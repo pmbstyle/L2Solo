@@ -2,6 +2,7 @@ const SendPacket = invoke('Packet/Send');
 const Pledge = invoke('GameServer/Network/Response/PledgeHelpers');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
+const weaponEnchantEffect = invoke('GameServer/Network/Response/WeaponEnchantEffect');
 
 function boatObjectId(actor) {
     const boat = actor?.fetchBoat?.() || actor?.boat;
@@ -122,7 +123,7 @@ function userInfo(actor) {
         .writeD(0x00)  // Special effects
         .writeD(actor.fetchMaxCp())
         .writeD(actor.fetchCp())
-        .writeC(actor.fetchMounted?.() || actor.mounted ? 1 : 0)  // Mounted
+        .writeC(actor.fetchMounted?.() || actor.mounted ? 0 : weaponEnchantEffect(actor))  // Enchant effect
         .writeC(0x00)  // Team circle color
         .writeD(Pledge.largeCrestId(actor))  // Clan large crest ID
         .writeC(0x00)  // Noble

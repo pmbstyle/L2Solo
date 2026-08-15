@@ -138,6 +138,11 @@ function inventorySummaryFromItems(items = []) {
             ...(summary[key]?.equippedSlots || []),
             ...(equipped && slot > 0 ? [slot] : [])
         ])].sort((a, b) => a - b);
+        const currentEnchant = Number(item.fetchEnchantLevel ? item.fetchEnchantLevel() : item.enchant || 0) || 0;
+        const previousEnchant = summary[key]?.enchant;
+        const enchant = previousEnchant === null || previousEnchant === undefined
+            ? (summary[key] ? null : currentEnchant)
+            : Number(previousEnchant) === currentEnchant ? currentEnchant : null;
         summary[key] = {
             selfId,
             name: item.fetchName ? item.fetchName() : item.name || itemName(selfId),
@@ -148,7 +153,8 @@ function inventorySummaryFromItems(items = []) {
             stackable: itemStackable(selfId, item),
             slot: Number(summary[key]?.slot || slot),
             rank: item.fetchRank ? item.fetchRank() : item.rank || itemTemplate(selfId)?.etc?.rank || 'none',
-            kind: item.fetchKind ? item.fetchKind() : item.kind || itemTemplate(selfId)?.template?.kind || ''
+            kind: item.fetchKind ? item.fetchKind() : item.kind || itemTemplate(selfId)?.template?.kind || '',
+            enchant
         };
         return summary;
     }, {});

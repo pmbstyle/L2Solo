@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS items (
     selfId INTEGER NOT NULL,
     name TEXT NOT NULL,
     amount INTEGER NOT NULL DEFAULT 1 CHECK(amount >= 0),
+    enchant INTEGER NOT NULL DEFAULT 0 CHECK(enchant >= 0),
     equipped INTEGER NOT NULL DEFAULT 0,
     slot INTEGER NOT NULL DEFAULT 0,
     petData TEXT,
@@ -112,6 +113,7 @@ CREATE TABLE IF NOT EXISTS warehouse_items (
     selfId INTEGER NOT NULL,
     name TEXT NOT NULL,
     amount INTEGER NOT NULL DEFAULT 1 CHECK(amount >= 0),
+    enchant INTEGER NOT NULL DEFAULT 0 CHECK(enchant >= 0),
     petData TEXT,
     characterId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE
 );

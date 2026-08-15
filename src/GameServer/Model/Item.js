@@ -13,6 +13,10 @@ class ItemModel {
         this.model.amount = data;
     }
 
+    setEnchantLevel(data) {
+        this.model.enchant = Math.max(0, Number(data) || 0);
+    }
+
     setPetData(data) {
         this.model.petData = data;
     }
@@ -41,6 +45,10 @@ class ItemModel {
 
     fetchAmount() {
         return this.model.amount ?? 1;
+    }
+
+    fetchEnchantLevel() {
+        return Math.max(0, Number(this.model.enchant ?? 0) || 0);
     }
 
     fetchClass1() {

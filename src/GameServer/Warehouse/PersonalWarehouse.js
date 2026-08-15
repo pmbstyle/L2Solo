@@ -28,6 +28,7 @@ function warehouseItem(row) {
     return new Item(Number(row.id), {
         ...utils.crushOb(template),
         amount: Number(row.amount),
+        enchant: Number(row.enchant || 0),
         petData: row.petData,
         equipped: false,
         slot: 0
@@ -68,14 +69,14 @@ async function deposit(session, lines) {
 
         const transferred = await Database.transferInventoryToWarehouse(actor.fetchId(), {
             id: source.fetchId(), selfId: source.fetchSelfId(), name: source.fetchName?.(), amount,
-            stackable: source.fetchStackable?.(), petData: source.fetchPetData?.()
+            stackable: source.fetchStackable?.(), petData: source.fetchPetData?.(), enchant: source.fetchEnchantLevel?.()
         });
         if (target) {
             target.setAmount(transferred.warehouseAmount);
         } else {
             const added = warehouseItem({
                 id: transferred.warehouseId, selfId: source.fetchSelfId(), amount,
-                petData: source.fetchPetData?.()
+                petData: source.fetchPetData?.(), enchant: transferred.enchant
             });
             if (added) stored.push(added);
         }
@@ -113,7 +114,7 @@ async function withdraw(session, lines) {
         } else {
             const added = warehouseItem({
                 id: transferred.inventoryId, selfId: source.fetchSelfId(), amount,
-                petData: transferred.petData
+                petData: transferred.petData, enchant: transferred.enchant
             });
             if (added) backpack.items.push(added);
         }

@@ -21,7 +21,7 @@ function purchaseList(items, adena) {
             .writeH(item.fetchClass2())
             .writeH(0x00) // ?
             .writeD(bodyPart(item))
-            .writeH(0x00)  // Enchant
+            .writeH(item.fetchEnchantLevel?.() || 0)  // Enchant
             .writeH(0x00)  // ?
             .writeH(0x00)  // ?
             .writeD(item.fetchPrice());

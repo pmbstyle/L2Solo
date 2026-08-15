@@ -1,4 +1,5 @@
 const SendPacket = invoke('Packet/Send');
+const weaponEnchantEffect = invoke('GameServer/Network/Response/WeaponEnchantEffect');
 
 function charSelectInfo(characters) {
     const packet = new SendPacket(0x13);
@@ -63,7 +64,7 @@ function charSelectInfo(characters) {
             .writeD(0x00)  // Time before deletion
             .writeD(character.classId)
             .writeD(0x00)  // Active character slot
-            .writeC(0x00); // Enchant effect
+            .writeC(weaponEnchantEffect(character)); // Enchant effect
     });
 
     return packet.fetchBuffer();

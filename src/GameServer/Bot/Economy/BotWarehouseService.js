@@ -18,6 +18,7 @@ function itemData(item) {
         equipped: !!(item.fetchEquipped?.() || item.equipped),
         rank: item.fetchRank?.() || item.rank || 'none',
         kind: item.fetchKind?.() || item.kind || '',
+        enchant: Number(item.fetchEnchantLevel?.() ?? item.enchant ?? 0) || 0,
         stackable: !!(item.fetchStackable?.() || item.stackable),
         petData: item.fetchPetData?.() || item.petData
     };

@@ -99,7 +99,11 @@ Database.init();
     assert.strictEqual(index.length, 1, 'the ordering index must be created after migration columns exist');
 
     const migrations = await Database.execute(['SELECT version FROM schema_migrations ORDER BY version'], 'test:migration-versions');
-    assert.strictEqual(migrations.at(-1).version, 10, 'cold simulation ownership migration must complete on a legacy database');
+    assert(migrations.at(-1).version >= 12, 'all current additive migrations must complete on a legacy database');
+    const itemColumns = await Database.execute(['PRAGMA table_info(items)'], 'test:enchant-item-columns');
+    assert(itemColumns.some((column) => column.name === 'enchant'), 'legacy item table must receive enchant level storage');
+    const warehouseColumns = await Database.execute(['PRAGMA table_info(warehouse_items)'], 'test:enchant-warehouse-columns');
+    assert(warehouseColumns.some((column) => column.name === 'enchant'), 'legacy warehouse table must receive enchant level storage');
     const lifeStateColumns = await Database.execute(['PRAGMA table_info(bot_life_state)'], 'test:owner-migration-columns');
     const lifeStateColumnNames = lifeStateColumns.map((column) => column.name);
     for (const column of ['simulationOwner', 'simulationRevision', 'simulationLeaseId', 'simulationLeaseUntil']) {

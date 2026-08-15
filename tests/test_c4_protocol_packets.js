@@ -300,6 +300,16 @@ assert.strictEqual(charInfo[0], 0x03);
 assert.strictEqual(charInfo.readInt32LE(13), 0, 'C4 CharInfo must send boat object id, not character heading');
 assert.ok(charInfo.includes(0xff), 'C4 CharInfo should include trailing name-color bytes');
 assert.strictEqual(charInfoEquipment(charInfo).weapon, 1007, 'C4 CharInfo should display right-hand weapons');
+const enchantedActor = fakeActor();
+enchantedActor.backpack.fetchItemRaw = () => ({ fetchEnchantLevel: () => 12 });
+const enchantedUserInfo = ServerResponse.userInfo(enchantedActor);
+const enchantedUserNameColorOffset = enchantedUserInfo.lastIndexOf(Buffer.from([0xff, 0xff, 0xff, 0x00]));
+assert.strictEqual(enchantedUserInfo[enchantedUserNameColorOffset - 21], 12, 'C4 UserInfo should expose the active weapon enchant effect');
+const enchantedCharInfo = ServerResponse.charInfo(enchantedActor);
+const enchantedCharNameColorOffset = enchantedCharInfo.lastIndexOf(Buffer.from([0xff, 0xff, 0xff, 0x00]));
+assert.strictEqual(enchantedCharInfo[enchantedCharNameColorOffset - 21], 12, 'C4 CharInfo should expose the active weapon enchant effect');
+enchantedActor.fetchMounted = () => true;
+assert.strictEqual(ServerResponse.charInfo(enchantedActor)[enchantedCharNameColorOffset - 21], 0, 'mounted C4 characters should suppress the weapon enchant effect');
 const boatActor = fakeActor();
 boatActor.fetchBoatId = () => 7000001;
 assert.strictEqual(ServerResponse.userInfo(boatActor).readInt32LE(13), 7000001, 'C4 UserInfo should preserve an attached boat object id');
@@ -515,6 +525,7 @@ assert.strictEqual(deleteObject[0], 0x12, 'C4 DeleteObject opcode should be 0x12
 assert.strictEqual(deleteObject.readInt32LE(1), 3000001, 'C4 DeleteObject should include object id');
 assert.strictEqual(deleteObject.readInt32LE(5), 0, 'C4 DeleteObject should include the required zero c2 field');
 
+const charSelectPaperdoll = fakePaperdoll();
 const charSelectInfo = ServerResponse.charSelectInfo([{
     name: 'C4Tester',
     id: 2000001,
@@ -536,8 +547,10 @@ const charSelectInfo = ServerResponse.charSelectInfo([{
     hair: 0,
     hairColor: 0,
     face: 0,
-    paperdoll: fakePaperdoll()
+    paperdoll: charSelectPaperdoll,
+    items: [{ id: charSelectPaperdoll[7].id, enchant: 9 }]
 }]);
 assert.strictEqual(charSelectInfo[0], 0x13);
+assert.strictEqual(charSelectInfo[charSelectInfo.length - 11], 9, 'C4 CharSelectInfo should expose the active weapon enchant effect');
 
 console.log('C4 protocol packet checks passed');
