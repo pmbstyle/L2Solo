@@ -4,7 +4,9 @@ require('../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
+const ClassProgression = invoke('GameServer/ClassProgression');
 const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
+const GeneratedColdSeeder = invoke('GameServer/Bot/Population/GeneratedColdSeeder');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
 DataCache.init();
@@ -13,6 +15,30 @@ const firstProfessionChoices = new Set(Array.from({ length: 30 }, (_, index) => 
     BotClassProgression.nextClass(0, 20, `starter_${index}`)
 )));
 assert(firstProfessionChoices.size > 1, 'first-profession choices must vary across a generated fighter cohort');
+
+// Exercise the same racial starter slots as generated population, but use the
+// durable character id for profession choice. This must cover every branch,
+// including the previously starved Swordsinger and Bladedancer paths.
+const secondProfessionChoices = new Map();
+const starterRegions = ['human', 'elf', 'dark_elf', 'orc', 'dwarf'];
+for (let index = 2000000; index < 2005000; index++) {
+    const characterId = index;
+    starterRegions.forEach((starterRegion) => {
+        const base = GeneratedColdSeeder.baseForIndex(index, starterRegion);
+        const firstClass = BotClassProgression.nextClass(base.classId, 20, characterId);
+        const secondOptions = ClassProgression.secondProfMap[firstClass] || [];
+        if (!secondOptions.length) return;
+        if (!secondProfessionChoices.has(firstClass)) secondProfessionChoices.set(firstClass, new Set());
+        secondProfessionChoices.get(firstClass).add(
+            BotClassProgression.nextClass(firstClass, 40, characterId)
+        );
+    });
+}
+Object.entries(ClassProgression.secondProfMap).forEach(([classId, options]) => {
+    const observed = [...(secondProfessionChoices.get(Number(classId)) || [])].sort((a, b) => a - b);
+    assert.deepStrictEqual(observed, [...options].sort((a, b) => a - b),
+        `generated population IDs must reach every second-profession branch from ${classId}`);
+});
 
 const original = {
     fetchSkill: Database.fetchSkill,
@@ -51,7 +77,8 @@ try {
         BotClassProgression.reconcile({ characterId: 2, classId: 49, level: 42, seed: 'Bren1465' }),
         BotClassProgression.reconcile({ characterId: 3, classId: 2, level: 76, seed: 'Veteran' })
     ]).then(([darkFighter, orcMystic, veteran]) => {
-        assert.ok([36, 37].includes(darkFighter.classId), 'a level 42 Dark Fighter must pass both profession transfers');
+        assert.ok([33, 34, 36, 37].includes(darkFighter.classId),
+            'a level 42 Dark Fighter must pass both profession transfers through a valid branch');
         assert.ok([51, 52].includes(orcMystic.classId), 'a level 42 Orc Mystic must pass both profession transfers');
         assert.strictEqual(veteran.classId, 88, 'a level 76 second-class bot must take its third profession');
         assert.strictEqual(skillsFor(1).find((skill) => skill.selfId === 239)?.level, 2, 'a C-grade bot must receive Expertise C through its real profession tree');

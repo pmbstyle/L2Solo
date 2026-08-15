@@ -671,7 +671,7 @@ function applyClassProgression(state, profile = {}) {
         characterId: state.characterId,
         classId: currentClassId,
         level,
-        seed: state.name || state.characterId
+        seed: state.characterId
     }).then((resolved) => {
         const classId = Number(resolved.classId || currentClassId);
         const role = BotRoles.inferRole(classId);
@@ -2041,12 +2041,12 @@ const BotLifeState = {
             ? (options.projectClassProgression === true ? Promise.resolve(BotClassProgression.plan({
                 classId: currentClassId,
                 level,
-                seed: nextState.name || nextState.characterId
+                seed: nextState.characterId
             })) : BotClassProgression.reconcile({
                 characterId: nextState.characterId,
                 classId: currentClassId,
                 level,
-                seed: nextState.name || nextState.characterId
+                seed: nextState.characterId
             }))
             : Promise.resolve({ classId: currentClassId, transitions: [] });
 

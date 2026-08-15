@@ -1,22 +1,33 @@
 const ClassProgression = invoke('GameServer/ClassProgression');
 
 function stableNumber(value) {
-    return [...String(value || 0)].reduce((sum, character) => sum + character.charCodeAt(0), 0);
+    let hash = 2166136261;
+    for (const character of String(value ?? 0)) {
+        hash ^= character.charCodeAt(0);
+        hash = Math.imul(hash, 16777619);
+    }
+    // FNV is a good stable accumulator, but its low bit remains correlated
+    // for nearby numeric ids with similar suffixes. Avalanche the result so
+    // first- and second-profession decisions stay independent.
+    hash = Math.imul(hash ^ (hash >>> 16), 2246822507);
+    hash = Math.imul(hash ^ (hash >>> 13), 3266489909);
+    return (hash ^ (hash >>> 16)) >>> 0;
 }
 
-function pick(options, seed) {
+function pick(options, seed, stage, currentClassId) {
     if (!options?.length) return null;
-    return options[Math.abs(stableNumber(seed)) % options.length];
+    const branchSeed = `${seed ?? 0}:${stage}:${currentClassId}`;
+    return options[stableNumber(branchSeed) % options.length];
 }
 
 function nextClass(classId, level, seed) {
     const current = Number(classId);
     const currentLevel = Number(level || 1);
     if (currentLevel >= 20 && ClassProgression.firstProfMap[current]) {
-        return pick(ClassProgression.firstProfMap[current], seed);
+        return pick(ClassProgression.firstProfMap[current], seed, 'first', current);
     }
     if (currentLevel >= 40 && ClassProgression.secondProfMap[current]) {
-        return pick(ClassProgression.secondProfMap[current], seed);
+        return pick(ClassProgression.secondProfMap[current], seed, 'second', current);
     }
     if (currentLevel >= 76) {
         return Number(Object.entries(ClassProgression.thirdClasses)

@@ -58,6 +58,64 @@ assert.strictEqual(ColdCombatProfile.needsDatabaseBackfill({ skillSource: 'datab
 assert.strictEqual(ColdCombatProfile.needsDatabaseBackfill(migratedSnapshot), false, 'a current database snapshot must not be rescanned on every migration tick');
 assert.strictEqual(ColdCombatProfile.needsDatabaseBackfill({ version: ColdCombatProfile.PROFILE_VERSION }), true, 'a class-tree fallback without a database source must still be migrated');
 
+function musicSkill(selfId) {
+    return { selfId, level: 1, passive: false, spell: false, power: 0, mp: 60, hp: 0, hitTime: 1000, reuse: 0, buffTime: 120000 };
+}
+
+const singer = {
+    ...fighter,
+    characterId: 904,
+    name: 'ColdSinger',
+    level: 75,
+    vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 },
+    party: { role: 'buffer' },
+    stats: {
+        ...fighter.stats,
+        classId: 21,
+        coldCombat: {
+            ...fighter.stats.coldCombat,
+            classId: 21,
+            effects: [],
+            skills: [musicSkill(264), musicSkill(265)]
+        }
+    }
+};
+const singerProfile = ColdCombatProfile.profileFor(singer, timestamp);
+assert.deepStrictEqual(ColdCombatProfile.partyMusicSkills(singerProfile).map((skill) => skill.selfId), [264, 265],
+    'a cold Swordsinger must retain learned songs as party music skills');
+assert.strictEqual(ColdCombatProfile.partyMusicMpCost(singerProfile, musicSkill(264), timestamp), 60,
+    'the first cold song must use its base MP cost');
+const firstSong = ColdCombatProfile.partyMusicEffect(musicSkill(264), timestamp);
+assert.strictEqual(ColdCombatProfile.partyMusicMpCost({ ...singerProfile, effects: [firstSong] }, musicSkill(265), timestamp), 90,
+    'cold song MP cost must include the native next-dance surcharge');
+
+const dancer = {
+    ...singer,
+    characterId: 905,
+    name: 'ColdDancer',
+    stats: {
+        ...singer.stats,
+        classId: 34,
+        coldCombat: {
+            ...singer.stats.coldCombat,
+            classId: 34,
+            equipment: { ...singer.stats.coldCombat.equipment, weaponKind: 'Weapon.Dual' },
+            effects: [],
+            skills: [musicSkill(271), musicSkill(272)]
+        }
+    }
+};
+const dancerProfile = ColdCombatProfile.profileFor(dancer, timestamp);
+assert.deepStrictEqual(ColdCombatProfile.partyMusicSkills(dancerProfile).map((skill) => skill.selfId), [271, 272],
+    'a cold Bladedancer with dual swords must retain learned dances');
+assert.strictEqual(ColdCombatProfile.partyMusicSkills(ColdCombatProfile.profileFor({
+    ...dancer,
+    stats: {
+        ...dancer.stats,
+        coldCombat: { ...dancer.stats.coldCombat, equipment: { ...dancer.stats.coldCombat.equipment, weaponKind: 'Weapon.Sword' } }
+    }
+}, timestamp)).length, 0, 'cold dances must preserve the dual-sword requirement');
+
 const coldFatalProfile = { ...buffed, maxHp: 1000 };
 const coldFatal = { selfId: 314, level: 1, power: 2908 };
 assert.strictEqual(BackgroundResolver.effectiveSkillPower(coldFatalProfile, coldFatal, 1000), 0,
@@ -157,6 +215,16 @@ const focusedResult = BackgroundResolver.resolveSolo({
 });
 assert.deepStrictEqual(focusedResult.debug.foughtNpcIds, [1], 'solo direct-drop farming must fight the requested NPC, not a random spot entry');
 
+const musicSpot = { ...spot, npcSelfIds: [], mob: { hp: 100000, damage: 1 } };
+const singerResult = BackgroundResolver.resolveSolo({ state: singer, spot: musicSpot, elapsedMs: 12000, timestamp, rng: () => 0.1 });
+assert(singerResult.debug.musicUses >= 2, 'cold solo combat must cast the Swordsinger songs it learned');
+assert(singerResult.patch.stats.coldCombat.effects.some((effect) => effect.id === 264),
+    'a cold solo song must persist on the singer after the fight');
+const dancerResult = BackgroundResolver.resolveSolo({ state: dancer, spot: musicSpot, elapsedMs: 12000, timestamp, rng: () => 0.1 });
+assert(dancerResult.debug.musicUses >= 2, 'cold solo combat must cast the Bladedancer dances it learned');
+assert(dancerResult.patch.stats.coldCombat.effects.some((effect) => effect.id === 271),
+    'a cold solo dance must persist on the dancer after the fight');
+
 const injuredTank = {
     ...fighter,
     characterId: 902,
@@ -194,6 +262,18 @@ const focusedPartyFight = BackgroundResolver.resolvePartyFight({
 assert.strictEqual(focusedPartyFight.debug.mobSelfId, 1, 'party direct-drop farming must use the party target NPC');
 assert.strictEqual(focusedPartyFight.members[0].charges, 2, 'unspent charges must survive a party cold fight');
 
+const musicPartyFight = BackgroundResolver.resolvePartyFight({
+    members: [singer, fighter],
+    spot: musicSpot,
+    timestamp,
+    rng: () => 0.1
+});
+assert(musicPartyFight.debug.musicUses >= 2, 'cold party combat must cast the provider songs');
+assert(musicPartyFight.members[0].profile.effects.some((effect) => effect.id === 264),
+    'the cold song provider must receive its own party aura');
+assert(musicPartyFight.members[1].profile.effects.some((effect) => effect.id === 264),
+    'cold party songs must reach another party member');
+
 const expiredChargeFight = BackgroundResolver.resolvePartyFight({
     members: [{
         ...fighter,
@@ -226,6 +306,17 @@ const partyResult = BackgroundPartyResolver.resolve({
 });
 assert(partyResult.debug.combatActions > 0, 'the party lifecycle must use the cold action simulation');
 assert(partyResult.debug.heals > 0, 'party support casts must be reflected in the persisted combat telemetry');
+const musicPartyResult = BackgroundPartyResolver.resolve({
+    party: { partyId: 'cold_music_party', leaderId: singer.characterId, cohesion: 1, risk: 0, roleCoverage: {}, stats: {} },
+    members: [singer, fighter],
+    spot: musicSpot,
+    elapsedMs: 12000,
+    timestamp,
+    rng: () => 0.1
+});
+assert(musicPartyResult.debug.musicUses >= 2, 'the cold party lifecycle must report song casts');
+assert(musicPartyResult.memberResults[1].result.patch.stats.coldCombat.effects.some((effect) => effect.id === 264),
+    'the cold party lifecycle must persist a song on the buffed member');
 const focusedPartyResult = BackgroundPartyResolver.resolve({
     party: {
         partyId: 'focused_cold_combat_party',

@@ -143,6 +143,12 @@ function hasEquippedTwoHandedWeapon(state = {}) {
     ));
 }
 
+function missingRequiredDualSword(state = {}, role = roleFor(state), classId = classIdFor(state)) {
+    const allowedKinds = BotEquipmentCompatibility.weaponKindsFor(role, classId);
+    if (allowedKinds.length !== 1 || allowedKinds[0] !== 'Weapon.Dual') return false;
+    return !equippedInventoryItems(state.inventory).some((item) => item.template?.kind === 'Weapon.Dual');
+}
+
 function itemScore(item, role, classId) {
     const stats = item.stats || {};
     const slot = Number(item.etc?.slot || 0);
@@ -440,6 +446,7 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
 function preferredTarget(state = {}, options = {}) {
     const role = roleFor(state);
     const classId = classIdFor(state);
+    const missingDualSword = missingRequiredDualSword(state, role, classId);
     const owned = inventoryMap(state.inventory);
     const ownedItems = inventoryItems(state.inventory);
     const stationService = { level: 70, stats: { classId: 57 } };
@@ -462,7 +469,8 @@ function preferredTarget(state = {}, options = {}) {
         .map((item) => ({ item, recipe: recipesByProduct.get(Number(item.selfId)) || null }))
         .filter(({ recipe }) => !options.recipeId || Number(recipe?.recipeId) === Number(options.recipeId))
         .filter(({ item }) => Number(owned.get(Number(item.selfId)) || 0) < 1)
-        .filter(({ item }) => isSlotUpgrade(item, ownedItems, role, classId));
+        .filter(({ item }) => (missingDualSword && item.template?.kind === 'Weapon.Dual')
+            || isSlotUpgrade(item, ownedItems, role, classId));
     const requiredRank = recipeRank || gradeForLevel(state.level);
     const hasCurrentGradeWeapon = ownedItems.some((item) => (
         WEAPON_SLOTS.has(Number(item.etc?.slot || 0))
@@ -471,7 +479,7 @@ function preferredTarget(state = {}, options = {}) {
     // A viable weapon is the first milestone of a new grade. Once it is
     // covered, fill the rest of the kit before considering another weapon of
     // the same grade.
-    const weaponFirst = !hasCurrentGradeWeapon
+    const weaponFirst = !hasCurrentGradeWeapon || missingDualSword
         ? allCandidates.filter(({ item }) => WEAPON_SLOTS.has(Number(item.etc?.slot || 0)))
         : allCandidates.filter(({ item }) => !WEAPON_SLOTS.has(Number(item.etc?.slot || 0)));
     const progressionCandidates = weaponFirst.length ? weaponFirst : allCandidates;
@@ -653,6 +661,7 @@ function equippedItemAtSlot(state = {}, slot) {
 function npcCandidatesForSlot(state = {}, desiredSlot, maxRank, options = {}) {
     const role = roleFor(state);
     const classId = classIdFor(state);
+    const requiredDualSword = Number(desiredSlot) === 14 && missingRequiredDualSword(state, role, classId);
     const current = equippedItemAtSlot(state, desiredSlot);
     const currentRank = rankIndex(current?.etc?.rank);
     const currentScore = current ? itemScore(current, role, classId) : 0;
@@ -661,7 +670,9 @@ function npcCandidatesForSlot(state = {}, desiredSlot, maxRank, options = {}) {
         .filter((item) => itemMatchesDesiredSlot(item, desiredSlot))
         .filter((item) => rankIndex(item.etc?.rank) <= rankIndex(maxRank))
         .filter((item) => suitable(item, state, role, item.etc?.rank))
-        .filter((item) => rankIndex(item.etc?.rank) > currentRank || itemScore(item, role, classId) > currentScore)
+        .filter((item) => requiredDualSword
+            || rankIndex(item.etc?.rank) > currentRank
+            || itemScore(item, role, classId) > currentScore)
         .map((item) => ({ item, offer: npcOfferForTarget(item, state, options) }))
         .filter(({ offer }) => offer)
         .sort((left, right) => rankIndex(right.item.etc?.rank) - rankIndex(left.item.etc?.rank)
@@ -675,6 +686,17 @@ function staticNpcUpgradePlan(state = {}, options = {}) {
     const reserve = operationalAdenaReserve(state);
     const spendable = Math.max(0, Number(state.adena || state.inventory?.[57]?.amount || 0) - reserve);
     const slots = desiredNpcSlots(state);
+
+    if (missingRequiredDualSword(state)) {
+        const dualCandidate = npcCandidatesForSlot(state, 14, targetRank, options)[0];
+        if (dualCandidate) {
+            return marketPlan(state, dualCandidate.item, dualCandidate.offer, {
+                targetSlot: 14,
+                reason: 'required_dual_sword',
+                reserve
+            });
+        }
+    }
 
     // First establish an adequate kit. Missing/under-grade slots select the
     // cheapest compatible item at the highest ordinary NPC grade, even when
