@@ -223,6 +223,7 @@ const tests = [
     'tests/test_raid_boss_minions.js',
     'tests/test_raid_boss_respawn_persistence.js',
     'tests/test_item_skill_use.js',
+    'tests/test_enchant_runtime.js',
     'tests/test_karma.js',
     'tests/test_launcher_progression_memory.js',
     'tests/test_world_wipe.js',

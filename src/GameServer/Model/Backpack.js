@@ -1,3 +1,10 @@
+const EnchantRules = invoke('GameServer/Items/C4EnchantRules');
+
+function armorStat(item, method, fallback) {
+    if (!item) return fallback;
+    return (Number(item[method]?.() || 0) || 0) + EnchantRules.statBonus(item, method === 'fetchPDef' ? 'pDef' : 'mDef');
+}
+
 class BackpackModel {
     constructor(data) {
         this.items = [];
@@ -91,24 +98,24 @@ class BackpackModel {
         const equip = this.equipment;
         const fullBody = this.fetchEquippedArmor(equip.armor);
         const torsoPDef = fullBody
-            ? fullBody.fetchPDef()
+            ? armorStat(fullBody, 'fetchPDef', 0)
             : (
-                (this.fetchEquippedArmor(equip.chest)?.fetchPDef() ?? (spellcaster ? 15 : 31)) +
-                (this.fetchEquippedArmor(equip.pants)?.fetchPDef() ?? (spellcaster ?  8 : 18))
+                armorStat(this.fetchEquippedArmor(equip.chest), 'fetchPDef', spellcaster ? 15 : 31) +
+                armorStat(this.fetchEquippedArmor(equip.pants), 'fetchPDef', spellcaster ? 8 : 18)
             );
 
         return (
-            (this.fetchEquippedArmor(equip.underwear)?.fetchPDef() ?? 0) +
-            (this.fetchEquippedArmor(equip.head )?.fetchPDef() ?? (12)) +
+            armorStat(this.fetchEquippedArmor(equip.underwear), 'fetchPDef', 0) +
+            armorStat(this.fetchEquippedArmor(equip.head), 'fetchPDef', 12) +
             torsoPDef +
-            (this.fetchEquippedArmor(equip.hands)?.fetchPDef() ?? ( 8)) +
-            (this.fetchEquippedArmor(equip.feet )?.fetchPDef() ?? ( 7)) +
-            (this.fetchEquippedArmor(equip.cloak)?.fetchPDef() ?? 0)
+            armorStat(this.fetchEquippedArmor(equip.hands), 'fetchPDef', 8) +
+            armorStat(this.fetchEquippedArmor(equip.feet), 'fetchPDef', 7) +
+            armorStat(this.fetchEquippedArmor(equip.cloak), 'fetchPDef', 0)
         );
     }
 
     fetchTotalShieldPDef() {
-        return this.fetchEquippedArmor(this.equipment.shield)?.fetchPDef() ?? 0;
+        return armorStat(this.fetchEquippedArmor(this.equipment.shield), 'fetchPDef', 0);
     }
 
     fetchTotalShieldRate() {
@@ -121,11 +128,11 @@ class BackpackModel {
         const equip = this.equipment;
 
         return (
-            (this.fetchEquippedArmor(equip.neck)?.fetchMDef() ?? 13) +
-            (this.fetchEquippedArmor(equip.earr)?.fetchMDef() ??  9) +
-            (this.fetchEquippedArmor(equip.earl)?.fetchMDef() ??  9) +
-            (this.fetchEquippedArmor(equip.fr  )?.fetchMDef() ??  5) +
-            (this.fetchEquippedArmor(equip.fl  )?.fetchMDef() ??  5)
+            armorStat(this.fetchEquippedArmor(equip.neck), 'fetchMDef', 13) +
+            armorStat(this.fetchEquippedArmor(equip.earr), 'fetchMDef', 9) +
+            armorStat(this.fetchEquippedArmor(equip.earl), 'fetchMDef', 9) +
+            armorStat(this.fetchEquippedArmor(equip.fr), 'fetchMDef', 5) +
+            armorStat(this.fetchEquippedArmor(equip.fl), 'fetchMDef', 5)
         );
     }
 
@@ -140,7 +147,8 @@ class BackpackModel {
     }
 
     fetchTotalWeaponPAtk() {
-        return this.fetchEquippedWeapon()?.fetchPAtk();
+        const weapon = this.fetchEquippedWeapon();
+        return weapon ? weapon.fetchPAtk() + EnchantRules.statBonus(weapon, 'pAtk') : undefined;
     }
 
     fetchTotalWeaponPAtkRnd() {
@@ -148,7 +156,8 @@ class BackpackModel {
     }
 
     fetchTotalWeaponMAtk() {
-        return this.fetchEquippedWeapon()?.fetchMAtk();
+        const weapon = this.fetchEquippedWeapon();
+        return weapon ? weapon.fetchMAtk() + EnchantRules.statBonus(weapon, 'mAtk') : undefined;
     }
 
     fetchTotalWeaponAtkSpd() {

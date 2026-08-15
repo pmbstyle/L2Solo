@@ -18,7 +18,7 @@ function privateStoreListBuy(merchant, rows, adena) {
         packet
             .writeD(item.fetchId())
             .writeD(item.fetchSelfId())
-            .writeH(0) // Enchant
+            .writeH(item.fetchEnchantLevel?.() || 0) // Enchant
             .writeD(row.amount)
             .writeD(item.fetchPrice())
             .writeH(0)

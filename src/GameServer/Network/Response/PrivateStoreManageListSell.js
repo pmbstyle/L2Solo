@@ -15,7 +15,7 @@ module.exports = function privateStoreManageListSell(actor, store) {
     packet.writeD(available.length);
     available.forEach((item) => {
         packet.writeD(item.fetchClass2()).writeD(item.fetchId()).writeD(item.fetchSelfId())
-            .writeD(item.fetchAmount()).writeH(0).writeH(0).writeH(0)
+            .writeD(item.fetchAmount()).writeH(item.fetchEnchantLevel?.() || 0).writeH(0).writeH(0)
             .writeD(bodyPart(item)).writeD(listed.get(Number(item.fetchId()))?.price || item.fetchPrice());
     });
 
@@ -23,7 +23,7 @@ module.exports = function privateStoreManageListSell(actor, store) {
     packet.writeD(current.length);
     current.forEach(({ row, item }) => {
         packet.writeD(item.fetchClass2()).writeD(item.fetchId()).writeD(item.fetchSelfId())
-            .writeD(row.count).writeH(0).writeH(0).writeH(0)
+            .writeD(row.count).writeH(item.fetchEnchantLevel?.() || 0).writeH(0).writeH(0)
             .writeD(bodyPart(item)).writeD(row.price).writeD(item.fetchPrice());
     });
     return packet.fetchBuffer();

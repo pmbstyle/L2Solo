@@ -9,12 +9,17 @@ const Actor = invoke('GameServer/Actor/Actor');
 const AdminShop = invoke('GameServer/World/Generics/NpcBypasses/AdminShop');
 const AdminSetLevel = invoke('GameServer/World/Generics/NpcBypasses/AdminSetLevel');
 const AdminFullBuff = invoke('GameServer/World/Generics/NpcBypasses/AdminFullBuff');
+const C4EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 
 const armors = require('../data/Items/Armors/armors.json');
 const weapons = require('../data/Items/Weapons/weapons.json');
-const others = require('../data/Items/Others/others.json');
+const others = [
+    ...require('../data/Items/Others/others.json'),
+    ...require('../data/Items/Others/c4_raid_bosses.json'),
+    ...require('../data/Items/Others/c4_low_level_raid_bosses.json')
+];
 const adminShop = require('../data/Admin/Shop/shop.json');
 
 const originalSetTimeout = global.setTimeout;
@@ -45,6 +50,12 @@ assert.ok(!adminHtml.includes('admin-shop armor-all'), 'admin panel should not e
 assert.ok(!adminHtml.includes('admin-shop weapon-all'), 'admin panel should not expose crash-prone full weapon lists');
 assert.ok(adminShopHtml.includes('admin-shop armor-s'), 'equipment shop should expose armor grade links');
 assert.ok(adminShopHtml.includes('admin-shop weapon-s'), 'equipment shop should expose weapon grade links');
+for (const category of [
+    'enchant-weapon-normal', 'enchant-weapon-blessed', 'enchant-weapon-crystal',
+    'enchant-armor-normal', 'enchant-armor-blessed', 'enchant-armor-crystal'
+]) {
+    assert.ok(adminShopHtml.includes(`admin-shop ${category}`), `equipment shop should expose ${category}`);
+}
 assert.ok(adminShopHtml.includes('admin-shop supply-crystals'), 'equipment shop should expose crystal supplies');
 assert.ok(adminShopHtml.includes('admin-shop supply-soulshots'), 'equipment shop should expose soulshot supplies');
 assert.ok(adminShopHtml.includes('admin-shop supply-spiritshots'), 'equipment shop should expose spiritshot supplies');
@@ -191,6 +202,23 @@ for (const [category, itemIds] of Object.entries(expectedSupplyGroups)) {
     });
 }
 
+const expectedEnchantGroups = {
+    'enchant-weapon-normal': [955, 951, 947, 729, 959],
+    'enchant-weapon-blessed': [6575, 6573, 6571, 6569, 6577],
+    'enchant-weapon-crystal': [957, 953, 949, 731, 961],
+    'enchant-armor-normal': [956, 952, 948, 730, 960],
+    'enchant-armor-blessed': [6576, 6574, 6572, 6570, 6578],
+    'enchant-armor-crystal': [958, 954, 950, 732, 962]
+};
+for (const [category, itemIds] of Object.entries(expectedEnchantGroups)) {
+    assert.deepStrictEqual(AdminShop.itemIdsForSource(adminShop[category]), itemIds, `${category} should expose every D-S enchant scroll`);
+    itemIds.forEach((selfId) => {
+        assert.ok(others.some((item) => item.selfId === selfId), `${category} item ${selfId} should exist in the item datapack`);
+        const scroll = C4EnchantScrolls.resolve(selfId);
+        assert.ok(scroll, `${category} item ${selfId} should be recognized by the enchant runtime`);
+    });
+}
+
 let adminBuyListPacket = null;
 AdminShop({
     actor: { backpack: { fetchTotalAdena: () => 1000000 } },
@@ -210,6 +238,18 @@ for (let i = 0; i < adminBuyListPacket.readInt16LE(9); i++) {
 assert.strictEqual(adminShopRows.get(1835).amount, 0, 'admin Soulshot stock should be unlimited in BuyList');
 assert.strictEqual(adminShopRows.get(1467).amount, 0, 'admin S-grade Soulshot stock should be unlimited in BuyList');
 assert.strictEqual(adminShopRows.get(1835).price, 0, 'admin supply prices should be free');
+
+let enchantBuyListPacket = null;
+AdminShop({
+    actor: { backpack: { fetchTotalAdena: () => 1000000 } },
+    dataSendToMe(packet) { enchantBuyListPacket = packet; }
+}, ['admin-shop', 'enchant-armor-blessed']);
+assert.ok(enchantBuyListPacket, 'admin shop should send a BuyList packet for enchant scrolls');
+assert.strictEqual(enchantBuyListPacket.readInt16LE(9), 5, 'admin enchant shop should expose all five D-S grades');
+for (let i = 0; i < enchantBuyListPacket.readInt16LE(9); i++) {
+    const offset = 11 + (i * 32);
+    assert.strictEqual(enchantBuyListPacket.readInt32LE(offset + 28), 0, 'admin enchant scrolls should be free');
+}
 
 assert.strictEqual(AdminSetLevel.normalizeLevel('1'), 1, 'admin level should accept level 1');
 assert.strictEqual(AdminSetLevel.normalizeLevel('80'), 80, 'admin level should accept the configured max level');

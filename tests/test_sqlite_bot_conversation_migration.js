@@ -99,7 +99,43 @@ Database.init();
     assert.strictEqual(index.length, 1, 'the ordering index must be created after migration columns exist');
 
     const migrations = await Database.execute(['SELECT version FROM schema_migrations ORDER BY version'], 'test:migration-versions');
-    assert.strictEqual(migrations.at(-1).version, 10, 'cold simulation ownership migration must complete on a legacy database');
+    assert(migrations.at(-1).version >= 12, 'all current additive migrations must complete on a legacy database');
+    const itemColumns = await Database.execute(['PRAGMA table_info(items)'], 'test:enchant-item-columns');
+    const itemEnchantColumn = itemColumns.find((column) => column.name === 'enchant');
+    assert(itemEnchantColumn, 'legacy item table must receive enchant level storage');
+    assert.strictEqual(Number(itemEnchantColumn.notnull), 1, 'item enchant storage must remain NOT NULL after migration');
+    assert.strictEqual(String(itemEnchantColumn.dflt_value), '0', 'item enchant storage must default to zero after migration');
+    const warehouseColumns = await Database.execute(['PRAGMA table_info(warehouse_items)'], 'test:enchant-warehouse-columns');
+    const warehouseEnchantColumn = warehouseColumns.find((column) => column.name === 'enchant');
+    assert(warehouseEnchantColumn, 'legacy warehouse table must receive enchant level storage');
+    assert.strictEqual(Number(warehouseEnchantColumn.notnull), 1, 'warehouse enchant storage must remain NOT NULL after migration');
+    assert.strictEqual(String(warehouseEnchantColumn.dflt_value), '0', 'warehouse enchant storage must default to zero after migration');
+    await Database.execute([
+        'INSERT INTO accounts(username, password) VALUES (?, ?)',
+        ['legacy_enchant_test', 'secret']
+    ], 'test:enchant-invariant-account');
+    const enchantCharacter = await Database.execute([
+        `INSERT INTO characters(username, name, classId, race, maxHp, maxMp, sex, face, hair, hairColor, locX, locY, locZ)
+         VALUES (?, ?, 0, 0, 100, 100, 0, 0, 0, 0, 0, 0, 0)`,
+        ['legacy_enchant_test', 'LegacyEnchantProbe']
+    ], 'test:enchant-invariant-character');
+    const enchantCharacterId = Number(enchantCharacter.insertId);
+    await assert.rejects(
+        Database.execute([
+            'INSERT INTO items(selfId, name, amount, enchant, characterId) VALUES (?, ?, ?, ?, ?)',
+            [1, 'invalid item enchant', 1, -1, enchantCharacterId]
+        ], 'test:negative-item-enchant'),
+        /CHECK constraint failed|constraint failed/i,
+        'items must reject negative enchant levels'
+    );
+    await assert.rejects(
+        Database.execute([
+            'INSERT INTO warehouse_items(selfId, name, amount, enchant, characterId) VALUES (?, ?, ?, ?, ?)',
+            [1, 'invalid warehouse enchant', 1, -1, enchantCharacterId]
+        ], 'test:negative-warehouse-enchant'),
+        /CHECK constraint failed|constraint failed/i,
+        'warehouse_items must reject negative enchant levels'
+    );
     const lifeStateColumns = await Database.execute(['PRAGMA table_info(bot_life_state)'], 'test:owner-migration-columns');
     const lifeStateColumnNames = lifeStateColumns.map((column) => column.name);
     for (const column of ['simulationOwner', 'simulationRevision', 'simulationLeaseId', 'simulationLeaseUntil']) {
