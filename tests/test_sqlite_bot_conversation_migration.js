@@ -40,12 +40,45 @@ legacy.exec(`
         metaJson TEXT,
         UNIQUE(conversationId, turnId, role)
     );
+    CREATE TABLE bot_life_state (
+        characterId INTEGER PRIMARY KEY,
+        accountName TEXT NOT NULL,
+        characterName TEXT NOT NULL,
+        level INTEGER NOT NULL DEFAULT 1,
+        exp INTEGER NOT NULL DEFAULT 0,
+        sp INTEGER NOT NULL DEFAULT 0,
+        adena INTEGER NOT NULL DEFAULT 0,
+        homeRegion TEXT,
+        currentRegion TEXT,
+        spotId TEXT,
+        activity TEXT NOT NULL DEFAULT 'hunting',
+        phase TEXT NOT NULL DEFAULT 'cold',
+        activityStartedAt INTEGER,
+        nextResolveAt INTEGER,
+        lastResolvedAt INTEGER,
+        lastHotAt INTEGER,
+        locX INTEGER NOT NULL DEFAULT 0,
+        locY INTEGER NOT NULL DEFAULT 0,
+        locZ INTEGER NOT NULL DEFAULT 0,
+        hp REAL NOT NULL DEFAULT 0,
+        maxHp REAL NOT NULL DEFAULT 0,
+        mp REAL NOT NULL DEFAULT 0,
+        maxMp REAL NOT NULL DEFAULT 0,
+        targetLevelBand TEXT,
+        deathCount INTEGER NOT NULL DEFAULT 0,
+        partyId TEXT,
+        inventorySummary TEXT,
+        statsJson TEXT,
+        updatedAt INTEGER NOT NULL DEFAULT 0
+    );
     INSERT INTO schema_migrations(version, appliedAt)
     VALUES (1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (6, 0), (7, 0);
     INSERT INTO bot_conversations(playerId, botId, createdAt, updatedAt)
     VALUES (1, 2, 1, 1);
     INSERT INTO bot_conversation_messages(conversationId, turnId, role, text)
     VALUES (1, 'legacy-turn', 'player', 'hello');
+    INSERT INTO bot_life_state(characterId, accountName, characterName, statsJson)
+    VALUES (42, 'legacy-owner', 'LegacyOwner', '{}');
 `);
 legacy.close();
 
@@ -66,7 +99,24 @@ Database.init();
     assert.strictEqual(index.length, 1, 'the ordering index must be created after migration columns exist');
 
     const migrations = await Database.execute(['SELECT version FROM schema_migrations ORDER BY version'], 'test:migration-versions');
-    assert.strictEqual(migrations.at(-1).version, 9, 'raid-boss persistence migration must complete on a legacy database');
+    assert.strictEqual(migrations.at(-1).version, 10, 'cold simulation ownership migration must complete on a legacy database');
+    const lifeStateColumns = await Database.execute(['PRAGMA table_info(bot_life_state)'], 'test:owner-migration-columns');
+    const lifeStateColumnNames = lifeStateColumns.map((column) => column.name);
+    for (const column of ['simulationOwner', 'simulationRevision', 'simulationLeaseId', 'simulationLeaseUntil']) {
+        assert(lifeStateColumnNames.includes(column), `legacy lifecycle table must receive ${column}`);
+    }
+    const ownerIndex = await Database.execute([
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'bot_life_state_simulation_owner_lease'"
+    ], 'test:owner-migration-index');
+    assert.strictEqual(ownerIndex.length, 1, 'ownership index must be created only after migration columns exist');
+    const migratedOwner = (await Database.execute([
+        'SELECT simulationOwner, simulationRevision, simulationLeaseId, simulationLeaseUntil FROM bot_life_state WHERE characterId = 42'
+    ], 'test:owner-migration-defaults'))[0];
+    assert.deepStrictEqual(
+        [migratedOwner.simulationOwner, migratedOwner.simulationRevision, migratedOwner.simulationLeaseId, migratedOwner.simulationLeaseUntil],
+        ['legacy_main', 0, null, 0],
+        'legacy lifecycle rows must remain main-owned with revision zero after migration'
+    );
 
     const migratedMessage = await Database.execute([
         'SELECT turnOrdinal, messageOrder, compacted FROM bot_conversation_messages WHERE turnId = ?',

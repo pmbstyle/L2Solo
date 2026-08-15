@@ -9,6 +9,7 @@ const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
+const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 
 DataCache.init();
 
@@ -219,11 +220,33 @@ async function run() {
     assert.strictEqual(reconciled.state.activity, 'shopping');
     assert.strictEqual(reconciled.state.stats.marketStore, null);
 
-    const expiredState = { ...state, characterId: 89, name: 'ExpiredSeller' };
+    const expiredState = {
+        ...state,
+        characterId: 89,
+        name: 'ExpiredSeller',
+        simulation: { ownerId: 'legacy_main', revision: 12, leaseId: null, leaseUntil: 0 }
+    };
     const expiredOpened = await ListingService.open(expiredState, listingOptions);
     const expiredResult = await ListingService.resolve(expiredOpened.state, 62000);
     assert.strictEqual(expiredResult.closed, true);
     assert.strictEqual(expiredResult.reason, 'expired');
+    assert.strictEqual(expiredResult.state.activity, 'traveling',
+        'an expired cold WTS must durably begin its return trip without an intermediate due shopping row');
+    assert(Number(expiredResult.state.timing.nextResolveAt) > 62000);
+    assert.strictEqual(expiredResult.state.simulation.revision, 12,
+        'legacy market close writes must preserve the authoritative ownership revision in cache');
+    const returnMessages = [];
+    const returnKernel = new ColdSimulationKernel({
+        resolveSolo: () => ({ patch: {}, materialize: { items: [] }, events: [], nextResolveAt: 120000 }),
+        emit: (type, payload) => returnMessages.push({ type, payload }),
+        now: () => Number(expiredResult.state.timing.nextResolveAt)
+    });
+    returnKernel.upsert({ state: expiredResult.state, context: {} });
+    returnKernel.tick();
+    assert.strictEqual(returnMessages[0]?.type, 'claim_request',
+        'post-market return travel must re-enter dedicated worker scheduling when due');
+    assert.strictEqual(returnMessages[0]?.payload.candidates[0]?.expectedRevision, 12,
+        'post-market return travel must claim against the durable ownership revision');
     assert.strictEqual(expiredResult.state.inventory[String(marketItem.selfId)].amount, 0, 'valuable unsold gear should move to the warehouse');
     assert.strictEqual(expiredResult.state.adena, 500, 'warehouse storage must not mint Adena');
     assert.strictEqual(expiredResult.warehouseCount, 1);

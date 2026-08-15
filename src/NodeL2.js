@@ -24,9 +24,11 @@ function shutdown(signal) {
     if (shuttingDown) return;
     shuttingDown = true;
     utils.infoWarn('DB', 'flushing buffered character state before %s', signal);
-    const forceExit = setTimeout(() => process.exit(0), 3000);
+    const forceExit = setTimeout(() => process.exit(0), 15000);
     forceExit.unref?.();
-    CharacterWriteQueue.flushAll()
+    Promise.resolve().then(() => invoke('GameServer/Bot/Population/PopulationService').stop())
+        .catch((error) => utils.infoWarn('ColdWorker', 'cold simulation drain failed: %s', error.message))
+        .then(() => CharacterWriteQueue.flushAll())
         .catch((error) => utils.infoWarn('DB', 'final buffered flush failed: %s', error.message))
         .then(() => PathfindingWorkerPool.shutdown())
         .then(() => LangfuseTracing.shutdown())
@@ -35,6 +37,9 @@ function shutdown(signal) {
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('message', (message) => {
+    if (message?.type === 'shutdown') shutdown(message.reason || 'IPC');
+});
 
 console.info('\n\
     + ================================== \n\

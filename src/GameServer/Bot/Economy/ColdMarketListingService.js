@@ -692,9 +692,16 @@ function closeSellStore(state, timestamp, reason) {
         })
         .then(({ state: liquidatedState, warehouseCount, liquidated }) => {
             MarketTelemetry.closed(reason, stockUnits(store));
-            return LifeState.upsertState(liquidatedState, `cold_market_${reason}`)
+            // A closed cold WTS has no remaining town action. Persist the
+            // return trip at the same durable boundary, matching the WTB
+            // close path, instead of leaving an immediately-due shopping row
+            // for a later scheduler command.
+            const returning = reason === 'sold_out'
+                ? liquidatedState
+                : GoalExecutor.finishMarketVisit(liquidatedState, timestamp) || liquidatedState;
+            return LifeState.upsertState(returning, `cold_market_${reason}`)
                 .then((saved) => ({
-                    state: saved || liquidatedState,
+                    state: saved || returning,
                     closed: true,
                     reason,
                     warehouseCount,

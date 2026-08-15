@@ -4,12 +4,14 @@ require('../src/Global');
 
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
+const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 
 DataCache.init();
 
 const originalExecute = Database.execute;
 const originalSyncInventorySummary = Database.syncInventorySummary;
 const originalFetchItems = Database.fetchItems;
+const originalRecoverStartupLeases = ColdSimulationOwner.recoverStartupLeases;
 
 function persistedShieldRow(characterId, name) {
     return {
@@ -66,6 +68,7 @@ Database.execute = ([sql, params]) => {
     return Promise.resolve([]);
 };
 Database.syncInventorySummary = () => Promise.resolve();
+ColdSimulationOwner.recoverStartupLeases = () => Promise.resolve({ affectedRows: 0 });
 
 const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 
@@ -109,6 +112,7 @@ const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
         Database.execute = originalExecute;
         Database.syncInventorySummary = originalSyncInventorySummary;
         Database.fetchItems = originalFetchItems;
+        ColdSimulationOwner.recoverStartupLeases = originalRecoverStartupLeases;
     }
 })().catch((error) => {
     console.error(error);

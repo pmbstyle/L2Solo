@@ -5,6 +5,10 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const craftScanAt = new Map();
 
+function isLegacyMainState(state) {
+    return String(state?.simulation?.ownerId || 'legacy_main') === 'legacy_main';
+}
+
 function itemData(item) {
     return {
         id: Number(item.fetchId?.() || item.id),
@@ -37,7 +41,7 @@ async function depositActor(actor, state = null) {
 
 async function depositCold(state) {
     const candidates = ItemDisposition.warehouseCandidates(state);
-    if (!state || !candidates.length) return { state, count: 0, items: [] };
+    if (!state || !isLegacyMainState(state) || !candidates.length) return { state, count: 0, items: [] };
 
     const rows = await Database.fetchItems(state.characterId);
     const inventory = { ...(state.inventory || {}) };
@@ -118,6 +122,7 @@ function pendingMarketReleaseCandidates(limit = 8, timestamp = Date.now()) {
     const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
     return LifeState.allStates(2000).filter((state) => (
         state?.phase !== 'hot'
+        && isLegacyMainState(state)
         && !state?.party?.partyId
         && ['hunting', 'resting'].includes(state?.activity)
         && Number(state.stats?.marketSellRetryAfter || 0) > Number(timestamp)
@@ -127,7 +132,7 @@ function pendingMarketReleaseCandidates(limit = 8, timestamp = Date.now()) {
 }
 
 async function resumeReleasedMarket(state, timestamp = Date.now()) {
-    if (!state || !hasFundedReleasedMarketMaterial(state)) return { state, resumed: false, items: [] };
+    if (!state || !isLegacyMainState(state) || !hasFundedReleasedMarketMaterial(state)) return { state, resumed: false, items: [] };
     const nextState = {
         ...state,
         stats: { ...(state.stats || {}), marketSellRetryAfter: null },
@@ -141,7 +146,7 @@ async function resumeReleasedMarket(state, timestamp = Date.now()) {
 }
 
 async function releaseCold(state) {
-    if (!state || state.phase === 'hot' || state.party?.partyId || !['hunting', 'resting'].includes(state.activity)) {
+    if (!state || !isLegacyMainState(state) || state.phase === 'hot' || state.party?.partyId || !['hunting', 'resting'].includes(state.activity)) {
         return { state, released: false, items: [] };
     }
     const warehouseItems = await Database.fetchWarehouseItems(state.characterId);
@@ -216,6 +221,7 @@ function releaseCandidates(limit = 8) {
         WHERE warehouse.amount > 0
         AND warehouse.selfId IN (${demandIds.map(() => '?').join(', ')})
         AND states.phase = 'cold'
+        AND states.simulationOwner = 'legacy_main'
         AND states.accountName NOT LIKE 'bot_craft_%'
         AND (states.partyId IS NULL OR states.partyId = '')
         AND states.activity IN ('hunting', 'resting')
@@ -229,6 +235,7 @@ function craftReleaseCandidates(limit = 4, timestamp = Date.now()) {
     const candidates = LifeState.allStates(2000).filter((state) => {
         const plan = state?.stats?.equipmentPlan;
         return state?.phase !== 'hot'
+            && isLegacyMainState(state)
             && !state?.party?.partyId
             && ['hunting', 'resting'].includes(state?.activity)
             && ['active', 'component_ready', 'ready_to_craft'].includes(plan?.status)

@@ -1,5 +1,3 @@
-const Database = invoke('Database');
-const Skillset = invoke('GameServer/Actor/Skillset');
 const ClassProgression = invoke('GameServer/ClassProgression');
 
 function stableNumber(value) {
@@ -27,7 +25,20 @@ function nextClass(classId, level, seed) {
     return null;
 }
 
+function plan({ classId, level, seed } = {}) {
+    let resolvedClassId = Number(classId);
+    const transitions = [];
+    if (!Number.isFinite(resolvedClassId)) return { classId: resolvedClassId, transitions };
+    for (let target = nextClass(resolvedClassId, level, seed); target; target = nextClass(resolvedClassId, level, seed)) {
+        resolvedClassId = target;
+        transitions.push(target);
+    }
+    return { classId: resolvedClassId, transitions };
+}
+
 async function reconcile({ characterId, classId, level, seed = characterId } = {}) {
+    const Database = invoke('Database');
+    const Skillset = invoke('GameServer/Actor/Skillset');
     const id = Number(characterId);
     let resolvedClassId = Number(classId);
     const transitions = [];
@@ -47,4 +58,4 @@ async function reconcile({ characterId, classId, level, seed = characterId } = {
     return { classId: resolvedClassId, transitions };
 }
 
-module.exports = { nextClass, reconcile };
+module.exports = { nextClass, plan, reconcile };

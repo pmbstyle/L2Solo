@@ -73,7 +73,9 @@ async function run() {
     const background = priorityPool.request({ startX: 11 }, { key: 'npc:11', timeoutMs: 5000 }).catch((error) => error);
     const companion = priorityPool.request({ startX: 12 }, { key: 'companion:12', priority: 100, timeoutMs: 5000 });
     assert.strictEqual((await background).code, 'PATH_PREEMPTED', 'interactive companion work must preempt queued background A*');
+    assert.strictEqual(priorityPool.stats().companionQueue, 1, 'pool telemetry must expose queued companion work separately');
     priorityWorkers[0].emit('message', { id: priorityWorkers[0].messages[0].id, ok: true, path: [{ locX: 10 }] });
+    assert.strictEqual(priorityPool.stats().companionBusy, 1, 'pool telemetry must expose active companion work separately');
     priorityWorkers[0].emit('message', { id: priorityWorkers[0].messages[1].id, ok: true, path: [{ locX: 12 }] });
     await Promise.all([busy, companion]);
     assert.strictEqual(priorityPool.stats().preempted, 1);

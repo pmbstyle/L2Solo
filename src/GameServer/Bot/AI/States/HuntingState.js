@@ -14,6 +14,7 @@ const BotTownTravel  = invoke('GameServer/Bot/AI/BotTownTravel');
 const BotSpotTravel  = invoke('GameServer/Bot/AI/BotSpotTravel');
 const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
 const BotRaidSafety   = invoke('GameServer/Bot/AI/BotRaidSafety');
+const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
 
 const TARGET_STALL_TICKS = 5;
 const TARGET_RETRY_COOLDOWN_MS = 15000;
@@ -26,6 +27,8 @@ const EMERGENCY_RETREAT_DISTANCE = 850;
 const MAX_WALK_SPOT_DISTANCE = 12000;
 const SPOT_ARRIVAL_RADIUS = 1000;
 const MAX_SPOT_RELOCATION_MS = 120000;
+const FULL_TARGET_CANDIDATE_LIMIT = 96;
+const VISIBLE_TARGET_CANDIDATE_LIMIT = 32;
 
 function isSoloHunter(session) {
     return session.plan === 'hunting' && session.partyCompanion !== true && !session.followPlayerSession;
@@ -58,8 +61,39 @@ function startShopping(session, bot, BotAI, reason) {
     return BotTownTravel.request(session, bot, BotAI, reason);
 }
 
+function claimedTargetIds(session, sessions = invoke('GameServer/Bot/BotManager').sessions || []) {
+    const claimed = new Set();
+    sessions.forEach((otherSession) => {
+        if (otherSession === session || !otherSession.actor || !isSoloHunter(otherSession)) return;
+        if (!otherSession.currentTargetId || otherSession.actor.state.fetchDead()) return;
+        claimed.add(Number(otherSession.currentTargetId));
+    });
+    return claimed;
+}
+
+function limitTargetCandidates(session, bot, candidates) {
+    const limit = session.hotActorLod?.tier === 'visible'
+        ? VISIBLE_TARGET_CANDIDATE_LIMIT
+        : FULL_TARGET_CANDIDATE_LIMIT;
+    if (candidates.length <= limit) return candidates;
+    return candidates
+        .map((npc) => ({ npc, distance: targetDistance(bot, npc) }))
+        .sort((first, second) => first.distance - second.distance)
+        .slice(0, limit)
+        .map((entry) => entry.npc);
+}
+
 function findPreferredMonster(session, bot, radius, options = {}) {
-    const nearbyNpcs = World.fetchNpcsInRadius(bot.fetchLocX(), bot.fetchLocY(), radius);
+    const scanStartedAt = Date.now();
+    const allNearbyNpcs = World.fetchNpcsInRadius(bot.fetchLocX(), bot.fetchLocY(), radius);
+    // Far-visible actors still choose a plausible nearby target, but do not
+    // multiply the expensive claim scan by every NPC in a dense spawn cell.
+    const eligibleNearbyNpcs = allNearbyNpcs
+        .filter((npc) => !options.excludeTargetId || npc.fetchId() !== options.excludeTargetId)
+        .filter((npc) => !BotRaidSafety.isProtectedRaidEntity(npc))
+        .filter((npc) => npc.fetchAttackable() && !npc.isDead());
+    const nearbyNpcs = limitTargetCandidates(session, bot, eligibleNearbyNpcs);
+    const claimedIds = claimedTargetIds(session);
     const clanCounts = nearbyNpcs.reduce((counts, npc) => {
         const clan = npc.fetchClanName?.();
         if (clan) counts.set(clan, (counts.get(clan) || 0) + 1);
@@ -69,10 +103,8 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     const currentSpotId = session.currentSpot?.id || spotIdAt(bot);
 
     const candidates = nearbyNpcs
-        .filter((npc) => !options.excludeTargetId || npc.fetchId() !== options.excludeTargetId)
-        .filter((npc) => !BotRaidSafety.isProtectedRaidEntity(npc))
         .map((npc) => {
-            const claimed = isClaimedByOtherSoloBot(session, npc);
+            const claimed = claimedIds.has(Number(npc.fetchId()));
             const npcSpotId = spotIdAt(npc);
             const clan = npc.fetchClanName?.();
             const scoreContext = {
@@ -117,6 +149,7 @@ function findPreferredMonster(session, bot, radius, options = {}) {
         reasons: selected.evaluation.reasons,
         at: Date.now()
     } : null;
+    HotActorLodPolicy.recordSubsystem('targetScan', Date.now() - scanStartedAt, nearbyNpcs.length);
     return selected?.npc || null;
 }
 
@@ -286,6 +319,8 @@ function targetProgressing(session, bot, target) {
 }
 
 module.exports = {
+    limitTargetCandidates,
+    claimedTargetIds,
     tick(session, bot, Generics, BotAI) {
         if (session.pendingTownTrip) {
             const trip = startShopping(session, bot, BotAI, session.pendingTownTrip.reason);
@@ -556,7 +591,7 @@ module.exports = {
                     SpotService.assignSpot(session, currentSpot);
                 }
 
-                const decision = DecisionService.suggest(BotAI.getStatus(session), session);
+                const decision = DecisionService.suggest(session.botStatus || BotAI.getStatus(session), session);
                 session.lastDecision = {
                     action: decision.action,
                     reason: decision.reason,

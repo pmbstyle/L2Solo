@@ -29,8 +29,39 @@ const CraftTelemetry = invoke('GameServer/Bot/Economy/CraftTelemetry');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const PersonaPartyPolicy = invoke('GameServer/Bot/Population/PersonaPartyPolicy');
 const PlayerActivitySignal = invoke('GameServer/Bot/Population/PlayerActivitySignal');
+const FloorAwareActivationPolicy = invoke('GameServer/Bot/Population/FloorAwareActivationPolicy');
+const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
+const ColdSimulationCoordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
 
 const HUNTING_TRAVEL_MS = 25000;
+
+function deterministicRandom(state = {}) {
+    const seedText = `${state.characterId || 0}:${state.timing?.lastResolvedAt || 0}:${state.timing?.nextResolveAt || 0}`;
+    let seed = 2166136261;
+    for (let index = 0; index < seedText.length; index++) {
+        seed ^= seedText.charCodeAt(index);
+        seed = Math.imul(seed, 16777619);
+    }
+    return () => {
+        seed |= 0;
+        seed = (seed + 0x6D2B79F5) | 0;
+        let value = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+        value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
+        return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+function withTimeout(work, timeoutMs) {
+    let timer = null;
+    const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+            const error = new Error('cold_owner_resolve_timeout');
+            error.code = 'COLD_OWNER_TIMEOUT';
+            reject(error);
+        }, Math.max(1000, Number(timeoutMs) || 10000));
+    });
+    return Promise.race([Promise.resolve().then(work), timeout]).finally(() => clearTimeout(timer));
+}
 
 function hasFiniteCoordinate(value) {
     return value !== null
@@ -496,6 +527,7 @@ const PopulationService = {
     nextColdCombatProfileMigrationAt: 0,
     nextMarketTownMigrationAt: 0,
     nextPartyRequestCleanupAt: 0,
+    nextColdOwnerRecoveryAt: 0,
     marketExpiryCleanupTimer: null,
     personaBackfillTimer: null,
     personaBackfillRunning: false,
@@ -505,6 +537,7 @@ const PopulationService = {
     coldCombatProfileMigrationRunning: false,
     marketTownMigrationRunning: false,
     marketExpiryCleanupRunning: false,
+    coldOwnerRecoveryRunning: false,
     partyFormationRunning: false,
     partyFormationPending: false,
     phasePolicyRunning: false,
@@ -545,14 +578,20 @@ const PopulationService = {
         }
 
         if (Config.backgroundResolverEnabled !== false) {
+            // Cold simulation is owned by ColdSimulationCoordinator and runs
+            // in its worker. Keep this timer telemetry-only: the legacy
+            // tickBudgeted() path must not be reintroduced on the main thread.
+            this.refreshSchedulerTelemetry();
             this.schedulerTimer = setInterval(() => {
-                this.tickBudgeted();
+                this.refreshSchedulerTelemetry();
             }, Config.schedulerIntervalMs);
 
             if (typeof this.schedulerTimer.unref === 'function') {
                 this.schedulerTimer.unref();
             }
         }
+
+        if (Config.backgroundResolverEnabled !== false) ColdSimulationCoordinator.start(this);
 
         this.classProgressionMigrationTimer = setInterval(() => {
             this.migrateLegacyClassProgression();
@@ -605,6 +644,7 @@ const PopulationService = {
     },
 
     stop() {
+        const coldStop = ColdSimulationCoordinator.stop();
         if (this.initialSummaryTimer) {
             clearTimeout(this.initialSummaryTimer);
             this.initialSummaryTimer = null;
@@ -650,6 +690,7 @@ const PopulationService = {
         Director.stop();
         Metrics.stopEventLoopMonitor();
         this.started = false;
+        return coldStop;
     },
 
     scheduleGeneratedColdSeed(delayMs = Config.generatedColdSeedDelayMs) {
@@ -905,6 +946,13 @@ const PopulationService = {
         });
     },
 
+    refreshSchedulerTelemetry() {
+        if (Config.enabled === false || Config.backgroundResolverEnabled === false) return null;
+        const profile = this.schedulerProfile();
+        Metrics.recordSchedulerProfile(profile);
+        return profile;
+    },
+
     isRestingActivationState(state) {
         const activity = state?.activity || 'hunting';
         if (activity === 'resting' || activity === 'dead') return true;
@@ -961,7 +1009,11 @@ const PopulationService = {
                             available.filter((state) => state.activity !== 'merchant' && state.activity !== 'crafting'),
                             actor.fetchLevel()
                         )].slice(0, crafters.length + ambientRemaining);
-                        return candidates.reduce((stateChain, state) => (
+                        const floorAware = FloorAwareActivationPolicy.filterCandidates(candidates, {
+                            playerLoc: loc,
+                            reason: 'near_player'
+                        }).accepted;
+                        return floorAware.reduce((stateChain, state) => (
                             stateChain.then(() => {
                                 return this.requestActivation(state, 'near_player', {
                                     recoverOnActivation: this.isRestingActivationState(state),
@@ -1489,6 +1541,114 @@ const PopulationService = {
             }), Promise.resolve())).then(() => claimed);
     },
 
+    recoverExpiredColdOwnerLeases(timestamp = Date.now()) {
+        if (this.coldOwnerRecoveryRunning || timestamp < this.nextColdOwnerRecoveryAt) {
+            return Promise.resolve({ affectedRows: 0, rows: [] });
+        }
+        this.coldOwnerRecoveryRunning = true;
+        this.nextColdOwnerRecoveryAt = timestamp + Math.max(1000, Number(Config.coldOwnerRecoveryIntervalMs) || 5000);
+        return ColdSimulationOwner.recoverExpiredLeases(timestamp).finally(() => {
+            this.coldOwnerRecoveryRunning = false;
+        });
+    },
+
+    resolveOwnedColdState(state) {
+        const partition = ColdSimulationOwner.eligibility(state);
+        if (!partition.ok) {
+            Metrics.recordColdOwnerLegacyDeferred(partition.reason);
+            return this.resolveColdState(state);
+        }
+
+        const startedAt = Date.now();
+        const leaseMs = Math.max(2000, Number(Config.coldOwnerLeaseMs) || ColdSimulationOwner.DEFAULT_LEASE_MS);
+        const timeoutMs = Math.min(leaseMs - 1000, Math.max(1000, Number(Config.coldOwnerResolveTimeoutMs) || 10000));
+        let activeToken = null;
+        Metrics.recordColdOwnerSelected();
+
+        const releaseActive = () => activeToken?.ok
+            ? ColdSimulationOwner.release(activeToken).catch(() => ({ ok: false, reason: 'release_error' }))
+            : Promise.resolve({ ok: false, reason: 'missing_claim' });
+
+        return ColdSimulationOwner.claim(state, { timestamp: startedAt, leaseMs }).then((claim) => {
+            if (!claim.ok) {
+                if (['legacy_activity', 'background_party', 'warehouse_state', 'market_state', 'craft_state', 'player_workflow'].includes(claim.reason)) {
+                    Metrics.recordColdOwnerLegacyDeferred(claim.reason);
+                    return this.resolveColdState(state);
+                }
+                Metrics.recordSkippedResolve(`cold_owner_claim_${claim.reason || 'rejected'}`);
+                return { ok: false, reason: claim.reason || 'claim_rejected', state };
+            }
+            activeToken = claim;
+            const claimedState = {
+                ...state,
+                simulation: {
+                    ownerId: claim.ownerId,
+                    revision: claim.revision,
+                    leaseId: claim.leaseId,
+                    leaseUntil: claim.leaseUntil
+                }
+            };
+
+            return withTimeout(() => {
+                if (joinedBackgroundParty(claimedState)) throw new Error('joined_party_after_claim');
+                const elapsedMs = claimedState.timing?.lastResolvedAt
+                    ? Math.max(1000, startedAt - claimedState.timing.lastResolvedAt)
+                    : 60000;
+                const lifecycleState = expirePartyRequestForState(claimedState, startedAt);
+                const spot = lifecycleState.activity === 'hunting' ? SpotProfiles.findForState(lifecycleState) : null;
+                if (lifecycleState.activity === 'hunting' && !spot) {
+                    const error = new Error('missing_owner_spot');
+                    error.code = 'COLD_OWNER_MISSING_SPOT';
+                    throw error;
+                }
+                const result = BackgroundResolver.resolveSolo({
+                    state: lifecycleState,
+                    spot,
+                    pressure: Director.pressureForState(lifecycleState),
+                    targetNpcId: directDropTargetNpcId(lifecycleState.stats?.equipmentPlan),
+                    elapsedMs,
+                    rng: deterministicRandom(lifecycleState),
+                    timestamp: startedAt
+                });
+                return LifeState.prepareResolve(lifecycleState, result, { persist: false, timestamp: startedAt })
+                    .then((nextState) => ({ nextState, result }));
+            }, timeoutMs).then(({ nextState, result }) => {
+                Metrics.recordColdOwnerResolved();
+                if (!nextState || joinedBackgroundParty(nextState)) {
+                    const error = new Error('owner_result_invalidated');
+                    error.code = 'COLD_OWNER_INVALIDATED';
+                    throw error;
+                }
+                return ColdSimulationOwner.commit(activeToken, nextState, { leaseMs }).then((committed) => {
+                    if (!committed.ok) {
+                        Metrics.recordSkippedResolve(`cold_owner_commit_${committed.reason || 'rejected'}`);
+                        return releaseActive().then(() => ({ ok: false, reason: committed.reason || 'commit_rejected', state }));
+                    }
+                    activeToken = committed;
+                    const committedState = LifeState.cachedState(state.characterId) || nextState;
+                    return LifeState.syncResolvedState(committedState)
+                        .then(() => LifeEvents.recordMany(state.characterId, result.events || []))
+                        .then(() => {
+                            Metrics.recordBackgroundResolve();
+                            Metrics.recordCombat(result.debug);
+                            GlobalChat.maybeAnnounce(committedState, result.events || []);
+                            return releaseActive().then((released) => ({
+                                ok: true,
+                                state: LifeState.cachedState(state.characterId) || committedState,
+                                debug: result.debug,
+                                release: released
+                            }));
+                        });
+                });
+            });
+        }).catch((error) => {
+            if (error?.code === 'COLD_OWNER_TIMEOUT') Metrics.recordColdOwnerTimeout();
+            else if (!error?.coldOwnerRecorded) Metrics.recordColdOwnerError(error);
+            Metrics.recordSkippedResolve(error?.code === 'COLD_OWNER_TIMEOUT' ? 'cold_owner_timeout' : 'cold_owner_error');
+            return releaseActive().then(() => ({ ok: false, reason: error?.message || 'owner_error', state }));
+        }).finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
+    },
+
     tickBudgeted() {
         if (this.resolving || this.partyFormationRunning || this.classProgressionMigrationRunning || this.coldCombatProfileMigrationRunning || Config.enabled === false || Config.backgroundResolverEnabled === false) {
             if (this.resolving || this.partyFormationRunning || this.classProgressionMigrationRunning || this.coldCombatProfileMigrationRunning) {
@@ -1507,9 +1667,10 @@ const PopulationService = {
         }
         const deadlineAt = startedAt + budgetMs;
         this.resolving = true;
-        return Database.cooperatively(() => (profile.allowBackgroundParties
+        return Database.cooperatively(() => this.recoverExpiredColdOwnerLeases(startedAt)
+            .then(() => (profile.allowBackgroundParties
             ? this.resolveDueParties(deadlineAt)
-            : Promise.resolve([]))
+            : Promise.resolve([])))
             .then(() => (profile.allowAuxiliaryBackground
                 ? this.releaseWarehouseMaterials(deadlineAt)
                 : Promise.resolve([])))
@@ -1519,7 +1680,7 @@ const PopulationService = {
             .then(() => LifeState.dueCold(profile.maxResolvesPerTick))
             .then((states) => {
                 Metrics.recordColdBatch(states.length, profile.maxResolvesPerTick);
-                return this.runInSchedulerSlices(states, (state) => this.resolveColdState(state)
+                return this.runInSchedulerSlices(states, (state) => this.resolveOwnedColdState(state)
                 .catch((error) => {
                     // A single bot may lose a race with a market or
                     // craft transaction. It must not abort every
@@ -1821,8 +1982,9 @@ const PopulationService = {
         });
     },
 
-    resolveColdState(state) {
+    resolveColdState(state, workerRequest = null) {
         const startedAt = Date.now();
+        const precomputedResult = workerRequest?.precomputedResult || null;
         if (joinedBackgroundParty(state)) {
             Metrics.recordSkippedResolve('joined_party_before_resolve');
             return Promise.resolve({ ok: false, reason: 'joined_party', state });
@@ -1832,7 +1994,7 @@ const PopulationService = {
         // between their persisted deadline and the next state change.
         if (state.activity === 'traveling' || (state.activity === 'resting' && Number(state.stats?.restUntil || 0) > 0)) {
             const requestLifecycleState = expirePartyRequestForState(state, startedAt);
-            const result = BackgroundResolver.resolveSolo({
+            const result = precomputedResult || BackgroundResolver.resolveSolo({
                 state: requestLifecycleState,
                 spot: null,
                 pressure: Director.pressureForState(state),
@@ -1887,36 +2049,41 @@ const PopulationService = {
             && !state.stats?.marketReturn
             && state.currentRegion !== 'Giran';
         const passiveActivity = ['traveling', 'shopping', 'merchant', 'crafting', 'dead'].includes(state?.activity) && !staleShopping;
-        const previousPlan = state.stats?.equipmentPlan;
+        const workerPlan = workerRequest?.precomputedPlan || null;
+        const previousPlan = workerPlan ? workerPlan.previousPlan : state.stats?.equipmentPlan;
         // A travelling bot does not fight at a spot during this resolve, but its
         // gear plan still needs the complete atlas.  Passing [] here turned every
         // in-progress craft route into `blocked` on its first travel tick.
         const spots = SpotProfiles.ensure();
-        const replanContext = GearAcquisitionPlanner.replanContextFor(state, previousPlan, startedAt);
-        const reusablePartyRequest = !state.party?.partyId
-            && previousPlan?.next
-            && replanContext.planCurrent
-            && !replanContext.failure
-            && state.stats?.partyRequest?.status === 'open'
-            && Number(state.stats.partyRequest.reviewAt || 0) > startedAt;
-        const upgradedPlan = reusablePartyRequest
-            ? previousPlan
-            : GearAcquisitionPlanner.planFor(state, { spots, ...replanContext });
-        const previousRefresh = previousPlan?.recipeId
-            && !reusablePartyRequest
-            ? GearAcquisitionPlanner.planFor(state, { spots, recipeId: previousPlan.recipeId, ...replanContext })
-            : null;
-        const rawAcquisitionPlan = GearAcquisitionPlanner.shouldFinishPreviousPlan(previousPlan, previousRefresh)
-            ? { ...previousRefresh, finishBeforeUpgrade: true }
-            : upgradedPlan;
-        const finalizedPlan = reusablePartyRequest
-            ? previousPlan
-            : GearAcquisitionPlanner.finalizePlan(state, previousPlan, rawAcquisitionPlan, replanContext, startedAt);
-        const acquisitionPlan = {
-            ...finalizedPlan,
-            marketFallback: finalizedPlan.status === 'active' && finalizedPlan.strategy === 'craft'
-                && Number(finalizedPlan.startedAt || startedAt) + 20 * 60 * 1000 <= Date.now()
-        };
+        const replanContext = workerPlan
+            ? { failure: workerPlan.replanFailure || null }
+            : GearAcquisitionPlanner.replanContextFor(state, previousPlan, startedAt);
+        let acquisitionPlan = workerPlan?.acquisitionPlan || null;
+        if (!acquisitionPlan) {
+            const reusablePartyRequest = !state.party?.partyId
+                && previousPlan?.next
+                && replanContext.planCurrent
+                && !replanContext.failure
+                && state.stats?.partyRequest?.status === 'open'
+                && Number(state.stats.partyRequest.reviewAt || 0) > startedAt;
+            const upgradedPlan = reusablePartyRequest
+                ? previousPlan
+                : GearAcquisitionPlanner.planFor(state, { spots, ...replanContext });
+            const previousRefresh = previousPlan?.recipeId && !reusablePartyRequest
+                ? GearAcquisitionPlanner.planFor(state, { spots, recipeId: previousPlan.recipeId, ...replanContext })
+                : null;
+            const rawAcquisitionPlan = GearAcquisitionPlanner.shouldFinishPreviousPlan(previousPlan, previousRefresh)
+                ? { ...previousRefresh, finishBeforeUpgrade: true }
+                : upgradedPlan;
+            const finalizedPlan = reusablePartyRequest
+                ? previousPlan
+                : GearAcquisitionPlanner.finalizePlan(state, previousPlan, rawAcquisitionPlan, replanContext, startedAt);
+            acquisitionPlan = {
+                ...finalizedPlan,
+                marketFallback: finalizedPlan.status === 'active' && finalizedPlan.strategy === 'craft'
+                    && Number(finalizedPlan.startedAt || startedAt) + 20 * 60 * 1000 <= Date.now()
+            };
+        }
         const partyRequest = partyRequestForPlan(state, acquisitionPlan, startedAt);
         const plannedStats = { ...(state.stats || {}), equipmentPlan: acquisitionPlan };
         if (partyRequest) plannedStats.partyRequest = partyRequest;
@@ -2031,7 +2198,7 @@ const PopulationService = {
             return Promise.resolve({ ok: false, reason: 'missing_spot', state });
         }
 
-        const result = BackgroundResolver.resolveSolo({
+        const result = precomputedResult || BackgroundResolver.resolveSolo({
             state: effectiveState,
             spot,
             pressure: Director.pressureForState(state),
@@ -2131,6 +2298,17 @@ const PopulationService = {
         }).finally(() => {
             Metrics.recordResolveDuration(Date.now() - startedAt);
         });
+    },
+
+    executeWorkerLifecycleCommand(state, request = {}) {
+        if (!request.precomputedResult) {
+            return Promise.resolve({ ok: false, reason: 'worker_result_required', state });
+        }
+        return this.resolveColdState(state, request);
+    },
+
+    coldWorkerSnapshot() {
+        return ColdSimulationCoordinator.snapshot();
     },
 
     summary() {

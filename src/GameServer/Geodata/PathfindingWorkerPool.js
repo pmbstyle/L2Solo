@@ -214,11 +214,14 @@ class BoundedPathfindingWorkerPool {
     }
 
     stats() {
+        const isCompanion = (task) => String(task?.key || '').startsWith('companion:');
         return {
             ...this.metrics,
             workers: this.workers.filter(Boolean).length,
             busy: this.workers.filter((slot) => !!slot?.task).length,
             queue: this.queue.length,
+            companionBusy: this.workers.filter((slot) => isCompanion(slot?.task)).length,
+            companionQueue: this.queue.filter(isCompanion).length,
             inFlight: this.tasks.size
         };
     }

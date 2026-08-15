@@ -24,7 +24,10 @@ function wakeBotOnDamage(victimSession, attacker) {
     victimSession.lastDamageWakeAt = now;
     // Damage needs a prompt response even if a visibility refresh woke this
     // bot a moment ago. Repeated damage is already rate-limited above.
-    invoke('GameServer/Bot/BotAI').wakeup(victimSession, { urgent: true });
+    const BotAI = invoke('GameServer/Bot/BotAI');
+    if (!BotAI.promoteForPlayerInteraction(victimSession, 'player_damage', attacker?.session)) {
+        BotAI.wakeup(victimSession, { urgent: true });
+    }
 }
 
 function shouldDamageCp(session, actor) {

@@ -12,6 +12,7 @@ const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 const BotTradeService = invoke('GameServer/Bot/BotTradeService');
 const ChatArrivalState = invoke('GameServer/Bot/AI/ChatArrivalState');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
+const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
 
 const CHAT_PHRASES = {
     foundTarget: [
@@ -182,42 +183,21 @@ const BotAI = {
     calculateNextTickDelay(session) {
         const bot = session.actor;
         if (!bot) return 3000;
-
-        const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
-        if (session.plan === 'shopping') {
-            return 1500;
-        }
-
         const World = invoke('GameServer/World/World');
         const onlinePlayers = realPlayerSessions(World) || [];
+        const context = HotActorLodPolicy.evaluate(session, onlinePlayers);
+        const lodDelay = HotActorLodPolicy.nextTickDelay(session, context);
+        return session.plan === 'shopping' && context.tier === 'full'
+            ? Math.min(1500, lodDelay)
+            : lodDelay;
+    },
 
-        if (onlinePlayers.length === 0) {
-            return 30000;
-        }
-
-        const botX = bot.fetchLocX();
-        const botY = bot.fetchLocY();
-
-        let minDist = Infinity;
-        onlinePlayers.forEach(pSession => {
-            const player = pSession.actor;
-            const dx = player.fetchLocX() - botX;
-            const dy = player.fetchLocY() - botY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < minDist) {
-                minDist = dist;
-            }
-        });
-
-        if (isCompanion || minDist <= 1200) {
-            return 1000 + Math.random() * 200;
-        } else if (minDist <= 3000) {
-            return 3000;
-        } else if (minDist <= 6000) {
-            return 5000;
-        } else {
-            return 30000;
-        }
+    promoteForPlayerInteraction(session, reason = 'player_interaction', sourceSession = null) {
+        if (!session?.actor || !session.aiActive) return false;
+        if (sourceSession && !HotActorLodPolicy.isRealPlayerSession(sourceSession)) return false;
+        HotActorLodPolicy.promote(session, reason);
+        this.wakeup(session, { urgent: true });
+        return true;
     },
 
     getClosestTown(locX, locY, locZ) {
@@ -371,12 +351,19 @@ const BotAI = {
     tick(session) {
         const bot = session.actor;
         if (!bot) return;
+        const tickStartedAt = Date.now();
+        let lodContext = { tier: 'preload' };
+
+        try {
 
         // Supply errands are parked as a cold workflow while away from the
         // leader. No autonomous state, ambient event, or LLM pass may run
         // until the destination callback resumes the shopping phase.
         if (session.supplyErrandPhase === 'cold' || session.supplyErrandPhase === 'returning') return;
 
+        const World = invoke('GameServer/World/World');
+        const onlinePlayers = realPlayerSessions(World) || [];
+        lodContext = HotActorLodPolicy.evaluate(session, onlinePlayers, tickStartedAt);
         PopulationService.recordHotTick(session);
         const botDead = bot.isDead();
         if (botDead) {
@@ -389,7 +376,20 @@ const BotAI = {
             // background timer is needed for a session-local preference.
             HotBotPolicyOverlay.get(session);
         }
-        session.botStatus = BotStatus.getStatus(session);
+        if (lodContext.tier === 'preload' && !botDead) {
+            if (Math.random() < 0.05) this.triggerFarAwayChatEvent(session, bot);
+            return;
+        }
+
+        if (HotActorLodPolicy.shouldRefreshStatus(session, lodContext, tickStartedAt)) {
+            const statusStartedAt = Date.now();
+            session.botStatus = BotStatus.getStatus(session);
+            HotActorLodPolicy.recordStatusRefresh(session, Date.now() - statusStartedAt);
+        }
+        if (HotActorLodPolicy.budgetExceeded(lodContext, tickStartedAt)) {
+            HotActorLodPolicy.recordDeferral();
+            return;
+        }
         // Autonomous state changes remain owned by the deterministic brain.
         // LLM inference is reserved for explicit player communication.
 
@@ -397,13 +397,10 @@ const BotAI = {
         // player. Keep this deterministic and independent from the LLM so the
         // normal hunting state cannot immediately overwrite the arrival.
         if (!botDead && ChatArrivalState.tick(session, bot)) {
-            session.botStatus = BotStatus.getStatus(session);
             return;
         }
 
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
-        const World = invoke('GameServer/World/World');
-        const onlinePlayers = realPlayerSessions(World) || [];
         const visibleRealPlayers = this.visibleRealPlayers(session, bot, World);
 
         if (!botDead && onlinePlayers.length > 0 && visibleRealPlayers.length === 0 && !isCompanion && session.plan !== 'shopping' && session.plan !== 'pk_hunting') {
@@ -538,7 +535,6 @@ const BotAI = {
         if (isCompanion) {
             PartyCompanionService.reconcileGroundLoot(session);
             if (PartyCompanionService.startQueuedGroundPickup(session)) {
-                session.botStatus = BotStatus.getStatus(session);
                 return;
             }
         }
@@ -548,12 +544,14 @@ const BotAI = {
         if (state) {
             try {
                 state.tick(session, bot, Generics, BotAI);
-                session.botStatus = BotStatus.getStatus(session);
             } catch (err) {
                 console.error(`Error in Bot AI State (${session.plan}) tick:`, err);
             }
         } else {
             utils.infoWarn('GameServer', 'Unhandled Bot plan: %s', session.plan);
+        }
+        } finally {
+            HotActorLodPolicy.recordTick(lodContext.tier, Date.now() - tickStartedAt);
         }
     },
 

@@ -27,7 +27,28 @@ function emptyCounters() {
         schedulerOverruns: 0,
         slowResolves: 0,
         backgroundDeferrals: 0,
-        partyFormationDeferrals: 0
+        partyFormationDeferrals: 0,
+        activationFloorCandidates: 0,
+        activationFloorAccepted: 0,
+        activationFloorRejected: 0,
+        activationFloorGeoChecks: 0,
+        activationFloorCacheHits: 0,
+        activationFloorBudgetDeferred: 0,
+        coldOwnerSelected: 0,
+        coldOwnerClaimed: 0,
+        coldOwnerResolved: 0,
+        coldOwnerCommitted: 0,
+        coldOwnerReleased: 0,
+        coldOwnerCasStale: 0,
+        coldOwnerRejected: 0,
+        coldOwnerLeaseRecoveries: 0,
+        coldOwnerLeaseExpiries: 0,
+        coldOwnerTimeouts: 0,
+        coldOwnerErrors: 0,
+        coldOwnerLegacyDeferred: 0,
+        coldOwnerDbBusy: 0,
+        coldOwnerDbRetries: 0,
+        coldOwnerHandoffs: 0
     };
 }
 
@@ -73,7 +94,13 @@ const PopulationMetrics = {
         partyFormationStageDurationsMs: new Map(),
         actorPathDurationsMs: [],
         companionPathDurationsMs: [],
-        skippedResolveReasons: new Map()
+        activationFloorDurationsMs: [],
+        activationFloorReasons: new Map(),
+        skippedResolveReasons: new Map(),
+        coldOwnerClaimDurationsMs: [],
+        coldOwnerCommitDurationsMs: [],
+        coldOwnerLegacyReasons: new Map(),
+        coldOwnerRejectReasons: new Map()
     },
     timer: null,
 
@@ -204,6 +231,91 @@ const PopulationMetrics = {
         this.counters.backgroundDeferrals += 1;
     },
 
+    recordColdOwnerSelected() {
+        this.counters.coldOwnerSelected += 1;
+    },
+
+    recordColdOwnerClaim(result = {}, durationMs = 0) {
+        this.interval.coldOwnerClaimDurationsMs.push(Math.max(0, Number(durationMs) || 0));
+        if (this.interval.coldOwnerClaimDurationsMs.length > Config.resolveSampleLimit) this.interval.coldOwnerClaimDurationsMs.shift();
+        if (result.ok) this.counters.coldOwnerClaimed += 1;
+        else this.recordColdOwnerRejected(result.reason);
+    },
+
+    recordColdOwnerResolved() {
+        this.counters.coldOwnerResolved += 1;
+    },
+
+    recordColdOwnerCommit(result = {}, durationMs = 0) {
+        this.interval.coldOwnerCommitDurationsMs.push(Math.max(0, Number(durationMs) || 0));
+        if (this.interval.coldOwnerCommitDurationsMs.length > Config.resolveSampleLimit) this.interval.coldOwnerCommitDurationsMs.shift();
+        if (result.ok) this.counters.coldOwnerCommitted += 1;
+        else this.recordColdOwnerRejected(result.reason);
+    },
+
+    recordColdOwnerRelease(result = {}) {
+        if (result.ok) this.counters.coldOwnerReleased += 1;
+        else this.recordColdOwnerRejected(result.reason);
+    },
+
+    recordColdOwnerRejected(reason = 'unknown') {
+        const key = String(reason || 'unknown');
+        this.counters.coldOwnerRejected += 1;
+        if (['stale_revision', 'cas_failed', 'owner_changed', 'lease_changed', 'lease_expired'].includes(key)) {
+            this.counters.coldOwnerCasStale += 1;
+        }
+        this.interval.coldOwnerRejectReasons.set(key, Number(this.interval.coldOwnerRejectReasons.get(key) || 0) + 1);
+    },
+
+    recordColdOwnerRecovery(count = 0, startup = false) {
+        const recovered = Math.max(0, Number(count) || 0);
+        this.counters.coldOwnerLeaseRecoveries += recovered;
+        if (!startup) this.counters.coldOwnerLeaseExpiries += recovered;
+    },
+
+    recordColdOwnerTimeout() {
+        this.counters.coldOwnerTimeouts += 1;
+    },
+
+    recordColdOwnerError(error = null) {
+        this.counters.coldOwnerErrors += 1;
+        const message = String(error?.message || error || '');
+        if (/SQLITE_BUSY|database is locked/i.test(message)) this.counters.coldOwnerDbBusy += 1;
+    },
+
+    recordColdOwnerLegacyDeferred(reason = 'unknown') {
+        const key = String(reason || 'unknown');
+        this.counters.coldOwnerLegacyDeferred += 1;
+        this.interval.coldOwnerLegacyReasons.set(key, Number(this.interval.coldOwnerLegacyReasons.get(key) || 0) + 1);
+    },
+
+    recordColdOwnerDbRetry() {
+        this.counters.coldOwnerDbRetries += 1;
+    },
+
+    recordColdOwnerHandoff(result = {}) {
+        if (result.ok && result.reason === 'hot_handoff') this.counters.coldOwnerHandoffs += 1;
+        else if (!result.ok) this.recordColdOwnerRejected(result.reason);
+    },
+
+    recordActivationFloorScan(scan = {}) {
+        const candidates = Math.max(0, Number(scan.candidates) || 0);
+        const accepted = Math.max(0, Number(scan.accepted) || 0);
+        const rejected = Math.max(0, Number(scan.rejected) || 0);
+        this.counters.activationFloorCandidates += candidates;
+        this.counters.activationFloorAccepted += accepted;
+        this.counters.activationFloorRejected += rejected;
+        this.counters.activationFloorGeoChecks += Math.max(0, Number(scan.geoChecks) || 0);
+        this.counters.activationFloorCacheHits += Math.max(0, Number(scan.cacheHits) || 0);
+        this.counters.activationFloorBudgetDeferred += Math.max(0, Number(scan.budgetDeferred) || 0);
+        this.interval.activationFloorDurationsMs.push(Math.max(0, Number(scan.durationMs) || 0));
+        if (this.interval.activationFloorDurationsMs.length > Config.resolveSampleLimit) this.interval.activationFloorDurationsMs.shift();
+        Object.entries(scan.reasons || {}).forEach(([reason, count]) => {
+            const key = String(reason || 'unknown');
+            this.interval.activationFloorReasons.set(key, Number(this.interval.activationFloorReasons.get(key) || 0) + Math.max(0, Number(count) || 0));
+        });
+    },
+
     recordPartyFormationDeferral() {
         this.counters.partyFormationDeferrals += 1;
     },
@@ -277,15 +389,27 @@ const PopulationMetrics = {
         const partyFormationStats = stats(this.interval.partyFormationDurationsMs);
         const actorPathStats = stats(this.interval.actorPathDurationsMs);
         const companionPathStats = stats(this.interval.companionPathDurationsMs);
+        const activationFloorStats = stats(this.interval.activationFloorDurationsMs);
+        const coldOwnerClaimStats = stats(this.interval.coldOwnerClaimDurationsMs);
+        const coldOwnerCommitStats = stats(this.interval.coldOwnerCommitDurationsMs);
         const partyFormationStages = Object.fromEntries(Array.from(this.interval.partyFormationStageDurationsMs.entries())
             .map(([stage, values]) => [stage, stats(values)]));
         const skippedResolveReasons = Object.fromEntries(this.interval.skippedResolveReasons.entries());
+        const activationFloorReasons = Object.fromEntries(this.interval.activationFloorReasons.entries());
+        const coldOwnerLegacyReasons = Object.fromEntries(this.interval.coldOwnerLegacyReasons.entries());
+        const coldOwnerRejectReasons = Object.fromEntries(this.interval.coldOwnerRejectReasons.entries());
         this.interval.resolveDurationsMs = [];
         this.interval.schedulerDurationsMs = [];
         this.interval.schedulerSliceDurationsMs = [];
         this.interval.partyFormationDurationsMs = [];
         this.interval.actorPathDurationsMs = [];
         this.interval.companionPathDurationsMs = [];
+        this.interval.activationFloorDurationsMs = [];
+        this.interval.coldOwnerClaimDurationsMs = [];
+        this.interval.coldOwnerCommitDurationsMs = [];
+        this.interval.activationFloorReasons = new Map();
+        this.interval.coldOwnerLegacyReasons = new Map();
+        this.interval.coldOwnerRejectReasons = new Map();
         this.interval.partyFormationStageDurationsMs = new Map();
         this.interval.skippedResolveReasons = new Map();
 
@@ -301,6 +425,16 @@ const PopulationMetrics = {
             pathfinding: {
                 actor: actorPathStats,
                 companion: companionPathStats
+            },
+            activationFloor: {
+                ...activationFloorStats,
+                reasons: activationFloorReasons
+            },
+            coldOwner: {
+                claim: coldOwnerClaimStats,
+                commit: coldOwnerCommitStats,
+                legacyReasons: coldOwnerLegacyReasons,
+                rejectReasons: coldOwnerRejectReasons
             },
             partyFormationStages,
             skippedResolveReasons,

@@ -177,7 +177,11 @@ CREATE TABLE IF NOT EXISTS bot_life_state (
     partyId TEXT,
     inventorySummary TEXT,
     statsJson TEXT,
-    updatedAt INTEGER NOT NULL DEFAULT 0
+    updatedAt INTEGER NOT NULL DEFAULT 0,
+    simulationOwner TEXT NOT NULL DEFAULT 'legacy_main',
+    simulationRevision INTEGER NOT NULL DEFAULT 0,
+    simulationLeaseId TEXT,
+    simulationLeaseUntil INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS bot_life_state_phase_nextResolveAt ON bot_life_state(phase, nextResolveAt);
 CREATE INDEX IF NOT EXISTS bot_life_state_phase_partyId ON bot_life_state(phase, partyId);
