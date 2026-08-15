@@ -71,6 +71,13 @@ const minion = actor(6002, {
     minionBossObjectId: boss.fetchId(),
     locX: 120
 });
+const staleBoss = actor(6004, {
+    selfId: 10004,
+    name: 'stale raid boss',
+    attackable: true,
+    raidBoss: true,
+    locX: 160
+});
 const regular = actor(6003, {
     selfId: 1,
     name: 'ordinary monster',
@@ -133,6 +140,21 @@ assert.strictEqual(engagement.phase, 'opening',
 leader.state.fetchCombats = () => true;
 engagement = BotRaidSafety.syncPlayerPartyRaid(leaderSession, 1001);
 assert.strictEqual(engagement.phase, 'combat', 'a player hit must release the party into standard raid combat');
+staleBoss.model = { raidBoss: true, raidAttackers: new Set() };
+World.npc.spawns = [boss, minion, regular, staleBoss];
+leaderSession.partyRaidEngagement = {
+    bossId: staleBoss.fetchId(),
+    bossTemplateId: staleBoss.fetchSelfId(),
+    openerId: tank.fetchId(),
+    phase: 'combat',
+    selectedAt: 900,
+    lastActiveAt: 1001
+};
+engagement = BotRaidSafety.syncPlayerPartyRaid(leaderSession, 1002);
+assert.strictEqual(engagement.bossId, boss.fetchId(),
+    'live player combat with the selected boss must replace a stale engagement entity atomically');
+assert.strictEqual(engagement.phase, 'combat',
+    'the reconciled selected boss must remain normal party combat without an opening retreat race');
 boss.fetchDestId = () => leader.fetchId();
 assert.strictEqual(BotRaidSafety.canEngagePlayerPartyRaid(heavySession, boss, leaderSession), true,
     'all companions may attack the boss after combat begins');
@@ -154,6 +176,8 @@ assert.strictEqual(PartyAwareness.leaderCombatTargetId(leaderSession, { allowPla
 
 boss.fetchDestId = () => undefined;
 minion.fetchDestId = () => tank.fetchId();
+assert.strictEqual(PartyAwareness.findThreatTargetingParty(leaderSession).type, 'npc',
+    'a matching engaged raid minion must remain a normal party assist target');
 tankSession.incomingThreatId = minion.fetchId();
 tankSession.incomingThreatAt = Date.now();
 EffectStore.apply(minion, { key: 'sleep', id: 1069, category: 'sleep', type: 'debuff', duration: 30000 });
