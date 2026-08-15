@@ -37,9 +37,11 @@ function weakenTemplate(row) {
             next.stats[key] = scaleStat(next.stats[key]);
         }
     });
-    if (Object.prototype.hasOwnProperty.call(next.vitals, 'maxHp')) {
-        next.vitals.maxHp = scaleStat(next.vitals.maxHp);
-    }
+    ['maxHp', 'revHp'].forEach((key) => {
+        if (Object.prototype.hasOwnProperty.call(next.vitals, key)) {
+            next.vitals[key] = scaleStat(next.vitals[key]);
+        }
+    });
 
     return next;
 }
