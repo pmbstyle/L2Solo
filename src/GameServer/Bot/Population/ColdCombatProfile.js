@@ -331,6 +331,55 @@ function profileFor(state = {}, timestamp = Date.now()) {
     };
 }
 
+function activeMusicEffects(profile = {}, timestamp = Date.now()) {
+    return activeEffects(profile.effects, timestamp).filter((effect) => (
+        C4SkillRules.resolve({
+            selfId: effect.id,
+            name: effect.name,
+            level: effect.level
+        }).isDance === true
+    ));
+}
+
+function partyMusicSkills(profile = {}) {
+    return (profile.skills || []).filter((skill) => {
+        if (skill.passive) return false;
+        const semantic = C4SkillRules.resolve(skill);
+        const required = number(semantic.requires?.weaponsAllowed);
+        return semantic.isDance === true
+            && semantic.target === 'party'
+            && !semantic.notUsedInC4
+            && (!required || (required & number(profile.weaponMask)) !== 0);
+    });
+}
+
+function partyMusicMpCost(profile, skill, timestamp = Date.now()) {
+    const semantic = C4SkillRules.resolve(skill);
+    let cost = Math.max(0, number(skill.mp));
+    if (semantic.isDance === true) {
+        cost += activeMusicEffects(profile, timestamp).length * Math.max(0, number(semantic.nextDanceCost));
+    }
+    return Math.max(0, Math.floor(cost * multiplier(profile, 'danceMpConsumeMul', timestamp)));
+}
+
+function partyMusicEffect(skill, timestamp = Date.now()) {
+    const semantic = C4SkillRules.resolve(skill);
+    const durationMs = Math.max(0, number(semantic.durationMs ?? skill.buffTime, 120000));
+    const skillId = number(skill.selfId);
+    return {
+        key: String(semantic.effect || `skill_${skillId}`),
+        id: skillId,
+        name: skill.name || semantic.effect || `Skill ${skillId}`,
+        level: number(skill.level, 1),
+        type: 'buff',
+        durationMs,
+        expiresAt: timestamp + durationMs,
+        stackFamily: semantic.stackFamily || null,
+        stackOrder: semantic.stackOrder ?? null,
+        stats: { ...(semantic.stats || {}) }
+    };
+}
+
 function offensiveSkills(profile) {
     const allowed = new Set([C4SkillRules.DAMAGE, C4SkillRules.DAMAGE_EFFECT, C4SkillRules.DEATH_LINK, C4SkillRules.FATAL, C4SkillRules.DRAIN, C4SkillRules.BLOW, C4SkillRules.AGGRO_DAMAGE]);
     return (profile.skills || []).filter((skill) => {
@@ -386,5 +435,6 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
 
 module.exports = {
     PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor,
-    offensiveSkills, npcForSpot, skillSnapshotsFromRecords, skillRecordsFromTree
+    offensiveSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect,
+    npcForSpot, skillSnapshotsFromRecords, skillRecordsFromTree
 };

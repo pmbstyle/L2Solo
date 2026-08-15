@@ -511,7 +511,7 @@ const BotManager = {
             characterId,
             classId: currentClassId,
             level,
-            seed: botData.name || characterId
+            seed: characterId
         });
     },
 

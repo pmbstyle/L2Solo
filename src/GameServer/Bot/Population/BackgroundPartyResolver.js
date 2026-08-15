@@ -156,6 +156,7 @@ const BackgroundPartyResolver = {
         let combatActions = 0;
         let skillUses = 0;
         let heals = 0;
+        let musicUses = 0;
         const defeatedNpcIds = [];
         let combatMembers = members.map((state) => ({ ...state }));
         for (let i = 0; i < fights; i++) {
@@ -163,6 +164,7 @@ const BackgroundPartyResolver = {
             combatActions += Number(encounter.debug?.actions || 0);
             skillUses += encounter.members.reduce((sum, member) => sum + Number(member.skillUses || 0), 0);
             heals += encounter.members.reduce((sum, member) => sum + Number(member.heals || 0), 0);
+            musicUses += encounter.members.reduce((sum, member) => sum + Number(member.musicUses || 0), 0);
             combatMembers = encounter.members.map((member) => ({
                 ...member.state,
                 vitals: { ...member.vitals },
@@ -170,6 +172,7 @@ const BackgroundPartyResolver = {
                     ...(member.state.stats || {}),
                     coldCombat: {
                         ...(member.state.stats?.coldCombat || member.profile),
+                        effects: member.profile.effects || member.state.stats?.coldCombat?.effects || [],
                         cooldowns: member.cooldowns,
                         charges: member.charges || 0,
                         chargeExpiresAt: member.chargeExpiresAt || null
@@ -376,6 +379,7 @@ const BackgroundPartyResolver = {
                 combatActions,
                 skillUses,
                 heals,
+                musicUses,
                 targetNpcId: Number(targetNpcId) || null,
                 defeatedNpcIds
             }

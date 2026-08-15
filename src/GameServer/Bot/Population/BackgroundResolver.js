@@ -296,8 +296,93 @@ function chooseChargeSkill(profile, mp, cooldowns, time, charges = 0) {
     }).sort((a, b) => Number(b.level || 0) - Number(a.level || 0))[0] || null;
 }
 
+function activeMusicEffectForSkill(profile, skill, timestamp) {
+    const skillId = Number(skill.selfId) || 0;
+    const semantic = C4SkillRules.resolve(skill);
+    return (profile.effects || []).some((effect) => (
+        effect
+        && effect.type !== 'debuff'
+        && effect.toggle !== true
+        && (!effect.expiresAt || Number(effect.expiresAt) > timestamp)
+        && (Number(effect.id) === skillId || effect.key === semantic.effect)
+    ));
+}
+
+function actorLocation(state = {}) {
+    return state.loc || state.location || state;
+}
+
+function withinSkillRadius(source, target, semantic) {
+    const radius = Math.max(0, Number(semantic.radius) || 0);
+    if (!radius) return true;
+    const sourceLoc = actorLocation(source.state);
+    const targetLoc = actorLocation(target.state);
+    const coordinates = ['locX', 'locY'].map((key) => [Number(sourceLoc?.[key]), Number(targetLoc?.[key])]);
+    if (coordinates.some(([from, to]) => !Number.isFinite(from) || !Number.isFinite(to))) return true;
+    const dx = coordinates[0][0] - coordinates[0][1];
+    const dy = coordinates[1][0] - coordinates[1][1];
+    return (dx * dx) + (dy * dy) <= radius * radius;
+}
+
+function chooseMusicAction(provider, targets, timestamp) {
+    const skill = ColdCombatProfile.partyMusicSkills(provider.profile)
+        .map((candidate) => {
+            const semantic = C4SkillRules.resolve(candidate);
+            const affected = targets.filter((target) => target.vitals.hp > 0
+                && withinSkillRadius(provider, target, semantic)
+                && !activeMusicEffectForSkill(target.profile, candidate, timestamp));
+            return {
+                skill: candidate,
+                affected,
+                cost: ColdCombatProfile.partyMusicMpCost(provider.profile, candidate, timestamp)
+            };
+        })
+        .filter((candidate) => candidate.cost <= provider.vitals.mp && candidate.affected.length > 0)
+        .sort((a, b) => Number(a.skill.selfId) - Number(b.skill.selfId))[0];
+    return skill || null;
+}
+
+function replaceMusicEffect(effects, nextEffect) {
+    return [
+        ...(effects || []).filter((effect) => Number(effect.id) !== Number(nextEffect.id) && effect.key !== nextEffect.key),
+        nextEffect
+    ];
+}
+
+function refreshFighterProfile(fighter, effects, timestamp) {
+    const coldCombat = {
+        ...(fighter.state.stats?.coldCombat || {}),
+        classId: fighter.profile.classId,
+        skills: fighter.profile.skills,
+        effects
+    };
+    fighter.state = {
+        ...fighter.state,
+        stats: { ...(fighter.state.stats || {}), coldCombat }
+    };
+    const hp = fighter.vitals.hp;
+    const mp = fighter.vitals.mp;
+    fighter.profile = botCombatStats(fighter.state, timestamp);
+    fighter.vitals.maxHp = fighter.profile.maxHp;
+    fighter.vitals.maxMp = fighter.profile.maxMp;
+    fighter.vitals.hp = Math.min(hp, fighter.vitals.maxHp);
+    fighter.vitals.mp = Math.min(mp, fighter.vitals.maxMp);
+}
+
+function applyMusicAction(provider, action, timestamp) {
+    if (!action?.affected?.length) return 0;
+    const effect = ColdCombatProfile.partyMusicEffect(action.skill, timestamp);
+    const semantic = C4SkillRules.resolve(action.skill);
+    const targets = action.affected.length === 1 && action.affected[0] === provider
+        ? action.affected
+        : [provider, ...action.affected.filter((target) => target !== provider)];
+    targets.filter((target) => target.vitals.hp > 0 && withinSkillRadius(provider, target, semantic))
+        .forEach((target) => refreshFighterProfile(target, replaceMusicEffect(target.profile.effects, effect), timestamp));
+    return action.cost;
+}
+
 function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp = Date.now() }) {
-    const bot = botCombatStats(state, timestamp);
+    let bot = botCombatStats(state, timestamp);
     const mob = ColdCombatProfile.npcForSpot(spot, rng, { preferredNpcId: targetNpcId }) || {
         level: Number(spot.avgLevel || bot.level), maxHp: Math.max(1, Number(spot.mob?.hp || 1)),
         pAtk: Math.max(1, Number(spot.mob?.damage || 1)), pAtkRnd: 0, pDef: 1, mDef: 1,
@@ -309,12 +394,14 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         maxHp: bot.maxHp,
         maxMp: bot.maxMp
     };
+    const soloFighter = { state, profile: bot, vitals };
     let botReadyAt = 0;
     let mobReadyAt = 0;
     let time = 0;
     let mobHp = mob.maxHp;
     let actions = 0;
     let skillUses = 0;
+    let musicUses = 0;
     const chargeState = coldChargeState(state, timestamp);
     let charges = chargeState.charges;
     let chargeExpiresAt = chargeState.chargeExpiresAt;
@@ -335,6 +422,17 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             expireCharges(heldCharges, timestamp + time);
             charges = heldCharges.charges;
             chargeExpiresAt = heldCharges.chargeExpiresAt;
+            const music = chooseMusicAction(soloFighter, [soloFighter], timestamp + time);
+            if (music) {
+                applyMusicAction(soloFighter, music, timestamp + time);
+                bot = soloFighter.profile;
+                vitals.mp = Math.max(0, vitals.mp - music.cost);
+                cooldowns[music.skill.selfId] = timestamp + time + Math.max(0, Number(music.skill.reuse || 0));
+                skillUses += 1;
+                musicUses += 1;
+                botReadyAt += actionDelayMs(bot, music.skill);
+                continue;
+            }
             const chargeSkill = chooseChargeSkill(bot, vitals.mp, cooldowns, timestamp + time, charges);
             if (chargeSkill) {
                 const semantic = C4SkillRules.resolve(chargeSkill);
@@ -393,7 +491,9 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             won: false,
             died,
             hp: Math.max(0, Math.round(vitals.hp)),
+            maxHp: Math.max(1, Math.round(vitals.maxHp)),
             mp: Math.max(0, Math.round(vitals.mp)),
+            maxMp: Math.max(1, Math.round(vitals.maxMp)),
             exp: 0,
             sp: 0,
             adena: 0,
@@ -401,7 +501,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             cooldowns,
             charges: died ? 0 : charges,
             chargeExpiresAt: died ? null : chargeExpiresAt,
-            debug: { actions, skillUses, mobSelfId: mob.selfId || null, timedOut: !died }
+            effects: soloFighter.profile.effects,
+            debug: { actions, skillUses, musicUses, mobSelfId: mob.selfId || null, timedOut: !died }
         };
     }
 
@@ -420,7 +521,9 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         won: true,
         died: false,
         hp: Math.max(1, Math.round(vitals.hp)),
+        maxHp: Math.max(1, Math.round(vitals.maxHp)),
         mp: Math.max(0, Math.round(vitals.mp)),
+        maxMp: Math.max(1, Math.round(vitals.maxMp)),
         exp: Math.round(rewards.exp * expMultiplier * rates.exp),
         sp: Math.round(rewards.sp * expMultiplier * rates.sp),
         adena,
@@ -428,7 +531,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         cooldowns,
         charges,
         chargeExpiresAt,
-        debug: { actions, skillUses, mobSelfId: mob.selfId || null, timedOut: false }
+        effects: soloFighter.profile.effects,
+        debug: { actions, skillUses, musicUses, mobSelfId: mob.selfId || null, timedOut: false }
     };
 }
 
@@ -469,6 +573,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             actions: 0,
             skillUses: 0,
             heals: 0,
+            musicUses: 0,
             charges: chargeState.charges,
             chargeExpiresAt: chargeState.chargeExpiresAt
         };
@@ -499,6 +604,17 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
                 next.skillUses += 1;
                 next.heals += 1;
                 next.readyAt += actionDelayMs(next.profile, heal.skill);
+                continue;
+            }
+
+            const music = chooseMusicAction(next, fighters, timestamp + time);
+            if (music) {
+                applyMusicAction(next, music, timestamp + time);
+                next.vitals.mp = Math.max(0, next.vitals.mp - music.cost);
+                next.cooldowns[music.skill.selfId] = timestamp + time + Math.max(0, Number(music.skill.reuse || 0));
+                next.skillUses += 1;
+                next.musicUses += 1;
+                next.readyAt += actionDelayMs(next.profile, music.skill);
                 continue;
             }
 
@@ -555,7 +671,12 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
         won: mobHp <= 0,
         timedOut: mobHp > 0 && fighters.some((fighter) => fighter.vitals.hp > 0),
         members: fighters,
-        debug: { actions, mobSelfId: mob.selfId || null }
+        debug: {
+            actions,
+            skillUses: fighters.reduce((sum, fighter) => sum + fighter.skillUses, 0),
+            musicUses: fighters.reduce((sum, fighter) => sum + fighter.musicUses, 0),
+            mobSelfId: mob.selfId || null
+        }
     };
 }
 
@@ -693,6 +814,7 @@ const BackgroundResolver = {
         let died = false;
         let combatActions = 0;
         let skillUses = 0;
+        let musicUses = 0;
         const foughtNpcIds = [];
 
         for (let i = 0; i < fights; i++) {
@@ -703,12 +825,15 @@ const BackgroundResolver = {
             };
             const result = resolveFight({ state: fightState, spot, pressure, targetNpcId, rng, timestamp });
             patch.vitals.hp = result.hp;
+            patch.vitals.maxHp = result.maxHp;
             patch.vitals.mp = result.mp;
+            patch.vitals.maxMp = result.maxMp;
             patch.stats = {
                 ...(patch.stats || state.stats || {}),
                 coldCombat: {
                     ...(state.stats?.coldCombat || ColdCombatProfile.profileFor(fightState, timestamp)),
                     ...(patch.stats?.coldCombat || {}),
+                    effects: result.effects || patch.stats?.coldCombat?.effects || [],
                     cooldowns: result.cooldowns || {},
                     charges: result.charges || 0,
                     chargeExpiresAt: result.chargeExpiresAt || null
@@ -720,6 +845,7 @@ const BackgroundResolver = {
             materialize.items.push(...result.loot);
             combatActions += Number(result.debug?.actions || 0);
             skillUses += Number(result.debug?.skillUses || 0);
+            musicUses += Number(result.debug?.musicUses || 0);
 
             if (result.won) {
                 wins += 1;
@@ -781,6 +907,7 @@ const BackgroundResolver = {
                 route: spot.route || null,
                 combatActions,
                 skillUses,
+                musicUses,
                 targetNpcId: Number(targetNpcId) || null,
                 foughtNpcIds
             }
