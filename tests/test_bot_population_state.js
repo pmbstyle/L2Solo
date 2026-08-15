@@ -6,6 +6,7 @@ const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const GearPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
+const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 
 DataCache.init();
 
@@ -19,11 +20,13 @@ const originalFetchSkill = Database.fetchSkill;
 const originalSetSkill = Database.setSkill;
 const originalUpdateSkillLevel = Database.updateSkillLevel;
 const originalUpdateCharacterClassId = Database.updateCharacterClassId;
+const originalRecoverStartupLeases = ColdSimulationOwner.recoverStartupLeases;
 const statements = [];
 const classUpdates = [];
 let stalePartyRows = [];
 
 try {
+    ColdSimulationOwner.recoverStartupLeases = () => Promise.resolve({ affectedRows: 0 });
     Database.execute = ([sql, params]) => {
         statements.push({ sql: String(sql), params });
         if (String(sql).startsWith('SELECT id, classId, level, exp, sp FROM characters')) {
@@ -176,6 +179,7 @@ try {
             assert(save.sql.includes('nextResolveAt = excluded.nextResolveAt'), 'persisted cold resolve timing must advance after every tick');
             assert(save.sql.includes('lastResolvedAt = excluded.lastResolvedAt'), 'persisted cold resolve history must survive an upsert');
             assert(save.sql.includes('inventorySummary = excluded.inventorySummary'), 'background drop rewards must persist after an upsert');
+            assert(save.sql.includes("WHERE bot_life_state.simulationOwner = 'legacy_main'"), 'legacy saves must not overwrite a cold owner lease');
             stalePartyRows = [{
                 characterId: 42,
                 statsJson: JSON.stringify({
@@ -419,6 +423,7 @@ try {
         Database.setSkill = originalSetSkill;
         Database.updateSkillLevel = originalUpdateSkillLevel;
         Database.updateCharacterClassId = originalUpdateCharacterClassId;
+        ColdSimulationOwner.recoverStartupLeases = originalRecoverStartupLeases;
     });
 } catch (err) {
     Database.execute = originalExecute;
@@ -431,5 +436,6 @@ try {
     Database.setSkill = originalSetSkill;
     Database.updateSkillLevel = originalUpdateSkillLevel;
     Database.updateCharacterClassId = originalUpdateCharacterClassId;
+    ColdSimulationOwner.recoverStartupLeases = originalRecoverStartupLeases;
     throw err;
 }

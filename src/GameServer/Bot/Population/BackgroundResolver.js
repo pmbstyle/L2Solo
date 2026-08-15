@@ -569,7 +569,7 @@ const BackgroundResolver = {
                 patch: {},
                 events: [],
                 materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-                nextResolveAt: Date.now() + 60000,
+                nextResolveAt: timestamp + 60000,
                 debug: { reason: 'missing_state_or_spot' }
             };
         }
@@ -617,7 +617,7 @@ const BackgroundResolver = {
                     spotId: spot.id,
                     currentRegion: state.homeRegion || state.currentRegion,
                     loc: { ...spot.center },
-                    stats: { ...(state.stats || {}), legacyShoppingRecoveredAt: Date.now() }
+                    stats: { ...(state.stats || {}), legacyShoppingRecoveredAt: timestamp }
                 },
                 events: [{
                     type: 'shopping_recovered',
@@ -625,7 +625,7 @@ const BackgroundResolver = {
                     weight: 1
                 }],
                 materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-                nextResolveAt: Date.now() + 30000,
+                nextResolveAt: timestamp + 30000,
                 debug: { activity: 'shopping_recovered' }
             };
         }
@@ -635,7 +635,7 @@ const BackgroundResolver = {
                 patch: { activity: 'shopping' },
                 events: [],
                 materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-                nextResolveAt: Date.now() + 120000,
+                nextResolveAt: timestamp + 120000,
                 debug: { activity: 'shopping' }
             };
         }
@@ -645,7 +645,7 @@ const BackgroundResolver = {
                 patch: { activity: 'merchant' },
                 events: [],
                 materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-                nextResolveAt: Date.now() + 60000,
+                nextResolveAt: timestamp + 60000,
                 debug: { activity: 'merchant' }
             };
         }
@@ -655,7 +655,7 @@ const BackgroundResolver = {
                 patch: { activity: 'crafting' },
                 events: [],
                 materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-                nextResolveAt: Date.now() + 60000,
+                nextResolveAt: timestamp + 60000,
                 debug: { activity: 'crafting' }
             };
         }
@@ -674,7 +674,7 @@ const BackgroundResolver = {
                 patch: {},
                 events: [],
                 materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-                nextResolveAt: Date.now() + 60000,
+                nextResolveAt: timestamp + 60000,
                 debug: { reason: 'missing_spot' }
             };
         }

@@ -70,6 +70,13 @@ async function run() {
     assert.strictEqual(result.state.inventory['94'].amount, 0, 'duplicate non-stackable gear must be deposited from separate item rows');
     assert.strictEqual(result.state.inventory['1'].amount, 1, 'low-level trash must remain available for NPC liquidation');
     assert.strictEqual(result.state.stats.lastWarehouseDeposit.items.length, 3);
+    const depositCalls = calls.length;
+    const ownedDeposit = await BotWarehouse.depositCold({
+        ...state,
+        simulation: { ownerId: 'cold_simulation_owner', revision: 1, leaseId: 'lease', leaseUntil: Date.now() + 1000 }
+    });
+    assert.strictEqual(ownedDeposit.count, 0, 'cold warehouse deposit must defer while the logical owner holds the row');
+    assert.strictEqual(calls.length, depositCalls, 'deferred warehouse deposit must not mutate inventory rows');
 
     const liveItem = (id, item, equipped = false) => ({
         id,
@@ -173,6 +180,13 @@ async function run() {
     assert.strictEqual(warehouseRows[0].amount, 50, 'unfunded warehouse surplus must remain stored');
     assert.strictEqual(marketRelease.state.stats.marketSellRetryAfter, null,
         'new funded WTB demand must clear a stale no-demand sale cooldown');
+    const withdrawalsBeforeFence = withdrawals.length;
+    const ownedRelease = await BotWarehouse.releaseCold({
+        ...marketRelease.state,
+        simulation: { ownerId: 'cold_simulation_owner', revision: 1, leaseId: 'lease', leaseUntil: Date.now() + 1000 }
+    });
+    assert.strictEqual(ownedRelease.released, false, 'warehouse release must remain legacy-main while a cold lease is active');
+    assert.strictEqual(withdrawals.length, withdrawalsBeforeFence, 'warehouse ownership fence must prevent physical item writes');
     const pendingSeller = {
         ...marketRelease.state,
         stats: {
@@ -180,7 +194,11 @@ async function run() {
             marketSellRetryAfter: Date.now() + 15 * 60 * 1000
         }
     };
-    LifeState.allStates = () => [pendingSeller];
+    LifeState.allStates = () => [pendingSeller, {
+        ...pendingSeller,
+        characterId: 60,
+        simulation: { ownerId: 'cold_simulation_owner', revision: 1, leaseId: 'lease', leaseUntil: Date.now() + 1000 }
+    }];
     assert.deepStrictEqual(BotWarehouse.pendingMarketReleaseCandidates(2).map((state) => state.characterId), [59],
         'a funded material already released before restart must be resumed from its stale cooldown');
     const resumedSeller = await BotWarehouse.resumeReleasedMarket(pendingSeller, 12345);
@@ -195,6 +213,7 @@ async function run() {
     };
     assert.deepStrictEqual(await BotWarehouse.releaseCandidates(3), [59]);
     assert(candidateQuery[0].includes('LIMIT 3'), 'warehouse scanning must remain bounded by the scheduler batch');
+    assert(candidateQuery[0].includes("states.simulationOwner = 'legacy_main'"), 'warehouse candidate SQL must exclude leased owner rows');
     assert.deepStrictEqual(candidateQuery[1], [5220], 'only currently funded material demand should enter the warehouse scan');
     LifeState.allStates = () => [{
         characterId: 58,
@@ -208,6 +227,13 @@ async function run() {
         activity: 'hunting',
         party: {},
         stats: { equipmentPlan: { status: 'active', strategy: 'market' } }
+    }, {
+        characterId: 61,
+        phase: 'cold',
+        activity: 'hunting',
+        party: {},
+        simulation: { ownerId: 'cold_simulation_owner', revision: 1, leaseId: 'lease', leaseUntil: Date.now() + 1000 },
+        stats: { equipmentPlan: { status: 'active', strategy: 'craft' } }
     }];
     assert.deepStrictEqual(BotWarehouse.craftReleaseCandidates(1, 100).map((state) => state.characterId), [58],
         'the bounded in-memory rotation must inspect only active craft owners');

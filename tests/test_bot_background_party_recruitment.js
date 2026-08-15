@@ -8,6 +8,7 @@ const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const PartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const HotActivation = invoke('GameServer/Bot/Population/HotActivation');
+const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const BotManager = invoke('GameServer/Bot/BotManager');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 
@@ -28,6 +29,7 @@ const originals = {
     loadAndSpawnBot: BotManager.loadAndSpawnBot,
     findCurrentSpot: SpotService.findCurrentSpot,
     record: LifeEvents.record,
+    handoffToMain: ColdSimulationOwner.handoffToMain,
     partyMinSize: Config.partyMinSize,
     partyMaxSize: Config.partyMaxSize,
     maxBackgroundParties: Config.maxBackgroundParties,
@@ -181,6 +183,16 @@ async function run() {
     assert.deepStrictEqual(reclaimed, [{ partyId: 'bgp_elective', status: 'dissolved' }]);
 
     const activationOrder = [];
+    ColdSimulationOwner.handoffToMain = async (state) => {
+        activationOrder.push(`handoff:${state.characterId}`);
+        return {
+            ok: true,
+            ownerId: ColdSimulationOwner.LEGACY_OWNER_ID,
+            revision: Number(state.simulation?.revision || 0),
+            leaseId: null,
+            leaseUntil: 0
+        };
+    };
     const groupedState = {
         characterId: 91001,
         accountName: 'bot_activation_probe',
@@ -215,6 +227,7 @@ async function run() {
     assert.deepStrictEqual(
         activationOrder,
         [
+            'handoff:91001',
             'status:bgp_activation_probe:dissolved',
             'clear:bgp_activation_probe:hot_activation_party_invite',
             'spawn:solo'
@@ -283,6 +296,7 @@ run().catch((err) => {
     BotManager.loadAndSpawnBot = originals.loadAndSpawnBot;
     SpotService.findCurrentSpot = originals.findCurrentSpot;
     LifeEvents.record = originals.record;
+    ColdSimulationOwner.handoffToMain = originals.handoffToMain;
     Config.partyMinSize = originals.partyMinSize;
     Config.partyMaxSize = originals.partyMaxSize;
     Config.maxBackgroundParties = originals.maxBackgroundParties;

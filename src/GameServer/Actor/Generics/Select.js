@@ -131,6 +131,7 @@ function select(session, actor, data) {
 
     if (botSession) {
         const user = botSession.actor;
+        invoke('GameServer/Bot/BotAI').promoteForPlayerInteraction(botSession, 'player_selected', session);
         if (user.fetchId() !== actor.fetchDestId()) { // First click on bot
             actor.setDestId(user.fetchId());
             session.dataSendToMe(ServerResponse.destSelected(actor.fetchDestId()));

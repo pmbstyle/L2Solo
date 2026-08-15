@@ -263,7 +263,7 @@ function startServer({ progressionRate } = {}) {
             ...process.env,
             L2NODE_PROGRESSION_RATE: state.progressionRate
         },
-        stdio: ['ignore', 'pipe', 'pipe']
+        stdio: ['ignore', 'pipe', 'pipe', 'ipc']
     });
 
     state.child = child;
@@ -297,12 +297,13 @@ function stopServer() {
     state.phase = 'stopping';
     appendLog('launcher', `stopping server process ${pid}`);
 
-    state.child.kill('SIGTERM');
+    if (state.child.connected) state.child.send({ type: 'shutdown', reason: 'launcher_stop' });
+    else state.child.kill('SIGTERM');
     setTimeout(() => {
         if (state.child?.pid !== pid) return;
         if (isWindows) spawnSync('taskkill.exe', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' });
         else state.child.kill('SIGKILL');
-    }, 5000).unref();
+    }, 20000).unref();
 
     return publicState();
 }

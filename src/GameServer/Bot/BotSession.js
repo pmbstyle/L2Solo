@@ -24,9 +24,20 @@ class BotSession {
     }
 
     dataSendToOthers(data, creature) {
+        const recipients = World.fetchVisibleUsers(this, creature).filter((user) => (
+            user.socket &&
+            typeof user.socket.write === 'function' &&
+            user.accountId !== this.accountId &&
+            !String(user.accountId).startsWith('bot_')
+        ));
+        const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
+        if (!recipients.length) {
+            HotActorLodPolicy.recordPacketBroadcast(0, data?.length || 0);
+            return;
+        }
         const packet = this.packData(data);
-        World.fetchVisibleUsers(this, creature).forEach((user) => {
-            if (user.socket && typeof user.socket.write === 'function' && user.accountId !== this.accountId) {
+        recipients.forEach((user) => {
+            if (user.socket && typeof user.socket.write === 'function') {
                 NpcVisibility.trackNpcPacket(user, data);
                 if (user.recordOutboundPacket) {
                     user.recordOutboundPacket(data);
@@ -34,6 +45,7 @@ class BotSession {
                 user.socket.write(packet);
             }
         });
+        HotActorLodPolicy.recordPacketBroadcast(recipients.length, packet.length);
     }
 
     dataSendToMeAndOthers(data, creature) {

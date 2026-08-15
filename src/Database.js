@@ -346,13 +346,47 @@ function applySchemaMigrations() {
                 updatedAt INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS raid_boss_state_respawnTime ON raid_boss_state(respawnTime);
-        `)]
+        `)],
+        [10, () => {
+            const addColumn = (table, name, definition) => {
+                const columns = connection.prepare(`PRAGMA table_info(${table})`).all();
+                if (!columns.some((column) => column.name === name)) {
+                    connection.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
+                }
+            };
+            addColumn('bot_life_state', 'simulationOwner', "TEXT NOT NULL DEFAULT 'legacy_main'");
+            addColumn('bot_life_state', 'simulationRevision', 'INTEGER NOT NULL DEFAULT 0');
+            addColumn('bot_life_state', 'simulationLeaseId', 'TEXT');
+            addColumn('bot_life_state', 'simulationLeaseUntil', 'INTEGER NOT NULL DEFAULT 0');
+            connection.exec(`
+                UPDATE bot_life_state
+                SET simulationOwner = 'legacy_main',
+                    simulationRevision = COALESCE(simulationRevision, 0),
+                    simulationLeaseId = NULL,
+                    simulationLeaseUntil = 0
+                WHERE simulationOwner IS NULL OR simulationOwner = '';
+                CREATE INDEX IF NOT EXISTS bot_life_state_simulation_owner_lease
+                    ON bot_life_state(simulationOwner, simulationLeaseUntil, phase, activity);
+            `);
+        }]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
-        apply();
-        connection.prepare('INSERT INTO schema_migrations(version, appliedAt) VALUES (?, ?)').run(version, now());
+        connection.exec('BEGIN IMMEDIATE');
+        try {
+            apply();
+            connection.prepare('INSERT INTO schema_migrations(version, appliedAt) VALUES (?, ?)').run(version, now());
+            connection.exec('COMMIT');
+        } catch (error) {
+            try {
+                connection.exec('ROLLBACK');
+            } catch (_) {
+                // Preserve the migration error; initialization will close the
+                // failed connection before returning to the caller.
+            }
+            throw error;
+        }
     });
 }
 
@@ -396,6 +430,135 @@ const UPSERT_MACRO = `INSERT INTO macros (characterId, id, icon, name, descr, ac
     ON CONFLICT(characterId, id) DO UPDATE SET icon = excluded.icon, name = excluded.name,
         descr = excluded.descr, acronym = excluded.acronym, commands = excluded.commands`;
 
+const LEGACY_SIMULATION_OWNER = 'legacy_main';
+const COLD_SIMULATION_OWNER = 'cold_simulation_owner';
+const SIMPLE_COLD_ACTIVITIES = new Set(['hunting', 'resting', 'traveling', 'dead']);
+const COLD_SIMULATION_PATCH_COLUMNS = new Set([
+    'level', 'exp', 'sp', 'adena', 'homeRegion', 'currentRegion', 'spotId',
+    'activity', 'phase', 'activityStartedAt', 'nextResolveAt', 'lastResolvedAt',
+    'lastHotAt', 'locX', 'locY', 'locZ', 'hp', 'maxHp', 'mp', 'maxMp',
+    'targetLevelBand', 'deathCount', 'inventorySummary', 'statsJson', 'updatedAt'
+]);
+
+function parsedObject(raw) {
+    if (!raw) return {};
+    if (typeof raw === 'object') return raw;
+    try {
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (_) {
+        return null;
+    }
+}
+
+function syncInventorySummaryUnsafe(characterId, inventory = {}) {
+    const existing = all('SELECT id, selfId, amount, equipped, slot FROM items WHERE characterId = ? ORDER BY id', [characterId]);
+    const bySelfId = new Map();
+    existing.forEach((row) => {
+        const key = Number(row.selfId);
+        if (!bySelfId.has(key)) bySelfId.set(key, []);
+        bySelfId.get(key).push(row);
+    });
+    Object.values(inventory).forEach((item) => {
+        const selfId = Number(item.selfId || 0);
+        const amount = Number(item.amount || 0);
+        if (!selfId) return;
+        const rows = bySelfId.get(selfId) || [];
+        if (amount <= 0) {
+            rows.forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]));
+            return;
+        }
+        const baseSlot = Number(item.slot || rows[0]?.slot || 0);
+        const nonStackable = baseSlot > 0 || item.stackable === false;
+        if (!nonStackable) {
+            const current = rows[0];
+            const equipped = item.equipped ? 1 : 0;
+            if (current) {
+                if (Number(current.amount) !== amount || Number(current.equipped) !== equipped || Number(current.slot) !== baseSlot) {
+                    write('UPDATE items SET amount = ?, equipped = ?, slot = ? WHERE id = ? AND characterId = ?', [amount, equipped, baseSlot, current.id, characterId]);
+                }
+            } else {
+                write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, ?, ?, ?)', [selfId, item.name || `Item ${selfId}`, amount, equipped, baseSlot, characterId]);
+            }
+            rows.slice(1).forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]));
+            return;
+        }
+
+        const equippedSlots = Array.isArray(item.equippedSlots)
+            ? [...new Set(item.equippedSlots.map(Number).filter((slot) => slot > 0))].slice(0, amount)
+            : item.equipped ? [baseSlot] : [];
+        const desired = [
+            ...equippedSlots.map((slot) => ({ equipped: 1, slot })),
+            ...Array.from({ length: Math.max(0, amount - equippedSlots.length) }, () => ({ equipped: 0, slot: 0 }))
+        ];
+        desired.forEach((entry, index) => {
+            const current = rows[index];
+            if (current) {
+                if (Number(current.amount) !== 1 || Number(current.equipped) !== entry.equipped || Number(current.slot) !== entry.slot) {
+                    write('UPDATE items SET amount = 1, equipped = ?, slot = ? WHERE id = ? AND characterId = ?', [entry.equipped, entry.slot, current.id, characterId]);
+                }
+            } else {
+                write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, 1, ?, ?, ?)', [selfId, item.name || `Item ${selfId}`, entry.equipped, entry.slot, characterId]);
+            }
+        });
+        rows.slice(desired.length).forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]));
+    });
+    return { characterId, entries: Object.keys(inventory).length };
+}
+
+function applyColdPhysicalStateUnsafe(characterId, physical = {}) {
+    write(`UPDATE characters SET level = ?, exp = ?, sp = ?, hp = ?, maxHp = ?, mp = ?, maxMp = ?${
+        Number.isFinite(Number(physical.classId)) ? ', classId = ?' : ''
+    } WHERE id = ?`, [
+        Number(physical.level || 1), Number(physical.exp || 0), Number(physical.sp || 0),
+        Number(physical.hp || 0), Number(physical.maxHp || 0),
+        Number(physical.mp || 0), Number(physical.maxMp || 0),
+        ...(Number.isFinite(Number(physical.classId)) ? [Number(physical.classId)] : []), characterId
+    ]);
+    (physical.skills || []).forEach((skill) => {
+        const selfId = Number(skill.selfId || 0);
+        const level = Number(skill.level || 0);
+        if (!selfId || !level) return;
+        write(`INSERT INTO skills (selfId, name, passive, level, characterId) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(characterId, selfId) DO UPDATE SET name = excluded.name, passive = excluded.passive, level = excluded.level`, [
+            selfId, String(skill.name || `Skill ${selfId}`), skill.passive ? 1 : 0, level, characterId
+        ]);
+    });
+    if (physical.inventory) syncInventorySummaryUnsafe(characterId, physical.inventory);
+}
+
+function coldSimulationPartition(row, options = {}) {
+    if (!row) return { ok: false, reason: 'missing_state' };
+    if (row.phase !== 'cold') return { ok: false, reason: 'not_cold' };
+    if (!SIMPLE_COLD_ACTIVITIES.has(String(row.activity || '')) && options.allowLifecycle !== true) {
+        return { ok: false, reason: 'legacy_activity' };
+    }
+    if (row.partyId && options.allowParty !== true) return { ok: false, reason: 'background_party' };
+    const stats = parsedObject(row.statsJson);
+    if (!stats) return { ok: false, reason: 'invalid_stats' };
+    if (options.allowLifecycle === true) {
+        return { ok: true, reason: row.partyId ? 'background_party_cold' : 'trusted_cold_lifecycle' };
+    }
+    if (stats.warehouseWorkflow || stats.warehouseErrand) return { ok: false, reason: 'warehouse_state' };
+    if (stats.marketStore || stats.marketReturn) return { ok: false, reason: 'market_state' };
+    if (stats.craftShop || stats.craftStationId || stats.craftReturn) return { ok: false, reason: 'craft_state' };
+    if (stats.supplyErrand) return { ok: false, reason: 'player_workflow' };
+    return { ok: true, reason: row.partyId ? 'background_party_cold' : 'simple_solo_cold' };
+}
+
+function coldSimulationRow(characterId) {
+    return one('SELECT * FROM bot_life_state WHERE characterId = ?', [Number(characterId)]);
+}
+
+function coldSimulationConflict(row, request, timestamp) {
+    if (!row) return 'missing_state';
+    if (Number(row.simulationRevision || 0) !== Number(request.expectedRevision)) return 'stale_revision';
+    if (String(row.simulationOwner || LEGACY_SIMULATION_OWNER) !== String(request.ownerId || COLD_SIMULATION_OWNER)) return 'owner_changed';
+    if (String(row.simulationLeaseId || '') !== String(request.leaseId || '')) return 'lease_changed';
+    if (Number(row.simulationLeaseUntil || 0) <= timestamp) return 'lease_expired';
+    return 'cas_failed';
+}
+
 const Database = {
     init(callback = () => {}) {
         try {
@@ -411,6 +574,15 @@ const Database = {
             utils.infoSuccess('DB', 'SQLite connected %s', databasePath);
             callback();
         } catch (error) {
+            if (connection) {
+                try {
+                    connection.close();
+                } catch (_) {
+                    // Keep the original initialization failure in the log.
+                }
+                connection = null;
+            }
+            process.exitCode = 1;
             utils.infoFail('DB', 'SQLite initialization failed -> %s', error.message);
         }
     },
@@ -430,6 +602,274 @@ const Database = {
                 hp = excluded.hp, mp = excluded.mp, updatedAt = excluded.updatedAt`,
         [Number(npcId), Number(respawnTime), hp === null ? null : Number(hp), mp === null ? null : Number(mp), now()],
         'raid-boss:upsert');
+    },
+
+    claimColdSimulationLease(request = {}) {
+        const characterId = Number(request.characterId);
+        const expectedRevision = Number(request.expectedRevision);
+        const ownerId = String(request.ownerId || COLD_SIMULATION_OWNER);
+        const leaseId = String(request.leaseId || '');
+        const timestamp = Number(request.timestamp || now());
+        const leaseUntil = Number(request.leaseUntil || 0);
+        if (!Number.isSafeInteger(characterId) || characterId <= 0) return Promise.resolve({ ok: false, reason: 'invalid_character' });
+        if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) return Promise.resolve({ ok: false, reason: 'invalid_revision' });
+        if (ownerId !== COLD_SIMULATION_OWNER || !leaseId || leaseUntil <= timestamp) return Promise.resolve({ ok: false, reason: 'invalid_lease' });
+
+        return inTransaction(() => {
+            const row = coldSimulationRow(characterId);
+            const partition = coldSimulationPartition(row, request);
+            if (!partition.ok) return partition;
+            if (Number(row.simulationRevision || 0) !== expectedRevision) return { ok: false, reason: 'stale_revision' };
+            const currentOwner = String(row.simulationOwner || LEGACY_SIMULATION_OWNER);
+            const currentLeaseUntil = Number(row.simulationLeaseUntil || 0);
+            if (currentOwner !== LEGACY_SIMULATION_OWNER && currentLeaseUntil > timestamp) {
+                return { ok: false, reason: 'lease_active' };
+            }
+            if (![LEGACY_SIMULATION_OWNER, COLD_SIMULATION_OWNER].includes(currentOwner)) {
+                return { ok: false, reason: 'owner_changed' };
+            }
+            const revision = expectedRevision + 1;
+            const result = write(`UPDATE bot_life_state
+                SET simulationOwner = ?, simulationRevision = ?, simulationLeaseId = ?, simulationLeaseUntil = ?
+                WHERE characterId = ? AND simulationRevision = ? AND simulationOwner = ?`, [
+                ownerId, revision, leaseId, leaseUntil, characterId, expectedRevision, currentOwner
+            ]);
+            if (result.affectedRows !== 1) return { ok: false, reason: 'cas_failed' };
+            return { ok: true, characterId, ownerId, leaseId, revision, leaseUntil, reason: 'claimed' };
+        }, 'bot-life:cold-owner-claim');
+    },
+
+    claimColdSimulationLeases(requests = []) {
+        const batch = Array.isArray(requests) ? requests.slice(0, 64) : [];
+        if (!batch.length) return Promise.resolve([]);
+        return inTransaction(() => batch.map((request) => {
+            const characterId = Number(request.characterId);
+            const expectedRevision = Number(request.expectedRevision);
+            const ownerId = String(request.ownerId || COLD_SIMULATION_OWNER);
+            const leaseId = String(request.leaseId || '');
+            const timestamp = Number(request.timestamp || now());
+            const leaseUntil = Number(request.leaseUntil || 0);
+            if (!Number.isSafeInteger(characterId) || characterId <= 0) return { ok: false, characterId, reason: 'invalid_character' };
+            if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) return { ok: false, characterId, reason: 'invalid_revision' };
+            if (ownerId !== COLD_SIMULATION_OWNER || !leaseId || leaseUntil <= timestamp) {
+                return { ok: false, characterId, reason: 'invalid_lease' };
+            }
+            const row = coldSimulationRow(characterId);
+            const partition = coldSimulationPartition(row, request);
+            if (!partition.ok) return { ...partition, characterId };
+            if (Number(row.simulationRevision || 0) !== expectedRevision) return { ok: false, characterId, reason: 'stale_revision' };
+            const currentOwner = String(row.simulationOwner || LEGACY_SIMULATION_OWNER);
+            const currentLeaseUntil = Number(row.simulationLeaseUntil || 0);
+            if (currentOwner !== LEGACY_SIMULATION_OWNER && currentLeaseUntil > timestamp) {
+                return { ok: false, characterId, reason: 'lease_active' };
+            }
+            if (![LEGACY_SIMULATION_OWNER, COLD_SIMULATION_OWNER].includes(currentOwner)) {
+                return { ok: false, characterId, reason: 'owner_changed' };
+            }
+            const revision = expectedRevision + 1;
+            const result = write(`UPDATE bot_life_state
+                SET simulationOwner = ?, simulationRevision = ?, simulationLeaseId = ?, simulationLeaseUntil = ?
+                WHERE characterId = ? AND simulationRevision = ? AND simulationOwner = ?`, [
+                ownerId, revision, leaseId, leaseUntil, characterId, expectedRevision, currentOwner
+            ]);
+            if (result.affectedRows !== 1) return { ok: false, characterId, reason: 'cas_failed' };
+            return { ok: true, characterId, ownerId, leaseId, revision, leaseUntil, reason: 'claimed' };
+        }), 'bot-life:cold-owner-claim-batch');
+    },
+
+    commitColdSimulationLease(request = {}) {
+        const characterId = Number(request.characterId);
+        const expectedRevision = Number(request.expectedRevision);
+        const ownerId = String(request.ownerId || COLD_SIMULATION_OWNER);
+        const leaseId = String(request.leaseId || '');
+        const timestamp = Number(request.timestamp || now());
+        const leaseUntil = Number(request.leaseUntil || 0);
+        const patch = { ...(request.patch || {}) };
+        const invalidColumn = Object.keys(patch).find((column) => !COLD_SIMULATION_PATCH_COLUMNS.has(column));
+        if (!Number.isSafeInteger(characterId) || characterId <= 0) return Promise.resolve({ ok: false, reason: 'invalid_character' });
+        if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) return Promise.resolve({ ok: false, reason: 'invalid_revision' });
+        if (ownerId !== COLD_SIMULATION_OWNER || !leaseId || leaseUntil <= timestamp) return Promise.resolve({ ok: false, reason: 'invalid_lease' });
+        if (invalidColumn) return Promise.resolve({ ok: false, reason: 'invalid_patch', column: invalidColumn });
+
+        return inTransaction(() => {
+            const row = coldSimulationRow(characterId);
+            const conflict = coldSimulationConflict(row, { expectedRevision, ownerId, leaseId }, timestamp);
+            if (conflict !== 'cas_failed') return { ok: false, reason: conflict };
+            const proposed = { ...row, ...patch, phase: patch.phase || row.phase, activity: patch.activity || row.activity };
+            const partition = coldSimulationPartition(proposed, request);
+            if (!partition.ok) return { ok: false, reason: 'partition_rejected', detail: partition.reason };
+            const entries = Object.entries({ ...patch, updatedAt: patch.updatedAt ?? timestamp });
+            const revision = expectedRevision + 1;
+            const assignments = entries.map(([column]) => `${escapeIdentifier(column)} = ?`);
+            assignments.push('simulationRevision = ?', 'simulationLeaseUntil = ?');
+            const params = [
+                ...entries.map(([, value]) => value), revision, leaseUntil,
+                characterId, ownerId, expectedRevision, leaseId, timestamp
+            ];
+            const result = write(`UPDATE bot_life_state SET ${assignments.join(', ')}
+                WHERE characterId = ? AND simulationOwner = ? AND simulationRevision = ?
+                  AND simulationLeaseId = ? AND simulationLeaseUntil > ?`, params);
+            if (result.affectedRows !== 1) {
+                return { ok: false, reason: coldSimulationConflict(coldSimulationRow(characterId), { expectedRevision, ownerId, leaseId }, timestamp) };
+            }
+            return {
+                ok: true,
+                characterId,
+                ownerId,
+                leaseId,
+                revision,
+                leaseUntil,
+                reason: 'committed',
+                row: coldSimulationRow(characterId)
+            };
+        }, 'bot-life:cold-owner-commit');
+    },
+
+    commitAndReleaseColdSimulationLeases(requests = []) {
+        const batch = Array.isArray(requests) ? requests.slice(0, 32) : [];
+        if (!batch.length) return Promise.resolve([]);
+        return inTransaction(() => batch.map((request) => {
+            const characterId = Number(request.characterId);
+            const expectedRevision = Number(request.expectedRevision);
+            const ownerId = String(request.ownerId || COLD_SIMULATION_OWNER);
+            const leaseId = String(request.leaseId || '');
+            const timestamp = Number(request.timestamp || now());
+            const patch = { ...(request.patch || {}) };
+            const invalidColumn = Object.keys(patch).find((column) => !COLD_SIMULATION_PATCH_COLUMNS.has(column));
+            if (!Number.isSafeInteger(characterId) || characterId <= 0) return { ok: false, characterId, reason: 'invalid_character' };
+            if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) return { ok: false, characterId, reason: 'invalid_revision' };
+            if (ownerId !== COLD_SIMULATION_OWNER || !leaseId) return { ok: false, characterId, reason: 'invalid_lease' };
+            if (invalidColumn) return { ok: false, characterId, reason: 'invalid_patch', column: invalidColumn };
+            const row = coldSimulationRow(characterId);
+            const conflict = coldSimulationConflict(row, { expectedRevision, ownerId, leaseId }, timestamp);
+            if (conflict !== 'cas_failed') return { ok: false, characterId, reason: conflict };
+            const proposed = { ...row, ...patch, phase: patch.phase || row.phase, activity: patch.activity || row.activity };
+            const partition = coldSimulationPartition(proposed, request);
+            if (!partition.ok) return { ok: false, characterId, reason: 'partition_rejected', detail: partition.reason };
+            const entries = Object.entries({ ...patch, updatedAt: patch.updatedAt ?? timestamp });
+            const revision = expectedRevision + 1;
+            const assignments = entries.map(([column]) => `${escapeIdentifier(column)} = ?`);
+            assignments.push(
+                'simulationOwner = ?',
+                'simulationRevision = ?',
+                'simulationLeaseId = NULL',
+                'simulationLeaseUntil = 0'
+            );
+            const params = [
+                ...entries.map(([, value]) => value), LEGACY_SIMULATION_OWNER, revision,
+                characterId, ownerId, expectedRevision, leaseId, timestamp
+            ];
+            const result = write(`UPDATE bot_life_state SET ${assignments.join(', ')}
+                WHERE characterId = ? AND simulationOwner = ? AND simulationRevision = ?
+                  AND simulationLeaseId = ? AND simulationLeaseUntil > ?`, params);
+            if (result.affectedRows !== 1) {
+                return {
+                    ok: false,
+                    characterId,
+                    reason: coldSimulationConflict(coldSimulationRow(characterId), { expectedRevision, ownerId, leaseId }, timestamp)
+                };
+            }
+            const physical = request.physical || null;
+            if (physical) applyColdPhysicalStateUnsafe(characterId, physical);
+            return {
+                ok: true,
+                characterId,
+                ownerId: LEGACY_SIMULATION_OWNER,
+                leaseId: null,
+                revision,
+                leaseUntil: 0,
+                reason: 'committed_released',
+                row: coldSimulationRow(characterId)
+            };
+        }), 'bot-life:cold-owner-commit-release-batch');
+    },
+
+    releaseColdSimulationLeases(requests = []) {
+        const batch = Array.isArray(requests) ? requests.slice(0, 64) : [];
+        if (!batch.length) return Promise.resolve([]);
+        return inTransaction(() => batch.map((request) => {
+            const characterId = Number(request.characterId);
+            const expectedRevision = Number(request.expectedRevision);
+            const ownerId = String(request.ownerId || COLD_SIMULATION_OWNER);
+            const leaseId = String(request.leaseId || '');
+            const timestamp = Number(request.timestamp || now());
+            const row = coldSimulationRow(characterId);
+            const conflict = coldSimulationConflict(row, { expectedRevision, ownerId, leaseId }, timestamp);
+            if (conflict !== 'cas_failed') return { ok: false, characterId, reason: conflict };
+            const revision = expectedRevision + 1;
+            const result = write(`UPDATE bot_life_state
+                SET simulationOwner = ?, simulationRevision = ?, simulationLeaseId = NULL, simulationLeaseUntil = 0
+                WHERE characterId = ? AND simulationOwner = ? AND simulationRevision = ? AND simulationLeaseId = ?`, [
+                LEGACY_SIMULATION_OWNER, revision, characterId, ownerId, expectedRevision, leaseId
+            ]);
+            if (result.affectedRows !== 1) return { ok: false, characterId, reason: 'cas_failed' };
+            return { ok: true, characterId, ownerId: LEGACY_SIMULATION_OWNER, leaseId: null, revision, leaseUntil: 0, reason: 'released' };
+        }), 'bot-life:cold-owner-release-batch');
+    },
+
+    releaseColdSimulationLease(request = {}) {
+        const characterId = Number(request.characterId);
+        const expectedRevision = Number(request.expectedRevision);
+        const ownerId = String(request.ownerId || COLD_SIMULATION_OWNER);
+        const leaseId = String(request.leaseId || '');
+        const timestamp = Number(request.timestamp || now());
+        return inTransaction(() => {
+            const row = coldSimulationRow(characterId);
+            const conflict = coldSimulationConflict(row, { expectedRevision, ownerId, leaseId }, timestamp);
+            if (conflict !== 'cas_failed') return { ok: false, reason: conflict };
+            const revision = expectedRevision + 1;
+            const result = write(`UPDATE bot_life_state
+                SET simulationOwner = ?, simulationRevision = ?, simulationLeaseId = NULL, simulationLeaseUntil = 0
+                WHERE characterId = ? AND simulationOwner = ? AND simulationRevision = ? AND simulationLeaseId = ?`, [
+                LEGACY_SIMULATION_OWNER, revision, characterId, ownerId, expectedRevision, leaseId
+            ]);
+            if (result.affectedRows !== 1) return { ok: false, reason: 'cas_failed' };
+            return { ok: true, characterId, ownerId: LEGACY_SIMULATION_OWNER, leaseId: null, revision, leaseUntil: 0, reason: 'released' };
+        }, 'bot-life:cold-owner-release');
+    },
+
+    handoffColdSimulationToMain(request = {}) {
+        const characterId = Number(request.characterId);
+        const expectedRevision = request.expectedRevision === null || request.expectedRevision === undefined
+            ? null
+            : Number(request.expectedRevision);
+        return inTransaction(() => {
+            const row = coldSimulationRow(characterId);
+            if (!row) return { ok: false, reason: 'missing_state' };
+            const revision = Number(row.simulationRevision || 0);
+            if (expectedRevision !== null && revision !== expectedRevision) return { ok: false, reason: 'stale_revision' };
+            const ownerId = String(row.simulationOwner || LEGACY_SIMULATION_OWNER);
+            if (ownerId === LEGACY_SIMULATION_OWNER) {
+                return { ok: true, characterId, ownerId, leaseId: null, revision, leaseUntil: 0, reason: 'already_main' };
+            }
+            if (ownerId !== COLD_SIMULATION_OWNER) return { ok: false, reason: 'owner_changed' };
+            const nextRevision = revision + 1;
+            const result = write(`UPDATE bot_life_state
+                SET simulationOwner = ?, simulationRevision = ?, simulationLeaseId = NULL, simulationLeaseUntil = 0
+                WHERE characterId = ? AND simulationOwner = ? AND simulationRevision = ?`, [
+                LEGACY_SIMULATION_OWNER, nextRevision, characterId, ownerId, revision
+            ]);
+            if (result.affectedRows !== 1) return { ok: false, reason: 'cas_failed' };
+            return { ok: true, characterId, ownerId: LEGACY_SIMULATION_OWNER, leaseId: null, revision: nextRevision, leaseUntil: 0, reason: 'hot_handoff' };
+        }, 'bot-life:hot-owner-handoff');
+    },
+
+    recoverColdSimulationLeases({ timestamp = now(), includeActive = false } = {}) {
+        const cutoff = Number(timestamp);
+        return inTransaction(() => {
+            const where = `simulationOwner = ?${includeActive ? '' : ' AND simulationLeaseUntil <= ?'}`;
+            const selectParams = includeActive ? [COLD_SIMULATION_OWNER] : [COLD_SIMULATION_OWNER, cutoff];
+            const candidates = all(`SELECT characterId FROM bot_life_state WHERE ${where}`, selectParams);
+            const result = write(`UPDATE bot_life_state
+                SET simulationOwner = ?, simulationRevision = simulationRevision + 1,
+                    simulationLeaseId = NULL, simulationLeaseUntil = 0
+                WHERE ${where}`, [LEGACY_SIMULATION_OWNER, ...selectParams]);
+            const rows = candidates.length
+                ? all(`SELECT characterId, simulationOwner, simulationRevision, simulationLeaseId, simulationLeaseUntil
+                    FROM bot_life_state WHERE characterId IN (${candidates.map(() => '?').join(', ')})`, candidates.map((row) => row.characterId))
+                : [];
+            return { ...result, rows };
+        }, includeActive ? 'bot-life:cold-owner-startup-recovery' : 'bot-life:cold-owner-expired-recovery');
     },
 
     clearRaidBossState(npcId) {
@@ -505,60 +945,10 @@ const Database = {
     },
 
     syncInventorySummary(characterId, inventory = {}) {
-        return withCharacterFlush(characterId, () => inTransaction(() => {
-            const existing = all('SELECT id, selfId, amount, equipped, slot FROM items WHERE characterId = ? ORDER BY id', [characterId]);
-            const bySelfId = new Map();
-            existing.forEach((row) => {
-                const key = Number(row.selfId);
-                if (!bySelfId.has(key)) bySelfId.set(key, []);
-                bySelfId.get(key).push(row);
-            });
-            Object.values(inventory).forEach((item) => {
-                const selfId = Number(item.selfId || 0);
-                const amount = Number(item.amount || 0);
-                if (!selfId) return;
-                const rows = bySelfId.get(selfId) || [];
-                if (amount <= 0) {
-                    rows.forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]));
-                    return;
-                }
-                const baseSlot = Number(item.slot || rows[0]?.slot || 0);
-                const nonStackable = baseSlot > 0 || item.stackable === false;
-                if (!nonStackable) {
-                    const current = rows[0];
-                    const equipped = item.equipped ? 1 : 0;
-                    if (current) {
-                        if (Number(current.amount) !== amount || Number(current.equipped) !== equipped || Number(current.slot) !== baseSlot) {
-                            write('UPDATE items SET amount = ?, equipped = ?, slot = ? WHERE id = ? AND characterId = ?', [amount, equipped, baseSlot, current.id, characterId]);
-                        }
-                    } else {
-                        write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, ?, ?, ?)', [selfId, item.name || `Item ${selfId}`, amount, equipped, baseSlot, characterId]);
-                    }
-                    rows.slice(1).forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]));
-                    return;
-                }
-
-                const equippedSlots = Array.isArray(item.equippedSlots)
-                    ? [...new Set(item.equippedSlots.map(Number).filter((slot) => slot > 0))].slice(0, amount)
-                    : item.equipped ? [baseSlot] : [];
-                const desired = [
-                    ...equippedSlots.map((slot) => ({ equipped: 1, slot })),
-                    ...Array.from({ length: Math.max(0, amount - equippedSlots.length) }, () => ({ equipped: 0, slot: 0 }))
-                ];
-                desired.forEach((entry, index) => {
-                    const current = rows[index];
-                    if (current) {
-                        if (Number(current.amount) !== 1 || Number(current.equipped) !== entry.equipped || Number(current.slot) !== entry.slot) {
-                            write('UPDATE items SET amount = 1, equipped = ?, slot = ? WHERE id = ? AND characterId = ?', [entry.equipped, entry.slot, current.id, characterId]);
-                        }
-                    } else {
-                        write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, 1, ?, ?, ?)', [selfId, item.name || `Item ${selfId}`, entry.equipped, entry.slot, characterId]);
-                    }
-                });
-                rows.slice(desired.length).forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]));
-            });
-            return { characterId, entries: Object.keys(inventory).length };
-        }, 'inventory:sync-summary'));
+        return withCharacterFlush(characterId, () => inTransaction(
+            () => syncInventorySummaryUnsafe(characterId, inventory),
+            'inventory:sync-summary'
+        ));
     },
 
     compactStackableInventory(selfIds = [], taskName = 'compact-stackable-inventory-v1') {

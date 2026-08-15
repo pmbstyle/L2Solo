@@ -19,6 +19,26 @@ let initialized = false;
 let initStarted = false;
 let initPromise = null;
 
+function isCriticalSnapshotReason(reason = '', state = null) {
+    if (state?.activity === 'dead') return true;
+    return /death|dead|loot|drop|adena|inventory|market|trade|economy|shop|warehouse|sell|buy|purchase|equip|equipment|handoff|revive|resurrect/i.test(String(reason));
+}
+
+function notifyColdSnapshot(state, reason = 'state_changed', options = {}) {
+    if (!state?.characterId || state.phase !== 'cold') return;
+    const critical = options.critical === true || isCriticalSnapshotReason(reason, state);
+    const handle = setImmediate(() => {
+        try {
+            const coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+            coordinator.markDirty?.(state, { reason, critical });
+        } catch (_) {
+            // The coordinator may not be loaded during the first state-table
+            // hydration pass. The next worker bootstrap snapshot is complete.
+        }
+    });
+    handle.unref?.();
+}
+
 function now() {
     return Date.now();
 }
@@ -342,6 +362,12 @@ function normalize(row) {
         },
         stats,
         inventory,
+        simulation: {
+            ownerId: row.simulationOwner || 'legacy_main',
+            revision: Math.max(0, Number(row.simulationRevision || 0)),
+            leaseId: row.simulationLeaseId || null,
+            leaseUntil: Math.max(0, Number(row.simulationLeaseUntil || 0))
+        },
         updatedAt: Number(row.updatedAt || 0)
     };
 }
@@ -450,6 +476,15 @@ function rowFromState(state) {
         partyId: persistedState.party?.partyId || null,
         inventorySummary: safeJson(persistedState.inventory || {}),
         statsJson: safeJson(persistedState.stats || {}),
+        // Legacy lifecycle writes are fenced in SQLite by simulationOwner, but
+        // `save()` intentionally does not rewrite the ownership columns. Keep
+        // the authoritative ownership snapshot on the transient row as well,
+        // otherwise normalize(row) resets the in-memory revision to zero and
+        // the cold worker rejects the resulting lifecycle ACK as stale.
+        simulationOwner: persistedState.simulation?.ownerId || 'legacy_main',
+        simulationRevision: Math.max(0, Number(persistedState.simulation?.revision || 0)),
+        simulationLeaseId: persistedState.simulation?.leaseId || null,
+        simulationLeaseUntil: Math.max(0, Number(persistedState.simulation?.leaseUntil || 0)),
         updatedAt: now()
     };
 }
@@ -490,7 +525,8 @@ function save(row) {
             partyId = excluded.partyId,
             inventorySummary = excluded.inventorySummary,
             statsJson = excluded.statsJson,
-            updatedAt = excluded.updatedAt`,
+            updatedAt = excluded.updatedAt
+        WHERE ${TABLE}.simulationOwner = 'legacy_main'`,
         [
             row.characterId,
             row.accountName,
@@ -523,6 +559,11 @@ function save(row) {
             row.updatedAt
         ]
     ]).then((result) => {
+        if (result && typeof result.affectedRows === 'number' && result.affectedRows !== 1) {
+            const error = new Error(`bot life state ownership conflict for ${row.characterId}`);
+            error.code = 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT';
+            throw error;
+        }
         Metrics.recordDbFlush();
         return result;
     });
@@ -569,6 +610,16 @@ function refreshColdCombatProfile(state) {
             coldCombat: ColdCombatProfile.legacySnapshot(state, skills, now())
         }
     }));
+}
+
+function projectColdCombatProfile(state, timestamp = now()) {
+    return Promise.resolve({
+        ...state,
+        stats: {
+            ...(state.stats || {}),
+            coldCombat: ColdCombatProfile.treeSnapshot(state, timestamp)
+        }
+    });
 }
 
 function applyClassProgression(state, profile = {}) {
@@ -902,6 +953,7 @@ function expireStalePartyRequests(limit = 0) {
     const staggerMs = Math.min(120000, Math.max(0, Math.floor(cooldownMs / 2)));
     const safeLimit = Math.max(0, Math.min(500, Number(limit) || 0));
     const staleSelection = `phase = 'cold'
+        AND simulationOwner = 'legacy_main'
         AND (partyId IS NULL OR partyId = '')
         AND activity IN ('hunting', 'resting', 'party_wait')
         AND json_extract(statsJson, '$.partyRequest.status') = 'open'
@@ -1074,7 +1126,12 @@ const BotLifeState = {
         if (initStarted) return initPromise;
         initStarted = true;
 
-        initPromise = Database.execute(['SELECT 1', []], 'schema:bot-life').then(() => recoverStaleHotStates()).then(() => recoverDissolvedPartyMembers()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => clearPassivePartyRequests()).then(() => expireStalePartyRequests()).then(() => discardInvalidEquipmentPlans()).then(() => discardFulfilledEquipmentPlans()).then(() => hydrateCache()).then((count) => {
+        initPromise = Database.execute(['SELECT 1', []], 'schema:bot-life')
+            // A process restart invalidates every in-process logical owner,
+            // even when its wall-clock lease had time remaining. Reclaim the
+            // rows before any legacy startup repair can touch them.
+            .then(() => invoke('GameServer/Bot/Population/ColdSimulationOwner').recoverStartupLeases())
+            .then(() => recoverStaleHotStates()).then(() => recoverDissolvedPartyMembers()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => clearPassivePartyRequests()).then(() => expireStalePartyRequests()).then(() => discardInvalidEquipmentPlans()).then(() => discardFulfilledEquipmentPlans()).then(() => hydrateCache()).then((count) => {
             const repairs = [...cache.values()]
                 .map(canonicalizeAreaState)
                 .map(recoverOrphanedGiranState)
@@ -1365,6 +1422,7 @@ const BotLifeState = {
             WHERE phase = 'cold'
             AND activity <> 'pk_hunting'
             AND (partyId IS NULL OR partyId = '')
+            AND simulationOwner = 'legacy_main'
             -- Cold stores settle on trade/expiry events, and craft-service
             -- stations are materialized on demand.  Neither belongs in the
             -- combat scheduler's periodic queue.
@@ -1810,10 +1868,10 @@ const BotLifeState = {
         });
     },
 
-    applyResolve(state, result) {
+    prepareResolve(state, result, options = {}) {
         if (!state || !result) return Promise.resolve(null);
 
-        const timestamp = now();
+        const timestamp = Number(options.timestamp || now());
         const exp = Number(state.exp || 0) + Number(result.materialize?.exp || 0);
         const sp = Number(state.sp || 0) + Number(result.materialize?.sp || 0);
         const level = levelForExp(exp, Number(state.level || 1));
@@ -1940,12 +1998,16 @@ const BotLifeState = {
         const currentClassId = Number(nextState.stats?.classId || 0);
         const needsClassProgression = knownProfileLevel < level || knownProfileClassId !== currentClassId;
         const progression = needsClassProgression
-            ? BotClassProgression.reconcile({
+            ? (options.projectClassProgression === true ? Promise.resolve(BotClassProgression.plan({
+                classId: currentClassId,
+                level,
+                seed: nextState.name || nextState.characterId
+            })) : BotClassProgression.reconcile({
                 characterId: nextState.characterId,
                 classId: currentClassId,
                 level,
                 seed: nextState.name || nextState.characterId
-            })
+            }))
             : Promise.resolve({ classId: currentClassId, transitions: [] });
 
         return progression.then((resolved) => {
@@ -1969,10 +2031,18 @@ const BotLifeState = {
             if (resolved.transitions?.length) delete progressedState.stats.equipmentPlan;
             const equippedProgressedState = reconcileEquipmentInventory(progressedState);
             const profileReady = needsClassProgression
-                ? refreshColdCombatProfile(equippedProgressedState)
+                ? (options.projectClassProgression === true
+                    ? projectColdCombatProfile(equippedProgressedState, timestamp)
+                    : refreshColdCombatProfile(equippedProgressedState))
                 : Promise.resolve(equippedProgressedState);
 
             return profileReady.then((profiledState) => {
+                if (options.persist === false) {
+                    return {
+                        ...reconcileFulfilledEquipmentPlan(profiledState),
+                        updatedAt: timestamp
+                    };
+                }
                 const row = rowFromState(profiledState);
                 return save(row)
                     .then(() => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp))
@@ -1981,6 +2051,12 @@ const BotLifeState = {
                     .then(() => {
                         const snapshot = normalize(row);
                         cache.set(snapshot.characterId, snapshot);
+                        notifyColdSnapshot(snapshot, nextActivity === 'dead' ? 'death' : 'resolve', {
+                            critical: nextActivity === 'dead'
+                                || materializedItems.length > 0
+                                || Number(result.materialize?.adena || 0) > 0
+                                || (result.events || []).length > 0
+                        });
                         return snapshot;
                     })
                     .catch((err) => {
@@ -1989,6 +2065,19 @@ const BotLifeState = {
                     });
             });
         });
+    },
+
+    applyResolve(state, result) {
+        return this.prepareResolve(state, result, { persist: true });
+    },
+
+    syncResolvedState(state) {
+        if (!state?.characterId) return Promise.resolve(null);
+        const row = rowFromState(state);
+        return Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp)
+            .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
+            .then(() => syncInventorySummary(row.characterId, state.inventory || {}))
+            .then(() => state);
     },
 
     marketGoalCandidates(limit = 8, timestamp = now()) {
@@ -2223,6 +2312,7 @@ const BotLifeState = {
             .then(() => {
                 const snapshot = normalize(row);
                 cache.set(snapshot.characterId, snapshot);
+                notifyColdSnapshot(snapshot, 'market_purchase', { critical: true });
                 return snapshot;
             }).catch(async (err) => {
                 utils.infoWarn('BotLife', 'failed market purchase for %s: %s', state.name, err.message);
@@ -2245,6 +2335,7 @@ const BotLifeState = {
             .then(() => {
                 const snapshot = normalize(row);
                 cache.set(snapshot.characterId, snapshot);
+                notifyColdSnapshot(snapshot, 'market_sale', { critical: true });
                 return snapshot;
             }).catch((error) => {
                 utils.infoWarn('BotLife', 'failed market rollback for %s: %s', state.name, error?.message || String(error));
@@ -2308,6 +2399,7 @@ const BotLifeState = {
             .then(() => {
                 const snapshot = normalize(row);
                 cache.set(snapshot.characterId, snapshot);
+                notifyColdSnapshot(snapshot, 'npc_liquidation', { critical: true });
                 return snapshot;
             }).catch(async (err) => {
                 utils.infoWarn('BotLife', 'failed market sale for %s: %s', state.name, err.message);
@@ -2404,6 +2496,7 @@ const BotLifeState = {
             .then(() => {
                 const snapshot = normalize(row);
                 cache.set(characterId, snapshot);
+                notifyColdSnapshot(snapshot, reason);
                 return snapshot;
             })
             .catch((err) => {
@@ -2440,6 +2533,7 @@ const BotLifeState = {
 
         cache.forEach((state) => {
             if (state.phase !== 'cold'
+                || (state.simulation?.ownerId && state.simulation.ownerId !== 'legacy_main')
                 || state.activity === 'pk_hunting'
                 || state.partyId
                 || state.party?.partyId
@@ -2508,6 +2602,24 @@ const BotLifeState = {
 
     cachedState(characterId) {
         return cache.get(Number(characterId)) || null;
+    },
+
+    acceptSimulationOwnership(characterId, result = {}, committedState = null) {
+        const id = Number(characterId);
+        const current = cache.get(id);
+        if (!current && !committedState) return null;
+        const next = {
+            ...(current || {}),
+            ...(committedState || {}),
+            simulation: {
+                ownerId: result.ownerId || 'legacy_main',
+                revision: Math.max(0, Number(result.revision || 0)),
+                leaseId: result.leaseId || null,
+                leaseUntil: Math.max(0, Number(result.leaseUntil || 0))
+            }
+        };
+        cache.set(id, next);
+        return next;
     },
 
     allStates(limit = 500) {

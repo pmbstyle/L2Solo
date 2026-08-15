@@ -3,6 +3,7 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const Metrics   = invoke('GameServer/Bot/Population/PopulationMetrics');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const ServerResponse = invoke('GameServer/Network/Response');
+const ColdSimulationCoordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
 
 function removeFromClientWorld(session) {
     const objectId = session?.actor?.fetchId?.();
@@ -38,19 +39,29 @@ const Cooldown = {
         return LifeState.upsertState(state, reason).then((saved) => {
             if (!saved) return { ok: false, reason: 'state_save_failed' };
 
-            const BotAI = invoke('GameServer/Bot/BotAI');
-            BotAI.stop(session);
-            removeFromClientWorld(session);
-            if (session.actor && typeof session.actor.destructor === 'function') {
-                session.actor.destructor();
-            }
-            World.removeUser(session);
-            BotManager.sessions = BotManager.sessions.filter((candidate) => candidate !== session);
-            session.actor = null;
+            return ColdSimulationCoordinator.acceptColdState(saved).then((accepted) => {
+                if (!accepted.ok) {
+                    return LifeState.markHot(session, 'cold_worker_handoff_timeout').then(() => ({
+                        ok: false,
+                        reason: accepted.reason || 'cold_worker_handoff_failed',
+                        state: LifeState.cachedState(saved.characterId) || saved
+                    }));
+                }
 
-            console.info('BotPopulation :: cooled %s reason=%s', saved.name, reason);
-            Metrics.recordCooldown();
-            return { ok: true, state: saved, reason };
+                const BotAI = invoke('GameServer/Bot/BotAI');
+                BotAI.stop(session);
+                removeFromClientWorld(session);
+                if (session.actor && typeof session.actor.destructor === 'function') {
+                    session.actor.destructor();
+                }
+                World.removeUser(session);
+                BotManager.sessions = BotManager.sessions.filter((candidate) => candidate !== session);
+                session.actor = null;
+
+                console.info('BotPopulation :: cooled %s reason=%s', saved.name, reason);
+                Metrics.recordCooldown();
+                return { ok: true, state: saved, reason };
+            });
         });
     },
 

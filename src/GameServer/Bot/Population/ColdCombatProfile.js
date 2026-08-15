@@ -199,6 +199,38 @@ function legacySnapshot(state = {}, records = [], timestamp = Date.now()) {
     };
 }
 
+function skillRecordsFromTree(classId, level) {
+    const tree = (DataCache.skillTree || []).find((entry) => Number(entry.classId) === Number(classId));
+    return (tree?.skills || []).map((entry) => {
+        const learned = (entry.levels || []).filter((row) => number(row.pLevel) <= level).at(-1);
+        if (!learned) return null;
+        const skill = (DataCache.skills || []).find((candidate) => Number(candidate.selfId) === Number(entry.selfId));
+        const definition = (skill?.levels || []).find((row) => number(row.level) === number(learned.level))
+            || (skill?.levels || []).filter((row) => number(row.level) <= number(learned.level)).at(-1);
+        if (!skill || !definition) return null;
+        return {
+            selfId: number(entry.selfId),
+            name: skill.template?.name || skill.name || `Skill ${entry.selfId}`,
+            passive: skill.template?.passive === true,
+            level: number(definition.level, number(learned.level, 1))
+        };
+    }).filter(Boolean);
+}
+
+function treeSnapshot(state = {}, timestamp = Date.now()) {
+    const existing = state.stats?.coldCombat || {};
+    const classId = number(state.stats?.classId, number(state.classId));
+    return {
+        ...existing,
+        version: PROFILE_VERSION,
+        skillSource: 'tree',
+        capturedAt: timestamp,
+        classId,
+        effects: existing.effects || [],
+        skills: skillsFromTree(classId, Math.max(1, number(state.level, 1)))
+    };
+}
+
 function capture(actor, timestamp = Date.now()) {
     const backpack = actor.backpack;
     const equipment = {
@@ -352,4 +384,7 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
     };
 }
 
-module.exports = { PROFILE_VERSION, capture, legacySnapshot, needsDatabaseBackfill, profileFor, offensiveSkills, npcForSpot, skillSnapshotsFromRecords };
+module.exports = {
+    PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor,
+    offensiveSkills, npcForSpot, skillSnapshotsFromRecords, skillRecordsFromTree
+};

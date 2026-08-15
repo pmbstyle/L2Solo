@@ -78,7 +78,7 @@ const BackgroundPartyResolver = {
                 memberResults: [],
                 events: [],
                 partyPatch: {},
-                nextResolveAt: Date.now() + 60000,
+                nextResolveAt: timestamp + 60000,
                 debug: { reason: 'missing_party_members_or_spot' }
             };
         }

@@ -7,6 +7,8 @@ const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const { marketStoreTitle } = invoke('GameServer/Bot/Economy/MarketStoreTitle');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
+const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
+const ColdSimulationCoordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
 const pendingActivations = new Set();
 const HOT_PLANS = new Set(['hunting', 'resting', 'shopping', 'merchant', 'pk_hunting']);
 
@@ -175,7 +177,24 @@ const HotActivation = {
 
             const BotManager = invoke('GameServer/Bot/BotManager');
             let craftActivation = false;
-            return releaseBackgroundParty(state, reason).then((releasedState) => {
+            return ColdSimulationCoordinator.fenceBot(state.characterId).then((fence) => {
+                if (!fence.ok && fence.reason !== 'worker_not_ready') {
+                    utils.infoWarn('ColdWorker', 'activation fence fallback for %s: %s', state.name, fence.reason);
+                }
+                return ColdSimulationOwner.handoffToMain(LifeState.cachedState(state.characterId) || state);
+            }).then((handoff) => {
+                if (!handoff.ok) throw new Error(`simulation_owner_handoff_failed:${handoff.reason}`);
+                state = {
+                    ...state,
+                    simulation: {
+                        ownerId: handoff.ownerId,
+                        revision: handoff.revision,
+                        leaseId: handoff.leaseId,
+                        leaseUntil: handoff.leaseUntil
+                    }
+                };
+                return releaseBackgroundParty(state, reason);
+            }).then((releasedState) => {
                 state = releasedState;
 
                 const craftShop = state.activity === 'crafting' && state.stats?.craftShop
