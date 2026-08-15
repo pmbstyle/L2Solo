@@ -187,6 +187,16 @@ const promotionDual = DataCache.items.find((item) => item.template?.kind === 'We
     && String(item.etc?.rank).toLowerCase() === 'c' && item.template?.name && item.template.name !== '0');
 assert(promotionSword && promotionDual, 'the datapack must expose C-grade sword and dual fixtures for profession gear progression');
 const fakeMarketOffer = (item) => ({ selfId: item.selfId, price: 1, town: 'Giran', sourceType: 'npc' });
+const promotionCap = GearAcquisitionPlanner.progressionPriceCap('c', 40);
+const affordableDualIds = DataCache.items
+    .filter((item) => item.template?.kind === 'Weapon.Dual'
+        && String(item.etc?.rank).toLowerCase() === 'c'
+        && Number(item.template?.price || 0) <= promotionCap)
+    .map((item) => Number(item.selfId));
+const overCapDual = DataCache.items.find((item) => item.template?.kind === 'Weapon.Dual'
+    && String(item.etc?.rank).toLowerCase() === 'c'
+    && Number(item.template?.price || 0) > promotionCap);
+assert(overCapDual, 'the datapack must expose an over-cap C-grade dual fixture');
 const missingDualPlan = GearAcquisitionPlanner.planFor({
     level: 40,
     adena: 1000000,
@@ -198,6 +208,24 @@ const missingDualPlan = GearAcquisitionPlanner.planFor({
 }, { spots: [], findMarketOffer: fakeMarketOffer });
 assert.strictEqual(itemTemplate(missingDualPlan.target?.selfId)?.template?.kind, 'Weapon.Dual',
     'a newly promoted Bladedancer without duals must immediately receive a dual-sword acquisition target');
+const overCapDualPlan = GearAcquisitionPlanner.planFor({
+    level: 40,
+    adena: 1000000,
+    stats: { classId: 34, role: 'buffer' },
+    inventory: {
+        57: { selfId: 57, amount: 1000000 },
+        [promotionSword.selfId]: { selfId: promotionSword.selfId, amount: 1, equipped: true, slot: 7 }
+    }
+}, {
+    spots: [],
+    findMarketOffer: () => null,
+    excludedTargetIds: affordableDualIds
+});
+const overCapTarget = itemTemplate(overCapDualPlan.target?.selfId);
+assert.strictEqual(overCapTarget?.template?.kind, 'Weapon.Dual',
+    'a same-grade sword must not suppress the required dual-sword target when no NPC offer exists');
+assert(Number(overCapTarget?.template?.price || 0) > promotionCap,
+    'the required dual-sword target must be retained even when every remaining dual is over the progression cap');
 const equippedDualPlan = GearAcquisitionPlanner.planFor({
     level: 40,
     adena: 1000000,

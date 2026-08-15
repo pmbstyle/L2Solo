@@ -489,7 +489,8 @@ function preferredTarget(state = {}, options = {}) {
     // grade cap (for example, D bows and daggers). Retain the weapon-first
     // milestone rather than declaring progression complete; shortlisting
     // still prevents a leap to a top-tier option.
-    const entryWeaponFallback = !hasCurrentGradeWeapon && weaponFirst.length > 0;
+    const entryWeaponFallback = (!hasCurrentGradeWeapon || missingDualSword)
+        && weaponFirst.length > 0;
     if (!options.recipeId && Number.isFinite(cap) && affordable.length === 0 && !entryWeaponFallback) return null;
     const effortOptions = options.allowedRecipeIds
         ? options
