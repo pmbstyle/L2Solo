@@ -222,6 +222,27 @@ function overlaps(effect, keys) {
     return keys.includes(effect?.key) || keys.includes(effect?.category);
 }
 
+function isPartyMusic(skill) {
+    const semantic = skill?.fetchSemantic?.() || {};
+    const effect = normalizedEffect(semantic.effect);
+    return semantic.isDance === true || effect.startsWith('song_') || effect.startsWith('dance_');
+}
+
+function matchesSkillEffect(effect, skill, keys) {
+    const skillId = Number(skill?.fetchSelfId?.() || 0);
+    const semantic = skill?.fetchSemantic?.() || {};
+    const effectKey = normalizedEffect(semantic.effect);
+    const exactIdentity = Number(effect?.id || 0) === skillId ||
+        normalizedEffect(effect?.key) === effectKey ||
+        normalizedEffect(effect?.category) === effectKey;
+
+    // Songs and dances are separate party effects even when another buff
+    // happens to expose the same stat (for example Chant of Rage and Dance
+    // of Fire both use pCritDamageMul). Stat overlap remains a compatibility
+    // fallback for ordinary legacy buffs, but must not suppress party music.
+    return exactIdentity || (!isPartyMusic(skill) && overlaps(effect, keys));
+}
+
 function refreshThresholdMs(skill) {
     const durationMs = Number(skill?.fetchBuffTime?.() ?? skill?.fetchSemantic?.().durationMs ?? 0);
     if (!Number.isFinite(durationMs) || durationMs <= 0) return REFRESH_THRESHOLD_MS;
@@ -235,14 +256,12 @@ function refreshThresholdMs(skill) {
 function needsSkill(target, skill) {
     const keys = statKeys(skill);
     const level = Number(skill.fetchLevel?.() || 1);
-    const skillId = Number(skill.fetchSelfId?.() || 0);
-    const semantic = skill.fetchSemantic?.() || {};
     const current = EffectStore.list(target, { includeDebuffs: false })
         // The effect id is the authoritative identity for a completed cast.
         // Keep the stat/effect-key fallback for old saved effects, but do not
         // re-request a buff merely because an older payload lacked its modern
         // semantic stat keys.
-        .filter((effect) => Number(effect.id || 0) === skillId || overlaps(effect, keys));
+        .filter((effect) => matchesSkillEffect(effect, skill, keys));
 
     // `activeBuffs` is retained for packet/UI compatibility only. It can outlive
     // an effect after death, dispel, or an interrupted cast, so support decisions

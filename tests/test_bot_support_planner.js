@@ -128,6 +128,66 @@ const target = actor('Slava', 0);
     );
 });
 
+const musicOverlapTarget = actor('MusicOverlapTarget', 4);
+const songOfWarding = skill(267, 'Song of Warding', 1, 'song_of_warding', { mDefMul: 1.3 }, 'party');
+songOfWarding.fetchBuffTime = () => 120000;
+EffectStore.apply(musicOverlapTarget, {
+    key: 'chant_of_fire',
+    id: 1006,
+    level: 1,
+    type: 'buff',
+    stats: { mDefMul: 1.3 },
+    durationMs: 1200000
+});
+assert.strictEqual(
+    BotSupportPlanner.needsSkill(musicOverlapTarget, songOfWarding),
+    true,
+    'an unrelated mDef buff must not suppress Song of Warding refresh'
+);
+EffectStore.apply(musicOverlapTarget, {
+    key: 'song_of_warding',
+    id: 267,
+    level: 1,
+    type: 'buff',
+    stats: { mDefMul: 1.3 },
+    durationMs: 120000
+});
+assert.strictEqual(
+    BotSupportPlanner.needsSkill(musicOverlapTarget, songOfWarding),
+    false,
+    'the matching Song of Warding effect must suppress an immediate refresh'
+);
+
+const danceOverlapTarget = actor('DanceOverlapTarget', 4);
+const danceOfFire = skill(274, 'Dance of Fire', 1, 'dance_of_fire', { pCritDamageMul: 1.5 }, 'party');
+danceOfFire.fetchBuffTime = () => 120000;
+EffectStore.apply(danceOverlapTarget, {
+    key: 'chant_of_rage',
+    id: 1253,
+    level: 1,
+    type: 'buff',
+    stats: { pCritDamageMul: 1.5 },
+    durationMs: 1200000
+});
+assert.strictEqual(
+    BotSupportPlanner.needsSkill(danceOverlapTarget, danceOfFire),
+    true,
+    'an unrelated pCritDamage buff must not suppress Dance of Fire refresh'
+);
+EffectStore.apply(danceOverlapTarget, {
+    key: 'dance_of_fire',
+    id: 274,
+    level: 1,
+    type: 'buff',
+    stats: { pCritDamageMul: 1.5 },
+    durationMs: 120000
+});
+assert.strictEqual(
+    BotSupportPlanner.needsSkill(danceOverlapTarget, danceOfFire),
+    false,
+    'the matching Dance of Fire effect must suppress an immediate refresh'
+);
+
 const policyProvider = actor('PolicyProvider', 25, [shieldOne, empower]);
 policyProvider.session = { actor: policyProvider };
 HotBotPolicyOverlay.set(policyProvider.session, {
