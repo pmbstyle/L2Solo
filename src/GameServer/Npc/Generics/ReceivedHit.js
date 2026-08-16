@@ -50,7 +50,12 @@ function receivedHit(session, actor, npc, hit, options = {}) {
     }
 
     npc.automation.replenishVitals(npc);
-    npc.enterCombatState(session, actor);
+    if (typeof npc.addDamageHate === 'function') {
+        npc.addDamageHate(session, actor, hit, hit);
+    }
+    else {
+        npc.enterCombatState(session, actor);
+    }
     if (npc.fetchIsRaidBoss?.() === true) {
         MinionManager.onBossAttacked(World, npc, actor, session);
     } else if (npc.minionBossObjectId) {

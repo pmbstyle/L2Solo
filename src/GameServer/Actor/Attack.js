@@ -241,7 +241,7 @@ class Attack {
             return;
         }
 
-        const conditionFailure = this.skillUseConditionFailure(actor, skill);
+        const conditionFailure = this.skillUseConditionFailure(session, actor, skill);
         if (conditionFailure) {
             this.rejectSkillUseCondition(session, actor, conditionFailure);
             invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill, conditionFailure.code || conditionFailure.reason || 'condition');
@@ -635,10 +635,15 @@ class Attack {
         }
     }
 
-    skillUseConditionFailure(actor, skill) {
+    skillUseConditionFailure(session, actor, skill) {
+        if (skill === undefined) {
+            skill = actor;
+            actor = session;
+            session = null;
+        }
         const semantic = skill.fetchSemantic?.() || {};
         const condition = semantic.condition || null;
-        const summonFailure = SkillEffects.validateSummonUse?.(actor, null, skill);
+        const summonFailure = SkillEffects.validateSummonUse?.(actor, null, skill, session);
         if (summonFailure) {
             return summonFailure;
         }

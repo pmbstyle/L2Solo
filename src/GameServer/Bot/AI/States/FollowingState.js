@@ -2,6 +2,7 @@ const SpeckMath      = invoke('GameServer/SpeckMath');
 const World          = invoke('GameServer/World/World');
 const ServerResponse = invoke('GameServer/Network/Response');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
+const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
 const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
@@ -51,6 +52,13 @@ function ratio(value, max) {
 
 function isBusy(bot) {
     return !!(bot.state.fetchTowards() || bot.state.fetchHits() || bot.state.fetchCasts());
+}
+
+function canAttemptPartyCorpseSummon(bot, partyThreat, leaderTargetId) {
+    if (partyThreat || leaderTargetId || bot.state.fetchSeated?.() || isBusy(bot)) return false;
+
+    const impairments = EffectStore.impairments(bot);
+    return !impairments.disabled && !impairments.silenced && !impairments.magicMuted;
 }
 
 function preemptForPriorityHeal(session, bot) {
@@ -535,6 +543,15 @@ function unsafeSupportMoment(bot, activeMobs) {
     return activeMobs > 0 || isBusy(bot);
 }
 
+function canRefreshPartyMusicDuringCombat(bot, action, partyThreat, partyRaid, botVitals, partyVitals, healerNeedsAction) {
+    if (!BotSupportPlanner.isUrgentPartyMusicRefresh(action)) return false;
+    if (isBusy(bot) || healerNeedsAction) return false;
+    if (partyRaid?.phase === 'combat' || partyThreat?.type === 'player') return false;
+    if (Number(partyThreat?.targetId || 0) === Number(bot.fetchId?.() || 0)) return false;
+    if (Number(botVitals?.hpRatio || 0) < 0.70 || Number(partyVitals?.hpRatio || 0) < 0.70) return false;
+    return true;
+}
+
 function partyMembersInSupportRange(leaderSession, bot, maxDistance = 900) {
     return PartyAwareness.partySessions(leaderSession)
         .filter((memberSession) => memberSession.actor && !memberSession.actor.isDead?.())
@@ -809,6 +826,8 @@ function deliverPurchasedResources(session, bot, playerSession) {
 
 module.exports = {
     deliverPurchasedResources,
+    canRefreshPartyMusicDuringCombat,
+    canAttemptPartyCorpseSummon,
 
     tick(session, bot, Generics, BotAI) {
         const playerSession = session.followPlayerSession;
@@ -1013,6 +1032,22 @@ module.exports = {
         const leaderTargetId = partyRaid?.phase === 'combat'
             ? Number(partyRaid.bossId)
             : (pulling.enabled ? undefined : configuredLeaderTargetId);
+        // A necromancer may need one quiet tick after the party kills a mob:
+        // the corpse is no longer a live party threat, but it is still a valid
+        // TARGET_CORPSE_MOB for the next summon cast.
+        if (canAttemptPartyCorpseSummon(bot, partyThreat, leaderTargetId)) {
+            const corpse = SummonerTactics.corpseTarget(session, bot);
+            if (corpse) {
+                session.currentTargetId = corpse.fetchId();
+                bot.select({ id: corpse.fetchId() });
+                BotAI.executeCombat(session, bot, corpse, Generics);
+                recordRoleDecision(session, bot, 'summon_corpse', 'corpse_available', {
+                    targetId: corpse.fetchId(),
+                    skillId: session.lastCombatDecision?.skillId || null
+                });
+                return;
+            }
+        }
         announceUnexpectedNpcAdd(session, bot, playerSession, partyThreat, leaderTargetId);
         const impairments = EffectStore.impairments(bot);
 
@@ -1299,6 +1334,15 @@ module.exports = {
             preemptForPriorityHeal(session, bot);
         }
         const healerCanCast = (skill) => canAffordHeal(skill) && !isBusy(bot) && !impairments.silenced;
+        const urgentPartyMusicRefresh = canRefreshPartyMusicDuringCombat(
+            bot,
+            supportBuffTarget,
+            partyThreat,
+            partyRaid,
+            botVitals,
+            partyVitals,
+            healerNeedsAction
+        );
         const rebuff = !partyThreat && !leaderTargetId && !isBusy(bot)
             ? BotSupportPlanner.rebuffRequest(bot, PartyPulling.supportProviders(playerSession))
             : null;
@@ -1316,9 +1360,10 @@ module.exports = {
         // A routine buff must never take the action slot from a live party
         // threat. The target may be a social ranged add that is still outside
         // melee range, so let the normal defence branch react immediately.
-        if (!acted && !partyThreat && !leaderTargetId && supportBuffTarget && !healerNeedsAction) {
+        const supportBuffAllowed = (!partyThreat && !leaderTargetId) || urgentPartyMusicRefresh;
+        if (!acted && supportBuffAllowed && supportBuffTarget && !healerNeedsAction) {
             const activeMobs = currentPartyAggroMonsters().length;
-            if (unsafeSupportMoment(bot, activeMobs)) {
+            if (unsafeSupportMoment(bot, activeMobs) && !urgentPartyMusicRefresh) {
                 recordRoleDecision(session, bot, 'buff_party', 'wait_for_safe_moment', {
                     buff: supportBuffTarget.effect,
                     targetId: supportBuffTarget.target.fetchId(),

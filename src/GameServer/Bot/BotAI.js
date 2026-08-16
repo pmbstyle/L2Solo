@@ -13,6 +13,8 @@ const BotTradeService = invoke('GameServer/Bot/BotTradeService');
 const ChatArrivalState = invoke('GameServer/Bot/AI/ChatArrivalState');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
+const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
+const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 
 const CHAT_PHRASES = {
     foundTarget: [
@@ -586,7 +588,23 @@ const BotAI = {
                 allowedPlayerPartyRaid && BotRaidSafety.hasControlledRaidMinion(npc)
             )
         };
-        const chargeSkill = options.basicAttackOnly ? null : BotCombatUtility.selectChargeSkill(bot, role);
+        // Bot casts use the internal SkillExec path and therefore do not pass
+        // through the packet-level SkillRequest control-effect gate.
+        const canCast = EffectRestrictions.canCast(bot);
+        const summonAction = options.basicAttackOnly || !canCast
+            ? null
+            : SummonerTactics.combatAction(session, bot, npc, Generics);
+        if (summonAction?.handled) {
+            session.lastCombatDecision = {
+                action: summonAction.reason,
+                role,
+                skillId: summonAction.skill?.fetchSelfId?.() || null,
+                targetId: summonAction.target?.fetchId?.() || npc?.fetchId?.() || null,
+                at: Date.now()
+            };
+            return true;
+        }
+        const chargeSkill = options.basicAttackOnly || !canCast ? null : BotCombatUtility.selectChargeSkill(bot, role);
         if (chargeSkill) {
             session.lastCombatDecision = {
                 action: 'charge_skill',
@@ -603,7 +621,7 @@ const BotAI = {
             });
             return true;
         }
-        const decision = options.basicAttackOnly
+        const decision = options.basicAttackOnly || !canCast
             ? null
             : BotCombatUtility.select(bot, npc, role, combatPolicy);
         if (decision) {

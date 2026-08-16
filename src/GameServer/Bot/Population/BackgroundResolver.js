@@ -4,6 +4,7 @@ const DataCache = invoke('GameServer/DataCache');
 const Formulas = invoke('GameServer/Formulas');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 
 function clamp(value, min, max) {
@@ -220,7 +221,8 @@ function resolveDeathRecovery(state, timestamp = Date.now()) {
                 coldCombat: {
                     ...(state.stats?.coldCombat || {}),
                     charges: 0,
-                    chargeExpiresAt: null
+                    chargeExpiresAt: null,
+                    summon: null
                 }
             }
         },
@@ -381,8 +383,162 @@ function applyMusicAction(provider, action, timestamp) {
     return action.cost;
 }
 
+function mutableCombatState(state = {}) {
+    return {
+        ...state,
+        inventory: Object.fromEntries(Object.entries(state.inventory || {}).map(([key, item]) => [key, { ...item }])),
+        stats: {
+            ...(state.stats || {}),
+            coldCombat: { ...(state.stats?.coldCombat || {}) }
+        }
+    };
+}
+
+function summonNpcStats(fighter, details) {
+    const direct = (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(details.npcId));
+    const skill = (DataCache.skills || []).find((entry) => Number(entry.selfId) === Number(details.skillId));
+    const skillLevel = Number(details.skillLevel || 1);
+    const levelCandidates = (skill?.levels || [])
+        .map((level) => ({
+            level: Number(level.level) || 0,
+            npc: (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(level.npcId))
+        }))
+        .filter((entry) => entry.npc)
+        .sort((a, b) => Math.abs(a.level - skillLevel) - Math.abs(b.level - skillLevel));
+    const summonName = String(skill?.template?.name || skill?.name || '').toLowerCase();
+    const fallbackIds = summonName.includes('soulless') || summonName.includes('reanimated')
+        || summonName.includes('corrupted') || summonName.includes('cursed man')
+        ? [12070, 12366, 12071, 12367]
+        : [];
+    const familyFallback = fallbackIds
+        .map((id) => (DataCache.npcs || []).find((entry) => Number(entry.selfId) === id))
+        .find(Boolean);
+    const npc = direct || levelCandidates[0]?.npc || familyFallback;
+    return {
+        npcId: Number(details.npcId || 0),
+        maxHp: Math.max(1, Number(npc?.vitals?.maxHp || fighter.profile.maxHp * 1.15)),
+        pAtk: Math.max(1, Number(npc?.stats?.pAtk || fighter.profile.pAtk * 0.85)),
+        pAtkRnd: Math.max(0, Number(npc?.stats?.pAtkRnd || fighter.profile.equipment?.pAtkRnd || 0)),
+        pDef: Math.max(1, Number(npc?.stats?.pDef || fighter.profile.pDef * 0.8)),
+        accur: Math.max(1, Number(npc?.stats?.accur || fighter.profile.accur)),
+        critical: Math.max(0, Number(npc?.stats?.crit || fighter.profile.critical)),
+        atkSpd: Math.max(1, Number(npc?.stats?.atkSpd || fighter.profile.atkSpd))
+    };
+}
+
+function persistedSummon(fighter, timestamp) {
+    const saved = fighter.state.stats?.coldCombat?.summon;
+    if (!saved?.active || Number(saved.expiresAt || 0) <= timestamp) return null;
+    const skill = (fighter.profile.skills || []).find((candidate) => Number(candidate.selfId) === Number(saved.skillId));
+    const details = ColdCombatProfile.summonDetails(skill || saved);
+    const npcStats = summonNpcStats(fighter, details);
+    const savedHp = Number(saved.hp || 0);
+    return {
+        ...saved,
+        ...npcStats,
+        skillId: Number(saved.skillId || skill?.selfId || 0),
+        expiresAt: Number(saved.expiresAt),
+        hp: Math.min(npcStats.maxHp, Math.max(1, savedHp || npcStats.maxHp)),
+        maxHp: npcStats.maxHp
+    };
+}
+
+function setPersistedSummon(fighter, summon) {
+    fighter.state = {
+        ...fighter.state,
+        stats: {
+            ...(fighter.state.stats || {}),
+            coldCombat: {
+                ...(fighter.state.stats?.coldCombat || {}),
+                summon: summon || null
+            }
+        }
+    };
+}
+
+function summonAttackDelay(summon) {
+    return Math.max(250, Formulas.calcMeleeAtkTime(Number(summon?.atkSpd) || 253));
+}
+
+function startColdSummon(fighter, timestamp, cooldowns, skills = ColdCombatProfile.summonSkills(fighter.profile)) {
+    const skill = skills.find((candidate) => (
+        Number(cooldowns[candidate.selfId] || 0) <= timestamp
+        && Number(candidate.mp || 0) <= fighter.vitals.mp
+    ));
+    if (!skill) return false;
+
+    const details = ColdCombatProfile.summonDetails(skill);
+    fighter.vitals.mp = Math.max(0, fighter.vitals.mp - Number(skill.mp || 0));
+    const totalLifeTime = Math.max(30000, Number(details.totalLifeTime || 1200000));
+    const summon = {
+        ...summonNpcStats(fighter, details),
+        active: true,
+        skillId: Number(skill.selfId),
+        expiresAt: timestamp + totalLifeTime
+    };
+    setPersistedSummon(fighter, summon);
+    fighter.summon = summon;
+    fighter.summonUses = Number(fighter.summonUses || 0) + 1;
+    cooldowns[skill.selfId] = timestamp + Math.max(0, Number(skill.reuse || 0));
+    fighter.readyAt = Number(fighter.readyAt || 0) + actionDelayMs(fighter.profile, skill);
+    fighter.summonReadyAt = fighter.readyAt + summonAttackDelay(summon);
+    return true;
+}
+
+function startColdCorpseSummon(fighter, timestamp, cooldowns) {
+    if (!BotRoles.isNecromancer(fighter.profile?.classId) || fighter.summon) return false;
+    const persisted = persistedSummon(fighter, timestamp);
+    if (persisted) {
+        const sameActiveSummon = fighter.summon?.active === true
+            && Number(fighter.summon.skillId) === Number(persisted.skillId)
+            && Number(fighter.summon.expiresAt) === Number(persisted.expiresAt);
+        fighter.summon = persisted;
+        if (!sameActiveSummon) {
+            fighter.summonReadyAt = Number(fighter.readyAt || 0) + summonAttackDelay(persisted);
+        }
+        return false;
+    }
+    return startColdSummon(
+        fighter,
+        timestamp,
+        cooldowns,
+        ColdCombatProfile.corpseSummonSkills(fighter.profile)
+    );
+}
+
+function ensureColdSummon(fighter, timestamp, cooldowns) {
+    const existing = persistedSummon(fighter, timestamp);
+    if (existing) {
+        const sameActiveSummon = fighter.summon?.active === true
+            && Number(fighter.summon.skillId) === Number(existing.skillId)
+            && Number(fighter.summon.expiresAt) === Number(existing.expiresAt);
+        fighter.summon = existing;
+        if (!sameActiveSummon) {
+            fighter.summonReadyAt = Number(fighter.readyAt || 0) + summonAttackDelay(existing);
+        }
+        return false;
+    }
+    if (fighter.state.stats?.coldCombat?.summon?.active) setPersistedSummon(fighter, null);
+    fighter.summon = null;
+    return startColdSummon(fighter, timestamp, cooldowns);
+}
+
+function summonDamage(fighter, mob, rng) {
+    const summon = fighter.summon;
+    if (!summon?.active || Number(summon.expiresAt || 0) <= Number(fighter.now || 0)) return 0;
+    if (!hitSucceeds(summon.accur, mob.evasion, rng)) return 0;
+    return Math.max(0, Formulas.calcPhysicalDamage(
+        summon.pAtk,
+        summon.pAtkRnd,
+        mob.pDef,
+        0,
+        { critical: Formulas.rollCritical(summon.critical, rng) }
+    ));
+}
+
 function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp = Date.now() }) {
-    let bot = botCombatStats(state, timestamp);
+    const fightState = mutableCombatState(state);
+    let bot = botCombatStats(fightState, timestamp);
     const mob = ColdCombatProfile.npcForSpot(spot, rng, { preferredNpcId: targetNpcId }) || {
         level: Number(spot.avgLevel || bot.level), maxHp: Math.max(1, Number(spot.mob?.hp || 1)),
         pAtk: Math.max(1, Number(spot.mob?.damage || 1)), pAtkRnd: 0, pDef: 1, mDef: 1,
@@ -394,7 +550,16 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         maxHp: bot.maxHp,
         maxMp: bot.maxMp
     };
-    const soloFighter = { state, profile: bot, vitals };
+    const soloFighter = {
+        state: fightState,
+        profile: bot,
+        vitals,
+        readyAt: 0,
+        summonReadyAt: Number.POSITIVE_INFINITY,
+        summonUses: 0,
+        summonActions: 0,
+        now: timestamp
+    };
     let botReadyAt = 0;
     let mobReadyAt = 0;
     let time = 0;
@@ -402,6 +567,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
     let actions = 0;
     let skillUses = 0;
     let musicUses = 0;
+    let summonUses = 0;
+    let summonActions = 0;
     const chargeState = coldChargeState(state, timestamp);
     let charges = chargeState.charges;
     let chargeExpiresAt = chargeState.chargeExpiresAt;
@@ -412,12 +579,38 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
     // bounded by time and actions. This is deliberately cheaper than a live
     // Actor while retaining its hit, critical, damage and speed formulas.
     while (vitals.hp > 0 && mobHp > 0 && time < fightLimitMs && actions < 48) {
-        const botActs = botReadyAt <= mobReadyAt;
-        time = botActs ? botReadyAt : mobReadyAt;
+        const summonReadyAt = soloFighter.summon?.active
+            ? Number(soloFighter.summonReadyAt)
+            : Number.POSITIVE_INFINITY;
+        const summonActs = summonReadyAt <= botReadyAt && summonReadyAt <= mobReadyAt;
+        const botActs = !summonActs && botReadyAt <= mobReadyAt;
+        time = summonActs ? summonReadyAt : botActs ? botReadyAt : mobReadyAt;
         if (time >= fightLimitMs) break;
         actions += 1;
 
-        if (botActs) {
+        if (summonActs) {
+            soloFighter.now = timestamp + time;
+            if (Number(soloFighter.summon.expiresAt || 0) <= soloFighter.now) {
+                setPersistedSummon(soloFighter, null);
+                soloFighter.summon = null;
+                soloFighter.summonReadyAt = Number.POSITIVE_INFINITY;
+                continue;
+            }
+            mobHp -= summonDamage(soloFighter, mob, rng);
+            summonActions += 1;
+            soloFighter.summonActions += 1;
+            soloFighter.summonReadyAt = time + summonAttackDelay(soloFighter.summon);
+            if (mobHp <= 0) break;
+        }
+        else if (botActs) {
+            soloFighter.now = timestamp + time;
+            soloFighter.readyAt = botReadyAt;
+            const summonedNow = ensureColdSummon(soloFighter, timestamp + time, cooldowns);
+            summonUses = Number(soloFighter.summonUses || 0);
+            if (summonedNow) {
+                botReadyAt = soloFighter.readyAt;
+                continue;
+            }
             const heldCharges = { charges, chargeExpiresAt };
             expireCharges(heldCharges, timestamp + time);
             charges = heldCharges.charges;
@@ -474,6 +667,12 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             }
             mobHp -= Math.max(0, damage);
             botReadyAt += actionDelayMs(bot, skill);
+            if (mobHp <= 0) {
+                soloFighter.readyAt = botReadyAt;
+                startColdCorpseSummon(soloFighter, timestamp + time, cooldowns);
+                summonUses = Number(soloFighter.summonUses || 0);
+                break;
+            }
         } else if (hitSucceeds(mob.accur, bot.evasion, rng)) {
             const critical = Formulas.rollCritical(mob.critical, rng);
             const damage = Formulas.calcMeleeDamage(mob.pAtk, mob.pAtkRnd, bot.pDef, { critical });
@@ -502,7 +701,9 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             charges: died ? 0 : charges,
             chargeExpiresAt: died ? null : chargeExpiresAt,
             effects: soloFighter.profile.effects,
-            debug: { actions, skillUses, musicUses, mobSelfId: mob.selfId || null, timedOut: !died }
+            inventory: fightState.inventory,
+            summon: soloFighter.summon || null,
+            debug: { actions, skillUses, musicUses, summonUses, summonActions, mobSelfId: mob.selfId || null, timedOut: !died }
         };
     }
 
@@ -532,7 +733,9 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         charges,
         chargeExpiresAt,
         effects: soloFighter.profile.effects,
-        debug: { actions, skillUses, musicUses, mobSelfId: mob.selfId || null, timedOut: false }
+        inventory: fightState.inventory,
+        summon: soloFighter.summon || null,
+        debug: { actions, skillUses, musicUses, summonUses, summonActions, mobSelfId: mob.selfId || null, timedOut: false }
     };
 }
 
@@ -556,12 +759,13 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
         accur: 1, evasion: 0, critical: 0, atkSpd: 253
     };
     const fighters = members.map((state) => {
-        const profile = botCombatStats(state, timestamp);
-        const chargeState = coldChargeState(state, timestamp);
+        const fighterState = mutableCombatState(state);
+        const profile = botCombatStats(fighterState, timestamp);
+        const chargeState = coldChargeState(fighterState, timestamp);
         return {
-            state,
+            state: fighterState,
             profile,
-            role: state.party?.role || state.stats?.role || 'dps',
+            role: fighterState.party?.role || fighterState.stats?.role || 'dps',
             vitals: {
                 hp: Math.min(profile.maxHp, Math.max(0, Number(state.vitals?.hp || profile.maxHp))),
                 maxHp: profile.maxHp,
@@ -575,7 +779,11 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             heals: 0,
             musicUses: 0,
             charges: chargeState.charges,
-            chargeExpiresAt: chargeState.chargeExpiresAt
+            chargeExpiresAt: chargeState.chargeExpiresAt,
+            summonUses: 0,
+            summonActions: 0,
+            summonReadyAt: Number.POSITIVE_INFINITY,
+            now: timestamp
         };
     });
     let mobHp = mob.maxHp;
@@ -587,14 +795,36 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
     while (mobHp > 0 && fighters.some((fighter) => fighter.vitals.hp > 0) && time < fightLimitMs && actions < 96) {
         const alive = fighters.filter((fighter) => fighter.vitals.hp > 0);
         const next = alive.sort((a, b) => a.readyAt - b.readyAt)[0];
-        const botActs = next && next.readyAt <= mobReadyAt;
-        time = botActs ? next.readyAt : mobReadyAt;
+        const nextSummon = alive
+            .filter((fighter) => fighter.summon?.active && Number.isFinite(Number(fighter.summonReadyAt)))
+            .sort((a, b) => a.summonReadyAt - b.summonReadyAt)[0];
+        const ownerReadyAt = next ? next.readyAt : Number.POSITIVE_INFINITY;
+        const summonReadyAt = nextSummon ? Number(nextSummon.summonReadyAt) : Number.POSITIVE_INFINITY;
+        const summonActs = nextSummon && summonReadyAt <= ownerReadyAt && summonReadyAt <= mobReadyAt;
+        const botActs = !summonActs && next && ownerReadyAt <= mobReadyAt;
+        time = summonActs ? summonReadyAt : botActs ? ownerReadyAt : mobReadyAt;
         if (time >= fightLimitMs) break;
         actions += 1;
 
-        if (botActs) {
+        if (summonActs) {
+            nextSummon.now = timestamp + time;
+            if (Number(nextSummon.summon.expiresAt || 0) <= nextSummon.now) {
+                setPersistedSummon(nextSummon, null);
+                nextSummon.summon = null;
+                nextSummon.summonReadyAt = Number.POSITIVE_INFINITY;
+                continue;
+            }
+            mobHp -= summonDamage(nextSummon, mob, rng);
+            nextSummon.summonActions += 1;
+            nextSummon.summonReadyAt = time + summonAttackDelay(nextSummon.summon);
+            if (mobHp <= 0) break;
+        }
+        else if (botActs) {
             next.actions += 1;
             expireCharges(next, timestamp + time);
+            next.now = timestamp + time;
+            const summonedNow = ensureColdSummon(next, timestamp + time, next.cooldowns);
+            if (summonedNow) continue;
             const heal = chooseHeal(next.profile, fighters, next.vitals.mp, next.cooldowns, timestamp + time);
             if (heal) {
                 const amount = Formulas.calcHealAmount(heal.skill.power);
@@ -653,6 +883,17 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             }
             mobHp -= Math.max(0, damage);
             next.readyAt += actionDelayMs(next.profile, skill);
+            if (mobHp <= 0) {
+                const necromancer = fighters.find((fighter) => (
+                    fighter.vitals.hp > 0
+                    && BotRoles.isNecromancer(fighter.profile?.classId)
+                    && !fighter.summon
+                ));
+                if (necromancer) {
+                    startColdCorpseSummon(necromancer, timestamp + time, necromancer.cooldowns);
+                }
+                break;
+            }
         } else {
             const targets = fighters.filter((fighter) => fighter.vitals.hp > 0);
             const tank = targets.find((fighter) => fighter.role === 'tank');
@@ -675,6 +916,8 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             actions,
             skillUses: fighters.reduce((sum, fighter) => sum + fighter.skillUses, 0),
             musicUses: fighters.reduce((sum, fighter) => sum + fighter.musicUses, 0),
+            summonUses: fighters.reduce((sum, fighter) => sum + Number(fighter.summonUses || 0), 0),
+            summonActions: fighters.reduce((sum, fighter) => sum + Number(fighter.summonActions || 0), 0),
             mobSelfId: mob.selfId || null
         }
     };
@@ -815,12 +1058,15 @@ const BackgroundResolver = {
         let combatActions = 0;
         let skillUses = 0;
         let musicUses = 0;
+        let summonUses = 0;
+        let summonActions = 0;
         const foughtNpcIds = [];
 
         for (let i = 0; i < fights; i++) {
             const fightState = {
                 ...state,
                 vitals: patch.vitals,
+                inventory: patch.inventory || state.inventory,
                 stats: { ...(state.stats || {}), ...(patch.stats || {}) }
             };
             const result = resolveFight({ state: fightState, spot, pressure, targetNpcId, rng, timestamp });
@@ -828,6 +1074,7 @@ const BackgroundResolver = {
             patch.vitals.maxHp = result.maxHp;
             patch.vitals.mp = result.mp;
             patch.vitals.maxMp = result.maxMp;
+            patch.inventory = result.inventory || patch.inventory || state.inventory;
             patch.stats = {
                 ...(patch.stats || state.stats || {}),
                 coldCombat: {
@@ -836,7 +1083,8 @@ const BackgroundResolver = {
                     effects: result.effects || patch.stats?.coldCombat?.effects || [],
                     cooldowns: result.cooldowns || {},
                     charges: result.charges || 0,
-                    chargeExpiresAt: result.chargeExpiresAt || null
+                    chargeExpiresAt: result.chargeExpiresAt || null,
+                    summon: result.died ? null : (result.summon || null)
                 }
             };
             materialize.exp += result.exp;
@@ -846,6 +1094,8 @@ const BackgroundResolver = {
             combatActions += Number(result.debug?.actions || 0);
             skillUses += Number(result.debug?.skillUses || 0);
             musicUses += Number(result.debug?.musicUses || 0);
+            summonUses += Number(result.debug?.summonUses || 0);
+            summonActions += Number(result.debug?.summonActions || 0);
 
             if (result.won) {
                 wins += 1;
@@ -908,6 +1158,8 @@ const BackgroundResolver = {
                 combatActions,
                 skillUses,
                 musicUses,
+                summonUses,
+                summonActions,
                 targetNpcId: Number(targetNpcId) || null,
                 foughtNpcIds
             }

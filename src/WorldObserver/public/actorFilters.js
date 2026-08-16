@@ -3,8 +3,16 @@
     if (typeof module !== 'undefined' && module.exports) module.exports = filters;
     if (root) root.WorldObserverActorFilters = filters;
 }(typeof globalThis !== 'undefined' ? globalThis : this, () => {
-    function className(actor) {
-        return actor?.className || actor?.build?.className || null;
+    function className(actor, catalog = []) {
+        const directName = actor?.className || actor?.build?.className;
+        if (directName) return directName;
+
+        const rawClassId = actor?.classId ?? actor?.build?.classId;
+        const classId = Number(rawClassId);
+        if (!Number.isInteger(classId) || classId < 0) return null;
+
+        const entry = catalog.find((item) => Number(item?.classId) === classId);
+        return entry?.className || entry?.label || entry?.name || null;
     }
 
     function classKey(actor) {
@@ -56,11 +64,19 @@
         return selectedClass === 'all' || classKey(actor) === selectedClass;
     }
 
-    function classOptions(actors = []) {
+    function classOptions(actors = [], catalog = []) {
         const byKey = new Map();
+
+        catalog.forEach((entry) => {
+            const classId = Number(entry?.classId);
+            const label = entry?.className || entry?.label || entry?.name;
+            if (!Number.isInteger(classId) || classId < 0 || !label) return;
+            byKey.set(`id:${classId}`, String(label));
+        });
+
         actors.forEach((actor) => {
             const key = classKey(actor);
-            const label = className(actor);
+            const label = className(actor, catalog);
             if (key && label && !byKey.has(key)) byKey.set(key, String(label));
         });
         return [...byKey.entries()]

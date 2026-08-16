@@ -125,6 +125,7 @@ function itemSummary(item, detailed = false) {
         kind: item.fetchKind(),
         amount: item.fetchAmount(),
         equipped: !!(item.fetchEquipped && item.fetchEquipped()),
+        slotId: item.fetchSlot ? Number(item.fetchSlot()) || null : null,
         slot: item.fetchSlot ? SLOT_NAMES[item.fetchSlot()] || item.fetchSlot() : 0,
         stackable: !!(item.fetchStackable && item.fetchStackable()),
         consumable: !!(item.fetchConsumable && item.fetchConsumable())
@@ -132,6 +133,12 @@ function itemSummary(item, detailed = false) {
 
     if (item.fetchRank) {
         summary.rank = item.fetchRank();
+    }
+    if (item.fetchEnchantLevel) {
+        summary.enchant = item.fetchEnchantLevel();
+    }
+    if (item.fetchPrice) {
+        summary.price = item.fetchPrice();
     }
 
     if (detailed || summary.equipped) {
@@ -151,6 +158,7 @@ function itemSummary(item, detailed = false) {
                 pDef: item.fetchPDef(),
                 mDef: item.fetchMDef(),
                 evasion: item.fetchEvasion(),
+                shieldRate: item.fetchShieldRate?.(),
                 bonusMp: item.fetchBonusMp()
             };
         }

@@ -3,6 +3,7 @@ const assert = require('assert');
 require('../src/Global');
 
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
+const FollowingState = invoke('GameServer/Bot/AI/States/FollowingState');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 const World = invoke('GameServer/World/World');
@@ -47,6 +48,145 @@ const empower = skill(1059, 'Empower', 1, 'empower', { mAtkMul: 1.2 });
 const shaman = actor('Noren', 49, [soulShieldTwo]);
 const mage = actor('Saren', 25, [shieldOne]);
 const target = actor('Slava', 0);
+
+[
+    { id: 264, name: 'Song of Earth', key: 'song_of_earth', stats: { pDefMul: 1.25 } },
+    { id: 271, name: 'Dance of Warrior', key: 'dance_of_warrior', stats: { pAtkMul: 1.12 } }
+].forEach(({ id, name, key, stats }) => {
+    const songOrDance = skill(id, name, 1, key, stats, 'party');
+    songOrDance.fetchBuffTime = () => 120000;
+    const musicProvider = actor('ArlenDawn', 21, [songOrDance]);
+    const musicAction = { provider: musicProvider, target, skill: songOrDance };
+    assert.strictEqual(
+        BotSupportPlanner.isUrgentPartyMusicRefresh(musicAction),
+        true,
+        `${name} without an active effect must be eligible for an urgent party refresh`
+    );
+    assert.strictEqual(
+        FollowingState.canRefreshPartyMusicDuringCombat(
+            musicProvider,
+            musicAction,
+            { type: 'npc', targetId: target.fetchId() },
+            null,
+            { hpRatio: 1 },
+            { hpRatio: 1 },
+            false
+        ),
+        true,
+        `${name} must be allowed to refresh during ordinary PvE pressure`
+    );
+    EffectStore.apply(target, { key, id, level: 1, type: 'buff', stats, durationMs: 120000 });
+    assert.strictEqual(
+        BotSupportPlanner.needsSkill(target, songOrDance),
+        false,
+        `a freshly landed two-minute ${name} must not be recast immediately`
+    );
+    assert.strictEqual(
+        BotSupportPlanner.isUrgentPartyMusicRefresh(musicAction),
+        false,
+        `a freshly landed two-minute ${name} must not enter the urgent refresh path`
+    );
+    EffectStore.remove(target, key);
+    assert.strictEqual(
+        FollowingState.canRefreshPartyMusicDuringCombat(
+            musicProvider,
+            musicAction,
+            { type: 'player', targetId: target.fetchId() },
+            null,
+            { hpRatio: 1 },
+            { hpRatio: 1 },
+            false
+        ),
+        false,
+        `${name} must not interrupt a player threat`
+    );
+    assert.strictEqual(
+        FollowingState.canRefreshPartyMusicDuringCombat(
+            musicProvider,
+            musicAction,
+            { type: 'npc', targetId: target.fetchId() },
+            null,
+            { hpRatio: 0.69 },
+            { hpRatio: 1 },
+            false
+        ),
+        false,
+        `${name} must wait when the provider is below the safe HP threshold`
+    );
+    assert.strictEqual(
+        FollowingState.canRefreshPartyMusicDuringCombat(
+            musicProvider,
+            musicAction,
+            { type: 'npc', targetId: target.fetchId() },
+            { phase: 'combat' },
+            { hpRatio: 1 },
+            { hpRatio: 1 },
+            false
+        ),
+        false,
+        `${name} must not interrupt a player-led raid`
+    );
+});
+
+const musicOverlapTarget = actor('MusicOverlapTarget', 4);
+const songOfWarding = skill(267, 'Song of Warding', 1, 'song_of_warding', { mDefMul: 1.3 }, 'party');
+songOfWarding.fetchBuffTime = () => 120000;
+EffectStore.apply(musicOverlapTarget, {
+    key: 'chant_of_fire',
+    id: 1006,
+    level: 1,
+    type: 'buff',
+    stats: { mDefMul: 1.3 },
+    durationMs: 1200000
+});
+assert.strictEqual(
+    BotSupportPlanner.needsSkill(musicOverlapTarget, songOfWarding),
+    true,
+    'an unrelated mDef buff must not suppress Song of Warding refresh'
+);
+EffectStore.apply(musicOverlapTarget, {
+    key: 'song_of_warding',
+    id: 267,
+    level: 1,
+    type: 'buff',
+    stats: { mDefMul: 1.3 },
+    durationMs: 120000
+});
+assert.strictEqual(
+    BotSupportPlanner.needsSkill(musicOverlapTarget, songOfWarding),
+    false,
+    'the matching Song of Warding effect must suppress an immediate refresh'
+);
+
+const danceOverlapTarget = actor('DanceOverlapTarget', 4);
+const danceOfFire = skill(274, 'Dance of Fire', 1, 'dance_of_fire', { pCritDamageMul: 1.5 }, 'party');
+danceOfFire.fetchBuffTime = () => 120000;
+EffectStore.apply(danceOverlapTarget, {
+    key: 'chant_of_rage',
+    id: 1253,
+    level: 1,
+    type: 'buff',
+    stats: { pCritDamageMul: 1.5 },
+    durationMs: 1200000
+});
+assert.strictEqual(
+    BotSupportPlanner.needsSkill(danceOverlapTarget, danceOfFire),
+    true,
+    'an unrelated pCritDamage buff must not suppress Dance of Fire refresh'
+);
+EffectStore.apply(danceOverlapTarget, {
+    key: 'dance_of_fire',
+    id: 274,
+    level: 1,
+    type: 'buff',
+    stats: { pCritDamageMul: 1.5 },
+    durationMs: 120000
+});
+assert.strictEqual(
+    BotSupportPlanner.needsSkill(danceOverlapTarget, danceOfFire),
+    false,
+    'the matching Dance of Fire effect must suppress an immediate refresh'
+);
 
 const policyProvider = actor('PolicyProvider', 25, [shieldOne, empower]);
 policyProvider.session = { actor: policyProvider };

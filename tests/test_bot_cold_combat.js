@@ -9,8 +9,21 @@ const BackgroundPartyResolver = invoke('GameServer/Bot/Population/BackgroundPart
 const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const PopulationMetrics = invoke('GameServer/Bot/Population/PopulationMetrics');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
 DataCache.init();
+
+const necromancerSummonNpcIds = [
+    12465, 12466, 12467, 12468, 12469,
+    12470, 12471, 12472,
+    13179, 13180, 13181, 13182, 13183, 13184, 13185
+];
+for (const npcId of necromancerSummonNpcIds) {
+    const npc = DataCache.npcs.find((candidate) => Number(candidate.selfId) === npcId);
+    assert(npc, `Necromancer summon NPC ${npcId} must be present in the datapack`);
+    assert.strictEqual(npc.template.kind, 'Summon', `Necromancer summon NPC ${npcId} must be a summon template`);
+    assert(npc.stats.pAtk > 0 && npc.vitals.maxHp > 0, `Necromancer summon NPC ${npcId} must have combat stats`);
+}
 
 const timestamp = 1_750_000_000_000;
 const fighter = {
@@ -153,6 +166,126 @@ const mixedSpot = {
     npcEntries: [{ selfId: 1, count: 1 }, { selfId: 12, count: 1 }],
     npcSelfIds: [1, 12]
 };
+
+assert(ColdCombatProfile.summonSkills(ColdCombatProfile.profileFor({
+    ...fighter,
+    level: 40,
+    stats: { classId: 14 },
+    inventory: { 1459: { selfId: 1459, amount: 100 } }
+}, timestamp)).some((skill) => skill.selfId === 1276), 'cold profiles must retain a learned servitor summon');
+const class14SkillIds = new Set(ColdCombatProfile.skillRecordsFromTree(14, 40).map((skill) => skill.selfId));
+for (const ancestorClassId of [10, 11]) {
+    for (const skill of ColdCombatProfile.skillRecordsFromTree(ancestorClassId, 40)) {
+        assert(class14SkillIds.has(skill.selfId),
+            `a second-class cold profile must inherit skill ${skill.selfId} from class ${ancestorClassId}`);
+    }
+}
+
+const coldSummoner = {
+    ...fighter,
+    characterId: 905,
+    name: 'ColdSummoner',
+    level: 40,
+    vitals: { hp: 3000, maxHp: 3000, mp: 2500, maxMp: 2500 },
+    inventory: {},
+    stats: { ...fighter.stats, classId: 14, role: 'mage', coldCombat: undefined },
+    party: { role: 'mage' }
+};
+const coldSummonerResult = BackgroundResolver.resolveSolo({
+    state: coldSummoner,
+    spot: { ...spot, npcSelfIds: [], mob: { hp: 100000, damage: 1 } },
+    elapsedMs: 12000,
+    timestamp,
+    rng: () => 0.1
+});
+assert(coldSummonerResult.debug.summonUses > 0, 'cold summoner combat must cast its servitor before attacking');
+assert(!coldSummonerResult.patch.inventory?.[1459], 'cold bot summoning must not require or consume crystals');
+assert(coldSummonerResult.patch.stats.coldCombat.summon?.active, 'the cold summon must survive in the persisted combat state');
+assert(coldSummonerResult.patch.stats.coldCombat.summon.pAtk >= 342,
+    'cold Kai the Cat must use the sourced NPC attack instead of the owner-scaled fallback');
+
+const coldNecromancerProfile = ColdCombatProfile.profileFor({
+    classId: 13,
+    level: 40,
+    stats: { classId: 13 }
+}, timestamp);
+assert.strictEqual(BotRoles.isNecromancer(13), true, 'Necromancer must be recognized as a corpse-summoning class');
+assert.strictEqual(BotRoles.isNecromancer(95), true, 'Soultaker must inherit the Necromancer corpse-summoning role');
+assert(coldNecromancerProfile.maxMp > 1000, 'cold Necromancer profiles must use the spellcaster MP formula');
+assert(ColdCombatProfile.corpseSummonSkills(coldNecromancerProfile).some((skill) => skill.selfId === 1154),
+    'cold Necromancer profiles must retain corpse-target servitor skills');
+const coldNecromancer = {
+    ...coldSummoner,
+    characterId: 907,
+    name: 'ColdNecromancer',
+    level: 40,
+    vitals: { hp: 3000, maxHp: 3000, mp: 2500, maxMp: 2500 },
+    stats: { ...coldSummoner.stats, classId: 13, role: 'mage', coldCombat: undefined },
+    party: { role: 'mage' }
+};
+const coldNecromancerResult = BackgroundResolver.resolveSolo({
+    state: coldNecromancer,
+    spot: { ...spot, npcSelfIds: [], mob: { hp: 1, damage: 1 } },
+    elapsedMs: 12000,
+    timestamp,
+    rng: () => 0.1
+});
+assert(coldNecromancerResult.debug.summonUses > 0,
+    'cold Necromancer combat must summon after its first mob leaves a corpse');
+assert(coldNecromancerResult.patch.stats.coldCombat.summon?.active,
+    'cold Necromancer combat must persist the raised servitor');
+assert(!coldNecromancerResult.patch.inventory?.[1459],
+    'cold Necromancer summoning must not require or consume crystals');
+
+const highLevelNecromancer = {
+    ...coldNecromancer,
+    characterId: 908,
+    level: 64,
+    vitals: { hp: 4000, maxHp: 4000, mp: 3500, maxMp: 3500 },
+    stats: { ...coldNecromancer.stats, coldCombat: undefined }
+};
+const highLevelNecromancerResult = BackgroundResolver.resolveSolo({
+    state: highLevelNecromancer,
+    spot: { ...spot, npcSelfIds: [], mob: { hp: 1, damage: 1 } },
+    elapsedMs: 12000,
+    timestamp,
+    rng: () => 0.1
+});
+assert.strictEqual(highLevelNecromancerResult.patch.stats.coldCombat.summon?.npcId, 13181,
+    'a level 64 Necromancer must resolve Summon Cursed Man to its level 3 NPC template');
+assert.strictEqual(highLevelNecromancerResult.patch.stats.coldCombat.summon?.pAtk, 1459,
+    'cold Necromancer summons must use the sourced NPC attack value');
+
+const persistedWeakKai = {
+    ...coldSummoner,
+    characterId: 906,
+    stats: {
+        ...coldSummoner.stats,
+        coldCombat: {
+            ...coldSummoner.stats.coldCombat,
+            summon: {
+                active: true,
+                skillId: 1276,
+                npcId: 12477,
+                pAtk: 61,
+                maxHp: 84,
+                hp: 42,
+                expiresAt: timestamp + 600000
+            }
+        }
+    }
+};
+const persistedWeakKaiResult = BackgroundResolver.resolveSolo({
+    state: persistedWeakKai,
+    spot: { ...spot, npcSelfIds: [], mob: { hp: 100000, damage: 1 } },
+    elapsedMs: 12000,
+    timestamp,
+    rng: () => 0.1
+});
+assert(persistedWeakKaiResult.patch.stats.coldCombat.summon.pAtk >= 342,
+    'an already active persisted Kai must refresh stale fallback combat stats');
+assert.strictEqual(persistedWeakKaiResult.patch.stats.coldCombat.summon.hp, 42,
+    'refreshing persisted summon stats must preserve current summon HP');
 const raidMixedSpot = {
     ...spot,
     npcEntries: [
@@ -252,6 +385,25 @@ const partyFight = BackgroundResolver.resolvePartyFight({
 });
 assert(partyFight.debug.actions > 0, 'party cold combat must execute one shared NPC encounter');
 assert(partyFight.members[1].heals > 0, 'a learned friendly heal must be applied to an injured party member');
+const summonerPartyFight = BackgroundResolver.resolvePartyFight({
+    members: [coldSummoner, fighter],
+    spot: { ...spot, npcSelfIds: [], mob: { hp: 100000, damage: 1 } },
+    timestamp,
+    rng: () => 0.1
+});
+assert(summonerPartyFight.members[0].summonUses > 0, 'a summoner in a cold party must cast its servitor');
+assert(summonerPartyFight.members[0].state.stats.coldCombat.summon?.active, 'party combat must persist the summoner servitor');
+const necromancerPartyFight = BackgroundResolver.resolvePartyFight({
+    members: [fighter, coldNecromancer],
+    spot: { ...spot, npcSelfIds: [], mob: { hp: 1, damage: 1 } },
+    timestamp,
+    rng: () => 0.1
+});
+const necromancerPartyMember = necromancerPartyFight.members.find((member) => member.state.characterId === coldNecromancer.characterId);
+assert(necromancerPartyMember?.summonUses > 0,
+    'a Necromancer in a cold party must raise a servitor from the shared corpse');
+assert(necromancerPartyMember?.state.stats.coldCombat.summon?.active,
+    'a party Necromancer must persist the raised servitor');
 const focusedPartyFight = BackgroundResolver.resolvePartyFight({
     members: [injuredTank, healer],
     spot: mixedSpot,
@@ -289,12 +441,21 @@ const expiredChargeFight = BackgroundResolver.resolvePartyFight({
 assert.strictEqual(expiredChargeFight.members[0].charges, 0, 'expired persisted charges must not reappear in cold combat');
 
 const deathRecovery = BackgroundResolver.resolveSolo({
-    state: { ...fighter, activity: 'dead', vitals: { ...fighter.vitals, hp: 0 } },
+    state: {
+        ...fighter,
+        activity: 'dead',
+        vitals: { ...fighter.vitals, hp: 0 },
+        stats: {
+            ...fighter.stats,
+            coldCombat: { ...fighter.stats.coldCombat, summon: { active: true, skillId: 1276 } }
+        }
+    },
     spot,
     timestamp
 });
 assert.strictEqual(deathRecovery.patch.stats.coldCombat.charges, 0, 'cold death recovery should clear all charges');
 assert.strictEqual(deathRecovery.patch.stats.coldCombat.chargeExpiresAt, null, 'cold death recovery should clear the charge deadline');
+assert.strictEqual(deathRecovery.patch.stats.coldCombat.summon, null, 'cold death recovery should recall the persisted servitor');
 
 const partyResult = BackgroundPartyResolver.resolve({
     party: { partyId: 'cold_combat_party', cohesion: 1, risk: 0, roleCoverage: { tank: 1, healer: 1 }, stats: {} },
@@ -306,6 +467,33 @@ const partyResult = BackgroundPartyResolver.resolve({
 });
 assert(partyResult.debug.combatActions > 0, 'the party lifecycle must use the cold action simulation');
 assert(partyResult.debug.heals > 0, 'party support casts must be reflected in the persisted combat telemetry');
+const summonerPartyResult = BackgroundPartyResolver.resolve({
+    party: { partyId: 'cold_summon_party', cohesion: 1, risk: 0, roleCoverage: {}, stats: {} },
+    members: [coldSummoner, fighter],
+    spot: { ...spot, npcSelfIds: [], mob: { hp: 100000, damage: 1 } },
+    elapsedMs: 12000,
+    timestamp,
+    rng: () => 0.1
+});
+assert(summonerPartyResult.debug.summonUses > 0, 'the party lifecycle must report cold summoner casts');
+assert(!summonerPartyResult.memberResults[0].result.patch.inventory?.[1459],
+    'the party lifecycle must not create or consume summon crystals');
+
+const partyDeathResult = BackgroundPartyResolver.resolve({
+    party: { partyId: 'cold_summon_death_party', cohesion: 1, risk: 0, roleCoverage: {}, stats: {} },
+    members: [{
+        ...coldSummoner,
+        vitals: { hp: 1, maxHp: 3000, mp: 2500, maxMp: 2500 },
+        stats: { ...coldSummoner.stats, coldCombat: { summon: { active: true, skillId: 1276 } } }
+    }, fighter],
+    spot: { ...spot, npcSelfIds: [], mob: { hp: 100000, damage: 100000 } },
+    elapsedMs: 12000,
+    timestamp,
+    rng: () => 0.1
+});
+assert.strictEqual(partyDeathResult.memberResults[0].result.patch.activity, 'dead', 'a fatal party fight must mark the summoner dead');
+assert.strictEqual(partyDeathResult.memberResults[0].result.patch.stats.coldCombat.summon, null,
+    'a party summoner death must recall the persisted servitor');
 const musicPartyResult = BackgroundPartyResolver.resolve({
     party: { partyId: 'cold_music_party', leaderId: singer.characterId, cohesion: 1, risk: 0, roleCoverage: {}, stats: {} },
     members: [singer, fighter],

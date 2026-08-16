@@ -12,6 +12,14 @@ function npcTalk(session, npc) {
         title
     };
 
+    const CrumaTowerTeleports = invoke('GameServer/World/C4CrumaTowerTeleports');
+    const crumaTowerTeleportHtml = CrumaTowerTeleports.html(npc.fetchSelfId());
+    if (crumaTowerTeleportHtml) {
+        session.dataSendToMe(ServerResponse.npcHtml(npc.fetchId(), crumaTowerTeleportHtml));
+        session.dataSendToMe(ServerResponse.actionFailed());
+        return;
+    }
+
     const SevenSignsDungeonTeleports = invoke('GameServer/World/C4SevenSignsDungeonTeleports');
     const dungeonTeleportHtml = SevenSignsDungeonTeleports.html(npc.fetchSelfId());
     if (dungeonTeleportHtml) {

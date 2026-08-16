@@ -1,11 +1,13 @@
 const DataCache = invoke('GameServer/DataCache');
 const Formulas = invoke('GameServer/Formulas');
+const ClassProgression = invoke('GameServer/ClassProgression');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
-const PROFILE_VERSION = 3;
+const PROFILE_VERSION = 4;
 
 const WEAPON_MASK_BY_KIND = Object.freeze({
     'Weapon.Sword': 4,
@@ -131,6 +133,61 @@ function effectiveBase(profile, stat, timestamp) {
         * multiplier(profile, `${stat}Mul`, timestamp)));
 }
 
+function skillDefinition(selfId, level) {
+    const skill = (DataCache.skills || []).find((candidate) => Number(candidate.selfId) === Number(selfId));
+    if (!skill) return null;
+    return (skill.levels || []).find((row) => number(row.level) === number(level))
+        || (skill.levels || []).filter((row) => number(row.level) <= number(level)).at(-1)
+        || null;
+}
+
+const FIRST_CLASS_TO_BASE = new Map(
+    Object.entries(ClassProgression.firstProfMap)
+        .flatMap(([baseClassId, classIds]) => classIds.map((classId) => [number(classId), number(baseClassId)]))
+);
+const SECOND_CLASS_TO_FIRST = new Map(
+    Object.entries(ClassProgression.secondProfMap)
+        .flatMap(([firstClassId, classIds]) => classIds.map((classId) => [number(classId), number(firstClassId)]))
+);
+
+function parentClassId(classId) {
+    const normalized = number(classId);
+    const thirdParent = number(ClassProgression.getThirdClass(normalized)?.parentClassId, NaN);
+    if (Number.isFinite(thirdParent)) return thirdParent;
+    return SECOND_CLASS_TO_FIRST.get(normalized)
+        ?? FIRST_CLASS_TO_BASE.get(normalized)
+        ?? null;
+}
+
+function classProgressionIds(classId) {
+    const ids = [];
+    const seen = new Set();
+    let current = number(classId);
+    while (Number.isFinite(current) && current >= 0 && !seen.has(current)) {
+        seen.add(current);
+        ids.unshift(current);
+        const parent = parentClassId(current);
+        if (parent === null || parent === current) break;
+        current = parent;
+    }
+    return ids;
+}
+
+function summonFields(definition = {}) {
+    return {
+        itemId: number(definition.itemId),
+        itemCount: number(definition.itemCount),
+        itemIdOT: number(definition.itemIdOT),
+        itemCountOT: number(definition.itemCountOT),
+        itemConsumeSteps: number(definition.itemConsumeSteps),
+        npcId: number(definition.npcId),
+        totalLifeTime: number(definition.totalLifeTime),
+        timeLostIdle: number(definition.timeLostIdle),
+        timeLostActive: number(definition.timeLostActive),
+        isCubic: definition.isCubic === true
+    };
+}
+
 function skillSnapshot(skill) {
     return {
         selfId: number(skill.fetchSelfId?.()),
@@ -142,22 +199,51 @@ function skillSnapshot(skill) {
         hp: number(skill.fetchConsumedHp?.()),
         hitTime: number(skill.fetchHitTime?.()),
         reuse: number(skill.fetchReuseTime?.()),
-        buffTime: number(skill.fetchBuffTime?.())
+        buffTime: number(skill.fetchBuffTime?.()),
+        itemId: number(skill.fetchItemConsumeId?.()),
+        itemCount: number(skill.fetchItemConsumeCount?.()),
+        itemIdOT: number(skill.fetchOngoingItemConsumeId?.()),
+        itemCountOT: number(skill.fetchOngoingItemConsumeCount?.()),
+        itemConsumeSteps: number(skill.fetchOngoingItemConsumeSteps?.()),
+        npcId: number(skill.fetchSummonNpcId?.()),
+        totalLifeTime: number(skill.fetchSummonTotalLifeTime?.()),
+        timeLostIdle: number(skill.fetchSummonTimeLostIdle?.()),
+        timeLostActive: number(skill.fetchSummonTimeLostActive?.()),
+        isCubic: skill.fetchSummonIsCubic?.() === true
     };
 }
 
+function skillTreeEntries(classId) {
+    const entries = new Map();
+    classProgressionIds(classId).forEach((id) => {
+        const tree = (DataCache.skillTree || []).find((entry) => number(entry.classId) === id);
+        (tree?.skills || []).forEach((entry) => {
+            const selfId = number(entry.selfId);
+            const previous = entries.get(selfId);
+            if (!previous) {
+                entries.set(selfId, entry);
+                return;
+            }
+
+            const levels = new Map((previous.levels || []).map((row) => [number(row.level), row]));
+            (entry.levels || []).forEach((row) => levels.set(number(row.level), row));
+            entries.set(selfId, { ...previous, ...entry, levels: [...levels.values()] });
+        });
+    });
+    return [...entries.values()];
+}
+
 function skillsFromTree(classId, level) {
-    const tree = (DataCache.skillTree || []).find((entry) => Number(entry.classId) === Number(classId));
-    return (tree?.skills || []).map((entry) => {
+    return skillTreeEntries(classId).map((entry) => {
         const learned = (entry.levels || []).filter((row) => number(row.pLevel) <= level).at(-1);
         if (!learned) return null;
         const skill = (DataCache.skills || []).find((candidate) => Number(candidate.selfId) === Number(entry.selfId));
-        const definition = (skill?.levels || []).find((row) => number(row.level) === number(learned.level))
-            || (skill?.levels || []).filter((row) => number(row.level) <= number(learned.level)).at(-1) || {};
+        const definition = skillDefinition(entry.selfId, learned.level) || {};
         return {
             selfId: number(entry.selfId), level: number(learned.level, 1), passive: skill?.template?.passive === true,
             spell: definition.spell === true, power: number(definition.power), mp: number(definition.mp), hp: number(definition.hp),
-            hitTime: number(definition.hitTime), reuse: number(definition.reuse), buffTime: number(definition.buff)
+            hitTime: number(definition.hitTime), reuse: number(definition.reuse), buffTime: number(definition.buff),
+            ...summonFields(definition)
         };
     }).filter(Boolean);
 }
@@ -168,8 +254,7 @@ function skillSnapshotsFromRecords(records = []) {
         const requestedLevel = number(record.level, 1);
         const skill = (DataCache.skills || []).find((candidate) => Number(candidate.selfId) === selfId);
         if (!skill) return null;
-        const definition = (skill.levels || []).find((row) => number(row.level) === requestedLevel)
-            || (skill.levels || []).filter((row) => number(row.level) <= requestedLevel).at(-1);
+        const definition = skillDefinition(selfId, requestedLevel);
         if (!definition) return null;
         return {
             selfId,
@@ -181,7 +266,8 @@ function skillSnapshotsFromRecords(records = []) {
             hp: number(definition.hp),
             hitTime: number(definition.hitTime),
             reuse: number(definition.reuse),
-            buffTime: number(definition.buff)
+            buffTime: number(definition.buff),
+            ...summonFields(definition)
         };
     }).filter(Boolean);
 }
@@ -200,8 +286,7 @@ function legacySnapshot(state = {}, records = [], timestamp = Date.now()) {
 }
 
 function skillRecordsFromTree(classId, level) {
-    const tree = (DataCache.skillTree || []).find((entry) => Number(entry.classId) === Number(classId));
-    return (tree?.skills || []).map((entry) => {
+    return skillTreeEntries(classId).map((entry) => {
         const learned = (entry.levels || []).filter((row) => number(row.pLevel) <= level).at(-1);
         if (!learned) return null;
         const skill = (DataCache.skills || []).find((candidate) => Number(candidate.selfId) === Number(entry.selfId));
@@ -278,7 +363,8 @@ function profileFor(state = {}, timestamp = Date.now()) {
     const classId = number(saved?.classId, number(state.stats?.classId, number(state.classId)));
     const template = classTemplate(classId);
     const level = Math.max(1, number(state.level, 1));
-    const spellcaster = [10, 25, 38, 49].includes(Formulas.getParentClassId(classId));
+    const spellcaster = [10, 13, 14, 25, 26, 28, 38, 39, 40, 41, 49].includes(Formulas.getParentClassId(classId))
+        || [10, 13, 14, 25, 26, 28, 38, 39, 40, 41, 49].includes(classId);
     const equipped = equippedTemplates(state);
     const legacyEquipment = equipmentFromTemplates(equipped, spellcaster, template.stats || {});
     const profile = {
@@ -391,6 +477,47 @@ function offensiveSkills(profile) {
     });
 }
 
+function summonDetails(skill = {}) {
+    const definition = skillDefinition(skill.selfId, skill.level) || {};
+    return {
+        skillId: number(skill.selfId),
+        skillLevel: number(skill.level, 1),
+        ...summonFields(definition),
+        ...Object.fromEntries(Object.entries(summonFields(skill)).filter(([, value]) => value > 0 || value === true))
+    };
+}
+
+function summonSkills(profile = {}) {
+    if (!BotRoles.isSummoner(profile.classId)) return [];
+    return (profile.skills || [])
+        .filter((skill) => !skill.passive)
+        .filter((skill) => {
+            const semantic = C4SkillRules.resolve(skill);
+            const details = summonDetails(skill);
+            return semantic.skillType === C4SkillRules.SUMMON
+                && semantic.target === 'self'
+                && details.npcId > 10
+                && details.isCubic !== true;
+        })
+        .sort((a, b) => Number(b.selfId || 0) - Number(a.selfId || 0)
+            || Number(b.level || 0) - Number(a.level || 0));
+}
+
+function corpseSummonSkills(profile = {}) {
+    return (profile.skills || [])
+        .filter((skill) => !skill.passive)
+        .filter((skill) => {
+            const semantic = C4SkillRules.resolve(skill);
+            const details = summonDetails(skill);
+            return semantic.skillType === C4SkillRules.SUMMON
+                && semantic.target === 'corpse_mob'
+                && details.npcId > 10
+                && details.isCubic !== true;
+        })
+        .sort((a, b) => Number(b.selfId || 0) - Number(a.selfId || 0)
+            || Number(b.level || 0) - Number(a.level || 0));
+}
+
 function npcForSpot(spot = {}, rng = Math.random, options = {}) {
     const rawEntries = Array.isArray(spot.npcEntries) && spot.npcEntries.length ? spot.npcEntries : (spot.npcSelfIds || []).map((selfId) => ({ selfId, count: 1 }));
     const entries = rawEntries.filter((entry) => {
@@ -435,6 +562,6 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
 
 module.exports = {
     PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor,
-    offensiveSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect,
+    offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect,
     npcForSpot, skillSnapshotsFromRecords, skillRecordsFromTree
 };

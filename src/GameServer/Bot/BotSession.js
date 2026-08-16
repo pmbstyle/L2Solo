@@ -5,6 +5,7 @@ const NpcVisibility = invoke('GameServer/World/NpcVisibility');
 class BotSession {
     constructor(username) {
         this.accountId = username;
+        this.botSession = true;
         this.socket = {
             write: () => {},
             resetAndDestroy: () => {}

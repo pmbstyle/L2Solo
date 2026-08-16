@@ -181,6 +181,7 @@ const tests = [
     'tests/test_equipment_slots.js',
     'tests/test_fall_damage.js',
     'tests/test_gatekeeper_teleports.js',
+    'tests/test_c4_cruma_tower_teleports.js',
     'tests/test_geodata_bootstrap.js',
     'tests/test_geodata_regions.js',
     'tests/test_day_night_spawns.js',
@@ -229,6 +230,7 @@ const tests = [
     'tests/test_world_wipe.js',
     'tests/test_macros.js',
     'tests/test_npc_combat_range.js',
+    'tests/test_npc_threat.js',
     'tests/test_npc_geodata_visibility.js',
     'tests/test_npc_interaction_completion.js',
     'tests/test_newbie_helper_starting_zones.js',
@@ -293,6 +295,7 @@ const tests = [
     'tests/test_world_observer_leaderboards.js',
     'tests/test_world_observer_raid_bosses.js',
     'tests/test_world_observer_cache.js',
+    'tests/test_world_observer_equipment.js',
     'tests/test_world_npc_grid.js',
     'tests/test_toggle_skills.js',
     'tests/test_ui_test_window.js'

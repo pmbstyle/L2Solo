@@ -4,6 +4,8 @@ require('../src/Global');
 
 const BotAI = invoke('GameServer/Bot/BotAI');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
+const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 
 function skill(selfId, options = {}) {
     return {
@@ -146,6 +148,116 @@ try {
     BotAI.executeCombat(utilitySession, utilityMage, npc(1104), utilityGenerics);
     assert.strictEqual(utilityGenerics.skills[0].selfId, 1234, 'mage should choose the stronger learned offensive spell');
     assert.strictEqual(utilitySession.lastCombatDecision.skillId, 1234, 'combat choice should be observable');
+
+    const summon = skill(1276, {
+        name: 'Summon Kai the Cat',
+        mp: 70,
+        type: C4SkillRules.SUMMON,
+        target: 'self',
+        spell: true
+    });
+    summon.fetchSummonNpcId = () => 12477;
+    summon.fetchSummonIsCubic = () => false;
+    const summoner = bot(14, [summon], 100);
+    summoner.fetchId = () => 11040;
+    const summonerGenerics = generics();
+    const summonerSession = {};
+    BotAI.executeCombat(summonerSession, summoner, npc(11040), summonerGenerics);
+    assert.deepStrictEqual(summonerGenerics.skills[0], { id: 11040, selfId: 1276, ctrl: true },
+        'a hot summoner must cast its learned servitor before falling back to mage damage');
+    assert.strictEqual(summonerSession.lastCombatDecision.action, 'summon_servitor',
+        'the hot summon action must be visible in combat telemetry');
+
+    const necroCorpseSummon = skill(1154, {
+        name: 'Summon Corrupted Man',
+        mp: 70,
+        type: C4SkillRules.SUMMON,
+        target: 'corpse_mob',
+        spell: true
+    });
+    necroCorpseSummon.fetchSummonNpcId = () => 12472;
+    necroCorpseSummon.fetchSummonIsCubic = () => false;
+    necroCorpseSummon.fetchLevel = () => 6;
+    const necromancer = bot(13, [
+        necroCorpseSummon,
+        skill(1234, { name: 'Vampiric Claw', mp: 8, power: 40, spell: true })
+    ], 100);
+    necromancer.fetchId = () => 11045;
+    const corpse = {
+        ...npc(11046),
+        fetchAttackable: () => true,
+        isDead: () => true
+    };
+    const necroGenerics = generics();
+    const necroSession = {};
+    BotAI.executeCombat(necroSession, necromancer, corpse, necroGenerics);
+    assert.deepStrictEqual(necroGenerics.skills[0], { id: 11046, selfId: 1154, ctrl: true },
+        'a hot necromancer must cast its corpse summon on the freshly killed mob');
+    assert.strictEqual(necroSession.lastCombatDecision.action, 'summon_corpse',
+        'the hot necromancer corpse cast must be visible in combat telemetry');
+
+    const necroLivingTargetGenerics = generics();
+    BotAI.executeCombat({}, necromancer, npc(11047), necroLivingTargetGenerics);
+    assert.strictEqual(necroLivingTargetGenerics.skills[0].selfId, 1234,
+        'a necromancer must keep using its own offensive spell while the target is alive');
+
+    assert.doesNotThrow(
+        () => SummonerTactics.combatAction({}, necromancer, null, generics()),
+        'a summon-aware combat tick with no selected target must not dereference a corpse target'
+    );
+
+    const controlledNecromancer = bot(13, [
+        skill(1234, { name: 'Vampiric Claw', mp: 8, power: 40, spell: true })
+    ], 100);
+    controlledNecromancer.fetchId = () => 11048;
+    EffectStore.apply(controlledNecromancer, {
+        key: 'silence',
+        id: 1064,
+        type: 'debuff',
+        category: 'silence',
+        durationMs: 60000
+    });
+    const controlledNecromancerGenerics = generics();
+    BotAI.executeCombat({}, controlledNecromancer, npc(11049), controlledNecromancerGenerics);
+    assert.strictEqual(controlledNecromancerGenerics.skills.length, 0,
+        'a party Necromancer under silence must not cast through the internal combat executor');
+    assert.strictEqual(controlledNecromancerGenerics.attacks.length, 1,
+        'a silenced party Necromancer may fall back to a basic attack');
+    EffectStore.remove(controlledNecromancer, 'silence');
+
+    const activeSummon = {
+        controlMode: 'attack',
+        fetchHp: () => 100,
+        fetchMaxHp: () => 100
+    };
+    const activeSummoner = bot(14, [
+        skill(1177, { name: 'Wind Strike', mp: 8, power: 40, spell: true })
+    ], 100);
+    activeSummoner.fetchId = () => 11041;
+    activeSummoner.fetchDestId = () => 11043;
+    activeSummoner.summon = activeSummon;
+    const activeSummonerGenerics = generics();
+    BotAI.executeCombat({}, activeSummoner, npc(11043), activeSummonerGenerics);
+    assert.strictEqual(activeSummonerGenerics.skills[0].selfId, 1177,
+        'a summoner with an attacking servitor must still cast its own offensive spell');
+    assert.strictEqual(activeSummonerGenerics.attacks.length, 0,
+        'an available summoner spell must win over the owner basic attack');
+
+    const lowMpSummon = skill(1277, {
+        name: 'Summon Mew the Cat',
+        mp: 70,
+        type: C4SkillRules.SUMMON,
+        target: 'self',
+        spell: true
+    });
+    lowMpSummon.fetchSummonNpcId = () => 12478;
+    lowMpSummon.fetchSummonIsCubic = () => false;
+    const lowMpSummonerGenerics = generics();
+    BotAI.executeCombat({}, bot(14, [lowMpSummon], 50), npc(11042), lowMpSummonerGenerics);
+    assert.strictEqual(lowMpSummonerGenerics.skills.length, 0,
+        'a hot summoner without enough MP must not attempt to cast a servitor');
+    assert.strictEqual(lowMpSummonerGenerics.attacks.length, 1,
+        'a hot summoner without enough MP must fall back to a normal attack');
 
     const raidSafeMage = bot(10, [
         skill(1235, { name: 'Area Nuke', mp: 5, power: 200, spell: true, semantic: { sourceTarget: 'area', radius: 200 } }),

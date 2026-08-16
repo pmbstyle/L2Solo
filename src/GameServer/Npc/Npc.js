@@ -57,6 +57,8 @@ class Npc extends NpcModel {
             hitEnd: undefined
         };
         this.skillReuseUntil = new Map();
+        this.aggroList = new Map();
+        this.combatTarget = undefined;
     }
 
     destructor(session) {
@@ -79,12 +81,167 @@ class Npc extends NpcModel {
         }
     }
 
-    enterCombatState(session, actor) {
-        if (this.state.fetchCombats() || actor?.isDead?.() || actor?.state?.fetchDead?.() || actor?.fakeDeath) {
-            return;
+    isValidAggroTarget(actor) {
+        if (!actor || Number(actor.fetchId?.()) <= 0) return false;
+        if (actor.state?.fetchDead?.() === true || actor.fakeDeath === true) return false;
+
+        // A disconnected player can remain strongly referenced by the hate
+        // table after Session.error() clears session.actor. Do not keep
+        // chasing that stale object; test the ownership link before falling
+        // back to the actor's online flag.
+        if (actor.session && actor.session.actor !== actor) return false;
+        if (typeof actor.fetchIsOnline === 'function' && actor.fetchIsOnline() === false) return false;
+
+        // NPCs and lightweight test actors may not expose StateModel. Only
+        // use the generic isDead() fallback when it cannot trigger the player
+        // ActionFailed side effect implemented by Actor.isDead().
+        if (!actor.state && actor.isDead?.() === true) return false;
+        return true;
+    }
+
+    ensureAggroEntry(actor) {
+        if (!this.isValidAggroTarget(actor)) return null;
+
+        const actorId = Number(actor.fetchId());
+        let entry = this.aggroList.get(actorId);
+        if (!entry) {
+            entry = { actor, damage: 0, hate: 0 };
+            this.aggroList.set(actorId, entry);
+        }
+        else {
+            // Keep the live object when a session exposes a refreshed actor
+            // instance with the same object id.
+            entry.actor = actor;
+        }
+        return entry;
+    }
+
+    addDamageHate(session, actor, damage = 0, aggro = 0) {
+        const entry = this.ensureAggroEntry(actor);
+        if (!entry) return false;
+
+        const damageValue = Math.max(0, Number(damage) || 0);
+        const aggroValue = Number.isFinite(Number(aggro)) ? Number(aggro) : 0;
+        entry.damage += damageValue;
+        entry.hate += aggroValue;
+
+        // L2Attackable.addDamageHate gives a newly registered actor one point
+        // of hate when the event itself carries zero aggro.
+        if (aggroValue === 0) entry.hate += 1;
+
+        const target = this.fetchMostHated();
+        if (!target) return false;
+
+        if (!this.state.fetchCombats()) {
+            this.enterCombatState(session, target, { skipAggro: true });
+        }
+        else {
+            this.switchCombatTarget(target);
+        }
+        return true;
+    }
+
+    fetchMostHated() {
+        let mostHated = null;
+        let maxHate = 0;
+
+        for (const [actorId, entry] of this.aggroList.entries()) {
+            if (!this.isValidAggroTarget(entry?.actor)) {
+                this.aggroList.delete(actorId);
+                continue;
+            }
+
+            if (entry.hate > maxHate) {
+                mostHated = entry.actor;
+                maxHate = entry.hate;
+            }
         }
 
+        return mostHated;
+    }
+
+    fetchCombatTarget() {
+        const mostHated = this.fetchMostHated();
+        if (mostHated) {
+            this.switchCombatTarget(mostHated);
+            return mostHated;
+        }
+
+        if (this.isValidAggroTarget(this.combatTarget)) {
+            return this.combatTarget;
+        }
+
+        return null;
+    }
+
+    switchCombatTarget(actor) {
+        if (!this.isValidAggroTarget(actor)) return false;
+        this.combatTarget = actor;
         this.setDestId(actor.fetchId());
+        return true;
+    }
+
+    getHating(actor) {
+        const actorId = Number(actor?.fetchId?.());
+        return this.aggroList.get(actorId)?.hate || 0;
+    }
+
+    reduceAggro(session, actor, amount) {
+        const reduction = Math.max(0, Number(amount) || 0);
+        if (reduction <= 0) return false;
+
+        const entries = actor
+            ? [this.aggroList.get(Number(actor.fetchId?.()))].filter(Boolean)
+            : [...this.aggroList.values()];
+        entries.forEach((entry) => {
+            entry.hate = Math.max(0, entry.hate - reduction);
+        });
+
+        return this.retargetAfterAggroChange(session);
+    }
+
+    removeAggroTarget(session, actor) {
+        const actorId = Number(actor?.fetchId?.());
+        if (!actorId || !this.aggroList.delete(actorId)) return false;
+        return this.retargetAfterAggroChange(session);
+    }
+
+    retargetAfterAggroChange(session) {
+        const target = this.fetchMostHated();
+        if (target) {
+            if (!this.state.fetchCombats()) {
+                this.enterCombatState(session, target, { skipAggro: true });
+            }
+            else {
+                this.switchCombatTarget(target);
+            }
+            return true;
+        }
+
+        if (this.state.fetchCombats()) this.abortCombatState(session);
+        return false;
+    }
+
+    clearAggroList() {
+        this.aggroList.clear();
+        this.combatTarget = undefined;
+    }
+
+    enterCombatState(session, actor, options = {}) {
+        if (!this.isValidAggroTarget(actor)) return false;
+
+        if (!options.skipAggro) {
+            const entry = this.ensureAggroEntry(actor);
+            if (entry && entry.hate <= 0) entry.hate = 1;
+        }
+
+        const target = this.fetchMostHated() || actor;
+        if (this.state.fetchCombats()) {
+            this.switchCombatTarget(target);
+            return true;
+        }
+
+        this.switchCombatTarget(target);
         this.state.setCombats(true);
 
         this.setStateRun(true);
@@ -94,7 +251,8 @@ class Npc extends NpcModel {
 
         this.timer.combatStart = setTimeout(() => {
             this.timer.combatStart = undefined;
-            if (!this.state.fetchCombats() || actor?.isDead?.() || actor?.state?.fetchDead?.() || actor?.fakeDeath) {
+            const initialTarget = this.fetchCombatTarget();
+            if (!this.state.fetchCombats() || !initialTarget) {
                 if (this.state.fetchCombats()) this.abortCombatState(session);
                 return;
             }
@@ -113,8 +271,25 @@ class Npc extends NpcModel {
             let nextPathRetryAt = 0;
             let pendingPath = null;
             let pathGeneration = 0;
+            let activeTarget = initialTarget;
 
             this.timer.combat = setInterval(() => {
+                const actor = this.fetchCombatTarget();
+                if (!actor) {
+                    this.abortCombatState(session);
+                    return;
+                }
+
+                if (actor !== activeTarget) {
+                    activeTarget = actor;
+                    pathGeneration++;
+                    pendingPath = null;
+                    activeMoveCoords = null;
+                    activePathWaypoints = [];
+                    activePathTargetCoords = null;
+                    this.automation.abortAll(this);
+                }
+
                 // A dead target cannot be chased or hit.  Leaving the NPC in
                 // combat here pins its target to the corpse indefinitely and
                 // makes party resurrection believe the fight never ended.
@@ -124,7 +299,7 @@ class Npc extends NpcModel {
                 }
 
                 if (new SpeckMath.Point(this.fetchLocX(), this.fetchLocY()).distance(new SpeckMath.Point(actor.fetchLocX(), actor.fetchLocY())) >= 1500) {
-                    this.abortCombatState(session); // Actor is out of reach
+                    this.abortCombatState(session, { preserveAggro: true }); // Actor is out of reach
                     return;
                 }
 
@@ -223,7 +398,7 @@ class Npc extends NpcModel {
                                         );
                                         nextPathRetryAt = Date.now() + retryDelay;
                                         if (Date.now() - pathFailureStartedAt >= NPC_PATH_FAILURE_TIMEOUT_MS) {
-                                            this.abortCombatState(session);
+                                            this.abortCombatState(session, { preserveAggro: true });
                                         }
                                         return;
                                     }
@@ -262,6 +437,9 @@ class Npc extends NpcModel {
 
                 this.automation.scheduleAction(session, this, actor, actionRange, () => {
                     activeMoveCoords = null;
+                    if (this.fetchCombatTarget() !== actor) {
+                        return;
+                    }
                     if (!EffectRestrictions.canAttack(this)) {
                         return;
                     }
@@ -472,7 +650,7 @@ class Npc extends NpcModel {
         }, actor, skill);
     }
 
-    abortCombatState(session) {
+    abortCombatState(session, { preserveAggro = false } = {}) {
         const wasMoving = this.state.inMotion();
         clearTimeout(this.timer.combatStart);
         this.timer.combatStart = undefined;
@@ -485,6 +663,7 @@ class Npc extends NpcModel {
         PathfindingWorkerPool.cancel(`npc:${this.fetchId()}`);
 
         this.clearDestId();
+        if (!preserveAggro) this.clearAggroList();
         this.state.setCombatEnded();
         this.automation.abortAll(this);
 
@@ -540,6 +719,11 @@ class Npc extends NpcModel {
 
     checkParticipants(session, src, dst) {
         if (src.state.fetchDead() || dst.state.fetchDead()) {
+            const replacement = this.fetchMostHated();
+            if (replacement && replacement !== dst) {
+                this.switchCombatTarget(replacement);
+                return true;
+            }
             this.abortCombatState(session);
             return true;
         }

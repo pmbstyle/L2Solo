@@ -197,6 +197,33 @@ async function withFastTimers(callback) {
     assert(session.packets.some((packet) => packet[0] === 0x16), 'Summon Kat should broadcast NpcInfo for the servitor');
     World.npc.spawns[0].destructor(session);
 
+    const botBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    const botSummonSession = sessionFor(botBackpack, summonKat);
+    botSummonSession.accountId = 'bot_summoner_test';
+    botSummonSession.botSession = true;
+    World.npc = { spawns: [], grid: {}, nextId: 9000001 };
+    await withFastTimers((realSetTimeout) => new Promise((resolve) => {
+        attack.remoteHit(botSummonSession, botSummonSession.actor, summonKat);
+        realSetTimeout(resolve, 20);
+    }));
+    assert.strictEqual(World.npc.spawns.length, 1, 'a bot should summon without carrying crystals');
+    assert.strictEqual(botBackpack.fetchItemFromSelfId(1458), undefined, 'a bot summon should not consume crystals');
+    assert.strictEqual(botSummonSession.actor.fetchMp(), 61, 'a bot summon should still consume MP');
+    World.npc.spawns[0].destructor(botSummonSession);
+
+    const spoofedBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    const spoofedBotNameSession = sessionFor(spoofedBackpack, summonKat);
+    spoofedBotNameSession.accountId = 'bot_spoofed_player';
+    World.npc = { spawns: [], grid: {}, nextId: 9000002 };
+    await withFastTimers((realSetTimeout) => new Promise((resolve) => {
+        attack.remoteHit(spoofedBotNameSession, spoofedBotNameSession.actor, summonKat);
+        realSetTimeout(resolve, 20);
+    }));
+    assert.strictEqual(World.npc.spawns.length, 0,
+        'a real session whose username starts with bot_ must not bypass summon crystal validation');
+    assert.strictEqual(spoofedBotNameSession.actor.fetchMp(), 100,
+        'a rejected spoofed bot summon must not consume MP');
+
     const actionPet = npc(12077, 9000007);
     actionPet.model.isPet = true;
     actionPet.model.isSummon = true;
@@ -461,6 +488,11 @@ async function withFastTimers(callback) {
     target.setCollectivePDef(1);
     World.npc.spawns.push(target);
     World.indexSpawnsInGrid?.();
+    summon.controlMode = 'attack';
+    summon.followOwner = false;
+    assert.doesNotThrow(() => SummonControl.attackTick(controlSession, summon, null),
+        'a queued summon attack with a missing target must stop safely');
+    assert.strictEqual(summon.controlMode, 'idle', 'a missing summon target must stop the attack mode');
     controlSession.actor.setDestId(target.fetchId());
     const targetHp = target.fetchHp();
     const savedRandom = Math.random;
@@ -474,6 +506,11 @@ async function withFastTimers(callback) {
 
     assert(target.fetchHp() < targetHp, 'servitor attack action should damage selected attackable NPC');
     assert(controlSession.packets.some((packet) => packet[0] === 0x05), 'servitor attack should broadcast an Attack packet');
+
+    target.state.setDead(true);
+    SummonControl.attackTick(controlSession, summon, target);
+    assert.strictEqual(summon.controlMode, 'follow', 'servitor should return to follow mode when its target dies');
+    assert.strictEqual(summon.followOwner, true, 'servitor should resume following its owner after target death');
 
     BasicAction(controlSession, controlSession.actor, { actionId: 0x17 });
     assert.strictEqual(summon.controlMode, 'idle', 'servitor cancel action should stop attack mode');

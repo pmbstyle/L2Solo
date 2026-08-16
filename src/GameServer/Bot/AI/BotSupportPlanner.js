@@ -5,6 +5,7 @@ const World = invoke('GameServer/World/World');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 
 const REFRESH_THRESHOLD_MS = 2 * 60 * 1000;
+const REFRESH_FRACTION = 0.25;
 const CAST_RESERVATION_MS = 5000;
 const PENDING_SUPPORT_CAST_TIMEOUT_MS = 30000;
 const MIN_SUPPORT_MP_RATIO = 0.35;
@@ -221,23 +222,53 @@ function overlaps(effect, keys) {
     return keys.includes(effect?.key) || keys.includes(effect?.category);
 }
 
+function isPartyMusic(skill) {
+    const semantic = skill?.fetchSemantic?.() || {};
+    const effect = normalizedEffect(semantic.effect);
+    return semantic.isDance === true || effect.startsWith('song_') || effect.startsWith('dance_');
+}
+
+function matchesSkillEffect(effect, skill, keys) {
+    const skillId = Number(skill?.fetchSelfId?.() || 0);
+    const semantic = skill?.fetchSemantic?.() || {};
+    const effectKey = normalizedEffect(semantic.effect);
+    const exactIdentity = Number(effect?.id || 0) === skillId ||
+        normalizedEffect(effect?.key) === effectKey ||
+        normalizedEffect(effect?.category) === effectKey;
+
+    // Songs and dances are separate party effects even when another buff
+    // happens to expose the same stat (for example Chant of Rage and Dance
+    // of Fire both use pCritDamageMul). Stat overlap remains a compatibility
+    // fallback for ordinary legacy buffs, but must not suppress party music.
+    return exactIdentity || (!isPartyMusic(skill) && overlaps(effect, keys));
+}
+
+function refreshThresholdMs(skill) {
+    const durationMs = Number(skill?.fetchBuffTime?.() ?? skill?.fetchSemantic?.().durationMs ?? 0);
+    if (!Number.isFinite(durationMs) || durationMs <= 0) return REFRESH_THRESHOLD_MS;
+    // A two-minute song/dance used to have the same refresh threshold as its
+    // complete lifetime, so it was considered stale immediately after landing.
+    // Refresh the last quarter of a known-duration effect while retaining the
+    // existing two-minute window for long buffs and legacy skill objects.
+    return Math.min(REFRESH_THRESHOLD_MS, Math.floor(durationMs * REFRESH_FRACTION));
+}
+
 function needsSkill(target, skill) {
     const keys = statKeys(skill);
     const level = Number(skill.fetchLevel?.() || 1);
-    const skillId = Number(skill.fetchSelfId?.() || 0);
-    const semantic = skill.fetchSemantic?.() || {};
     const current = EffectStore.list(target, { includeDebuffs: false })
         // The effect id is the authoritative identity for a completed cast.
         // Keep the stat/effect-key fallback for old saved effects, but do not
         // re-request a buff merely because an older payload lacked its modern
         // semantic stat keys.
-        .filter((effect) => Number(effect.id || 0) === skillId || overlaps(effect, keys));
+        .filter((effect) => matchesSkillEffect(effect, skill, keys));
 
     // `activeBuffs` is retained for packet/UI compatibility only. It can outlive
     // an effect after death, dispel, or an interrupted cast, so support decisions
     // must be based exclusively on the target's structured effect state.
     if (current.some((effect) => Number(effect.level || 0) > level)) return false;
-    if (current.some((effect) => Number(effect.level || 0) === level && EffectStore.remainingMs(target, effect.key) > REFRESH_THRESHOLD_MS)) {
+    const thresholdMs = refreshThresholdMs(skill);
+    if (current.some((effect) => Number(effect.level || 0) === level && EffectStore.remainingMs(target, effect.key) > thresholdMs)) {
         return false;
     }
     return true;
@@ -338,6 +369,15 @@ function queueSupportCast(session, action) {
         expiresAt: Date.now() + PENDING_SUPPORT_CAST_TIMEOUT_MS
     };
     return true;
+}
+
+function isUrgentPartyMusicRefresh(action) {
+    const skill = action?.skill;
+    const semantic = skill?.fetchSemantic?.() || {};
+    const effect = normalizedEffect(semantic.effect);
+    const partyAura = semantic.target === 'party' || skill?.fetchTargetKind?.() === 'party';
+    const partyMusic = semantic.isDance === true || effect.startsWith('song_') || effect.startsWith('dance_');
+    return !!action?.target && partyAura && partyMusic && needsSkill(action.target, skill);
 }
 
 function beginSupportCast(session, provider, target, skill) {
@@ -504,6 +544,7 @@ module.exports = {
     situationalBuffUseful,
     partyAuraCanReach,
     needsSkill,
+    isUrgentPartyMusicRefresh,
     actionCompare,
     hasPendingAction,
     reserve,
