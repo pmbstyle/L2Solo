@@ -11,6 +11,13 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const COND_BEHIND = 0x0008;
 const COND_CRIT = 0x0010;
 
+function isBotSummonActor(session, actor) {
+    const candidate = session || actor?.session;
+    return candidate?.constructor?.name === 'BotSession'
+        || String(candidate?.accountId || '').startsWith('bot_')
+        || actor?.isBot === true;
+}
+
 function execute(session, actor, target, skill, context = {}) {
     const semantic = skill.fetchSemantic();
     const magicSkill = context.magicSkill ?? skill.fetchSpell();
@@ -525,7 +532,7 @@ function applyDrainSoul(actor, target) {
 }
 
 function applySummon(session, actor, target, skill, semantic, magicSkill, attack) {
-    const failure = validateSummonUse(actor, target, skill);
+    const failure = validateSummonUse(actor, target, skill, session);
     if (failure) {
         clearLoadedShot(attack || actor.attack, actor, magicSkill);
         return null;
@@ -590,7 +597,7 @@ function cubicRecipients(session, actor, target, skill) {
     return recipients.length > 0 ? recipients : [actor];
 }
 
-function validateSummonUse(actor, target, skill) {
+function validateSummonUse(actor, target, skill, session) {
     if (skill.fetchSkillType?.() !== C4SkillRules.SUMMON) {
         return null;
     }
@@ -607,7 +614,7 @@ function validateSummonUse(actor, target, skill) {
         return 'You already have a servitor.';
     }
 
-    if (!hasRequiredSkillItems(actor, skill)) {
+    if (!isBotSummonActor(session, actor) && !hasRequiredSkillItems(actor, skill)) {
         return 'Not enough required items.';
     }
 
@@ -673,6 +680,8 @@ function summonDisplayName(skill, fallbackName) {
 }
 
 function hasRequiredSkillItems(actor, skill) {
+    if (isBotSummonActor(actor?.session, actor)) return true;
+
     const itemId = Number(skill.fetchItemConsumeId?.()) || 0;
     const count = Number(skill.fetchItemConsumeCount?.()) || 0;
     if (!itemId || count <= 0) return true;
@@ -682,6 +691,8 @@ function hasRequiredSkillItems(actor, skill) {
 }
 
 function consumeSkillItems(session, actor, skill, callback) {
+    if (isBotSummonActor(session, actor)) return callback();
+
     const itemId = Number(skill.fetchItemConsumeId?.()) || 0;
     const count = Number(skill.fetchItemConsumeCount?.()) || 0;
     if (!itemId || count <= 0) {

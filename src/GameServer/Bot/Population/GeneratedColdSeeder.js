@@ -253,11 +253,15 @@ function ensureBaseLoadout(characterId, classId, adena, level = 1) {
     return awardBaseGear(characterId, classId)
         .then(() => awardBaseSkills(characterId, classId))
         .then(() => awardProfileSkills(characterId, classId, level))
-        .then(() => ensureAdena(characterId, adena))
-        .then(() => ShotStock.ensureCharacterStock(characterId, {
-            classId,
-            targetAmount: ShotStock.DEFAULT_TARGET_AMOUNT
-        }));
+        .then((progression) => {
+            const resolvedClassId = Number(progression?.classId || classId);
+            return ensureAdena(characterId, adena)
+                .then(() => ShotStock.ensureCharacterStock(characterId, {
+                    classId: resolvedClassId,
+                    targetAmount: ShotStock.DEFAULT_TARGET_AMOUNT
+                }))
+                .then(() => ({ classId: resolvedClassId }));
+        });
 }
 
 function ensureAccount(username) {
@@ -284,13 +288,17 @@ function ensureCharacter(username, index, base = baseForIndex(index), seedProfil
                 : classReady;
             return levelReady
                 .then(() => ensureBaseLoadout(character.id, classId, adena, level))
-                .then(() => ({
-                    character: base.serviceCrafter
-                        ? { ...character, classId, level, adena, exp: expForLevel(level), sp: Math.round(level * level * 3) }
-                        : { ...character, adena },
-                    created: false,
-                    base
-                }));
+                .then(() => Database.fetchCharacters(username))
+                .then((reconciledCharacters) => {
+                    const reconciled = reconciledCharacters[0] || character;
+                    return {
+                        character: base.serviceCrafter
+                            ? { ...reconciled, classId, level, adena, exp: expForLevel(level), sp: Math.round(level * level * 3) }
+                            : { ...reconciled, adena },
+                        created: false,
+                        base
+                    };
+                });
         }
 
         const template = classInfo(base.classId);
@@ -321,7 +329,16 @@ function ensureCharacter(username, index, base = baseForIndex(index), seedProfil
                 };
                 return Database.updateCharacterExperience(character.id, level, character.exp, character.sp)
                     .then(() => ensureBaseLoadout(character.id, base.classId, character.adena, level))
-                    .then(() => ({ character, created: true, base, spot, levelProfile, vitals, loc }));
+                    .then(() => Database.fetchCharacters(username))
+                    .then((reconciledCharacters) => ({
+                        character: reconciledCharacters[0] || character,
+                        created: true,
+                        base,
+                        spot,
+                        levelProfile,
+                        vitals,
+                        loc
+                    }));
             });
         });
     });

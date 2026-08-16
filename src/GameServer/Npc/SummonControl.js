@@ -37,6 +37,11 @@ const FollowDistance = 80;
 const FollowTickMs = 500;
 const InteractionDistance = 150;
 
+function isBotSummonSession(session) {
+    return session?.constructor?.name === 'BotSession'
+        || String(session?.accountId || '').startsWith('bot_');
+}
+
 function activeSummon(actor) {
     if (actor.fetchMounted?.() === true || actor.mounted === true) return null;
     return [actor.summon, actor.pet].find((summon) => (
@@ -138,9 +143,10 @@ function startLifetime(session, actor, summon, skill) {
     summon.summonTotalLifeTime = total;
     summon.summonTimeLostIdle = Number(skill.fetchSummonTimeLostIdle?.()) || 1000;
     summon.summonTimeLostActive = Number(skill.fetchSummonTimeLostActive?.()) || summon.summonTimeLostIdle;
-    summon.summonItemConsumeId = Number(skill.fetchOngoingItemConsumeId?.()) || 0;
-    summon.summonItemConsumeCount = Number(skill.fetchOngoingItemConsumeCount?.()) || 0;
-    summon.summonItemConsumeSteps = Number(skill.fetchOngoingItemConsumeSteps?.()) || 0;
+    const botOwned = isBotSummonSession(session);
+    summon.summonItemConsumeId = botOwned ? 0 : Number(skill.fetchOngoingItemConsumeId?.()) || 0;
+    summon.summonItemConsumeCount = botOwned ? 0 : Number(skill.fetchOngoingItemConsumeCount?.()) || 0;
+    summon.summonItemConsumeSteps = botOwned ? 0 : Number(skill.fetchOngoingItemConsumeSteps?.()) || 0;
     summon.summonNextItemConsumeTime = summon.summonItemConsumeId && summon.summonItemConsumeSteps > 0
         ? total - total / (summon.summonItemConsumeSteps + 1)
         : -1;
@@ -288,8 +294,18 @@ function attack(session, actor, summon) {
 }
 
 function attackTick(session, summon, target) {
-    if (summon.controlMode !== 'attack' || summon.isDead?.() || target.isDead?.()) {
+    if (summon.controlMode !== 'attack' || summon.isDead?.()) {
         stop(session, summon);
+        return;
+    }
+
+    if (target.isDead?.() || target.state?.fetchDead?.() === true) {
+        const owner = session?.actor;
+        if (owner && (owner.summon === summon || owner.pet === summon)) {
+            startFollowOwner(session, owner, summon);
+        } else {
+            stop(session, summon);
+        }
         return;
     }
 
@@ -303,7 +319,8 @@ function attackTick(session, summon, target) {
     summon.state.setHits(true);
 
     summon.attack.queueTimer(() => {
-        if (summon.controlMode !== 'attack' || summon.isDead?.() || target.isDead?.()) return;
+        if (summon.controlMode !== 'attack' || summon.isDead?.()
+            || target.isDead?.() || target.state?.fetchDead?.() === true) return;
         if (hitLanded) {
             invoke(path.npc).receivedHit(session, summon, target, hit.damage);
         }
@@ -311,7 +328,7 @@ function attackTick(session, summon, target) {
 
     summon.attack.queueTimer(() => {
         summon.state.setHits(false);
-        if (summon.controlMode !== 'attack' || summon.isDead?.() || target.isDead?.()) return;
+        if (summon.controlMode !== 'attack' || summon.isDead?.()) return;
         attackTick(session, summon, target);
     }, speed);
 }
@@ -456,6 +473,7 @@ module.exports = {
     showStatusWindow,
     startFollowOwner,
     startLifetime,
+    attackTick,
     startPetFeed,
     stop,
     tickLifetime,

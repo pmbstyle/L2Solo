@@ -153,6 +153,34 @@ const mixedSpot = {
     npcEntries: [{ selfId: 1, count: 1 }, { selfId: 12, count: 1 }],
     npcSelfIds: [1, 12]
 };
+
+assert(ColdCombatProfile.summonSkills(ColdCombatProfile.profileFor({
+    ...fighter,
+    level: 40,
+    stats: { classId: 14 },
+    inventory: { 1459: { selfId: 1459, amount: 100 } }
+}, timestamp)).some((skill) => skill.selfId === 1276), 'cold profiles must retain a learned servitor summon');
+
+const coldSummoner = {
+    ...fighter,
+    characterId: 905,
+    name: 'ColdSummoner',
+    level: 40,
+    vitals: { hp: 3000, maxHp: 3000, mp: 2500, maxMp: 2500 },
+    inventory: {},
+    stats: { ...fighter.stats, classId: 14, role: 'mage', coldCombat: undefined },
+    party: { role: 'mage' }
+};
+const coldSummonerResult = BackgroundResolver.resolveSolo({
+    state: coldSummoner,
+    spot: { ...spot, npcSelfIds: [], mob: { hp: 100000, damage: 1 } },
+    elapsedMs: 12000,
+    timestamp,
+    rng: () => 0.1
+});
+assert(coldSummonerResult.debug.summonUses > 0, 'cold summoner combat must cast its servitor before attacking');
+assert(!coldSummonerResult.patch.inventory?.[1459], 'cold bot summoning must not require or consume crystals');
+assert(coldSummonerResult.patch.stats.coldCombat.summon?.active, 'the cold summon must survive in the persisted combat state');
 const raidMixedSpot = {
     ...spot,
     npcEntries: [
@@ -252,6 +280,14 @@ const partyFight = BackgroundResolver.resolvePartyFight({
 });
 assert(partyFight.debug.actions > 0, 'party cold combat must execute one shared NPC encounter');
 assert(partyFight.members[1].heals > 0, 'a learned friendly heal must be applied to an injured party member');
+const summonerPartyFight = BackgroundResolver.resolvePartyFight({
+    members: [coldSummoner, fighter],
+    spot: { ...spot, npcSelfIds: [], mob: { hp: 100000, damage: 1 } },
+    timestamp,
+    rng: () => 0.1
+});
+assert(summonerPartyFight.members[0].summonUses > 0, 'a summoner in a cold party must cast its servitor');
+assert(summonerPartyFight.members[0].state.stats.coldCombat.summon?.active, 'party combat must persist the summoner servitor');
 const focusedPartyFight = BackgroundResolver.resolvePartyFight({
     members: [injuredTank, healer],
     spot: mixedSpot,
@@ -289,12 +325,21 @@ const expiredChargeFight = BackgroundResolver.resolvePartyFight({
 assert.strictEqual(expiredChargeFight.members[0].charges, 0, 'expired persisted charges must not reappear in cold combat');
 
 const deathRecovery = BackgroundResolver.resolveSolo({
-    state: { ...fighter, activity: 'dead', vitals: { ...fighter.vitals, hp: 0 } },
+    state: {
+        ...fighter,
+        activity: 'dead',
+        vitals: { ...fighter.vitals, hp: 0 },
+        stats: {
+            ...fighter.stats,
+            coldCombat: { ...fighter.stats.coldCombat, summon: { active: true, skillId: 1276 } }
+        }
+    },
     spot,
     timestamp
 });
 assert.strictEqual(deathRecovery.patch.stats.coldCombat.charges, 0, 'cold death recovery should clear all charges');
 assert.strictEqual(deathRecovery.patch.stats.coldCombat.chargeExpiresAt, null, 'cold death recovery should clear the charge deadline');
+assert.strictEqual(deathRecovery.patch.stats.coldCombat.summon, null, 'cold death recovery should recall the persisted servitor');
 
 const partyResult = BackgroundPartyResolver.resolve({
     party: { partyId: 'cold_combat_party', cohesion: 1, risk: 0, roleCoverage: { tank: 1, healer: 1 }, stats: {} },
@@ -306,6 +351,33 @@ const partyResult = BackgroundPartyResolver.resolve({
 });
 assert(partyResult.debug.combatActions > 0, 'the party lifecycle must use the cold action simulation');
 assert(partyResult.debug.heals > 0, 'party support casts must be reflected in the persisted combat telemetry');
+const summonerPartyResult = BackgroundPartyResolver.resolve({
+    party: { partyId: 'cold_summon_party', cohesion: 1, risk: 0, roleCoverage: {}, stats: {} },
+    members: [coldSummoner, fighter],
+    spot: { ...spot, npcSelfIds: [], mob: { hp: 100000, damage: 1 } },
+    elapsedMs: 12000,
+    timestamp,
+    rng: () => 0.1
+});
+assert(summonerPartyResult.debug.summonUses > 0, 'the party lifecycle must report cold summoner casts');
+assert(!summonerPartyResult.memberResults[0].result.patch.inventory?.[1459],
+    'the party lifecycle must not create or consume summon crystals');
+
+const partyDeathResult = BackgroundPartyResolver.resolve({
+    party: { partyId: 'cold_summon_death_party', cohesion: 1, risk: 0, roleCoverage: {}, stats: {} },
+    members: [{
+        ...coldSummoner,
+        vitals: { hp: 1, maxHp: 3000, mp: 2500, maxMp: 2500 },
+        stats: { ...coldSummoner.stats, coldCombat: { summon: { active: true, skillId: 1276 } } }
+    }, fighter],
+    spot: { ...spot, npcSelfIds: [], mob: { hp: 100000, damage: 100000 } },
+    elapsedMs: 12000,
+    timestamp,
+    rng: () => 0.1
+});
+assert.strictEqual(partyDeathResult.memberResults[0].result.patch.activity, 'dead', 'a fatal party fight must mark the summoner dead');
+assert.strictEqual(partyDeathResult.memberResults[0].result.patch.stats.coldCombat.summon, null,
+    'a party summoner death must recall the persisted servitor');
 const musicPartyResult = BackgroundPartyResolver.resolve({
     party: { partyId: 'cold_music_party', leaderId: singer.characterId, cohesion: 1, risk: 0, roleCoverage: {}, stats: {} },
     members: [singer, fighter],

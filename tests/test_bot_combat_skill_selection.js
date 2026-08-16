@@ -147,6 +147,41 @@ try {
     assert.strictEqual(utilityGenerics.skills[0].selfId, 1234, 'mage should choose the stronger learned offensive spell');
     assert.strictEqual(utilitySession.lastCombatDecision.skillId, 1234, 'combat choice should be observable');
 
+    const summon = skill(1276, {
+        name: 'Summon Kai the Cat',
+        mp: 70,
+        type: C4SkillRules.SUMMON,
+        target: 'self',
+        spell: true
+    });
+    summon.fetchSummonNpcId = () => 12477;
+    summon.fetchSummonIsCubic = () => false;
+    const summoner = bot(14, [summon], 100);
+    summoner.fetchId = () => 11040;
+    const summonerGenerics = generics();
+    const summonerSession = {};
+    BotAI.executeCombat(summonerSession, summoner, npc(11040), summonerGenerics);
+    assert.deepStrictEqual(summonerGenerics.skills[0], { id: 11040, selfId: 1276, ctrl: true },
+        'a hot summoner must cast its learned servitor before falling back to mage damage');
+    assert.strictEqual(summonerSession.lastCombatDecision.action, 'summon_servitor',
+        'the hot summon action must be visible in combat telemetry');
+
+    const lowMpSummon = skill(1277, {
+        name: 'Summon Mew the Cat',
+        mp: 70,
+        type: C4SkillRules.SUMMON,
+        target: 'self',
+        spell: true
+    });
+    lowMpSummon.fetchSummonNpcId = () => 12478;
+    lowMpSummon.fetchSummonIsCubic = () => false;
+    const lowMpSummonerGenerics = generics();
+    BotAI.executeCombat({}, bot(14, [lowMpSummon], 50), npc(11042), lowMpSummonerGenerics);
+    assert.strictEqual(lowMpSummonerGenerics.skills.length, 0,
+        'a hot summoner without enough MP must not attempt to cast a servitor');
+    assert.strictEqual(lowMpSummonerGenerics.attacks.length, 1,
+        'a hot summoner without enough MP must fall back to a normal attack');
+
     const raidSafeMage = bot(10, [
         skill(1235, { name: 'Area Nuke', mp: 5, power: 200, spell: true, semantic: { sourceTarget: 'area', radius: 200 } }),
         skill(1236, { name: 'Single Nuke', mp: 5, power: 20, spell: true })

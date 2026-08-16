@@ -13,6 +13,7 @@ const BotTradeService = invoke('GameServer/Bot/BotTradeService');
 const ChatArrivalState = invoke('GameServer/Bot/AI/ChatArrivalState');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
+const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 
 const CHAT_PHRASES = {
     foundTarget: [
@@ -586,6 +587,19 @@ const BotAI = {
                 allowedPlayerPartyRaid && BotRaidSafety.hasControlledRaidMinion(npc)
             )
         };
+        const summonAction = options.basicAttackOnly
+            ? null
+            : SummonerTactics.combatAction(session, bot, npc, Generics);
+        if (summonAction?.handled) {
+            session.lastCombatDecision = {
+                action: summonAction.reason,
+                role,
+                skillId: summonAction.skill?.fetchSelfId?.() || null,
+                targetId: summonAction.target?.fetchId?.() || npc?.fetchId?.() || null,
+                at: Date.now()
+            };
+            return true;
+        }
         const chargeSkill = options.basicAttackOnly ? null : BotCombatUtility.selectChargeSkill(bot, role);
         if (chargeSkill) {
             session.lastCombatDecision = {

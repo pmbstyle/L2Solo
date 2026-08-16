@@ -16,6 +16,7 @@ const MANA_REST_ROLES = new Set(['mage', 'archer', 'healer']);
 // Singer and Bladedancer share the buffer role, but they are melee fighters
 // whose combat loop must not stop merely because their MP is low.
 const CASTER_BUFFER_CLASSES = new Set([17, 49, 50, 51, 52]);
+const SUMMONER_CLASSES = new Set([14, 28, 41]);
 
 function classIdOf(value) {
     if (typeof value === 'number' || typeof value === 'string') return value;
@@ -86,6 +87,10 @@ function isTank(value) {
     return isRole(value, 'tank');
 }
 
+function isSummoner(value) {
+    return SUMMONER_CLASSES.has(roleClassId(value));
+}
+
 function canBuff(value) {
     return isRole(value, 'buffer');
 }
@@ -135,12 +140,15 @@ function partyRoleStance(role) {
 
 module.exports = {
     ROLE_CLASSES,
+    SUMMONER_CLASSES,
     className,
+    roleClassId,
     presentation,
     inferRole,
     isRole,
     isHealer,
     isTank,
+    isSummoner,
     canBuff,
     shouldRestForMana,
     needsPartyManaRecovery,
