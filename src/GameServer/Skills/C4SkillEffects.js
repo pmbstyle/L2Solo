@@ -38,6 +38,7 @@ function execute(session, actor, target, skill, context = {}) {
         spReward: 0,
         charges: null,
         aggroDamage: 0,
+        aggroPointsApplied: 0,
         aggroReduced: false,
         aggroReduction: 0,
         aggroRemoved: false,
@@ -48,40 +49,42 @@ function execute(session, actor, target, skill, context = {}) {
         spoilOnHit: false
     };
 
+    const finish = () => finalizeSkillResult(result, session, actor, target, skill, semantic);
+
     if (context.selfEffectOnly === true && semantic.selfEffect) {
         result.selfEffect = applyEffect(session, actor, skill, {
             ...semantic,
             ...semantic.selfEffect,
             stats: semantic.selfEffect.stats || {}
         }, actor);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.SUMMON) {
         result.summon = applySummon(session, actor, target, skill, semantic, magicSkill, context.attack);
         result.rejected = !result.summon;
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.SOULSHOT || semantic.skillType === C4SkillRules.SPIRITSHOT) {
         result.shotLoaded = applyShot(actor, semantic);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.RESURRECT) {
         result.resurrected = applyResurrection(session, target);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.RECALL) {
         result.recalled = applyRecall(session, target, semantic);
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.HEAL) {
         result.heal = applyHeal(session, actor, target, skill, semantic, magicSkill, context.attack);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.HEAL_PERCENT) {
@@ -92,94 +95,94 @@ function execute(session, actor, target, skill, context = {}) {
         if (semantic.effect) {
             result.effect = applyEffect(session, target, skill, semantic, actor);
         }
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.HEAL_STATIC) {
         result.heal = applyHeal(session, actor, target, skill, semantic, magicSkill, context.attack);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.HEAL_HOT) {
         result.heal = applyHeal(session, actor, target, skill, semantic, magicSkill, context.attack);
         result.effect = applyEffect(session, target, skill, semantic, actor);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.HOT) {
         result.effect = applyEffect(session, target, skill, semantic, actor);
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.MANA_HOT) {
         result.effect = applyEffect(session, target, skill, semantic, actor);
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.CLEANSE) {
         result.cleansed = applyCleanse(session, target, semantic);
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.HEAL_CLEANSE) {
         result.heal = applyHeal(session, actor, target, skill, semantic, magicSkill, context.attack);
         result.cleansed = applyCleanse(session, target, semantic);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.MANA_RECHARGE) {
         result.mpRestore = applyManaRecharge(session, actor, target, skill, semantic, magicSkill, context.attack);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.MANA_HEAL) {
         result.mpRestore = applyManaHeal(session, actor, target, skill, semantic, magicSkill, context.attack);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.COMBAT_POINT_HEAL) {
         result.cpRestore = applyCombatPointHeal(session, actor, target, skill, semantic, magicSkill, context.attack);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.BALANCE_LIFE) {
         result.heal = applyBalanceLife(session, actor);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.COMBAT_POINT_DAMAGE) {
         result.cpDamage = applyCombatPointDamage(session, actor, target, skill, semantic, magicSkill, context.attack);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.CREATE_ITEM) {
         result.createdItems = applyCreateItem(session, actor, semantic);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.GIVE_SP) {
         result.spReward = applyGiveSp(session, actor, target, skill, semantic, magicSkill, context.attack);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.CHARGE) {
         result.charges = applyCharge(session, actor, skill, semantic, magicSkill, context.attack);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.DRAIN_SOUL) {
         result.absorbedSoul = applyDrainSoul(actor, target);
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.SEED) {
         result.effect = applySeed(session, actor, target, skill, semantic);
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.BLOW) {
@@ -193,30 +196,30 @@ function execute(session, actor, target, skill, context = {}) {
         if (!rollBlow(actor, target, semantic, context.attack, rng)) {
             clearLoadedShot(context.attack, actor, magicSkill);
             result.missed = true;
-            return result;
+            return finish();
         }
 
         result.damage = context.attack.prepareSkillDamage(actor, target, skill, magicSkill, rng);
         result.lethal = applyLethal(actor, target, skill, semantic, rng, result);
-        return result;
+        return finish();
     }
 
     if (magicSkill && isOffensive(semantic) && !usesEffectSuccessFormula(semantic) && !rollMagicSuccess(actor, target, skill, semantic, rng)) {
         clearLoadedShot(context.attack, actor, magicSkill);
         result.resisted = true;
-        return result;
+        return finish();
     }
 
     if (semantic.mobOnly && !isAttackableNpc(target)) {
         clearLoadedShot(context.attack, actor, magicSkill);
         result.effectResisted = true;
-        return result;
+        return finish();
     }
 
     if (semantic.undeadOnly && !isUndead(target)) {
         clearLoadedShot(context.attack, actor, magicSkill);
         result.effectResisted = true;
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.AGGRO_REMOVE) {
@@ -227,12 +230,17 @@ function execute(session, actor, target, skill, context = {}) {
             clearNpcAggro(session, target);
         }
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.AGGRO_DAMAGE) {
         result.aggroDamage = calcAggroDamage(skill, target);
-        target?.enterCombatState?.(session, actor);
+        if (typeof target?.addDamageHate === 'function') {
+            target.addDamageHate(session, actor, 0, result.aggroDamage);
+        }
+        else {
+            target?.enterCombatState?.(session, actor);
+        }
         if (semantic.selfEffect && !EffectStore.list(actor).some((effect) => (
             Number(effect.id) === Number(skill.fetchSelfId()) && effect.key === semantic.selfEffect.effect
         ))) {
@@ -243,14 +251,18 @@ function execute(session, actor, target, skill, context = {}) {
             }, actor);
         }
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.AGGRO_REDUCE) {
         result.aggroReduced = true;
         result.aggroReduction = Math.max(0, Number(skill.fetchPower?.()) || 0);
+        if (typeof target?.reduceAggro === 'function') {
+            const reduction = result.aggroReduction || target.getHating?.(actor) || 0;
+            target.reduceAggro(session, null, reduction);
+        }
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.AGGRO_REDUCE_CHAR) {
@@ -258,14 +270,19 @@ function execute(session, actor, target, skill, context = {}) {
             result.effectResisted = true;
         } else {
             result.aggroReduced = true;
-            clearNpcAggro(session, target, actor);
+            if (typeof target?.removeAggroTarget === 'function') {
+                target.removeAggroTarget(session, actor);
+            }
+            else {
+                clearNpcAggro(session, target, actor);
+            }
             if (semantic.effect) result.effect = applyEffect(session, target, skill, semantic, actor);
             if (semantic.turnBack && typeof target?.fetchHead === 'function' && typeof target?.setHead === 'function') {
                 target.setHead(Number(actor?.fetchHead?.()) & 0xffff);
             }
         }
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.CANCEL) {
@@ -282,7 +299,7 @@ function execute(session, actor, target, skill, context = {}) {
             if (semantic.effect) result.effect = applyEffect(session, effectTarget, skill, semantic, actor);
         }
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.DRAIN) {
@@ -295,7 +312,7 @@ function execute(session, actor, target, skill, context = {}) {
             result.effectResisted = effectResisted;
             if (!effectResisted) result.effect = applyEffect(session, target, skill, semantic, actor);
         }
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.BANE) {
@@ -305,7 +322,7 @@ function execute(session, actor, target, skill, context = {}) {
             result.cancelled = applyBane(session, target, semantic, rng);
         }
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
-        return result;
+        return finish();
     }
 
     if (semantic.skillType === C4SkillRules.DAMAGE || semantic.skillType === C4SkillRules.DAMAGE_EFFECT || semantic.skillType === C4SkillRules.DEATH_LINK || semantic.skillType === C4SkillRules.FATAL) {
@@ -347,7 +364,51 @@ function execute(session, actor, target, skill, context = {}) {
         }, actor);
     }
 
+    return finish();
+}
+
+function finalizeSkillResult(result, session, actor, target, skill, semantic) {
+    result.aggroPointsApplied = applyAggroPoints(session, actor, target, skill, semantic);
     return result;
+}
+
+function applyAggroPoints(session, actor, target, skill, semantic) {
+    const aggroPoints = Math.max(0, Number(semantic?.aggroPoints) || 0);
+    if (aggroPoints <= 0 || !actor || !target) return 0;
+
+    const World = invoke('GameServer/World/World');
+    const fetchNpcsInRadius = World?.fetchNpcsInRadius;
+    if (typeof fetchNpcsInRadius !== 'function' || !World?.npc?.grid) return 0;
+
+    const actorX = Number(actor.fetchLocX?.());
+    const actorY = Number(actor.fetchLocY?.());
+    if (!Number.isFinite(actorX) || !Number.isFinite(actorY)) return 0;
+
+    const targetId = Number(target.fetchId?.());
+    let npcs;
+    try {
+        npcs = fetchNpcsInRadius.call(World, actorX, actorY, 1000) || [];
+    }
+    catch {
+        return 0;
+    }
+    let applied = 0;
+
+    npcs.forEach((npc) => {
+        if (npc?.fetchAttackable?.() !== true || npc.state?.fetchCombats?.() !== true) return;
+
+        const currentTargetId = Number(npc.fetchDestId?.());
+        const isCurrentTarget = npc === target
+            || (targetId > 0 && currentTargetId === targetId);
+        if (!isCurrentTarget || typeof npc.addDamageHate !== 'function') return;
+
+        const level = Math.max(1, Number(npc.fetchLevel?.()) || 1);
+        const hate = Math.floor((150 * aggroPoints) / (level + 7));
+        if (hate <= 0 || !npc.addDamageHate(session, actor, 0, hate)) return;
+        applied += hate;
+    });
+
+    return applied;
 }
 
 function applyHeal(session, actor, target, skill, semantic, magicSkill, attack) {
@@ -1049,6 +1110,7 @@ function clearTargetState(session, target) {
 function clearNpcAggro(session, target, actor) {
     if (typeof target?.abortCombatState !== 'function') return false;
     if (actor && typeof target.fetchDestId === 'function' && Number(target.fetchDestId()) !== Number(actor.fetchId?.())) return false;
+    target.clearAggroList?.();
     target.abortCombatState(session);
     return true;
 }

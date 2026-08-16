@@ -68,7 +68,7 @@ function interruptOnApply(session, actor, effect, source = session?.actor) {
         actor.state?.setCombats?.(false);
         if (typeof actor.abortCombatState === 'function') {
             const safeSession = session?.dataSendToMeAndOthers ? session : { dataSendToMeAndOthers() {} };
-            actor.abortCombatState(safeSession);
+            actor.abortCombatState(safeSession, { preserveAggro: true });
         }
     }
     stopMovement(session, actor);

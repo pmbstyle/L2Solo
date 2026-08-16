@@ -153,7 +153,9 @@ function startFakeDeath(session, actor) {
     invoke('GameServer/Effects/EffectRestrictions').stopMovement(session, actor);
     const World = invoke('GameServer/World/World');
     (World.npc?.spawns || []).forEach((npc) => {
-        if (Number(npc.fetchDestId?.()) === Number(actor.fetchId?.())) npc.abortCombatState?.(session);
+        if (Number(npc.fetchDestId?.()) === Number(actor.fetchId?.())) {
+            npc.abortCombatState?.(session, { preserveAggro: true });
+        }
     });
     session?.dataSendToMeAndOthers?.(ServerResponse.changeWaitType(actor, 2), actor);
 }

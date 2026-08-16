@@ -229,6 +229,7 @@ const tests = [
     'tests/test_world_wipe.js',
     'tests/test_macros.js',
     'tests/test_npc_combat_range.js',
+    'tests/test_npc_threat.js',
     'tests/test_npc_geodata_visibility.js',
     'tests/test_npc_interaction_completion.js',
     'tests/test_newbie_helper_starting_zones.js',
