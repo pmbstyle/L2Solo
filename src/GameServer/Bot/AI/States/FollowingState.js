@@ -535,6 +535,15 @@ function unsafeSupportMoment(bot, activeMobs) {
     return activeMobs > 0 || isBusy(bot);
 }
 
+function canRefreshPartyMusicDuringCombat(bot, action, partyThreat, partyRaid, botVitals, partyVitals, healerNeedsAction) {
+    if (!BotSupportPlanner.isUrgentPartyMusicRefresh(action)) return false;
+    if (isBusy(bot) || healerNeedsAction) return false;
+    if (partyRaid?.phase === 'combat' || partyThreat?.type === 'player') return false;
+    if (Number(partyThreat?.targetId || 0) === Number(bot.fetchId?.() || 0)) return false;
+    if (Number(botVitals?.hpRatio || 0) < 0.70 || Number(partyVitals?.hpRatio || 0) < 0.70) return false;
+    return true;
+}
+
 function partyMembersInSupportRange(leaderSession, bot, maxDistance = 900) {
     return PartyAwareness.partySessions(leaderSession)
         .filter((memberSession) => memberSession.actor && !memberSession.actor.isDead?.())
@@ -809,6 +818,7 @@ function deliverPurchasedResources(session, bot, playerSession) {
 
 module.exports = {
     deliverPurchasedResources,
+    canRefreshPartyMusicDuringCombat,
 
     tick(session, bot, Generics, BotAI) {
         const playerSession = session.followPlayerSession;
@@ -1299,6 +1309,15 @@ module.exports = {
             preemptForPriorityHeal(session, bot);
         }
         const healerCanCast = (skill) => canAffordHeal(skill) && !isBusy(bot) && !impairments.silenced;
+        const urgentPartyMusicRefresh = canRefreshPartyMusicDuringCombat(
+            bot,
+            supportBuffTarget,
+            partyThreat,
+            partyRaid,
+            botVitals,
+            partyVitals,
+            healerNeedsAction
+        );
         const rebuff = !partyThreat && !leaderTargetId && !isBusy(bot)
             ? BotSupportPlanner.rebuffRequest(bot, PartyPulling.supportProviders(playerSession))
             : null;
@@ -1316,9 +1335,10 @@ module.exports = {
         // A routine buff must never take the action slot from a live party
         // threat. The target may be a social ranged add that is still outside
         // melee range, so let the normal defence branch react immediately.
-        if (!acted && !partyThreat && !leaderTargetId && supportBuffTarget && !healerNeedsAction) {
+        const supportBuffAllowed = (!partyThreat && !leaderTargetId) || urgentPartyMusicRefresh;
+        if (!acted && supportBuffAllowed && supportBuffTarget && !healerNeedsAction) {
             const activeMobs = currentPartyAggroMonsters().length;
-            if (unsafeSupportMoment(bot, activeMobs)) {
+            if (unsafeSupportMoment(bot, activeMobs) && !urgentPartyMusicRefresh) {
                 recordRoleDecision(session, bot, 'buff_party', 'wait_for_safe_moment', {
                     buff: supportBuffTarget.effect,
                     targetId: supportBuffTarget.target.fetchId(),

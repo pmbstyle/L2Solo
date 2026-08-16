@@ -352,6 +352,15 @@ function queueSupportCast(session, action) {
     return true;
 }
 
+function isUrgentPartyMusicRefresh(action) {
+    const skill = action?.skill;
+    const semantic = skill?.fetchSemantic?.() || {};
+    const effect = normalizedEffect(semantic.effect);
+    const partyAura = semantic.target === 'party' || skill?.fetchTargetKind?.() === 'party';
+    const partyMusic = semantic.isDance === true || effect.startsWith('song_') || effect.startsWith('dance_');
+    return !!action?.target && partyAura && partyMusic && needsSkill(action.target, skill);
+}
+
 function beginSupportCast(session, provider, target, skill) {
     const pending = session?.pendingSupportCast;
     if (!pending || Number(pending.expiresAt || 0) <= Date.now()) {
@@ -516,6 +525,7 @@ module.exports = {
     situationalBuffUseful,
     partyAuraCanReach,
     needsSkill,
+    isUrgentPartyMusicRefresh,
     actionCompare,
     hasPendingAction,
     reserve,
