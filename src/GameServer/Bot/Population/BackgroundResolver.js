@@ -456,11 +456,16 @@ function setPersistedSummon(fighter, summon) {
     };
 }
 
+function summonAttackDelay(summon) {
+    return Math.max(250, Formulas.calcMeleeAtkTime(Number(summon?.atkSpd) || 253));
+}
+
 function startColdSummon(fighter, timestamp, cooldowns, skills = ColdCombatProfile.summonSkills(fighter.profile)) {
     const skill = skills.find((candidate) => (
         Number(cooldowns[candidate.selfId] || 0) <= timestamp
+        && Number(candidate.mp || 0) <= fighter.vitals.mp
     ));
-    if (!skill || Number(skill.mp || 0) > fighter.vitals.mp) return false;
+    if (!skill) return false;
 
     const details = ColdCombatProfile.summonDetails(skill);
     fighter.vitals.mp = Math.max(0, fighter.vitals.mp - Number(skill.mp || 0));
@@ -476,6 +481,7 @@ function startColdSummon(fighter, timestamp, cooldowns, skills = ColdCombatProfi
     fighter.summonUses = Number(fighter.summonUses || 0) + 1;
     cooldowns[skill.selfId] = timestamp + Math.max(0, Number(skill.reuse || 0));
     fighter.readyAt = Number(fighter.readyAt || 0) + actionDelayMs(fighter.profile, skill);
+    fighter.summonReadyAt = fighter.readyAt + summonAttackDelay(summon);
     return true;
 }
 
@@ -483,7 +489,13 @@ function startColdCorpseSummon(fighter, timestamp, cooldowns) {
     if (!BotRoles.isNecromancer(fighter.profile?.classId) || fighter.summon) return false;
     const persisted = persistedSummon(fighter, timestamp);
     if (persisted) {
+        const sameActiveSummon = fighter.summon?.active === true
+            && Number(fighter.summon.skillId) === Number(persisted.skillId)
+            && Number(fighter.summon.expiresAt) === Number(persisted.expiresAt);
         fighter.summon = persisted;
+        if (!sameActiveSummon) {
+            fighter.summonReadyAt = Number(fighter.readyAt || 0) + summonAttackDelay(persisted);
+        }
         return false;
     }
     return startColdSummon(
@@ -497,7 +509,13 @@ function startColdCorpseSummon(fighter, timestamp, cooldowns) {
 function ensureColdSummon(fighter, timestamp, cooldowns) {
     const existing = persistedSummon(fighter, timestamp);
     if (existing) {
+        const sameActiveSummon = fighter.summon?.active === true
+            && Number(fighter.summon.skillId) === Number(existing.skillId)
+            && Number(fighter.summon.expiresAt) === Number(existing.expiresAt);
         fighter.summon = existing;
+        if (!sameActiveSummon) {
+            fighter.summonReadyAt = Number(fighter.readyAt || 0) + summonAttackDelay(existing);
+        }
         return false;
     }
     if (fighter.state.stats?.coldCombat?.summon?.active) setPersistedSummon(fighter, null);
@@ -532,7 +550,16 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         maxHp: bot.maxHp,
         maxMp: bot.maxMp
     };
-    const soloFighter = { state: fightState, profile: bot, vitals, readyAt: 0, summonUses: 0, summonActions: 0, now: timestamp };
+    const soloFighter = {
+        state: fightState,
+        profile: bot,
+        vitals,
+        readyAt: 0,
+        summonReadyAt: Number.POSITIVE_INFINITY,
+        summonUses: 0,
+        summonActions: 0,
+        now: timestamp
+    };
     let botReadyAt = 0;
     let mobReadyAt = 0;
     let time = 0;
@@ -552,12 +579,30 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
     // bounded by time and actions. This is deliberately cheaper than a live
     // Actor while retaining its hit, critical, damage and speed formulas.
     while (vitals.hp > 0 && mobHp > 0 && time < fightLimitMs && actions < 48) {
-        const botActs = botReadyAt <= mobReadyAt;
-        time = botActs ? botReadyAt : mobReadyAt;
+        const summonReadyAt = soloFighter.summon?.active
+            ? Number(soloFighter.summonReadyAt)
+            : Number.POSITIVE_INFINITY;
+        const summonActs = summonReadyAt <= botReadyAt && summonReadyAt <= mobReadyAt;
+        const botActs = !summonActs && botReadyAt <= mobReadyAt;
+        time = summonActs ? summonReadyAt : botActs ? botReadyAt : mobReadyAt;
         if (time >= fightLimitMs) break;
         actions += 1;
 
-        if (botActs) {
+        if (summonActs) {
+            soloFighter.now = timestamp + time;
+            if (Number(soloFighter.summon.expiresAt || 0) <= soloFighter.now) {
+                setPersistedSummon(soloFighter, null);
+                soloFighter.summon = null;
+                soloFighter.summonReadyAt = Number.POSITIVE_INFINITY;
+                continue;
+            }
+            mobHp -= summonDamage(soloFighter, mob, rng);
+            summonActions += 1;
+            soloFighter.summonActions += 1;
+            soloFighter.summonReadyAt = time + summonAttackDelay(soloFighter.summon);
+            if (mobHp <= 0) break;
+        }
+        else if (botActs) {
             soloFighter.now = timestamp + time;
             soloFighter.readyAt = botReadyAt;
             const summonedNow = ensureColdSummon(soloFighter, timestamp + time, cooldowns);
@@ -565,11 +610,6 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             if (summonedNow) {
                 botReadyAt = soloFighter.readyAt;
                 continue;
-            }
-            if (soloFighter.summon) {
-                mobHp -= summonDamage(soloFighter, mob, rng);
-                summonActions += 1;
-                if (mobHp <= 0) break;
             }
             const heldCharges = { charges, chargeExpiresAt };
             expireCharges(heldCharges, timestamp + time);
@@ -628,6 +668,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             mobHp -= Math.max(0, damage);
             botReadyAt += actionDelayMs(bot, skill);
             if (mobHp <= 0) {
+                soloFighter.readyAt = botReadyAt;
                 startColdCorpseSummon(soloFighter, timestamp + time, cooldowns);
                 summonUses = Number(soloFighter.summonUses || 0);
                 break;
@@ -741,6 +782,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             chargeExpiresAt: chargeState.chargeExpiresAt,
             summonUses: 0,
             summonActions: 0,
+            summonReadyAt: Number.POSITIVE_INFINITY,
             now: timestamp
         };
     });
@@ -753,22 +795,36 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
     while (mobHp > 0 && fighters.some((fighter) => fighter.vitals.hp > 0) && time < fightLimitMs && actions < 96) {
         const alive = fighters.filter((fighter) => fighter.vitals.hp > 0);
         const next = alive.sort((a, b) => a.readyAt - b.readyAt)[0];
-        const botActs = next && next.readyAt <= mobReadyAt;
-        time = botActs ? next.readyAt : mobReadyAt;
+        const nextSummon = alive
+            .filter((fighter) => fighter.summon?.active && Number.isFinite(Number(fighter.summonReadyAt)))
+            .sort((a, b) => a.summonReadyAt - b.summonReadyAt)[0];
+        const ownerReadyAt = next ? next.readyAt : Number.POSITIVE_INFINITY;
+        const summonReadyAt = nextSummon ? Number(nextSummon.summonReadyAt) : Number.POSITIVE_INFINITY;
+        const summonActs = nextSummon && summonReadyAt <= ownerReadyAt && summonReadyAt <= mobReadyAt;
+        const botActs = !summonActs && next && ownerReadyAt <= mobReadyAt;
+        time = summonActs ? summonReadyAt : botActs ? ownerReadyAt : mobReadyAt;
         if (time >= fightLimitMs) break;
         actions += 1;
 
-        if (botActs) {
+        if (summonActs) {
+            nextSummon.now = timestamp + time;
+            if (Number(nextSummon.summon.expiresAt || 0) <= nextSummon.now) {
+                setPersistedSummon(nextSummon, null);
+                nextSummon.summon = null;
+                nextSummon.summonReadyAt = Number.POSITIVE_INFINITY;
+                continue;
+            }
+            mobHp -= summonDamage(nextSummon, mob, rng);
+            nextSummon.summonActions += 1;
+            nextSummon.summonReadyAt = time + summonAttackDelay(nextSummon.summon);
+            if (mobHp <= 0) break;
+        }
+        else if (botActs) {
             next.actions += 1;
             expireCharges(next, timestamp + time);
             next.now = timestamp + time;
             const summonedNow = ensureColdSummon(next, timestamp + time, next.cooldowns);
             if (summonedNow) continue;
-            if (next.summon) {
-                mobHp -= summonDamage(next, mob, rng);
-                next.summonActions += 1;
-                if (mobHp <= 0) break;
-            }
             const heal = chooseHeal(next.profile, fighters, next.vitals.mp, next.cooldowns, timestamp + time);
             if (heal) {
                 const amount = Formulas.calcHealAmount(heal.skill.power);

@@ -13,8 +13,8 @@ const COND_CRIT = 0x0010;
 
 function isBotSummonActor(session, actor) {
     const candidate = session || actor?.session;
-    return candidate?.constructor?.name === 'BotSession'
-        || String(candidate?.accountId || '').startsWith('bot_')
+    return candidate?.botSession === true
+        || candidate?.constructor?.name === 'BotSession'
         || actor?.isBot === true;
 }
 
@@ -259,7 +259,7 @@ function execute(session, actor, target, skill, context = {}) {
         result.aggroReduction = Math.max(0, Number(skill.fetchPower?.()) || 0);
         if (typeof target?.reduceAggro === 'function') {
             const reduction = result.aggroReduction || target.getHating?.(actor) || 0;
-            target.reduceAggro(session, null, reduction);
+            target.reduceAggro(session, actor, reduction);
         }
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
         return finish();
@@ -741,8 +741,6 @@ function summonDisplayName(skill, fallbackName) {
 }
 
 function hasRequiredSkillItems(actor, skill) {
-    if (isBotSummonActor(actor?.session, actor)) return true;
-
     const itemId = Number(skill.fetchItemConsumeId?.()) || 0;
     const count = Number(skill.fetchItemConsumeCount?.()) || 0;
     if (!itemId || count <= 0) return true;

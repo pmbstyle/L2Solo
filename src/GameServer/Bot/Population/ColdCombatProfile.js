@@ -5,6 +5,7 @@ const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
 const PROFILE_VERSION = 4;
 
@@ -140,6 +141,38 @@ function skillDefinition(selfId, level) {
         || null;
 }
 
+const FIRST_CLASS_TO_BASE = new Map(
+    Object.entries(ClassProgression.firstProfMap)
+        .flatMap(([baseClassId, classIds]) => classIds.map((classId) => [number(classId), number(baseClassId)]))
+);
+const SECOND_CLASS_TO_FIRST = new Map(
+    Object.entries(ClassProgression.secondProfMap)
+        .flatMap(([firstClassId, classIds]) => classIds.map((classId) => [number(classId), number(firstClassId)]))
+);
+
+function parentClassId(classId) {
+    const normalized = number(classId);
+    const thirdParent = number(ClassProgression.getThirdClass(normalized)?.parentClassId, NaN);
+    if (Number.isFinite(thirdParent)) return thirdParent;
+    return SECOND_CLASS_TO_FIRST.get(normalized)
+        ?? FIRST_CLASS_TO_BASE.get(normalized)
+        ?? null;
+}
+
+function classProgressionIds(classId) {
+    const ids = [];
+    const seen = new Set();
+    let current = number(classId);
+    while (Number.isFinite(current) && current >= 0 && !seen.has(current)) {
+        seen.add(current);
+        ids.unshift(current);
+        const parent = parentClassId(current);
+        if (parent === null || parent === current) break;
+        current = parent;
+    }
+    return ids;
+}
+
 function summonFields(definition = {}) {
     return {
         itemId: number(definition.itemId),
@@ -181,13 +214,21 @@ function skillSnapshot(skill) {
 }
 
 function skillTreeEntries(classId) {
-    const normalized = number(classId);
-    const parent = number(ClassProgression.getThirdClass(normalized)?.parentClassId);
-    const classIds = parent && parent !== normalized ? [parent, normalized] : [normalized];
     const entries = new Map();
-    classIds.forEach((id) => {
+    classProgressionIds(classId).forEach((id) => {
         const tree = (DataCache.skillTree || []).find((entry) => number(entry.classId) === id);
-        (tree?.skills || []).forEach((entry) => entries.set(number(entry.selfId), entry));
+        (tree?.skills || []).forEach((entry) => {
+            const selfId = number(entry.selfId);
+            const previous = entries.get(selfId);
+            if (!previous) {
+                entries.set(selfId, entry);
+                return;
+            }
+
+            const levels = new Map((previous.levels || []).map((row) => [number(row.level), row]));
+            (entry.levels || []).forEach((row) => levels.set(number(row.level), row));
+            entries.set(selfId, { ...previous, ...entry, levels: [...levels.values()] });
+        });
     });
     return [...entries.values()];
 }
@@ -447,6 +488,7 @@ function summonDetails(skill = {}) {
 }
 
 function summonSkills(profile = {}) {
+    if (!BotRoles.isSummoner(profile.classId)) return [];
     return (profile.skills || [])
         .filter((skill) => !skill.passive)
         .filter((skill) => {

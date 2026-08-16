@@ -38,8 +38,7 @@ const FollowTickMs = 500;
 const InteractionDistance = 150;
 
 function isBotSummonSession(session) {
-    return session?.constructor?.name === 'BotSession'
-        || String(session?.accountId || '').startsWith('bot_');
+    return session?.botSession === true || session?.constructor?.name === 'BotSession';
 }
 
 function activeSummon(actor) {
@@ -294,7 +293,7 @@ function attack(session, actor, summon) {
 }
 
 function attackTick(session, summon, target) {
-    if (summon.controlMode !== 'attack' || summon.isDead?.()) {
+    if (!target || summon.controlMode !== 'attack' || summon.isDead?.()) {
         stop(session, summon);
         return;
     }

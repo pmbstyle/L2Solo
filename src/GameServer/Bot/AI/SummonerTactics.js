@@ -119,7 +119,7 @@ function combatAction(session, actor, target, Generics) {
 
     const summon = SummonControl.activeSummon(actor);
     if (!summon) {
-        const corpseSkill = corpseSummonSkill(actor, target);
+        const corpseSkill = target ? corpseSummonSkill(actor, target) : null;
         if (corpseSkill) {
             Generics.skillExec(session, actor, {
                 id: target.fetchId(),

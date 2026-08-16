@@ -173,6 +173,13 @@ assert(ColdCombatProfile.summonSkills(ColdCombatProfile.profileFor({
     stats: { classId: 14 },
     inventory: { 1459: { selfId: 1459, amount: 100 } }
 }, timestamp)).some((skill) => skill.selfId === 1276), 'cold profiles must retain a learned servitor summon');
+const class14SkillIds = new Set(ColdCombatProfile.skillRecordsFromTree(14, 40).map((skill) => skill.selfId));
+for (const ancestorClassId of [10, 11]) {
+    for (const skill of ColdCombatProfile.skillRecordsFromTree(ancestorClassId, 40)) {
+        assert(class14SkillIds.has(skill.selfId),
+            `a second-class cold profile must inherit skill ${skill.selfId} from class ${ancestorClassId}`);
+    }
+}
 
 const coldSummoner = {
     ...fighter,

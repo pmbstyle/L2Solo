@@ -5,6 +5,7 @@ require('../src/Global');
 const BotAI = invoke('GameServer/Bot/BotAI');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
+const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 
 function skill(selfId, options = {}) {
     return {
@@ -199,6 +200,11 @@ try {
     BotAI.executeCombat({}, necromancer, npc(11047), necroLivingTargetGenerics);
     assert.strictEqual(necroLivingTargetGenerics.skills[0].selfId, 1234,
         'a necromancer must keep using its own offensive spell while the target is alive');
+
+    assert.doesNotThrow(
+        () => SummonerTactics.combatAction({}, necromancer, null, generics()),
+        'a summon-aware combat tick with no selected target must not dereference a corpse target'
+    );
 
     const controlledNecromancer = bot(13, [
         skill(1234, { name: 'Vampiric Claw', mp: 8, power: 40, spell: true })

@@ -219,17 +219,28 @@ async function verifyCombatRetarget() {
     npc.hasCombatLineOfSight = () => true;
     npc.isTargetInAttackRange = () => true;
 
+    const waitFor = async (predicate, timeoutMs = 2500) => {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            if (predicate()) return true;
+            await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        return predicate();
+    };
+
     try {
         assert.strictEqual(npc.addDamageHate(damageDealerSession, damageDealer, 500, 500), true);
-        await new Promise((resolve) => setTimeout(resolve, 1200));
-        assert(observedTargets.includes(damageDealer), 'the NPC must initially attack the highest-hate damage dealer');
+        assert.strictEqual(
+            await waitFor(() => observedTargets.includes(damageDealer)),
+            true,
+            'the NPC must initially attack the highest-hate damage dealer'
+        );
 
         observedTargets.length = 0;
         assert.strictEqual(npc.addDamageHate(tankSession, tank, 0, 1000), true);
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        assert(observedTargets.length > 0, 'the NPC must continue its combat loop after threat transfer');
-        assert(
-            observedTargets.every((target) => target === tank),
+        assert.strictEqual(
+            await waitFor(() => observedTargets.length > 0 && observedTargets.every((target) => target === tank)),
+            true,
             'the first attacks after threat transfer must target the tank'
         );
     }
@@ -243,6 +254,51 @@ async function verifyCombatRetarget() {
     }
 }
 
+function verifyAggroMutations() {
+    npc.clearAggroList();
+    assert.strictEqual(npc.addDamageHate(damageDealerSession, damageDealer, 0, 500), true);
+    assert.strictEqual(npc.addDamageHate(tankSession, tank, 0, 200), true);
+
+    const charm = new SkillModel({
+        selfId: 15,
+        name: 'Charm',
+        level: 1,
+        passive: false,
+        spell: true,
+        distance: 400,
+        mp: 0,
+        power: 100,
+        hitTime: 0,
+        reuse: 0,
+        buff: 0
+    });
+    C4SkillEffects.execute(
+        tankSession,
+        tank,
+        npc,
+        charm,
+        { magicSkill: true, rng: () => 0, attack: { clearLoadedShot() {} } }
+    );
+    assert.strictEqual(npc.getHating(tank), 100, 'Charm should reduce only the caster hate entry');
+    assert.strictEqual(npc.getHating(damageDealer), 500, 'Charm must not reduce unrelated hate entries');
+
+    npc.reduceAggro(tankSession, tank, 1000);
+    assert.strictEqual(npc.getHating(tank), 0, 'over-reducing one hate entry must clamp it at zero');
+    assert.strictEqual(npc.fetchMostHated(), damageDealer, 'zeroed hate must not displace a positive hate target');
+
+    npc.reduceAggro(damageDealerSession, null, 1000);
+    assert.strictEqual(npc.getHating(damageDealer), 0, 'over-reducing all hate entries must clamp every entry at zero');
+    assert.strictEqual(npc.fetchMostHated(), null, 'an NPC with only zero-hate entries must have no most-hated target');
+
+    npc.clearAggroList();
+    npc.addDamageHate(damageDealerSession, damageDealer, 0, 500);
+    npc.addDamageHate(tankSession, tank, 0, 200);
+    assert.strictEqual(npc.removeAggroTarget(damageDealerSession, damageDealer), true, 'an aggro target should be removable');
+    assert.strictEqual(npc.getHating(damageDealer), 0, 'removed aggro target must leave no hate behind');
+    npc.abortCombatState(tankSession);
+}
+
+verifyAggroMutations();
 verifyCombatRetarget()
     .then(() => console.log('NPC threat transfer checks passed'))
     .catch((error) => {

@@ -194,7 +194,7 @@ class Npc extends NpcModel {
             ? [this.aggroList.get(Number(actor.fetchId?.()))].filter(Boolean)
             : [...this.aggroList.values()];
         entries.forEach((entry) => {
-            entry.hate -= reduction;
+            entry.hate = Math.max(0, entry.hate - reduction);
         });
 
         return this.retargetAfterAggroChange(session);
