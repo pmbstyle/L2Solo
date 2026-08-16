@@ -167,3 +167,6 @@ This project is a heavily modified solo-MMO fork of the original [NodeL2 Server 
 L2Solo is licensed under the Apache 2.0 license.
 
 Crafting with ❤️ by a player for players 🤘
+
+<img width="600"  alt="L2solo hit the star" src="https://github.com/user-attachments/assets/5e22564f-fe8e-4956-af21-1158f1849a31" />
+
