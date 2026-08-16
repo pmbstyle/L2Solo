@@ -1279,25 +1279,94 @@ function vitalBar(label, vital, color) {
     return `<div class="vital-row"><span>${label}</span><div class="vital-track"><div class="vital-fill" style="width:${pct}%;background:${color}"></div></div><strong>${pct}%</strong></div>`;
 }
 
+const PAPERDOLL_SLOTS = Object.freeze([
+    { key: 'earring-left', label: 'Left earring', short: 'ER', slotIds: [1], edge: 'left' },
+    { key: 'head', label: 'Head', short: 'HD', slotIds: [6] },
+    { key: 'necklace', label: 'Necklace', short: 'NK', slotIds: [3], edge: 'right' },
+    { key: 'ring-left', label: 'Left ring', short: 'RG', slotIds: [4], edge: 'left' },
+    { key: 'chest', label: 'Chest / full armor', short: 'CH', slotIds: [10, 15] },
+    { key: 'weapon', label: 'Weapon', short: 'WP', slotIds: [7, 14], edge: 'left' },
+    { key: 'shield', label: 'Shield', short: 'SH', slotIds: [8], edge: 'right' },
+    { key: 'gloves', label: 'Gloves', short: 'GL', slotIds: [9], edge: 'left' },
+    { key: 'legs', label: 'Legs', short: 'LG', slotIds: [11] },
+    { key: 'cloak', label: 'Cloak', short: 'CL', slotIds: [13], edge: 'right' },
+    { key: 'feet', label: 'Feet', short: 'FT', slotIds: [12] },
+    { key: 'ring-right', label: 'Right ring', short: 'RG', slotIds: [5], edge: 'right' },
+    { key: 'earring-right', label: 'Right earring', short: 'ER', slotIds: [2], edge: 'right' }
+]);
+
+function paperdollItem(items, slotIds, used) {
+    const item = items.find((candidate) => {
+        const slotId = Number(candidate.slotId || 0);
+        return slotIds.includes(slotId) && !used.has(candidate);
+    });
+    if (item) used.add(item);
+    return item || null;
+}
+
+function itemStatRows(item) {
+    const stats = item?.stats || {};
+    return [
+        ['P. Atk', stats.pAtk],
+        ['P. Atk var.', stats.pAtkRnd],
+        ['M. Atk', stats.mAtk],
+        ['Atk. Spd', stats.atkSpd],
+        ['P. Def', stats.pDef],
+        ['M. Def', stats.mDef],
+        ['Critical', stats.critical],
+        ['Accuracy', stats.accuracy],
+        ['Evasion', stats.evasion],
+        ['Shield rate', stats.shieldRate],
+        ['Bonus MP', stats.bonusMp],
+        ['MP consume', stats.consumedMp]
+    ].filter(([, value]) => Number(value || 0) !== 0);
+}
+
+function renderItemTooltip(item) {
+    if (!item) return '';
+    const stats = itemStatRows(item);
+    const enchant = Number(item.enchant || 0);
+    return `<div class="item-tooltip" role="tooltip">
+        <strong>${text(item.name)}</strong>
+        <span class="item-tooltip-meta">${text(item.slot)} · ${text(equipmentGrade(item.rank))}${enchant ? ` · +${number(enchant)}` : ''}</span>
+        ${stats.length ? `<div class="item-tooltip-stats">${stats.map(([label, value]) => `<span><i>${text(label)}</i><b>${number(value)}</b></span>`).join('')}</div>` : '<span class="item-tooltip-empty">No item-specific stats</span>'}
+        ${item.price ? `<span class="item-tooltip-price">Base price ${number(item.price)} Adena</span>` : ''}
+    </div>`;
+}
+
+function renderPaperdollSlot(slot, item) {
+    const edge = slot.edge ? ` edge-${slot.edge}` : '';
+    if (!item) {
+        return `<div class="paperdoll-slot paperdoll-slot-${text(slot.key)} is-empty${edge}" aria-label="${text(slot.label)} empty">
+            <span class="paperdoll-slot-key">${text(slot.short)}</span>
+            <span class="paperdoll-empty-mark">·</span>
+        </div>`;
+    }
+    return `<div class="paperdoll-slot paperdoll-slot-${text(slot.key)} has-item${edge}" tabindex="0" aria-label="${text(`${slot.label}: ${item.name}`)}">
+        <span class="paperdoll-slot-key">${text(slot.short)}</span>
+        ${item.iconUrl ? `<img src="${text(item.iconUrl)}" alt="${text(item.name)}" loading="lazy" decoding="async">` : '<span class="paperdoll-missing-icon">?</span>'}
+        ${Number(item.enchant || 0) ? `<b class="paperdoll-enchant">+${number(item.enchant)}</b>` : ''}
+        ${renderItemTooltip(item)}
+    </div>`;
+}
+
 function renderEquipment(equipment, combat) {
     if (!equipment) return '';
     const items = equipment.equipped || [];
     const totals = equipment.totals || combat || {};
+    const used = new Set();
     return `<section class="inspector-block">
-        <div class="inspector-block-title"><h3>Equipped</h3><span>${items.length} items</span></div>
+        <div class="inspector-block-title"><h3>Paperdoll</h3><span>${items.length} items · hover for stats</span></div>
+        <div class="paperdoll" aria-label="Equipped items">
+            <div class="paperdoll-center" aria-hidden="true"><span>W</span><small>C4</small></div>
+            ${PAPERDOLL_SLOTS.map((slot) => renderPaperdollSlot(slot, paperdollItem(items, slot.slotIds, used))).join('')}
+        </div>
         <div class="combat-stats">
             ${statCell('P. Atk', totals.pAtk)}
             ${statCell('M. Atk', totals.mAtk)}
             ${statCell('P. Def', totals.pDef)}
             ${statCell('M. Def', totals.mDef)}
         </div>
-        <div class="equipment-list">${items.length ? items.map((item) => `
-            <div class="equipment-row">
-                <span class="equipment-slot">${text(item.slot)}</span>
-                <strong>${text(item.name)}</strong>
-                <span class="equipment-rank">${text(equipmentGrade(item.rank))}</span>
-            </div>
-        `).join('') : '<div class="list-empty">No equipment snapshot</div>'}</div>
     </section>`;
 }
 

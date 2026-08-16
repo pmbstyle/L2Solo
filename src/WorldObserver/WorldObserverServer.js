@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const ITEM_ICON_CATALOG_DIR = path.join(PUBLIC_DIR, 'item-icons');
+const ITEM_ICON_MANIFEST_PATH = path.join(ITEM_ICON_CATALOG_DIR, 'index.json');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
@@ -16,7 +18,10 @@ const MIME_TYPES = {
     '.css': 'text/css; charset=utf-8',
     '.js': 'application/javascript; charset=utf-8',
     '.json': 'application/json; charset=utf-8',
-    '.svg': 'image/svg+xml; charset=utf-8'
+    '.svg': 'image/svg+xml; charset=utf-8',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg'
 };
 const OBSERVER_IDLE_CACHE_MS = 2000;
 const OBSERVER_PLAYER_CACHE_MS = 5000;
@@ -428,6 +433,7 @@ const EQUIPMENT_SLOTS = {
     10: 'chest',
     11: 'legs',
     12: 'feet',
+    13: 'cloak',
     14: 'two-handed weapon',
     15: 'full armor'
 };
@@ -439,6 +445,117 @@ function equipmentSlot(slot) {
 
 let itemTemplateIndex = null;
 let itemTemplateSource = null;
+let itemIconCatalogCache = null;
+
+function normalizeItemName(value) {
+    return String(value || '')
+        .normalize('NFKC')
+        .toLowerCase()
+        .replace(/[’‘]/g, "'")
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function itemIconCategory(kind) {
+    const normalized = String(kind || '').toLowerCase();
+    if (normalized.startsWith('weapon.')) return 'weapon';
+    if (normalized === 'armor.shield') return 'shield';
+    if (normalized === 'armor.jewel') return 'jewelry';
+    if (normalized.startsWith('armor.')) return 'armor';
+    return null;
+}
+
+function loadItemIconCatalog() {
+    if (itemIconCatalogCache) return itemIconCatalogCache;
+
+    try {
+        const manifest = JSON.parse(fs.readFileSync(ITEM_ICON_MANIFEST_PATH, 'utf8'));
+        const entries = Object.values(manifest.items || {})
+            .filter((entry) => entry && entry.localFile);
+        const bySelfId = new Map();
+        const byNameAndCategory = new Map();
+        const byFile = new Map();
+
+        entries.forEach((entry) => {
+            const selfId = Number(entry.selfId || 0);
+            const fileName = path.basename(String(entry.localFile));
+            if (selfId > 0) bySelfId.set(selfId, entry);
+            byFile.set(fileName, entry);
+
+            const normalizedName = normalizeItemName(entry.normalizedName || entry.name);
+            const category = entry.category || null;
+            if (normalizedName) {
+                const key = `${category || 'any'}|${normalizedName}`;
+                const bucket = byNameAndCategory.get(key) || [];
+                bucket.push(entry);
+                byNameAndCategory.set(key, bucket);
+            }
+        });
+
+        itemIconCatalogCache = {
+            available: true,
+            itemCount: entries.length,
+            bySelfId,
+            byNameAndCategory,
+            byFile
+        };
+    } catch (error) {
+        itemIconCatalogCache = {
+            available: false,
+            itemCount: 0,
+            bySelfId: new Map(),
+            byNameAndCategory: new Map(),
+            byFile: new Map(),
+            error: error.message
+        };
+    }
+
+    return itemIconCatalogCache;
+}
+
+function itemIconFor(item, selfId, name, kind) {
+    const catalog = loadItemIconCatalog();
+    if (!catalog.available) return null;
+
+    const normalizedName = normalizeItemName(name);
+    const category = itemIconCategory(kind);
+    const exact = catalog.bySelfId.get(Number(selfId));
+    const exactNameMatches = exact && (!normalizedName || normalizeItemName(exact.normalizedName || exact.name) === normalizedName);
+    let entry = exactNameMatches ? exact : null;
+    let match = entry ? 'selfId' : null;
+
+    if (!entry && normalizedName) {
+        const candidates = [
+            ...(category ? catalog.byNameAndCategory.get(`${category}|${normalizedName}`) || [] : []),
+            ...catalog.byNameAndCategory.get(`any|${normalizedName}`) || []
+        ];
+        entry = candidates[0] || null;
+        match = entry ? 'name' : null;
+    }
+
+    if (!entry?.localFile) return null;
+    const fileName = path.basename(String(entry.localFile));
+    return {
+        url: `/observer/item-icons/${encodeURIComponent(fileName)}`,
+        fileName,
+        source: entry.localSource || 'l2hub',
+        detailUrl: entry.detailUrl || null,
+        match
+    };
+}
+
+function itemIconFilePath(fileName) {
+    const catalog = loadItemIconCatalog();
+    const safeName = String(fileName || '');
+    if (!catalog.available || !safeName || safeName !== path.basename(safeName)) return null;
+    const entry = catalog.byFile.get(safeName);
+    if (!entry?.localFile) return null;
+
+    const catalogRoot = path.resolve(ITEM_ICON_CATALOG_DIR);
+    const filePath = path.resolve(catalogRoot, String(entry.localFile));
+    if (!filePath.startsWith(`${catalogRoot}${path.sep}`)) return null;
+    return filePath;
+}
 
 function itemTemplate(selfId) {
     const items = DataCache.items || [];
@@ -494,22 +611,38 @@ function equipmentRank(value) {
 function compactItem(item) {
     if (!item) return null;
     const template = itemTemplate(item.selfId || item.objectId);
+    const selfId = Number(item.selfId || item.objectId || 0) || null;
+    const name = item.name || template?.template?.name || 'Unknown item';
+    const kind = item.kind || template?.template?.kind || '';
+    const rawSlot = item.slotId ?? item.slot?.id ?? item.slot?.value ?? item.slot ?? template?.etc?.slot;
+    const slotId = Number(rawSlot) || null;
     const stats = item.stats || template?.stats || null;
+    const icon = itemIconFor(item, selfId, name, kind);
     return {
-        selfId: Number(item.selfId || item.objectId || 0) || null,
-        name: item.name || template?.template?.name || 'Unknown item',
-        slot: item.slot?.name || equipmentSlot(item.slot || template?.etc?.slot),
+        selfId,
+        name,
+        slotId,
+        slot: item.slot?.name || equipmentSlot(slotId || rawSlot),
         rank: equipmentRank(item.rank || template?.etc?.rank),
-        kind: item.kind || template?.template?.kind || '',
+        kind,
+        enchant: Number(item.enchant ?? item.enchantLevel ?? 0) || 0,
+        price: Math.max(0, Number(item.price ?? template?.template?.price ?? 0) || 0),
+        iconUrl: icon?.url || null,
+        iconSource: icon?.source || null,
+        iconMatch: icon?.match || null,
         stats: stats ? {
             pAtk: Number(stats.pAtk || 0),
+            pAtkRnd: Number(stats.pAtkRnd || 0),
             mAtk: Number(stats.mAtk || 0),
+            atkSpd: Number(stats.atkSpd || 0),
             pDef: Number(stats.pDef || 0),
             mDef: Number(stats.mDef || 0),
             evasion: Number(stats.evasion || 0),
             critical: Number(stats.critical || stats.crit || 0),
             accuracy: Number(stats.accuracy || stats.accur || 0),
-            bonusMp: Number(stats.bonusMp || stats.maxMp || 0)
+            shieldRate: Number(stats.shieldRate || 0),
+            bonusMp: Number(stats.bonusMp || stats.maxMp || 0),
+            consumedMp: Number(stats.consumedMp || stats.mp || 0)
         } : null
     };
 }
@@ -522,17 +655,22 @@ function liveItem(item) {
         slot: item.fetchSlot?.(),
         rank: item.fetchRank?.(),
         kind: item.fetchKind?.(),
+        enchant: item.fetchEnchantLevel?.(),
+        price: item.fetchPrice?.(),
         stats: item.isWeapon?.() ? {
             pAtk: item.fetchPAtk?.(),
+            pAtkRnd: item.fetchPAtkRnd?.(),
             mAtk: item.fetchMAtk?.(),
+            atkSpd: item.fetchAtkSpd?.(),
             critical: item.fetchCritical?.(),
             accuracy: item.fetchAccur?.()
-        } : {
+        } : item.isArmor?.() ? {
             pDef: item.fetchPDef?.(),
             mDef: item.fetchMDef?.(),
             evasion: item.fetchEvasion?.(),
+            shieldRate: item.fetchShieldRate?.(),
             bonusMp: item.fetchBonusMp?.()
-        }
+        } : null
     });
 }
 
@@ -1084,6 +1222,24 @@ function route(request, response) {
         return;
     }
 
+    const itemIconMatch = url.pathname.match(/^\/observer\/item-icons\/([^/]+)$/);
+    if (itemIconMatch) {
+        let fileName = null;
+        try {
+            fileName = decodeURIComponent(itemIconMatch[1]);
+        } catch (error) {
+            fileName = null;
+        }
+        const filePath = itemIconFilePath(fileName);
+        if (!filePath) {
+            response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+            response.end('Not found');
+            return;
+        }
+        sendFile(response, filePath);
+        return;
+    }
+
     if (url.pathname.startsWith('/observer/')) {
         const relative = url.pathname.replace(/^\/observer\/?/, '') || 'index.html';
         const safeRelative = path.normalize(relative).replace(/^(\.\.[/\\])+/, '');
@@ -1109,11 +1265,21 @@ const WorldObserverServer = {
     compactStateBot,
     compactColdDetail,
     compactHotDetail,
+    compactItem,
+    itemIconFilePath,
     classCatalog,
     actorDetail,
     raidBossCatalog,
     raidBossSnapshot,
     equipmentValue,
+    itemIconCatalogStatus() {
+        const catalog = loadItemIconCatalog();
+        return {
+            available: catalog.available,
+            itemCount: catalog.itemCount,
+            error: catalog.error || null
+        };
+    },
     snapshotJson,
     observerCacheTtl,
     snapshotCacheStats() {
