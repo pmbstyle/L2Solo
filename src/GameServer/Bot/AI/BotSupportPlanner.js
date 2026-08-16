@@ -5,6 +5,7 @@ const World = invoke('GameServer/World/World');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 
 const REFRESH_THRESHOLD_MS = 2 * 60 * 1000;
+const REFRESH_FRACTION = 0.25;
 const CAST_RESERVATION_MS = 5000;
 const PENDING_SUPPORT_CAST_TIMEOUT_MS = 30000;
 const MIN_SUPPORT_MP_RATIO = 0.35;
@@ -221,6 +222,16 @@ function overlaps(effect, keys) {
     return keys.includes(effect?.key) || keys.includes(effect?.category);
 }
 
+function refreshThresholdMs(skill) {
+    const durationMs = Number(skill?.fetchBuffTime?.() ?? skill?.fetchSemantic?.().durationMs ?? 0);
+    if (!Number.isFinite(durationMs) || durationMs <= 0) return REFRESH_THRESHOLD_MS;
+    // A two-minute song/dance used to have the same refresh threshold as its
+    // complete lifetime, so it was considered stale immediately after landing.
+    // Refresh the last quarter of a known-duration effect while retaining the
+    // existing two-minute window for long buffs and legacy skill objects.
+    return Math.min(REFRESH_THRESHOLD_MS, Math.floor(durationMs * REFRESH_FRACTION));
+}
+
 function needsSkill(target, skill) {
     const keys = statKeys(skill);
     const level = Number(skill.fetchLevel?.() || 1);
@@ -237,7 +248,8 @@ function needsSkill(target, skill) {
     // an effect after death, dispel, or an interrupted cast, so support decisions
     // must be based exclusively on the target's structured effect state.
     if (current.some((effect) => Number(effect.level || 0) > level)) return false;
-    if (current.some((effect) => Number(effect.level || 0) === level && EffectStore.remainingMs(target, effect.key) > REFRESH_THRESHOLD_MS)) {
+    const thresholdMs = refreshThresholdMs(skill);
+    if (current.some((effect) => Number(effect.level || 0) === level && EffectStore.remainingMs(target, effect.key) > thresholdMs)) {
         return false;
     }
     return true;

@@ -48,6 +48,21 @@ const shaman = actor('Noren', 49, [soulShieldTwo]);
 const mage = actor('Saren', 25, [shieldOne]);
 const target = actor('Slava', 0);
 
+[
+    { id: 264, name: 'Song of Earth', key: 'song_of_earth', stats: { pDefMul: 1.25 } },
+    { id: 271, name: 'Dance of Warrior', key: 'dance_of_warrior', stats: { pAtkMul: 1.12 } }
+].forEach(({ id, name, key, stats }) => {
+    const songOrDance = skill(id, name, 1, key, stats, 'party');
+    songOrDance.fetchBuffTime = () => 120000;
+    EffectStore.apply(target, { key, id, level: 1, type: 'buff', stats, durationMs: 120000 });
+    assert.strictEqual(
+        BotSupportPlanner.needsSkill(target, songOrDance),
+        false,
+        `a freshly landed two-minute ${name} must not be recast immediately`
+    );
+    EffectStore.remove(target, key);
+});
+
 const policyProvider = actor('PolicyProvider', 25, [shieldOne, empower]);
 policyProvider.session = { actor: policyProvider };
 HotBotPolicyOverlay.set(policyProvider.session, {
