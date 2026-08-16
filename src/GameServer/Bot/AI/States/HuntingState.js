@@ -9,6 +9,7 @@ const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const BotTargetScorer = invoke('GameServer/Bot/AI/BotTargetScorer');
 const BotPvpRisk      = invoke('GameServer/Bot/AI/BotPvpRisk');
 const BotRoles        = invoke('GameServer/Bot/AI/BotRoles');
+const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const BotTownTravel  = invoke('GameServer/Bot/AI/BotTownTravel');
 const BotSpotTravel  = invoke('GameServer/Bot/AI/BotSpotTravel');
@@ -508,6 +509,11 @@ module.exports = {
                             at: Date.now()
                         };
                     } else if (npc.isDead()) {
+                        const corpseSkill = SummonerTactics.corpseSummonSkill(bot, npc);
+                        if (corpseSkill) {
+                            BotAI.executeCombat(session, bot, npc, Generics);
+                            return;
+                        }
                         if (Math.random() < 0.20) {
                             BotAI.say(session, BotAI.getRandomPhrase('victory'));
                         }

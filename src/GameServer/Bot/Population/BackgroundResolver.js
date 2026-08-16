@@ -4,6 +4,7 @@ const DataCache = invoke('GameServer/DataCache');
 const Formulas = invoke('GameServer/Formulas');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 
 function clamp(value, min, max) {
@@ -394,7 +395,25 @@ function mutableCombatState(state = {}) {
 }
 
 function summonNpcStats(fighter, details) {
-    const npc = (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(details.npcId));
+    const direct = (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(details.npcId));
+    const skill = (DataCache.skills || []).find((entry) => Number(entry.selfId) === Number(details.skillId));
+    const skillLevel = Number(details.skillLevel || 1);
+    const levelCandidates = (skill?.levels || [])
+        .map((level) => ({
+            level: Number(level.level) || 0,
+            npc: (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(level.npcId))
+        }))
+        .filter((entry) => entry.npc)
+        .sort((a, b) => Math.abs(a.level - skillLevel) - Math.abs(b.level - skillLevel));
+    const summonName = String(skill?.template?.name || skill?.name || '').toLowerCase();
+    const fallbackIds = summonName.includes('soulless') || summonName.includes('reanimated')
+        || summonName.includes('corrupted') || summonName.includes('cursed man')
+        ? [12070, 12366, 12071, 12367]
+        : [];
+    const familyFallback = fallbackIds
+        .map((id) => (DataCache.npcs || []).find((entry) => Number(entry.selfId) === id))
+        .find(Boolean);
+    const npc = direct || levelCandidates[0]?.npc || familyFallback;
     return {
         npcId: Number(details.npcId || 0),
         maxHp: Math.max(1, Number(npc?.vitals?.maxHp || fighter.profile.maxHp * 1.15)),
@@ -412,13 +431,15 @@ function persistedSummon(fighter, timestamp) {
     if (!saved?.active || Number(saved.expiresAt || 0) <= timestamp) return null;
     const skill = (fighter.profile.skills || []).find((candidate) => Number(candidate.selfId) === Number(saved.skillId));
     const details = ColdCombatProfile.summonDetails(skill || saved);
+    const npcStats = summonNpcStats(fighter, details);
+    const savedHp = Number(saved.hp || 0);
     return {
-        ...summonNpcStats(fighter, details),
         ...saved,
+        ...npcStats,
         skillId: Number(saved.skillId || skill?.selfId || 0),
         expiresAt: Number(saved.expiresAt),
-        hp: Math.max(1, Number(saved.hp || saved.maxHp || 1)),
-        maxHp: Math.max(1, Number(saved.maxHp || 1))
+        hp: Math.min(npcStats.maxHp, Math.max(1, savedHp || npcStats.maxHp)),
+        maxHp: npcStats.maxHp
     };
 }
 
@@ -435,8 +456,8 @@ function setPersistedSummon(fighter, summon) {
     };
 }
 
-function startColdSummon(fighter, timestamp, cooldowns) {
-    const skill = ColdCombatProfile.summonSkills(fighter.profile).find((candidate) => (
+function startColdSummon(fighter, timestamp, cooldowns, skills = ColdCombatProfile.summonSkills(fighter.profile)) {
+    const skill = skills.find((candidate) => (
         Number(cooldowns[candidate.selfId] || 0) <= timestamp
     ));
     if (!skill || Number(skill.mp || 0) > fighter.vitals.mp) return false;
@@ -456,6 +477,21 @@ function startColdSummon(fighter, timestamp, cooldowns) {
     cooldowns[skill.selfId] = timestamp + Math.max(0, Number(skill.reuse || 0));
     fighter.readyAt = Number(fighter.readyAt || 0) + actionDelayMs(fighter.profile, skill);
     return true;
+}
+
+function startColdCorpseSummon(fighter, timestamp, cooldowns) {
+    if (!BotRoles.isNecromancer(fighter.profile?.classId) || fighter.summon) return false;
+    const persisted = persistedSummon(fighter, timestamp);
+    if (persisted) {
+        fighter.summon = persisted;
+        return false;
+    }
+    return startColdSummon(
+        fighter,
+        timestamp,
+        cooldowns,
+        ColdCombatProfile.corpseSummonSkills(fighter.profile)
+    );
 }
 
 function ensureColdSummon(fighter, timestamp, cooldowns) {
@@ -591,6 +627,11 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             }
             mobHp -= Math.max(0, damage);
             botReadyAt += actionDelayMs(bot, skill);
+            if (mobHp <= 0) {
+                startColdCorpseSummon(soloFighter, timestamp + time, cooldowns);
+                summonUses = Number(soloFighter.summonUses || 0);
+                break;
+            }
         } else if (hitSucceeds(mob.accur, bot.evasion, rng)) {
             const critical = Formulas.rollCritical(mob.critical, rng);
             const damage = Formulas.calcMeleeDamage(mob.pAtk, mob.pAtkRnd, bot.pDef, { critical });
@@ -786,6 +827,17 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             }
             mobHp -= Math.max(0, damage);
             next.readyAt += actionDelayMs(next.profile, skill);
+            if (mobHp <= 0) {
+                const necromancer = fighters.find((fighter) => (
+                    fighter.vitals.hp > 0
+                    && BotRoles.isNecromancer(fighter.profile?.classId)
+                    && !fighter.summon
+                ));
+                if (necromancer) {
+                    startColdCorpseSummon(necromancer, timestamp + time, necromancer.cooldowns);
+                }
+                break;
+            }
         } else {
             const targets = fighters.filter((fighter) => fighter.vitals.hp > 0);
             const tank = targets.find((fighter) => fighter.role === 'tank');

@@ -2,6 +2,7 @@ const SpeckMath      = invoke('GameServer/SpeckMath');
 const World          = invoke('GameServer/World/World');
 const ServerResponse = invoke('GameServer/Network/Response');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
+const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
 const BotSkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
@@ -51,6 +52,13 @@ function ratio(value, max) {
 
 function isBusy(bot) {
     return !!(bot.state.fetchTowards() || bot.state.fetchHits() || bot.state.fetchCasts());
+}
+
+function canAttemptPartyCorpseSummon(bot, partyThreat, leaderTargetId) {
+    if (partyThreat || leaderTargetId || bot.state.fetchSeated?.() || isBusy(bot)) return false;
+
+    const impairments = EffectStore.impairments(bot);
+    return !impairments.disabled && !impairments.silenced && !impairments.magicMuted;
 }
 
 function preemptForPriorityHeal(session, bot) {
@@ -819,6 +827,7 @@ function deliverPurchasedResources(session, bot, playerSession) {
 module.exports = {
     deliverPurchasedResources,
     canRefreshPartyMusicDuringCombat,
+    canAttemptPartyCorpseSummon,
 
     tick(session, bot, Generics, BotAI) {
         const playerSession = session.followPlayerSession;
@@ -1023,6 +1032,22 @@ module.exports = {
         const leaderTargetId = partyRaid?.phase === 'combat'
             ? Number(partyRaid.bossId)
             : (pulling.enabled ? undefined : configuredLeaderTargetId);
+        // A necromancer may need one quiet tick after the party kills a mob:
+        // the corpse is no longer a live party threat, but it is still a valid
+        // TARGET_CORPSE_MOB for the next summon cast.
+        if (canAttemptPartyCorpseSummon(bot, partyThreat, leaderTargetId)) {
+            const corpse = SummonerTactics.corpseTarget(session, bot);
+            if (corpse) {
+                session.currentTargetId = corpse.fetchId();
+                bot.select({ id: corpse.fetchId() });
+                BotAI.executeCombat(session, bot, corpse, Generics);
+                recordRoleDecision(session, bot, 'summon_corpse', 'corpse_available', {
+                    targetId: corpse.fetchId(),
+                    skillId: session.lastCombatDecision?.skillId || null
+                });
+                return;
+            }
+        }
         announceUnexpectedNpcAdd(session, bot, playerSession, partyThreat, leaderTargetId);
         const impairments = EffectStore.impairments(bot);
 

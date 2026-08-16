@@ -17,6 +17,7 @@ const MANA_REST_ROLES = new Set(['mage', 'archer', 'healer']);
 // whose combat loop must not stop merely because their MP is low.
 const CASTER_BUFFER_CLASSES = new Set([17, 49, 50, 51, 52]);
 const SUMMONER_CLASSES = new Set([14, 28, 41]);
+const NECROMANCER_CLASSES = new Set([13]);
 
 function classIdOf(value) {
     if (typeof value === 'number' || typeof value === 'string') return value;
@@ -91,6 +92,10 @@ function isSummoner(value) {
     return SUMMONER_CLASSES.has(roleClassId(value));
 }
 
+function isNecromancer(value) {
+    return NECROMANCER_CLASSES.has(roleClassId(value));
+}
+
 function canBuff(value) {
     return isRole(value, 'buffer');
 }
@@ -141,6 +146,7 @@ function partyRoleStance(role) {
 module.exports = {
     ROLE_CLASSES,
     SUMMONER_CLASSES,
+    NECROMANCER_CLASSES,
     className,
     roleClassId,
     presentation,
@@ -149,6 +155,7 @@ module.exports = {
     isHealer,
     isTank,
     isSummoner,
+    isNecromancer,
     canBuff,
     shouldRestForMana,
     needsPartyManaRecovery,

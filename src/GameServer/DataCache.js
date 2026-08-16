@@ -18,6 +18,7 @@ const DataCache = {
         const C4SevenSignsDungeonTeleports = invoke('GameServer/World/C4SevenSignsDungeonTeleports');
         DataCache.npcs            = [
             ...validateModel(path + 'Npcs/npcs').filter((npc) => npc.selfId !== 135),
+            ...validateModel(path + 'Npcs/summons'),
             ...validateModel(path + 'Npcs/c4_swamp_of_screams'),
             ...validateModel(path + 'Npcs/c4_garden_of_beasts'),
             ...validateModel(path + 'Npcs/c4_valley_of_saints'),

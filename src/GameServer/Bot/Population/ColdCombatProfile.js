@@ -322,8 +322,8 @@ function profileFor(state = {}, timestamp = Date.now()) {
     const classId = number(saved?.classId, number(state.stats?.classId, number(state.classId)));
     const template = classTemplate(classId);
     const level = Math.max(1, number(state.level, 1));
-    const spellcaster = [10, 14, 25, 26, 28, 38, 39, 40, 41, 49].includes(Formulas.getParentClassId(classId))
-        || [10, 14, 25, 26, 28, 38, 39, 40, 41, 49].includes(classId);
+    const spellcaster = [10, 13, 14, 25, 26, 28, 38, 39, 40, 41, 49].includes(Formulas.getParentClassId(classId))
+        || [10, 13, 14, 25, 26, 28, 38, 39, 40, 41, 49].includes(classId);
     const equipped = equippedTemplates(state);
     const legacyEquipment = equipmentFromTemplates(equipped, spellcaster, template.stats || {});
     const profile = {
@@ -439,6 +439,8 @@ function offensiveSkills(profile) {
 function summonDetails(skill = {}) {
     const definition = skillDefinition(skill.selfId, skill.level) || {};
     return {
+        skillId: number(skill.selfId),
+        skillLevel: number(skill.level, 1),
         ...summonFields(definition),
         ...Object.fromEntries(Object.entries(summonFields(skill)).filter(([, value]) => value > 0 || value === true))
     };
@@ -452,6 +454,21 @@ function summonSkills(profile = {}) {
             const details = summonDetails(skill);
             return semantic.skillType === C4SkillRules.SUMMON
                 && semantic.target === 'self'
+                && details.npcId > 10
+                && details.isCubic !== true;
+        })
+        .sort((a, b) => Number(b.selfId || 0) - Number(a.selfId || 0)
+            || Number(b.level || 0) - Number(a.level || 0));
+}
+
+function corpseSummonSkills(profile = {}) {
+    return (profile.skills || [])
+        .filter((skill) => !skill.passive)
+        .filter((skill) => {
+            const semantic = C4SkillRules.resolve(skill);
+            const details = summonDetails(skill);
+            return semantic.skillType === C4SkillRules.SUMMON
+                && semantic.target === 'corpse_mob'
                 && details.npcId > 10
                 && details.isCubic !== true;
         })
@@ -503,6 +520,6 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
 
 module.exports = {
     PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor,
-    offensiveSkills, summonDetails, summonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect,
+    offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect,
     npcForSpot, skillSnapshotsFromRecords, skillRecordsFromTree
 };

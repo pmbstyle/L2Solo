@@ -34,6 +34,38 @@ const SkillModel = invoke('GameServer/Model/Skill');
 const SkillExec = invoke('GameServer/Actor/Generics/SkillExec');
 const ActorGenerics = invoke(path.actor);
 
+function corpseSummonControlProbe() {
+    return {
+        effects: {},
+        state: {
+            fetchSeated: () => false,
+            fetchTowards: () => false,
+            fetchHits: () => false,
+            fetchCasts: () => false
+        }
+    };
+}
+
+assert.strictEqual(
+    FollowingState.canAttemptPartyCorpseSummon(corpseSummonControlProbe(), null, null),
+    true,
+    'a free party corpse-summon tick must be allowed without control effects'
+);
+for (const [effect, label] of [
+    [{ key: 'stun', id: 101, type: 'debuff', category: 'stun', durationMs: 60000 }, 'stun'],
+    [{ key: 'silence', id: 1064, type: 'debuff', category: 'silence', durationMs: 60000 }, 'silence'],
+    [{ key: 'magic_mute', id: 99991, type: 'debuff', stats: { magicMute: true }, durationMs: 60000 }, 'magic mute']
+]) {
+    const actor = corpseSummonControlProbe();
+    EffectStore.apply(actor, effect);
+    assert.strictEqual(
+        FollowingState.canAttemptPartyCorpseSummon(actor, null, null),
+        false,
+        `party corpse summoning must be blocked while the Necromancer has ${label}`
+    );
+    EffectStore.remove(actor, effect.key);
+}
+
 class FakeState {
     constructor() {
         this.seated = false;
