@@ -222,6 +222,16 @@ function className(value) {
         ?.template?.class || null;
 }
 
+function classCatalog() {
+    return (DataCache.classTemplates || [])
+        .map((template) => ({
+            classId: normalizedClassId(template.classId),
+            className: template.template?.class || null
+        }))
+        .filter((entry) => entry.classId !== null && entry.className)
+        .sort((left, right) => left.className.localeCompare(right.className, 'en', { sensitivity: 'base' }));
+}
+
 const RACE_NAMES = Object.freeze({
     0: 'Human',
     1: 'Elf',
@@ -912,6 +922,7 @@ function snapshot() {
         bounds: WORLD_BOUNDS,
         mapTiles: MAP_TILES,
         labels: REGION_LABELS,
+        classes: classCatalog(),
         raidBosses: raidBossSnapshot(),
         population: PopulationStatus.counts(),
         runtime: {
@@ -1098,6 +1109,7 @@ const WorldObserverServer = {
     compactStateBot,
     compactColdDetail,
     compactHotDetail,
+    classCatalog,
     actorDetail,
     raidBossCatalog,
     raidBossSnapshot,

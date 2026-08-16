@@ -568,8 +568,7 @@ function actorSearchText(actor) {
         displayActivity(actor),
         actor.role,
         roleLabel(actor.role),
-        actor.className,
-        actor.build?.className,
+        actorClassName(actor),
         actor.build?.classFamily,
         actor.region,
         actor.area?.name,
@@ -934,7 +933,7 @@ function renderFilterCounts() {
 }
 
 function renderClassFilter() {
-    const options = ActorFilters.classOptions(eligibleActors());
+    const options = ActorFilters.classOptions(eligibleActors(), state.snapshot?.classes || []);
     const signature = options.map((option) => `${option.key}:${option.label}`).join('|');
     if (signature === state.classOptionsSignature) return;
     state.classOptionsSignature = signature;
@@ -1216,8 +1215,7 @@ function activityLabel(value) {
 }
 
 function actorClassName(actor) {
-    return actor.className
-        || actor.build?.className
+    return ActorFilters.className(actor, state.snapshot?.classes || [])
         || (actor.build?.classFamily ? humanizeToken(actor.build.classFamily) : null)
         || (actor.kind === 'player' ? 'Player' : 'Unknown class');
 }

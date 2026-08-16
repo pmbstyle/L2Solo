@@ -6,7 +6,14 @@ const actors = [
     { id: 1, name: 'Starter', level: 1, classId: 0, className: 'Human Fighter' },
     { id: 2, name: 'Cleric', level: 24, classId: 15, className: 'Cleric' },
     { id: 3, name: 'Bishop', level: 45, classId: 16, className: 'Bishop' },
-    { id: 4, name: 'Legacy', level: 52, build: { classId: 16, className: 'Bishop' } }
+    { id: 4, name: 'Legacy', level: 52, build: { classId: 16, className: 'Bishop' } },
+    { id: 5, name: 'Singer', level: 40, classId: 21 },
+    { id: 6, name: 'Dancer', level: 45, classId: 34 }
+];
+
+const classCatalog = [
+    { classId: 21, className: 'Swordsinger' },
+    { classId: 34, className: 'Bladedancer' }
 ];
 
 assert.strictEqual(Filters.isEligible({ kind: 'player', role: 'crafter', staticService: true }), true, 'real players must never be hidden by bot-service filters');
@@ -31,6 +38,18 @@ assert.strictEqual(Filters.actorKind(2, 'bot', { players: [{ id: 2 }] }), 'bot',
 assert.strictEqual(Filters.actorKind(3, null, { players: [{ id: 2 }] }), 'bot', 'unknown party leaders default to bots');
 
 assert.strictEqual(Filters.classKey(actors[0]), 'id:0', 'base profession id zero must remain filterable');
+assert.strictEqual(Filters.className(actors[4], classCatalog), 'Swordsinger',
+    'class metadata must resolve a Swordsinger when an actor only carries its class id');
+assert.strictEqual(Filters.className(actors[5], classCatalog), 'Bladedancer',
+    'class metadata must resolve a Bladedancer when an actor only carries its class id');
+assert.deepStrictEqual(Filters.classOptions(actors.slice(4), classCatalog), [
+    { key: 'id:34', label: 'Bladedancer' },
+    { key: 'id:21', label: 'Swordsinger' }
+], 'the class filter must retain both music classes when names come from the observer catalog');
+assert.deepStrictEqual(Filters.classOptions([], classCatalog), [
+    { key: 'id:34', label: 'Bladedancer' },
+    { key: 'id:21', label: 'Swordsinger' }
+], 'the class filter must expose catalog classes even when no actor currently has that profession');
 assert.deepStrictEqual(Filters.classOptions(actors), [
     { key: 'id:16', label: 'Bishop' },
     { key: 'id:15', label: 'Cleric' },

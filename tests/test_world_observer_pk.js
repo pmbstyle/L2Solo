@@ -7,6 +7,12 @@ DataCache.init();
 const Observer = invoke('WorldObserver/WorldObserverServer');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 
+const observerClasses = Observer.classCatalog();
+assert(observerClasses.some((entry) => entry.classId === 21 && entry.className === 'Swordsinger'),
+    'observer class catalog must include Swordsinger');
+assert(observerClasses.some((entry) => entry.classId === 34 && entry.className === 'Bladedancer'),
+    'observer class catalog must include Bladedancer');
+
 function actor(karma = 0) {
     return {
         fetchId: () => 42,
