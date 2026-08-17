@@ -156,6 +156,34 @@ const BackgroundPartyState = {
         });
     },
 
+    purgeHistory(limit = Config.partyHistoryCleanupBatchSize, timestamp = now()) {
+        if (!initialized) return Promise.resolve(0);
+        const retentionMs = Math.max(0, Number(Config.partyHistoryRetentionMs) || 0);
+        if (!retentionMs) return Promise.resolve(0);
+        const safeLimit = Math.max(1, Math.min(5000, Number(limit) || 1000));
+        const cutoff = Math.max(0, Number(timestamp) - retentionMs);
+        return Database.execute([
+            `DELETE FROM ${TABLE}
+            WHERE partyId IN (
+                SELECT partyId FROM ${TABLE}
+                WHERE status <> 'active'
+                  AND updatedAt <= ?
+                ORDER BY updatedAt ASC
+                LIMIT ${safeLimit}
+            )`,
+            [cutoff]
+        ]).then((result) => {
+            const deleted = Number(result?.affectedRows || 0);
+            if (deleted > 0) {
+                utils.infoWarn('BotParty', 'purged %d dissolved background party history row(s)', deleted);
+            }
+            return deleted;
+        }).catch((err) => {
+            utils.infoWarn('BotParty', 'failed to purge dissolved background party history: %s', err.message);
+            return 0;
+        });
+    },
+
     createOrUpdate(party) {
         const membership = normalizeMembership(party);
         const status = party?.status || 'active';

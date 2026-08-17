@@ -410,6 +410,7 @@ CREATE TABLE IF NOT EXISTS bot_background_parties (
     updatedAt INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS bot_background_parties_status_nextResolveAt ON bot_background_parties(status, nextResolveAt);
+CREATE INDEX IF NOT EXISTS bot_background_parties_status_updatedAt ON bot_background_parties(status, updatedAt);
 CREATE INDEX IF NOT EXISTS bot_background_parties_spotId ON bot_background_parties(spotId);
 
 INSERT OR IGNORE INTO sqlite_sequence(name, seq) VALUES ('characters', 1999999);

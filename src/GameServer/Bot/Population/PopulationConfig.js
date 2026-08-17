@@ -116,6 +116,11 @@ const DEFAULTS = {
     partyRequirementRefreshMs: 5 * 60 * 1000,
     partyRequirementRefreshBatchSize: 2,
     partySessionJitterMs: 5 * 60 * 1000,
+    // Dissolved party rows are operational history, not durable state. Keep
+    // a short diagnostic window without allowing every rotation to grow the
+    // population database forever.
+    partyHistoryRetentionMs: 24 * 60 * 60 * 1000,
+    partyHistoryCleanupBatchSize: 1000,
     cooldownGraceMs: 120000,
     cooldownBatchSize: 20,
     cooldownRadius: 11000,
@@ -219,6 +224,8 @@ const ENV_KEYS = {
     partyRecruitmentChatEnabled: 'BOT_PARTY_RECRUITMENT_CHAT_ENABLED',
     partyRecruitmentChatIntervalMs: 'BOT_PARTY_RECRUITMENT_CHAT_INTERVAL_MS',
     partyMarketBreakMinSessionMs: 'BOT_PARTY_MARKET_BREAK_MIN_SESSION_MS',
+    partyHistoryRetentionMs: 'BOT_PARTY_HISTORY_RETENTION_MS',
+    partyHistoryCleanupBatchSize: 'BOT_PARTY_HISTORY_CLEANUP_BATCH_SIZE',
     devLogPlayerChat: 'BOT_DEV_LOG_PLAYER_CHAT',
     debug: 'BOT_POPULATION_DEBUG'
 };

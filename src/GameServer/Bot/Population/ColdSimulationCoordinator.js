@@ -147,8 +147,11 @@ class ColdSimulationCoordinator {
         this.population = population || this.population;
         this.started = true;
         this.stopping = false;
-        return Promise.all([LifeState.init(), BackgroundPartyState.init()]).then(() => {
+        return Promise.all([LifeState.init(), BackgroundPartyState.init()]).then(async () => {
             if (this.stopping) return false;
+            // LifeState startup has already released members of historical
+            // dissolved parties. Only then is it safe to trim the rows.
+            await BackgroundPartyState.purgeHistory();
             this.queue.start();
             this.startWorker();
             this.watchdogTimer = setInterval(() => this.watchdog(), 1000);
