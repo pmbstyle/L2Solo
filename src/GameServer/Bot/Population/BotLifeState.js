@@ -1704,12 +1704,14 @@ const BotLifeState = {
                 SELECT ${objectiveSpot} AS candidateSpot, COUNT(*) AS candidateCount, MIN(updatedAt) AS oldestAt
                 FROM ${TABLE}
                 WHERE phase = 'cold'
+                AND simulationOwner = 'legacy_main'
                 AND (partyId IS NULL OR partyId = '')
                 AND spotId IS NOT NULL
                 AND ${activityClause}
                 GROUP BY candidateSpot
             ) party_spots ON party_spots.candidateSpot = ${stateObjectiveSpot}
             WHERE states.phase = 'cold'
+            AND states.simulationOwner = 'legacy_main'
             AND (states.partyId IS NULL OR states.partyId = '')
             AND states.spotId IS NOT NULL
             AND ${stateActivityClause}
@@ -1772,6 +1774,7 @@ const BotLifeState = {
         return Database.execute([
             `SELECT COUNT(*) AS candidateCount FROM ${TABLE}
             WHERE phase = 'cold'
+            AND simulationOwner = 'legacy_main'
             AND (partyId IS NULL OR partyId = '')
             AND spotId IS NOT NULL
             AND ${activityClause}`,
@@ -1804,6 +1807,7 @@ const BotLifeState = {
                     ) AS candidateRank
                 FROM ${TABLE} states
                 WHERE states.phase = 'cold'
+                AND states.simulationOwner = 'legacy_main'
                 AND (states.partyId IS NULL OR states.partyId = '')
                 AND ${objectiveSpot} IN (${placeholders})
                 AND ${activityClause}

@@ -380,6 +380,12 @@ function applySchemaMigrations() {
             if (!warehouseColumns.some((column) => column.name === 'enchant')) {
                 connection.exec('ALTER TABLE warehouse_items ADD COLUMN enchant INTEGER NOT NULL DEFAULT 0 CHECK(enchant >= 0)');
             }
+        }],
+        [13, () => {
+            connection.exec(`
+                CREATE INDEX IF NOT EXISTS bot_life_state_party_owner_filter
+                    ON bot_life_state(simulationOwner, phase, partyId, activity, spotId, updatedAt);
+            `);
         }]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
