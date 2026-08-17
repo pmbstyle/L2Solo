@@ -1590,76 +1590,10 @@ const PopulationService = {
     },
 
     tickBudgeted() {
-        if (this.resolving || this.partyFormationRunning || this.classProgressionMigrationRunning || this.coldCombatProfileMigrationRunning || Config.enabled === false || Config.backgroundResolverEnabled === false) {
-            if (this.resolving || this.partyFormationRunning || this.classProgressionMigrationRunning || this.coldCombatProfileMigrationRunning) {
-                Metrics.recordSchedulerSkip();
-            }
-            return Promise.resolve([]);
-        }
-
-        const startedAt = Date.now();
-        const profile = this.schedulerProfile();
-        Metrics.recordSchedulerProfile(profile);
-        const budgetMs = profile.budgetMs;
-        if (budgetMs <= 0) {
-            Metrics.recordSchedulerBudgetStop();
-            return Promise.resolve([]);
-        }
-        const deadlineAt = startedAt + budgetMs;
-        this.resolving = true;
-        return Database.cooperatively(() => this.recoverExpiredColdOwnerLeases(startedAt)
-            .then(() => (profile.allowBackgroundParties
-            ? this.resolveDueParties(deadlineAt)
-            : Promise.resolve([])))
-            .then(() => (profile.allowAuxiliaryBackground
-                ? this.releaseWarehouseMaterials(deadlineAt)
-                : Promise.resolve([])))
-            .then(() => (profile.allowAuxiliaryBackground
-                ? this.reconcileMarketGoals(deadlineAt)
-                : Promise.resolve([])))
-            .then(() => LifeState.dueCold(profile.maxResolvesPerTick))
-            .then((states) => {
-                Metrics.recordColdBatch(states.length, profile.maxResolvesPerTick);
-                return this.runInSchedulerSlices(states, (state) => this.resolveOwnedColdState(state)
-                .catch((error) => {
-                    // A single bot may lose a race with a market or
-                    // craft transaction. It must not abort every
-                    // remaining cold resolve in this scheduler tick.
-                    utils.infoWarn('BotPopulation', 'cold resolve failed for %s: %s', state.name, error?.message || error);
-                    Metrics.recordSkippedResolve('cold_resolve_rejected');
-                    return { ok: false, reason: 'resolve_rejected', state };
-                }), deadlineAt);
-            })
-            .catch((err) => {
-                utils.infoWarn('BotPopulation', 'background scheduler failed: %s', err.message);
-                return [];
-            })
-            .finally(() => {
-                const elapsedMs = Date.now() - startedAt;
-                Metrics.recordSchedulerRun(elapsedMs);
-                if (elapsedMs >= Config.schedulerIntervalMs) {
-                    utils.infoWarn(
-                        'BotPopulation',
-                        'background scheduler overran interval: %dms >= %dms',
-                        elapsedMs,
-                        Config.schedulerIntervalMs
-                    );
-                }
-                this.resolving = false;
-                this.maybeExpireStaleMarketStores();
-                // The scheduler is known to run throughout normal operation;
-                // use its post-resolve edge as a reliable fallback for the
-                // bounded legacy-store transition timer.
-                this.maybeMigrateLegacyMarketTowns();
-                // Keep the bounded profile migration outside the active
-                // scheduler slot. An independent timer can otherwise make a
-                // normal five-second tick look busy and skip its resolves.
-                this.maybeMigrateLegacyColdCombatProfiles();
-                if (this.partyFormationPending) {
-                    this.partyFormationPending = false;
-                    this.formBackgroundParties();
-                }
-            }));
+        // Cold simulation is worker-owned. Keep this compatibility entrypoint
+        // inert so an old timer or plugin cannot accidentally reintroduce a
+        // second main-thread resolver competing with the worker CAS loop.
+        return Promise.resolve([]);
     },
 
     resolveDueParties(deadlineAt = Infinity) {

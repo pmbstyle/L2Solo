@@ -2,7 +2,6 @@ const assert = require('assert');
 
 require('../src/Global');
 
-const Database = invoke('Database');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const Owner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
@@ -37,8 +36,6 @@ function state(characterId, activity = 'hunting', stats = {}) {
 }
 
 const originals = {
-    cooperative: Database.cooperatively,
-    dueCold: LifeState.dueCold,
     prepareResolve: LifeState.prepareResolve,
     cachedState: LifeState.cachedState,
     syncResolvedState: LifeState.syncResolvedState,
@@ -46,20 +43,12 @@ const originals = {
     claim: Owner.claim,
     commit: Owner.commit,
     release: Owner.release,
-    recoverExpiredLeases: Owner.recoverExpiredLeases,
     resolveSolo: BackgroundResolver.resolveSolo,
     findForState: SpotProfiles.findForState,
     pressureForState: Director.pressureForState,
     maybeAnnounce: GlobalChat.maybeAnnounce,
     resolveColdState: PopulationService.resolveColdState,
-    schedulerProfile: PopulationService.schedulerProfile,
-    runInSchedulerSlices: PopulationService.runInSchedulerSlices,
-    resolveDueParties: PopulationService.resolveDueParties,
-    releaseWarehouseMaterials: PopulationService.releaseWarehouseMaterials,
-    reconcileMarketGoals: PopulationService.reconcileMarketGoals,
-    recoverExpiredColdOwnerLeases: PopulationService.recoverExpiredColdOwnerLeases,
-    timeoutMs: Config.coldOwnerResolveTimeoutMs,
-    resolving: PopulationService.resolving
+    timeoutMs: Config.coldOwnerResolveTimeoutMs
 };
 
 (async () => {
@@ -132,40 +121,15 @@ const originals = {
     assert.strictEqual(releases, 3, 'timeout must release its active claim');
 
     LifeState.prepareResolve = async (candidate) => ({ ...candidate, exp: candidate.exp + 1 });
-    Database.cooperatively = (work) => Promise.resolve().then(work);
-    Owner.recoverExpiredLeases = async () => ({ affectedRows: 0, rows: [] });
-    PopulationService.recoverExpiredColdOwnerLeases = async () => ({ affectedRows: 0, rows: [] });
-    PopulationService.resolveDueParties = async () => [];
-    PopulationService.releaseWarehouseMaterials = async () => [];
-    PopulationService.reconcileMarketGoals = async () => [];
-    PopulationService.schedulerProfile = () => ({
-        idle: true,
-        budgetMs: 10000,
-        maxResolvesPerTick: 2,
-        allowBackgroundParties: false,
-        allowAuxiliaryBackground: false,
-        activity: { mode: 'idle', realPlayers: 0, companionCount: 0 },
-        lagMs: 0
-    });
-    PopulationService.runInSchedulerSlices = (values, handler) => values.reduce(
-        (chain, value) => chain.then(async (results) => [...results, await handler(value)]),
-        Promise.resolve([])
-    );
-    LifeState.dueCold = async () => [state(5), state(6, 'shopping')];
-    PopulationService.resolving = false;
-    const mixed = await PopulationService.tickBudgeted();
-    assert.strictEqual(mixed.length, 2, 'scheduler must retain both owner and legacy results');
-    assert.strictEqual(mixed[0].ok, true);
-    assert.strictEqual(mixed[1].legacy, true);
-    assert.strictEqual(legacyResolves, 2, 'legacy member of a mixed batch must use only legacy-main');
+    const retiredScheduler = await PopulationService.tickBudgeted();
+    assert.deepStrictEqual(retiredScheduler, [], 'the retired main-thread scheduler must not resolve a mixed batch');
+    assert.strictEqual(legacyResolves, 1, 'legacy-main fallback remains available only through an explicit resolve call');
 
-    console.log('Cold owner scheduler mix, release, and timeout checks passed');
+    console.log('Cold owner and legacy fallback checks passed');
 })().catch((error) => {
     console.error(error);
     process.exitCode = 1;
 }).finally(() => {
-    Database.cooperatively = originals.cooperative;
-    LifeState.dueCold = originals.dueCold;
     LifeState.prepareResolve = originals.prepareResolve;
     LifeState.cachedState = originals.cachedState;
     LifeState.syncResolvedState = originals.syncResolvedState;
@@ -173,18 +137,10 @@ const originals = {
     Owner.claim = originals.claim;
     Owner.commit = originals.commit;
     Owner.release = originals.release;
-    Owner.recoverExpiredLeases = originals.recoverExpiredLeases;
     BackgroundResolver.resolveSolo = originals.resolveSolo;
     SpotProfiles.findForState = originals.findForState;
     Director.pressureForState = originals.pressureForState;
     GlobalChat.maybeAnnounce = originals.maybeAnnounce;
     PopulationService.resolveColdState = originals.resolveColdState;
-    PopulationService.schedulerProfile = originals.schedulerProfile;
-    PopulationService.runInSchedulerSlices = originals.runInSchedulerSlices;
-    PopulationService.resolveDueParties = originals.resolveDueParties;
-    PopulationService.releaseWarehouseMaterials = originals.releaseWarehouseMaterials;
-    PopulationService.reconcileMarketGoals = originals.reconcileMarketGoals;
-    PopulationService.recoverExpiredColdOwnerLeases = originals.recoverExpiredColdOwnerLeases;
     Config.coldOwnerResolveTimeoutMs = originals.timeoutMs;
-    PopulationService.resolving = originals.resolving;
 });

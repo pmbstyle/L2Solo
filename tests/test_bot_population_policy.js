@@ -119,7 +119,7 @@ async function run() {
         'with a real player online, background formation must be deferred instead of queued behind the scheduler');
     PopulationService.resolving = false;
     PopulationService.partyFormationRunning = true;
-    assert.deepStrictEqual(await PopulationService.tickBudgeted(), [], 'the scheduler must wait for an in-flight party formation pass');
+    assert.deepStrictEqual(await PopulationService.tickBudgeted(), [], 'the retired main-thread scheduler must remain inert');
 }
 
 run()
