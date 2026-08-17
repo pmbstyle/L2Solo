@@ -44,11 +44,13 @@ global.invoke = (module) => {
 
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const BackgroundPartyResolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
+const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const LifeStateProjector = invoke('GameServer/Bot/Population/BotLifeState');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Protocol = require('./ColdSimulationProtocol');
-const { ColdSimulationKernel } = require('./ColdSimulationKernel');
+const { ColdSimulationKernel, beginRouteTravelState } = require('./ColdSimulationKernel');
 const forbiddenLoaded = Object.keys(require.cache).filter((filename) => (
     /[\\/]src[\\/]Database\.js$/i.test(filename)
     || /[\\/]GameServer[\\/]World[\\/]World\.js$/i.test(filename)
@@ -98,6 +100,12 @@ function startKernel(config = {}) {
     kernel = new ColdSimulationKernel({
         resolveSolo: (options) => BackgroundResolver.resolveSolo(options),
         resolveParty: (options) => BackgroundPartyResolver.resolve(options),
+        partySession: {
+            partySessionMaxMs: Config.partySessionMaxMs,
+            partySessionJitterMs: Config.partySessionJitterMs,
+            partyMinSize: Config.partyMinSize
+        },
+        partyMinSize: Config.partyMinSize,
         projectResolve: async (state, result, timestamp) => {
             const projected = await LifeStateProjector.prepareResolve(state, result, {
                 persist: false,
@@ -120,7 +128,7 @@ function startKernel(config = {}) {
                 durable: progressionChanged ? { classId: afterClassId, skills } : null
             };
         },
-        planLifecycle: ({ state, timestamp }) => {
+        planLifecycle: ({ state, context, timestamp }) => {
             const previousPlan = state.stats?.equipmentPlan || null;
             const spots = planningSpots;
             const replanContext = GearAcquisitionPlanner.replanContextFor(state, previousPlan, timestamp);
@@ -147,15 +155,38 @@ function startKernel(config = {}) {
                 marketFallback: finalizedPlan.status === 'active' && finalizedPlan.strategy === 'craft'
                     && Number(finalizedPlan.startedAt || timestamp) + 20 * 60 * 1000 <= timestamp
             };
+            const partyRequest = PartyRequestPlanner.partyRequestForPlan(state, acquisitionPlan, timestamp);
+            const partyRouteWaiting = !state.party?.partyId
+                && (partyRequest?.priority === 'required'
+                    || (partyRequest?.status === 'deferred'
+                        && (acquisitionPlan.partyNeed === 'required' || acquisitionPlan.requiresParty === true)));
+            const partyFallback = partyRouteWaiting
+                ? GearAcquisitionPlanner.safeFallbackForPlan(state, acquisitionPlan, spots)
+                : null;
+            const fallbackSpot = partyFallback
+                ? spots.find((spot) => String(spot.id) === String(partyFallback.spotId)) || null
+                : null;
+            const plannedStats = { ...(state.stats || {}), equipmentPlan: acquisitionPlan };
+            if (partyRequest) plannedStats.partyRequest = partyRequest;
+            else delete plannedStats.partyRequest;
+            const plannedState = {
+                ...state,
+                activity: fallbackSpot && !['traveling', 'shopping', 'merchant', 'crafting', 'dead'].includes(state.activity)
+                    ? 'hunting'
+                    : state.activity,
+                spotId: fallbackSpot ? fallbackSpot.id : state.spotId,
+                stats: plannedStats
+            };
+            const routedState = beginRouteTravelState(plannedState, context?.route, timestamp) || plannedState;
             return {
                 previousPlan,
                 acquisitionPlan,
+                partyRequest,
+                partyFallback,
+                targetNpcId: partyRouteWaiting ? Number(partyFallback?.npcId || 0) : Number(acquisitionPlan.next?.npcId || 0),
                 reusablePartyRequest,
                 replanFailure: replanContext.failure || null,
-                plannedState: {
-                    ...state,
-                    stats: { ...(state.stats || {}), equipmentPlan: acquisitionPlan }
-                }
+                plannedState: routedState
             };
         },
         emit: send,

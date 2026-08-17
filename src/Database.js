@@ -449,7 +449,7 @@ const COLD_SIMULATION_PATCH_COLUMNS = new Set([
     'level', 'exp', 'sp', 'adena', 'homeRegion', 'currentRegion', 'spotId',
     'activity', 'phase', 'activityStartedAt', 'nextResolveAt', 'lastResolvedAt',
     'lastHotAt', 'locX', 'locY', 'locZ', 'hp', 'maxHp', 'mp', 'maxMp',
-    'targetLevelBand', 'deathCount', 'inventorySummary', 'statsJson', 'updatedAt'
+    'targetLevelBand', 'deathCount', 'partyId', 'inventorySummary', 'statsJson', 'updatedAt'
 ]);
 
 function parsedObject(raw) {
@@ -772,7 +772,59 @@ const Database = {
     commitAndReleaseColdSimulationLeases(requests = []) {
         const batch = Array.isArray(requests) ? requests.slice(0, 32) : [];
         if (!batch.length) return Promise.resolve([]);
+        const atomicGroupFailures = new Map();
+        const atomicGroups = new Map();
+        batch.forEach((request) => {
+            const groupId = request.atomicGroup?.id ? String(request.atomicGroup.id) : null;
+            if (!groupId) return;
+            const group = atomicGroups.get(groupId) || [];
+            group.push(request);
+            atomicGroups.set(groupId, group);
+        });
+        atomicGroups.forEach((group, groupId) => {
+            const expectedIds = new Set((group[0]?.atomicGroup?.memberIds || []).map(Number).filter(Boolean));
+            const presentIds = new Set(group.map((request) => Number(request.characterId)).filter(Boolean));
+            let failure = expectedIds.size === 0
+                || expectedIds.size !== presentIds.size
+                || [...expectedIds].some((id) => !presentIds.has(id));
+            let reason = failure ? 'party_group_incomplete' : null;
+            if (!failure) {
+                for (const request of group) {
+                    const characterId = Number(request.characterId);
+                    const expectedRevision = Number(request.expectedRevision);
+                    const ownerId = String(request.ownerId || COLD_SIMULATION_OWNER);
+                    const leaseId = String(request.leaseId || '');
+                    const timestamp = Number(request.timestamp || now());
+                    const invalidColumn = Object.keys(request.patch || {})
+                        .find((column) => !COLD_SIMULATION_PATCH_COLUMNS.has(column));
+                    const row = coldSimulationRow(characterId);
+                    const conflict = coldSimulationConflict(row, { expectedRevision, ownerId, leaseId }, timestamp);
+                    const proposed = { ...row, ...(request.patch || {}), phase: request.patch?.phase || row?.phase, activity: request.patch?.activity || row?.activity };
+                    const partition = coldSimulationPartition(proposed, request);
+                    if (!Number.isSafeInteger(characterId) || characterId <= 0
+                        || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0
+                        || ownerId !== COLD_SIMULATION_OWNER || !leaseId
+                        || invalidColumn || conflict !== 'cas_failed' || !partition.ok) {
+                        failure = true;
+                        reason = conflict !== 'cas_failed'
+                            ? conflict
+                            : invalidColumn || !partition.ok ? 'party_group_invalid' : 'party_group_invalid';
+                        break;
+                    }
+                }
+            }
+            if (failure) atomicGroupFailures.set(groupId, reason || 'party_group_aborted');
+        });
         return inTransaction(() => batch.map((request) => {
+            const groupId = request.atomicGroup?.id ? String(request.atomicGroup.id) : null;
+            if (groupId && atomicGroupFailures.has(groupId)) {
+                return {
+                    ok: false,
+                    characterId: Number(request.characterId),
+                    reason: 'party_group_aborted',
+                    detail: atomicGroupFailures.get(groupId)
+                };
+            }
             const characterId = Number(request.characterId);
             const expectedRevision = Number(request.expectedRevision);
             const ownerId = String(request.ownerId || COLD_SIMULATION_OWNER);

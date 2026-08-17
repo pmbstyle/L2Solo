@@ -145,6 +145,70 @@ const failedDropPlan = {
 const failedContext = GearAcquisitionPlanner.replanContextFor(failedDropState, failedDropPlan, 20 * 60 * 1000);
 assert.strictEqual(failedContext.failure.reason, 'combat_unviable', 'a cold drop route with repeated resolves and no target kills must expire');
 assert.strictEqual(failedContext.planCurrent, true, 'failure detection must work even when the persisted plan still matches the current level');
+
+const partyBlockedPlan = {
+    ...failedDropPlan,
+    partyNeed: 'required',
+    requiresParty: true
+};
+const partyBlockedState = {
+    ...failedDropState,
+    stats: {
+        ...failedDropState.stats,
+        targetCombat: {
+            populationTargets: {
+                450: { resolves: 0, targetKills: 0 }
+            }
+        },
+        partyRequest: {
+            status: 'deferred',
+            priority: 'required',
+            targetId: failedTarget.selfId,
+            npcId: 450,
+            attempts: GearAcquisitionPlanner.PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT
+        }
+    }
+};
+const partyBlockedContext = GearAcquisitionPlanner.replanContextFor(
+    partyBlockedState,
+    partyBlockedPlan,
+    20 * 60 * 1000
+);
+assert.strictEqual(partyBlockedContext.failure.reason, 'party_route_unavailable',
+    'a repeatedly deferred required party route must become a planner recovery, not an endless direct-drop objective');
+const partyBlockedFallback = GearAcquisitionPlanner.planFor(partyBlockedState, {
+    spots: [],
+    ...partyBlockedContext,
+    findMarketOffer: (item) => Number(item.selfId) === Number(failedTarget.selfId)
+        ? { selfId: item.selfId, price: 999999, town: 'Gludio', sourceType: 'npc' }
+        : null
+});
+assert.strictEqual(partyBlockedFallback.strategy, 'market',
+    'an unavailable party route must use the exact market recovery when it is available');
+
+const craftBlockedPlan = {
+    ...partyBlockedPlan,
+    strategy: 'craft',
+    next: { spotId: 'starter-field', npcId: 450, itemId: failedTarget.selfId }
+};
+delete craftBlockedPlan.partyNeed;
+const craftBlockedContext = GearAcquisitionPlanner.replanContextFor(
+    partyBlockedState,
+    craftBlockedPlan,
+    20 * 60 * 1000
+);
+assert.strictEqual(craftBlockedContext.failure.reason, 'party_route_unavailable',
+    'a repeatedly deferred required craft route must become a planner recovery too');
+const craftBlockedFallback = GearAcquisitionPlanner.planFor(partyBlockedState, {
+    spots: [],
+    ...craftBlockedContext,
+    findMarketOffer: (item) => Number(item.selfId) === Number(failedTarget.selfId)
+        ? { selfId: item.selfId, price: 999999, town: 'Gludio', sourceType: 'npc' }
+        : null
+});
+assert.strictEqual(craftBlockedFallback.strategy, 'market',
+    'an unavailable craft route must use a direct market recovery when the final item is available');
+
 const legacyDropPlan = { ...failedDropPlan };
 delete legacyDropPlan.targetProgress;
 const legacyContext = GearAcquisitionPlanner.replanContextFor(failedDropState, legacyDropPlan, 20 * 60 * 1000);
@@ -648,6 +712,28 @@ const routed = SpotProfiles.findForState({
     stats: { equipmentPlan: { status: 'active', next: { spotId: stoneGolemSpot.id } } }
 });
 assert.strictEqual(routed.id, stoneGolemSpot.id, 'an active equipment plan must override the previous farming spot');
+const starterDropSource = {
+    ...stoneGolemSpot,
+    id: 'starter-drop-source',
+    avgLevel: 2,
+    minLevel: 1,
+    maxLevel: 3
+};
+const levelingFallback = {
+    ...stoneGolemSpot,
+    id: 'leveling-fallback',
+    avgLevel: 16,
+    minLevel: 14,
+    maxLevel: 18
+};
+SpotProfiles.cache = [starterDropSource, levelingFallback];
+const outleveledGearSource = SpotProfiles.findForState({
+    level: 16,
+    spotId: starterDropSource.id,
+    stats: { equipmentPlan: { status: 'active', next: { spotId: starterDropSource.id } } }
+});
+assert.strictEqual(outleveledGearSource.id, levelingFallback.id,
+    'an active gear plan must yield to a level-appropriate route when its drop source is a starter camp');
 SpotProfiles.cache = [
     { id: 'starter-mixed', avgLevel: 13, minLevel: 9, maxLevel: 22, density: 78, center: {}, npcEntries: [] },
     { id: 'd-grade-field', avgLevel: 30, minLevel: 27, maxLevel: 33, density: 12, center: {}, npcEntries: [] }

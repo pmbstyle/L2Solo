@@ -83,6 +83,7 @@ function persistencePatch(state = {}, timestamp = Date.now()) {
         maxMp: Number(state.vitals?.maxMp || 0),
         targetLevelBand: state.levelBand || null,
         deathCount: Number(state.stats?.deaths || 0),
+        partyId: state.party?.partyId || null,
         inventorySummary: JSON.stringify(state.inventory || {}),
         statsJson: JSON.stringify(state.stats || {}),
         updatedAt: Number(state.updatedAt || timestamp)
@@ -225,16 +226,53 @@ function commitAndReleaseBatch(entries = [], options = {}) {
     const requests = [];
     const states = new Map();
     const rejected = [];
+    const accepted = [];
+    const groupedEntries = new Map();
     (entries || []).slice(0, 32).forEach((entry) => {
         const token = entry.token || {};
         const nextState = entry.nextState;
         const partition = eligibility(nextState, entry.options || options);
+        const groupId = entry.atomicGroup?.id ? String(entry.atomicGroup.id) : null;
+        if (groupId) {
+            const group = groupedEntries.get(groupId) || [];
+            group.push(entry);
+            groupedEntries.set(groupId, group);
+        }
         if (!token?.ok || !partition.ok || Number(token.characterId) !== Number(nextState?.characterId)) {
             rejected.push({
                 ok: false,
                 characterId: Number(nextState?.characterId || token?.characterId || 0),
                 reason: !token?.ok ? 'missing_claim' : !partition.ok ? 'partition_rejected' : 'character_changed',
                 detail: !partition.ok ? partition.reason : undefined
+            });
+            return;
+        }
+        accepted.push({ entry, token, nextState, groupId });
+    });
+
+    const abortedGroups = new Map();
+    groupedEntries.forEach((group, groupId) => {
+        const expectedIds = new Set((group[0]?.atomicGroup?.memberIds || []).map(Number).filter(Boolean));
+        const presentIds = new Set(group.map((entry) => Number(entry.nextState?.characterId)).filter(Boolean));
+        const validIds = new Set(accepted
+            .filter((candidate) => candidate.groupId === groupId)
+            .map((candidate) => Number(candidate.nextState?.characterId))
+            .filter(Boolean));
+        const complete = expectedIds.size > 0
+            && expectedIds.size === presentIds.size
+            && [...expectedIds].every((id) => presentIds.has(id));
+        if (!complete || validIds.size !== presentIds.size) {
+            abortedGroups.set(groupId, !complete ? 'party_group_incomplete' : 'party_group_invalid');
+        }
+    });
+
+    accepted.forEach(({ entry, token, nextState, groupId }) => {
+        if (groupId && abortedGroups.has(groupId)) {
+            rejected.push({
+                ok: false,
+                characterId: Number(nextState.characterId),
+                reason: 'party_group_aborted',
+                detail: abortedGroups.get(groupId)
             });
             return;
         }
@@ -263,7 +301,8 @@ function commitAndReleaseBatch(entries = [], options = {}) {
                 ...(inventoryChanged ? { inventory: nextState.inventory || {} } : {})
             },
             allowParty: entry.options?.allowParty === true || options.allowParty === true,
-            allowLifecycle: entry.options?.allowLifecycle === true || options.allowLifecycle === true
+            allowLifecycle: entry.options?.allowLifecycle === true || options.allowLifecycle === true,
+            atomicGroup: entry.atomicGroup || null
         });
     });
     if (!requests.length) return Promise.resolve(rejected);

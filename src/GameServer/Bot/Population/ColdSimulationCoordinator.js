@@ -8,6 +8,9 @@ const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
+const SpotService = invoke('GameServer/Bot/AI/SpotService');
+const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const Director = invoke('GameServer/Bot/Population/PopulationDirector');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
@@ -15,6 +18,8 @@ const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwne
 const Protocol = require('./ColdSimulationProtocol');
 const { ColdCommitQueue } = require('./ColdCommitQueue');
 const { ColdSnapshotQueue } = require('./ColdSnapshotQueue');
+
+const HUNTING_TRAVEL_MS = 25000;
 
 function wait(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -330,21 +335,115 @@ class ColdSimulationCoordinator {
         try { profiles = SpotProfiles.ensure() || []; } catch (_) { profiles = []; }
         const spots = new Map(profiles.map((spot) => [String(spot.id), spot]));
         const parties = new Map((BackgroundPartyState.active?.() || []).map((party) => [Number(party.leaderId || 0), party]));
-        return { spots, parties };
+        let occupancy = {};
+        try { occupancy = SpotProfiles.currentOccupancy(profiles) || {}; } catch (_) { occupancy = {}; }
+        return { spots, profiles, occupancy, parties };
+    }
+
+    routeFor(state, currentSpot, party, partyMembers, index) {
+        if (!state || state.phase !== 'cold' || state.stats?.travel) return null;
+        const partyRoute = !!party;
+        const eligibleActivity = state.activity === 'hunting'
+            || (partyRoute && state.activity === 'grouped');
+        if (!eligibleActivity) return null;
+        if (partyRoute && partyMembers.some((member) => ['resting', 'traveling', 'dead'].includes(member.activity))) return null;
+
+        const role = partyRoute ? PartyComposition.roleForState(state) : null;
+        const partyRequired = !partyRoute
+            && !state.party?.partyId
+            && (state.stats?.equipmentPlan?.partyNeed === 'required'
+                || state.stats?.equipmentPlan?.requiresParty === true);
+        let fallbackSpot = null;
+        if (partyRequired) {
+            let fallback = null;
+            try {
+                fallback = GearAcquisitionPlanner.safeFallbackForPlan(
+                    state,
+                    state.stats?.equipmentPlan,
+                    [...index.spots.values()]
+                );
+            } catch (_) { fallback = null; }
+            fallbackSpot = (fallback && index.spots.get(String(fallback.spotId))) || null;
+            if (!fallbackSpot) {
+                try {
+                    fallbackSpot = SpotProfiles.findForState({
+                        ...state,
+                        spotId: null,
+                        stats: Object.fromEntries(Object.entries(state.stats || {})
+                            .filter(([key]) => key !== 'equipmentPlan'))
+                    }, { occupancy: index.occupancy });
+                } catch (_) { fallbackSpot = null; }
+            }
+        }
+        const routeState = partyRoute
+            ? {
+                ...state,
+                spotId: party.spotId || state.spotId,
+                party: { ...(state.party || {}), partyId: party.partyId, role },
+                stats: { ...(state.stats || {}), routeMode: 'party' }
+            }
+            : fallbackSpot
+                ? { ...state, spotId: null }
+                : state;
+        const options = {
+            occupancy: index.occupancy,
+            ...(partyRoute ? { mode: 'party', role } : {})
+        };
+        let selected = fallbackSpot;
+        try {
+            if (!selected) selected = SpotProfiles.findForState(routeState, options);
+        } catch (_) { selected = null; }
+        if (!selected) return null;
+
+        let physical = null;
+        try { physical = SpotService.findCurrentSpot(state.loc); } catch (_) { physical = null; }
+        const currentId = physical?.id || currentSpot?.id || state.spotId || party?.spotId || null;
+        if (String(selected.id) === String(currentId || '')) return null;
+
+        const members = partyRoute ? partyMembers : [state];
+        const destinations = {};
+        for (const member of members) {
+            let destination = null;
+            try { destination = SpotService.arrivalPointForState(member, selected); } catch (_) { destination = null; }
+            if (!destination) return null;
+            destinations[String(member.characterId)] = destination;
+        }
+        const activeEquipmentPlan = state.stats?.equipmentPlan?.status === 'active';
+        return {
+            needed: true,
+            mode: partyRoute ? 'party' : 'solo',
+            currentSpotId: currentId,
+            spotId: selected.id,
+            regionName: selected.name || state.currentRegion || 'Hunting Ground',
+            travelMs: HUNTING_TRAVEL_MS,
+            reason: partyRoute
+                ? 'party_spot_replan'
+                : activeEquipmentPlan ? 'equipment_source_replan' : 'level_replan',
+            to: destinations[String(state.characterId)] || null,
+            destinations
+        };
     }
 
     contextFor(state, index = this.contextIndex()) {
-        const spot = index.spots.get(String(state.spotId || '')) || null;
+        let physical = null;
+        try { physical = SpotService.findCurrentSpot(state.loc); } catch (_) { physical = null; }
+        const spot = (physical && index.spots.get(String(physical.id)))
+            || index.spots.get(String(state.spotId || ''))
+            || null;
         let pressure = {};
         try { pressure = Director.pressureForState(state) || {}; } catch (_) { pressure = {}; }
         const party = index.parties.get(Number(state.characterId)) || null;
+        const partyMembers = party
+            ? (party.memberIds || []).map((characterId) => LifeState.cachedState(characterId)).filter(Boolean)
+            : [];
         return {
             spot,
             pressure,
             targetNpcId: directDropTargetNpcId(state.stats?.equipmentPlan),
             isPartyLeader: !!party,
             party,
-            partyMembers: party ? (party.memberIds || []).map((characterId) => LifeState.cachedState(characterId)).filter(Boolean) : []
+            partyMembers,
+            route: this.routeFor(state, spot, party, partyMembers, index)
         };
     }
 
@@ -669,8 +768,15 @@ class ColdSimulationCoordinator {
         const state = LifeState.cachedState(entry.nextState.characterId) || entry.nextState;
         await LifeEvents.recordMany(state.characterId, entry.proposal.result?.events || []);
         if (entry.proposal.partyResolution?.party) {
-            await BackgroundPartyState.createOrUpdate(entry.proposal.partyResolution.party);
-            Metrics.recordPartyResolve();
+            const party = entry.proposal.partyResolution.party;
+            await BackgroundPartyState.createOrUpdate(party);
+            if (party.status === 'dissolved') {
+                await LifeState.clearParty(
+                    party.partyId,
+                    party.stats?.partyBreakReason || 'party_dissolved'
+                );
+                Metrics.recordPartyDissolution();
+            } else Metrics.recordPartyResolve();
         }
         Metrics.recordBackgroundResolve();
         Metrics.recordCombat(entry.proposal.result?.debug);

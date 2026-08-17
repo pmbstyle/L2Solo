@@ -191,6 +191,55 @@ async function createProbe(index) {
     assert.deepStrictEqual(partyRows.map((row) => Number(row.exp)), [1200, 1201]);
     assert(partyRows.every((row) => row.simulationOwner === Owner.LEGACY_OWNER_ID && row.simulationLeaseId === null));
 
+    const releaseBase = partyMembers.map((member) => LifeState.cachedState(member.characterId));
+    const releaseClaim = await Owner.claimBatch(releaseBase.map((member, index) => ({
+        state: member,
+        leaseId: `party-release-${index}`,
+        options: { allowParty: true, allowLifecycle: true }
+    })), { timestamp: 4200, leaseMs: 10000 });
+    const releaseCommit = await Owner.commitAndReleaseBatch(releaseClaim.grants.map((token, index) => ({
+        token,
+        nextState: {
+            ...releaseBase[index],
+            party: { ...(releaseBase[index].party || {}), partyId: null, leaderId: null },
+            stats: { ...(releaseBase[index].stats || {}), backgroundPartyId: null, partyRequest: null },
+            updatedAt: 4300
+        },
+        options: { allowParty: true, allowLifecycle: true }
+    })), { timestamp: 4300 });
+    assert(releaseCommit.every((result) => result.ok), 'party release must commit every member');
+    const releasedPartyRows = await Database.execute([
+        'SELECT partyId FROM bot_life_state WHERE characterId IN (?, ?) ORDER BY characterId',
+        partyMembers.map((member) => member.characterId)
+    ]);
+    assert(releasedPartyRows.every((row) => row.partyId === null), 'party release must clear the durable party column');
+
+    const atomicBase = [states[0], states[2]].map((base) => LifeState.cachedState(base.characterId));
+    const atomicClaim = await Owner.claimBatch(atomicBase.map((member, index) => ({
+        state: member,
+        leaseId: `atomic-party-${index}`,
+        options: { allowParty: true, allowLifecycle: true }
+    })), { timestamp: 5000, leaseMs: 10000 });
+    assert.strictEqual(atomicClaim.grants.length, 2, 'atomic party probe must claim every member');
+    const invalidatedMember = atomicClaim.grants[1];
+    await Owner.handoffToMain(LifeState.cachedState(invalidatedMember.characterId));
+    const atomicGroup = { id: 'atomic-party-route', memberIds: atomicBase.map((member) => member.characterId) };
+    const atomicCommit = await Owner.commitAndReleaseBatch(atomicClaim.grants.map((token, index) => ({
+        token,
+        nextState: { ...atomicBase[index], exp: 1300 + index, updatedAt: 5100 },
+        options: { allowParty: true, allowLifecycle: true },
+        atomicGroup
+    })), { timestamp: 5100 });
+    assert(atomicCommit.every((result) => !result.ok), 'a stale party member must abort the complete party transition');
+    assert(atomicCommit.every((result) => result.reason === 'party_group_aborted'),
+        'atomic party rejection must be explicit for every member');
+    const atomicRows = await Database.execute([
+        'SELECT characterId, exp FROM bot_life_state WHERE characterId IN (?, ?) ORDER BY characterId',
+        atomicBase.map((member) => member.characterId)
+    ]);
+    assert.deepStrictEqual(atomicRows.map((row) => Number(row.exp)), [1200, 1201],
+        'an aborted party transition must not persist one member without the other');
+
     console.log('Cold owner batch partial-stale and ACK-loss checks passed');
 })().catch((error) => {
     console.error(error);

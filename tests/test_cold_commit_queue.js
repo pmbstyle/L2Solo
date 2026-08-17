@@ -81,6 +81,28 @@ function proposal(characterId, priority = 'P2', revision = 1) {
     assert.strictEqual(attempts, 3);
     assert.strictEqual(retryQueue.snapshot().retries, 2);
 
+    const groupedBatches = [];
+    const groupedQueue = new ColdCommitQueue({
+        now: () => now,
+        maxRows: 3,
+        prepare: async (entry) => entry.baseState,
+        commit: async (entries) => {
+            groupedBatches.push(entries.map((entry) => Number(entry.nextState.characterId)));
+            return entries.map((entry) => ({ ok: true, characterId: entry.nextState.characterId }));
+        }
+    });
+    const atomicGroup = { id: 'party-queue-group', memberIds: [31, 32, 33] };
+    groupedQueue.enqueue(proposal(30, 'P1'));
+    [31, 32, 33].forEach((characterId) => groupedQueue.enqueue({
+        ...proposal(characterId, 'P1'),
+        atomicGroup
+    }));
+    await groupedQueue.flushDue(true);
+    await groupedQueue.flushDue(true);
+    assert.deepStrictEqual(groupedBatches[0], [30], 'a full party group must not be split by the preceding batch entries');
+    assert.deepStrictEqual(groupedBatches[1].sort((a, b) => a - b), [31, 32, 33],
+        'all members of an atomic party commit must be flushed together');
+
     console.log('Cold commit queue coalescing, durability boundary, backpressure, and retry checks passed');
 })().catch((error) => {
     console.error(error);

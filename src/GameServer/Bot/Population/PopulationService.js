@@ -32,6 +32,14 @@ const PlayerActivitySignal = invoke('GameServer/Bot/Population/PlayerActivitySig
 const FloorAwareActivationPolicy = invoke('GameServer/Bot/Population/FloorAwareActivationPolicy');
 const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const ColdSimulationCoordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
+const BackgroundPartyLifecycle = invoke('GameServer/Bot/Population/BackgroundPartyLifecycle');
+
+const {
+    partyObjectiveForPlan,
+    partyRequestForPlan,
+    partyObjectiveForState
+} = PartyRequestPlanner;
 
 const HUNTING_TRAVEL_MS = 25000;
 
@@ -257,95 +265,6 @@ function acquisitionRequirementKey(plan) {
     });
 }
 
-function partyObjectiveForPlan(plan) {
-    if (!plan || !['active', 'blocked'].includes(plan.status) || !plan.next?.spotId) return null;
-    const partyNeed = plan.partyNeed || (plan.requiresParty ? 'required' : 'solo_ok');
-    if (!['required', 'preferred'].includes(partyNeed)) return null;
-    const strategy = plan.strategy || 'acquisition';
-    const targetItemId = Number(plan.next.itemId || plan.target?.selfId || 0);
-    const npcId = Number(plan.next.npcId || 0);
-    // A party hunts a route/NPC, not one item at a time. The item remains in
-    // the request for personal reward tracking, but it must not fragment all
-    // bots killing the same dropper into incompatible groups.
-    const objectiveKey = npcId > 0
-        ? [strategy, plan.next.spotId, npcId].join(':')
-        : [strategy, plan.next.spotId, npcId, targetItemId].join(':');
-    return {
-        status: 'open',
-        priority: partyNeed,
-        objectiveKey,
-        reason: strategy === 'craft' ? 'craft_material' : 'gear_acquisition',
-        partyNeedReason: plan.partyNeedReason || null,
-        strategy,
-        spotId: plan.next.spotId,
-        npcId: npcId || null,
-        itemId: targetItemId || null,
-        targetId: Number(plan.target?.selfId || 0) || null
-    };
-}
-
-function partyRequestEligible(state) {
-    return !state?.party?.partyId
-        && ['hunting', 'resting', 'party_wait'].includes(state?.activity);
-}
-
-function partyRequestForPlan(state, plan, timestamp = Date.now()) {
-    if (!partyRequestEligible(state)) return null;
-    const objective = partyObjectiveForPlan(plan);
-    if (!objective) return null;
-    const previous = state.stats?.partyRequest;
-    const sameRequest = ['open', 'deferred'].includes(previous?.status)
-        && previous.objectiveKey === objective.objectiveKey
-        && Number(previous.itemId || 0) === Number(objective.itemId || 0)
-        && Number(previous.targetId || 0) === Number(objective.targetId || 0);
-    const maxAge = objective.priority === 'required'
-        ? Math.max(30000, Number(Config.partyRequestMaxAgeMs) || 15 * 60 * 1000)
-        : Math.max(30000, Number(Config.partyPreferredMaxAgeMs) || 5 * 60 * 1000);
-    const cooldownMs = Math.max(30000, Number(Config.partyRequestCooldownMs) || 5 * 60 * 1000);
-    const previousRequestedAt = sameRequest ? Number(previous.requestedAt || timestamp) : timestamp;
-    const previousAttempts = sameRequest ? Number(previous.attempts || 0) : 0;
-
-    if (sameRequest && previous.status === 'deferred' && Number(previous.deferredUntil || 0) > timestamp) {
-        return {
-            ...objective,
-            status: 'deferred',
-            requestedAt: previousRequestedAt,
-            deferredUntil: Number(previous.deferredUntil),
-            expiredAt: Number(previous.expiredAt || 0) || null,
-            attempts: previousAttempts,
-            lastMatchedAt: previous.lastMatchedAt || null
-        };
-    }
-
-    if (sameRequest && previous.status === 'open' && timestamp - previousRequestedAt >= maxAge) {
-        return {
-            ...objective,
-            status: 'deferred',
-            requestedAt: previousRequestedAt,
-            deferredUntil: timestamp + cooldownMs,
-            expiredAt: timestamp,
-            attempts: previousAttempts + 1,
-            lastMatchedAt: previous.lastMatchedAt || null
-        };
-    }
-
-    return {
-        ...objective,
-        status: 'open',
-        requestedAt: sameRequest && previous.status === 'open' ? previousRequestedAt : timestamp,
-        reviewAt: timestamp + Math.max(30000, Number(Config.partyWaitReplanMs) || 5 * 60 * 1000),
-        attempts: sameRequest ? previousAttempts : 0,
-        lastMatchedAt: sameRequest ? previous.lastMatchedAt || null : null
-    };
-}
-
-function partyObjectiveForState(state) {
-    if (state?.stats?.partyRequest) {
-        return state.stats.partyRequest.status === 'open' ? state.stats.partyRequest : null;
-    }
-    return partyObjectiveForPlan(state?.stats?.equipmentPlan);
-}
-
 function partyObjectivesShareRoute(left, right) {
     return Boolean(left && right
         && String(left.spotId || '') === String(right.spotId || '')
@@ -354,11 +273,7 @@ function partyObjectivesShareRoute(left, right) {
 }
 
 function partySessionExpired(party, timestamp = Date.now()) {
-    const sessionExpiresAt = Number(party?.stats?.sessionExpiresAt || 0);
-    if (sessionExpiresAt > 0) return timestamp >= sessionExpiresAt;
-    const maxAge = Math.max(0, Number(Config.partySessionMaxMs) || 0);
-    const startedAt = Number(party?.stats?.formedAt || party?.startedAt || 0);
-    return maxAge > 0 && startedAt > 0 && timestamp - startedAt >= maxAge;
+    return BackgroundPartyLifecycle.sessionExpired(party, timestamp, Config);
 }
 
 function statesForParties(partyIds = []) {
@@ -478,6 +393,26 @@ function dissolveBackgroundParty(party, reason, memberCount = 0) {
             );
             return { ok: false, reason, party, cleared };
         });
+}
+
+function assignPartyMembers(members = [], party) {
+    const assigned = [];
+    const failed = [];
+    return (members || []).reduce((chain, member) => chain.then(() => (
+        LifeState.assignParty(
+            member,
+            party.partyId,
+            PartyComposition.roleForState(member),
+            party.leaderId
+        ).then((saved) => {
+            if (saved) assigned.push(member);
+            else failed.push(member);
+            return saved;
+        }).catch(() => {
+            failed.push(member);
+            return null;
+        })
+    )), Promise.resolve()).then(() => ({ assigned, failed }));
 }
 
 function activationCandidatesForPlayer(states, playerLevel) {
@@ -1232,29 +1167,28 @@ const PopulationService = {
                     return BackgroundPartyState.createOrUpdate(party).then((savedParty) => {
                         if (!savedParty) return null;
 
-                        return members.reduce((memberChain, member) => (
-                            memberChain.then(() => LifeState.assignParty(
-                                member,
-                                savedParty.partyId,
-                                PartyComposition.roleForState(member),
-                                savedParty.leaderId
-                            ))
-                        ), Promise.resolve()).then(() => LifeEvents.record(leader.characterId, 'party', `${leader.name} formed a party near ${party.spotId}`, {
-                            partyId: savedParty.partyId,
-                            spotId: savedParty.spotId,
-                            memberIds: savedParty.memberIds,
-                            route: party.stats.route
-                        }, 2)).then(() => {
-                            Metrics.recordPartyFormation();
-                            created.push(savedParty);
-                            console.info(
-                                'BotPopulation :: formed background party %s spot=%s members=%d leader=%s',
-                                savedParty.partyId,
-                                savedParty.spotId || 'none',
-                                savedParty.memberIds.length,
-                                leader.name
-                            );
-                            return savedParty;
+                        return assignPartyMembers(members, savedParty).then(({ assigned, failed }) => {
+                            if (failed.length || assigned.length !== members.length) {
+                                return dissolveBackgroundParty(savedParty, 'party_assignment_failed', assigned.length)
+                                    .then(() => null);
+                            }
+                            return LifeEvents.record(leader.characterId, 'party', `${leader.name} formed a party near ${party.spotId}`, {
+                                partyId: savedParty.partyId,
+                                spotId: savedParty.spotId,
+                                memberIds: savedParty.memberIds,
+                                route: party.stats.route
+                            }, 2).then(() => {
+                                Metrics.recordPartyFormation();
+                                created.push(savedParty);
+                                console.info(
+                                    'BotPopulation :: formed background party %s spot=%s members=%d leader=%s',
+                                    savedParty.partyId,
+                                    savedParty.spotId || 'none',
+                                    savedParty.memberIds.length,
+                                    leader.name
+                                );
+                                return savedParty;
+                            });
                         });
                     });
                 }), Promise.resolve()).then(() => created);
@@ -1509,16 +1443,10 @@ const PopulationService = {
                 const recruits = PartyComposition.selectRecruits(members, nearby, { maxSize: Config.partyMaxSize });
                 if (!recruits.length) return null;
 
-                return recruits.reduce((memberChain, recruit) => (
-                    memberChain.then(() => LifeState.assignParty(
-                        recruit,
-                        party.partyId,
-                        PartyComposition.roleForState(recruit),
-                        party.leaderId
-                    ))
-                ), Promise.resolve()).then(() => {
-                    recruits.forEach((recruit) => claimed.add(Number(recruit.characterId)));
-                    const allMembers = [...members, ...recruits];
+                return assignPartyMembers(recruits, party).then(({ assigned }) => {
+                    assigned.forEach((recruit) => claimed.add(Number(recruit.characterId)));
+                    if (!assigned.length) return null;
+                    const allMembers = [...members, ...assigned];
                     return BackgroundPartyState.createOrUpdate({
                         ...party,
                         memberIds: allMembers.map((member) => member.characterId),
@@ -1528,13 +1456,13 @@ const PopulationService = {
                             memberNames: allMembers.map((member) => member.name),
                             lastRecruitAt: Date.now()
                         }
-                    }).then((updatedParty) => LifeEvents.record(party.leaderId, 'party_recruit', `${members[0].name} recruited ${recruits.map((recruit) => recruit.name).join(', ')} near ${party.spotId}`, {
+                    }).then((updatedParty) => LifeEvents.record(party.leaderId, 'party_recruit', `${members[0].name} recruited ${assigned.map((recruit) => recruit.name).join(', ')} near ${party.spotId}`, {
                         partyId: party.partyId,
-                        recruitIds: recruits.map((recruit) => recruit.characterId),
+                        recruitIds: assigned.map((recruit) => recruit.characterId),
                         spotId: party.spotId
                     }, 1).then(() => {
-                        Metrics.recordPartyRecruit(recruits.length);
-                        console.info('BotPopulation :: recruited %d bot(s) into %s near %s', recruits.length, party.partyId, party.spotId || 'none');
+                        Metrics.recordPartyRecruit(assigned.length);
+                        console.info('BotPopulation :: recruited %d bot(s) into %s near %s', assigned.length, party.partyId, party.spotId || 'none');
                         return updatedParty;
                     }));
                 });
@@ -2164,10 +2092,19 @@ const PopulationService = {
                 .finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
         }
         const requiredPartyRequest = partyRequest?.priority === 'required';
-        const partyFallback = requiredPartyRequest && !passiveActivity
+        // A deferred request still owns the safe fallback route until the
+        // planner either reopens it or replaces the unavailable target. Do
+        // not let the cooldown hand control back to SpotProfiles while the
+        // persisted gear plan still points at an unsafe source.
+        const deferredPartyRequest = partyRequest?.status === 'deferred'
+            && (acquisitionPlan?.partyNeed === 'required'
+                || acquisitionPlan?.requiresParty === true);
+        const partyRouteWaiting = (requiredPartyRequest || deferredPartyRequest)
+            && !state.party?.partyId;
+        const partyFallback = partyRouteWaiting && !passiveActivity
             ? GearAcquisitionPlanner.safeFallbackForPlan(state, acquisitionPlan, spots)
             : null;
-        const fallbackSpot = requiredPartyRequest && !passiveActivity
+        const fallbackSpot = partyRouteWaiting && !passiveActivity
             ? (partyFallback && SpotProfiles.findById(partyFallback.spotId)) || SpotProfiles.findForState({
                 ...plannedState,
                 spotId: null,
@@ -2202,7 +2139,7 @@ const PopulationService = {
             state: effectiveState,
             spot,
             pressure: Director.pressureForState(state),
-            targetNpcId: requiredPartyRequest
+            targetNpcId: partyRouteWaiting
                 ? Number(partyFallback?.npcId || 0)
                 : directDropTargetNpcId(acquisitionPlan),
             elapsedMs

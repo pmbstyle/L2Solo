@@ -142,6 +142,8 @@ const BackgroundPartyState = {
 
     createOrUpdate(party) {
         if (!party?.partyId || !party.memberIds?.length) return Promise.resolve(null);
+        const memberCount = new Set(party.memberIds.map((id) => Number(id)).filter(Boolean)).size;
+        if ((party.status || 'active') === 'active' && memberCount < Config.partyMinSize) return Promise.resolve(null);
         const ready = initialized ? Promise.resolve(true) : this.init();
 
         return ready.then((isReady) => {

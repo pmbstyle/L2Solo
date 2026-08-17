@@ -187,7 +187,16 @@ const SpotProfiles = {
                 .map((spot) => ({ spot, score: GearAcquisitionPlanner.scoreSpot(spot, acquisitionPlan) }))
                 .filter((candidate) => candidate.score > 0)
                 .sort((a, b) => b.score - a.score)[0];
-            if (planned) return planned.spot;
+            if (planned) {
+                // A drop source may be valid for the item but still be a
+                // starter-level camp for the bot. Never let an active gear
+                // plan pin an outleveled bot to that source indefinitely.
+                const hasLevelBounds = Number.isFinite(Number(planned.spot.minLevel))
+                    && Number.isFinite(Number(planned.spot.maxLevel));
+                if (!currentSpot || !hasLevelBounds || SpotService.isSuitable(planned.spot, targetLevel, options)) {
+                    return planned.spot;
+                }
+            }
         }
 
         if (currentSpot && !mustRelocate && SpotService.isSuitable(currentSpot, targetLevel, options)) {

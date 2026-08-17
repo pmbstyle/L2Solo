@@ -1,4 +1,6 @@
 const SIMPLE_ACTIVITIES = new Set(['hunting', 'resting', 'traveling', 'dead']);
+const HUNTING_TRAVEL_MS = 25000;
+const BackgroundPartyLifecycle = require('./BackgroundPartyLifecycle');
 
 class DueHeap {
     constructor() {
@@ -68,9 +70,155 @@ function deterministicRandom(state = {}) {
     };
 }
 
-function nextDueAt(state = {}, timestamp = Date.now()) {
+function partySessionExpiryAt(state = {}, context = {}, partySession = {}) {
+    const party = context?.party || null;
+    const partyId = party?.partyId || state.party?.partyId || state.partyId || '';
+    if (!partyId) return 0;
+
+    const explicitExpiry = Number(
+        party?.stats?.sessionExpiresAt
+        || state.stats?.sessionExpiresAt
+        || 0
+    );
+    if (explicitExpiry > 0) return explicitExpiry;
+
+    const startedAt = Number(
+        party?.stats?.formedAt
+        || party?.startedAt
+        || state.stats?.formedAt
+        || 0
+    );
+    return BackgroundPartyLifecycle.rotationExpiry(partyId, startedAt, partySession);
+}
+
+function partyIntegrityInvalid(context = {}, partySession = {}) {
+    const party = context?.party || null;
+    if (!party) return false;
+    const minSize = Math.max(2, Number(partySession.partyMinSize) || 2);
+    const declaredMemberIds = Array.isArray(party.memberIds) && party.memberIds.length
+        ? [...new Set(party.memberIds.map(Number).filter(Boolean))]
+        : [];
+    if (declaredMemberIds.length < minSize) return true;
+    if (!Array.isArray(context.partyMembers)) return false;
+    const partyId = String(party.partyId || '');
+    const attachedCount = context.partyMembers.filter((member) => (
+        String(member?.party?.partyId || member?.partyId || '') === partyId
+    )).length;
+    return attachedCount < minSize || attachedCount !== declaredMemberIds.length;
+}
+
+function nextDueAt(state = {}, timestamp = Date.now(), context = {}, partySession = {}) {
     const due = Number(state.timing?.nextResolveAt || 0);
+    if (partyIntegrityInvalid(context, partySession)) return timestamp;
+    const sessionExpiry = partySessionExpiryAt(state, context, partySession);
+    if (sessionExpiry > 0) return due > 0 ? Math.min(due, sessionExpiry) : sessionExpiry;
     return due > 0 ? due : Math.max(0, Number(state.updatedAt || timestamp));
+}
+
+function hasFiniteCoordinate(value) {
+    return value !== null
+        && value !== undefined
+        && String(value).trim() !== ''
+        && Number.isFinite(Number(value));
+}
+
+function routeDestination(state = {}, route = {}) {
+    return route?.destinations?.[String(state.characterId)] || route?.to || null;
+}
+
+function beginRouteTravelState(state = {}, route = null, timestamp = Date.now(), options = {}) {
+    if (!state || !route?.needed || state.activity === 'traveling') return null;
+    const destination = routeDestination(state, route);
+    const from = { ...(state.loc || {}) };
+    if (!destination || !hasFiniteCoordinate(from.locX) || !hasFiniteCoordinate(from.locY)) return null;
+    const arrivalAt = timestamp + Math.max(1000, Number(route.travelMs) || HUNTING_TRAVEL_MS);
+    const isPartyRoute = route.mode === 'party';
+    return {
+        ...state,
+        activity: 'traveling',
+        timing: {
+            ...(state.timing || {}),
+            activityStartedAt: timestamp,
+            nextResolveAt: arrivalAt
+        },
+        stats: {
+            ...(state.stats || {}),
+            travel: {
+                from,
+                to: { ...destination },
+                startedAt: timestamp,
+                arrivalAt,
+                regionName: route.regionName || state.currentRegion || 'Hunting Ground',
+                method: 'gatekeeper_spot',
+                spotId: route.spotId,
+                arrivalActivity: isPartyRoute ? 'grouped' : 'hunting',
+                arrivalEvent: isPartyRoute ? 'party_arrived_hunting_ground' : 'arrived_hunting_ground',
+                reason: isPartyRoute
+                    ? 'party_spot_replan'
+                    : route.reason || (state.stats?.equipmentPlan?.status === 'active'
+                        ? 'equipment_source_replan'
+                        : 'level_replan')
+            }
+        }
+    };
+}
+
+function finishPartyRouteTravelState(state = {}, timestamp = Date.now()) {
+    const travel = state.stats?.travel;
+    if (state.activity !== 'traveling'
+        || travel?.reason !== 'party_spot_replan'
+        || Number(travel.arrivalAt || 0) > timestamp
+        || !travel.to) return null;
+
+    return {
+        ...state,
+        activity: travel.arrivalActivity || 'grouped',
+        currentRegion: travel.regionName || state.currentRegion,
+        spotId: travel.spotId || state.spotId,
+        loc: { ...travel.to },
+        timing: {
+            ...(state.timing || {}),
+            activityStartedAt: timestamp,
+            nextResolveAt: timestamp + 1000
+        },
+        stats: { ...(state.stats || {}), travel: null }
+    };
+}
+
+function partyTransitionProposals(run, memberStates, party, timestamp, event = null, activity = 'party_travel') {
+    const nextResolveAt = Number(memberStates[0]?.timing?.nextResolveAt || timestamp + 1000);
+    const atomicGroup = {
+        id: `party:${party.partyId}:${timestamp}:${activity}`,
+        memberIds: memberStates.map((state) => Number(state.characterId)).filter(Boolean)
+    };
+    return memberStates.map((state) => {
+        const id = Number(state.characterId);
+        const events = event && id === Number(run.party.leaderId)
+            ? [{ ...event, characterId: id }]
+            : [];
+        return {
+            proposalId: `${run.grants.get(id)?.leaseId}:${run.grants.get(id)?.revision}`,
+            characterId: id,
+            priority: 'P1',
+            enqueuedAt: timestamp,
+            token: run.grants.get(id),
+            baseState: run.members.find((member) => Number(member.characterId) === id) || state,
+            nextState: state,
+            durable: null,
+            result: {
+                patch: {},
+                events,
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                nextResolveAt,
+                debug: { activity, partyId: run.party.partyId, spotId: party.spotId || null }
+            },
+            options: { allowParty: true, allowLifecycle: true },
+            atomicGroup,
+            partyResolution: id === Number(run.party.leaderId)
+                ? { partyId: party.partyId, party }
+                : null
+        };
+    });
 }
 
 function lifecycleKind(state = {}, context = {}) {
@@ -134,6 +282,8 @@ class ColdSimulationKernel {
         this.claimAckTimeoutMs = Math.max(1000, Number(options.claimAckTimeoutMs) || 5000);
         this.flushTargetMs = Math.max(100, Number(options.flushTargetMs) || 2000);
         this.flushHardMs = Math.max(this.flushTargetMs, Number(options.flushHardMs) || 5000);
+        this.partySession = options.partySession || {};
+        this.partyMinSize = Math.max(2, Number(options.partyMinSize) || 2);
         this.states = new Map();
         this.versions = new Map();
         this.heap = new DueHeap();
@@ -188,7 +338,8 @@ class ColdSimulationKernel {
             return false;
         }
         if (current && incomingRevision === currentRevision
-            && nextDueAt(current.state, this.now()) === nextDueAt(state, this.now())
+            && nextDueAt(current.state, this.now(), current.context, this.partySession)
+                === nextDueAt(state, this.now(), entry.context || {}, this.partySession)
             && lifecycleKind(current.state, current.context) === lifecycleKind(state, entry.context || {})) {
             // A full catalog refresh normally changes only context. Keep the
             // existing heap version so ten-second refreshes do not accumulate
@@ -244,7 +395,7 @@ class ColdSimulationKernel {
         if (!current || this.busy(id) || !isSchedulableKind(lifecycleKind(current.state, current.context))) return false;
         const scheduled = this.scheduleTokens.get(id);
         if (scheduled?.version === current.version) return false;
-        this.schedule(id, current.version, dueAt ?? nextDueAt(current.state, this.now()));
+        this.schedule(id, current.version, dueAt ?? nextDueAt(current.state, this.now(), current.context, this.partySession));
         return true;
     }
 
@@ -292,7 +443,10 @@ class ColdSimulationKernel {
             } else if (kind === 'party') {
                 const party = current.context.party;
                 const contextMembers = current.context.partyMembers || [];
-                const memberIds = [...new Set((party?.memberIds || contextMembers.map((member) => member.characterId)).map(Number).filter(Boolean))];
+                const declaredMemberIds = Array.isArray(party?.memberIds) && party.memberIds.length
+                    ? party.memberIds
+                    : [id];
+                const memberIds = [...new Set(declaredMemberIds.map(Number).filter(Boolean))];
                 // The leader context is a catalog snapshot and can lag behind
                 // commit ACKs for individual members. Revision fencing must use
                 // the kernel's authoritative per-bot state map or every party
@@ -302,28 +456,52 @@ class ColdSimulationKernel {
                     || contextMembers.find((member) => Number(member.characterId) === memberId)
                     || null
                 )).filter(Boolean);
-                if (!party || members.length !== memberIds.length || memberIds.length < 2
-                    || memberIds.some((memberId) => this.claiming.has(memberId) || this.inFlight.has(memberId))) {
+                const attachedMembers = members.filter((member) => (
+                    String(member.party?.partyId || member.partyId || '') === String(party?.partyId || '')
+                ));
+                const invalidPartySize = memberIds.length < this.partyMinSize;
+                const membershipMismatch = attachedMembers.length !== memberIds.length;
+                const invalidReason = invalidPartySize
+                    ? 'party_min_size'
+                    : attachedMembers.length < this.partyMinSize || membershipMismatch
+                        ? 'party_membership_mismatch'
+                        : null;
+                const partyMembers = invalidReason
+                    ? (attachedMembers.length
+                        ? attachedMembers
+                        : members.filter((member) => Number(member.characterId) === id))
+                    : members;
+                const candidateMemberIds = partyMembers.map((member) => Number(member.characterId)).filter(Boolean);
+                if (!party || !partyMembers.length
+                    || candidateMemberIds.some((memberId) => this.claiming.has(memberId) || this.inFlight.has(memberId))) {
                     this.requeue(id, this.now() + 1000);
                     continue;
                 }
-                if (candidates.length + memberIds.length > limit) {
+                if (candidates.length + candidateMemberIds.length > limit) {
                     this.requeue(id, this.now() + 100);
                     break;
                 }
-                const purpose = { kind: 'party', partyId: party.partyId, leaderId: id, memberIds };
+                const purpose = {
+                    kind: 'party',
+                    partyId: party.partyId,
+                    leaderId: id,
+                    memberIds: candidateMemberIds,
+                    invalidReason
+                };
                 this.partyRuns.set(String(party.partyId), {
                     purpose,
                     party,
-                    members,
+                    members: partyMembers,
                     spot: current.context.spot,
+                    route: current.context.route || null,
                     pressure: current.context.pressure || {},
                     targetNpcId: Number(current.context.targetNpcId || 0),
                     grants: new Map(),
-                    rejected: false
+                    rejected: false,
+                    invalidReason: purpose.invalidReason
                 });
-                memberIds.forEach((memberId) => {
-                    const member = members.find((entry) => Number(entry.characterId) === memberId);
+                candidateMemberIds.forEach((memberId) => {
+                    const member = partyMembers.find((entry) => Number(entry.characterId) === memberId);
                     this.claiming.add(memberId);
                     this.claimStartedAt.set(memberId, this.now());
                     candidates.push({
@@ -448,7 +626,7 @@ class ColdSimulationKernel {
             if (!isSchedulableKind(lifecycleKind(entry.state, entry.context))
                 || this.scheduleTokens.has(id)
                 || this.busy(id)) continue;
-            this.schedule(id, entry.version, nextDueAt(entry.state, timestamp));
+            this.schedule(id, entry.version, nextDueAt(entry.state, timestamp, entry.context, this.partySession));
             recovered += 1;
         }
         this.stats.orphanRecoveries += recovered;
@@ -533,6 +711,176 @@ class ColdSimulationKernel {
         if (!run || this.stopping) return;
         const startedAt = this.now();
         try {
+            if (run.invalidReason) {
+                const releasedMembers = run.members.map((state) => (
+                    BackgroundPartyLifecycle.releaseMember(state, startedAt, run.invalidReason)
+                ));
+                const dissolvedParty = {
+                    ...run.party,
+                    status: 'dissolved',
+                    nextResolveAt: null,
+                    stats: {
+                        ...(run.party.stats || {}),
+                        partyBreakReason: run.invalidReason,
+                        declaredMemberCount: run.party.memberIds?.length || 0,
+                        attachedMemberCount: run.members.length,
+                        dissolvedAt: startedAt,
+                        travel: null
+                    }
+                };
+                const proposals = partyTransitionProposals(
+                    run,
+                    releasedMembers,
+                    dissolvedParty,
+                    startedAt,
+                    {
+                        type: 'party_invalid_size',
+                        summary: `Party ${run.party.partyId} dissolved because it has fewer than ${this.partyMinSize} members`,
+                        weight: 1,
+                        meta: {
+                            partyId: run.party.partyId,
+                            reason: run.invalidReason,
+                            memberCount: run.members.length
+                        }
+                    },
+                    'party_invalid_size'
+                );
+                proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
+                this.stats.resolved += proposals.length;
+                this.flush(null, true);
+                return;
+            }
+
+            if (BackgroundPartyLifecycle.sessionExpired(run.party, startedAt, this.partySession)) {
+                const releasedMembers = run.members.map((state) => (
+                    BackgroundPartyLifecycle.releaseMember(state, startedAt)
+                ));
+                const dissolvedParty = {
+                    ...run.party,
+                    status: 'dissolved',
+                    nextResolveAt: null,
+                    stats: {
+                        ...(run.party.stats || {}),
+                        partyBreakReason: 'party_session_rotation',
+                        sessionExpiredAt: startedAt,
+                        travel: null
+                    }
+                };
+                const proposals = partyTransitionProposals(
+                    run,
+                    releasedMembers,
+                    dissolvedParty,
+                    startedAt,
+                    {
+                        type: 'party_session_rotation',
+                        summary: `Party ${run.party.partyId} rotated after its session expired`,
+                        weight: 1,
+                        meta: { partyId: run.party.partyId, reason: 'party_session_rotation' }
+                    },
+                    'party_session_rotation'
+                );
+                proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
+                this.stats.resolved += proposals.length;
+                this.flush(null, true);
+                return;
+            }
+
+            const partyTravel = run.party.stats?.travel;
+            if (partyTravel?.reason === 'party_spot_replan') {
+                const arrivalAt = Number(partyTravel.arrivalAt || 0);
+                if (arrivalAt > startedAt) {
+                    const waitingMembers = run.members.map((state) => ({
+                        ...state,
+                        timing: { ...(state.timing || {}), nextResolveAt: arrivalAt }
+                    }));
+                    const waitingParty = { ...run.party, nextResolveAt: arrivalAt };
+                    const proposals = partyTransitionProposals(
+                        run,
+                        waitingMembers,
+                        waitingParty,
+                        startedAt,
+                        null,
+                        'party_travel_wait'
+                    );
+                    proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
+                    this.stats.resolved += proposals.length;
+                    this.flush(null, true);
+                    return;
+                }
+
+                const arrivedMembers = run.members.map((state) => (
+                    finishPartyRouteTravelState(state, startedAt)
+                    || {
+                        ...state,
+                        timing: { ...(state.timing || {}), nextResolveAt: startedAt + 1000 }
+                    }
+                ));
+                const arrivedParty = {
+                    ...run.party,
+                    nextResolveAt: startedAt + 1000,
+                    stats: {
+                        ...(run.party.stats || {}),
+                        lastResolveAt: startedAt,
+                        travel: null
+                    }
+                };
+                const proposals = partyTransitionProposals(
+                    run,
+                    arrivedMembers,
+                    arrivedParty,
+                    startedAt,
+                    {
+                        type: 'party_travel',
+                        summary: `Party ${run.party.partyId} arrived near ${partyTravel.regionName || partyTravel.spotId}`,
+                        weight: 1,
+                        meta: { partyId: run.party.partyId, spotId: partyTravel.spotId || run.party.spotId }
+                    },
+                    'party_arrival'
+                );
+                proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
+                this.stats.resolved += proposals.length;
+                this.flush(null, true);
+                return;
+            }
+
+            if (run.route?.needed) {
+                const arrivalAt = startedAt + Math.max(1000, Number(run.route.travelMs) || HUNTING_TRAVEL_MS);
+                const travellingMembers = run.members.map((state) => (
+                    beginRouteTravelState(state, run.route, startedAt)
+                    || {
+                        ...state,
+                        timing: { ...(state.timing || {}), nextResolveAt: arrivalAt }
+                    }
+                ));
+                const travellingParty = {
+                    ...run.party,
+                    spotId: run.route.spotId,
+                    nextResolveAt: arrivalAt,
+                    stats: {
+                        ...(run.party.stats || {}),
+                        travel: {
+                            reason: 'party_spot_replan',
+                            regionName: run.route.regionName,
+                            spotId: run.route.spotId,
+                            startedAt,
+                            arrivalAt
+                        }
+                    }
+                };
+                const proposals = partyTransitionProposals(
+                    run,
+                    travellingMembers,
+                    travellingParty,
+                    startedAt,
+                    null,
+                    'party_travel'
+                );
+                proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
+                this.stats.resolved += proposals.length;
+                this.flush(null, true);
+                return;
+            }
+
             if (!this.resolveParty) throw new Error('party_resolver_unavailable');
             const lastResolvedAt = Math.min(...run.members.map((member) => Number(member.timing?.lastResolvedAt || startedAt - 60000)));
             const resolution = await this.resolveParty({
@@ -613,9 +961,12 @@ class ColdSimulationKernel {
             const resolveState = lifecyclePlan?.plannedState || active.state;
             const result = await this.resolveSolo({
                 state: resolveState,
-                spot: active.context.spot || null,
+                spot: resolveState.activity === 'traveling' ? null : active.context.spot || null,
                 pressure: active.context.pressure || {},
-                targetNpcId: Number(lifecyclePlan?.acquisitionPlan?.next?.npcId || active.context.targetNpcId || 0),
+                targetNpcId: Number(lifecyclePlan?.targetNpcId
+                    || lifecyclePlan?.acquisitionPlan?.next?.npcId
+                    || active.context.targetNpcId
+                    || 0),
                 elapsedMs,
                 rng: deterministicRandom(active.state),
                 timestamp
@@ -763,9 +1114,11 @@ class ColdSimulationKernel {
         const now = this.now();
         const due = [...this.states.values()].filter((entry) => (
             isSchedulableKind(lifecycleKind(entry.state, entry.context))
-            && nextDueAt(entry.state, now) <= now
+            && nextDueAt(entry.state, now, entry.context, this.partySession) <= now
         ));
-        const oldestDueAt = due.reduce((oldest, entry) => Math.min(oldest, nextDueAt(entry.state, now)), now);
+        const oldestDueAt = due.reduce((oldest, entry) => (
+            Math.min(oldest, nextDueAt(entry.state, now, entry.context, this.partySession))
+        ), now);
         const oldestDirtyAt = [...this.dirty.values()].reduce((oldest, proposal) => (
             Math.min(oldest, Number(proposal.enqueuedAt || now))
         ), now);
@@ -804,6 +1157,8 @@ module.exports = {
     ColdSimulationKernel,
     DueHeap,
     deterministicRandom,
+    beginRouteTravelState,
+    finishPartyRouteTravelState,
     lifecycleKind,
     priorityForResult,
     nextDueAt

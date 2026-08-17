@@ -129,9 +129,34 @@ class ColdCommitQueue {
         return lane.length ? Number(lane[0].queuedAt || this.now()) : this.now();
     }
 
+    takeLaneBatch(lane, limit) {
+        const selected = [];
+        const selectedEntries = new Set();
+        for (const entry of lane) {
+            if (selectedEntries.has(entry)) continue;
+            const groupId = entry.atomicGroup?.id;
+            const group = groupId
+                ? lane.filter((candidate) => candidate.atomicGroup?.id === groupId)
+                : [entry];
+            if (selected.length && selected.length + group.length > limit) break;
+            if (!selected.length && group.length > limit) break;
+            group.forEach((candidate) => {
+                selected.push(candidate);
+                selectedEntries.add(candidate);
+            });
+            if (selected.length >= limit) break;
+        }
+        if (!selected.length) return [];
+        const selectedSet = new Set(selected);
+        for (let index = lane.length - 1; index >= 0; index--) {
+            if (selectedSet.has(lane[index])) lane.splice(index, 1);
+        }
+        return selected;
+    }
+
     takeBatch(force = false) {
         const timestamp = this.now();
-        if (this.p0.length) return this.p0.splice(0, Math.min(16, this.maxRows));
+        if (this.p0.length) return this.takeLaneBatch(this.p0, Math.min(16, this.maxRows));
         const p2Overdue = this.p2.size > 0 && timestamp - this.oldest(this.p2) >= this.overdueMs;
         const p1Ready = this.p1.length > 0 && (force || timestamp - this.oldest(this.p1) >= this.p1TargetMs);
         const p2Ready = this.p2.size > 0 && (force || timestamp - this.oldest(this.p2) >= this.targetMs);
@@ -145,7 +170,7 @@ class ColdCommitQueue {
         }
         if (p1Ready) {
             this.p1Credit += 1;
-            return this.p1.splice(0, Math.min(16, this.maxRows));
+            return this.takeLaneBatch(this.p1, Math.min(16, this.maxRows));
         }
         if (p2Ready) {
             const batch = [...this.p2.values()]
