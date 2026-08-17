@@ -1,11 +1,12 @@
 const World = invoke('GameServer/World/World');
+const AttackRange = invoke('GameServer/Actor/AttackRange');
 
 function canAttackNpc(npc, data = {}) {
     return npc?.fetchAttackable?.() === true || npc?.fetchIsSummon?.() === true || data.ctrl === true;
 }
 
 function attackExec(session, actor, data) {
-    const attackRange = Math.max(0, Number(data.range) || 0);
+    const attackRange = AttackRange.fetchNormalAttackRange(actor, data);
 
     World.fetchNpc(data.id).then((npc) => {
         actor.automation.scheduleAction(session, actor, npc, attackRange, () => {
@@ -15,7 +16,7 @@ function attackExec(session, actor, data) {
             else {
                 World.npcTalk(session, npc);
             }
-        });
+        }, { collisionAware: true });
     }).catch(() => {
         World.fetchUser(data.id).then((user) => {
             actor.automation.scheduleAction(session, actor, user, attackRange, () => {
@@ -35,7 +36,7 @@ function attackExec(session, actor, data) {
                         BotMerchant.talk(session, user);
                     }
                 }
-            });
+            }, { collisionAware: true });
         }).catch((err) => {
             utils.infoWarn('GameServer', 'Attack -> ' + err);
         })

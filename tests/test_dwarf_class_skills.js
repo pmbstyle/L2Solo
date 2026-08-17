@@ -3,6 +3,7 @@ const assert = require('assert');
 require('../src/Global');
 
 const Attack = invoke('GameServer/Actor/Attack');
+const AttackRange = invoke('GameServer/Actor/AttackRange');
 const calculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
 const skillExec = invoke('GameServer/Actor/Generics/SkillExec');
 const C4SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
@@ -48,6 +49,7 @@ function actor(overrides = {}) {
         fetchLocX: () => overrides.x ?? 100,
         fetchLocY: () => overrides.y ?? 200,
         fetchLocZ: () => overrides.z ?? 300,
+        fetchRadius: () => overrides.radius ?? 0,
         fetchHead: () => overrides.head ?? 0,
         fetchStr: () => overrides.str ?? 40,
         fetchDex: () => overrides.dex ?? 30,
@@ -178,28 +180,32 @@ const poleUser = actor({
     x: 0,
     y: 0,
     z: 0,
+    radius: 9,
     weaponKind: 'Weapon.Pole',
     skills: [skill(216, 'Polearm Mastery', 45, { passive: true })]
 });
-const poleTarget = (id, x, y, z = 0) => ({
+const poleTarget = (id, x, y, z = 0, radius = 0) => ({
     fetchId: () => id,
     fetchLocX: () => x,
     fetchLocY: () => y,
     fetchLocZ: () => z,
+    fetchRadius: () => radius,
     fetchAttackable: () => true,
     isDead: () => false,
     state: { fetchDead: () => false }
 });
-const polePrimary = poleTarget(1000010, 20, 0);
-const poleSecondary = poleTarget(1000011, 30, 10);
-const poleBehind = poleTarget(1000012, -20, 0);
-const poleOutside = poleTarget(1000013, 45, 0);
-const poleAbove = poleTarget(1000014, 20, 0, 700);
-poleAttack.fetchSkillTargetsInRadius = () => [polePrimary, poleSecondary, poleBehind, poleOutside, poleAbove];
+const polePrimary = poleTarget(1000010, 20, 0, 0, 10);
+const poleSecondary = poleTarget(1000011, 30, 10, 0, 10);
+const poleBehind = poleTarget(1000012, -20, 0, 0, 10);
+const poleWithinRange = poleTarget(1000013, 75, 0, 0, 6);
+const poleOutsideRange = poleTarget(1000014, 82, 0, 0, 6);
+const poleAbove = poleTarget(1000015, 20, 0, 700, 6);
+poleAttack.fetchSkillTargetsInRadius = () => [polePrimary, poleSecondary, poleBehind, poleWithinRange, poleOutsideRange, poleAbove];
+assert.strictEqual(AttackRange.effectiveRange(poleUser, poleWithinRange, 66), 81, 'polearm range should include both collision radii');
 assert.deepStrictEqual(
     poleAttack.resolveMeleeTargets(poleUser, polePrimary).map((target) => target.fetchId()),
-    [polePrimary.fetchId(), poleSecondary.fetchId()],
-    'Polearm Mastery should add only live targets inside the native 40-range, 120-degree attack arc'
+    [polePrimary.fetchId(), poleSecondary.fetchId(), poleWithinRange.fetchId()],
+    'Polearm Mastery should add targets inside the native 66-range, 120-degree attack arc'
 );
 EffectStore.apply(poleUser, { key: 'focus_attack', id: 317, type: 'buff', stats: { hitMainTarget: true } });
 assert.deepStrictEqual(poleAttack.resolveMeleeTargets(poleUser, polePrimary), [polePrimary], 'Focus Attack should collapse a polearm swing back to its main target');

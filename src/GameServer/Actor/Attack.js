@@ -9,6 +9,7 @@ const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
 const RaidCurse = invoke('GameServer/RaidBoss/RaidCurse');
 const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
+const AttackRange = invoke('GameServer/Actor/AttackRange');
 
 // L2WeaponType.mask() values used by the C4 datapack's weaponsAllowed field.
 const WEAPON_MASK_BY_KIND = Object.freeze({
@@ -545,7 +546,13 @@ class Attack {
 
         const maxTargets = Math.max(1, 4 + Math.floor(EffectStats.add(actor, 'atkCountMaxAdd')));
         const enemySkill = { fetchTargetKind: () => 'enemy' };
-        const nearby = this.fetchSkillTargetsInRadius(actor, actor.fetchLocX(), actor.fetchLocY(), 40);
+        const attackRange = AttackRange.fetchNormalAttackRange(actor);
+        const nearby = this.fetchSkillTargetsInRadius(
+            actor,
+            actor.fetchLocX(),
+            actor.fetchLocY(),
+            AttackRange.targetQueryRadius(actor, attackRange)
+        );
         const seen = new Set([primary.fetchId?.()]);
         const targets = [primary];
 
@@ -554,7 +561,7 @@ class Attack {
             if (!id || seen.has(id)) continue;
             if (!this.isValidSkillTarget(target, enemySkill, actor)) continue;
             if (Math.abs((Number(target.fetchLocZ?.()) || 0) - (Number(actor.fetchLocZ?.()) || 0)) > 650) continue;
-            if (this.distance2d(actor, target) > 40 || !this.isFacing(actor, target, 120)) continue;
+            if (!AttackRange.isWithinRange(actor, target, attackRange) || !this.isFacing(actor, target, 120)) continue;
 
             seen.add(id);
             targets.push(target);

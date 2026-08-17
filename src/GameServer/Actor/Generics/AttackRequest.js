@@ -1,16 +1,6 @@
-const BOW_ATTACK_RANGE = 700;
-const EffectStats = invoke('GameServer/Effects/EffectStats');
+const AttackRange = invoke('GameServer/Actor/AttackRange');
 
-function fetchNormalAttackRange(actor, data = {}) {
-    const requestedRange = Math.max(0, Number(data.range) || 0);
-    if (requestedRange > 0) {
-        return requestedRange;
-    }
-
-    return actor?.backpack?.fetchTotalWeaponKind?.() === 'Weapon.Bow'
-        ? BOW_ATTACK_RANGE + EffectStats.add(actor, 'pAtkRangeAdd')
-        : 0;
-}
+const fetchNormalAttackRange = AttackRange.fetchNormalAttackRange;
 
 function withNormalAttackRange(actor, data) {
     return {
@@ -57,4 +47,6 @@ function attackRequest(session, actor, data) {
 
 module.exports = attackRequest;
 module.exports.fetchNormalAttackRange = fetchNormalAttackRange;
-module.exports.BOW_ATTACK_RANGE = BOW_ATTACK_RANGE;
+module.exports.BOW_ATTACK_RANGE = AttackRange.BOW_ATTACK_RANGE;
+module.exports.MELEE_ATTACK_RANGE = AttackRange.MELEE_ATTACK_RANGE;
+module.exports.POLEARM_ATTACK_RANGE = AttackRange.POLEARM_ATTACK_RANGE;
