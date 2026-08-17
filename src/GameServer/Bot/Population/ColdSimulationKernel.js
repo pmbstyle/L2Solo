@@ -1,6 +1,8 @@
 const SIMPLE_ACTIVITIES = new Set(['hunting', 'resting', 'traveling', 'dead']);
 const HUNTING_TRAVEL_MS = 25000;
+const PROPOSAL_PAYLOAD_LIMIT_BYTES = 240 * 1024;
 const BackgroundPartyLifecycle = require('./BackgroundPartyLifecycle');
+const Protocol = require('./ColdSimulationProtocol');
 
 class DueHeap {
     constructor() {
@@ -268,6 +270,29 @@ function priorityForResult(state, result) {
     return 'P2';
 }
 
+function proposalPayloadBytes(proposals = []) {
+    return Protocol.byteLength({ proposals });
+}
+
+function compactProposal(proposal = {}, includeInventory = true) {
+    const baseState = proposal.baseState || null;
+    const result = proposal.result || {};
+    const compactBaseState = baseState
+        ? {
+            characterId: Number(baseState.characterId || proposal.characterId || 0),
+            ...(includeInventory ? { inventory: baseState.inventory || {} } : {})
+        }
+        : null;
+    return {
+        ...proposal,
+        ...(baseState ? { baseState: compactBaseState } : {}),
+        result: {
+            events: Array.isArray(result.events) ? result.events : [],
+            debug: result.debug || {}
+        }
+    };
+}
+
 class ColdSimulationKernel {
     constructor(options = {}) {
         if (typeof options.resolveSolo !== 'function') throw new Error('resolveSolo is required');
@@ -319,6 +344,9 @@ class ColdSimulationKernel {
             leaseRecoveries: 0,
             leaseRenewals: 0,
             leaseRenewalMisses: 0,
+            proposalCompactions: 0,
+            proposalOversize: 0,
+            proposalOversizeRejected: 0,
             orphanRecoveries: 0,
             loopRuns: 0,
             lastLoopAt: 0,
@@ -1054,13 +1082,35 @@ class ColdSimulationKernel {
             })
             .slice(0, this.maxBatch);
         const proposals = [];
+        const oversized = [];
         for (const proposal of eligible) {
-            const candidate = [...proposals, proposal];
-            if (Buffer.byteLength(JSON.stringify({ proposals: candidate })) > 240 * 1024) break;
-            proposals.push(proposal);
+            let transportProposal = proposal;
+            if (proposalPayloadBytes([proposal]) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                this.stats.proposalOversize += 1;
+                transportProposal = compactProposal(proposal, true);
+                if (proposalPayloadBytes([transportProposal]) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                    transportProposal = compactProposal(proposal, false);
+                }
+                if (proposalPayloadBytes([transportProposal]) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                    oversized.push(proposal);
+                    continue;
+                }
+                this.stats.proposalCompactions += 1;
+            }
+            const candidate = [...proposals, transportProposal];
+            if (proposalPayloadBytes(candidate) > PROPOSAL_PAYLOAD_LIMIT_BYTES) break;
+            proposals.push(transportProposal);
         }
+        oversized.forEach((proposal) => {
+            this.dirty.delete(Number(proposal.characterId));
+            this.stats.proposalOversizeRejected += 1;
+            this.emit('release_request', {
+                releases: [{ token: proposal.token, reason: 'proposal_too_large' }]
+            });
+            this.requeue(Number(proposal.characterId), timestamp + 5000);
+        });
         if (!proposals.length) return 0;
-        proposals.forEach((proposal) => this.dirty.delete(proposal.characterId));
+        proposals.forEach((proposal) => this.dirty.delete(Number(proposal.characterId)));
         this.stats.proposals += proposals.length;
         this.emit('proposal_batch', { proposals });
         return proposals.length;

@@ -691,6 +691,72 @@ function state(characterId = 1, overrides = {}) {
         'a renewed claim must not be recovered using its old deadline');
     assert.strictEqual(renewalKernel.inFlight.get(90).grant.leaseUntil, now + 10000);
 
+    const oversizedInventory = Object.fromEntries(Array.from({ length: 1200 }, (_, index) => [
+        String(index), {
+            selfId: index + 1000,
+            name: `Oversized item ${index} ${'x'.repeat(42)}`,
+            amount: index + 1,
+            kind: 'Other.Material'
+        }
+    ]));
+    const oversizedState = state(91, {
+        inventory: oversizedInventory,
+        stats: { equipmentPlan: { status: 'active' } },
+        simulation: { ownerId: 'cold_simulation_owner', revision: 5, leaseId: 'oversized-lease', leaseUntil: now + 30000 }
+    });
+    const oversizedEmitted = [];
+    const oversizedKernel = new ColdSimulationKernel({
+        resolveSolo: resolver,
+        emit: (type, payload) => oversizedEmitted.push({ type, payload }),
+        now: () => now + 10000
+    });
+    const oversizedProposal = {
+        proposalId: 'oversized-lease:5',
+        characterId: 91,
+        priority: 'P2',
+        enqueuedAt: now,
+        token: {
+            ok: true,
+            characterId: 91,
+            ownerId: 'cold_simulation_owner',
+            revision: 5,
+            leaseId: 'oversized-lease',
+            leaseUntil: now + 30000
+        },
+        baseState: oversizedState,
+        nextState: oversizedState,
+        durable: null,
+        result: {
+            patch: { inventory: oversizedInventory, stats: oversizedState.stats },
+            events: [],
+            materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+            nextResolveAt: now + 30000,
+            debug: { activity: 'hunting' }
+        },
+        options: { allowLifecycle: true }
+    };
+    oversizedKernel.inFlight.set(91, {
+        grant: oversizedProposal.token,
+        state: oversizedState,
+        context: {},
+        startedAt: now
+    });
+    oversizedKernel.dirty.set(91, oversizedProposal);
+    oversizedKernel.flushDue();
+    const compactedMessage = oversizedEmitted.find((entry) => entry.type === 'proposal_batch');
+    assert(compactedMessage, 'an oversized first proposal must be compacted and emitted');
+    assert(Protocol.validateEnvelope(
+        Protocol.envelope('proposal_batch', 'epoch', compactedMessage.payload),
+        'worker',
+        { workerEpoch: 'epoch' }
+    ).ok, 'compacted proposal batch must stay within the IPC envelope limit');
+    assert.strictEqual(compactedMessage.payload.proposals[0].result.patch, undefined,
+        'compacted proposals must remove duplicate result state when nextState is present');
+    assert.strictEqual(oversizedKernel.snapshot().dirty, 0,
+        'an oversized first proposal must not remain stuck in the dirty queue');
+    assert.strictEqual(oversizedKernel.snapshot().proposalCompactions, 1);
+    assert.strictEqual(oversizedKernel.snapshot().proposalOversize, 1);
+
     const capacityMessages = [];
     const capacityKernel = new ColdSimulationKernel({
         resolveSolo: resolver,
