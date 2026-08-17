@@ -132,6 +132,34 @@ assert.strictEqual(BotRaidSafety.canEngagePlayerPartyRaid(heavySession, boss, le
 assert.strictEqual(BotRaidSafety.canEngagePlayerPartyRaid(tankSession, minion, leaderSession), false,
     'the opener must attack the selected boss rather than pull through a minion');
 
+const originalLeaderCombatState = leader.state.fetchCombats;
+const originalMinionTarget = minion.fetchDestId;
+delete leaderSession.partyRaidEngagement;
+leader.fetchDestId = () => minion.fetchId();
+leader.state.fetchCombats = () => true;
+boss.fetchDestId = () => undefined;
+minion.fetchDestId = () => leader.fetchId();
+engagement = BotRaidSafety.syncPlayerPartyRaid(leaderSession, 1000);
+assert.strictEqual(engagement.bossId, boss.fetchId(),
+    'a player-selected minion must resolve to its live raid boss');
+assert.strictEqual(engagement.targetId, minion.fetchId(),
+    'the player-selected raid minion must remain the party combat target');
+assert.strictEqual(engagement.phase, 'combat',
+    'a player actively attacking a raid minion must release the party into combat immediately');
+assert.strictEqual(BotRaidSafety.leaderDesignatedRaidTarget(leaderSession)?.target, minion,
+    'raid target resolution must preserve the selected minion object');
+assert.strictEqual(BotRaidSafety.canEngagePlayerPartyRaid(mageSession, minion, leaderSession), true,
+    'all companions may assist a player-led raid after the player attacks a minion');
+assert.strictEqual(PartyAwareness.findThreatTargetingParty(leaderSession)?.actor, minion,
+    'the selected minion must flow through normal party threat assistance');
+assert.strictEqual(PartyAwareness.leaderCombatTargetId(leaderSession, { allowPlayerRaid: true }), minion.fetchId(),
+    'the explicit player-party assist path must expose an engaged selected minion');
+
+leader.state.fetchCombats = originalLeaderCombatState;
+leader.fetchDestId = () => boss.fetchId();
+minion.fetchDestId = originalMinionTarget;
+delete leaderSession.partyRaidEngagement;
+
 boss.model.raidAttackers.add(leader.fetchId());
 engagement = BotRaidSafety.syncPlayerPartyRaid(leaderSession, 1000);
 assert.strictEqual(engagement.phase, 'opening',

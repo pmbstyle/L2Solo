@@ -87,6 +87,8 @@ assert.deepStrictEqual(
     new Set([boss, ...minions]),
     'the index must return only the selected boss and its linked minions'
 );
+assert.strictEqual(RaidEntityIndex.raidEntityByObjectId(World, minions[0].fetchId()), minions[0],
+    'the index must resolve a selected raid minion without scanning all world spawns');
 
 const addedMinion = actor(6010, {
     selfId: 10020,
@@ -104,6 +106,8 @@ World.removeNpcFromGrid(addedMinion);
 World.npc.spawns.splice(World.npc.spawns.indexOf(addedMinion), 1);
 assert(!BotRaidSafety.raidEntities(leaderSession.partyRaidEngagement).includes(addedMinion),
     'a removed minion must leave raid membership immediately');
+assert.strictEqual(RaidEntityIndex.raidEntityByObjectId(World, addedMinion.fetchId()), null,
+    'a removed raid minion must leave direct object-id lookup');
 assert.strictEqual(RaidEntityIndex.stats(World).rebuilds, 1,
     'incremental minion removal must not rebuild the world index');
 
