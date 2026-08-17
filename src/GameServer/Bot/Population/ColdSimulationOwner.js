@@ -338,6 +338,22 @@ function releaseBatch(tokens = [], options = {}) {
     }).catch(recordFailure);
 }
 
+function renewActiveLeases(options = {}) {
+    const timestamp = Number(options.timestamp || Date.now());
+    const leaseMs = Math.max(1000, Number(options.leaseMs || DEFAULT_LEASE_MS));
+    return Database.renewColdSimulationLeases({
+        ownerId: OWNER_ID,
+        timestamp,
+        leaseMs
+    }).then((results) => {
+        results.forEach((result) => {
+            if (result.ok) reflect(result);
+            else Metrics().recordColdOwnerRejected(result.reason);
+        });
+        return results;
+    }).catch(recordFailure);
+}
+
 function handoffToMain(state) {
     if (!state?.characterId) return Promise.resolve({ ok: false, reason: 'missing_state' });
     const stateOwnership = state.simulation;
@@ -381,6 +397,7 @@ module.exports = {
     commitAndReleaseBatch,
     release,
     releaseBatch,
+    renewActiveLeases,
     handoffToMain,
     recoverExpiredLeases,
     recoverStartupLeases

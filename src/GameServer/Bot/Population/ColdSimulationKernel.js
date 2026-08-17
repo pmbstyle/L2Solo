@@ -317,6 +317,8 @@ class ColdSimulationKernel {
             stale: 0,
             claimRecoveries: 0,
             leaseRecoveries: 0,
+            leaseRenewals: 0,
+            leaseRenewalMisses: 0,
             orphanRecoveries: 0,
             loopRuns: 0,
             lastLoopAt: 0,
@@ -716,6 +718,29 @@ class ColdSimulationKernel {
             });
             this.stats.claimed += run.purpose.memberIds.length;
             this.resolveChain = this.resolveChain.then(() => this.resolvePartyGrant(partyId));
+        });
+    }
+
+    onLeaseRenewal(payload = {}) {
+        (payload.renewals || []).forEach((renewal) => {
+            const id = Number(renewal.characterId);
+            const active = this.inFlight.get(id);
+            const grant = active?.grant;
+            if (!active || !grant
+                || String(grant.leaseId || '') !== String(renewal.leaseId || '')
+                || Number(grant.revision) !== Number(renewal.revision)) {
+                this.stats.leaseRenewalMisses += 1;
+                return;
+            }
+            const leaseUntil = Number(renewal.leaseUntil || 0);
+            if (!Number.isFinite(leaseUntil) || leaseUntil <= Number(grant.leaseUntil || 0)) return;
+            active.grant = { ...grant, leaseUntil };
+            if (active.partyId) {
+                const run = this.partyRuns.get(String(active.partyId));
+                const partyGrant = run?.grants.get(id);
+                if (partyGrant) run.grants.set(id, { ...partyGrant, leaseUntil });
+            }
+            this.stats.leaseRenewals += 1;
         });
     }
 

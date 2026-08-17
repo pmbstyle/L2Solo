@@ -252,6 +252,9 @@ async function handle(message) {
     case 'claim_ack':
         kernel?.onClaimAck(payload);
         break;
+    case 'lease_renewal':
+        kernel?.onLeaseRenewal(payload);
+        break;
     case 'commit_ack':
         kernel?.onCommitAck(payload);
         break;

@@ -930,6 +930,62 @@ const Database = {
         }, 'bot-life:cold-owner-release');
     },
 
+    renewColdSimulationLeases({
+        timestamp = now(),
+        leaseMs = 30000,
+        ownerId = COLD_SIMULATION_OWNER
+    } = {}) {
+        const cutoff = Number(timestamp);
+        const duration = Math.max(1000, Number(leaseMs) || 30000);
+        const owner = String(ownerId || COLD_SIMULATION_OWNER);
+        if (owner !== COLD_SIMULATION_OWNER || !Number.isFinite(cutoff)) return Promise.resolve([]);
+
+        return inTransaction(() => {
+            const candidates = all(`SELECT characterId, simulationRevision, simulationLeaseId, simulationLeaseUntil
+                FROM bot_life_state
+                WHERE simulationOwner = ?
+                  AND simulationLeaseId IS NOT NULL
+                  AND simulationLeaseUntil > ?`, [owner, cutoff]);
+            return candidates.map((candidate) => {
+                const leaseUntil = Math.max(
+                    Number(candidate.simulationLeaseUntil || 0),
+                    cutoff + duration
+                );
+                const result = write(`UPDATE bot_life_state
+                    SET simulationLeaseUntil = ?
+                    WHERE characterId = ? AND simulationOwner = ?
+                      AND simulationRevision = ? AND simulationLeaseId = ?
+                      AND simulationLeaseUntil > ?`, [
+                    leaseUntil,
+                    Number(candidate.characterId),
+                    owner,
+                    Number(candidate.simulationRevision),
+                    candidate.simulationLeaseId,
+                    cutoff
+                ]);
+                if (result.affectedRows !== 1) {
+                    return {
+                        ok: false,
+                        characterId: Number(candidate.characterId),
+                        ownerId: owner,
+                        revision: Number(candidate.simulationRevision),
+                        leaseId: candidate.simulationLeaseId,
+                        reason: 'renewal_cas_failed'
+                    };
+                }
+                return {
+                    ok: true,
+                    characterId: Number(candidate.characterId),
+                    ownerId: owner,
+                    revision: Number(candidate.simulationRevision),
+                    leaseId: candidate.simulationLeaseId,
+                    leaseUntil,
+                    reason: 'renewed'
+                };
+            });
+        }, 'bot-life:cold-owner-renew-batch');
+    },
+
     handoffColdSimulationToMain(request = {}) {
         const characterId = Number(request.characterId);
         const expectedRevision = request.expectedRevision === null || request.expectedRevision === undefined

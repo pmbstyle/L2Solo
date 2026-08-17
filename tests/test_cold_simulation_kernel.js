@@ -665,6 +665,32 @@ function state(characterId = 1, overrides = {}) {
     assert.strictEqual(burstClaim.payload.candidates.length, 3,
         'a catch-up tick must honor the smaller in-flight burst even when the protocol batch is larger');
 
+    const renewalKernel = new ColdSimulationKernel({ resolveSolo: resolver, now: () => now });
+    const renewalGrant = {
+        ok: true,
+        characterId: 90,
+        ownerId: 'cold_simulation_owner',
+        revision: 4,
+        leaseId: 'renewal-lease',
+        leaseUntil: now + 1000
+    };
+    renewalKernel.inFlight.set(90, {
+        grant: renewalGrant,
+        state: state(90),
+        context: {},
+        startedAt: now
+    });
+    renewalKernel.onLeaseRenewal({ renewals: [{
+        ...renewalGrant,
+        leaseUntil: now + 10000
+    }] });
+    assert.strictEqual(renewalKernel.snapshot().leaseRenewals, 1,
+        'worker must accept a matching lease renewal for an active claim');
+    renewalKernel.recoverStalled(now + 2000);
+    assert.strictEqual(renewalKernel.snapshot().leaseRecoveries, 0,
+        'a renewed claim must not be recovered using its old deadline');
+    assert.strictEqual(renewalKernel.inFlight.get(90).grant.leaseUntil, now + 10000);
+
     const capacityMessages = [];
     const capacityKernel = new ColdSimulationKernel({
         resolveSolo: resolver,

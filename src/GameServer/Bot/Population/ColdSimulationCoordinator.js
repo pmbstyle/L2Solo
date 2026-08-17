@@ -73,6 +73,7 @@ class ColdSimulationCoordinator {
         this.watchdogTimer = null;
         this.reconcileTimer = null;
         this.recoveryTimer = null;
+        this.renewalTimer = null;
         this.seen = new Set();
         this.seenOrder = [];
         this.waiters = new Map();
@@ -157,9 +158,19 @@ class ColdSimulationCoordinator {
             this.recoveryTimer = setInterval(() => {
                 ColdSimulationOwner.recoverExpiredLeases().catch((error) => this.recordError(error));
             }, Math.max(1000, Number(Config.coldOwnerRecoveryIntervalMs) || 5000));
+            this.renewalTimer = setInterval(() => {
+                if (!this.worker || this.stopping) return;
+                ColdSimulationOwner.renewActiveLeases({
+                    leaseMs: Math.max(2000, Number(Config.coldOwnerLeaseMs) || 30000)
+                }).then((renewals) => {
+                    const active = (renewals || []).filter((result) => result.ok);
+                    if (active.length) this.postCollections('lease_renewal', { renewals: active });
+                }).catch((error) => this.recordError(error));
+            }, Math.max(1000, Number(Config.coldOwnerRenewalIntervalMs) || 5000));
             this.watchdogTimer.unref?.();
             this.reconcileTimer.unref?.();
             this.recoveryTimer.unref?.();
+            this.renewalTimer.unref?.();
             return true;
         }).catch((error) => {
             this.started = false;
@@ -974,10 +985,12 @@ class ColdSimulationCoordinator {
         if (this.watchdogTimer) clearInterval(this.watchdogTimer);
         if (this.reconcileTimer) clearInterval(this.reconcileTimer);
         if (this.recoveryTimer) clearInterval(this.recoveryTimer);
+        if (this.renewalTimer) clearInterval(this.renewalTimer);
         if (this.restartTimer) clearTimeout(this.restartTimer);
         this.watchdogTimer = null;
         this.reconcileTimer = null;
         this.recoveryTimer = null;
+        this.renewalTimer = null;
         this.restartTimer = null;
         this.pauseReasons.clear();
         await Promise.race([this.snapshotInFlight || Promise.resolve(), wait(10000)]).catch(() => null);
