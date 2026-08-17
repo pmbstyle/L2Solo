@@ -242,6 +242,16 @@ function partySpotForLeader(leader, objectiveSpotId = null) {
     }, { mode: 'party', role: PartyComposition.roleForState(leader) }) || SpotProfiles.findById(leader.spotId);
 }
 
+function leaderIdForMembers(party, members = []) {
+    const memberIds = new Set((members || [])
+        .map((member) => Number(member?.characterId))
+        .filter(Boolean));
+    const currentLeaderId = Number(party?.leaderId || 0);
+    if (memberIds.has(currentLeaderId)) return currentLeaderId;
+    const selectedLeader = PartyComposition.chooseLeader(members);
+    return Number(selectedLeader?.characterId || members[0]?.characterId || currentLeaderId || 0);
+}
+
 function maxBackgroundPartiesForBacklog(partyWaitCount = 0) {
     const base = Math.max(0, Number(Config.maxBackgroundParties) || 0);
     const threshold = Math.max(1, Number(Config.partyBacklogCapacityThreshold) || 250);
@@ -1365,6 +1375,7 @@ const PopulationService = {
             const objective = objectiveMember ? partyObjectiveForState(objectiveMember) : null;
             await BackgroundPartyState.createOrUpdate({
                 ...party,
+                leaderId: leaderIdForMembers(party, retainedMembers),
                 memberIds: retainedMembers.map((member) => member.characterId),
                 roleCoverage: PartyComposition.roleCoverage(retainedMembers),
                 spotId: objective?.spotId || party.spotId,
@@ -1449,6 +1460,7 @@ const PopulationService = {
                     const allMembers = [...members, ...assigned];
                     return BackgroundPartyState.createOrUpdate({
                         ...party,
+                        leaderId: leaderIdForMembers(party, allMembers),
                         memberIds: allMembers.map((member) => member.characterId),
                         roleCoverage: PartyComposition.roleCoverage(allMembers),
                         stats: {

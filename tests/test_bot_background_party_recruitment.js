@@ -104,7 +104,22 @@ async function run() {
     assert.deepStrictEqual(assigned.map((entry) => entry.state.characterId), [3, 4]);
     assert.deepStrictEqual(saved.memberIds, [1, 2, 3, 4]);
     assert.deepStrictEqual(saved.roleCoverage, { tank: 1, healer: 1, buffer: 1, dps: 1 });
+    assert.strictEqual(saved.leaderId, 1, 'recruitment must preserve an attached party leader');
     assert.strictEqual(events.length, 1);
+
+    const staleLeaderParty = { partyId: 'bgp_stale_leader', leaderId: 999, memberIds: [1, 2], spotId: 'cruma', stats: {} };
+    let staleLeaderSaved = null;
+    PartyState.active = () => [staleLeaderParty];
+    LifeState.statesForParties = () => Promise.resolve(new Map([['bgp_stale_leader', members]]));
+    PartyState.createOrUpdate = (nextParty) => {
+        staleLeaderSaved = nextParty;
+        return Promise.resolve(nextParty);
+    };
+    await PopulationService.recruitBackgroundMembers([
+        { characterId: 7, name: 'StaleLeaderRecruit', level: 15, spotId: 'cruma', party: { role: 'dps' } }
+    ]);
+    assert.strictEqual(staleLeaderSaved.leaderId, 1,
+        'recruitment must re-elect an attached member when the stored leader has already departed');
 
     const sharedParties = [
         { partyId: 'bgp_shared_a', leaderId: 50, memberIds: [50, 51, 52, 53], spotId: 'cruma', stats: {} },
