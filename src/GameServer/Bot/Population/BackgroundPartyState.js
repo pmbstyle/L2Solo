@@ -158,10 +158,11 @@ const BackgroundPartyState = {
 
     createOrUpdate(party) {
         const membership = normalizeMembership(party);
-        if (!party?.partyId || !membership.memberIds.length) return Promise.resolve(null);
+        const status = party?.status || 'active';
+        if (!party?.partyId || (status === 'active' && !membership.memberIds.length)) return Promise.resolve(null);
         const normalizedParty = { ...party, ...membership };
         const memberCount = membership.memberIds.length;
-        if ((party.status || 'active') === 'active' && memberCount < Config.partyMinSize) return Promise.resolve(null);
+        if (status === 'active' && memberCount < Config.partyMinSize) return Promise.resolve(null);
         const ready = initialized ? Promise.resolve(true) : this.init();
 
         return ready.then((isReady) => {

@@ -29,6 +29,17 @@ const originalExecute = Database.execute;
     assert.strictEqual(queries[0][0][1][1], 101, 'the SQL leader id must use the normalized attached leader');
     assert.strictEqual(queries[0][0][1][2], '[101,102]', 'the SQL member list must use normalized ids');
 
+    const dissolved = await BackgroundPartyState.createOrUpdate({
+        partyId: 'bgp_empty_dissolved',
+        status: 'dissolved',
+        memberIds: []
+    });
+    assert(dissolved, 'an empty dissolved party must remain persistable for orphan cleanup');
+    assert.strictEqual(dissolved.status, 'dissolved');
+    assert.deepStrictEqual(dissolved.memberIds, []);
+    assert.strictEqual(queries.length, 2, 'dissolved orphan cleanup should perform its persistence write');
+    assert.strictEqual(queries[1][0][1][8], 'dissolved', 'the cleanup write must preserve dissolved status');
+
     console.log('Background party membership invariant checks passed');
 })().catch((error) => {
     console.error(error);

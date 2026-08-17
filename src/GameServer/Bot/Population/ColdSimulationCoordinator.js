@@ -567,6 +567,7 @@ class ColdSimulationCoordinator {
 
     async sendFullSnapshot() {
         const states = LifeState.allStates(Math.max(1, Number(Config.maxPlayingPopulation) + 300 || 2000));
+        await this.reconcileOrphanedBackgroundParties();
         const compactPartyMemberIds = new Set(states.map((state) => Number(state.characterId || 0)).filter(Boolean));
         const index = this.contextIndex({ compactPartyMemberIds });
         const pageSize = this.snapshotQueue.pageSize;
@@ -603,6 +604,20 @@ class ColdSimulationCoordinator {
         if (!pendingPage) pendingPage = [];
         if (!await emit(pendingPage, true)) return { ok: false, rowsSent, pagesSent };
         return { ok: true, rowsSent, pagesSent };
+    }
+
+    async reconcileOrphanedBackgroundParties() {
+        const orphaned = BackgroundPartyState.active().filter((party) => {
+            const memberIds = (party.memberIds || []).map((id) => Number(id)).filter(Boolean);
+            return !memberIds.length || memberIds.every((id) => !LifeState.cachedState(id));
+        });
+        for (const party of orphaned) {
+            const dissolved = await BackgroundPartyState.setStatus(party.partyId, 'dissolved');
+            if (dissolved) {
+                console.info('ColdWorker :: dissolved orphaned background party %s declaredMembers=%d', party.partyId, party.memberIds?.length || 0);
+            }
+        }
+        return orphaned;
     }
 
     startSnapshotJob(mode, work, pressure = {}) {
