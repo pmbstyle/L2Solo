@@ -533,10 +533,10 @@ const BotManager = {
 
     loadAndSpawnBot(username, botData = {}) {
         const session = new BotSession(username);
-        
-        Shared.fetchCharacters(username).then((characters) => {
+
+        return Shared.fetchCharacters(username).then((characters) => {
             const firstCharacter = characters[0];
-            if (!firstCharacter) return;
+            if (!firstCharacter) return null;
 
             const firstStoreCfg = merchantConfigFor(botData, firstCharacter.name);
             // Cold-generated characters may have been created before their
@@ -557,14 +557,14 @@ const BotManager = {
                         .then(() => Shared.fetchCharacters(username));
                 });
 
-            spawnReady.then((readyCharacters) => {
-                const character = readyCharacters[0];
-                if (!character) return;
+            return spawnReady.then((readyCharacters) => {
+                const character = readyCharacters?.[0];
+                if (!character) return null;
                 const storeCfg = merchantConfigFor(botData, character.name);
                 const runtimeStore = botData.privateStore || null;
                 const manufactureShop = botData.manufactureShop || null;
 
-                Shared.fetchClassInformation(character.classId).then((classInfo) => {
+                return Shared.fetchClassInformation(character.classId).then((classInfo) => {
                     if (botData.locX !== undefined) {
                         character.locX = botData.locX;
                         character.locY = botData.locY;
@@ -690,12 +690,14 @@ const BotManager = {
                 
                     this.sessions.push(session);
                     session.populationHotAt = Date.now();
-                    PopulationService.markHot(session, 'spawn');
-                    let modeText = "[Hunting Mode]";
-                    if (session.townGossip) modeText = "[Gossip Mode]";
-                    if (session.plan === 'pk_hunting') modeText = "[PK Mode]";
-                    if (session.plan === 'merchant') modeText = "[Merchant Mode]";
-                    utils.infoSuccess("BotManager", "%s (Level %d) is active in World %s", character.name, character.level, modeText);
+                    return Promise.resolve(PopulationService.markHot(session, 'spawn')).then(() => {
+                        let modeText = "[Hunting Mode]";
+                        if (session.townGossip) modeText = "[Gossip Mode]";
+                        if (session.plan === 'pk_hunting') modeText = "[PK Mode]";
+                        if (session.plan === 'merchant') modeText = "[Merchant Mode]";
+                        utils.infoSuccess("BotManager", "%s (Level %d) is active in World %s", character.name, character.level, modeText);
+                        return session;
+                    });
                 });
             });
         });

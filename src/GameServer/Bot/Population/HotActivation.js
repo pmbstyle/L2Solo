@@ -211,8 +211,7 @@ const HotActivation = {
                 const recipesReady = craftShop
                     ? CraftShopService.ensureRecipes(state.characterId, craftShop)
                     : Promise.resolve();
-                return recipesReady.then(() => {
-                    BotManager.loadAndSpawnBot(state.accountName, {
+                return recipesReady.then(() => Promise.resolve(BotManager.loadAndSpawnBot(state.accountName, {
                         name: state.name,
                         homeRegion: state.homeRegion,
                         newbieAnchor: !!state.stats?.newbieAnchor,
@@ -239,8 +238,8 @@ const HotActivation = {
                             items: marketStore.items || []
                         } : null,
                         manufactureShop: craftShop
-                    });
-
+                    })).then((session) => {
+                    if (!session) throw new Error('bot_spawn_failed');
                     const pendingTimer = setTimeout(() => {
                         pendingActivations.delete(state.characterId);
                     }, 10000);
@@ -261,7 +260,7 @@ const HotActivation = {
                     );
                     Metrics.recordActivation();
                     return { ok: true, state, reason };
-                });
+                }));
             }).catch((error) => {
                 pendingActivations.delete(state.characterId);
                 const failureReason = craftActivation ? 'craft_recipe_sync_failed' : 'activation_prepare_failed';

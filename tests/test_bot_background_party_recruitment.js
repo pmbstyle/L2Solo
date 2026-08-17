@@ -235,6 +235,7 @@ async function run() {
     SpotService.findCurrentSpot = () => null;
     BotManager.loadAndSpawnBot = (_accountName, options) => {
         activationOrder.push(`spawn:${options.coldLifeState?.party?.partyId || 'solo'}`);
+        return Promise.resolve({ actor: {} });
     };
 
     const activated = await HotActivation.activate(groupedState, 'party_invite', { keepStoreLocation: true });
