@@ -278,7 +278,11 @@ class ColdSimulationKernel {
         this.now = options.now || Date.now;
         this.emit = options.emit || (() => {});
         this.maxBatch = Math.max(1, Math.min(64, Number(options.maxBatch) || 64));
-        this.maxInFlight = Math.max(this.maxBatch, Math.min(128, Number(options.maxInFlight) || 128));
+        // Resolves are chained below, so maxInFlight is an ownership/lease
+        // burst guard rather than a promise-concurrency setting. It must be
+        // allowed to stay below maxBatch; otherwise a large batch silently
+        // defeats the guard and recreates an expiring-lease backlog.
+        this.maxInFlight = Math.max(1, Math.min(128, Number(options.maxInFlight) || 32));
         this.claimAckTimeoutMs = Math.max(1000, Number(options.claimAckTimeoutMs) || 5000);
         this.flushTargetMs = Math.max(100, Number(options.flushTargetMs) || 2000);
         this.flushHardMs = Math.max(this.flushTargetMs, Number(options.flushHardMs) || 5000);

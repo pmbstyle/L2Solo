@@ -323,7 +323,7 @@ class ColdSimulationCoordinator {
     workerConfig() {
         return {
             maxBatch: Math.max(1, Math.min(64, Number(Config.coldWorkerBatchSize) || 64)),
-            maxInFlight: Math.max(64, Math.min(128, Number(Config.coldWorkerMaxInFlight) || 128)),
+            maxInFlight: Math.max(1, Math.min(128, Number(Config.coldWorkerMaxInFlight) || 32)),
             claimAckTimeoutMs: 5000,
             flushTargetMs: Math.max(100, Number(Config.coldWorkerOrdinaryFlushMs) || 2000),
             flushHardMs: Math.max(1000, Number(Config.coldWorkerOrdinaryHardMaxMs) || 5000),

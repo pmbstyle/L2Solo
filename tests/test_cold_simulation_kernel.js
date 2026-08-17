@@ -648,6 +648,23 @@ function state(characterId = 1, overrides = {}) {
     assert(!compactFallbackMessages.some((entry) => entry.type === 'claim_request'),
         'a compact party reference must wait until its full authoritative state is loaded');
 
+    const burstMessages = [];
+    const burstKernel = new ColdSimulationKernel({
+        resolveSolo: resolver,
+        emit: (type, payload) => burstMessages.push({ type, payload }),
+        now: () => now,
+        maxBatch: 64,
+        maxInFlight: 3
+    });
+    for (let id = 80; id < 85; id++) burstKernel.upsert({
+        state: state(id, { timing: { lastResolvedAt: 1000, nextResolveAt: now - 1 } }),
+        context: { spot: { id: 'spot' } }
+    });
+    burstKernel.tick();
+    const burstClaim = burstMessages.find((entry) => entry.type === 'claim_request');
+    assert.strictEqual(burstClaim.payload.candidates.length, 3,
+        'a catch-up tick must honor the smaller in-flight burst even when the protocol batch is larger');
+
     const capacityMessages = [];
     const capacityKernel = new ColdSimulationKernel({
         resolveSolo: resolver,

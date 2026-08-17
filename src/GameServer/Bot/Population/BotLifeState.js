@@ -1663,15 +1663,20 @@ const BotLifeState = {
         )), Promise.resolve([]));
     },
 
-    statesForParty(partyId) {
+    statesForParty(partyId, options = {}) {
         if (!initialized || !partyId) return Promise.resolve([]);
+
+        const ownerId = options.ownerId ? String(options.ownerId) : null;
+        const ownerClause = ownerId ? 'AND simulationOwner = ?' : '';
+        const params = ownerId ? [partyId, ownerId] : [partyId];
 
         return Database.execute([
             `SELECT * FROM ${TABLE}
             WHERE phase = 'cold'
             AND partyId = ?
+            ${ownerClause}
             ORDER BY level DESC, characterId ASC`,
-            [partyId]
+            params
         ]).then((rows) => rows.map((row) => {
             const state = normalize(row);
             cache.set(state.characterId, state);
@@ -1901,7 +1906,10 @@ const BotLifeState = {
     clearParty(partyId, reason = 'party_dissolved') {
         if (!initialized || !partyId) return Promise.resolve(0);
 
-        return this.statesForParty(partyId).then((members) => (
+        // Main-owned rows are the only rows this legacy cleanup path may
+        // write. Cold-worker-owned members will be released by the worker's
+        // party resolution, avoiding a predictable CAS conflict here.
+        return this.statesForParty(partyId, { ownerId: 'legacy_main' }).then((members) => (
             members.reduce((chain, member) => (
                 chain.then((cleared) => this.leaveParty(member, reason)
                     .then((updated) => cleared + (updated ? 1 : 0)))

@@ -20,7 +20,10 @@ const DEFAULTS = {
     coldOwnerRecoveryIntervalMs: 5000,
     coldWorkerBatchSize: 64,
     coldWorkerCommitBatchSize: 32,
-    coldWorkerMaxInFlight: 128,
+    // Resolver work is serialized inside the worker. Keep the lease window
+    // bounded so a catch-up burst cannot create a large queue of expiring
+    // claims while preserving the full candidate throughput on later ticks.
+    coldWorkerMaxInFlight: 32,
     coldWorkerOrdinaryFlushMs: 2000,
     coldWorkerOrdinaryHardMaxMs: 5000,
     coldWorkerCriticalFlushMs: 100,

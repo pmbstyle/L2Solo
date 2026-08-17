@@ -279,6 +279,13 @@ try {
                     const fairCandidates = statements.find((entry) => entry.sql.includes('ROW_NUMBER() OVER') && entry.sql.includes('PARTITION BY'));
                     assert(fairCandidates, 'party recruitment must load a bounded fair sample per active spot');
                     assert(fairCandidates.sql.includes("states.simulationOwner = 'legacy_main'"), 'party recruitment must exclude cold-worker-owned rows');
+                    const clearPartyStart = statements.length;
+                    return BotLifeState.clearParty('bgp_cleanup_probe', 'ownership_aware_cleanup').then(() => {
+                        const clearPartyQuery = statements.slice(clearPartyStart)
+                            .find((entry) => entry.sql.includes('AND partyId = ?') && entry.sql.includes('simulationOwner = ?'));
+                        assert(clearPartyQuery, 'party cleanup must query only rows owned by the main lifecycle');
+                        assert.deepStrictEqual(clearPartyQuery.params, ['bgp_cleanup_probe', 'legacy_main']);
+                    });
                 }).then(() => {
                     const member = {
                         characterId: 44,
