@@ -63,6 +63,10 @@ class Item extends ItemModel {
         return this.model.accur ?? 0;
     }
 
+    fetchAttackRange() {
+        return this.model.attackRange ?? this.model.pAtkRange ?? 0;
+    }
+
     fetchConsumedMp() {
         return this.model.mp ?? 0;
     }

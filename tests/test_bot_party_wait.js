@@ -50,6 +50,7 @@ async function run() {
     };
     let applied = null;
     let resolverOptions = null;
+    let spotSelectionStates = [];
     const fallbackSpot = {
         id: 'safe_fallback',
         name: 'Safe fallback',
@@ -63,7 +64,14 @@ async function run() {
         mob: { hp: 1, damage: 1 }
     };
     SpotProfiles.ensure = () => [];
-    SpotProfiles.findForState = () => fallbackSpot;
+    const unsafeSpot = { ...fallbackSpot, id: 'unsafe_target', name: 'Unsafe target' };
+    SpotProfiles.findForState = (candidateState) => {
+        spotSelectionStates.push({
+            spotId: candidateState?.spotId || null,
+            hasEquipmentPlan: Boolean(candidateState?.stats?.equipmentPlan)
+        });
+        return candidateState?.stats?.equipmentPlan ? unsafeSpot : fallbackSpot;
+    };
     GearPlanner.planFor = () => ({
         status: 'active',
         partyNeed: 'required',
@@ -75,7 +83,7 @@ async function run() {
     BackgroundResolver.resolveSolo = (options) => {
         resolverOptions = options;
         return {
-            patch: { activity: 'hunting', spotId: fallbackSpot.id, vitals: options.state.vitals || {} },
+            patch: { activity: 'hunting', spotId: options.state.spotId, vitals: options.state.vitals || {} },
             materialize: { exp: 1, sp: 1, adena: 1, items: [] },
             nextResolveAt: Date.now() + 60000,
             debug: { fights: 1, wins: 1, losses: 0, deaths: 0, defeatedNpcIds: [1] },
@@ -110,6 +118,90 @@ async function run() {
     assert.strictEqual(applied.stats.partyWaitUntil, undefined, 'the non-blocking request must not create a wait deadline');
     assert(applied.timing.nextResolveAt > Date.now(), 'the fallback hunt must retain a normal combat deadline');
     assert.strictEqual(resolverOptions.targetNpcId, 0, 'fallback combat must not pretend to farm the unsafe acquisition target');
+
+    resolverOptions = null;
+    spotSelectionStates = [];
+    const deferredState = {
+        ...state,
+        characterId: 9103,
+        stats: {
+            travel: null,
+            partyRequest: {
+                status: 'deferred',
+                priority: 'required',
+                objectiveKey: 'farm:unsafe_target:77',
+                spotId: 'unsafe_target',
+                npcId: 77,
+                itemId: 88,
+                targetId: 88,
+                deferredUntil: Date.now() + 60000,
+                attempts: 1
+            }
+        }
+    };
+    const deferredResult = await PopulationService.resolveColdState(deferredState);
+    assert.strictEqual(deferredResult.ok, true);
+    assert.strictEqual(resolverOptions.targetNpcId, 0,
+        'a deferred party request must keep using safe fallback combat instead of returning to the unsafe target');
+    assert.strictEqual(deferredResult.state.spotId, fallbackSpot.id,
+        'a deferred party request must not send the bot back to the stale gear spot');
+    assert.strictEqual(deferredResult.state.stats.partyRequest.status, 'deferred');
+    assert(spotSelectionStates.some((entry) => entry.spotId === null && entry.hasEquipmentPlan === false),
+        'deferred fallback selection must evaluate level routing without the stale equipment plan');
+
+    GearPlanner.planFor = (currentState, options = {}) => options.forceMarketTargetId
+        ? {
+            status: 'active',
+            grade: 'd',
+            strategy: 'market',
+            partyNeed: 'solo_ok',
+            requiresParty: false,
+            target: { selfId: 88 },
+            market: { town: 'Gludio', price: 1000, sourceType: 'npc' },
+            next: null
+        }
+        : {
+            status: 'active',
+            partyNeed: 'required',
+            requiresParty: true,
+            target: { selfId: 88 },
+            next: { spotId: 'unsafe_target', npcId: 77, itemId: 88 },
+            strategy: 'direct_drop'
+        };
+    const recoveryResult = await PopulationService.resolveColdState({
+        ...state,
+        characterId: 9105,
+        stats: {
+            travel: null,
+            equipmentPlan: {
+                status: 'active',
+                grade: 'd',
+                plannedForLevel: 30,
+                strategy: 'direct_drop',
+                partyNeed: 'required',
+                requiresParty: true,
+                target: { selfId: 88 },
+                next: { spotId: 'unsafe_target', npcId: 77, itemId: 88 },
+                targetProgress: { npcId: 77, resolves: 0, targetKills: 0 }
+            },
+            partyRequest: {
+                status: 'deferred',
+                priority: 'required',
+                objectiveKey: 'direct_drop:unsafe_target:77',
+                spotId: 'unsafe_target',
+                npcId: 77,
+                itemId: 88,
+                targetId: 88,
+                deferredUntil: Date.now() + 60000,
+                attempts: 2
+            }
+        }
+    });
+    assert.strictEqual(recoveryResult.ok, true);
+    assert.strictEqual(recoveryResult.state.stats.partyRequest, undefined,
+        'planner recovery must clear the obsolete deferred party request');
+    assert.strictEqual(recoveryResult.state.stats.equipmentPlan.strategy, 'market',
+        'planner recovery must replace the unavailable direct-drop route');
 
     GearPlanner.planFor = () => ({
         status: 'active',
@@ -176,6 +268,7 @@ async function run() {
         stats: { sessionExpiresAt: timestamp + 60000 }
     }, timestamp), false, 'a staggered session expiry must override the nominal party age');
     assert.strictEqual(PopulationService.partySessionExpired({ stats: { sessionExpiresAt: timestamp - 1 } }, timestamp), true, 'an explicit staggered session expiry must rotate the party');
+    assert.strictEqual(PopulationService.partySessionExpired({ partyId: 'missing-session-metadata' }, timestamp), false, 'missing session metadata must not expire a party immediately');
     console.log('Bot party request fallback checks passed');
 }
 

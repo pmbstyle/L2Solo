@@ -144,6 +144,7 @@ const DataCache = {
             ...validateModel(path + 'Items/Armors/c4_sealed_a_grade'),
             ...validateModel(path + 'Items/Armors/c4_s_grade'),
             ...validateModel(path + 'Items/Weapons/weapons'),
+            ...validateModel(path + 'Items/Weapons/c4_special_ability_weapons'),
             ...validateModel(path + 'Items/Weapons/c4_s_grade'),
             ...validateModel(path + 'Items/Weapons/c4_necropolis_of_sacrifice'),
             ...validateModel(path + 'Items/Weapons/c4_raid_bosses'),

@@ -380,6 +380,12 @@ function applySchemaMigrations() {
             if (!warehouseColumns.some((column) => column.name === 'enchant')) {
                 connection.exec('ALTER TABLE warehouse_items ADD COLUMN enchant INTEGER NOT NULL DEFAULT 0 CHECK(enchant >= 0)');
             }
+        }],
+        [13, () => {
+            connection.exec(`
+                CREATE INDEX IF NOT EXISTS bot_life_state_party_owner_filter
+                    ON bot_life_state(simulationOwner, phase, partyId, activity, spotId, updatedAt);
+            `);
         }]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
@@ -449,7 +455,7 @@ const COLD_SIMULATION_PATCH_COLUMNS = new Set([
     'level', 'exp', 'sp', 'adena', 'homeRegion', 'currentRegion', 'spotId',
     'activity', 'phase', 'activityStartedAt', 'nextResolveAt', 'lastResolvedAt',
     'lastHotAt', 'locX', 'locY', 'locZ', 'hp', 'maxHp', 'mp', 'maxMp',
-    'targetLevelBand', 'deathCount', 'inventorySummary', 'statsJson', 'updatedAt'
+    'targetLevelBand', 'deathCount', 'partyId', 'inventorySummary', 'statsJson', 'updatedAt'
 ]);
 
 function parsedObject(raw) {
@@ -772,7 +778,59 @@ const Database = {
     commitAndReleaseColdSimulationLeases(requests = []) {
         const batch = Array.isArray(requests) ? requests.slice(0, 32) : [];
         if (!batch.length) return Promise.resolve([]);
+        const atomicGroupFailures = new Map();
+        const atomicGroups = new Map();
+        batch.forEach((request) => {
+            const groupId = request.atomicGroup?.id ? String(request.atomicGroup.id) : null;
+            if (!groupId) return;
+            const group = atomicGroups.get(groupId) || [];
+            group.push(request);
+            atomicGroups.set(groupId, group);
+        });
+        atomicGroups.forEach((group, groupId) => {
+            const expectedIds = new Set((group[0]?.atomicGroup?.memberIds || []).map(Number).filter(Boolean));
+            const presentIds = new Set(group.map((request) => Number(request.characterId)).filter(Boolean));
+            let failure = expectedIds.size === 0
+                || expectedIds.size !== presentIds.size
+                || [...expectedIds].some((id) => !presentIds.has(id));
+            let reason = failure ? 'party_group_incomplete' : null;
+            if (!failure) {
+                for (const request of group) {
+                    const characterId = Number(request.characterId);
+                    const expectedRevision = Number(request.expectedRevision);
+                    const ownerId = String(request.ownerId || COLD_SIMULATION_OWNER);
+                    const leaseId = String(request.leaseId || '');
+                    const timestamp = Number(request.timestamp || now());
+                    const invalidColumn = Object.keys(request.patch || {})
+                        .find((column) => !COLD_SIMULATION_PATCH_COLUMNS.has(column));
+                    const row = coldSimulationRow(characterId);
+                    const conflict = coldSimulationConflict(row, { expectedRevision, ownerId, leaseId }, timestamp);
+                    const proposed = { ...row, ...(request.patch || {}), phase: request.patch?.phase || row?.phase, activity: request.patch?.activity || row?.activity };
+                    const partition = coldSimulationPartition(proposed, request);
+                    if (!Number.isSafeInteger(characterId) || characterId <= 0
+                        || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0
+                        || ownerId !== COLD_SIMULATION_OWNER || !leaseId
+                        || invalidColumn || conflict !== 'cas_failed' || !partition.ok) {
+                        failure = true;
+                        reason = conflict !== 'cas_failed'
+                            ? conflict
+                            : invalidColumn || !partition.ok ? 'party_group_invalid' : 'party_group_invalid';
+                        break;
+                    }
+                }
+            }
+            if (failure) atomicGroupFailures.set(groupId, reason || 'party_group_aborted');
+        });
         return inTransaction(() => batch.map((request) => {
+            const groupId = request.atomicGroup?.id ? String(request.atomicGroup.id) : null;
+            if (groupId && atomicGroupFailures.has(groupId)) {
+                return {
+                    ok: false,
+                    characterId: Number(request.characterId),
+                    reason: 'party_group_aborted',
+                    detail: atomicGroupFailures.get(groupId)
+                };
+            }
             const characterId = Number(request.characterId);
             const expectedRevision = Number(request.expectedRevision);
             const ownerId = String(request.ownerId || COLD_SIMULATION_OWNER);
@@ -870,6 +928,62 @@ const Database = {
             if (result.affectedRows !== 1) return { ok: false, reason: 'cas_failed' };
             return { ok: true, characterId, ownerId: LEGACY_SIMULATION_OWNER, leaseId: null, revision, leaseUntil: 0, reason: 'released' };
         }, 'bot-life:cold-owner-release');
+    },
+
+    renewColdSimulationLeases({
+        timestamp = now(),
+        leaseMs = 30000,
+        ownerId = COLD_SIMULATION_OWNER
+    } = {}) {
+        const cutoff = Number(timestamp);
+        const duration = Math.max(1000, Number(leaseMs) || 30000);
+        const owner = String(ownerId || COLD_SIMULATION_OWNER);
+        if (owner !== COLD_SIMULATION_OWNER || !Number.isFinite(cutoff)) return Promise.resolve([]);
+
+        return inTransaction(() => {
+            const candidates = all(`SELECT characterId, simulationRevision, simulationLeaseId, simulationLeaseUntil
+                FROM bot_life_state
+                WHERE simulationOwner = ?
+                  AND simulationLeaseId IS NOT NULL
+                  AND simulationLeaseUntil > ?`, [owner, cutoff]);
+            return candidates.map((candidate) => {
+                const leaseUntil = Math.max(
+                    Number(candidate.simulationLeaseUntil || 0),
+                    cutoff + duration
+                );
+                const result = write(`UPDATE bot_life_state
+                    SET simulationLeaseUntil = ?
+                    WHERE characterId = ? AND simulationOwner = ?
+                      AND simulationRevision = ? AND simulationLeaseId = ?
+                      AND simulationLeaseUntil > ?`, [
+                    leaseUntil,
+                    Number(candidate.characterId),
+                    owner,
+                    Number(candidate.simulationRevision),
+                    candidate.simulationLeaseId,
+                    cutoff
+                ]);
+                if (result.affectedRows !== 1) {
+                    return {
+                        ok: false,
+                        characterId: Number(candidate.characterId),
+                        ownerId: owner,
+                        revision: Number(candidate.simulationRevision),
+                        leaseId: candidate.simulationLeaseId,
+                        reason: 'renewal_cas_failed'
+                    };
+                }
+                return {
+                    ok: true,
+                    characterId: Number(candidate.characterId),
+                    ownerId: owner,
+                    revision: Number(candidate.simulationRevision),
+                    leaseId: candidate.simulationLeaseId,
+                    leaseUntil,
+                    reason: 'renewed'
+                };
+            });
+        }, 'bot-life:cold-owner-renew-batch');
     },
 
     handoffColdSimulationToMain(request = {}) {

@@ -3,6 +3,7 @@ const SelectedModel  = invoke('GameServer/Model/Selected');
 const Timer          = invoke('GameServer/Timer');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
+const AttackRange    = invoke('GameServer/Actor/AttackRange');
 
 class Automation extends SelectedModel {
     constructor() {
@@ -172,16 +173,20 @@ class Automation extends SelectedModel {
         };
     }
 
-    scheduleAction(session, src, dst, radius, callback) {
+    scheduleAction(session, src, dst, radius, callback, options = {}) {
+        const movementRadius = options.collisionAware
+            ? AttackRange.effectiveRange(src, dst, radius)
+            : Math.max(0, Number(radius) || 0);
+
         // Execute each time, or else creature is stuck
         this.setDestId(dst.fetchId());
-        session.dataSendToMeAndOthers(ServerResponse.moveToPawn(src, dst, radius), src);
-        const stopCoords = this.actionStopCoords(src, dst, radius);
+        session.dataSendToMeAndOthers(ServerResponse.moveToPawn(src, dst, movementRadius), src);
+        const stopCoords = this.actionStopCoords(src, dst, movementRadius);
 
         // Calculate duration
         src.state.setTowards(radius === 0 ? 'melee' : 'remote');
         const ticks = this.ticksToMove(
-            src.fetchLocX(), src.fetchLocY(), src.fetchLocZ(), dst.fetchLocX(), dst.fetchLocY(), dst.fetchLocZ(), radius, src.fetchCollectiveRunSpd()
+            src.fetchLocX(), src.fetchLocY(), src.fetchLocZ(), dst.fetchLocX(), dst.fetchLocY(), dst.fetchLocZ(), movementRadius, src.fetchCollectiveRunSpd()
         );
 
         // Dynamically update coordinates step-by-step only while the bot is

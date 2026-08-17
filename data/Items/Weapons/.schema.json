@@ -58,6 +58,9 @@
                     },
                     "accur": {
                         "type": "number"
+                    },
+                    "attackRange": {
+                        "type": "integer"
                     }
                 },
                 "required": [

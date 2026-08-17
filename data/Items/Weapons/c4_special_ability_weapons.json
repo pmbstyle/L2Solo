@@ -1,0 +1,74 @@
+[
+    {
+        "selfId": 4839,
+        "template": { "kind": "Weapon.Pole", "name": "Orcish Glaive - Towering Blow", "class1": 0, "class2": 0, "mass": 2030, "price": 2290000 },
+        "stats": { "pAtk": 107, "pAtkRnd": 10, "mAtk": 61, "atkSpd": 325, "crit": 8, "accur": -3, "attackRange": 80 },
+        "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 916 }
+    },
+    {
+        "selfId": 4841,
+        "template": { "kind": "Weapon.Pole", "name": "Body Slasher - Towering Blow", "class1": 0, "class2": 0, "mass": 2030, "price": 2290000 },
+        "stats": { "pAtk": 107, "pAtkRnd": 10, "mAtk": 61, "atkSpd": 325, "crit": 8, "accur": -3, "attackRange": 80 },
+        "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 916 }
+    },
+    {
+        "selfId": 4842,
+        "template": { "kind": "Weapon.Pole", "name": "Body Slasher - Wide Blow", "class1": 0, "class2": 0, "mass": 2030, "price": 2290000 },
+        "stats": { "pAtk": 107, "pAtkRnd": 10, "mAtk": 61, "atkSpd": 325, "crit": 8, "accur": -3, "attackRange": 66 },
+        "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 916 }
+    },
+    {
+        "selfId": 4844,
+        "template": { "kind": "Weapon.Pole", "name": "Bec de Corbin - Towering Blow", "class1": 0, "class2": 0, "mass": 2020, "price": 2870000 },
+        "stats": { "pAtk": 122, "pAtkRnd": 10, "mAtk": 68, "atkSpd": 325, "crit": 8, "accur": -3, "attackRange": 80 },
+        "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 1148 }
+    },
+    {
+        "selfId": 4848,
+        "template": { "kind": "Weapon.Pole", "name": "Scorpion - Towering Blow", "class1": 0, "class2": 0, "mass": 1990, "price": 4780000 },
+        "stats": { "pAtk": 144, "pAtkRnd": 10, "mAtk": 78, "atkSpd": 325, "crit": 8, "accur": -3, "attackRange": 80 },
+        "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1912 }
+    },
+    {
+        "selfId": 4850,
+        "template": { "kind": "Weapon.Pole", "name": "Widow Maker - Towering Blow", "class1": 0, "class2": 0, "mass": 1980, "price": 4780000 },
+        "stats": { "pAtk": 144, "pAtkRnd": 10, "mAtk": 78, "atkSpd": 325, "crit": 8, "accur": -3, "attackRange": 80 },
+        "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1912 }
+    },
+    {
+        "selfId": 4851,
+        "template": { "kind": "Weapon.Pole", "name": "Widow Maker - Wide Blow", "class1": 0, "class2": 0, "mass": 1980, "price": 4780000 },
+        "stats": { "pAtk": 144, "pAtkRnd": 10, "mAtk": 78, "atkSpd": 325, "crit": 8, "accur": -3, "attackRange": 66 },
+        "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1912 }
+    },
+    {
+        "selfId": 4853,
+        "template": { "kind": "Weapon.Pole", "name": "Orcish Poleaxe - Towering Blow", "class1": 0, "class2": 0, "mass": 1950, "price": 6130000 },
+        "stats": { "pAtk": 156, "pAtkRnd": 10, "mAtk": 83, "atkSpd": 325, "crit": 8, "accur": -3, "attackRange": 80 },
+        "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 2452 }
+    },
+    {
+        "selfId": 4854,
+        "template": { "kind": "Weapon.Pole", "name": "Orcish Poleaxe - Wide Blow", "class1": 0, "class2": 0, "mass": 1950, "price": 6130000 },
+        "stats": { "pAtk": 156, "pAtkRnd": 10, "mAtk": 83, "atkSpd": 325, "crit": 8, "accur": -3, "attackRange": 66 },
+        "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 2452 }
+    },
+    {
+        "selfId": 4860,
+        "template": { "kind": "Weapon.Pole", "name": "Lance - Towering Blow", "class1": 0, "class2": 0, "mass": 1920, "price": 13100000 },
+        "stats": { "pAtk": 194, "pAtkRnd": 10, "mAtk": 99, "atkSpd": 325, "crit": 8, "accur": -3, "attackRange": 80 },
+        "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "b", "cristals": 1746 }
+    },
+    {
+        "selfId": 4862,
+        "template": { "kind": "Weapon.Pole", "name": "Halberd - Towering Blow", "class1": 0, "class2": 0, "mass": 1900, "price": 18300000 },
+        "stats": { "pAtk": 213, "pAtkRnd": 10, "mAtk": 107, "atkSpd": 325, "crit": 8, "accur": -3, "attackRange": 80 },
+        "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 1464 }
+    },
+    {
+        "selfId": 4863,
+        "template": { "kind": "Weapon.Pole", "name": "Halberd - Wide Blow", "class1": 0, "class2": 0, "mass": 1900, "price": 18300000 },
+        "stats": { "pAtk": 213, "pAtkRnd": 10, "mAtk": 107, "atkSpd": 325, "crit": 8, "accur": -3, "attackRange": 66 },
+        "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 1464 }
+    }
+]

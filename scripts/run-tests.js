@@ -138,6 +138,7 @@ const tests = [
     'tests/test_cold_owner_batches.js',
     'tests/test_cold_owner_scheduler.js',
     'tests/test_cold_simulation_kernel.js',
+    'tests/test_cold_worker_routing.js',
     'tests/test_cold_commit_queue.js',
     'tests/test_cold_worker_isolation.js',
     'tests/test_cold_worker_coordinator.js',

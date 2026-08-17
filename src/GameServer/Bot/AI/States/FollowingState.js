@@ -897,6 +897,7 @@ module.exports = {
         if (partyRaid) PartyPulling.cancel(playerSession);
         if (partyRaid?.phase === 'opening') {
             const raidBoss = BotRaidSafety.raidBossByObjectId(partyRaid.bossId);
+            const raidTarget = BotRaidSafety.raidEntityByObjectId(partyRaid.targetId) || raidBoss;
             const isOpener = Number(bot.fetchId()) === Number(partyRaid.openerId || 0);
             const openerSession = PartyAwareness.partySessions(playerSession).find((memberSession) => (
                 Number(memberSession.actor?.fetchId?.()) === Number(partyRaid.openerId || 0)
@@ -942,29 +943,29 @@ module.exports = {
                 });
                 return;
             }
-            if (isOpener && raidBoss && !isBusy(bot)) {
+            if (isOpener && raidTarget && !isBusy(bot)) {
                 if (standUp(session, bot)) {
                     recordRoleDecision(session, bot, 'prepare_raid', 'stand_before_opening', {
-                        targetId: raidBoss.fetchId(),
+                        targetId: raidTarget.fetchId(),
                         openerId: partyRaid.openerId
                     });
                     return;
                 }
-                session.currentTargetId = raidBoss.fetchId();
-                bot.select({ id: raidBoss.fetchId() });
+                session.currentTargetId = raidTarget.fetchId();
+                bot.select({ id: raidTarget.fetchId() });
                 recordRoleDecision(session, bot, 'open_raid', 'player_designated_raid_target', {
-                    targetId: raidBoss.fetchId()
+                    targetId: raidTarget.fetchId()
                 });
-                BotAI.executeCombat(session, bot, raidBoss, Generics, {
+                BotAI.executeCombat(session, bot, raidTarget, Generics, {
                     playerPartyRaidLeaderSession: playerSession
                 });
             } else {
-                if (session.currentTargetId === Number(partyRaid.bossId)) {
+                if (session.currentTargetId === Number(partyRaid.targetId || partyRaid.bossId)) {
                     session.currentTargetId = undefined;
                     bot.unselect();
                 }
                 recordRoleDecision(session, bot, 'hold_for_raid_opener', isOpener ? 'opener_busy' : 'tank_opens_first', {
-                    targetId: partyRaid.bossId,
+                    targetId: partyRaid.targetId || partyRaid.bossId,
                     openerId: partyRaid.openerId || null
                 });
             }
@@ -1030,7 +1031,7 @@ module.exports = {
             return partyAggroCache;
         };
         const leaderTargetId = partyRaid?.phase === 'combat'
-            ? Number(partyRaid.bossId)
+            ? Number(partyRaid.targetId || partyRaid.bossId)
             : (pulling.enabled ? undefined : configuredLeaderTargetId);
         // A necromancer may need one quiet tick after the party kills a mob:
         // the corpse is no longer a live party threat, but it is still a valid

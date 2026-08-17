@@ -437,6 +437,22 @@ try {
     assert.strictEqual(EffectStore.hasDebuff(raidDps, 'fear'), false,
         'normal raid assist must not apply a Fear effect');
 
+    delete leaderSession.partyRaidEngagement;
+    leader.destId = raidMinion.fetchId();
+    raidBoss.destId = undefined;
+    raidMinion.destId = leader.fetchId();
+    raidDpsSession.plan = 'following';
+    raidOpeners.length = 0;
+    FollowingState.tick(raidDpsSession, raidDps, {}, raidBotAI);
+    assert.strictEqual(BotRaidSafety.syncPlayerPartyRaid(leaderSession)?.phase, 'combat',
+        'a fresh player aggro on a raid minion must immediately authorize party combat');
+    assert.strictEqual(leaderSession.partyRaidEngagement?.targetId, raidMinion.fetchId(),
+        'a fresh player aggro must preserve the selected minion as the party target');
+    assert.strictEqual(raidDpsSession.plan, 'following',
+        'a companion must not flee when the player opens the raid through a minion');
+    assert.strictEqual(raidOpeners[0]?.target, raidMinion,
+        'a fresh player-led minion aggro must send the companion into that minion');
+
     const unrelatedRaidBoss = {
         ...staleRaidBoss,
         destId: raidDps.fetchId(),

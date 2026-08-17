@@ -8,6 +8,9 @@ const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
+const SpotService = invoke('GameServer/Bot/AI/SpotService');
+const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const Director = invoke('GameServer/Bot/Population/PopulationDirector');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
@@ -15,6 +18,8 @@ const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwne
 const Protocol = require('./ColdSimulationProtocol');
 const { ColdCommitQueue } = require('./ColdCommitQueue');
 const { ColdSnapshotQueue } = require('./ColdSnapshotQueue');
+
+const HUNTING_TRAVEL_MS = 25000;
 
 function wait(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -27,6 +32,27 @@ function yieldToLoop() {
 function directDropTargetNpcId(plan = {}) {
     if (!plan || plan.status !== 'active') return 0;
     return Number(plan.next?.npcId || plan.targetNpcId || 0);
+}
+
+function compactPartyMemberContext(state = {}) {
+    const partyId = state.party?.partyId || state.partyId || null;
+    return {
+        characterId: Number(state.characterId || 0),
+        phase: state.phase || 'cold',
+        activity: state.activity || 'hunting',
+        partyId,
+        ...(partyId ? {
+            party: {
+                partyId,
+                leaderId: Number(state.party?.leaderId || 0)
+            }
+        } : {}),
+        simulation: {
+            ownerId: state.simulation?.ownerId || 'legacy_main',
+            revision: Math.max(0, Number(state.simulation?.revision || 0))
+        },
+        compact: true
+    };
 }
 
 class ColdSimulationCoordinator {
@@ -47,6 +73,7 @@ class ColdSimulationCoordinator {
         this.watchdogTimer = null;
         this.reconcileTimer = null;
         this.recoveryTimer = null;
+        this.renewalTimer = null;
         this.seen = new Set();
         this.seenOrder = [];
         this.waiters = new Map();
@@ -131,9 +158,19 @@ class ColdSimulationCoordinator {
             this.recoveryTimer = setInterval(() => {
                 ColdSimulationOwner.recoverExpiredLeases().catch((error) => this.recordError(error));
             }, Math.max(1000, Number(Config.coldOwnerRecoveryIntervalMs) || 5000));
+            this.renewalTimer = setInterval(() => {
+                if (!this.worker || this.stopping) return;
+                ColdSimulationOwner.renewActiveLeases({
+                    leaseMs: Math.max(2000, Number(Config.coldOwnerLeaseMs) || 30000)
+                }).then((renewals) => {
+                    const active = (renewals || []).filter((result) => result.ok);
+                    if (active.length) this.postCollections('lease_renewal', { renewals: active });
+                }).catch((error) => this.recordError(error));
+            }, Math.max(1000, Number(Config.coldOwnerRenewalIntervalMs) || 5000));
             this.watchdogTimer.unref?.();
             this.reconcileTimer.unref?.();
             this.recoveryTimer.unref?.();
+            this.renewalTimer.unref?.();
             return true;
         }).catch((error) => {
             this.started = false;
@@ -297,7 +334,7 @@ class ColdSimulationCoordinator {
     workerConfig() {
         return {
             maxBatch: Math.max(1, Math.min(64, Number(Config.coldWorkerBatchSize) || 64)),
-            maxInFlight: Math.max(64, Math.min(128, Number(Config.coldWorkerMaxInFlight) || 128)),
+            maxInFlight: Math.max(1, Math.min(128, Number(Config.coldWorkerMaxInFlight) || 32)),
             claimAckTimeoutMs: 5000,
             flushTargetMs: Math.max(100, Number(Config.coldWorkerOrdinaryFlushMs) || 2000),
             flushHardMs: Math.max(1000, Number(Config.coldWorkerOrdinaryHardMaxMs) || 5000),
@@ -325,26 +362,134 @@ class ColdSimulationCoordinator {
         flush(true);
     }
 
-    contextIndex() {
+    contextIndex(options = {}) {
         let profiles = [];
         try { profiles = SpotProfiles.ensure() || []; } catch (_) { profiles = []; }
         const spots = new Map(profiles.map((spot) => [String(spot.id), spot]));
         const parties = new Map((BackgroundPartyState.active?.() || []).map((party) => [Number(party.leaderId || 0), party]));
-        return { spots, parties };
+        let occupancy = {};
+        try { occupancy = SpotProfiles.currentOccupancy(profiles) || {}; } catch (_) { occupancy = {}; }
+        return {
+            spots,
+            profiles,
+            occupancy,
+            parties,
+            compactPartyMembers: options.compactPartyMembers === true,
+            compactPartyMemberIds: options.compactPartyMemberIds instanceof Set
+                ? options.compactPartyMemberIds
+                : null
+        };
+    }
+
+    routeFor(state, currentSpot, party, partyMembers, index) {
+        if (!state || state.phase !== 'cold' || state.stats?.travel) return null;
+        const partyRoute = !!party;
+        const eligibleActivity = state.activity === 'hunting'
+            || (partyRoute && state.activity === 'grouped');
+        if (!eligibleActivity) return null;
+        if (partyRoute && partyMembers.some((member) => ['resting', 'traveling', 'dead'].includes(member.activity))) return null;
+
+        const role = partyRoute ? PartyComposition.roleForState(state) : null;
+        const partyRequired = !partyRoute
+            && !state.party?.partyId
+            && (state.stats?.equipmentPlan?.partyNeed === 'required'
+                || state.stats?.equipmentPlan?.requiresParty === true);
+        let fallbackSpot = null;
+        if (partyRequired) {
+            let fallback = null;
+            try {
+                fallback = GearAcquisitionPlanner.safeFallbackForPlan(
+                    state,
+                    state.stats?.equipmentPlan,
+                    [...index.spots.values()]
+                );
+            } catch (_) { fallback = null; }
+            fallbackSpot = (fallback && index.spots.get(String(fallback.spotId))) || null;
+            if (!fallbackSpot) {
+                try {
+                    fallbackSpot = SpotProfiles.findForState({
+                        ...state,
+                        spotId: null,
+                        stats: Object.fromEntries(Object.entries(state.stats || {})
+                            .filter(([key]) => key !== 'equipmentPlan'))
+                    }, { occupancy: index.occupancy });
+                } catch (_) { fallbackSpot = null; }
+            }
+        }
+        const routeState = partyRoute
+            ? {
+                ...state,
+                spotId: party.spotId || state.spotId,
+                party: { ...(state.party || {}), partyId: party.partyId, role },
+                stats: { ...(state.stats || {}), routeMode: 'party' }
+            }
+            : fallbackSpot
+                ? { ...state, spotId: null }
+                : state;
+        const options = {
+            occupancy: index.occupancy,
+            ...(partyRoute ? { mode: 'party', role } : {})
+        };
+        let selected = fallbackSpot;
+        try {
+            if (!selected) selected = SpotProfiles.findForState(routeState, options);
+        } catch (_) { selected = null; }
+        if (!selected) return null;
+
+        let physical = null;
+        try { physical = SpotService.findCurrentSpot(state.loc); } catch (_) { physical = null; }
+        const currentId = physical?.id || currentSpot?.id || state.spotId || party?.spotId || null;
+        if (String(selected.id) === String(currentId || '')) return null;
+
+        const members = partyRoute ? partyMembers : [state];
+        const destinations = {};
+        for (const member of members) {
+            let destination = null;
+            try { destination = SpotService.arrivalPointForState(member, selected); } catch (_) { destination = null; }
+            if (!destination) return null;
+            destinations[String(member.characterId)] = destination;
+        }
+        const activeEquipmentPlan = state.stats?.equipmentPlan?.status === 'active';
+        return {
+            needed: true,
+            mode: partyRoute ? 'party' : 'solo',
+            currentSpotId: currentId,
+            spotId: selected.id,
+            regionName: selected.name || state.currentRegion || 'Hunting Ground',
+            travelMs: HUNTING_TRAVEL_MS,
+            reason: partyRoute
+                ? 'party_spot_replan'
+                : activeEquipmentPlan ? 'equipment_source_replan' : 'level_replan',
+            to: destinations[String(state.characterId)] || null,
+            destinations
+        };
     }
 
     contextFor(state, index = this.contextIndex()) {
-        const spot = index.spots.get(String(state.spotId || '')) || null;
+        let physical = null;
+        try { physical = SpotService.findCurrentSpot(state.loc); } catch (_) { physical = null; }
+        const spot = (physical && index.spots.get(String(physical.id)))
+            || index.spots.get(String(state.spotId || ''))
+            || null;
         let pressure = {};
         try { pressure = Director.pressureForState(state) || {}; } catch (_) { pressure = {}; }
         const party = index.parties.get(Number(state.characterId)) || null;
+        const partyMembers = party
+            ? (party.memberIds || []).map((characterId) => LifeState.cachedState(characterId)).filter(Boolean).map((member) => {
+                const memberId = Number(member.characterId || 0);
+                const compact = index.compactPartyMembers === true
+                    || index.compactPartyMemberIds?.has(memberId);
+                return compact ? compactPartyMemberContext(member) : member;
+            })
+            : [];
         return {
             spot,
             pressure,
             targetNpcId: directDropTargetNpcId(state.stats?.equipmentPlan),
             isPartyLeader: !!party,
             party,
-            partyMembers: party ? (party.memberIds || []).map((characterId) => LifeState.cachedState(characterId)).filter(Boolean) : []
+            partyMembers,
+            route: this.routeFor(state, spot, party, partyMembers, index)
         };
     }
 
@@ -422,7 +567,8 @@ class ColdSimulationCoordinator {
 
     async sendFullSnapshot() {
         const states = LifeState.allStates(Math.max(1, Number(Config.maxPlayingPopulation) + 300 || 2000));
-        const index = this.contextIndex();
+        const compactPartyMemberIds = new Set(states.map((state) => Number(state.characterId || 0)).filter(Boolean));
+        const index = this.contextIndex({ compactPartyMemberIds });
         const pageSize = this.snapshotQueue.pageSize;
         let page = [];
         let pendingPage = null;
@@ -510,7 +656,7 @@ class ColdSimulationCoordinator {
             while (this.worker && this.ready) {
                 const entries = this.snapshotQueue.takeCritical(this.snapshotQueue.pageSize);
                 if (!entries.length) break;
-                const index = this.contextIndex();
+                const index = this.contextIndex({ compactPartyMembers: true });
                 const result = await this.sendIncrementalEntries(entries, index, this.snapshotQueue.pageSize, 'P0');
                 if (!result.ok) {
                     entries.forEach((entry) => this.snapshotQueue.restoreCritical(entry));
@@ -558,7 +704,7 @@ class ColdSimulationCoordinator {
 
         this.counters.snapshotDirtyRuns += 1;
         return this.startSnapshotJob('dirty', async () => {
-            const index = this.contextIndex();
+            const index = this.contextIndex({ compactPartyMembers: true });
             const result = await this.sendIncrementalEntries(plan.entries, index, plan.pageSize);
             if (result.ok) plan.entries.forEach((entry) => this.snapshotQueue.complete(entry, true));
             return result;
@@ -620,7 +766,7 @@ class ColdSimulationCoordinator {
         const claimed = await ColdSimulationOwner.claimBatch(candidates, {
             leaseMs: Math.max(2000, Number(Config.coldOwnerLeaseMs) || 30000)
         });
-        const index = this.contextIndex();
+        const index = this.contextIndex({ compactPartyMembers: true });
         const rejected = [...missing, ...(claimed.rejected || [])].map((result) => {
             const state = LifeState.cachedState(result.characterId);
             return state ? { ...result, state, context: this.contextFor(state, index) } : result;
@@ -669,8 +815,15 @@ class ColdSimulationCoordinator {
         const state = LifeState.cachedState(entry.nextState.characterId) || entry.nextState;
         await LifeEvents.recordMany(state.characterId, entry.proposal.result?.events || []);
         if (entry.proposal.partyResolution?.party) {
-            await BackgroundPartyState.createOrUpdate(entry.proposal.partyResolution.party);
-            Metrics.recordPartyResolve();
+            const party = entry.proposal.partyResolution.party;
+            await BackgroundPartyState.createOrUpdate(party);
+            if (party.status === 'dissolved') {
+                await LifeState.clearParty(
+                    party.partyId,
+                    party.stats?.partyBreakReason || 'party_dissolved'
+                );
+                Metrics.recordPartyDissolution();
+            } else Metrics.recordPartyResolve();
         }
         Metrics.recordBackgroundResolve();
         Metrics.recordCombat(entry.proposal.result?.debug);
@@ -682,7 +835,7 @@ class ColdSimulationCoordinator {
     async handleCommitResults(results = []) {
         const releaseTokens = results.filter((result) => !result.ok && result.proposal?.token).map((result) => result.proposal.token);
         if (releaseTokens.length) await ColdSimulationOwner.releaseBatch(releaseTokens).catch(() => []);
-        const index = this.contextIndex();
+        const index = this.contextIndex({ compactPartyMembers: true });
         const acknowledgements = results.map((result) => {
             const state = LifeState.cachedState(result.characterId) || result.nextState || result.proposal?.baseState || null;
             return {
@@ -700,7 +853,7 @@ class ColdSimulationCoordinator {
     async handleReleaseRequest(message) {
         const tokens = (message.payload.releases || []).map((entry) => entry.token).filter(Boolean);
         const released = await ColdSimulationOwner.releaseBatch(tokens).catch(() => []);
-        const index = this.contextIndex();
+        const index = this.contextIndex({ compactPartyMembers: true });
         const results = released.map((result) => {
             const state = LifeState.cachedState(result.characterId);
             return { ...result, state, context: state ? this.contextFor(state, index) : {} };
@@ -727,7 +880,12 @@ class ColdSimulationCoordinator {
                     this.commandInflight.set(id, operation);
                     try { result = await operation; } finally { this.commandInflight.delete(id); }
                     const nextState = result?.state || LifeState.cachedState(request.characterId) || state;
-                    results.push({ ok: result?.ok !== false, characterId: request.characterId, state: nextState, context: this.contextFor(nextState) });
+                    results.push({
+                        ok: result?.ok !== false,
+                        characterId: request.characterId,
+                        state: nextState,
+                        context: this.contextFor(nextState, this.contextIndex({ compactPartyMembers: true }))
+                    });
                 } catch (error) {
                     this.counters.commandErrors += 1;
                     results.push({ ok: false, characterId: request.characterId, reason: error?.message || 'command_error', retryAfterMs: 5000 });
@@ -827,10 +985,12 @@ class ColdSimulationCoordinator {
         if (this.watchdogTimer) clearInterval(this.watchdogTimer);
         if (this.reconcileTimer) clearInterval(this.reconcileTimer);
         if (this.recoveryTimer) clearInterval(this.recoveryTimer);
+        if (this.renewalTimer) clearInterval(this.renewalTimer);
         if (this.restartTimer) clearTimeout(this.restartTimer);
         this.watchdogTimer = null;
         this.reconcileTimer = null;
         this.recoveryTimer = null;
+        this.renewalTimer = null;
         this.restartTimer = null;
         this.pauseReasons.clear();
         await Promise.race([this.snapshotInFlight || Promise.resolve(), wait(10000)]).catch(() => null);
@@ -883,3 +1043,4 @@ class ColdSimulationCoordinator {
 
 module.exports = new ColdSimulationCoordinator();
 module.exports.ColdSimulationCoordinator = ColdSimulationCoordinator;
+module.exports.compactPartyMemberContext = compactPartyMemberContext;

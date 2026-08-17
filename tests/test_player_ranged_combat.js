@@ -3,12 +3,14 @@ const assert = require('assert');
 require('../src/Global');
 
 const AttackRequest = invoke('GameServer/Actor/Generics/AttackRequest');
+const AttackRange = invoke('GameServer/Actor/AttackRange');
 const SkillExec = invoke('GameServer/Actor/Generics/SkillExec');
 const SkillModel = invoke('GameServer/Model/Skill');
+const DataCache = invoke('GameServer/DataCache');
 const World = invoke('GameServer/World/World');
 const activeSkills = require('../data/Skills/Active/active.json');
 
-function attackActor(weaponKind) {
+function attackActor(weaponKind, weapon = null) {
     return {
         effects: {},
         storedAttack: null,
@@ -21,6 +23,7 @@ function attackActor(weaponKind) {
         fetchLocZ: () => 0,
         fetchHead: () => 0,
         backpack: {
+            fetchEquippedWeapon: () => weapon,
             fetchTotalWeaponKind: () => weaponKind
         },
         automation: {
@@ -67,8 +70,18 @@ assert.strictEqual(
 );
 assert.strictEqual(
     AttackRequest.fetchNormalAttackRange(attackActor('Weapon.Sword'), {}),
-    0,
-    'normal melee attacks should still close to melee range'
+    40,
+    'normal melee attacks should use the sourced 40 range'
+);
+assert.strictEqual(
+    AttackRequest.fetchNormalAttackRange(attackActor('Weapon.Pole'), {}),
+    66,
+    'normal polearm attacks should use the sourced 66 range'
+);
+assert.strictEqual(
+    AttackRequest.fetchNormalAttackRange(attackActor('Weapon.Pole', { fetchAttackRange: () => 80 }), {}),
+    80,
+    'Towering Blow polearms should expose their sourced 80 attack range'
 );
 assert.strictEqual(
     AttackRequest.fetchNormalAttackRange(attackActor('Weapon.Bow'), { range: 900 }),
@@ -88,11 +101,31 @@ const swordActor = attackActor('Weapon.Sword');
 AttackRequest(session(), swordActor, { id: 3000001, ctrl: true });
 assert.strictEqual(
     swordActor.storedAttack.range,
-    0,
-    'player melee attack requests should store zero range'
+    40,
+    'player melee attack requests should store the sourced melee range'
+);
+
+const poleActor = attackActor('Weapon.Pole');
+AttackRequest(session(), poleActor, { id: 3000001, ctrl: true });
+assert.strictEqual(
+    poleActor.storedAttack.range,
+    66,
+    'player polearm attack requests should store the sourced range for AttackExec'
 );
 
 (async () => {
+    DataCache.init();
+    const toweringBlow = DataCache.items.find((item) => item.selfId === 4839);
+    assert(toweringBlow, 'C4 Towering Blow weapon variants should be loaded into the item cache');
+    assert.strictEqual(
+        AttackRange.fetchNormalAttackRange({
+            fetchWeapon: () => 4839,
+            backpack: { fetchTotalWeaponKind: () => 'Weapon.Pole' }
+        }),
+        80,
+        'cached Towering Blow variants should drive the normal attack range'
+    );
+
     const powerShotData = activeSkill(56);
     const windStrikeData = activeSkill(1177);
     assert.strictEqual(powerShotData.template.distance, 700, 'Power Shot should keep sourced distance 700');

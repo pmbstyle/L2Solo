@@ -53,6 +53,7 @@ function createState(spawns) {
         membership: new WeakMap(),
         bossesByObjectId: new Map(),
         bossesByTemplateId: new Map(),
+        raidEntitiesByObjectId: new Map(),
         minionsByBossObjectId: new Map(),
         minionsByBossTemplateId: new Map()
     };
@@ -68,6 +69,10 @@ function reset(world) {
 
 function removeMembership(state, npc, membership) {
     if (!membership) return;
+    if ((membership.raidBoss || membership.raidMinion) &&
+        state.raidEntitiesByObjectId.get(membership.objectId) === npc) {
+        state.raidEntitiesByObjectId.delete(membership.objectId);
+    }
     if (membership.raidBoss) {
         if (state.bossesByObjectId.get(membership.objectId) === npc) {
             state.bossesByObjectId.delete(membership.objectId);
@@ -106,6 +111,9 @@ function indexObject(state, npc, { count = true } = {}) {
     if (raidMinion) {
         addToSetMap(state.minionsByBossObjectId, bossObjectId, npc);
         addToSetMap(state.minionsByBossTemplateId, bossTemplateId, npc);
+    }
+    if ((raidBoss || raidMinion) && membership.objectId) {
+        state.raidEntitiesByObjectId.set(membership.objectId, npc);
     }
     if (raidBoss || raidMinion) state.membership.set(npc, membership);
 
@@ -162,6 +170,11 @@ function remove(world, npc) {
 function bossByObjectId(world, id) {
     telemetry.lookups += 1;
     return ensure(world)?.bossesByObjectId.get(positiveId(id)) || null;
+}
+
+function raidEntityByObjectId(world, id) {
+    telemetry.lookups += 1;
+    return ensure(world)?.raidEntitiesByObjectId.get(positiveId(id)) || null;
 }
 
 function bossByTemplateId(world, id) {
@@ -237,6 +250,7 @@ module.exports = {
     add,
     remove,
     bossByObjectId,
+    raidEntityByObjectId,
     bossByTemplateId,
     bossFor,
     entitiesForRaid,

@@ -17,10 +17,14 @@ const DEFAULTS = {
     schedulerPlayerMaxResolvesPerTick: 12,
     coldOwnerLeaseMs: 30000,
     coldOwnerResolveTimeoutMs: 10000,
+    coldOwnerRenewalIntervalMs: 5000,
     coldOwnerRecoveryIntervalMs: 5000,
     coldWorkerBatchSize: 64,
     coldWorkerCommitBatchSize: 32,
-    coldWorkerMaxInFlight: 128,
+    // Resolver work is serialized inside the worker. Keep the lease window
+    // bounded so a catch-up burst cannot create a large queue of expiring
+    // claims while preserving the full candidate throughput on later ticks.
+    coldWorkerMaxInFlight: 32,
     coldWorkerOrdinaryFlushMs: 2000,
     coldWorkerOrdinaryHardMaxMs: 5000,
     coldWorkerCriticalFlushMs: 100,
@@ -184,6 +188,7 @@ const ENV_KEYS = {
     schedulerPlayerMaxResolvesPerTick: 'BOT_POPULATION_SCHEDULER_PLAYER_MAX_RESOLVES',
     coldOwnerLeaseMs: 'BOT_POPULATION_COLD_OWNER_LEASE_MS',
     coldOwnerResolveTimeoutMs: 'BOT_POPULATION_COLD_OWNER_TIMEOUT_MS',
+    coldOwnerRenewalIntervalMs: 'BOT_POPULATION_COLD_OWNER_RENEWAL_MS',
     coldOwnerRecoveryIntervalMs: 'BOT_POPULATION_COLD_OWNER_RECOVERY_MS',
     coldWorkerBatchSize: 'BOT_POPULATION_COLD_WORKER_BATCH_SIZE',
     coldWorkerCommitBatchSize: 'BOT_POPULATION_COLD_WORKER_COMMIT_BATCH_SIZE',

@@ -23,6 +23,7 @@ const RATE_MODEL_VERSION = 5;
 const DIRECT_FAILURE_RESOLVE_LIMIT = 8;
 const DIRECT_DROP_EXHAUSTION_MULTIPLIER = 3;
 const DIRECT_ROUTE_COOLDOWN_MS = 60 * 60 * 1000;
+const PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT = 2;
 const PAIRED_SLOTS = Object.freeze({ 1: 2, 2: 1, 4: 5, 5: 4 });
 const NPC_GEAR_MAX_RANK = 'd';
 let staticNpcItemIdsCache = null;
@@ -837,6 +838,34 @@ function directPlanFailure(state = {}, plan = {}, timestamp = Date.now()) {
     return null;
 }
 
+function partyRouteFailure(state = {}, plan = {}, timestamp = Date.now()) {
+    if (plan?.status !== 'active' || !['direct_drop', 'craft'].includes(plan.strategy)) return null;
+    if (plan.partyNeed !== 'required' && plan.requiresParty !== true) return null;
+
+    const request = state.stats?.partyRequest;
+    if (request?.status !== 'deferred'
+        || Number(request.attempts || 0) < PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT) return null;
+
+    const targetId = Number(plan.target?.selfId || (plan.strategy === 'direct_drop' ? plan.next?.itemId : 0) || 0);
+    const npcId = Number(plan.next?.npcId || 0);
+    if (!targetId || !npcId) return null;
+
+    const requestedTargetId = Number(request.targetId || request.itemId || 0);
+    const requestedNpcId = Number(request.npcId || 0);
+    if (requestedTargetId > 0 && requestedTargetId !== targetId) return null;
+    if (requestedNpcId > 0 && requestedNpcId !== npcId) return null;
+
+    return {
+        reason: 'party_route_unavailable',
+        targetId,
+        npcId,
+        resolves: 0,
+        targetKills: 0,
+        attempts: Number(request.attempts || 0),
+        ageMs: Math.max(0, Number(timestamp) - Number(plan.startedAt || timestamp))
+    };
+}
+
 function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now()) {
     const currentGrade = gradeForLevel(state.level);
     const currentLevel = Number(state.level || 1);
@@ -844,7 +873,10 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
     const recoveryTargets = sameGrade ? (previousPlan.recoveryTargets || [])
         .filter((entry) => Number(entry.until || 0) > timestamp && Number(entry.targetId || 0) > 0)
         : [];
-    const failure = sameGrade ? directPlanFailure(state, previousPlan, timestamp) : null;
+    const failure = sameGrade
+        ? (directPlanFailure(state, previousPlan, timestamp)
+            || partyRouteFailure(state, previousPlan, timestamp))
+        : null;
     if (failure) {
         const recovery = {
             targetId: failure.targetId,
@@ -1298,4 +1330,4 @@ function sameObjective(left, right) {
     );
 }
 
-module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, bestSourceForState, safeFallbackForPlan, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, replanContextFor, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
+module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, bestSourceForState, safeFallbackForPlan, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, replanContextFor, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };

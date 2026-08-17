@@ -262,6 +262,9 @@ try {
                         const populationRank = candidates.sql.indexOf('party_spots.candidateCount DESC');
                         assert(requiredRank >= 0 && requiredRank < preferredRank, 'required requests must rank ahead of preferred requests');
                         assert(preferredRank < generalRank && generalRank < populationRank, 'all open requests must rank ahead of crowded general candidate grounds');
+                        assert(candidates.sql.includes("states.simulationOwner = 'legacy_main'"), 'party formation must not race the cold worker owner');
+                        assert(candidates.sql.includes("simulationOwner = 'legacy_main'"), 'party spot counts must exclude cold-worker-owned rows');
+                        assert(candidates.sql.includes('ORDER BY'), 'party candidate query must retain deterministic bounded ordering');
                     });
                 });
             }).then(() => BotLifeState.coldPartyCandidates(5, true)).then(() => {
@@ -270,10 +273,19 @@ try {
                 return BotLifeState.coldPartyCandidateCount(true).then(() => {
                     const count = statements.find((entry) => entry.sql.includes('COUNT(*) AS candidateCount'));
                     assert(count, 'party capacity planning must be able to measure the full wait backlog');
+                    assert(count.sql.includes("simulationOwner = 'legacy_main'"), 'party capacity counts must exclude cold-worker-owned rows');
                     return BotLifeState.coldPartyCandidatesForSpots(['cruma', 'dion'], 3, true);
                 }).then(() => {
                     const fairCandidates = statements.find((entry) => entry.sql.includes('ROW_NUMBER() OVER') && entry.sql.includes('PARTITION BY'));
                     assert(fairCandidates, 'party recruitment must load a bounded fair sample per active spot');
+                    assert(fairCandidates.sql.includes("states.simulationOwner = 'legacy_main'"), 'party recruitment must exclude cold-worker-owned rows');
+                    const clearPartyStart = statements.length;
+                    return BotLifeState.clearParty('bgp_cleanup_probe', 'ownership_aware_cleanup').then(() => {
+                        const clearPartyQuery = statements.slice(clearPartyStart)
+                            .find((entry) => entry.sql.includes('AND partyId = ?') && entry.sql.includes('simulationOwner = ?'));
+                        assert(clearPartyQuery, 'party cleanup must query only rows owned by the main lifecycle');
+                        assert.deepStrictEqual(clearPartyQuery.params, ['bgp_cleanup_probe', 'legacy_main']);
+                    });
                 }).then(() => {
                     const member = {
                         characterId: 44,

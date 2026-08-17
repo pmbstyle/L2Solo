@@ -173,6 +173,8 @@ if (process.argv[2] === '--bootstrap') {
         });
         const index = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'bot_life_state_simulation_owner_lease'").get();
         assert(index?.sql?.includes('(simulationOwner, simulationLeaseUntil, phase, activity)'), 'owner/lease index must use the intended key order');
+        const partyOwnerIndex = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'bot_life_state_party_owner_filter'").get();
+        assert(partyOwnerIndex?.sql?.includes('(simulationOwner, phase, partyId, activity, spotId, updatedAt)'), 'party candidate index must cover owner-filtered formation scans');
         assert.strictEqual(Number(db.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 10').get().count), 1, 'v10 must be recorded exactly once');
         assert.deepStrictEqual(legacyRows(db), expectedRows, 'migration must preserve every pre-v10 bot lifecycle value');
         const owners = db.prepare(`SELECT simulationOwner, simulationRevision, simulationLeaseId, simulationLeaseUntil

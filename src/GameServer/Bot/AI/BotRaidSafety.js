@@ -53,6 +53,10 @@ function raidBossByObjectId(id) {
     return RaidEntityIndex.bossByObjectId(world(), id);
 }
 
+function raidEntityByObjectId(id) {
+    return RaidEntityIndex.raidEntityByObjectId(world(), id);
+}
+
 function belongsToRaid(target, raid) {
     if (!target || !raid || !isProtectedRaidEntity(target)) return false;
     const boss = raidBossFor(target);
@@ -119,15 +123,22 @@ function selectRaidOpener(leaderSession) {
         .sort(compareScores)[0] || null;
 }
 
-function leaderDesignatedRaidBoss(leaderSession) {
+function leaderDesignatedRaidTarget(leaderSession) {
     const leader = leaderSession?.actor;
     if (!leader || leader.fetchIsOnline?.() !== true || leader.isDead?.() || leader.state?.fetchDead?.()) return null;
     const targetId = Number(leader.fetchDestId?.() || 0);
     if (!targetId) return null;
-    const target = RaidEntityIndex.bossByObjectId(world(), targetId);
-    return target && isRaidBoss(target) && target.fetchAttackable?.() === true && !target.isDead?.()
-        ? target
+    const target = RaidEntityIndex.raidEntityByObjectId(world(), targetId);
+    if (!target || target.fetchAttackable?.() !== true || target.isDead?.()) return null;
+
+    const boss = raidBossFor(target);
+    return boss && boss.fetchAttackable?.() === true && !boss.isDead?.()
+        ? { target, boss }
         : null;
+}
+
+function leaderDesignatedRaidBoss(leaderSession) {
+    return leaderDesignatedRaidTarget(leaderSession)?.boss || null;
 }
 
 function raidEntities(raid) {
@@ -155,11 +166,13 @@ function raidHasPartyCombat(leaderSession, raid) {
     return sessions.some((session) => entityIds.has(currentCombatTargetId(session.actor)));
 }
 
-function startPlayerPartyRaid(leaderSession, boss, now) {
+function startPlayerPartyRaid(leaderSession, boss, target, now) {
     const opener = selectRaidOpener(leaderSession);
     const raid = {
         bossId: objectId(boss),
         bossTemplateId: templateId(boss),
+        targetId: objectId(target || boss),
+        targetTemplateId: templateId(target || boss),
         openerId: objectId(opener?.actor),
         phase: 'opening',
         selectedAt: now,
@@ -175,7 +188,9 @@ function syncPlayerPartyRaid(leaderSession, now = Date.now()) {
         return null;
     }
 
-    const selectedBoss = leaderDesignatedRaidBoss(leaderSession);
+    const selectedRaidTarget = leaderDesignatedRaidTarget(leaderSession);
+    const selectedBoss = selectedRaidTarget?.boss || null;
+    const selectedTarget = selectedRaidTarget?.target || null;
     let raid = leaderSession.partyRaidEngagement;
     const existingBoss = raid
         ? RaidEntityIndex.bossByObjectId(world(), raid.bossId)
@@ -198,11 +213,15 @@ function syncPlayerPartyRaid(leaderSession, now = Date.now()) {
         if (!raid || (!selectedMatches && (
             raid.phase === 'opening' || raidHasPartyCombat(leaderSession, selectedRaid)
         ))) {
-            raid = startPlayerPartyRaid(leaderSession, selectedBoss, now);
+            raid = startPlayerPartyRaid(leaderSession, selectedBoss, selectedTarget, now);
         }
     }
 
     if (!raid) return null;
+    if (selectedTarget && belongsToRaid(selectedTarget, raid)) {
+        raid.targetId = objectId(selectedTarget);
+        raid.targetTemplateId = templateId(selectedTarget);
+    }
     const selectedMatches = selectedBoss && objectId(selectedBoss) === Number(raid.bossId || 0);
     if (raid.phase === 'opening') {
         if (!selectedMatches) {
@@ -234,7 +253,7 @@ function canEngagePlayerPartyRaid(session, target, leaderSession = session?.foll
     if (raid.phase === 'combat') return true;
     return raid.phase === 'opening' &&
         objectId(session.actor) === Number(raid.openerId || 0) &&
-        isRaidBoss(target) && objectId(target) === Number(raid.bossId || 0);
+        objectId(target) === Number(raid.targetId || raid.bossId || 0);
 }
 
 function isEngagedPlayerPartyRaidTarget(leaderSession, target) {
@@ -312,12 +331,14 @@ module.exports = {
     isProtectedRaidEntity,
     raidBossFor,
     raidBossByObjectId,
+    raidEntityByObjectId,
     raidEntities,
     belongsToRaid,
     hasHeavyArmor,
     isRaidOpenerReady,
     selectRaidOpener,
     leaderDesignatedRaidBoss,
+    leaderDesignatedRaidTarget,
     syncPlayerPartyRaid,
     canEngagePlayerPartyRaid,
     isEngagedPlayerPartyRaidTarget,

@@ -99,6 +99,13 @@ function state(characterId, revision, activity = 'hunting') {
     });
     assert.strictEqual(invalidPatch.reason, 'invalid_patch', 'gateway must reject fields outside the explicit bridge protocol');
 
+    const renewed = await Owner.renewActiveLeases({ timestamp: 2000, leaseMs: 5000 });
+    assert.strictEqual(renewed.length, 1, 'active cold ownership must be renewable before its lease expires');
+    assert.strictEqual(renewed[0].ok, true);
+    assert.strictEqual(renewed[0].leaseUntil, 7000, 'renewal must extend the lease from the renewal timestamp');
+    assert.strictEqual(BotLifeState.cachedState(characterId).simulation.leaseUntil, 7000,
+        'renewal must update the main ownership cache for later persistence');
+
     const resting = {
         ...state(characterId, first.revision, 'resting'),
         stats: { restUntil: 9000 },
