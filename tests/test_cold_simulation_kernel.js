@@ -619,6 +619,35 @@ function state(characterId = 1, overrides = {}) {
     assert.strictEqual(partyRouteProposal.payload.proposals.find((proposalEntry) => proposalEntry.characterId === 30)
         .partyResolution.party.stats.travel.spotId, 'mid-level-field');
 
+    const compactFallbackMessages = [];
+    const compactFallbackKernel = new ColdSimulationKernel({
+        resolveSolo: resolver,
+        resolveParty: () => { throw new Error('compact party fallback must wait for the authoritative member state'); },
+        emit: (type, payload) => compactFallbackMessages.push({ type, payload }),
+        now: () => now
+    });
+    const compactLeader = state(35, { party: { partyId: 'compact-party' } });
+    const compactMember = {
+        characterId: 36,
+        phase: 'cold',
+        activity: 'grouped',
+        partyId: 'compact-party',
+        party: { partyId: 'compact-party' },
+        simulation: { ownerId: 'legacy_main', revision: 3 },
+        compact: true
+    };
+    compactFallbackKernel.upsert({
+        state: compactLeader,
+        context: {
+            isPartyLeader: true,
+            party: { partyId: 'compact-party', leaderId: 35, memberIds: [35, 36] },
+            partyMembers: [compactLeader, compactMember]
+        }
+    });
+    compactFallbackKernel.tick();
+    assert(!compactFallbackMessages.some((entry) => entry.type === 'claim_request'),
+        'a compact party reference must wait until its full authoritative state is loaded');
+
     const capacityMessages = [];
     const capacityKernel = new ColdSimulationKernel({
         resolveSolo: resolver,

@@ -447,6 +447,15 @@ class ColdSimulationKernel {
                     ? party.memberIds
                     : [id];
                 const memberIds = [...new Set(declaredMemberIds.map(Number).filter(Boolean))];
+                const missingMemberState = memberIds.some((memberId) => {
+                    if (this.states.get(memberId)?.state) return false;
+                    const fallback = contextMembers.find((member) => Number(member.characterId) === memberId);
+                    return !fallback || fallback.compact === true;
+                });
+                if (missingMemberState) {
+                    this.requeue(id, this.now() + 1000);
+                    continue;
+                }
                 // The leader context is a catalog snapshot and can lag behind
                 // commit ACKs for individual members. Revision fencing must use
                 // the kernel's authoritative per-bot state map or every party

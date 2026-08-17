@@ -4,16 +4,89 @@ require('../src/Global');
 
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
+const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
-const { ColdSimulationCoordinator } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
+const {
+    ColdSimulationCoordinator,
+    compactPartyMemberContext
+} = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
 
 const originalFindForState = SpotProfiles.findForState;
 const originalFindCurrentSpot = SpotService.findCurrentSpot;
 const originalArrivalPointForState = SpotService.arrivalPointForState;
 const originalSafeFallbackForPlan = GearAcquisitionPlanner.safeFallbackForPlan;
+const originalCachedState = LifeState.cachedState;
 
 try {
+    const compact = compactPartyMemberContext({
+        characterId: 11,
+        phase: 'cold',
+        activity: 'grouped',
+        party: { partyId: 'compact-party', leaderId: 11 },
+        simulation: { ownerId: 'legacy_main', revision: 17 },
+        stats: { equipmentPlan: { huge: 'x'.repeat(20000) } },
+        inventorySummary: 'x'.repeat(20000)
+    });
+    assert.strictEqual(compact.characterId, 11);
+    assert.strictEqual(compact.partyId, 'compact-party');
+    assert.strictEqual(compact.party.partyId, 'compact-party');
+    assert.strictEqual(compact.simulation.revision, 17);
+    assert.strictEqual(compact.compact, true);
+    assert(Buffer.byteLength(JSON.stringify(compact)) < 512,
+        'party context should not repeat the full inventory and equipment state');
+
+    const fullMember = {
+        characterId: 12,
+        phase: 'cold',
+        activity: 'resting',
+        party: { partyId: 'compact-party' },
+        simulation: { ownerId: 'legacy_main', revision: 18 },
+        stats: { huge: 'x'.repeat(20000) },
+        inventorySummary: 'x'.repeat(20000)
+    };
+    LifeState.cachedState = (characterId) => Number(characterId) === 11
+        ? { ...fullMember, characterId: 11 }
+        : fullMember;
+    const contextCoordinator = new ColdSimulationCoordinator();
+    const compactContext = contextCoordinator.contextFor({
+        characterId: 11,
+        phase: 'cold',
+        activity: 'resting',
+        loc: { locX: 1, locY: 2, locZ: 3 },
+        stats: {}
+    }, {
+        spots: new Map(),
+        parties: new Map([[
+            11,
+            { partyId: 'compact-party', leaderId: 11, memberIds: [11, 12] }
+        ]]),
+        occupancy: {},
+        compactPartyMembers: true
+    });
+    assert(compactContext.partyMembers.every((member) => member.compact === true),
+        'snapshot party context must compact every already-loaded member');
+    assert(compactContext.partyMembers.every((member) => !member.inventorySummary),
+        'snapshot party context must omit duplicated inventory payloads');
+    const mixedContext = contextCoordinator.contextFor({
+        characterId: 11,
+        phase: 'cold',
+        activity: 'resting',
+        loc: { locX: 1, locY: 2, locZ: 3 },
+        stats: {}
+    }, {
+        spots: new Map(),
+        parties: new Map([[
+            11,
+            { partyId: 'compact-party', leaderId: 11, memberIds: [11, 12] }
+        ]]),
+        occupancy: {},
+        compactPartyMemberIds: new Set([11])
+    });
+    assert.strictEqual(mixedContext.partyMembers[0].compact, true);
+    assert(mixedContext.partyMembers[1].inventorySummary,
+        'a member omitted from the bootstrap set must retain a full fallback state');
+
     const currentSpot = { id: 'starter-field', name: 'Starter fields' };
     const targetSpot = { id: 'mid-level-field', name: 'Mid-level fields' };
     const destinationFor = (state) => ({
@@ -112,4 +185,5 @@ try {
     SpotService.findCurrentSpot = originalFindCurrentSpot;
     SpotService.arrivalPointForState = originalArrivalPointForState;
     GearAcquisitionPlanner.safeFallbackForPlan = originalSafeFallbackForPlan;
+    LifeState.cachedState = originalCachedState;
 }

@@ -34,6 +34,27 @@ function directDropTargetNpcId(plan = {}) {
     return Number(plan.next?.npcId || plan.targetNpcId || 0);
 }
 
+function compactPartyMemberContext(state = {}) {
+    const partyId = state.party?.partyId || state.partyId || null;
+    return {
+        characterId: Number(state.characterId || 0),
+        phase: state.phase || 'cold',
+        activity: state.activity || 'hunting',
+        partyId,
+        ...(partyId ? {
+            party: {
+                partyId,
+                leaderId: Number(state.party?.leaderId || 0)
+            }
+        } : {}),
+        simulation: {
+            ownerId: state.simulation?.ownerId || 'legacy_main',
+            revision: Math.max(0, Number(state.simulation?.revision || 0))
+        },
+        compact: true
+    };
+}
+
 class ColdSimulationCoordinator {
     constructor(options = {}) {
         this.WorkerClass = options.WorkerClass || Worker;
@@ -330,14 +351,23 @@ class ColdSimulationCoordinator {
         flush(true);
     }
 
-    contextIndex() {
+    contextIndex(options = {}) {
         let profiles = [];
         try { profiles = SpotProfiles.ensure() || []; } catch (_) { profiles = []; }
         const spots = new Map(profiles.map((spot) => [String(spot.id), spot]));
         const parties = new Map((BackgroundPartyState.active?.() || []).map((party) => [Number(party.leaderId || 0), party]));
         let occupancy = {};
         try { occupancy = SpotProfiles.currentOccupancy(profiles) || {}; } catch (_) { occupancy = {}; }
-        return { spots, profiles, occupancy, parties };
+        return {
+            spots,
+            profiles,
+            occupancy,
+            parties,
+            compactPartyMembers: options.compactPartyMembers === true,
+            compactPartyMemberIds: options.compactPartyMemberIds instanceof Set
+                ? options.compactPartyMemberIds
+                : null
+        };
     }
 
     routeFor(state, currentSpot, party, partyMembers, index) {
@@ -434,7 +464,12 @@ class ColdSimulationCoordinator {
         try { pressure = Director.pressureForState(state) || {}; } catch (_) { pressure = {}; }
         const party = index.parties.get(Number(state.characterId)) || null;
         const partyMembers = party
-            ? (party.memberIds || []).map((characterId) => LifeState.cachedState(characterId)).filter(Boolean)
+            ? (party.memberIds || []).map((characterId) => LifeState.cachedState(characterId)).filter(Boolean).map((member) => {
+                const memberId = Number(member.characterId || 0);
+                const compact = index.compactPartyMembers === true
+                    || index.compactPartyMemberIds?.has(memberId);
+                return compact ? compactPartyMemberContext(member) : member;
+            })
             : [];
         return {
             spot,
@@ -521,7 +556,8 @@ class ColdSimulationCoordinator {
 
     async sendFullSnapshot() {
         const states = LifeState.allStates(Math.max(1, Number(Config.maxPlayingPopulation) + 300 || 2000));
-        const index = this.contextIndex();
+        const compactPartyMemberIds = new Set(states.map((state) => Number(state.characterId || 0)).filter(Boolean));
+        const index = this.contextIndex({ compactPartyMemberIds });
         const pageSize = this.snapshotQueue.pageSize;
         let page = [];
         let pendingPage = null;
@@ -609,7 +645,7 @@ class ColdSimulationCoordinator {
             while (this.worker && this.ready) {
                 const entries = this.snapshotQueue.takeCritical(this.snapshotQueue.pageSize);
                 if (!entries.length) break;
-                const index = this.contextIndex();
+                const index = this.contextIndex({ compactPartyMembers: true });
                 const result = await this.sendIncrementalEntries(entries, index, this.snapshotQueue.pageSize, 'P0');
                 if (!result.ok) {
                     entries.forEach((entry) => this.snapshotQueue.restoreCritical(entry));
@@ -657,7 +693,7 @@ class ColdSimulationCoordinator {
 
         this.counters.snapshotDirtyRuns += 1;
         return this.startSnapshotJob('dirty', async () => {
-            const index = this.contextIndex();
+            const index = this.contextIndex({ compactPartyMembers: true });
             const result = await this.sendIncrementalEntries(plan.entries, index, plan.pageSize);
             if (result.ok) plan.entries.forEach((entry) => this.snapshotQueue.complete(entry, true));
             return result;
@@ -719,7 +755,7 @@ class ColdSimulationCoordinator {
         const claimed = await ColdSimulationOwner.claimBatch(candidates, {
             leaseMs: Math.max(2000, Number(Config.coldOwnerLeaseMs) || 30000)
         });
-        const index = this.contextIndex();
+        const index = this.contextIndex({ compactPartyMembers: true });
         const rejected = [...missing, ...(claimed.rejected || [])].map((result) => {
             const state = LifeState.cachedState(result.characterId);
             return state ? { ...result, state, context: this.contextFor(state, index) } : result;
@@ -788,7 +824,7 @@ class ColdSimulationCoordinator {
     async handleCommitResults(results = []) {
         const releaseTokens = results.filter((result) => !result.ok && result.proposal?.token).map((result) => result.proposal.token);
         if (releaseTokens.length) await ColdSimulationOwner.releaseBatch(releaseTokens).catch(() => []);
-        const index = this.contextIndex();
+        const index = this.contextIndex({ compactPartyMembers: true });
         const acknowledgements = results.map((result) => {
             const state = LifeState.cachedState(result.characterId) || result.nextState || result.proposal?.baseState || null;
             return {
@@ -806,7 +842,7 @@ class ColdSimulationCoordinator {
     async handleReleaseRequest(message) {
         const tokens = (message.payload.releases || []).map((entry) => entry.token).filter(Boolean);
         const released = await ColdSimulationOwner.releaseBatch(tokens).catch(() => []);
-        const index = this.contextIndex();
+        const index = this.contextIndex({ compactPartyMembers: true });
         const results = released.map((result) => {
             const state = LifeState.cachedState(result.characterId);
             return { ...result, state, context: state ? this.contextFor(state, index) : {} };
@@ -833,7 +869,12 @@ class ColdSimulationCoordinator {
                     this.commandInflight.set(id, operation);
                     try { result = await operation; } finally { this.commandInflight.delete(id); }
                     const nextState = result?.state || LifeState.cachedState(request.characterId) || state;
-                    results.push({ ok: result?.ok !== false, characterId: request.characterId, state: nextState, context: this.contextFor(nextState) });
+                    results.push({
+                        ok: result?.ok !== false,
+                        characterId: request.characterId,
+                        state: nextState,
+                        context: this.contextFor(nextState, this.contextIndex({ compactPartyMembers: true }))
+                    });
                 } catch (error) {
                     this.counters.commandErrors += 1;
                     results.push({ ok: false, characterId: request.characterId, reason: error?.message || 'command_error', retryAfterMs: 5000 });
@@ -989,3 +1030,4 @@ class ColdSimulationCoordinator {
 
 module.exports = new ColdSimulationCoordinator();
 module.exports.ColdSimulationCoordinator = ColdSimulationCoordinator;
+module.exports.compactPartyMemberContext = compactPartyMemberContext;
