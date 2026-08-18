@@ -204,6 +204,9 @@ function applyBuffTarget(session, bot, decision, targetSession) {
     }
     if (bot.fetchMp() < skill.fetchConsumedMp()) return { applied: false, reason: 'low_mp_for_buff' };
     if (distance2d(bot, target) > 900) return { applied: false, reason: 'target_too_far' };
+    if (!BotSupportPlanner.canPlanSupportAction(target, bot, skill, [{ actor: target, leader: true }])) {
+        return { applied: false, reason: 'buff_capacity' };
+    }
 
     const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
     BotPartyChat.expectSkillResult(session, {
