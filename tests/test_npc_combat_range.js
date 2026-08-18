@@ -239,6 +239,17 @@ assert.doesNotThrow(
     'physical NPC skills should not require a player backpack'
 );
 
+const crossNpcTarget = npcWithRange(40, 900002);
+assert.doesNotThrow(
+    () => meleeNpc.hit(session, crossNpcTarget, 999999),
+    'an NPC target must not fall through the player damage pipeline on a lethal hit'
+);
+assert.strictEqual(
+    crossNpcTarget.fetchHp(),
+    100,
+    'a cross-NPC target should be discarded instead of being processed as a player'
+);
+
 function AttackHelperCleanup(npc) {
     npc.abortCombatState({
         dataSendToMeAndOthers() {}

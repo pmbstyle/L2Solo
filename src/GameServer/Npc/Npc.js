@@ -744,6 +744,19 @@ class Npc extends NpcModel {
             return;
         }
 
+        // Npc combat must only hand off player/bot actors to the actor damage
+        // pipeline. A stale or cross-NPC aggro entry used to fall through to
+        // Actor/Generics/ReceivedHit, whose lethal PvP bookkeeping expects
+        // fetchPvpFlag/fetchKarma and crashed the whole game process.
+        if (
+            typeof actor?.fetchPvpFlag !== 'function'
+            || typeof actor?.fetchKarma !== 'function'
+            || typeof actor?.setPvpFlag !== 'function'
+        ) {
+            this.removeAggroTarget(session, actor);
+            return;
+        }
+
         if (actor?.session) {
             actor.session.incomingThreatId = this.fetchId();
             actor.session.incomingThreatAt = Date.now();
