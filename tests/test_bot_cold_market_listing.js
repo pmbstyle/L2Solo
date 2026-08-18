@@ -6,6 +6,7 @@ const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
@@ -23,6 +24,7 @@ const speculativeItem = DataCache.items.find((item) => (
     item !== marketItem
     && item !== equippedItem
     && (item?.template?.kind?.startsWith('Weapon.') || item?.template?.kind?.startsWith('Armor.'))
+    && ItemDisposition.gradeIndex(item?.etc?.rank) >= ItemDisposition.gradeIndex('c')
     && Number(item.template?.price || 0) >= 10000
     && !invoke('GameServer/Bot/Economy/MarketListingPolicy').starterItemIds().has(Number(item.selfId))
 ));
@@ -122,10 +124,21 @@ async function run() {
             1864: { selfId: 1864, name: 'Stem', amount: 4, kind: 'Other.Material', starterMobLootAmount: 4 }
         }
     };
+    const starterMobLootCandidates = ItemDisposition.saleCandidates(starterMobLootState);
     assert.deepStrictEqual(
-        ItemDisposition.saleCandidates(starterMobLootState).map((item) => item.selfId),
-        [1864],
-        'ordinary level-one-to-five loot must stay out of sales while materials remain sellable'
+        starterMobLootCandidates.map((item) => item.selfId),
+        [1, 1864],
+        'low-grade starter gear and materials must remain eligible for cleanup after level ten'
+    );
+    assert.strictEqual(
+        MarketListingPolicy.classify(starterMobLootState, starterMobLootCandidates.find((item) => item.selfId === 1)).action,
+        'npc',
+        'low-grade starter gear must be routed to the NPC shop rather than retained or warehoused'
+    );
+    assert.deepStrictEqual(
+        ItemDisposition.npcLiquidationCandidates(starterMobLootState).map((item) => item.selfId).sort((a, b) => a - b),
+        [1, 1864],
+        'the actual NPC liquidation path must include low-grade gear and cheap materials'
     );
 
     const marketBuyer = {

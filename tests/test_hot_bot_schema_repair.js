@@ -38,12 +38,15 @@ function response(content, usage) {
 
 async function main() {
     const originalConfig = options.default.OpenRouter;
+    const originalAI = options.default.AI;
     const originalWorldUser = World.user;
     const originalFetchVisibleUsers = World.fetchVisibleUsers;
     const originalCompactStatus = BotBrainContext.compactStatus;
     const requests = [];
 
     try {
+        // Keep this OpenRouter fixture independent from developer-local [AI].
+        options.default.AI = undefined;
         options.default.OpenRouter = {
             ...originalConfig,
             enabled: true,
@@ -106,6 +109,7 @@ async function main() {
         console.log('Hot bot schema repair checks passed');
     } finally {
         options.default.OpenRouter = originalConfig;
+        options.default.AI = originalAI;
         World.user = originalWorldUser;
         World.fetchVisibleUsers = originalFetchVisibleUsers;
         BotBrainContext.compactStatus = originalCompactStatus;

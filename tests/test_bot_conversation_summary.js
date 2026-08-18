@@ -7,6 +7,8 @@ const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
 const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
 
 async function main() {
+    const originalAI = options.default.AI;
+    options.default.AI = undefined;
     BotConversationStore.resetMemory();
     BotConversationSummarizer.reset();
     BotInferenceBudget.reset();
@@ -156,6 +158,7 @@ async function main() {
         OpenRouterGateway.resetCircuit();
         BotInferenceBudget.reset();
         options.default.OpenRouter = {};
+        options.default.AI = originalAI;
     }
 }
 

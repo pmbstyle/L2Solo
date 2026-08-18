@@ -253,6 +253,104 @@ function refreshThresholdMs(skill) {
     return Math.min(REFRESH_THRESHOLD_MS, Math.floor(durationMs * REFRESH_FRACTION));
 }
 
+function isCountedBuff(effect) {
+    return effect?.type !== 'debuff' &&
+        effect?.toggle !== true &&
+        !['hp_recover', 'life_force_orc'].includes(effect?.stackFamily);
+}
+
+function buffCapacity(target) {
+    const effects = EffectStore.list(target);
+    const debuffCount = effects.filter((effect) => effect.type === 'debuff').length;
+    const limit = Number(EffectStore.BUFF_LIMIT) || 20;
+    const reservedDebuffs = Number(EffectStore.DEBUFF_RESERVED_SLOTS) || 10;
+    const allowed = Math.max(0, limit - Math.max(0, debuffCount - reservedDebuffs));
+    const used = effects.filter(isCountedBuff).length;
+    return { allowed, used };
+}
+
+function supportEffectReusesSlot(target, skill) {
+    const semantic = skill?.fetchSemantic?.() || {};
+    const effectKey = normalizedEffect(semantic.effect);
+    const stackFamily = semantic.stackFamily;
+    return EffectStore.list(target).some((effect) => (
+        normalizedEffect(effect.key) === effectKey ||
+        (!!stackFamily && effect.stackFamily === stackFamily)
+    ));
+}
+
+function hasSupportBuffCapacity(target, skill) {
+    const semantic = skill?.fetchSemantic?.() || {};
+    const incoming = {
+        type: semantic.effectType || 'buff',
+        toggle: semantic.toggle === true,
+        stackFamily: semantic.stackFamily
+    };
+    if (!isCountedBuff(incoming)) return true;
+
+    // A refresh or a native stack replacement reuses an existing slot. This
+    // also preserves deliberate upgrades such as a stronger Might family
+    // effect while preventing a new unrelated buff from evicting an older one.
+    if (supportEffectReusesSlot(target, skill)) return true;
+
+    const capacity = buffCapacity(target);
+    return capacity.used < capacity.allowed;
+}
+
+function partyAuraRecipients(members, provider, skill) {
+    if (partyAuraRadius(skill) === null) return [];
+
+    const actors = [];
+    const seen = new Set();
+    const addActor = (actor) => {
+        if (!actor || seen.has(actor)) return;
+        seen.add(actor);
+        actors.push(actor);
+    };
+    members.forEach((member) => addActor(member?.actor));
+
+    // Direct player-requested buffs may pass only the player as `members`,
+    // while the native party aura still reaches the complete party.
+    const providerSession = provider?.session;
+    const leaderSession = providerSession?.partyCompanion === true && providerSession.followPlayerSession
+        ? providerSession.followPlayerSession
+        : providerSession;
+    if (leaderSession) {
+        try {
+            const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+            PartyAwareness.partyActors(leaderSession).forEach(addActor);
+        } catch (_) {}
+    }
+
+    const recipients = [];
+    actors.forEach((actor) => {
+        if (actor.state?.fetchDead?.() === true || actor.isDead?.() === true) return;
+        if (partyAuraCanReach(provider, actor, skill)) recipients.push(actor);
+
+        try {
+            const SummonControl = invoke('GameServer/Npc/SummonControl');
+            const summon = SummonControl.activeSummon(actor);
+            if (summon && summon.state?.fetchDead?.() !== true && summon.isDead?.() !== true && partyAuraCanReach(provider, summon, skill)) {
+                recipients.push(summon);
+            }
+        } catch (_) {}
+    });
+    return recipients;
+}
+
+function canPlanSupportAction(target, provider, skill, members) {
+    const recipients = partyAuraRecipients(members, provider, skill);
+    if (recipients.length === 0) return hasSupportBuffCapacity(target, skill);
+
+    // A party aura is applied to every recipient in range, not only to the
+    // selected primary target. A single full recipient without this effect
+    // would otherwise cause the native cast to evict another buff and restart
+    // the planner's rotation.
+    return recipients.every((recipient) => (
+        !needsSkill(recipient, skill) || hasSupportBuffCapacity(recipient, skill)
+    ));
+}
+
 function needsSkill(target, skill) {
     const keys = statKeys(skill);
     const level = Number(skill.fetchLevel?.() || 1);
@@ -346,7 +444,7 @@ function allActions(members, providers, respectReservations = true) {
     return members
         .filter((member) => member?.actor && !member.actor.state?.fetchDead?.())
         .flatMap((member) => providers.flatMap((provider) => supportSkills(provider)
-            .filter((skill) => isUsefulForTarget(member.actor, skill, provider, context) && canCast(provider, skill) && needsSkill(member.actor, skill) && (!respectReservations || !isReserved(member.actor, skill)))
+            .filter((skill) => isUsefulForTarget(member.actor, skill, provider, context) && canCast(provider, skill) && needsSkill(member.actor, skill) && canPlanSupportAction(member.actor, provider, skill, members) && (!respectReservations || !isReserved(member.actor, skill)))
             .map((skill) => ({
                 provider,
                 target: member.actor,
@@ -554,5 +652,6 @@ module.exports = {
     finishSupportCast,
     cancelSupportCast,
     nextAction,
+    canPlanSupportAction,
     rebuffRequest
 };

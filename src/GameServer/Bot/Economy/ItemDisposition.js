@@ -1,10 +1,16 @@
 const DataCache = invoke('GameServer/DataCache');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
+const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
+const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 
 const SELLABLE_KINDS = ['Weapon.', 'Armor.', 'Other.Material'];
+const NPC_ONLY_KINDS = ['Other.Recipe', 'Other.Spellbook'];
 const NPC_LIQUIDATION_MAX_UNIT_PRICE = 1000;
 const WAREHOUSE_GEAR_MIN_BASE_PRICE = 1000;
 const TRADE_MIN_LEVEL = 10;
+const INVENTORY_SLOT_LIMIT = 80;
+const NPC_ONLY_CLEANUP_MIN_SLOTS = 3;
+const GRADE_ORDER = Object.freeze({ none: 0, d: 1, c: 2, b: 3, a: 4, s: 5 });
 
 function templateFor(selfId) {
     return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId)) || null;
@@ -21,6 +27,105 @@ function priceFor(state, item, template) {
 
 function basePrice(item, template = templateFor(item?.selfId)) {
     return Math.max(0, Number(template?.template?.price || 0));
+}
+
+function kindFor(item, template = templateFor(item?.selfId)) {
+    return item?.kind || template?.template?.kind || '';
+}
+
+function gradeIndex(rank) {
+    return GRADE_ORDER[String(rank || 'none').trim().toLowerCase().replaceAll('_', '-')] || 0;
+}
+
+function recipeInfo(item) {
+    const recipe = C4RecipeItems.resolve(item?.selfId);
+    if (!recipe) return null;
+    const product = templateFor(recipe.productId);
+    return { recipe, product, productRank: product?.etc?.rank || 'none' };
+}
+
+function isRecipeItem(item, template = templateFor(item?.selfId)) {
+    return !!recipeInfo(item)
+        && (kindFor(item, template).startsWith('Other.Recipe')
+            || String(item?.name || template?.template?.name || '').toLowerCase().startsWith('recipe'));
+}
+
+function isBelowCGrade(item) {
+    const info = recipeInfo(item);
+    return !!info && gradeIndex(info.productRank) < gradeIndex('c');
+}
+
+function isNpcOnlyItem(item, template = templateFor(item?.selfId)) {
+    const kind = kindFor(item, template);
+    const name = String(item?.name || template?.template?.name || '').toLowerCase();
+    return NPC_ONLY_KINDS.some((prefix) => kind.startsWith(prefix))
+        || isRecipeItem(item, template)
+        || name.includes('spellbook');
+}
+
+function canLearnRecipe(state, item) {
+    const info = recipeInfo(item);
+    if (!info || info.recipe.type !== 'dwarven' || isBelowCGrade(item)) return false;
+    const craftLevel = Number(state?.craftLevel ?? state?.stats?.dwarvenCraftLevel
+        ?? CraftShopService.craftLevelFor(state) ?? 0);
+    if (craftLevel <= 0) return false;
+    return craftLevel >= Number(info.recipe.level || 0);
+}
+
+function recipeDisposition(state, item, knownRecipeIds = []) {
+    const info = recipeInfo(item);
+    if (!info || !isRecipeItem(item)) return null;
+    const known = new Set((knownRecipeIds || []).map((value) => Number(value)));
+    if (!canLearnRecipe(state, item)) return { action: 'npc', reason: 'recipe_not_learnable' };
+    if (known.has(Number(info.recipe.recipeId))) return { action: 'npc', reason: 'recipe_already_known' };
+    return { action: 'learn', reason: 'recipe_book', recipe: info.recipe };
+}
+
+function inventorySlotCount(state = {}) {
+    return Object.values(state.inventory || {}).reduce((total, item) => {
+        const amount = Math.max(0, Number(item?.amount || 0));
+        if (amount <= 0) return total;
+        if (Array.isArray(item?.instances)) return total + item.instances.length;
+        if (item?.stackable === false) return total + amount;
+        return total + 1;
+    }, 0);
+}
+
+function npcOnlySlotCount(state = {}) {
+    return Object.values(state.inventory || {}).reduce((total, item) => {
+        if (!isNpcOnlyItem(item)) return total;
+        const amount = Math.max(0, Number(item?.amount || 0));
+        // NPC liquidation can leave a zero-amount summary entry behind while
+        // its old non-stackable instances are still present in the snapshot.
+        // Those instances are no longer inventory and must not retrigger town
+        // cleanup.
+        if (amount <= 0) return total;
+        if (Array.isArray(item?.instances)) return total + Math.min(amount, item.instances.length);
+        if (item?.stackable === false) return total + amount;
+        return total + 1;
+    }, 0);
+}
+
+function inventoryCleanupNeed(state = {}, options = {}) {
+    const timestamp = Number(options.now) || Date.now();
+    const slots = inventorySlotCount(state);
+    const npcOnlySlots = npcOnlySlotCount(state);
+    const overCapacity = slots > INVENTORY_SLOT_LIMIT;
+    const accumulatedNpcOnly = npcOnlySlots >= NPC_ONLY_CLEANUP_MIN_SLOTS;
+    // A normal market retry cooldown prevents pointless town loops. Residual
+    // NPC-only books/recipes and a genuinely full inventory are different:
+    // they are deterministic cleanup work and must get another visit even
+    // when the previous market attempt ended with no player demand.
+    if (Number(state.stats?.marketSellRetryAfter || 0) > timestamp
+        && !overCapacity
+        && !accumulatedNpcOnly) return null;
+    if (!overCapacity && !accumulatedNpcOnly) return null;
+    return {
+        reason: overCapacity ? 'inventory_capacity' : 'npc_only_inventory',
+        slots,
+        npcOnlySlots,
+        limit: INVENTORY_SLOT_LIMIT
+    };
 }
 
 function reservedCraftAmounts(state) {
@@ -92,17 +197,22 @@ function isTradeEligible(state = {}) {
 }
 
 function protectedStarterLootAmount(item, kind) {
+    const kindName = String(kind || '');
     // Low-level resources remain sellable once the character reaches the
-    // trading phase: they are a legitimate early Adena source. Ordinary gear
-    // and drops from level 1-5 mobs are retained instead of becoming instant
-    // private-store/NPC-liquidation stock.
-    if (String(kind || '').startsWith('Other.Material')) return 0;
+    // trading phase: they are a legitimate early Adena source. No-grade and
+    // D-grade gear is junk by policy and must be liquidated in the NPC shop,
+    // including copies that came from protected starter-mob loot.
+    if (kindName.startsWith('Other.Material')
+        || ((kindName.startsWith('Weapon.') || kindName.startsWith('Armor.'))
+            && gradeIndex(item?.rank || templateFor(item?.selfId)?.etc?.rank || 'none') < gradeIndex('c'))) return 0;
     return Math.max(0, Math.min(Number(item?.amount || 0), Number(item?.starterMobLootAmount || 0)));
 }
 
 function saleCandidates(state, options = {}) {
     if (!isTradeEligible(state)) return [];
-    const limit = Math.max(1, Math.min(20, Number(options.limit) || 8));
+    const limit = options.unlimited
+        ? Number.MAX_SAFE_INTEGER
+        : Math.max(1, Math.min(20, Number(options.limit) || 8));
     const reserved = { ...reservedEquipmentAmounts(state), ...(options.reserved || {}) };
     return Object.values(state?.inventory || {}).flatMap((item) => {
         const selfId = Number(item?.selfId || 0);
@@ -113,13 +223,20 @@ function saleCandidates(state, options = {}) {
         if (!selfId || selfId === 57 || sellableAmount <= 0) return [];
 
         const template = templateFor(selfId);
-        const kind = item.kind || template?.template?.kind || '';
-        if (!SELLABLE_KINDS.some((prefix) => kind.startsWith(prefix))) return [];
+        const kind = kindFor(item, template);
+        const npcOnly = isNpcOnlyItem(item, template);
+        if (options.onlyNpc === true && !npcOnly) return [];
+        if (!npcOnly && !SELLABLE_KINDS.some((prefix) => kind.startsWith(prefix))) return [];
 
-        const protectedAmount = protectedStarterLootAmount(item, kind);
+        // Recipes and spellbooks are explicit NPC-only cleanup targets. They
+        // must not inherit the generic starter-loot protection, otherwise a
+        // generated bot can carry the same book forever after a market visit.
+        const protectedAmount = npcOnly ? 0 : protectedStarterLootAmount(item, kind);
         const sellableCount = Math.max(0, sellableAmount - protectedAmount);
         const base = basePrice(item, template);
-        const price = priceFor(state, item, template);
+        // Recipes and spellbooks must still be liquidatable when their datapack
+        // price is zero. The NPC path applies its own minimum price of one.
+        const price = npcOnly ? Math.max(1, priceFor(state, item, template), Math.floor(base * 0.5)) : priceFor(state, item, template);
         if (price <= 0 || sellableCount <= 0) return [];
         return [{
             selfId,
@@ -135,7 +252,15 @@ function saleCandidates(state, options = {}) {
 
 function npcLiquidationCandidates(state, options = {}) {
     const maxUnitPrice = Math.max(1, Number(options.maxUnitPrice) || NPC_LIQUIDATION_MAX_UNIT_PRICE);
-    return saleCandidates(state, { limit: 20 }).filter((item) => item.basePrice <= maxUnitPrice).map((item) => ({
+    // Do not pass onlyNpc here: low-grade gear and cheap materials are not
+    // intrinsically NPC-only, but the market policy deliberately routes them
+    // to the NPC shop during cleanup. Filter the unified sale set after the
+    // starter-loot protection has been applied.
+    return saleCandidates(state, { unlimited: true }).filter((item) => {
+        const gear = String(item.kind || '').startsWith('Weapon.') || String(item.kind || '').startsWith('Armor.');
+        const lowGradeGear = gear && gradeIndex(item.rank) < gradeIndex('c');
+        return isNpcOnlyItem(item) || lowGradeGear || item.basePrice <= maxUnitPrice;
+    }).map((item) => ({
         ...item,
         npcPrice: Math.max(1, Math.floor(item.basePrice * 0.5))
     }));
@@ -149,6 +274,7 @@ function isWarehouseCandidate(item, template = templateFor(item?.selfId)) {
     const amount = Number(item?.amount || 0);
     const kind = item?.kind || template?.template?.kind || '';
     if (!selfId || selfId === 57 || amount <= 0 || item?.equipped) return false;
+    if (isNpcOnlyItem(item, template)) return false;
     if (kind.startsWith('Other.Material')) return true;
     return (kind.startsWith('Weapon.') || kind.startsWith('Armor.'))
         && basePrice(item, template) > WAREHOUSE_GEAR_MIN_BASE_PRICE;
@@ -171,15 +297,30 @@ function saleSummary(state, options = {}) {
 }
 
 module.exports = {
+    GRADE_ORDER,
+    INVENTORY_SLOT_LIMIT,
+    NPC_ONLY_CLEANUP_MIN_SLOTS,
     NPC_LIQUIDATION_MAX_UNIT_PRICE,
+    NPC_ONLY_KINDS,
     TRADE_MIN_LEVEL,
     WAREHOUSE_GEAR_MIN_BASE_PRICE,
     basePrice,
+    canLearnRecipe,
+    craftLevelFor: (state) => Number(state?.craftLevel ?? state?.stats?.dwarvenCraftLevel
+        ?? CraftShopService.craftLevelFor(state) ?? 0),
+    gradeIndex,
     isTradeEligible,
+    isBelowCGrade,
+    isNpcOnlyItem,
+    inventoryCleanupNeed,
+    inventorySlotCount,
+    npcOnlySlotCount,
     isWarehouseCandidate,
     npcLiquidationCandidates,
     priceFor,
     protectedStarterLootAmount,
+    recipeDisposition,
+    recipeInfo,
     reservedCombinationAmounts,
     reservedCraftAmounts,
     reservedEquipmentAmounts,

@@ -243,6 +243,82 @@ try {
     assert.strictEqual(activeSummonerGenerics.attacks.length, 0,
         'an available summoner spell must win over the owner basic attack');
 
+    const servitorPhysicalShield = skill(1140, {
+        name: 'Servitor Physical Shield',
+        mp: 44,
+        target: 'pet',
+        type: C4SkillRules.EFFECT,
+        spell: true,
+        semantic: {
+            skillType: C4SkillRules.EFFECT,
+            trait: 'buff',
+            effect: 'servitor_physical_shield',
+            effectType: 'buff',
+            target: 'pet',
+            stackFamily: 'pDef',
+            stackOrder: 1.12,
+            stats: { pDefMul: 1.12 }
+        }
+    });
+    const strongerPartyShieldSummon = {
+        effects: {},
+        controlMode: 'follow',
+        fetchId: () => 11060,
+        fetchHp: () => 100,
+        fetchMaxHp: () => 100,
+        state: { fetchDead: () => false },
+        isDead: () => false
+    };
+    EffectStore.apply(strongerPartyShieldSummon, {
+        key: 'chant_of_shielding',
+        id: 1009,
+        level: 3,
+        type: 'buff',
+        stackFamily: 'pDef',
+        stackOrder: 1.15,
+        stats: { pDefMul: 1.15 },
+        durationMs: 60000
+    });
+    const idleStackAwareSummoner = bot(14, [servitorPhysicalShield], 100);
+    idleStackAwareSummoner.fetchId = () => 11061;
+    idleStackAwareSummoner.summon = strongerPartyShieldSummon;
+    const idleStackAwareGenerics = generics();
+    const idleStackAwareAction = SummonerTactics.combatAction(
+        {},
+        idleStackAwareSummoner,
+        null,
+        idleStackAwareGenerics
+    );
+    assert.strictEqual(idleStackAwareGenerics.skills.length, 0,
+        'a stronger same-family party buff must suppress a weaker servitor buff recast');
+    assert.strictEqual(idleStackAwareAction.reason, 'summon_follow',
+        'a fully covered servitor should return to follow state while idle');
+
+    const combatFirstSummon = {
+        effects: {},
+        controlMode: 'attack',
+        fetchId: () => 11062,
+        fetchHp: () => 100,
+        fetchMaxHp: () => 100,
+        state: { fetchDead: () => false },
+        isDead: () => false
+    };
+    const combatFirstSummoner = bot(14, [servitorPhysicalShield, skill(1177, {
+        name: 'Wind Strike',
+        mp: 8,
+        power: 40,
+        spell: true
+    })], 100);
+    combatFirstSummoner.fetchId = () => 11063;
+    combatFirstSummoner.fetchDestId = () => 11064;
+    combatFirstSummoner.summon = combatFirstSummon;
+    const combatFirstGenerics = generics();
+    BotAI.executeCombat({}, combatFirstSummoner, npc(11064), combatFirstGenerics);
+    assert.strictEqual(combatFirstGenerics.skills[0].selfId, 1177,
+        'a summoner must use its offensive skill before idle servitor maintenance');
+    assert.strictEqual(combatFirstGenerics.skills.some((entry) => entry.selfId === 1140), false,
+        'a summoner must not cast a servitor buff while its target is active');
+
     const lowMpSummon = skill(1277, {
         name: 'Summon Mew the Cat',
         mp: 70,

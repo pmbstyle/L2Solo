@@ -33,8 +33,14 @@ function classify(state, item, options = {}) {
     if (!item || Number(item.selfId || 0) <= 0 || Number(item.count || 0) <= 0) {
         return { action: 'ignore', reason: 'invalid_item' };
     }
+    if (ItemDisposition.isNpcOnlyItem(item)) {
+        return { action: 'npc', reason: 'npc_only_item' };
+    }
     if (starterItemIds().has(Number(item.selfId))) {
         return { action: 'npc', reason: 'starter_kit' };
+    }
+    if (isGear(item) && ItemDisposition.gradeIndex(item.rank) < ItemDisposition.gradeIndex('c')) {
+        return { action: 'npc', reason: 'low_grade_gear' };
     }
     if (isGear(item) && Number(item.basePrice || 0) <= MARKET_GEAR_MIN_BASE_PRICE) {
         return { action: 'npc', reason: 'low_value_gear' };
@@ -97,7 +103,17 @@ function listingPrice(item, decision) {
 }
 
 function evaluate(state, options = {}) {
-    const candidates = ItemDisposition.saleCandidates(state, options);
+    const marketCandidates = ItemDisposition.saleCandidates(state, options);
+    const npcCandidates = ItemDisposition.saleCandidates(state, {
+        ...options,
+        onlyNpc: true,
+        unlimited: true
+    });
+    const marketIds = new Set(marketCandidates.map((item) => Number(item.selfId)));
+    const candidates = [
+        ...marketCandidates,
+        ...npcCandidates.filter((item) => !marketIds.has(Number(item.selfId)))
+    ];
     const decisions = candidates.map((item) => {
         const decision = classify(state, item, options);
         return {

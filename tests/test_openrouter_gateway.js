@@ -15,7 +15,9 @@ function response(body, status = 200) {
 const baseConfig = {
     enabled: true,
     apiKey: 'test-key',
+    apiUrl: OpenRouterGateway.OPENROUTER_URL,
     model: 'test/model',
+    reasoningEffort: 'low',
     timeoutMs: 1000,
     circuitBreakerFailureThreshold: 3,
     circuitBreakerOpenMs: 5000
@@ -87,6 +89,47 @@ async function main() {
     assert.strictEqual(captured.body.response_format.type, 'json_schema');
     assert.strictEqual(captured.body.response_format.json_schema.strict, true);
     assert.deepStrictEqual(captured.body.response_format.json_schema.schema, schema.schema);
+
+    let localUrl;
+    let localHeaders;
+    let localBody;
+    OpenRouterGateway.setTransport(async (url, init) => {
+        localUrl = url;
+        localHeaders = init.headers;
+        localBody = JSON.parse(init.body);
+        return response({
+            choices: [{ message: { content: JSON.stringify({ reply: 'local hello' }) } }],
+            usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 }
+        });
+    });
+    const local = await OpenRouterGateway.request({
+        config: {
+            ...baseConfig,
+            apiKey: '',
+            apiUrl: 'http://127.0.0.1:1234/v1/chat/completions',
+            model: 'local-model',
+            reasoningEffort: 'off'
+        },
+        requestId: 'gateway-local',
+        sessionId: 'local-session',
+        messages: [{ role: 'user', content: 'hello local' }],
+        responseSchema: schema
+    });
+    assert.strictEqual(local.ok, true);
+    assert.deepStrictEqual(local.data, { reply: 'local hello' });
+    assert.strictEqual(localUrl, 'http://127.0.0.1:1234/v1/chat/completions');
+    assert.strictEqual(localHeaders.Authorization, undefined, 'local providers may omit Authorization');
+    assert.strictEqual(localHeaders['HTTP-Referer'], undefined);
+    assert.strictEqual(localHeaders['X-OpenRouter-Title'], undefined);
+    assert.strictEqual(localBody.max_tokens, 320);
+    assert.strictEqual(localBody.max_completion_tokens, undefined);
+    assert.strictEqual(localBody.temperature, 0.35);
+    assert.strictEqual(localBody.reasoning, undefined);
+    assert.strictEqual(localBody.reasoning_effort, 'none');
+    assert.strictEqual(localBody.session_id, undefined);
+    assert.strictEqual(localBody.usage, undefined);
+    assert.strictEqual(localBody.provider, undefined);
+    assert.strictEqual(localBody.response_format.type, 'json_schema');
 
     const lunaSchema = {
         name: 'luna_gateway_test',

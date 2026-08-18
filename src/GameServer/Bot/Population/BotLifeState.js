@@ -3,6 +3,7 @@ const Metrics  = invoke('GameServer/Bot/Population/PopulationMetrics');
 const DataCache = invoke('GameServer/DataCache');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
+const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 
 const TABLE = 'bot_life_state';
@@ -309,6 +310,27 @@ function refreshCraftShop(state = {}) {
 
 function syncInventorySummary(characterId, inventory) {
     return Database.syncInventorySummary(characterId, inventory);
+}
+
+function removeOneRecipeCopy(item) {
+    const amount = Math.max(0, Number(item?.amount || 0) - 1);
+    const next = { ...(item || {}), amount };
+    if (!Array.isArray(item?.instances)) return next;
+
+    const instances = item.instances.slice(1);
+    const equippedSlots = [...new Set(instances
+        .filter((instance) => instance?.equipped && Number(instance.slot) > 0)
+        .map((instance) => Number(instance.slot)))].sort((left, right) => left - right);
+    return {
+        ...next,
+        instances,
+        equipped: equippedSlots.length > 0,
+        equippedCount: equippedSlots.length,
+        equippedSlots,
+        enchant: instances.length && new Set(instances.map((instance) => Number(instance.enchant || 0))).size === 1
+            ? Number(instances[0].enchant || 0)
+            : null
+    };
 }
 
 function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
@@ -1067,6 +1089,85 @@ function expireStalePartyRequests(limit = 0) {
                 utils.infoWarn('BotLife', 'deferred %d stale party requests', expired);
             }
             return expired;
+        }));
+}
+
+function deferUnformablePartyRequests(characterIds = [], reason = 'no_compatible_level_match') {
+    const ids = [...new Set((characterIds || []).map((id) => Number(id)).filter(Boolean))].slice(0, 500);
+    if (!ids.length) return Promise.resolve(0);
+
+    const timestamp = now();
+    const cooldownMs = Math.max(30000, Number(Config.partyRequestCooldownMs) || 5 * 60 * 1000);
+    const staggerMs = Math.min(120000, Math.max(0, Math.floor(cooldownMs / 2)));
+    const placeholders = ids.map(() => '?').join(', ');
+    const selection = `characterId IN (${placeholders})
+        AND phase = 'cold'
+        AND simulationOwner = 'legacy_main'
+        AND (partyId IS NULL OR partyId = '')
+        AND activity IN ('hunting', 'resting', 'party_wait')
+        AND json_extract(statsJson, '$.partyRequest.status') = 'open'
+        AND json_extract(statsJson, '$.partyRequest.priority') = 'required'`;
+    const selectCurrent = () => Database.execute([
+        `SELECT characterId, statsJson FROM ${TABLE} WHERE ${selection}`,
+        ids
+    ]);
+    const waitForPending = (rows) => Promise.all((rows || [])
+        .map((row) => pendingWrites.get(Number(row.characterId || 0)))
+        .filter(Boolean)
+        .map((pending) => pending.catch(() => null)));
+    const sql = `UPDATE ${TABLE}
+        SET statsJson = json_set(
+                COALESCE(statsJson, '{}'),
+                '$.partyRequest.status', 'deferred',
+                '$.partyRequest.deferredUntil', ? + (ABS(characterId) % ?),
+                '$.partyRequest.expiredAt', ?,
+                '$.partyRequest.attempts', COALESCE(CAST(json_extract(statsJson, '$.partyRequest.attempts') AS INTEGER), 0) + 1,
+                '$.partyRequest.lastReason', ?
+            ),
+            updatedAt = ?
+        WHERE ${selection}`;
+    const params = [
+        timestamp + cooldownMs,
+        Math.max(1, staggerMs),
+        timestamp,
+        String(reason || 'no_compatible_level_match'),
+        timestamp,
+        ...ids
+    ];
+    const updateCache = (rows) => {
+        (rows || []).forEach((row) => {
+            const characterId = Number(row.characterId || 0);
+            const cached = cache.get(characterId);
+            if (!cached) return;
+            const request = parseJson(row.statsJson, {}).partyRequest;
+            if (request?.status !== 'open' || request.priority !== 'required') return;
+            cache.set(characterId, {
+                ...cached,
+                updatedAt: timestamp,
+                stats: {
+                    ...(cached.stats || {}),
+                    partyRequest: {
+                        ...request,
+                        status: 'deferred',
+                        deferredUntil: timestamp + cooldownMs + (Math.abs(characterId) % Math.max(1, staggerMs)),
+                        expiredAt: timestamp,
+                        attempts: Number(request.attempts || 0) + 1,
+                        lastReason: String(reason || 'no_compatible_level_match')
+                    }
+                }
+            });
+        });
+    };
+
+    return selectCurrent()
+        .then((rows) => waitForPending(rows).then(() => selectCurrent()))
+        .then((rows) => Database.execute([sql, params]).then((result) => {
+            const deferred = Number(result?.affectedRows || 0);
+            if (deferred > 0) {
+                updateCache(rows);
+                utils.infoWarn('BotLife', 'deferred %d unformable party requests reason=%s', deferred, String(reason || 'unknown'));
+            }
+            return deferred;
         }));
 }
 
@@ -2137,12 +2238,10 @@ const BotLifeState = {
         const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
         return Database.execute([
             `SELECT states.* FROM ${TABLE} states
-            INNER JOIN bot_goal_state goals ON goals.characterId = states.characterId
             WHERE states.phase = 'cold'
             AND (states.partyId IS NULL OR states.partyId = '')
             AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting')
             AND COALESCE(CAST(json_extract(states.statsJson, '$.marketSellRetryAfter') AS INTEGER), 0) <= ?
-            AND goals.goalJson LIKE '%"type":"sell_inventory"%'
             ORDER BY states.updatedAt ASC
             LIMIT ${safeLimit}`,
             [Number(timestamp) || now()]
@@ -2152,6 +2251,29 @@ const BotLifeState = {
             return state;
         })).catch((err) => {
             utils.infoWarn('BotLife', 'failed to fetch market-goal candidates: %s', err.message);
+            return [];
+        });
+    },
+
+    staleGoalCandidates(limit = 8, timestamp = now()) {
+        if (!initialized) return Promise.resolve([]);
+        const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
+        return Database.execute([
+            `SELECT states.* FROM ${TABLE} states
+            INNER JOIN bot_goal_state goals ON goals.characterId = states.characterId
+            WHERE states.phase = 'cold'
+            AND (states.partyId IS NULL OR states.partyId = '')
+            AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting')
+            AND COALESCE(CAST(json_extract(goals.goalJson, '$.nextReviewAt') AS INTEGER), 0) <= ?
+            ORDER BY goals.updatedAt ASC, states.updatedAt ASC
+            LIMIT ${safeLimit}`,
+            [Number(timestamp) || now()]
+        ]).then((rows) => rows.map((row) => {
+            const state = normalize(row);
+            cache.set(state.characterId, state);
+            return state;
+        })).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to fetch stale goal candidates: %s', err.message);
             return [];
         });
     },
@@ -2511,6 +2633,56 @@ const BotLifeState = {
             });
     },
 
+    learnCraftableRecipes(state) {
+        if (!state?.characterId) return Promise.resolve(state || null);
+        const candidates = Object.values(state.inventory || {})
+            .filter((item) => ItemDisposition.canLearnRecipe(state, item))
+            .sort((left, right) => Number(left.selfId || 0) - Number(right.selfId || 0));
+        if (!candidates.length) return Promise.resolve(state);
+
+        return Database.fetchCharacterRecipes(state.characterId).then((rows) => {
+            const known = new Set((rows || []).map((row) => Number(row.recipeId)));
+            const inventory = { ...(state.inventory || {}) };
+            const learned = [];
+
+            return candidates.reduce((chain, item) => chain.then(async () => {
+                const decision = ItemDisposition.recipeDisposition(state, item, [...known]);
+                if (decision?.action !== 'learn') return;
+                try {
+                    await Database.setCharacterRecipe(state.characterId, decision.recipe.recipeId, decision.recipe.type);
+                } catch (error) {
+                    utils.infoWarn('BotLife', 'failed to learn recipe %d for %s: %s', decision.recipe.recipeId, state.name, error.message || error);
+                    return;
+                }
+                known.add(Number(decision.recipe.recipeId));
+                inventory[String(item.selfId)] = removeOneRecipeCopy(item);
+                learned.push({
+                    recipeId: Number(decision.recipe.recipeId),
+                    recipeItemId: Number(decision.recipe.recipeItemId),
+                    name: item.name || `Recipe ${decision.recipe.recipeId}`
+                });
+            }), Promise.resolve()).then(() => {
+                if (!learned.length) return state;
+                const nextState = {
+                    ...state,
+                    inventory,
+                    stats: {
+                        ...(state.stats || {}),
+                        lastRecipeBookLearning: { learned, at: now() }
+                    },
+                    updatedAt: now()
+                };
+                return this.upsertState(nextState, 'recipe_book_learned').then((saved) => {
+                    const persisted = saved || nextState;
+                    return syncInventorySummary(persisted.characterId, persisted.inventory).then(() => persisted);
+                });
+            });
+        }).catch((error) => {
+            utils.infoWarn('BotLife', 'failed recipe-book reconciliation for %s: %s', state.name, error.message || error);
+            return state;
+        });
+    },
+
     upsertState(state, reason = 'seed') {
         if (!state || !state.characterId) return Promise.resolve(null);
 
@@ -2650,6 +2822,11 @@ const BotLifeState = {
     expireStalePartyRequests(limit = 0) {
         if (!initialized) return Promise.resolve(0);
         return expireStalePartyRequests(limit);
+    },
+
+    deferUnformablePartyRequests(characterIds = [], reason = 'no_compatible_level_match') {
+        if (!initialized) return Promise.resolve(0);
+        return deferUnformablePartyRequests(characterIds, reason);
     },
 
     cachedState(characterId) {

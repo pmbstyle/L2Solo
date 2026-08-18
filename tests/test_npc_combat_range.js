@@ -53,15 +53,23 @@ function npcWithRange(atkRadius, selfId = 900000) {
     });
 }
 
-function actorAt(x) {
+function actorAt(x, id = 2000001, cp = 0) {
+    let pvpFlag = 0;
+    let karma = 0;
     return {
         hp: 1000,
-        fetchId: () => 2000001,
+        cp,
+        fetchId: () => id,
         fetchRadius: () => 8,
         fetchLocX: () => x,
         fetchLocY: () => 0,
         fetchLocZ: () => 0,
         fetchHp() { return this.hp; },
+        fetchCp() { return this.cp; },
+        setCp(value) { this.cp = value; },
+        fetchPvpFlag: () => pvpFlag,
+        setPvpFlag(value) { pvpFlag = value; },
+        fetchKarma: () => karma,
         fetchMaxHp: () => 1000,
         setHp(value) { this.hp = value; },
         fetchCollectivePDef: () => 100,
@@ -98,6 +106,10 @@ class BotSession {
     }
 
     dataSendToMeAndOthers(packet) {
+        this.packets.push(packet);
+    }
+
+    dataSendToMe(packet) {
         this.packets.push(packet);
     }
 }
@@ -238,6 +250,30 @@ assert.doesNotThrow(
     () => new Attack().prepareSkillDamage(meleeNpc, target, npcPhysicalSkill, false),
     'physical NPC skills should not require a player backpack'
 );
+
+const crossNpcTarget = npcWithRange(40, 900002);
+assert.doesNotThrow(
+    () => meleeNpc.hit(session, crossNpcTarget, 999999),
+    'an NPC target must not fall through the player damage pipeline on a lethal hit'
+);
+assert.strictEqual(
+    crossNpcTarget.fetchHp(),
+    100,
+    'a cross-NPC target should be discarded instead of being processed as a player'
+);
+
+const sameTarget = actorAt(100, 2000003, 30);
+const sameTargetSession = new BotSession(sameTarget);
+meleeNpc.hit(sameTargetSession, sameTarget, 20);
+assert.strictEqual(sameTarget.fetchCp(), 30, 'NPC damage must not consume CP on the current target');
+assert.strictEqual(sameTarget.fetchHp(), 980, 'NPC damage must reduce HP on the current target');
+
+const retargetedVictim = actorAt(100, 2000004, 30);
+const originalAggroTarget = actorAt(100, 2000005);
+const retargetedSession = new BotSession(originalAggroTarget);
+meleeNpc.hit(retargetedSession, retargetedVictim, 20);
+assert.strictEqual(retargetedVictim.fetchCp(), 30, 'NPC damage must not consume CP after aggro retargeting');
+assert.strictEqual(retargetedVictim.fetchHp(), 980, 'NPC damage must reduce HP after aggro retargeting');
 
 function AttackHelperCleanup(npc) {
     npc.abortCombatState({

@@ -333,6 +333,106 @@ action = BotSupportPlanner.nextAction(fullPackageBuffer, [
 assert.strictEqual(action.skill.fetchSelfId(), 1078, 'after a successful cast, the autonomous buffer should advance to the next needed party buff without another request');
 assert.strictEqual(action.target, packageMage, 'the next planned buff should target its eligible party member');
 
+const capacitySkills = Array.from({ length: 21 }, (_, index) => (
+    skill(5000 + index, `Capacity Buff ${index}`, 1, `capacity_buff_${index}`, {})
+));
+const capacityProvider = actor('CapacityBuffer', 49, capacitySkills);
+const capacityTarget = actor('CapacityTarget', 0);
+for (let index = 0; index < 20; index += 1) {
+    EffectStore.apply(capacityTarget, {
+        key: `capacity_buff_${index}`,
+        id: 6000 + index,
+        level: 1,
+        type: 'buff',
+        durationMs: 10 * 60 * 1000
+    });
+}
+assert.strictEqual(
+    BotSupportPlanner.nextAction(capacityProvider, [{ actor: capacityTarget, leader: true }], [capacityProvider]),
+    null,
+    'a full buff bar must not request a new unrelated buff that would evict an older one'
+);
+assert.strictEqual(
+    BotSupportPlanner.hasPendingAction([{ actor: capacityTarget, leader: true }], [capacityProvider]),
+    false,
+    'a full buff bar must not keep party pulling paused through an impossible support action'
+);
+EffectStore.remove(capacityTarget, 'capacity_buff_19');
+assert.ok(
+    BotSupportPlanner.nextAction(capacityProvider, [{ actor: capacityTarget, leader: true }], [capacityProvider]),
+    'a missing buff should still be planned when a real buff slot is available'
+);
+
+const refreshingCapacitySkill = skill(5100, 'Refreshing Capacity Buff', 1, 'refreshing_capacity_buff', {});
+refreshingCapacitySkill.fetchBuffTime = () => 120000;
+const refreshingCapacityProvider = actor('RefreshingCapacityBuffer', 49, [refreshingCapacitySkill]);
+const refreshingCapacityTarget = actor('RefreshingCapacityTarget', 0);
+for (let index = 0; index < 19; index += 1) {
+    EffectStore.apply(refreshingCapacityTarget, {
+        key: `refresh_filler_${index}`,
+        id: 6100 + index,
+        level: 1,
+        type: 'buff',
+        durationMs: 10 * 60 * 1000
+    });
+}
+EffectStore.apply(refreshingCapacityTarget, {
+    key: 'refreshing_capacity_buff',
+    id: 5100,
+    level: 1,
+    type: 'buff',
+    durationMs: 1000
+});
+assert.strictEqual(
+    BotSupportPlanner.nextAction(refreshingCapacityProvider, [{ actor: refreshingCapacityTarget, leader: true }], [refreshingCapacityProvider])?.skill.fetchSelfId(),
+    5100,
+    'a nearly expired existing buff should still refresh at a full buff capacity'
+);
+
+const auraCapacitySkill = {
+    ...skill(5200, 'Capacity Party Aura', 1, 'capacity_party_aura', {}, 'party'),
+    fetchDistance: () => -1,
+    fetchSemantic: () => ({ effectType: 'buff', effect: 'capacity_party_aura', stats: {}, target: 'party', radius: 1000 })
+};
+const auraCapacityProvider = actor('AuraCapacityBuffer', 21, [auraCapacitySkill]);
+const fullAuraMember = actor('FullAuraMember', 0);
+const freeAuraMember = actor('FreeAuraMember', 0);
+for (let index = 0; index < 20; index += 1) {
+    EffectStore.apply(fullAuraMember, {
+        key: `aura_full_filler_${index}`,
+        id: 6200 + index,
+        level: 1,
+        type: 'buff',
+        durationMs: 10 * 60 * 1000
+    });
+}
+for (let index = 0; index < 19; index += 1) {
+    EffectStore.apply(freeAuraMember, {
+        key: `aura_free_filler_${index}`,
+        id: 6300 + index,
+        level: 1,
+        type: 'buff',
+        durationMs: 10 * 60 * 1000
+    });
+}
+assert.strictEqual(
+    BotSupportPlanner.nextAction(auraCapacityProvider, [
+        { actor: fullAuraMember, leader: true },
+        { actor: freeAuraMember, leader: false }
+    ], [auraCapacityProvider]),
+    null,
+    'a party aura must wait when any in-range member would be evicted by the cast'
+);
+EffectStore.remove(fullAuraMember, 'aura_full_filler_19');
+assert.strictEqual(
+    BotSupportPlanner.nextAction(auraCapacityProvider, [
+        { actor: fullAuraMember, leader: true },
+        { actor: freeAuraMember, leader: false }
+    ], [auraCapacityProvider])?.skill.fetchSelfId(),
+    5200,
+    'a party aura should resume when every recipient has capacity'
+);
+
 const pullPriorityBuffer = actor('PullPriorityBuffer', 49, [sharedShield]);
 const ordinaryLeader = actor('OrdinaryLeader', 0);
 const designatedPuller = actor('DesignatedPuller', 4);

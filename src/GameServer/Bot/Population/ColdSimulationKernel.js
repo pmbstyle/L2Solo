@@ -189,13 +189,17 @@ function finishPartyRouteTravelState(state = {}, timestamp = Date.now()) {
 
 function partyTransitionProposals(run, memberStates, party, timestamp, event = null, activity = 'party_travel') {
     const nextResolveAt = Number(memberStates[0]?.timing?.nextResolveAt || timestamp + 1000);
+    const requestedLeaderId = Number(run.party.leaderId || 0);
+    const resolutionMemberId = memberStates.some((state) => Number(state.characterId) === requestedLeaderId)
+        ? requestedLeaderId
+        : Number(memberStates[0]?.characterId || 0);
     const atomicGroup = {
         id: `party:${party.partyId}:${timestamp}:${activity}`,
         memberIds: memberStates.map((state) => Number(state.characterId)).filter(Boolean)
     };
     return memberStates.map((state) => {
         const id = Number(state.characterId);
-        const events = event && id === Number(run.party.leaderId)
+        const events = event && id === resolutionMemberId
             ? [{ ...event, characterId: id }]
             : [];
         return {
@@ -216,7 +220,7 @@ function partyTransitionProposals(run, memberStates, party, timestamp, event = n
             },
             options: { allowParty: true, allowLifecycle: true },
             atomicGroup,
-            partyResolution: id === Number(run.party.leaderId)
+            partyResolution: id === resolutionMemberId
                 ? { partyId: party.partyId, party }
                 : null
         };
@@ -1249,5 +1253,6 @@ module.exports = {
     finishPartyRouteTravelState,
     lifecycleKind,
     priorityForResult,
-    nextDueAt
+    nextDueAt,
+    partyTransitionProposals
 };

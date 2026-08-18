@@ -9,9 +9,12 @@ function session(id) {
 }
 
 const originalConfig = options.default.OpenRouter;
+const originalAI = options.default.AI;
 const bot = session(2000201);
 
 try {
+    // Keep this OpenRouter budget fixture independent from developer-local [AI].
+    options.default.AI = undefined;
     options.default.OpenRouter = {
         ...originalConfig,
         maxConcurrentRequests: 8
@@ -153,5 +156,6 @@ try {
     console.log('Bot inference budget checks passed');
 } finally {
     options.default.OpenRouter = originalConfig;
+    options.default.AI = originalAI;
     BotInferenceBudget.reset();
 }

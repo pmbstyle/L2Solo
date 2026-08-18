@@ -47,6 +47,7 @@ function response() {
 
 async function main() {
     const originalConfig = options.default.OpenRouter;
+    const originalAI = options.default.AI;
     const originalWorldUser = World.user;
     const originalWorldNpc = World.npc;
     const originalFetchVisibleUsers = World.fetchVisibleUsers;
@@ -62,6 +63,8 @@ async function main() {
     let releaseFirst;
 
     try {
+        // Keep this OpenRouter fixture independent from developer-local [AI].
+        options.default.AI = undefined;
         options.default.OpenRouter = {
             ...originalConfig,
             enabled: true,
@@ -149,6 +152,7 @@ async function main() {
     } finally {
         releaseFirst?.();
         options.default.OpenRouter = originalConfig;
+        options.default.AI = originalAI;
         World.user = originalWorldUser;
         World.npc = originalWorldNpc;
         World.fetchVisibleUsers = originalFetchVisibleUsers;

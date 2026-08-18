@@ -35,16 +35,31 @@ function rotationExpiry(partyId, startedAt) {
     return Number(startedAt) + maxAge + offset;
 }
 
+function normalizeMembership(party = {}) {
+    const memberIds = Array.from(new Set((party.memberIds || [])
+        .map((id) => Number(id))
+        .filter(Boolean)));
+    const requestedLeaderId = Number(party.leaderId || 0);
+    const leaderId = memberIds.includes(requestedLeaderId)
+        ? requestedLeaderId
+        : Number(memberIds[0] || 0);
+    return { leaderId, memberIds };
+}
+
 function normalize(row) {
     const startedAt = Number(row.startedAt || 0);
     const stats = parseJson(row.statsJson, {});
     if (row.status === 'active' && startedAt && !Number(stats.sessionExpiresAt || 0)) {
         stats.sessionExpiresAt = rotationExpiry(row.partyId, startedAt);
     }
+    const membership = normalizeMembership({
+        leaderId: row.leaderId,
+        memberIds: parseJson(row.memberIdsJson, [])
+    });
     return {
         partyId: row.partyId || '',
-        leaderId: Number(row.leaderId || 0),
-        memberIds: parseJson(row.memberIdsJson, []).map((id) => Number(id)).filter(Boolean),
+        leaderId: membership.leaderId,
+        memberIds: membership.memberIds,
         spotId: row.spotId || null,
         startedAt,
         nextResolveAt: row.nextResolveAt ? Number(row.nextResolveAt) : null,
@@ -59,10 +74,11 @@ function normalize(row) {
 
 function rowFromParty(party) {
     const timestamp = now();
+    const membership = normalizeMembership(party);
     return {
         partyId: party.partyId,
-        leaderId: Number(party.leaderId || party.memberIds?.[0] || 0),
-        memberIdsJson: safeJson((party.memberIds || []).map((id) => Number(id)).filter(Boolean)),
+        leaderId: membership.leaderId,
+        memberIdsJson: safeJson(membership.memberIds),
         spotId: party.spotId || null,
         startedAt: party.startedAt || timestamp,
         nextResolveAt: party.nextResolveAt || null,
@@ -140,22 +156,57 @@ const BackgroundPartyState = {
         });
     },
 
+    purgeHistory(limit = Config.partyHistoryCleanupBatchSize, timestamp = now()) {
+        if (!initialized) return Promise.resolve(0);
+        const retentionMs = Math.max(0, Number(Config.partyHistoryRetentionMs) || 0);
+        if (!retentionMs) return Promise.resolve(0);
+        const safeLimit = Math.max(1, Math.min(5000, Number(limit) || 1000));
+        const cutoff = Math.max(0, Number(timestamp) - retentionMs);
+        return Database.execute([
+            `DELETE FROM ${TABLE}
+             WHERE partyId IN (
+                SELECT parties.partyId FROM ${TABLE} parties
+                WHERE status <> 'active'
+                  AND parties.updatedAt <= ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM bot_life_state life
+                      WHERE life.partyId = parties.partyId
+                  )
+                ORDER BY parties.updatedAt ASC
+                LIMIT ${safeLimit}
+             )`,
+            [cutoff]
+        ]).then((result) => {
+            const deleted = Number(result?.affectedRows || 0);
+            if (deleted > 0) {
+                utils.infoWarn('BotParty', 'purged %d dissolved background party history row(s)', deleted);
+            }
+            return deleted;
+        }).catch((err) => {
+            utils.infoWarn('BotParty', 'failed to purge dissolved background party history: %s', err.message);
+            return 0;
+        });
+    },
+
     createOrUpdate(party) {
-        if (!party?.partyId || !party.memberIds?.length) return Promise.resolve(null);
-        const memberCount = new Set(party.memberIds.map((id) => Number(id)).filter(Boolean)).size;
-        if ((party.status || 'active') === 'active' && memberCount < Config.partyMinSize) return Promise.resolve(null);
+        const membership = normalizeMembership(party);
+        const status = party?.status || 'active';
+        if (!party?.partyId || (status === 'active' && !membership.memberIds.length)) return Promise.resolve(null);
+        const normalizedParty = { ...party, ...membership };
+        const memberCount = membership.memberIds.length;
+        if (status === 'active' && memberCount < Config.partyMinSize) return Promise.resolve(null);
         const ready = initialized ? Promise.resolve(true) : this.init();
 
         return ready.then((isReady) => {
             if (!isReady) return null;
-            const row = rowFromParty(party);
+            const row = rowFromParty(normalizedParty);
             return save(row).then(() => {
                 const snapshot = normalize(row);
                 cache.set(snapshot.partyId, snapshot);
                 return snapshot;
             });
         }).catch((err) => {
-            utils.infoWarn('BotParty', 'failed to save background party %s: %s', party.partyId, err.message);
+            utils.infoWarn('BotParty', 'failed to save background party %s: %s', normalizedParty.partyId, err.message);
             return null;
         });
     },

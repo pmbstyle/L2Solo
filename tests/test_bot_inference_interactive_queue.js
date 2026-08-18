@@ -14,7 +14,10 @@ function tick() {
 
 async function main() {
     const originalConfig = options.default.OpenRouter;
+    const originalAI = options.default.AI;
     try {
+        // Keep this OpenRouter budget fixture independent from developer-local [AI].
+        options.default.AI = undefined;
         options.default.OpenRouter = {
             ...originalConfig,
             maxConcurrentRequests: 1
@@ -136,6 +139,7 @@ async function main() {
         console.log('Interactive inference queue checks passed');
     } finally {
         options.default.OpenRouter = originalConfig;
+        options.default.AI = originalAI;
         BotInferenceBudget.reset();
     }
 }

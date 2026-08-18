@@ -824,7 +824,7 @@ function tracePreProviderFallback(session, requestContext, outcome, playerMessag
 const BotBrain = {
     isEnabled() {
         const cfg = config();
-        return cfg.enabled && !!cfg.apiKey;
+        return OpenRouterGateway.isConfigured(cfg);
     },
 
     applyPartyPolicy,
@@ -845,8 +845,10 @@ const BotBrain = {
             debugSkip(session, cfg, 'disabled');
             return false;
         }
-        if (!cfg.apiKey) {
-            debugSkip(session, cfg, 'missing_api_key');
+        if (!OpenRouterGateway.isConfigured(cfg)) {
+            debugSkip(session, cfg, cfg.provider === 'openrouter' && !cfg.apiKey
+                ? 'missing_api_key'
+                : 'not_configured');
             return false;
         }
         if (session.brainInFlight) {

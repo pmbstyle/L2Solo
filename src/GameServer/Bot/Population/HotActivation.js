@@ -151,6 +151,20 @@ function releaseBackgroundParty(state, reason) {
         });
 }
 
+function restoreColdAfterActivationFailure(state) {
+    if (!state?.characterId) return Promise.resolve({ ok: false, reason: 'missing_state' });
+    const current = LifeState.cachedState(state.characterId) || state;
+    return ColdSimulationCoordinator.acceptColdState(current).then((accepted) => {
+        if (!accepted?.ok) {
+            utils.infoWarn('BotPopulation', 'failed to return %s to cold worker after activation failure: %s', state.name, accepted?.reason || 'unknown');
+        }
+        return accepted;
+    }).catch((error) => {
+        utils.infoWarn('BotPopulation', 'failed to return %s to cold worker after activation failure: %s', state.name, error?.message || error);
+        return { ok: false, reason: error?.message || 'cold_restore_failed' };
+    });
+}
+
 const HotActivation = {
     activate(stateOrName, reason = 'activation', options = {}) {
         const loadState = typeof stateOrName === 'string'
@@ -177,6 +191,7 @@ const HotActivation = {
 
             const BotManager = invoke('GameServer/Bot/BotManager');
             let craftActivation = false;
+            let releasedForActivation = false;
             return ColdSimulationCoordinator.fenceBot(state.characterId).then((fence) => {
                 if (!fence.ok && fence.reason !== 'worker_not_ready') {
                     utils.infoWarn('ColdWorker', 'activation fence fallback for %s: %s', state.name, fence.reason);
@@ -196,6 +211,7 @@ const HotActivation = {
                 return releaseBackgroundParty(state, reason);
             }).then((releasedState) => {
                 state = releasedState;
+                releasedForActivation = true;
 
                 const craftShop = state.activity === 'crafting' && state.stats?.craftShop
                     ? CraftShopService.profileFor(state)
@@ -211,8 +227,7 @@ const HotActivation = {
                 const recipesReady = craftShop
                     ? CraftShopService.ensureRecipes(state.characterId, craftShop)
                     : Promise.resolve();
-                return recipesReady.then(() => {
-                    BotManager.loadAndSpawnBot(state.accountName, {
+                return recipesReady.then(() => Promise.resolve(BotManager.loadAndSpawnBot(state.accountName, {
                         name: state.name,
                         homeRegion: state.homeRegion,
                         newbieAnchor: !!state.stats?.newbieAnchor,
@@ -239,8 +254,8 @@ const HotActivation = {
                             items: marketStore.items || []
                         } : null,
                         manufactureShop: craftShop
-                    });
-
+                    })).then((session) => {
+                    if (!session) throw new Error('bot_spawn_failed');
                     const pendingTimer = setTimeout(() => {
                         pendingActivations.delete(state.characterId);
                     }, 10000);
@@ -261,12 +276,17 @@ const HotActivation = {
                     );
                     Metrics.recordActivation();
                     return { ok: true, state, reason };
-                });
+                }));
             }).catch((error) => {
-                pendingActivations.delete(state.characterId);
-                const failureReason = craftActivation ? 'craft_recipe_sync_failed' : 'activation_prepare_failed';
-                utils.infoWarn('BotPopulation', 'activation failed for %s: %s', state.name, error.message || error);
-                return { ok: false, reason: failureReason, state };
+                const restore = releasedForActivation
+                    ? restoreColdAfterActivationFailure(state)
+                    : Promise.resolve(null);
+                return restore.then(() => {
+                    pendingActivations.delete(state.characterId);
+                    const failureReason = craftActivation ? 'craft_recipe_sync_failed' : 'activation_prepare_failed';
+                    utils.infoWarn('BotPopulation', 'activation failed for %s: %s', state.name, error.message || error);
+                    return { ok: false, reason: failureReason, state };
+                });
             });
         });
     }

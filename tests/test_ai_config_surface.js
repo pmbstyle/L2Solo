@@ -6,6 +6,7 @@ const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 
 const originalOpenRouter = options.default.OpenRouter;
+const originalAI = options.default.AI;
 const originalLangfuse = options.default.Langfuse;
 
 try {
@@ -13,7 +14,10 @@ try {
     assert.strictEqual(OpenRouterGateway.DEFAULTS.reasoningEffort, 'low');
     assert.strictEqual(OpenRouterGateway.DEFAULTS.temperature, 0.35);
     assert.strictEqual(OpenRouterGateway.DEFAULTS.partyRouterModel, 'openai/gpt-5.6-luna');
+    assert.strictEqual(OpenRouterGateway.DEFAULTS.apiUrl, OpenRouterGateway.OPENROUTER_URL);
 
+    // Do not let a developer-local [AI] section change the OpenRouter fixture.
+    options.default.AI = undefined;
     options.default.OpenRouter = {
         enabled: true,
         apiKey: 'config-test-key',
@@ -43,6 +47,20 @@ try {
     assert.strictEqual(openRouter.negotiationEnabled, undefined);
     assert.strictEqual(openRouter.hotBotGlobalMaxInFlight, undefined);
 
+    options.default.AI = {
+        enabled: true,
+        apiUrl: 'http://127.0.0.1:1234/v1/chat/completions',
+        apiKey: '',
+        model: 'local-model'
+    };
+    const local = OpenRouterGateway.config();
+    assert.strictEqual(local.provider, 'openai-compatible');
+    assert.strictEqual(local.apiUrl, 'http://127.0.0.1:1234/v1/chat/completions');
+    assert.strictEqual(local.model, 'local-model');
+    assert.strictEqual(local.reasoningEffort, 'off', 'custom providers should disable optional thinking by default');
+    assert.strictEqual(local.partyRouterModel, 'local-model', 'a custom provider should reuse its model for party routing by default');
+    assert.strictEqual(OpenRouterGateway.isConfigured(local), true, 'local OpenAI-compatible endpoints may omit an API key');
+
     options.default.Langfuse = {
         enabled: true,
         envFile: '',
@@ -64,5 +82,6 @@ try {
     console.log('AI config surface checks passed');
 } finally {
     options.default.OpenRouter = originalOpenRouter;
+    options.default.AI = originalAI;
     options.default.Langfuse = originalLangfuse;
 }

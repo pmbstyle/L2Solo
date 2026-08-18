@@ -15,6 +15,14 @@ const DEFAULTS = {
     schedulerPartyBudgetMs: 75,
     schedulerIdleMaxResolvesPerTick: 100,
     schedulerPlayerMaxResolvesPerTick: 12,
+    // Goal metadata is repaired in short cooperative slices. Keep the
+    // player pass bounded, but let a restart backlog converge in minutes
+    // instead of leaving thousands of due rows stale for hours.
+    goalMetadataReconcileIntervalMs: 10000,
+    goalMetadataIdleBatchSize: 32,
+    goalMetadataPlayerBatchSize: 16,
+    goalMetadataIdleBudgetMs: 1000,
+    goalMetadataPlayerBudgetMs: 200,
     coldOwnerLeaseMs: 30000,
     coldOwnerResolveTimeoutMs: 10000,
     coldOwnerRenewalIntervalMs: 5000,
@@ -116,6 +124,12 @@ const DEFAULTS = {
     partyRequirementRefreshMs: 5 * 60 * 1000,
     partyRequirementRefreshBatchSize: 2,
     partySessionJitterMs: 5 * 60 * 1000,
+    // Dissolved party rows are operational history, not durable state. Keep
+    // a short diagnostic window without allowing every rotation to grow the
+    // population database forever.
+    partyHistoryRetentionMs: 24 * 60 * 60 * 1000,
+    partyHistoryCleanupBatchSize: 1000,
+    partyHistoryCleanupIntervalMs: 60 * 60 * 1000,
     cooldownGraceMs: 120000,
     cooldownBatchSize: 20,
     cooldownRadius: 11000,
@@ -186,6 +200,11 @@ const ENV_KEYS = {
     schedulerPartyBudgetMs: 'BOT_POPULATION_SCHEDULER_PARTY_BUDGET_MS',
     schedulerIdleMaxResolvesPerTick: 'BOT_POPULATION_SCHEDULER_IDLE_MAX_RESOLVES',
     schedulerPlayerMaxResolvesPerTick: 'BOT_POPULATION_SCHEDULER_PLAYER_MAX_RESOLVES',
+    goalMetadataReconcileIntervalMs: 'BOT_POPULATION_GOAL_METADATA_INTERVAL_MS',
+    goalMetadataIdleBatchSize: 'BOT_POPULATION_GOAL_METADATA_IDLE_BATCH',
+    goalMetadataPlayerBatchSize: 'BOT_POPULATION_GOAL_METADATA_PLAYER_BATCH',
+    goalMetadataIdleBudgetMs: 'BOT_POPULATION_GOAL_METADATA_IDLE_BUDGET_MS',
+    goalMetadataPlayerBudgetMs: 'BOT_POPULATION_GOAL_METADATA_PLAYER_BUDGET_MS',
     coldOwnerLeaseMs: 'BOT_POPULATION_COLD_OWNER_LEASE_MS',
     coldOwnerResolveTimeoutMs: 'BOT_POPULATION_COLD_OWNER_TIMEOUT_MS',
     coldOwnerRenewalIntervalMs: 'BOT_POPULATION_COLD_OWNER_RENEWAL_MS',
@@ -219,6 +238,9 @@ const ENV_KEYS = {
     partyRecruitmentChatEnabled: 'BOT_PARTY_RECRUITMENT_CHAT_ENABLED',
     partyRecruitmentChatIntervalMs: 'BOT_PARTY_RECRUITMENT_CHAT_INTERVAL_MS',
     partyMarketBreakMinSessionMs: 'BOT_PARTY_MARKET_BREAK_MIN_SESSION_MS',
+    partyHistoryRetentionMs: 'BOT_PARTY_HISTORY_RETENTION_MS',
+    partyHistoryCleanupBatchSize: 'BOT_PARTY_HISTORY_CLEANUP_BATCH_SIZE',
+    partyHistoryCleanupIntervalMs: 'BOT_PARTY_HISTORY_CLEANUP_INTERVAL_MS',
     devLogPlayerChat: 'BOT_DEV_LOG_PLAYER_CHAT',
     debug: 'BOT_POPULATION_DEBUG'
 };

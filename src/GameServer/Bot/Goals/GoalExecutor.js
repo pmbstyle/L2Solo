@@ -19,9 +19,10 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
         && ['market_search_for_weapon', 'market_search_for_gear'].includes(goal.plan?.expectedBenefit);
     const buyingMaterial = goal.type === 'buy_craft_material' && goal.plan?.expectedBenefit === 'market_buy_craft_material';
     const sellingInventory = goal.type === 'sell_inventory' && goal.plan?.expectedBenefit === 'market_sale_inventory';
+    const forcedInventoryCleanup = sellingInventory && !!(goal.target?.cleanupReason || goal.plan?.cleanupReason);
     if (!buyingGear && !buyingMaterial && !sellingInventory) return null;
     if ((buyingGear || buyingMaterial) && Number(state.stats?.marketRetryAfter || 0) > timestamp) return null;
-    if (sellingInventory && Number(state.stats?.marketSellRetryAfter || 0) > timestamp) return null;
+    if (sellingInventory && !forcedInventoryCleanup && Number(state.stats?.marketSellRetryAfter || 0) > timestamp) return null;
 
     const town = sellingInventory
         ? marketTown(MarketTownPolicy.targetTownForSale(state))
@@ -47,6 +48,8 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
                 townName: town.name,
                 viaTown: nearestTown.name,
                 method: 'soe_gatekeeper',
+                arrivalActivity: 'shopping',
+                arrivalEvent: 'arrived_town',
                 startedAt: timestamp,
                 arrivalAt: timestamp + MARKET_TRAVEL_MS
             }

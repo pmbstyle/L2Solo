@@ -245,6 +245,31 @@ function evaluate(state = {}, options = {}) {
         });
     }
 
+    const inventoryCleanup = ItemDisposition.inventoryCleanupNeed(state, { now: timestamp });
+    if (inventoryCleanup) {
+        candidates.push({
+            type: 'sell_inventory',
+            // An over-capacity bag is an actionable safety problem: it blocks
+            // native trades and keeps every later drop in the same failure
+            // loop.  Keep recovery/death above it, but outrank ordinary
+            // progression and adena gathering.
+            priority: 96,
+            target: {
+                itemCount: inventoryCleanup.slots,
+                npcOnlySlots: inventoryCleanup.npcOnlySlots,
+                cleanupReason: inventoryCleanup.reason
+            },
+            plan: {
+                kind: 'market_sell',
+                expectedBenefit: 'market_sale_inventory',
+                risk: 0,
+                cleanupReason: inventoryCleanup.reason
+            },
+            blockers: [],
+            nextReviewAt: timestamp + 10 * 60 * 1000
+        });
+    }
+
     const sale = ItemDisposition.saleSummary(state);
     const wealthSale = PersonaEconomicPolicy.wealthSaleOpportunity(state, sale);
     if (sale.itemCount >= 3 || sale.marketValue >= 1000 || wealthSale) {

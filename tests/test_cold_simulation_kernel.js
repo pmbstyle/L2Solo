@@ -6,7 +6,8 @@ const {
     beginRouteTravelState,
     deterministicRandom,
     finishPartyRouteTravelState,
-    lifecycleKind
+    lifecycleKind,
+    partyTransitionProposals
 } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 
 function state(characterId = 1, overrides = {}) {
@@ -79,6 +80,29 @@ function state(characterId = 1, overrides = {}) {
     const first = deterministicRandom(state());
     const second = deterministicRandom(state());
     assert.deepStrictEqual([first(), first(), first()], [second(), second(), second()], 'resolver RNG must replay deterministically');
+
+    const staleLeaderRun = {
+        party: { partyId: 'bgp_stale_leader', leaderId: 99, memberIds: [99, 1, 2] },
+        members: [state(1), state(2)],
+        grants: new Map([
+            [1, { leaseId: 'stale-1', revision: 4 }],
+            [2, { leaseId: 'stale-2', revision: 4 }]
+        ])
+    };
+    const staleLeaderProposals = partyTransitionProposals(
+        staleLeaderRun,
+        staleLeaderRun.members,
+        { ...staleLeaderRun.party, status: 'dissolved' },
+        5000,
+        { type: 'party_invalid_size' },
+        'party_invalid_size'
+    );
+    assert.strictEqual(staleLeaderProposals.filter((proposal) => proposal.partyResolution).length, 1,
+        'an invalid party must still persist its resolution when the declared leader is no longer attached');
+    assert.strictEqual(staleLeaderProposals[0].partyResolution.partyId, staleLeaderRun.party.partyId);
+    assert.deepStrictEqual(staleLeaderProposals[0].result.events, [
+        { type: 'party_invalid_size', characterId: 1 }
+    ], 'the fallback attached member must receive the party lifecycle event');
 
     kernel.onCommitAck({ results: [{
         ok: true,

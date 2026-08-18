@@ -8,6 +8,9 @@ const GameRequest = invoke('GameServer/Network/Request');
 const ServerResponse = invoke('GameServer/Network/Response');
 const ReceivePacket = invoke('Packet/Receive');
 const World = invoke('GameServer/World/World');
+const DataCache = invoke('GameServer/DataCache');
+
+DataCache.init();
 
 function fakePaperdoll() {
     return Array.from({ length: 16 }, (_, slot) => ({
@@ -363,6 +366,18 @@ assert.strictEqual(privateBuyList.readInt32LE(1), actor.fetchId(), 'C4 PrivateSt
 assert.strictEqual(privateBuyList.readInt32LE(9), 1, 'C4 PrivateStoreListBuy should include the wanted row count');
 assert.strictEqual(privateBuyList.readInt32LE(13), 70001, 'C4 PrivateStoreListBuy should use the seller inventory object id');
 assert.strictEqual(privateBuyList.readInt32LE(39), 62, 'C4 PrivateStoreListBuy should expose the buyer offer price');
+
+const corruptedReferencePriceItem = {
+    ...wantedItem,
+    fetchPrice: () => 7857032704
+};
+const safePrivateBuyList = ServerResponse.privateStoreListBuy(actor, [{ item: corruptedReferencePriceItem, amount: 12, price: 62 }], 5000);
+assert.strictEqual(safePrivateBuyList.readInt32LE(27), 100, 'C4 PrivateStoreListBuy should use the authoritative template reference price');
+assert.strictEqual(safePrivateBuyList.readInt32LE(39), 62, 'C4 PrivateStoreListBuy should preserve the buyer offer after repairing a corrupt reference price');
+
+const invalidOfferList = ServerResponse.privateStoreListBuy(actor, [{ item: wantedItem, amount: 12, price: 7857032704 }], 7857032704);
+assert.strictEqual(invalidOfferList.readUInt32LE(5), 0xffffffff, 'C4 PrivateStoreListBuy should saturate an oversized adena display value');
+assert.strictEqual(invalidOfferList.readInt32LE(9), 0, 'C4 PrivateStoreListBuy should omit an offer that cannot be represented by a C4 D field');
 
 const originalConsumeMerchant = GameRequest.sell.consumeMerchant;
 let capturedPrivateSell = null;

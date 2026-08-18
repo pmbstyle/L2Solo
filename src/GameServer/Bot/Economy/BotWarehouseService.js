@@ -24,10 +24,44 @@ function itemData(item) {
     };
 }
 
-async function depositActor(actor, state = null) {
+async function learnActorRecipes(actor, state = null, session = null) {
+    const backpack = actor?.backpack;
+    if (!session || !backpack?.fetchItems || !backpack.deleteItem || !backpack.registerRecipe || !backpack.hasRecipe) return [];
+    const craftLevel = Number(backpack.fetchDwarvenCraftLevel?.(actor) || 0);
+    if (craftLevel <= 0) return [];
+
+    const craftState = {
+        ...(state || {}),
+        classId: Number(actor.fetchClassId?.() || state?.classId || state?.stats?.classId || 0),
+        level: Number(actor.fetchLevel?.() || state?.level || 1),
+        craftLevel,
+        stats: { ...(state?.stats || {}), dwarvenCraftLevel: craftLevel }
+    };
+    const learned = [];
+    for (const source of backpack.fetchItems().slice()) {
+        const item = itemData(source);
+        const info = ItemDisposition.recipeInfo(item);
+        if (!info || backpack.hasRecipe(actor, info.recipe.recipeId)) continue;
+        const decision = ItemDisposition.recipeDisposition(craftState, item, []);
+        if (decision?.action !== 'learn') continue;
+        if (actor.isDead?.()) continue;
+
+        const registered = await new Promise((resolve) => {
+            backpack.deleteItem(session, source.fetchId?.() || source.id, 1, () => {
+                backpack.registerRecipe(actor, info.recipe);
+                resolve(true);
+            });
+        });
+        if (registered) learned.push({ selfId: item.selfId, recipeId: info.recipe.recipeId, name: item.name });
+    }
+    return learned;
+}
+
+async function depositActor(actor, state = null, session = null) {
     const backpack = actor?.backpack;
     if (!backpack || !actor?.fetchId) return { count: 0, items: [] };
 
+    const learned = await learnActorRecipes(actor, state, session);
     const stored = [];
     for (const source of ItemDisposition.unreservedActorItems(state, backpack.fetchItems().slice())) {
         const item = itemData(source);
@@ -37,7 +71,7 @@ async function depositActor(actor, state = null) {
         else source.setAmount(result.inventoryAmount);
         stored.push({ selfId: item.selfId, name: item.name, amount: item.amount });
     }
-    return { count: stored.reduce((sum, item) => sum + item.amount, 0), items: stored };
+    return { count: stored.reduce((sum, item) => sum + item.amount, 0), items: stored, learned };
 }
 
 async function depositCold(state) {
@@ -286,6 +320,7 @@ async function releaseColdBatch(limit = 8, deadlineAt = Infinity) {
 module.exports = {
     depositActor,
     depositCold,
+    learnActorRecipes,
     itemData,
     craftRequests,
     marketRequests,

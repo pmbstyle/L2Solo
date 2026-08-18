@@ -31,6 +31,7 @@ function response(body) {
 
 async function main() {
     const originalConfig = options.default.OpenRouter;
+    const originalAI = options.default.AI;
     const originalWorldUser = World.user;
     const originalCompactStatus = BotBrainContext.compactStatus;
     const originalWithObservation = LangfuseTracing.withObservation;
@@ -40,6 +41,8 @@ async function main() {
     const observations = [];
 
     try {
+        // Keep this OpenRouter fixture independent from developer-local [AI].
+        options.default.AI = undefined;
         options.default.OpenRouter = {
             ...originalConfig,
             enabled: true,
@@ -147,6 +150,7 @@ async function main() {
         }
     } finally {
         options.default.OpenRouter = originalConfig;
+        options.default.AI = originalAI;
         World.user = originalWorldUser;
         BotBrainContext.compactStatus = originalCompactStatus;
         LangfuseTracing.withObservation = originalWithObservation;

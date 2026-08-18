@@ -10,20 +10,62 @@ function describeMovedItems(items) {
     return items.map((item) => `${item.count} ${item.name}`).join(', ');
 }
 
+function sessionName(session) {
+    return session?.actor?.fetchName?.() || session?.accountId || 'unknown';
+}
+
 async function tradeDone(session, buffer) {
     const packet = new ReceivePacket(buffer);
+    const playerName = sessionName(session);
 
     packet.readD(); // 1 = confirmed, 0 = cancelled
 
     if (packet.data[0] !== 1) {
+        console.info("TradeDone :: %s cancelled native bot trade", playerName);
         BotTradeService.cancel(session);
         session.dataSendToMe(ServerResponse.tradeDone(false));
         return;
     }
 
+    let tradeSummary = null;
     try {
+        const confirmation = BotTradeService.confirmPlayerTrade(session);
+        if (!confirmation.ok) {
+            utils.infoWarn('TradeDone', 'bot trade confirmation rejected player=%s reason=%s', playerName, confirmation.reason || 'unknown');
+            BotTradeService.cancel(session);
+            session.dataSendToMe(ServerResponse.actionFailed());
+            session.dataSendToMe(ServerResponse.tradeDone(false));
+            return;
+        }
+
+        tradeSummary = BotTradeService.activeTradeSummary(session);
+        console.info(
+            "TradeDone :: %s confirmed native bot trade id=%s bot=%s playerItems=%j botItems=%j",
+            playerName,
+            tradeSummary?.id || 'unknown',
+            confirmation.trade?.botSession?.actor?.fetchName?.() || 'unknown',
+            tradeSummary?.playerItems || [],
+            tradeSummary?.botItems || []
+        );
         const result = await BotTradeService.commit(session);
         if (!result.ok) {
+            utils.infoWarn(
+                'TradeDone',
+                'bot trade commit rejected player=%s trade=%s reason=%s error=%s playerItems=%j botItems=%j',
+                playerName,
+                tradeSummary?.id || 'unknown',
+                result.reason || 'unknown',
+                result.error?.message || '',
+                tradeSummary?.playerItems || [],
+                tradeSummary?.botItems || []
+            );
+            if (result.reason === 'inventory_capacity' && confirmation.trade?.botSession) {
+                BotManager.botTell(
+                    confirmation.trade.botSession,
+                    session,
+                    "I can't accept this right now — my inventory is full."
+                );
+            }
             BotTradeService.cancel(session);
             session.dataSendToMe(ServerResponse.actionFailed());
             session.dataSendToMe(ServerResponse.tradeDone(false));
@@ -73,7 +115,7 @@ async function tradeDone(session, buffer) {
         session.dataSendToMe(ServerResponse.itemsList(session.actor.backpack.fetchItems()));
         session.dataSendToMe(ServerResponse.tradeDone(true));
     } catch (err) {
-        utils.infoWarn('TradeDone', 'bot trade failed: %s', err.message || err);
+        utils.infoWarn('TradeDone', 'bot trade exception player=%s trade=%s: %s', playerName, tradeSummary?.id || 'unknown', err.stack || err.message || err);
         BotTradeService.cancel(session);
         session.dataSendToMe(ServerResponse.actionFailed());
         session.dataSendToMe(ServerResponse.tradeDone(false));

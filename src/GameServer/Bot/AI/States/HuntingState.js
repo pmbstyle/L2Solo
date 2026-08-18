@@ -461,7 +461,10 @@ module.exports = {
         // 4. HP/MP resting check
         const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
         const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
-        if (hpRatio < 0.35 || mpRatio < 0.20) {
+        // Match RestingState's role-aware wake policy.  Melee/dps bots are
+        // allowed to keep hunting with low MP; otherwise they immediately
+        // wake again at full HP and oscillate between hunting and resting.
+        if (hpRatio < 0.35 || (BotRoles.shouldRestForMana(bot) && mpRatio < 0.20)) {
             if (session.currentTargetId) clearTarget(session, bot, session.currentTargetId);
             session.lastTargetEvaluation = undefined;
             session.lastCombatDecision = undefined;

@@ -23,6 +23,7 @@ const MODEL_PROFILES = Object.freeze({
 const DEFAULTS = Object.freeze({
     enabled: false,
     apiKey: '',
+    apiUrl: OPENROUTER_URL,
     model: LUNA_MODEL,
     partyRouterModel: LUNA_MODEL,
     temperature: 0.35,
@@ -74,16 +75,53 @@ function reasoningEffort(value, fallback = DEFAULTS.reasoningEffort) {
     return REASONING_EFFORTS.has(normalized) ? normalized : fallback;
 }
 
+function providerForUrl(value) {
+    const url = String(value || '').trim().replace(/\/+$/, '');
+    const openRouterUrl = OPENROUTER_URL.replace(/\/+$/, '');
+    return url && url === openRouterUrl ? 'openrouter' : 'openai-compatible';
+}
+
+function hasSection(value) {
+    return value && typeof value === 'object' && !Array.isArray(value);
+}
+
 function config(overrides = {}) {
-    const optn = options.default.OpenRouter || {};
+    const customOptions = hasSection(options.default.AI) ? options.default.AI : null;
+    const optn = customOptions || options.default.OpenRouter || {};
+    const legacyConfig = !customOptions;
+    const apiUrl = String(
+        process.env.L2NODE_AI_API_URL ||
+        (legacyConfig ? process.env.OPENROUTER_API_URL : '') ||
+        optn.apiUrl ||
+        (legacyConfig ? OPENROUTER_URL : '') ||
+        ''
+    ).trim();
+    const apiKey = String(
+        (legacyConfig ? process.env.OPENROUTER_API_KEY : process.env.L2NODE_AI_API_KEY) ||
+        optn.apiKey ||
+        DEFAULTS.apiKey
+    );
+    const model = (legacyConfig ? process.env.OPENROUTER_MODEL : process.env.L2NODE_AI_MODEL) ||
+        optn.model ||
+        DEFAULTS.model;
     const source = {
         ...DEFAULTS,
         enabled: bool(optn.enabled, DEFAULTS.enabled),
-        apiKey: process.env.OPENROUTER_API_KEY || optn.apiKey || DEFAULTS.apiKey,
-        model: process.env.OPENROUTER_MODEL || optn.model || DEFAULTS.model,
-        partyRouterModel: process.env.OPENROUTER_PARTY_ROUTER_MODEL || optn.partyRouterModel || DEFAULTS.partyRouterModel,
+        apiKey,
+        apiUrl,
+        model,
+        partyRouterModel: (legacyConfig
+            ? process.env.OPENROUTER_PARTY_ROUTER_MODEL
+            : process.env.L2NODE_AI_PARTY_ROUTER_MODEL) || optn.partyRouterModel ||
+            (legacyConfig ? DEFAULTS.partyRouterModel : model),
         temperature: num(optn.temperature, DEFAULTS.temperature),
-        reasoningEffort: reasoningEffort(optn.reasoningEffort),
+        // Local OpenAI-compatible servers commonly expose thinking models.
+        // Keep their default request cheap and bounded, while preserving the
+        // existing reasoning default for the legacy OpenRouter profile.
+        reasoningEffort: reasoningEffort(
+            optn.reasoningEffort,
+            legacyConfig ? DEFAULTS.reasoningEffort : 'off'
+        ),
         maxConcurrentRequests: Math.max(1, Math.floor(num(
             optn.maxConcurrentRequests,
             DEFAULTS.maxConcurrentRequests
@@ -96,6 +134,10 @@ function config(overrides = {}) {
         ...overrides,
         enabled: bool(overrides.enabled, source.enabled),
         apiKey: overrides.apiKey !== undefined ? String(overrides.apiKey || '') : source.apiKey,
+        apiUrl: String(overrides.apiUrl !== undefined ? overrides.apiUrl || '' : source.apiUrl || '').trim(),
+        provider: overrides.provider || providerForUrl(
+            overrides.apiUrl !== undefined ? overrides.apiUrl : source.apiUrl
+        ),
         model: overrides.model || source.model,
         partyRouterModel: overrides.partyRouterModel !== undefined
             ? String(overrides.partyRouterModel || '')
@@ -133,11 +175,13 @@ function modelProfile(model) {
     return MODEL_PROFILES[String(model || '').trim()] || null;
 }
 
-function supportsTemperature(model) {
+function supportsTemperature(model, provider = 'openrouter') {
+    if (provider === 'openai-compatible') return true;
     return modelProfile(model)?.supportsTemperature !== false;
 }
 
-function completionLimitParam(model) {
+function completionLimitParam(model, provider = 'openrouter') {
+    if (provider === 'openai-compatible') return 'max_tokens';
     return modelProfile(model)?.completionLimitParam || 'max_completion_tokens';
 }
 
@@ -197,6 +241,11 @@ function providerOptions(model, extra = {}) {
         ...extra,
         require_parameters: true
     };
+}
+
+function isConfigured(cfg = config()) {
+    if (cfg?.enabled !== true || !String(cfg.apiUrl || '').trim() || !String(cfg.model || '').trim()) return false;
+    return cfg.provider !== 'openrouter' || !!String(cfg.apiKey || '').trim();
 }
 
 function circuitState(key = 'default') {
@@ -441,9 +490,14 @@ async function requestUntraced(spec = {}) {
         circuitKey: String(spec.circuitKey || 'default').slice(0, 64)
     };
     const startedAt = Date.now();
+    const requestUrl = String(requestData.url || cfg.apiUrl || '').trim();
+    const requestProvider = requestData.url ? providerForUrl(requestUrl) : cfg.provider;
 
     if (!cfg.enabled) return complete(requestData, cfg, 'disabled', startedAt);
-    if (!cfg.apiKey) return complete(requestData, cfg, 'missing_api_key', startedAt);
+    if (!requestUrl) return complete(requestData, cfg, 'provider_error', startedAt);
+    if (requestProvider === 'openrouter' && !cfg.apiKey) {
+        return complete(requestData, cfg, 'missing_api_key', startedAt);
+    }
     if (requestData.circuitBreaker !== false && circuitIsOpen(cfg, requestData.circuitKey)) {
         return complete(requestData, cfg, 'circuit_open', startedAt);
     }
@@ -459,16 +513,26 @@ async function requestUntraced(spec = {}) {
         model: cfg.model,
         messages: Array.isArray(requestData.messages) ? requestData.messages : []
     };
-    if (supportsTemperature(cfg.model)) body.temperature = cfg.temperature;
+    if (supportsTemperature(cfg.model, requestProvider)) body.temperature = cfg.temperature;
 
     const maxCompletionTokens = completionLimit(cfg, requestData);
-    if (maxCompletionTokens !== null) body[completionLimitParam(cfg.model)] = maxCompletionTokens;
+    if (maxCompletionTokens !== null) body[completionLimitParam(cfg.model, requestProvider)] = maxCompletionTokens;
 
-    if (cfg.reasoningEffort !== 'off') {
-        body.reasoning = {
-            effort: cfg.reasoningEffort,
-            exclude: true
-        };
+    if (requestProvider === 'openrouter') {
+        if (cfg.reasoningEffort !== 'off') {
+            body.reasoning = {
+                effort: cfg.reasoningEffort,
+                exclude: true
+            };
+        }
+    } else {
+        // `reasoning_effort` is the portable Chat Completions spelling used by
+        // local servers such as LM Studio and Ollama. Map our disabled value
+        // to the API's explicit `none`, so thinking models do not consume the
+        // whole bounded completion budget before producing JSON.
+        body.reasoning_effort = cfg.reasoningEffort === 'off'
+            ? 'none'
+            : cfg.reasoningEffort;
     }
 
     const effectiveResponseSchema = responseSchemaForModel(requestData.responseSchema, cfg.model);
@@ -483,21 +547,28 @@ async function requestUntraced(spec = {}) {
         };
     }
 
-    if (requestData.sessionId) body.session_id = requestData.sessionId;
-    body.usage = { include: true };
+    if (requestProvider === 'openrouter') {
+        if (requestData.sessionId) body.session_id = requestData.sessionId;
+        body.usage = { include: true };
+    }
 
-    const provider = providerOptions(cfg.model, requestData.provider);
-    if (provider) body.provider = provider;
+    if (requestProvider === 'openrouter') {
+        const provider = providerOptions(cfg.model, requestData.provider);
+        if (provider) body.provider = provider;
+    }
 
     try {
-        const response = await fetcher(requestData.url || OPENROUTER_URL, {
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+        if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
+        if (requestProvider === 'openrouter') {
+            headers['HTTP-Referer'] = requestData.referer || 'http://localhost';
+            headers['X-OpenRouter-Title'] = requestData.title || 'L2Node Bots';
+        }
+        const response = await fetcher(requestUrl, {
             method: 'POST',
-            headers: {
-                Authorization: `Bearer ${cfg.apiKey}`,
-                'Content-Type': 'application/json',
-                'HTTP-Referer': requestData.referer || 'http://localhost',
-                'X-OpenRouter-Title': requestData.title || 'L2Node Bots'
-            },
+            headers,
             body: JSON.stringify(body),
             signal: controller.signal
         });
@@ -628,18 +699,19 @@ async function request(spec = {}) {
                     ...spec,
                     interactive: spec.interactive === true
                 });
-                const modelParameters = {
-                    reasoning: {
-                        enabled: effectiveConfig.reasoningEffort !== 'off',
-                        effort: effectiveConfig.reasoningEffort,
-                        exclude: true
-                    }
-                };
-                if (supportsTemperature(effectiveConfig.model)) {
+                const modelParameters = {};
+                if (supportsTemperature(effectiveConfig.model, effectiveConfig.provider)) {
                     modelParameters.temperature = effectiveConfig.temperature;
                 }
                 if (effectiveMaxTokens !== null) {
-                    modelParameters[completionLimitParam(effectiveConfig.model)] = effectiveMaxTokens;
+                    modelParameters[completionLimitParam(effectiveConfig.model, effectiveConfig.provider)] = effectiveMaxTokens;
+                }
+                if (effectiveConfig.provider !== 'openai-compatible') {
+                    modelParameters.reasoning = {
+                        enabled: effectiveConfig.reasoningEffort !== 'off',
+                        effort: effectiveConfig.reasoningEffort,
+                        exclude: true
+                    };
                 }
                 observation.update({
                     model: result.telemetry.model || null,
@@ -681,6 +753,7 @@ const OpenRouterGateway = {
     OPENROUTER_URL,
     DEFAULTS,
     config,
+    isConfigured,
     request,
 
     setTransport(nextTransport) {

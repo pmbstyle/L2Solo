@@ -74,6 +74,8 @@ class ColdSimulationCoordinator {
         this.reconcileTimer = null;
         this.recoveryTimer = null;
         this.renewalTimer = null;
+        this.historyCleanupTimer = null;
+        this.historyCleanupInFlight = null;
         this.seen = new Set();
         this.seenOrder = [];
         this.waiters = new Map();
@@ -147,8 +149,19 @@ class ColdSimulationCoordinator {
         this.population = population || this.population;
         this.started = true;
         this.stopping = false;
-        return Promise.all([LifeState.init(), BackgroundPartyState.init()]).then(() => {
-            if (this.stopping) return false;
+        return Promise.all([LifeState.init(), BackgroundPartyState.init()]).then(async ([lifeReady, partyReady]) => {
+            if (this.stopping) {
+                this.started = false;
+                return false;
+            }
+            if (!lifeReady || !partyReady) {
+                this.started = false;
+                this.recordError(new Error(`cold_population_startup_unavailable:life=${lifeReady ? 'ready' : 'failed'}:party=${partyReady ? 'ready' : 'failed'}`));
+                return false;
+            }
+            // LifeState startup has already released members of historical
+            // dissolved parties. Only then is it safe to trim the rows.
+            await BackgroundPartyState.purgeHistory();
             this.queue.start();
             this.startWorker();
             this.watchdogTimer = setInterval(() => this.watchdog(), 1000);
@@ -167,10 +180,19 @@ class ColdSimulationCoordinator {
                     if (active.length) this.postCollections('lease_renewal', { renewals: active });
                 }).catch((error) => this.recordError(error));
             }, Math.max(1000, Number(Config.coldOwnerRenewalIntervalMs) || 5000));
+            this.historyCleanupTimer = setInterval(() => {
+                if (this.stopping || this.historyCleanupInFlight) return;
+                this.historyCleanupInFlight = BackgroundPartyState.purgeHistory()
+                    .catch((error) => this.recordError(error))
+                    .finally(() => {
+                        this.historyCleanupInFlight = null;
+                    });
+            }, Math.max(30000, Number(Config.partyHistoryCleanupIntervalMs) || 60 * 60 * 1000));
             this.watchdogTimer.unref?.();
             this.reconcileTimer.unref?.();
             this.recoveryTimer.unref?.();
             this.renewalTimer.unref?.();
+            this.historyCleanupTimer.unref?.();
             return true;
         }).catch((error) => {
             this.started = false;
@@ -567,6 +589,7 @@ class ColdSimulationCoordinator {
 
     async sendFullSnapshot() {
         const states = LifeState.allStates(Math.max(1, Number(Config.maxPlayingPopulation) + 300 || 2000));
+        await this.reconcileOrphanedBackgroundParties();
         const compactPartyMemberIds = new Set(states.map((state) => Number(state.characterId || 0)).filter(Boolean));
         const index = this.contextIndex({ compactPartyMemberIds });
         const pageSize = this.snapshotQueue.pageSize;
@@ -603,6 +626,20 @@ class ColdSimulationCoordinator {
         if (!pendingPage) pendingPage = [];
         if (!await emit(pendingPage, true)) return { ok: false, rowsSent, pagesSent };
         return { ok: true, rowsSent, pagesSent };
+    }
+
+    async reconcileOrphanedBackgroundParties() {
+        const orphaned = BackgroundPartyState.active().filter((party) => {
+            const memberIds = (party.memberIds || []).map((id) => Number(id)).filter(Boolean);
+            return !memberIds.length || memberIds.every((id) => !LifeState.cachedState(id));
+        });
+        for (const party of orphaned) {
+            const dissolved = await BackgroundPartyState.setStatus(party.partyId, 'dissolved');
+            if (dissolved) {
+                console.info('ColdWorker :: dissolved orphaned background party %s declaredMembers=%d', party.partyId, party.memberIds?.length || 0);
+            }
+        }
+        return orphaned;
     }
 
     startSnapshotJob(mode, work, pressure = {}) {
@@ -793,9 +830,8 @@ class ColdSimulationCoordinator {
     }
 
     async prepareProposal(proposal) {
-        if (proposal?.nextState) return proposal.nextState;
         const state = LifeState.cachedState(proposal.characterId) || proposal.baseState;
-        if (!state || !proposal.result) return null;
+        if (!state) return null;
         const claimedState = {
             ...state,
             simulation: {
@@ -805,9 +841,26 @@ class ColdSimulationCoordinator {
                 leaseUntil: proposal.token.leaseUntil
             }
         };
+        const timestamp = Number(proposal.enqueuedAt || Date.now());
+        const cleanupState = this.population?.prepareInventoryCleanupProposal?.(
+            claimedState,
+            timestamp,
+            claimedState.simulation
+        );
+        if (cleanupState) {
+            proposal.inventoryCleanupForced = true;
+            proposal.result = {
+                events: [],
+                debug: { inventoryCleanup: true }
+            };
+            delete cleanupState.cleanup;
+            return cleanupState;
+        }
+        if (proposal?.nextState) return proposal.nextState;
+        if (!proposal.result) return null;
         return LifeState.prepareResolve(claimedState, proposal.result, {
             persist: false,
-            timestamp: Number(proposal.enqueuedAt || Date.now())
+            timestamp
         });
     }
 
@@ -986,11 +1039,13 @@ class ColdSimulationCoordinator {
         if (this.reconcileTimer) clearInterval(this.reconcileTimer);
         if (this.recoveryTimer) clearInterval(this.recoveryTimer);
         if (this.renewalTimer) clearInterval(this.renewalTimer);
+        if (this.historyCleanupTimer) clearInterval(this.historyCleanupTimer);
         if (this.restartTimer) clearTimeout(this.restartTimer);
         this.watchdogTimer = null;
         this.reconcileTimer = null;
         this.recoveryTimer = null;
         this.renewalTimer = null;
+        this.historyCleanupTimer = null;
         this.restartTimer = null;
         this.pauseReasons.clear();
         await Promise.race([this.snapshotInFlight || Promise.resolve(), wait(10000)]).catch(() => null);
@@ -1007,6 +1062,8 @@ class ColdSimulationCoordinator {
         }
         const queue = await this.queue.drain(10000);
         await Promise.race([this.commandTail.catch(() => null), wait(10000)]);
+        await Promise.race([this.historyCleanupInFlight || Promise.resolve(), wait(10000)]).catch(() => null);
+        this.historyCleanupInFlight = null;
         if (this.worker) await this.worker.terminate().catch(() => null);
         this.worker = null;
         await ColdSimulationOwner.recoverStartupLeases().catch(() => null);
