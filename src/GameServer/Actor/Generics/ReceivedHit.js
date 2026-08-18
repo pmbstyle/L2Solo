@@ -30,8 +30,12 @@ function wakeBotOnDamage(victimSession, attacker) {
     }
 }
 
-function shouldDamageCp(session, actor) {
-    const attacker = session?.actor;
+function damageSource(session, options = {}) {
+    return options.source ?? session?.actor;
+}
+
+function shouldDamageCp(session, actor, source) {
+    const attacker = source ?? session?.actor;
     return !!(
         attacker &&
         attacker !== actor &&
@@ -41,9 +45,9 @@ function shouldDamageCp(session, actor) {
     );
 }
 
-function applyCombatPointShield(session, actor, hit) {
+function applyCombatPointShield(session, actor, hit, source) {
     let damage = Math.max(0, Number(hit) || 0);
-    if (!shouldDamageCp(session, actor)) {
+    if (!shouldDamageCp(session, actor, source)) {
         return damage;
     }
 
@@ -78,8 +82,7 @@ function applyTransferPain(session, actor, hit) {
     return incoming - transferred;
 }
 
-function tauntAfterPkKill(session, victim) {
-    const attacker = session?.actor;
+function tauntAfterPkKill(session, victim, attacker = session?.actor) {
     if (!isBotSession(session) || !attacker || Number(attacker.fetchKarma?.() || 0) <= 0) return;
 
     const now = Date.now();
@@ -99,7 +102,8 @@ function receivedHit(session, actor, hit, options = {}) {
     const Generics = invoke(path.actor);
     const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
     const victimSession = actor?.session;
-    const hpDamage = applyCombatPointShield(session, actor, applyTransferPain(session, actor, hit));
+    const source = damageSource(session, options);
+    const hpDamage = applyCombatPointShield(session, actor, applyTransferPain(session, actor, hit), source);
 
     if (options.wakeSleep !== false) {
         EffectRestrictions.wakeOnDamage(actor, victimSession || session);
@@ -114,27 +118,28 @@ function receivedHit(session, actor, hit, options = {}) {
 
     // Bummer
     if (actor.fetchHp() <= 0) {
-        if (session.actor && session.actor !== actor && !session.actor.fetchKind) {
-            const attacker = session.actor;
+        if (source && source !== actor && !source.fetchKind) {
+            const attacker = source;
             const victim = actor;
+            const attackerSession = attacker.session || session;
             const Database = invoke('Database');
             const ServerResponse = invoke('GameServer/Network/Response');
 
             if (victim.fetchPvpFlag() === 1 || victim.fetchKarma() > 0) {
                 // Legitimate PvP or PK-hunting kill
                 attacker.setPvp(attacker.fetchPvp() + 1);
-                session.dataSendToMe(ServerResponse.userInfo(attacker));
-                session.dataSendToOthers(ServerResponse.charInfo(attacker), attacker);
-                session.dataSendToOthers(ServerResponse.relationChanged(attacker), attacker);
+                attackerSession.dataSendToMe(ServerResponse.userInfo(attacker));
+                attackerSession.dataSendToOthers(ServerResponse.charInfo(attacker), attacker);
+                attackerSession.dataSendToOthers(ServerResponse.relationChanged(attacker), attacker);
                 Database.updateCharacterPvpPkKarma(attacker.fetchId(), attacker.fetchPvp(), attacker.fetchPk(), attacker.fetchKarma());
             } else {
                 // PK kill (murdering an innocent white player/bot)
                 const karmaAward = Karma.pkKillKarma(attacker, victim);
                 attacker.setPk(attacker.fetchPk() + 1);
                 attacker.setKarma(attacker.fetchKarma() + karmaAward);
-                session.dataSendToMe(ServerResponse.userInfo(attacker));
-                session.dataSendToOthers(ServerResponse.charInfo(attacker), attacker);
-                session.dataSendToOthers(ServerResponse.relationChanged(attacker), attacker);
+                attackerSession.dataSendToMe(ServerResponse.userInfo(attacker));
+                attackerSession.dataSendToOthers(ServerResponse.charInfo(attacker), attacker);
+                attackerSession.dataSendToOthers(ServerResponse.relationChanged(attacker), attacker);
                 Database.updateCharacterPvpPkKarma(attacker.fetchId(), attacker.fetchPvp(), attacker.fetchPk(), attacker.fetchKarma());
             }
 
@@ -144,23 +149,23 @@ function receivedHit(session, actor, hit, options = {}) {
                 victim.session.dataSendToMe(ServerResponse.userInfo(victim));
                 victim.session.dataSendToOthers(ServerResponse.relationChanged(victim), victim);
             } else {
-                session.dataSendToOthers(ServerResponse.relationChanged(victim), victim);
+                attackerSession.dataSendToOthers(ServerResponse.relationChanged(victim), victim);
             }
-            session.dataSendToMe(ServerResponse.relationChanged(victim));
+            attackerSession.dataSendToMe(ServerResponse.relationChanged(victim));
 
             if (victim.session && victim.session.pvpFlagTimer) {
                 clearTimeout(victim.session.pvpFlagTimer);
                 victim.session.pvpFlagTimer = undefined;
             }
 
-            tauntAfterPkKill(session, victim);
+            tauntAfterPkKill(attackerSession, victim, attacker);
         }
 
         Generics.die(session, actor);
         return;
     }
 
-    wakeBotOnDamage(victimSession, session?.actor);
+    wakeBotOnDamage(victimSession, source);
     actor.automation.replenishVitals(actor);
     Generics.enterCombatState(session, actor);
 }

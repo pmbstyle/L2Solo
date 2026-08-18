@@ -154,6 +154,19 @@ assert.strictEqual(
     'an offline actor must not enter the NPC hate table'
 );
 
+const crossNpcTarget = {
+    fetchId: () => 900011,
+    fetchKind: () => 'Monster',
+    fetchIsSummon: () => false,
+    state: { fetchDead: () => false }
+};
+assert.strictEqual(
+    npc.addDamageHate(tankSession, crossNpcTarget, 100, 100),
+    false,
+    'an ordinary NPC must not enter another NPC hate table'
+);
+assert.strictEqual(npc.getHating(crossNpcTarget), 0, 'cross-NPC hate must not be retained for later retargeting');
+
 const originalFetchNpcsInRadius = World.fetchNpcsInRadius;
 const originalWorldNpc = World.npc;
 World.npc ||= {};

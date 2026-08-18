@@ -288,7 +288,7 @@ function applyManaHot(session, source, target, effect) {
 function applyDamage(session, source, target, damage) {
     if (session && source && target?.fetchId && source !== target) {
         if (target.fetchId() >= 2000000) {
-            invoke(path.actor).receivedHit(session, target, damage, { wakeSleep: true });
+            invoke(path.actor).receivedHit(session, target, damage, { wakeSleep: true, source });
         } else {
             // Lisvus keeps an attackable NPC asleep when it takes DOT damage.
             invoke(path.npc).receivedHit(session, source, target, damage, { wakeSleep: false });

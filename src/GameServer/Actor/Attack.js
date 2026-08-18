@@ -1124,7 +1124,7 @@ class Attack {
                     creature.session.incomingThreatId = actor.fetchId();
                     creature.session.incomingThreatAt = Date.now();
                 }
-                invoke(path.actor).receivedHit(session, creature, hit);
+                invoke(path.actor).receivedHit(session, creature, hit, { source: actor });
                 return;
             }
 
@@ -1145,7 +1145,7 @@ class Attack {
                 session.pvpFlagTimer = undefined;
             }, 15000); // 15 seconds flag duration
 
-            invoke(path.actor).receivedHit(session, creature, hit);
+            invoke(path.actor).receivedHit(session, creature, hit, { source: actor });
         }
         else {
             invoke(path.npc).receivedHit(session, actor, creature, hit);
@@ -1172,7 +1172,7 @@ class Attack {
         if (reflected <= 0) return;
 
         if (Number(actor.fetchId?.()) >= 2000000) {
-            invoke(path.actor).receivedHit(session, actor, reflected);
+            invoke(path.actor).receivedHit(session, actor, reflected, { source: creature });
         } else {
             invoke(path.npc).receivedHit(session, creature, actor, reflected);
         }

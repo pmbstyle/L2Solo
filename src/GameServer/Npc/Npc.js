@@ -83,6 +83,10 @@ class Npc extends NpcModel {
 
     isValidAggroTarget(actor) {
         if (!actor || Number(actor.fetchId?.()) <= 0) return false;
+        // NPC combat can target players and player-owned summons, but not
+        // another ordinary NPC. Keeping cross-NPC objects out of hate tables
+        // prevents aggro transfer from re-entering the player damage pipeline.
+        if (typeof actor.fetchKind === 'function' && actor.fetchIsSummon?.() !== true) return false;
         if (actor.state?.fetchDead?.() === true || actor.fakeDeath === true) return false;
 
         // A disconnected player can remain strongly referenced by the hate
@@ -761,7 +765,7 @@ class Npc extends NpcModel {
             actor.session.incomingThreatId = this.fetchId();
             actor.session.incomingThreatAt = Date.now();
         }
-        invoke(path.actor).receivedHit(session, actor, hit);
+        invoke(path.actor).receivedHit(session, actor, hit, { source: this });
     }
 
     broadcastVitals() {
