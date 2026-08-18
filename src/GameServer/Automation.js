@@ -60,11 +60,19 @@ class Automation extends SelectedModel {
     replenishVitalsTick(creature) {
         const maxHp = creature.fetchMaxHp();
         const maxMp = creature.fetchMaxMp();
+        const hasCp = typeof creature.fetchCp === 'function'
+            && typeof creature.fetchMaxCp === 'function'
+            && typeof creature.setCp === 'function';
+        const maxCp = hasCp ? creature.fetchMaxCp() : 0;
         const minHp = Math.min(creature.fetchHp() + this.fetchRevHpAmount(creature), maxHp);
         const minMp = Math.min(creature.fetchMp() + this.fetchRevMpAmount(creature), maxMp);
+        const minCp = hasCp
+            ? Math.min(creature.fetchCp() + this.fetchRevCpAmount(creature), maxCp)
+            : 0;
 
         creature.setHp(minHp);
         creature.setMp(minMp);
+        if (hasCp) creature.setCp(minCp);
 
         if (creature.fetchKind === undefined) {
             creature.statusUpdateVitals(creature);
@@ -73,11 +81,11 @@ class Automation extends SelectedModel {
             creature.broadcastVitals();
         }
 
-        if (minHp >= maxHp && minMp >= maxMp) {
+        if (minHp >= maxHp && minMp >= maxMp && (!hasCp || minCp >= maxCp)) {
             this.stopReplenish();
         }
 
-        return { hp: minHp, mp: minMp };
+        return { hp: minHp, mp: minMp, ...(hasCp ? { cp: minCp } : {}) };
     }
 
     fetchRevHpAmount(creature) {
@@ -93,6 +101,16 @@ class Automation extends SelectedModel {
         return Math.max(0, (
             (base * EffectStats.multiplier(creature, 'regMp'))
             + EffectStats.add(creature, 'regMpAdd')
+        ) * this.fetchRegenStateMultiplier(creature));
+    }
+
+    fetchRevCpAmount(creature) {
+        // C4 derives CP regeneration from the same level-adjusted base HP
+        // regeneration value as HP, then applies CON, movement, and regCp
+        // modifiers. CP has no separate base regeneration table.
+        const base = this.fetchPlayerRegenBase(creature, 'CON');
+        return Math.max(0, (
+            base * EffectStats.multiplier(creature, 'regCp')
         ) * this.fetchRegenStateMultiplier(creature));
     }
 
