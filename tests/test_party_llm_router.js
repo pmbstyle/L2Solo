@@ -16,11 +16,14 @@ function candidate(id, name, role = 'dps') {
 
 async function main() {
     const originalConfig = options.default.OpenRouter;
+    const originalAI = options.default.AI;
     const originalTransport = OpenRouterGateway.setTransport;
     const originalWithObservation = LangfuseTracing.withObservation;
     const observations = [];
     let captured = null;
     try {
+        // Keep this OpenRouter fixture independent from developer-local [AI].
+        options.default.AI = undefined;
         options.default.OpenRouter = {
             enabled: true,
             apiKey: 'party-router-test',
@@ -98,6 +101,7 @@ async function main() {
         assert.strictEqual(selfCorrected.route, 'clarify', 'self-described ambiguity must not become a silent none route');
     } finally {
         options.default.OpenRouter = originalConfig;
+        options.default.AI = originalAI;
         OpenRouterGateway.resetTransport();
         OpenRouterGateway.setTransport = originalTransport;
         LangfuseTracing.withObservation = originalWithObservation;

@@ -15,7 +15,9 @@ function response(body, status = 200) {
 const baseConfig = {
     enabled: true,
     apiKey: 'test-key',
+    apiUrl: OpenRouterGateway.OPENROUTER_URL,
     model: 'test/model',
+    reasoningEffort: 'low',
     timeoutMs: 1000,
     circuitBreakerFailureThreshold: 3,
     circuitBreakerOpenMs: 5000

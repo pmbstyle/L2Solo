@@ -6,6 +6,8 @@ require('../src/Global');
 // developer's ignored config/local.ini from changing that contract underneath
 // the test suite; LLM routing is covered by the hot conversation flow tests.
 const originalOpenRouterEnabled = options.default.OpenRouter?.enabled;
+const originalAI = options.default.AI;
+options.default.AI = undefined;
 if (options.default.OpenRouter) options.default.OpenRouter.enabled = false;
 
 const BotManager = invoke('GameServer/Bot/BotManager');
@@ -271,4 +273,5 @@ try {
     Generics.skillExec = originalSkillExec;
     BotManager.botTell = originalBotTell;
     if (options.default.OpenRouter) options.default.OpenRouter.enabled = originalOpenRouterEnabled;
+    options.default.AI = originalAI;
 }

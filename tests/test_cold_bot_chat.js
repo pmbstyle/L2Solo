@@ -33,11 +33,14 @@ function response(body) {
 
 async function main() {
     const originalConfig = options.default.OpenRouter;
+    const originalAI = options.default.AI;
     const originalWithObservation = LangfuseTracing.withObservation;
     const originalWithRootObservation = LangfuseTracing.withRootObservation;
     const requests = [];
     const observations = [];
     try {
+        // Keep this OpenRouter fixture independent from developer-local [AI].
+        options.default.AI = undefined;
         options.default.OpenRouter = {
             ...originalConfig,
             enabled: true,
@@ -172,6 +175,7 @@ async function main() {
         console.log('Cold bot chat checks passed');
     } finally {
         options.default.OpenRouter = originalConfig;
+        options.default.AI = originalAI;
         LangfuseTracing.withObservation = originalWithObservation;
         LangfuseTracing.withRootObservation = originalWithRootObservation;
         OpenRouterGateway.resetCircuit();

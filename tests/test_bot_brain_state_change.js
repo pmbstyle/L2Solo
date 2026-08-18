@@ -33,6 +33,7 @@ function response(body) {
 
 async function main() {
     const originalConfig = options.default.OpenRouter;
+    const originalAI = options.default.AI;
     const originalWorldUser = World.user;
     const originalFetchVisibleUsers = World.fetchVisibleUsers;
     const requests = [];
@@ -40,6 +41,8 @@ async function main() {
     const playerSession = { accountId: 'player_state_change', actor: actor(2000302, 'NearbyPlayer', 100) };
 
     try {
+        // Keep this OpenRouter fixture independent from developer-local [AI].
+        options.default.AI = undefined;
         options.default.OpenRouter = {
             ...originalConfig,
             enabled: true,
@@ -135,6 +138,7 @@ async function main() {
         console.log('Bot brain communication-only routing checks passed');
     } finally {
         options.default.OpenRouter = originalConfig;
+        options.default.AI = originalAI;
         World.user = originalWorldUser;
         World.fetchVisibleUsers = originalFetchVisibleUsers;
         OpenRouterGateway.resetCircuit();

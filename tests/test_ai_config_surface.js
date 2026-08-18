@@ -16,6 +16,8 @@ try {
     assert.strictEqual(OpenRouterGateway.DEFAULTS.partyRouterModel, 'openai/gpt-5.6-luna');
     assert.strictEqual(OpenRouterGateway.DEFAULTS.apiUrl, OpenRouterGateway.OPENROUTER_URL);
 
+    // Do not let a developer-local [AI] section change the OpenRouter fixture.
+    options.default.AI = undefined;
     options.default.OpenRouter = {
         enabled: true,
         apiKey: 'config-test-key',
