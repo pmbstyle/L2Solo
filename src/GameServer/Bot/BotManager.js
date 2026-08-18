@@ -4,6 +4,7 @@ const DataCache   = invoke('GameServer/DataCache');
 const World       = invoke('GameServer/World/World');
 const BotSession  = invoke('GameServer/Bot/BotSession');
 const BotAI       = invoke('GameServer/Bot/BotAI');
+const BotStatus   = invoke('GameServer/Bot/AI/BotStatus');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const MerchantConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
