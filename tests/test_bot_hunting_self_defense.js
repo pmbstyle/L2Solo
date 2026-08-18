@@ -183,6 +183,7 @@ assert.strictEqual(seated, false, 'resting solo hunter should stand before retre
 assert.strictEqual(woundedAttackId, null, 'resting solo hunter with critical HP should not counterattack immediately');
 
 const exhaustedBot = actor(2000013);
+exhaustedBot.fetchClassId = () => 10;
 exhaustedBot.fetchMp = () => 10;
 exhaustedBot.selected = threatNpc.fetchId();
 const exhaustedSession = {
@@ -205,6 +206,30 @@ assert.strictEqual(exhaustedBot.selected, undefined, 'voluntary recovery should 
 assert.strictEqual(exhaustedSession.lastTargetEvaluation, undefined, 'recovery should clear stale target scoring');
 assert.strictEqual(exhaustedSession.lastCombatDecision, undefined, 'recovery should clear stale combat choices');
 assert.strictEqual(exhaustedSession.lastPvpDecision, undefined, 'recovery should clear stale PvP choices');
+
+const lowManaDps = actor(2000015);
+lowManaDps.fetchMp = () => 10;
+const lowManaDpsSession = {
+    accountId: 'bot_low_mana_dps',
+    actor: lowManaDps,
+    plan: 'hunting',
+    dataSendToOthers() {}
+};
+const lowManaDpsChat = [];
+World.user = { sessions: [lowManaDpsSession] };
+World.npc = { spawns: [] };
+World.fetchNpcsInRadius = () => [];
+HuntingState.tick(lowManaDpsSession, lowManaDps, {}, {
+    say(_session, text) {
+        lowManaDpsChat.push(text);
+    },
+    getStatus() { return {}; },
+    executeCombat() {}
+});
+assert.strictEqual(lowManaDpsSession.plan, 'hunting',
+    'a melee/dps hunter must not enter a recovery loop only because MP is low');
+assert(!lowManaDpsChat.includes('Phew! My HP/MP is low. Sitting down to recover.'),
+    'low-MP melee/dps hunters must not emit the recovery spam line');
 
 async function targetLifecycleChecks() {
     const originalRandom = Math.random;
