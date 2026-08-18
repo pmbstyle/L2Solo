@@ -74,6 +74,7 @@ const original = {
     botTell: BotManager.botTell,
     findSessionById: BotManager.findSessionById
 };
+const botTellCalls = [];
 
 (async () => {
     try {
@@ -86,7 +87,7 @@ const original = {
         BotLootEtiquette.resolveTrade = () => null;
         BotEquipmentUpgrade.applyBestUpgrades = () => [];
         BotEventJournal.record = () => Promise.resolve();
-        BotManager.botTell = () => {};
+        BotManager.botTell = (source, target, text) => botTellCalls.push({ source, target, text });
         BotManager.findSessionById = (id) => Number(id) === 200 ? bot : null;
 
         const requestPacket = Buffer.from([0x15, 200, 0, 0, 0]);
@@ -108,6 +109,16 @@ const original = {
         assert.strictEqual(playerItem.fetchAmount(), 1, 'confirmed trade must deduct the player item');
         assert.strictEqual(player.actor.backpack.fetchItemFromSelfId(1001).fetchAmount(), 1);
         assert(playerPackets.some((packet) => packet[0] === 0x22 && packet[1] === 1), 'client must receive successful TradeDone');
+
+        bot.actor.backpack.items = Array.from({ length: 81 }, (_, index) => item(1000 + index, 2000 + index, 1, `Full Slot ${index + 1}`));
+        const capacityTrade = tradeRequest(player, requestPacket);
+        assert.strictEqual(capacityTrade, undefined, 'TradeRequest handler should keep its packet-handler contract');
+        addTradeItem(player, Buffer.from([0x16, 0, 0, 0, 0, 101, 0, 0, 0, 1, 0, 0, 0]));
+        const tellsBeforeCapacityFailure = botTellCalls.length;
+        await tradeDone(player, Buffer.from([0x17, 1, 0, 0, 0]));
+        assert.strictEqual(botTellCalls.length, tellsBeforeCapacityFailure + 1, 'capacity failure should notify the player in chat');
+        assert.strictEqual(botTellCalls.at(-1).target, player, 'capacity notice should target the trading player');
+        assert(botTellCalls.at(-1).text.includes('inventory is full'), 'capacity notice should explain the inventory blocker');
         console.log('Bot player trade packet checks passed');
     } finally {
         Database.transferInventoryBetweenCharacters = original.transfer;

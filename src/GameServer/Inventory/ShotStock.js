@@ -1,6 +1,7 @@
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 
 const DEFAULT_TARGET_AMOUNT = 1000;
 const WEAPON_SLOTS = new Set([7, 14]);
@@ -64,7 +65,7 @@ function itemRank(selfId) {
 
 function classWantsSpiritshots(classId) {
     const role = BotRoles.inferRole(Number(classId || 0));
-    return role === 'mage' || role === 'healer' || role === 'buffer';
+    return BotWeaponCompatibility.isCasterRole(role, classId);
 }
 
 function actorClassId(actor) {
