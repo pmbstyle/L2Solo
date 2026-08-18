@@ -273,7 +273,7 @@ module.exports = {
         // gear that no buyer accepted belong in the bot's own warehouse.
         let warehouse;
         try {
-            warehouse = await BotWarehouse.depositActor(bot, session.coldLifeState);
+            warehouse = await BotWarehouse.depositActor(bot, session.coldLifeState, session);
         } catch (err) {
             // The generic sell-junk bypass would destroy the very items we
             // meant to protect, so keep the bag intact and retry next visit.

@@ -20,6 +20,7 @@ const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const ColdMarketTradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
 const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
+const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const PartyRecruitmentChat = invoke('GameServer/Bot/Population/ColdPartyRecruitmentChat');
@@ -403,6 +404,47 @@ function dissolveBackgroundParty(party, reason, memberCount = 0) {
             );
             return { ok: false, reason, party, cleared };
         });
+}
+
+function inventoryCleanupGoal(state, timestamp = Date.now()) {
+    if (!state || state.phase !== 'cold' || state.party?.partyId || state.partyId
+        || state.stats?.travel || state.stats?.marketReturn
+        || ['traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting'].includes(state.activity)) return null;
+    const need = ItemDisposition.inventoryCleanupNeed(state, { now: timestamp });
+    if (!need) return null;
+    return {
+        type: 'sell_inventory',
+        status: 'active',
+        priority: 96,
+        target: {
+            itemCount: need.slots,
+            npcOnlySlots: need.npcOnlySlots,
+            cleanupReason: need.reason
+        },
+        plan: {
+            kind: 'market_sell',
+            expectedBenefit: 'market_sale_inventory',
+            risk: 0,
+            cleanupReason: need.reason
+        },
+        blockers: []
+    };
+}
+
+function inventoryCleanupTravelState(state, timestamp = Date.now(), simulation = null) {
+    const cleanupGoal = inventoryCleanupGoal(state, timestamp);
+    if (!cleanupGoal) return null;
+    const travelState = GoalExecutor.beginMarketTravel(state, cleanupGoal, timestamp);
+    if (!travelState) return null;
+
+    const cleanup = cleanupGoal.target;
+    console.info('BotGoals :: forced inventory cleanup for %s slots=%d npcOnly=%d reason=%s',
+        state.name, Number(cleanup.itemCount || 0), Number(cleanup.npcOnlySlots || 0), cleanup.cleanupReason);
+    return {
+        ...travelState,
+        ...(simulation ? { simulation } : {}),
+        cleanup
+    };
 }
 
 function assignPartyMembers(members = [], party) {
@@ -1895,6 +1937,22 @@ const PopulationService = {
             Metrics.recordSkippedResolve('joined_party_before_resolve');
             return Promise.resolve({ ok: false, reason: 'joined_party', state });
         }
+        const cleanupState = inventoryCleanupTravelState(state, startedAt);
+        if (cleanupState) {
+            const { cleanup, ...travelState } = cleanupState;
+            return LifeState.upsertState(travelState, 'inventory_cleanup_market_travel')
+                    .then((saved) => ({
+                        ok: true,
+                        state: saved || travelState,
+                        debug: {
+                            activity: 'inventory_cleanup_travel',
+                            slots: cleanup.itemCount,
+                            npcOnlySlots: cleanup.npcOnlySlots,
+                            reason: cleanup.cleanupReason
+                        }
+                    }))
+                    .finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
+        }
         const elapsedMs = state.timing?.lastResolvedAt ? Math.max(1000, startedAt - state.timing.lastResolvedAt) : 60000;
         // These transitions have no planning, market search, or inventory work
         // between their persisted deadline and the next state change.
@@ -2220,6 +2278,10 @@ const PopulationService = {
             return Promise.resolve({ ok: false, reason: 'worker_result_required', state });
         }
         return this.resolveColdState(state, request);
+    },
+
+    prepareInventoryCleanupProposal(state, timestamp = Date.now(), simulation = null) {
+        return inventoryCleanupTravelState(state, timestamp, simulation);
     },
 
     coldWorkerSnapshot() {

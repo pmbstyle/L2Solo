@@ -830,9 +830,8 @@ class ColdSimulationCoordinator {
     }
 
     async prepareProposal(proposal) {
-        if (proposal?.nextState) return proposal.nextState;
         const state = LifeState.cachedState(proposal.characterId) || proposal.baseState;
-        if (!state || !proposal.result) return null;
+        if (!state) return null;
         const claimedState = {
             ...state,
             simulation: {
@@ -842,9 +841,26 @@ class ColdSimulationCoordinator {
                 leaseUntil: proposal.token.leaseUntil
             }
         };
+        const timestamp = Number(proposal.enqueuedAt || Date.now());
+        const cleanupState = this.population?.prepareInventoryCleanupProposal?.(
+            claimedState,
+            timestamp,
+            claimedState.simulation
+        );
+        if (cleanupState) {
+            proposal.inventoryCleanupForced = true;
+            proposal.result = {
+                events: [],
+                debug: { inventoryCleanup: true }
+            };
+            delete cleanupState.cleanup;
+            return cleanupState;
+        }
+        if (proposal?.nextState) return proposal.nextState;
+        if (!proposal.result) return null;
         return LifeState.prepareResolve(claimedState, proposal.result, {
             persist: false,
-            timestamp: Number(proposal.enqueuedAt || Date.now())
+            timestamp
         });
     }
 

@@ -3,6 +3,7 @@ const Metrics  = invoke('GameServer/Bot/Population/PopulationMetrics');
 const DataCache = invoke('GameServer/DataCache');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
+const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 
 const TABLE = 'bot_life_state';
@@ -309,6 +310,27 @@ function refreshCraftShop(state = {}) {
 
 function syncInventorySummary(characterId, inventory) {
     return Database.syncInventorySummary(characterId, inventory);
+}
+
+function removeOneRecipeCopy(item) {
+    const amount = Math.max(0, Number(item?.amount || 0) - 1);
+    const next = { ...(item || {}), amount };
+    if (!Array.isArray(item?.instances)) return next;
+
+    const instances = item.instances.slice(1);
+    const equippedSlots = [...new Set(instances
+        .filter((instance) => instance?.equipped && Number(instance.slot) > 0)
+        .map((instance) => Number(instance.slot)))].sort((left, right) => left - right);
+    return {
+        ...next,
+        instances,
+        equipped: equippedSlots.length > 0,
+        equippedCount: equippedSlots.length,
+        equippedSlots,
+        enchant: instances.length && new Set(instances.map((instance) => Number(instance.enchant || 0))).size === 1
+            ? Number(instances[0].enchant || 0)
+            : null
+    };
 }
 
 function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
@@ -2509,6 +2531,56 @@ const BotLifeState = {
                 utils.infoWarn('BotLife', 'failed NPC liquidation for %s: %s', state.name, err.message);
                 return null;
             });
+    },
+
+    learnCraftableRecipes(state) {
+        if (!state?.characterId) return Promise.resolve(state || null);
+        const candidates = Object.values(state.inventory || {})
+            .filter((item) => ItemDisposition.canLearnRecipe(state, item))
+            .sort((left, right) => Number(left.selfId || 0) - Number(right.selfId || 0));
+        if (!candidates.length) return Promise.resolve(state);
+
+        return Database.fetchCharacterRecipes(state.characterId).then((rows) => {
+            const known = new Set((rows || []).map((row) => Number(row.recipeId)));
+            const inventory = { ...(state.inventory || {}) };
+            const learned = [];
+
+            return candidates.reduce((chain, item) => chain.then(async () => {
+                const decision = ItemDisposition.recipeDisposition(state, item, [...known]);
+                if (decision?.action !== 'learn') return;
+                try {
+                    await Database.setCharacterRecipe(state.characterId, decision.recipe.recipeId, decision.recipe.type);
+                } catch (error) {
+                    utils.infoWarn('BotLife', 'failed to learn recipe %d for %s: %s', decision.recipe.recipeId, state.name, error.message || error);
+                    return;
+                }
+                known.add(Number(decision.recipe.recipeId));
+                inventory[String(item.selfId)] = removeOneRecipeCopy(item);
+                learned.push({
+                    recipeId: Number(decision.recipe.recipeId),
+                    recipeItemId: Number(decision.recipe.recipeItemId),
+                    name: item.name || `Recipe ${decision.recipe.recipeId}`
+                });
+            }), Promise.resolve()).then(() => {
+                if (!learned.length) return state;
+                const nextState = {
+                    ...state,
+                    inventory,
+                    stats: {
+                        ...(state.stats || {}),
+                        lastRecipeBookLearning: { learned, at: now() }
+                    },
+                    updatedAt: now()
+                };
+                return this.upsertState(nextState, 'recipe_book_learned').then((saved) => {
+                    const persisted = saved || nextState;
+                    return syncInventorySummary(persisted.characterId, persisted.inventory).then(() => persisted);
+                });
+            });
+        }).catch((error) => {
+            utils.infoWarn('BotLife', 'failed recipe-book reconciliation for %s: %s', state.name, error.message || error);
+            return state;
+        });
     },
 
     upsertState(state, reason = 'seed') {

@@ -518,9 +518,11 @@ function open(state, options = {}) {
             marketSellRetryAfter: timestamp + SELL_RETRY_DELAY_MS
         }
     });
+    return LifeState.learnCraftableRecipes(state).then((preparedState) => {
+    state = preparedState || state;
     const initialItems = ItemDisposition.saleCandidates(state, options);
     if (!initialItems.length) {
-        return Promise.resolve({ state: deferSellRetry(state), listed: false, reason: 'nothing_to_sell' });
+        return { state: deferSellRetry(state), listed: false, reason: 'nothing_to_sell' };
     }
 
     // GoalExecutor chooses the best buyer town before travel. At this stage
@@ -615,6 +617,7 @@ function open(state, options = {}) {
     });
     });
     }));
+    });
 }
 
 function stockUnits(store) {
