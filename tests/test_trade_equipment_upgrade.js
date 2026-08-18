@@ -11,6 +11,7 @@ const tradeDone = invoke('GameServer/Network/Request/TradeDone');
 
 const original = {
     commit: BotTradeService.commit,
+    confirmPlayerTrade: BotTradeService.confirmPlayerTrade,
     recordEvent: BotSocialMemory.recordEvent,
     resolveTrade: BotLootEtiquette.resolveTrade,
     applyBestUpgrades: BotEquipmentUpgrade.applyBestUpgrades,
@@ -35,6 +36,7 @@ let reevaluated = null;
             partnerSession: botSession,
             moved: [{ selfId: 5, name: 'Mace', count: 1 }]
         });
+        BotTradeService.confirmPlayerTrade = () => ({ ok: true });
         BotSocialMemory.recordEvent = () => Promise.resolve(null);
         BotLootEtiquette.resolveTrade = () => null;
         BotManager.botTell = () => {};
@@ -52,6 +54,7 @@ let reevaluated = null;
         console.log('Trade equipment upgrade checks passed');
     } finally {
         BotTradeService.commit = original.commit;
+        BotTradeService.confirmPlayerTrade = original.confirmPlayerTrade;
         BotSocialMemory.recordEvent = original.recordEvent;
         BotLootEtiquette.resolveTrade = original.resolveTrade;
         BotEquipmentUpgrade.applyBestUpgrades = original.applyBestUpgrades;

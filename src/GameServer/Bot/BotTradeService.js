@@ -167,6 +167,20 @@ function attachTrade(trade) {
     trade.botSession.activeTrade = trade;
 }
 
+function activeTradeBetween(playerSession, botSession) {
+    const playerTrade = activeTradeFor(playerSession);
+    if (playerTrade?.playerSession === playerSession && playerTrade?.botSession === botSession) {
+        return playerTrade;
+    }
+
+    const botTrade = activeTradeFor(botSession);
+    if (botTrade?.playerSession === playerSession && botTrade?.botSession === botSession) {
+        return botTrade;
+    }
+
+    return null;
+}
+
 function createTrade(playerSession, botSession, direction, metadata = {}) {
     return {
         id: `bot-trade-${++tradeSequence}`,
@@ -176,7 +190,9 @@ function createTrade(playerSession, botSession, direction, metadata = {}) {
         playerItems: new Map(),
         botItems: new Map(),
         playerConfirmed: false,
-        botConfirmed: false,
+        // A BotSession has no client that can send the second confirmation
+        // packet. The server owns that side of the native trade.
+        botConfirmed: true,
         state: 'open',
         createdAt: now(),
         expiresAt: now() + TRADE_TTL_MS,
@@ -195,6 +211,13 @@ function canStart(playerSession, botSession, { allowMerchant = false } = {}) {
 function startPlayerTrade(playerSession, targetSession) {
     const reason = canStart(playerSession, targetSession);
     if (reason) return { ok: false, reason };
+
+    const existing = activeTradeBetween(playerSession, targetSession);
+    if (existing) {
+        console.info("BotTrade :: %s reused trade with %s", actorName(playerSession), actorName(targetSession));
+        return { ok: true, trade: existing, reused: true };
+    }
+
     cancel(playerSession, 'replaced', false);
     cancel(targetSession, 'replaced', false);
 
@@ -314,7 +337,8 @@ function offerBotItem(botSession, objectId, amount) {
     const line = lineFor(item, nextCount);
     trade.botItems.set(canonicalObjectId, line);
     reservations.set(canonicalObjectId, { tradeId: trade.id, count: nextCount });
-    trade.botConfirmed = false;
+    trade.botConfirmed = true;
+    trade.playerConfirmed = false;
     sendToPlayer(trade, ServerResponse.tradeOtherAdd(line));
     console.info("BotTrade :: %s offered %d %s to %s", actorName(botSession), line.count, item.fetchName(), actorName(trade.playerSession));
     return { ok: true, line };
@@ -489,7 +513,18 @@ async function commit(playerSession) {
         completedAt: trade.completedAt,
         result: { ...result, partnerSession: null }
     };
+    const detail = result.moved.map((item) => `${item.count} ${item.name}`).join(', ');
+    console.info("BotTrade :: %s completed trade with %s: %s", actorName(trade.playerSession), actorName(trade.botSession), detail);
     return result;
+}
+
+function confirmPlayerTrade(playerSession) {
+    const trade = activeTradeFor(playerSession);
+    if (!trade || trade.playerSession !== playerSession) return { ok: false, reason: 'no_active_trade' };
+
+    trade.playerConfirmed = true;
+    if (!trade.botConfirmed) return { ok: false, reason: 'bot_not_confirmed' };
+    return { ok: true, trade };
 }
 
 function cancel(session, reason = 'cancelled', notify = true) {
@@ -533,6 +568,7 @@ module.exports = {
     cancel,
     cleanup,
     commit,
+    confirmPlayerTrade,
     isTradableItem: isSafeOfferItem,
     offerBotItem,
     startNegotiatedTrade,

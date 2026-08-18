@@ -22,6 +22,14 @@ async function tradeDone(session, buffer) {
     }
 
     try {
+        const confirmation = BotTradeService.confirmPlayerTrade(session);
+        if (!confirmation.ok) {
+            BotTradeService.cancel(session);
+            session.dataSendToMe(ServerResponse.actionFailed());
+            session.dataSendToMe(ServerResponse.tradeDone(false));
+            return;
+        }
+
         const result = await BotTradeService.commit(session);
         if (!result.ok) {
             BotTradeService.cancel(session);
