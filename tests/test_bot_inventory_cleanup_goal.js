@@ -51,6 +51,32 @@ assert.deepStrictEqual(need, {
     limit: ItemDisposition.INVENTORY_SLOT_LIMIT
 });
 
+const capacityOnlyState = {
+    ...state,
+    inventory: {
+        1: {
+            selfId: 1,
+            name: 'Short Sword',
+            kind: 'Weapon.Sword',
+            stackable: false,
+            amount: 81,
+            instances: Array.from({ length: 81 }, (_, index) => ({
+                id: 9050000 + index,
+                amount: 1,
+                equipped: false,
+                slot: 0
+            }))
+        }
+    },
+    stats: { marketSellRetryAfter: now + 60 * 60 * 1000 }
+};
+assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed(capacityOnlyState, { now }), {
+    reason: 'inventory_capacity',
+    slots: 81,
+    npcOnlySlots: 0,
+    limit: ItemDisposition.INVENTORY_SLOT_LIMIT
+}, 'an over-capacity inventory must bypass the market retry cooldown even without NPC-only items');
+
 const goal = NeedsEvaluator.evaluate(state, { now, spot: { id: 'cruma', name: 'Cruma Tower' } })
     .find((candidate) => candidate.type === 'sell_inventory' && candidate.target.cleanupReason === 'inventory_capacity');
 assert(goal, 'inventory pressure must create a sell_inventory goal');

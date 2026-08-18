@@ -110,14 +110,15 @@ function inventoryCleanupNeed(state = {}, options = {}) {
     const timestamp = Number(options.now) || Date.now();
     const slots = inventorySlotCount(state);
     const npcOnlySlots = npcOnlySlotCount(state);
-    // A normal market retry cooldown prevents pointless town loops. Residual
-    // NPC-only books/recipes are different: they are deterministic cleanup
-    // work and must get another visit even when the previous market attempt
-    // ended with no player demand.
-    if (Number(state.stats?.marketSellRetryAfter || 0) > timestamp
-        && npcOnlySlots < NPC_ONLY_CLEANUP_MIN_SLOTS) return null;
     const overCapacity = slots > INVENTORY_SLOT_LIMIT;
     const accumulatedNpcOnly = npcOnlySlots >= NPC_ONLY_CLEANUP_MIN_SLOTS;
+    // A normal market retry cooldown prevents pointless town loops. Residual
+    // NPC-only books/recipes and a genuinely full inventory are different:
+    // they are deterministic cleanup work and must get another visit even
+    // when the previous market attempt ended with no player demand.
+    if (Number(state.stats?.marketSellRetryAfter || 0) > timestamp
+        && !overCapacity
+        && !accumulatedNpcOnly) return null;
     if (!overCapacity && !accumulatedNpcOnly) return null;
     return {
         reason: overCapacity ? 'inventory_capacity' : 'npc_only_inventory',
@@ -196,11 +197,14 @@ function isTradeEligible(state = {}) {
 }
 
 function protectedStarterLootAmount(item, kind) {
+    const kindName = String(kind || '');
     // Low-level resources remain sellable once the character reaches the
-    // trading phase: they are a legitimate early Adena source. Ordinary gear
-    // and drops from level 1-5 mobs are retained instead of becoming instant
-    // private-store/NPC-liquidation stock.
-    if (String(kind || '').startsWith('Other.Material')) return 0;
+    // trading phase: they are a legitimate early Adena source. No-grade and
+    // D-grade gear is junk by policy and must be liquidated in the NPC shop,
+    // including copies that came from protected starter-mob loot.
+    if (kindName.startsWith('Other.Material')
+        || ((kindName.startsWith('Weapon.') || kindName.startsWith('Armor.'))
+            && gradeIndex(item?.rank || templateFor(item?.selfId)?.etc?.rank || 'none') < gradeIndex('c'))) return 0;
     return Math.max(0, Math.min(Number(item?.amount || 0), Number(item?.starterMobLootAmount || 0)));
 }
 
@@ -248,7 +252,15 @@ function saleCandidates(state, options = {}) {
 
 function npcLiquidationCandidates(state, options = {}) {
     const maxUnitPrice = Math.max(1, Number(options.maxUnitPrice) || NPC_LIQUIDATION_MAX_UNIT_PRICE);
-    return saleCandidates(state, { unlimited: true, onlyNpc: true }).filter((item) => isNpcOnlyItem(item) || item.basePrice <= maxUnitPrice).map((item) => ({
+    // Do not pass onlyNpc here: low-grade gear and cheap materials are not
+    // intrinsically NPC-only, but the market policy deliberately routes them
+    // to the NPC shop during cleanup. Filter the unified sale set after the
+    // starter-loot protection has been applied.
+    return saleCandidates(state, { unlimited: true }).filter((item) => {
+        const gear = String(item.kind || '').startsWith('Weapon.') || String(item.kind || '').startsWith('Armor.');
+        const lowGradeGear = gear && gradeIndex(item.rank) < gradeIndex('c');
+        return isNpcOnlyItem(item) || lowGradeGear || item.basePrice <= maxUnitPrice;
+    }).map((item) => ({
         ...item,
         npcPrice: Math.max(1, Math.floor(item.basePrice * 0.5))
     }));

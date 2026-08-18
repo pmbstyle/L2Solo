@@ -39,6 +39,9 @@ function classify(state, item, options = {}) {
     if (starterItemIds().has(Number(item.selfId))) {
         return { action: 'npc', reason: 'starter_kit' };
     }
+    if (isGear(item) && ItemDisposition.gradeIndex(item.rank) < ItemDisposition.gradeIndex('c')) {
+        return { action: 'npc', reason: 'low_grade_gear' };
+    }
     if (isGear(item) && Number(item.basePrice || 0) <= MARKET_GEAR_MIN_BASE_PRICE) {
         return { action: 'npc', reason: 'low_value_gear' };
     }

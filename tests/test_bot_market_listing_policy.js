@@ -3,6 +3,7 @@ const assert = require('assert');
 require('../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
+const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketDemandIndex = invoke('GameServer/Bot/Economy/MarketDemandIndex');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
@@ -15,18 +16,18 @@ const starterWeapon = (DataCache.newbieItems || [])
     .find((item) => item?.template?.kind?.startsWith('Weapon.'));
 const usefulWeapon = DataCache.items.find((item) => (
     item?.template?.kind?.startsWith('Weapon.') &&
+    ItemDisposition.gradeIndex(item.etc?.rank) >= ItemDisposition.gradeIndex('c') &&
     Number(item.template.price || 0) > MarketListingPolicy.MARKET_GEAR_MIN_BASE_PRICE
 ));
 const ordinaryGear = DataCache.items.find((item) => (
     (item?.template?.kind?.startsWith('Weapon.') || item?.template?.kind?.startsWith('Armor.')) &&
-    Number(item.template.price || 0) > MarketListingPolicy.MARKET_GEAR_MIN_BASE_PRICE &&
-    Number(item.template.price || 0) < MarketListingPolicy.SPECULATIVE_GEAR_MIN_BASE_PRICE &&
+    ItemDisposition.gradeIndex(item.etc?.rank) >= ItemDisposition.gradeIndex('c') &&
     !MarketListingPolicy.starterItemIds().has(Number(item.selfId))
 ));
 
 assert(starterWeapon, 'the newbie templates must include a starter weapon');
 assert(usefulWeapon, 'the datapack must include market-worthy gear');
-assert(ordinaryGear, 'the datapack must include ordinary gear below the speculative threshold');
+assert(ordinaryGear, 'the datapack must include non-starter C-grade-or-better gear');
 
 function saleItem(item, count = 1, price = 1000) {
     return {
@@ -66,6 +67,16 @@ const starterDecision = MarketListingPolicy.classify(seller, saleItem(starterWea
 assert.strictEqual(starterDecision.action, 'npc', 'free starter gear must never enter a private store');
 assert.strictEqual(starterDecision.reason, 'starter_kit');
 
+const lowGradeGear = DataCache.items.find((item) => (
+    (item?.template?.kind?.startsWith('Weapon.') || item?.template?.kind?.startsWith('Armor.')) &&
+    ItemDisposition.gradeIndex(item.etc?.rank) < ItemDisposition.gradeIndex('c') &&
+    !MarketListingPolicy.starterItemIds().has(Number(item.selfId))
+));
+assert(lowGradeGear, 'the datapack must contain non-starter low-grade gear');
+const lowGradeDecision = MarketListingPolicy.classify(seller, saleItem(lowGradeGear), { states: [], now });
+assert.strictEqual(lowGradeDecision.action, 'npc', 'all gear below C-grade must go to the NPC shop');
+assert.strictEqual(lowGradeDecision.reason, 'low_grade_gear');
+
 const targetId = Number(usefulWeapon.selfId);
 const buyer = {
     characterId: 20,
@@ -104,7 +115,8 @@ assert.strictEqual(speculative.action, 'list', 'valuable gear may use one bounde
 assert.strictEqual(speculative.reason, 'speculative_demand');
 assert.strictEqual(speculative.listCount, 1);
 
-const ordinaryLatent = MarketListingPolicy.classify(seller, saleItem(ordinaryGear, 1, 3000), {
+const ordinaryLatentItem = { ...saleItem(ordinaryGear, 1, 3000), basePrice: 3000 };
+const ordinaryLatent = MarketListingPolicy.classify(seller, ordinaryLatentItem, {
     states: [{ ...latentBuyer, stats: { equipmentPlan: { status: 'active', strategy: 'drop', target: { selfId: ordinaryGear.selfId } } } }],
     now
 });
