@@ -74,6 +74,8 @@ class ColdSimulationCoordinator {
         this.reconcileTimer = null;
         this.recoveryTimer = null;
         this.renewalTimer = null;
+        this.historyCleanupTimer = null;
+        this.historyCleanupInFlight = null;
         this.seen = new Set();
         this.seenOrder = [];
         this.waiters = new Map();
@@ -147,8 +149,16 @@ class ColdSimulationCoordinator {
         this.population = population || this.population;
         this.started = true;
         this.stopping = false;
-        return Promise.all([LifeState.init(), BackgroundPartyState.init()]).then(async () => {
-            if (this.stopping) return false;
+        return Promise.all([LifeState.init(), BackgroundPartyState.init()]).then(async ([lifeReady, partyReady]) => {
+            if (this.stopping) {
+                this.started = false;
+                return false;
+            }
+            if (!lifeReady || !partyReady) {
+                this.started = false;
+                this.recordError(new Error(`cold_population_startup_unavailable:life=${lifeReady ? 'ready' : 'failed'}:party=${partyReady ? 'ready' : 'failed'}`));
+                return false;
+            }
             // LifeState startup has already released members of historical
             // dissolved parties. Only then is it safe to trim the rows.
             await BackgroundPartyState.purgeHistory();
@@ -170,10 +180,19 @@ class ColdSimulationCoordinator {
                     if (active.length) this.postCollections('lease_renewal', { renewals: active });
                 }).catch((error) => this.recordError(error));
             }, Math.max(1000, Number(Config.coldOwnerRenewalIntervalMs) || 5000));
+            this.historyCleanupTimer = setInterval(() => {
+                if (this.stopping || this.historyCleanupInFlight) return;
+                this.historyCleanupInFlight = BackgroundPartyState.purgeHistory()
+                    .catch((error) => this.recordError(error))
+                    .finally(() => {
+                        this.historyCleanupInFlight = null;
+                    });
+            }, Math.max(30000, Number(Config.partyHistoryCleanupIntervalMs) || 60 * 60 * 1000));
             this.watchdogTimer.unref?.();
             this.reconcileTimer.unref?.();
             this.recoveryTimer.unref?.();
             this.renewalTimer.unref?.();
+            this.historyCleanupTimer.unref?.();
             return true;
         }).catch((error) => {
             this.started = false;
@@ -1004,11 +1023,13 @@ class ColdSimulationCoordinator {
         if (this.reconcileTimer) clearInterval(this.reconcileTimer);
         if (this.recoveryTimer) clearInterval(this.recoveryTimer);
         if (this.renewalTimer) clearInterval(this.renewalTimer);
+        if (this.historyCleanupTimer) clearInterval(this.historyCleanupTimer);
         if (this.restartTimer) clearTimeout(this.restartTimer);
         this.watchdogTimer = null;
         this.reconcileTimer = null;
         this.recoveryTimer = null;
         this.renewalTimer = null;
+        this.historyCleanupTimer = null;
         this.restartTimer = null;
         this.pauseReasons.clear();
         await Promise.race([this.snapshotInFlight || Promise.resolve(), wait(10000)]).catch(() => null);
@@ -1025,6 +1046,8 @@ class ColdSimulationCoordinator {
         }
         const queue = await this.queue.drain(10000);
         await Promise.race([this.commandTail.catch(() => null), wait(10000)]);
+        await Promise.race([this.historyCleanupInFlight || Promise.resolve(), wait(10000)]).catch(() => null);
+        this.historyCleanupInFlight = null;
         if (this.worker) await this.worker.terminate().catch(() => null);
         this.worker = null;
         await ColdSimulationOwner.recoverStartupLeases().catch(() => null);

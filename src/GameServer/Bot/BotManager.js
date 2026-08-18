@@ -78,6 +78,29 @@ function recoverStarterSpawn(botData = {}, character = {}) {
     return { ...botData, ...stableSpawnLocation(botData) };
 }
 
+async function rollbackPublishedBot(session, reason) {
+    try {
+        const rollback = await PopulationService.cooldownSession(session, reason, { ignoreVisibility: true });
+        if (rollback?.ok) return rollback;
+        utils.infoWarn('BotManager', 'failed to rollback hot spawn for %s: %s', session?.actor?.fetchName?.() || 'unknown', rollback?.reason || 'unknown');
+    } catch (error) {
+        utils.infoWarn('BotManager', 'failed to rollback hot spawn for %s: %s', session?.actor?.fetchName?.() || 'unknown', error?.message || error);
+    }
+
+    // A failed rollback must not leave a visible/AI-active actor behind. The
+    // durable row is still reported above so the operator can repair it, but
+    // the runtime population must not advertise a bot whose lifecycle is
+    // unknown.
+    BotAI.stop(session);
+    if (session?.actor && typeof session.actor.destructor === 'function') {
+        session.actor.destructor();
+    }
+    World.removeUser(session);
+    BotManager.sessions = BotManager.sessions.filter((candidate) => candidate !== session);
+    session.actor = null;
+    return { ok: false, reason: 'hot_spawn_rollback_failed' };
+}
+
 const BotManager = {
     sessions: [],
     pkEncounterTimer: null,
@@ -564,7 +587,7 @@ const BotManager = {
                 const runtimeStore = botData.privateStore || null;
                 const manufactureShop = botData.manufactureShop || null;
 
-                return Shared.fetchClassInformation(character.classId).then((classInfo) => {
+                return Shared.fetchClassInformation(character.classId).then(async (classInfo) => {
                     if (botData.locX !== undefined) {
                         character.locX = botData.locX;
                         character.locY = botData.locY;
@@ -669,35 +692,47 @@ const BotManager = {
                         session.actor.state.setSeated(session.plan === 'resting');
                     }
 
-                    // Spawn the bot actor in the World
-                    World.insertUser(session);
-                    session.actor.enterWorld();
+                    let hotPersisted = false;
+                    try {
+                        // Persist ownership before publishing the actor to the
+                        // world. markHot resolves null on a database failure,
+                        // so the result must be treated as an activation error.
+                        const hotState = await PopulationService.markHot(session, 'spawn');
+                        if (!hotState) throw new Error('hot_state_persist_failed');
+                        hotPersisted = true;
+                        session.populationHotAt = Date.now();
 
-                    // Explicitly send the bot's CharInfo to other players in the world
-                    const ServerResponse = invoke('GameServer/Network/Response');
-                    session.dataSendToOthers(ServerResponse.charInfo(session.actor), session.actor);
-                    session.dataSendToOthers(ServerResponse.relationChanged(session.actor), session.actor);
-                    if (privateStore?.storeType === 1) {
-                        session.dataSendToOthers(ServerResponse.privateStoreMsg(session.actor, privateStore.title), session.actor);
-                    } else if (privateStore?.storeType === 3) {
-                        session.dataSendToOthers(ServerResponse.privateStoreBuyMsg(session.actor, privateStore.title), session.actor);
-                    } else if (manufactureShop) {
-                        session.dataSendToOthers(ServerResponse.recipeShopMsg(session.actor), session.actor);
-                    }
+                        // Spawn the bot actor in the World only after its
+                        // durable lifecycle has become hot.
+                        World.insertUser(session);
+                        session.actor.enterWorld();
 
-                    // Start AI loop
-                    BotAI.init(session);
-                
-                    this.sessions.push(session);
-                    session.populationHotAt = Date.now();
-                    return Promise.resolve(PopulationService.markHot(session, 'spawn')).then(() => {
+                        // Explicitly send the bot's CharInfo to other players in the world
+                        const ServerResponse = invoke('GameServer/Network/Response');
+                        session.dataSendToOthers(ServerResponse.charInfo(session.actor), session.actor);
+                        session.dataSendToOthers(ServerResponse.relationChanged(session.actor), session.actor);
+                        if (privateStore?.storeType === 1) {
+                            session.dataSendToOthers(ServerResponse.privateStoreMsg(session.actor, privateStore.title), session.actor);
+                        } else if (privateStore?.storeType === 3) {
+                            session.dataSendToOthers(ServerResponse.privateStoreBuyMsg(session.actor, privateStore.title), session.actor);
+                        } else if (manufactureShop) {
+                            session.dataSendToOthers(ServerResponse.recipeShopMsg(session.actor), session.actor);
+                        }
+
+                        // Start AI loop
+                        BotAI.init(session);
+
+                        this.sessions.push(session);
                         let modeText = "[Hunting Mode]";
                         if (session.townGossip) modeText = "[Gossip Mode]";
                         if (session.plan === 'pk_hunting') modeText = "[PK Mode]";
                         if (session.plan === 'merchant') modeText = "[Merchant Mode]";
                         utils.infoSuccess("BotManager", "%s (Level %d) is active in World %s", character.name, character.level, modeText);
                         return session;
-                    });
+                    } catch (error) {
+                        if (hotPersisted) await rollbackPublishedBot(session, 'hot_spawn_rollback');
+                        throw error;
+                    }
                 });
             });
         });
