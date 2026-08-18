@@ -36,6 +36,7 @@ try {
             return Promise.resolve(stalePartyRows);
         }
         if (String(sql).startsWith('UPDATE bot_life_state')) {
+            if (String(sql).includes("'$.partyRequest.lastReason'")) return Promise.resolve({ affectedRows: 1 });
             return Promise.resolve({ affectedRows: 2 });
         }
         if (String(sql).startsWith('SELECT * FROM bot_life_state')) {
@@ -219,11 +220,24 @@ try {
             assert(due.sql.includes("json_extract(statsJson, '$.equipmentPlan.next.spotId')"), 'due cold states must prioritize active gear plans whose source spot differs from the saved spot');
             assert(due.sql.includes("startup_craft_wait_recovery"), 'startup craft recovery must immediately replan before the ordinary hunting backlog');
             assert(due.sql.includes('COALESCE(nextResolveAt, 0) ASC'), 'due cold states must remain fair by schedule within each lifecycle bucket');
-            const marketCandidates = statements.find((entry) => entry.sql.includes("goals.goalJson LIKE '%\"type\":\"sell_inventory\"%'"));
-            assert(marketCandidates, 'market reconciliation must query persisted sell goals');
+            const marketCandidates = statements.find((entry) => entry.sql.includes("FROM bot_life_state states")
+                && entry.sql.includes("marketSellRetryAfter"));
+            assert(marketCandidates, 'market reconciliation must query current lifecycle market state');
+            assert(!marketCandidates.sql.includes('goalJson LIKE'), 'market reconciliation must not trust stale goal metadata');
             assert(marketCandidates.sql.includes("'$.marketSellRetryAfter'"), 'market reconciliation must exclude sellers whose retry cooldown is still active');
             assert.deepStrictEqual(marketCandidates.params, [123456], 'market reconciliation must bind the current retry cutoff');
-            return BotLifeState.assignParty({
+            return BotLifeState.staleGoalCandidates(5, 123456).then(() => {
+                const staleGoals = statements.at(-1);
+                assert(staleGoals.sql.includes('INNER JOIN bot_goal_state goals'), 'goal metadata review must read persisted goal rows');
+                assert(staleGoals.sql.includes("'$.nextReviewAt'"), 'goal metadata review must select rows whose review deadline is due');
+                assert.deepStrictEqual(staleGoals.params, [123456], 'goal metadata review must bind the current review cutoff');
+                return BotLifeState.deferUnformablePartyRequests([42], 'no_compatible_level_match').then((deferred) => {
+                    const deferUpdate = statements.at(-1);
+                    assert.strictEqual(deferred, 1, 'an unformable required group must close its active requests as a batch');
+                    assert(deferUpdate.sql.includes("'$.partyRequest.lastReason'"), 'unformable party cleanup must persist its reason');
+                    assert.strictEqual(deferUpdate.params[3], 'no_compatible_level_match', 'unformable party cleanup must persist the classification');
+                });
+            }).then(() => BotLifeState.assignParty({
                 characterId: 43,
                 name: 'PartyWaitAssignmentProbe',
                 phase: 'cold',
@@ -398,7 +412,7 @@ try {
                             assert.strictEqual(recoveredState.stats.lastRespawnAt, respawnAt, 'resolver-specific respawn telemetry must survive the counter merge');
                         });
                     });
-                });
+                }));
         }).then(() => BotLifeState.upsertState({
             characterId: 99,
             name: 'StaleSummaryProbe',

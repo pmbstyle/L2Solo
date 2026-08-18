@@ -15,6 +15,14 @@ const DEFAULTS = {
     schedulerPartyBudgetMs: 75,
     schedulerIdleMaxResolvesPerTick: 100,
     schedulerPlayerMaxResolvesPerTick: 12,
+    // Goal metadata is repaired in short cooperative slices. Keep the
+    // player pass bounded, but let a restart backlog converge in minutes
+    // instead of leaving thousands of due rows stale for hours.
+    goalMetadataReconcileIntervalMs: 10000,
+    goalMetadataIdleBatchSize: 32,
+    goalMetadataPlayerBatchSize: 16,
+    goalMetadataIdleBudgetMs: 1000,
+    goalMetadataPlayerBudgetMs: 200,
     coldOwnerLeaseMs: 30000,
     coldOwnerResolveTimeoutMs: 10000,
     coldOwnerRenewalIntervalMs: 5000,
@@ -192,6 +200,11 @@ const ENV_KEYS = {
     schedulerPartyBudgetMs: 'BOT_POPULATION_SCHEDULER_PARTY_BUDGET_MS',
     schedulerIdleMaxResolvesPerTick: 'BOT_POPULATION_SCHEDULER_IDLE_MAX_RESOLVES',
     schedulerPlayerMaxResolvesPerTick: 'BOT_POPULATION_SCHEDULER_PLAYER_MAX_RESOLVES',
+    goalMetadataReconcileIntervalMs: 'BOT_POPULATION_GOAL_METADATA_INTERVAL_MS',
+    goalMetadataIdleBatchSize: 'BOT_POPULATION_GOAL_METADATA_IDLE_BATCH',
+    goalMetadataPlayerBatchSize: 'BOT_POPULATION_GOAL_METADATA_PLAYER_BATCH',
+    goalMetadataIdleBudgetMs: 'BOT_POPULATION_GOAL_METADATA_IDLE_BUDGET_MS',
+    goalMetadataPlayerBudgetMs: 'BOT_POPULATION_GOAL_METADATA_PLAYER_BUDGET_MS',
     coldOwnerLeaseMs: 'BOT_POPULATION_COLD_OWNER_LEASE_MS',
     coldOwnerResolveTimeoutMs: 'BOT_POPULATION_COLD_OWNER_TIMEOUT_MS',
     coldOwnerRenewalIntervalMs: 'BOT_POPULATION_COLD_OWNER_RENEWAL_MS',

@@ -516,10 +516,12 @@ const PopulationService = {
     initialSummaryTimer: null,
     schedulerTimer: null,
     partyFormationTimer: null,
+    partyRequestCleanupTimer: null,
     phasePolicyTimer: null,
     seedTimer: null,
     classProgressionMigrationTimer: null,
     marketTownMigrationTimer: null,
+    goalMetadataTimer: null,
     nextColdCombatProfileMigrationAt: 0,
     nextMarketTownMigrationAt: 0,
     nextPartyRequestCleanupAt: 0,
@@ -532,10 +534,12 @@ const PopulationService = {
     classProgressionMigrationRunning: false,
     coldCombatProfileMigrationRunning: false,
     marketTownMigrationRunning: false,
+    goalMetadataRunning: false,
     marketExpiryCleanupRunning: false,
     coldOwnerRecoveryRunning: false,
     partyFormationRunning: false,
     partyFormationPending: false,
+    partyRequestCleanupRunning: false,
     phasePolicyRunning: false,
 
     init() {
@@ -613,7 +617,31 @@ const PopulationService = {
             this.marketExpiryCleanupTimer.unref();
         }
 
+        if (Config.backgroundResolverEnabled !== false) {
+            this.reconcileGoalMetadata();
+            this.goalMetadataTimer = setInterval(() => {
+                this.reconcileGoalMetadata();
+            }, Math.max(5000, Number(Config.goalMetadataReconcileIntervalMs) || 30000));
+
+            if (typeof this.goalMetadataTimer.unref === 'function') {
+                this.goalMetadataTimer.unref();
+            }
+        }
+
         if (Config.backgroundPartyEnabled !== false) {
+            this.partyRequestCleanupTimer = setInterval(() => {
+                // Request TTL maintenance is deliberately lower priority than
+                // party formation while a real player is online. Running it
+                // on the formation timer made a single SQLite cleanup query
+                // consume most of the player-safe formation budget.
+                if (this.partyFormationRunning || this.playerActivityProfile().protected) return;
+                this.runPartyRequestCleanup(Config.partyRequestCleanupBatchSize);
+            }, Math.max(5000, Number(Config.partyRequestCleanupIntervalMs) || 30000));
+
+            if (typeof this.partyRequestCleanupTimer.unref === 'function') {
+                this.partyRequestCleanupTimer.unref();
+            }
+
             this.partyFormationTimer = setInterval(() => {
                 this.formBackgroundParties();
             }, Config.partyFormationIntervalMs);
@@ -657,6 +685,10 @@ const PopulationService = {
             clearInterval(this.partyFormationTimer);
             this.partyFormationTimer = null;
         }
+        if (this.partyRequestCleanupTimer) {
+            clearInterval(this.partyRequestCleanupTimer);
+            this.partyRequestCleanupTimer = null;
+        }
         if (this.phasePolicyTimer) {
             clearInterval(this.phasePolicyTimer);
             this.phasePolicyTimer = null;
@@ -678,6 +710,12 @@ const PopulationService = {
             clearInterval(this.marketExpiryCleanupTimer);
             this.marketExpiryCleanupTimer = null;
         }
+        if (this.goalMetadataTimer) {
+            clearInterval(this.goalMetadataTimer);
+            this.goalMetadataTimer = null;
+        }
+        this.goalMetadataRunning = false;
+        this.partyRequestCleanupRunning = false;
         if (this.personaBackfillTimer) {
             clearInterval(this.personaBackfillTimer);
             this.personaBackfillTimer = null;
@@ -949,6 +987,53 @@ const PopulationService = {
         return profile;
     },
 
+    reconcileGoalMetadata() {
+        if (this.goalMetadataRunning || Config.enabled === false || Config.backgroundResolverEnabled === false) {
+            return Promise.resolve([]);
+        }
+        const activity = this.playerActivityProfile();
+        const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
+        const lagAbort = Math.max(0, Number(Config.schedulerLagAbortMs) || 0);
+        if (lagAbort > 0 && lagMs >= lagAbort) {
+            Metrics.recordBackgroundDeferral();
+            return Promise.resolve([]);
+        }
+
+        const protectedPass = !!activity?.protected;
+        const batchSize = Math.max(1, Number(protectedPass
+            ? Config.goalMetadataPlayerBatchSize
+            : Config.goalMetadataIdleBatchSize) || (protectedPass ? 2 : 8));
+        const budgetMs = Math.max(25, Number(protectedPass
+            ? Config.goalMetadataPlayerBudgetMs
+            : Config.goalMetadataIdleBudgetMs) || (protectedPass ? 75 : 500));
+        const deadlineAt = Date.now() + budgetMs;
+        const staleDeadlineAt = Date.now() + Math.max(25, Math.floor(budgetMs / 2));
+        this.goalMetadataRunning = true;
+
+        const reviewStale = () => {
+            if (Date.now() >= staleDeadlineAt) return Promise.resolve([]);
+            return LifeState.staleGoalCandidates(batchSize, Date.now()).then((states) => (
+                this.runInSchedulerSlices(states, (state) => GoalService.review(state).catch((error) => {
+                    utils.infoWarn('BotGoals', 'bounded metadata review failed for %s: %s', state.name, error?.message || error);
+                    return null;
+                }), staleDeadlineAt)
+            ));
+        };
+
+        return reviewStale()
+            .then((staleResults) => this.reconcileMarketGoals(deadlineAt, batchSize).then((marketResults) => [
+                ...staleResults,
+                ...marketResults
+            ]))
+            .catch((error) => {
+                utils.infoWarn('BotGoals', 'bounded metadata reconcile failed: %s', error?.message || error);
+                return [];
+            })
+            .finally(() => {
+                this.goalMetadataRunning = false;
+            });
+    },
+
     isRestingActivationState(state) {
         const activity = state?.activity || 'hunting';
         if (activity === 'resting' || activity === 'dead') return true;
@@ -1073,27 +1158,68 @@ const PopulationService = {
         ), Promise.resolve([]));
     },
 
+    cleanupStalePartyRequests(timestamp = Date.now(), batchSize = Config.partyRequestCleanupBatchSize) {
+        const cleanupInterval = Math.max(5000, Number(Config.partyRequestCleanupIntervalMs) || 30000);
+        if (timestamp < this.nextPartyRequestCleanupAt) return Promise.resolve(0);
+        return LifeState.expireStalePartyRequests(Math.max(1, Number(batchSize) || Config.partyRequestCleanupBatchSize))
+            .catch((error) => {
+                utils.infoWarn('BotPopulation', 'party request cleanup failed: %s', error?.message || error);
+                return 0;
+            })
+            .finally(() => {
+                this.nextPartyRequestCleanupAt = Date.now() + cleanupInterval;
+            });
+    },
+
+    runPartyRequestCleanup(batchSize = Config.partyRequestCleanupBatchSize) {
+        if (this.partyRequestCleanupRunning) return Promise.resolve(0);
+        this.partyRequestCleanupRunning = true;
+        return this.cleanupStalePartyRequests(Date.now(), batchSize)
+            .finally(() => {
+                this.partyRequestCleanupRunning = false;
+            });
+    },
+
     formBackgroundParties() {
         // Formation rewrites party membership.  It must not overlap with the
         // scheduler after that scheduler has already selected solo candidates.
+        // Player protection limits this work; it no longer disables the queue
+        // or its TTL cleanup completely.
         if (this.partyFormationRunning || Config.enabled === false || Config.backgroundPartyEnabled === false) {
             return Promise.resolve([]);
         }
-        if (this.playerActivityProfile().protected) {
-            Metrics.recordPartyFormationDeferral();
-            return Promise.resolve([]);
-        }
-        if (this.resolving) {
-            // The intervals are intentionally aligned (45s and 5s), so
-            // dropping this tick would starve party formation indefinitely.
-            // Let the scheduler launch it from its safe completion edge.
+        const activity = this.playerActivityProfile();
+        if (this.partyRequestCleanupRunning) {
             this.partyFormationPending = true;
             return Promise.resolve([]);
         }
+        if (this.resolving) {
+            // Keep the cleanup independent from the resolver. Formation will
+            // be retried by the interval after the current pass is complete.
+            this.partyFormationPending = true;
+            return activity.protected
+                ? Promise.resolve([])
+                : this.runPartyRequestCleanup(Config.partyRequestCleanupBatchSize).then(() => []);
+        }
+
+        const formationBudgetMs = this.partyFormationBudgetMs(activity);
+        if (formationBudgetMs <= 0) {
+            Metrics.recordPartyFormationDeferral();
+            return activity.protected
+                ? Promise.resolve([])
+                : this.runPartyRequestCleanup(Config.partyRequestCleanupBatchSize).then(() => []);
+        }
 
         this.partyFormationRunning = true;
+        this.partyFormationPending = false;
+        // A live player gets the whole formation budget. Cleanup runs from
+        // its own low-priority timer and must not sit in front of the
+        // candidate query in this critical path.
+        const cleanup = activity.protected
+            ? Promise.resolve(0)
+            : this.runPartyRequestCleanup(Config.partyRequestCleanupBatchSize);
         const startedAt = Date.now();
-        const deadlineAt = startedAt + this.partyFormationBudgetMs();
+        const deadlineAt = startedAt + formationBudgetMs;
         let budgetStopRecorded = false;
         const budgetReached = () => {
             if (Date.now() < deadlineAt) return false;
@@ -1109,43 +1235,51 @@ const PopulationService = {
                 Metrics.recordPartyFormationStage(name, Date.now() - stageStartedAt);
             });
         };
+        const candidateLimit = activity.protected
+            ? Math.min(80, Number(Config.partyFormationCandidateLimit) || 80)
+            : Config.partyFormationCandidateLimit;
+        const recruitmentCandidateLimit = activity.protected
+            ? Math.min(8, Number(Config.partyRecruitmentCandidateLimit) || 8)
+            : Config.partyRecruitmentCandidateLimit;
         const formationWork = () => {
-            const timestamp = Date.now();
-            const cleanupInterval = Math.max(5000, Number(Config.partyRequestCleanupIntervalMs) || 30000);
-            const cleanup = timestamp >= this.nextPartyRequestCleanupAt
-                ? LifeState.expireStalePartyRequests(Config.partyRequestCleanupBatchSize).catch((error) => {
-                    utils.infoWarn('BotPopulation', 'party request cleanup failed: %s', error?.message || error);
-                    return 0;
-                }).finally(() => {
-                    this.nextPartyRequestCleanupAt = Date.now() + cleanupInterval;
-                })
-                : Promise.resolve(0);
             return timedStage('cleanup', () => cleanup)
             // Extra capacity and eviction are reserved for actionable required
             // requests. The candidate query still includes preferred and
             // elective bots, but orders open requests ahead of the bounded
             // general pool so crowded solo grounds cannot starve them.
-            .then(() => timedStage('candidate_count', () => LifeState.coldPartyCandidateCount(true)))
-            .then((requiredPartyRequestCount) => timedStage('candidate_query', () => LifeState.coldPartyCandidates(Config.partyFormationCandidateLimit)
+            .then(() => timedStage('candidate_count', () => activity.protected
+                ? null
+                : LifeState.coldPartyCandidateCount(true)))
+            .then((requiredPartyRequestCount) => timedStage('candidate_query', () => LifeState.coldPartyCandidates(candidateLimit)
                 .then((states) => ({ states, requiredPartyRequestCount }))
                 .then(({ states, requiredPartyRequestCount }) => {
                     const activeParties = BackgroundPartyState.active();
                     const recruitSpots = activeParties
                         .filter((party) => (party.memberIds || []).length < Config.partyMaxSize)
                         .map((party) => party.spotId);
-                    const fairCandidates = LifeState.coldPartyCandidatesForSpots(
-                        recruitSpots,
-                        Config.partyRecruitmentCandidateLimit,
-                        false
-                    );
+                    // Recruitment is useful during idle maintenance, but it
+                    // is secondary to foreground work while a real player is
+                    // online. Avoid loading one fair sample per active party
+                    // into the player-critical path.
+                    const fairCandidates = activity.protected
+                        ? Promise.resolve([])
+                        : LifeState.coldPartyCandidatesForSpots(
+                            recruitSpots,
+                            recruitmentCandidateLimit,
+                            false
+                        );
                     return fairCandidates.then((spotCandidates) => {
                         const byId = new Map((states || []).map((state) => [Number(state.characterId), state]));
                         spotCandidates.forEach((state) => byId.set(Number(state.characterId), state));
                         const mergedStates = Array.from(byId.values());
+                        const sampledRequiredCount = mergedStates.filter((state) => (
+                            state.stats?.partyRequest?.status === 'open'
+                            && state.stats?.partyRequest?.priority === 'required'
+                        )).length;
                         return {
                             states: mergedStates,
                             partyRequestBacklog: mergedStates.some((state) => state.stats?.partyRequest?.status === 'open'),
-                            requiredPartyRequestCount
+                            requiredPartyRequestCount: Number(requiredPartyRequestCount || 0) || sampledRequiredCount
                         };
                     });
                 })))
@@ -1155,14 +1289,19 @@ const PopulationService = {
                     state.stats?.partyRequest?.status === 'open'
                     && state.stats?.partyRequest?.priority === 'required'
                 ));
-                return this.reclaimBackgroundPartyCapacity(requiredStates, requiredPartyRequestCount, {
-                    deadlineAt,
-                    markBudgetStop: () => budgetReached()
-                })
-                    .then(() => this.recruitBackgroundMembers(willingStates, {
+                const reclaim = activity.protected
+                    ? Promise.resolve([])
+                    : this.reclaimBackgroundPartyCapacity(requiredStates, requiredPartyRequestCount, {
                         deadlineAt,
                         markBudgetStop: () => budgetReached()
-                    })).then((recruitedIds) => ({
+                    });
+                const recruit = activity.protected
+                    ? Promise.resolve(new Set())
+                    : reclaim.then(() => this.recruitBackgroundMembers(willingStates, {
+                        deadlineAt,
+                        markBudgetStop: () => budgetReached()
+                    }));
+                return reclaim.then(() => recruit).then((recruitedIds) => ({
                     states: willingStates.filter((state) => !recruitedIds.has(Number(state.characterId))),
                     partyRequestBacklog,
                     requiredPartyRequestCount
@@ -1172,7 +1311,14 @@ const PopulationService = {
                 const activeParties = BackgroundPartyState.counts().active || 0;
                 const slots = Math.max(0, maxBackgroundPartiesForBacklog(requiredPartyRequestCount) - activeParties);
                 if (slots <= 0) return [];
-                const maxNewParties = Math.min(slots, Config.partyFormationBatchSize);
+                // A live player keeps a small formation reserve, but that
+                // reserve must not turn into a burst of simultaneous party
+                // writes while the foreground session is active.
+                const maxNewParties = Math.min(
+                    slots,
+                    Config.partyFormationBatchSize,
+                    activity.protected ? 1 : Config.partyFormationBatchSize
+                );
                 const activePartiesBySpot = BackgroundPartyState.active().reduce((counts, party) => {
                     const spotId = String(party.spotId || '');
                     if (spotId) counts.set(spotId, Number(counts.get(spotId) || 0) + 1);
@@ -1189,7 +1335,17 @@ const PopulationService = {
                         minSize: Config.partyMinSize,
                         maxSize: Config.partyMaxSize
                     });
-                    if (members.length < Config.partyMinSize) return null;
+                    if (members.length < Config.partyMinSize) {
+                        const requiredIds = group
+                            .filter((state) => state.stats?.partyRequest?.status === 'open'
+                                && state.stats?.partyRequest?.priority === 'required')
+                            .map((state) => state.characterId);
+                        return LifeState.deferUnformablePartyRequests(requiredIds, 'no_compatible_level_match')
+                            .catch((error) => {
+                                utils.infoWarn('BotPopulation', 'failed to defer unformable party requests: %s', error?.message || error);
+                                return 0;
+                            });
+                    }
 
                     const leader = PartyComposition.chooseLeader(members);
                     const objectiveMember = members.find((member) => (
@@ -1270,10 +1426,23 @@ const PopulationService = {
         return groupBySpot(states, options);
     },
 
-    partyFormationBudgetMs() {
-        const activity = this.playerActivityProfile();
-        if (activity.protected) return 0;
-        return Math.max(50, Number(Config.partyFormationIdleBudgetMs) || 500);
+    partyFormationBudgetMs(activity = this.playerActivityProfile()) {
+        const baseBudget = activity?.protected
+            ? Number(Config.partyFormationPlayerBudgetMs) || 600
+            : Number(Config.partyFormationIdleBudgetMs) || 500;
+        const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
+        const lagThrottle = Math.max(0, Number(Config.schedulerLagThrottleMs) || 0);
+        const lagAbort = Math.max(0, Number(Config.schedulerLagAbortMs) || 0);
+        if (lagAbort > 0 && lagMs >= lagAbort) return 0;
+        if (lagAbort > lagThrottle && lagMs > lagThrottle) {
+            const pressure = Math.min(1, (lagMs - lagThrottle) / (lagAbort - lagThrottle));
+            return Math.max(25, Math.round(baseBudget * (1 - pressure)));
+        }
+        if (lagAbort === 0 && lagThrottle > 0 && lagMs > lagThrottle) {
+            const pressure = Math.min(1, (lagMs - lagThrottle) / lagThrottle);
+            return Math.max(25, Math.round(baseBudget * (1 - pressure)));
+        }
+        return Math.max(25, baseBudget);
     },
 
     schedulerProfile() {
@@ -1697,8 +1866,8 @@ const PopulationService = {
             });
     },
 
-    reconcileMarketGoals(deadlineAt = Infinity) {
-        return LifeState.marketGoalCandidates(Config.maxMarketGoalReconcilesPerTick)
+    reconcileMarketGoals(deadlineAt = Infinity, limit = Config.maxMarketGoalReconcilesPerTick) {
+        return LifeState.marketGoalCandidates(limit)
             .then((states) => this.runInSchedulerSlices(states, (state) => {
                     const spot = SpotProfiles.findForState(state);
                     return GoalService.review(state, { spot }).then((goalSnapshot) => {

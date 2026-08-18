@@ -1092,6 +1092,85 @@ function expireStalePartyRequests(limit = 0) {
         }));
 }
 
+function deferUnformablePartyRequests(characterIds = [], reason = 'no_compatible_level_match') {
+    const ids = [...new Set((characterIds || []).map((id) => Number(id)).filter(Boolean))].slice(0, 500);
+    if (!ids.length) return Promise.resolve(0);
+
+    const timestamp = now();
+    const cooldownMs = Math.max(30000, Number(Config.partyRequestCooldownMs) || 5 * 60 * 1000);
+    const staggerMs = Math.min(120000, Math.max(0, Math.floor(cooldownMs / 2)));
+    const placeholders = ids.map(() => '?').join(', ');
+    const selection = `characterId IN (${placeholders})
+        AND phase = 'cold'
+        AND simulationOwner = 'legacy_main'
+        AND (partyId IS NULL OR partyId = '')
+        AND activity IN ('hunting', 'resting', 'party_wait')
+        AND json_extract(statsJson, '$.partyRequest.status') = 'open'
+        AND json_extract(statsJson, '$.partyRequest.priority') = 'required'`;
+    const selectCurrent = () => Database.execute([
+        `SELECT characterId, statsJson FROM ${TABLE} WHERE ${selection}`,
+        ids
+    ]);
+    const waitForPending = (rows) => Promise.all((rows || [])
+        .map((row) => pendingWrites.get(Number(row.characterId || 0)))
+        .filter(Boolean)
+        .map((pending) => pending.catch(() => null)));
+    const sql = `UPDATE ${TABLE}
+        SET statsJson = json_set(
+                COALESCE(statsJson, '{}'),
+                '$.partyRequest.status', 'deferred',
+                '$.partyRequest.deferredUntil', ? + (ABS(characterId) % ?),
+                '$.partyRequest.expiredAt', ?,
+                '$.partyRequest.attempts', COALESCE(CAST(json_extract(statsJson, '$.partyRequest.attempts') AS INTEGER), 0) + 1,
+                '$.partyRequest.lastReason', ?
+            ),
+            updatedAt = ?
+        WHERE ${selection}`;
+    const params = [
+        timestamp + cooldownMs,
+        Math.max(1, staggerMs),
+        timestamp,
+        String(reason || 'no_compatible_level_match'),
+        timestamp,
+        ...ids
+    ];
+    const updateCache = (rows) => {
+        (rows || []).forEach((row) => {
+            const characterId = Number(row.characterId || 0);
+            const cached = cache.get(characterId);
+            if (!cached) return;
+            const request = parseJson(row.statsJson, {}).partyRequest;
+            if (request?.status !== 'open' || request.priority !== 'required') return;
+            cache.set(characterId, {
+                ...cached,
+                updatedAt: timestamp,
+                stats: {
+                    ...(cached.stats || {}),
+                    partyRequest: {
+                        ...request,
+                        status: 'deferred',
+                        deferredUntil: timestamp + cooldownMs + (Math.abs(characterId) % Math.max(1, staggerMs)),
+                        expiredAt: timestamp,
+                        attempts: Number(request.attempts || 0) + 1,
+                        lastReason: String(reason || 'no_compatible_level_match')
+                    }
+                }
+            });
+        });
+    };
+
+    return selectCurrent()
+        .then((rows) => waitForPending(rows).then(() => selectCurrent()))
+        .then((rows) => Database.execute([sql, params]).then((result) => {
+            const deferred = Number(result?.affectedRows || 0);
+            if (deferred > 0) {
+                updateCache(rows);
+                utils.infoWarn('BotLife', 'deferred %d unformable party requests reason=%s', deferred, String(reason || 'unknown'));
+            }
+            return deferred;
+        }));
+}
+
 function discardInvalidEquipmentPlans() {
     const timestamp = now();
     return Database.execute([
@@ -2159,12 +2238,10 @@ const BotLifeState = {
         const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
         return Database.execute([
             `SELECT states.* FROM ${TABLE} states
-            INNER JOIN bot_goal_state goals ON goals.characterId = states.characterId
             WHERE states.phase = 'cold'
             AND (states.partyId IS NULL OR states.partyId = '')
             AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting')
             AND COALESCE(CAST(json_extract(states.statsJson, '$.marketSellRetryAfter') AS INTEGER), 0) <= ?
-            AND goals.goalJson LIKE '%"type":"sell_inventory"%'
             ORDER BY states.updatedAt ASC
             LIMIT ${safeLimit}`,
             [Number(timestamp) || now()]
@@ -2174,6 +2251,29 @@ const BotLifeState = {
             return state;
         })).catch((err) => {
             utils.infoWarn('BotLife', 'failed to fetch market-goal candidates: %s', err.message);
+            return [];
+        });
+    },
+
+    staleGoalCandidates(limit = 8, timestamp = now()) {
+        if (!initialized) return Promise.resolve([]);
+        const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
+        return Database.execute([
+            `SELECT states.* FROM ${TABLE} states
+            INNER JOIN bot_goal_state goals ON goals.characterId = states.characterId
+            WHERE states.phase = 'cold'
+            AND (states.partyId IS NULL OR states.partyId = '')
+            AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting')
+            AND COALESCE(CAST(json_extract(goals.goalJson, '$.nextReviewAt') AS INTEGER), 0) <= ?
+            ORDER BY goals.updatedAt ASC, states.updatedAt ASC
+            LIMIT ${safeLimit}`,
+            [Number(timestamp) || now()]
+        ]).then((rows) => rows.map((row) => {
+            const state = normalize(row);
+            cache.set(state.characterId, state);
+            return state;
+        })).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to fetch stale goal candidates: %s', err.message);
             return [];
         });
     },
@@ -2722,6 +2822,11 @@ const BotLifeState = {
     expireStalePartyRequests(limit = 0) {
         if (!initialized) return Promise.resolve(0);
         return expireStalePartyRequests(limit);
+    },
+
+    deferUnformablePartyRequests(characterIds = [], reason = 'no_compatible_level_match') {
+        if (!initialized) return Promise.resolve(0);
+        return deferUnformablePartyRequests(characterIds, reason);
     },
 
     cachedState(characterId) {

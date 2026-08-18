@@ -47,7 +47,8 @@ async function run() {
     assert.strictEqual(playerProfile.idle, false, 'a real player must select the player scheduler profile');
     assert.strictEqual(playerProfile.budgetMs, Config.schedulerPlayerBudgetMs, 'player scheduler must use the conservative budget');
     assert.strictEqual(playerProfile.maxResolvesPerTick, Config.schedulerPlayerMaxResolvesPerTick, 'player scheduler must use the smaller cold batch cap');
-    assert.strictEqual(PopulationService.partyFormationBudgetMs(), 0, 'player presence must defer background party formation');
+    assert.strictEqual(PopulationService.partyFormationBudgetMs(), Config.partyFormationPlayerBudgetMs,
+        'player presence must keep a bounded background party formation budget');
 
     PopulationService.playerActivityProfile = () => ({ protected: true, activeParty: true, realPlayers: 1, companionCount: 8, mode: 'party' });
     const partyProfile = PopulationService.schedulerProfile();
@@ -66,6 +67,7 @@ async function run() {
     Config.schedulerLagAbortMs = originalLagAbort;
     Metrics.currentEventLoopLag = () => Config.schedulerLagAbortMs;
     assert.strictEqual(PopulationService.schedulerProfile().budgetMs, 0, 'critical event-loop lag must stop background work');
+    assert.strictEqual(PopulationService.partyFormationBudgetMs(), 0, 'critical event-loop lag must stop party formation too');
 
     PlayerActivitySignal.reset();
     const player = {
