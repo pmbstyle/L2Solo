@@ -92,9 +92,29 @@ function petSkill(actor, predicate) {
 function effectActive(summon, skill) {
     const semantic = skill.fetchSemantic?.() || C4SkillRules.resolve(skill);
     const skillId = Number(skill.fetchSelfId?.() || 0);
-    return EffectStore.list(summon).some((effect) => (
-        Number(effect?.id || 0) === skillId || (semantic.effect && effect?.key === semantic.effect)
-    ));
+    const stackFamily = semantic.stackFamily;
+    const desiredStackOrder = Number(semantic.stackOrder);
+
+    return EffectStore.list(summon).some((effect) => {
+        if (Number(effect?.id || 0) === skillId || (semantic.effect && effect?.key === semantic.effect)) {
+            return true;
+        }
+
+        // A stronger party buff can occupy the same native stack as a
+        // servitor buff (for example Chant of Shielding vs Servitor Physical
+        // Shield).  It already covers the requested stat, so do not recast
+        // the weaker pet skill just because its exact id/key is absent.
+        if (
+            !stackFamily ||
+            effect?.type === 'debuff' ||
+            effect?.stackFamily !== stackFamily ||
+            !Number.isFinite(desiredStackOrder)
+        ) {
+            return false;
+        }
+
+        return Number(effect.stackOrder) >= desiredStackOrder;
+    });
 }
 
 function cast(session, actor, summon, skill, Generics) {
@@ -150,29 +170,33 @@ function combatAction(session, actor, target, Generics) {
         && summonMaxHp > 0 && summonHp / summonMaxHp < 0.7);
     if (heal) return cast(session, actor, summon, heal, Generics);
 
+    if (target) {
+        const targetId = Number(target.fetchId?.() || 0);
+        const selectedId = Number(actor.fetchDestId?.() || 0);
+        if (summon.controlMode !== 'attack' || selectedId !== targetId) {
+            actor.select?.({ id: targetId });
+            SummonControl.attack(session, actor, summon);
+            // The summon keeps its own attack loop. Starting that loop must
+            // not consume the owner's combat tick: the summoner can cast an
+            // offensive spell while the servitor is moving into melee range.
+            return { handled: false, reason: 'summon_attack', summon, target };
+        }
+
+        // Pet maintenance must not steal a combat tick from the owner while
+        // the servitor is already engaged. Let the normal combat selector
+        // choose the summoner's own spell or weapon attack first.
+        return { handled: false, reason: 'summon_attacking', summon, target };
+    }
+
+    // With no active target, refresh one missing pet buff at a time. This
+    // keeps maintenance out of the combat rotation while preserving idle
+    // servitor upkeep.
     const buff = petSkill(actor, (skill) => PET_BUFF_IDS.has(Number(skill.fetchSelfId()))
         && !effectActive(summon, skill));
     if (buff) return cast(session, actor, summon, buff, Generics);
 
-    if (!target) {
-        if (summon.controlMode !== 'follow') SummonControl.startFollowOwner(session, actor, summon);
-        return { handled: true, reason: 'summon_follow', summon };
-    }
-
-    const targetId = Number(target.fetchId?.() || 0);
-    const selectedId = Number(actor.fetchDestId?.() || 0);
-    if (summon.controlMode !== 'attack' || selectedId !== targetId) {
-        actor.select?.({ id: targetId });
-        SummonControl.attack(session, actor, summon);
-        // The summon keeps its own attack loop.  Starting that loop must not
-        // consume the owner's combat tick: the summoner can cast an offensive
-        // spell while the servitor is moving into melee range.
-        return { handled: false, reason: 'summon_attack', summon, target };
-    }
-
-    // A servitor already attacking is not an owner action.  Let the normal
-    // combat selector choose the summoner's own spell or weapon attack.
-    return { handled: false, reason: 'summon_attacking', summon, target };
+    if (summon.controlMode !== 'follow') SummonControl.startFollowOwner(session, actor, summon);
+    return { handled: true, reason: 'summon_follow', summon };
 }
 
 module.exports = {
