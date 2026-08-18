@@ -361,11 +361,55 @@ function validateLine(trade, session, line, { botSide = false } = {}) {
     return { ok: true, item: liveItem };
 }
 
-function incomingSlots(session, outgoingLines) {
+function inventoryCapacity(session, outgoingLines) {
     const inventory = session.actor.backpack.fetchItems();
-    const existingSelfIds = new Set(inventory.filter((item) => item.fetchStackable?.()).map((item) => Number(item.fetchSelfId())));
+    const equippedItems = inventory.filter((item) => !!item.fetchEquipped?.()).length;
+    const stackableItems = inventory.filter((item) => !!item.fetchStackable?.());
+    const existingSelfIds = new Set(stackableItems.map((item) => Number(item.fetchSelfId())));
     const incomingNew = outgoingLines.filter((line) => !line.stackable && !existingSelfIds.has(Number(line.selfId))).length;
-    return inventory.length + incomingNew <= MAX_INVENTORY_ITEMS;
+    const canonicalSlots = new Set(stackableItems.map((item) => Number(item.fetchSelfId()))).size
+        + inventory.filter((item) => !item.fetchStackable?.()).length;
+    const projectedRawItems = inventory.length + incomingNew;
+    return {
+        ok: projectedRawItems <= MAX_INVENTORY_ITEMS,
+        rawItems: inventory.length,
+        equippedItems,
+        looseItems: inventory.length - equippedItems,
+        stackableItems: stackableItems.length,
+        stackableKinds: existingSelfIds.size,
+        canonicalSlots,
+        incomingLines: outgoingLines.length,
+        incomingNew,
+        projectedRawItems,
+        maxItems: MAX_INVENTORY_ITEMS,
+        incoming: outgoingLines.map((line) => ({
+            selfId: Number(line.selfId),
+            count: Number(line.count),
+            stackable: !!line.stackable,
+            name: line.name
+        }))
+    };
+}
+
+function logInventoryCapacity(trade, session, snapshot) {
+    console.info(
+        'BotTradeCapacity :: trade=%s receiver=%s receiverType=%s raw=%d equipped=%d loose=%d stackableRows=%d stackableKinds=%d canonical=%d incomingLines=%d incomingNew=%d projectedRaw=%d max=%d accepted=%s incoming=%s',
+        trade.id,
+        actorName(session),
+        isBotSession(session) ? 'bot' : 'player',
+        snapshot.rawItems,
+        snapshot.equippedItems,
+        snapshot.looseItems,
+        snapshot.stackableItems,
+        snapshot.stackableKinds,
+        snapshot.canonicalSlots,
+        snapshot.incomingLines,
+        snapshot.incomingNew,
+        snapshot.projectedRawItems,
+        snapshot.maxItems,
+        snapshot.ok,
+        JSON.stringify(snapshot.incoming)
+    );
 }
 
 function transferEntries(trade) {
@@ -457,7 +501,11 @@ async function commit(playerSession) {
             return validation;
         }
     }
-    if (!incomingSlots(trade.playerSession, [...trade.botItems.values()]) || !incomingSlots(trade.botSession, [...trade.playerItems.values()])) {
+    const playerCapacity = inventoryCapacity(trade.playerSession, [...trade.botItems.values()]);
+    const botCapacity = inventoryCapacity(trade.botSession, [...trade.playerItems.values()]);
+    logInventoryCapacity(trade, trade.playerSession, playerCapacity);
+    logInventoryCapacity(trade, trade.botSession, botCapacity);
+    if (!playerCapacity.ok || !botCapacity.ok) {
         const result = { ok: false, reason: 'inventory_capacity' };
         recordSupplyTrade(trade, 'failed', result.reason, false);
         return result;
