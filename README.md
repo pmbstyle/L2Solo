@@ -131,6 +131,7 @@ Example:
 [OpenRouter]
 enabled = true
 apiKey = <your-OpenRouter-key-here>
+apiUrl = https://openrouter.ai/api/v1/chat/completions
 model = openai/gpt-5.6-luna
 partyRouterModel = openai/gpt-5.6-luna
 debug = true
@@ -141,6 +142,29 @@ OpenRouter can also read the key/model from environment variables:
 ```bash
 OPENROUTER_API_KEY=sk-or-v1-your-key-here npm start
 ```
+
+The bot simulation can also use a local or remote provider that exposes the
+OpenAI-compatible Chat Completions API. Use an `[AI]` section instead of
+`[OpenRouter]` and provide the complete endpoint URL:
+
+```ini
+[AI]
+enabled = true
+apiUrl = http://127.0.0.1:1234/v1/chat/completions
+apiKey = lm-studio
+model = <model-id-from-the-provider>
+partyRouterModel = <model-id-from-the-provider>
+# Optional for thinking models: off (default), low, medium, or high.
+# reasoningEffort = off
+```
+
+For Ollama, use `http://127.0.0.1:11434/v1/chat/completions` and a pulled model
+tag such as `llama3.2`. The API key can be empty for local providers; a value
+like `ollama` or `lm-studio` is also accepted when the server expects an
+OpenAI-compatible client key. Thinking is disabled by default for `[AI]`,
+which keeps the bounded bot response budget available for the required JSON;
+set `reasoningEffort` to `low`, `medium`, or `high` when the selected model
+benefits from explicit reasoning.
 
 ## In-Game Commands
 

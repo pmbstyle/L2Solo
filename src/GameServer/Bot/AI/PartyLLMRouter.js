@@ -30,7 +30,7 @@ function config() {
 
 function enabled() {
     const cfg = config();
-    return cfg.enabled === true && !!cfg.apiKey && !!cfg.model;
+    return OpenRouterGateway.isConfigured(cfg);
 }
 
 function playerId(session) {
@@ -120,7 +120,7 @@ function prompt(input, cards) {
 
 async function route(input = {}) {
     const cfg = config();
-    if (!cfg.enabled || !cfg.apiKey || !cfg.model) {
+    if (!OpenRouterGateway.isConfigured(cfg)) {
         return { ok: false, route: 'none', candidate: null, reason: 'disabled', telemetry: null };
     }
 

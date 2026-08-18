@@ -387,7 +387,7 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
             }
         };
 
-        const llmReady = cfg.enabled && !!cfg.apiKey;
+        const llmReady = OpenRouterGateway.isConfigured(cfg);
         const estimatedPromptTokens = estimatePromptTokens({
             messages: [
                 { role: 'system', content: systemPrompt() },
