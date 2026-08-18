@@ -164,13 +164,17 @@ const BackgroundPartyState = {
         const cutoff = Math.max(0, Number(timestamp) - retentionMs);
         return Database.execute([
             `DELETE FROM ${TABLE}
-            WHERE partyId IN (
-                SELECT partyId FROM ${TABLE}
+             WHERE partyId IN (
+                SELECT parties.partyId FROM ${TABLE} parties
                 WHERE status <> 'active'
-                  AND updatedAt <= ?
-                ORDER BY updatedAt ASC
+                  AND parties.updatedAt <= ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM bot_life_state life
+                      WHERE life.partyId = parties.partyId
+                  )
+                ORDER BY parties.updatedAt ASC
                 LIMIT ${safeLimit}
-            )`,
+             )`,
             [cutoff]
         ]).then((result) => {
             const deleted = Number(result?.affectedRows || 0);

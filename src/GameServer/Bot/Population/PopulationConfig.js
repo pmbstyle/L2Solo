@@ -121,6 +121,7 @@ const DEFAULTS = {
     // population database forever.
     partyHistoryRetentionMs: 24 * 60 * 60 * 1000,
     partyHistoryCleanupBatchSize: 1000,
+    partyHistoryCleanupIntervalMs: 60 * 60 * 1000,
     cooldownGraceMs: 120000,
     cooldownBatchSize: 20,
     cooldownRadius: 11000,
@@ -226,6 +227,7 @@ const ENV_KEYS = {
     partyMarketBreakMinSessionMs: 'BOT_PARTY_MARKET_BREAK_MIN_SESSION_MS',
     partyHistoryRetentionMs: 'BOT_PARTY_HISTORY_RETENTION_MS',
     partyHistoryCleanupBatchSize: 'BOT_PARTY_HISTORY_CLEANUP_BATCH_SIZE',
+    partyHistoryCleanupIntervalMs: 'BOT_PARTY_HISTORY_CLEANUP_INTERVAL_MS',
     devLogPlayerChat: 'BOT_DEV_LOG_PLAYER_CHAT',
     debug: 'BOT_POPULATION_DEBUG'
 };

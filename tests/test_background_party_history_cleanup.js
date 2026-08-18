@@ -26,7 +26,8 @@ const originalExecute = Database.execute;
     const deleteQuery = queries.find((entry) => String(entry?.[0]?.[0] || '').includes('DELETE FROM bot_background_parties'));
     assert(deleteQuery, 'cleanup should issue a bounded history delete');
     assert.match(deleteQuery[0][0], /status <> 'active'/);
-    assert.match(deleteQuery[0][0], /ORDER BY updatedAt ASC/);
+    assert.match(deleteQuery[0][0], /ORDER BY (?:parties\.)?updatedAt ASC/);
+    assert.match(deleteQuery[0][0], /NOT EXISTS/);
     assert.match(deleteQuery[0][0], /LIMIT 7/);
     assert.deepStrictEqual(deleteQuery[0][1], [timestamp - Config.partyHistoryRetentionMs]);
 

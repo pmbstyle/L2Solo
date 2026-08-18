@@ -425,6 +425,15 @@ function assignPartyMembers(members = [], party) {
     )), Promise.resolve()).then(() => ({ assigned, failed }));
 }
 
+function syncPartyLeader(members = [], party, leaderId) {
+    const nextLeaderId = Number(leaderId || 0);
+    const staleMembers = (members || []).filter((member) => (
+        Number(member.party?.leaderId || 0) !== nextLeaderId
+    ));
+    if (!staleMembers.length) return Promise.resolve({ assigned: [], failed: [] });
+    return assignPartyMembers(staleMembers, { ...party, leaderId: nextLeaderId });
+}
+
 function activationCandidatesForPlayer(states, playerLevel) {
     const level = Number(playerLevel || 1);
     const range = Math.max(0, Number(Config.activationLevelRange || 0));
@@ -1373,9 +1382,10 @@ const PopulationService = {
                 member.stats?.equipmentPlan?.partyNeed === 'required'
             )) || retainedMembers.find((member) => partyObjectiveForState(member));
             const objective = objectiveMember ? partyObjectiveForState(objectiveMember) : null;
-            await BackgroundPartyState.createOrUpdate({
+            const nextLeaderId = leaderIdForMembers(party, retainedMembers);
+            const nextParty = {
                 ...party,
-                leaderId: leaderIdForMembers(party, retainedMembers),
+                leaderId: nextLeaderId,
                 memberIds: retainedMembers.map((member) => member.characterId),
                 roleCoverage: PartyComposition.roleCoverage(retainedMembers),
                 spotId: objective?.spotId || party.spotId,
@@ -1387,7 +1397,11 @@ const PopulationService = {
                         : null,
                     lastRequirementRefreshAt: timestamp
                 }
-            });
+            };
+            if (Number(nextLeaderId) !== Number(party.leaderId)) {
+                await syncPartyLeader(retainedMembers, nextParty, nextLeaderId);
+            }
+            await BackgroundPartyState.createOrUpdate(nextParty);
             return changed || departures.length ? [...refreshed, party.partyId] : refreshed;
         }), Promise.resolve([])));
     },
@@ -1454,13 +1468,31 @@ const PopulationService = {
                 const recruits = PartyComposition.selectRecruits(members, nearby, { maxSize: Config.partyMaxSize });
                 if (!recruits.length) return null;
 
-                return assignPartyMembers(recruits, party).then(({ assigned }) => {
+                // Elect an attached leader before writing recruits. If the
+                // persisted leader already departed, assigning recruits with
+                // that stale id creates a split-brain party state.
+                const electedLeaderId = leaderIdForMembers(party, members)
+                    || Number(recruits[0]?.characterId || 0);
+                const assignmentParty = { ...party, leaderId: electedLeaderId };
+                const retainedLeaderSync = Number(electedLeaderId) !== Number(party.leaderId)
+                    ? syncPartyLeader(members, assignmentParty, electedLeaderId)
+                    : Promise.resolve({ assigned: [], failed: [] });
+                return retainedLeaderSync.then(({ failed: retainedLeaderFailures = [] }) => {
+                    if (retainedLeaderFailures.length) {
+                        utils.infoWarn('BotPopulation', 'party leader sync failed for %s members=%d', party.partyId, retainedLeaderFailures.length);
+                        return null;
+                    }
+                    return assignPartyMembers(recruits, assignmentParty);
+                }).then((assignmentResult) => {
+                    if (!assignmentResult) return null;
+                    const { assigned = [] } = assignmentResult;
                     assigned.forEach((recruit) => claimed.add(Number(recruit.characterId)));
                     if (!assigned.length) return null;
                     const allMembers = [...members, ...assigned];
+                    const finalLeaderId = leaderIdForMembers(assignmentParty, allMembers);
                     return BackgroundPartyState.createOrUpdate({
                         ...party,
-                        leaderId: leaderIdForMembers(party, allMembers),
+                        leaderId: finalLeaderId,
                         memberIds: allMembers.map((member) => member.characterId),
                         roleCoverage: PartyComposition.roleCoverage(allMembers),
                         stats: {
@@ -1468,7 +1500,7 @@ const PopulationService = {
                             memberNames: allMembers.map((member) => member.name),
                             lastRecruitAt: Date.now()
                         }
-                    }).then((updatedParty) => LifeEvents.record(party.leaderId, 'party_recruit', `${members[0].name} recruited ${assigned.map((recruit) => recruit.name).join(', ')} near ${party.spotId}`, {
+                    }).then((updatedParty) => LifeEvents.record(finalLeaderId, 'party_recruit', `${members[0].name} recruited ${assigned.map((recruit) => recruit.name).join(', ')} near ${party.spotId}`, {
                         partyId: party.partyId,
                         recruitIds: assigned.map((recruit) => recruit.characterId),
                         spotId: party.spotId

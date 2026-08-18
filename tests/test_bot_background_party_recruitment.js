@@ -11,6 +11,7 @@ const HotActivation = invoke('GameServer/Bot/Population/HotActivation');
 const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const BotManager = invoke('GameServer/Bot/BotManager');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
+const ColdSimulationCoordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
 
 const originals = {
     active: PartyState.active,
@@ -30,6 +31,7 @@ const originals = {
     findCurrentSpot: SpotService.findCurrentSpot,
     record: LifeEvents.record,
     handoffToMain: ColdSimulationOwner.handoffToMain,
+    acceptColdState: ColdSimulationCoordinator.acceptColdState,
     partyMinSize: Config.partyMinSize,
     partyMaxSize: Config.partyMaxSize,
     maxBackgroundParties: Config.maxBackgroundParties,
@@ -120,6 +122,11 @@ async function run() {
     ]);
     assert.strictEqual(staleLeaderSaved.leaderId, 1,
         'recruitment must re-elect an attached member when the stored leader has already departed');
+    assert.deepStrictEqual(
+        assigned.filter((entry) => entry.partyId === 'bgp_stale_leader').map((entry) => entry.leaderId),
+        [1, 1, 1],
+        'retained members and recruits must receive the elected leader id'
+    );
 
     const sharedParties = [
         { partyId: 'bgp_shared_a', leaderId: 50, memberIds: [50, 51, 52, 53], spotId: 'cruma', stats: {} },
@@ -265,6 +272,25 @@ async function run() {
     assert(!activationOrder.some((entry) => entry.startsWith('spawn:')), 'failed party cleanup must stop hot activation before spawning');
 
     activationOrder.length = 0;
+    const failedSpawnState = {
+        ...groupedState,
+        characterId: 91004,
+        name: 'FailedSpawnProbe'
+    };
+    LifeState.clearParty = async () => 2;
+    LifeState.cachedState = (characterId) => characterId === failedSpawnState.characterId
+        ? { ...releasedState, characterId: failedSpawnState.characterId, name: failedSpawnState.name }
+        : null;
+    BotManager.loadAndSpawnBot = () => Promise.resolve(null);
+    ColdSimulationCoordinator.acceptColdState = async (state) => {
+        activationOrder.push(`restore:${state.characterId}`);
+        return { ok: true, reason: 'restored_for_test' };
+    };
+    const failedSpawn = await HotActivation.activate(failedSpawnState, 'spawn_failure', { keepStoreLocation: true });
+    assert.strictEqual(failedSpawn.ok, false, 'failed hot spawn must be reported as failed');
+    assert.strictEqual(activationOrder.at(-1), 'restore:91004', 'failed activation must return its released state to the cold worker');
+
+    activationOrder.length = 0;
     const concurrentState = {
         ...groupedState,
         characterId: 91003,
@@ -274,6 +300,10 @@ async function run() {
         ...concurrentState,
         activity: 'hunting',
         party: { partyId: null, leaderId: null }
+    };
+    BotManager.loadAndSpawnBot = (_accountName, options) => {
+        activationOrder.push(`spawn:${options.coldLifeState?.party?.partyId || 'solo'}`);
+        return Promise.resolve({ actor: {} });
     };
     let releaseStatus;
     const releaseGate = new Promise((resolve) => { releaseStatus = resolve; });
@@ -313,6 +343,7 @@ run().catch((err) => {
     SpotService.findCurrentSpot = originals.findCurrentSpot;
     LifeEvents.record = originals.record;
     ColdSimulationOwner.handoffToMain = originals.handoffToMain;
+    ColdSimulationCoordinator.acceptColdState = originals.acceptColdState;
     Config.partyMinSize = originals.partyMinSize;
     Config.partyMaxSize = originals.partyMaxSize;
     Config.maxBackgroundParties = originals.maxBackgroundParties;
