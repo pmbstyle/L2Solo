@@ -20,6 +20,17 @@ for (const npcId of cityGatekeepers) {
 }
 
 assert.strictEqual(GatekeeperTeleports.destination(7006, 18), null, 'a gatekeeper must not expose another city’s route by raw id');
+assert.deepStrictEqual(
+    GatekeeperTeleports.destination(7006, 462),
+    { locX: 49315, locY: 248452, locZ: -5960, price: 2500 },
+    'Roxxy must teleport to the interior geodata layer of Elven Ruins'
+);
+assert.strictEqual(
+    GatekeeperTeleports.destination(7006, 1003),
+    null,
+    'Roxxy must not replace the interior Elven Ruins route with its surface entrance'
+);
+assert.match(GatekeeperTeleports.html(7006), /gatekeeper-teleport 462/, 'Roxxy must expose the interior Elven Ruins route');
 assert.deepStrictEqual(GatekeeperTeleports.destination(7059, 19), { locX: 83400, locY: 147943, locZ: -3404, price: 8100 });
 assert.match(GatekeeperTeleports.html(7080), /Dragon Valley - 6400 Adena/);
 assert.match(GatekeeperTeleports.html(7848), /Forsaken Plains - 840 Adena/);
