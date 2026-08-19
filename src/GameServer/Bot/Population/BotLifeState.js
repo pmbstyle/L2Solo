@@ -994,7 +994,7 @@ function clearPassivePartyRequests() {
         WHERE phase = 'cold'
         AND (partyId IS NULL OR partyId = '')
         AND activity IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead')
-        AND json_extract(statsJson, '$.partyRequest.status') = 'open'`,
+        AND partyRequestStatus = 'open'`,
         [timestamp]
     ]).then((result) => {
         const cleared = Number(result?.affectedRows || 0);
@@ -1018,9 +1018,9 @@ function expireStalePartyRequests(limit = 0) {
         AND simulationOwner = 'legacy_main'
         AND (partyId IS NULL OR partyId = '')
         AND activity IN ('hunting', 'resting', 'party_wait')
-        AND json_extract(statsJson, '$.partyRequest.status') = 'open'
-        AND CAST(json_extract(statsJson, '$.partyRequest.requestedAt') AS INTEGER) <=
-            CASE WHEN json_extract(statsJson, '$.partyRequest.priority') = 'required' THEN ? ELSE ? END`;
+        AND partyRequestStatus = 'open'
+        AND partyRequestedAt <= ?
+        AND (COALESCE(partyRequestPriority, '') <> 'required' OR partyRequestedAt <= ?)`;
     const target = safeLimit > 0
         ? `characterId IN (
                 SELECT characterId FROM ${TABLE}
@@ -1044,10 +1044,10 @@ function expireStalePartyRequests(limit = 0) {
         Math.max(1, staggerMs),
         timestamp,
         timestamp,
-        timestamp - requiredMaxAge,
-        timestamp - preferredMaxAge
+        timestamp - preferredMaxAge,
+        timestamp - requiredMaxAge
     ];
-    const staleParams = [timestamp - requiredMaxAge, timestamp - preferredMaxAge];
+    const staleParams = [timestamp - preferredMaxAge, timestamp - requiredMaxAge];
     const selectStale = () => Database.execute([
         `SELECT characterId, statsJson FROM ${TABLE} WHERE ${target}`,
         staleParams
@@ -1105,8 +1105,8 @@ function deferUnformablePartyRequests(characterIds = [], reason = 'no_compatible
         AND simulationOwner = 'legacy_main'
         AND (partyId IS NULL OR partyId = '')
         AND activity IN ('hunting', 'resting', 'party_wait')
-        AND json_extract(statsJson, '$.partyRequest.status') = 'open'
-        AND json_extract(statsJson, '$.partyRequest.priority') = 'required'`;
+        AND partyRequestStatus = 'open'
+        AND partyRequestPriority = 'required'`;
     const selectCurrent = () => Database.execute([
         `SELECT characterId, statsJson FROM ${TABLE} WHERE ${selection}`,
         ids
@@ -1793,45 +1793,48 @@ const BotLifeState = {
         const safeLimit = Math.max(1, Math.min(500, Number(limit) || 80));
         const activityClause = partyRequiredOnly
             ? `activity IN ('hunting', 'resting', 'party_wait')
-                AND json_extract(statsJson, '$.partyRequest.status') = 'open'
-                AND json_extract(statsJson, '$.partyRequest.priority') = 'required'`
+                AND partyRequestStatus = 'open'
+                AND partyRequestPriority = 'required'`
             : "activity IN ('hunting', 'resting', 'party_wait')";
-        const stateActivityClause = partyRequiredOnly
-            ? `states.activity IN ('hunting', 'resting', 'party_wait')
-                AND json_extract(states.statsJson, '$.partyRequest.status') = 'open'
-                AND json_extract(states.statsJson, '$.partyRequest.priority') = 'required'`
-            : "states.activity IN ('hunting', 'resting', 'party_wait')";
-        const objectiveSpot = "COALESCE(json_extract(statsJson, '$.partyRequest.spotId'), json_extract(statsJson, '$.equipmentPlan.next.spotId'), spotId)";
-        const stateObjectiveSpot = "COALESCE(json_extract(states.statsJson, '$.partyRequest.spotId'), json_extract(states.statsJson, '$.equipmentPlan.next.spotId'), states.spotId)";
 
         return Database.execute([
-            `SELECT states.* FROM ${TABLE} states
-            INNER JOIN (
-                SELECT ${objectiveSpot} AS candidateSpot, COUNT(*) AS candidateCount, MIN(updatedAt) AS oldestAt
+            `WITH eligible AS MATERIALIZED (
+                SELECT characterId, partyObjectiveSpot AS candidateSpot,
+                    partyRequestStatus, partyRequestPriority, updatedAt, level
                 FROM ${TABLE}
                 WHERE phase = 'cold'
                 AND simulationOwner = 'legacy_main'
                 AND (partyId IS NULL OR partyId = '')
                 AND spotId IS NOT NULL
                 AND ${activityClause}
+            ), party_spots AS MATERIALIZED (
+                SELECT candidateSpot, COUNT(*) AS candidateCount, MIN(updatedAt) AS oldestAt
+                FROM eligible
                 GROUP BY candidateSpot
-            ) party_spots ON party_spots.candidateSpot = ${stateObjectiveSpot}
-            WHERE states.phase = 'cold'
-            AND states.simulationOwner = 'legacy_main'
-            AND (states.partyId IS NULL OR states.partyId = '')
-            AND states.spotId IS NOT NULL
-            AND ${stateActivityClause}
-            ORDER BY
-                CASE
-                    WHEN json_extract(states.statsJson, '$.partyRequest.status') = 'open'
-                        AND json_extract(states.statsJson, '$.partyRequest.priority') = 'required' THEN 0
-                    WHEN json_extract(states.statsJson, '$.partyRequest.status') = 'open' THEN 1
-                    ELSE 2
-                END ASC,
-                party_spots.candidateCount DESC, party_spots.oldestAt ASC,
-                states.level ASC, states.updatedAt ASC
-            LIMIT ${safeLimit}`,
-            []
+            ), ranked AS MATERIALIZED (
+                SELECT eligible.characterId,
+                    CASE
+                        WHEN eligible.partyRequestStatus = 'open'
+                            AND eligible.partyRequestPriority = 'required' THEN 0
+                        WHEN eligible.partyRequestStatus = 'open' THEN 1
+                        ELSE 2
+                    END AS requestRank,
+                    party_spots.candidateCount, party_spots.oldestAt,
+                    eligible.level, eligible.updatedAt
+                FROM eligible
+                INNER JOIN party_spots ON party_spots.candidateSpot = eligible.candidateSpot
+                ORDER BY requestRank ASC,
+                    party_spots.candidateCount DESC, party_spots.oldestAt ASC,
+                    eligible.level ASC, eligible.updatedAt ASC
+                LIMIT ${safeLimit}
+            )
+            SELECT states.* FROM ranked
+            INNER JOIN ${TABLE} states ON states.characterId = ranked.characterId
+            ORDER BY ranked.requestRank ASC,
+                ranked.candidateCount DESC, ranked.oldestAt ASC,
+                ranked.level ASC, ranked.updatedAt ASC`,
+            [],
+            { read: true }
         ]).then((rows) => rows.map((row) => {
             const state = normalize(row);
             cache.set(state.characterId, state);
@@ -1873,8 +1876,8 @@ const BotLifeState = {
         if (!initialized) return Promise.resolve(0);
         const activityClause = partyRequiredOnly
             ? `activity IN ('hunting', 'resting', 'party_wait')
-                AND json_extract(statsJson, '$.partyRequest.status') = 'open'
-                AND json_extract(statsJson, '$.partyRequest.priority') = 'required'`
+                AND partyRequestStatus = 'open'
+                AND partyRequestPriority = 'required'`
             : "activity IN ('hunting', 'resting', 'party_wait')";
 
         return Database.execute([
@@ -1898,29 +1901,34 @@ const BotLifeState = {
         const safeLimit = Math.max(1, Math.min(100, Number(limitPerSpot) || 40));
         const placeholders = uniqueSpots.map(() => '?').join(', ');
         const activityClause = partyRequiredOnly
-            ? `states.activity IN ('hunting', 'resting', 'party_wait')
-                AND json_extract(states.statsJson, '$.partyRequest.status') = 'open'
-                AND json_extract(states.statsJson, '$.partyRequest.priority') = 'required'`
-            : "states.activity IN ('hunting', 'resting', 'party_wait')";
-        const objectiveSpot = "COALESCE(json_extract(states.statsJson, '$.partyRequest.spotId'), json_extract(states.statsJson, '$.equipmentPlan.next.spotId'), states.spotId)";
+            ? `activity IN ('hunting', 'resting', 'party_wait')
+                AND partyRequestStatus = 'open'
+                AND partyRequestPriority = 'required'`
+            : "activity IN ('hunting', 'resting', 'party_wait')";
 
         return Database.execute([
-            `SELECT * FROM (
-                SELECT states.*,
+            `WITH ranked AS MATERIALIZED (
+                SELECT characterId, partyObjectiveSpot,
                     ROW_NUMBER() OVER (
-                        PARTITION BY ${objectiveSpot}
-                        ORDER BY states.updatedAt ASC, states.level ASC, states.characterId ASC
+                        PARTITION BY partyObjectiveSpot
+                        ORDER BY updatedAt ASC, level ASC, characterId ASC
                     ) AS candidateRank
-                FROM ${TABLE} states
-                WHERE states.phase = 'cold'
-                AND states.simulationOwner = 'legacy_main'
-                AND (states.partyId IS NULL OR states.partyId = '')
-                AND ${objectiveSpot} IN (${placeholders})
+                FROM ${TABLE}
+                WHERE phase = 'cold'
+                AND simulationOwner = 'legacy_main'
+                AND (partyId IS NULL OR partyId = '')
+                AND partyObjectiveSpot IN (${placeholders})
                 AND ${activityClause}
-            ) ranked
-            WHERE candidateRank <= ${safeLimit}
-            ORDER BY spotId ASC, candidateRank ASC`,
-            uniqueSpots
+            ), selected AS MATERIALIZED (
+                SELECT characterId, partyObjectiveSpot, candidateRank
+                FROM ranked
+                WHERE candidateRank <= ${safeLimit}
+            )
+            SELECT states.* FROM selected
+            INNER JOIN ${TABLE} states ON states.characterId = selected.characterId
+            ORDER BY selected.partyObjectiveSpot ASC, selected.candidateRank ASC`,
+            uniqueSpots,
+            { read: true }
         ]).then((rows) => rows.map((row) => {
             const state = normalize(row);
             cache.set(state.characterId, state);

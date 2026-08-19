@@ -122,8 +122,8 @@ function enqueue(work, { operation = 'raw', read = false } = {}) {
     return result;
 }
 
-function run(sql, params = [], operation) {
-    const read = isReadStatement(sql);
+function run(sql, params = [], operation, readOverride = null) {
+    const read = readOverride === null ? isReadStatement(sql) : !!readOverride;
     return enqueue(() => {
         if (!connection) throw new Error(`SQLite is not initialized (${operation || operationName(sql)})`);
         const statement = connection.prepare(sql);
@@ -386,6 +386,52 @@ function applySchemaMigrations() {
                 CREATE INDEX IF NOT EXISTS bot_life_state_party_owner_filter
                     ON bot_life_state(simulationOwner, phase, partyId, activity, spotId, updatedAt);
             `);
+        }],
+        [14, () => {
+            const columns = connection.prepare('PRAGMA table_xinfo(bot_life_state)').all();
+            const names = new Set(columns.map((column) => String(column.name)));
+            if (!names.has('partyRequestStatus')) {
+                connection.exec(`ALTER TABLE bot_life_state ADD COLUMN partyRequestStatus TEXT
+                    GENERATED ALWAYS AS (json_extract(statsJson, '$.partyRequest.status')) VIRTUAL`);
+            }
+            if (!names.has('partyRequestPriority')) {
+                connection.exec(`ALTER TABLE bot_life_state ADD COLUMN partyRequestPriority TEXT
+                    GENERATED ALWAYS AS (json_extract(statsJson, '$.partyRequest.priority')) VIRTUAL`);
+            }
+            if (!names.has('partyObjectiveSpot')) {
+                connection.exec(`ALTER TABLE bot_life_state ADD COLUMN partyObjectiveSpot TEXT
+                    GENERATED ALWAYS AS (COALESCE(
+                        json_extract(statsJson, '$.partyRequest.spotId'),
+                        json_extract(statsJson, '$.equipmentPlan.next.spotId'),
+                        spotId
+                    )) VIRTUAL`);
+            }
+            connection.exec(`
+                DROP INDEX IF EXISTS bot_life_state_party_request_filter;
+                DROP INDEX IF EXISTS bot_life_state_party_objective_spot;
+                CREATE INDEX IF NOT EXISTS bot_life_state_party_candidate_projection
+                    ON bot_life_state(
+                        simulationOwner, phase, partyId, activity, partyObjectiveSpot,
+                        partyRequestStatus, partyRequestPriority, updatedAt, level
+                    );
+            `);
+        }],
+        [15, () => {
+            const columns = connection.prepare('PRAGMA table_xinfo(bot_life_state)').all();
+            const names = new Set(columns.map((column) => String(column.name)));
+            if (!names.has('partyRequestedAt')) {
+                connection.exec(`ALTER TABLE bot_life_state ADD COLUMN partyRequestedAt INTEGER
+                    GENERATED ALWAYS AS (
+                        CAST(json_extract(statsJson, '$.partyRequest.requestedAt') AS INTEGER)
+                    ) VIRTUAL`);
+            }
+            connection.exec(`
+                CREATE INDEX IF NOT EXISTS bot_life_state_party_request_expiry
+                    ON bot_life_state(
+                        simulationOwner, phase, partyRequestStatus,
+                        partyRequestedAt, partyRequestPriority
+                    );
+            `);
         }]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
@@ -638,7 +684,7 @@ const Database = {
     },
 
     execute(statement, operation = 'raw') {
-        return run(statement[0], statement[1] || [], operation);
+        return run(statement[0], statement[1] || [], operation, statement[2]?.read ?? null);
     },
 
     fetchRaidBossStates() {
@@ -707,7 +753,17 @@ const Database = {
             const row = coldSimulationRow(characterId);
             const partition = coldSimulationPartition(row, request);
             if (!partition.ok) return { ...partition, characterId };
-            if (Number(row.simulationRevision || 0) !== expectedRevision) return { ok: false, characterId, reason: 'stale_revision' };
+            if (Number(row.simulationRevision || 0) !== expectedRevision) {
+                return {
+                    ok: false,
+                    characterId,
+                    reason: 'stale_revision',
+                    expectedRevision,
+                    actualRevision: Number(row.simulationRevision || 0),
+                    actualOwner: String(row.simulationOwner || LEGACY_SIMULATION_OWNER),
+                    actualLeaseUntil: Number(row.simulationLeaseUntil || 0)
+                };
+            }
             const currentOwner = String(row.simulationOwner || LEGACY_SIMULATION_OWNER);
             const currentLeaseUntil = Number(row.simulationLeaseUntil || 0);
             if (currentOwner !== LEGACY_SIMULATION_OWNER && currentLeaseUntil > timestamp) {
@@ -722,7 +778,18 @@ const Database = {
                 WHERE characterId = ? AND simulationRevision = ? AND simulationOwner = ?`, [
                 ownerId, revision, leaseId, leaseUntil, characterId, expectedRevision, currentOwner
             ]);
-            if (result.affectedRows !== 1) return { ok: false, characterId, reason: 'cas_failed' };
+            if (result.affectedRows !== 1) {
+                const actual = coldSimulationRow(characterId);
+                return {
+                    ok: false,
+                    characterId,
+                    reason: 'cas_failed',
+                    expectedRevision,
+                    actualRevision: Number(actual?.simulationRevision || 0),
+                    actualOwner: String(actual?.simulationOwner || LEGACY_SIMULATION_OWNER),
+                    actualLeaseUntil: Number(actual?.simulationLeaseUntil || 0)
+                };
+            }
             return { ok: true, characterId, ownerId, leaseId, revision, leaseUntil, reason: 'claimed' };
         }), 'bot-life:cold-owner-claim-batch');
     },

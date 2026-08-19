@@ -183,32 +183,28 @@ CREATE TABLE IF NOT EXISTS bot_life_state (
     simulationOwner TEXT NOT NULL DEFAULT 'legacy_main',
     simulationRevision INTEGER NOT NULL DEFAULT 0,
     simulationLeaseId TEXT,
-    simulationLeaseUntil INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS bot_life_state_phase_nextResolveAt ON bot_life_state(phase, nextResolveAt);
-CREATE INDEX IF NOT EXISTS bot_life_state_phase_partyId ON bot_life_state(phase, partyId);
-CREATE INDEX IF NOT EXISTS bot_life_state_accountName ON bot_life_state(accountName);
-CREATE INDEX IF NOT EXISTS bot_life_state_characterName ON bot_life_state(characterName COLLATE NOCASE);
-CREATE INDEX IF NOT EXISTS bot_life_state_party_request_filter
-    ON bot_life_state(
-        phase,
-        partyId,
-        activity,
-        json_extract(statsJson, '$.partyRequest.status'),
+    simulationLeaseUntil INTEGER NOT NULL DEFAULT 0,
+    partyRequestStatus TEXT GENERATED ALWAYS AS (
+        json_extract(statsJson, '$.partyRequest.status')
+    ) VIRTUAL,
+    partyRequestPriority TEXT GENERATED ALWAYS AS (
         json_extract(statsJson, '$.partyRequest.priority')
-    );
-CREATE INDEX IF NOT EXISTS bot_life_state_party_objective_spot
-    ON bot_life_state(
-        phase,
-        partyId,
-        activity,
+    ) VIRTUAL,
+    partyRequestedAt INTEGER GENERATED ALWAYS AS (
+        CAST(json_extract(statsJson, '$.partyRequest.requestedAt') AS INTEGER)
+    ) VIRTUAL,
+    partyObjectiveSpot TEXT GENERATED ALWAYS AS (
         COALESCE(
             json_extract(statsJson, '$.partyRequest.spotId'),
             json_extract(statsJson, '$.equipmentPlan.next.spotId'),
             spotId
         )
-    );
-
+    ) VIRTUAL
+);
+CREATE INDEX IF NOT EXISTS bot_life_state_phase_nextResolveAt ON bot_life_state(phase, nextResolveAt);
+CREATE INDEX IF NOT EXISTS bot_life_state_phase_partyId ON bot_life_state(phase, partyId);
+CREATE INDEX IF NOT EXISTS bot_life_state_accountName ON bot_life_state(accountName);
+CREATE INDEX IF NOT EXISTS bot_life_state_characterName ON bot_life_state(characterName COLLATE NOCASE);
 CREATE TABLE IF NOT EXISTS bot_goal_state (
     characterId INTEGER PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
     goalJson TEXT,

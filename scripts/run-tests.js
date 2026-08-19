@@ -173,6 +173,7 @@ const tests = [
     'tests/test_stackable_inventory_persistence.js',
     'tests/test_sqlite_bot_conversation_migration.js',
     'tests/test_sqlite_bot_life_state_migration.js',
+    'tests/test_party_candidate_projection_performance.js',
     'tests/test_sqlite_account_casefold.js',
     'tests/test_character_status_persistence.js',
     'tests/test_change_class.js',

@@ -7,6 +7,7 @@ require('../src/Global');
 const Database = invoke('Database');
 const Owner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const databasePath = path.join(process.cwd(), 'tmp', 'test-cold-owner-batches.sqlite');
 
 fs.rmSync(databasePath, { force: true });
@@ -69,6 +70,19 @@ async function createProbe(index) {
     })), { timestamp: 2000, leaseMs: 10000 });
     assert.strictEqual(claimed.grants.length, 3, 'one transaction must claim every eligible row');
     assert.strictEqual(claimed.rejected.length, 0);
+
+    const staleClaims = await Owner.claimBatch([{
+        state: states[0],
+        leaseId: 'stale-batch-lease'
+    }], { timestamp: 2100, leaseMs: 10000 });
+    assert.strictEqual(staleClaims.grants.length, 0);
+    assert.strictEqual(staleClaims.rejected[0].reason, 'stale_revision');
+    assert.strictEqual(staleClaims.rejected[0].expectedRevision, 0);
+    assert.strictEqual(staleClaims.rejected[0].actualRevision, 1);
+    assert.strictEqual(staleClaims.rejected[0].actualOwner, Owner.OWNER_ID);
+    const staleTelemetry = Metrics.snapshot().coldOwner;
+    assert.strictEqual(staleTelemetry.staleRevisionGaps['+1'], 1, 'stale claims must expose revision distance');
+    assert.strictEqual(staleTelemetry.staleOwners[Owner.OWNER_ID], 1, 'stale claims must expose the current owner');
 
     const fenced = claimed.grants[1];
     const handoffState = LifeState.cachedState(fenced.characterId);

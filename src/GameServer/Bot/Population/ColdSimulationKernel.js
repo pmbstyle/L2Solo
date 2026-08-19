@@ -699,13 +699,17 @@ class ColdSimulationKernel {
             const id = Number(result.characterId);
             this.claiming.delete(id);
             this.claimStartedAt.delete(id);
+            // A rejected claim carries the main process' current ownership
+            // snapshot. Party claims must absorb it just like solo claims do;
+            // otherwise the next party attempt repeats the same stale revision
+            // forever and creates a CAS/IPC retry storm.
+            if (result.state) this.upsert(result);
             if (result.purpose?.kind === 'party') {
                 const run = this.partyRuns.get(String(result.purpose.partyId));
                 if (run) run.rejected = true;
                 return;
             }
-            if (result.state) this.upsert(result);
-            else this.requeue(id, this.now() + 1000);
+            if (!result.state) this.requeue(id, this.now() + 1000);
         });
         (payload.grants || []).forEach((grant) => {
             const id = Number(grant.characterId);

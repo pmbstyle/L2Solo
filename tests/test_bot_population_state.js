@@ -83,10 +83,12 @@ try {
         const passivePartyRequestCleanup = statements.find((entry) => entry.sql.includes("json_remove(COALESCE(statsJson, '{}'), '$.partyRequest')")
             && entry.sql.includes("activity IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead')"));
         assert(passivePartyRequestCleanup, 'startup must clear party requests from passive activities that cannot join formation');
+        assert(passivePartyRequestCleanup.sql.includes("partyRequestStatus = 'open'"), 'passive cleanup must use the generated request projection');
         const stalePartyRequestCleanup = statements.find((entry) => entry.sql.includes("'$.partyRequest.deferredUntil'")
-            && entry.sql.includes("'$.partyRequest.requestedAt'")
+            && entry.sql.includes('partyRequestedAt <=')
             && entry.sql.includes("'$.partyRequest.status', 'deferred'"));
         assert(stalePartyRequestCleanup, 'startup must defer party requests that already exceeded their priority-specific TTL');
+        assert(stalePartyRequestCleanup.sql.includes('partyRequestPriority'), 'TTL cleanup must use the generated priority projection');
         const invalidPlanMigration = statements.find((entry) => entry.sql.includes("json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan')"));
         assert(invalidPlanMigration, 'startup must discard malformed persisted equipment plans that passive bots would not otherwise replan');
         assert(invalidPlanMigration.sql.includes("'$.equipmentPlan.target.selfId'"), 'the invalid-plan migration must validate the persisted target identity');
@@ -270,19 +272,21 @@ try {
                         const candidates = statements.slice(candidateQueryStart)
                             .find((entry) => entry.sql.includes('party_spots.candidateCount'));
                         assert(candidates, 'party formation must see event-scheduled party waits without making them combat-due');
-                        const requiredRank = candidates.sql.indexOf("$.partyRequest.priority') = 'required' THEN 0");
-                        const preferredRank = candidates.sql.indexOf("$.partyRequest.status') = 'open' THEN 1");
+                        const requiredRank = candidates.sql.indexOf("eligible.partyRequestPriority = 'required' THEN 0");
+                        const preferredRank = candidates.sql.indexOf("eligible.partyRequestStatus = 'open' THEN 1");
                         const generalRank = candidates.sql.indexOf('ELSE 2');
                         const populationRank = candidates.sql.indexOf('party_spots.candidateCount DESC');
                         assert(requiredRank >= 0 && requiredRank < preferredRank, 'required requests must rank ahead of preferred requests');
                         assert(preferredRank < generalRank && generalRank < populationRank, 'all open requests must rank ahead of crowded general candidate grounds');
-                        assert(candidates.sql.includes("states.simulationOwner = 'legacy_main'"), 'party formation must not race the cold worker owner');
                         assert(candidates.sql.includes("simulationOwner = 'legacy_main'"), 'party spot counts must exclude cold-worker-owned rows');
+                        assert(candidates.sql.includes('partyObjectiveSpot AS candidateSpot'), 'party formation must use the indexed objective projection');
+                        assert(!candidates.sql.includes('json_extract'), 'party formation must not parse full JSON state while ranking candidates');
+                        assert(candidates.sql.indexOf('LIMIT 5') < candidates.sql.indexOf('SELECT states.*'), 'party formation must rank lightweight ids before loading full state blobs');
                         assert(candidates.sql.includes('ORDER BY'), 'party candidate query must retain deterministic bounded ordering');
                     });
                 });
             }).then(() => BotLifeState.coldPartyCandidates(5, true)).then(() => {
-                const requiredCandidates = statements.find((entry) => entry.sql.includes("$.partyRequest.priority") && entry.sql.includes("'required'"));
+                const requiredCandidates = statements.find((entry) => entry.sql.includes('partyRequestPriority') && entry.sql.includes("'required'"));
                 assert(requiredCandidates, 'required party requests must reserve formation capacity ahead of elective hunting parties');
                 return BotLifeState.coldPartyCandidateCount(true).then(() => {
                     const count = statements.find((entry) => entry.sql.includes('COUNT(*) AS candidateCount'));
@@ -292,7 +296,9 @@ try {
                 }).then(() => {
                     const fairCandidates = statements.find((entry) => entry.sql.includes('ROW_NUMBER() OVER') && entry.sql.includes('PARTITION BY'));
                     assert(fairCandidates, 'party recruitment must load a bounded fair sample per active spot');
-                    assert(fairCandidates.sql.includes("states.simulationOwner = 'legacy_main'"), 'party recruitment must exclude cold-worker-owned rows');
+                    assert(fairCandidates.sql.includes("simulationOwner = 'legacy_main'"), 'party recruitment must exclude cold-worker-owned rows');
+                    assert(fairCandidates.sql.includes('PARTITION BY partyObjectiveSpot'), 'party recruitment must rank the indexed objective projection');
+                    assert(!fairCandidates.sql.includes('json_extract'), 'party recruitment must not parse JSON while ranking candidates');
                     const clearPartyStart = statements.length;
                     return BotLifeState.clearParty('bgp_cleanup_probe', 'ownership_aware_cleanup').then(() => {
                         const clearPartyQuery = statements.slice(clearPartyStart)

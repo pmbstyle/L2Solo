@@ -68,6 +68,19 @@ function stats(values) {
     };
 }
 
+function revisionGapBucket(result = {}) {
+    const expected = Number(result.expectedRevision);
+    const actual = Number(result.actualRevision);
+    if (!Number.isFinite(expected) || !Number.isFinite(actual)) return 'unknown';
+    const gap = actual - expected;
+    if (gap < 0) return 'ahead';
+    if (gap === 0) return 'same';
+    if (gap === 1) return '+1';
+    if (gap <= 4) return '+2-4';
+    if (gap <= 16) return '+5-16';
+    return '+17';
+}
+
 const PopulationMetrics = {
     startedAt: null,
     counters: emptyCounters(),
@@ -100,7 +113,9 @@ const PopulationMetrics = {
         coldOwnerClaimDurationsMs: [],
         coldOwnerCommitDurationsMs: [],
         coldOwnerLegacyReasons: new Map(),
-        coldOwnerRejectReasons: new Map()
+        coldOwnerRejectReasons: new Map(),
+        coldOwnerStaleRevisionGaps: new Map(),
+        coldOwnerStaleOwners: new Map()
     },
     timer: null,
 
@@ -239,7 +254,7 @@ const PopulationMetrics = {
         this.interval.coldOwnerClaimDurationsMs.push(Math.max(0, Number(durationMs) || 0));
         if (this.interval.coldOwnerClaimDurationsMs.length > Config.resolveSampleLimit) this.interval.coldOwnerClaimDurationsMs.shift();
         if (result.ok) this.counters.coldOwnerClaimed += 1;
-        else this.recordColdOwnerRejected(result.reason);
+        else this.recordColdOwnerRejected(result.reason, result);
     },
 
     recordColdOwnerResolved() {
@@ -250,19 +265,29 @@ const PopulationMetrics = {
         this.interval.coldOwnerCommitDurationsMs.push(Math.max(0, Number(durationMs) || 0));
         if (this.interval.coldOwnerCommitDurationsMs.length > Config.resolveSampleLimit) this.interval.coldOwnerCommitDurationsMs.shift();
         if (result.ok) this.counters.coldOwnerCommitted += 1;
-        else this.recordColdOwnerRejected(result.reason);
+        else this.recordColdOwnerRejected(result.reason, result);
     },
 
     recordColdOwnerRelease(result = {}) {
         if (result.ok) this.counters.coldOwnerReleased += 1;
-        else this.recordColdOwnerRejected(result.reason);
+        else this.recordColdOwnerRejected(result.reason, result);
     },
 
-    recordColdOwnerRejected(reason = 'unknown') {
+    recordColdOwnerRejected(reason = 'unknown', result = {}) {
         const key = String(reason || 'unknown');
         this.counters.coldOwnerRejected += 1;
         if (['stale_revision', 'cas_failed', 'owner_changed', 'lease_changed', 'lease_expired'].includes(key)) {
             this.counters.coldOwnerCasStale += 1;
+            const gap = revisionGapBucket(result);
+            const owner = String(result.actualOwner || 'unknown');
+            this.interval.coldOwnerStaleRevisionGaps.set(
+                gap,
+                Number(this.interval.coldOwnerStaleRevisionGaps.get(gap) || 0) + 1
+            );
+            this.interval.coldOwnerStaleOwners.set(
+                owner,
+                Number(this.interval.coldOwnerStaleOwners.get(owner) || 0) + 1
+            );
         }
         this.interval.coldOwnerRejectReasons.set(key, Number(this.interval.coldOwnerRejectReasons.get(key) || 0) + 1);
     },
@@ -398,6 +423,8 @@ const PopulationMetrics = {
         const activationFloorReasons = Object.fromEntries(this.interval.activationFloorReasons.entries());
         const coldOwnerLegacyReasons = Object.fromEntries(this.interval.coldOwnerLegacyReasons.entries());
         const coldOwnerRejectReasons = Object.fromEntries(this.interval.coldOwnerRejectReasons.entries());
+        const coldOwnerStaleRevisionGaps = Object.fromEntries(this.interval.coldOwnerStaleRevisionGaps.entries());
+        const coldOwnerStaleOwners = Object.fromEntries(this.interval.coldOwnerStaleOwners.entries());
         this.interval.resolveDurationsMs = [];
         this.interval.schedulerDurationsMs = [];
         this.interval.schedulerSliceDurationsMs = [];
@@ -410,6 +437,8 @@ const PopulationMetrics = {
         this.interval.activationFloorReasons = new Map();
         this.interval.coldOwnerLegacyReasons = new Map();
         this.interval.coldOwnerRejectReasons = new Map();
+        this.interval.coldOwnerStaleRevisionGaps = new Map();
+        this.interval.coldOwnerStaleOwners = new Map();
         this.interval.partyFormationStageDurationsMs = new Map();
         this.interval.skippedResolveReasons = new Map();
 
@@ -434,7 +463,9 @@ const PopulationMetrics = {
                 claim: coldOwnerClaimStats,
                 commit: coldOwnerCommitStats,
                 legacyReasons: coldOwnerLegacyReasons,
-                rejectReasons: coldOwnerRejectReasons
+                rejectReasons: coldOwnerRejectReasons,
+                staleRevisionGaps: coldOwnerStaleRevisionGaps,
+                staleOwners: coldOwnerStaleOwners
             },
             partyFormationStages,
             skippedResolveReasons,
