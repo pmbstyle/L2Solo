@@ -22,6 +22,7 @@ const originals = {
     execute: Database.execute,
     refreshInventory: LifeState.refreshInventory,
     upsertState: LifeState.upsertState,
+    applyNpcLiquidation: LifeState.applyNpcLiquidation,
     findByCharacterId: LifeState.findByCharacterId,
     allStates: LifeState.allStates,
     bestBuyOffer: MarketOpportunity.bestBuyOffer,
@@ -52,6 +53,18 @@ async function run() {
         calls.push({ characterId, ...item });
         return Promise.resolve({ inventoryAmount: 0, warehouseAmount: item.amount });
     };
+    Database.fetchWarehouseItems = () => Promise.resolve([]);
+    LifeState.applyNpcLiquidation = (coldState, candidates, options) => Promise.resolve({
+        ...coldState,
+        inventory: candidates.reduce((inventory, item) => ({
+            ...inventory,
+            [item.selfId]: {
+                ...inventory[item.selfId],
+                amount: Math.max(0, Number(inventory[item.selfId]?.amount || 0) - Number(item.count || 0))
+            }
+        }), { ...(coldState.inventory || {}) }),
+        stats: { ...(coldState.stats || {}), lastNpcLiquidation: { source: options.source, sold: candidates } }
+    });
     const state = {
         characterId: 55,
         inventory: {
@@ -70,6 +83,33 @@ async function run() {
     assert.strictEqual(result.state.inventory['94'].amount, 0, 'duplicate non-stackable gear must be deposited from separate item rows');
     assert.strictEqual(result.state.inventory['1'].amount, 1, 'low-level trash must remain available for NPC liquidation');
     assert.strictEqual(result.state.stats.lastWarehouseDeposit.items.length, 3);
+    assert.strictEqual(BotWarehouse.retentionAmount({ ...usefulGear, amount: 4 }, 0), 2,
+        'warehouse gear retention must preserve at most the two copies needed by dual-sword plans');
+    assert.strictEqual(BotWarehouse.retentionAmount({ ...usefulGear, amount: 1 }, 2), 0,
+        'warehouse gear retention must reject a third stored copy');
+    assert.strictEqual(BotWarehouse.retentionAmount(material, 500), 20,
+        'stackable crafting materials must remain outside the gear-copy cap');
+
+    Database.fetchItems = () => Promise.resolve([
+        { id: 35, selfId: 94, amount: 1, equipped: false },
+        { id: 36, selfId: 94, amount: 1, equipped: false },
+        { id: 37, selfId: 94, amount: 1, equipped: false }
+    ]);
+    Database.fetchWarehouseItems = () => Promise.resolve([
+        { id: 70, selfId: 94, amount: 1 }
+    ]);
+    calls.length = 0;
+    const capped = await BotWarehouse.depositCold({
+        characterId: 55,
+        inventory: {
+            94: { selfId: 94, name: 'Bec de Corbin', amount: 3, kind: 'Weapon.Pole', rank: 'c' }
+        },
+        stats: {}
+    });
+    assert.strictEqual(capped.count, 1, 'only the remaining warehouse gear allowance may be deposited');
+    assert.strictEqual(capped.overflow[0].count, 2, 'surplus gear must be reported for value-preserving NPC liquidation');
+    assert.strictEqual(capped.state.inventory['94'].amount, 0, 'surplus cold gear must leave inventory after liquidation');
+    assert.strictEqual(capped.state.stats.lastNpcLiquidation.source, 'warehouse_retention_overflow');
     const depositCalls = calls.length;
     const ownedDeposit = await BotWarehouse.depositCold({
         ...state,
@@ -113,6 +153,10 @@ async function run() {
         fetchId: () => 56,
         backpack: liveBackpack
     };
+    Database.fetchWarehouseItems = () => Promise.resolve([
+        { id: 68, selfId: 123, amount: 1 },
+        { id: 69, selfId: 123, amount: 1 }
+    ]);
     const preview = TradeService.previewSaleToStore(liveActor, {
         storeType: 3,
         items: [{ selfId: 123, count: 3, price: 1000 }]
@@ -120,9 +164,9 @@ async function run() {
     assert.strictEqual(preview.itemCount, 1, 'hot private-store sales must expose only swords beyond the active combination reserve');
 
     const live = await BotWarehouse.depositActor(liveActor, liveState);
-    assert.strictEqual(live.count, 21, 'active bots must deposit ordinary leftovers and only surplus combination components');
-    assert.deepStrictEqual(liveBackpack.items.map((item) => item.selfId), [1, 123, 123],
-        'the equipped and reserved source swords must survive hot warehouse handling');
+    assert.strictEqual(live.count, 20, 'active bots must store materials without adding a third warehouse gear copy');
+    assert.deepStrictEqual(liveBackpack.items.map((item) => item.selfId), [1, 123, 123, 123],
+        'equipped, reserved, and warehouse-overflow swords must survive until the existing NPC sell step');
 
     let warehouseRows = [{ id: 71, selfId: 5220, name: 'Metal Hardener', amount: 60 }];
     const withdrawals = [];
@@ -275,6 +319,7 @@ run().catch((err) => {
     Database.execute = originals.execute;
     LifeState.refreshInventory = originals.refreshInventory;
     LifeState.upsertState = originals.upsertState;
+    LifeState.applyNpcLiquidation = originals.applyNpcLiquidation;
     LifeState.findByCharacterId = originals.findByCharacterId;
     LifeState.allStates = originals.allStates;
     MarketOpportunity.bestBuyOffer = originals.bestBuyOffer;

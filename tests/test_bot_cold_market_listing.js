@@ -33,6 +33,7 @@ assert(marketItem && equippedItem && speculativeItem, 'the datapack must contain
 const originals = {
     execute: Database.execute,
     fetchItems: Database.fetchItems,
+    fetchWarehouseItems: Database.fetchWarehouseItems,
     updateItemAmount: Database.updateItemAmount,
     updateItemEquipState: Database.updateItemEquipState,
     updateCharacterLocation: Database.updateCharacterLocation,
@@ -51,6 +52,7 @@ async function run() {
         { id: 21, selfId: marketItem.selfId, amount: 1, equipped: false, slot: marketItem.etc.slot },
         { id: 22, selfId: equippedItem.selfId, amount: 1, equipped: true, slot: equippedItem.etc.slot }
     ]);
+    Database.fetchWarehouseItems = () => Promise.resolve([]);
     Database.updateItemAmount = (characterId, id, amount) => {
         calls.push({ type: 'amount', characterId, id, amount });
         return Promise.resolve();
@@ -369,6 +371,7 @@ run().catch((err) => {
 }).finally(() => {
     Database.execute = originals.execute;
     Database.fetchItems = originals.fetchItems;
+    Database.fetchWarehouseItems = originals.fetchWarehouseItems;
     Database.updateItemAmount = originals.updateItemAmount;
     Database.updateItemEquipState = originals.updateItemEquipState;
     Database.updateCharacterLocation = originals.updateCharacterLocation;
