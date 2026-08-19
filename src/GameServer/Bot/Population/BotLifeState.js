@@ -1971,9 +1971,8 @@ const BotLifeState = {
         });
     },
 
-    assignParty(state, partyId, role = 'dps', leaderId = 0) {
-        if (!state || !partyId) return Promise.resolve(null);
-
+    preparePartyAssignment(state, partyId, role = 'dps', leaderId = 0) {
+        if (!state || !partyId) return null;
         const hasPartyRequest = state.stats?.partyRequest?.status === 'open';
         const wasWaitingForParty = state.activity === 'party_wait'
             || state.stats?.lastReason === 'acquisition_party_wait'
@@ -2006,11 +2005,28 @@ const BotLifeState = {
             updatedAt: timestamp
         };
         const row = rowFromState(nextState);
+        return {
+            row,
+            snapshot: normalize(row),
+            expectedUpdatedAt: Number(state.updatedAt || 0),
+            expectedPartyId: state.party?.partyId || null
+        };
+    },
 
-        return save(row).then(() => {
-            const snapshot = normalize(row);
+    acceptPartyAssignments(prepared = []) {
+        return (prepared || []).map((entry) => entry?.snapshot).filter(Boolean).map((snapshot) => {
             cache.set(snapshot.characterId, snapshot);
             return snapshot;
+        });
+    },
+
+    assignParty(state, partyId, role = 'dps', leaderId = 0) {
+        const prepared = this.preparePartyAssignment(state, partyId, role, leaderId);
+        if (!prepared) return Promise.resolve(null);
+
+        return save(prepared.row).then(() => {
+            this.acceptPartyAssignments([prepared]);
+            return prepared.snapshot;
         }).catch((err) => {
             if (err?.code !== 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT') {
                 utils.infoWarn('BotLife', 'failed to assign %s to party %s: %s', state.name, partyId, err.message);
@@ -2266,6 +2282,96 @@ const BotLifeState = {
             return state;
         })).catch((err) => {
             utils.infoWarn('BotLife', 'failed to fetch market-goal candidates: %s', err.message);
+            return [];
+        });
+    },
+
+    coldPartyCandidateProjections() {
+        if (!initialized) return Promise.resolve([]);
+
+        // Party discovery deliberately reads only the fields used by
+        // objective grouping, composition, persona intent and affinity. The
+        // full inventory/cold-combat payload is hydrated after selection.
+        return Database.execute([
+            `SELECT characterId, characterName, level, activity, spotId,
+                activityStartedAt, updatedAt, simulationOwner, simulationRevision,
+                json_extract(statsJson, '$.role') AS role,
+                json_extract(statsJson, '$.generatedIndex') AS generatedIndex,
+                json_extract(statsJson, '$.partyRequest') AS partyRequestJson,
+                json_extract(statsJson, '$.equipmentPlan') AS equipmentPlanJson,
+                json_extract(statsJson, '$.partyHistory') AS partyHistoryJson
+            FROM ${TABLE} INDEXED BY bot_life_state_party_candidate_projection
+            WHERE phase = 'cold'
+            AND simulationOwner = 'legacy_main'
+            AND (partyId IS NULL OR partyId = '')
+            AND spotId IS NOT NULL
+            AND activity IN ('hunting', 'resting', 'party_wait')`,
+            [],
+            { read: true }
+        ], 'bot-life:party-candidate-projection').then((rows) => rows.map((row) => {
+            const role = row.role || null;
+            const partyRequest = parseJson(row.partyRequestJson, null);
+            const equipmentPlan = parseJson(row.equipmentPlanJson, null);
+            const partyHistory = parseJson(row.partyHistoryJson, null);
+            return {
+                characterId: Number(row.characterId),
+                name: row.characterName || '',
+                level: Number(row.level || 1),
+                phase: 'cold',
+                activity: row.activity || 'hunting',
+                spotId: row.spotId || null,
+                timing: {
+                    activityStartedAt: row.activityStartedAt ? Number(row.activityStartedAt) : null
+                },
+                party: { partyId: null, role, leaderId: null },
+                stats: {
+                    ...(role ? { role } : {}),
+                    ...(row.generatedIndex !== null && row.generatedIndex !== undefined
+                        ? { generatedIndex: row.generatedIndex }
+                        : {}),
+                    ...(partyRequest ? { partyRequest } : {}),
+                    ...(equipmentPlan ? { equipmentPlan } : {}),
+                    ...(partyHistory ? { partyHistory } : {})
+                },
+                simulation: {
+                    ownerId: row.simulationOwner || 'legacy_main',
+                    revision: Math.max(0, Number(row.simulationRevision || 0)),
+                    leaseId: null,
+                    leaseUntil: 0
+                },
+                updatedAt: Number(row.updatedAt || 0),
+                projection: true
+            };
+        })).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to fetch party candidate projection: %s', err.message);
+            return [];
+        });
+    },
+
+    statesByIds(characterIds = [], options = {}) {
+        if (!initialized) return Promise.resolve([]);
+        const ids = [...new Set((characterIds || []).map(Number).filter((id) => Number.isSafeInteger(id) && id > 0))]
+            .slice(0, 64);
+        if (!ids.length) return Promise.resolve([]);
+        const placeholders = ids.map(() => '?').join(', ');
+        const ownerId = options.ownerId ? String(options.ownerId) : null;
+        const ownerClause = ownerId ? 'AND simulationOwner = ?' : '';
+        const unassignedClause = options.unassigned ? "AND (partyId IS NULL OR partyId = '')" : '';
+        const params = [...ids, ...(ownerId ? [ownerId] : [])];
+
+        return Database.execute([
+            `SELECT * FROM ${TABLE}
+            WHERE characterId IN (${placeholders})
+            ${ownerClause}
+            ${unassignedClause}`,
+            params,
+            { read: true }
+        ], 'bot-life:states-by-id').then((rows) => rows.map((row) => {
+            const state = normalize(row);
+            cache.set(state.characterId, state);
+            return state;
+        })).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to hydrate %d party candidate(s): %s', ids.length, err.message);
             return [];
         });
     },

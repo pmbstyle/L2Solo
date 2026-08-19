@@ -77,22 +77,30 @@ Database.init();
 (async () => {
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
     assert.strictEqual(await LifeState.init(), true);
-    assert.strictEqual((await LifeState.coldPartyCandidates(250)).length, 250, 'warmup query must return the requested sample');
+    const warmup = await LifeState.coldPartyCandidateProjections();
+    assert.strictEqual(warmup.length, 1776, 'warmup query must cover the complete eligible pool');
+    assert.strictEqual(new Set(warmup.map((state) => state.spotId)).size, 24, 'projection must not starve smaller spots');
 
     const durations = [];
     for (let run = 0; run < 7; run += 1) {
         const startedAt = performance.now();
-        const rows = await LifeState.coldPartyCandidates(250);
+        const rows = await LifeState.coldPartyCandidateProjections();
         durations.push(performance.now() - startedAt);
-        assert.strictEqual(rows.length, 250);
+        assert.strictEqual(rows.length, 1776);
     }
 
     const sorted = [...durations].sort((left, right) => left - right);
     const p95Ms = sorted[Math.ceil(sorted.length * 0.95) - 1];
     assert(
-        p95Ms < 200,
-        `party candidate projection p95 ${p95Ms.toFixed(1)}ms exceeded the 200ms CI ceiling`
+        p95Ms < 150,
+        `complete party candidate projection p95 ${p95Ms.toFixed(1)}ms exceeded the 150ms CI ceiling`
     );
+
+    const hydrated = await LifeState.statesByIds(warmup.slice(0, 15).map((state) => state.characterId), {
+        ownerId: 'legacy_main',
+        unassigned: true
+    });
+    assert.strictEqual(hydrated.length, 15, 'only the selected shortlist should require full state hydration');
 
     const projection = await Database.execute([
         `SELECT partyRequestStatus, partyRequestPriority, partyRequestedAt, partyObjectiveSpot

@@ -44,6 +44,25 @@ function compareCandidate(anchor, coverage, peers = [anchor]) {
     };
 }
 
+function bestCandidates(candidates, limit, compare) {
+    const safeLimit = Math.max(0, Number(limit) || 0);
+    if (!safeLimit) return [];
+    const best = [];
+    for (const candidate of candidates) {
+        let insertAt = best.length;
+        for (let index = 0; index < best.length; index += 1) {
+            if (compare(candidate, best[index]) < 0) {
+                insertAt = index;
+                break;
+            }
+        }
+        if (insertAt >= safeLimit) continue;
+        best.splice(insertAt, 0, candidate);
+        if (best.length > safeLimit) best.pop();
+    }
+    return best;
+}
+
 function buildAround(anchor, candidates, maxSize, levelRange) {
     const eligible = candidates.filter((state) => Math.abs(levelOf(state) - levelOf(anchor)) <= levelRange);
     const selected = [anchor];
@@ -52,26 +71,27 @@ function buildAround(anchor, candidates, maxSize, levelRange) {
 
     SUPPORT_ROLES.forEach((role) => {
         if (selected.length >= maxSize || coverage[role]) return;
-        const support = eligible
-            .filter((state) => !used.has(Number(state.characterId)) && roleForState(state) === role)
-            .sort(compareCandidate(anchor, coverage, selected))[0];
+        const support = bestCandidates(
+            eligible.filter((state) => !used.has(Number(state.characterId)) && roleForState(state) === role),
+            1,
+            compareCandidate(anchor, coverage, selected)
+        )[0];
         if (!support) return;
         selected.push(support);
         used.add(Number(support.characterId));
         coverage[role] = 1;
     });
 
-    eligible
-        .filter((state) => !used.has(Number(state.characterId)))
-        .sort(compareCandidate(anchor, coverage, selected))
-        .some((state) => {
-            if (selected.length >= maxSize) return true;
-            selected.push(state);
-            used.add(Number(state.characterId));
-            const role = roleForState(state);
-            coverage[role] = (coverage[role] || 0) + 1;
-            return false;
-        });
+    bestCandidates(
+        eligible.filter((state) => !used.has(Number(state.characterId))),
+        maxSize - selected.length,
+        compareCandidate(anchor, coverage, selected)
+    ).forEach((state) => {
+        selected.push(state);
+        used.add(Number(state.characterId));
+        const role = roleForState(state);
+        coverage[role] = (coverage[role] || 0) + 1;
+    });
 
     const levels = selected.map(levelOf);
     const levelSpread = Math.max(...levels) - Math.min(...levels);
@@ -121,26 +141,27 @@ function selectRecruits(members = [], candidates = [], options = {}) {
 
     SUPPORT_ROLES.forEach((role) => {
         if (members.length + recruits.length >= maxSize || coverage[role]) return;
-        const recruit = eligible
-            .filter((state) => !used.has(Number(state.characterId)) && roleForState(state) === role)
-            .sort(compareCandidate(leader, coverage, members))[0];
+        const recruit = bestCandidates(
+            eligible.filter((state) => !used.has(Number(state.characterId)) && roleForState(state) === role),
+            1,
+            compareCandidate(leader, coverage, members)
+        )[0];
         if (!recruit) return;
         recruits.push(recruit);
         used.add(Number(recruit.characterId));
         coverage[role] = 1;
     });
 
-    eligible
-        .filter((state) => !used.has(Number(state.characterId)))
-        .sort(compareCandidate(leader, coverage, members))
-        .some((state) => {
-            if (members.length + recruits.length >= maxSize) return true;
-            recruits.push(state);
-            used.add(Number(state.characterId));
-            const role = roleForState(state);
-            coverage[role] = (coverage[role] || 0) + 1;
-            return false;
-        });
+    bestCandidates(
+        eligible.filter((state) => !used.has(Number(state.characterId))),
+        maxSize - members.length - recruits.length,
+        compareCandidate(leader, coverage, members)
+    ).forEach((state) => {
+        recruits.push(state);
+        used.add(Number(state.characterId));
+        const role = roleForState(state);
+        coverage[role] = (coverage[role] || 0) + 1;
+    });
 
     return recruits;
 }

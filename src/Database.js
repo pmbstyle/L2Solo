@@ -781,6 +781,103 @@ const Database = {
         return run(statement[0], statement[1] || [], operation, statement[2]?.read ?? null);
     },
 
+    commitBackgroundPartyMembership({ party, members = [], event = null } = {}) {
+        const batch = Array.isArray(members) ? members.slice(0, 40) : [];
+        const characterIds = [...new Set(batch.map((entry) => Number(entry?.row?.characterId)).filter((id) => (
+            Number.isSafeInteger(id) && id > 0
+        )))];
+        if (!party?.partyId || !characterIds.length || characterIds.length !== batch.length) {
+            return Promise.resolve({ ok: false, reason: 'invalid_party_membership' });
+        }
+
+        return inTransaction(() => {
+            const placeholders = characterIds.map(() => '?').join(', ');
+            const currentRows = all(`SELECT characterId, phase, simulationOwner, partyId, updatedAt
+                FROM bot_life_state WHERE characterId IN (${placeholders})`, characterIds);
+            const currentById = new Map(currentRows.map((row) => [Number(row.characterId), row]));
+            const conflicts = batch.filter((entry) => {
+                const row = entry.row;
+                const current = currentById.get(Number(row.characterId));
+                return !current
+                    || current.phase !== 'cold'
+                    || String(current.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER
+                    || String(current.partyId || '') !== String(entry.expectedPartyId || '')
+                    || Number(current.updatedAt || 0) !== Number(entry.expectedUpdatedAt || 0);
+            }).map((entry) => Number(entry.row.characterId));
+            if (conflicts.length) return { ok: false, reason: 'membership_conflict', conflicts };
+
+            write(`INSERT INTO bot_background_parties (
+                partyId, leaderId, memberIdsJson, spotId, startedAt, nextResolveAt,
+                cohesion, risk, status, roleCoverageJson, statsJson, updatedAt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(partyId) DO UPDATE SET
+                leaderId = excluded.leaderId,
+                memberIdsJson = excluded.memberIdsJson,
+                spotId = excluded.spotId,
+                nextResolveAt = excluded.nextResolveAt,
+                cohesion = excluded.cohesion,
+                risk = excluded.risk,
+                status = excluded.status,
+                roleCoverageJson = excluded.roleCoverageJson,
+                statsJson = excluded.statsJson,
+                updatedAt = excluded.updatedAt`, [
+                party.partyId, party.leaderId, party.memberIdsJson, party.spotId,
+                party.startedAt, party.nextResolveAt, party.cohesion, party.risk,
+                party.status, party.roleCoverageJson, party.statsJson, party.updatedAt
+            ]);
+
+            for (const entry of batch) {
+                const row = entry.row;
+                const result = write(`UPDATE bot_life_state
+                    SET activity = ?, activityStartedAt = ?, nextResolveAt = ?,
+                        partyId = ?, statsJson = ?, updatedAt = ?
+                    WHERE characterId = ?
+                    AND phase = 'cold'
+                    AND simulationOwner = ?
+                    AND COALESCE(partyId, '') = ?
+                    AND updatedAt = ?`, [
+                    row.activity, row.activityStartedAt, row.nextResolveAt,
+                    row.partyId, row.statsJson, row.updatedAt,
+                    row.characterId, LEGACY_SIMULATION_OWNER,
+                    String(entry.expectedPartyId || ''), Number(entry.expectedUpdatedAt || 0)
+                ]);
+                if (result.affectedRows !== 1) {
+                    const error = new Error(`background party membership conflict for ${row.characterId}`);
+                    error.code = 'BOT_PARTY_MEMBERSHIP_CONFLICT';
+                    throw error;
+                }
+            }
+
+            const eventCharacterId = Number(event?.characterId || 0);
+            const eventType = String(event?.eventType || '');
+            const eventSummary = String(event?.summary || '').slice(0, 255);
+            if (eventCharacterId > 0 && eventType && eventSummary) {
+                write(`INSERT INTO bot_life_events
+                    (characterId, eventType, summary, weight, createdAt, metaJson)
+                    VALUES (?, ?, ?, ?, ?, ?)`, [
+                    eventCharacterId,
+                    eventType,
+                    eventSummary,
+                    Math.max(1, Number(event?.weight || 1)),
+                    Number(event?.createdAt || Date.now()),
+                    JSON.stringify(event?.meta || {})
+                ]);
+                write(`DELETE FROM bot_life_events
+                    WHERE characterId = ?
+                    AND id NOT IN (
+                        SELECT id FROM (
+                            SELECT id FROM bot_life_events
+                            WHERE characterId = ?
+                            ORDER BY weight DESC, createdAt DESC
+                            LIMIT 20
+                        ) keep_rows
+                    )`, [eventCharacterId, eventCharacterId]);
+            }
+
+            return { ok: true, partyId: party.partyId, characterIds };
+        }, 'bot-party:commit-membership');
+    },
+
     fetchRaidBossStates() {
         return select('raid_boss_state', ['npcId', 'respawnTime', 'hp', 'mp', 'updatedAt'], '', [], 'raid-boss:states');
     },

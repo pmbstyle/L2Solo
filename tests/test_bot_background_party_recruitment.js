@@ -18,6 +18,7 @@ const originals = {
     counts: PartyState.counts,
     statesForParty: LifeState.statesForParty,
     statesForParties: LifeState.statesForParties,
+    coldPartyCandidateProjections: LifeState.coldPartyCandidateProjections,
     coldPartyCandidateCount: LifeState.coldPartyCandidateCount,
     coldPartyCandidates: LifeState.coldPartyCandidates,
     coldPartyCandidatesForSpots: LifeState.coldPartyCandidatesForSpots,
@@ -47,12 +48,12 @@ const originalFormationState = {
 async function run() {
     Config.partyMinSize = 2;
     Config.partyMaxSize = 5;
-    let requiredOnly = null;
+    let projectionCalls = 0;
     PartyState.active = () => [];
     PartyState.counts = () => ({ active: 0 });
-    LifeState.coldPartyCandidateCount = (value) => {
-        requiredOnly = value;
-        return Promise.resolve(0);
+    LifeState.coldPartyCandidateProjections = () => {
+        projectionCalls += 1;
+        return Promise.resolve([]);
     };
     LifeState.coldPartyCandidates = () => Promise.resolve([]);
     LifeState.coldPartyCandidatesForSpots = () => Promise.resolve([]);
@@ -61,7 +62,7 @@ async function run() {
     PopulationService.partyFormationRunning = false;
     PopulationService.nextPartyRequestCleanupAt = Infinity;
     await PopulationService.formBackgroundParties();
-    assert.strictEqual(requiredOnly, true, 'extra party capacity must be driven by required requests, not every eligible solo bot');
+    assert.strictEqual(projectionCalls, 1, 'party formation must discover the complete lightweight candidate projection once');
 
     PartyState.active = originals.active;
     PartyState.counts = originals.counts;
@@ -69,6 +70,7 @@ async function run() {
     LifeState.coldPartyCandidates = originals.coldPartyCandidates;
     LifeState.coldPartyCandidatesForSpots = originals.coldPartyCandidatesForSpots;
     LifeState.statesForParties = originals.statesForParties;
+    LifeState.coldPartyCandidateProjections = originals.coldPartyCandidateProjections;
 
     const party = { partyId: 'bgp_1', leaderId: 1, memberIds: [1, 2], spotId: 'cruma', stats: {} };
     const members = [
@@ -330,6 +332,7 @@ run().catch((err) => {
     PartyState.counts = originals.counts;
     LifeState.statesForParty = originals.statesForParty;
     LifeState.statesForParties = originals.statesForParties;
+    LifeState.coldPartyCandidateProjections = originals.coldPartyCandidateProjections;
     LifeState.coldPartyCandidateCount = originals.coldPartyCandidateCount;
     LifeState.coldPartyCandidates = originals.coldPartyCandidates;
     LifeState.coldPartyCandidatesForSpots = originals.coldPartyCandidatesForSpots;

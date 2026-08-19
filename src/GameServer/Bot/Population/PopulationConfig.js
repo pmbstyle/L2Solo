@@ -121,14 +121,9 @@ const DEFAULTS = {
     staleLlmTurnMs: 7 * 24 * 60 * 60 * 1000,
     compactedConversationRetentionMs: 24 * 60 * 60 * 1000,
     conversationMaxUncompactedRows: 512,
-    partyFormationBatchSize: 3,
-    // Forming is an infrequent event. Read enough waiting candidates to let
-    // the three available slots reach distinct crowded grounds instead of
-    // letting the two largest queues consume the whole selection window.
-    partyFormationCandidateLimit: 250,
-    // Recruitment must get a fair sample from every active party ground; a
-    // global top-N window otherwise starves less crowded spots forever.
-    partyRecruitmentCandidateLimit: 40,
+    // Idle formation can fill six parties per pass; live-player protection
+    // still caps the same pass at one party in PopulationService.
+    partyFormationBatchSize: 6,
     partyMinSize: 2,
     partyMaxSize: 5,
     // At roughly one party resolve per 90 seconds, forty parties consume
