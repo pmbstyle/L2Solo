@@ -534,6 +534,10 @@ const PopulationService = {
     warehouseCleanupPassUnits: 0,
     nextStateRetentionAt: 0,
     stateRetentionPassRows: 0,
+    walResetTimer: null,
+    walResetRunning: false,
+    nextWalResetAt: 0,
+    lastWalResetResult: null,
     marketExpiryCleanupTimer: null,
     personaBackfillTimer: null,
     personaBackfillRunning: false,
@@ -654,6 +658,14 @@ const PopulationService = {
             if (typeof this.stateRetentionTimer.unref === 'function') this.stateRetentionTimer.unref();
         }
 
+        const walResetIntervalMs = Math.max(1000, Number(options.default.Database?.checkpointResetIntervalMs) || 5000);
+        if (Number(options.default.Database?.checkpointResetWalBytes) > 0) {
+            this.walResetTimer = setInterval(() => {
+                this.runAdaptiveWalReset();
+            }, walResetIntervalMs);
+            if (typeof this.walResetTimer.unref === 'function') this.walResetTimer.unref();
+        }
+
         if (Config.backgroundPartyEnabled !== false) {
             this.partyRequestCleanupTimer = setInterval(() => {
                 // Request TTL maintenance is deliberately lower priority than
@@ -722,6 +734,13 @@ const PopulationService = {
         this.stateRetentionRunning = false;
         this.stateRetentionPassRows = 0;
         this.nextStateRetentionAt = 0;
+        if (this.walResetTimer) {
+            clearInterval(this.walResetTimer);
+            this.walResetTimer = null;
+        }
+        this.walResetRunning = false;
+        this.nextWalResetAt = 0;
+        this.lastWalResetResult = null;
         PersistentStateRetention.reset();
         if (this.partyFormationTimer) {
             clearInterval(this.partyFormationTimer);
@@ -1888,6 +1907,81 @@ const PopulationService = {
             .then((parties) => this.runInSchedulerSlices(parties, (party) => this.resolveBackgroundParty(party), deadlineAt));
     },
 
+    checkpointPressure() {
+        const database = Database.stats();
+        const checkpoint = database.checkpoint || {};
+        const last = checkpoint.last || {};
+        const lastReset = checkpoint.lastReset || {};
+        const walBytes = Math.max(0, Number(last.afterBytes || last.beforeBytes || 0));
+        const resetBytes = Math.max(0, Number(lastReset.afterBytes || lastReset.beforeBytes || 0));
+        const growthBytes = lastReset.at ? Math.max(0, walBytes - resetBytes) : walBytes;
+        const resetWalBytes = Math.max(0, Number(options.default.Database?.checkpointResetWalBytes) || 0);
+        const resetGrowthBytes = Math.max(1, Number(options.default.Database?.checkpointResetGrowthBytes) || 64 * 1024 * 1024);
+        const resetDue = resetWalBytes > 0
+            && walBytes >= resetWalBytes
+            && (!lastReset.at || growthBytes >= resetGrowthBytes);
+        return {
+            database,
+            checkpoint,
+            last,
+            lastReset,
+            walBytes,
+            growthBytes,
+            resetGrowthBytes,
+            resetDue
+        };
+    },
+
+    runAdaptiveWalReset(timestamp = Date.now()) {
+        const resetWalBytes = Math.max(0, Number(options.default.Database?.checkpointResetWalBytes) || 0);
+        if (!resetWalBytes || this.walResetRunning || timestamp < Number(this.nextWalResetAt || 0)) {
+            return Promise.resolve(null);
+        }
+        const activity = this.playerActivityProfile(timestamp);
+        if (activity.protected) return Promise.resolve(null);
+        if (this.resolving || this.warehouseCleanupRunning || this.stateRetentionRunning || this.partyFormationRunning) {
+            return Promise.resolve(null);
+        }
+
+        const pressure = this.checkpointPressure();
+        const { database, checkpoint, last, lastReset, walBytes, growthBytes, resetGrowthBytes } = pressure;
+        if (walBytes < resetWalBytes || Number(database.pending || 0) > 0 || checkpoint.inFlight) {
+            return Promise.resolve(null);
+        }
+        if (lastReset.at && growthBytes < resetGrowthBytes) return Promise.resolve(null);
+        const logFrames = Math.max(0, Number(last.logFrames || 0));
+        const checkpointedFrames = Math.max(0, Number(last.checkpointedFrames || 0));
+        if (!last.ok || last.mode !== 'passive' || Number(last.busy || 0) > 0 || checkpointedFrames < logFrames) {
+            return Promise.resolve(null);
+        }
+
+        const retryMs = Math.max(1000, Number(options.default.Database?.checkpointResetRetryMs) || 5000);
+        const cooldownMs = Math.max(retryMs, Number(options.default.Database?.checkpointResetCooldownMs) || 60000);
+        const busyTimeoutMs = Math.max(1, Math.min(250, Number(options.default.Database?.checkpointResetBusyTimeoutMs) || 50));
+        this.walResetRunning = true;
+        this.nextWalResetAt = timestamp + retryMs;
+        return Database.checkpoint({ mode: 'restart', busyTimeoutMs }).then((result) => {
+            this.lastWalResetResult = { ...result, requestedAt: timestamp };
+            if (result?.ok && Number(result.busy || 0) === 0) {
+                this.nextWalResetAt = Date.now() + cooldownMs;
+                console.info(
+                    'DB          :: adaptive WAL restart complete wal=%dMB frames=%d/%d duration=%dms',
+                    Math.round(Number(result.afterBytes || walBytes) / 1024 / 1024),
+                    Number(result.checkpointedFrames || 0),
+                    Number(result.logFrames || 0),
+                    Math.round(Number(result.durationMs || 0))
+                );
+            }
+            return result;
+        }).catch((error) => {
+            this.lastWalResetResult = { ok: false, error: error?.message || String(error), requestedAt: timestamp };
+            utils.infoWarn('DB', 'adaptive WAL restart failed: %s', error?.message || error);
+            return null;
+        }).finally(() => {
+            this.walResetRunning = false;
+        });
+    },
+
     runWarehouseCleanup(timestamp = Date.now()) {
         if (Config.warehouseCleanupEnabled === false || Config.enabled === false
             || this.warehouseCleanupRunning || this.stateRetentionRunning
@@ -1900,6 +1994,14 @@ const PopulationService = {
             Metrics.recordBackgroundDeferral();
             Metrics.recordWarehouseCleanupDeferral('player_protected');
             return Promise.resolve(null);
+        }
+        // This timer normally fires before the 5-second reset timer because
+        // both intervals share the same event loop phase. Yielding here gives
+        // a due reset a deterministic quiet window instead of starving it
+        // behind a succession of short cleanup transactions.
+        if (this.checkpointPressure().resetDue) {
+            Metrics.recordWarehouseCleanupDeferral('wal_pressure');
+            return this.runAdaptiveWalReset(timestamp);
         }
         const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
         const lagLimit = Math.max(1, Number(Config.schedulerLagThrottleMs) || 40);
@@ -1954,6 +2056,10 @@ const PopulationService = {
             Metrics.recordBackgroundDeferral();
             Metrics.recordStateRetentionDeferral('player_protected');
             return Promise.resolve(null);
+        }
+        if (this.checkpointPressure().resetDue) {
+            Metrics.recordStateRetentionDeferral('wal_pressure');
+            return this.runAdaptiveWalReset(timestamp);
         }
         const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
         const lagLimit = Math.max(1, Number(Config.schedulerLagThrottleMs) || 40);
@@ -2266,15 +2372,19 @@ const PopulationService = {
         if (cleanupState) {
             const { cleanup, ...travelState } = cleanupState;
             return LifeState.upsertState(travelState, 'inventory_cleanup_market_travel')
-                    .then((saved) => ({
+                    .then((saved) => (saved ? {
                         ok: true,
-                        state: saved || travelState,
+                        state: saved,
                         debug: {
                             activity: 'inventory_cleanup_travel',
                             slots: cleanup.itemCount,
                             npcOnlySlots: cleanup.npcOnlySlots,
                             reason: cleanup.cleanupReason
                         }
+                    } : {
+                        ok: false,
+                        reason: 'state_write_rejected',
+                        state
                     }))
                     .finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
         }

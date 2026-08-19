@@ -624,6 +624,7 @@ function save(row) {
         if (result && typeof result.affectedRows === 'number' && result.affectedRows !== 1) {
             const error = new Error(`bot life state ownership conflict for ${row.characterId}`);
             error.code = 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT';
+            Metrics.recordLegacyOwnershipConflict();
             throw error;
         }
         Metrics.recordDbFlush();
@@ -2007,7 +2008,9 @@ const BotLifeState = {
             cache.set(snapshot.characterId, snapshot);
             return snapshot;
         }).catch((err) => {
-            utils.infoWarn('BotLife', 'failed to assign %s to party %s: %s', state.name, partyId, err.message);
+            if (err?.code !== 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT') {
+                utils.infoWarn('BotLife', 'failed to assign %s to party %s: %s', state.name, partyId, err.message);
+            }
             return null;
         });
     },
@@ -2767,7 +2770,9 @@ const BotLifeState = {
                 return snapshot;
             })
             .catch((err) => {
-                utils.infoWarn('BotLife', 'failed to upsert %s: %s', row.characterName, err.message);
+                if (err?.code !== 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT') {
+                    utils.infoWarn('BotLife', 'failed to upsert %s: %s', row.characterName, err.message);
+                }
                 return null;
             });
 

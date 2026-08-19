@@ -1191,10 +1191,15 @@ const Database = {
         return snapshot;
     },
 
-    checkpoint() {
+    checkpoint(options = {}) {
         if (shuttingDown) return Promise.reject(new Error('SQLite shutdown is in progress (maintenance:checkpoint)'));
         if (!connection) return Promise.reject(new Error('SQLite is not initialized (maintenance:checkpoint)'));
-        return CheckpointCoordinator.request({ force: true, mode: 'passive', minWalBytes: 0 });
+        return CheckpointCoordinator.request({
+            force: true,
+            mode: options.mode === 'restart' ? 'restart' : 'passive',
+            minWalBytes: 0,
+            busyTimeoutMs: options.busyTimeoutMs
+        });
     },
 
     applyBufferedCharacterState(characterId, state = {}) {

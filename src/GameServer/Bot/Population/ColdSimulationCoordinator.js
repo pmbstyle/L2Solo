@@ -936,6 +936,7 @@ class ColdSimulationCoordinator {
                     results.push({
                         ok: result?.ok !== false,
                         characterId: request.characterId,
+                        reason: result?.reason || (result?.ok === false ? 'command_rejected' : 'command_applied'),
                         state: nextState,
                         context: this.contextFor(nextState, this.contextIndex({ compactPartyMembers: true }))
                     });

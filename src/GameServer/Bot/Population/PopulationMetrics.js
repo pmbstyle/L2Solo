@@ -49,6 +49,7 @@ function emptyCounters() {
         coldOwnerDbBusy: 0,
         coldOwnerDbRetries: 0,
         coldOwnerHandoffs: 0,
+        legacyOwnershipConflicts: 0,
         warehouseCleanupRuns: 0,
         warehouseCleanupOwners: 0,
         warehouseCleanupCompacted: 0,
@@ -340,6 +341,10 @@ const PopulationMetrics = {
     recordColdOwnerHandoff(result = {}) {
         if (result.ok && result.reason === 'hot_handoff') this.counters.coldOwnerHandoffs += 1;
         else if (!result.ok) this.recordColdOwnerRejected(result.reason);
+    },
+
+    recordLegacyOwnershipConflict() {
+        this.counters.legacyOwnershipConflicts += 1;
     },
 
     recordWarehouseCleanup(result = {}, durationMs = 0) {

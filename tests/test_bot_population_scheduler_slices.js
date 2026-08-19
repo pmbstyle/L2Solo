@@ -8,6 +8,7 @@ const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const PlayerActivitySignal = invoke('GameServer/Bot/Population/PlayerActivitySignal');
 const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
 const PersistentStateRetention = invoke('GameServer/Bot/Population/PersistentStateRetention');
+const Database = invoke('Database');
 
 const originalSliceMs = Config.schedulerSliceMs;
 const originalYield = PopulationService.yieldSchedulerSlice;
@@ -25,6 +26,11 @@ const originalStateRetention = PersistentStateRetention.runNextBatch;
 const originalStateRetentionRunning = PopulationService.stateRetentionRunning;
 const originalStateRetentionPassRows = PopulationService.stateRetentionPassRows;
 const originalNextStateRetentionAt = PopulationService.nextStateRetentionAt;
+const originalDatabaseStats = Database.stats;
+const originalDatabaseCheckpoint = Database.checkpoint;
+const originalWalResetRunning = PopulationService.walResetRunning;
+const originalNextWalResetAt = PopulationService.nextWalResetAt;
+const originalLastWalResetResult = PopulationService.lastWalResetResult;
 
 async function run() {
     const values = [];
@@ -79,6 +85,91 @@ async function run() {
     Metrics.currentEventLoopLag = () => Config.schedulerLagAbortMs;
     assert.strictEqual(PopulationService.schedulerProfile().budgetMs, 0, 'critical event-loop lag must stop background work');
     assert.strictEqual(PopulationService.partyFormationBudgetMs(), 0, 'critical event-loop lag must stop party formation too');
+
+    const databaseConfig = options.default.Database;
+    const originalResetConfig = {
+        checkpointResetWalBytes: databaseConfig.checkpointResetWalBytes,
+        checkpointResetGrowthBytes: databaseConfig.checkpointResetGrowthBytes,
+        checkpointResetCooldownMs: databaseConfig.checkpointResetCooldownMs,
+        checkpointResetRetryMs: databaseConfig.checkpointResetRetryMs,
+        checkpointResetBusyTimeoutMs: databaseConfig.checkpointResetBusyTimeoutMs
+    };
+    Object.assign(databaseConfig, {
+        checkpointResetWalBytes: 100,
+        checkpointResetGrowthBytes: 50,
+        checkpointResetCooldownMs: 1000,
+        checkpointResetRetryMs: 100,
+        checkpointResetBusyTimeoutMs: 10
+    });
+    let checkpointCalls = 0;
+    let checkpointState = {
+        pending: 0,
+        checkpoint: {
+            inFlight: false,
+            last: { ok: true, mode: 'passive', busy: 0, afterBytes: 300, logFrames: 20, checkpointedFrames: 20 }
+        }
+    };
+    Database.stats = () => checkpointState;
+    Database.checkpoint = async (checkpointOptions) => {
+        checkpointCalls += 1;
+        assert.strictEqual(checkpointOptions.mode, 'restart');
+        assert.strictEqual(checkpointOptions.busyTimeoutMs, 10);
+        return { ok: true, mode: 'restart', busy: 0, afterBytes: 300, logFrames: 20, checkpointedFrames: 20 };
+    };
+    PopulationService.walResetRunning = false;
+    PopulationService.nextWalResetAt = 0;
+    PopulationService.lastWalResetResult = null;
+    PopulationService.resolving = false;
+    PopulationService.warehouseCleanupRunning = false;
+    PopulationService.stateRetentionRunning = false;
+    PopulationService.partyFormationRunning = false;
+    PopulationService.playerActivityProfile = () => ({ protected: true, realPlayers: 1, connectingPlayers: 0 });
+    assert.strictEqual(await PopulationService.runAdaptiveWalReset(1000), null,
+        'a real player must suppress WAL reset before it is requested');
+    assert.strictEqual(checkpointCalls, 0);
+    PopulationService.playerActivityProfile = () => ({ protected: false, realPlayers: 0, connectingPlayers: 0 });
+    const reset = await PopulationService.runAdaptiveWalReset(1000);
+    assert.strictEqual(reset.mode, 'restart');
+    assert.strictEqual(checkpointCalls, 1, 'idle, drained WAL pressure must request exactly one bounded reset');
+    assert(PopulationService.nextWalResetAt > 1000, 'a successful reset must install a cooldown');
+    checkpointState = {
+        pending: 0,
+        checkpoint: {
+            inFlight: false,
+            last: { ok: true, mode: 'passive', busy: 0, afterBytes: 330, logFrames: 3, checkpointedFrames: 3 },
+            lastReset: { ok: true, mode: 'restart', busy: 0, afterBytes: 300, at: 1000 }
+        }
+    };
+    PopulationService.nextWalResetAt = 0;
+    assert.strictEqual(await PopulationService.runAdaptiveWalReset(3000), null,
+        'a reused WAL below the growth threshold must not reset repeatedly just because its file stays large');
+    assert.strictEqual(checkpointCalls, 1);
+
+    let phaseLockedCleanupCalls = 0;
+    BotWarehouse.cleanupHistoricalBatch = async () => {
+        phaseLockedCleanupCalls += 1;
+        return { cursor: 0, exhausted: false };
+    };
+    checkpointState = {
+        pending: 0,
+        checkpoint: {
+            inFlight: false,
+            last: { ok: true, mode: 'passive', busy: 0, afterBytes: 300, logFrames: 20, checkpointedFrames: 20 }
+        }
+    };
+    PopulationService.nextWalResetAt = 0;
+    PopulationService.warehouseCleanupRunning = false;
+    PopulationService.stateRetentionRunning = false;
+    PopulationService.nextWarehouseCleanupAt = 0;
+    const maintenanceReset = await PopulationService.runWarehouseCleanup(4000);
+    assert.strictEqual(maintenanceReset.mode, 'restart',
+        'due WAL pressure must receive the maintenance timer quiet window even when intervals share a phase');
+    assert.strictEqual(checkpointCalls, 2);
+    assert.strictEqual(phaseLockedCleanupCalls, 0, 'warehouse cleanup must yield before opening a competing transaction');
+    BotWarehouse.cleanupHistoricalBatch = originalWarehouseCleanup;
+    Database.stats = originalDatabaseStats;
+    Database.checkpoint = originalDatabaseCheckpoint;
+    Object.assign(databaseConfig, originalResetConfig);
 
     let cleanupCalls = 0;
     BotWarehouse.cleanupHistoricalBatch = async (options) => {
@@ -199,6 +290,11 @@ run()
         PopulationService.stateRetentionRunning = originalStateRetentionRunning;
         PopulationService.stateRetentionPassRows = originalStateRetentionPassRows;
         PopulationService.nextStateRetentionAt = originalNextStateRetentionAt;
+        PopulationService.walResetRunning = originalWalResetRunning;
+        PopulationService.nextWalResetAt = originalNextWalResetAt;
+        PopulationService.lastWalResetResult = originalLastWalResetResult;
+        Database.stats = originalDatabaseStats;
+        Database.checkpoint = originalDatabaseCheckpoint;
         Metrics.currentEventLoopLag = originalEventLoopLag;
         PlayerActivitySignal.reset();
     });

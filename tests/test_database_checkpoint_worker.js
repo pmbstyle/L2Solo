@@ -8,6 +8,7 @@ require('../src/Global');
 const Database = invoke('Database');
 const CheckpointCoordinator = require('../src/DatabaseCheckpointCoordinator');
 const databasePath = path.join(process.cwd(), 'tmp', 'test-database-checkpoint-worker.sqlite');
+const keepAlive = setInterval(() => {}, 1000);
 
 for (const file of [databasePath, `${databasePath}-wal`, `${databasePath}-shm`]) fs.rmSync(file, { force: true });
 options.default.Database.path = path.relative(process.cwd(), databasePath);
@@ -63,6 +64,12 @@ async function run() {
     const drained = await Database.checkpoint();
     assert.strictEqual(drained.ok, true);
     assert(Number(drained.checkpointedFrames) <= Number(drained.logFrames));
+    const reset = await Database.checkpoint({ mode: 'restart', busyTimeoutMs: 50 });
+    assert.strictEqual(reset.ok, true);
+    assert.strictEqual(reset.mode, 'restart', 'idle maintenance must be able to reset a fully checkpointed WAL generation');
+    assert.strictEqual(Number(reset.busy), 0, 'a drained WAL must reset without waiting on another owner');
+    assert.strictEqual(CheckpointCoordinator.snapshot().resets, 1, 'successful reset telemetry must be explicit');
+    assert.strictEqual(CheckpointCoordinator.snapshot().lastReset.mode, 'restart');
     const beforeCrash = CheckpointCoordinator.snapshot();
 
     await CheckpointCoordinator.terminateForTest();
@@ -77,7 +84,7 @@ async function run() {
 
     const snapshot = Database.stats().checkpoint;
     assert.strictEqual(snapshot.ready, true);
-    assert(snapshot.completed >= 3, 'checkpoint telemetry must expose completed worker runs');
+    assert(snapshot.completed >= 4, 'checkpoint telemetry must expose completed worker runs');
     assert(snapshot.restarts >= 1, 'checkpoint telemetry must expose worker recovery');
     assert.strictEqual(snapshot.errors, 0, 'a deliberate worker exit must not be reported as a database failure');
 
@@ -97,4 +104,5 @@ run().catch((error) => {
 }).finally(async () => {
     await Database.close();
     for (const file of [databasePath, `${databasePath}-wal`, `${databasePath}-shm`]) fs.rmSync(file, { force: true });
+    clearInterval(keepAlive);
 });

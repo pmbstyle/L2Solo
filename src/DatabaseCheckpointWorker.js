@@ -30,20 +30,30 @@ function checkpoint(message = {}) {
         };
     }
 
-    const mode = message.mode === 'truncate' ? 'TRUNCATE' : 'PASSIVE';
+    const mode = message.mode === 'truncate'
+        ? 'TRUNCATE'
+        : message.mode === 'restart' ? 'RESTART' : 'PASSIVE';
+    const resetMode = mode === 'RESTART';
+    if (resetMode) {
+        connection.exec(`PRAGMA busy_timeout = ${Math.max(0, Math.min(250, Number(message.busyTimeoutMs) || 50))};`);
+    }
     const startedAt = process.hrtime.bigint();
-    const row = connection.prepare(`PRAGMA wal_checkpoint(${mode})`).get() || {};
-    return {
-        ok: true,
-        skipped: false,
-        mode: mode.toLowerCase(),
-        beforeBytes,
-        afterBytes: walBytes(),
-        durationMs: Number(process.hrtime.bigint() - startedAt) / 1e6,
-        busy: Math.max(0, Number(row.busy || 0)),
-        logFrames: Math.max(0, Number(row.log || 0)),
-        checkpointedFrames: Math.max(0, Number(row.checkpointed || 0))
-    };
+    try {
+        const row = connection.prepare(`PRAGMA wal_checkpoint(${mode})`).get() || {};
+        return {
+            ok: true,
+            skipped: false,
+            mode: mode.toLowerCase(),
+            beforeBytes,
+            afterBytes: walBytes(),
+            durationMs: Number(process.hrtime.bigint() - startedAt) / 1e6,
+            busy: Math.max(0, Number(row.busy || 0)),
+            logFrames: Math.max(0, Number(row.log || 0)),
+            checkpointedFrames: Math.max(0, Number(row.checkpointed || 0))
+        };
+    } finally {
+        if (resetMode) connection.exec('PRAGMA busy_timeout = 250;');
+    }
 }
 
 function respond(id, result) {

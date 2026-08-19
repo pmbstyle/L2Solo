@@ -8,6 +8,7 @@ const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy')
 const NeedsEvaluator = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 
 DataCache.init();
 
@@ -169,4 +170,16 @@ assert(ItemDisposition.inventoryCleanupNeed({
     stats: { marketSellRetryAfter: now + 60 * 60 * 1000 }
 }, { now }), 'NPC-only cleanup must bypass market retry cooldown');
 
-console.log('Bot inventory cleanup goal checks passed');
+const originalUpsertState = LifeState.upsertState;
+LifeState.upsertState = async () => null;
+PopulationService.resolveColdState(state).then((rejected) => {
+    assert.strictEqual(rejected.ok, false, 'a fenced cleanup write must not be reported as a successful resolve');
+    assert.strictEqual(rejected.reason, 'state_write_rejected');
+    assert.strictEqual(rejected.state, state, 'the rejected result must retain the authoritative pre-write state');
+    console.log('Bot inventory cleanup goal checks passed');
+}).catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+}).finally(() => {
+    LifeState.upsertState = originalUpsertState;
+});

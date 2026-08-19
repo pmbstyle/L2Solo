@@ -27,9 +27,14 @@ const counters = {
     busy: 0,
     errors: 0,
     coalesced: 0,
-    frames: 0
+    frames: 0,
+    resetRequests: 0,
+    resets: 0,
+    resetBusy: 0,
+    resetErrors: 0
 };
 let last = null;
+let lastReset = null;
 
 function percentile(values, fraction) {
     if (!values.length) return 0;
@@ -60,6 +65,7 @@ function record(result = {}) {
         at: Date.now()
     };
     last = normalized;
+    const reset = normalized.mode === 'restart';
     if (!normalized.ok) counters.errors += 1;
     else if (normalized.skipped) counters.skipped += 1;
     else {
@@ -68,6 +74,14 @@ function record(result = {}) {
         counters.frames += Math.max(0, Number(normalized.checkpointedFrames || 0));
         durations.push(normalized.durationMs);
         if (durations.length > SAMPLE_LIMIT) durations.shift();
+    }
+    if (reset) {
+        if (!normalized.ok) counters.resetErrors += 1;
+        else if (Number(normalized.busy || 0) > 0) counters.resetBusy += 1;
+        else {
+            counters.resets += 1;
+            lastReset = { ...normalized };
+        }
     }
     return normalized;
 }
@@ -139,6 +153,10 @@ function request(options = {}) {
     }
     const id = ++sequence;
     counters.requests += 1;
+    const mode = options.mode === 'restart'
+        ? 'restart'
+        : options.mode === 'truncate' ? 'truncate' : 'passive';
+    if (mode === 'restart') counters.resetRequests += 1;
     let resolveRequest;
     let rejectRequest;
     const promise = new Promise((resolve, reject) => {
@@ -151,8 +169,9 @@ function request(options = {}) {
         type: 'checkpoint',
         id,
         force: options.force === true,
-        mode: options.mode === 'truncate' ? 'truncate' : 'passive',
-        minWalBytes: Math.max(0, Number(options.minWalBytes || 0))
+        mode,
+        minWalBytes: Math.max(0, Number(options.minWalBytes || 0)),
+        busyTimeoutMs: Math.max(0, Math.min(250, Number(options.busyTimeoutMs) || 0))
     });
     return promise;
 }
@@ -200,7 +219,8 @@ function snapshot() {
         p50Ms: percentile(durations, 0.5),
         p95Ms: percentile(durations, 0.95),
         maxMs: durations.length ? Number(Math.max(...durations).toFixed(2)) : 0,
-        last: last ? { ...last } : null
+        last: last ? { ...last } : null,
+        lastReset: lastReset ? { ...lastReset } : null
     };
 }
 
