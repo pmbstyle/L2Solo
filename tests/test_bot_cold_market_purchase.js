@@ -102,7 +102,8 @@ async function run() {
 
     assert.strictEqual(result.purchased, true);
     assert.strictEqual(result.state.adena, 0);
-    assert.strictEqual(result.state.inventory['57'].amount, 0);
+    assert.strictEqual(result.state.inventory['57'], undefined,
+        'spent Adena must not remain as a zero-amount durable inventory entry');
     assert.strictEqual(result.state.inventory['1'].equipped, false);
     assert.strictEqual(result.state.inventory['2'].equipped, true);
     assert.strictEqual(result.state.stats.equipment[0].selfId, 2);

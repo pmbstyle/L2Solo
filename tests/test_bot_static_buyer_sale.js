@@ -41,7 +41,8 @@ async function run() {
 
     const result = await StaticBuyerService.sell(state, 'Talking Island');
     assert.strictEqual(result.sold, true);
-    assert.strictEqual(result.state.inventory['1864'].amount, 0, 'accepted materials are removed');
+    assert.strictEqual(result.state.inventory['1864'], undefined,
+        'accepted materials must be absent from the durable inventory summary');
     assert.strictEqual(result.state.inventory['1'].amount, 1, 'equipment remains available for the player market');
     assert.strictEqual(result.state.adena, 100 + preview[0].npcPrice * 10);
     assert.strictEqual(result.state.stats.lastNpcLiquidation.source, 'static_buyer');

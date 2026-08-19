@@ -45,6 +45,7 @@ async function main() {
     const originalDelay = BotAI.calculateNextTickDelay;
     let ticks = 0;
     const session = { actor: {}, aiActive: true };
+    const normalSession = { actor: {}, aiActive: true };
     try {
         BotAI.tick = () => { ticks += 1; };
         BotAI.calculateNextTickDelay = () => 60000;
@@ -53,8 +54,17 @@ async function main() {
         await wait(20);
         assert.strictEqual(ticks, 1, 'urgent wakeup must execute on the cooperative dispatcher');
         assert.strictEqual(Dispatcher.snapshot().urgent, 1);
+        BotAI.stop(session);
+
+        Dispatcher.resetForTest();
+        ticks = 0;
+        BotAI.wakeup(normalSession);
+        await wait(20);
+        assert.strictEqual(ticks, 1, 'normal wakeup must execute on the cooperative dispatcher');
+        assert.strictEqual(Dispatcher.snapshot().urgent, 0, 'normal wakeup must preserve the fairness lane');
     } finally {
         BotAI.stop(session);
+        BotAI.stop(normalSession);
         BotAI.tick = originalTick;
         BotAI.calculateNextTickDelay = originalDelay;
         Dispatcher.resetForTest();

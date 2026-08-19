@@ -109,6 +109,10 @@ function state(characterId, revision, activity = 'hunting') {
     const resting = {
         ...state(characterId, first.revision, 'resting'),
         stats: { restUntil: 9000 },
+        inventory: {
+            57: { selfId: 57, name: 'Adena', amount: 500 },
+            9999: { selfId: 9999, name: 'Consumed Probe', amount: 0 }
+        },
         timing: { activityStartedAt: 2000, nextResolveAt: 9000, lastResolvedAt: 2000, lastHotAt: null },
         updatedAt: 2000
     };
@@ -118,6 +122,13 @@ function state(characterId, revision, activity = 'hunting') {
     assert.strictEqual(committed.row.activity, 'resting');
     assert.strictEqual(BotLifeState.cachedState(characterId).activity, 'resting', 'commit must reflect the accepted state in cache');
     assert.strictEqual(BotLifeState.cachedState(characterId).simulation.revision, committed.revision, 'commit must reflect its revision in cache');
+    assert.strictEqual(BotLifeState.cachedState(characterId).inventory['9999'], undefined,
+        'committed cache state must not retain a zero-amount inventory entry');
+    const committedInventory = JSON.parse((await Database.execute([
+        'SELECT inventorySummary FROM bot_life_state WHERE characterId = ?', [characterId]
+    ]))[0].inventorySummary);
+    assert.strictEqual(committedInventory['9999'], undefined,
+        'cold-owner persistence must not write a zero-amount inventory entry');
 
     const staleCommit = await Owner.commit(first, { ...resting, activity: 'hunting' }, { timestamp: 2100, leaseMs: 5000 });
     assert.strictEqual(staleCommit.reason, 'stale_revision', 'an old claim must never overwrite a newer revision');

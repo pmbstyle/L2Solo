@@ -454,6 +454,71 @@ function applySchemaMigrations() {
                 CREATE INDEX IF NOT EXISTS bot_llm_turns_active_retention
                     ON bot_llm_turns(state, startedAt, id);
             `);
+        }],
+        [17, () => {
+            const rows = connection.prepare(`SELECT characterId, inventorySummary, statsJson
+                FROM bot_life_state`).all();
+            const updateState = connection.prepare(`UPDATE bot_life_state
+                SET inventorySummary = ?, statsJson = ?
+                WHERE characterId = ?`);
+            let statesCompacted = 0;
+            let inventoryEntriesRemoved = 0;
+            let targetMapsRemoved = 0;
+
+            rows.forEach((row) => {
+                let inventory;
+                let stats;
+                try { inventory = JSON.parse(row.inventorySummary || '{}'); } catch (_) { inventory = null; }
+                try { stats = JSON.parse(row.statsJson || '{}'); } catch (_) { stats = null; }
+                let inventoryChanged = false;
+                let statsChanged = false;
+
+                if (inventory && typeof inventory === 'object' && !Array.isArray(inventory)) {
+                    Object.entries(inventory).forEach(([key, item]) => {
+                        if (item && Number.isFinite(Number(item.amount)) && Number(item.amount) > 0) return;
+                        delete inventory[key];
+                        inventoryEntriesRemoved += 1;
+                        inventoryChanged = true;
+                    });
+                }
+                if (stats?.targetCombat && Object.prototype.hasOwnProperty.call(stats.targetCombat, 'targets')) {
+                    delete stats.targetCombat.targets;
+                    targetMapsRemoved += 1;
+                    statsChanged = true;
+                }
+                if (!inventoryChanged && !statsChanged) return;
+                updateState.run(
+                    inventoryChanged ? JSON.stringify(inventory) : row.inventorySummary,
+                    statsChanged ? JSON.stringify(stats) : row.statsJson,
+                    row.characterId
+                );
+                statesCompacted += 1;
+            });
+
+            const routineEventsRemoved = Number(connection.prepare(`DELETE FROM bot_life_events
+                WHERE eventType IN ('rest', 'hunt')
+                  AND id NOT IN (
+                      SELECT id FROM (
+                          SELECT id,
+                              ROW_NUMBER() OVER (
+                                  PARTITION BY characterId, eventType
+                                  ORDER BY createdAt DESC, id DESC
+                              ) AS retainedRank
+                          FROM bot_life_events
+                          WHERE eventType IN ('rest', 'hunt')
+                      ) ranked
+                      WHERE retainedRank = 1
+                  )`).run().changes || 0);
+
+            if (statesCompacted || routineEventsRemoved) {
+                console.info(
+                    'Database :: compacted bot state rows=%d inventoryEntries=%d targetMaps=%d routineEvents=%d',
+                    statesCompacted,
+                    inventoryEntriesRemoved,
+                    targetMapsRemoved,
+                    routineEventsRemoved
+                );
+            }
         }]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));

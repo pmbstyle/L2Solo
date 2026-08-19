@@ -13,6 +13,7 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const cache = new Map();
 const pendingWrites = new Map();
@@ -120,7 +121,7 @@ function itemStackable(selfId, item = {}) {
 }
 
 function normalizeInventoryStackability(inventory = {}) {
-    return Object.fromEntries(Object.entries(inventory || {}).map(([key, item]) => {
+    return Object.fromEntries(Object.entries(InventorySummary.canonicalize(inventory)).map(([key, item]) => {
         const selfId = Number(item?.selfId || key);
         return [key, { ...(item || {}), stackable: itemStackable(selfId, item) }];
     }));
@@ -353,19 +354,19 @@ function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
     const limitTargets = (values) => Object.fromEntries(Object.entries(values)
         .sort(([, left], [, right]) => Number(right.lastResolvedAt || 0) - Number(left.lastResolvedAt || 0))
         .slice(0, 24));
-    const targets = { ...(previous.targets || {}) };
-    const current = add(targets[targetKey]);
-    targets[targetKey] = current;
+    const current = add(previous.populationTargets?.[targetKey]
+        || (Number(previous.targetNpcId) === targetNpcId ? previous : {}));
     const populationTargets = { ...(previous.populationTargets || {}) };
     if (!debug.aggregate || debug.populationTelemetryOwner === true) {
         populationTargets[targetKey] = add(populationTargets[targetKey]);
     }
+    const retained = { ...(previous || {}) };
+    delete retained.targets;
 
     return {
-        ...(previous || {}),
+        ...retained,
         targetNpcId,
         ...current,
-        targets: limitTargets(targets),
         populationTargets: limitTargets(populationTargets)
     };
 }
@@ -508,7 +509,10 @@ function recordFromSession(session, phase, reason = '') {
 }
 
 function rowFromState(state) {
-    const persistedState = reconcileFulfilledEquipmentPlan(state);
+    const persistedState = reconcileFulfilledEquipmentPlan({
+        ...state,
+        inventory: InventorySummary.canonicalize(state?.inventory)
+    });
     return {
         characterId: persistedState.characterId,
         accountName: persistedState.accountName || '',
@@ -1324,7 +1328,7 @@ const BotLifeState = {
             row.activity = 'merchant';
             row.currentRegion = marketState.currentRegion || row.currentRegion;
             row.spotId = marketState.spotId || row.spotId;
-            row.inventorySummary = safeJson(marketState.inventory || {});
+            row.inventorySummary = safeJson(InventorySummary.canonicalize(marketState.inventory));
             row.adena = Number(marketState.adena || row.adena || 0);
             row.statsJson = safeJson({ ...(marketState.stats || {}), lastReason: reason });
         } else if (craftState?.stats?.craftShop) {

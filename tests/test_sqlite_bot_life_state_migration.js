@@ -247,6 +247,7 @@ if (process.argv[2] === '--bootstrap') {
         assert.strictEqual(Number(db.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 10').get().count), 1, 'v10 must be recorded exactly once');
         assert.strictEqual(Number(db.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 14').get().count), 1, 'v14 must be recorded exactly once');
         assert.strictEqual(Number(db.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 15').get().count), 1, 'v15 must be recorded exactly once');
+        assert.strictEqual(Number(db.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 17').get().count), 1, 'v17 must be recorded exactly once');
         assert.deepStrictEqual(legacyRows(db), expectedRows, 'migration must preserve every pre-v10 bot lifecycle value');
         const owners = db.prepare(`SELECT simulationOwner, simulationRevision, simulationLeaseId, simulationLeaseUntil
             FROM bot_life_state ORDER BY characterId`).all();
@@ -296,6 +297,57 @@ if (process.argv[2] === '--bootstrap') {
     bootstrap(version13Path);
     assertMigrated(version13Path);
 
+    const compactionPath = path.join(outputDir, 'version-16-compaction.sqlite');
+    seed(compactionPath, Array.from({ length: 16 }, (_, index) => index + 1), { schema: currentSchema });
+    const compactionSeed = open(compactionPath);
+    compactionSeed.prepare(`UPDATE bot_life_state SET inventorySummary = ?, statsJson = ? WHERE characterId = ?`).run(
+        JSON.stringify({
+            57: { selfId: 57, name: 'Adena', amount: 78215 },
+            100: { selfId: 100, name: 'Consumed', amount: 0 },
+            101: { selfId: 101, name: 'Invalid', amount: -2 }
+        }),
+        JSON.stringify({
+            targetCombat: {
+                targets: { 20001: { resolves: 5 } },
+                populationTargets: { 20001: { resolves: 5 } }
+            }
+        }),
+        71001
+    );
+    const insertLifeEvent = compactionSeed.prepare(`INSERT INTO bot_life_events(
+        characterId, eventType, summary, weight, createdAt, metaJson
+    ) VALUES (?, ?, ?, ?, ?, '{}')`);
+    insertLifeEvent.run(71001, 'rest', 'old rest', 2, 1000);
+    insertLifeEvent.run(71001, 'rest', 'new rest', 2, 2000);
+    insertLifeEvent.run(71001, 'hunt', 'old hunt', 1, 1100);
+    insertLifeEvent.run(71001, 'hunt', 'new hunt', 1, 2100);
+    insertLifeEvent.run(71001, 'death', 'major event', 4, 1500);
+    compactionSeed.close();
+
+    bootstrap(compactionPath);
+    const compacted = open(compactionPath);
+    const compactedState = compacted.prepare(`SELECT inventorySummary, statsJson
+        FROM bot_life_state WHERE characterId = 71001`).get();
+    const compactedInventory = JSON.parse(compactedState.inventorySummary);
+    const compactedStats = JSON.parse(compactedState.statsJson);
+    assert.deepStrictEqual(Object.keys(compactedInventory), ['57'], 'v17 must remove non-positive inventory entries');
+    assert.strictEqual(compactedStats.targetCombat.targets, undefined, 'v17 must remove obsolete target maps');
+    assert.deepStrictEqual(compactedStats.targetCombat.populationTargets, { 20001: { resolves: 5 } },
+        'v17 must preserve population target telemetry');
+    assert.deepStrictEqual(compacted.prepare(`SELECT eventType, summary FROM bot_life_events
+        WHERE characterId = 71001 ORDER BY eventType`).all().map((row) => ({ ...row })), [
+        { eventType: 'death', summary: 'major event' },
+        { eventType: 'hunt', summary: 'new hunt' },
+        { eventType: 'rest', summary: 'new rest' }
+    ], 'v17 must retain major events and only the newest routine event of each type');
+    assert.strictEqual(Number(compacted.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 17').get().count), 1);
+    compacted.close();
+    bootstrap(compactionPath);
+    const compactedAgain = open(compactionPath);
+    assert.strictEqual(Number(compactedAgain.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 17').get().count), 1,
+        'v17 compaction must be one-time and idempotent');
+    compactedAgain.close();
+
     const freshPath = path.join(outputDir, 'fresh.sqlite');
     bootstrap(freshPath);
     const fresh = open(freshPath);
@@ -308,6 +360,7 @@ if (process.argv[2] === '--bootstrap') {
     assert.strictEqual(Number(fresh.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 10').get().count), 1);
     assert.strictEqual(Number(fresh.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 14').get().count), 1);
     assert.strictEqual(Number(fresh.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 15').get().count), 1);
+    assert.strictEqual(Number(fresh.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 17').get().count), 1);
     fresh.close();
 
     const failedPath = path.join(outputDir, 'failed-v10.sqlite');

@@ -173,6 +173,7 @@ const tests = [
     'tests/test_character_write_queue.js',
     'tests/test_database_checkpoint_worker.js',
     'tests/test_hot_bot_load_test.js',
+    'tests/test_bot_life_events.js',
     'tests/test_stackable_inventory_persistence.js',
     'tests/test_sqlite_bot_conversation_migration.js',
     'tests/test_sqlite_bot_life_state_migration.js',

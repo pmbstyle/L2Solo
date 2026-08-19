@@ -366,6 +366,7 @@ try {
                     const persistedStats = JSON.parse(partySave.params[27]);
                     assert.strictEqual(persistedStats.lastResolveDebug.partyId, 'bgp_probe', 'a party result must not be replaced by its previous solo debug snapshot');
                     assert.strictEqual(persistedStats.targetCombat.populationTargets['93'].targetKills, 1, 'a party result must retain its shared target telemetry');
+                    assert.strictEqual(persistedStats.targetCombat.targets, undefined, 'obsolete per-bot target maps must not be persisted');
                     const deadProbe = {
                         characterId: 45,
                         name: 'DeadPartyRequestProbe',
