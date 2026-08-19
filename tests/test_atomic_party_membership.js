@@ -58,11 +58,13 @@ Database.init();
         ownerId: 'legacy_main',
         unassigned: true
     });
+    const firstPartyDue = Date.now() + 45000;
     const preparedParty = PartyState.prepareCommit({
         partyId: 'bgp_atomic_success',
         leaderId: 3200001,
         memberIds: [3200001, 3200002],
         spotId: 'cruma',
+        nextResolveAt: firstPartyDue,
         status: 'active',
         roleCoverage: { tank: 1, healer: 1 },
         stats: { objective: { objectiveKey: 'direct_drop:cruma:701', spotId: 'cruma' } }
@@ -71,8 +73,11 @@ Database.init();
         member,
         preparedParty.snapshot.partyId,
         member.stats.role,
-        preparedParty.snapshot.leaderId
+        preparedParty.snapshot.leaderId,
+        preparedParty.snapshot.nextResolveAt
     ));
+    assert(preparedMembers.every((entry) => Number(entry.snapshot.timing.nextResolveAt) === firstPartyDue),
+        'atomic party assignment must align member scheduling with the durable party row');
 
     const committed = await Database.commitBackgroundPartyMembership({
         party: preparedParty.row,

@@ -79,6 +79,8 @@ function settleSnapshot() {
     await settleSnapshot();
     assert.strictEqual(assigned.activity, 'grouped');
     assert.strictEqual(assigned.party.partyId, 'handoff-party');
+    assert(Number(assigned.timing.nextResolveAt) > Number(assigned.updatedAt || 0),
+        'a newly assigned party leader must receive a bounded worker schedule');
     assert(notifications.some((entry) => (
         entry.options.reason === 'party_assigned'
         && entry.options.critical === true

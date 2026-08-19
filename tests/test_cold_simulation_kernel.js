@@ -7,6 +7,7 @@ const {
     deterministicRandom,
     finishPartyRouteTravelState,
     lifecycleKind,
+    nextDueAt,
     partyTransitionProposals
 } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 
@@ -586,6 +587,47 @@ function state(characterId = 1, overrides = {}) {
     expiryScheduleKernel.tick();
     assert.strictEqual(expiryScheduleMessages[0].type, 'claim_request',
         'a valid party must be claimed at session expiry even when nextResolveAt is later');
+
+    const partyDue = expiryScheduleNow + 3000;
+    const partyDueLeader = state(27, {
+        timing: { lastResolvedAt: expiryScheduleNow - 1000, nextResolveAt: null },
+        party: { partyId: 'party-row-scheduled', leaderId: 27 }
+    });
+    const partyDueMember = state(28, {
+        timing: { lastResolvedAt: expiryScheduleNow - 1000, nextResolveAt: null },
+        party: { partyId: 'party-row-scheduled', leaderId: 27 }
+    });
+    const partyDueContext = {
+        isPartyLeader: true,
+        party: {
+            partyId: 'party-row-scheduled',
+            leaderId: 27,
+            memberIds: [27, 28],
+            nextResolveAt: partyDue,
+            stats: { sessionExpiresAt: expiryScheduleNow + 60000 }
+        },
+        partyMembers: [partyDueLeader, partyDueMember]
+    };
+    assert.strictEqual(nextDueAt(partyDueLeader, expiryScheduleNow, partyDueContext), partyDue,
+        'a newly assigned leader with no personal due time must use the durable party schedule');
+    assert.strictEqual(nextDueAt({
+        ...partyDueLeader,
+        timing: { ...partyDueLeader.timing, nextResolveAt: expiryScheduleNow + 1000 }
+    }, expiryScheduleNow, partyDueContext), partyDue,
+        'a stale leader schedule must not outrun the authoritative party row');
+
+    const priorityParty = {
+        ...partyDueContext.party,
+        nextResolveAt: expiryScheduleNow
+    };
+    const priorityContext = { ...partyDueContext, party: priorityParty };
+    const partyCapacityKernel = new ColdSimulationKernel({ now: () => expiryScheduleNow, resolveSolo: resolver });
+    partyCapacityKernel.upsert({ state: partyDueLeader, context: priorityContext });
+    partyCapacityKernel.upsert({ state: partyDueMember, context: {} });
+    assert.deepStrictEqual(partyCapacityKernel.dueCandidates(expiryScheduleNow, 1), [],
+        'an atomic party claim must wait when the current capacity cannot fit every member');
+    assert.strictEqual(partyCapacityKernel.dueCandidates(expiryScheduleNow, 2).length, 2,
+        'a capacity-blocked party must retain priority instead of moving behind overdue solo work');
 
     const singletonMessages = [];
     let singletonNow = now;

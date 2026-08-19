@@ -110,7 +110,14 @@ function partyIntegrityInvalid(context = {}, partySession = {}) {
 }
 
 function nextDueAt(state = {}, timestamp = Date.now(), context = {}, partySession = {}) {
-    const due = Number(state.timing?.nextResolveAt || 0);
+    const stateDue = Number(state.timing?.nextResolveAt || 0);
+    // The party row is the durable scheduling authority for a party resolve.
+    // A freshly assigned leader can briefly carry no personal due time, and
+    // later leader snapshots can also lag behind an advanced party schedule.
+    const partyDue = context?.isPartyLeader
+        ? Number(context.party?.nextResolveAt || 0)
+        : 0;
+    const due = partyDue > 0 ? partyDue : stateDue;
     if (partyIntegrityInvalid(context, partySession)) return timestamp;
     const sessionExpiry = partySessionExpiryAt(state, context, partySession);
     if (sessionExpiry > 0) return due > 0 ? Math.min(due, sessionExpiry) : sessionExpiry;
@@ -525,7 +532,10 @@ class ColdSimulationKernel {
                     continue;
                 }
                 if (candidates.length + candidateMemberIds.length > limit) {
-                    this.requeue(id, this.now() + 100);
+                    // Keep the original overdue priority. Moving a party to
+                    // now+100 on every partially free tick lets an endless
+                    // stream of overdue solo work starve the atomic claim.
+                    this.schedule(id, current.version, entry.dueAt);
                     break;
                 }
                 const purpose = {

@@ -1971,13 +1971,14 @@ const BotLifeState = {
         });
     },
 
-    preparePartyAssignment(state, partyId, role = 'dps', leaderId = 0) {
+    preparePartyAssignment(state, partyId, role = 'dps', leaderId = 0, partyNextResolveAt = null) {
         if (!state || !partyId) return null;
         const hasPartyRequest = state.stats?.partyRequest?.status === 'open';
         const wasWaitingForParty = state.activity === 'party_wait'
             || state.stats?.lastReason === 'acquisition_party_wait'
             || (hasPartyRequest && state.activity !== 'resting');
         const timestamp = now();
+        const scheduledPartyAt = Number(partyNextResolveAt || 0);
         const nextState = {
             ...state,
             activity: wasWaitingForParty ? 'grouped' : state.activity,
@@ -2000,7 +2001,9 @@ const BotLifeState = {
             timing: {
                 ...(state.timing || {}),
                 activityStartedAt: wasWaitingForParty ? timestamp : state.timing?.activityStartedAt,
-                nextResolveAt: wasWaitingForParty ? null : state.timing?.nextResolveAt
+                nextResolveAt: wasWaitingForParty
+                    ? (scheduledPartyAt > 0 ? scheduledPartyAt : timestamp + 1000)
+                    : state.timing?.nextResolveAt
             },
             updatedAt: timestamp
         };
@@ -2025,8 +2028,8 @@ const BotLifeState = {
         });
     },
 
-    assignParty(state, partyId, role = 'dps', leaderId = 0) {
-        const prepared = this.preparePartyAssignment(state, partyId, role, leaderId);
+    assignParty(state, partyId, role = 'dps', leaderId = 0, partyNextResolveAt = null) {
+        const prepared = this.preparePartyAssignment(state, partyId, role, leaderId, partyNextResolveAt);
         if (!prepared) return Promise.resolve(null);
 
         return save(prepared.row).then(() => {

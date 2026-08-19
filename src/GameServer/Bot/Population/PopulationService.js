@@ -456,7 +456,8 @@ function assignPartyMembers(members = [], party) {
             member,
             party.partyId,
             PartyComposition.roleForState(member),
-            party.leaderId
+            party.leaderId,
+            party.nextResolveAt
         ).then((saved) => {
             if (saved) assigned.push(member);
             else failed.push(member);
@@ -512,7 +513,8 @@ function commitPartyMembership(party, members = [], event = null) {
         member,
         preparedParty.snapshot.partyId,
         PartyComposition.roleForState(member),
-        preparedParty.snapshot.leaderId
+        preparedParty.snapshot.leaderId,
+        preparedParty.snapshot.nextResolveAt
     )).filter(Boolean);
     if (preparedMembers.length !== selected.length) {
         return Promise.resolve({ party: null, assigned: [], failed: selected });
