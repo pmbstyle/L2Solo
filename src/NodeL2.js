@@ -32,6 +32,8 @@ function shutdown(signal) {
         .catch((error) => utils.infoWarn('DB', 'final buffered flush failed: %s', error.message))
         .then(() => PathfindingWorkerPool.shutdown())
         .then(() => LangfuseTracing.shutdown())
+        .then(() => Database.close())
+        .catch((error) => utils.infoWarn('DB', 'graceful SQLite close failed: %s', error.message))
         .finally(() => process.exit(0));
 }
 

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
+const CheckpointCoordinator = require('./DatabaseCheckpointCoordinator');
 
 let connection;
 let queryTail = Promise.resolve();
@@ -684,9 +685,16 @@ const Database = {
             databasePath = databaseFile();
             fs.mkdirSync(path.dirname(databasePath), { recursive: true });
             connection = new DatabaseSync(databasePath, { timeout: 5000 });
-            connection.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA temp_store = MEMORY;');
+            // SQLite's built-in auto-checkpoint runs synchronously inside the
+            // unlucky gameplay write that crosses its frame threshold. Keep
+            // WAL durability, but move checkpoint I/O to a dedicated worker.
+            connection.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA temp_store = MEMORY; PRAGMA wal_autocheckpoint = 0;');
             connection.exec(fs.readFileSync(path.join(process.cwd(), 'database', 'sql', 'sqlite.sql'), 'utf8'));
             applySchemaMigrations();
+            CheckpointCoordinator.start(databasePath, {
+                intervalMs: Number(options.default.Database?.checkpointIntervalMs) || 5000,
+                minWalBytes: Number(options.default.Database?.checkpointMinWalBytes) || (4 * 1024 * 1024)
+            });
             cleanZeroAmountItems().catch((error) => utils.infoWarn('DB', 'failed to clean zero amount items: %s', error.message));
             utils.infoSuccess('DB', 'SQLite connected %s', databasePath);
             callback();
@@ -1128,12 +1136,16 @@ const Database = {
         if (closePromise) return closePromise;
         shuttingDown = true;
         const pending = queryTail;
-        closePromise = pending.then(() => {
-            if (!connection) return false;
+        closePromise = pending.then(async () => {
+            if (!connection) {
+                await CheckpointCoordinator.stop({ final: true });
+                return false;
+            }
             const openConnection = connection;
             connection = null;
             openConnection.close();
             queryTail = Promise.resolve();
+            await CheckpointCoordinator.stop({ final: true });
             return true;
         });
         return closePromise;
@@ -1172,14 +1184,17 @@ const Database = {
             failures: metrics.failures,
             avgWaitMs: metrics.total ? Math.round(metrics.waitMs / metrics.total) : 0,
             avgRunMs: metrics.total ? Math.round(metrics.runMs / metrics.total) : 0,
-            operations
+            operations,
+            checkpoint: CheckpointCoordinator.snapshot()
         };
         if (resetPeak) metrics.maxPending = metrics.pending;
         return snapshot;
     },
 
     checkpoint() {
-        return enqueue(() => normalizeRows(connection.prepare('PRAGMA wal_checkpoint(PASSIVE)').all()), { operation: 'maintenance:checkpoint', read: false });
+        if (shuttingDown) return Promise.reject(new Error('SQLite shutdown is in progress (maintenance:checkpoint)'));
+        if (!connection) return Promise.reject(new Error('SQLite is not initialized (maintenance:checkpoint)'));
+        return CheckpointCoordinator.request({ force: true, mode: 'passive', minWalBytes: 0 });
     },
 
     applyBufferedCharacterState(characterId, state = {}) {
