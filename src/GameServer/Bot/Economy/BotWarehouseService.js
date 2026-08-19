@@ -5,6 +5,8 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const craftScanAt = new Map();
 const MAX_GEAR_COPIES_PER_TYPE = 2;
+let templateSource = null;
+let templateIndex = new Map();
 
 function isLegacyMainState(state) {
     return String(state?.simulation?.ownerId || 'legacy_main') === 'legacy_main';
@@ -176,7 +178,136 @@ async function depositCold(state) {
 }
 
 function templateFor(selfId) {
-    return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId)) || null;
+    const items = DataCache.items || [];
+    if (items !== templateSource) {
+        templateSource = items;
+        templateIndex = new Map(items.map((item) => [Number(item.selfId), item]));
+    }
+    return templateIndex.get(Number(selfId)) || null;
+}
+
+function historicalGearOverflow(items = [], maxUnits = 16) {
+    let remaining = Math.max(1, Math.min(64, Number(maxUnits) || 16));
+    const groups = new Map();
+    (items || []).forEach((item) => {
+        const selfId = Number(item?.selfId || 0);
+        if (!selfId || Number(item?.amount || 0) <= 0 || !isGear(item)) return;
+        if (!groups.has(selfId)) groups.set(selfId, []);
+        groups.get(selfId).push(item);
+    });
+
+    const selected = [];
+    for (const selfId of [...groups.keys()].sort((left, right) => left - right)) {
+        if (remaining <= 0) break;
+        let retained = MAX_GEAR_COPIES_PER_TYPE;
+        const rows = groups.get(selfId).sort((left, right) => (
+            Number(right.enchant || 0) - Number(left.enchant || 0)
+            || Number(left.id || 0) - Number(right.id || 0)
+        ));
+        for (const row of rows) {
+            if (remaining <= 0) break;
+            const amount = Math.max(0, Number(row.amount || 0));
+            const kept = Math.min(retained, amount);
+            retained -= kept;
+            const overflow = amount - kept;
+            if (overflow <= 0) continue;
+            const liquidated = Math.min(overflow, remaining);
+            const candidate = overflowCandidate({
+                ...row,
+                name: row.name || templateFor(selfId)?.template?.name || `Item ${selfId}`
+            }, liquidated);
+            if (!candidate?.npcPrice) continue;
+            selected.push({
+                id: Number(row.id),
+                selfId,
+                amount: liquidated,
+                enchant: Math.max(0, Number(row.enchant || 0)),
+                npcPrice: candidate.npcPrice
+            });
+            remaining -= liquidated;
+        }
+    }
+    return selected;
+}
+
+function historicalCleanupCandidates(afterCharacterId = 0, limit = 4) {
+    const cursor = Math.max(0, Number(afterCharacterId) || 0);
+    const safeLimit = Math.max(1, Math.min(32, Number(limit) || 4));
+    return Database.execute([`
+        SELECT DISTINCT warehouse.characterId
+        FROM warehouse_items warehouse INDEXED BY warehouse_items_characterId
+        CROSS JOIN bot_life_state states ON states.characterId = warehouse.characterId
+        WHERE warehouse.characterId > ?
+          AND warehouse.amount > 0
+          AND states.phase = 'cold'
+          AND states.simulationOwner = 'legacy_main'
+          AND (states.partyId IS NULL OR states.partyId = '')
+          AND states.activity IN ('hunting', 'resting')
+        ORDER BY warehouse.characterId ASC
+        LIMIT ${safeLimit}`,
+    [cursor]], 'warehouse:cleanup-candidates').then((rows) => rows
+        .map((row) => Number(row.characterId))
+        .filter((characterId) => characterId > cursor));
+}
+
+async function cleanupHistoricalOwner(characterId, maxUnits = 16) {
+    const warehouseItems = await Database.fetchWarehouseItems(characterId);
+    const selections = historicalGearOverflow(warehouseItems, maxUnits);
+    if (!selections.length) {
+        return { ok: true, reason: 'no_overflow', characterId: Number(characterId), rowsRemoved: 0, units: 0, payout: 0 };
+    }
+    return LifeState.applyWarehouseGearCleanup(characterId, selections, {
+        source: 'historical_gear_retention'
+    });
+}
+
+async function cleanupHistoricalBatch(options = {}) {
+    const cursor = Math.max(0, Number(options.cursor) || 0);
+    const ownerLimit = Math.max(1, Math.min(32, Number(options.ownerLimit) || 4));
+    const maxUnits = Math.max(1, Math.min(64, Number(options.maxUnitsPerOwner) || 16));
+    const deadlineAt = Number.isFinite(Number(options.deadlineAt)) ? Number(options.deadlineAt) : Infinity;
+    const characterIds = await historicalCleanupCandidates(cursor, ownerLimit);
+    const summary = {
+        cursor,
+        exhausted: characterIds.length < ownerLimit,
+        candidates: characterIds.length,
+        ownersScanned: 0,
+        ownersCompacted: 0,
+        rowsRemoved: 0,
+        units: 0,
+        payout: 0,
+        skipped: 0,
+        errors: 0,
+        budgetStopped: false
+    };
+
+    for (const characterId of characterIds) {
+        if (Date.now() >= deadlineAt) {
+            summary.exhausted = false;
+            summary.budgetStopped = true;
+            break;
+        }
+        try {
+            const result = await cleanupHistoricalOwner(characterId, maxUnits);
+            summary.cursor = characterId;
+            summary.ownersScanned += 1;
+            if (!result?.ok) {
+                if (result?.reason === 'cleanup_error') summary.errors += 1;
+                else summary.skipped += 1;
+                continue;
+            }
+            if (Number(result.units || 0) > 0) summary.ownersCompacted += 1;
+            summary.rowsRemoved += Math.max(0, Number(result.rowsRemoved || 0));
+            summary.units += Math.max(0, Number(result.units || 0));
+            summary.payout += Math.max(0, Number(result.payout || 0));
+        } catch (error) {
+            summary.cursor = characterId;
+            summary.ownersScanned += 1;
+            summary.errors += 1;
+            utils.infoWarn('BotWarehouse', 'historical cleanup failed for %d: %s', characterId, error?.message || error);
+        }
+    }
+    return summary;
 }
 
 function craftRequests(state, warehouseItems) {
@@ -388,6 +519,10 @@ module.exports = {
     marketRequests,
     hasFundedReleasedMarketMaterial,
     pendingMarketReleaseCandidates,
+    historicalGearOverflow,
+    historicalCleanupCandidates,
+    cleanupHistoricalOwner,
+    cleanupHistoricalBatch,
     resumeReleasedMarket,
     releaseCold,
     releaseCandidates,

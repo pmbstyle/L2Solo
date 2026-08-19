@@ -515,6 +515,7 @@ const PopulationService = {
     summaryTimer: null,
     initialSummaryTimer: null,
     schedulerTimer: null,
+    warehouseCleanupTimer: null,
     partyFormationTimer: null,
     partyRequestCleanupTimer: null,
     phasePolicyTimer: null,
@@ -526,6 +527,9 @@ const PopulationService = {
     nextMarketTownMigrationAt: 0,
     nextPartyRequestCleanupAt: 0,
     nextColdOwnerRecoveryAt: 0,
+    nextWarehouseCleanupAt: 0,
+    warehouseCleanupCursor: 0,
+    warehouseCleanupPassUnits: 0,
     marketExpiryCleanupTimer: null,
     personaBackfillTimer: null,
     personaBackfillRunning: false,
@@ -537,6 +541,7 @@ const PopulationService = {
     goalMetadataRunning: false,
     marketExpiryCleanupRunning: false,
     coldOwnerRecoveryRunning: false,
+    warehouseCleanupRunning: false,
     partyFormationRunning: false,
     partyFormationPending: false,
     partyRequestCleanupRunning: false,
@@ -628,6 +633,14 @@ const PopulationService = {
             }
         }
 
+        if (Config.warehouseCleanupEnabled !== false) {
+            this.nextWarehouseCleanupAt = Date.now() + Math.max(1000, Number(Config.warehouseCleanupStartDelayMs) || 60000);
+            this.warehouseCleanupTimer = setInterval(() => {
+                this.runWarehouseCleanup();
+            }, Math.max(250, Number(Config.warehouseCleanupIntervalMs) || 2000));
+            if (typeof this.warehouseCleanupTimer.unref === 'function') this.warehouseCleanupTimer.unref();
+        }
+
         if (Config.backgroundPartyEnabled !== false) {
             this.partyRequestCleanupTimer = setInterval(() => {
                 // Request TTL maintenance is deliberately lower priority than
@@ -681,6 +694,14 @@ const PopulationService = {
             clearInterval(this.schedulerTimer);
             this.schedulerTimer = null;
         }
+        if (this.warehouseCleanupTimer) {
+            clearInterval(this.warehouseCleanupTimer);
+            this.warehouseCleanupTimer = null;
+        }
+        this.warehouseCleanupRunning = false;
+        this.warehouseCleanupCursor = 0;
+        this.warehouseCleanupPassUnits = 0;
+        this.nextWarehouseCleanupAt = 0;
         if (this.partyFormationTimer) {
             clearInterval(this.partyFormationTimer);
             this.partyFormationTimer = null;
@@ -1844,6 +1865,59 @@ const PopulationService = {
 
         return BackgroundPartyState.due(Config.maxPartyResolvesPerTick)
             .then((parties) => this.runInSchedulerSlices(parties, (party) => this.resolveBackgroundParty(party), deadlineAt));
+    },
+
+    runWarehouseCleanup(timestamp = Date.now()) {
+        if (Config.warehouseCleanupEnabled === false || Config.enabled === false
+            || this.warehouseCleanupRunning || timestamp < Number(this.nextWarehouseCleanupAt || 0)) {
+            return Promise.resolve(null);
+        }
+
+        const activity = this.playerActivityProfile(timestamp);
+        if (activity.protected) {
+            Metrics.recordBackgroundDeferral();
+            Metrics.recordWarehouseCleanupDeferral('player_protected');
+            return Promise.resolve(null);
+        }
+        const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
+        const lagLimit = Math.max(1, Number(Config.schedulerLagThrottleMs) || 40);
+        if (lagMs >= lagLimit) {
+            Metrics.recordWarehouseCleanupDeferral('event_loop_lag');
+            return Promise.resolve(null);
+        }
+        if (Number(Database.stats().pending || 0) > 0) {
+            Metrics.recordWarehouseCleanupDeferral('database_queue');
+            return Promise.resolve(null);
+        }
+
+        const startedAt = Date.now();
+        const budgetMs = Math.max(1, Math.min(50, Number(Config.warehouseCleanupBudgetMs) || 12));
+        this.warehouseCleanupRunning = true;
+        return Database.cooperatively(() => BotWarehouse.cleanupHistoricalBatch({
+            cursor: this.warehouseCleanupCursor,
+            ownerLimit: Config.warehouseCleanupOwnersPerTick,
+            maxUnitsPerOwner: Config.warehouseCleanupUnitsPerOwner,
+            deadlineAt: startedAt + budgetMs
+        }), Math.min(budgetMs, Math.max(1, Number(Config.schedulerSliceMs) || 12))).then((result) => {
+            this.warehouseCleanupCursor = Math.max(0, Number(result?.cursor || this.warehouseCleanupCursor));
+            this.warehouseCleanupPassUnits += Math.max(0, Number(result?.units || 0));
+            if (result?.exhausted) {
+                const pauseMs = this.warehouseCleanupPassUnits > 0
+                    ? Math.max(1000, Number(Config.warehouseCleanupPassPauseMs) || 60000)
+                    : Math.max(60000, Number(Config.warehouseCleanupIdlePauseMs) || (6 * 60 * 60 * 1000));
+                this.warehouseCleanupCursor = 0;
+                this.warehouseCleanupPassUnits = 0;
+                this.nextWarehouseCleanupAt = Date.now() + pauseMs;
+            }
+            Metrics.recordWarehouseCleanup(result || {}, Date.now() - startedAt);
+            return result;
+        }).catch((error) => {
+            Metrics.recordWarehouseCleanup({ errors: 1, cursor: this.warehouseCleanupCursor }, Date.now() - startedAt);
+            utils.infoWarn('BotWarehouse', 'bounded historical cleanup failed: %s', error?.message || error);
+            return null;
+        }).finally(() => {
+            this.warehouseCleanupRunning = false;
+        });
     },
 
     releaseWarehouseMaterials(deadlineAt = Infinity) {

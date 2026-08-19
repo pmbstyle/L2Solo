@@ -91,6 +91,17 @@ const DEFAULTS = {
     maxPartyResolvesPerTick: 3,
     maxMarketGoalReconcilesPerTick: 8,
     maxWarehouseReleasesPerTick: 8,
+    // Historical gear debt is repaired only while the server is player-idle.
+    // Each pass advances by owner id and performs at most one tiny atomic
+    // transaction per owner, so cleanup cannot become a startup table sweep.
+    warehouseCleanupEnabled: true,
+    warehouseCleanupStartDelayMs: 60000,
+    warehouseCleanupIntervalMs: 500,
+    warehouseCleanupPassPauseMs: 60000,
+    warehouseCleanupIdlePauseMs: 6 * 60 * 60 * 1000,
+    warehouseCleanupOwnersPerTick: 1,
+    warehouseCleanupUnitsPerOwner: 32,
+    warehouseCleanupBudgetMs: 12,
     partyFormationBatchSize: 3,
     // Forming is an infrequent event. Read enough waiting candidates to let
     // the three available slots reach distinct crowded grounds instead of
@@ -241,6 +252,14 @@ const ENV_KEYS = {
     partyHistoryRetentionMs: 'BOT_PARTY_HISTORY_RETENTION_MS',
     partyHistoryCleanupBatchSize: 'BOT_PARTY_HISTORY_CLEANUP_BATCH_SIZE',
     partyHistoryCleanupIntervalMs: 'BOT_PARTY_HISTORY_CLEANUP_INTERVAL_MS',
+    warehouseCleanupEnabled: 'BOT_WAREHOUSE_CLEANUP_ENABLED',
+    warehouseCleanupStartDelayMs: 'BOT_WAREHOUSE_CLEANUP_START_DELAY_MS',
+    warehouseCleanupIntervalMs: 'BOT_WAREHOUSE_CLEANUP_INTERVAL_MS',
+    warehouseCleanupPassPauseMs: 'BOT_WAREHOUSE_CLEANUP_PASS_PAUSE_MS',
+    warehouseCleanupIdlePauseMs: 'BOT_WAREHOUSE_CLEANUP_IDLE_PAUSE_MS',
+    warehouseCleanupOwnersPerTick: 'BOT_WAREHOUSE_CLEANUP_OWNERS_PER_TICK',
+    warehouseCleanupUnitsPerOwner: 'BOT_WAREHOUSE_CLEANUP_UNITS_PER_OWNER',
+    warehouseCleanupBudgetMs: 'BOT_WAREHOUSE_CLEANUP_BUDGET_MS',
     devLogPlayerChat: 'BOT_DEV_LOG_PLAYER_CHAT',
     debug: 'BOT_POPULATION_DEBUG'
 };

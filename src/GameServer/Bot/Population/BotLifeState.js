@@ -2641,6 +2641,41 @@ const BotLifeState = {
             });
     },
 
+    applyWarehouseGearCleanup(characterId, selections = [], options = {}) {
+        const id = Number(characterId);
+        if (!Number.isSafeInteger(id) || id <= 0 || !Array.isArray(selections) || !selections.length) {
+            return Promise.resolve({ ok: false, reason: 'invalid_request', characterId: id || null });
+        }
+
+        const previous = pendingWrites.get(id) || Promise.resolve();
+        const ready = initialized ? Promise.resolve(true) : this.init();
+        const next = previous.then(() => ready).then((isReady) => {
+            if (!isReady) throw new Error('state table unavailable');
+            return Database.liquidateWarehouseGear(id, selections, options);
+        }).then((result) => {
+            if (!result?.ok || !result.state) return result;
+            const snapshot = normalize(result.state);
+            cache.set(id, snapshot);
+            Metrics.recordDbFlush();
+            notifyColdSnapshot(snapshot, 'warehouse_gear_cleanup', { critical: true });
+            return { ...result, state: snapshot };
+        }).catch((error) => {
+            utils.infoWarn('BotLife', 'failed warehouse gear cleanup for %d: %s', id, error.message || error);
+            return {
+                ok: false,
+                reason: error.code === 'WAREHOUSE_GEAR_CHANGED' ? 'warehouse_changed' : 'cleanup_error',
+                characterId: id,
+                error
+            };
+        });
+
+        const tracked = next.finally(() => {
+            if (pendingWrites.get(id) === tracked) pendingWrites.delete(id);
+        });
+        pendingWrites.set(id, tracked);
+        return next;
+    },
+
     learnCraftableRecipes(state) {
         if (!state?.characterId) return Promise.resolve(state || null);
         const candidates = Object.values(state.inventory || {})

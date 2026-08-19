@@ -6,6 +6,7 @@ const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const PlayerActivitySignal = invoke('GameServer/Bot/Population/PlayerActivitySignal');
+const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
 
 const originalSliceMs = Config.schedulerSliceMs;
 const originalYield = PopulationService.yieldSchedulerSlice;
@@ -14,6 +15,11 @@ const originalEventLoopLag = Metrics.currentEventLoopLag;
 const originalIdleMaxResolves = Config.schedulerIdleMaxResolvesPerTick;
 const originalLagAbort = Config.schedulerLagAbortMs;
 const originalActivityProfile = PopulationService.playerActivityProfile;
+const originalWarehouseCleanup = BotWarehouse.cleanupHistoricalBatch;
+const originalWarehouseCleanupRunning = PopulationService.warehouseCleanupRunning;
+const originalWarehouseCleanupCursor = PopulationService.warehouseCleanupCursor;
+const originalWarehouseCleanupPassUnits = PopulationService.warehouseCleanupPassUnits;
+const originalNextWarehouseCleanupAt = PopulationService.nextWarehouseCleanupAt;
 
 async function run() {
     const values = [];
@@ -69,7 +75,38 @@ async function run() {
     assert.strictEqual(PopulationService.schedulerProfile().budgetMs, 0, 'critical event-loop lag must stop background work');
     assert.strictEqual(PopulationService.partyFormationBudgetMs(), 0, 'critical event-loop lag must stop party formation too');
 
+    let cleanupCalls = 0;
+    BotWarehouse.cleanupHistoricalBatch = async (options) => {
+        cleanupCalls += 1;
+        return { cursor: 77, exhausted: false, ownersScanned: 1, ownersCompacted: 1, rowsRemoved: 2, units: 2, payout: 100, options };
+    };
+    PopulationService.warehouseCleanupRunning = false;
+    PopulationService.warehouseCleanupCursor = 0;
+    PopulationService.warehouseCleanupPassUnits = 0;
+    PopulationService.nextWarehouseCleanupAt = 0;
+    PopulationService.playerActivityProfile = () => ({ protected: true, activeParty: false, realPlayers: 1, companionCount: 0, mode: 'player' });
+    Metrics.currentEventLoopLag = () => 0;
+    assert.strictEqual(await PopulationService.runWarehouseCleanup(1000), null,
+        'historical warehouse cleanup must be completely disabled during player protection');
+    assert.strictEqual(cleanupCalls, 0);
+
+    PopulationService.playerActivityProfile = () => ({ protected: false, activeParty: false, realPlayers: 0, companionCount: 0, mode: 'idle' });
+    const cleanup = await PopulationService.runWarehouseCleanup(2000);
+    assert.strictEqual(cleanupCalls, 1, 'idle maintenance may advance one bounded historical cleanup batch');
+    assert.strictEqual(cleanup.cursor, 77);
+    assert.strictEqual(cleanup.options.ownerLimit, 1, 'one scheduler tick must perform at most one cleanup transaction');
+    assert.strictEqual(cleanup.options.maxUnitsPerOwner, 32);
+    assert.strictEqual(PopulationService.warehouseCleanupCursor, 77);
+
     PlayerActivitySignal.reset();
+    const connecting = PlayerActivitySignal.observe({
+        sessions: [{ constructor: { name: 'Session' }, accountId: null, actor: null }],
+        now: 500,
+        graceMs: 30000
+    });
+    assert.strictEqual(connecting.mode, 'connecting', 'an unauthenticated real socket must protect the main loop before an actor exists');
+    assert.strictEqual(connecting.connectingPlayers, 1);
+    assert.strictEqual(connecting.protected, true);
     const player = {
         constructor: { name: 'Session' },
         accountId: 'player_1',
@@ -116,6 +153,11 @@ run()
         PopulationService.yieldSchedulerSlice = originalYield;
         PopulationService.realPlayerSessions = originalRealPlayerSessions;
         PopulationService.playerActivityProfile = originalActivityProfile;
+        BotWarehouse.cleanupHistoricalBatch = originalWarehouseCleanup;
+        PopulationService.warehouseCleanupRunning = originalWarehouseCleanupRunning;
+        PopulationService.warehouseCleanupCursor = originalWarehouseCleanupCursor;
+        PopulationService.warehouseCleanupPassUnits = originalWarehouseCleanupPassUnits;
+        PopulationService.nextWarehouseCleanupAt = originalNextWarehouseCleanupAt;
         Metrics.currentEventLoopLag = originalEventLoopLag;
         PlayerActivitySignal.reset();
     });

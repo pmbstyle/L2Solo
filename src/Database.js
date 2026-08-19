@@ -1416,6 +1416,145 @@ const Database = {
         return remove('warehouse_items', 'id = ? AND characterId = ?', [id, characterId], 'warehouse:delete');
     },
 
+    liquidateWarehouseGear(characterId, selections = [], options = {}) {
+        const id = Number(characterId);
+        const selected = (selections || []).map((item) => ({
+            id: Number(item?.id || 0),
+            selfId: Number(item?.selfId || 0),
+            amount: Math.max(0, Number(item?.amount || 0)),
+            enchant: Math.max(0, Number(item?.enchant || 0)),
+            npcPrice: Math.max(0, Number(item?.npcPrice || 0))
+        }));
+        const selectedIds = new Set(selected.map((item) => item.id));
+        if (!Number.isSafeInteger(id) || id <= 0 || !selected.length || selected.length > 64
+            || selectedIds.size !== selected.length
+            || selected.some((item) => !item.id || !item.selfId || item.amount <= 0 || item.npcPrice <= 0)) {
+            return Promise.reject(new Error('invalid warehouse gear liquidation request'));
+        }
+
+        return withCharacterFlush(id, () => inTransaction(() => {
+            const state = one('SELECT * FROM bot_life_state WHERE characterId = ?', [id]);
+            if (!state) return { ok: false, reason: 'missing_state', characterId: id };
+            if (String(state.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER) {
+                return { ok: false, reason: 'owner_changed', characterId: id };
+            }
+            const partition = coldSimulationPartition(state);
+            if (!partition.ok) return { ok: false, reason: partition.reason, characterId: id };
+            if (!['hunting', 'resting'].includes(String(state.activity || ''))) {
+                return { ok: false, reason: 'active_lifecycle', characterId: id };
+            }
+
+            const stats = parsedObject(state.statsJson);
+            if (!stats) return { ok: false, reason: 'invalid_stats', characterId: id };
+            if (stats.backgroundPartyId) return { ok: false, reason: 'background_party', characterId: id };
+
+            const sources = selected.map((item) => {
+                const source = one(`SELECT id, selfId, amount, enchant
+                    FROM warehouse_items WHERE id = ? AND characterId = ?`, [item.id, id]);
+                if (!source || Number(source.selfId) !== item.selfId
+                    || Number(source.amount || 0) < item.amount
+                    || Math.max(0, Number(source.enchant || 0)) !== item.enchant) {
+                    const error = new Error(`warehouse gear changed for ${id}:${item.id}`);
+                    error.code = 'WAREHOUSE_GEAR_CHANGED';
+                    throw error;
+                }
+                return { ...item, remaining: Number(source.amount) - item.amount };
+            });
+
+            let rowsRemoved = 0;
+            sources.forEach((source) => {
+                if (source.remaining <= 0) {
+                    write('DELETE FROM warehouse_items WHERE id = ? AND characterId = ?', [source.id, id]);
+                    rowsRemoved += 1;
+                } else {
+                    write('UPDATE warehouse_items SET amount = ? WHERE id = ? AND characterId = ?', [source.remaining, source.id, id]);
+                }
+            });
+
+            const inventory = parsedObject(state.inventorySummary);
+            if (!inventory) throw new Error(`invalid inventory summary for ${id}`);
+            const adenaRows = all(`SELECT id, amount FROM items
+                WHERE characterId = ? AND selfId = 57 ORDER BY id`, [id]);
+            const physicalAdena = adenaRows.reduce((sum, item) => sum + Math.max(0, Number(item.amount || 0)), 0);
+            const payout = sources.reduce((sum, item) => sum + (item.amount * item.npcPrice), 0);
+            const currentAdena = Math.max(
+                0,
+                Number(state.adena || 0),
+                Number(inventory['57']?.amount || 0),
+                physicalAdena
+            );
+            const nextAdena = currentAdena + payout;
+            inventory['57'] = {
+                ...(inventory['57'] || {}),
+                selfId: 57,
+                name: 'Adena',
+                amount: nextAdena
+            };
+
+            const soldByItem = new Map();
+            sources.forEach((item) => {
+                const key = `${item.selfId}:${item.npcPrice}`;
+                const previous = soldByItem.get(key) || { selfId: item.selfId, amount: 0, price: item.npcPrice };
+                previous.amount += item.amount;
+                soldByItem.set(key, previous);
+            });
+            const timestamp = now();
+            const units = sources.reduce((sum, item) => sum + item.amount, 0);
+            const nextStats = {
+                ...stats,
+                lastWarehouseCompaction: {
+                    source: String(options.source || 'historical_gear_retention'),
+                    payout,
+                    units,
+                    rowsRemoved,
+                    sold: [...soldByItem.values()].slice(0, 8),
+                    at: timestamp
+                }
+            };
+
+            const adenaRow = adenaRows[0];
+            if (adenaRow) {
+                write('UPDATE items SET name = ?, amount = ? WHERE id = ? AND characterId = ?', ['Adena', nextAdena, adenaRow.id, id]);
+                adenaRows.slice(1).forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, id]));
+            } else {
+                write(`INSERT INTO items (selfId, name, amount, enchant, equipped, slot, characterId)
+                    VALUES (57, 'Adena', ?, 0, 0, 0, ?)`, [nextAdena, id]);
+            }
+
+            const updated = write(`UPDATE bot_life_state
+                SET adena = ?, inventorySummary = ?, statsJson = ?, updatedAt = ?
+                WHERE characterId = ?
+                  AND simulationOwner = ?
+                  AND simulationRevision = ?
+                  AND phase = 'cold'
+                  AND (partyId IS NULL OR partyId = '')
+                  AND activity IN ('hunting', 'resting')`, [
+                nextAdena,
+                JSON.stringify(inventory),
+                JSON.stringify(nextStats),
+                timestamp,
+                id,
+                LEGACY_SIMULATION_OWNER,
+                Number(state.simulationRevision || 0)
+            ]);
+            if (Number(updated.affectedRows || 0) !== 1) {
+                const error = new Error(`warehouse cleanup ownership changed for ${id}`);
+                error.code = 'WAREHOUSE_CLEANUP_FENCE';
+                throw error;
+            }
+
+            return {
+                ok: true,
+                reason: 'compacted',
+                characterId: id,
+                rowsRemoved,
+                units,
+                payout,
+                state: normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [id]))
+            };
+        }, 'warehouse:cleanup-gear'));
+    },
+
     transferInventoryToWarehouse(characterId, item) {
         return withCharacterFlush(characterId, () => inTransaction(() => {
             const source = one('SELECT id, amount, enchant FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);

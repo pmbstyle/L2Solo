@@ -48,7 +48,16 @@ function emptyCounters() {
         coldOwnerLegacyDeferred: 0,
         coldOwnerDbBusy: 0,
         coldOwnerDbRetries: 0,
-        coldOwnerHandoffs: 0
+        coldOwnerHandoffs: 0,
+        warehouseCleanupRuns: 0,
+        warehouseCleanupOwners: 0,
+        warehouseCleanupCompacted: 0,
+        warehouseCleanupRows: 0,
+        warehouseCleanupUnits: 0,
+        warehouseCleanupPayout: 0,
+        warehouseCleanupDeferrals: 0,
+        warehouseCleanupErrors: 0,
+        warehouseCleanupBudgetStops: 0
     };
 }
 
@@ -115,7 +124,9 @@ const PopulationMetrics = {
         coldOwnerLegacyReasons: new Map(),
         coldOwnerRejectReasons: new Map(),
         coldOwnerStaleRevisionGaps: new Map(),
-        coldOwnerStaleOwners: new Map()
+        coldOwnerStaleOwners: new Map(),
+        warehouseCleanupDurationsMs: [],
+        warehouseCleanupDeferralReasons: new Map()
     },
     timer: null,
 
@@ -323,6 +334,35 @@ const PopulationMetrics = {
         else if (!result.ok) this.recordColdOwnerRejected(result.reason);
     },
 
+    recordWarehouseCleanup(result = {}, durationMs = 0) {
+        this.counters.warehouseCleanupRuns += 1;
+        this.counters.warehouseCleanupOwners += Math.max(0, Number(result.ownersScanned || 0));
+        this.counters.warehouseCleanupCompacted += Math.max(0, Number(result.ownersCompacted || 0));
+        this.counters.warehouseCleanupRows += Math.max(0, Number(result.rowsRemoved || 0));
+        this.counters.warehouseCleanupUnits += Math.max(0, Number(result.units || 0));
+        this.counters.warehouseCleanupPayout += Math.max(0, Number(result.payout || 0));
+        this.counters.warehouseCleanupErrors += Math.max(0, Number(result.errors || 0));
+        if (result.budgetStopped) this.counters.warehouseCleanupBudgetStops += 1;
+        this.schedulerState = {
+            ...this.schedulerState,
+            warehouseCleanupCursor: Math.max(0, Number(result.cursor || 0)),
+            warehouseCleanupExhausted: !!result.exhausted
+        };
+        this.interval.warehouseCleanupDurationsMs.push(Math.max(0, Number(durationMs) || 0));
+        if (this.interval.warehouseCleanupDurationsMs.length > Config.resolveSampleLimit) {
+            this.interval.warehouseCleanupDurationsMs.shift();
+        }
+    },
+
+    recordWarehouseCleanupDeferral(reason = 'unknown') {
+        const key = String(reason || 'unknown');
+        this.counters.warehouseCleanupDeferrals += 1;
+        this.interval.warehouseCleanupDeferralReasons.set(
+            key,
+            Number(this.interval.warehouseCleanupDeferralReasons.get(key) || 0) + 1
+        );
+    },
+
     recordActivationFloorScan(scan = {}) {
         const candidates = Math.max(0, Number(scan.candidates) || 0);
         const accepted = Math.max(0, Number(scan.accepted) || 0);
@@ -353,6 +393,7 @@ const PopulationMetrics = {
             lagMs: Math.max(0, Number(profile.lagMs) || 0),
             playerMode: profile.activity?.mode || 'idle',
             realPlayers: Math.max(0, Number(profile.activity?.realPlayers) || 0),
+            connectingPlayers: Math.max(0, Number(profile.activity?.connectingPlayers) || 0),
             companions: Math.max(0, Number(profile.activity?.companionCount) || 0)
         };
     },
@@ -425,6 +466,8 @@ const PopulationMetrics = {
         const coldOwnerRejectReasons = Object.fromEntries(this.interval.coldOwnerRejectReasons.entries());
         const coldOwnerStaleRevisionGaps = Object.fromEntries(this.interval.coldOwnerStaleRevisionGaps.entries());
         const coldOwnerStaleOwners = Object.fromEntries(this.interval.coldOwnerStaleOwners.entries());
+        const warehouseCleanupStats = stats(this.interval.warehouseCleanupDurationsMs);
+        const warehouseCleanupDeferralReasons = Object.fromEntries(this.interval.warehouseCleanupDeferralReasons.entries());
         this.interval.resolveDurationsMs = [];
         this.interval.schedulerDurationsMs = [];
         this.interval.schedulerSliceDurationsMs = [];
@@ -439,6 +482,8 @@ const PopulationMetrics = {
         this.interval.coldOwnerRejectReasons = new Map();
         this.interval.coldOwnerStaleRevisionGaps = new Map();
         this.interval.coldOwnerStaleOwners = new Map();
+        this.interval.warehouseCleanupDurationsMs = [];
+        this.interval.warehouseCleanupDeferralReasons = new Map();
         this.interval.partyFormationStageDurationsMs = new Map();
         this.interval.skippedResolveReasons = new Map();
 
@@ -466,6 +511,12 @@ const PopulationMetrics = {
                 rejectReasons: coldOwnerRejectReasons,
                 staleRevisionGaps: coldOwnerStaleRevisionGaps,
                 staleOwners: coldOwnerStaleOwners
+            },
+            warehouseCleanup: {
+                ...warehouseCleanupStats,
+                cursor: this.schedulerState.warehouseCleanupCursor || 0,
+                exhausted: !!this.schedulerState.warehouseCleanupExhausted,
+                deferralReasons: warehouseCleanupDeferralReasons
             },
             partyFormationStages,
             skippedResolveReasons,
