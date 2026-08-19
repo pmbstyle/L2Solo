@@ -109,6 +109,10 @@ function state(characterId, revision, activity = 'hunting') {
     const resting = {
         ...state(characterId, first.revision, 'resting'),
         stats: { restUntil: 9000 },
+        inventory: {
+            57: { selfId: 57, name: 'Adena', amount: 500 },
+            9999: { selfId: 9999, name: 'Consumed Probe', amount: 0 }
+        },
         timing: { activityStartedAt: 2000, nextResolveAt: 9000, lastResolvedAt: 2000, lastHotAt: null },
         updatedAt: 2000
     };
@@ -118,6 +122,13 @@ function state(characterId, revision, activity = 'hunting') {
     assert.strictEqual(committed.row.activity, 'resting');
     assert.strictEqual(BotLifeState.cachedState(characterId).activity, 'resting', 'commit must reflect the accepted state in cache');
     assert.strictEqual(BotLifeState.cachedState(characterId).simulation.revision, committed.revision, 'commit must reflect its revision in cache');
+    assert.strictEqual(BotLifeState.cachedState(characterId).inventory['9999'], undefined,
+        'committed cache state must not retain a zero-amount inventory entry');
+    const committedInventory = JSON.parse((await Database.execute([
+        'SELECT inventorySummary FROM bot_life_state WHERE characterId = ?', [characterId]
+    ]))[0].inventorySummary);
+    assert.strictEqual(committedInventory['9999'], undefined,
+        'cold-owner persistence must not write a zero-amount inventory entry');
 
     const staleCommit = await Owner.commit(first, { ...resting, activity: 'hunting' }, { timestamp: 2100, leaseMs: 5000 });
     assert.strictEqual(staleCommit.reason, 'stale_revision', 'an old claim must never overwrite a newer revision');
@@ -166,14 +177,56 @@ function state(characterId, revision, activity = 'hunting') {
     assert.strictEqual(BotLifeState.cachedState(characterId).simulation.revision, recovered.simulationRevision, 'recovery must reflect its revision in cache');
 
     await Database.execute([
-        'INSERT INTO warehouse_items (selfId, name, amount, characterId) VALUES (57, ?, 1, ?)',
-        ['Adena', characterId]
+        `UPDATE bot_life_state
+         SET activity = 'resting', phase = 'cold', adena = 100,
+             inventorySummary = ?, statsJson = '{}'
+         WHERE characterId = ?`,
+        [JSON.stringify({ 57: { selfId: 57, name: 'Adena', amount: 100 } }), characterId]
     ]);
+    await Database.execute(['DELETE FROM items WHERE characterId = ? AND selfId = 57', [characterId]]);
+    await Database.execute([
+        "INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (57, 'Adena', 100, 0, 0, ?)",
+        [characterId]
+    ]);
+    const storedGear = [];
+    for (const enchant of [3, 2, 0]) {
+        const inserted = await Database.execute([
+            "INSERT INTO warehouse_items (selfId, name, amount, enchant, characterId) VALUES (94, 'Bec de Corbin', 1, ?, ?)",
+            [enchant, characterId]
+        ]);
+        storedGear.push({ id: Number(inserted.insertId), selfId: 94, amount: 1, enchant, npcPrice: 50 });
+    }
+    const compacted = await Database.liquidateWarehouseGear(characterId, [storedGear[2]], { source: 'test_cleanup' });
+    assert.strictEqual(compacted.ok, true, 'legacy-main cold owners may compact a selected warehouse object atomically');
+    assert.strictEqual(compacted.rowsRemoved, 1);
+    assert.strictEqual(compacted.units, 1);
+    assert.strictEqual(compacted.payout, 50);
+    assert.strictEqual(Number(compacted.state.adena), 150);
+    assert.strictEqual(JSON.parse(compacted.state.inventorySummary)['57'].amount, 150);
+    assert.strictEqual(JSON.parse(compacted.state.statsJson).lastWarehouseCompaction.source, 'test_cleanup');
+    assert.deepStrictEqual((await Database.fetchWarehouseItems(characterId))
+        .filter((item) => Number(item.selfId) === 94)
+        .map((item) => Number(item.enchant)).sort((a, b) => b - a), [3, 2],
+    'the explicit low-enchant surplus row must be removed while the two keepers survive');
+    assert.strictEqual(Number((await Database.fetchItems(characterId)).find((item) => Number(item.selfId) === 57).amount), 150,
+        'physical Adena must commit in the same transaction as warehouse removal and life-state payout');
+    await assert.rejects(
+        Database.liquidateWarehouseGear(characterId, [{ ...storedGear[0], enchant: 99 }], { source: 'stale_test' }),
+        /warehouse gear changed/,
+        'a stale object snapshot must roll the whole cleanup transaction back'
+    );
+    assert.strictEqual(Number((await Database.fetchItems(characterId)).find((item) => Number(item.selfId) === 57).amount), 150,
+        'failed cleanup must not credit Adena');
+    assert((await Database.fetchWarehouseItems(characterId)).some((item) => Number(item.id) === storedGear[0].id),
+        'failed cleanup must not remove the selected warehouse object');
+
     const warehouseClaim = await Owner.claim({
         ...resting,
         simulation: { ownerId: Owner.LEGACY_OWNER_ID, revision: recovered.simulationRevision, leaseId: null, leaseUntil: 0 }
     }, { timestamp: 6000, leaseMs: 5000, leaseId: 'lease-warehouse' });
     assert.strictEqual(warehouseClaim.ok, true, 'passive stored items must not starve the owner-capable lifecycle partition');
+    const leasedCleanup = await Database.liquidateWarehouseGear(characterId, [storedGear[0]], { source: 'must_not_run' });
+    assert.strictEqual(leasedCleanup.reason, 'owner_changed', 'warehouse cleanup must defer while the cold worker owns the lifecycle row');
     const warehouseReleased = await Owner.release(warehouseClaim, { timestamp: 6100 });
     assert.strictEqual(warehouseReleased.ok, true);
 

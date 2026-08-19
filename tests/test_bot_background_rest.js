@@ -44,4 +44,37 @@ const ready = BackgroundResolver.resolveSolo({
 assert.strictEqual(ready.patch.activity, 'hunting', 'a recovered cold bot should return to hunting after its recovery delay');
 assert.strictEqual(ready.patch.stats.restUntil, null, 'completed recovery must clear its persisted deadline');
 
+const lowManaDps = {
+    ...state,
+    vitals: { hp: 1200, maxHp: 1200, mp: 0, maxMp: 650 },
+    stats: { ...state.stats, classId: 1, role: 'dps', restUntil: now + 600000 }
+};
+const activeDps = BackgroundResolver.resolveSolo({
+    state: lowManaDps,
+    spot: { id: 'execution_ground' },
+    elapsedMs: 0,
+    timestamp: now
+});
+assert.strictEqual(activeDps.patch.activity, 'hunting', 'a physical DPS must not wait for an obsolete MP recovery deadline');
+assert.strictEqual(activeDps.patch.stats.restUntil, null, 'waking a non-mana role must clear its old rest deadline');
+assert.strictEqual(BackgroundResolver.needsRest(lowManaDps, lowManaDps.vitals), false,
+    'zero MP alone must not stop a physical DPS cold lifecycle');
+
+const lowManaMage = {
+    ...lowManaDps,
+    stats: { ...lowManaDps.stats, classId: 11, role: 'mage' }
+};
+const restingMage = BackgroundResolver.resolveSolo({
+    state: lowManaMage,
+    spot: { id: 'execution_ground' },
+    elapsedMs: 0,
+    timestamp: now
+});
+assert.strictEqual(restingMage.patch.activity, 'resting', 'a depleted caster must retain MP recovery fidelity');
+assert.strictEqual(BackgroundResolver.needsRest(lowManaMage, lowManaMage.vitals), true,
+    'zero MP must remain a rest trigger for a caster');
+
+const standing = BackgroundResolver.applyStandingRegen(lowManaDps, lowManaDps.vitals, 30000, now);
+assert(standing.mp > 0 && standing.mp < standing.maxMp, 'cold hunting must receive bounded standing MP regeneration');
+
 console.log('Bot background rest checks passed');

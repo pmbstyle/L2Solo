@@ -48,7 +48,22 @@ function emptyCounters() {
         coldOwnerLegacyDeferred: 0,
         coldOwnerDbBusy: 0,
         coldOwnerDbRetries: 0,
-        coldOwnerHandoffs: 0
+        coldOwnerHandoffs: 0,
+        legacyOwnershipConflicts: 0,
+        warehouseCleanupRuns: 0,
+        warehouseCleanupOwners: 0,
+        warehouseCleanupCompacted: 0,
+        warehouseCleanupRows: 0,
+        warehouseCleanupUnits: 0,
+        warehouseCleanupPayout: 0,
+        warehouseCleanupDeferrals: 0,
+        warehouseCleanupErrors: 0,
+        warehouseCleanupBudgetStops: 0,
+        stateRetentionRuns: 0,
+        stateRetentionRows: 0,
+        stateRetentionDeferrals: 0,
+        stateRetentionErrors: 0,
+        stateRetentionOverruns: 0
     };
 }
 
@@ -66,6 +81,19 @@ function stats(values) {
         p95Ms: Math.round(sorted[p95Index]),
         maxMs: Math.round(sorted[sorted.length - 1])
     };
+}
+
+function revisionGapBucket(result = {}) {
+    const expected = Number(result.expectedRevision);
+    const actual = Number(result.actualRevision);
+    if (!Number.isFinite(expected) || !Number.isFinite(actual)) return 'unknown';
+    const gap = actual - expected;
+    if (gap < 0) return 'ahead';
+    if (gap === 0) return 'same';
+    if (gap === 1) return '+1';
+    if (gap <= 4) return '+2-4';
+    if (gap <= 16) return '+5-16';
+    return '+17';
 }
 
 const PopulationMetrics = {
@@ -100,7 +128,14 @@ const PopulationMetrics = {
         coldOwnerClaimDurationsMs: [],
         coldOwnerCommitDurationsMs: [],
         coldOwnerLegacyReasons: new Map(),
-        coldOwnerRejectReasons: new Map()
+        coldOwnerRejectReasons: new Map(),
+        coldOwnerStaleRevisionGaps: new Map(),
+        coldOwnerStaleOwners: new Map(),
+        warehouseCleanupDurationsMs: [],
+        warehouseCleanupDeferralReasons: new Map(),
+        stateRetentionDurationsMs: [],
+        stateRetentionDeferralReasons: new Map(),
+        stateRetentionPolicyRows: new Map()
     },
     timer: null,
 
@@ -239,7 +274,7 @@ const PopulationMetrics = {
         this.interval.coldOwnerClaimDurationsMs.push(Math.max(0, Number(durationMs) || 0));
         if (this.interval.coldOwnerClaimDurationsMs.length > Config.resolveSampleLimit) this.interval.coldOwnerClaimDurationsMs.shift();
         if (result.ok) this.counters.coldOwnerClaimed += 1;
-        else this.recordColdOwnerRejected(result.reason);
+        else this.recordColdOwnerRejected(result.reason, result);
     },
 
     recordColdOwnerResolved() {
@@ -250,19 +285,29 @@ const PopulationMetrics = {
         this.interval.coldOwnerCommitDurationsMs.push(Math.max(0, Number(durationMs) || 0));
         if (this.interval.coldOwnerCommitDurationsMs.length > Config.resolveSampleLimit) this.interval.coldOwnerCommitDurationsMs.shift();
         if (result.ok) this.counters.coldOwnerCommitted += 1;
-        else this.recordColdOwnerRejected(result.reason);
+        else this.recordColdOwnerRejected(result.reason, result);
     },
 
     recordColdOwnerRelease(result = {}) {
         if (result.ok) this.counters.coldOwnerReleased += 1;
-        else this.recordColdOwnerRejected(result.reason);
+        else this.recordColdOwnerRejected(result.reason, result);
     },
 
-    recordColdOwnerRejected(reason = 'unknown') {
+    recordColdOwnerRejected(reason = 'unknown', result = {}) {
         const key = String(reason || 'unknown');
         this.counters.coldOwnerRejected += 1;
         if (['stale_revision', 'cas_failed', 'owner_changed', 'lease_changed', 'lease_expired'].includes(key)) {
             this.counters.coldOwnerCasStale += 1;
+            const gap = revisionGapBucket(result);
+            const owner = String(result.actualOwner || 'unknown');
+            this.interval.coldOwnerStaleRevisionGaps.set(
+                gap,
+                Number(this.interval.coldOwnerStaleRevisionGaps.get(gap) || 0) + 1
+            );
+            this.interval.coldOwnerStaleOwners.set(
+                owner,
+                Number(this.interval.coldOwnerStaleOwners.get(owner) || 0) + 1
+            );
         }
         this.interval.coldOwnerRejectReasons.set(key, Number(this.interval.coldOwnerRejectReasons.get(key) || 0) + 1);
     },
@@ -298,6 +343,72 @@ const PopulationMetrics = {
         else if (!result.ok) this.recordColdOwnerRejected(result.reason);
     },
 
+    recordLegacyOwnershipConflict() {
+        this.counters.legacyOwnershipConflicts += 1;
+    },
+
+    recordWarehouseCleanup(result = {}, durationMs = 0) {
+        this.counters.warehouseCleanupRuns += 1;
+        this.counters.warehouseCleanupOwners += Math.max(0, Number(result.ownersScanned || 0));
+        this.counters.warehouseCleanupCompacted += Math.max(0, Number(result.ownersCompacted || 0));
+        this.counters.warehouseCleanupRows += Math.max(0, Number(result.rowsRemoved || 0));
+        this.counters.warehouseCleanupUnits += Math.max(0, Number(result.units || 0));
+        this.counters.warehouseCleanupPayout += Math.max(0, Number(result.payout || 0));
+        this.counters.warehouseCleanupErrors += Math.max(0, Number(result.errors || 0));
+        if (result.budgetStopped) this.counters.warehouseCleanupBudgetStops += 1;
+        this.schedulerState = {
+            ...this.schedulerState,
+            warehouseCleanupCursor: Math.max(0, Number(result.cursor || 0)),
+            warehouseCleanupExhausted: !!result.exhausted
+        };
+        this.interval.warehouseCleanupDurationsMs.push(Math.max(0, Number(durationMs) || 0));
+        if (this.interval.warehouseCleanupDurationsMs.length > Config.resolveSampleLimit) {
+            this.interval.warehouseCleanupDurationsMs.shift();
+        }
+    },
+
+    recordWarehouseCleanupDeferral(reason = 'unknown') {
+        const key = String(reason || 'unknown');
+        this.counters.warehouseCleanupDeferrals += 1;
+        this.interval.warehouseCleanupDeferralReasons.set(
+            key,
+            Number(this.interval.warehouseCleanupDeferralReasons.get(key) || 0) + 1
+        );
+    },
+
+    recordStateRetention(result = {}, durationMs = 0, overBudget = false) {
+        const rows = Math.max(0, Number(result.rowsRemoved || 0));
+        const policy = String(result.policy || 'unknown');
+        this.counters.stateRetentionRuns += 1;
+        this.counters.stateRetentionRows += rows;
+        this.counters.stateRetentionErrors += Math.max(0, Number(result.errors || 0));
+        if (overBudget) this.counters.stateRetentionOverruns += 1;
+        this.schedulerState = {
+            ...this.schedulerState,
+            stateRetentionPolicy: policy,
+            stateRetentionNextPolicy: String(result.nextPolicy || 'unknown')
+        };
+        this.interval.stateRetentionDurationsMs.push(Math.max(0, Number(durationMs) || 0));
+        if (this.interval.stateRetentionDurationsMs.length > Config.resolveSampleLimit) {
+            this.interval.stateRetentionDurationsMs.shift();
+        }
+        if (rows > 0) {
+            this.interval.stateRetentionPolicyRows.set(
+                policy,
+                Number(this.interval.stateRetentionPolicyRows.get(policy) || 0) + rows
+            );
+        }
+    },
+
+    recordStateRetentionDeferral(reason = 'unknown') {
+        const key = String(reason || 'unknown');
+        this.counters.stateRetentionDeferrals += 1;
+        this.interval.stateRetentionDeferralReasons.set(
+            key,
+            Number(this.interval.stateRetentionDeferralReasons.get(key) || 0) + 1
+        );
+    },
+
     recordActivationFloorScan(scan = {}) {
         const candidates = Math.max(0, Number(scan.candidates) || 0);
         const accepted = Math.max(0, Number(scan.accepted) || 0);
@@ -328,6 +439,7 @@ const PopulationMetrics = {
             lagMs: Math.max(0, Number(profile.lagMs) || 0),
             playerMode: profile.activity?.mode || 'idle',
             realPlayers: Math.max(0, Number(profile.activity?.realPlayers) || 0),
+            connectingPlayers: Math.max(0, Number(profile.activity?.connectingPlayers) || 0),
             companions: Math.max(0, Number(profile.activity?.companionCount) || 0)
         };
     },
@@ -398,6 +510,13 @@ const PopulationMetrics = {
         const activationFloorReasons = Object.fromEntries(this.interval.activationFloorReasons.entries());
         const coldOwnerLegacyReasons = Object.fromEntries(this.interval.coldOwnerLegacyReasons.entries());
         const coldOwnerRejectReasons = Object.fromEntries(this.interval.coldOwnerRejectReasons.entries());
+        const coldOwnerStaleRevisionGaps = Object.fromEntries(this.interval.coldOwnerStaleRevisionGaps.entries());
+        const coldOwnerStaleOwners = Object.fromEntries(this.interval.coldOwnerStaleOwners.entries());
+        const warehouseCleanupStats = stats(this.interval.warehouseCleanupDurationsMs);
+        const warehouseCleanupDeferralReasons = Object.fromEntries(this.interval.warehouseCleanupDeferralReasons.entries());
+        const stateRetentionStats = stats(this.interval.stateRetentionDurationsMs);
+        const stateRetentionDeferralReasons = Object.fromEntries(this.interval.stateRetentionDeferralReasons.entries());
+        const stateRetentionPolicyRows = Object.fromEntries(this.interval.stateRetentionPolicyRows.entries());
         this.interval.resolveDurationsMs = [];
         this.interval.schedulerDurationsMs = [];
         this.interval.schedulerSliceDurationsMs = [];
@@ -410,6 +529,13 @@ const PopulationMetrics = {
         this.interval.activationFloorReasons = new Map();
         this.interval.coldOwnerLegacyReasons = new Map();
         this.interval.coldOwnerRejectReasons = new Map();
+        this.interval.coldOwnerStaleRevisionGaps = new Map();
+        this.interval.coldOwnerStaleOwners = new Map();
+        this.interval.warehouseCleanupDurationsMs = [];
+        this.interval.warehouseCleanupDeferralReasons = new Map();
+        this.interval.stateRetentionDurationsMs = [];
+        this.interval.stateRetentionDeferralReasons = new Map();
+        this.interval.stateRetentionPolicyRows = new Map();
         this.interval.partyFormationStageDurationsMs = new Map();
         this.interval.skippedResolveReasons = new Map();
 
@@ -434,7 +560,22 @@ const PopulationMetrics = {
                 claim: coldOwnerClaimStats,
                 commit: coldOwnerCommitStats,
                 legacyReasons: coldOwnerLegacyReasons,
-                rejectReasons: coldOwnerRejectReasons
+                rejectReasons: coldOwnerRejectReasons,
+                staleRevisionGaps: coldOwnerStaleRevisionGaps,
+                staleOwners: coldOwnerStaleOwners
+            },
+            warehouseCleanup: {
+                ...warehouseCleanupStats,
+                cursor: this.schedulerState.warehouseCleanupCursor || 0,
+                exhausted: !!this.schedulerState.warehouseCleanupExhausted,
+                deferralReasons: warehouseCleanupDeferralReasons
+            },
+            stateRetention: {
+                ...stateRetentionStats,
+                policy: this.schedulerState.stateRetentionPolicy || 'none',
+                nextPolicy: this.schedulerState.stateRetentionNextPolicy || 'none',
+                deferralReasons: stateRetentionDeferralReasons,
+                policyRows: stateRetentionPolicyRows
             },
             partyFormationStages,
             skippedResolveReasons,

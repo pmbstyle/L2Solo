@@ -7,6 +7,7 @@ const {
     deterministicRandom,
     finishPartyRouteTravelState,
     lifecycleKind,
+    nextDueAt,
     partyTransitionProposals
 } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 
@@ -408,6 +409,82 @@ function state(characterId = 1, overrides = {}) {
         'the leader proposal must carry the party durable update');
     assert(!partyMessages.some((entry) => entry.type === 'command_request'), 'party combat compute must never fall back to main');
 
+    const stalePartyMessages = [];
+    let stalePartyNow = now;
+    const stalePartyMembers = [
+        state(220, { party: { partyId: 'stale-party-220', leaderId: 220 } }),
+        state(221, { party: { partyId: 'stale-party-220', leaderId: 220 } })
+    ];
+    const staleParty = {
+        partyId: 'stale-party-220',
+        leaderId: 220,
+        memberIds: [220, 221],
+        stats: {},
+        nextResolveAt: stalePartyNow
+    };
+    const stalePartyKernel = new ColdSimulationKernel({
+        resolveSolo: resolver,
+        resolveParty: () => { throw new Error('partial stale party claim must not resolve'); },
+        emit: (type, payload) => stalePartyMessages.push({ type, payload }),
+        now: () => stalePartyNow
+    });
+    stalePartyKernel.upsert({
+        state: stalePartyMembers[0],
+        context: { isPartyLeader: true, party: staleParty, partyMembers: stalePartyMembers, spot: { id: 'stale-party-spot' } }
+    });
+    stalePartyKernel.upsert({ state: stalePartyMembers[1], context: {} });
+    stalePartyKernel.tick();
+    const stalePartyClaim = stalePartyMessages.shift();
+    const leaderCandidate = stalePartyClaim.payload.candidates.find((candidate) => candidate.characterId === 220);
+    const memberCandidate = stalePartyClaim.payload.candidates.find((candidate) => candidate.characterId === 221);
+    const refreshedMember = {
+        ...stalePartyMembers[1],
+        simulation: { ownerId: 'legacy_main', revision: 9, leaseId: null, leaseUntil: 0 }
+    };
+    stalePartyKernel.onClaimAck({
+        grants: [{
+            ok: true,
+            characterId: 220,
+            ownerId: 'cold_simulation_owner',
+            revision: leaderCandidate.expectedRevision + 1,
+            leaseId: 'stale-party-leader-lease',
+            leaseUntil: stalePartyNow + 30000,
+            purpose: leaderCandidate.purpose
+        }],
+        rejected: [{
+            ok: false,
+            characterId: 221,
+            reason: 'stale_revision',
+            expectedRevision: memberCandidate.expectedRevision,
+            actualRevision: 9,
+            actualOwner: 'legacy_main',
+            state: refreshedMember,
+            context: {},
+            purpose: memberCandidate.purpose
+        }]
+    });
+    assert.strictEqual(stalePartyKernel.states.get(221).state.simulation.revision, 9,
+        'a stale party claim must refresh the member revision before retrying');
+    const partialRelease = stalePartyMessages.find((entry) => entry.type === 'release_request');
+    assert(partialRelease, 'a partial party claim must release grants accepted before the rejection');
+    stalePartyKernel.onReleaseAck({ results: [{
+        ok: true,
+        characterId: 220,
+        state: {
+            ...stalePartyMembers[0],
+            simulation: { ownerId: 'legacy_main', revision: 5, leaseId: null, leaseUntil: 0 }
+        },
+        context: { isPartyLeader: true, party: staleParty, partyMembers: stalePartyMembers, spot: { id: 'stale-party-spot' } }
+    }] });
+    stalePartyNow += 1000;
+    stalePartyKernel.tick();
+    const retriedPartyClaim = stalePartyMessages.find((entry) => entry.type === 'claim_request');
+    assert.deepStrictEqual(
+        retriedPartyClaim.payload.candidates.map((candidate) => candidate.expectedRevision),
+        [5, 9],
+        'the next party claim must use revisions returned by release and stale ACKs'
+    );
+
     const expiredPartyMessages = [];
     const expiredPartyMembers = [
         state(22, {
@@ -510,6 +587,47 @@ function state(characterId = 1, overrides = {}) {
     expiryScheduleKernel.tick();
     assert.strictEqual(expiryScheduleMessages[0].type, 'claim_request',
         'a valid party must be claimed at session expiry even when nextResolveAt is later');
+
+    const partyDue = expiryScheduleNow + 3000;
+    const partyDueLeader = state(27, {
+        timing: { lastResolvedAt: expiryScheduleNow - 1000, nextResolveAt: null },
+        party: { partyId: 'party-row-scheduled', leaderId: 27 }
+    });
+    const partyDueMember = state(28, {
+        timing: { lastResolvedAt: expiryScheduleNow - 1000, nextResolveAt: null },
+        party: { partyId: 'party-row-scheduled', leaderId: 27 }
+    });
+    const partyDueContext = {
+        isPartyLeader: true,
+        party: {
+            partyId: 'party-row-scheduled',
+            leaderId: 27,
+            memberIds: [27, 28],
+            nextResolveAt: partyDue,
+            stats: { sessionExpiresAt: expiryScheduleNow + 60000 }
+        },
+        partyMembers: [partyDueLeader, partyDueMember]
+    };
+    assert.strictEqual(nextDueAt(partyDueLeader, expiryScheduleNow, partyDueContext), partyDue,
+        'a newly assigned leader with no personal due time must use the durable party schedule');
+    assert.strictEqual(nextDueAt({
+        ...partyDueLeader,
+        timing: { ...partyDueLeader.timing, nextResolveAt: expiryScheduleNow + 1000 }
+    }, expiryScheduleNow, partyDueContext), partyDue,
+        'a stale leader schedule must not outrun the authoritative party row');
+
+    const priorityParty = {
+        ...partyDueContext.party,
+        nextResolveAt: expiryScheduleNow
+    };
+    const priorityContext = { ...partyDueContext, party: priorityParty };
+    const partyCapacityKernel = new ColdSimulationKernel({ now: () => expiryScheduleNow, resolveSolo: resolver });
+    partyCapacityKernel.upsert({ state: partyDueLeader, context: priorityContext });
+    partyCapacityKernel.upsert({ state: partyDueMember, context: {} });
+    assert.deepStrictEqual(partyCapacityKernel.dueCandidates(expiryScheduleNow, 1), [],
+        'an atomic party claim must wait when the current capacity cannot fit every member');
+    assert.strictEqual(partyCapacityKernel.dueCandidates(expiryScheduleNow, 2).length, 2,
+        'a capacity-blocked party must retain priority instead of moving behind overdue solo work');
 
     const singletonMessages = [];
     let singletonNow = now;

@@ -189,26 +189,37 @@ const BackgroundPartyState = {
     },
 
     createOrUpdate(party) {
-        const membership = normalizeMembership(party);
-        const status = party?.status || 'active';
-        if (!party?.partyId || (status === 'active' && !membership.memberIds.length)) return Promise.resolve(null);
-        const normalizedParty = { ...party, ...membership };
-        const memberCount = membership.memberIds.length;
-        if (status === 'active' && memberCount < Config.partyMinSize) return Promise.resolve(null);
+        const prepared = this.prepareCommit(party);
+        if (!prepared) return Promise.resolve(null);
         const ready = initialized ? Promise.resolve(true) : this.init();
 
         return ready.then((isReady) => {
             if (!isReady) return null;
-            const row = rowFromParty(normalizedParty);
-            return save(row).then(() => {
-                const snapshot = normalize(row);
-                cache.set(snapshot.partyId, snapshot);
-                return snapshot;
+            return save(prepared.row).then(() => {
+                this.acceptCommit(prepared);
+                return prepared.snapshot;
             });
         }).catch((err) => {
-            utils.infoWarn('BotParty', 'failed to save background party %s: %s', normalizedParty.partyId, err.message);
+            utils.infoWarn('BotParty', 'failed to save background party %s: %s', prepared.snapshot.partyId, err.message);
             return null;
         });
+    },
+
+    prepareCommit(party) {
+        const membership = normalizeMembership(party);
+        const status = party?.status || 'active';
+        if (!party?.partyId || (status === 'active' && !membership.memberIds.length)) return null;
+        const normalizedParty = { ...party, ...membership };
+        if (status === 'active' && membership.memberIds.length < Config.partyMinSize) return null;
+        const row = rowFromParty(normalizedParty);
+        return { row, snapshot: normalize(row) };
+    },
+
+    acceptCommit(prepared) {
+        const snapshot = prepared?.snapshot;
+        if (!snapshot?.partyId) return null;
+        cache.set(snapshot.partyId, snapshot);
+        return snapshot;
     },
 
     find(partyId) {

@@ -91,14 +91,39 @@ const DEFAULTS = {
     maxPartyResolvesPerTick: 3,
     maxMarketGoalReconcilesPerTick: 8,
     maxWarehouseReleasesPerTick: 8,
-    partyFormationBatchSize: 3,
-    // Forming is an infrequent event. Read enough waiting candidates to let
-    // the three available slots reach distinct crowded grounds instead of
-    // letting the two largest queues consume the whole selection window.
-    partyFormationCandidateLimit: 250,
-    // Recruitment must get a fair sample from every active party ground; a
-    // global top-N window otherwise starves less crowded spots forever.
-    partyRecruitmentCandidateLimit: 40,
+    // Historical gear debt is repaired only while the server is player-idle.
+    // Each pass advances by owner id and performs at most one tiny atomic
+    // transaction per owner, so cleanup cannot become a startup table sweep.
+    warehouseCleanupEnabled: true,
+    warehouseCleanupStartDelayMs: 60000,
+    warehouseCleanupIntervalMs: 500,
+    warehouseCleanupPassPauseMs: 60000,
+    warehouseCleanupIdlePauseMs: 6 * 60 * 60 * 1000,
+    warehouseCleanupOwnersPerTick: 1,
+    warehouseCleanupUnitsPerOwner: 32,
+    warehouseCleanupBudgetMs: 12,
+    // Append-only diagnostics and AI memory have explicit lifecycles. Run a
+    // single indexed delete statement per idle tick and stagger it behind the
+    // warehouse repair so both jobs never form a startup write burst.
+    stateRetentionEnabled: true,
+    stateRetentionStartDelayMs: 90000,
+    stateRetentionIntervalMs: 1000,
+    stateRetentionPassPauseMs: 60000,
+    stateRetentionIdlePauseMs: 6 * 60 * 60 * 1000,
+    stateRetentionBatchSize: 64,
+    stateRetentionBudgetMs: 12,
+    activityJournalRetentionMs: 30 * 24 * 60 * 60 * 1000,
+    activityJournalRowsPerPair: 128,
+    activityJournalMaxRows: 100000,
+    aiAuditRetentionMs: 30 * 24 * 60 * 60 * 1000,
+    toolOutcomeMaxRows: 50000,
+    llmTurnMaxRows: 50000,
+    staleLlmTurnMs: 7 * 24 * 60 * 60 * 1000,
+    compactedConversationRetentionMs: 24 * 60 * 60 * 1000,
+    conversationMaxUncompactedRows: 512,
+    // Idle formation can fill six parties per pass; live-player protection
+    // still caps the same pass at one party in PopulationService.
+    partyFormationBatchSize: 6,
     partyMinSize: 2,
     partyMaxSize: 5,
     // At roughly one party resolve per 90 seconds, forty parties consume
@@ -241,6 +266,30 @@ const ENV_KEYS = {
     partyHistoryRetentionMs: 'BOT_PARTY_HISTORY_RETENTION_MS',
     partyHistoryCleanupBatchSize: 'BOT_PARTY_HISTORY_CLEANUP_BATCH_SIZE',
     partyHistoryCleanupIntervalMs: 'BOT_PARTY_HISTORY_CLEANUP_INTERVAL_MS',
+    warehouseCleanupEnabled: 'BOT_WAREHOUSE_CLEANUP_ENABLED',
+    warehouseCleanupStartDelayMs: 'BOT_WAREHOUSE_CLEANUP_START_DELAY_MS',
+    warehouseCleanupIntervalMs: 'BOT_WAREHOUSE_CLEANUP_INTERVAL_MS',
+    warehouseCleanupPassPauseMs: 'BOT_WAREHOUSE_CLEANUP_PASS_PAUSE_MS',
+    warehouseCleanupIdlePauseMs: 'BOT_WAREHOUSE_CLEANUP_IDLE_PAUSE_MS',
+    warehouseCleanupOwnersPerTick: 'BOT_WAREHOUSE_CLEANUP_OWNERS_PER_TICK',
+    warehouseCleanupUnitsPerOwner: 'BOT_WAREHOUSE_CLEANUP_UNITS_PER_OWNER',
+    warehouseCleanupBudgetMs: 'BOT_WAREHOUSE_CLEANUP_BUDGET_MS',
+    stateRetentionEnabled: 'BOT_STATE_RETENTION_ENABLED',
+    stateRetentionStartDelayMs: 'BOT_STATE_RETENTION_START_DELAY_MS',
+    stateRetentionIntervalMs: 'BOT_STATE_RETENTION_INTERVAL_MS',
+    stateRetentionPassPauseMs: 'BOT_STATE_RETENTION_PASS_PAUSE_MS',
+    stateRetentionIdlePauseMs: 'BOT_STATE_RETENTION_IDLE_PAUSE_MS',
+    stateRetentionBatchSize: 'BOT_STATE_RETENTION_BATCH_SIZE',
+    stateRetentionBudgetMs: 'BOT_STATE_RETENTION_BUDGET_MS',
+    activityJournalRetentionMs: 'BOT_ACTIVITY_JOURNAL_RETENTION_MS',
+    activityJournalRowsPerPair: 'BOT_ACTIVITY_JOURNAL_ROWS_PER_PAIR',
+    activityJournalMaxRows: 'BOT_ACTIVITY_JOURNAL_MAX_ROWS',
+    aiAuditRetentionMs: 'BOT_AI_AUDIT_RETENTION_MS',
+    toolOutcomeMaxRows: 'BOT_TOOL_OUTCOME_MAX_ROWS',
+    llmTurnMaxRows: 'BOT_LLM_TURN_MAX_ROWS',
+    staleLlmTurnMs: 'BOT_STALE_LLM_TURN_MS',
+    compactedConversationRetentionMs: 'BOT_COMPACTED_CONVERSATION_RETENTION_MS',
+    conversationMaxUncompactedRows: 'BOT_CONVERSATION_MAX_UNCOMPACTED_ROWS',
     devLogPlayerChat: 'BOT_DEV_LOG_PLAYER_CHAT',
     debug: 'BOT_POPULATION_DEBUG'
 };

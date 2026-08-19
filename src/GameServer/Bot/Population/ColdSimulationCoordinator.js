@@ -789,7 +789,26 @@ class ColdSimulationCoordinator {
                 missing.push({ ok: false, characterId: Number(candidate.characterId), reason: 'missing_state' });
                 continue;
             }
-            purposes.set(Number(candidate.characterId), candidate.purpose || null);
+            const purpose = candidate.purpose || null;
+            purposes.set(Number(candidate.characterId), purpose);
+            if (purpose?.kind === 'party') {
+                const expectedPartyId = String(purpose.partyId || '');
+                const currentPartyId = String(state.party?.partyId || state.partyId || '');
+                const party = BackgroundPartyState.find(expectedPartyId);
+                const declaredMembers = new Set((party?.memberIds || []).map(Number).filter(Boolean));
+                if (!expectedPartyId
+                    || currentPartyId !== expectedPartyId
+                    || party?.status !== 'active'
+                    || !declaredMembers.has(Number(state.characterId))) {
+                    Metrics.recordColdOwnerRejected('party_membership_changed');
+                    missing.push({
+                        ok: false,
+                        characterId: Number(candidate.characterId),
+                        reason: 'party_membership_changed'
+                    });
+                    continue;
+                }
+            }
             candidates.push({
                 ...candidate,
                 state,
@@ -876,7 +895,16 @@ class ColdSimulationCoordinator {
                     party.stats?.partyBreakReason || 'party_dissolved'
                 );
                 Metrics.recordPartyDissolution();
-            } else Metrics.recordPartyResolve();
+            } else {
+                Metrics.recordPartyResolve();
+                if (entry.proposal.partyResolution.reviewGoals
+                    && this.population?.reconcileWorkerPartyGoals) {
+                    await this.population.reconcileWorkerPartyGoals(party, Number(entry.proposal.enqueuedAt || Date.now()))
+                        .catch((error) => {
+                            utils.infoWarn('BotGoals', 'worker party goal reconcile failed for %s: %s', party.partyId, error?.message || error);
+                        });
+                }
+            }
         }
         Metrics.recordBackgroundResolve();
         Metrics.recordCombat(entry.proposal.result?.debug);
@@ -936,6 +964,7 @@ class ColdSimulationCoordinator {
                     results.push({
                         ok: result?.ok !== false,
                         characterId: request.characterId,
+                        reason: result?.reason || (result?.ok === false ? 'command_rejected' : 'command_applied'),
                         state: nextState,
                         context: this.contextFor(nextState, this.contextIndex({ compactPartyMembers: true }))
                     });

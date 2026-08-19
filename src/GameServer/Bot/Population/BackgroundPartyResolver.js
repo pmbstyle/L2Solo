@@ -21,9 +21,9 @@ function memberVitals(state) {
     const maxMp = Number(vitals.maxMp || vitals.mp || 50 + level * 18);
 
     return {
-        hp: Number(vitals.hp || maxHp),
+        hp: Number(vitals.hp ?? maxHp),
         maxHp,
-        mp: Number(vitals.mp || maxMp),
+        mp: Number(vitals.mp ?? maxMp),
         maxMp
     };
 }
@@ -100,7 +100,7 @@ const BackgroundPartyResolver = {
                     // not wake and consume solo capacity while the healer is
                     // still recovering.
                     stats: { ...(state.stats || {}), restUntil: partyRestUntil || null }
-                }, elapsedMs, timestamp)
+                }, elapsedMs, timestamp, { party: true })
             }));
             const resting = memberResults.filter(({ result }) => result.patch.activity === 'resting').length;
             const nextRestUntil = resting
@@ -116,10 +116,21 @@ const BackgroundPartyResolver = {
                             activity: 'resting',
                             stats: { ...(result.patch.stats || {}), restUntil: nextRestUntil }
                         },
+                        // A ready member is still waiting for the group. Do
+                        // not claim it returned to hunting until the shared
+                        // party recovery actually completes.
+                        events: (result.events || []).filter((event) => event.type !== 'recovered'),
                         nextResolveAt: nextRestUntil
                     }
                 }))
-                : memberResults;
+                : memberResults.map(({ state, result }) => ({
+                    state,
+                    result: {
+                        ...result,
+                        patch: { ...result.patch, activity: 'grouped' },
+                        nextResolveAt: timestamp + 45000
+                    }
+                }));
 
             return {
                 memberResults: synchronizedMemberResults,
@@ -160,7 +171,10 @@ const BackgroundPartyResolver = {
         let summonUses = 0;
         let summonActions = 0;
         const defeatedNpcIds = [];
-        let combatMembers = members.map((state) => ({ ...state }));
+        let combatMembers = members.map((state) => ({
+            ...state,
+            vitals: BackgroundResolver.applyStandingRegen(state, state.vitals, elapsedMs, timestamp)
+        }));
         for (let i = 0; i < fights; i++) {
             const encounter = BackgroundResolver.resolvePartyFight({ members: combatMembers, spot, targetNpcId, rng, timestamp });
             combatActions += Number(encounter.debug?.actions || 0);
@@ -217,9 +231,11 @@ const BackgroundPartyResolver = {
                     meta: { partyId: party.partyId, spotId: spot.id, fights, wins }
                 });
             } else {
-                const hpPct = hp / Math.max(1, vitals.maxHp);
-                const mpPct = mp / Math.max(1, vitals.maxMp);
-                if (hpPct < 0.3 || mpPct < 0.18) {
+                if (BackgroundResolver.needsRest(state, vitals, {
+                    party: true,
+                    hpThreshold: 0.3,
+                    mpThreshold: 0.18
+                })) {
                     activity = 'resting';
                     resting += 1;
                 }
@@ -293,7 +309,7 @@ const BackgroundPartyResolver = {
                             activity: 'resting',
                             vitals: result.patch.vitals,
                             stats: { ...(state.stats || {}), ...(result.patch.stats || {}) }
-                        }, 0, timestamp);
+                        }, 0, timestamp, { party: true });
                         // The fights have already completed before the party
                         // decides to rest. Keep their rewards (and any gear
                         // redistribution) while replacing only the next

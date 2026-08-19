@@ -957,10 +957,7 @@ const PartyCompanionService = {
         // Do not let an old solo AI timeout fire between the teleport packet
         // and its delayed authoritative position update. TeleportTo performs
         // one urgent wakeup after that update completes.
-        if (companionSession.aiTimeout) {
-            clearTimeout(companionSession.aiTimeout);
-            companionSession.aiTimeout = null;
-        }
+        invoke('GameServer/Bot/BotAI').cancelScheduledTick(companionSession);
         const arrivalPending = this.bringToLeader(leaderSession, companionSession);
 
         if (previousLeader && previousLeader !== leaderSession) {

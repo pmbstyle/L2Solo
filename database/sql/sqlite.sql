@@ -183,32 +183,28 @@ CREATE TABLE IF NOT EXISTS bot_life_state (
     simulationOwner TEXT NOT NULL DEFAULT 'legacy_main',
     simulationRevision INTEGER NOT NULL DEFAULT 0,
     simulationLeaseId TEXT,
-    simulationLeaseUntil INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS bot_life_state_phase_nextResolveAt ON bot_life_state(phase, nextResolveAt);
-CREATE INDEX IF NOT EXISTS bot_life_state_phase_partyId ON bot_life_state(phase, partyId);
-CREATE INDEX IF NOT EXISTS bot_life_state_accountName ON bot_life_state(accountName);
-CREATE INDEX IF NOT EXISTS bot_life_state_characterName ON bot_life_state(characterName COLLATE NOCASE);
-CREATE INDEX IF NOT EXISTS bot_life_state_party_request_filter
-    ON bot_life_state(
-        phase,
-        partyId,
-        activity,
-        json_extract(statsJson, '$.partyRequest.status'),
+    simulationLeaseUntil INTEGER NOT NULL DEFAULT 0,
+    partyRequestStatus TEXT GENERATED ALWAYS AS (
+        json_extract(statsJson, '$.partyRequest.status')
+    ) VIRTUAL,
+    partyRequestPriority TEXT GENERATED ALWAYS AS (
         json_extract(statsJson, '$.partyRequest.priority')
-    );
-CREATE INDEX IF NOT EXISTS bot_life_state_party_objective_spot
-    ON bot_life_state(
-        phase,
-        partyId,
-        activity,
+    ) VIRTUAL,
+    partyRequestedAt INTEGER GENERATED ALWAYS AS (
+        CAST(json_extract(statsJson, '$.partyRequest.requestedAt') AS INTEGER)
+    ) VIRTUAL,
+    partyObjectiveSpot TEXT GENERATED ALWAYS AS (
         COALESCE(
             json_extract(statsJson, '$.partyRequest.spotId'),
             json_extract(statsJson, '$.equipmentPlan.next.spotId'),
             spotId
         )
-    );
-
+    ) VIRTUAL
+);
+CREATE INDEX IF NOT EXISTS bot_life_state_phase_nextResolveAt ON bot_life_state(phase, nextResolveAt);
+CREATE INDEX IF NOT EXISTS bot_life_state_phase_partyId ON bot_life_state(phase, partyId);
+CREATE INDEX IF NOT EXISTS bot_life_state_accountName ON bot_life_state(accountName);
+CREATE INDEX IF NOT EXISTS bot_life_state_characterName ON bot_life_state(characterName COLLATE NOCASE);
 CREATE TABLE IF NOT EXISTS bot_goal_state (
     characterId INTEGER PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
     goalJson TEXT,
@@ -300,6 +296,8 @@ CREATE TABLE IF NOT EXISTS bot_activity_journal (
 CREATE INDEX IF NOT EXISTS bot_activity_journal_pair_recent ON bot_activity_journal(playerId, botId, updatedAt DESC);
 CREATE INDEX IF NOT EXISTS bot_activity_journal_bot_recent ON bot_activity_journal(botId, updatedAt DESC);
 CREATE INDEX IF NOT EXISTS bot_activity_journal_coalesce ON bot_activity_journal(playerId, botId, eventType, dedupeKey, updatedAt);
+CREATE INDEX IF NOT EXISTS bot_activity_journal_retention_age ON bot_activity_journal(updatedAt, id);
+CREATE INDEX IF NOT EXISTS bot_activity_journal_pair_retention ON bot_activity_journal(botId, playerId, updatedAt DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS bot_tool_outcomes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -315,6 +313,7 @@ CREATE TABLE IF NOT EXISTS bot_tool_outcomes (
 );
 CREATE INDEX IF NOT EXISTS bot_tool_outcomes_bot_recent ON bot_tool_outcomes(botId, createdAt DESC);
 CREATE INDEX IF NOT EXISTS bot_tool_outcomes_turn ON bot_tool_outcomes(botId, turnId, toolName, createdAt DESC);
+CREATE INDEX IF NOT EXISTS bot_tool_outcomes_retention_age ON bot_tool_outcomes(createdAt, id);
 
 CREATE TABLE IF NOT EXISTS bot_llm_turns (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -340,6 +339,8 @@ CREATE TABLE IF NOT EXISTS bot_llm_turns (
 CREATE INDEX IF NOT EXISTS bot_llm_turns_bot_recent ON bot_llm_turns(botId, id DESC);
 CREATE INDEX IF NOT EXISTS bot_llm_turns_player_recent ON bot_llm_turns(playerId, id DESC);
 CREATE INDEX IF NOT EXISTS bot_llm_turns_state_recent ON bot_llm_turns(state, id DESC);
+CREATE INDEX IF NOT EXISTS bot_llm_turns_terminal_retention ON bot_llm_turns(state, COALESCE(finishedAt, startedAt, 0), id);
+CREATE INDEX IF NOT EXISTS bot_llm_turns_active_retention ON bot_llm_turns(state, startedAt, id);
 
 CREATE TABLE IF NOT EXISTS bot_negotiations (
     id TEXT PRIMARY KEY,

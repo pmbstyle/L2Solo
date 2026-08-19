@@ -99,7 +99,21 @@ Database.init();
     assert.strictEqual(index.length, 1, 'the ordering index must be created after migration columns exist');
 
     const migrations = await Database.execute(['SELECT version FROM schema_migrations ORDER BY version'], 'test:migration-versions');
-    assert(migrations.at(-1).version >= 12, 'all current additive migrations must complete on a legacy database');
+    assert(migrations.at(-1).version >= 16, 'all current additive migrations must complete on a legacy database');
+    const retentionIndexes = await Database.execute([
+        `SELECT name FROM sqlite_master
+         WHERE type = 'index' AND name IN (
+             'bot_conversation_messages_compacted_age',
+             'bot_conversation_messages_uncompacted_group',
+             'bot_activity_journal_retention_age',
+             'bot_activity_journal_pair_retention',
+             'bot_tool_outcomes_retention_age',
+             'bot_llm_turns_terminal_retention',
+             'bot_llm_turns_active_retention'
+         ) ORDER BY name`
+    ], 'test:retention-indexes');
+    assert.strictEqual(retentionIndexes.length, 7,
+        'legacy databases must receive every bounded-retention index after additive columns exist');
     const itemColumns = await Database.execute(['PRAGMA table_info(items)'], 'test:enchant-item-columns');
     const itemEnchantColumn = itemColumns.find((column) => column.name === 'enchant');
     assert(itemEnchantColumn, 'legacy item table must receive enchant level storage');

@@ -1,6 +1,7 @@
 const { randomUUID } = require('crypto');
 
 const Database = invoke('Database');
+const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 
 const OWNER_ID = 'cold_simulation_owner';
 const LEGACY_OWNER_ID = 'legacy_main';
@@ -60,6 +61,7 @@ function ownership(state = {}) {
 }
 
 function persistencePatch(state = {}, timestamp = Date.now()) {
+    const inventory = InventorySummary.canonicalize(state.inventory);
     return {
         level: Number(state.level || 1),
         exp: Number(state.exp || 0),
@@ -84,7 +86,7 @@ function persistencePatch(state = {}, timestamp = Date.now()) {
         targetLevelBand: state.levelBand || null,
         deathCount: Number(state.stats?.deaths || 0),
         partyId: state.party?.partyId || null,
-        inventorySummary: JSON.stringify(state.inventory || {}),
+        inventorySummary: JSON.stringify(inventory),
         statsJson: JSON.stringify(state.stats || {}),
         updatedAt: Number(state.updatedAt || timestamp)
     };
@@ -123,7 +125,9 @@ function claim(state, options = {}) {
         ownerId: OWNER_ID,
         leaseId: options.leaseId || leaseId(),
         timestamp,
-        leaseUntil: timestamp + leaseMs
+        leaseUntil: timestamp + leaseMs,
+        allowParty: options.allowParty === true,
+        allowLifecycle: options.allowLifecycle === true
     }).then((result) => {
         Metrics().recordColdOwnerClaim(result, Date.now() - startedAt);
         return reflect(result);
@@ -186,6 +190,10 @@ function commit(claimToken, nextState, options = {}) {
         Metrics().recordColdOwnerCommit(result, 0);
         return Promise.resolve(result);
     }
+    const canonicalState = {
+        ...nextState,
+        inventory: InventorySummary.canonicalize(nextState.inventory)
+    };
     const timestamp = Number(options.timestamp || Date.now());
     const leaseMs = Math.max(1000, Number(options.leaseMs || DEFAULT_LEASE_MS));
     const startedAt = Date.now();
@@ -196,10 +204,10 @@ function commit(claimToken, nextState, options = {}) {
         leaseId: claimToken.leaseId,
         timestamp,
         leaseUntil: timestamp + leaseMs,
-        patch: persistencePatch(nextState, timestamp)
+        patch: persistencePatch(canonicalState, timestamp)
     }).then((result) => {
         Metrics().recordColdOwnerCommit(result, Date.now() - startedAt);
-        return reflect(result, nextState);
+        return reflect(result, canonicalState);
     }).catch(recordFailure);
 }
 
@@ -276,16 +284,18 @@ function commitAndReleaseBatch(entries = [], options = {}) {
             });
             return;
         }
-        states.set(Number(token.characterId), nextState);
-        const inventoryChanged = JSON.stringify(entry.proposal?.baseState?.inventory || {})
-            !== JSON.stringify(nextState.inventory || {});
+        const canonicalInventory = InventorySummary.canonicalize(nextState.inventory);
+        const canonicalState = { ...nextState, inventory: canonicalInventory };
+        states.set(Number(token.characterId), canonicalState);
+        const inventoryChanged = JSON.stringify(InventorySummary.canonicalize(entry.proposal?.baseState?.inventory))
+            !== JSON.stringify(canonicalInventory);
         requests.push({
             characterId: Number(token.characterId),
             expectedRevision: Number(token.revision),
             ownerId: OWNER_ID,
             leaseId: token.leaseId,
             timestamp,
-            patch: persistencePatch(nextState, timestamp),
+            patch: persistencePatch(canonicalState, timestamp),
             physical: {
                 level: Number(nextState.level || 1),
                 exp: Number(nextState.exp || 0),
@@ -298,7 +308,7 @@ function commitAndReleaseBatch(entries = [], options = {}) {
                     classId: Number(entry.proposal.durable.classId),
                     skills: entry.proposal.durable.skills || []
                 } : {}),
-                ...(inventoryChanged ? { inventory: nextState.inventory || {} } : {})
+                ...(inventoryChanged ? { inventory: canonicalInventory } : {})
             },
             allowParty: entry.options?.allowParty === true || options.allowParty === true,
             allowLifecycle: entry.options?.allowLifecycle === true || options.allowLifecycle === true,
@@ -354,15 +364,21 @@ function renewActiveLeases(options = {}) {
     }).catch(recordFailure);
 }
 
-function handoffToMain(state) {
+function handoffToMain(state, options = {}) {
     if (!state?.characterId) return Promise.resolve({ ok: false, reason: 'missing_state' });
     const stateOwnership = state.simulation;
+    const nextState = options.nextState || null;
+    const timestamp = Number(options.timestamp || Date.now());
     return Database.handoffColdSimulationToMain({
         characterId: Number(state.characterId),
-        expectedRevision: stateOwnership ? Number(stateOwnership.revision || 0) : null
+        expectedRevision: stateOwnership ? Number(stateOwnership.revision || 0) : null,
+        timestamp,
+        allowParty: options.allowParty === true,
+        allowLifecycle: options.allowLifecycle === true,
+        ...(nextState ? { patch: persistencePatch(nextState, timestamp) } : {})
     }).then((result) => {
         Metrics().recordColdOwnerHandoff(result);
-        return reflect(result);
+        return reflect(result, nextState);
     }).catch(recordFailure);
 }
 

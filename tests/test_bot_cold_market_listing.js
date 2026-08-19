@@ -33,6 +33,7 @@ assert(marketItem && equippedItem && speculativeItem, 'the datapack must contain
 const originals = {
     execute: Database.execute,
     fetchItems: Database.fetchItems,
+    fetchWarehouseItems: Database.fetchWarehouseItems,
     updateItemAmount: Database.updateItemAmount,
     updateItemEquipState: Database.updateItemEquipState,
     updateCharacterLocation: Database.updateCharacterLocation,
@@ -51,6 +52,7 @@ async function run() {
         { id: 21, selfId: marketItem.selfId, amount: 1, equipped: false, slot: marketItem.etc.slot },
         { id: 22, selfId: equippedItem.selfId, amount: 1, equipped: true, slot: equippedItem.etc.slot }
     ]);
+    Database.fetchWarehouseItems = () => Promise.resolve([]);
     Database.updateItemAmount = (characterId, id, amount) => {
         calls.push({ type: 'amount', characterId, id, amount });
         return Promise.resolve();
@@ -217,7 +219,8 @@ async function run() {
 
     const sold = await ListingService.settle(offer);
     assert.strictEqual(sold.adena, 500 + offer.price);
-    assert.strictEqual(sold.inventory[String(marketItem.selfId)].amount, 0);
+    assert.strictEqual(sold.inventory[String(marketItem.selfId)], undefined,
+        'sold-out stock must not remain in the durable inventory summary');
     assert.strictEqual(sold.activity, 'shopping', 'selling the final item must close the store as part of the trade event');
     assert.strictEqual(sold.stats.marketStore, null);
     const soldSync = calls.find((call) => call.type === 'inventory-sync' && call.characterId === 88);
@@ -260,7 +263,8 @@ async function run() {
         'post-market return travel must re-enter dedicated worker scheduling when due');
     assert.strictEqual(returnMessages[0]?.payload.candidates[0]?.expectedRevision, 12,
         'post-market return travel must claim against the durable ownership revision');
-    assert.strictEqual(expiredResult.state.inventory[String(marketItem.selfId)].amount, 0, 'valuable unsold gear should move to the warehouse');
+    assert.strictEqual(expiredResult.state.inventory[String(marketItem.selfId)], undefined,
+        'valuable unsold gear moved to the warehouse must leave the durable inventory summary');
     assert.strictEqual(expiredResult.state.adena, 500, 'warehouse storage must not mint Adena');
     assert.strictEqual(expiredResult.warehouseCount, 1);
     assert(Number(expiredResult.state.stats.marketSellRetryAfter) > 62000, 'valuable unsold stock needs a later market retry');
@@ -369,6 +373,7 @@ run().catch((err) => {
 }).finally(() => {
     Database.execute = originals.execute;
     Database.fetchItems = originals.fetchItems;
+    Database.fetchWarehouseItems = originals.fetchWarehouseItems;
     Database.updateItemAmount = originals.updateItemAmount;
     Database.updateItemEquipState = originals.updateItemEquipState;
     Database.updateCharacterLocation = originals.updateCharacterLocation;

@@ -8,11 +8,18 @@ const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy')
 const NeedsEvaluator = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 
 DataCache.init();
 
 const spellbook = DataCache.items.find((item) => /spellbook/i.test(item?.template?.name || ''));
 assert(spellbook, 'the datapack must contain a spellbook fixture');
+const dEnchantScroll = DataCache.items.find((item) => Number(item?.selfId) === 956);
+assert(dEnchantScroll?.template?.kind === 'Other.Scroll', 'the datapack must contain the D-grade armor enchant scroll fixture');
+const escapeScroll = DataCache.items.find((item) => Number(item?.selfId) === 736);
+const resurrectionScroll = DataCache.items.find((item) => Number(item?.selfId) === 737);
+assert(escapeScroll?.template?.kind === 'Other.Scroll' && resurrectionScroll?.template?.kind === 'Other.Scroll',
+    'the datapack must contain ordinary consumable scroll fixtures');
 
 const now = Date.now();
 const state = {
@@ -106,6 +113,57 @@ assert.deepStrictEqual(proposalTravel.simulation, {
     leaseId: 'test-lease',
     leaseUntil: now + 30000
 });
+assert.strictEqual(proposalTravel.stats.forcedMarketCleanup.cleanupReason, 'inventory_capacity',
+    'worker cleanup travel must carry durable intent through arrival');
+
+const staleRecoverIntent = PopulationService.marketListingIntent({
+    ...proposalTravel,
+    activity: 'shopping',
+    stats: { ...proposalTravel.stats, travel: null }
+}, { type: 'recover', status: 'active' });
+assert.strictEqual(staleRecoverIntent.shouldOpen, true,
+    'forced cleanup arrival must open the sale lifecycle even when goal metadata still says recover');
+assert.strictEqual(staleRecoverIntent.state.stats.forcedMarketCleanup, null,
+    'consuming forced cleanup intent must prevent the marker itself from starting another town loop');
+
+const scrollState = {
+    ...state,
+    inventory: {
+        [dEnchantScroll.selfId]: {
+            selfId: dEnchantScroll.selfId,
+            name: dEnchantScroll.template.name,
+            kind: dEnchantScroll.template.kind,
+            stackable: false,
+            amount: 81,
+            instances: Array.from({ length: 81 }, (_, index) => ({
+                id: 9200000 + index,
+                amount: 1,
+                equipped: false,
+                slot: 0
+            }))
+        }
+    }
+};
+assert(ItemDisposition.saleCandidates(scrollState).some((item) => Number(item.selfId) === Number(dEnchantScroll.selfId)),
+    'valuable scroll surplus must enter the sale/disposition lifecycle');
+assert.strictEqual(ItemDisposition.isWarehouseCandidate(scrollState.inventory[dEnchantScroll.selfId]), true,
+    'valuable scrolls without demand must be removable from the backpack into the warehouse');
+assert.strictEqual(MarketListingPolicy.evaluate(scrollState).warehouse[0]?.selfId, dEnchantScroll.selfId,
+    'scroll cleanup must choose warehouse retention when no buyer demand exists');
+for (const consumable of [escapeScroll, resurrectionScroll]) {
+    const consumableItem = {
+        selfId: consumable.selfId,
+        name: consumable.template.name,
+        kind: consumable.template.kind,
+        stackable: true,
+        amount: 10
+    };
+    const consumableState = { ...state, inventory: { [consumable.selfId]: consumableItem } };
+    assert.strictEqual(ItemDisposition.saleCandidates(consumableState).length, 0,
+        `${consumable.template.name} must remain available to bot runtime instead of entering market cleanup`);
+    assert.strictEqual(ItemDisposition.isWarehouseCandidate(consumableItem), false,
+        `${consumable.template.name} must not be parked in the warehouse`);
+}
 
 const cooldownCleanup = GoalExecutor.beginMarketTravel({
     ...state,
@@ -169,4 +227,16 @@ assert(ItemDisposition.inventoryCleanupNeed({
     stats: { marketSellRetryAfter: now + 60 * 60 * 1000 }
 }, { now }), 'NPC-only cleanup must bypass market retry cooldown');
 
-console.log('Bot inventory cleanup goal checks passed');
+const originalUpsertState = LifeState.upsertState;
+LifeState.upsertState = async () => null;
+PopulationService.resolveColdState(state).then((rejected) => {
+    assert.strictEqual(rejected.ok, false, 'a fenced cleanup write must not be reported as a successful resolve');
+    assert.strictEqual(rejected.reason, 'state_write_rejected');
+    assert.strictEqual(rejected.state, state, 'the rejected result must retain the authoritative pre-write state');
+    console.log('Bot inventory cleanup goal checks passed');
+}).catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+}).finally(() => {
+    LifeState.upsertState = originalUpsertState;
+});

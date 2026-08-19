@@ -38,10 +38,14 @@ DataCache.init();
 
     const legacySummary = BotLifeState.normalizeInventoryStackability({
         1835: { selfId: 1835, name: 'Soulshot: No Grade', amount: 10, stackable: false },
-        1: { selfId: 1, name: 'Short Sword', amount: 1, stackable: true }
+        1: { selfId: 1, name: 'Short Sword', amount: 1, stackable: true },
+        2: { selfId: 2, name: 'Long Sword', amount: 0, stackable: false },
+        3: { selfId: 3, name: 'Broad Sword', amount: -1, stackable: false }
     });
     assert.strictEqual(legacySummary['1835'].stackable, true, 'persisted false flags must be repaired for known stackables');
     assert.strictEqual(legacySummary['1'].stackable, false, 'persisted true flags must not override equipment metadata');
+    assert.strictEqual(legacySummary['2'], undefined, 'zero-amount inventory entries must not survive normalization');
+    assert.strictEqual(legacySummary['3'], undefined, 'negative inventory entries must not survive normalization');
 
     const result = await Database.compactStackableInventory([1835], 'test-stackable-compaction-v1');
     assert.strictEqual(result.rowsRemoved, 2, 'one-time maintenance must remove duplicate stackable rows');

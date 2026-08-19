@@ -13,6 +13,7 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const cache = new Map();
 const pendingWrites = new Map();
@@ -120,7 +121,7 @@ function itemStackable(selfId, item = {}) {
 }
 
 function normalizeInventoryStackability(inventory = {}) {
-    return Object.fromEntries(Object.entries(inventory || {}).map(([key, item]) => {
+    return Object.fromEntries(Object.entries(InventorySummary.canonicalize(inventory)).map(([key, item]) => {
         const selfId = Number(item?.selfId || key);
         return [key, { ...(item || {}), stackable: itemStackable(selfId, item) }];
     }));
@@ -353,19 +354,19 @@ function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
     const limitTargets = (values) => Object.fromEntries(Object.entries(values)
         .sort(([, left], [, right]) => Number(right.lastResolvedAt || 0) - Number(left.lastResolvedAt || 0))
         .slice(0, 24));
-    const targets = { ...(previous.targets || {}) };
-    const current = add(targets[targetKey]);
-    targets[targetKey] = current;
+    const current = add(previous.populationTargets?.[targetKey]
+        || (Number(previous.targetNpcId) === targetNpcId ? previous : {}));
     const populationTargets = { ...(previous.populationTargets || {}) };
     if (!debug.aggregate || debug.populationTelemetryOwner === true) {
         populationTargets[targetKey] = add(populationTargets[targetKey]);
     }
+    const retained = { ...(previous || {}) };
+    delete retained.targets;
 
     return {
-        ...(previous || {}),
+        ...retained,
         targetNpcId,
         ...current,
-        targets: limitTargets(targets),
         populationTargets: limitTargets(populationTargets)
     };
 }
@@ -508,7 +509,10 @@ function recordFromSession(session, phase, reason = '') {
 }
 
 function rowFromState(state) {
-    const persistedState = reconcileFulfilledEquipmentPlan(state);
+    const persistedState = reconcileFulfilledEquipmentPlan({
+        ...state,
+        inventory: InventorySummary.canonicalize(state?.inventory)
+    });
     return {
         characterId: persistedState.characterId,
         accountName: persistedState.accountName || '',
@@ -624,6 +628,7 @@ function save(row) {
         if (result && typeof result.affectedRows === 'number' && result.affectedRows !== 1) {
             const error = new Error(`bot life state ownership conflict for ${row.characterId}`);
             error.code = 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT';
+            Metrics.recordLegacyOwnershipConflict();
             throw error;
         }
         Metrics.recordDbFlush();
@@ -994,7 +999,7 @@ function clearPassivePartyRequests() {
         WHERE phase = 'cold'
         AND (partyId IS NULL OR partyId = '')
         AND activity IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead')
-        AND json_extract(statsJson, '$.partyRequest.status') = 'open'`,
+        AND partyRequestStatus = 'open'`,
         [timestamp]
     ]).then((result) => {
         const cleared = Number(result?.affectedRows || 0);
@@ -1018,9 +1023,9 @@ function expireStalePartyRequests(limit = 0) {
         AND simulationOwner = 'legacy_main'
         AND (partyId IS NULL OR partyId = '')
         AND activity IN ('hunting', 'resting', 'party_wait')
-        AND json_extract(statsJson, '$.partyRequest.status') = 'open'
-        AND CAST(json_extract(statsJson, '$.partyRequest.requestedAt') AS INTEGER) <=
-            CASE WHEN json_extract(statsJson, '$.partyRequest.priority') = 'required' THEN ? ELSE ? END`;
+        AND partyRequestStatus = 'open'
+        AND partyRequestedAt <= ?
+        AND (COALESCE(partyRequestPriority, '') <> 'required' OR partyRequestedAt <= ?)`;
     const target = safeLimit > 0
         ? `characterId IN (
                 SELECT characterId FROM ${TABLE}
@@ -1044,10 +1049,10 @@ function expireStalePartyRequests(limit = 0) {
         Math.max(1, staggerMs),
         timestamp,
         timestamp,
-        timestamp - requiredMaxAge,
-        timestamp - preferredMaxAge
+        timestamp - preferredMaxAge,
+        timestamp - requiredMaxAge
     ];
-    const staleParams = [timestamp - requiredMaxAge, timestamp - preferredMaxAge];
+    const staleParams = [timestamp - preferredMaxAge, timestamp - requiredMaxAge];
     const selectStale = () => Database.execute([
         `SELECT characterId, statsJson FROM ${TABLE} WHERE ${target}`,
         staleParams
@@ -1105,8 +1110,8 @@ function deferUnformablePartyRequests(characterIds = [], reason = 'no_compatible
         AND simulationOwner = 'legacy_main'
         AND (partyId IS NULL OR partyId = '')
         AND activity IN ('hunting', 'resting', 'party_wait')
-        AND json_extract(statsJson, '$.partyRequest.status') = 'open'
-        AND json_extract(statsJson, '$.partyRequest.priority') = 'required'`;
+        AND partyRequestStatus = 'open'
+        AND partyRequestPriority = 'required'`;
     const selectCurrent = () => Database.execute([
         `SELECT characterId, statsJson FROM ${TABLE} WHERE ${selection}`,
         ids
@@ -1323,7 +1328,7 @@ const BotLifeState = {
             row.activity = 'merchant';
             row.currentRegion = marketState.currentRegion || row.currentRegion;
             row.spotId = marketState.spotId || row.spotId;
-            row.inventorySummary = safeJson(marketState.inventory || {});
+            row.inventorySummary = safeJson(InventorySummary.canonicalize(marketState.inventory));
             row.adena = Number(marketState.adena || row.adena || 0);
             row.statsJson = safeJson({ ...(marketState.stats || {}), lastReason: reason });
         } else if (craftState?.stats?.craftShop) {
@@ -1793,45 +1798,48 @@ const BotLifeState = {
         const safeLimit = Math.max(1, Math.min(500, Number(limit) || 80));
         const activityClause = partyRequiredOnly
             ? `activity IN ('hunting', 'resting', 'party_wait')
-                AND json_extract(statsJson, '$.partyRequest.status') = 'open'
-                AND json_extract(statsJson, '$.partyRequest.priority') = 'required'`
+                AND partyRequestStatus = 'open'
+                AND partyRequestPriority = 'required'`
             : "activity IN ('hunting', 'resting', 'party_wait')";
-        const stateActivityClause = partyRequiredOnly
-            ? `states.activity IN ('hunting', 'resting', 'party_wait')
-                AND json_extract(states.statsJson, '$.partyRequest.status') = 'open'
-                AND json_extract(states.statsJson, '$.partyRequest.priority') = 'required'`
-            : "states.activity IN ('hunting', 'resting', 'party_wait')";
-        const objectiveSpot = "COALESCE(json_extract(statsJson, '$.partyRequest.spotId'), json_extract(statsJson, '$.equipmentPlan.next.spotId'), spotId)";
-        const stateObjectiveSpot = "COALESCE(json_extract(states.statsJson, '$.partyRequest.spotId'), json_extract(states.statsJson, '$.equipmentPlan.next.spotId'), states.spotId)";
 
         return Database.execute([
-            `SELECT states.* FROM ${TABLE} states
-            INNER JOIN (
-                SELECT ${objectiveSpot} AS candidateSpot, COUNT(*) AS candidateCount, MIN(updatedAt) AS oldestAt
+            `WITH eligible AS MATERIALIZED (
+                SELECT characterId, partyObjectiveSpot AS candidateSpot,
+                    partyRequestStatus, partyRequestPriority, updatedAt, level
                 FROM ${TABLE}
                 WHERE phase = 'cold'
                 AND simulationOwner = 'legacy_main'
                 AND (partyId IS NULL OR partyId = '')
                 AND spotId IS NOT NULL
                 AND ${activityClause}
+            ), party_spots AS MATERIALIZED (
+                SELECT candidateSpot, COUNT(*) AS candidateCount, MIN(updatedAt) AS oldestAt
+                FROM eligible
                 GROUP BY candidateSpot
-            ) party_spots ON party_spots.candidateSpot = ${stateObjectiveSpot}
-            WHERE states.phase = 'cold'
-            AND states.simulationOwner = 'legacy_main'
-            AND (states.partyId IS NULL OR states.partyId = '')
-            AND states.spotId IS NOT NULL
-            AND ${stateActivityClause}
-            ORDER BY
-                CASE
-                    WHEN json_extract(states.statsJson, '$.partyRequest.status') = 'open'
-                        AND json_extract(states.statsJson, '$.partyRequest.priority') = 'required' THEN 0
-                    WHEN json_extract(states.statsJson, '$.partyRequest.status') = 'open' THEN 1
-                    ELSE 2
-                END ASC,
-                party_spots.candidateCount DESC, party_spots.oldestAt ASC,
-                states.level ASC, states.updatedAt ASC
-            LIMIT ${safeLimit}`,
-            []
+            ), ranked AS MATERIALIZED (
+                SELECT eligible.characterId,
+                    CASE
+                        WHEN eligible.partyRequestStatus = 'open'
+                            AND eligible.partyRequestPriority = 'required' THEN 0
+                        WHEN eligible.partyRequestStatus = 'open' THEN 1
+                        ELSE 2
+                    END AS requestRank,
+                    party_spots.candidateCount, party_spots.oldestAt,
+                    eligible.level, eligible.updatedAt
+                FROM eligible
+                INNER JOIN party_spots ON party_spots.candidateSpot = eligible.candidateSpot
+                ORDER BY requestRank ASC,
+                    party_spots.candidateCount DESC, party_spots.oldestAt ASC,
+                    eligible.level ASC, eligible.updatedAt ASC
+                LIMIT ${safeLimit}
+            )
+            SELECT states.* FROM ranked
+            INNER JOIN ${TABLE} states ON states.characterId = ranked.characterId
+            ORDER BY ranked.requestRank ASC,
+                ranked.candidateCount DESC, ranked.oldestAt ASC,
+                ranked.level ASC, ranked.updatedAt ASC`,
+            [],
+            { read: true }
         ]).then((rows) => rows.map((row) => {
             const state = normalize(row);
             cache.set(state.characterId, state);
@@ -1873,8 +1881,8 @@ const BotLifeState = {
         if (!initialized) return Promise.resolve(0);
         const activityClause = partyRequiredOnly
             ? `activity IN ('hunting', 'resting', 'party_wait')
-                AND json_extract(statsJson, '$.partyRequest.status') = 'open'
-                AND json_extract(statsJson, '$.partyRequest.priority') = 'required'`
+                AND partyRequestStatus = 'open'
+                AND partyRequestPriority = 'required'`
             : "activity IN ('hunting', 'resting', 'party_wait')";
 
         return Database.execute([
@@ -1898,29 +1906,34 @@ const BotLifeState = {
         const safeLimit = Math.max(1, Math.min(100, Number(limitPerSpot) || 40));
         const placeholders = uniqueSpots.map(() => '?').join(', ');
         const activityClause = partyRequiredOnly
-            ? `states.activity IN ('hunting', 'resting', 'party_wait')
-                AND json_extract(states.statsJson, '$.partyRequest.status') = 'open'
-                AND json_extract(states.statsJson, '$.partyRequest.priority') = 'required'`
-            : "states.activity IN ('hunting', 'resting', 'party_wait')";
-        const objectiveSpot = "COALESCE(json_extract(states.statsJson, '$.partyRequest.spotId'), json_extract(states.statsJson, '$.equipmentPlan.next.spotId'), states.spotId)";
+            ? `activity IN ('hunting', 'resting', 'party_wait')
+                AND partyRequestStatus = 'open'
+                AND partyRequestPriority = 'required'`
+            : "activity IN ('hunting', 'resting', 'party_wait')";
 
         return Database.execute([
-            `SELECT * FROM (
-                SELECT states.*,
+            `WITH ranked AS MATERIALIZED (
+                SELECT characterId, partyObjectiveSpot,
                     ROW_NUMBER() OVER (
-                        PARTITION BY ${objectiveSpot}
-                        ORDER BY states.updatedAt ASC, states.level ASC, states.characterId ASC
+                        PARTITION BY partyObjectiveSpot
+                        ORDER BY updatedAt ASC, level ASC, characterId ASC
                     ) AS candidateRank
-                FROM ${TABLE} states
-                WHERE states.phase = 'cold'
-                AND states.simulationOwner = 'legacy_main'
-                AND (states.partyId IS NULL OR states.partyId = '')
-                AND ${objectiveSpot} IN (${placeholders})
+                FROM ${TABLE}
+                WHERE phase = 'cold'
+                AND simulationOwner = 'legacy_main'
+                AND (partyId IS NULL OR partyId = '')
+                AND partyObjectiveSpot IN (${placeholders})
                 AND ${activityClause}
-            ) ranked
-            WHERE candidateRank <= ${safeLimit}
-            ORDER BY spotId ASC, candidateRank ASC`,
-            uniqueSpots
+            ), selected AS MATERIALIZED (
+                SELECT characterId, partyObjectiveSpot, candidateRank
+                FROM ranked
+                WHERE candidateRank <= ${safeLimit}
+            )
+            SELECT states.* FROM selected
+            INNER JOIN ${TABLE} states ON states.characterId = selected.characterId
+            ORDER BY selected.partyObjectiveSpot ASC, selected.candidateRank ASC`,
+            uniqueSpots,
+            { read: true }
         ]).then((rows) => rows.map((row) => {
             const state = normalize(row);
             cache.set(state.characterId, state);
@@ -1958,14 +1971,14 @@ const BotLifeState = {
         });
     },
 
-    assignParty(state, partyId, role = 'dps', leaderId = 0) {
-        if (!state || !partyId) return Promise.resolve(null);
-
+    preparePartyAssignment(state, partyId, role = 'dps', leaderId = 0, partyNextResolveAt = null) {
+        if (!state || !partyId) return null;
         const hasPartyRequest = state.stats?.partyRequest?.status === 'open';
         const wasWaitingForParty = state.activity === 'party_wait'
             || state.stats?.lastReason === 'acquisition_party_wait'
             || (hasPartyRequest && state.activity !== 'resting');
         const timestamp = now();
+        const scheduledPartyAt = Number(partyNextResolveAt || 0);
         const nextState = {
             ...state,
             activity: wasWaitingForParty ? 'grouped' : state.activity,
@@ -1988,18 +2001,44 @@ const BotLifeState = {
             timing: {
                 ...(state.timing || {}),
                 activityStartedAt: wasWaitingForParty ? timestamp : state.timing?.activityStartedAt,
-                nextResolveAt: wasWaitingForParty ? null : state.timing?.nextResolveAt
+                nextResolveAt: wasWaitingForParty
+                    ? (scheduledPartyAt > 0 ? scheduledPartyAt : timestamp + 1000)
+                    : state.timing?.nextResolveAt
             },
             updatedAt: timestamp
         };
         const row = rowFromState(nextState);
+        return {
+            row,
+            snapshot: normalize(row),
+            expectedUpdatedAt: Number(state.updatedAt || 0),
+            expectedPartyId: state.party?.partyId || null
+        };
+    },
 
-        return save(row).then(() => {
-            const snapshot = normalize(row);
+    acceptPartyAssignments(prepared = []) {
+        return (prepared || []).map((entry) => entry?.snapshot).filter(Boolean).map((snapshot) => {
             cache.set(snapshot.characterId, snapshot);
+            // Party membership changes the worker scheduling partition. Push
+            // the committed state immediately instead of waiting for the old
+            // solo due token to discover the assignment through a rejected
+            // claim.
+            notifyColdSnapshot(snapshot, 'party_assigned', { critical: true });
             return snapshot;
+        });
+    },
+
+    assignParty(state, partyId, role = 'dps', leaderId = 0, partyNextResolveAt = null) {
+        const prepared = this.preparePartyAssignment(state, partyId, role, leaderId, partyNextResolveAt);
+        if (!prepared) return Promise.resolve(null);
+
+        return save(prepared.row).then(() => {
+            this.acceptPartyAssignments([prepared]);
+            return prepared.snapshot;
         }).catch((err) => {
-            utils.infoWarn('BotLife', 'failed to assign %s to party %s: %s', state.name, partyId, err.message);
+            if (err?.code !== 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT') {
+                utils.infoWarn('BotLife', 'failed to assign %s to party %s: %s', state.name, partyId, err.message);
+            }
             return null;
         });
     },
@@ -2255,6 +2294,96 @@ const BotLifeState = {
         });
     },
 
+    coldPartyCandidateProjections() {
+        if (!initialized) return Promise.resolve([]);
+
+        // Party discovery deliberately reads only the fields used by
+        // objective grouping, composition, persona intent and affinity. The
+        // full inventory/cold-combat payload is hydrated after selection.
+        return Database.execute([
+            `SELECT characterId, characterName, level, activity, spotId,
+                activityStartedAt, updatedAt, simulationOwner, simulationRevision,
+                json_extract(statsJson, '$.role') AS role,
+                json_extract(statsJson, '$.generatedIndex') AS generatedIndex,
+                json_extract(statsJson, '$.partyRequest') AS partyRequestJson,
+                json_extract(statsJson, '$.equipmentPlan') AS equipmentPlanJson,
+                json_extract(statsJson, '$.partyHistory') AS partyHistoryJson
+            FROM ${TABLE} INDEXED BY bot_life_state_party_candidate_projection
+            WHERE phase = 'cold'
+            AND simulationOwner = 'legacy_main'
+            AND (partyId IS NULL OR partyId = '')
+            AND spotId IS NOT NULL
+            AND activity IN ('hunting', 'resting', 'party_wait')`,
+            [],
+            { read: true }
+        ], 'bot-life:party-candidate-projection').then((rows) => rows.map((row) => {
+            const role = row.role || null;
+            const partyRequest = parseJson(row.partyRequestJson, null);
+            const equipmentPlan = parseJson(row.equipmentPlanJson, null);
+            const partyHistory = parseJson(row.partyHistoryJson, null);
+            return {
+                characterId: Number(row.characterId),
+                name: row.characterName || '',
+                level: Number(row.level || 1),
+                phase: 'cold',
+                activity: row.activity || 'hunting',
+                spotId: row.spotId || null,
+                timing: {
+                    activityStartedAt: row.activityStartedAt ? Number(row.activityStartedAt) : null
+                },
+                party: { partyId: null, role, leaderId: null },
+                stats: {
+                    ...(role ? { role } : {}),
+                    ...(row.generatedIndex !== null && row.generatedIndex !== undefined
+                        ? { generatedIndex: row.generatedIndex }
+                        : {}),
+                    ...(partyRequest ? { partyRequest } : {}),
+                    ...(equipmentPlan ? { equipmentPlan } : {}),
+                    ...(partyHistory ? { partyHistory } : {})
+                },
+                simulation: {
+                    ownerId: row.simulationOwner || 'legacy_main',
+                    revision: Math.max(0, Number(row.simulationRevision || 0)),
+                    leaseId: null,
+                    leaseUntil: 0
+                },
+                updatedAt: Number(row.updatedAt || 0),
+                projection: true
+            };
+        })).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to fetch party candidate projection: %s', err.message);
+            return [];
+        });
+    },
+
+    statesByIds(characterIds = [], options = {}) {
+        if (!initialized) return Promise.resolve([]);
+        const ids = [...new Set((characterIds || []).map(Number).filter((id) => Number.isSafeInteger(id) && id > 0))]
+            .slice(0, 64);
+        if (!ids.length) return Promise.resolve([]);
+        const placeholders = ids.map(() => '?').join(', ');
+        const ownerId = options.ownerId ? String(options.ownerId) : null;
+        const ownerClause = ownerId ? 'AND simulationOwner = ?' : '';
+        const unassignedClause = options.unassigned ? "AND (partyId IS NULL OR partyId = '')" : '';
+        const params = [...ids, ...(ownerId ? [ownerId] : [])];
+
+        return Database.execute([
+            `SELECT * FROM ${TABLE}
+            WHERE characterId IN (${placeholders})
+            ${ownerClause}
+            ${unassignedClause}`,
+            params,
+            { read: true }
+        ], 'bot-life:states-by-id').then((rows) => rows.map((row) => {
+            const state = normalize(row);
+            cache.set(state.characterId, state);
+            return state;
+        })).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to hydrate %d party candidate(s): %s', ids.length, err.message);
+            return [];
+        });
+    },
+
     staleGoalCandidates(limit = 8, timestamp = now()) {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
@@ -2323,31 +2452,65 @@ const BotLifeState = {
         });
     },
 
-    leaveParty(state, reason = 'party_break') {
+    leaveParty(state, reason = 'party_break', options = {}) {
         if (!state?.characterId) return Promise.resolve(null);
-        const releasedFromObjective = ['party_objective_complete', 'party_session_rotation'].includes(reason);
-        const nextActivity = releasedFromObjective && state.activity === 'grouped'
-            ? 'hunting'
-            : state.activity;
+        const timestamp = now();
+        const partyTravel = state.stats?.travel?.reason === 'party_spot_replan';
+        // `grouped` and party-route travel are not valid solo lifecycle
+        // states. Every detachment reason must return them to an actionable
+        // route, including capacity reclamation and friend priority.
+        const needsSoloResume = state.activity === 'grouped' || partyTravel;
+        const nextActivity = needsSoloResume ? 'hunting' : state.activity;
         const nextState = {
             ...state,
             activity: nextActivity,
             party: { ...(state.party || {}), partyId: null, leaderId: null },
             stats: {
                 ...(state.stats || {}),
+                ...(partyTravel ? { travel: null } : {}),
                 backgroundPartyId: null,
                 partyBreakReason: reason,
                 partyRequest: null
             },
-            timing: releasedFromObjective
-                ? { ...(state.timing || {}), activityStartedAt: now(), nextResolveAt: now() + 30000 }
+            timing: needsSoloResume
+                ? { ...(state.timing || {}), activityStartedAt: timestamp, nextResolveAt: timestamp + 30000 }
                 : state.timing,
-            updatedAt: now()
+            updatedAt: timestamp
         };
         const row = rowFromState(nextState);
+        if (options.ownerHandoff === true) {
+            return invoke('GameServer/Bot/Population/ColdSimulationOwner').handoffToMain(state, {
+                nextState,
+                timestamp,
+                allowParty: true,
+                allowLifecycle: true
+            }).then((result) => {
+                if (!result?.ok) {
+                    utils.infoWarn('BotLife', 'failed owner handoff while removing %s from party: %s', state.name, result?.reason || 'unknown');
+                    return null;
+                }
+                Metrics.recordDbFlush();
+                const snapshot = cache.get(Number(state.characterId)) || normalize({
+                    ...row,
+                    simulationOwner: result.ownerId,
+                    simulationRevision: result.revision,
+                    simulationLeaseId: result.leaseId,
+                    simulationLeaseUntil: result.leaseUntil
+                });
+                notifyColdSnapshot(snapshot, `party_left_${reason}`, { critical: true });
+                return snapshot;
+            }).catch((err) => {
+                utils.infoWarn('BotLife', 'failed to remove %s from party: %s', state.name, err.message);
+                return null;
+            });
+        }
         return save(row).then(() => {
             const snapshot = normalize(row);
             cache.set(snapshot.characterId, snapshot);
+            // Without this transition snapshot the worker retains the old
+            // `party_member` catalog entry forever and never recreates a solo
+            // due token. Membership transitions are P0 lifecycle changes.
+            notifyColdSnapshot(snapshot, `party_left_${reason}`, { critical: true });
             return snapshot;
         }).catch((err) => {
             utils.infoWarn('BotLife', 'failed to remove %s from party: %s', state.name, err.message);
@@ -2633,6 +2796,41 @@ const BotLifeState = {
             });
     },
 
+    applyWarehouseGearCleanup(characterId, selections = [], options = {}) {
+        const id = Number(characterId);
+        if (!Number.isSafeInteger(id) || id <= 0 || !Array.isArray(selections) || !selections.length) {
+            return Promise.resolve({ ok: false, reason: 'invalid_request', characterId: id || null });
+        }
+
+        const previous = pendingWrites.get(id) || Promise.resolve();
+        const ready = initialized ? Promise.resolve(true) : this.init();
+        const next = previous.then(() => ready).then((isReady) => {
+            if (!isReady) throw new Error('state table unavailable');
+            return Database.liquidateWarehouseGear(id, selections, options);
+        }).then((result) => {
+            if (!result?.ok || !result.state) return result;
+            const snapshot = normalize(result.state);
+            cache.set(id, snapshot);
+            Metrics.recordDbFlush();
+            notifyColdSnapshot(snapshot, 'warehouse_gear_cleanup', { critical: true });
+            return { ...result, state: snapshot };
+        }).catch((error) => {
+            utils.infoWarn('BotLife', 'failed warehouse gear cleanup for %d: %s', id, error.message || error);
+            return {
+                ok: false,
+                reason: error.code === 'WAREHOUSE_GEAR_CHANGED' ? 'warehouse_changed' : 'cleanup_error',
+                characterId: id,
+                error
+            };
+        });
+
+        const tracked = next.finally(() => {
+            if (pendingWrites.get(id) === tracked) pendingWrites.delete(id);
+        });
+        pendingWrites.set(id, tracked);
+        return next;
+    },
+
     learnCraftableRecipes(state) {
         if (!state?.characterId) return Promise.resolve(state || null);
         const candidates = Object.values(state.inventory || {})
@@ -2724,7 +2922,9 @@ const BotLifeState = {
                 return snapshot;
             })
             .catch((err) => {
-                utils.infoWarn('BotLife', 'failed to upsert %s: %s', row.characterName, err.message);
+                if (err?.code !== 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT') {
+                    utils.infoWarn('BotLife', 'failed to upsert %s: %s', row.characterName, err.message);
+                }
                 return null;
             });
 

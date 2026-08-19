@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
+const CheckpointCoordinator = require('./DatabaseCheckpointCoordinator');
 
 let connection;
 let queryTail = Promise.resolve();
@@ -122,8 +123,8 @@ function enqueue(work, { operation = 'raw', read = false } = {}) {
     return result;
 }
 
-function run(sql, params = [], operation) {
-    const read = isReadStatement(sql);
+function run(sql, params = [], operation, readOverride = null) {
+    const read = readOverride === null ? isReadStatement(sql) : !!readOverride;
     return enqueue(() => {
         if (!connection) throw new Error(`SQLite is not initialized (${operation || operationName(sql)})`);
         const statement = connection.prepare(sql);
@@ -386,6 +387,138 @@ function applySchemaMigrations() {
                 CREATE INDEX IF NOT EXISTS bot_life_state_party_owner_filter
                     ON bot_life_state(simulationOwner, phase, partyId, activity, spotId, updatedAt);
             `);
+        }],
+        [14, () => {
+            const columns = connection.prepare('PRAGMA table_xinfo(bot_life_state)').all();
+            const names = new Set(columns.map((column) => String(column.name)));
+            if (!names.has('partyRequestStatus')) {
+                connection.exec(`ALTER TABLE bot_life_state ADD COLUMN partyRequestStatus TEXT
+                    GENERATED ALWAYS AS (json_extract(statsJson, '$.partyRequest.status')) VIRTUAL`);
+            }
+            if (!names.has('partyRequestPriority')) {
+                connection.exec(`ALTER TABLE bot_life_state ADD COLUMN partyRequestPriority TEXT
+                    GENERATED ALWAYS AS (json_extract(statsJson, '$.partyRequest.priority')) VIRTUAL`);
+            }
+            if (!names.has('partyObjectiveSpot')) {
+                connection.exec(`ALTER TABLE bot_life_state ADD COLUMN partyObjectiveSpot TEXT
+                    GENERATED ALWAYS AS (COALESCE(
+                        json_extract(statsJson, '$.partyRequest.spotId'),
+                        json_extract(statsJson, '$.equipmentPlan.next.spotId'),
+                        spotId
+                    )) VIRTUAL`);
+            }
+            connection.exec(`
+                DROP INDEX IF EXISTS bot_life_state_party_request_filter;
+                DROP INDEX IF EXISTS bot_life_state_party_objective_spot;
+                CREATE INDEX IF NOT EXISTS bot_life_state_party_candidate_projection
+                    ON bot_life_state(
+                        simulationOwner, phase, partyId, activity, partyObjectiveSpot,
+                        partyRequestStatus, partyRequestPriority, updatedAt, level
+                    );
+            `);
+        }],
+        [15, () => {
+            const columns = connection.prepare('PRAGMA table_xinfo(bot_life_state)').all();
+            const names = new Set(columns.map((column) => String(column.name)));
+            if (!names.has('partyRequestedAt')) {
+                connection.exec(`ALTER TABLE bot_life_state ADD COLUMN partyRequestedAt INTEGER
+                    GENERATED ALWAYS AS (
+                        CAST(json_extract(statsJson, '$.partyRequest.requestedAt') AS INTEGER)
+                    ) VIRTUAL`);
+            }
+            connection.exec(`
+                CREATE INDEX IF NOT EXISTS bot_life_state_party_request_expiry
+                    ON bot_life_state(
+                        simulationOwner, phase, partyRequestStatus,
+                        partyRequestedAt, partyRequestPriority
+                    );
+            `);
+        }],
+        [16, () => {
+            // Retention is deliberately incremental. These indexes keep each
+            // idle-only delete batch on a narrow age/group range instead of
+            // turning maintenance into a main-thread table scan.
+            connection.exec(`
+                CREATE INDEX IF NOT EXISTS bot_conversation_messages_compacted_age
+                    ON bot_conversation_messages(compacted, createdAt, id);
+                CREATE INDEX IF NOT EXISTS bot_conversation_messages_uncompacted_group
+                    ON bot_conversation_messages(compacted, conversationId, id DESC);
+                CREATE INDEX IF NOT EXISTS bot_activity_journal_retention_age
+                    ON bot_activity_journal(updatedAt, id);
+                CREATE INDEX IF NOT EXISTS bot_activity_journal_pair_retention
+                    ON bot_activity_journal(botId, playerId, updatedAt DESC, id DESC);
+                CREATE INDEX IF NOT EXISTS bot_tool_outcomes_retention_age
+                    ON bot_tool_outcomes(createdAt, id);
+                CREATE INDEX IF NOT EXISTS bot_llm_turns_terminal_retention
+                    ON bot_llm_turns(state, COALESCE(finishedAt, startedAt, 0), id);
+                CREATE INDEX IF NOT EXISTS bot_llm_turns_active_retention
+                    ON bot_llm_turns(state, startedAt, id);
+            `);
+        }],
+        [17, () => {
+            const rows = connection.prepare(`SELECT characterId, inventorySummary, statsJson
+                FROM bot_life_state`).all();
+            const updateState = connection.prepare(`UPDATE bot_life_state
+                SET inventorySummary = ?, statsJson = ?
+                WHERE characterId = ?`);
+            let statesCompacted = 0;
+            let inventoryEntriesRemoved = 0;
+            let targetMapsRemoved = 0;
+
+            rows.forEach((row) => {
+                let inventory;
+                let stats;
+                try { inventory = JSON.parse(row.inventorySummary || '{}'); } catch (_) { inventory = null; }
+                try { stats = JSON.parse(row.statsJson || '{}'); } catch (_) { stats = null; }
+                let inventoryChanged = false;
+                let statsChanged = false;
+
+                if (inventory && typeof inventory === 'object' && !Array.isArray(inventory)) {
+                    Object.entries(inventory).forEach(([key, item]) => {
+                        if (item && Number.isFinite(Number(item.amount)) && Number(item.amount) > 0) return;
+                        delete inventory[key];
+                        inventoryEntriesRemoved += 1;
+                        inventoryChanged = true;
+                    });
+                }
+                if (stats?.targetCombat && Object.prototype.hasOwnProperty.call(stats.targetCombat, 'targets')) {
+                    delete stats.targetCombat.targets;
+                    targetMapsRemoved += 1;
+                    statsChanged = true;
+                }
+                if (!inventoryChanged && !statsChanged) return;
+                updateState.run(
+                    inventoryChanged ? JSON.stringify(inventory) : row.inventorySummary,
+                    statsChanged ? JSON.stringify(stats) : row.statsJson,
+                    row.characterId
+                );
+                statesCompacted += 1;
+            });
+
+            const routineEventsRemoved = Number(connection.prepare(`DELETE FROM bot_life_events
+                WHERE eventType IN ('rest', 'hunt')
+                  AND id NOT IN (
+                      SELECT id FROM (
+                          SELECT id,
+                              ROW_NUMBER() OVER (
+                                  PARTITION BY characterId, eventType
+                                  ORDER BY createdAt DESC, id DESC
+                              ) AS retainedRank
+                          FROM bot_life_events
+                          WHERE eventType IN ('rest', 'hunt')
+                      ) ranked
+                      WHERE retainedRank = 1
+                  )`).run().changes || 0);
+
+            if (statesCompacted || routineEventsRemoved) {
+                console.info(
+                    'Database :: compacted bot state rows=%d inventoryEntries=%d targetMaps=%d routineEvents=%d',
+                    statesCompacted,
+                    inventoryEntriesRemoved,
+                    targetMapsRemoved,
+                    routineEventsRemoved
+                );
+            }
         }]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
@@ -617,9 +750,16 @@ const Database = {
             databasePath = databaseFile();
             fs.mkdirSync(path.dirname(databasePath), { recursive: true });
             connection = new DatabaseSync(databasePath, { timeout: 5000 });
-            connection.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA temp_store = MEMORY;');
+            // SQLite's built-in auto-checkpoint runs synchronously inside the
+            // unlucky gameplay write that crosses its frame threshold. Keep
+            // WAL durability, but move checkpoint I/O to a dedicated worker.
+            connection.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA temp_store = MEMORY; PRAGMA wal_autocheckpoint = 0;');
             connection.exec(fs.readFileSync(path.join(process.cwd(), 'database', 'sql', 'sqlite.sql'), 'utf8'));
             applySchemaMigrations();
+            CheckpointCoordinator.start(databasePath, {
+                intervalMs: Number(options.default.Database?.checkpointIntervalMs) || 5000,
+                minWalBytes: Number(options.default.Database?.checkpointMinWalBytes) || (4 * 1024 * 1024)
+            });
             cleanZeroAmountItems().catch((error) => utils.infoWarn('DB', 'failed to clean zero amount items: %s', error.message));
             utils.infoSuccess('DB', 'SQLite connected %s', databasePath);
             callback();
@@ -638,7 +778,104 @@ const Database = {
     },
 
     execute(statement, operation = 'raw') {
-        return run(statement[0], statement[1] || [], operation);
+        return run(statement[0], statement[1] || [], operation, statement[2]?.read ?? null);
+    },
+
+    commitBackgroundPartyMembership({ party, members = [], event = null } = {}) {
+        const batch = Array.isArray(members) ? members.slice(0, 40) : [];
+        const characterIds = [...new Set(batch.map((entry) => Number(entry?.row?.characterId)).filter((id) => (
+            Number.isSafeInteger(id) && id > 0
+        )))];
+        if (!party?.partyId || !characterIds.length || characterIds.length !== batch.length) {
+            return Promise.resolve({ ok: false, reason: 'invalid_party_membership' });
+        }
+
+        return inTransaction(() => {
+            const placeholders = characterIds.map(() => '?').join(', ');
+            const currentRows = all(`SELECT characterId, phase, simulationOwner, partyId, updatedAt
+                FROM bot_life_state WHERE characterId IN (${placeholders})`, characterIds);
+            const currentById = new Map(currentRows.map((row) => [Number(row.characterId), row]));
+            const conflicts = batch.filter((entry) => {
+                const row = entry.row;
+                const current = currentById.get(Number(row.characterId));
+                return !current
+                    || current.phase !== 'cold'
+                    || String(current.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER
+                    || String(current.partyId || '') !== String(entry.expectedPartyId || '')
+                    || Number(current.updatedAt || 0) !== Number(entry.expectedUpdatedAt || 0);
+            }).map((entry) => Number(entry.row.characterId));
+            if (conflicts.length) return { ok: false, reason: 'membership_conflict', conflicts };
+
+            write(`INSERT INTO bot_background_parties (
+                partyId, leaderId, memberIdsJson, spotId, startedAt, nextResolveAt,
+                cohesion, risk, status, roleCoverageJson, statsJson, updatedAt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(partyId) DO UPDATE SET
+                leaderId = excluded.leaderId,
+                memberIdsJson = excluded.memberIdsJson,
+                spotId = excluded.spotId,
+                nextResolveAt = excluded.nextResolveAt,
+                cohesion = excluded.cohesion,
+                risk = excluded.risk,
+                status = excluded.status,
+                roleCoverageJson = excluded.roleCoverageJson,
+                statsJson = excluded.statsJson,
+                updatedAt = excluded.updatedAt`, [
+                party.partyId, party.leaderId, party.memberIdsJson, party.spotId,
+                party.startedAt, party.nextResolveAt, party.cohesion, party.risk,
+                party.status, party.roleCoverageJson, party.statsJson, party.updatedAt
+            ]);
+
+            for (const entry of batch) {
+                const row = entry.row;
+                const result = write(`UPDATE bot_life_state
+                    SET activity = ?, activityStartedAt = ?, nextResolveAt = ?,
+                        partyId = ?, statsJson = ?, updatedAt = ?
+                    WHERE characterId = ?
+                    AND phase = 'cold'
+                    AND simulationOwner = ?
+                    AND COALESCE(partyId, '') = ?
+                    AND updatedAt = ?`, [
+                    row.activity, row.activityStartedAt, row.nextResolveAt,
+                    row.partyId, row.statsJson, row.updatedAt,
+                    row.characterId, LEGACY_SIMULATION_OWNER,
+                    String(entry.expectedPartyId || ''), Number(entry.expectedUpdatedAt || 0)
+                ]);
+                if (result.affectedRows !== 1) {
+                    const error = new Error(`background party membership conflict for ${row.characterId}`);
+                    error.code = 'BOT_PARTY_MEMBERSHIP_CONFLICT';
+                    throw error;
+                }
+            }
+
+            const eventCharacterId = Number(event?.characterId || 0);
+            const eventType = String(event?.eventType || '');
+            const eventSummary = String(event?.summary || '').slice(0, 255);
+            if (eventCharacterId > 0 && eventType && eventSummary) {
+                write(`INSERT INTO bot_life_events
+                    (characterId, eventType, summary, weight, createdAt, metaJson)
+                    VALUES (?, ?, ?, ?, ?, ?)`, [
+                    eventCharacterId,
+                    eventType,
+                    eventSummary,
+                    Math.max(1, Number(event?.weight || 1)),
+                    Number(event?.createdAt || Date.now()),
+                    JSON.stringify(event?.meta || {})
+                ]);
+                write(`DELETE FROM bot_life_events
+                    WHERE characterId = ?
+                    AND id NOT IN (
+                        SELECT id FROM (
+                            SELECT id FROM bot_life_events
+                            WHERE characterId = ?
+                            ORDER BY weight DESC, createdAt DESC
+                            LIMIT 20
+                        ) keep_rows
+                    )`, [eventCharacterId, eventCharacterId]);
+            }
+
+            return { ok: true, partyId: party.partyId, characterIds };
+        }, 'bot-party:commit-membership');
     },
 
     fetchRaidBossStates() {
@@ -707,7 +944,17 @@ const Database = {
             const row = coldSimulationRow(characterId);
             const partition = coldSimulationPartition(row, request);
             if (!partition.ok) return { ...partition, characterId };
-            if (Number(row.simulationRevision || 0) !== expectedRevision) return { ok: false, characterId, reason: 'stale_revision' };
+            if (Number(row.simulationRevision || 0) !== expectedRevision) {
+                return {
+                    ok: false,
+                    characterId,
+                    reason: 'stale_revision',
+                    expectedRevision,
+                    actualRevision: Number(row.simulationRevision || 0),
+                    actualOwner: String(row.simulationOwner || LEGACY_SIMULATION_OWNER),
+                    actualLeaseUntil: Number(row.simulationLeaseUntil || 0)
+                };
+            }
             const currentOwner = String(row.simulationOwner || LEGACY_SIMULATION_OWNER);
             const currentLeaseUntil = Number(row.simulationLeaseUntil || 0);
             if (currentOwner !== LEGACY_SIMULATION_OWNER && currentLeaseUntil > timestamp) {
@@ -722,7 +969,18 @@ const Database = {
                 WHERE characterId = ? AND simulationRevision = ? AND simulationOwner = ?`, [
                 ownerId, revision, leaseId, leaseUntil, characterId, expectedRevision, currentOwner
             ]);
-            if (result.affectedRows !== 1) return { ok: false, characterId, reason: 'cas_failed' };
+            if (result.affectedRows !== 1) {
+                const actual = coldSimulationRow(characterId);
+                return {
+                    ok: false,
+                    characterId,
+                    reason: 'cas_failed',
+                    expectedRevision,
+                    actualRevision: Number(actual?.simulationRevision || 0),
+                    actualOwner: String(actual?.simulationOwner || LEGACY_SIMULATION_OWNER),
+                    actualLeaseUntil: Number(actual?.simulationLeaseUntil || 0)
+                };
+            }
             return { ok: true, characterId, ownerId, leaseId, revision, leaseUntil, reason: 'claimed' };
         }), 'bot-life:cold-owner-claim-batch');
     },
@@ -991,24 +1249,50 @@ const Database = {
         const expectedRevision = request.expectedRevision === null || request.expectedRevision === undefined
             ? null
             : Number(request.expectedRevision);
+        const patch = { ...(request.patch || {}) };
+        const invalidColumn = Object.keys(patch).find((column) => !COLD_SIMULATION_PATCH_COLUMNS.has(column));
+        if (invalidColumn) return Promise.resolve({ ok: false, reason: 'invalid_patch', column: invalidColumn });
         return inTransaction(() => {
             const row = coldSimulationRow(characterId);
             if (!row) return { ok: false, reason: 'missing_state' };
             const revision = Number(row.simulationRevision || 0);
             if (expectedRevision !== null && revision !== expectedRevision) return { ok: false, reason: 'stale_revision' };
             const ownerId = String(row.simulationOwner || LEGACY_SIMULATION_OWNER);
-            if (ownerId === LEGACY_SIMULATION_OWNER) {
+            if (!Object.keys(patch).length && ownerId === LEGACY_SIMULATION_OWNER) {
                 return { ok: true, characterId, ownerId, leaseId: null, revision, leaseUntil: 0, reason: 'already_main' };
             }
-            if (ownerId !== COLD_SIMULATION_OWNER) return { ok: false, reason: 'owner_changed' };
+            if (![LEGACY_SIMULATION_OWNER, COLD_SIMULATION_OWNER].includes(ownerId)) return { ok: false, reason: 'owner_changed' };
+            if (Object.keys(patch).length) {
+                const proposed = { ...row, ...patch, phase: patch.phase || row.phase, activity: patch.activity || row.activity };
+                const partition = coldSimulationPartition(proposed, request);
+                if (!partition.ok) return { ok: false, reason: 'partition_rejected', detail: partition.reason };
+            }
             const nextRevision = revision + 1;
+            const entries = Object.entries({ ...patch, updatedAt: patch.updatedAt ?? request.timestamp ?? now() });
+            const assignments = entries.map(([column]) => `${escapeIdentifier(column)} = ?`);
+            assignments.push(
+                'simulationOwner = ?',
+                'simulationRevision = ?',
+                'simulationLeaseId = NULL',
+                'simulationLeaseUntil = 0'
+            );
             const result = write(`UPDATE bot_life_state
-                SET simulationOwner = ?, simulationRevision = ?, simulationLeaseId = NULL, simulationLeaseUntil = 0
+                SET ${assignments.join(', ')}
                 WHERE characterId = ? AND simulationOwner = ? AND simulationRevision = ?`, [
+                ...entries.map(([, value]) => value),
                 LEGACY_SIMULATION_OWNER, nextRevision, characterId, ownerId, revision
             ]);
             if (result.affectedRows !== 1) return { ok: false, reason: 'cas_failed' };
-            return { ok: true, characterId, ownerId: LEGACY_SIMULATION_OWNER, leaseId: null, revision: nextRevision, leaseUntil: 0, reason: 'hot_handoff' };
+            return {
+                ok: true,
+                characterId,
+                ownerId: LEGACY_SIMULATION_OWNER,
+                leaseId: null,
+                revision: nextRevision,
+                leaseUntil: 0,
+                reason: Object.keys(patch).length ? 'main_transition' : 'hot_handoff',
+                row: coldSimulationRow(characterId)
+            };
         }, 'bot-life:hot-owner-handoff');
     },
 
@@ -1040,12 +1324,16 @@ const Database = {
         if (closePromise) return closePromise;
         shuttingDown = true;
         const pending = queryTail;
-        closePromise = pending.then(() => {
-            if (!connection) return false;
+        closePromise = pending.then(async () => {
+            if (!connection) {
+                await CheckpointCoordinator.stop({ final: true });
+                return false;
+            }
             const openConnection = connection;
             connection = null;
             openConnection.close();
             queryTail = Promise.resolve();
+            await CheckpointCoordinator.stop({ final: true });
             return true;
         });
         return closePromise;
@@ -1084,14 +1372,22 @@ const Database = {
             failures: metrics.failures,
             avgWaitMs: metrics.total ? Math.round(metrics.waitMs / metrics.total) : 0,
             avgRunMs: metrics.total ? Math.round(metrics.runMs / metrics.total) : 0,
-            operations
+            operations,
+            checkpoint: CheckpointCoordinator.snapshot()
         };
         if (resetPeak) metrics.maxPending = metrics.pending;
         return snapshot;
     },
 
-    checkpoint() {
-        return enqueue(() => normalizeRows(connection.prepare('PRAGMA wal_checkpoint(PASSIVE)').all()), { operation: 'maintenance:checkpoint', read: false });
+    checkpoint(options = {}) {
+        if (shuttingDown) return Promise.reject(new Error('SQLite shutdown is in progress (maintenance:checkpoint)'));
+        if (!connection) return Promise.reject(new Error('SQLite is not initialized (maintenance:checkpoint)'));
+        return CheckpointCoordinator.request({
+            force: true,
+            mode: options.mode === 'restart' ? 'restart' : 'passive',
+            minWalBytes: 0,
+            busyTimeoutMs: options.busyTimeoutMs
+        });
     },
 
     applyBufferedCharacterState(characterId, state = {}) {
@@ -1349,6 +1645,145 @@ const Database = {
         return remove('warehouse_items', 'id = ? AND characterId = ?', [id, characterId], 'warehouse:delete');
     },
 
+    liquidateWarehouseGear(characterId, selections = [], options = {}) {
+        const id = Number(characterId);
+        const selected = (selections || []).map((item) => ({
+            id: Number(item?.id || 0),
+            selfId: Number(item?.selfId || 0),
+            amount: Math.max(0, Number(item?.amount || 0)),
+            enchant: Math.max(0, Number(item?.enchant || 0)),
+            npcPrice: Math.max(0, Number(item?.npcPrice || 0))
+        }));
+        const selectedIds = new Set(selected.map((item) => item.id));
+        if (!Number.isSafeInteger(id) || id <= 0 || !selected.length || selected.length > 64
+            || selectedIds.size !== selected.length
+            || selected.some((item) => !item.id || !item.selfId || item.amount <= 0 || item.npcPrice <= 0)) {
+            return Promise.reject(new Error('invalid warehouse gear liquidation request'));
+        }
+
+        return withCharacterFlush(id, () => inTransaction(() => {
+            const state = one('SELECT * FROM bot_life_state WHERE characterId = ?', [id]);
+            if (!state) return { ok: false, reason: 'missing_state', characterId: id };
+            if (String(state.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER) {
+                return { ok: false, reason: 'owner_changed', characterId: id };
+            }
+            const partition = coldSimulationPartition(state);
+            if (!partition.ok) return { ok: false, reason: partition.reason, characterId: id };
+            if (!['hunting', 'resting'].includes(String(state.activity || ''))) {
+                return { ok: false, reason: 'active_lifecycle', characterId: id };
+            }
+
+            const stats = parsedObject(state.statsJson);
+            if (!stats) return { ok: false, reason: 'invalid_stats', characterId: id };
+            if (stats.backgroundPartyId) return { ok: false, reason: 'background_party', characterId: id };
+
+            const sources = selected.map((item) => {
+                const source = one(`SELECT id, selfId, amount, enchant
+                    FROM warehouse_items WHERE id = ? AND characterId = ?`, [item.id, id]);
+                if (!source || Number(source.selfId) !== item.selfId
+                    || Number(source.amount || 0) < item.amount
+                    || Math.max(0, Number(source.enchant || 0)) !== item.enchant) {
+                    const error = new Error(`warehouse gear changed for ${id}:${item.id}`);
+                    error.code = 'WAREHOUSE_GEAR_CHANGED';
+                    throw error;
+                }
+                return { ...item, remaining: Number(source.amount) - item.amount };
+            });
+
+            let rowsRemoved = 0;
+            sources.forEach((source) => {
+                if (source.remaining <= 0) {
+                    write('DELETE FROM warehouse_items WHERE id = ? AND characterId = ?', [source.id, id]);
+                    rowsRemoved += 1;
+                } else {
+                    write('UPDATE warehouse_items SET amount = ? WHERE id = ? AND characterId = ?', [source.remaining, source.id, id]);
+                }
+            });
+
+            const inventory = parsedObject(state.inventorySummary);
+            if (!inventory) throw new Error(`invalid inventory summary for ${id}`);
+            const adenaRows = all(`SELECT id, amount FROM items
+                WHERE characterId = ? AND selfId = 57 ORDER BY id`, [id]);
+            const physicalAdena = adenaRows.reduce((sum, item) => sum + Math.max(0, Number(item.amount || 0)), 0);
+            const payout = sources.reduce((sum, item) => sum + (item.amount * item.npcPrice), 0);
+            const currentAdena = Math.max(
+                0,
+                Number(state.adena || 0),
+                Number(inventory['57']?.amount || 0),
+                physicalAdena
+            );
+            const nextAdena = currentAdena + payout;
+            inventory['57'] = {
+                ...(inventory['57'] || {}),
+                selfId: 57,
+                name: 'Adena',
+                amount: nextAdena
+            };
+
+            const soldByItem = new Map();
+            sources.forEach((item) => {
+                const key = `${item.selfId}:${item.npcPrice}`;
+                const previous = soldByItem.get(key) || { selfId: item.selfId, amount: 0, price: item.npcPrice };
+                previous.amount += item.amount;
+                soldByItem.set(key, previous);
+            });
+            const timestamp = now();
+            const units = sources.reduce((sum, item) => sum + item.amount, 0);
+            const nextStats = {
+                ...stats,
+                lastWarehouseCompaction: {
+                    source: String(options.source || 'historical_gear_retention'),
+                    payout,
+                    units,
+                    rowsRemoved,
+                    sold: [...soldByItem.values()].slice(0, 8),
+                    at: timestamp
+                }
+            };
+
+            const adenaRow = adenaRows[0];
+            if (adenaRow) {
+                write('UPDATE items SET name = ?, amount = ? WHERE id = ? AND characterId = ?', ['Adena', nextAdena, adenaRow.id, id]);
+                adenaRows.slice(1).forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, id]));
+            } else {
+                write(`INSERT INTO items (selfId, name, amount, enchant, equipped, slot, characterId)
+                    VALUES (57, 'Adena', ?, 0, 0, 0, ?)`, [nextAdena, id]);
+            }
+
+            const updated = write(`UPDATE bot_life_state
+                SET adena = ?, inventorySummary = ?, statsJson = ?, updatedAt = ?
+                WHERE characterId = ?
+                  AND simulationOwner = ?
+                  AND simulationRevision = ?
+                  AND phase = 'cold'
+                  AND (partyId IS NULL OR partyId = '')
+                  AND activity IN ('hunting', 'resting')`, [
+                nextAdena,
+                JSON.stringify(inventory),
+                JSON.stringify(nextStats),
+                timestamp,
+                id,
+                LEGACY_SIMULATION_OWNER,
+                Number(state.simulationRevision || 0)
+            ]);
+            if (Number(updated.affectedRows || 0) !== 1) {
+                const error = new Error(`warehouse cleanup ownership changed for ${id}`);
+                error.code = 'WAREHOUSE_CLEANUP_FENCE';
+                throw error;
+            }
+
+            return {
+                ok: true,
+                reason: 'compacted',
+                characterId: id,
+                rowsRemoved,
+                units,
+                payout,
+                state: normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [id]))
+            };
+        }, 'warehouse:cleanup-gear'));
+    },
+
     transferInventoryToWarehouse(characterId, item) {
         return withCharacterFlush(characterId, () => inTransaction(() => {
             const source = one('SELECT id, amount, enchant FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
@@ -1532,6 +1967,53 @@ const Database = {
                 targetSlot: Number(target.slot || 0)
             };
         }, 'item:enchant'));
+    },
+
+    enchantColdInventoryItems(characterId, operations = []) {
+        const batch = Array.isArray(operations) ? operations.slice(0, 64) : [];
+        if (!batch.length) return Promise.resolve({ operations: [] });
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const completed = [];
+            for (const operation of batch) {
+                const scrollId = Number(operation.scrollId || 0);
+                const scrollSelfId = Number(operation.scrollSelfId || 0);
+                const targetId = Number(operation.targetId || 0);
+                const targetSelfId = Number(operation.targetSelfId || 0);
+                const expectedEnchant = Math.max(0, Number(operation.expectedEnchant || 0));
+                const enchantLevel = Math.max(0, Number(operation.enchantLevel || 0));
+                if (!scrollId || !scrollSelfId || !targetId || !targetSelfId
+                    || enchantLevel !== expectedEnchant + 1) throw new Error('invalid cold safe enchant operation');
+
+                const scroll = one('SELECT id, selfId, amount FROM items WHERE id = ? AND characterId = ?', [scrollId, characterId]);
+                if (!scroll || Number(scroll.selfId) !== scrollSelfId || Number(scroll.amount) < 1) {
+                    throw new Error('cold enchant scroll changed');
+                }
+                const target = one(`SELECT id, selfId, amount, enchant, equipped
+                    FROM items WHERE id = ? AND characterId = ?`, [targetId, characterId]);
+                if (!target || Number(target.selfId) !== targetSelfId || Number(target.amount) !== 1
+                    || Number(target.equipped) !== 1 || Number(target.enchant || 0) !== expectedEnchant) {
+                    throw new Error('cold enchant target changed');
+                }
+
+                const remainingScrolls = Number(scroll.amount) - 1;
+                if (remainingScrolls > 0) {
+                    write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [remainingScrolls, scrollId, characterId]);
+                } else {
+                    write('DELETE FROM items WHERE id = ? AND characterId = ?', [scrollId, characterId]);
+                }
+                write('UPDATE items SET enchant = ? WHERE id = ? AND characterId = ?', [enchantLevel, targetId, characterId]);
+                completed.push({
+                    scrollId,
+                    scrollSelfId,
+                    targetId,
+                    targetSelfId,
+                    expectedEnchant,
+                    enchantLevel,
+                    scrollAmount: remainingScrolls
+                });
+            }
+            return { operations: completed };
+        }, 'item:cold-safe-enchant'));
     },
 
     craftForCustomer(crafterId, customerId, { materials, product, crafterMp, price, adena }) {

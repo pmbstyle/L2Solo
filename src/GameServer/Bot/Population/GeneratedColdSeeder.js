@@ -467,6 +467,25 @@ function sameRecipeEntries(left = [], right = []) {
     return leftIds.length === rightIds.length && leftIds.every((recipeId, index) => recipeId === rightIds[index]);
 }
 
+function eventLoopYield() {
+    return new Promise((resolve) => setImmediate(resolve));
+}
+
+function cooperativeEach(items, worker, options = {}) {
+    const values = Array.isArray(items) ? items : [];
+    const clock = typeof options.now === 'function' ? options.now : Date.now;
+    const yieldNow = typeof options.yield === 'function' ? options.yield : eventLoopYield;
+    const sliceMs = Math.max(1, Number(options.sliceMs ?? Config.schedulerSliceMs) || 12);
+    let sliceStartedAt = clock();
+    return values.reduce((chain, value, index) => chain.then(async () => {
+        if (index > 0 && clock() - sliceStartedAt >= sliceMs) {
+            await yieldNow();
+            sliceStartedAt = clock();
+        }
+        return worker(value, index);
+    }), Promise.resolve());
+}
+
 const GeneratedColdSeeder = {
     running: false,
     // Millisecond-based slots keep generated accounts distinct across a
@@ -477,15 +496,16 @@ const GeneratedColdSeeder = {
     craftServiceSeedState,
     baseForIndex,
     nameFor,
+    cooperativeEach,
 
     ensureCraftServices() {
         let created = 0;
         let seeded = 0;
-        let chain = Promise.resolve();
-        for (let slot = 0; slot < CRAFT_SERVICE_COUNT; slot++) {
+        const slots = Array.from({ length: CRAFT_SERVICE_COUNT }, (_, slot) => slot);
+        return cooperativeEach(slots, (slot) => {
             const index = CRAFT_SERVICE_INDEX_BASE + slot;
             const username = `bot_craft_${String(slot + 1).padStart(2, '0')}`;
-            chain = chain.then(() => ensureAccount(username))
+            return ensureAccount(username)
                 .then(() => ensureCharacter(username, index, CRAFT_SERVICE_PROFILE))
                 .then((result) => LifeState.findByCharacterId(result.character.id).then((existingState) => {
                     // The normal population seed repeats while it fills the target.
@@ -523,8 +543,7 @@ const GeneratedColdSeeder = {
                             return saved;
                         });
                 }));
-        }
-        return chain.then(() => ({ created, seeded }));
+        }).then(() => ({ created, seeded }));
     },
 
     seedPopulation() {
@@ -544,9 +563,7 @@ const GeneratedColdSeeder = {
             const batch = plan.missing.slice(0, SeedPlanner.seedBatchSize(plan, Config.generatedColdBatchSize));
             let created = 0;
             let seeded = 0;
-            let chain = Promise.resolve();
-
-            batch.forEach((spot) => {
+            return cooperativeEach(batch, (spot) => {
                 const index = this.nextPopulationIndex++;
                 const username = `bot_pop_${index.toString(36)}`.slice(0, 16);
                 const base = baseForIndex(index, spot.starterRegion);
@@ -555,7 +572,7 @@ const GeneratedColdSeeder = {
                     level: Math.max(1, Number(spot.minLevel || 1)),
                     band: `wave_${plan.wave}`
                 };
-                chain = chain.then(() => ensureAccount(username)
+                return ensureAccount(username)
                     .then(() => ensureCharacter(username, index, base, seedProfile))
                     .then((result) => {
                         const state = stateFor(result.character, index, {
@@ -574,10 +591,9 @@ const GeneratedColdSeeder = {
                                 if (saved) seeded += 1;
                                 return saved;
                             });
-                    }));
-            });
+                    });
+            }).then(() => this.ensureCraftServices()).then((services) => ({
 
-            return chain.then(() => this.ensureCraftServices()).then((services) => ({
                 created: created + services.created,
                 seeded,
                 // `population` includes generated merchants, unlike the

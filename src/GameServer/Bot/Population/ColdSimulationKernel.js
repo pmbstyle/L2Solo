@@ -110,7 +110,14 @@ function partyIntegrityInvalid(context = {}, partySession = {}) {
 }
 
 function nextDueAt(state = {}, timestamp = Date.now(), context = {}, partySession = {}) {
-    const due = Number(state.timing?.nextResolveAt || 0);
+    const stateDue = Number(state.timing?.nextResolveAt || 0);
+    // The party row is the durable scheduling authority for a party resolve.
+    // A freshly assigned leader can briefly carry no personal due time, and
+    // later leader snapshots can also lag behind an advanced party schedule.
+    const partyDue = context?.isPartyLeader
+        ? Number(context.party?.nextResolveAt || 0)
+        : 0;
+    const due = partyDue > 0 ? partyDue : stateDue;
     if (partyIntegrityInvalid(context, partySession)) return timestamp;
     const sessionExpiry = partySessionExpiryAt(state, context, partySession);
     if (sessionExpiry > 0) return due > 0 ? Math.min(due, sessionExpiry) : sessionExpiry;
@@ -525,7 +532,10 @@ class ColdSimulationKernel {
                     continue;
                 }
                 if (candidates.length + candidateMemberIds.length > limit) {
-                    this.requeue(id, this.now() + 100);
+                    // Keep the original overdue priority. Moving a party to
+                    // now+100 on every partially free tick lets an endless
+                    // stream of overdue solo work starve the atomic claim.
+                    this.schedule(id, current.version, entry.dueAt);
                     break;
                 }
                 const purpose = {
@@ -699,13 +709,17 @@ class ColdSimulationKernel {
             const id = Number(result.characterId);
             this.claiming.delete(id);
             this.claimStartedAt.delete(id);
+            // A rejected claim carries the main process' current ownership
+            // snapshot. Party claims must absorb it just like solo claims do;
+            // otherwise the next party attempt repeats the same stale revision
+            // forever and creates a CAS/IPC retry storm.
+            if (result.state) this.upsert(result);
             if (result.purpose?.kind === 'party') {
                 const run = this.partyRuns.get(String(result.purpose.partyId));
                 if (run) run.rejected = true;
                 return;
             }
-            if (result.state) this.upsert(result);
-            else this.requeue(id, this.now() + 1000);
+            if (!result.state) this.requeue(id, this.now() + 1000);
         });
         (payload.grants || []).forEach((grant) => {
             const id = Number(grant.characterId);
@@ -989,6 +1003,7 @@ class ColdSimulationKernel {
                     options: { allowParty: true, allowLifecycle: true },
                     partyResolution: id === Number(run.party.leaderId) ? {
                         partyId: run.party.partyId,
+                        reviewGoals: true,
                         party: {
                             ...run.party,
                             ...resolution.partyPatch,
