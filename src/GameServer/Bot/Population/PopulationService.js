@@ -1913,8 +1913,8 @@ const PopulationService = {
         const last = checkpoint.last || {};
         const lastReset = checkpoint.lastReset || {};
         const walBytes = Math.max(0, Number(last.afterBytes || last.beforeBytes || 0));
-        const resetBytes = Math.max(0, Number(lastReset.afterBytes || lastReset.beforeBytes || 0));
-        const growthBytes = lastReset.at ? Math.max(0, walBytes - resetBytes) : walBytes;
+        const generationBytes = Math.max(0, Number(last.generationBytes || 0));
+        const growthBytes = lastReset.at ? generationBytes : walBytes;
         const resetWalBytes = Math.max(0, Number(options.default.Database?.checkpointResetWalBytes) || 0);
         const resetGrowthBytes = Math.max(1, Number(options.default.Database?.checkpointResetGrowthBytes) || 64 * 1024 * 1024);
         const resetDue = resetWalBytes > 0
@@ -1926,6 +1926,7 @@ const PopulationService = {
             last,
             lastReset,
             walBytes,
+            generationBytes,
             growthBytes,
             resetGrowthBytes,
             resetDue

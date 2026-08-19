@@ -144,6 +144,20 @@ async function run() {
     assert.strictEqual(await PopulationService.runAdaptiveWalReset(3000), null,
         'a reused WAL below the growth threshold must not reset repeatedly just because its file stays large');
     assert.strictEqual(checkpointCalls, 1);
+    checkpointState.checkpoint.last = {
+        ok: true,
+        mode: 'passive',
+        busy: 0,
+        afterBytes: 300,
+        generationBytes: 60,
+        logFrames: 6,
+        checkpointedFrames: 6
+    };
+    PopulationService.nextWalResetAt = 0;
+    const reusedGenerationReset = await PopulationService.runAdaptiveWalReset(3500);
+    assert.strictEqual(reusedGenerationReset.mode, 'restart',
+        'logical generation growth must trigger another reset even while the reused WAL file size is unchanged');
+    assert.strictEqual(checkpointCalls, 2);
 
     let phaseLockedCleanupCalls = 0;
     BotWarehouse.cleanupHistoricalBatch = async () => {
@@ -164,7 +178,7 @@ async function run() {
     const maintenanceReset = await PopulationService.runWarehouseCleanup(4000);
     assert.strictEqual(maintenanceReset.mode, 'restart',
         'due WAL pressure must receive the maintenance timer quiet window even when intervals share a phase');
-    assert.strictEqual(checkpointCalls, 2);
+    assert.strictEqual(checkpointCalls, 3);
     assert.strictEqual(phaseLockedCleanupCalls, 0, 'warehouse cleanup must yield before opening a competing transaction');
     BotWarehouse.cleanupHistoricalBatch = originalWarehouseCleanup;
     Database.stats = originalDatabaseStats;

@@ -36,6 +36,13 @@ const counters = {
 let last = null;
 let lastReset = null;
 
+function resetState() {
+    for (const key of Object.keys(counters)) counters[key] = 0;
+    durations.length = 0;
+    last = null;
+    lastReset = null;
+}
+
 function percentile(values, fraction) {
     if (!values.length) return 0;
     const sorted = [...values].sort((left, right) => left - right);
@@ -104,7 +111,10 @@ function spawn() {
         const entry = pending.get(Number(message.id));
         if (!entry) return;
         pending.delete(Number(message.id));
-        const result = record(message.result || { ok: false, error: 'missing_checkpoint_result' });
+        const result = record({
+            mode: entry.mode,
+            ...(message.result || { ok: false, error: 'missing_checkpoint_result' })
+        });
         if (activeRequest?.id === Number(message.id)) activeRequest = null;
         entry.resolve(result);
     });
@@ -130,6 +140,7 @@ function start(nextDatabasePath, options = {}) {
     const resolved = path.resolve(String(nextDatabasePath || ''));
     if (databasePath === resolved && worker && !stopping) return snapshot();
     if (worker || timer || restartTimer) throw new Error('checkpoint coordinator already started for another database');
+    resetState();
     databasePath = resolved;
     stopping = false;
     spawn();
@@ -164,7 +175,7 @@ function request(options = {}) {
         rejectRequest = reject;
     });
     activeRequest = { id, promise };
-    pending.set(id, { resolve: resolveRequest, reject: rejectRequest });
+    pending.set(id, { resolve: resolveRequest, reject: rejectRequest, mode });
     worker.postMessage({
         type: 'checkpoint',
         id,

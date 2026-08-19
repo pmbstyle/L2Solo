@@ -1,6 +1,8 @@
 const assert = require('assert');
+const EventEmitter = require('events');
 const fs = require('fs');
 const path = require('path');
+const workerThreads = require('worker_threads');
 const { DatabaseSync } = require('node:sqlite');
 
 require('../src/Global');
@@ -8,9 +10,12 @@ require('../src/Global');
 const Database = invoke('Database');
 const CheckpointCoordinator = require('../src/DatabaseCheckpointCoordinator');
 const databasePath = path.join(process.cwd(), 'tmp', 'test-database-checkpoint-worker.sqlite');
+const secondDatabasePath = path.join(process.cwd(), 'tmp', 'test-database-checkpoint-worker-second.sqlite');
 const keepAlive = setInterval(() => {}, 1000);
 
-for (const file of [databasePath, `${databasePath}-wal`, `${databasePath}-shm`]) fs.rmSync(file, { force: true });
+const databaseFiles = [databasePath, secondDatabasePath]
+    .flatMap((file) => [file, `${file}-wal`, `${file}-shm`]);
+for (const file of databaseFiles) fs.rmSync(file, { force: true });
 options.default.Database.path = path.relative(process.cwd(), databasePath);
 Database.init();
 
@@ -68,6 +73,8 @@ async function run() {
     assert.strictEqual(reset.ok, true);
     assert.strictEqual(reset.mode, 'restart', 'idle maintenance must be able to reset a fully checkpointed WAL generation');
     assert.strictEqual(Number(reset.busy), 0, 'a drained WAL must reset without waiting on another owner');
+    assert(Number(reset.pageSize) >= 512, 'checkpoint telemetry must expose the SQLite page size');
+    assert(Number(reset.generationBytes) > 0, 'checkpoint telemetry must expose logical WAL generation bytes');
     assert.strictEqual(CheckpointCoordinator.snapshot().resets, 1, 'successful reset telemetry must be explicit');
     assert.strictEqual(CheckpointCoordinator.snapshot().lastReset.mode, 'restart');
     const beforeCrash = CheckpointCoordinator.snapshot();
@@ -95,6 +102,59 @@ async function run() {
     verification.close();
     const walSize = fs.existsSync(`${databasePath}-wal`) ? fs.statSync(`${databasePath}-wal`).size : 0;
     assert.strictEqual(walSize, 0, 'graceful close must leave no checkpoint debt behind');
+
+    options.default.Database.path = path.relative(process.cwd(), secondDatabasePath);
+    Database.init();
+    assert.strictEqual(CheckpointCoordinator.snapshot().lastReset, null,
+        'a new database lifecycle must not inherit the previous database reset baseline');
+    assert.strictEqual(CheckpointCoordinator.snapshot().resets, 0,
+        'checkpoint counters must describe only the active database lifecycle');
+    assert.strictEqual(await Database.close(), true);
+
+    const coordinatorPath = require.resolve('../src/DatabaseCheckpointCoordinator');
+    const OriginalWorker = workerThreads.Worker;
+    class FailingCheckpointWorker extends EventEmitter {
+        constructor() {
+            super();
+            queueMicrotask(() => this.emit('message', { type: 'ready' }));
+        }
+
+        unref() {}
+
+        postMessage(message) {
+            if (message.type === 'checkpoint') {
+                queueMicrotask(() => this.emit('message', {
+                    type: 'result',
+                    id: message.id,
+                    result: { ok: false, error: 'synthetic_checkpoint_failure' }
+                }));
+            } else if (message.type === 'shutdown') {
+                queueMicrotask(() => this.emit('message', {
+                    type: 'result',
+                    id: message.id,
+                    result: { ok: true, mode: 'passive', busy: 0 }
+                }));
+            }
+        }
+
+        async terminate() {}
+    }
+
+    delete require.cache[coordinatorPath];
+    workerThreads.Worker = FailingCheckpointWorker;
+    const ErrorCoordinator = require(coordinatorPath);
+    try {
+        ErrorCoordinator.start(path.join(process.cwd(), 'tmp', 'synthetic-checkpoint-error.sqlite'), { intervalMs: 60000 });
+        assert(await waitFor(() => ErrorCoordinator.snapshot().ready));
+        const failedReset = await ErrorCoordinator.request({ force: true, mode: 'restart' });
+        assert.strictEqual(failedReset.mode, 'restart', 'failed checkpoint results must retain their requested mode');
+        assert.strictEqual(ErrorCoordinator.snapshot().resetErrors, 1,
+            'a failed RESTART must increment reset-specific error telemetry');
+        await ErrorCoordinator.stop({ final: false });
+    } finally {
+        workerThreads.Worker = OriginalWorker;
+        delete require.cache[coordinatorPath];
+    }
     console.log('Database checkpoint worker isolation and recovery checks passed');
 }
 
@@ -103,6 +163,6 @@ run().catch((error) => {
     process.exitCode = 1;
 }).finally(async () => {
     await Database.close();
-    for (const file of [databasePath, `${databasePath}-wal`, `${databasePath}-shm`]) fs.rmSync(file, { force: true });
+    for (const file of databaseFiles) fs.rmSync(file, { force: true });
     clearInterval(keepAlive);
 });
