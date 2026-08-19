@@ -789,7 +789,26 @@ class ColdSimulationCoordinator {
                 missing.push({ ok: false, characterId: Number(candidate.characterId), reason: 'missing_state' });
                 continue;
             }
-            purposes.set(Number(candidate.characterId), candidate.purpose || null);
+            const purpose = candidate.purpose || null;
+            purposes.set(Number(candidate.characterId), purpose);
+            if (purpose?.kind === 'party') {
+                const expectedPartyId = String(purpose.partyId || '');
+                const currentPartyId = String(state.party?.partyId || state.partyId || '');
+                const party = BackgroundPartyState.find(expectedPartyId);
+                const declaredMembers = new Set((party?.memberIds || []).map(Number).filter(Boolean));
+                if (!expectedPartyId
+                    || currentPartyId !== expectedPartyId
+                    || party?.status !== 'active'
+                    || !declaredMembers.has(Number(state.characterId))) {
+                    Metrics.recordColdOwnerRejected('party_membership_changed');
+                    missing.push({
+                        ok: false,
+                        characterId: Number(candidate.characterId),
+                        reason: 'party_membership_changed'
+                    });
+                    continue;
+                }
+            }
             candidates.push({
                 ...candidate,
                 state,

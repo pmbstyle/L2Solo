@@ -2016,6 +2016,11 @@ const BotLifeState = {
     acceptPartyAssignments(prepared = []) {
         return (prepared || []).map((entry) => entry?.snapshot).filter(Boolean).map((snapshot) => {
             cache.set(snapshot.characterId, snapshot);
+            // Party membership changes the worker scheduling partition. Push
+            // the committed state immediately instead of waiting for the old
+            // solo due token to discover the assignment through a rejected
+            // claim.
+            notifyColdSnapshot(snapshot, 'party_assigned', { critical: true });
             return snapshot;
         });
     },
@@ -2446,29 +2451,37 @@ const BotLifeState = {
 
     leaveParty(state, reason = 'party_break') {
         if (!state?.characterId) return Promise.resolve(null);
-        const releasedFromObjective = ['party_objective_complete', 'party_session_rotation'].includes(reason);
-        const nextActivity = releasedFromObjective && state.activity === 'grouped'
-            ? 'hunting'
-            : state.activity;
+        const timestamp = now();
+        const partyTravel = state.stats?.travel?.reason === 'party_spot_replan';
+        // `grouped` and party-route travel are not valid solo lifecycle
+        // states. Every detachment reason must return them to an actionable
+        // route, including capacity reclamation and friend priority.
+        const needsSoloResume = state.activity === 'grouped' || partyTravel;
+        const nextActivity = needsSoloResume ? 'hunting' : state.activity;
         const nextState = {
             ...state,
             activity: nextActivity,
             party: { ...(state.party || {}), partyId: null, leaderId: null },
             stats: {
                 ...(state.stats || {}),
+                ...(partyTravel ? { travel: null } : {}),
                 backgroundPartyId: null,
                 partyBreakReason: reason,
                 partyRequest: null
             },
-            timing: releasedFromObjective
-                ? { ...(state.timing || {}), activityStartedAt: now(), nextResolveAt: now() + 30000 }
+            timing: needsSoloResume
+                ? { ...(state.timing || {}), activityStartedAt: timestamp, nextResolveAt: timestamp + 30000 }
                 : state.timing,
-            updatedAt: now()
+            updatedAt: timestamp
         };
         const row = rowFromState(nextState);
         return save(row).then(() => {
             const snapshot = normalize(row);
             cache.set(snapshot.characterId, snapshot);
+            // Without this transition snapshot the worker retains the old
+            // `party_member` catalog entry forever and never recreates a solo
+            // due token. Membership transitions are P0 lifecycle changes.
+            notifyColdSnapshot(snapshot, `party_left_${reason}`, { critical: true });
             return snapshot;
         }).catch((err) => {
             utils.infoWarn('BotLife', 'failed to remove %s from party: %s', state.name, err.message);
