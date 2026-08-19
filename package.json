@@ -12,6 +12,7 @@
         "geodata": "node scripts/ensure-geodata.js",
         "check": "node scripts/check-syntax.js",
         "test": "node scripts/run-tests.js",
+        "load:mixed": "node scripts/mixed-runtime-load-test.js",
         "wipe:bots": "node scripts/wipe-bots.js"
     },
     "dependencies": {

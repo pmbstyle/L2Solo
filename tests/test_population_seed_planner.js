@@ -155,4 +155,22 @@ assert.ok(generatedNames.every((name) => !/[0-9]/.test(name)), 'ordinary generat
 assert.ok(generatedNames.every((name) => /^[A-Z][a-z]+[A-Z][a-z]+$/.test(name)), 'generated names must remain readable CamelCase name pairs');
 assert.strictEqual(new Set(generatedNames).size, generatedNames.length, 'readable names must remain unique across a full population sample');
 
-console.log('Population seed planner checks passed');
+(async () => {
+    let clock = 0;
+    let yields = 0;
+    const processed = [];
+    await GeneratedColdSeeder.cooperativeEach([1, 2, 3, 4], async (value) => {
+        processed.push(value);
+        clock += 8;
+    }, {
+        sliceMs: 10,
+        now: () => clock,
+        yield: async () => { yields += 1; }
+    });
+    assert.deepStrictEqual(processed, [1, 2, 3, 4], 'cooperative seeding must preserve deterministic slot order');
+    assert.strictEqual(yields, 1, 'population seeding must yield when its synchronous slice exceeds the player-safe budget');
+    console.log('Population seed planner checks passed');
+})().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+});
