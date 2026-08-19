@@ -296,6 +296,8 @@ CREATE TABLE IF NOT EXISTS bot_activity_journal (
 CREATE INDEX IF NOT EXISTS bot_activity_journal_pair_recent ON bot_activity_journal(playerId, botId, updatedAt DESC);
 CREATE INDEX IF NOT EXISTS bot_activity_journal_bot_recent ON bot_activity_journal(botId, updatedAt DESC);
 CREATE INDEX IF NOT EXISTS bot_activity_journal_coalesce ON bot_activity_journal(playerId, botId, eventType, dedupeKey, updatedAt);
+CREATE INDEX IF NOT EXISTS bot_activity_journal_retention_age ON bot_activity_journal(updatedAt, id);
+CREATE INDEX IF NOT EXISTS bot_activity_journal_pair_retention ON bot_activity_journal(botId, playerId, updatedAt DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS bot_tool_outcomes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -311,6 +313,7 @@ CREATE TABLE IF NOT EXISTS bot_tool_outcomes (
 );
 CREATE INDEX IF NOT EXISTS bot_tool_outcomes_bot_recent ON bot_tool_outcomes(botId, createdAt DESC);
 CREATE INDEX IF NOT EXISTS bot_tool_outcomes_turn ON bot_tool_outcomes(botId, turnId, toolName, createdAt DESC);
+CREATE INDEX IF NOT EXISTS bot_tool_outcomes_retention_age ON bot_tool_outcomes(createdAt, id);
 
 CREATE TABLE IF NOT EXISTS bot_llm_turns (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -336,6 +339,8 @@ CREATE TABLE IF NOT EXISTS bot_llm_turns (
 CREATE INDEX IF NOT EXISTS bot_llm_turns_bot_recent ON bot_llm_turns(botId, id DESC);
 CREATE INDEX IF NOT EXISTS bot_llm_turns_player_recent ON bot_llm_turns(playerId, id DESC);
 CREATE INDEX IF NOT EXISTS bot_llm_turns_state_recent ON bot_llm_turns(state, id DESC);
+CREATE INDEX IF NOT EXISTS bot_llm_turns_terminal_retention ON bot_llm_turns(state, COALESCE(finishedAt, startedAt, 0), id);
+CREATE INDEX IF NOT EXISTS bot_llm_turns_active_retention ON bot_llm_turns(state, startedAt, id);
 
 CREATE TABLE IF NOT EXISTS bot_negotiations (
     id TEXT PRIMARY KEY,

@@ -432,6 +432,27 @@ function applySchemaMigrations() {
                         partyRequestedAt, partyRequestPriority
                     );
             `);
+        }],
+        [16, () => {
+            // Retention is deliberately incremental. These indexes keep each
+            // idle-only delete batch on a narrow age/group range instead of
+            // turning maintenance into a main-thread table scan.
+            connection.exec(`
+                CREATE INDEX IF NOT EXISTS bot_conversation_messages_compacted_age
+                    ON bot_conversation_messages(compacted, createdAt, id);
+                CREATE INDEX IF NOT EXISTS bot_conversation_messages_uncompacted_group
+                    ON bot_conversation_messages(compacted, conversationId, id DESC);
+                CREATE INDEX IF NOT EXISTS bot_activity_journal_retention_age
+                    ON bot_activity_journal(updatedAt, id);
+                CREATE INDEX IF NOT EXISTS bot_activity_journal_pair_retention
+                    ON bot_activity_journal(botId, playerId, updatedAt DESC, id DESC);
+                CREATE INDEX IF NOT EXISTS bot_tool_outcomes_retention_age
+                    ON bot_tool_outcomes(createdAt, id);
+                CREATE INDEX IF NOT EXISTS bot_llm_turns_terminal_retention
+                    ON bot_llm_turns(state, COALESCE(finishedAt, startedAt, 0), id);
+                CREATE INDEX IF NOT EXISTS bot_llm_turns_active_retention
+                    ON bot_llm_turns(state, startedAt, id);
+            `);
         }]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));

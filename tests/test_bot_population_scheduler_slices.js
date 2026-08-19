@@ -7,6 +7,7 @@ const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const PlayerActivitySignal = invoke('GameServer/Bot/Population/PlayerActivitySignal');
 const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
+const PersistentStateRetention = invoke('GameServer/Bot/Population/PersistentStateRetention');
 
 const originalSliceMs = Config.schedulerSliceMs;
 const originalYield = PopulationService.yieldSchedulerSlice;
@@ -20,6 +21,10 @@ const originalWarehouseCleanupRunning = PopulationService.warehouseCleanupRunnin
 const originalWarehouseCleanupCursor = PopulationService.warehouseCleanupCursor;
 const originalWarehouseCleanupPassUnits = PopulationService.warehouseCleanupPassUnits;
 const originalNextWarehouseCleanupAt = PopulationService.nextWarehouseCleanupAt;
+const originalStateRetention = PersistentStateRetention.runNextBatch;
+const originalStateRetentionRunning = PopulationService.stateRetentionRunning;
+const originalStateRetentionPassRows = PopulationService.stateRetentionPassRows;
+const originalNextStateRetentionAt = PopulationService.nextStateRetentionAt;
 
 async function run() {
     const values = [];
@@ -98,6 +103,38 @@ async function run() {
     assert.strictEqual(cleanup.options.maxUnitsPerOwner, 32);
     assert.strictEqual(PopulationService.warehouseCleanupCursor, 77);
 
+    let retentionCalls = 0;
+    PersistentStateRetention.runNextBatch = async (options) => {
+        retentionCalls += 1;
+        return {
+            policy: 'activity_pair_cap',
+            nextPolicy: 'activity_global_cap',
+            rowsRemoved: 4,
+            cycleComplete: false,
+            options
+        };
+    };
+    PopulationService.stateRetentionRunning = false;
+    PopulationService.stateRetentionPassRows = 0;
+    PopulationService.nextStateRetentionAt = 0;
+    PopulationService.playerActivityProfile = () => ({ protected: true, activeParty: false, realPlayers: 1, companionCount: 0, mode: 'player' });
+    assert.strictEqual(await PopulationService.runStateRetention(3000), null,
+        'persistent-state retention must be completely disabled during player protection');
+    assert.strictEqual(retentionCalls, 0);
+
+    PopulationService.playerActivityProfile = () => ({ protected: false, activeParty: false, realPlayers: 0, companionCount: 0, mode: 'idle' });
+    const retention = await PopulationService.runStateRetention(4000);
+    assert.strictEqual(retentionCalls, 1, 'idle maintenance may execute one retention statement');
+    assert.strictEqual(retention.rowsRemoved, 4);
+    assert.strictEqual(retention.options.batchSize, Config.stateRetentionBatchSize);
+    assert.strictEqual(PopulationService.stateRetentionPassRows, 4);
+
+    PopulationService.warehouseCleanupRunning = true;
+    assert.strictEqual(await PopulationService.runStateRetention(5000), null,
+        'retention and warehouse compaction must not enqueue concurrent maintenance writes');
+    assert.strictEqual(retentionCalls, 1);
+    PopulationService.warehouseCleanupRunning = false;
+
     PlayerActivitySignal.reset();
     const connecting = PlayerActivitySignal.observe({
         sessions: [{ constructor: { name: 'Session' }, accountId: null, actor: null }],
@@ -158,6 +195,10 @@ run()
         PopulationService.warehouseCleanupCursor = originalWarehouseCleanupCursor;
         PopulationService.warehouseCleanupPassUnits = originalWarehouseCleanupPassUnits;
         PopulationService.nextWarehouseCleanupAt = originalNextWarehouseCleanupAt;
+        PersistentStateRetention.runNextBatch = originalStateRetention;
+        PopulationService.stateRetentionRunning = originalStateRetentionRunning;
+        PopulationService.stateRetentionPassRows = originalStateRetentionPassRows;
+        PopulationService.nextStateRetentionAt = originalNextStateRetentionAt;
         Metrics.currentEventLoopLag = originalEventLoopLag;
         PlayerActivitySignal.reset();
     });

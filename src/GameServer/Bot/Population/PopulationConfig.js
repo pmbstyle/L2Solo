@@ -102,6 +102,25 @@ const DEFAULTS = {
     warehouseCleanupOwnersPerTick: 1,
     warehouseCleanupUnitsPerOwner: 32,
     warehouseCleanupBudgetMs: 12,
+    // Append-only diagnostics and AI memory have explicit lifecycles. Run a
+    // single indexed delete statement per idle tick and stagger it behind the
+    // warehouse repair so both jobs never form a startup write burst.
+    stateRetentionEnabled: true,
+    stateRetentionStartDelayMs: 90000,
+    stateRetentionIntervalMs: 1000,
+    stateRetentionPassPauseMs: 60000,
+    stateRetentionIdlePauseMs: 6 * 60 * 60 * 1000,
+    stateRetentionBatchSize: 64,
+    stateRetentionBudgetMs: 12,
+    activityJournalRetentionMs: 30 * 24 * 60 * 60 * 1000,
+    activityJournalRowsPerPair: 128,
+    activityJournalMaxRows: 100000,
+    aiAuditRetentionMs: 30 * 24 * 60 * 60 * 1000,
+    toolOutcomeMaxRows: 50000,
+    llmTurnMaxRows: 50000,
+    staleLlmTurnMs: 7 * 24 * 60 * 60 * 1000,
+    compactedConversationRetentionMs: 24 * 60 * 60 * 1000,
+    conversationMaxUncompactedRows: 512,
     partyFormationBatchSize: 3,
     // Forming is an infrequent event. Read enough waiting candidates to let
     // the three available slots reach distinct crowded grounds instead of
@@ -260,6 +279,22 @@ const ENV_KEYS = {
     warehouseCleanupOwnersPerTick: 'BOT_WAREHOUSE_CLEANUP_OWNERS_PER_TICK',
     warehouseCleanupUnitsPerOwner: 'BOT_WAREHOUSE_CLEANUP_UNITS_PER_OWNER',
     warehouseCleanupBudgetMs: 'BOT_WAREHOUSE_CLEANUP_BUDGET_MS',
+    stateRetentionEnabled: 'BOT_STATE_RETENTION_ENABLED',
+    stateRetentionStartDelayMs: 'BOT_STATE_RETENTION_START_DELAY_MS',
+    stateRetentionIntervalMs: 'BOT_STATE_RETENTION_INTERVAL_MS',
+    stateRetentionPassPauseMs: 'BOT_STATE_RETENTION_PASS_PAUSE_MS',
+    stateRetentionIdlePauseMs: 'BOT_STATE_RETENTION_IDLE_PAUSE_MS',
+    stateRetentionBatchSize: 'BOT_STATE_RETENTION_BATCH_SIZE',
+    stateRetentionBudgetMs: 'BOT_STATE_RETENTION_BUDGET_MS',
+    activityJournalRetentionMs: 'BOT_ACTIVITY_JOURNAL_RETENTION_MS',
+    activityJournalRowsPerPair: 'BOT_ACTIVITY_JOURNAL_ROWS_PER_PAIR',
+    activityJournalMaxRows: 'BOT_ACTIVITY_JOURNAL_MAX_ROWS',
+    aiAuditRetentionMs: 'BOT_AI_AUDIT_RETENTION_MS',
+    toolOutcomeMaxRows: 'BOT_TOOL_OUTCOME_MAX_ROWS',
+    llmTurnMaxRows: 'BOT_LLM_TURN_MAX_ROWS',
+    staleLlmTurnMs: 'BOT_STALE_LLM_TURN_MS',
+    compactedConversationRetentionMs: 'BOT_COMPACTED_CONVERSATION_RETENTION_MS',
+    conversationMaxUncompactedRows: 'BOT_CONVERSATION_MAX_UNCOMPACTED_ROWS',
     devLogPlayerChat: 'BOT_DEV_LOG_PLAYER_CHAT',
     debug: 'BOT_POPULATION_DEBUG'
 };

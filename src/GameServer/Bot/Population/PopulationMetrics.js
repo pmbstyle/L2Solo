@@ -57,7 +57,12 @@ function emptyCounters() {
         warehouseCleanupPayout: 0,
         warehouseCleanupDeferrals: 0,
         warehouseCleanupErrors: 0,
-        warehouseCleanupBudgetStops: 0
+        warehouseCleanupBudgetStops: 0,
+        stateRetentionRuns: 0,
+        stateRetentionRows: 0,
+        stateRetentionDeferrals: 0,
+        stateRetentionErrors: 0,
+        stateRetentionOverruns: 0
     };
 }
 
@@ -126,7 +131,10 @@ const PopulationMetrics = {
         coldOwnerStaleRevisionGaps: new Map(),
         coldOwnerStaleOwners: new Map(),
         warehouseCleanupDurationsMs: [],
-        warehouseCleanupDeferralReasons: new Map()
+        warehouseCleanupDeferralReasons: new Map(),
+        stateRetentionDurationsMs: [],
+        stateRetentionDeferralReasons: new Map(),
+        stateRetentionPolicyRows: new Map()
     },
     timer: null,
 
@@ -363,6 +371,39 @@ const PopulationMetrics = {
         );
     },
 
+    recordStateRetention(result = {}, durationMs = 0, overBudget = false) {
+        const rows = Math.max(0, Number(result.rowsRemoved || 0));
+        const policy = String(result.policy || 'unknown');
+        this.counters.stateRetentionRuns += 1;
+        this.counters.stateRetentionRows += rows;
+        this.counters.stateRetentionErrors += Math.max(0, Number(result.errors || 0));
+        if (overBudget) this.counters.stateRetentionOverruns += 1;
+        this.schedulerState = {
+            ...this.schedulerState,
+            stateRetentionPolicy: policy,
+            stateRetentionNextPolicy: String(result.nextPolicy || 'unknown')
+        };
+        this.interval.stateRetentionDurationsMs.push(Math.max(0, Number(durationMs) || 0));
+        if (this.interval.stateRetentionDurationsMs.length > Config.resolveSampleLimit) {
+            this.interval.stateRetentionDurationsMs.shift();
+        }
+        if (rows > 0) {
+            this.interval.stateRetentionPolicyRows.set(
+                policy,
+                Number(this.interval.stateRetentionPolicyRows.get(policy) || 0) + rows
+            );
+        }
+    },
+
+    recordStateRetentionDeferral(reason = 'unknown') {
+        const key = String(reason || 'unknown');
+        this.counters.stateRetentionDeferrals += 1;
+        this.interval.stateRetentionDeferralReasons.set(
+            key,
+            Number(this.interval.stateRetentionDeferralReasons.get(key) || 0) + 1
+        );
+    },
+
     recordActivationFloorScan(scan = {}) {
         const candidates = Math.max(0, Number(scan.candidates) || 0);
         const accepted = Math.max(0, Number(scan.accepted) || 0);
@@ -468,6 +509,9 @@ const PopulationMetrics = {
         const coldOwnerStaleOwners = Object.fromEntries(this.interval.coldOwnerStaleOwners.entries());
         const warehouseCleanupStats = stats(this.interval.warehouseCleanupDurationsMs);
         const warehouseCleanupDeferralReasons = Object.fromEntries(this.interval.warehouseCleanupDeferralReasons.entries());
+        const stateRetentionStats = stats(this.interval.stateRetentionDurationsMs);
+        const stateRetentionDeferralReasons = Object.fromEntries(this.interval.stateRetentionDeferralReasons.entries());
+        const stateRetentionPolicyRows = Object.fromEntries(this.interval.stateRetentionPolicyRows.entries());
         this.interval.resolveDurationsMs = [];
         this.interval.schedulerDurationsMs = [];
         this.interval.schedulerSliceDurationsMs = [];
@@ -484,6 +528,9 @@ const PopulationMetrics = {
         this.interval.coldOwnerStaleOwners = new Map();
         this.interval.warehouseCleanupDurationsMs = [];
         this.interval.warehouseCleanupDeferralReasons = new Map();
+        this.interval.stateRetentionDurationsMs = [];
+        this.interval.stateRetentionDeferralReasons = new Map();
+        this.interval.stateRetentionPolicyRows = new Map();
         this.interval.partyFormationStageDurationsMs = new Map();
         this.interval.skippedResolveReasons = new Map();
 
@@ -517,6 +564,13 @@ const PopulationMetrics = {
                 cursor: this.schedulerState.warehouseCleanupCursor || 0,
                 exhausted: !!this.schedulerState.warehouseCleanupExhausted,
                 deferralReasons: warehouseCleanupDeferralReasons
+            },
+            stateRetention: {
+                ...stateRetentionStats,
+                policy: this.schedulerState.stateRetentionPolicy || 'none',
+                nextPolicy: this.schedulerState.stateRetentionNextPolicy || 'none',
+                deferralReasons: stateRetentionDeferralReasons,
+                policyRows: stateRetentionPolicyRows
             },
             partyFormationStages,
             skippedResolveReasons,

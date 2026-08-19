@@ -138,6 +138,7 @@ const tests = [
     'tests/test_floor_aware_activation_policy.js',
     'tests/test_bot_population_scheduler_slices.js',
     'tests/test_bot_population_scheduler_telemetry.js',
+    'tests/test_persistent_state_retention.js',
     'tests/test_cold_simulation_owner.js',
     'tests/test_cold_owner_batches.js',
     'tests/test_cold_owner_scheduler.js',

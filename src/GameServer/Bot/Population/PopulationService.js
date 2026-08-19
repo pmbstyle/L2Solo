@@ -20,6 +20,7 @@ const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const ColdMarketTradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
 const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
+const PersistentStateRetention = invoke('GameServer/Bot/Population/PersistentStateRetention');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
@@ -516,6 +517,7 @@ const PopulationService = {
     initialSummaryTimer: null,
     schedulerTimer: null,
     warehouseCleanupTimer: null,
+    stateRetentionTimer: null,
     partyFormationTimer: null,
     partyRequestCleanupTimer: null,
     phasePolicyTimer: null,
@@ -530,6 +532,8 @@ const PopulationService = {
     nextWarehouseCleanupAt: 0,
     warehouseCleanupCursor: 0,
     warehouseCleanupPassUnits: 0,
+    nextStateRetentionAt: 0,
+    stateRetentionPassRows: 0,
     marketExpiryCleanupTimer: null,
     personaBackfillTimer: null,
     personaBackfillRunning: false,
@@ -542,6 +546,7 @@ const PopulationService = {
     marketExpiryCleanupRunning: false,
     coldOwnerRecoveryRunning: false,
     warehouseCleanupRunning: false,
+    stateRetentionRunning: false,
     partyFormationRunning: false,
     partyFormationPending: false,
     partyRequestCleanupRunning: false,
@@ -641,6 +646,14 @@ const PopulationService = {
             if (typeof this.warehouseCleanupTimer.unref === 'function') this.warehouseCleanupTimer.unref();
         }
 
+        if (Config.stateRetentionEnabled !== false) {
+            this.nextStateRetentionAt = Date.now() + Math.max(1000, Number(Config.stateRetentionStartDelayMs) || 90000);
+            this.stateRetentionTimer = setInterval(() => {
+                this.runStateRetention();
+            }, Math.max(250, Number(Config.stateRetentionIntervalMs) || 1000));
+            if (typeof this.stateRetentionTimer.unref === 'function') this.stateRetentionTimer.unref();
+        }
+
         if (Config.backgroundPartyEnabled !== false) {
             this.partyRequestCleanupTimer = setInterval(() => {
                 // Request TTL maintenance is deliberately lower priority than
@@ -702,6 +715,14 @@ const PopulationService = {
         this.warehouseCleanupCursor = 0;
         this.warehouseCleanupPassUnits = 0;
         this.nextWarehouseCleanupAt = 0;
+        if (this.stateRetentionTimer) {
+            clearInterval(this.stateRetentionTimer);
+            this.stateRetentionTimer = null;
+        }
+        this.stateRetentionRunning = false;
+        this.stateRetentionPassRows = 0;
+        this.nextStateRetentionAt = 0;
+        PersistentStateRetention.reset();
         if (this.partyFormationTimer) {
             clearInterval(this.partyFormationTimer);
             this.partyFormationTimer = null;
@@ -1869,7 +1890,8 @@ const PopulationService = {
 
     runWarehouseCleanup(timestamp = Date.now()) {
         if (Config.warehouseCleanupEnabled === false || Config.enabled === false
-            || this.warehouseCleanupRunning || timestamp < Number(this.nextWarehouseCleanupAt || 0)) {
+            || this.warehouseCleanupRunning || this.stateRetentionRunning
+            || timestamp < Number(this.nextWarehouseCleanupAt || 0)) {
             return Promise.resolve(null);
         }
 
@@ -1917,6 +1939,66 @@ const PopulationService = {
             return null;
         }).finally(() => {
             this.warehouseCleanupRunning = false;
+        });
+    },
+
+    runStateRetention(timestamp = Date.now()) {
+        if (Config.stateRetentionEnabled === false || Config.enabled === false
+            || this.stateRetentionRunning || this.warehouseCleanupRunning
+            || timestamp < Number(this.nextStateRetentionAt || 0)) {
+            return Promise.resolve(null);
+        }
+
+        const activity = this.playerActivityProfile(timestamp);
+        if (activity.protected) {
+            Metrics.recordBackgroundDeferral();
+            Metrics.recordStateRetentionDeferral('player_protected');
+            return Promise.resolve(null);
+        }
+        const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
+        const lagLimit = Math.max(1, Number(Config.schedulerLagThrottleMs) || 40);
+        if (lagMs >= lagLimit) {
+            Metrics.recordStateRetentionDeferral('event_loop_lag');
+            return Promise.resolve(null);
+        }
+        if (Number(Database.stats().pending || 0) > 0) {
+            Metrics.recordStateRetentionDeferral('database_queue');
+            return Promise.resolve(null);
+        }
+
+        const startedAt = Date.now();
+        const budgetMs = Math.max(1, Math.min(50, Number(Config.stateRetentionBudgetMs) || 12));
+        this.stateRetentionRunning = true;
+        return Database.cooperatively(() => PersistentStateRetention.runNextBatch({
+            timestamp,
+            batchSize: Config.stateRetentionBatchSize,
+            activityRetentionMs: Config.activityJournalRetentionMs,
+            activityRowsPerPair: Config.activityJournalRowsPerPair,
+            activityMaxRows: Config.activityJournalMaxRows,
+            auditRetentionMs: Config.aiAuditRetentionMs,
+            toolOutcomeMaxRows: Config.toolOutcomeMaxRows,
+            llmTurnMaxRows: Config.llmTurnMaxRows,
+            staleLlmTurnMs: Config.staleLlmTurnMs,
+            compactedConversationRetentionMs: Config.compactedConversationRetentionMs,
+            conversationMaxUncompactedRows: Config.conversationMaxUncompactedRows
+        }), Math.min(budgetMs, Math.max(1, Number(Config.schedulerSliceMs) || 12))).then((result) => {
+            const durationMs = Date.now() - startedAt;
+            this.stateRetentionPassRows += Math.max(0, Number(result?.rowsRemoved || 0));
+            if (result?.cycleComplete) {
+                const pauseMs = this.stateRetentionPassRows > 0
+                    ? Math.max(1000, Number(Config.stateRetentionPassPauseMs) || 60000)
+                    : Math.max(60000, Number(Config.stateRetentionIdlePauseMs) || (6 * 60 * 60 * 1000));
+                this.stateRetentionPassRows = 0;
+                this.nextStateRetentionAt = Date.now() + pauseMs;
+            }
+            Metrics.recordStateRetention(result || {}, durationMs, durationMs > budgetMs);
+            return result;
+        }).catch((error) => {
+            Metrics.recordStateRetention({ errors: 1 }, Date.now() - startedAt);
+            utils.infoWarn('BotPopulation', 'bounded persistent-state retention failed: %s', error?.message || error);
+            return null;
+        }).finally(() => {
+            this.stateRetentionRunning = false;
         });
     },
 
