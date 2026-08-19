@@ -1,6 +1,7 @@
 const Database = invoke('Database');
 const BotManager = invoke('GameServer/Bot/BotManager');
 const BotAI = invoke('GameServer/Bot/BotAI');
+const HotAiDispatcher = invoke('GameServer/Bot/AI/HotAiDispatcher');
 const CharacterWriteQueue = invoke('GameServer/Persistence/CharacterWriteQueue');
 const MixedRuntimeSlo = require('./MixedRuntimeSlo');
 const { performance } = require('perf_hooks');
@@ -122,6 +123,7 @@ function attachPlayerProbe() {
     source.aiActive = false;
     if (source.aiTimeout) clearTimeout(source.aiTimeout);
     source.aiTimeout = null;
+    HotAiDispatcher.cancel(source);
     BotManager.sessions = BotManager.sessions.filter((session) => session !== source);
 
     const player = new LoadPlayerSession(source.actor);
@@ -321,6 +323,9 @@ const HotBotLoadTest = {
         const baseline = Database.stats({ resetPeak: true });
         const lagSamples = [];
         const tickDurations = [];
+        const actorTickDurations = [];
+        const persistenceDurations = [];
+        const slowActorTicks = [];
         const errors = [];
         const profiler = createProfiler();
         const BotStatus = invoke('GameServer/Bot/AI/BotStatus');
@@ -366,7 +371,12 @@ const HotBotLoadTest = {
             session.aiActive = false;
             if (session.aiTimeout) clearTimeout(session.aiTimeout);
             session.aiTimeout = null;
+            HotAiDispatcher.cancel(session);
         });
+        // Provisioning intentionally exercises normal BotAI lifecycle. Start
+        // the measured interval with an empty queue and fresh dispatcher
+        // telemetry so startup wakes cannot contaminate player-tail results.
+        HotAiDispatcher.resetForTest();
 
         const lagTimer = setInterval(() => {
             const measuredAt = Date.now();
@@ -374,12 +384,30 @@ const HotBotLoadTest = {
             expectedLagAt = measuredAt + 100;
         }, 100);
         const tickTimer = setInterval(() => {
-            const tickStartedAt = Date.now();
-            hotSessions().forEach((session, index) => {
-                if (index % shards !== activeShard) return;
-                try {
+            const tickStartedAt = performance.now();
+            const scheduled = hotSessions().filter((session, index) => index % shards === activeShard);
+            let remaining = scheduled.length;
+            scheduled.forEach((session) => {
+                HotAiDispatcher.enqueue(session, () => {
+                  try {
                     const actor = session.actor;
+                    const actorTickStartedAt = performance.now();
                     BotAI.tick(session);
+                    const actorTickDuration = performance.now() - actorTickStartedAt;
+                    actorTickDurations.push(actorTickDuration);
+                    if (actorTickDuration >= 10) {
+                        slowActorTicks.push({
+                            name: actor.fetchName?.() || session.accountId,
+                            plan: session.plan || 'none',
+                            lod: session.hotActorLod?.tier || 'unknown',
+                            durationMs: Number(actorTickDuration.toFixed(3))
+                        });
+                        if (slowActorTicks.length > 20) {
+                            slowActorTicks.sort((left, right) => right.durationMs - left.durationMs);
+                            slowActorTicks.length = 20;
+                        }
+                    }
+                    const persistenceStartedAt = performance.now();
                     CharacterWriteQueue.location(actor.fetchId(), {
                         locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ(), head: actor.fetchHead()
                     });
@@ -387,13 +415,18 @@ const HotBotLoadTest = {
                     CharacterWriteQueue.experience(actor.fetchId(), actor.fetchLevel(), actor.fetchExp(), actor.fetchSp());
                     const item = itemByCharacter.get(actor.fetchId());
                     if (item) CharacterWriteQueue.itemAmount(actor.fetchId(), item.id, item.amount);
+                    persistenceDurations.push(performance.now() - persistenceStartedAt);
                     persistenceWrites += item ? 4 : 3;
                     totalTicks += 1;
-                } catch (error) {
+                  } catch (error) {
                     errors.push(error.message || String(error));
-                }
+                  } finally {
+                    remaining -= 1;
+                    if (remaining === 0) tickDurations.push(performance.now() - tickStartedAt);
+                  }
+                }, { onError: (error) => errors.push(error.message || String(error)) });
             });
-            tickDurations.push(Date.now() - tickStartedAt);
+            if (scheduled.length === 0) tickDurations.push(0);
             activeShard = (activeShard + 1) % shards;
         }, spreadMs);
 
@@ -430,6 +463,7 @@ const HotBotLoadTest = {
         setTimeout(() => {
             clearInterval(lagTimer);
             clearInterval(tickTimer);
+            hotSessions().forEach((session) => HotAiDispatcher.cancel(session));
             if (playerTimer) clearInterval(playerTimer);
             if (observerTimer) clearInterval(observerTimer);
             Promise.allSettled([...observerPending]).then(() => {
@@ -483,7 +517,13 @@ const HotBotLoadTest = {
                         expected: expectedTicks,
                         persistenceWrites,
                         tickP95Ms: percentile(tickDurations, 0.95),
-                        tickMaxMs: maximum(tickDurations)
+                        tickMaxMs: maximum(tickDurations),
+                        actorP95Ms: percentile(actorTickDurations, 0.95),
+                        actorP99Ms: percentile(actorTickDurations, 0.99),
+                        actorMaxMs: maximum(actorTickDurations),
+                        persistenceP95Ms: percentile(persistenceDurations, 0.95),
+                        persistenceMaxMs: maximum(persistenceDurations),
+                        slowActors: slowActorTicks.sort((left, right) => right.durationMs - left.durationMs)
                     },
                     eventLoop: {
                         samples: lagSamples.length,
@@ -516,6 +556,7 @@ const HotBotLoadTest = {
                         operations: operationDelta(baseline.operations, after.operations)
                     },
                     profile: profiler.snapshot(),
+                    hotDispatch: HotAiDispatcher.snapshot(),
                     memory: process.memoryUsage(),
                     errors: errors.slice(0, 10)
                 };

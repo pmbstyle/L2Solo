@@ -7,6 +7,7 @@ const tests = [
     'tests/test_armor_stats.js',
     'tests/test_bot_ai_visibility.js',
     'tests/test_hot_actor_lod_policy.js',
+    'tests/test_hot_ai_dispatcher.js',
     'tests/test_bot_movement_visibility.js',
     'tests/test_openrouter_gateway.js',
     'tests/test_ai_config_surface.js',

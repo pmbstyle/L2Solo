@@ -13,6 +13,7 @@ const BotTradeService = invoke('GameServer/Bot/BotTradeService');
 const ChatArrivalState = invoke('GameServer/Bot/AI/ChatArrivalState');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
+const HotAiDispatcher = invoke('GameServer/Bot/AI/HotAiDispatcher');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 
@@ -122,22 +123,44 @@ function clearTacticalState(session) {
 const BotAI = {
     clearTacticalState,
 
-    init(session) {
+    cancelScheduledTick(session) {
+        if (!session) return false;
+        session.aiScheduleGeneration = Number(session.aiScheduleGeneration || 0) + 1;
+        if (session.aiTimeout) clearTimeout(session.aiTimeout);
+        session.aiTimeout = null;
+        return HotAiDispatcher.cancel(session);
+    },
+
+    scheduleTick(session, delayMs, { urgent = false } = {}) {
+        if (!session?.actor || !session.aiActive) return false;
+        this.cancelScheduledTick(session);
+        const generation = Number(session.aiScheduleGeneration || 0);
         const runAiTick = () => {
-            if (!session.actor || !session.aiActive) return;
-
-            try {
-                this.tick(session);
-            } catch (err) {
-                console.error("Bot AI Tick Error:", err);
-            }
-
-            const nextTickDelay = this.calculateNextTickDelay(session);
-            session.aiTimeout = setTimeout(runAiTick, nextTickDelay);
+            session.aiTimeout = null;
+            if (!session.actor || !session.aiActive || Number(session.aiScheduleGeneration || 0) !== generation) return;
+            HotAiDispatcher.enqueue(session, () => {
+                if (!session.actor || !session.aiActive || Number(session.aiScheduleGeneration || 0) !== generation) return;
+                try {
+                    this.tick(session);
+                } catch (err) {
+                    console.error("Bot AI Tick Error:", err);
+                }
+                // A wakeup requested from inside the tick owns the next pass.
+                if (!session.actor || !session.aiActive || Number(session.aiScheduleGeneration || 0) !== generation) return;
+                this.scheduleTick(session, this.calculateNextTickDelay(session));
+            }, {
+                urgent,
+                onError: (err) => console.error("Bot AI Dispatch Error:", err)
+            });
         };
+        session.aiTimeout = setTimeout(runAiTick, Math.max(0, Number(delayMs) || 0));
+        return true;
+    },
 
+    init(session) {
+        this.cancelScheduledTick(session);
         session.aiActive = true;
-        session.aiTimeout = setTimeout(runAiTick, 1000 + Math.random() * 2000);
+        this.scheduleTick(session, 1000 + Math.random() * 2000);
     },
 
     stop(session) {
@@ -148,10 +171,7 @@ const BotAI = {
         ChatArrivalState.clear(session, 'ai_stop');
         try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'ai_stop'); } catch (_) { /* optional ambient module */ }
         try { invoke('GameServer/Bot/AI/BotInferenceBudget').reset(session); } catch (_) { /* optional budget module */ }
-        if (session.aiTimeout) {
-            clearTimeout(session.aiTimeout);
-            session.aiTimeout = null;
-        }
+        this.cancelScheduledTick(session);
     },
 
     wakeup(session, { urgent = false } = {}) {
@@ -161,25 +181,10 @@ const BotAI = {
         if (!urgent && now - Number(session.lastAiWakeAt || 0) < WAKEUP_THROTTLE_MS) return;
         session.lastAiWakeAt = now;
 
-        if (session.aiTimeout) {
-            clearTimeout(session.aiTimeout);
-            session.aiTimeout = null;
-        }
-
-        const runAiTick = () => {
-            if (!session.actor || !session.aiActive) return;
-
-            try {
-                this.tick(session);
-            } catch (err) {
-                console.error("Bot AI Tick Error:", err);
-            }
-
-            const nextTickDelay = this.calculateNextTickDelay(session);
-            session.aiTimeout = setTimeout(runAiTick, nextTickDelay);
-        };
-
-        runAiTick();
+        // Even urgent damage/player-interaction reactions must leave the
+        // network callback before AI work starts. The dispatcher prioritizes
+        // them, coalesces duplicate wakes, and runs one actor per turn.
+        this.scheduleTick(session, 0, { urgent: true });
     },
 
     calculateNextTickDelay(session) {
