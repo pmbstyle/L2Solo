@@ -157,6 +157,53 @@ function settleSnapshot() {
     assert.strictEqual(response?.payload?.rejected?.[0]?.state?.party?.partyId, null,
         'stale rejection must return the current detached state to the worker');
 
+    const raceAssigned = await LifeState.assignParty(
+        travelDetached,
+        'handoff-party',
+        'dps',
+        Number(character.id)
+    );
+    const activeClaim = await Owner.claim(raceAssigned, {
+        allowParty: true,
+        allowLifecycle: true,
+        timestamp: Date.now()
+    });
+    assert.strictEqual(activeClaim.ok, true,
+        `race fixture must hold an active worker lease: ${JSON.stringify(activeClaim)}`);
+    const claimedPartyState = LifeState.cachedState(character.id);
+    const marketBreakState = {
+        ...claimedPartyState,
+        activity: 'traveling',
+        stats: {
+            ...(claimedPartyState.stats || {}),
+            travel: {
+                reason: 'market_sale_inventory',
+                arrivalActivity: 'shopping',
+                arrivalAt: Date.now() + 30000,
+                to: { locX: 81500, locY: 148500, locZ: -3470 }
+            }
+        }
+    };
+    const raceDetached = await LifeState.leaveParty(
+        marketBreakState,
+        'market_break',
+        { ownerHandoff: true }
+    );
+    await settleSnapshot();
+    assert(raceDetached, 'party market break must atomically invalidate an active worker lease');
+    assert.strictEqual(raceDetached.party.partyId, null);
+    assert.strictEqual(raceDetached.activity, 'traveling');
+    assert.strictEqual(raceDetached.stats.travel.reason, 'market_sale_inventory');
+    assert.strictEqual(raceDetached.simulation.ownerId, 'legacy_main');
+    assert(Number(raceDetached.simulation.revision) > Number(activeClaim.revision),
+        'the atomic main transition must advance the revision past the active worker token');
+    const staleCommit = await Owner.commit(activeClaim, claimedPartyState, {
+        allowParty: true,
+        allowLifecycle: true,
+        timestamp: Date.now()
+    });
+    assert.strictEqual(staleCommit.ok, false, 'the invalidated worker token must not overwrite party departure');
+
     console.log('Cold party membership snapshot handoff and stale-claim fencing checks passed');
 })().catch((error) => {
     console.error(error);

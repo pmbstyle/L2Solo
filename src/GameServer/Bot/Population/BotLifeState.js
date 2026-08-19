@@ -2452,7 +2452,7 @@ const BotLifeState = {
         });
     },
 
-    leaveParty(state, reason = 'party_break') {
+    leaveParty(state, reason = 'party_break', options = {}) {
         if (!state?.characterId) return Promise.resolve(null);
         const timestamp = now();
         const partyTravel = state.stats?.travel?.reason === 'party_spot_replan';
@@ -2478,6 +2478,32 @@ const BotLifeState = {
             updatedAt: timestamp
         };
         const row = rowFromState(nextState);
+        if (options.ownerHandoff === true) {
+            return invoke('GameServer/Bot/Population/ColdSimulationOwner').handoffToMain(state, {
+                nextState,
+                timestamp,
+                allowParty: true,
+                allowLifecycle: true
+            }).then((result) => {
+                if (!result?.ok) {
+                    utils.infoWarn('BotLife', 'failed owner handoff while removing %s from party: %s', state.name, result?.reason || 'unknown');
+                    return null;
+                }
+                Metrics.recordDbFlush();
+                const snapshot = cache.get(Number(state.characterId)) || normalize({
+                    ...row,
+                    simulationOwner: result.ownerId,
+                    simulationRevision: result.revision,
+                    simulationLeaseId: result.leaseId,
+                    simulationLeaseUntil: result.leaseUntil
+                });
+                notifyColdSnapshot(snapshot, `party_left_${reason}`, { critical: true });
+                return snapshot;
+            }).catch((err) => {
+                utils.infoWarn('BotLife', 'failed to remove %s from party: %s', state.name, err.message);
+                return null;
+            });
+        }
         return save(row).then(() => {
             const snapshot = normalize(row);
             cache.set(snapshot.characterId, snapshot);

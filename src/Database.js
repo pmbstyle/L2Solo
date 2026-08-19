@@ -1249,24 +1249,50 @@ const Database = {
         const expectedRevision = request.expectedRevision === null || request.expectedRevision === undefined
             ? null
             : Number(request.expectedRevision);
+        const patch = { ...(request.patch || {}) };
+        const invalidColumn = Object.keys(patch).find((column) => !COLD_SIMULATION_PATCH_COLUMNS.has(column));
+        if (invalidColumn) return Promise.resolve({ ok: false, reason: 'invalid_patch', column: invalidColumn });
         return inTransaction(() => {
             const row = coldSimulationRow(characterId);
             if (!row) return { ok: false, reason: 'missing_state' };
             const revision = Number(row.simulationRevision || 0);
             if (expectedRevision !== null && revision !== expectedRevision) return { ok: false, reason: 'stale_revision' };
             const ownerId = String(row.simulationOwner || LEGACY_SIMULATION_OWNER);
-            if (ownerId === LEGACY_SIMULATION_OWNER) {
+            if (!Object.keys(patch).length && ownerId === LEGACY_SIMULATION_OWNER) {
                 return { ok: true, characterId, ownerId, leaseId: null, revision, leaseUntil: 0, reason: 'already_main' };
             }
-            if (ownerId !== COLD_SIMULATION_OWNER) return { ok: false, reason: 'owner_changed' };
+            if (![LEGACY_SIMULATION_OWNER, COLD_SIMULATION_OWNER].includes(ownerId)) return { ok: false, reason: 'owner_changed' };
+            if (Object.keys(patch).length) {
+                const proposed = { ...row, ...patch, phase: patch.phase || row.phase, activity: patch.activity || row.activity };
+                const partition = coldSimulationPartition(proposed, request);
+                if (!partition.ok) return { ok: false, reason: 'partition_rejected', detail: partition.reason };
+            }
             const nextRevision = revision + 1;
+            const entries = Object.entries({ ...patch, updatedAt: patch.updatedAt ?? request.timestamp ?? now() });
+            const assignments = entries.map(([column]) => `${escapeIdentifier(column)} = ?`);
+            assignments.push(
+                'simulationOwner = ?',
+                'simulationRevision = ?',
+                'simulationLeaseId = NULL',
+                'simulationLeaseUntil = 0'
+            );
             const result = write(`UPDATE bot_life_state
-                SET simulationOwner = ?, simulationRevision = ?, simulationLeaseId = NULL, simulationLeaseUntil = 0
+                SET ${assignments.join(', ')}
                 WHERE characterId = ? AND simulationOwner = ? AND simulationRevision = ?`, [
+                ...entries.map(([, value]) => value),
                 LEGACY_SIMULATION_OWNER, nextRevision, characterId, ownerId, revision
             ]);
             if (result.affectedRows !== 1) return { ok: false, reason: 'cas_failed' };
-            return { ok: true, characterId, ownerId: LEGACY_SIMULATION_OWNER, leaseId: null, revision: nextRevision, leaseUntil: 0, reason: 'hot_handoff' };
+            return {
+                ok: true,
+                characterId,
+                ownerId: LEGACY_SIMULATION_OWNER,
+                leaseId: null,
+                revision: nextRevision,
+                leaseUntil: 0,
+                reason: Object.keys(patch).length ? 'main_transition' : 'hot_handoff',
+                row: coldSimulationRow(characterId)
+            };
         }, 'bot-life:hot-owner-handoff');
     },
 
@@ -1941,6 +1967,53 @@ const Database = {
                 targetSlot: Number(target.slot || 0)
             };
         }, 'item:enchant'));
+    },
+
+    enchantColdInventoryItems(characterId, operations = []) {
+        const batch = Array.isArray(operations) ? operations.slice(0, 64) : [];
+        if (!batch.length) return Promise.resolve({ operations: [] });
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const completed = [];
+            for (const operation of batch) {
+                const scrollId = Number(operation.scrollId || 0);
+                const scrollSelfId = Number(operation.scrollSelfId || 0);
+                const targetId = Number(operation.targetId || 0);
+                const targetSelfId = Number(operation.targetSelfId || 0);
+                const expectedEnchant = Math.max(0, Number(operation.expectedEnchant || 0));
+                const enchantLevel = Math.max(0, Number(operation.enchantLevel || 0));
+                if (!scrollId || !scrollSelfId || !targetId || !targetSelfId
+                    || enchantLevel !== expectedEnchant + 1) throw new Error('invalid cold safe enchant operation');
+
+                const scroll = one('SELECT id, selfId, amount FROM items WHERE id = ? AND characterId = ?', [scrollId, characterId]);
+                if (!scroll || Number(scroll.selfId) !== scrollSelfId || Number(scroll.amount) < 1) {
+                    throw new Error('cold enchant scroll changed');
+                }
+                const target = one(`SELECT id, selfId, amount, enchant, equipped
+                    FROM items WHERE id = ? AND characterId = ?`, [targetId, characterId]);
+                if (!target || Number(target.selfId) !== targetSelfId || Number(target.amount) !== 1
+                    || Number(target.equipped) !== 1 || Number(target.enchant || 0) !== expectedEnchant) {
+                    throw new Error('cold enchant target changed');
+                }
+
+                const remainingScrolls = Number(scroll.amount) - 1;
+                if (remainingScrolls > 0) {
+                    write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [remainingScrolls, scrollId, characterId]);
+                } else {
+                    write('DELETE FROM items WHERE id = ? AND characterId = ?', [scrollId, characterId]);
+                }
+                write('UPDATE items SET enchant = ? WHERE id = ? AND characterId = ?', [enchantLevel, targetId, characterId]);
+                completed.push({
+                    scrollId,
+                    scrollSelfId,
+                    targetId,
+                    targetSelfId,
+                    expectedEnchant,
+                    enchantLevel,
+                    scrollAmount: remainingScrolls
+                });
+            }
+            return { operations: completed };
+        }, 'item:cold-safe-enchant'));
     },
 
     craftForCustomer(crafterId, customerId, { materials, product, crafterMp, price, adena }) {

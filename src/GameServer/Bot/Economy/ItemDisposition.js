@@ -1,6 +1,7 @@
 const DataCache = invoke('GameServer/DataCache');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
+const C4EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 
 const SELLABLE_KINDS = ['Weapon.', 'Armor.', 'Other.Material'];
@@ -31,6 +32,10 @@ function basePrice(item, template = templateFor(item?.selfId)) {
 
 function kindFor(item, template = templateFor(item?.selfId)) {
     return item?.kind || template?.template?.kind || '';
+}
+
+function isEnchantScroll(item) {
+    return !!C4EnchantScrolls.resolve(item?.selfId);
 }
 
 function gradeIndex(rank) {
@@ -226,7 +231,9 @@ function saleCandidates(state, options = {}) {
         const kind = kindFor(item, template);
         const npcOnly = isNpcOnlyItem(item, template);
         if (options.onlyNpc === true && !npcOnly) return [];
-        if (!npcOnly && !SELLABLE_KINDS.some((prefix) => kind.startsWith(prefix))) return [];
+        if (!npcOnly
+            && !isEnchantScroll(item)
+            && !SELLABLE_KINDS.some((prefix) => kind.startsWith(prefix))) return [];
 
         // Recipes and spellbooks are explicit NPC-only cleanup targets. They
         // must not inherit the generic starter-loot protection, otherwise a
@@ -276,6 +283,12 @@ function isWarehouseCandidate(item, template = templateFor(item?.selfId)) {
     if (!selfId || selfId === 57 || amount <= 0 || item?.equipped) return false;
     if (isNpcOnlyItem(item, template)) return false;
     if (kind.startsWith('Other.Material')) return true;
+    // Many C4 enchant scrolls are intentionally non-stackable. Preserve
+    // valuable surplus in the warehouse so it cannot permanently consume
+    // backpack capacity while the peer market has no ready buyer. Other
+    // scrolls remain in inventory because bots consume them for travel and
+    // party resurrection.
+    if (isEnchantScroll(item)) return true;
     return (kind.startsWith('Weapon.') || kind.startsWith('Armor.'))
         && basePrice(item, template) > WAREHOUSE_GEAR_MIN_BASE_PRICE;
 }

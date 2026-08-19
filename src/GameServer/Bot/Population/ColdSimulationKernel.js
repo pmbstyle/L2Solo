@@ -1003,6 +1003,7 @@ class ColdSimulationKernel {
                     options: { allowParty: true, allowLifecycle: true },
                     partyResolution: id === Number(run.party.leaderId) ? {
                         partyId: run.party.partyId,
+                        reviewGoals: true,
                         party: {
                             ...run.party,
                             ...resolution.partyPatch,

@@ -895,7 +895,16 @@ class ColdSimulationCoordinator {
                     party.stats?.partyBreakReason || 'party_dissolved'
                 );
                 Metrics.recordPartyDissolution();
-            } else Metrics.recordPartyResolve();
+            } else {
+                Metrics.recordPartyResolve();
+                if (entry.proposal.partyResolution.reviewGoals
+                    && this.population?.reconcileWorkerPartyGoals) {
+                    await this.population.reconcileWorkerPartyGoals(party, Number(entry.proposal.enqueuedAt || Date.now()))
+                        .catch((error) => {
+                            utils.infoWarn('BotGoals', 'worker party goal reconcile failed for %s: %s', party.partyId, error?.message || error);
+                        });
+                }
+            }
         }
         Metrics.recordBackgroundResolve();
         Metrics.recordCombat(entry.proposal.result?.debug);

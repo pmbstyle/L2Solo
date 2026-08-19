@@ -75,8 +75,16 @@ let coordinator = null;
 
     coordinator = new ColdSimulationCoordinator();
     let mainCommands = 0;
+    let partyGoalReconciles = 0;
     const partyResolvesBefore = Number(Metrics.counters.partyResolves || 0);
-    await coordinator.start({ executeWorkerLifecycleCommand() { mainCommands += 1; } });
+    await coordinator.start({
+        executeWorkerLifecycleCommand() { mainCommands += 1; },
+        reconcileWorkerPartyGoals(party) {
+            partyGoalReconciles += 1;
+            assert.strictEqual(party.partyId, 'worker-party');
+            return Promise.resolve({ party, reviewed: 0, departed: null });
+        }
+    });
 
     const deadline = Date.now() + 25000;
     let rows = [];
@@ -107,6 +115,8 @@ let coordinator = null;
     assert(Number(JSON.parse(partyRow.statsJson).fightsResolved || 0) >= 1);
     assert(Number(Metrics.counters.partyResolves || 0) > partyResolvesBefore,
         'worker party commit must feed the public party resolve metric');
+    assert.strictEqual(partyGoalReconciles, 1,
+        'one committed worker party combat result must reconcile party goals exactly once through the leader');
 
     await coordinator.stop();
     console.log('Cold worker party compute and durable batch-CAS integration checks passed');

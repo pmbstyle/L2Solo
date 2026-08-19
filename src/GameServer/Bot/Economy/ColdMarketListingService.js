@@ -1,5 +1,6 @@
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
+const ColdSafeEnchantService = invoke('GameServer/Bot/Economy/ColdSafeEnchantService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const { marketStoreTitle } = invoke('GameServer/Bot/Economy/MarketStoreTitle');
@@ -518,7 +519,9 @@ function open(state, options = {}) {
             marketSellRetryAfter: timestamp + SELL_RETRY_DELAY_MS
         }
     });
-    return LifeState.learnCraftableRecipes(state).then((preparedState) => {
+    return ColdSafeEnchantService.enchantSafe(state, options)
+        .then((enchantResult) => LifeState.learnCraftableRecipes(enchantResult.state || state))
+        .then((preparedState) => {
     state = preparedState || state;
     const initialItems = ItemDisposition.saleCandidates(state, options);
     if (!initialItems.length) {

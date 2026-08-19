@@ -407,6 +407,64 @@ function dissolveBackgroundParty(party, reason, memberCount = 0) {
         });
 }
 
+async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
+    if (!party?.partyId || party.status === 'dissolved') {
+        return { party, reviewed: 0, departed: null };
+    }
+
+    const members = (party.memberIds || [])
+        .map((characterId) => LifeState.cachedState(characterId))
+        .filter((member) => member && String(member.party?.partyId || member.partyId || '') === String(party.partyId));
+    if (!members.length) return { party, reviewed: 0, departed: null };
+
+    const spot = SpotProfiles.findById(party.spotId) || null;
+    let reviewed = 0;
+    let departed = null;
+    for (const member of members) {
+        const cachedGoal = GoalService.snapshot(member.characterId);
+        const cleanupNeeded = ItemDisposition.inventoryCleanupNeed(member, { now: timestamp });
+        const due = !cachedGoal?.current || Number(cachedGoal.current.nextReviewAt || 0) <= timestamp;
+        const goalSnapshot = due || cleanupNeeded
+            ? await GoalService.review(member, { spot, now: timestamp })
+            : cachedGoal;
+        if (due || cleanupNeeded) reviewed += 1;
+        if (departed || !canTakePartyMarketBreak(party, members, member, timestamp)) continue;
+
+        // Goal review can overlap the next worker claim. Re-read the reflected
+        // ownership revision immediately before the atomic transition so the
+        // handoff fences that live token instead of an older cached snapshot.
+        const currentMember = LifeState.cachedState(member.characterId) || member;
+        if (String(currentMember.party?.partyId || currentMember.partyId || '') !== String(party.partyId)) continue;
+        const travel = GoalExecutor.beginMarketTravel(currentMember, goalSnapshot?.current, timestamp);
+        if (!travel) continue;
+        const detached = await LifeState.leaveParty(travel, 'market_break', { ownerHandoff: true });
+        if (detached) departed = detached;
+    }
+
+    if (!departed) return { party, reviewed, departed: null };
+    const activeMembers = members.filter((member) => Number(member.characterId) !== Number(departed.characterId));
+    if (activeMembers.length < Config.partyMinSize) {
+        const dissolved = await dissolveBackgroundParty(party, 'market_break', activeMembers.length);
+        return { party: dissolved.party || party, reviewed, departed, dissolved: true };
+    }
+
+    const leader = activeMembers.find((member) => Number(member.characterId) === Number(party.leaderId))
+        || PartyComposition.chooseLeader(activeMembers)
+        || activeMembers[0];
+    const updatedParty = await BackgroundPartyState.createOrUpdate({
+        ...party,
+        leaderId: Number(leader.characterId),
+        memberIds: activeMembers.map((member) => Number(member.characterId)),
+        roleCoverage: PartyComposition.roleCoverage(activeMembers),
+        stats: {
+            ...(party.stats || {}),
+            lastMarketBreakAt: timestamp
+        },
+        updatedAt: timestamp
+    });
+    return { party: updatedParty || party, reviewed, departed, dissolved: false };
+}
+
 function inventoryCleanupGoal(state, timestamp = Date.now()) {
     if (!state || state.phase !== 'cold' || state.party?.partyId || state.partyId
         || state.stats?.travel || state.stats?.marketReturn
@@ -443,8 +501,34 @@ function inventoryCleanupTravelState(state, timestamp = Date.now(), simulation =
         state.name, Number(cleanup.itemCount || 0), Number(cleanup.npcOnlySlots || 0), cleanup.cleanupReason);
     return {
         ...travelState,
+        stats: {
+            ...(travelState.stats || {}),
+            forcedMarketCleanup: {
+                ...cleanup,
+                startedAt: timestamp
+            }
+        },
         ...(simulation ? { simulation } : {}),
         cleanup
+    };
+}
+
+function marketListingIntent(state, goal = null) {
+    const forcedCleanup = state?.stats?.forcedMarketCleanup || null;
+    if (!forcedCleanup && goal?.type !== 'sell_inventory') {
+        return { shouldOpen: false, state };
+    }
+    if (!forcedCleanup) return { shouldOpen: true, state };
+
+    return {
+        shouldOpen: true,
+        state: {
+            ...state,
+            stats: {
+                ...(state.stats || {}),
+                forcedMarketCleanup: null
+            }
+        }
     };
 }
 
@@ -1152,8 +1236,13 @@ const PopulationService = {
         };
 
         return reviewStale()
-            .then((staleResults) => this.reconcileMarketGoals(deadlineAt, batchSize).then((marketResults) => [
+            .then((staleResults) => this.releaseWarehouseMaterials(deadlineAt).then((warehouseResults) => ({
+                staleResults,
+                warehouseResults
+            })))
+            .then(({ staleResults, warehouseResults }) => this.reconcileMarketGoals(deadlineAt, batchSize).then((marketResults) => [
                 ...staleResults,
+                ...warehouseResults,
                 ...marketResults
             ]))
             .catch((error) => {
@@ -2215,7 +2304,9 @@ const PopulationService = {
                         .reduce((sum, item) => sum + Number(item.amount || 0), 0);
                     const marketItems = released.flatMap((result) => result.items).filter((item) => item.reason === 'market')
                         .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-                    console.info('BotPopulation :: warehouse materials released bots=%d resumedMarkets=%d craftItems=%d marketItems=%d', released.length, resumedMarkets, craftItems, marketItems);
+                    const enchantItems = released.flatMap((result) => result.items).filter((item) => item.reason === 'enchant')
+                        .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+                    console.info('BotPopulation :: warehouse materials released bots=%d resumedMarkets=%d craftItems=%d enchantItems=%d marketItems=%d', released.length, resumedMarkets, craftItems, enchantItems, marketItems);
                 }
                 return released;
             })
@@ -2765,9 +2856,9 @@ const PopulationService = {
                         return LifeState.upsertState(batchState, 'market_batch_continue')
                             .then((saved) => saved || batchState);
                     }
-                    const shouldOpenListing = !marketLifecycle.closed && goal?.type === 'sell_inventory';
-                    const listingPromise = shouldOpenListing
-                        ? ColdMarketListingService.open(purchasedState)
+                    const listingIntent = marketListingIntent(purchasedState, goal);
+                    const listingPromise = !marketLifecycle.closed && listingIntent.shouldOpen
+                        ? ColdMarketListingService.open(listingIntent.state)
                         : Promise.resolve({ state: purchasedState, listed: false });
                     const marketStatePromise = listingPromise.then((listingResult) => {
                         const listingState = listingResult.state || purchasedState;
@@ -2816,6 +2907,10 @@ const PopulationService = {
         return inventoryCleanupTravelState(state, timestamp, simulation);
     },
 
+    reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
+        return reconcileWorkerPartyGoals(party, timestamp);
+    },
+
     coldWorkerSnapshot() {
         return ColdSimulationCoordinator.snapshot();
     },
@@ -2835,5 +2930,6 @@ PopulationService.arrivalPointForState = (state, spot) => SpotService.arrivalPoi
 PopulationService.beginPartySpotTravel = beginPartySpotTravel;
 PopulationService.finishPartySpotTravel = finishPartySpotTravel;
 PopulationService.finishPartyTravelRecord = finishPartyTravelRecord;
+PopulationService.marketListingIntent = marketListingIntent;
 
 module.exports = PopulationService;

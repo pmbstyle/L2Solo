@@ -1,9 +1,12 @@
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
+const EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+const ColdSafeEnchantService = invoke('GameServer/Bot/Economy/ColdSafeEnchantService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const craftScanAt = new Map();
+let enchantReleaseCursor = 0;
 const MAX_GEAR_COPIES_PER_TYPE = 2;
 let templateSource = null;
 let templateIndex = new Map();
@@ -383,8 +386,9 @@ async function releaseCold(state) {
         item.selfId,
         Number(amounts.get(item.selfId) || 0) + Number(item.amount || 0)
     ), new Map());
+    const enchanting = ColdSafeEnchantService.warehouseRequests(state, warehouseItems);
     const selling = marketRequests(state, warehouseItems, reserved);
-    const requests = [...crafting, ...selling].reduce((merged, request) => {
+    const requests = [...crafting, ...enchanting, ...selling].reduce((merged, request) => {
         const key = `${request.selfId}:${request.reason}`;
         const previous = merged.get(key);
         merged.set(key, previous ? { ...previous, amount: previous.amount + request.amount } : request);
@@ -395,7 +399,7 @@ async function releaseCold(state) {
     const remainingByRequest = new Map([...requests.entries()].map(([key, request]) => [key, Number(request.amount || 0)]));
     const released = [];
     for (const row of warehouseItems) {
-        for (const reason of ['craft', 'market']) {
+        for (const reason of ['craft', 'enchant', 'market']) {
             const key = `${Number(row.selfId)}:${reason}`;
             const remaining = Number(remainingByRequest.get(key) || 0);
             if (remaining <= 0 || Number(row.amount || 0) <= 0) continue;
@@ -416,24 +420,59 @@ async function releaseCold(state) {
     if (!released.length) return { state, released: false, items: [] };
 
     const refreshed = await LifeState.refreshInventory(state);
+    const enchantResult = released.some((item) => item.reason === 'enchant')
+        ? await ColdSafeEnchantService.enchantSafe(refreshed)
+        : { state: refreshed, enchanted: false, operations: [] };
+    const releasedState = enchantResult.state || refreshed;
     const timestamp = Date.now();
     const releasedForMarket = released.some((item) => item.reason === 'market');
     const nextState = {
-        ...refreshed,
+        ...releasedState,
         stats: {
-            ...(refreshed.stats || {}),
-            marketSellRetryAfter: releasedForMarket ? null : refreshed.stats?.marketSellRetryAfter,
+            ...(releasedState.stats || {}),
+            marketSellRetryAfter: releasedForMarket ? null : releasedState.stats?.marketSellRetryAfter,
             lastWarehouseWithdrawal: { items: released, at: timestamp }
         },
         timing: {
-            ...(refreshed.timing || {}),
-            nextResolveAt: refreshed.activity === 'hunting'
+            ...(releasedState.timing || {}),
+            nextResolveAt: releasedState.activity === 'hunting'
                 ? timestamp
-                : refreshed.timing?.nextResolveAt
+                : releasedState.timing?.nextResolveAt
         }
     };
     const saved = await LifeState.upsertState(nextState, 'cold_warehouse_release');
     return { state: saved || nextState, released: true, items: released };
+}
+
+function enchantReleaseCandidates(limit = 8) {
+    const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
+    const scrollIds = Object.entries(EnchantScrolls.ENCHANT_SCROLLS)
+        .filter(([, scroll]) => scroll.grade === 'D')
+        .map(([selfId]) => Number(selfId));
+    const fetchAfter = (cursor) => Database.execute([`
+        SELECT DISTINCT states.characterId
+        FROM warehouse_items warehouse
+        INNER JOIN bot_life_state states ON states.characterId = warehouse.characterId
+        WHERE warehouse.amount > 0
+        AND warehouse.selfId IN (${scrollIds.map(() => '?').join(', ')})
+        AND states.phase = 'cold'
+        AND states.simulationOwner = 'legacy_main'
+        AND states.accountName NOT LIKE 'bot_craft_%'
+        AND (states.partyId IS NULL OR states.partyId = '')
+        AND states.activity IN ('hunting', 'resting')
+        AND states.characterId > ?
+        ORDER BY states.characterId ASC
+        LIMIT ${safeLimit}`,
+    [...scrollIds, Number(cursor || 0)]], 'warehouse:enchant-release-candidates');
+    return fetchAfter(enchantReleaseCursor).then(async (rows) => {
+        if (!rows.length && enchantReleaseCursor > 0) {
+            enchantReleaseCursor = 0;
+            rows = await fetchAfter(0);
+        }
+        const characterIds = rows.map((row) => Number(row.characterId)).filter(Boolean);
+        if (characterIds.length) enchantReleaseCursor = characterIds[characterIds.length - 1];
+        return characterIds;
+    });
 }
 
 function releaseCandidates(limit = 8) {
@@ -485,10 +524,18 @@ async function releaseColdBatch(limit = 8, deadlineAt = Infinity) {
     if (remainingLimit <= 0) return released;
     const craftLimit = Math.max(1, Math.floor(remainingLimit / 2));
     const craftStates = craftReleaseCandidates(craftLimit);
-    const marketIds = await releaseCandidates(remainingLimit);
+    const [marketIds, enchantIds] = await Promise.all([
+        releaseCandidates(remainingLimit),
+        enchantReleaseCandidates(remainingLimit)
+    ]);
     const states = [...craftStates];
     const claimed = new Set(states.map((state) => Number(state.characterId)));
-    for (const characterId of marketIds) {
+    const backgroundIds = [];
+    for (let index = 0; index < Math.max(marketIds.length, enchantIds.length); index += 1) {
+        if (enchantIds[index]) backgroundIds.push(enchantIds[index]);
+        if (marketIds[index]) backgroundIds.push(marketIds[index]);
+    }
+    for (const characterId of backgroundIds) {
         if (states.length >= remainingLimit) break;
         if (claimed.has(Number(characterId))) continue;
         const state = await LifeState.findByCharacterId(characterId);
@@ -517,6 +564,7 @@ module.exports = {
     retentionAmount,
     craftRequests,
     marketRequests,
+    enchantReleaseCandidates,
     hasFundedReleasedMarketMaterial,
     pendingMarketReleaseCandidates,
     historicalGearOverflow,

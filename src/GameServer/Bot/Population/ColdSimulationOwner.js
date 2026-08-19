@@ -125,7 +125,9 @@ function claim(state, options = {}) {
         ownerId: OWNER_ID,
         leaseId: options.leaseId || leaseId(),
         timestamp,
-        leaseUntil: timestamp + leaseMs
+        leaseUntil: timestamp + leaseMs,
+        allowParty: options.allowParty === true,
+        allowLifecycle: options.allowLifecycle === true
     }).then((result) => {
         Metrics().recordColdOwnerClaim(result, Date.now() - startedAt);
         return reflect(result);
@@ -362,15 +364,21 @@ function renewActiveLeases(options = {}) {
     }).catch(recordFailure);
 }
 
-function handoffToMain(state) {
+function handoffToMain(state, options = {}) {
     if (!state?.characterId) return Promise.resolve({ ok: false, reason: 'missing_state' });
     const stateOwnership = state.simulation;
+    const nextState = options.nextState || null;
+    const timestamp = Number(options.timestamp || Date.now());
     return Database.handoffColdSimulationToMain({
         characterId: Number(state.characterId),
-        expectedRevision: stateOwnership ? Number(stateOwnership.revision || 0) : null
+        expectedRevision: stateOwnership ? Number(stateOwnership.revision || 0) : null,
+        timestamp,
+        allowParty: options.allowParty === true,
+        allowLifecycle: options.allowLifecycle === true,
+        ...(nextState ? { patch: persistencePatch(nextState, timestamp) } : {})
     }).then((result) => {
         Metrics().recordColdOwnerHandoff(result);
-        return reflect(result);
+        return reflect(result, nextState);
     }).catch(recordFailure);
 }
 

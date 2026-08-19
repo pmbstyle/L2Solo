@@ -236,7 +236,8 @@ async function createProbe(index) {
     })), { timestamp: 5000, leaseMs: 10000 });
     assert.strictEqual(atomicClaim.grants.length, 2, 'atomic party probe must claim every member');
     const invalidatedMember = atomicClaim.grants[1];
-    await Owner.handoffToMain(LifeState.cachedState(invalidatedMember.characterId));
+    const invalidation = await Owner.handoffToMain(LifeState.cachedState(invalidatedMember.characterId));
+    assert.strictEqual(invalidation.ok, true, `atomic party invalidation must succeed: ${JSON.stringify(invalidation)}`);
     const atomicGroup = { id: 'atomic-party-route', memberIds: atomicBase.map((member) => member.characterId) };
     const atomicCommit = await Owner.commitAndReleaseBatch(atomicClaim.grants.map((token, index) => ({
         token,
