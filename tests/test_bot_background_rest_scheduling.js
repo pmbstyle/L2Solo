@@ -14,7 +14,7 @@ const exhausted = {
     levelBand: '18-22',
     activity: 'resting',
     vitals: { hp: 10, maxHp: 800, mp: 0, maxMp: 420 },
-    stats: { restUntil },
+    stats: { classId: 11, role: 'mage', restUntil },
     party: { role: 'dps' }
 };
 
@@ -31,7 +31,7 @@ const restedParty = BackgroundPartyResolver.resolve({
         characterId: 82,
         name: 'ReadyMember',
         vitals: { hp: 800, maxHp: 800, mp: 420, maxMp: 420 },
-        stats: {}
+        stats: { classId: 1, role: 'dps' }
     }],
     spot,
     elapsedMs: 0,
@@ -44,8 +44,8 @@ assert.strictEqual(restedParty.partyPatch.stats.restUntil, restUntil, 'the commo
 const combatRestParty = BackgroundPartyResolver.resolve({
     party: { partyId: 'combat-rest', cohesion: 0.7, risk: 0.2, roleCoverage: { dps: 2 }, stats: {} },
     members: [
-        { ...exhausted, characterId: 83, activity: 'grouped', vitals: { hp: 800, maxHp: 800, mp: 1, maxMp: 420 }, stats: {}, party: { role: 'dps' } },
-        { ...exhausted, characterId: 84, activity: 'grouped', vitals: { hp: 800, maxHp: 800, mp: 420, maxMp: 420 }, stats: {}, party: { role: 'dps' } }
+        { ...exhausted, characterId: 83, activity: 'grouped', vitals: { hp: 800, maxHp: 800, mp: 1, maxMp: 420 }, stats: { classId: 5, role: 'tank' }, party: { role: 'tank' } },
+        { ...exhausted, characterId: 84, activity: 'grouped', vitals: { hp: 800, maxHp: 800, mp: 420, maxMp: 420 }, stats: { classId: 1, role: 'dps' }, party: { role: 'dps' } }
     ],
     spot,
     elapsedMs: 10_000,
@@ -59,5 +59,13 @@ assert(
     combatRestParty.memberResults.some(({ result }) => Number(result.materialize.exp || 0) > 0),
     'the combat window that triggered rest must still award its completed fight rewards'
 );
+assert.strictEqual(BackgroundResolver.needsRest({ stats: { classId: 1 } }, {
+    hp: 800, maxHp: 800, mp: 0, maxMp: 420
+}, { party: true, hpThreshold: 0.3, mpThreshold: 0.18 }), false,
+    'an empty-MP physical DPS must not stop the whole party');
+assert.strictEqual(BackgroundResolver.needsRest({ stats: { classId: 5 } }, {
+    hp: 800, maxHp: 800, mp: 0, maxMp: 420
+}, { party: true, hpThreshold: 0.3, mpThreshold: 0.18 }), true,
+    'an empty-MP tank must still trigger party recovery because Hate is part of its primary job');
 
 console.log('Bot background rest scheduling checks passed');

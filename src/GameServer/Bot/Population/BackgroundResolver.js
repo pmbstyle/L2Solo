@@ -83,19 +83,52 @@ function coldRestRegenPerTick(state) {
     return { hp: Math.max(0, hp), mp: Math.max(0, mp) };
 }
 
-function estimateRestMs(state, vitals) {
+function requiresManaRecovery(state, options = {}) {
+    if (typeof options.requireMana === 'boolean') return options.requireMana;
+    return options.party === true
+        ? BotRoles.needsPartyManaRecovery(state)
+        : BotRoles.shouldRestForMana(state);
+}
+
+function needsRest(state, vitals, options = {}) {
+    const hpRatio = Number(vitals?.hp ?? 0) / Math.max(1, Number(vitals?.maxHp ?? vitals?.hp ?? 1));
+    const mpRatio = Number(vitals?.mp ?? 0) / Math.max(1, Number(vitals?.maxMp ?? vitals?.mp ?? 1));
+    return hpRatio < Number(options.hpThreshold ?? 0.35)
+        || (requiresManaRecovery(state, options) && mpRatio < Number(options.mpThreshold ?? 0.20));
+}
+
+function estimateRestMs(state, vitals, options = {}) {
     const maxHp = Number(vitals.maxHp || vitals.hp || 1);
     const maxMp = Number(vitals.maxMp || vitals.mp || 1);
     const missingHp = Math.max(0, maxHp - Number(vitals.hp || 0));
     const missingMp = Math.max(0, maxMp - Number(vitals.mp || 0));
     const regen = coldRestRegenPerTick(state);
     const hpSeconds = missingHp / Math.max(0.01, regen.hp / 3);
-    const mpSeconds = missingMp / Math.max(0.01, regen.mp / 3);
+    const mpSeconds = requiresManaRecovery(state, options)
+        ? missingMp / Math.max(0.01, regen.mp / 3)
+        : 0;
 
     return Math.round(Math.max(hpSeconds, mpSeconds, 8) * 1000);
 }
 
-function resolveRest(state, elapsedMs, timestamp) {
+function applyStandingRegen(state, sourceVitals, elapsedMs, timestamp = Date.now()) {
+    const combat = botCombatStats(state, timestamp);
+    const vitals = {
+        hp: Math.max(0, Number(sourceVitals?.hp ?? combat.maxHp)),
+        maxHp: combat.maxHp,
+        mp: Math.max(0, Number(sourceVitals?.mp ?? combat.maxMp)),
+        maxMp: combat.maxMp
+    };
+    const sitting = coldRestRegenPerTick(state);
+    const ticks = Math.max(0, Number(elapsedMs) || 0) / 3000;
+    // C4 base regeneration continues while standing. The 1.5 multiplier in
+    // coldRestRegenPerTick is the seated bonus, so remove it for hunt time.
+    vitals.hp = Math.min(vitals.maxHp, vitals.hp + (sitting.hp / 1.5) * ticks);
+    vitals.mp = Math.min(vitals.maxMp, vitals.mp + (sitting.mp / 1.5) * ticks);
+    return vitals;
+}
+
+function resolveRest(state, elapsedMs, timestamp, options = {}) {
     const combat = botCombatStats(state, timestamp);
     const vitals = {
         hp: Math.max(0, Number(state.vitals?.hp || 0)),
@@ -109,9 +142,14 @@ function resolveRest(state, elapsedMs, timestamp) {
     vitals.mp = Math.min(vitals.maxMp, vitals.mp + regen.mp * ticks);
 
     const hpReady = vitals.hp / Math.max(1, vitals.maxHp) >= 0.95;
-    const mpReady = vitals.mp / Math.max(1, vitals.maxMp) >= 0.95;
-    const scheduledRemainingMs = Math.max(0, Number(state.stats?.restUntil || 0) - timestamp);
-    const remainingMs = Math.max(estimateRestMs(state, vitals), scheduledRemainingMs);
+    const requireMana = requiresManaRecovery(state, options);
+    const mpReady = !requireMana || vitals.mp / Math.max(1, vitals.maxMp) >= 0.95;
+    // A persisted deadline can come from the old all-roles MP policy. For a
+    // non-mana role, recompute only the remaining HP recovery instead.
+    const scheduledRemainingMs = requireMana
+        ? Math.max(0, Number(state.stats?.restUntil || 0) - timestamp)
+        : 0;
+    const remainingMs = Math.max(estimateRestMs(state, vitals, options), scheduledRemainingMs);
     const resting = !hpReady || !mpReady || scheduledRemainingMs > 0;
     const restUntil = resting ? timestamp + remainingMs : null;
 
@@ -131,7 +169,7 @@ function resolveRest(state, elapsedMs, timestamp) {
         // recovery deadline so the scheduler can leave this bot alone until
         // HP/MP should have changed.
         nextResolveAt: resting ? restUntil : timestamp + 30000,
-        debug: { activity: resting ? 'resting' : 'recovered', regen, remainingMs }
+        debug: { activity: resting ? 'resting' : 'recovered', regen, remainingMs, requireMana }
     };
 }
 
@@ -545,8 +583,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         accur: 1, evasion: 0, critical: 0, atkSpd: 253, mAtk: 1, castSpd: 333
     };
     const vitals = {
-        hp: Number(state.vitals?.hp || bot.maxHp),
-        mp: Number(state.vitals?.mp || bot.maxMp),
+        hp: Number(state.vitals?.hp ?? bot.maxHp),
+        mp: Number(state.vitals?.mp ?? bot.maxMp),
         maxHp: bot.maxHp,
         maxMp: bot.maxMp
     };
@@ -767,9 +805,9 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             profile,
             role: fighterState.party?.role || fighterState.stats?.role || 'dps',
             vitals: {
-                hp: Math.min(profile.maxHp, Math.max(0, Number(state.vitals?.hp || profile.maxHp))),
+                hp: Math.min(profile.maxHp, Math.max(0, Number(state.vitals?.hp ?? profile.maxHp))),
                 maxHp: profile.maxHp,
-                mp: Math.min(profile.maxMp, Math.max(0, Number(state.vitals?.mp || profile.maxMp))),
+                mp: Math.min(profile.maxMp, Math.max(0, Number(state.vitals?.mp ?? profile.maxMp))),
                 maxMp: profile.maxMp
             },
             cooldowns: { ...(state.stats?.coldCombat?.cooldowns || {}) },
@@ -926,6 +964,9 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
 const BackgroundResolver = {
     resolveRest,
     resolvePartyFight,
+    needsRest,
+    estimateRestMs,
+    applyStandingRegen,
     effectiveSkillPower,
     resolveSolo({ state, spot, pressure = {}, targetNpcId = 0, elapsedMs = 60000, rng = Math.random, timestamp = Date.now() }) {
         if (!state) {
@@ -1048,7 +1089,7 @@ const BackgroundResolver = {
         const events = [];
         const materialize = { exp: 0, sp: 0, adena: 0, items: [] };
         const patch = {
-            vitals: { ...(state.vitals || {}) },
+            vitals: applyStandingRegen(state, state.vitals, elapsedMs, timestamp),
             activity: 'hunting',
             spotId: spot.id
         };
@@ -1116,7 +1157,7 @@ const BackgroundResolver = {
 
             const hpPct = patch.vitals.hp / Math.max(1, patch.vitals.maxHp || patch.vitals.hp);
             const mpPct = patch.vitals.mp / Math.max(1, patch.vitals.maxMp || patch.vitals.mp || 1);
-            if (hpPct < 0.35 || mpPct < 0.2) {
+            if (needsRest(fightState, patch.vitals)) {
                 patch.activity = 'resting';
                 patch.stats = {
                     ...(patch.stats || state.stats || {}),
