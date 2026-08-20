@@ -188,7 +188,8 @@ assert.deepStrictEqual(
 const casterNpc = npcWithRange(40, 109);
 casterNpc.setCollectiveCastSpd(999999);
 casterNpc.automation.replenishVitals = () => {};
-const casterSkill = casterNpc.selectCombatSkill(target);
+let casterRolls = [0.99, 0];
+const casterSkill = casterNpc.selectCombatSkill(target, () => casterRolls.shift());
 assert(casterSkill, 'NPC with sourced combat skills should select a spell before falling back to melee');
 assert.strictEqual(casterSkill.fetchSelfId(), 4001, 'Salamander should select its sourced NPC Wind Strike skill');
 casterSkill.model.reuse = 1;

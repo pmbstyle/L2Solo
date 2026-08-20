@@ -5,6 +5,9 @@ const RaidBossBalance = invoke('GameServer/RaidBoss/RaidBossBalance');
 const DataCache = {
     init: () => {
         const path = '../data/';
+        // Generated NPC templates predate the source AI enum; merge the
+        // source-backed profile before any NPC instance is spawned.
+        const npcAiTypes = invoke(path + 'Npcs/ai');
 
         DataCache.classTemplates  = validateModel(path + 'Templates/templates');
         ClassProgression.expandTemplates(DataCache.classTemplates);
@@ -16,7 +19,7 @@ const DataCache = {
         DataCache.skillTree       = validateModel(path + 'Skills/Tree/tree');
         const C4LateTownGatekeepers = invoke('GameServer/World/C4LateTownGatekeepers');
         const C4SevenSignsDungeonTeleports = invoke('GameServer/World/C4SevenSignsDungeonTeleports');
-        DataCache.npcs            = [
+        DataCache.npcs            = applyNpcAiTypes([
             ...validateModel(path + 'Npcs/npcs').filter((npc) => npc.selfId !== 135),
             ...validateModel(path + 'Npcs/summons'),
             ...validateModel(path + 'Npcs/c4_swamp_of_screams'),
@@ -56,7 +59,7 @@ const DataCache = {
             ...validateModel(path + 'Npcs/c4_raid_boss_minions'),
             ...C4LateTownGatekeepers.npcs,
             ...C4SevenSignsDungeonTeleports.npcs
-        ];
+        ], npcAiTypes);
         DataCache.npcs = RaidBossBalance.weakenTemplates(DataCache.npcs);
         DataCache.npcSpawns       = [
             ...validateModel(path + 'Npcs/Spawns/spawns'),
@@ -222,6 +225,17 @@ const DataCache = {
         item ? callback(item) : utils.infoWarn('Datapack', 'unknown SkillTree ClassId %d', classId);
     }
 };
+
+function applyNpcAiTypes(npcs, aiTypes) {
+    return npcs.map((npc) => {
+        const ai = npc.template?.ai ?? aiTypes?.[String(npc.selfId)];
+        if (!ai || npc.template?.ai) return npc;
+        return {
+            ...npc,
+            template: { ...npc.template, ai }
+        };
+    });
+}
 
 function validateModel(filepath) {
     const path   = require('path').dirname(filepath);

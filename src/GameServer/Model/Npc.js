@@ -35,6 +35,22 @@ class NpcModel extends CreatureModel {
         return this.model.raidBoss === true;
     }
 
+    fetchAiType() {
+        const value = this.model.ai
+            ?? this.model.AI
+            ?? this.model.aiType
+            ?? this.model.template?.ai
+            ?? this.model.template?.AI
+            ?? this.model.template?.aiType;
+        if (value === undefined || value === null) return null;
+
+        const normalized = String(value).trim().toLowerCase();
+        if (['corpse', 'healer'].includes(normalized)) return 'balanced';
+        return ['fighter', 'mage', 'balanced', 'archer'].includes(normalized)
+            ? normalized
+            : null;
+    }
+
     fetchHostile() {
         return this.model.hostile;
     }
