@@ -19,7 +19,7 @@ const RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
 const WEAPON_SLOTS = new Set([7, 14]);
 const ARMOR_SLOTS = new Set([6, 9, 10, 11, 12, 15]);
 const JEWEL_SLOTS = new Set([1, 2, 3, 4, 5]);
-const RATE_MODEL_VERSION = 5;
+const RATE_MODEL_VERSION = 6;
 const DIRECT_FAILURE_RESOLVE_LIMIT = 8;
 const DIRECT_DROP_EXHAUSTION_MULTIPLIER = 3;
 const DIRECT_ROUTE_COOLDOWN_MS = 60 * 60 * 1000;
@@ -947,6 +947,22 @@ function itemDropYield(reward, itemId, kind = 'drop', context = {}) {
     return (reward?.[kind === 'spoil' ? 'spoils' : 'rewards'] || []).reduce((sum, group) => {
         const roll = ProgressionRates.rewardGroupRoll(group, kind, context, () => 0);
         const groupChance = Number(roll.chance || 0) / 100;
+        const matchingItems = (group.items || []).filter((item) => Number(item.selfId) === Number(itemId));
+        if (kind === 'drop') {
+            const selectionChance = matchingItems.reduce((itemSum, item) => (
+                itemSum + ProgressionRates.dropItemSelectionChance(group, item, roll.itemRate)
+            ), 0);
+            const selectedYield = matchingItems.reduce((itemSum, item) => (
+                itemSum
+                + ProgressionRates.dropItemSelectionChance(group, item, roll.itemRate)
+                    * ProgressionRates.expectedDropAmount(group, item, roll.itemRate)
+            ), 0);
+            return {
+                chance: sum.chance + groupChance * selectionChance,
+                expectedYield: sum.expectedYield + groupChance * selectedYield
+            };
+        }
+
         const selectionChance = (group.items || [])
             .filter((item) => Number(item.selfId) === Number(itemId))
             .reduce((itemSum, item) => itemSum + Number(item.chance || 0) / 100, 0);

@@ -132,7 +132,7 @@ expectedCombatSkills.forEach((skillIds, npcId) => {
 });
 
 const eyeInstance = npcInstance(eye, 9301520);
-assert.strictEqual(eyeInstance.selectCombatSkill({}).fetchSelfId(), 4631,
+assert.strictEqual(eyeInstance.selectCombatSkill({}, () => 0).fetchSelfId(), 4631,
     'an unbuffed Valley caster must prioritize its source self-buff');
 const eyeBuff = NpcSkills.forNpc(eyeInstance).find((skill) => skill.fetchSelfId() === 4631);
 assert.deepStrictEqual(
@@ -144,7 +144,8 @@ EffectStore.apply(eyeInstance, {
     key: eyeBuff.fetchSemantic().effect, id: 4631, level: 3, name: eyeBuff.fetchName(),
     type: 'buff', stats: eyeBuff.fetchSemantic().stats, durationMs: 120000
 });
-assert.strictEqual(eyeInstance.selectCombatSkill({}).fetchSelfId(), 4561,
+let eyeRolls = [0.99, 0];
+assert.strictEqual(eyeInstance.selectCombatSkill({}, () => eyeRolls.shift()).fetchSelfId(), 4561,
     'after its buff is active the caster must proceed to its first enemy skill');
 
 const shout = npcInstance(npcs.find((npc) => npc.selfId === 1532), 9301532);

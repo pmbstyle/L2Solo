@@ -519,7 +519,75 @@ function applySchemaMigrations() {
                     routineEventsRemoved
                 );
             }
-        }]
+        }],
+        [18, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS social_entities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind TEXT NOT NULL,
+                externalKey TEXT NOT NULL,
+                displayName TEXT NOT NULL DEFAULT '',
+                createdAt INTEGER NOT NULL DEFAULT 0,
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                retiredAt INTEGER,
+                UNIQUE(kind, externalKey)
+            );
+
+            CREATE TABLE IF NOT EXISTS social_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                eventKey TEXT NOT NULL UNIQUE,
+                sourceEntityId INTEGER NOT NULL REFERENCES social_entities(id) ON DELETE CASCADE,
+                targetEntityId INTEGER NOT NULL REFERENCES social_entities(id) ON DELETE CASCADE,
+                contextEntityId INTEGER REFERENCES social_entities(id) ON DELETE SET NULL,
+                eventType TEXT NOT NULL,
+                magnitude INTEGER NOT NULL DEFAULT 1,
+                salience INTEGER NOT NULL DEFAULT 1 CHECK(salience BETWEEN 1 AND 10),
+                affinityDelta INTEGER NOT NULL DEFAULT 0,
+                trustDelta INTEGER NOT NULL DEFAULT 0,
+                respectDelta INTEGER NOT NULL DEFAULT 0,
+                fearDelta INTEGER NOT NULL DEFAULT 0,
+                hostilityDelta INTEGER NOT NULL DEFAULT 0,
+                familiarityDelta INTEGER NOT NULL DEFAULT 0,
+                occurredAt INTEGER NOT NULL DEFAULT 0,
+                payloadJson TEXT
+            );
+            CREATE INDEX IF NOT EXISTS social_events_source_recent
+                ON social_events(sourceEntityId, occurredAt DESC, id DESC);
+            CREATE INDEX IF NOT EXISTS social_events_target_recent
+                ON social_events(targetEntityId, occurredAt DESC, id DESC);
+            CREATE INDEX IF NOT EXISTS social_events_context_recent
+                ON social_events(contextEntityId, occurredAt DESC, id DESC);
+            CREATE INDEX IF NOT EXISTS social_events_retention
+                ON social_events(occurredAt, id);
+
+            CREATE TABLE IF NOT EXISTS social_relations (
+                sourceEntityId INTEGER NOT NULL REFERENCES social_entities(id) ON DELETE CASCADE,
+                targetEntityId INTEGER NOT NULL REFERENCES social_entities(id) ON DELETE CASCADE,
+                affinity INTEGER NOT NULL DEFAULT 0 CHECK(affinity BETWEEN -100 AND 100),
+                trust INTEGER NOT NULL DEFAULT 0 CHECK(trust BETWEEN -100 AND 100),
+                respect INTEGER NOT NULL DEFAULT 0 CHECK(respect BETWEEN -100 AND 100),
+                fear INTEGER NOT NULL DEFAULT 0 CHECK(fear BETWEEN -100 AND 100),
+                hostility INTEGER NOT NULL DEFAULT 0 CHECK(hostility BETWEEN -100 AND 100),
+                familiarity INTEGER NOT NULL DEFAULT 0 CHECK(familiarity >= 0),
+                evidenceCount INTEGER NOT NULL DEFAULT 0 CHECK(evidenceCount >= 0),
+                lastEventId INTEGER REFERENCES social_events(id) ON DELETE SET NULL,
+                lastInteractionAt INTEGER,
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                revision INTEGER NOT NULL DEFAULT 0 CHECK(revision >= 0),
+                metaJson TEXT,
+                PRIMARY KEY(sourceEntityId, targetEntityId),
+                CHECK(sourceEntityId <> targetEntityId)
+            );
+            CREATE INDEX IF NOT EXISTS social_relations_source_updated
+                ON social_relations(sourceEntityId, updatedAt DESC, targetEntityId);
+            CREATE INDEX IF NOT EXISTS social_relations_target_updated
+                ON social_relations(targetEntityId, updatedAt DESC, sourceEntityId);
+
+            CREATE TABLE IF NOT EXISTS social_projection_cursors (
+                consumer TEXT PRIMARY KEY,
+                lastEventId INTEGER NOT NULL DEFAULT 0 CHECK(lastEventId >= 0),
+                updatedAt INTEGER NOT NULL DEFAULT 0
+            );
+        `)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
@@ -742,6 +810,131 @@ function coldSimulationConflict(row, request, timestamp) {
     return 'cas_failed';
 }
 
+function ensureSocialEntityUnsafe(entity, timestamp) {
+    write(`INSERT INTO social_entities(kind, externalKey, displayName, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(kind, externalKey) DO UPDATE SET
+            displayName = CASE
+                WHEN excluded.displayName <> '' THEN excluded.displayName
+                ELSE social_entities.displayName
+            END,
+            updatedAt = MAX(social_entities.updatedAt, excluded.updatedAt)`, [
+        entity.kind,
+        entity.externalKey,
+        entity.displayName || '',
+        timestamp,
+        timestamp
+    ]);
+    return one('SELECT * FROM social_entities WHERE kind = ? AND externalKey = ?', [entity.kind, entity.externalKey]);
+}
+
+function socialRelationUnsafe(sourceEntityId, targetEntityId) {
+    return one(`SELECT * FROM social_relations
+        WHERE sourceEntityId = ? AND targetEntityId = ?`, [sourceEntityId, targetEntityId]);
+}
+
+function socialEventUnsafe(eventKey) {
+    return one(`SELECT event.*,
+            source.id sourceId, source.kind sourceKind,
+            source.externalKey sourceKey, source.displayName sourceName,
+            target.id targetId, target.kind targetKind,
+            target.externalKey targetKey, target.displayName targetName,
+            context.id contextId, context.kind contextKind,
+            context.externalKey contextKey, context.displayName contextName
+        FROM social_events event
+        INNER JOIN social_entities source ON source.id = event.sourceEntityId
+        INNER JOIN social_entities target ON target.id = event.targetEntityId
+        LEFT JOIN social_entities context ON context.id = event.contextEntityId
+        WHERE event.eventKey = ?`, [eventKey]);
+}
+
+function commitSocialGraphEventUnsafe(input) {
+    const existing = socialEventUnsafe(input.eventKey);
+    if (existing) {
+        const sameIdentity = existing.sourceKind === input.source.kind &&
+            existing.sourceKey === input.source.externalKey &&
+            existing.targetKind === input.target.kind &&
+            existing.targetKey === input.target.externalKey &&
+            existing.eventType === input.eventType;
+        if (!sameIdentity) throw new Error(`social event key collision: ${input.eventKey}`);
+        return {
+            inserted: false,
+            event: existing,
+            relation: socialRelationUnsafe(existing.sourceEntityId, existing.targetEntityId)
+        };
+    }
+
+    const committedAt = now();
+    const source = ensureSocialEntityUnsafe(input.source, committedAt);
+    const target = ensureSocialEntityUnsafe(input.target, committedAt);
+    if (Number(source.id) === Number(target.id)) {
+        throw new Error('social relation source and target must differ');
+    }
+    const context = input.context ? ensureSocialEntityUnsafe(input.context, committedAt) : null;
+    const delta = input.delta;
+    const eventResult = write(`INSERT INTO social_events(
+            eventKey, sourceEntityId, targetEntityId, contextEntityId, eventType,
+            magnitude, salience, affinityDelta, trustDelta, respectDelta,
+            fearDelta, hostilityDelta, familiarityDelta, occurredAt, payloadJson
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+        input.eventKey,
+        source.id,
+        target.id,
+        context?.id || null,
+        input.eventType,
+        input.magnitude,
+        input.salience,
+        delta.affinity,
+        delta.trust,
+        delta.respect,
+        delta.fear,
+        delta.hostility,
+        delta.familiarity,
+        input.occurredAt,
+        input.payloadJson
+    ]);
+    const eventId = Number(eventResult.insertId);
+
+    write(`INSERT INTO social_relations(
+            sourceEntityId, targetEntityId, affinity, trust, respect, fear,
+            hostility, familiarity, evidenceCount, lastEventId,
+            lastInteractionAt, updatedAt, revision, metaJson
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 1, ?)
+        ON CONFLICT(sourceEntityId, targetEntityId) DO UPDATE SET
+            affinity = MAX(-100, MIN(100, social_relations.affinity + excluded.affinity)),
+            trust = MAX(-100, MIN(100, social_relations.trust + excluded.trust)),
+            respect = MAX(-100, MIN(100, social_relations.respect + excluded.respect)),
+            fear = MAX(-100, MIN(100, social_relations.fear + excluded.fear)),
+            hostility = MAX(-100, MIN(100, social_relations.hostility + excluded.hostility)),
+            familiarity = MAX(0, social_relations.familiarity + ?),
+            evidenceCount = social_relations.evidenceCount + 1,
+            lastEventId = excluded.lastEventId,
+            lastInteractionAt = MAX(COALESCE(social_relations.lastInteractionAt, 0), excluded.lastInteractionAt),
+            updatedAt = excluded.updatedAt,
+            revision = social_relations.revision + 1,
+            metaJson = COALESCE(excluded.metaJson, social_relations.metaJson)`, [
+        source.id,
+        target.id,
+        delta.affinity,
+        delta.trust,
+        delta.respect,
+        delta.fear,
+        delta.hostility,
+        Math.max(0, delta.familiarity),
+        eventId,
+        input.occurredAt,
+        committedAt,
+        input.relationMetaJson,
+        delta.familiarity
+    ]);
+
+    return {
+        inserted: true,
+        event: socialEventUnsafe(input.eventKey),
+        relation: socialRelationUnsafe(source.id, target.id)
+    };
+}
+
 const Database = {
     init(callback = () => {}) {
         try {
@@ -779,6 +972,14 @@ const Database = {
 
     execute(statement, operation = 'raw') {
         return run(statement[0], statement[1] || [], operation, statement[2]?.read ?? null);
+    },
+
+    ensureSocialEntity(entity) {
+        return inTransaction(() => ensureSocialEntityUnsafe(entity, now()), 'social:entity-upsert');
+    },
+
+    commitSocialGraphEvent(input) {
+        return inTransaction(() => commitSocialGraphEventUnsafe(input), 'social:event-commit');
     },
 
     commitBackgroundPartyMembership({ party, members = [], event = null } = {}) {

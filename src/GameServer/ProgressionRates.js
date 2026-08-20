@@ -69,6 +69,65 @@ function amountMultiplier(overall, rate) {
     return Math.max(1, scaled / 100);
 }
 
+function dropItemBaseChance(group, item) {
+    const groupChance = Math.max(0, Number(group?.overall) || 0);
+    const itemShare = Math.max(0, Number(item?.chance) || 0);
+    return groupChance * itemShare / 100;
+}
+
+function dropItemSelectionWeight(group, item, rate) {
+    return Math.min(100, dropItemBaseChance(group, item) * numberOr(rate, 1));
+}
+
+function dropItemSelectionChance(group, item, rate) {
+    const total = (group?.items || []).reduce((sum, candidate) => (
+        sum + dropItemSelectionWeight(group, candidate, rate)
+    ), 0);
+    return total > 0 ? dropItemSelectionWeight(group, item, rate) / total : 0;
+}
+
+function dropAmountBounds(item) {
+    const min = Math.max(0, Math.floor(Number(item?.min) || 0));
+    return { min, max: Math.max(min, Math.floor(Number(item?.max) || min)) };
+}
+
+function expectedDropAmount(group, item, rate) {
+    const repeats = Math.max(1, dropItemBaseChance(group, item) * numberOr(rate, 1) / 100);
+    const { min, max } = dropAmountBounds(item);
+    return repeats * (min + max) / 2;
+}
+
+function selectDropItem(group, rate, rng = Math.random) {
+    const weighted = (group?.items || []).map((item) => ({
+        item,
+        weight: dropItemSelectionWeight(group, item, rate)
+    })).filter((entry) => entry.weight > 0);
+    const total = weighted.reduce((sum, entry) => sum + entry.weight, 0);
+    if (total <= 0) return null;
+
+    const roll = rng() * total;
+    let partition = 0;
+    for (const entry of weighted) {
+        partition += entry.weight;
+        if (roll < partition) return entry.item;
+    }
+    return weighted[weighted.length - 1].item;
+}
+
+function rollDropAmount(group, item, rate, rng = Math.random) {
+    const scaledChance = Math.max(100, dropItemBaseChance(group, item) * numberOr(rate, 1));
+    const guaranteed = Math.floor(scaledChance / 100);
+    const remainder = scaledChance - guaranteed * 100;
+    const repeats = guaranteed + (rng() * 100 < remainder ? 1 : 0);
+    const { min, max } = dropAmountBounds(item);
+    let amount = 0;
+
+    for (let index = 0; index < repeats; index++) {
+        amount += min === max ? min : Math.floor(rng() * (max - min + 1)) + min;
+    }
+    return Math.max(1, amount);
+}
+
 function deepBlueRule({ npcLevel, killerLevel, attackerLevels = [] } = {}) {
     const levels = [killerLevel, ...attackerLevels]
         .map((level) => Number(level))
@@ -113,7 +172,7 @@ function rewardGroupRoll(group, kind = 'drop', context = {}, rng = Math.random) 
     // Lisvus applies the Deep Blue modifier to categorized normal-drop chance,
     // but still calculates a selected item's high-rate quantity from its base rate.
     const amountRate = rule.active && kind === 'drop' ? baseRate : rate;
-    return { ...roll, amountMultiplier: amountMultiplier(group.overall, amountRate), rule };
+    return { ...roll, amountMultiplier: amountMultiplier(group.overall, amountRate), itemRate: baseRate, rule };
 }
 
 function scaleAmount(amount, amountMultiplier, rng = Math.random) {
@@ -130,6 +189,12 @@ module.exports = {
     profile,
     groupRate,
     rollGroup,
+    dropItemBaseChance,
+    dropItemSelectionWeight,
+    dropItemSelectionChance,
+    expectedDropAmount,
+    selectDropItem,
+    rollDropAmount,
     deepBlueRule,
     rewardGroupRoll,
     scaleAmount
