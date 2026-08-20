@@ -11,7 +11,6 @@ const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const originalFetchRewards = DataCache.fetchNpcRewardsFromSelfId;
 const originalFetchItem = DataCache.fetchItemFromSelfId;
 const originalRewardGroupRoll = ProgressionRates.rewardGroupRoll;
-const originalScaleAmount = ProgressionRates.scaleAmount;
 const originalObserveDrop = BotLootEtiquette.observeDrop;
 const originalQueueGroundPickup = PartyCompanionService.queueRandomGroundPickup;
 const originalRandom = Math.random;
@@ -21,7 +20,7 @@ try {
         rewards: [
             {
                 overall: 100,
-                items: [{ selfId: 123, name: 'Saber', min: 1, max: 1, chance: 100 }]
+                items: [{ selfId: 955, name: 'Scroll: Enchant Weapon (Grade D)', min: 1, max: 1, chance: 100 }]
             },
             {
                 overall: 100,
@@ -29,19 +28,18 @@ try {
             }
         ]
     });
-    DataCache.fetchItemFromSelfId = (selfId, callback) => callback(selfId === 123
+    DataCache.fetchItemFromSelfId = (selfId, callback) => callback(selfId === 955
         ? {
             selfId,
-            template: { kind: 'Weapon.Sword', name: 'Saber' },
-            etc: { stackable: false }
+            template: { kind: 'Other.Scroll', name: 'Scroll: Enchant Weapon (Grade D)' },
+            etc: { stackable: false, consumable: true }
         }
         : {
             selfId,
             template: { kind: 'Other.Material', name: 'Varnish' },
             etc: { stackable: true }
         });
-    ProgressionRates.rewardGroupRoll = () => ({ hit: true, amountMultiplier: 3 });
-    ProgressionRates.scaleAmount = () => 3;
+    ProgressionRates.rewardGroupRoll = () => ({ hit: true, itemRate: 3 });
     Math.random = () => 0.99;
 
     const groundDrops = [];
@@ -77,22 +75,25 @@ try {
     NpcRewards.call(world, botSession, npc);
 
     assert.deepStrictEqual(groundDrops, [
-        { selfId: 123, amount: 1 },
+        { selfId: 955, amount: 1 },
+        { selfId: 955, amount: 1 },
+        { selfId: 955, amount: 1 },
         { selfId: 1865, amount: 3 }
-    ], 'scaled drops must clamp a weapon to one while preserving a material stack');
+    ], 'scaled non-stackable drops must spawn separate instances while stackable drops stay consolidated');
     assert.deepStrictEqual(observedDrops, [
-        { selfId: 123, amount: 1 },
+        { selfId: 955, amount: 3 },
         { selfId: 1865, amount: 3 }
-    ], 'loot observers must receive canonical non-stackable and stackable amounts');
+    ], 'loot observers must receive the complete scaled amount for both item kinds');
     assert.deepStrictEqual(directAwards, [
-        { selfId: 123, amount: 1 },
+        { selfId: 955, amount: 1 },
+        { selfId: 955, amount: 1 },
+        { selfId: 955, amount: 1 },
         { selfId: 1865, amount: 3 }
-    ], 'bot direct rewards must clamp equipment without reducing resource stacks');
+    ], 'bot direct rewards must persist non-stackables separately without splitting resource stacks');
 } finally {
     DataCache.fetchNpcRewardsFromSelfId = originalFetchRewards;
     DataCache.fetchItemFromSelfId = originalFetchItem;
     ProgressionRates.rewardGroupRoll = originalRewardGroupRoll;
-    ProgressionRates.scaleAmount = originalScaleAmount;
     BotLootEtiquette.observeDrop = originalObserveDrop;
     PartyCompanionService.queueRandomGroundPickup = originalQueueGroundPickup;
     Math.random = originalRandom;

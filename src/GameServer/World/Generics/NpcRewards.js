@@ -37,15 +37,33 @@ function maybeBragAboutLoot(session, selfId, amount) {
     }
 }
 
-function awardDirect(world, session, selfId, amount) {
-    world.purchaseItem(session, selfId, amount);
+function awardDirect(world, session, selfId, amount, stackable) {
+    if (stackable) {
+        world.purchaseItem(session, selfId, amount);
+    } else {
+        for (let index = 0; index < amount; index++) {
+            world.purchaseItem(session, selfId, 1);
+        }
+    }
     maybeBragAboutLoot(session, selfId, amount);
 }
 
-function normalizeDropAmount(selfId, amount, callback) {
+function awardDrop(world, session, npc, selfId, amount) {
     DataCache.fetchItemFromSelfId(selfId, (itemDetails) => {
         const stackable = utils.crushOb(itemDetails).stackable === true;
-        callback(stackable ? amount : 1);
+        if (isBotSession(session) && !(session.partyCompanion === true && session.followPlayerSession)) {
+            awardDirect(world, session, selfId, amount, stackable);
+            return;
+        }
+
+        const instances = stackable ? 1 : amount;
+        const instanceAmount = stackable ? amount : 1;
+        for (let index = 0; index < instances; index++) {
+            spawnGroundDrop(world, session, npc, selfId, instanceAmount);
+        }
+        if (!isBotSession(session)) {
+            BotLootEtiquette.observeDrop(session, npc, selfId, amount);
+        }
     });
 }
 
@@ -79,28 +97,10 @@ function npcRewards(session, npc) {
         rewards.forEach((reward) => {
             const groupRoll = ProgressionRates.rewardGroupRoll(reward, 'drop', rewardContext);
             if (groupRoll.hit) {
-                let number = Math.random() * 100;
-                let rewardPartition = 0;
-
-                for (const item of reward.items) {
-                    rewardPartition += item.chance;
-
-                    if (number <= rewardPartition) { // TODO: Remove locZ hack at some point
-                        const baseAmount = utils.oneFromSpan(item.min, item.max);
-                        const scaledAmount = ProgressionRates.scaleAmount(baseAmount, groupRoll.amountMultiplier);
-                        normalizeDropAmount(item.selfId, scaledAmount, (amount) => {
-                            if (isBotSession(session) && !(session.partyCompanion === true && session.followPlayerSession)) {
-                                awardDirect(this, session, item.selfId, amount);
-                            } else {
-                                spawnGroundDrop(this, session, npc, item.selfId, amount);
-                                if (!isBotSession(session)) {
-                                    BotLootEtiquette.observeDrop(session, npc, item.selfId, amount);
-                                }
-                            }
-                        });
-                        break;
-                    }
-                }
+                const item = ProgressionRates.selectDropItem(reward, groupRoll.itemRate);
+                if (!item) return;
+                const amount = ProgressionRates.rollDropAmount(reward, item, groupRoll.itemRate);
+                awardDrop(this, session, npc, item.selfId, amount);
             }
         });
     });

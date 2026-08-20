@@ -1,12 +1,6 @@
 const DataCache = invoke('GameServer/DataCache');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 
-function randInt(rng, min, max) {
-    const low = Math.max(0, Number(min) || 0);
-    const high = Math.max(low, Number(max) || low);
-    return Math.floor(rng() * (high - low + 1)) + low;
-}
-
 function rewardDataForSpot(spot, rng, npcSelfId = 0) {
     const entries = spot?.npcEntries?.length
         ? spot.npcEntries
@@ -45,16 +39,6 @@ function rewardDataForSpot(spot, rng, npcSelfId = 0) {
     return candidates[candidates.length - 1].reward;
 }
 
-function selectItem(items, rng) {
-    let partition = 0;
-    const roll = rng() * 100;
-    for (const item of items || []) {
-        partition += Number(item.chance || 0);
-        if (roll <= partition) return item;
-    }
-    return null;
-}
-
 function itemSnapshot(item, amount, sourceMobLevel = 0) {
     const template = (DataCache.items || []).find((entry) => Number(entry.selfId) === Number(item.selfId));
     if (!template || template.template?.kind === 'Other.Quest') return null;
@@ -89,9 +73,9 @@ function rollForFight({ spot, killerLevel, npcSelfId = 0, rng = Math.random, max
         }, rng);
         if (!groupRoll.hit) continue;
 
-        const item = selectItem(group.items, rng);
+        const item = ProgressionRates.selectDropItem(group, groupRoll.itemRate, rng);
         if (!item || Number(item.selfId) === 57) continue;
-        const amount = ProgressionRates.scaleAmount(randInt(rng, item.min, item.max), groupRoll.amountMultiplier, rng);
+        const amount = ProgressionRates.rollDropAmount(group, item, groupRoll.itemRate, rng);
         const snapshot = itemSnapshot(item, amount, defeatedNpcLevel);
         if (snapshot) drops.push(snapshot);
     }

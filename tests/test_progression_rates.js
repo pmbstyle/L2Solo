@@ -6,6 +6,7 @@ const ProgressionRates = invoke('GameServer/ProgressionRates');
 const DataCache = invoke('GameServer/DataCache');
 const ExperienceReward = invoke('GameServer/Actor/Generics/ExperienceReward');
 const SendPacket = invoke('Packet/Send');
+const raidRewards = require('../data/Npcs/Rewards/c4_raid_bosses.json');
 const originalRate = process.env.L2NODE_PROGRESSION_RATE;
 
 DataCache.init();
@@ -46,6 +47,16 @@ assert.strictEqual(rareHit.amountMultiplier, 1);
 const rareMiss = ProgressionRates.rollGroup(0.5, profile.drop, () => 0.051);
 assert.strictEqual(rareMiss.hit, false);
 
+const madnessGroup = raidRewards.find((npc) => npc.selfId === 10378).rewards[1];
+const enchantWeaponD = madnessGroup.items.find((item) => item.selfId === 955);
+const rawEnchantChance = ProgressionRates.dropItemBaseChance(madnessGroup, enchantWeaponD);
+assert(Math.abs(rawEnchantChance - 38.3035) < 0.000001, 'Madness Beast EWD must reconstruct its sourced 38.3035% chance');
+assert.strictEqual(ProgressionRates.dropItemSelectionWeight(madnessGroup, enchantWeaponD, 10), 100, 'x10 item selection weight must saturate at 100%');
+assert.strictEqual(ProgressionRates.selectDropItem(madnessGroup, 10, () => 0), enchantWeaponD, 'the high-rate category selector must use balanced item weights');
+assert.strictEqual(ProgressionRates.selectDropItem(madnessGroup, 10, () => 0.4).selfId, 956, 'high-rate balancing must not retain the x1 EWD category share after its weight saturates');
+assert.strictEqual(ProgressionRates.rollDropAmount(madnessGroup, enchantWeaponD, 10, () => 0.83036), 3, 'x10 EWD must produce three items when the 83.035% overflow roll misses');
+assert.strictEqual(ProgressionRates.rollDropAmount(madnessGroup, enchantWeaponD, 10, () => 0.83034), 4, 'x10 EWD must produce a fourth item when the 83.035% overflow roll hits');
+
 const noDeepBlue = ProgressionRates.deepBlueRule({ npcLevel: 20, killerLevel: 28, attackerLevels: [27] });
 assert.strictEqual(noDeepBlue.active, false);
 assert.strictEqual(noDeepBlue.chanceMultiplier, 1);
@@ -68,6 +79,7 @@ assert.strictEqual(deepBlueAdena.hit, true);
 const deepBlueItem = ProgressionRates.rewardGroupRoll({ overall: 100, items: [{ selfId: 1000 }] }, 'drop', { npcLevel: 20, killerLevel: 29 }, () => 0.31);
 assert.strictEqual(deepBlueItem.hit, true);
 assert.strictEqual(deepBlueItem.amountMultiplier, 10);
+assert.strictEqual(deepBlueItem.itemRate, profile.drop, 'deep-blue penalties must not reduce selected-item high-rate overflow');
 
 const summonOwner = ProgressionRates.deepBlueRule({ npcLevel: 20, killerLevel: 40, attackerLevels: [10] });
 assert.strictEqual(summonOwner.highestLevel, 40);
