@@ -17,6 +17,8 @@ const metrics = {
     reasonCounts: new Map()
 };
 
+let founderScanOffset = 0;
+
 function number(value, fallback = 0) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
@@ -87,8 +89,9 @@ function candidateFilterSql() {
         AND COALESCE(json_extract(CASE WHEN json_valid(COALESCE(life.statsJson, '{}')) THEN life.statsJson ELSE '{}' END, '$.craftShop'), '') = ''`;
 }
 
-async function candidateProjection(limit = 512) {
+async function candidateProjection(limit = 512, offset = 0) {
     const safeLimit = Math.max(1, Math.min(2000, Math.floor(number(limit, 512))));
+    const safeOffset = Math.max(0, Math.floor(number(offset)));
     const rows = await Database.execute([`
         SELECT c.id AS characterId, c.name, c.username, c.classId, c.level, c.clanId,
                life.accountName, life.activity, life.phase, life.statsJson,
@@ -98,7 +101,7 @@ async function candidateProjection(limit = 512) {
         LEFT JOIN bot_personas persona ON persona.characterId = c.id
         WHERE ${candidateFilterSql()}
         ORDER BY c.level DESC, c.id ASC
-        LIMIT ${safeLimit}
+        LIMIT ${safeLimit} OFFSET ${safeOffset}
     `, []], 'clan-simulation:founder-projection');
     return rows.map(normalizeCandidate).filter((candidate) => !Policy.isStaticService(candidate));
 }
@@ -261,17 +264,28 @@ const ClanSimulationService = {
 
     resolveBatch(limit = Config.resolveBatchSize, options = {}) {
         if (!Config.enabled) return Promise.resolve({ attempted: 0, created: 0, joined: 0, blocked: 0 });
-        return candidateProjection(limit).then(async (candidates) => {
+        const safeLimit = Math.max(1, Math.min(2000, Math.floor(number(limit, Config.resolveBatchSize))));
+        const scanOffset = founderScanOffset;
+        return candidateProjection(safeLimit, scanOffset).then(async (candidates) => {
+            if (!candidates.length && scanOffset > 0) {
+                founderScanOffset = 0;
+                return candidateProjection(safeLimit, 0);
+            }
+            return candidates;
+        }).then(async (candidates) => {
             const clans = await autonomousClanProjection();
+            if (!candidates.length) return { attempted: 0, created: 0, joined: 0, blocked: 0 };
             const pool = candidates;
             const deadlineAt = Date.now() + Math.max(1, number(options.budgetMs, Config.resolveBudgetMs));
             const summary = { attempted: 0, created: 0, joined: 0, blocked: 0 };
             const reservedIds = new Set();
+            let processed = 0;
             for (const candidate of candidates) {
                 if (Date.now() >= deadlineAt) {
                     metrics.budgetStops += 1;
                     break;
                 }
+                processed += 1;
                 if (reservedIds.has(candidate.characterId)) continue;
                 const availablePool = pool.filter((entry) => !reservedIds.has(entry.characterId));
                 const result = await resolveCandidate(candidate, { clans, pool: availablePool });
@@ -294,6 +308,8 @@ const ClanSimulationService = {
                     });
                 } else summary.blocked += 1;
             }
+            founderScanOffset += processed;
+            if (processed >= candidates.length && candidates.length < safeLimit) founderScanOffset = 0;
             return summary;
         });
     },
@@ -312,6 +328,7 @@ const ClanSimulationService = {
     },
 
     resetMetrics() {
+        founderScanOffset = 0;
         Object.keys(metrics).forEach((key) => {
             if (metrics[key] instanceof Map) metrics[key].clear();
             else metrics[key] = 0;
