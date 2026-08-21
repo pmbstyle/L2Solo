@@ -27,6 +27,10 @@
                         <span aria-hidden="true">♜</span>
                         Raid bosses <b id="raidBossAliveCount">0</b>
                     </button>
+                    <button class="rankings-button clan-button" id="openClans" type="button" aria-haspopup="dialog" aria-controls="clansModal">
+                        <span aria-hidden="true">♘</span>
+                        Clans <b id="clanCount">0</b>
+                    </button>
                     <button class="icon-button" id="fitButton" title="Fit all points" aria-label="Fit all points">
                         <span>⌖</span>
                     </button>
@@ -240,6 +244,49 @@
             <div class="raid-boss-summary" id="raidBossSummary">Waiting for raid-boss data.</div>
             <div class="raid-boss-list-head"><span id="raidBossScope">0 bosses</span><span>Click an in-world boss to center the map</span></div>
             <div class="raid-boss-list" id="raidBossList" role="list"></div>
+        </section>
+    </div>
+
+    <div class="rankings-backdrop" id="clansModal" role="dialog" aria-modal="true" aria-labelledby="clansTitle" hidden>
+        <section class="rankings-modal clans-modal">
+            <header class="rankings-header">
+                <div>
+                    <span class="section-kicker">World society</span>
+                    <h2 id="clansTitle">Clans</h2>
+                    <p>Track clan progression, bot membership, shared resources, and the current operation.</p>
+                </div>
+                <button class="rankings-close" id="closeClans" type="button" aria-label="Close clans">×</button>
+            </header>
+
+            <div class="clan-summary" id="clanSummary">Waiting for clan data.</div>
+            <div class="clan-workspace">
+                <section class="clan-directory" aria-label="Clan directory">
+                    <div class="clan-controls">
+                        <div class="ranking-tabs" id="clanSortTabs" role="group" aria-label="Clan sort order">
+                            <button class="ranking-tab is-active" type="button" aria-pressed="true" data-clan-sort="level">Level</button>
+                            <button class="ranking-tab" type="button" aria-pressed="false" data-clan-sort="members">Members</button>
+                            <button class="ranking-tab" type="button" aria-pressed="false" data-clan-sort="online">Online</button>
+                        </div>
+                        <label class="clan-search">
+                            <span aria-hidden="true">⌕</span>
+                            <input id="clanSearch" type="search" placeholder="Find a clan…" autocomplete="off">
+                        </label>
+                    </div>
+                    <div class="clan-list-head">
+                        <span id="clanScope">0 clans</span>
+                        <span>Sorted by level</span>
+                    </div>
+                    <div class="clan-list" id="clanList" role="list"></div>
+                </section>
+
+                <section class="clan-detail" id="clanDetail" aria-live="polite">
+                    <div class="inspector-empty">
+                        <span class="empty-glyph">♘</span>
+                        <strong>Select a clan</strong>
+                        <p>Open a clan to inspect its bots, goal, warehouse, and operation history.</p>
+                    </div>
+                </section>
+            </div>
         </section>
     </div>
 

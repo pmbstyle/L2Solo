@@ -29,7 +29,19 @@ const state = {
     raidBossFilter: 'all',
     raidBossSearch: '',
     selectedRaidBossId: null,
-    raidBossFocusReturn: null
+    raidBossFocusReturn: null,
+    clanOpen: false,
+    clanSort: 'level',
+    clanSearch: '',
+    clanMemberFilter: 'bots',
+    clanDirectory: null,
+    selectedClanId: null,
+    clanDetail: null,
+    clanDetailLoading: false,
+    clanError: null,
+    clanRequest: 0,
+    clanLastLoadedAt: 0,
+    clanFocusReturn: null
 };
 
 const COLORS = {
@@ -149,7 +161,17 @@ const els = {
     raidBossSummary: document.querySelector('#raidBossSummary'),
     raidBossScope: document.querySelector('#raidBossScope'),
     raidBossList: document.querySelector('#raidBossList'),
-    raidBossAliveCount: document.querySelector('#raidBossAliveCount')
+    raidBossAliveCount: document.querySelector('#raidBossAliveCount'),
+    openClans: document.querySelector('#openClans'),
+    closeClans: document.querySelector('#closeClans'),
+    clansModal: document.querySelector('#clansModal'),
+    clanCount: document.querySelector('#clanCount'),
+    clanSummary: document.querySelector('#clanSummary'),
+    clanSortTabs: document.querySelector('#clanSortTabs'),
+    clanSearch: document.querySelector('#clanSearch'),
+    clanScope: document.querySelector('#clanScope'),
+    clanList: document.querySelector('#clanList'),
+    clanDetail: document.querySelector('#clanDetail')
 };
 
 const DEFAULT_TILES = {
@@ -518,6 +540,7 @@ function renderRankings() {
 
 function openRankings() {
     if (state.raidBossOpen) closeRaidBosses();
+    if (state.clanOpen) closeClans();
     state.rankingOpen = true;
     state.rankingFocusReturn = document.activeElement;
     renderRankings();
@@ -530,13 +553,14 @@ function closeRankings() {
     if (!state.rankingOpen) return;
     state.rankingOpen = false;
     els.rankingsModal.hidden = true;
-    document.body.classList.remove('rankings-open');
+    if (!state.raidBossOpen && !state.clanOpen) document.body.classList.remove('rankings-open');
     state.rankingFocusReturn?.focus?.();
     state.rankingFocusReturn = null;
 }
 
 function openRaidBosses() {
     if (state.rankingOpen) closeRankings();
+    if (state.clanOpen) closeClans();
     state.raidBossOpen = true;
     state.raidBossFocusReturn = document.activeElement;
     renderRaidBosses();
@@ -549,9 +573,220 @@ function closeRaidBosses() {
     if (!state.raidBossOpen) return;
     state.raidBossOpen = false;
     els.raidBossesModal.hidden = true;
-    if (!state.rankingOpen) document.body.classList.remove('rankings-open');
+    if (!state.rankingOpen && !state.clanOpen) document.body.classList.remove('rankings-open');
     state.raidBossFocusReturn?.focus?.();
     state.raidBossFocusReturn = null;
+}
+
+function clanItems() {
+    return Array.isArray(state.clanDirectory?.clans) ? state.clanDirectory.clans : [];
+}
+
+function filteredClans() {
+    const query = String(state.clanSearch || '').trim().toLowerCase();
+    return clanItems().filter((clan) => {
+        if (!query) return true;
+        return [clan.name, clan.leaderName, clan.level, clan.memberCount, clan.botMembers]
+            .filter((value) => value !== null && value !== undefined)
+            .join(' ')
+            .toLowerCase()
+            .includes(query);
+    }).sort((left, right) => {
+        const primary = state.clanSort === 'members'
+            ? Number(right.memberCount || 0) - Number(left.memberCount || 0)
+            : state.clanSort === 'online'
+                ? Number(right.onlineMembers || 0) - Number(left.onlineMembers || 0)
+                : Number(right.level || 0) - Number(left.level || 0);
+        return primary
+            || Number(right.memberCount || 0) - Number(left.memberCount || 0)
+            || String(left.name).localeCompare(String(right.name));
+    });
+}
+
+function clanSortLabel() {
+    return state.clanSort === 'members' ? 'members' : state.clanSort === 'online' ? 'online now' : 'level';
+}
+
+function renderClans() {
+    const directory = state.clanDirectory;
+    const totals = directory?.totals || { members: 0, bots: 0, players: 0, online: 0, autonomous: 0 };
+    const clans = filteredClans();
+    if (els.clanCount) els.clanCount.textContent = Number(directory?.total || 0).toLocaleString();
+    if (els.clanSummary) {
+        els.clanSummary.textContent = directory
+            ? `${number(directory.total)} clans · ${number(totals.bots)} bots · ${number(totals.online)} online · ${number(totals.autonomous)} autonomous`
+            : 'Waiting for clan data.';
+    }
+    if (els.clanScope) {
+        els.clanScope.textContent = directory
+            ? `${number(clans.length)} ${clans.length === 1 ? 'clan' : 'clans'}`
+            : '0 clans';
+    }
+    const sortHint = els.clanList?.previousElementSibling?.querySelector('span:last-child');
+    if (sortHint) sortHint.textContent = `Sorted by ${clanSortLabel()}`;
+    if (!els.clanList) return;
+    if (state.clanError && !directory) {
+        els.clanList.innerHTML = `<div class="list-empty">Clan data failed: ${text(state.clanError)}</div>`;
+        renderClanDetail();
+        return;
+    }
+    els.clanList.innerHTML = clans.length ? clans.map((clan) => `
+        <button class="clan-row${Number(clan.id) === Number(state.selectedClanId) ? ' is-selected' : ''}" type="button" data-clan-id="${escapeHtml(clan.id)}">
+            <span class="clan-level">L${number(clan.level, 0)}</span>
+            <span class="clan-identity">
+                <strong>${text(clan.name, 'Unnamed clan')}</strong>
+                <span>${text(clan.leaderName, 'Unknown leader')} · ${number(clan.botMembers)}/${number(clan.memberCount)} bots</span>
+            </span>
+            <span class="clan-row-side"><strong>${number(clan.memberCount)}</strong><span>${number(clan.onlineMembers)} online</span></span>
+        </button>
+    `).join('') : '<div class="list-empty">No clans match this search.</div>';
+    renderClanDetail();
+}
+
+function clanGoalSummary(goal) {
+    if (!goal) return { title: 'No active goal', meta: 'Waiting for the next clan decision' };
+    const target = goal.target?.itemName || goal.target?.npcName || goal.plan?.label || goal.type || 'operation';
+    const progress = goal.required > 0 ? `${number(goal.progress)}/${number(goal.required)}` : 'ready';
+    return {
+        title: `${target} · ${progress}`,
+        meta: `${goal.status || 'active'}${goal.plan?.kind ? ` · ${goal.plan.kind}` : ''}${goal.plan?.reasonCode ? ` · ${goal.plan.reasonCode}` : ''}`
+    };
+}
+
+function renderClanDetail() {
+    if (!els.clanDetail) return;
+    const detail = state.clanDetail;
+    if (state.clanDetailLoading && !detail) {
+        els.clanDetail.innerHTML = '<div class="inspector-empty"><span class="loading-orbit"></span><strong>Loading clan</strong><p>Reading members and durable clan state.</p></div>';
+        return;
+    }
+    if (!detail?.clan) {
+        els.clanDetail.innerHTML = state.clanError
+            ? `<div class="inspector-empty"><span class="empty-glyph">!</span><strong>Clan unavailable</strong><p>${text(state.clanError)}</p></div>`
+            : '<div class="inspector-empty"><span class="empty-glyph">♘</span><strong>Select a clan</strong><p>Open a clan to inspect its bots, goal, warehouse, and operation history.</p></div>';
+        return;
+    }
+    const clan = detail.clan;
+    const goal = clanGoalSummary(clan.goal);
+    const members = (detail.members || []).filter((member) => {
+        if (state.clanMemberFilter === 'online') return member.online;
+        if (state.clanMemberFilter === 'all') return true;
+        return member.isBot;
+    });
+    const warehouse = clan.warehouse || {};
+    const operation = detail.operation;
+    const events = (detail.events || []).slice(0, 6);
+    els.clanDetail.innerHTML = `
+        <div class="clan-detail-header">
+            <div>
+                <span class="section-kicker">${clan.autonomous ? 'Autonomous clan' : 'Player clan'}</span>
+                <h3>${text(clan.name, 'Unnamed clan')}</h3>
+                <p>Level ${number(clan.level, 0)} · leader ${text(clan.leaderName, 'Unknown')} · ${number(clan.onlineMembers)} online now</p>
+            </div>
+            <span class="clan-level-badge">L${number(clan.level, 0)}</span>
+        </div>
+        <div class="clan-metric-grid">
+            <div><span>Members</span><strong>${number(clan.memberCount)}</strong><small>${number(clan.botMembers)} bots</small></div>
+            <div><span>Average level</span><strong>${number(clan.averageLevel)}</strong><small>range ${number(clan.lowestLevel)}–${number(clan.highestLevel)}</small></div>
+            <div><span>Warehouse</span><strong>${compactNumber(warehouse.adena)} A</strong><small>${number(warehouse.bloodMarks)} Blood Marks</small></div>
+            <div><span>Operation</span><strong>${operation ? text(operation.status, 'active') : 'Idle'}</strong><small>${operation ? text(operation.type, 'operation') : 'No active party'}</small></div>
+        </div>
+        <div class="clan-info-grid">
+            <section class="clan-info-block">
+                <div class="clan-block-title"><span>Current goal</span><b>${text(goal.meta)}</b></div>
+                <strong class="clan-goal-title">${text(goal.title)}</strong>
+                <p>${clan.market?.openDemands ? `${number(clan.market.openDemands)} market demand(s) open · ${number(clan.market.requestedUnits)} unit(s) requested` : 'No open market demand.'}</p>
+            </section>
+            <section class="clan-info-block">
+                <div class="clan-block-title"><span>Progression</span><b>${number(clan.contributions?.length || 0)} levels funded</b></div>
+                <p>${(clan.contributions || []).length ? clan.contributions.map((entry) => `L${number(entry.targetLevel)} · ${number(entry.amount)} A · ${number(entry.entries)} contributors`).join(' · ') : 'No contribution ledger entries yet.'}</p>
+            </section>
+        </div>
+        <div class="clan-member-toolbar">
+            <div class="ranking-tabs" id="clanMemberTabs" role="group" aria-label="Clan member filter">
+                ${['bots', 'all', 'online'].map((filter) => `<button class="ranking-tab${state.clanMemberFilter === filter ? ' is-active' : ''}" type="button" aria-pressed="${state.clanMemberFilter === filter}" data-clan-member-filter="${filter}">${filter === 'bots' ? 'Bots' : filter === 'all' ? 'All members' : 'Online'}</button>`).join('')}
+            </div>
+            <span>${number(members.length)} shown</span>
+        </div>
+        <div class="clan-member-list" role="list">
+            ${members.length ? members.map((member) => `
+                <button class="clan-member-row" type="button" data-clan-member-id="${escapeHtml(member.id)}" data-clan-member-kind="${escapeHtml(member.kind)}">
+                    <i class="phase-dot ${member.online ? 'is-online' : ''}"></i>
+                    <span class="clan-member-main"><strong>${text(member.isLeader ? `♛ ${member.name}` : member.name)}</strong><span>${text(member.className, 'Unknown class')} · ${text(roleLabel(member.role || 'member'))} · Lv ${number(member.level, '?')}</span></span>
+                    <span class="clan-member-state"><strong>${text(activityLabel(member.activity || member.phase), member.phase)}</strong><span>${text(member.region, 'Unknown location')}</span></span>
+                </button>
+            `).join('') : '<div class="list-empty">No members match this view.</div>'}
+        </div>
+        <div class="clan-events">
+            <div class="clan-block-title"><span>Recent clan events</span><b>${number(events.length)} shown</b></div>
+            ${events.length ? events.map((event) => `<div class="clan-event-row"><strong>${text(event.eventType, 'event')}</strong><span>${text(event.plan || event.reasonCode, 'state update')}</span><time>${text(formatTime(event.occurredAt))}</time></div>`).join('') : '<p>No durable clan events yet.</p>'}
+        </div>
+    `;
+}
+
+async function loadClanDetail(id) {
+    const clanId = Number(id);
+    if (!clanId) return;
+    const requestId = ++state.clanRequest;
+    state.selectedClanId = clanId;
+    state.clanDetail = null;
+    state.clanDetailLoading = true;
+    state.clanError = null;
+    renderClans();
+    try {
+        const response = await fetch(`/observer/api/clan/${encodeURIComponent(clanId)}`, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const detail = await response.json();
+        if (requestId !== state.clanRequest || Number(state.selectedClanId) !== clanId) return;
+        state.clanDetail = detail;
+    } catch (error) {
+        if (requestId === state.clanRequest) state.clanError = error.message;
+    } finally {
+        if (requestId === state.clanRequest) {
+            state.clanDetailLoading = false;
+            renderClans();
+        }
+    }
+}
+
+async function loadClanDirectory({ force = false, selectFirst = false } = {}) {
+    if (!force && Date.now() - state.clanLastLoadedAt < 10000) return;
+    try {
+        const response = await fetch('/observer/api/clans', { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const directory = await response.json();
+        state.clanDirectory = directory;
+        state.clanLastLoadedAt = Date.now();
+        state.clanError = null;
+        const selectedExists = clanItems().some((clan) => Number(clan.id) === Number(state.selectedClanId));
+        if ((selectFirst || !selectedExists) && clanItems().length) state.selectedClanId = Number(clanItems()[0].id);
+        renderClans();
+        if (state.clanOpen && state.selectedClanId && (!state.clanDetail || selectFirst)) loadClanDetail(state.selectedClanId);
+    } catch (error) {
+        state.clanError = error.message;
+        renderClans();
+    }
+}
+
+function openClans() {
+    if (state.rankingOpen) closeRankings();
+    if (state.raidBossOpen) closeRaidBosses();
+    state.clanOpen = true;
+    state.clanFocusReturn = document.activeElement;
+    els.clansModal.hidden = false;
+    document.body.classList.add('rankings-open');
+    renderClans();
+    loadClanDirectory({ force: true, selectFirst: true });
+    requestAnimationFrame(() => els.closeClans.focus());
+}
+
+function closeClans() {
+    if (!state.clanOpen) return;
+    state.clanOpen = false;
+    els.clansModal.hidden = true;
+    if (!state.rankingOpen && !state.raidBossOpen) document.body.classList.remove('rankings-open');
+    state.clanFocusReturn?.focus?.();
+    state.clanFocusReturn = null;
 }
 
 function eligibleActors() {
@@ -1736,6 +1971,7 @@ async function refresh() {
         renderSnapshot();
         if (state.selectedId && !state.detailLoading) loadActorDetail(state.selectedId.id, state.selectedId.kind, false);
         if (state.rankingOpen) renderRankings();
+        loadClanDirectory();
     } catch (error) {
         els.serverLine.textContent = `Observer snapshot failed: ${error.message}`;
     }
@@ -1745,6 +1981,8 @@ els.openRankings?.addEventListener('click', openRankings);
 els.closeRankings?.addEventListener('click', closeRankings);
 els.openRaidBosses?.addEventListener('click', openRaidBosses);
 els.closeRaidBosses?.addEventListener('click', closeRaidBosses);
+els.openClans?.addEventListener('click', openClans);
+els.closeClans?.addEventListener('click', closeClans);
 
 els.rankingsModal?.addEventListener('click', (event) => {
     const actor = event.target.closest('[data-ranking-id]');
@@ -1763,6 +2001,45 @@ els.raidBossesModal?.addEventListener('click', (event) => {
         return;
     }
     if (event.target === els.raidBossesModal) closeRaidBosses();
+});
+
+els.clansModal?.addEventListener('click', (event) => {
+    const member = event.target.closest('[data-clan-member-id]');
+    if (member) {
+        selectActor(member.dataset.clanMemberId, member.dataset.clanMemberKind || 'bot', true);
+        closeClans();
+        return;
+    }
+    const memberFilter = event.target.closest('[data-clan-member-filter]');
+    if (memberFilter) {
+        state.clanMemberFilter = memberFilter.dataset.clanMemberFilter || 'bots';
+        renderClanDetail();
+        return;
+    }
+    const clan = event.target.closest('[data-clan-id]');
+    if (clan) {
+        loadClanDetail(clan.dataset.clanId);
+        return;
+    }
+    if (event.target === els.clansModal) closeClans();
+});
+
+els.clanSortTabs?.addEventListener('click', (event) => {
+    const tab = event.target.closest('[data-clan-sort]');
+    if (!tab) return;
+    state.clanSort = tab.dataset.clanSort || 'level';
+    els.clanSortTabs.querySelectorAll('[data-clan-sort]').forEach((item) => {
+        const active = item === tab;
+        item.classList.toggle('is-active', active);
+        item.setAttribute('aria-pressed', String(active));
+    });
+    renderClans();
+});
+
+els.clanSearch?.addEventListener('input', (event) => {
+    state.clanSearch = String(event.target.value || '').trim().toLowerCase();
+    if (els.clanList) els.clanList.scrollTop = 0;
+    renderClans();
 });
 
 els.raidBossFilters?.addEventListener('click', (event) => {
@@ -1949,6 +2226,11 @@ document.addEventListener('keydown', (event) => {
         closeRankings();
         return;
     }
+    if (event.key === 'Escape' && state.clanOpen) {
+        event.preventDefault();
+        closeClans();
+        return;
+    }
     if (state.rankingOpen) {
         if (event.key === 'Tab') {
             const focusable = [...els.rankingsModal.querySelectorAll('button:not([disabled]), select:not([disabled])')]
@@ -1968,6 +2250,22 @@ document.addEventListener('keydown', (event) => {
     if (state.raidBossOpen) {
         if (event.key === 'Tab') {
             const focusable = [...els.raidBossesModal.querySelectorAll('button:not([disabled]), input:not([disabled])')]
+                .filter((element) => !element.hidden && element.offsetParent !== null);
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last?.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first?.focus();
+            }
+        }
+        return;
+    }
+    if (state.clanOpen) {
+        if (event.key === 'Tab') {
+            const focusable = [...els.clansModal.querySelectorAll('button:not([disabled]), input:not([disabled])')]
                 .filter((element) => !element.hidden && element.offsetParent !== null);
             const first = focusable[0];
             const last = focusable[focusable.length - 1];

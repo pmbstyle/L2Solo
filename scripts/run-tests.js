@@ -323,6 +323,7 @@ const tests = [
     'tests/test_world_observer_raid_bosses.js',
     'tests/test_world_observer_cache.js',
     'tests/test_world_observer_equipment.js',
+    'tests/test_world_observer_clans.js',
     'tests/test_world_npc_grid.js',
     'tests/test_toggle_skills.js',
     'tests/test_ui_test_window.js'
