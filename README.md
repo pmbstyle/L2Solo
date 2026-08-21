@@ -98,7 +98,7 @@ Clean C4 client protocol 656
 
 You will need:
 
-- Node.js 22.5+
+- Node.js v22.15+
 - A [Lineage II C4 client](https://drive.google.com/file/d/1u0nW3m9c6Hql8sR9POQAcvglxIno23lv/view?usp=sharing) using protocol 656
 
 ## Quick Start
