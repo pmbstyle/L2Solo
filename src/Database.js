@@ -587,6 +587,144 @@ function applySchemaMigrations() {
                 lastEventId INTEGER NOT NULL DEFAULT 0 CHECK(lastEventId >= 0),
                 updatedAt INTEGER NOT NULL DEFAULT 0
             );
+        `)],
+        [19, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS clan_simulation_clans (
+                clanId INTEGER PRIMARY KEY REFERENCES clans(id) ON DELETE CASCADE,
+                version INTEGER NOT NULL DEFAULT 1,
+                createdAt INTEGER NOT NULL,
+                updatedAt INTEGER NOT NULL,
+                stateJson TEXT NOT NULL DEFAULT '{}'
+            );
+            CREATE INDEX IF NOT EXISTS clan_simulation_clans_updatedAt
+                ON clan_simulation_clans(updatedAt);
+        `)],
+        [20, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS clan_contributions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+                characterId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+                targetLevel INTEGER NOT NULL,
+                amount INTEGER NOT NULL CHECK(amount > 0),
+                source TEXT NOT NULL DEFAULT 'adena',
+                resolveKey TEXT NOT NULL,
+                createdAt INTEGER NOT NULL,
+                UNIQUE(clanId, characterId, targetLevel, resolveKey)
+            );
+            CREATE INDEX IF NOT EXISTS clan_contributions_clan_level
+                ON clan_contributions(clanId, targetLevel, createdAt);
+        `)],
+        [21, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS clan_warehouse_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+                selfId INTEGER NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                kind TEXT NOT NULL DEFAULT '',
+                amount INTEGER NOT NULL DEFAULT 1 CHECK(amount > 0),
+                enchant INTEGER NOT NULL DEFAULT 0 CHECK(enchant >= 0),
+                petData TEXT,
+                reservedAmount INTEGER NOT NULL DEFAULT 0 CHECK(reservedAmount >= 0),
+                createdAt INTEGER NOT NULL DEFAULT 0,
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(clanId, selfId, enchant)
+            );
+            CREATE INDEX IF NOT EXISTS clan_warehouse_items_clan_self
+                ON clan_warehouse_items(clanId, selfId, amount);
+
+            CREATE TABLE IF NOT EXISTS clan_warehouse_ledger (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+                characterId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+                selfId INTEGER NOT NULL,
+                amount INTEGER NOT NULL CHECK(amount > 0),
+                operation TEXT NOT NULL,
+                resolveKey TEXT NOT NULL,
+                warehouseRevision INTEGER NOT NULL DEFAULT 0,
+                createdAt INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(clanId, characterId, selfId, operation, resolveKey)
+            );
+            CREATE INDEX IF NOT EXISTS clan_warehouse_ledger_clan_item
+                ON clan_warehouse_ledger(clanId, selfId, createdAt);
+
+            CREATE TABLE IF NOT EXISTS clan_warehouse_reservations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+                selfId INTEGER NOT NULL,
+                amount INTEGER NOT NULL CHECK(amount > 0),
+                beneficiaryId INTEGER REFERENCES characters(id) ON DELETE SET NULL,
+                goalKey TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'reserved' CHECK(status IN ('reserved', 'released', 'consumed')),
+                createdAt INTEGER NOT NULL DEFAULT 0,
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(clanId, selfId, goalKey)
+            );
+            CREATE INDEX IF NOT EXISTS clan_warehouse_reservations_active
+                ON clan_warehouse_reservations(clanId, selfId, status, updatedAt);
+        `)],
+        [22, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS clan_goal_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+                eventType TEXT NOT NULL,
+                goalType TEXT NOT NULL DEFAULT '',
+                plan TEXT NOT NULL DEFAULT '',
+                reasonCode TEXT NOT NULL DEFAULT '',
+                payloadJson TEXT NOT NULL DEFAULT '{}',
+                occurredAt INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS clan_goal_events_clan_recent
+                ON clan_goal_events(clanId, occurredAt DESC, id DESC);
+
+            CREATE TABLE IF NOT EXISTS clan_market_demands (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+                itemId INTEGER NOT NULL,
+                amount INTEGER NOT NULL CHECK(amount > 0),
+                maxPrice INTEGER NOT NULL CHECK(maxPrice > 0),
+                goalKey TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'fulfilled', 'cancelled')),
+                createdAt INTEGER NOT NULL DEFAULT 0,
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(clanId, itemId, goalKey)
+            );
+            CREATE INDEX IF NOT EXISTS clan_market_demands_item_status
+                ON clan_market_demands(itemId, status, updatedAt);
+        `)],
+        [23, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS clan_operations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+                operationKey TEXT NOT NULL UNIQUE,
+                operationType TEXT NOT NULL,
+                targetNpcId INTEGER NOT NULL DEFAULT 0,
+                leaderId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+                memberIdsJson TEXT NOT NULL DEFAULT '[]',
+                status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'succeeded', 'failed', 'cancelled')),
+                wins INTEGER NOT NULL DEFAULT 0,
+                deaths INTEGER NOT NULL DEFAULT 0,
+                reasonCode TEXT NOT NULL DEFAULT '',
+                rewardJson TEXT NOT NULL DEFAULT '[]',
+                createdAt INTEGER NOT NULL DEFAULT 0,
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                resolvedAt INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS clan_operations_clan_status
+                ON clan_operations(clanId, status, updatedAt);
+
+            CREATE TABLE IF NOT EXISTS clan_operation_members (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                operationId INTEGER NOT NULL REFERENCES clan_operations(id) ON DELETE CASCADE,
+                clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+                characterId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+                status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'released')),
+                reservedAt INTEGER NOT NULL DEFAULT 0,
+                releasedAt INTEGER
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS clan_operation_members_active_character
+                ON clan_operation_members(characterId) WHERE status = 'active';
+            CREATE INDEX IF NOT EXISTS clan_operation_members_operation
+                ON clan_operation_members(operationId, status, characterId);
         `)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
@@ -620,6 +758,171 @@ function all(sql, params = []) {
 function write(sql, params = []) {
     const result = connection.prepare(sql).run(...params);
     return { affectedRows: Number(result.changes || 0), insertId: Number(result.lastInsertRowid || 0) };
+}
+
+const GENERATED_BOT_FILTER = `(
+    c.username LIKE 'bot_pop_%'
+    OR c.username LIKE 'bot_scale_%'
+    OR life.accountName LIKE 'bot_pop_%'
+    OR life.accountName LIKE 'bot_scale_%'
+    OR json_extract(CASE WHEN json_valid(COALESCE(life.statsJson, '{}')) THEN life.statsJson ELSE '{}' END, '$.generatedCold') = 1
+)
+AND c.username NOT LIKE 'bot_craft_%'
+AND COALESCE(life.accountName, '') NOT LIKE 'bot_craft_%'
+AND COALESCE(json_extract(CASE WHEN json_valid(COALESCE(life.statsJson, '{}')) THEN life.statsJson ELSE '{}' END, '$.craftStationId'), '') = ''
+AND COALESCE(json_extract(CASE WHEN json_valid(COALESCE(life.statsJson, '{}')) THEN life.statsJson ELSE '{}' END, '$.craftShop'), '') = ''`;
+
+function jsonObject(raw) {
+    if (!raw) return {};
+    if (typeof raw === 'object' && !Array.isArray(raw)) return { ...raw };
+    try {
+        const value = JSON.parse(raw);
+        return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    } catch (_) {
+        return {};
+    }
+}
+
+function jsonArray(raw) {
+    if (Array.isArray(raw)) return raw;
+    try {
+        const value = JSON.parse(raw || '[]');
+        return Array.isArray(value) ? value : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+function generatedBotRow(row = {}) {
+    const stats = jsonObject(row.statsJson);
+    const accountName = String(row.accountName || row.lifeAccountName || '');
+    const username = String(row.username || '');
+    const staticService = Boolean(stats.craftStationId || stats.craftShop)
+        || /^bot_craft_/i.test(accountName)
+        || /^bot_craft_/i.test(username);
+    const generated = /^bot_(pop|scale)_/i.test(accountName)
+        || /^bot_(pop|scale)_/i.test(username)
+        || stats.generatedCold === true
+        || Number(stats.generatedCold) === 1;
+    return generated && !staticService;
+}
+
+function botPopulationUnsafe() {
+    return one(`SELECT
+        COUNT(DISTINCT c.id) AS population,
+        COUNT(DISTINCT CASE WHEN c.clanId != 0 THEN c.id END) AS botMembers
+        FROM characters c
+        LEFT JOIN bot_life_state life ON life.characterId = c.id
+        WHERE ${GENERATED_BOT_FILTER}`);
+}
+
+function executeReadAutonomousBotMember(characterId, clanId) {
+    return selectOne(`characters`, ['id'], `id = ? AND clanId = ? AND EXISTS (
+        SELECT 1 FROM clan_simulation_clans simulated WHERE simulated.clanId = characters.clanId
+    ) AND (
+        username LIKE 'bot_pop_%'
+        OR username LIKE 'bot_scale_%'
+        OR EXISTS (
+            SELECT 1 FROM bot_life_state life
+            WHERE life.characterId = characters.id
+              AND (
+                  life.accountName LIKE 'bot_pop_%'
+                  OR life.accountName LIKE 'bot_scale_%'
+                  OR json_extract(CASE WHEN json_valid(COALESCE(life.statsJson, '{}')) THEN life.statsJson ELSE '{}' END, '$.generatedCold') = 1
+              )
+              AND COALESCE(life.accountName, '') NOT LIKE 'bot_craft_%'
+              AND COALESCE(json_extract(CASE WHEN json_valid(COALESCE(life.statsJson, '{}')) THEN life.statsJson ELSE '{}' END, '$.craftStationId'), '') = ''
+              AND COALESCE(json_extract(CASE WHEN json_valid(COALESCE(life.statsJson, '{}')) THEN life.statsJson ELSE '{}' END, '$.craftShop'), '') = ''
+        )
+    )`, [Number(characterId), Number(clanId)], 'clan-simulation:bot-member')
+        .then((rows) => !!rows[0]);
+}
+
+function simulationState(raw, clanId, leaderId, memberIds, timestamp) {
+    const value = jsonObject(raw);
+    return {
+        ...value,
+        version: 1,
+        clanId: Number(clanId),
+        leaderId: Number(leaderId),
+        level: Math.max(0, Math.min(3, Number(value.level) || 0)),
+        memberIds: [...new Set(memberIds.map(Number).filter(Boolean))].sort((a, b) => a - b),
+        goal: value.goal || null,
+        contributionLedgerVersion: Math.max(0, Number(value.contributionLedgerVersion) || 0),
+        warehouseRevision: Math.max(0, Number(value.warehouseRevision) || 0),
+        updatedAt: Number(timestamp) || now()
+    };
+}
+
+function syncAdenaSnapshotUnsafe(characterId, amount, event = null) {
+    const row = one('SELECT inventorySummary, statsJson FROM bot_life_state WHERE characterId = ?', [Number(characterId)]);
+    if (!row) return false;
+    const inventory = jsonObject(row.inventorySummary);
+    inventory['57'] = {
+        ...(inventory['57'] || {}),
+        selfId: 57,
+        name: 'Adena',
+        amount: Math.max(0, Number(amount) || 0)
+    };
+    const stats = jsonObject(row.statsJson);
+    if (event) stats.lastClanContribution = { ...event };
+    write(`UPDATE bot_life_state SET adena = ?, inventorySummary = ?, statsJson = ?, updatedAt = ?
+        WHERE characterId = ?`, [
+        Math.max(0, Number(amount) || 0),
+        JSON.stringify(inventory),
+        JSON.stringify(stats),
+        now(),
+        Number(characterId)
+    ]);
+    return true;
+}
+
+function updateColdInventorySnapshotUnsafe(characterId, selfId, event = null, expectedRevision = null) {
+    const id = Number(characterId);
+    const itemId = Number(selfId);
+    const row = one(`SELECT phase, simulationOwner, simulationRevision, partyId,
+            inventorySummary, statsJson
+        FROM bot_life_state WHERE characterId = ?`, [id]);
+    if (!row) return { ok: false, code: 'missing_state' };
+    if (String(row.phase || '') !== 'cold'
+        || String(row.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER
+        || String(row.partyId || '') !== '') {
+        return { ok: false, code: 'stale_snapshot' };
+    }
+    const currentRevision = Number(row.simulationRevision || 0);
+    if (expectedRevision !== null && Number(expectedRevision) !== currentRevision) {
+        return { ok: false, code: 'stale_snapshot', simulationRevision: currentRevision };
+    }
+    const inventory = jsonObject(row.inventorySummary);
+    const physical = Number(one(`SELECT COALESCE(SUM(amount), 0) AS amount
+        FROM items WHERE characterId = ? AND selfId = ? AND amount > 0`, [id, itemId]).amount || 0);
+    const previous = inventory[String(itemId)] || {};
+    inventory[String(itemId)] = {
+        ...previous,
+        selfId: itemId,
+        name: previous.name || (itemId === 57 ? 'Adena' : `Item ${itemId}`),
+        amount: physical
+    };
+    const stats = jsonObject(row.statsJson);
+    if (event) stats.lastClanWarehouseTransfer = { ...event };
+    const nextRevision = currentRevision + 1;
+    const updated = write(`UPDATE bot_life_state
+        SET inventorySummary = ?, statsJson = ?, simulationRevision = ?, updatedAt = ?
+        WHERE characterId = ? AND phase = 'cold'
+          AND simulationOwner = ? AND simulationRevision = ?
+          AND (partyId IS NULL OR partyId = '')`, [
+        JSON.stringify(inventory),
+        JSON.stringify(stats),
+        nextRevision,
+        now(),
+        id,
+        LEGACY_SIMULATION_OWNER,
+        currentRevision
+    ]);
+    if (Number(updated.affectedRows || 0) !== 1) {
+        return { ok: false, code: 'stale_snapshot', simulationRevision: currentRevision };
+    }
+    return { ok: true, simulationRevision: nextRevision, amount: physical };
 }
 
 function applyBufferedCharacterStateUnsafe(characterId, state = {}) {
@@ -2254,6 +2557,1088 @@ const Database = {
 
     updateItemPetData(characterId, id, petData) { return withCharacterFlush(characterId, () => update('items', { petData: JSON.stringify(petData || {}) }, 'id = ? AND characterId = ?', [id, characterId], 'item:pet')); },
     fetchClans() { return select('clans', ['*'], '', [], 'clan:list'); },
+    fetchClanSimulationClans() {
+        return select('clan_simulation_clans', ['*'], '', [], 'clan-simulation:list')
+            .then((rows) => rows.map((row) => ({
+                ...row,
+                state: jsonObject(row.stateJson)
+            })));
+    },
+    isAutonomousClan(clanId) {
+        return selectOne('clan_simulation_clans', ['clanId'], 'clanId = ?', [Number(clanId)], 'clan-simulation:membership')
+            .then((rows) => !!rows[0]);
+    },
+    isAutonomousBotMember(characterId, clanId) {
+        return executeReadAutonomousBotMember(characterId, clanId);
+    },
+    createAutonomousClan({
+        name,
+        leaderId,
+        memberIds = [],
+        stateJson = {},
+        maxBotClans = 40,
+        maxBotMemberShare = 0.70,
+        founderQuorum = 5
+    } = {}) {
+        const uniqueMemberIds = [...new Set(memberIds.map(Number).filter((id) => Number.isSafeInteger(id) && id > 0))]
+            .sort((left, right) => left - right);
+        return inTransaction(() => {
+            if (!String(name || '').trim() || !Number(leaderId) || uniqueMemberIds.length < Number(founderQuorum || 5)) {
+                return { ok: false, code: 'founder_no_quorum' };
+            }
+            if (!uniqueMemberIds.includes(Number(leaderId))) {
+                return { ok: false, code: 'founder_no_quorum' };
+            }
+
+            const autonomousCount = Number(one('SELECT COUNT(*) AS count FROM clan_simulation_clans').count || 0);
+            if (autonomousCount >= Math.max(0, Number(maxBotClans) || 0)) {
+                return { ok: false, code: 'founder_clan_limit' };
+            }
+
+            const placeholders = uniqueMemberIds.map(() => '?').join(', ');
+            const members = all(`SELECT c.id, c.username, c.clanId, life.accountName, life.statsJson
+                FROM characters c
+                LEFT JOIN bot_life_state life ON life.characterId = c.id
+                WHERE c.id IN (${placeholders})`, uniqueMemberIds);
+            if (members.length !== uniqueMemberIds.length) {
+                return { ok: false, code: 'founder_no_quorum' };
+            }
+            if (members.some((member) => Number(member.clanId) !== 0 || !generatedBotRow(member))) {
+                return { ok: false, code: 'founder_population_limit' };
+            }
+
+            const population = botPopulationUnsafe();
+            const maxMembers = Math.floor(Math.max(0, Number(population.population) || 0) * Math.max(0, Math.min(1, Number(maxBotMemberShare) || 0)));
+            const nextBotMembers = Number(population.botMembers) + uniqueMemberIds.length;
+            if (nextBotMembers > maxMembers) {
+                return { ok: false, code: 'founder_population_limit', population: Number(population.population), maxBotMembers: maxMembers };
+            }
+
+            const inserted = write('INSERT INTO clans (name, leaderId) VALUES (?, ?)', [String(name).trim(), Number(leaderId)]);
+            const clanId = Number(inserted.insertId);
+            const update = write(`UPDATE characters
+                SET clanId = ?,
+                    clanPrivileges = CASE WHEN id = ? THEN 2047 ELSE 0 END,
+                    clanJoinExpiryTime = 0,
+                    clanCreateExpiryTime = 0
+                WHERE id IN (${placeholders}) AND clanId = 0`, [clanId, Number(leaderId), ...uniqueMemberIds]);
+            if (update.affectedRows !== uniqueMemberIds.length) throw new Error('autonomous clan member reservation changed');
+
+            const timestamp = now();
+            const state = simulationState(stateJson, clanId, leaderId, uniqueMemberIds, timestamp);
+            write(`INSERT INTO clan_simulation_clans (clanId, version, createdAt, updatedAt, stateJson)
+                VALUES (?, ?, ?, ?, ?)`, [clanId, 1, timestamp, timestamp, JSON.stringify(state)]);
+            return {
+                ok: true,
+                clanId,
+                memberIds: uniqueMemberIds,
+                population: Number(population.population) || 0,
+                botMembers: nextBotMembers,
+                maxBotMembers: maxMembers
+            };
+        }, 'clan-simulation:create').catch((error) => {
+            if (/UNIQUE constraint failed: clans\.name/i.test(String(error.message || ''))) {
+                return { ok: false, code: 'name_exists' };
+            }
+            throw error;
+        });
+    },
+    joinAutonomousClan({
+        clanId,
+        characterId,
+        memberLimit = 10,
+        maxBotMemberShare = 0.70
+    } = {}) {
+        const id = Number(characterId);
+        const targetClanId = Number(clanId);
+        return inTransaction(() => {
+            const simulation = one('SELECT clanId, stateJson FROM clan_simulation_clans WHERE clanId = ?', [targetClanId]);
+            if (!simulation) return { ok: false, code: 'target_not_autonomous' };
+
+            const memberCount = Number(one('SELECT COUNT(*) AS count FROM characters WHERE clanId = ?', [targetClanId]).count || 0);
+            if (memberCount >= Math.max(1, Number(memberLimit) || 10)) {
+                return { ok: false, code: 'join_clan_full' };
+            }
+
+            const candidate = one(`SELECT c.id, c.username, c.clanId, life.accountName, life.statsJson
+                FROM characters c
+                LEFT JOIN bot_life_state life ON life.characterId = c.id
+                WHERE c.id = ?`, [id]);
+            if (!candidate || Number(candidate.clanId) !== 0) return { ok: false, code: 'target_has_clan' };
+            if (!generatedBotRow(candidate)) return { ok: false, code: 'join_static_service_conflict' };
+
+            const population = botPopulationUnsafe();
+            const maxMembers = Math.floor(Math.max(0, Number(population.population) || 0) * Math.max(0, Math.min(1, Number(maxBotMemberShare) || 0)));
+            const nextBotMembers = Number(population.botMembers) + 1;
+            if (nextBotMembers > maxMembers) {
+                return { ok: false, code: 'join_population_limit', population: Number(population.population), maxBotMembers: maxMembers };
+            }
+
+            const updated = write('UPDATE characters SET clanId = ?, clanPrivileges = 0, clanJoinExpiryTime = 0 WHERE id = ? AND clanId = 0', [targetClanId, id]);
+            if (updated.affectedRows !== 1) return { ok: false, code: 'target_has_clan' };
+
+            const timestamp = now();
+            const previousState = jsonObject(simulation.stateJson);
+            const state = simulationState(simulation.stateJson, targetClanId, previousState.leaderId, previousState.memberIds || [], timestamp);
+            state.memberIds = [...new Set([...state.memberIds, id])].sort((left, right) => left - right);
+            write('UPDATE clan_simulation_clans SET updatedAt = ?, stateJson = ? WHERE clanId = ?', [timestamp, JSON.stringify(state), targetClanId]);
+            return {
+                ok: true,
+                clanId: targetClanId,
+                characterId: id,
+                population: Number(population.population) || 0,
+                botMembers: nextBotMembers,
+                maxBotMembers: maxMembers
+            };
+        }, 'clan-simulation:join');
+    },
+    fetchClanContributionSummary(clanId, targetLevel = null) {
+        const params = [Number(clanId)];
+        const levelClause = targetLevel === null || targetLevel === undefined ? '' : ' AND targetLevel = ?';
+        if (levelClause) params.push(Number(targetLevel));
+        return run(`SELECT clanId, targetLevel, COUNT(*) AS entries, COALESCE(SUM(amount), 0) AS amount
+            FROM clan_contributions WHERE clanId = ?${levelClause}
+            GROUP BY clanId, targetLevel ORDER BY targetLevel`, params, 'clan-simulation:contributions')
+            .then((rows) => rows.map((row) => ({
+                clanId: Number(row.clanId),
+                targetLevel: Number(row.targetLevel),
+                entries: Number(row.entries),
+                amount: Number(row.amount)
+            })));
+    },
+    transferClanAdena({
+        clanId,
+        characterId,
+        leaderId,
+        targetLevel = 0,
+        amount,
+        reserve = 0,
+        maxContributionFraction = 0.35,
+        resolveKey,
+        source = 'adena'
+    } = {}) {
+        const clan = Number(clanId);
+        const contributor = Number(characterId);
+        const leader = Number(leaderId);
+        const requested = Math.floor(Number(amount) || 0);
+        const key = String(resolveKey || '').trim();
+        if (!clan || !contributor || !leader || contributor === leader || requested <= 0 || !key) {
+            return Promise.resolve({ ok: false, code: 'contribution_no_disposable_adena' });
+        }
+
+        return withCharacterFlushes([contributor, leader], () => inTransaction(() => {
+            const simulation = one('SELECT clanId FROM clan_simulation_clans WHERE clanId = ?', [clan]);
+            if (!simulation) return { ok: false, code: 'target_not_autonomous' };
+            const clanRow = one('SELECT id, level, leaderId FROM clans WHERE id = ?', [clan]);
+            if (!clanRow || Number(clanRow.level) !== Number(targetLevel) || Number(clanRow.leaderId) !== leader) {
+                return { ok: false, code: 'stale_snapshot' };
+            }
+            const members = all(`SELECT id, clanId FROM characters WHERE id IN (?, ?)`, [contributor, leader]);
+            if (members.length !== 2 || members.some((member) => Number(member.clanId) !== clan)) {
+                return { ok: false, code: 'stale_snapshot' };
+            }
+
+            const existing = one(`SELECT id, amount FROM clan_contributions
+                WHERE clanId = ? AND characterId = ? AND targetLevel = ? AND resolveKey = ?`,
+            [clan, contributor, Number(targetLevel), key]);
+            if (existing) {
+                return {
+                    ok: false,
+                    code: 'contribution_already_applied',
+                    amount: Number(existing.amount),
+                    ledgerId: Number(existing.id)
+                };
+            }
+
+            const sourceRows = all(`SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 ORDER BY id`, [contributor]);
+            const sourceBefore = sourceRows.reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0);
+            const disposable = Math.max(0, sourceBefore - Math.max(0, Math.floor(Number(reserve) || 0)));
+            if (disposable <= 0) return { ok: false, code: 'contribution_no_disposable_adena', sourceBefore, disposable };
+            const fraction = Math.max(0, Math.min(1, Number(maxContributionFraction) || 0));
+            const maxAllowed = Math.min(disposable, Math.floor(disposable * fraction));
+            if (requested > maxAllowed) {
+                return { ok: false, code: 'contribution_reserved', sourceBefore, disposable, maxAllowed };
+            }
+
+            let remaining = requested;
+            sourceRows.forEach((row) => {
+                if (remaining <= 0) return;
+                const current = Math.max(0, Number(row.amount) || 0);
+                const deduction = Math.min(current, remaining);
+                const next = current - deduction;
+                if (next <= 0) write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, contributor]);
+                else write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [next, row.id, contributor]);
+                remaining -= deduction;
+            });
+            if (remaining > 0) throw new Error('clan contribution source changed');
+
+            const leaderRows = all(`SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 ORDER BY id`, [leader]);
+            const leaderBefore = leaderRows.reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0);
+            const leaderAfter = leaderBefore + requested;
+            if (leaderRows.length) {
+                write('UPDATE items SET name = ?, amount = ? WHERE id = ? AND characterId = ?', ['Adena', leaderAfter, leaderRows[0].id, leader]);
+                leaderRows.slice(1).forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, leader]));
+            } else {
+                write(`INSERT INTO items (selfId, name, amount, enchant, equipped, slot, characterId)
+                    VALUES (57, 'Adena', ?, 0, 0, 0, ?)`, [leaderAfter, leader]);
+            }
+
+            const timestamp = now();
+            const ledger = write(`INSERT INTO clan_contributions
+                (clanId, characterId, targetLevel, amount, source, resolveKey, createdAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?)`, [clan, contributor, Number(targetLevel), requested, String(source), key, timestamp]);
+            syncAdenaSnapshotUnsafe(contributor, sourceBefore - requested, {
+                clanId: clan, targetLevel: Number(targetLevel), amount: -requested, at: timestamp
+            });
+            syncAdenaSnapshotUnsafe(leader, leaderAfter, {
+                clanId: clan, targetLevel: Number(targetLevel), amount: requested, at: timestamp
+            });
+            return {
+                ok: true,
+                code: 'contribution_applied',
+                clanId: clan,
+                characterId: contributor,
+                leaderId: leader,
+                targetLevel: Number(targetLevel),
+                amount: requested,
+                sourceBefore,
+                sourceAfter: sourceBefore - requested,
+                leaderBefore,
+                leaderAfter,
+                ledgerId: Number(ledger.insertId)
+            };
+        }, 'clan-simulation:contribution'));
+    },
+    fetchClanWarehouseItems(clanId) {
+        return select('clan_warehouse_items', ['*'], 'clanId = ? AND amount > 0', [Number(clanId)], 'clan-warehouse:list');
+    },
+    updateAutonomousClanGoal({
+        clanId,
+        goal = null,
+        expectedUpdatedAt = null,
+        eventType = 'goal_updated',
+        reasonCode = ''
+    } = {}) {
+        const clan = Number(clanId);
+        if (!clan) return Promise.resolve({ ok: false, code: 'target_not_autonomous' });
+        return inTransaction(() => {
+            const simulation = one('SELECT clanId, stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan]);
+            const clanRow = one('SELECT leaderId FROM clans WHERE id = ?', [clan]);
+            if (!simulation || !clanRow) return { ok: false, code: 'target_not_autonomous' };
+            const previousState = jsonObject(simulation.stateJson);
+            const currentUpdatedAt = Number(previousState.updatedAt || 0);
+            if (expectedUpdatedAt !== null && currentUpdatedAt !== Number(expectedUpdatedAt)) {
+                return { ok: false, code: 'ownership_conflict', updatedAt: currentUpdatedAt };
+            }
+            const timestamp = now();
+            const state = simulationState(simulation.stateJson, clan, clanRow.leaderId, previousState.memberIds || [], timestamp);
+            state.goal = goal || null;
+            state.updatedAt = timestamp;
+            const updated = write(`UPDATE clan_simulation_clans
+                SET updatedAt = ?, stateJson = ? WHERE clanId = ?`, [timestamp, JSON.stringify(state), clan]);
+            if (Number(updated.affectedRows || 0) !== 1) return { ok: false, code: 'ownership_conflict' };
+            if (eventType) {
+                write(`INSERT INTO clan_goal_events
+                    (clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)`, [
+                    clan,
+                    String(eventType),
+                    String(goal?.type || ''),
+                    String(goal?.plan?.kind || ''),
+                    String(reasonCode || ''),
+                    JSON.stringify(goal || {}),
+                    timestamp
+                ]);
+            }
+            return { ok: true, clanId: clan, goal: state.goal, updatedAt: timestamp };
+        }, 'clan-goal:update');
+    },
+    recordClanGoalEvent({ clanId, eventType, goalType = '', plan = '', reasonCode = '', payload = {} } = {}) {
+        if (!Number(clanId) || !String(eventType || '').trim()) return Promise.resolve({ ok: false, code: 'invalid_goal_event' });
+        return insert('clan_goal_events', {
+            clanId: Number(clanId),
+            eventType: String(eventType),
+            goalType: String(goalType || ''),
+            plan: String(plan || ''),
+            reasonCode: String(reasonCode || ''),
+            payloadJson: JSON.stringify(payload || {}),
+            occurredAt: now()
+        }, 'clan-goal:event').then((result) => ({ ok: true, eventId: Number(result.insertId) }));
+    },
+    fetchClanGoalEvents(clanId, limit = 50) {
+        const safeLimit = Math.max(1, Math.min(200, Math.floor(Number(limit) || 50)));
+        return run(`SELECT * FROM clan_goal_events WHERE clanId = ?
+            ORDER BY occurredAt DESC, id DESC LIMIT ${safeLimit}`, [Number(clanId)], 'clan-goal:events');
+    },
+    upsertClanMarketDemand({ clanId, itemId, amount, maxPrice, goalKey, status = 'open' } = {}) {
+        const clan = Number(clanId);
+        const item = Number(itemId);
+        const requested = Math.floor(Number(amount) || 0);
+        const price = Math.floor(Number(maxPrice) || 0);
+        const key = String(goalKey || '').trim();
+        if (!clan || !item || requested <= 0 || price <= 0 || !key) {
+            return Promise.resolve({ ok: false, code: 'invalid_market_demand' });
+        }
+        return inTransaction(() => {
+            const timestamp = now();
+            const existing = one(`SELECT * FROM clan_market_demands
+                WHERE clanId = ? AND itemId = ? AND goalKey = ?`, [clan, item, key]);
+            if (existing) {
+                write(`UPDATE clan_market_demands SET amount = ?, maxPrice = ?, status = ?, updatedAt = ?
+                    WHERE id = ? AND clanId = ?`, [requested, price, String(status), timestamp, existing.id, clan]);
+                return { ok: true, demandId: Number(existing.id), created: false, status: String(status) };
+            }
+            const inserted = write(`INSERT INTO clan_market_demands
+                (clanId, itemId, amount, maxPrice, goalKey, status, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [clan, item, requested, price, key, String(status), timestamp, timestamp]);
+            return { ok: true, demandId: Number(inserted.insertId), created: true, status: String(status) };
+        }, 'clan-market:demand');
+    },
+    syncClanMarketDemandSignal({ clanId, itemId, amount, maxPrice, goalKey, status = 'open' } = {}) {
+        const clan = Number(clanId);
+        const selfId = Number(itemId);
+        const key = String(goalKey || '').trim();
+        if (!clan || !selfId || !key) return Promise.resolve({ ok: false, code: 'invalid_market_demand' });
+        return inTransaction(() => {
+            const clanRow = one('SELECT leaderId FROM clans WHERE id = ?', [clan]);
+            if (!clanRow) return { ok: false, code: 'target_not_autonomous' };
+            const leader = one(`SELECT characterId, statsJson FROM bot_life_state
+                WHERE characterId = ?`, [Number(clanRow.leaderId)]);
+            if (!leader) return { ok: false, code: 'market_signal_owner_missing' };
+            const stats = jsonObject(leader.statsJson);
+            const activeSignal = stats.clanMarketDemand;
+            if (String(status) === 'open') {
+                if (!activeSignal || String(activeSignal.goalKey || '') !== key) {
+                    stats.clanMarketPreviousWanted = stats.marketWanted || null;
+                }
+                stats.clanMarketDemand = {
+                    clanId: clan,
+                    itemId: selfId,
+                    amount: Math.max(1, Math.floor(Number(amount) || 1)),
+                    maxPrice: Math.max(1, Math.floor(Number(maxPrice) || 1)),
+                    goalKey: key,
+                    updatedAt: now()
+                };
+                stats.marketWanted = {
+                    itemId: selfId,
+                    itemName: selfId === 1419 ? 'Blood Mark' : `Item ${selfId}`,
+                    lastMissingAt: now(),
+                    clanId: clan
+                };
+            } else if (activeSignal && String(activeSignal.goalKey || '') === key) {
+                stats.marketWanted = stats.clanMarketPreviousWanted || null;
+                delete stats.clanMarketPreviousWanted;
+                delete stats.clanMarketDemand;
+            } else {
+                return { ok: true, characterId: Number(leader.characterId), unchanged: true };
+            }
+            write('UPDATE bot_life_state SET statsJson = ?, updatedAt = ? WHERE characterId = ?', [
+                JSON.stringify(stats), now(), Number(leader.characterId)
+            ]);
+            return { ok: true, characterId: Number(leader.characterId), itemId: selfId, status: String(status) };
+        }, 'clan-market:signal');
+    },
+    fetchClanMarketDemands({ clanId = null, itemId = null, status = 'open', limit = 100 } = {}) {
+        const clauses = [];
+        const params = [];
+        if (clanId !== null && clanId !== undefined) { clauses.push('clanId = ?'); params.push(Number(clanId)); }
+        if (itemId !== null && itemId !== undefined) { clauses.push('itemId = ?'); params.push(Number(itemId)); }
+        if (status !== null && status !== undefined) { clauses.push('status = ?'); params.push(String(status)); }
+        const safeLimit = Math.max(1, Math.min(500, Math.floor(Number(limit) || 100)));
+        return run(`SELECT * FROM clan_market_demands${clauses.length ? ` WHERE ${clauses.join(' AND ')}` : ''}
+            ORDER BY updatedAt ASC, id ASC LIMIT ${safeLimit}`, params, 'clan-market:demands');
+    },
+    fetchActiveAutonomousClanOperation(clanId) {
+        return selectOne('clan_operations', ['*'], "clanId = ? AND status = 'active'", [Number(clanId)], 'clan-party:active-operation')
+            .then((rows) => rows[0] || null);
+    },
+    fetchAutonomousClanOperation(operationId) {
+        return selectOne('clan_operations', ['*'], 'id = ?', [Number(operationId)], 'clan-party:operation')
+            .then((rows) => rows[0] || null);
+    },
+    startAutonomousClanOperation({
+        clanId,
+        operationKey,
+        operationType = 'farm',
+        targetNpcId = 0,
+        leaderId = 0,
+        memberIds = [],
+        expectedGoalUpdatedAt = null
+    } = {}) {
+        const clan = Number(clanId);
+        const key = String(operationKey || '').trim();
+        const members = [...new Set((memberIds || []).map(Number).filter((id) => Number.isSafeInteger(id) && id > 0))]
+            .sort((left, right) => left - right);
+        if (!clan || !key || members.length < 2) return Promise.resolve({ ok: false, code: 'party_not_ready' });
+
+        return inTransaction(() => {
+            const existingByKey = one('SELECT * FROM clan_operations WHERE operationKey = ?', [key]);
+            if (existingByKey) {
+                return {
+                    ok: true,
+                    idempotent: true,
+                    code: existingByKey.status === 'active' ? 'party_operation_active' : 'party_operation_replay',
+                    operationId: Number(existingByKey.id),
+                    status: String(existingByKey.status),
+                    operation: existingByKey
+                };
+            }
+            const simulation = one('SELECT clanId, stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan]);
+            const clanRow = one('SELECT id, level, leaderId FROM clans WHERE id = ?', [clan]);
+            if (!simulation || !clanRow) return { ok: false, code: 'target_not_autonomous' };
+
+            const previousState = jsonObject(simulation.stateJson);
+            const goal = jsonObject(previousState.goal);
+            const currentGoalUpdatedAt = Number(previousState.updatedAt || 0);
+            if (expectedGoalUpdatedAt !== null
+                && currentGoalUpdatedAt !== Number(expectedGoalUpdatedAt)) {
+                return { ok: false, code: 'ownership_conflict', updatedAt: currentGoalUpdatedAt };
+            }
+            if (!goal || String(goal.plan?.kind || '') !== String(operationType)
+                || String(goal.partyId || '') !== '') {
+                return { ok: false, code: 'party_goal_changed' };
+            }
+            const selectedIds = new Set((goal.assignedMemberIds || []).map(Number));
+            if (members.some((id) => !selectedIds.has(id))) return { ok: false, code: 'party_goal_changed' };
+
+            const placeholders = members.map(() => '?').join(', ');
+            const rows = all(`SELECT c.id, c.clanId, c.username, life.accountName, life.statsJson,
+                    life.phase, life.simulationOwner, life.simulationRevision, life.partyId
+                FROM characters c
+                LEFT JOIN bot_life_state life ON life.characterId = c.id
+                WHERE c.id IN (${placeholders})`, members);
+            if (rows.length !== members.length || rows.some((row) => (
+                Number(row.clanId) !== clan
+                || !generatedBotRow(row)
+                || String(row.phase || '') !== 'cold'
+                || String(row.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER
+                || String(row.partyId || '') !== ''
+            ))) return { ok: false, code: 'party_not_ready' };
+
+            const activeMember = one(`SELECT characterId FROM clan_operation_members
+                WHERE characterId IN (${placeholders}) AND status = 'active' LIMIT 1`, members);
+            if (activeMember) {
+                return { ok: false, code: 'party_member_reservation_conflict', characterId: Number(activeMember.characterId) };
+            }
+            const activeClan = one("SELECT id FROM clan_operations WHERE clanId = ? AND status = 'active' LIMIT 1", [clan]);
+            if (activeClan) return { ok: false, code: 'party_operation_active', operationId: Number(activeClan.id) };
+
+            const timestamp = now();
+            const resolvedLeader = Number(leaderId) || Number(goal.plan?.beneficiaryId) || Number(clanRow.leaderId);
+            const nextGoal = {
+                ...goal,
+                partyId: key,
+                status: 'executing',
+                updatedAt: timestamp
+            };
+            const state = simulationState(simulation.stateJson, clan, clanRow.leaderId, previousState.memberIds || [], timestamp);
+            state.goal = nextGoal;
+            state.updatedAt = timestamp;
+            const updated = write(`UPDATE clan_simulation_clans SET updatedAt = ?, stateJson = ?
+                WHERE clanId = ? AND updatedAt = ?`, [timestamp, JSON.stringify(state), clan, currentGoalUpdatedAt]);
+            if (Number(updated.affectedRows || 0) !== 1) return { ok: false, code: 'ownership_conflict' };
+
+            const inserted = write(`INSERT INTO clan_operations
+                (clanId, operationKey, operationType, targetNpcId, leaderId, memberIdsJson, status, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`, [
+                clan,
+                key,
+                String(operationType),
+                Math.max(0, Number(targetNpcId) || 0),
+                resolvedLeader,
+                JSON.stringify(members),
+                timestamp,
+                timestamp
+            ]);
+            members.forEach((characterId) => write(`INSERT INTO clan_operation_members
+                (operationId, clanId, characterId, status, reservedAt)
+                VALUES (?, ?, ?, 'active', ?)`, [Number(inserted.insertId), clan, characterId, timestamp]));
+            write(`INSERT INTO clan_goal_events
+                (clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt)
+                VALUES (?, 'party_operation_started', ?, ?, 'party_operation_started', ?, ?)`, [
+                clan,
+                String(goal.type || ''),
+                String(operationType),
+                JSON.stringify({ operationKey: key, operationId: Number(inserted.insertId), memberIds: members }),
+                timestamp
+            ]);
+            return {
+                ok: true,
+                code: 'party_operation_started',
+                operationId: Number(inserted.insertId),
+                operationKey: key,
+                memberIds: members,
+                updatedAt: timestamp
+            };
+        }, 'clan-party:start');
+    },
+    completeAutonomousClanOperation({ operationId, success = false, drops = [], reasonCode = '' } = {}) {
+        const id = Number(operationId);
+        if (!id) return Promise.resolve({ ok: false, code: 'operation_missing' });
+        return inTransaction(() => {
+            const operation = one('SELECT * FROM clan_operations WHERE id = ?', [id]);
+            if (!operation) return { ok: false, code: 'operation_missing' };
+            if (String(operation.status) !== 'active') {
+                return {
+                    ok: true,
+                    idempotent: true,
+                    code: 'operation_already_resolved',
+                    operationId: id,
+                    status: String(operation.status),
+                    reward: jsonArray(operation.rewardJson)
+                };
+            }
+            const clan = Number(operation.clanId);
+            const simulation = one('SELECT clanId, stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan]);
+            const clanRow = one('SELECT id, leaderId FROM clans WHERE id = ?', [clan]);
+            if (!simulation || !clanRow) return { ok: false, code: 'target_not_autonomous' };
+            const timestamp = now();
+            const normalizedDrops = (Array.isArray(drops) ? drops : []).reduce((result, drop) => {
+                const selfId = Number(drop?.selfId || 0);
+                const amount = Math.floor(Number(drop?.amount) || 0);
+                if (!selfId || amount <= 0) return result;
+                const enchant = Math.max(0, Number(drop?.enchant) || 0);
+                const key = `${selfId}:${enchant}`;
+                const existing = result.get(key) || {
+                    selfId,
+                    amount: 0,
+                    enchant,
+                    name: String(drop?.name || `Item ${selfId}`),
+                    kind: String(drop?.kind || ''),
+                    petData: drop?.petData || null
+                };
+                existing.amount += amount;
+                result.set(key, existing);
+                return result;
+            }, new Map());
+            const reward = [...normalizedDrops.values()];
+            let warehouseRevision = Math.max(0, Number(jsonObject(simulation.stateJson).warehouseRevision) || 0);
+            if (success) {
+                reward.forEach((drop) => {
+                    const warehouse = one(`SELECT id, amount FROM clan_warehouse_items
+                        WHERE clanId = ? AND selfId = ? AND enchant = ? LIMIT 1`, [clan, drop.selfId, drop.enchant]);
+                    if (warehouse) {
+                        write(`UPDATE clan_warehouse_items SET amount = amount + ?, updatedAt = ?
+                            WHERE id = ? AND clanId = ?`, [drop.amount, timestamp, warehouse.id, clan]);
+                    } else {
+                        write(`INSERT INTO clan_warehouse_items
+                            (clanId, selfId, name, kind, amount, enchant, petData, createdAt, updatedAt)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+                            clan, drop.selfId, drop.name, drop.kind, drop.amount, drop.enchant,
+                            drop.petData ? JSON.stringify(drop.petData) : null, timestamp, timestamp
+                        ]);
+                    }
+                    write(`INSERT INTO clan_warehouse_ledger
+                        (clanId, characterId, selfId, amount, operation, resolveKey, warehouseRevision, createdAt)
+                        VALUES (?, ?, ?, ?, 'party_reward', ?, ?, ?)`, [
+                        clan,
+                        Number(operation.leaderId),
+                        drop.selfId,
+                        drop.amount,
+                        String(operation.operationKey),
+                        warehouseRevision + 1,
+                        timestamp
+                    ]);
+                    warehouseRevision += 1;
+                });
+            }
+
+            const previousState = jsonObject(simulation.stateJson);
+            const state = simulationState(simulation.stateJson, clan, clanRow.leaderId, previousState.memberIds || [], timestamp);
+            const goal = jsonObject(previousState.goal);
+            if (Object.keys(goal).length) {
+                const progress = reward
+                    .filter((drop) => Number(drop.selfId) === Number(goal.target?.itemId))
+                    .reduce((sum, drop) => sum + drop.amount, Number(goal.progress) || 0);
+                state.goal = {
+                    ...goal,
+                    partyId: null,
+                    progress: Math.min(Number(goal.required) || progress, progress),
+                    status: progress >= Number(goal.required || 0) ? 'completed' : 'executing',
+                    reasonCodes: [...new Set([...(goal.reasonCodes || []), success ? 'party_reward_applied' : String(reasonCode || 'party_operation_failed')])].slice(-8),
+                    updatedAt: timestamp
+                };
+            } else {
+                state.goal = null;
+            }
+            if (success && reward.length) state.warehouseRevision = warehouseRevision;
+            state.updatedAt = timestamp;
+            write(`UPDATE clan_simulation_clans SET updatedAt = ?, stateJson = ? WHERE clanId = ?`, [
+                timestamp, JSON.stringify(state), clan
+            ]);
+            write(`UPDATE clan_operation_members SET status = 'released', releasedAt = ?
+                WHERE operationId = ? AND status = 'active'`, [timestamp, id]);
+            const status = success ? 'succeeded' : 'failed';
+            write(`UPDATE clan_operations SET status = ?, wins = ?, deaths = ?, reasonCode = ?, rewardJson = ?,
+                    updatedAt = ?, resolvedAt = ? WHERE id = ? AND status = 'active'`, [
+                status,
+                success ? 1 : 0,
+                success ? 0 : 1,
+                String(reasonCode || (success ? 'party_operation_succeeded' : 'party_operation_failed')),
+                JSON.stringify(reward),
+                timestamp,
+                timestamp,
+                id
+            ]);
+            write(`INSERT INTO clan_goal_events
+                (clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt)
+                VALUES (?, ?, ?, 'farm', ?, ?, ?)`, [
+                clan,
+                success ? 'party_operation_succeeded' : 'party_operation_failed',
+                String(goal.type || 'item'),
+                String(reasonCode || (success ? 'party_operation_succeeded' : 'party_operation_failed')),
+                JSON.stringify({ operationId: id, operationKey: operation.operationKey, reward }),
+                timestamp
+            ]);
+            return {
+                ok: true,
+                code: success ? 'party_operation_succeeded' : 'party_operation_failed',
+                operationId: id,
+                status,
+                reward,
+                warehouseRevision,
+                goal: state.goal
+            };
+        }, 'clan-party:complete');
+    },
+    transferInventoryToClanWarehouse({
+        clanId,
+        characterId,
+        item = {},
+        amount,
+        resolveKey,
+        expectedWarehouseRevision = null,
+        expectedSimulationRevision = null
+    } = {}) {
+        const clan = Number(clanId);
+        const character = Number(characterId);
+        const selfId = Number(item.selfId || 0);
+        const sourceItemId = Number(item.id || 0);
+        const requested = Math.floor(Number(amount) || 0);
+        const key = String(resolveKey || '').trim();
+        if (!clan || !character || !selfId || !sourceItemId || requested <= 0 || !key) {
+            return Promise.resolve({ ok: false, code: 'warehouse_transfer_failed' });
+        }
+
+        return withCharacterFlush(character, () => inTransaction(() => {
+            const simulation = one('SELECT clanId, stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan]);
+            const clanRow = one('SELECT id, level FROM clans WHERE id = ?', [clan]);
+            const member = one('SELECT id, clanId FROM characters WHERE id = ?', [character]);
+            const life = one(`SELECT phase, simulationOwner, simulationRevision, partyId
+                FROM bot_life_state WHERE characterId = ?`, [character]);
+            if (!simulation || !clanRow || !member || Number(member.clanId) !== clan) {
+                return { ok: false, code: 'warehouse_transfer_failed' };
+            }
+            if (!life || String(life.phase || '') !== 'cold'
+                || String(life.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER
+                || String(life.partyId || '') !== '') {
+                return { ok: false, code: 'stale_snapshot' };
+            }
+            if (expectedSimulationRevision !== null
+                && Number(life.simulationRevision || 0) !== Number(expectedSimulationRevision)) {
+                return { ok: false, code: 'stale_snapshot', simulationRevision: Number(life.simulationRevision || 0) };
+            }
+
+            const previousState = jsonObject(simulation.stateJson);
+            const currentWarehouseRevision = Math.max(0, Number(previousState.warehouseRevision) || 0);
+            if (expectedWarehouseRevision !== null
+                && currentWarehouseRevision !== Number(expectedWarehouseRevision)) {
+                return { ok: false, code: 'ownership_conflict', warehouseRevision: currentWarehouseRevision };
+            }
+
+            const existingLedger = one(`SELECT id, amount, warehouseRevision
+                FROM clan_warehouse_ledger
+                WHERE clanId = ? AND characterId = ? AND selfId = ?
+                  AND operation = 'deposit' AND resolveKey = ?`, [clan, character, selfId, key]);
+            if (existingLedger) {
+                return {
+                    ok: false,
+                    code: 'warehouse_transfer_already_applied',
+                    amount: Number(existingLedger.amount),
+                    ledgerId: Number(existingLedger.id),
+                    warehouseRevision: Number(existingLedger.warehouseRevision)
+                };
+            }
+
+            const source = one(`SELECT id, selfId, name, amount, enchant, petData
+                FROM items WHERE id = ? AND characterId = ?`, [sourceItemId, character]);
+            if (!source || Number(source.selfId) !== selfId || Number(source.amount || 0) < requested) {
+                return { ok: false, code: 'warehouse_transfer_failed' };
+            }
+
+            const kind = String(item.kind || '');
+            const recipe = kind.startsWith('Other.Recipe');
+            const recipeTarget = recipe
+                ? one(`SELECT id, amount, reservedAmount FROM clan_warehouse_items
+                    WHERE clanId = ? AND selfId = ? AND amount > 0 LIMIT 1`, [clan, selfId])
+                : null;
+            if (recipeTarget) {
+                return { ok: false, code: 'warehouse_duplicate_recipe' };
+            }
+
+            const stackable = item.stackable !== false && !recipe;
+            const target = stackable
+                ? one(`SELECT id, amount, reservedAmount FROM clan_warehouse_items
+                    WHERE clanId = ? AND selfId = ? AND enchant = ? LIMIT 1`, [clan, selfId, Number(source.enchant || 0)])
+                : null;
+            const timestamp = now();
+            let warehouseId;
+            let warehouseAmount;
+            if (target) {
+                warehouseId = Number(target.id);
+                warehouseAmount = Number(target.amount || 0) + requested;
+                write(`UPDATE clan_warehouse_items
+                    SET amount = ?, updatedAt = ? WHERE id = ? AND clanId = ?`, [warehouseAmount, timestamp, warehouseId, clan]);
+            } else {
+                warehouseAmount = requested;
+                warehouseId = Number(write(`INSERT INTO clan_warehouse_items
+                    (clanId, selfId, name, kind, amount, enchant, petData, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+                    clan,
+                    selfId,
+                    String(item.name || source.name || `Item ${selfId}`),
+                    kind,
+                    requested,
+                    Math.max(0, Number(source.enchant || 0)),
+                    source.petData || null,
+                    timestamp,
+                    timestamp
+                ]).insertId);
+            }
+
+            const sourceAfter = Number(source.amount || 0) - requested;
+            if (sourceAfter <= 0) write('DELETE FROM items WHERE id = ? AND characterId = ?', [source.id, character]);
+            else write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [sourceAfter, source.id, character]);
+
+            const lifeUpdate = updateColdInventorySnapshotUnsafe(character, selfId, {
+                clanId: clan,
+                selfId,
+                amount: -requested,
+                warehouseId,
+                at: timestamp
+            }, expectedSimulationRevision === null ? Number(life.simulationRevision || 0) : Number(expectedSimulationRevision));
+            if (!lifeUpdate.ok) return lifeUpdate;
+
+            const nextWarehouseRevision = currentWarehouseRevision + 1;
+            const state = simulationState(simulation.stateJson, clan, previousState.leaderId, previousState.memberIds || [], timestamp);
+            state.warehouseRevision = nextWarehouseRevision;
+            write(`UPDATE clan_simulation_clans SET updatedAt = ?, stateJson = ?
+                WHERE clanId = ? AND json_extract(stateJson, '$.warehouseRevision') = ?`, [
+                timestamp, JSON.stringify(state), clan, currentWarehouseRevision
+            ]);
+            const ledger = write(`INSERT INTO clan_warehouse_ledger
+                (clanId, characterId, selfId, amount, operation, resolveKey, warehouseRevision, createdAt)
+                VALUES (?, ?, ?, ?, 'deposit', ?, ?, ?)`, [
+                clan, character, selfId, requested, key, nextWarehouseRevision, timestamp
+            ]);
+            return {
+                ok: true,
+                code: 'warehouse_deposit_applied',
+                clanId: clan,
+                characterId: character,
+                selfId,
+                amount: requested,
+                warehouseId,
+                warehouseAmount,
+                warehouseRevision: nextWarehouseRevision,
+                simulationRevision: lifeUpdate.simulationRevision,
+                ledgerId: Number(ledger.insertId)
+            };
+        }, 'clan-warehouse:deposit'));
+    },
+    transferClanAdenaToWarehouse({
+        clanId,
+        characterId,
+        targetLevel = 1,
+        amount,
+        reserve = 0,
+        maxContributionFraction = 0.35,
+        resolveKey,
+        expectedWarehouseRevision = null,
+        expectedSimulationRevision = null,
+        source = 'adena'
+    } = {}) {
+        const clan = Number(clanId);
+        const contributor = Number(characterId);
+        const requested = Math.floor(Number(amount) || 0);
+        const key = String(resolveKey || '').trim();
+        if (!clan || !contributor || requested <= 0 || !key) {
+            return Promise.resolve({ ok: false, code: 'contribution_no_disposable_adena' });
+        }
+
+        return withCharacterFlush(contributor, () => inTransaction(() => {
+            const simulation = one('SELECT clanId, stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan]);
+            const clanRow = one('SELECT id, level, leaderId FROM clans WHERE id = ?', [clan]);
+            const member = one('SELECT id, clanId FROM characters WHERE id = ?', [contributor]);
+            const life = one(`SELECT phase, simulationOwner, simulationRevision, partyId
+                FROM bot_life_state WHERE characterId = ?`, [contributor]);
+            if (!simulation || !clanRow || Number(clanRow.level) !== Number(targetLevel)
+                || !member || Number(member.clanId) !== clan || !life) {
+                return { ok: false, code: 'stale_snapshot' };
+            }
+            if (String(life.phase || '') !== 'cold'
+                || String(life.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER
+                || String(life.partyId || '') !== '') return { ok: false, code: 'stale_snapshot' };
+            if (expectedSimulationRevision !== null
+                && Number(life.simulationRevision || 0) !== Number(expectedSimulationRevision)) {
+                return { ok: false, code: 'stale_snapshot', simulationRevision: Number(life.simulationRevision || 0) };
+            }
+
+            const previousState = jsonObject(simulation.stateJson);
+            const currentWarehouseRevision = Math.max(0, Number(previousState.warehouseRevision) || 0);
+            if (expectedWarehouseRevision !== null
+                && currentWarehouseRevision !== Number(expectedWarehouseRevision)) {
+                return { ok: false, code: 'ownership_conflict', warehouseRevision: currentWarehouseRevision };
+            }
+            const existingLedger = one(`SELECT id, amount, warehouseRevision
+                FROM clan_warehouse_ledger
+                WHERE clanId = ? AND characterId = ? AND selfId = 57
+                  AND operation = 'adena_contribution' AND resolveKey = ?`, [clan, contributor, key]);
+            if (existingLedger) {
+                return {
+                    ok: false,
+                    code: 'contribution_already_applied',
+                    amount: Number(existingLedger.amount),
+                    ledgerId: Number(existingLedger.id),
+                    warehouseRevision: Number(existingLedger.warehouseRevision)
+                };
+            }
+
+            const sourceRows = all(`SELECT id, amount FROM items
+                WHERE characterId = ? AND selfId = 57 ORDER BY id`, [contributor]);
+            const sourceBefore = sourceRows.reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0);
+            const disposable = Math.max(0, sourceBefore - Math.max(0, Math.floor(Number(reserve) || 0)));
+            if (disposable <= 0) return { ok: false, code: 'contribution_no_disposable_adena', sourceBefore, disposable };
+            const fraction = Math.max(0, Math.min(1, Number(maxContributionFraction) || 0));
+            const maxAllowed = Math.min(disposable, Math.floor(disposable * fraction));
+            if (requested > maxAllowed) {
+                return { ok: false, code: 'contribution_reserved', sourceBefore, disposable, maxAllowed };
+            }
+
+            let remaining = requested;
+            sourceRows.forEach((row) => {
+                if (remaining <= 0) return;
+                const current = Math.max(0, Number(row.amount) || 0);
+                const deduction = Math.min(current, remaining);
+                const next = current - deduction;
+                if (next <= 0) write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, contributor]);
+                else write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [next, row.id, contributor]);
+                remaining -= deduction;
+            });
+            if (remaining > 0) throw new Error('clan warehouse contribution source changed');
+
+            const warehouse = one(`SELECT id, amount, reservedAmount FROM clan_warehouse_items
+                WHERE clanId = ? AND selfId = 57 AND enchant = 0 LIMIT 1`, [clan]);
+            const timestamp = now();
+            const warehouseAmount = Number(warehouse?.amount || 0) + requested;
+            const warehouseId = warehouse
+                ? Number(warehouse.id)
+                : Number(write(`INSERT INTO clan_warehouse_items
+                    (clanId, selfId, name, kind, amount, enchant, createdAt, updatedAt)
+                    VALUES (?, 57, 'Adena', 'Other.Currency', ?, 0, ?, ?)`, [clan, requested, timestamp, timestamp]).insertId);
+            if (warehouse) write(`UPDATE clan_warehouse_items SET amount = ?, updatedAt = ?
+                WHERE id = ? AND clanId = ?`, [warehouseAmount, timestamp, warehouseId, clan]);
+
+            const lifeUpdate = updateColdInventorySnapshotUnsafe(contributor, 57, {
+                clanId: clan,
+                selfId: 57,
+                amount: -requested,
+                warehouseId,
+                at: timestamp
+            }, expectedSimulationRevision === null ? Number(life.simulationRevision || 0) : Number(expectedSimulationRevision));
+            if (!lifeUpdate.ok) return lifeUpdate;
+
+            const nextWarehouseRevision = currentWarehouseRevision + 1;
+            const state = simulationState(simulation.stateJson, clan, previousState.leaderId, previousState.memberIds || [], timestamp);
+            state.warehouseRevision = nextWarehouseRevision;
+            write(`UPDATE clan_simulation_clans SET updatedAt = ?, stateJson = ?
+                WHERE clanId = ? AND json_extract(stateJson, '$.warehouseRevision') = ?`, [
+                timestamp, JSON.stringify(state), clan, currentWarehouseRevision
+            ]);
+            const contribution = write(`INSERT INTO clan_contributions
+                (clanId, characterId, targetLevel, amount, source, resolveKey, createdAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?)`, [clan, contributor, Number(targetLevel), requested, source, key, timestamp]);
+            const ledger = write(`INSERT INTO clan_warehouse_ledger
+                (clanId, characterId, selfId, amount, operation, resolveKey, warehouseRevision, createdAt)
+                VALUES (?, ?, 57, ?, 'adena_contribution', ?, ?, ?)`, [
+                clan, contributor, requested, key, nextWarehouseRevision, timestamp
+            ]);
+            return {
+                ok: true,
+                code: 'contribution_applied',
+                clanId: clan,
+                characterId: contributor,
+                targetLevel: Number(targetLevel),
+                amount: requested,
+                sourceBefore,
+                sourceAfter: sourceBefore - requested,
+                warehouseId,
+                warehouseAmount,
+                warehouseRevision: nextWarehouseRevision,
+                simulationRevision: lifeUpdate.simulationRevision,
+                contributionId: Number(contribution.insertId),
+                ledgerId: Number(ledger.insertId)
+            };
+        }, 'clan-warehouse:adena-contribution'));
+    },
+    reserveClanWarehouseItem({
+        clanId,
+        selfId,
+        amount,
+        goalKey,
+        beneficiaryId = null,
+        expectedWarehouseRevision = null
+    } = {}) {
+        const clan = Number(clanId);
+        const itemId = Number(selfId);
+        const requested = Math.floor(Number(amount) || 0);
+        const key = String(goalKey || '').trim();
+        if (!clan || !itemId || requested <= 0 || !key) {
+            return Promise.resolve({ ok: false, code: 'warehouse_transfer_failed' });
+        }
+        return inTransaction(() => {
+            const simulation = one('SELECT clanId, stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan]);
+            if (!simulation) return { ok: false, code: 'warehouse_transfer_failed' };
+            const previousState = jsonObject(simulation.stateJson);
+            const currentRevision = Math.max(0, Number(previousState.warehouseRevision) || 0);
+            if (expectedWarehouseRevision !== null && currentRevision !== Number(expectedWarehouseRevision)) {
+                return { ok: false, code: 'ownership_conflict', warehouseRevision: currentRevision };
+            }
+            const existing = one(`SELECT id, amount, status FROM clan_warehouse_reservations
+                WHERE clanId = ? AND selfId = ? AND goalKey = ?`, [clan, itemId, key]);
+            if (existing?.status === 'reserved') {
+                return { ok: false, code: 'warehouse_reservation_exists', reservationId: Number(existing.id) };
+            }
+            const stock = one(`SELECT id, amount, reservedAmount FROM clan_warehouse_items
+                WHERE clanId = ? AND selfId = ? AND amount > 0 ORDER BY id LIMIT 1`, [clan, itemId]);
+            if (!stock) return { ok: false, code: 'warehouse_no_stock' };
+            const available = Math.max(0, Number(stock.amount) - Number(stock.reservedAmount || 0));
+            if (available < requested) return { ok: false, code: 'warehouse_item_reserved', available };
+            const timestamp = now();
+            const reservation = write(`INSERT INTO clan_warehouse_reservations
+                (clanId, selfId, amount, beneficiaryId, goalKey, status, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, 'reserved', ?, ?)`, [clan, itemId, requested, beneficiaryId ? Number(beneficiaryId) : null, key, timestamp, timestamp]);
+            write(`UPDATE clan_warehouse_items SET reservedAmount = reservedAmount + ?, updatedAt = ?
+                WHERE id = ? AND clanId = ?`, [requested, timestamp, stock.id, clan]);
+            const nextRevision = currentRevision + 1;
+            const state = simulationState(simulation.stateJson, clan, previousState.leaderId, previousState.memberIds || [], timestamp);
+            state.warehouseRevision = nextRevision;
+            write('UPDATE clan_simulation_clans SET updatedAt = ?, stateJson = ? WHERE clanId = ?', [timestamp, JSON.stringify(state), clan]);
+            return { ok: true, code: 'warehouse_item_reserved', reservationId: Number(reservation.insertId), warehouseRevision: nextRevision };
+        }, 'clan-warehouse:reserve');
+    },
+    releaseClanWarehouseReservation({ clanId, selfId, goalKey, expectedWarehouseRevision = null } = {}) {
+        const clan = Number(clanId);
+        const itemId = Number(selfId);
+        const key = String(goalKey || '').trim();
+        if (!clan || !itemId || !key) return Promise.resolve({ ok: false, code: 'warehouse_transfer_failed' });
+        return inTransaction(() => {
+            const simulation = one('SELECT clanId, stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan]);
+            const reservation = one(`SELECT id, amount, status FROM clan_warehouse_reservations
+                WHERE clanId = ? AND selfId = ? AND goalKey = ?`, [clan, itemId, key]);
+            if (!simulation || !reservation) return { ok: false, code: 'warehouse_transfer_failed' };
+            if (reservation.status !== 'reserved') return { ok: true, code: 'warehouse_reservation_released' };
+            const previousState = jsonObject(simulation.stateJson);
+            const currentRevision = Math.max(0, Number(previousState.warehouseRevision) || 0);
+            if (expectedWarehouseRevision !== null && currentRevision !== Number(expectedWarehouseRevision)) {
+                return { ok: false, code: 'ownership_conflict', warehouseRevision: currentRevision };
+            }
+            const stock = one(`SELECT id, reservedAmount FROM clan_warehouse_items
+                WHERE clanId = ? AND selfId = ? AND amount > 0 ORDER BY id LIMIT 1`, [clan, itemId]);
+            const timestamp = now();
+            if (stock) write(`UPDATE clan_warehouse_items SET reservedAmount = MAX(0, reservedAmount - ?), updatedAt = ?
+                WHERE id = ? AND clanId = ?`, [Number(reservation.amount), timestamp, stock.id, clan]);
+            write(`UPDATE clan_warehouse_reservations SET status = 'released', updatedAt = ? WHERE id = ?`, [timestamp, reservation.id]);
+            const nextRevision = currentRevision + 1;
+            const state = simulationState(simulation.stateJson, clan, previousState.leaderId, previousState.memberIds || [], timestamp);
+            state.warehouseRevision = nextRevision;
+            write('UPDATE clan_simulation_clans SET updatedAt = ?, stateJson = ? WHERE clanId = ?', [timestamp, JSON.stringify(state), clan]);
+            return { ok: true, code: 'warehouse_reservation_released', warehouseRevision: nextRevision };
+        }, 'clan-warehouse:release');
+    },
+    advanceAutonomousClanLevel({
+        clanId,
+        fromLevel = 0,
+        toLevel = 1,
+        requiredAmount = 0,
+        requiredItemId = 0,
+        requiredItemAmount = requiredAmount
+    } = {}) {
+        const clan = Number(clanId);
+        return inTransaction(() => {
+            const simulation = one('SELECT clanId, stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan]);
+            const clanRow = one('SELECT id, level, leaderId FROM clans WHERE id = ?', [clan]);
+            if (!simulation || !clanRow) return { ok: false, code: 'target_not_autonomous' };
+            if (Number(clanRow.level) !== Number(fromLevel)) return { ok: false, code: 'level_already_advanced', level: Number(clanRow.level) };
+
+            const itemId = Math.max(0, Number(requiredItemId) || 0);
+            const required = Math.max(0, Math.floor(Number(itemId ? requiredItemAmount : requiredAmount) || 0));
+            let contributed = 0;
+            let warehouseAmount = 0;
+            if (itemId > 0) {
+                warehouseAmount = Number(one(`SELECT COALESCE(SUM(MAX(0, amount - reservedAmount)), 0) AS amount
+                    FROM clan_warehouse_items WHERE clanId = ? AND selfId = ?`, [clan, itemId]).amount || 0);
+                if (warehouseAmount < required) {
+                    return { ok: false, code: 'warehouse_item_not_ready', warehouseAmount, requiredAmount: required, itemId };
+                }
+            } else {
+                contributed = Number(one(`SELECT COALESCE(SUM(amount), 0) AS amount
+                    FROM clan_contributions WHERE clanId = ? AND targetLevel = ?`, [clan, Number(fromLevel)]).amount || 0);
+                if (contributed < required) {
+                    return { ok: false, code: 'contribution_level_ready', contributed, requiredAmount: required };
+                }
+            }
+
+            const updated = write('UPDATE clans SET level = ? WHERE id = ? AND level = ?', [Number(toLevel), clan, Number(fromLevel)]);
+            if (updated.affectedRows !== 1) return { ok: false, code: 'level_already_advanced' };
+            const previousState = jsonObject(simulation.stateJson);
+            const timestamp = now();
+            if (itemId > 0 && required > 0) {
+                let remaining = required;
+                const rows = all(`SELECT id, amount, reservedAmount FROM clan_warehouse_items
+                    WHERE clanId = ? AND selfId = ? AND amount > reservedAmount ORDER BY id`, [clan, itemId]);
+                rows.forEach((row) => {
+                    if (remaining <= 0) return;
+                    const available = Math.max(0, Number(row.amount) - Number(row.reservedAmount || 0));
+                    const consumed = Math.min(available, remaining);
+                    const nextAmount = Number(row.amount) - consumed;
+                    if (nextAmount <= 0) write('DELETE FROM clan_warehouse_items WHERE id = ? AND clanId = ?', [row.id, clan]);
+                    else write(`UPDATE clan_warehouse_items SET amount = ?, updatedAt = ? WHERE id = ? AND clanId = ?`, [nextAmount, timestamp, row.id, clan]);
+                    remaining -= consumed;
+                });
+                if (remaining > 0) throw new Error('clan level-up warehouse changed');
+                const nextWarehouseRevision = Math.max(0, Number(previousState.warehouseRevision) || 0) + 1;
+                write(`INSERT INTO clan_warehouse_ledger
+                    (clanId, characterId, selfId, amount, operation, resolveKey, warehouseRevision, createdAt)
+                    VALUES (?, ?, ?, ?, 'level_up_consume', ?, ?, ?)`, [
+                    clan,
+                    Number(clanRow.leaderId),
+                    itemId,
+                    required,
+                    `clan:${clan}:level:${Number(fromLevel)}:${Number(toLevel)}:${itemId}`,
+                    nextWarehouseRevision,
+                    timestamp
+                ]);
+                previousState.warehouseRevision = nextWarehouseRevision;
+            }
+            const state = simulationState(previousState, clan, clanRow.leaderId, previousState.memberIds || [], timestamp);
+            state.level = Number(toLevel);
+            state.goal = null;
+            write('UPDATE clan_simulation_clans SET updatedAt = ?, stateJson = ? WHERE clanId = ?', [state.updatedAt, JSON.stringify(state), clan]);
+            return {
+                ok: true,
+                code: itemId > 0 ? 'item_level_up' : 'contribution_level_up',
+                clanId: clan,
+                fromLevel: Number(fromLevel),
+                toLevel: Number(toLevel),
+                contributed,
+                requiredAmount: required,
+                requiredItemId: itemId,
+                warehouseAmount,
+                warehouseRevision: Number(state.warehouseRevision || 0)
+            };
+        }, 'clan-simulation:level-up');
+    },
     createClanCrest(clanId, kind, data) { return insert('clan_crests', { clanId, kind, data, createdAt: now() }, 'clan:crest-create'); },
     fetchClanCrest(id) { return selectOne('clan_crests', ['*'], 'id = ?', [id], 'clan:crest'); },
     createClan(data) { return insert('clans', { name: data.name, leaderId: data.leaderId }, 'clan:create'); },

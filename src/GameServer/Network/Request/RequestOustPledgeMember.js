@@ -35,6 +35,10 @@ function consume(session, data) {
     }
 
     ClanService.removeMember(targetSession.actor, { force: true }).then((result) => {
+        if (!result.ok) {
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return;
+        }
         targetSession.dataSendToMe(ServerResponse.userInfo(targetSession.actor));
         targetSession.dataSendToMe(ServerResponse.pledgeShowMemberListDelete(member.name));
         ClanService.onlineSessions(result.clan).forEach((memberSession) => {

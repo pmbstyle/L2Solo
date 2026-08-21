@@ -12,6 +12,10 @@ function requestWithdrawalPledge(session) {
 
     const name = actor.fetchName();
     ClanService.removeMember(actor).then((result) => {
+        if (!result.ok) {
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return;
+        }
         session.dataSendToMe(ServerResponse.userInfo(actor));
         session.dataSendToMe(ServerResponse.pledgeShowMemberListDelete(name));
         ClanService.onlineSessions(result.clan).forEach((memberSession) => {

@@ -226,11 +226,14 @@ const ClanService = {
         if (!options.force && this.isLeader(actor, clan)) return Promise.resolve({ ok: false, code: 'leader_cannot_leave' });
 
         const joinExpiry = nowMs() + JOIN_COOLDOWN_MS;
-        return Database.updateCharacterClan(actor.fetchId(), 0, 0, joinExpiry, number(actor.fetchClanCreateExpiryTime?.())).then(() => {
-            setActorClan(actor, 0, 0);
-            actor.setClanJoinExpiryTime?.(joinExpiry);
-            removeMemberFromCache(clanId, actor.fetchId());
-            return { ok: true, clan };
+        return Database.isAutonomousBotMember(actor.fetchId(), clanId).then((permanent) => {
+            if (permanent) return { ok: false, code: 'autonomous_membership_permanent' };
+            return Database.updateCharacterClan(actor.fetchId(), 0, 0, joinExpiry, number(actor.fetchClanCreateExpiryTime?.())).then(() => {
+                setActorClan(actor, 0, 0);
+                actor.setClanJoinExpiryTime?.(joinExpiry);
+                removeMemberFromCache(clanId, actor.fetchId());
+                return { ok: true, clan };
+            });
         });
     },
 

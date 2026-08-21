@@ -36,6 +36,12 @@ const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwne
 const ColdSimulationCoordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const BackgroundPartyLifecycle = invoke('GameServer/Bot/Population/BackgroundPartyLifecycle');
+const ClanSimulationConfig = invoke('GameServer/Clan/ClanSimulationConfig');
+const ClanSimulationService = invoke('GameServer/Clan/ClanSimulationService');
+const ClanEconomyService = invoke('GameServer/Clan/ClanEconomyService');
+const ClanGoalService = invoke('GameServer/Clan/ClanGoalService');
+const ClanPartyService = invoke('GameServer/Clan/ClanPartyService');
+const ClanMarketService = invoke('GameServer/Clan/ClanMarketService');
 
 const {
     partyObjectiveForPlan,
@@ -670,6 +676,7 @@ const PopulationService = {
     summaryTimer: null,
     initialSummaryTimer: null,
     schedulerTimer: null,
+    clanSimulationTimer: null,
     warehouseCleanupTimer: null,
     stateRetentionTimer: null,
     partyFormationTimer: null,
@@ -709,6 +716,7 @@ const PopulationService = {
     partyFormationPending: false,
     partyRequestCleanupRunning: false,
     phasePolicyRunning: false,
+    clanSimulationRunning: false,
 
     init() {
         if (this.initialized || Config.enabled === false) return;
@@ -760,6 +768,15 @@ const PopulationService = {
         }
 
         if (Config.backgroundResolverEnabled !== false) ColdSimulationCoordinator.start(this);
+
+        if (ClanSimulationConfig.enabled !== false) {
+            this.clanSimulationTimer = setInterval(() => {
+                this.resolveClanSimulation();
+            }, ClanSimulationConfig.resolveIntervalMs);
+            if (typeof this.clanSimulationTimer.unref === 'function') {
+                this.clanSimulationTimer.unref();
+            }
+        }
 
         this.classProgressionMigrationTimer = setInterval(() => {
             this.migrateLegacyClassProgression();
@@ -872,6 +889,10 @@ const PopulationService = {
         if (this.schedulerTimer) {
             clearInterval(this.schedulerTimer);
             this.schedulerTimer = null;
+        }
+        if (this.clanSimulationTimer) {
+            clearInterval(this.clanSimulationTimer);
+            this.clanSimulationTimer = null;
         }
         if (this.warehouseCleanupTimer) {
             clearInterval(this.warehouseCleanupTimer);
@@ -1200,6 +1221,38 @@ const PopulationService = {
         const profile = this.schedulerProfile();
         Metrics.recordSchedulerProfile(profile);
         return profile;
+    },
+
+    resolveClanSimulation() {
+        if (this.clanSimulationRunning || ClanSimulationConfig.enabled === false) return Promise.resolve(null);
+        const activity = this.playerActivityProfile();
+        if (activity?.protected) return Promise.resolve({ deferred: true, reason: 'player_protection' });
+
+        this.clanSimulationRunning = true;
+        const startedAt = Date.now();
+        return ClanSimulationService.resolveBatch(ClanSimulationConfig.resolveBatchSize, {
+            budgetMs: ClanSimulationConfig.resolveBudgetMs
+        }).then((founder) => ClanEconomyService.resolveBatch(ClanSimulationConfig.resolveBatchSize, {
+            budgetMs: Math.max(1, ClanSimulationConfig.resolveBudgetMs - (Date.now() - startedAt))
+        }).then((economy) => ClanGoalService.resolveBatch(ClanSimulationConfig.resolveBatchSize, {
+            budgetMs: Math.max(1, ClanSimulationConfig.resolveBudgetMs - (Date.now() - startedAt))
+        }).then((goals) => ClanMarketService.resolveBatch(ClanSimulationConfig.resolveBatchSize, {
+            budgetMs: Math.max(1, ClanSimulationConfig.resolveBudgetMs - (Date.now() - startedAt))
+        }).then((market) => ClanPartyService.resolveBatch(ClanSimulationConfig.resolveBatchSize, {
+            budgetMs: Math.max(1, ClanSimulationConfig.resolveBudgetMs - (Date.now() - startedAt))
+        }).then((party) => ({ founder, economy, goals, market, party })))))).catch((error) => {
+            utils.infoWarn('ClanSimulation', 'bounded resolve failed: %s', error.message);
+            return {
+                founder: { attempted: 0, created: 0, joined: 0, blocked: 0 },
+                economy: { attempted: 0, levelUps: 0, contributions: 0, blocked: 0 },
+                goals: { attempted: 0, changed: 0, completed: 0 },
+                market: { attempted: 0, purchases: 0, deposited: 0, levelUps: 0, blocked: 0 },
+                party: { attempted: 0, started: 0, resolved: 0, succeeded: 0, failed: 0 },
+                error: error.message
+            };
+        }).finally(() => {
+            this.clanSimulationRunning = false;
+        });
     },
 
     reconcileGoalMetadata() {
