@@ -149,6 +149,27 @@ try {
     assert.strictEqual(utilityGenerics.skills[0].selfId, 1234, 'mage should choose the stronger learned offensive spell');
     assert.strictEqual(utilitySession.lastCombatDecision.skillId, 1234, 'combat choice should be observable');
 
+    const undeadNuke = skill(1028, {
+        name: 'Might of Heaven',
+        mp: 35,
+        power: 42,
+        spell: true,
+        semantic: { undeadOnly: true }
+    });
+    const ordinaryNuke = skill(1177, { name: 'Wind Strike', mp: 8, power: 12, spell: true });
+    const healerWithUndeadNuke = bot(30, [undeadNuke, ordinaryNuke], 100);
+    const livingTarget = { ...npc(11045), fetchUndead: () => false };
+    const livingTargetGenerics = generics();
+    BotAI.executeCombat({}, healerWithUndeadNuke, livingTarget, livingTargetGenerics);
+    assert.strictEqual(livingTargetGenerics.skills[0].selfId, 1177,
+        'a healer must not select an undead-only nuke against a living target');
+
+    const undeadTarget = { ...npc(11046), fetchUndead: () => true };
+    const undeadTargetGenerics = generics();
+    BotAI.executeCombat({}, healerWithUndeadNuke, undeadTarget, undeadTargetGenerics);
+    assert.strictEqual(undeadTargetGenerics.skills[0].selfId, 1028,
+        'a healer may select Might of Heaven against an undead target');
+
     const summon = skill(1276, {
         name: 'Summon Kai the Cat',
         mp: 70,
