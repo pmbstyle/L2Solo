@@ -1888,7 +1888,9 @@ const Database = {
         if (!connection) return Promise.reject(new Error('SQLite is not initialized (maintenance:checkpoint)'));
         return CheckpointCoordinator.request({
             force: true,
-            mode: options.mode === 'restart' ? 'restart' : 'passive',
+            mode: options.mode === 'truncate'
+                ? 'truncate'
+                : options.mode === 'restart' ? 'restart' : 'passive',
             minWalBytes: 0,
             busyTimeoutMs: options.busyTimeoutMs
         });

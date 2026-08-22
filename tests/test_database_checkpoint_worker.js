@@ -77,6 +77,14 @@ async function run() {
     assert(Number(reset.generationBytes) > 0, 'checkpoint telemetry must expose logical WAL generation bytes');
     assert.strictEqual(CheckpointCoordinator.snapshot().resets, 1, 'successful reset telemetry must be explicit');
     assert.strictEqual(CheckpointCoordinator.snapshot().lastReset.mode, 'restart');
+
+    const truncated = await Database.checkpoint({ mode: 'truncate', busyTimeoutMs: 50 });
+    assert.strictEqual(truncated.ok, true);
+    assert.strictEqual(truncated.mode, 'truncate', 'idle maintenance must physically truncate a fully checkpointed WAL generation');
+    const truncatedWalSize = fs.existsSync(`${databasePath}-wal`) ? fs.statSync(`${databasePath}-wal`).size : 0;
+    assert.strictEqual(truncatedWalSize, 0, 'TRUNCATE must release the physical WAL file after the generation is drained');
+    assert.strictEqual(CheckpointCoordinator.snapshot().resets, 2);
+    assert.strictEqual(CheckpointCoordinator.snapshot().lastReset.mode, 'truncate');
     const beforeCrash = CheckpointCoordinator.snapshot();
 
     await CheckpointCoordinator.terminateForTest();

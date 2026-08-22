@@ -2199,12 +2199,12 @@ const PopulationService = {
         const busyTimeoutMs = Math.max(1, Math.min(250, Number(options.default.Database?.checkpointResetBusyTimeoutMs) || 50));
         this.walResetRunning = true;
         this.nextWalResetAt = timestamp + retryMs;
-        return Database.checkpoint({ mode: 'restart', busyTimeoutMs }).then((result) => {
+        return Database.checkpoint({ mode: 'truncate', busyTimeoutMs }).then((result) => {
             this.lastWalResetResult = { ...result, requestedAt: timestamp };
             if (result?.ok && Number(result.busy || 0) === 0) {
                 this.nextWalResetAt = Date.now() + cooldownMs;
                 console.info(
-                    'DB          :: adaptive WAL restart complete wal=%dMB frames=%d/%d duration=%dms',
+                    'DB          :: adaptive WAL truncate complete wal=%dMB frames=%d/%d duration=%dms',
                     Math.round(Number(result.afterBytes || walBytes) / 1024 / 1024),
                     Number(result.checkpointedFrames || 0),
                     Number(result.logFrames || 0),
