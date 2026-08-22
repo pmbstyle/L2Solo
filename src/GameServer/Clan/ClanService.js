@@ -300,13 +300,13 @@ const ClanService = {
         const crestId = number(id);
         if (crestId === 0) return Promise.resolve(null);
 
-        return Database.fetchClanCrest(crestId).then((row) => {
+        return Database.fetchClanCrest(crestId).then(([row]) => {
             if (!row || String(row.kind || SMALL_CREST_KIND) !== SMALL_CREST_KIND) return null;
             return {
                 id: number(row.id),
                 clanId: number(row.clanId),
                 kind: String(row.kind || SMALL_CREST_KIND),
-                data: Buffer.from(row.data || [])
+                data: ClanCrestService.clientCrestData(row.data, 'clan')
             };
         });
     },

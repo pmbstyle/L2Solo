@@ -40,6 +40,37 @@ function readBmp(entry, kind) {
     };
 }
 
+function clientCrestData(data, kind = 'clan') {
+    const bytes = Buffer.from(data || []);
+    if (bytes.length < 54 || bytes.toString('ascii', 0, 2) !== 'BM') return bytes;
+
+    const expected = EXPECTED[kind] || EXPECTED.clan;
+    const pixelOffset = bytes.readUInt32LE(10);
+    const width = Math.abs(bytes.readInt32LE(18));
+    const height = Math.abs(bytes.readInt32LE(22));
+    const bitsPerPixel = bytes.readUInt16LE(28);
+    const compression = bytes.readUInt32LE(30);
+    const rowBytes = Math.ceil(width * bitsPerPixel / 8);
+    const rowStride = Math.ceil(rowBytes / 4) * 4;
+
+    if (width !== expected.width || height !== expected.height || bitsPerPixel !== expected.bitsPerPixel
+        || compression !== 0 || pixelOffset + rowStride * height > bytes.length) {
+        return bytes;
+    }
+
+    // C4's RequestSetPledgeCrest accepts the indexed pixel payload (16x12
+    // bytes for a clan crest), not the BMP header/palette. Normalize both the
+    // imported BMP assets and legacy database rows before PledgeCrest sends it.
+    const payload = Buffer.alloc(rowBytes * height);
+    const sourceHeight = bytes.readInt32LE(22);
+    for (let row = 0; row < height; row += 1) {
+        const sourceRow = sourceHeight > 0 ? height - 1 - row : row;
+        bytes.copy(payload, row * rowBytes, pixelOffset + sourceRow * rowStride,
+            pixelOffset + sourceRow * rowStride + rowBytes);
+    }
+    return payload;
+}
+
 function loadLibrary() {
     if (library) return library;
     if (!fs.existsSync(MANIFEST_FILE)) {
@@ -117,6 +148,7 @@ const ClanCrestService = {
     assets(kind = 'clan') {
         return [...(loadLibrary()[kind] || [])].map(({ data, ...asset }) => asset);
     },
+    clientCrestData,
     assetFor,
     ensureAutonomousCrest,
     ensureAutonomousClans,

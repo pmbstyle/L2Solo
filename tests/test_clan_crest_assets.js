@@ -9,6 +9,8 @@ const rootDir = path.resolve(__dirname, '..');
 const databasePath = path.join(rootDir, 'tmp', 'test-clan-crest-assets.sqlite');
 const Database = invoke('Database');
 const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
+const ClanService = invoke('GameServer/Clan/ClanService');
+const ServerResponse = invoke('GameServer/Network/Response');
 
 function removeDatabaseFiles() {
     [databasePath, `${databasePath}-wal`, `${databasePath}-shm`].forEach((file) => fs.rmSync(file, { force: true }));
@@ -63,6 +65,14 @@ async function main() {
         const crestData = Buffer.from(crest.data);
         assert(crestData.length > 54);
         assert.strictEqual(crestData.toString('ascii', 0, 2), 'BM');
+        const clientData = ClanCrestService.clientCrestData(crestData, 'clan');
+        assert.strictEqual(clientData.length, 16 * 12, 'C4 must receive the raw 16x12 clan crest payload');
+        assert.notStrictEqual(clientData.toString('ascii', 0, 2), 'BM', 'C4 payload must not include the BMP header');
+        const requested = await ClanService.findSmallCrest(Number(promotedRows[0].crestId));
+        assert.strictEqual(requested.data.length, 16 * 12, 'crest request path must normalize legacy BMP rows');
+        const packet = ServerResponse.pledgeCrest(requested.id, requested.data);
+        assert.strictEqual(packet.readInt32LE(1), requested.id);
+        assert.strictEqual(packet.readInt32LE(5), 16 * 12);
         console.log('Clan crest asset checks passed');
     } finally {
         await Database.close();
