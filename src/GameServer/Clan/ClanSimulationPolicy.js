@@ -13,6 +13,14 @@ const FIRST_PROFESSION_CLASS_IDS = new Set([
 ]);
 
 const ROSTER_ROLES = Object.freeze(['tank', 'healer', 'buffer', 'dps', 'mage', 'crafter', 'spoiler']);
+const MEMBER_TARGETS = Object.freeze({
+    0: 7,
+    1: 10,
+    2: 14,
+    3: 20,
+    4: 28,
+    5: 35
+});
 const DEFAULT_ROLE_WEIGHTS = Object.freeze({
     tank: 1.00,
     healer: 1.00,
@@ -77,6 +85,15 @@ function rosterNeeds(members = [], desired = ROSTER_ROLES) {
         needs[role] = Math.max(0, 1 - number(counts[role]));
         return needs;
     }, {});
+}
+
+function desiredMemberCount(level, options = {}) {
+    const normalizedLevel = Math.max(0, Math.floor(number(level)));
+    const configured = options.memberTargets?.[normalizedLevel]
+        ?? MEMBER_TARGETS[normalizedLevel]
+        ?? MEMBER_TARGETS[5];
+    const hardLimit = ClanRules.memberLimit(normalizedLevel);
+    return Math.min(hardLimit, Math.max(1, Math.floor(number(configured, hardLimit))));
 }
 
 function founderScore(candidate = {}) {
@@ -157,6 +174,9 @@ function clanSuitability(candidate = {}, clan = {}, options = {}) {
     const role = rosterRole(candidate);
     const needs = options.rosterNeeds || rosterNeeds(members, options.desiredRoles);
     const roleNeed = needs[role] ? 1 : 0;
+    const targetMemberCount = desiredMemberCount(clan.level, options);
+    const memberGap = Math.max(0, targetMemberCount - members.length);
+    const growthNeed = memberGap > 0;
     const historyScore = clamp(partyHistoryRuns(candidate) / 4);
     const affinityScore = socialAffinity(candidate, memberIds);
     const fullness = ClanRules.memberLimit(number(clan.level)) > 0
@@ -170,15 +190,19 @@ function clanSuitability(candidate = {}, clan = {}, options = {}) {
         + affinityScore * 0.20
         + clamp(fullness) * 0.14
         + commitment * 0.10
+        + (growthNeed ? 0.24 : 0)
     );
 
     const reasonCodes = [];
-    if (!roleNeed) reasonCodes.push(Contracts.REASON_CODES.JOIN_UNSUITABLE);
+    if (!roleNeed && !growthNeed) reasonCodes.push(Contracts.REASON_CODES.JOIN_UNSUITABLE);
     return {
         ok: score >= number(options.threshold ?? Contracts.config.existingClanSuitabilityThreshold),
         score,
         role,
         roleNeed: !!roleNeed,
+        growthNeed,
+        targetMemberCount,
+        memberGap,
         rosterNeeds: needs,
         reasonCodes
     };
@@ -218,12 +242,14 @@ module.exports = {
     BASE_CLASS_IDS,
     FIRST_PROFESSION_CLASS_IDS,
     ROSTER_ROLES,
+    MEMBER_TARGETS,
     DEFAULT_ROLE_WEIGHTS,
     hasFirstProfession,
     isStaticService,
     rosterRole,
     roleCounts,
     rosterNeeds,
+    desiredMemberCount,
     partyHistoryRuns,
     founderScore,
     founderEligibility,

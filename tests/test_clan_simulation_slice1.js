@@ -92,6 +92,35 @@ async function main() {
         assert(existing, 'a missing healer role with party history should match an existing clan');
         assert.strictEqual(existing.suitability.role, 'healer');
 
+        const completeRoster = [4, 15, 21, 11, 54, 3, 57]
+            .map((classId, index) => ({ id: 4200100 + index, classId }));
+        const growthCandidate = {
+            ...founderCandidate(),
+            characterId: 4200200,
+            classId: 3,
+            persona: { traits: { commitment: 0.8 } },
+            partyHistory: { 4100001: { runs: 4 } }
+        };
+        const growthMatch = Policy.selectExistingClan(growthCandidate, [{
+            id: 2,
+            level: 2,
+            members: completeRoster
+        }]);
+        assert(growthMatch, 'a strong duplicate-role candidate should grow an under-target clan');
+        assert.strictEqual(growthMatch.suitability.roleNeed, false);
+        assert.strictEqual(growthMatch.suitability.growthNeed, true);
+        assert.strictEqual(growthMatch.suitability.targetMemberCount, 14);
+
+        const targetRoster = [...completeRoster, ...Array.from({ length: 7 }, (_, index) => ({
+            id: 4200110 + index,
+            classId: 3
+        }))];
+        assert.strictEqual(Policy.selectExistingClan(growthCandidate, [{
+            id: 2,
+            level: 2,
+            members: targetRoster
+        }]), null, 'a clan at its growth target should not accept arbitrary duplicate roles');
+
         const projection = await ClanSimulationService.candidateProjection(20);
         assert.strictEqual(projection.length, 10, 'founder projection should only contain generated adventurers');
         assert.strictEqual(projection.some((candidate) => candidate.stats.generatedCold === true), true);
