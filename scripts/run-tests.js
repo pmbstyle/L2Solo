@@ -265,6 +265,7 @@ const tests = [
     'tests/test_newbie_helper_starting_zones.js',
     'tests/test_npc_shop_stock.js',
     'tests/test_npc_sell_shop.js',
+    'tests/test_sell_junk_packet_bounds.js',
     'tests/test_personal_warehouse.js',
     'tests/test_npc_social_aggro.js',
     'tests/test_npc_hot_bot_aggro.js',

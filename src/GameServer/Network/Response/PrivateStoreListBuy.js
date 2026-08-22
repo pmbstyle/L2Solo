@@ -1,29 +1,16 @@
 const SendPacket = invoke('Packet/Send');
 const DataCache = invoke('GameServer/DataCache');
-
-// Send.writeD encodes the full unsigned 32-bit wire range as an int32.
-const MAX_UNSIGNED_D = 0xffffffff;
-
-function wireD(value) {
-    const numericValue = Number(value);
-    return Number.isSafeInteger(numericValue) && numericValue >= 0 && numericValue <= MAX_UNSIGNED_D
-        ? numericValue
-        : null;
-}
-
-function boundedD(value) {
-    const numericValue = Number(value);
-    if (!Number.isFinite(numericValue)) return 0;
-    return Math.max(0, Math.min(MAX_UNSIGNED_D, Math.floor(numericValue)));
-}
+const WireD = invoke('Packet/WireD');
 
 function referencePrice(item) {
     const template = (DataCache.items || []).find((entry) => (
         Number(entry.selfId) === Number(item.fetchSelfId())
     ));
-    const templatePrice = wireD(template?.template?.price);
+    const templatePrice = WireD.isRepresentable(template?.template?.price)
+        ? Number(template.template.price)
+        : null;
     if (templatePrice !== null) return templatePrice;
-    return wireD(item.fetchPrice?.());
+    return WireD.isRepresentable(item.fetchPrice?.()) ? Number(item.fetchPrice()) : null;
 }
 
 function bodyPart(item) {
@@ -36,22 +23,22 @@ function privateStoreListBuy(merchant, rows, adena) {
     const safeRows = (Array.isArray(rows) ? rows : []).filter((row) => {
         const item = row?.item;
         return item
-            && wireD(item.fetchId?.()) !== null
-            && wireD(item.fetchSelfId?.()) !== null
-            && wireD(row.amount) !== null
+            && WireD.isRepresentable(item.fetchId?.())
+            && WireD.isRepresentable(item.fetchSelfId?.())
+            && WireD.isRepresentable(row.amount)
             && referencePrice(item) !== null
-            && wireD(bodyPart(item)) !== null
-            && wireD(item.fetchClass2?.()) !== null
-            && wireD(row.price) !== null;
+            && WireD.isRepresentable(bodyPart(item))
+            && WireD.isRepresentable(item.fetchClass2?.())
+            && WireD.isRepresentable(row.price);
     });
 
     const packet = new SendPacket(0xb8);
     packet
-        .writeD(boundedD(merchant.fetchId()))
+        .writeD(WireD.bounded(merchant.fetchId()))
         // C4 has no wider adena field. Saturate the display value at the
         // 32-bit wire limit; trade authorization still uses the server-side
         // wallet.
-        .writeD(boundedD(adena))
+        .writeD(WireD.bounded(adena))
         .writeD(safeRows.length);
 
     safeRows.forEach((row) => {

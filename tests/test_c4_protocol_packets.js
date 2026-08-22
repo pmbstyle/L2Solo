@@ -379,6 +379,30 @@ const invalidOfferList = ServerResponse.privateStoreListBuy(actor, [{ item: want
 assert.strictEqual(invalidOfferList.readUInt32LE(5), 0xffffffff, 'C4 PrivateStoreListBuy should saturate an oversized adena display value');
 assert.strictEqual(invalidOfferList.readInt32LE(9), 0, 'C4 PrivateStoreListBuy should omit an offer that cannot be represented by a C4 D field');
 
+const oversizedInventoryItem = {
+    ...wantedItem,
+    fetchClass1: () => 4,
+    fetchAmount: () => 111614128261,
+    fetchEquipped: () => false
+};
+const highUnsignedInventoryItem = {
+    ...oversizedInventoryItem,
+    fetchAmount: () => 2600993176
+};
+const highUnsignedInventoryList = ServerResponse.itemsList([highUnsignedInventoryItem]);
+assert.strictEqual(highUnsignedInventoryList.readUInt32LE(15), 2600993176,
+    'C4 ItemsList should preserve a valid amount above signed int32');
+const inventoryList = ServerResponse.itemsList([oversizedInventoryItem]);
+assert.strictEqual(inventoryList.readUInt32LE(15), 0xffffffff,
+    'C4 ItemsList should saturate an oversized inventory stack instead of crashing the server');
+
+const sellListWithOversizedWallet = ServerResponse.sellList(
+    [{ item: oversizedInventoryItem, amount: 1, price: 20 }],
+    111614128261
+);
+assert.strictEqual(sellListWithOversizedWallet.readUInt32LE(1), 0xffffffff,
+    'C4 SellList should saturate an oversized Adena display value');
+
 const originalConsumeMerchant = GameRequest.sell.consumeMerchant;
 let capturedPrivateSell = null;
 GameRequest.sell.consumeMerchant = (session, list, options) => {
