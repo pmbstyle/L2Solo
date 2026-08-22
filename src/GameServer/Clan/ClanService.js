@@ -1,5 +1,6 @@
 const Database = invoke('Database');
 const ClanRules = invoke('GameServer/Clan/ClanRules');
+const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
 
 const DAY_MS = 86400000;
 const JOIN_COOLDOWN_MS = 5 * DAY_MS;
@@ -121,6 +122,8 @@ const ClanService = {
     init() {
         return ensureSchema()
             .then(() => this.reload())
+            .then(() => ClanCrestService.ensureAutonomousClans())
+            .then((result) => result.assigned ? this.reload() : this.all())
             .then(() => utils.infoSuccess('Clan', 'loaded %d clans', state.clans.size))
             .catch((err) => {
                 utils.infoWarn('Clan', 'clan tables unavailable: %s', err.message);

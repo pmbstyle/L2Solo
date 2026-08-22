@@ -5,6 +5,7 @@ const GoalService = invoke('GameServer/Clan/ClanGoalService');
 const GoalPolicy = invoke('GameServer/Clan/ClanGoalPolicy');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
+const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
 
 const metrics = {
     resolves: 0,
@@ -152,6 +153,7 @@ async function resolveActiveOperation(clan, goal, operation, options = {}) {
         });
         if (advanced.ok) {
             metrics.levelUps += 1;
+            await ClanCrestService.ensureAutonomousCrest(clan.id);
             recordReason(Contracts.REASON_CODES.CONTRIBUTION_LEVEL_UP);
             if (typeof ClanService.reload === 'function') await ClanService.reload();
         } else {

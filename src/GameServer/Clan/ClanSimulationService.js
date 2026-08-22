@@ -5,6 +5,7 @@ const Config = invoke('GameServer/Clan/ClanSimulationConfig');
 const Contracts = invoke('GameServer/Clan/ClanSimulationContracts');
 const Policy = invoke('GameServer/Clan/ClanSimulationPolicy');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
+const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
 
 const metrics = {
     founderCandidates: 0,
@@ -233,6 +234,12 @@ async function resolveCandidate(candidate, options = {}) {
         return { ...result, eligibility, recruits };
     }
     metrics.founderCreated += 1;
+    try {
+        const crest = await ClanCrestService.ensureAutonomousCrest(result.clanId);
+        if (!crest.ok) utils.infoWarn('ClanCrest', 'could not assign crest to clan %d: %s', result.clanId, crest.code);
+    } catch (error) {
+        utils.infoWarn('ClanCrest', 'crest assignment failed for clan %d: %s', result.clanId, error.message);
+    }
     await ClanService.reload();
     return { ...result, eligibility, recruits };
 }

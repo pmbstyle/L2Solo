@@ -5,6 +5,7 @@ const Contracts = invoke('GameServer/Clan/ClanSimulationContracts');
 const Policy = invoke('GameServer/Clan/ClanContributionPolicy');
 const ClanWarehouseService = invoke('GameServer/Clan/ClanWarehouseService');
 const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
+const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
 
 const metrics = {
     resolves: 0,
@@ -155,6 +156,7 @@ async function resolveClan(clan, options = {}) {
                 });
                 if (advanced.ok) {
                     metrics.levelUps += 1;
+                    await ClanCrestService.ensureAutonomousCrest(clan.id);
                     recordReason(Contracts.REASON_CODES.CONTRIBUTION_LEVEL_UP);
                 }
             }
@@ -203,6 +205,7 @@ async function resolveClan(clan, options = {}) {
         });
         if (advanced.ok) {
             metrics.levelUps += 1;
+            await ClanCrestService.ensureAutonomousCrest(clan.id);
             recordReason(Contracts.REASON_CODES.CONTRIBUTION_LEVEL_UP);
         }
         return { ...advanced, requiredAmount, contributedAmount };

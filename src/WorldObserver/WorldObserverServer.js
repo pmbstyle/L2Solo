@@ -523,6 +523,7 @@ function clanOverviewQuery() {
             WHERE c.clanId != 0
         )
         SELECT clans.id, clans.name, clans.level, clans.leaderId,
+               clans.crestId, clans.allyCrestId,
                leader.name AS leaderName,
                simulated.version AS simulationVersion,
                simulated.createdAt AS simulationCreatedAt,
@@ -603,6 +604,8 @@ function compactClanOverview(row, auxiliary = {}) {
         id: clanNumber(row.id),
         name: String(row.name || ''),
         level: clanNumber(row.level),
+        crestId: clanNumber(row.crestId),
+        allyCrestId: clanNumber(row.allyCrestId),
         leaderId: clanNumber(row.leaderId) || null,
         leaderName: row.leaderName || null,
         autonomous: Number(row.simulationVersion || 0) > 0,

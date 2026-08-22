@@ -3814,6 +3814,59 @@ const Database = {
             };
         }, 'clan-simulation:level-up');
     },
+    fetchAutonomousClanCrests() {
+        return run(`SELECT clans.id, clans.level, clans.crestId, crests.data AS crestData
+            FROM clans
+            JOIN clan_simulation_clans simulated ON simulated.clanId = clans.id
+            LEFT JOIN clan_crests crests ON crests.id = clans.crestId AND crests.kind = 'pledge'
+            ORDER BY clans.id ASC`, [], 'clan:crest-autonomous', true);
+    },
+    assignAutonomousClanCrest({ clanId, data, kind = 'pledge' } = {}) {
+        const clan = Number(clanId);
+        const crestData = Buffer.from(data || []);
+        if (!clan || !crestData.length || !['pledge', 'ally'].includes(String(kind))) {
+            return Promise.resolve({ ok: false, code: 'invalid_clan_crest' });
+        }
+        return inTransaction(() => {
+            if (!one('SELECT clanId FROM clan_simulation_clans WHERE clanId = ?', [clan])) {
+                return { ok: false, code: 'target_not_autonomous' };
+            }
+            const crestColumn = String(kind) === 'ally' ? 'allyCrestId' : 'crestId';
+            const current = one(`SELECT level, ${crestColumn} AS crestId FROM clans WHERE id = ?`, [clan]);
+            if (!current) return { ok: false, code: 'clan_missing' };
+            if (String(kind) === 'pledge' && Number(current.level || 0) < 3) {
+                return { ok: false, code: 'level_too_low' };
+            }
+            if (Number(current.crestId || 0) > 0) {
+                return { ok: true, idempotent: true, crestId: Number(current.crestId) };
+            }
+            const created = write(`INSERT INTO clan_crests (clanId, kind, data, createdAt) VALUES (?, ?, ?, ?)`, [
+                clan, String(kind), crestData, now()
+            ]);
+            const updated = write(`UPDATE clans SET ${crestColumn} = ? WHERE id = ? AND COALESCE(${crestColumn}, 0) = 0`, [created.insertId, clan]);
+            if (Number(updated.affectedRows) !== 1) throw new Error('autonomous clan crest reservation changed');
+            return { ok: true, crestId: Number(created.insertId) };
+        }, 'clan:crest-autonomous-assign');
+    },
+    clearAutonomousClanCrest({ clanId, kind = 'pledge' } = {}) {
+        const clan = Number(clanId);
+        if (!clan || !['pledge', 'ally'].includes(String(kind))) {
+            return Promise.resolve({ ok: false, code: 'invalid_clan_crest' });
+        }
+        return inTransaction(() => {
+            if (!one('SELECT clanId FROM clan_simulation_clans WHERE clanId = ?', [clan])) {
+                return { ok: false, code: 'target_not_autonomous' };
+            }
+            const crestColumn = String(kind) === 'ally' ? 'allyCrestId' : 'crestId';
+            const current = one(`SELECT ${crestColumn} AS crestId FROM clans WHERE id = ?`, [clan]);
+            if (!current) return { ok: false, code: 'clan_missing' };
+            const crestId = Number(current.crestId || 0);
+            if (!crestId) return { ok: true, idempotent: true, cleared: false };
+            write(`UPDATE clans SET ${crestColumn} = 0 WHERE id = ?`, [clan]);
+            write('DELETE FROM clan_crests WHERE id = ? AND clanId = ? AND kind = ?', [crestId, clan, String(kind)]);
+            return { ok: true, cleared: true, crestId };
+        }, 'clan:crest-autonomous-clear');
+    },
     createClanCrest(clanId, kind, data) { return insert('clan_crests', { clanId, kind, data, createdAt: now() }, 'clan:crest-create'); },
     fetchClanCrest(id) { return selectOne('clan_crests', ['*'], 'id = ?', [id], 'clan:crest'); },
     createClan(data) { return insert('clans', { name: data.name, leaderId: data.leaderId }, 'clan:create'); },

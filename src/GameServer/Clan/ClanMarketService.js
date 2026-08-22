@@ -6,6 +6,7 @@ const ClanService = invoke('GameServer/Clan/ClanService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
 
 const metrics = {
     resolves: 0,
@@ -147,6 +148,7 @@ async function resolveClan(clan) {
     });
     if (advanced.ok) {
         metrics.levelUps += 1;
+        await ClanCrestService.ensureAutonomousCrest(clan.id);
         recordReason(Contracts.REASON_CODES.CONTRIBUTION_LEVEL_UP);
         if (typeof ClanService.reload === 'function') await ClanService.reload();
     }
