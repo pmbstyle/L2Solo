@@ -725,6 +725,30 @@ function applySchemaMigrations() {
                 ON clan_operation_members(characterId) WHERE status = 'active';
             CREATE INDEX IF NOT EXISTS clan_operation_members_operation
                 ON clan_operation_members(operationId, status, characterId);
+        `)],
+        [24, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS clan_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+                actionKey TEXT NOT NULL UNIQUE,
+                actionType TEXT NOT NULL,
+                priority INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK(status IN ('pending', 'running', 'succeeded', 'failed', 'cancelled')),
+                attempt INTEGER NOT NULL DEFAULT 0,
+                availableAt INTEGER NOT NULL DEFAULT 0,
+                leaseUntil INTEGER,
+                payloadJson TEXT NOT NULL DEFAULT '{}',
+                resultJson TEXT NOT NULL DEFAULT '{}',
+                reasonCode TEXT NOT NULL DEFAULT '',
+                createdAt INTEGER NOT NULL DEFAULT 0,
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                resolvedAt INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS clan_actions_due
+                ON clan_actions(status, availableAt, priority DESC, id ASC);
+            CREATE INDEX IF NOT EXISTS clan_actions_clan_status
+                ON clan_actions(clanId, status, updatedAt DESC, id DESC);
         `)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
@@ -2566,6 +2590,144 @@ const Database = {
                 state: jsonObject(row.stateJson)
             })));
     },
+    enqueueClanAction({
+        clanId,
+        actionKey,
+        actionType,
+        priority = 0,
+        availableAt = null,
+        payload = {}
+    } = {}) {
+        const clan = Number(clanId);
+        const key = String(actionKey || '').trim();
+        const type = String(actionType || '').trim();
+        if (!clan || !key || !type) return Promise.resolve({ ok: false, code: 'invalid_clan_action' });
+        return inTransaction(() => {
+            const existing = one('SELECT * FROM clan_actions WHERE actionKey = ?', [key]);
+            if (existing) {
+                return {
+                    ok: true,
+                    created: false,
+                    idempotent: true,
+                    actionId: Number(existing.id),
+                    action: existing
+                };
+            }
+            if (!one('SELECT clanId FROM clan_simulation_clans WHERE clanId = ?', [clan])) {
+                return { ok: false, code: 'target_not_autonomous' };
+            }
+            const timestamp = now();
+            const dueAt = availableAt !== null && availableAt !== undefined && Number.isFinite(Number(availableAt))
+                ? Math.max(0, Number(availableAt))
+                : timestamp;
+            const inserted = write(`INSERT INTO clan_actions
+                (clanId, actionKey, actionType, priority, status, attempt, availableAt,
+                 payloadJson, resultJson, reasonCode, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, '{}', '', ?, ?)`, [
+                clan,
+                key,
+                type,
+                Math.floor(Number(priority) || 0),
+                dueAt,
+                JSON.stringify(payload && typeof payload === 'object' ? payload : {}),
+                timestamp,
+                timestamp
+            ]);
+            const action = one('SELECT * FROM clan_actions WHERE id = ?', [Number(inserted.insertId)]);
+            return { ok: true, created: true, actionId: Number(inserted.insertId), action };
+        }, 'clan-action:enqueue');
+    },
+    claimClanActions({ limit = 8, at = null, leaseMs = 120000 } = {}) {
+        const safeLimit = Math.max(1, Math.min(100, Math.floor(Number(limit) || 8)));
+        return inTransaction(() => {
+            const timestamp = at !== null && at !== undefined && Number.isFinite(Number(at))
+                ? Number(at)
+                : now();
+            const leaseUntil = timestamp + Math.max(1000, Math.floor(Number(leaseMs) || 120000));
+            write(`UPDATE clan_actions SET status = 'pending', leaseUntil = NULL, updatedAt = ?
+                WHERE status = 'running' AND leaseUntil IS NOT NULL AND leaseUntil <= ?`, [timestamp, timestamp]);
+            const pending = all(`SELECT * FROM clan_actions
+                WHERE status = 'pending' AND availableAt <= ?
+                ORDER BY priority DESC, availableAt ASC, id ASC LIMIT ${safeLimit}`, [timestamp]);
+            return pending.map((action) => {
+                const updated = write(`UPDATE clan_actions
+                    SET status = 'running', attempt = attempt + 1, leaseUntil = ?, updatedAt = ?
+                    WHERE id = ? AND status = 'pending'`, [leaseUntil, timestamp, Number(action.id)]);
+                if (Number(updated.affectedRows || 0) !== 1) return null;
+                return one('SELECT * FROM clan_actions WHERE id = ?', [Number(action.id)]);
+            }).filter(Boolean);
+        }, 'clan-action:claim');
+    },
+    resolveClanAction({ actionId, status = 'succeeded', result = {}, reasonCode = '' } = {}) {
+        const id = Number(actionId);
+        const nextStatus = ['succeeded', 'failed', 'cancelled'].includes(String(status))
+            ? String(status)
+            : 'failed';
+        if (!id) return Promise.resolve({ ok: false, code: 'invalid_clan_action' });
+        return inTransaction(() => {
+            const action = one('SELECT * FROM clan_actions WHERE id = ?', [id]);
+            if (!action) return { ok: false, code: 'clan_action_missing' };
+            if (['succeeded', 'failed', 'cancelled'].includes(String(action.status))) {
+                return {
+                    ok: true,
+                    idempotent: true,
+                    actionId: id,
+                    status: String(action.status),
+                    action
+                };
+            }
+            const timestamp = now();
+            const safeResult = result && typeof result === 'object' ? result : {};
+            const updated = write(`UPDATE clan_actions
+                SET status = ?, leaseUntil = NULL, resultJson = ?, reasonCode = ?, updatedAt = ?, resolvedAt = ?
+                WHERE id = ? AND status IN ('pending', 'running')`, [
+                nextStatus,
+                JSON.stringify(safeResult),
+                String(reasonCode || ''),
+                timestamp,
+                timestamp,
+                id
+            ]);
+            if (Number(updated.affectedRows || 0) !== 1) return { ok: false, code: 'ownership_conflict' };
+            write(`INSERT INTO clan_goal_events
+                (clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt)
+                VALUES (?, ?, '', ?, ?, ?, ?)`, [
+                Number(action.clanId),
+                `action_${nextStatus}`,
+                String(action.actionType || ''),
+                String(reasonCode || ''),
+                JSON.stringify({ actionId: id, actionKey: action.actionKey, result: safeResult }),
+                timestamp
+            ]);
+            return {
+                ok: true,
+                actionId: id,
+                status: nextStatus,
+                action: one('SELECT * FROM clan_actions WHERE id = ?', [id])
+            };
+        }, 'clan-action:resolve');
+    },
+    fetchClanActions({ clanId = null, status = null, limit = 50 } = {}) {
+        const clauses = [];
+        const params = [];
+        if (clanId !== null && clanId !== undefined) { clauses.push('clanId = ?'); params.push(Number(clanId)); }
+        if (status !== null && status !== undefined) { clauses.push('status = ?'); params.push(String(status)); }
+        const safeLimit = Math.max(1, Math.min(200, Math.floor(Number(limit) || 50)));
+        return run(`SELECT * FROM clan_actions${clauses.length ? ` WHERE ${clauses.join(' AND ')}` : ''}
+            ORDER BY updatedAt DESC, id DESC LIMIT ${safeLimit}`, params, 'clan-action:list');
+    },
+    fetchClansNeedingAction(limit = 64) {
+        const safeLimit = Math.max(1, Math.min(500, Math.floor(Number(limit) || 64)));
+        return run(`SELECT simulated.clanId, simulated.stateJson, simulated.updatedAt
+            FROM clan_simulation_clans simulated
+            WHERE NOT EXISTS (
+                SELECT 1 FROM clan_actions actions
+                WHERE actions.clanId = simulated.clanId
+                  AND actions.status IN ('pending', 'running')
+            )
+            ORDER BY simulated.updatedAt ASC, simulated.clanId ASC
+            LIMIT ${safeLimit}`, [], 'clan-action:bootstrap');
+    },
     isAutonomousClan(clanId) {
         return selectOne('clan_simulation_clans', ['clanId'], 'clanId = ?', [Number(clanId)], 'clan-simulation:membership')
             .then((rows) => !!rows[0]);
@@ -2630,6 +2792,17 @@ const Database = {
             const state = simulationState(stateJson, clanId, leaderId, uniqueMemberIds, timestamp);
             write(`INSERT INTO clan_simulation_clans (clanId, version, createdAt, updatedAt, stateJson)
                 VALUES (?, ?, ?, ?, ?)`, [clanId, 1, timestamp, timestamp, JSON.stringify(state)]);
+            write(`INSERT INTO clan_actions
+                (clanId, actionKey, actionType, priority, status, attempt, availableAt,
+                 payloadJson, resultJson, reasonCode, createdAt, updatedAt)
+                VALUES (?, ?, 'goal_plan', 100, 'pending', 0, ?, ?, '{}', 'clan_created', ?, ?)`, [
+                clanId,
+                `clan:${clanId}:bootstrap:${timestamp}`,
+                timestamp,
+                JSON.stringify({ reason: 'clan_created', clanId }),
+                timestamp,
+                timestamp
+            ]);
             return {
                 ok: true,
                 clanId,

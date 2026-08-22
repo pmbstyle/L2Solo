@@ -25,7 +25,10 @@ const DEFAULTS = {
     catastrophicFailureThreshold: 5,
     resolveIntervalMs: 60000,
     resolveBatchSize: 16,
-    resolveBudgetMs: 20
+    resolveBudgetMs: 80,
+    actionBatchSize: 8,
+    actionLeaseMs: 120000,
+    actionRetryMs: 60000
 };
 
 const ENV_KEYS = {
@@ -55,7 +58,10 @@ const ENV_KEYS = {
     catastrophicFailureThreshold: 'CLAN_SIMULATION_CATASTROPHIC_FAILURE_THRESHOLD',
     resolveIntervalMs: 'CLAN_SIMULATION_RESOLVE_INTERVAL_MS',
     resolveBatchSize: 'CLAN_SIMULATION_RESOLVE_BATCH_SIZE',
-    resolveBudgetMs: 'CLAN_SIMULATION_RESOLVE_BUDGET_MS'
+    resolveBudgetMs: 'CLAN_SIMULATION_RESOLVE_BUDGET_MS',
+    actionBatchSize: 'CLAN_SIMULATION_ACTION_BATCH_SIZE',
+    actionLeaseMs: 'CLAN_SIMULATION_ACTION_LEASE_MS',
+    actionRetryMs: 'CLAN_SIMULATION_ACTION_RETRY_MS'
 };
 
 function asBoolean(value, fallback) {
@@ -111,5 +117,8 @@ config.catastrophicFailureThreshold = Math.max(1, Math.floor(config.catastrophic
 config.resolveIntervalMs = Math.max(1000, Math.floor(config.resolveIntervalMs));
 config.resolveBatchSize = Math.max(1, Math.floor(config.resolveBatchSize));
 config.resolveBudgetMs = Math.max(1, Math.floor(config.resolveBudgetMs));
+config.actionBatchSize = Math.max(1, Math.floor(config.actionBatchSize));
+config.actionLeaseMs = Math.max(1000, Math.floor(config.actionLeaseMs));
+config.actionRetryMs = Math.max(1000, Math.floor(config.actionRetryMs));
 
 module.exports = config;

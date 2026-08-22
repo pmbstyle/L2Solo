@@ -50,7 +50,8 @@ function goalComparable(goal) {
     return copy;
 }
 
-async function clanProjection() {
+async function clanProjection(clanId = null) {
+    const hasClanId = Number(clanId) > 0;
     const rows = await Database.execute([`
         SELECT simulated.clanId, simulated.stateJson,
                clans.name, clans.level, clans.leaderId,
@@ -62,8 +63,9 @@ async function clanProjection() {
         JOIN clans ON clans.id = simulated.clanId
         JOIN characters members ON members.clanId = simulated.clanId
         LEFT JOIN bot_life_state life ON life.characterId = members.id
+        ${hasClanId ? 'WHERE simulated.clanId = ?' : ''}
         ORDER BY simulated.clanId ASC, members.id ASC
-    `, []], 'clan-goal:projection');
+    `, hasClanId ? [Number(clanId)] : []], hasClanId ? 'clan-goal:projection-one' : 'clan-goal:projection');
     const byId = new Map();
     rows.forEach((row) => {
         const clanId = number(row.clanId);
@@ -95,6 +97,11 @@ async function clanProjection() {
         if (!ClanSimulationPolicy.isStaticService(member)) byId.get(clanId).members.push(member);
     });
     return [...byId.values()];
+}
+
+async function clanProjectionById(clanId) {
+    const clans = await clanProjection(clanId);
+    return clans[0] || null;
 }
 
 function marketOffer(itemId) {
@@ -271,6 +278,7 @@ const ClanGoalService = {
     config: Config,
     policy: GoalPolicy,
     clanProjection,
+    clanProjectionById,
     resolveClan,
     recordCatastrophicFailure,
 

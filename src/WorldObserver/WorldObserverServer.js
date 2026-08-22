@@ -578,8 +578,17 @@ function clanAuxiliaryRows() {
             FROM clan_operations
             WHERE status = 'active'
             GROUP BY clanId
-        `, []], 'observer:clan-operations')
-    ]).then(([warehouse, contributions, demands, operations]) => ({ warehouse, contributions, demands, operations }));
+        `, []], 'observer:clan-operations'),
+        Database.execute([`
+            SELECT clanId,
+                   COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+                   COALESCE(SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END), 0) AS running,
+                   MAX(updatedAt) AS latestActionAt
+            FROM clan_actions
+            WHERE status IN ('pending', 'running')
+            GROUP BY clanId
+        `, []], 'observer:clan-actions')
+    ]).then(([warehouse, contributions, demands, operations, actions]) => ({ warehouse, contributions, demands, operations, actions }));
 }
 
 function compactClanOverview(row, auxiliary = {}) {
@@ -587,6 +596,7 @@ function compactClanOverview(row, auxiliary = {}) {
     const warehouse = auxiliary.warehouse || {};
     const demand = auxiliary.demand || {};
     const operation = auxiliary.operation || {};
+    const actions = auxiliary.actions || {};
     const memberCount = clanNumber(row.memberCount);
     const botMembers = clanNumber(row.botMembers);
     return {
@@ -618,6 +628,11 @@ function compactClanOverview(row, auxiliary = {}) {
             requestedUnits: clanNumber(demand.requestedUnits),
             latestDemandAt: clanNumber(demand.latestDemandAt)
         },
+        actions: {
+            pending: clanNumber(actions.pending),
+            running: clanNumber(actions.running),
+            latestActionAt: clanNumber(actions.latestActionAt)
+        },
         operations: {
             active: clanNumber(operation.activeOperations),
             latestAt: clanNumber(operation.latestOperationAt)
@@ -641,11 +656,13 @@ async function clanSnapshot() {
     });
     const demandsByClan = new Map(auxiliary.demands.map((row) => [Number(row.clanId), row]));
     const operationsByClan = new Map(auxiliary.operations.map((row) => [Number(row.clanId), row]));
+    const actionsByClan = new Map(auxiliary.actions.map((row) => [Number(row.clanId), row]));
     const clans = rows.map((row) => compactClanOverview(row, {
         warehouse: warehouseByClan.get(Number(row.id)),
         contributions: contributionsByClan.get(Number(row.id)) || [],
         demand: demandsByClan.get(Number(row.id)),
-        operation: operationsByClan.get(Number(row.id))
+        operation: operationsByClan.get(Number(row.id)),
+        actions: actionsByClan.get(Number(row.id))
     }));
     const totals = clans.reduce((summary, clan) => {
         summary.members += clan.memberCount;
@@ -747,7 +764,7 @@ function compactClanEvent(row) {
 async function clanDetail(clanId) {
     const id = Number(clanId);
     if (!Number.isSafeInteger(id) || id <= 0) return null;
-    const [directory, members, events, warehouse, contributions, demands, operation] = await Promise.all([
+    const [directory, members, events, warehouse, contributions, demands, operation, actions] = await Promise.all([
         clanSnapshot(),
         clanMemberQuery(id),
         Database.fetchClanGoalEvents(id, 24),
@@ -766,6 +783,7 @@ async function clanDetail(clanId) {
             ORDER BY operations.createdAt DESC, operations.id DESC
             LIMIT 1
         `, [id]], 'observer:clan-operation')
+        , Database.fetchClanActions({ clanId: id, limit: 24 })
     ]);
     const overview = directory.clans.find((clan) => clan.id === id);
     if (!overview) return null;
@@ -816,6 +834,19 @@ async function clanDetail(clanId) {
             status: demand.status || null,
             createdAt: clanNumber(demand.createdAt),
             updatedAt: clanNumber(demand.updatedAt)
+        })),
+        actions: actions.map((action) => ({
+            id: clanNumber(action.id),
+            key: action.actionKey || null,
+            type: action.actionType || null,
+            priority: clanNumber(action.priority),
+            status: action.status || null,
+            attempt: clanNumber(action.attempt),
+            availableAt: clanNumber(action.availableAt),
+            updatedAt: clanNumber(action.updatedAt),
+            resolvedAt: clanNumber(action.resolvedAt),
+            reasonCode: action.reasonCode || null,
+            result: observerJson(action.resultJson)
         })),
         operation: operationRow ? {
             id: clanNumber(operationRow.id),

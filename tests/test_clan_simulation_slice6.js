@@ -173,7 +173,8 @@ async function main() {
         PopulationService.playerActivityProfile = () => ({ protected: true, realPlayers: 1 });
         const deferred = await PopulationService.resolveClanSimulation();
         PopulationService.playerActivityProfile = originalProfile;
-        assert.strictEqual(deferred.deferred, true, 'player-first guard must defer clan simulation under player activity');
+        assert.strictEqual(deferred.playerProtected, true, 'clan simulation must preserve player activity context');
+        assert(deferred.actions && deferred.actions.attempted >= 0, 'clan actions must remain schedulable with a real player online');
 
         const metrics = {
             founder: ClanSimulationService.metrics(),

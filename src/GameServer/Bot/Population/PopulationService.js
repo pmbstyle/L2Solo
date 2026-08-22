@@ -38,6 +38,7 @@ const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanne
 const BackgroundPartyLifecycle = invoke('GameServer/Bot/Population/BackgroundPartyLifecycle');
 const ClanSimulationConfig = invoke('GameServer/Clan/ClanSimulationConfig');
 const ClanSimulationService = invoke('GameServer/Clan/ClanSimulationService');
+const ClanActionService = invoke('GameServer/Clan/ClanActionService');
 const ClanEconomyService = invoke('GameServer/Clan/ClanEconomyService');
 const ClanGoalService = invoke('GameServer/Clan/ClanGoalService');
 const ClanPartyService = invoke('GameServer/Clan/ClanPartyService');
@@ -777,6 +778,7 @@ const PopulationService = {
             if (typeof this.clanSimulationTimer.unref === 'function') {
                 this.clanSimulationTimer.unref();
             }
+            this.resolveClanSimulation();
         }
 
         this.classProgressionMigrationTimer = setInterval(() => {
@@ -1227,28 +1229,27 @@ const PopulationService = {
     resolveClanSimulation() {
         if (this.clanSimulationRunning || ClanSimulationConfig.enabled === false) return Promise.resolve(null);
         const activity = this.playerActivityProfile();
-        if (activity?.protected) return Promise.resolve({ deferred: true, reason: 'player_protection' });
 
         this.clanSimulationRunning = true;
         const startedAt = Date.now();
-        return ClanSimulationService.resolveBatch(ClanSimulationConfig.resolveBatchSize, {
-            budgetMs: ClanSimulationConfig.resolveBudgetMs
-        }).then((founder) => ClanEconomyService.resolveBatch(ClanSimulationConfig.resolveBatchSize, {
-            budgetMs: Math.max(1, ClanSimulationConfig.resolveBudgetMs - (Date.now() - startedAt))
-        }).then((economy) => ClanGoalService.resolveBatch(ClanSimulationConfig.resolveBatchSize, {
-            budgetMs: Math.max(1, ClanSimulationConfig.resolveBudgetMs - (Date.now() - startedAt))
-        }).then((goals) => ClanMarketService.resolveBatch(ClanSimulationConfig.resolveBatchSize, {
-            budgetMs: Math.max(1, ClanSimulationConfig.resolveBudgetMs - (Date.now() - startedAt))
-        }).then((market) => ClanPartyService.resolveBatch(ClanSimulationConfig.resolveBatchSize, {
-            budgetMs: Math.max(1, ClanSimulationConfig.resolveBudgetMs - (Date.now() - startedAt))
-        }).then((party) => ({ founder, economy, goals, market, party })))))).catch((error) => {
+        const actionBudget = Math.max(10, Number(ClanSimulationConfig.resolveBudgetMs) || 80);
+        const founderBudget = activity?.protected ? 5 : Math.min(20, actionBudget);
+        return ClanActionService.resolveBatch({
+            limit: ClanSimulationConfig.actionBatchSize,
+            budgetMs: actionBudget
+        }).then((actions) => ClanSimulationService.resolveBatch(ClanSimulationConfig.resolveBatchSize, {
+            budgetMs: Math.max(1, founderBudget - (Date.now() - startedAt))
+        }).then((founder) => ({
+            actions,
+            founder,
+            playerProtected: !!activity?.protected,
+            elapsedMs: Date.now() - startedAt
+        }))).catch((error) => {
             utils.infoWarn('ClanSimulation', 'bounded resolve failed: %s', error.message);
             return {
+                actions: { attempted: 0, claimed: 0, succeeded: 0, failed: 0 },
                 founder: { attempted: 0, created: 0, joined: 0, blocked: 0 },
-                economy: { attempted: 0, levelUps: 0, contributions: 0, blocked: 0 },
-                goals: { attempted: 0, changed: 0, completed: 0 },
-                market: { attempted: 0, purchases: 0, deposited: 0, levelUps: 0, blocked: 0 },
-                party: { attempted: 0, started: 0, resolved: 0, succeeded: 0, failed: 0 },
+                playerProtected: !!activity?.protected,
                 error: error.message
             };
         }).finally(() => {

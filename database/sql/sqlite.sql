@@ -201,6 +201,29 @@ CREATE UNIQUE INDEX IF NOT EXISTS clan_operation_members_active_character
 CREATE INDEX IF NOT EXISTS clan_operation_members_operation
     ON clan_operation_members(operationId, status, characterId);
 
+CREATE TABLE IF NOT EXISTS clan_actions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+    actionKey TEXT NOT NULL UNIQUE,
+    actionType TEXT NOT NULL,
+    priority INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending', 'running', 'succeeded', 'failed', 'cancelled')),
+    attempt INTEGER NOT NULL DEFAULT 0,
+    availableAt INTEGER NOT NULL DEFAULT 0,
+    leaseUntil INTEGER,
+    payloadJson TEXT NOT NULL DEFAULT '{}',
+    resultJson TEXT NOT NULL DEFAULT '{}',
+    reasonCode TEXT NOT NULL DEFAULT '',
+    createdAt INTEGER NOT NULL DEFAULT 0,
+    updatedAt INTEGER NOT NULL DEFAULT 0,
+    resolvedAt INTEGER
+);
+CREATE INDEX IF NOT EXISTS clan_actions_due
+    ON clan_actions(status, availableAt, priority DESC, id ASC);
+CREATE INDEX IF NOT EXISTS clan_actions_clan_status
+    ON clan_actions(clanId, status, updatedAt DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS clan_crests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
