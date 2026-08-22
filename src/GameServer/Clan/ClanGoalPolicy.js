@@ -32,8 +32,9 @@ function operationMembers(members = [], limit = 5) {
 }
 
 function hasReadyRoles(members = []) {
-    const roles = new Set(members.map((member) => ClanPolicy.rosterRole(member)));
-    return members.length >= 5 && roles.has('tank') && roles.has('healer') && roles.has('buffer');
+    const available = members.filter((member) => member?.phase === 'cold' && !member?.partyId);
+    const roles = new Set(available.map((member) => ClanPolicy.rosterRole(member)));
+    return available.length >= 5 && roles.has('tank') && roles.has('healer') && roles.has('buffer');
 }
 
 function planReason(plan, context = {}) {

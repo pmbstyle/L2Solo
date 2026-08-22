@@ -142,6 +142,23 @@ async function schedulePlanAfterLevelUp(clan, parentAction, result) {
     return queued;
 }
 
+async function schedulePlanAfterMarketMiss(clan, parentAction, result) {
+    const actionKey = `clan:${Number(clan.id)}:after:${Number(parentAction.id)}:goal_plan:market_replan`;
+    const queued = await Database.enqueueClanAction({
+        clanId: clan.id,
+        actionKey,
+        actionType: ACTION_TYPES.PLAN,
+        priority: 100,
+        payload: {
+            parentActionId: Number(parentAction.id),
+            reason: Contracts.REASON_CODES.MARKET_NO_OFFER,
+            result: result && typeof result === 'object' ? result : {}
+        }
+    });
+    if (queued.created) metrics.planned += 1;
+    return queued;
+}
+
 async function loadClan(clanId) {
     return GoalService.clanProjectionById(clanId);
 }
@@ -205,8 +222,12 @@ async function resolveAction(action) {
         const clan = await loadClan(action.clanId);
         const goal = clan?.state?.goal || null;
         const advanced = result?.advanced?.ok === true || result?.advanced === true;
+        const marketMiss = String(action.actionType) === ACTION_TYPES.MARKET
+            && String(result?.reason || result?.code || '') === Contracts.REASON_CODES.MARKET_NO_OFFER;
         if (clan && advanced) {
             await schedulePlanAfterLevelUp(clan, action, result);
+        } else if (clan && marketMiss) {
+            await schedulePlanAfterMarketMiss(clan, action, result);
         } else if (clan && goal && !(String(action.actionType) === ACTION_TYPES.PLAN && goal.status === 'completed')) {
             const productive = ok && workDone(String(action.actionType), result);
             const delay = ok && productive ? 0 : Config.actionRetryMs;
