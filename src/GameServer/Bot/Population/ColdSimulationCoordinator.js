@@ -20,6 +20,14 @@ const { ColdCommitQueue } = require('./ColdCommitQueue');
 const { ColdSnapshotQueue } = require('./ColdSnapshotQueue');
 
 const HUNTING_TRAVEL_MS = 25000;
+const OWNERSHIP_REBASE_REASONS = new Set([
+    'stale_revision',
+    'cas_failed',
+    'owner_changed',
+    'lease_changed',
+    'lease_expired',
+    'lease_active'
+]);
 
 function wait(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -830,9 +838,31 @@ class ColdSimulationCoordinator {
             leaseMs: Math.max(2000, Number(Config.coldOwnerLeaseMs) || 30000)
         });
         const index = this.contextIndex({ compactPartyMembers: true });
+        const rebaseIds = [...new Set((claimed.rejected || [])
+            .filter((result) => OWNERSHIP_REBASE_REASONS.has(String(result.reason || '')))
+            .map((result) => Number(result.characterId))
+            .filter((characterId) => Number.isSafeInteger(characterId) && characterId > 0))];
+        // Clan warehouse/contribution writes advance simulationRevision in the
+        // same legacy row that the worker snapshots. A rejected claim must
+        // rebase from SQLite; returning the cached row simply emits the same
+        // stale CAS again and turns one legitimate handoff into an IPC storm.
+        const authoritativeStates = rebaseIds.length
+            ? await LifeState.statesByIds(rebaseIds)
+            : [];
+        const authoritativeById = new Map(authoritativeStates.map((state) => [
+            Number(state.characterId), state
+        ]));
         const rejected = [...missing, ...(claimed.rejected || [])].map((result) => {
-            const state = LifeState.cachedState(result.characterId);
-            return state ? { ...result, state, context: this.contextFor(state, index) } : result;
+            const state = authoritativeById.get(Number(result.characterId))
+                || LifeState.cachedState(result.characterId);
+            if (!state) return result;
+            const needsRetryDelay = OWNERSHIP_REBASE_REASONS.has(String(result.reason || ''));
+            return {
+                ...result,
+                ...(needsRetryDelay ? { retryAfterMs: Math.max(1000, Number(result.retryAfterMs) || 1000) } : {}),
+                state,
+                context: this.contextFor(state, index)
+            };
         });
         this.postCollections('claim_ack', {
             grants: (claimed.grants || []).map((grant) => ({ ...grant, purpose: purposes.get(Number(grant.characterId)) || null })),

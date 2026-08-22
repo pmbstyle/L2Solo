@@ -713,7 +713,12 @@ class ColdSimulationKernel {
             // snapshot. Party claims must absorb it just like solo claims do;
             // otherwise the next party attempt repeats the same stale revision
             // forever and creates a CAS/IPC retry storm.
-            if (result.state) this.upsert(result);
+            if (result.state) {
+                this.upsert(result);
+                if (Number(result.retryAfterMs) > 0) {
+                    this.requeue(id, this.now() + Math.max(1000, Number(result.retryAfterMs)));
+                }
+            }
             if (result.purpose?.kind === 'party') {
                 const run = this.partyRuns.get(String(result.purpose.partyId));
                 if (run) run.rejected = true;

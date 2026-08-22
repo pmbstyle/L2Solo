@@ -145,6 +145,7 @@ const tests = [
     'tests/test_persistent_state_retention.js',
     'tests/test_cold_simulation_owner.js',
     'tests/test_cold_owner_batches.js',
+    'tests/test_cold_claim_rebase.js',
     'tests/test_cold_owner_scheduler.js',
     'tests/test_cold_simulation_kernel.js',
     'tests/test_cold_worker_routing.js',
