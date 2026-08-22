@@ -204,7 +204,10 @@ class Session {
 
     dataSendToOthers(data, creature) {
         const packet = this.packData(data);
-        World.fetchVisibleUsers(this, creature).forEach((user) => {
+        const visibleUsers = typeof World.fetchVisibleRealPlayers === 'function'
+            ? World.fetchVisibleRealPlayers(this, creature)
+            : World.fetchVisibleUsers(this, creature);
+        visibleUsers.forEach((user) => {
             NpcVisibility.trackNpcPacket(user, data);
             if (user.recordOutboundPacket) {
                 user.recordOutboundPacket(data);

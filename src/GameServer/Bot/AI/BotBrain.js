@@ -68,7 +68,10 @@ function visibleRealPlayers(session, bot, cfg = config(), requestContext = null)
 
     const World = invoke('GameServer/World/World');
     const botLoc = location(bot);
-    const visible = World.fetchVisibleUsers(session, bot)
+    const fetchVisiblePlayers = typeof World.fetchVisibleRealPlayers === 'function'
+        ? World.fetchVisibleRealPlayers.bind(World)
+        : World.fetchVisibleUsers.bind(World);
+    const visible = fetchVisiblePlayers(session, bot)
         .filter(isRealPlayer)
         .map((playerSession) => compactPlayer(playerSession, botLoc))
         .filter((player) => player.distance <= cfg.visibilityRadius)

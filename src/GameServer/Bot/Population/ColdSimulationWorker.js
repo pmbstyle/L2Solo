@@ -275,6 +275,9 @@ async function handle(message) {
     case 'resume':
         kernel?.resume();
         break;
+    case 'throttle':
+        kernel?.setMaxInFlight(payload.maxInFlight);
+        break;
     case 'shutdown':
         if (shuttingDown) break;
         shuttingDown = true;

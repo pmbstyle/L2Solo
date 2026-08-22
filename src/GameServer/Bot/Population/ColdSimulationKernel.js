@@ -1215,6 +1215,11 @@ class ColdSimulationKernel {
         this.paused = false;
     }
 
+    setMaxInFlight(value) {
+        this.maxInFlight = Math.max(1, Math.min(128, Number(value) || this.maxInFlight));
+        return this.maxInFlight;
+    }
+
     async shutdown() {
         this.stopping = true;
         await this.resolveChain.catch(() => null);
@@ -1259,6 +1264,7 @@ class ColdSimulationKernel {
             dirtyAgeMs: this.dirty.size ? Math.max(0, now - oldestDirtyAt) : 0,
             commanding: this.commanding.size,
             commandingAgeMs: this.commanding.size ? Math.max(0, now - oldestCommandAt) : 0,
+            maxInFlight: this.maxInFlight,
             paused: this.paused,
             stopping: this.stopping
         };

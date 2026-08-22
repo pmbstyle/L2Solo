@@ -23,7 +23,10 @@ function removeFromClientWorld(session) {
 
 function isVisibleToRealPlayer(session) {
     if (!session || !session.actor) return false;
-    return World.fetchVisibleUsers(session, session.actor).some((user) => (
+    const visibleUsers = typeof World.fetchVisibleRealPlayers === 'function'
+        ? World.fetchVisibleRealPlayers(session, session.actor)
+        : World.fetchVisibleUsers(session, session.actor);
+    return visibleUsers.some((user) => (
         user.actor &&
         user.accountId &&
         !String(user.accountId).startsWith('bot_')

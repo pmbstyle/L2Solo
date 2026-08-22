@@ -657,18 +657,6 @@ function distance2d(a, b) {
     return Math.sqrt((dx * dx) + (dy * dy));
 }
 
-function nearbyHotCount(sessions, player) {
-    const playerLevel = Number(player.fetchLevel?.() || 1);
-    return sessions.filter((session) => {
-        const actor = session?.actor;
-        if (!actor || !session.accountId || !String(session.accountId).startsWith('bot_')) return false;
-        if (actor.fetchIsOnline && !actor.fetchIsOnline()) return false;
-        if (session.plan === 'merchant') return false;
-        if (distance2d(actor, player) > Config.activationRadius) return false;
-        return Math.abs(Number(actor.fetchLevel?.() || 1) - playerLevel) <= Config.activationLevelRange;
-    }).length;
-}
-
 const PopulationService = {
     groupBySpot,
     partySpotForLeader,
@@ -1336,8 +1324,6 @@ const PopulationService = {
                     locY: actor.fetchLocY(),
                     locZ: actor.fetchLocZ()
                 };
-                const existingNearby = nearbyHotCount(BotManager.sessions, actor);
-                const densityDeficit = Math.max(0, Config.nearPlayerHotTarget - existingNearby);
                 // Craft shops are persistent town infrastructure. They must not
                 // compete with the ambient-density budget, otherwise a full row
                 // of public stations can only appear in several policy ticks.
@@ -1357,9 +1343,16 @@ const PopulationService = {
                         ));
                         const merchants = available.filter((state) => state.activity === 'merchant' && state.stats?.marketStore);
                         const crafters = available.filter((state) => state.activity === 'crafting' && state.stats?.craftShop);
-                        const ambientRemaining = Math.min(
-                            Math.max(0, Config.maxActivationsPerScan - ambientActivated.length),
-                            Math.max(0, densityDeficit - crafters.length)
+                        // There is intentionally no local population target
+                        // here. The old fixed local target made a player see
+                        // only a fixed handful of bots even when hundreds of
+                        // eligible cold states occupied the same area. Keep a
+                        // bounded per-pass activation budget so the population
+                        // converges gradually and player pressure can still
+                        // interrupt the work between scans.
+                        const ambientRemaining = Math.max(
+                            0,
+                            Config.maxActivationsPerScan - ambientActivated.length
                         );
                         const candidates = [...crafters, ...merchants, ...activationCandidatesForPlayer(
                             available.filter((state) => state.activity !== 'merchant' && state.activity !== 'crafting'),
@@ -1464,6 +1457,16 @@ const PopulationService = {
             return Promise.resolve([]);
         }
         const activity = this.playerActivityProfile();
+        if (activity.protected) {
+            // Background party formation starts with a large SQLite projection
+            // query. It is useful for world convergence, but never worth
+            // spending hundreds of milliseconds of the player event loop on
+            // while a real client is online. The interval will retry after
+            // player protection ends.
+            this.partyFormationPending = true;
+            Metrics.recordPartyFormationDeferral();
+            return Promise.resolve([]);
+        }
         if (this.partyRequestCleanupRunning) {
             this.partyFormationPending = true;
             return Promise.resolve([]);

@@ -26,8 +26,12 @@ const MIME_TYPES = {
     '.jpeg': 'image/jpeg'
 };
 const OBSERVER_IDLE_CACHE_MS = 2000;
-const OBSERVER_PLAYER_CACHE_MS = 5000;
-const OBSERVER_PARTY_CACHE_MS = 10000;
+// The observer refreshes its map every 2s, but bot state is deliberately much
+// slower-moving than the player-facing game world. Reuse the expensive
+// 1776-state snapshot for 30s while a player is online instead of rebuilding
+// it every 5-10s and adding avoidable main-process allocation/GC pressure.
+const OBSERVER_PLAYER_CACHE_MS = 30000;
+const OBSERVER_PARTY_CACHE_MS = 30000;
 const snapshotCache = {
     json: null,
     generatedAt: 0,
@@ -1466,7 +1470,35 @@ function buildSyntheticEvents(bots) {
         });
 }
 
-function snapshot() {
+function mapCooperatively(items, mapper, sliceBudgetMs = 4) {
+    const values = Array.isArray(items) ? items : [];
+    const result = [];
+    let index = 0;
+
+    return new Promise((resolve) => {
+        const runSlice = () => {
+            const deadline = Date.now() + Math.max(1, Number(sliceBudgetMs) || 1);
+            while (index < values.length && Date.now() < deadline) {
+                result.push(mapper(values[index], index));
+                index += 1;
+            }
+
+            if (index >= values.length) {
+                resolve(result);
+                return;
+            }
+
+            // Observer work is diagnostic and must yield to game/network
+            // callbacks between chunks. A full 1776-bot snapshot can otherwise
+            // occupy the main event loop long enough to look like player lag.
+            setImmediate(runSlice);
+        };
+
+        runSlice();
+    });
+}
+
+async function snapshot() {
     const BotManager = invoke('GameServer/Bot/BotManager');
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
     const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
@@ -1489,9 +1521,11 @@ function snapshot() {
     // but do not hide the rest of the world from the map.
     const states = LifeState.allStates(2000);
     const stateById = new Map(states.map((state) => [Number(state.characterId), state]));
-    const stateBots = states
-        .map((state) => compactStateBot(state, hotIds, stateById.get(Number(state.party?.leaderId || state.stats?.leaderId))))
-        .filter(Boolean);
+    const stateBots = (await mapCooperatively(states, (state) => compactStateBot(
+        state,
+        hotIds,
+        stateById.get(Number(state.party?.leaderId || state.stats?.leaderId))
+    ))).filter(Boolean);
     const bots = [...hotBots, ...stateBots];
     const players = realPlayerSessions().map(compactPlayer);
     const memory = process.memoryUsage();

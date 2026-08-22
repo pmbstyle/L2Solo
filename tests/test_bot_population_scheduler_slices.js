@@ -26,6 +26,7 @@ const originalStateRetention = PersistentStateRetention.runNextBatch;
 const originalStateRetentionRunning = PopulationService.stateRetentionRunning;
 const originalStateRetentionPassRows = PopulationService.stateRetentionPassRows;
 const originalNextStateRetentionAt = PopulationService.nextStateRetentionAt;
+const originalPartyFormationPending = PopulationService.partyFormationPending;
 const originalDatabaseStats = Database.stats;
 const originalDatabaseCheckpoint = Database.checkpoint;
 const originalWalResetRunning = PopulationService.walResetRunning;
@@ -66,6 +67,13 @@ async function run() {
     assert.strictEqual(playerProfile.maxResolvesPerTick, Config.schedulerPlayerMaxResolvesPerTick, 'player scheduler must use the smaller cold batch cap');
     assert.strictEqual(PopulationService.partyFormationBudgetMs(), Config.partyFormationPlayerBudgetMs,
         'player presence must keep a bounded background party formation budget');
+    PopulationService.resolving = false;
+    PopulationService.partyFormationRunning = false;
+    PopulationService.partyFormationPending = false;
+    assert.deepStrictEqual(await PopulationService.formBackgroundParties(), [],
+        'player protection must defer the expensive background party projection');
+    assert.strictEqual(PopulationService.partyFormationPending, true,
+        'deferred party formation must remain pending for the next idle interval');
 
     PopulationService.playerActivityProfile = () => ({ protected: true, activeParty: true, realPlayers: 1, companionCount: 8, mode: 'party' });
     const partyProfile = PopulationService.schedulerProfile();
@@ -304,6 +312,7 @@ run()
         PopulationService.stateRetentionRunning = originalStateRetentionRunning;
         PopulationService.stateRetentionPassRows = originalStateRetentionPassRows;
         PopulationService.nextStateRetentionAt = originalNextStateRetentionAt;
+        PopulationService.partyFormationPending = originalPartyFormationPending;
         PopulationService.walResetRunning = originalWalResetRunning;
         PopulationService.nextWalResetAt = originalNextWalResetAt;
         PopulationService.lastWalResetResult = originalLastWalResetResult;

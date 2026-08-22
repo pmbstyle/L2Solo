@@ -76,6 +76,7 @@ class ColdSimulationCoordinator {
         this.snapshotsLoaded = false;
         this.lastHeartbeatAt = 0;
         this.lastWorkerSnapshot = {};
+        this.workerMaxInFlight = null;
         this.restartCount = 0;
         this.restartTimer = null;
         this.watchdogTimer = null;
@@ -313,6 +314,7 @@ class ColdSimulationCoordinator {
                 this.post('init', { config: this.workerConfig(), catalogVersion: utils.buildNumber() });
             } else if (payload.phase === 'running') {
                 this.ready = true;
+                this.syncWorkerPressure();
                 if (this.pauseReasons.size) this.post('pause', { reasons: [...this.pauseReasons] });
                 await this.sendSnapshots(true);
             } else if (payload.phase === 'snapshots_loaded') {
@@ -364,7 +366,7 @@ class ColdSimulationCoordinator {
     workerConfig() {
         return {
             maxBatch: Math.max(1, Math.min(64, Number(Config.coldWorkerBatchSize) || 64)),
-            maxInFlight: Math.max(1, Math.min(128, Number(Config.coldWorkerMaxInFlight) || 32)),
+            maxInFlight: this.desiredWorkerPressure().maxInFlight,
             claimAckTimeoutMs: 5000,
             flushTargetMs: Math.max(100, Number(Config.coldWorkerOrdinaryFlushMs) || 2000),
             flushHardMs: Math.max(1000, Number(Config.coldWorkerOrdinaryHardMaxMs) || 5000),
@@ -1047,6 +1049,7 @@ class ColdSimulationCoordinator {
 
     watchdog() {
         if (!this.worker || this.stopping) return;
+        this.syncWorkerPressure();
         const age = Date.now() - this.lastHeartbeatAt;
         if (age <= Math.max(5000, Number(Config.coldWorkerUnhealthyMs) || 5000)) {
             this.setPauseReason('heartbeat_stale', false);
@@ -1056,6 +1059,42 @@ class ColdSimulationCoordinator {
         if (age > Math.max(10000, Number(Config.coldWorkerDeadMs) || 10000)) {
             this.worker.terminate().catch(() => null);
         }
+    }
+
+    desiredWorkerPressure() {
+        const scheduler = Metrics.schedulerState || {};
+        const lagMs = Math.max(
+            Number(Metrics.currentEventLoopLag?.() || 0),
+            Number(scheduler.lagMs || 0)
+        );
+        const player = Number(scheduler.realPlayers || 0) > 0 || scheduler.mode === 'player';
+        const idleLimit = Math.max(1, Math.min(128, Number(Config.coldWorkerMaxInFlight) || 32));
+        const playerLimit = Math.max(1, Math.min(idleLimit, Number(Config.coldWorkerPlayerMaxInFlight) || 8));
+        const lagLimit = Math.max(1, Math.min(playerLimit, Number(Config.coldWorkerLagMaxInFlight) || 2));
+        const throttleMs = Math.max(0, Number(Config.schedulerLagThrottleMs) || 0);
+        const abortMs = Math.max(0, Number(Config.schedulerLagAbortMs) || 0);
+        let maxInFlight = player ? playerLimit : idleLimit;
+
+        if (abortMs > 0 && lagMs >= abortMs) {
+            maxInFlight = lagLimit;
+        } else if (throttleMs > 0 && lagMs > throttleMs) {
+            maxInFlight = Math.max(lagLimit, Math.floor(maxInFlight / 2));
+        }
+
+        return { maxInFlight, lagMs, player };
+    }
+
+    syncWorkerPressure() {
+        if (!this.worker || !this.ready) return null;
+        const pressure = this.desiredWorkerPressure();
+        if (this.workerMaxInFlight === pressure.maxInFlight) return pressure;
+        this.workerMaxInFlight = pressure.maxInFlight;
+        this.post('throttle', {
+            maxInFlight: pressure.maxInFlight,
+            lagMs: pressure.lagMs,
+            player: pressure.player
+        });
+        return pressure;
     }
 
     setPauseReason(reason, active, detail = {}) {
@@ -1077,6 +1116,7 @@ class ColdSimulationCoordinator {
     onWorkerExit(code) {
         this.counters.workerExits += 1;
         this.worker = null;
+        this.workerMaxInFlight = null;
         this.ready = false;
         this.snapshotsLoaded = false;
         this.waiters.forEach((waiter) => waiter.reject(new Error('cold_worker_exited')));

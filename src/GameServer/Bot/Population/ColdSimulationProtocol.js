@@ -16,6 +16,7 @@ const MAIN_TYPES = new Set([
     'fence_ack',
     'pause',
     'resume',
+    'throttle',
     'shutdown'
 ]);
 

@@ -45,7 +45,6 @@ const originalCooldownSession = PopulationService.cooldownSession;
 const originalConfig = {
     activationRadius: Config.activationRadius,
     activationLevelRange: Config.activationLevelRange,
-    nearPlayerHotTarget: Config.nearPlayerHotTarget,
     maxActivationsPerScan: Config.maxActivationsPerScan,
     cooldownGraceMs: Config.cooldownGraceMs,
     cooldownRadius: Config.cooldownRadius,
@@ -72,7 +71,6 @@ async function run() {
 
     Config.activationRadius = 9000;
     Config.activationLevelRange = 5;
-    Config.nearPlayerHotTarget = 3;
     Config.maxActivationsPerScan = 1;
     Config.cooldownGraceMs = 120000;
     Config.cooldownRadius = 11000;
@@ -103,7 +101,8 @@ async function run() {
 
     await PopulationService.activateNearPlayers();
     assert.strictEqual(coldLimit, 100, 'activation must inspect the complete local service row');
-    assert.deepStrictEqual(activated, ['ServiceCrafter', 'ServiceCrafterTwo', 'ServiceCrafterThree'], 'craft services must not be capped by the ambient bot activation budget');
+    assert.deepStrictEqual(activated, ['ServiceCrafter', 'ServiceCrafterTwo', 'ServiceCrafterThree', 'ColdA'],
+        'craft services must not be capped by the ambient budget and the uncapped local population must ramp one ambient bot');
 
     const cooled = [];
     PopulationService.cooldownSession = (botSession) => {
@@ -112,6 +111,21 @@ async function run() {
     };
     await PopulationService.cooldownEligibleHot();
     assert.deepStrictEqual(cooled, ['bot_far_craft', 'bot_far'], 'cooldown should park distant craft services along with normal cold-backed bots');
+
+    const highLevelPlayer = session('player_high_level', actor(9, 0, 78));
+    const highBotA = session('bot_high_a', actor(10, 1000, 45), { populationHotAt: Date.now() - 300000 });
+    const highBotB = session('bot_high_b', actor(11, 2000, 45), { populationHotAt: Date.now() - 300000 });
+    World.user = { sessions: [highLevelPlayer, highBotA, highBotB] };
+    BotManager.sessions = [highBotA, highBotB];
+    LifeState.coldNear = () => Promise.resolve([
+        { characterId: 108, name: 'ColdLevel45', level: 45 }
+    ]);
+    activated.length = 0;
+    Config.maxActivationsPerScan = 1;
+
+    await PopulationService.activateNearPlayers();
+    assert.deepStrictEqual(activated, ['ColdLevel45'],
+        'local visibility must not stop activating an eligible nearby bot after the old density target is removed');
 
     PopulationService.resolving = true;
     assert.deepStrictEqual(await PopulationService.formBackgroundParties(), [], 'party formation must not overlap a cold scheduler pass');

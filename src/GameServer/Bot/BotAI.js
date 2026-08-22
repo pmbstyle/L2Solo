@@ -695,8 +695,11 @@ const BotAI = {
                 return dx * dx + dy * dy <= 6000 * 6000;
             });
         }
-        if (typeof World.fetchVisibleUsers !== 'function') return [];
-        return World.fetchVisibleUsers(session, bot).filter(isRealPlayerSession);
+        const fetchVisiblePlayers = typeof World.fetchVisibleRealPlayers === 'function'
+            ? World.fetchVisibleRealPlayers.bind(World)
+            : World.fetchVisibleUsers?.bind(World);
+        if (!fetchVisiblePlayers) return [];
+        return fetchVisiblePlayers(session, bot).filter(isRealPlayerSession);
     },
 
     getStatus(session) {
