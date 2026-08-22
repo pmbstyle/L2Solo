@@ -507,6 +507,43 @@ function marketLocation(town, options) {
     return town?.center ? { ...town.center } : { ...(options.state?.loc || {}) };
 }
 
+function preTradeNpcCleanup(state, forcedCleanup = {}, timestamp = Date.now()) {
+    const candidates = ItemDisposition.npcLiquidationCandidates(state, {
+        unlimited: true,
+        allowPreTradeCleanup: true
+    });
+    const clearedState = {
+        ...state,
+        stats: {
+            ...(state.stats || {}),
+            forcedMarketCleanup: null,
+            marketSellRetryAfter: null
+        }
+    };
+    if (!candidates.length) {
+        return Promise.resolve({
+            state: clearedState,
+            listed: false,
+            cleaned: false,
+            reason: 'pre_trade_nothing_to_cleanup',
+            cleanup: forcedCleanup
+        });
+    }
+    return LifeState.applyNpcLiquidation(clearedState, candidates, {
+        source: 'pre_trade_npc_cleanup',
+        cleanupReason: forcedCleanup.cleanupReason || 'inventory_cleanup',
+        town: clearedState.currentRegion || null,
+        at: timestamp
+    }).then((cleanedState) => ({
+        state: cleanedState || clearedState,
+        listed: false,
+        cleaned: !!cleanedState,
+        reason: 'pre_trade_npc_cleanup',
+        cleanup: forcedCleanup,
+        liquidated: candidates
+    }));
+}
+
 function open(state, options = {}) {
     if (!state || state.phase === 'hot' || state.activity !== 'shopping') {
         return Promise.resolve({ state, listed: false, reason: 'not_shopping' });
@@ -523,6 +560,10 @@ function open(state, options = {}) {
         .then((enchantResult) => LifeState.learnCraftableRecipes(enchantResult.state || state))
         .then((preparedState) => {
     state = preparedState || state;
+    const forcedCleanup = options.forcedCleanup || null;
+    if (forcedCleanup && !ItemDisposition.isTradeEligible(state)) {
+        return preTradeNpcCleanup(state, forcedCleanup, timestamp);
+    }
     const initialItems = ItemDisposition.saleCandidates(state, options);
     if (!initialItems.length) {
         return { state: deferSellRetry(state), listed: false, reason: 'nothing_to_sell' };

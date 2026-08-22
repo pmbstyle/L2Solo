@@ -17,6 +17,7 @@ DataCache.init();
 const marketItem = DataCache.items.find((item) => (
     item?.etc?.rank === 'c' && item.template?.kind?.startsWith('Weapon.') && Number(item.template?.price || 0) > 1000
 ));
+const spellbook = DataCache.items.find((item) => /spellbook/i.test(item?.template?.name || ''));
 const equippedItem = DataCache.items.find((item) => (
     item !== marketItem && item?.etc?.rank === 'c' && Number(item.etc?.slot || 0) === Number(marketItem?.etc?.slot || 0)
 ));
@@ -28,7 +29,7 @@ const speculativeItem = DataCache.items.find((item) => (
     && Number(item.template?.price || 0) >= 10000
     && !invoke('GameServer/Bot/Economy/MarketListingPolicy').starterItemIds().has(Number(item.selfId))
 ));
-assert(marketItem && equippedItem && speculativeItem, 'the datapack must contain market gear for the listing lifecycle fixture');
+assert(marketItem && equippedItem && speculativeItem && spellbook, 'the datapack must contain market gear and spellbook fixtures');
 
 const originals = {
     execute: Database.execute,
@@ -116,6 +117,39 @@ async function run() {
         1000 + ListingService.SELL_RETRY_DELAY_MS,
         'a market visit with nothing sellable must not immediately repeat'
     );
+
+    const preTradeCleanup = {
+        ...preTradeState,
+        characterId: 95,
+        name: 'PreTradeCleanupSeller',
+        inventory: {
+            57: { selfId: 57, name: 'Adena', amount: 500 },
+            [spellbook.selfId]: {
+                selfId: spellbook.selfId,
+                name: spellbook.template.name,
+                amount: 1,
+                equipped: false,
+                kind: spellbook.template.kind,
+                stackable: false
+            }
+        },
+        stats: {
+            ...preTradeState.stats,
+            forcedMarketCleanup: {
+                cleanupReason: 'npc_only_inventory',
+                itemCount: 1,
+                npcOnlySlots: 1
+            }
+        }
+    };
+    const preTradeCleanupResult = await ListingService.open(preTradeCleanup, {
+        now: 1000,
+        forcedCleanup: preTradeCleanup.stats.forcedMarketCleanup
+    });
+    assert.strictEqual(preTradeCleanupResult.listed, false, 'pre-trade cleanup must never open a private store');
+    assert.strictEqual(preTradeCleanupResult.reason, 'pre_trade_npc_cleanup');
+    assert.strictEqual(preTradeCleanupResult.state.stats.lastNpcLiquidation.source, 'pre_trade_npc_cleanup');
+    assert.strictEqual(preTradeCleanupResult.state.stats.forcedMarketCleanup, null, 'pre-trade cleanup must consume forced intent');
 
     const starterMobLootState = {
         ...state,

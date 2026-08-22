@@ -528,6 +528,7 @@ function marketListingIntent(state, goal = null) {
 
     return {
         shouldOpen: true,
+        cleanup: forcedCleanup,
         state: {
             ...state,
             stats: {
@@ -2911,7 +2912,9 @@ const PopulationService = {
                     }
                     const listingIntent = marketListingIntent(purchasedState, goal);
                     const listingPromise = !marketLifecycle.closed && listingIntent.shouldOpen
-                        ? ColdMarketListingService.open(listingIntent.state)
+                        ? ColdMarketListingService.open(listingIntent.state, {
+                            forcedCleanup: listingIntent.cleanup || null
+                        })
                         : Promise.resolve({ state: purchasedState, listed: false });
                     const marketStatePromise = listingPromise.then((listingResult) => {
                         const listingState = listingResult.state || purchasedState;

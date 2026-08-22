@@ -122,11 +122,13 @@ function inventoryCleanupNeed(state = {}, options = {}) {
     const slots = inventorySlotCount(state);
     const npcOnlySlots = npcOnlySlotCount(state);
     const overCapacity = slots > INVENTORY_SLOT_LIMIT;
-    const accumulatedNpcOnly = npcOnlySlots >= NPC_ONLY_CLEANUP_MIN_SLOTS;
+    const accumulatedNpcOnly = isTradeEligible(state)
+        && npcOnlySlots >= NPC_ONLY_CLEANUP_MIN_SLOTS;
     // A normal market retry cooldown prevents pointless town loops. Residual
-    // NPC-only books/recipes and a genuinely full inventory are different:
-    // they are deterministic cleanup work and must get another visit even
-    // when the previous market attempt ended with no player demand.
+    // NPC-only books/recipes become deterministic cleanup work once a
+    // generated character reaches its trading phase. Before that point they
+    // are deferred instead of creating a market trip that cannot execute.
+    // A genuinely full inventory remains actionable at every level.
     if (Number(state.stats?.marketSellRetryAfter || 0) > timestamp
         && !overCapacity
         && !accumulatedNpcOnly) return null;
@@ -220,7 +222,7 @@ function protectedStarterLootAmount(item, kind) {
 }
 
 function saleCandidates(state, options = {}) {
-    if (!isTradeEligible(state)) return [];
+    if (!isTradeEligible(state) && !options.allowPreTradeCleanup) return [];
     const limit = options.unlimited
         ? Number.MAX_SAFE_INTEGER
         : Math.max(1, Math.min(20, Number(options.limit) || 8));
@@ -277,7 +279,10 @@ function npcLiquidationCandidates(state, options = {}) {
     // intrinsically NPC-only, but the market policy deliberately routes them
     // to the NPC shop during cleanup. Filter the unified sale set after the
     // starter-loot protection has been applied.
-    return saleCandidates(state, { unlimited: true }).filter((item) => {
+    return saleCandidates(state, {
+        unlimited: true,
+        allowPreTradeCleanup: options.allowPreTradeCleanup === true
+    }).filter((item) => {
         if (isClanProgressionItem(item)) return false;
         const gear = String(item.kind || '').startsWith('Weapon.') || String(item.kind || '').startsWith('Armor.');
         const lowGradeGear = gear && gradeIndex(item.rank) < gradeIndex('c');
