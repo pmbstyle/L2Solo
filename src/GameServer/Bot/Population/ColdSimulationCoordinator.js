@@ -636,7 +636,14 @@ class ColdSimulationCoordinator {
         for (const party of orphaned) {
             const dissolved = await BackgroundPartyState.setStatus(party.partyId, 'dissolved');
             if (dissolved) {
-                console.info('ColdWorker :: dissolved orphaned background party %s declaredMembers=%d', party.partyId, party.memberIds?.length || 0);
+                const released = await LifeState.releaseDissolvedPartyMembers(
+                    party.partyId,
+                    'orphaned_dissolved_party'
+                );
+                console.info('ColdWorker :: dissolved orphaned background party %s declaredMembers=%d releasedMembers=%d',
+                    party.partyId,
+                    party.memberIds?.length || 0,
+                    released);
             }
         }
         return orphaned;

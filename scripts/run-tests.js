@@ -152,6 +152,7 @@ const tests = [
     'tests/test_cold_worker_isolation.js',
     'tests/test_cold_worker_coordinator.js',
     'tests/test_cold_orphan_party_reconcile.js',
+    'tests/test_cold_orphan_party_release.js',
     'tests/test_background_party_history_cleanup.js',
     'tests/test_cold_worker_party_coordinator.js',
     'tests/test_cold_worker_party_goals.js',

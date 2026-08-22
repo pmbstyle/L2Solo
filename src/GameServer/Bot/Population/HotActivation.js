@@ -136,7 +136,7 @@ function releaseBackgroundParty(state, reason) {
     if (!partyId) return Promise.resolve(state);
 
     return BackgroundPartyState.setStatus(partyId, 'dissolved')
-        .then(() => LifeState.clearParty(partyId, `hot_activation_${reason}`))
+        .then(() => LifeState.releaseDissolvedPartyMembers(partyId, `hot_activation_${reason}`))
         .then((cleared) => {
             const refreshed = LifeState.cachedState(state.characterId);
             if (refreshed && !refreshed.party?.partyId) return refreshed;

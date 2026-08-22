@@ -2060,6 +2060,28 @@ const BotLifeState = {
         });
     },
 
+    releaseDissolvedPartyMembers(partyId, reason = 'orphaned_dissolved_party') {
+        if (!initialized || !partyId) return Promise.resolve(0);
+
+        // A runtime party reconciliation can discover members after the
+        // party row has already been dissolved. Release every cold member
+        // here, handing worker-owned rows back to the main lifecycle owner
+        // before applying the normal party departure transition.
+        return this.statesForParty(partyId).then((members) => (
+            members.reduce((chain, member) => (
+                chain.then((released) => {
+                    const ownerHandoff = member.simulation?.ownerId
+                        && member.simulation.ownerId !== 'legacy_main';
+                    return this.leaveParty(member, reason, { ownerHandoff: !!ownerHandoff })
+                        .then((updated) => released + (updated ? 1 : 0));
+                })
+            ), Promise.resolve(0))
+        )).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to release dissolved party %s: %s', partyId, err.message);
+            return 0;
+        });
+    },
+
     prepareResolve(state, result, options = {}) {
         if (!state || !result) return Promise.resolve(null);
 

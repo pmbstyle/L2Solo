@@ -399,7 +399,7 @@ function canTakePartyMarketBreak(party, members, member, timestamp = Date.now())
 
 function dissolveBackgroundParty(party, reason, memberCount = 0) {
     return BackgroundPartyState.setStatus(party.partyId, 'dissolved')
-        .then(() => LifeState.clearParty(party.partyId, reason))
+        .then(() => LifeState.releaseDissolvedPartyMembers(party.partyId, reason))
         .then((cleared) => {
             Metrics.recordPartyDissolution();
             console.info(
