@@ -266,6 +266,7 @@ const tests = [
     'tests/test_npc_threat.js',
     'tests/test_npc_geodata_visibility.js',
     'tests/test_npc_interaction_completion.js',
+    'tests/test_npc_dual_role.js',
     'tests/test_newbie_helper_starting_zones.js',
     'tests/test_npc_shop_stock.js',
     'tests/test_npc_sell_shop.js',
