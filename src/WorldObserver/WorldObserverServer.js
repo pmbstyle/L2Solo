@@ -600,11 +600,15 @@ function compactClanOverview(row, auxiliary = {}) {
     const actions = auxiliary.actions || {};
     const memberCount = clanNumber(row.memberCount);
     const botMembers = clanNumber(row.botMembers);
+    const id = clanNumber(row.id);
+    const level = clanNumber(row.level);
+    const crestId = clanNumber(row.crestId);
     return {
-        id: clanNumber(row.id),
+        id,
         name: String(row.name || ''),
-        level: clanNumber(row.level),
-        crestId: clanNumber(row.crestId),
+        level,
+        crestId,
+        crestUrl: level >= 3 && id > 0 && crestId > 0 ? `/observer/api/clan/${id}/crest` : null,
         allyCrestId: clanNumber(row.allyCrestId),
         leaderId: clanNumber(row.leaderId) || null,
         leaderName: row.leaderName || null,
@@ -867,6 +871,30 @@ async function clanDetail(clanId) {
             }))
         } : null,
         events: events.map(compactClanEvent)
+    };
+}
+
+async function clanCrest(clanId) {
+    const id = Number(clanId);
+    if (!Number.isSafeInteger(id) || id <= 0) return null;
+    const rows = await Database.execute([`
+        SELECT clans.id AS clanId, clans.level, clans.crestId,
+               crests.id, crests.kind, crests.data
+        FROM clans
+        JOIN clan_crests crests
+          ON crests.id = clans.crestId
+         AND crests.clanId = clans.id
+         AND crests.kind = 'pledge'
+        WHERE clans.id = ? AND clans.level >= 3
+        LIMIT 1
+    `, [id], { read: true }], 'observer:clan-crest');
+    const row = rows[0];
+    if (!row || Number(row.crestId || 0) <= 0 || !row.data) return null;
+    return {
+        clanId: clanNumber(row.clanId),
+        id: clanNumber(row.id),
+        kind: row.kind || 'pledge',
+        data: Buffer.from(row.data)
     };
 }
 
@@ -1585,6 +1613,15 @@ function sendJsonText(response, json, statusCode = 200) {
     response.end(json);
 }
 
+function sendClanCrest(response, crest) {
+    response.writeHead(200, {
+        'Content-Type': 'image/bmp',
+        'Content-Length': crest.data.length,
+        'Cache-Control': 'no-store'
+    });
+    response.end(crest.data);
+}
+
 function sendFile(response, filePath) {
     fs.readFile(filePath, (err, body) => {
         if (err) {
@@ -1619,6 +1656,16 @@ function route(request, response) {
     if (url.pathname === '/observer/api/clans') {
         clanSnapshot()
             .then((data) => sendJson(response, data))
+            .catch((err) => sendJson(response, { error: err.message }, 500));
+        return;
+    }
+
+    const clanCrestMatch = url.pathname.match(/^\/observer\/api\/clan\/(\d+)\/crest$/);
+    if (clanCrestMatch) {
+        clanCrest(clanCrestMatch[1])
+            .then((crest) => crest
+                ? sendClanCrest(response, crest)
+                : sendJson(response, { error: 'Clan crest not found' }, 404))
             .catch((err) => sendJson(response, { error: err.message }, 500));
         return;
     }
@@ -1699,6 +1746,7 @@ const WorldObserverServer = {
     compactClanGoal,
     compactClanOverview,
     compactClanMember,
+    clanCrest,
     clanSnapshot,
     clanDetail,
     compactItem,

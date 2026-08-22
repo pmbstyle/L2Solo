@@ -37,6 +37,7 @@ const overview = Observer.compactClanOverview({
     id: 7,
     name: 'Dawn Covenant',
     level: 2,
+    crestId: 17,
     leaderId: 42,
     leaderName: 'Aster',
     simulationVersion: 1,
@@ -64,6 +65,17 @@ assert.strictEqual(overview.botMembers, 5);
 assert.strictEqual(overview.warehouse.bloodMarks, 1);
 assert.strictEqual(overview.goal.status, 'active');
 assert.strictEqual(overview.operations.active, 1);
+assert.strictEqual(overview.crestUrl, null, 'clans below level 3 must not expose a crest');
+
+const crestOverview = Observer.compactClanOverview({
+    id: 8,
+    name: 'Silver Oath',
+    level: 3,
+    crestId: 18,
+    memberCount: 1,
+    botMembers: 1
+});
+assert.strictEqual(crestOverview.crestUrl, '/observer/api/clan/8/crest', 'eligible assigned clan crests must expose an observer URL');
 
 const botMember = Observer.compactClanMember({
     id: 42,
@@ -130,6 +142,9 @@ async function databaseBackedChecks() {
     insertCharacter.run(9102, 'bot_pop_observer', 'ObserverHealer', 15, 40);
     insertCharacter.run(9103, 'observer_player', 'ObserverPlayer', 0, 35);
     seed.prepare('INSERT INTO clans(id, name, level, leaderId) VALUES (91, ?, 3, 9101)').run('Observer Vanguard');
+    seed.prepare('INSERT INTO clan_crests(id, clanId, kind, data, createdAt) VALUES (91001, 91, ?, ?, 200)')
+        .run('pledge', fs.readFileSync(path.join(rootDir, 'data', 'crests', 'clan', 'crest-001.bmp')));
+    seed.prepare('UPDATE clans SET crestId = 91001 WHERE id = 91').run();
     seed.prepare('UPDATE characters SET clanId = 91 WHERE id IN (9101, 9102, 9103)').run();
     const insertState = seed.prepare(`INSERT INTO bot_life_state(
         characterId, accountName, characterName, level, adena, activity, phase,
@@ -172,6 +187,12 @@ async function databaseBackedChecks() {
         assert.strictEqual(directory.clans[0].botMembers, 2);
         assert.strictEqual(directory.clans[0].warehouse.bloodMarks, 2);
         assert.strictEqual(directory.clans[0].operations.active, 1);
+        assert.strictEqual(directory.clans[0].crestUrl, '/observer/api/clan/91/crest');
+
+        const crest = await Observer.clanCrest(91);
+        assert.strictEqual(crest.clanId, 91);
+        assert.strictEqual(crest.kind, 'pledge');
+        assert.strictEqual(crest.data.toString('ascii', 0, 2), 'BM');
 
         const detail = await Observer.clanDetail(91);
         assert.strictEqual(detail.clan.id, 91);

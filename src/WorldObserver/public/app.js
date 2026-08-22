@@ -594,9 +594,7 @@ function filteredClans() {
     }).sort((left, right) => {
         const primary = state.clanSort === 'members'
             ? Number(right.memberCount || 0) - Number(left.memberCount || 0)
-            : state.clanSort === 'online'
-                ? Number(right.onlineMembers || 0) - Number(left.onlineMembers || 0)
-                : Number(right.level || 0) - Number(left.level || 0);
+            : Number(right.level || 0) - Number(left.level || 0);
         return primary
             || Number(right.memberCount || 0) - Number(left.memberCount || 0)
             || String(left.name).localeCompare(String(right.name));
@@ -604,7 +602,13 @@ function filteredClans() {
 }
 
 function clanSortLabel() {
-    return state.clanSort === 'members' ? 'members' : state.clanSort === 'online' ? 'online now' : 'level';
+    return state.clanSort === 'members' ? 'members' : 'level';
+}
+
+function clanCrestMarkup(clan, size = 'small') {
+    if (!clan?.crestUrl) return '';
+    const label = `${clan.name || 'Clan'} crest`;
+    return `<span class="clan-crest clan-crest-${size}"><img src="${escapeHtml(clan.crestUrl)}" alt="${escapeHtml(label)}" loading="lazy"></span>`;
 }
 
 function renderClans() {
@@ -614,7 +618,7 @@ function renderClans() {
     if (els.clanCount) els.clanCount.textContent = Number(directory?.total || 0).toLocaleString();
     if (els.clanSummary) {
         els.clanSummary.textContent = directory
-            ? `${number(directory.total)} clans · ${number(totals.bots)} bots · ${number(totals.online)} online · ${number(totals.autonomous)} autonomous`
+            ? `${number(directory.total)} clans · ${number(totals.bots)} bots · ${number(totals.autonomous)} autonomous`
             : 'Waiting for clan data.';
     }
     if (els.clanScope) {
@@ -634,10 +638,10 @@ function renderClans() {
         <button class="clan-row${Number(clan.id) === Number(state.selectedClanId) ? ' is-selected' : ''}" type="button" data-clan-id="${escapeHtml(clan.id)}">
             <span class="clan-level">L${number(clan.level, 0)}</span>
             <span class="clan-identity">
-                <strong>${text(clan.name, 'Unnamed clan')}</strong>
+                <strong>${clanCrestMarkup(clan)}${text(clan.name, 'Unnamed clan')}</strong>
                 <span>${text(clan.leaderName, 'Unknown leader')} · ${number(clan.botMembers)}/${number(clan.memberCount)} bots</span>
             </span>
-            <span class="clan-row-side"><strong>${number(clan.memberCount)}</strong><span>${number(clan.onlineMembers)} online</span></span>
+            <span class="clan-row-side"><strong>${number(clan.memberCount)}</strong><span>members</span></span>
         </button>
     `).join('') : '<div class="list-empty">No clans match this search.</div>';
     renderClanDetail();
@@ -669,7 +673,6 @@ function renderClanDetail() {
     const clan = detail.clan;
     const goal = clanGoalSummary(clan.goal);
     const members = (detail.members || []).filter((member) => {
-        if (state.clanMemberFilter === 'online') return member.online;
         if (state.clanMemberFilter === 'all') return true;
         return member.isBot;
     });
@@ -680,8 +683,8 @@ function renderClanDetail() {
         <div class="clan-detail-header">
             <div>
                 <span class="section-kicker">${clan.autonomous ? 'Autonomous clan' : 'Player clan'}</span>
-                <h3>${text(clan.name, 'Unnamed clan')}</h3>
-                <p>Level ${number(clan.level, 0)} · leader ${text(clan.leaderName, 'Unknown')} · ${number(clan.onlineMembers)} online now</p>
+                <h3>${clanCrestMarkup(clan, 'large')}${text(clan.name, 'Unnamed clan')}</h3>
+                <p>Level ${number(clan.level, 0)} · leader ${text(clan.leaderName, 'Unknown')} · ${number(clan.memberCount)} members</p>
             </div>
             <span class="clan-level-badge">L${number(clan.level, 0)}</span>
         </div>
@@ -704,14 +707,13 @@ function renderClanDetail() {
         </div>
         <div class="clan-member-toolbar">
             <div class="ranking-tabs" id="clanMemberTabs" role="group" aria-label="Clan member filter">
-                ${['bots', 'all', 'online'].map((filter) => `<button class="ranking-tab${state.clanMemberFilter === filter ? ' is-active' : ''}" type="button" aria-pressed="${state.clanMemberFilter === filter}" data-clan-member-filter="${filter}">${filter === 'bots' ? 'Bots' : filter === 'all' ? 'All members' : 'Online'}</button>`).join('')}
+                ${['bots', 'all'].map((filter) => `<button class="ranking-tab${state.clanMemberFilter === filter ? ' is-active' : ''}" type="button" aria-pressed="${state.clanMemberFilter === filter}" data-clan-member-filter="${filter}">${filter === 'bots' ? 'Bots' : 'All members'}</button>`).join('')}
             </div>
             <span>${number(members.length)} shown</span>
         </div>
         <div class="clan-member-list" role="list">
             ${members.length ? members.map((member) => `
                 <button class="clan-member-row" type="button" data-clan-member-id="${escapeHtml(member.id)}" data-clan-member-kind="${escapeHtml(member.kind)}">
-                    <i class="phase-dot ${member.online ? 'is-online' : ''}"></i>
                     <span class="clan-member-main"><strong>${text(member.isLeader ? `♛ ${member.name}` : member.name)}</strong><span>${text(member.className, 'Unknown class')} · ${text(roleLabel(member.role || 'member'))} · Lv ${number(member.level, '?')}</span></span>
                     <span class="clan-member-state"><strong>${text(activityLabel(member.activity || member.phase), member.phase)}</strong><span>${text(member.region, 'Unknown location')}</span></span>
                 </button>
