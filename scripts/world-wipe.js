@@ -9,7 +9,13 @@ const rootDir = path.resolve(__dirname, '..');
 const scopes = new Set(['bots', 'players', 'all']);
 
 function readDatabasePath() {
-    const files = [path.join(rootDir, 'config', 'default.ini'), path.join(rootDir, 'config', 'local.ini')];
+    const configuredOverride = process.env.L2NODE_CONFIG_FILE;
+    const files = [
+        path.join(rootDir, 'config', 'default.ini'),
+        configuredOverride
+            ? (path.isAbsolute(configuredOverride) ? configuredOverride : path.resolve(rootDir, configuredOverride))
+            : path.join(rootDir, 'config', 'local.ini')
+    ];
     let value = 'tmp/nodel2.sqlite';
     files.filter(fs.existsSync).forEach((file) => {
         let inDatabase = false;

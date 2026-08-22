@@ -12,10 +12,12 @@ const isWindows = process.platform === 'win32';
 const host = process.env.L2NODE_LAUNCHER_HOST || '127.0.0.1';
 const port = Number(process.env.L2NODE_LAUNCHER_PORT || 8090);
 const maxLogLines = 80;
-const logsDir = path.join(rootDir, 'tmp', 'logs');
+const launcherName = process.env.L2NODE_LAUNCHER_NAME || 'L2Solo Launcher';
+const runtimeDir = resolveRootPath(process.env.L2NODE_RUNTIME_DIR || 'tmp');
+const logsDir = resolveRootPath(process.env.L2NODE_LOG_DIR || path.relative(rootDir, path.join(runtimeDir, 'logs')));
 const latestLogPath = path.join(logsDir, 'latest-server.log');
 const previousLogPath = path.join(logsDir, 'previous-server.log');
-const launcherSettingsPath = process.env.L2NODE_LAUNCHER_SETTINGS_FILE || path.join(rootDir, 'tmp', 'launcher-settings.json');
+const launcherSettingsPath = resolveRootPath(process.env.L2NODE_LAUNCHER_SETTINGS_FILE || path.relative(rootDir, path.join(runtimeDir, 'launcher-settings.json')));
 const debugFlagNames = [
     'L2NODE_PACKET_TRACE'
 ];
@@ -37,6 +39,12 @@ const wipeConfirmations = {
     players: 'WIPE PLAYERS',
     all: 'WIPE ALL'
 };
+
+function resolveRootPath(value) {
+    return path.isAbsolute(String(value))
+        ? String(value)
+        : path.resolve(rootDir, String(value));
+}
 
 function log(message) {
     console.info(`Launcher  :: ${message}`);
@@ -101,7 +109,9 @@ function mergeConfig(base, override) {
 
 function readConfig() {
     const defaultPath = path.join(rootDir, 'config', 'default.ini');
-    const localPath = path.join(rootDir, 'config', 'local.ini');
+    const localPath = process.env.L2NODE_CONFIG_FILE
+        ? resolveRootPath(process.env.L2NODE_CONFIG_FILE)
+        : path.join(rootDir, 'config', 'local.ini');
     const config = parseIni(fs.readFileSync(defaultPath, 'utf8'));
 
     if (fs.existsSync(localPath)) {
@@ -336,7 +346,7 @@ function sendHtml(response) {
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>L2Solo Launcher</title>
+    <title>${launcherName}</title>
     <style>
         :root {
             color-scheme: dark;
@@ -588,7 +598,7 @@ function sendHtml(response) {
 <body>
     <main>
         <header>
-            <h1>L2Solo Launcher</h1>
+            <h1>${launcherName}</h1>
             <div id="status" class="status stopped"><span class="dot"></span><span>Stopped</span></div>
         </header>
 
