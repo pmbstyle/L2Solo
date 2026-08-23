@@ -86,6 +86,23 @@ async function main() {
         });
         assert.strictEqual(goalSetup.ok, true);
 
+        await Database.execute(['UPDATE bot_life_state SET partyId = ? WHERE characterId = ?', ['busy-party', 4500002]]);
+        const originalFetchActiveOperation = Database.fetchActiveAutonomousClanOperation;
+        let activeOperationLookups = 0;
+        let notReady;
+        try {
+            Database.fetchActiveAutonomousClanOperation = (...args) => {
+                activeOperationLookups += 1;
+                return originalFetchActiveOperation.apply(Database, args);
+            };
+            notReady = await ClanPartyService.resolveBatch(4, { budgetMs: 1000, rng: () => 0 });
+        } finally {
+            Database.fetchActiveAutonomousClanOperation = originalFetchActiveOperation;
+        }
+        assert.strictEqual(notReady.started, 0, 'an unavailable required role must keep the clan party pending');
+        assert.strictEqual(activeOperationLookups, 0, 'a not-ready roster without goal.partyId must not query for an impossible active operation');
+        await Database.execute(['UPDATE bot_life_state SET partyId = NULL WHERE characterId = ?', [4500002]]);
+
         const started = await ClanPartyService.resolveBatch(4, { budgetMs: 1000, rng: () => 0 });
         assert.strictEqual(started.started, 1, 'first party pass must persist the operation');
         const [activeOperation] = await Database.execute([

@@ -53,13 +53,23 @@ function operationKey(clan, goal) {
     return `${number(clan.id)}:farm:${number(goal.updatedAt)}:${number(goal.catastrophicFailures)}`;
 }
 
-async function startOperation(clan, goal) {
+function operationRoster(clan, goal) {
     const members = parseIds(goal.assignedMemberIds);
     const selected = members.length ? members : GoalPolicy.operationMembers(clan.members, 5);
-    if (selected.length < 5 || !GoalPolicy.hasReadyRoles(selected.map((id) => memberById(clan, id)).filter(Boolean))) {
+    const selectedMembers = selected.map((id) => memberById(clan, id)).filter(Boolean);
+    return {
+        selected,
+        ready: selected.length >= 5 && GoalPolicy.hasReadyRoles(selectedMembers)
+    };
+}
+
+async function startOperation(clan, goal) {
+    const roster = operationRoster(clan, goal);
+    if (!roster.ready) {
         recordReason(Contracts.REASON_CODES.PARTY_NOT_READY);
         return { ok: false, code: Contracts.REASON_CODES.PARTY_NOT_READY, skipped: true };
     }
+    const selected = roster.selected;
     const result = await Database.startAutonomousClanOperation({
         clanId: clan.id,
         operationKey: operationKey(clan, goal),
@@ -168,6 +178,15 @@ async function resolveClan(clan, options = {}) {
     const goal = clan.state?.goal;
     if (!goal || goal.type !== 'item' || goal.plan?.kind !== 'farm' || number(goal.progress) >= number(goal.required)) {
         return { ok: true, skipped: true, reason: 'farm_goal_missing' };
+    }
+
+    // Starting an operation atomically writes goal.partyId together with the
+    // active operation row. If there is no party id yet and the projected
+    // roster is unavailable, no active operation can require resolution. Skip
+    // the database lookup and retain the durable action for a later retry.
+    if (!String(goal.partyId || '') && !operationRoster(clan, goal).ready) {
+        recordReason(Contracts.REASON_CODES.PARTY_NOT_READY);
+        return { ok: false, code: Contracts.REASON_CODES.PARTY_NOT_READY, skipped: true };
     }
 
     const active = await Database.fetchActiveAutonomousClanOperation(clan.id);
