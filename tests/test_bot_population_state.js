@@ -237,6 +237,10 @@ try {
             assert(marketCandidates, 'market reconciliation must query current lifecycle market state');
             assert(!marketCandidates.sql.includes('goalJson LIKE'), 'market reconciliation must not trust stale goal metadata');
             assert(marketCandidates.sql.includes("'$.marketSellRetryAfter'"), 'market reconciliation must exclude sellers whose retry cooldown is still active');
+            assert(marketCandidates.sql.includes('INDEXED BY bot_life_state_market_reconcile'),
+                'market reconciliation must use its keyset-compatible lifecycle index');
+            assert(!marketCandidates.sql.includes('COALESCE(states.updatedAt'),
+                'a redundant updatedAt expression must not force a temporary sort');
             assert(marketCandidates.sql.includes('states.characterId > ?'), 'market reconciliation must advance with a stable keyset cursor');
             assert.deepStrictEqual(marketCandidates.params, [123456, 0, 0, 0], 'the first market pass must start at the beginning of the rotation');
             assert.deepStrictEqual(marketCandidateQueries[1].params, [123457, 10, 10, 72],

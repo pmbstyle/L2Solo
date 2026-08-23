@@ -2332,14 +2332,15 @@ const BotLifeState = {
         const fetchAfter = (cursor) => Database.execute([
             `SELECT states.*, goals.goalJson AS currentGoalJson,
                 goals.updatedAt AS currentGoalUpdatedAt FROM ${TABLE} states
+            INDEXED BY bot_life_state_market_reconcile
             LEFT JOIN bot_goal_state goals ON goals.characterId = states.characterId
             WHERE states.phase = 'cold'
             AND (states.partyId IS NULL OR states.partyId = '')
             AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting')
             AND COALESCE(CAST(json_extract(states.statsJson, '$.marketSellRetryAfter') AS INTEGER), 0) <= ?
-            AND (COALESCE(states.updatedAt, 0) > ?
-                OR (COALESCE(states.updatedAt, 0) = ? AND states.characterId > ?))
-            ORDER BY COALESCE(states.updatedAt, 0) ASC, states.characterId ASC
+            AND (states.updatedAt > ?
+                OR (states.updatedAt = ? AND states.characterId > ?))
+            ORDER BY states.updatedAt ASC, states.characterId ASC
             LIMIT ${safeLimit}`,
             [
                 Number(timestamp) || now(),
