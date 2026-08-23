@@ -202,8 +202,15 @@ class Npc extends NpcModel {
 
     switchCombatTarget(actor) {
         if (!this.isValidAggroTarget(actor)) return false;
+        const previousTargetId = Number(this.fetchDestId?.() || 0);
         this.combatTarget = actor;
         this.setDestId(actor.fetchId());
+        if (previousTargetId !== Number(actor.fetchId())) {
+            const World = invoke('GameServer/World/World');
+            if (World.npc) {
+                World.npc.threatRevision = Number(World.npc.threatRevision || 0) + 1;
+            }
+        }
         return true;
     }
 
@@ -815,7 +822,14 @@ class Npc extends NpcModel {
         this.timer.hitEnd = undefined;
         PathfindingWorkerPool.cancel(`npc:${this.fetchId()}`);
 
+        const previousTargetId = Number(this.fetchDestId?.() || 0);
         this.clearDestId();
+        if (previousTargetId) {
+            const World = invoke('GameServer/World/World');
+            if (World.npc) {
+                World.npc.threatRevision = Number(World.npc.threatRevision || 0) + 1;
+            }
+        }
         if (!preserveAggro) this.clearAggroList();
         this.state.setCombatEnded();
         this.automation.abortAll(this);

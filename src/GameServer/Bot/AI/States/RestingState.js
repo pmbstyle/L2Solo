@@ -149,7 +149,7 @@ module.exports = {
                 });
                 return;
             }
-            const threat = PartyAwareness.findThreatTargetingParty(playerSession);
+            const threat = PartyAwareness.findThreatTargetingPartyProjected(playerSession);
             if (threat?.type === 'raid' && BotRaidSafety.retreat(session, bot, threat.actor, { distance: EMERGENCY_RETREAT_DISTANCE })) {
                 recordWakeDecision(session, bot, 'retreat', 'raid_entity_protected', {
                     targetId: threat.actor.fetchId?.() || null

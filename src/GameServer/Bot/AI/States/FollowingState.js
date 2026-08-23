@@ -766,7 +766,7 @@ function deliverPurchasedResources(session, bot, playerSession) {
         return true;
     }
     let partyThreat = null;
-    try { partyThreat = PartyAwareness.findThreatTargetingParty(playerSession); } catch (_) { /* lightweight test/session */ }
+    try { partyThreat = PartyAwareness.findThreatTargetingPartyProjected(playerSession); } catch (_) { /* lightweight test/session */ }
     const leaderBusy = !!(
         playerSession.actor.state?.fetchHits?.() ||
         playerSession.actor.state?.fetchCasts?.() ||
@@ -983,7 +983,7 @@ module.exports = {
         if (partyRaid) {
             pulling = { enabled: false, target: null, puller: null, engageable: false, phase: null };
         }
-        let rawPartyThreat = PartyAwareness.findThreatTargetingParty(playerSession);
+        let rawPartyThreat = PartyAwareness.findThreatTargetingPartyProjected(playerSession);
         if (rawPartyThreat?.type === 'raid' && !BotRaidSafety.canEngagePlayerPartyRaid(
             session,
             rawPartyThreat.actor,

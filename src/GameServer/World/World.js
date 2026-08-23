@@ -129,6 +129,7 @@ const World = {
         this.gameTime = GameTime;
         this.npc   = {
             spawns: [], grid: {}, nextId: 1000000,
+            threatRevision: 0,
             gridKeys: new WeakMap(),
             periodMode: GameTime.mode(), periodRevision: 0, periodDefinitions: [],
             raidBossRespawnTimers: new Map(), raidBossState: new Map()

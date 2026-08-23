@@ -89,7 +89,7 @@ function partyMemberSummary(memberSession, leaderSession, bot) {
 }
 
 function partyThreatSummary(leaderSession, bot) {
-    const threat = PartyAwareness.findThreatTargetingParty(leaderSession);
+    const threat = PartyAwareness.findThreatTargetingPartyProjected(leaderSession);
     if (!threat?.actor) return null;
 
     return {

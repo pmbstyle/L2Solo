@@ -3,10 +3,17 @@ const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 
 const RECENT_INCOMING_THREAT_MS = 5000;
+// Hot companions are dispatched serially, but several services inside one
+// decision ask the same party-wide question. Share that projection briefly
+// across the party instead of repeating one spatial query per member for
+// every caller. Damage invalidates the projection before the urgent wakeup,
+// so this does not add hit-response latency.
+const THREAT_PROJECTION_MAX_AGE_MS = 150;
 // NPC combat remains active until the target is 1500 units away.  Threat
 // discovery must cover that full envelope: a ranged/social add at 1401-1499
 // can still be hitting the puller and therefore must wake the camp.
 const NPC_THREAT_RADIUS = 1500;
+const threatProjections = new WeakMap();
 
 // World loads bot controls as part of its own initialization. Resolving it at
 // module scope here can therefore retain Node's empty circular-dependency
@@ -216,6 +223,81 @@ function findThreatTargetingParty(leaderSession, options = {}) {
     return null;
 }
 
+function projectionLeader(session) {
+    if (session?.partyCompanion === true && session.followPlayerSession) {
+        return session.followPlayerSession;
+    }
+    return session;
+}
+
+function recordProjectionSubsystem(name, durationMs, items = 0) {
+    try {
+        invoke('GameServer/Bot/AI/HotActorLodPolicy').recordSubsystem(name, durationMs, items);
+    } catch (_) {
+        // Party awareness is also used by lightweight tests and startup paths
+        // that do not initialize the full hot-runtime telemetry graph.
+    }
+}
+
+function awarenessOptionsKey(options = {}) {
+    return `${Number(options.npcRadius || NPC_THREAT_RADIUS)}:${Number(options.playerRadius || 1800)}`;
+}
+
+function cachedThreatIsUsable(entry, now, maxAgeMs, currentWorld, optionsKey) {
+    if (!entry || now - entry.createdAt > maxAgeMs) return false;
+    if (entry.optionsKey !== optionsKey) return false;
+    if (entry.npcRegistry !== currentWorld.npc) return false;
+    if (entry.npcRadiusReader !== currentWorld.fetchNpcsInRadius) return false;
+    if (entry.npcThreatRevision !== Number(currentWorld.npc?.threatRevision || 0)) return false;
+    if (entry.userRevision !== Number(currentWorld.user?.revision || 0)) return false;
+    const actor = entry.threat?.actor;
+    if (!actor) return true;
+    if (actor.isDead?.() === true || actor.state?.fetchDead?.() === true) return false;
+    if (entry.threat.source !== 'recent_incoming_hit') {
+        const projectedTargetId = Number(entry.threat.targetId || 0);
+        const currentTargetId = Number(actor.fetchDestId?.() || 0);
+        if (projectedTargetId !== currentTargetId) return false;
+    }
+    return true;
+}
+
+function findThreatTargetingPartyProjected(leaderSession, options = {}) {
+    const leader = projectionLeader(leaderSession);
+    if (!leader || typeof leader !== 'object') return null;
+
+    const maxAgeMs = Math.max(0, Number(options.maxAgeMs ?? THREAT_PROJECTION_MAX_AGE_MS) || 0);
+    const now = Date.now();
+    const currentWorld = world();
+    const optionsKey = awarenessOptionsKey(options);
+    const cached = threatProjections.get(leader);
+    if (maxAgeMs > 0 && cachedThreatIsUsable(cached, now, maxAgeMs, currentWorld, optionsKey)) {
+        recordProjectionSubsystem('partyThreatCacheHit', 0, 1);
+        return cached.threat;
+    }
+
+    const awarenessOptions = { ...options };
+    delete awarenessOptions.maxAgeMs;
+    const startedAt = Date.now();
+    const threat = findThreatTargetingParty(leader, awarenessOptions);
+    threatProjections.set(leader, {
+        createdAt: now,
+        threat,
+        optionsKey,
+        npcRegistry: currentWorld.npc,
+        npcRadiusReader: currentWorld.fetchNpcsInRadius,
+        npcThreatRevision: Number(currentWorld.npc?.threatRevision || 0),
+        userRevision: Number(currentWorld.user?.revision || 0)
+    });
+    recordProjectionSubsystem('partyThreatScan', Date.now() - startedAt, 1);
+    return threat;
+}
+
+function invalidateThreatProjection(session) {
+    const leader = projectionLeader(session);
+    if (!leader || typeof leader !== 'object') return false;
+    return threatProjections.delete(leader);
+}
+
 function leaderCombatTargetId(leaderSession, options = {}) {
     const leader = leaderSession?.actor;
     if (!isOnlineActor(leader)) return null;
@@ -247,9 +329,12 @@ function leaderCombatTargetId(leaderSession, options = {}) {
 
 module.exports = {
     findThreatTargetingParty,
+    findThreatTargetingPartyProjected,
+    invalidateThreatProjection,
     isPartySession,
     leaderCombatTargetId,
     partyActors,
     partySessions,
-    recentIncomingNpc
+    recentIncomingNpc,
+    THREAT_PROJECTION_MAX_AGE_MS
 };

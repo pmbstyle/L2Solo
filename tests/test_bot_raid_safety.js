@@ -99,6 +99,30 @@ const threat = PartyAwareness.findThreatTargetingParty(leaderSession);
 assert.strictEqual(threat.type, 'raid', 'a raid entity targeting the party must be reported as an escape threat');
 assert.strictEqual(threat.actor, boss, 'raid safety must outrank ordinary party combat decisions');
 
+const originalFetchNpcsInRadius = World.fetchNpcsInRadius;
+const originalBossTarget = boss.fetchDestId;
+let projectedSpatialScans = 0;
+World.fetchNpcsInRadius = (...args) => {
+    projectedSpatialScans += 1;
+    return originalFetchNpcsInRadius(...args);
+};
+PartyAwareness.invalidateThreatProjection(leaderSession);
+assert.strictEqual(PartyAwareness.findThreatTargetingPartyProjected(leaderSession)?.actor, boss,
+    'the shared party projection must preserve normal threat selection');
+const scansAfterProjectionMiss = projectedSpatialScans;
+assert(scansAfterProjectionMiss > 0, 'the first party projection must perform a real spatial scan');
+assert.strictEqual(PartyAwareness.findThreatTargetingPartyProjected(leaderSession)?.actor, boss,
+    'a repeated hot decision must reuse the same short-lived party projection');
+assert.strictEqual(projectedSpatialScans, scansAfterProjectionMiss,
+    'the cached party projection must not repeat per-member spatial scans');
+boss.fetchDestId = () => undefined;
+PartyAwareness.invalidateThreatProjection(leaderSession);
+assert.strictEqual(PartyAwareness.findThreatTargetingPartyProjected(leaderSession), null,
+    'explicit invalidation must expose a changed threat immediately');
+boss.fetchDestId = originalBossTarget;
+PartyAwareness.invalidateThreatProjection(leaderSession);
+World.fetchNpcsInRadius = originalFetchNpcsInRadius;
+
 leader.fetchDestId = () => boss.fetchId();
 assert.strictEqual(PartyAwareness.leaderCombatTargetId(leaderSession), null,
     'companions must not inherit a player-selected raid target');
@@ -263,6 +287,7 @@ delete leaderSession.partyRaidEngagement;
 leader.fetchDestId = () => undefined;
 boss.fetchDestId = () => leader.fetchId();
 World.user.sessions = [leaderSession, holdingCompanion];
+PartyAwareness.invalidateThreatProjection(leaderSession);
 FleeingState.tick(holdingCompanion, safeCompanion, {}, {});
 assert.strictEqual(holdingCompanion.plan, 'fleeing',
     'a companion already at safe range must stay away while its leader is still fighting a raid entity');
@@ -275,6 +300,7 @@ const fleeingCompanion = {
 };
 boss.fetchDestId = () => undefined;
 World.user.sessions = [leaderSession, fleeingCompanion];
+PartyAwareness.invalidateThreatProjection(leaderSession);
 FleeingState.tick(fleeingCompanion, companion, {}, {});
 assert.strictEqual(fleeingCompanion.plan, 'following', 'a companion must return to its party after escaping a raid entity');
 assert.strictEqual(fleeingCompanion.followPlayerSession, leaderSession, 'raid retreat must preserve the companion relationship');

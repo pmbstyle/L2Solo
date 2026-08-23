@@ -88,7 +88,7 @@ function combatState(leaderSession, options = {}) {
         .map((id) => Number(id || 0))
         .filter(Boolean));
 
-    const threat = PartyAwareness.findThreatTargetingParty(leaderSession);
+    const threat = PartyAwareness.findThreatTargetingPartyProjected(leaderSession);
     if (threat?.actor && !ignoredTargetIds.has(actorId(threat.actor))) {
         const isTravellingPullTarget = pull.active &&
             options.ignoreTravellingPuller === true &&

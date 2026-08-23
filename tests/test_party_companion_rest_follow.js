@@ -1715,6 +1715,7 @@ try {
 
     autoPullTank.mp = 100;
     autoPullTargetId = autoPullTank.fetchId();
+    PartyAwareness.invalidateThreatProjection(healerLeaderSession);
     let engagedPulledTarget = null;
     FollowingState.tick(autoPullTankSession, autoPullTank, {
         skillExec() { autoPullSkillCast = true; }
@@ -1732,6 +1733,7 @@ try {
     fallenAutoPullSession.partyCompanion = true;
     fallenAutoPullSession.plan = 'following';
     autoPullTargetId = undefined;
+    PartyAwareness.invalidateThreatProjection(healerLeaderSession);
     autoPullTankSession.currentTargetId = undefined;
     autoPullTank.unselect();
     World.user = { sessions: [healerLeaderSession, autoPullTankSession, fallenAutoPullSession] };
