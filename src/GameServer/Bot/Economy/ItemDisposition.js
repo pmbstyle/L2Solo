@@ -15,8 +15,16 @@ const NPC_ONLY_CLEANUP_MIN_SLOTS = 3;
 const CLAN_PROGRESSION_ITEM_IDS = new Set([1419]);
 const GRADE_ORDER = Object.freeze({ none: 0, d: 1, c: 2, b: 3, a: 4, s: 5 });
 
+let templateIndexSource = null;
+let templateIndex = new Map();
+
 function templateFor(selfId) {
-    return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId)) || null;
+    const items = DataCache.items || [];
+    if (templateIndexSource !== items) {
+        templateIndexSource = items;
+        templateIndex = new Map(items.map((item) => [Number(item.selfId), item]));
+    }
+    return templateIndex.get(Number(selfId)) || null;
 }
 
 function priceFor(state, item, template) {
