@@ -714,6 +714,7 @@ const PopulationService = {
     phasePolicyRunning: false,
     clanActionRunning: false,
     clanFounderRunning: false,
+    nextClanActionAt: 0,
 
     init() {
         if (this.initialized || Config.enabled === false) return;
@@ -875,6 +876,7 @@ const PopulationService = {
         }
         this.clanActionRunning = false;
         this.clanFounderRunning = false;
+        this.nextClanActionAt = 0;
         if (this.warehouseCleanupTimer) {
             clearInterval(this.warehouseCleanupTimer);
             this.warehouseCleanupTimer = null;
@@ -1216,11 +1218,17 @@ const PopulationService = {
 
         if (ClanSimulationConfig.enabled !== false) {
             const clanIntervalMs = Math.max(1000, Number(ClanSimulationConfig.resolveIntervalMs) || 60000);
+            const clanContinuationMs = Math.max(
+                Math.max(50, Number(Config.backgroundJobTickMs) || 250),
+                Math.max(100, Number(Config.backgroundGovernorWindowMs) || 1000)
+            );
             registry.register({
                 name: 'clan_actions',
-                intervalMs: clanIntervalMs,
+                intervalMs: clanContinuationMs,
                 offsetMs: 0,
-                run: () => this.resolveClanActions()
+                run: () => this.nextClanActionAt > Date.now()
+                    ? { skipped: true, reason: 'not_due' }
+                    : this.resolveClanActions()
             });
             registry.register({
                 name: 'clan_founders',
@@ -1271,6 +1279,16 @@ const PopulationService = {
         return registry;
     },
 
+    scheduleClanActions(continuation = false) {
+        const normalMs = Math.max(1000, Number(ClanSimulationConfig.resolveIntervalMs) || 60000);
+        const continuationMs = Math.max(
+            Math.max(50, Number(Config.backgroundJobTickMs) || 250),
+            Math.max(100, Number(Config.backgroundGovernorWindowMs) || 1000)
+        );
+        this.nextClanActionAt = Date.now() + (continuation ? continuationMs : normalMs);
+        return this.nextClanActionAt;
+    },
+
     resolveClanActions(activity = this.playerActivityProfile()) {
         if (ClanSimulationConfig.enabled === false) return Promise.resolve({ skipped: true, reason: 'disabled' });
         if (this.clanActionRunning) return Promise.resolve({ skipped: true, reason: 'already_running' });
@@ -1286,20 +1304,26 @@ const PopulationService = {
             realPlayers: activity?.realPlayers
         });
         if (!admission.ok) {
+            this.scheduleClanActions(true);
             Metrics.recordBackgroundDeferral();
             return Promise.resolve({ skipped: true, reason: `governor_${admission.reason}` });
         }
 
         this.clanActionRunning = true;
         const startedAt = Date.now();
+        let needsContinuation = true;
         return Promise.resolve().then(() => ClanActionService.resolveBatch({
             limit: ClanSimulationConfig.actionBatchSize,
             budgetMs: admission.budgetMs
-        })).catch((error) => {
+        })).then((result) => {
+            needsContinuation = !!result?.budgetStopped || Number(result?.queue?.ready || 0) > 0;
+            return result;
+        }).catch((error) => {
             utils.infoWarn('ClanSimulation', 'action resolve failed: %s', error.message);
             return { attempted: 0, claimed: 0, resolved: 0, released: 0, succeeded: 0, failed: 0, leftRunning: 0, error: error.message };
         }).finally(() => {
             BackgroundWorkGovernor.complete(admission.lease, { durationMs: Date.now() - startedAt });
+            this.scheduleClanActions(needsContinuation);
             this.clanActionRunning = false;
         });
     },

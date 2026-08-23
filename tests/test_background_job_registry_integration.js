@@ -49,6 +49,7 @@ async function main() {
         assert.strictEqual(snapshot.registered, 5);
         assert.strictEqual(snapshot.tickMs, 250);
         assert.strictEqual(snapshot.jobs.clan_actions.offsetMs, 0);
+        assert.strictEqual(snapshot.jobs.clan_actions.intervalMs, 1000, 'clan actions must poll for backlog continuation every governor window');
         assert.strictEqual(snapshot.jobs.goal_stale_review.offsetMs, 2500);
         assert.strictEqual(snapshot.jobs.goal_warehouse_release.offsetMs, 2750);
         assert.strictEqual(snapshot.jobs.goal_market_reconcile.offsetMs, 3000);

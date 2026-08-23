@@ -173,6 +173,10 @@ Every background admission should use the same snapshot:
   deadline-limited pass continues in the next governor window. This preserves
   backlog throughput while allowing player/lag/DB pressure to be rechecked
   between stale goals, warehouse work, and market work.
+- Clan actions now use the same backlog-aware continuation contract: a ready
+  queue or budget stop retries in the next governor window, while a caught-up
+  queue returns to the configured minute cadence. Claims remain one-at-a-time,
+  so higher throughput does not reintroduce stranded running leases.
 - Migrate the remaining low-frequency maintenance intervals incrementally
   after their local admission contracts are explicit.
 - Keep high-frequency actor/effect timers outside this registry; they are a

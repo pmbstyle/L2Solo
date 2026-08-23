@@ -21,8 +21,10 @@ async function main() {
         founderResolveBudgetMs: Config.founderResolveBudgetMs,
         founderPlayerBudgetMs: Config.founderPlayerBudgetMs,
         actionBatchSize: Config.actionBatchSize,
-        resolveBatchSize: Config.resolveBatchSize
+        resolveBatchSize: Config.resolveBatchSize,
+        resolveIntervalMs: Config.resolveIntervalMs
     };
+    const originalNextClanActionAt = PopulationService.nextClanActionAt;
 
     try {
         Config.enabled = true;
@@ -32,6 +34,7 @@ async function main() {
         Config.founderPlayerBudgetMs = 5;
         Config.actionBatchSize = 8;
         Config.resolveBatchSize = 16;
+        Config.resolveIntervalMs = 60000;
         Governor.reset();
         PopulationService.clanActionRunning = false;
         PopulationService.clanFounderRunning = false;
@@ -92,6 +95,17 @@ async function main() {
         const independentFounder = await PopulationService.resolveClanFounders({ protected: false });
         assert.strictEqual(independentFounder.budgetMs, 20, 'founder must retain its own full budget after the resource is released');
 
+        Governor.reset();
+        ClanActionService.resolveBatch = async () => ({ attempted: 1, budgetStopped: true, queue: { ready: 3 } });
+        await PopulationService.resolveClanActions({ protected: false });
+        let delayMs = PopulationService.nextClanActionAt - Date.now();
+        assert(delayMs > 900 && delayMs <= 1000, 'a ready clan backlog must continue in the next governor window');
+        Governor.reset();
+        ClanActionService.resolveBatch = async () => ({ attempted: 0, budgetStopped: false, queue: { ready: 0 } });
+        await PopulationService.resolveClanActions({ protected: false });
+        delayMs = PopulationService.nextClanActionAt - Date.now();
+        assert(delayMs > 59000 && delayMs <= 60000, 'a caught-up clan queue must return to its normal cadence');
+
         assert.strictEqual(PopulationService.clanActionRunning, false);
         assert.strictEqual(PopulationService.clanFounderRunning, false);
         console.log('Clan scheduler admission checks passed');
@@ -103,6 +117,7 @@ async function main() {
         Object.assign(Config, originalConfig);
         PopulationService.clanActionRunning = false;
         PopulationService.clanFounderRunning = false;
+        PopulationService.nextClanActionAt = originalNextClanActionAt;
         Governor.reset();
     }
 }
