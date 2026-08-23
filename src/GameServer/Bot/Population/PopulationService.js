@@ -1244,14 +1244,15 @@ const PopulationService = {
         return profile;
     },
 
-    resolveClanActions() {
+    resolveClanActions(activity = this.playerActivityProfile()) {
         if (ClanSimulationConfig.enabled === false) return Promise.resolve({ skipped: true, reason: 'disabled' });
         if (this.clanActionRunning) return Promise.resolve({ skipped: true, reason: 'already_running' });
         this.clanActionRunning = true;
-        const actionBudget = Math.max(10, Number(ClanSimulationConfig.resolveBudgetMs) || 80);
+        const idleBudget = Math.max(10, Number(ClanSimulationConfig.resolveBudgetMs) || 80);
+        const playerBudget = Math.max(1, Math.min(idleBudget, Number(ClanSimulationConfig.actionPlayerBudgetMs) || 20));
         return ClanActionService.resolveBatch({
             limit: ClanSimulationConfig.actionBatchSize,
-            budgetMs: actionBudget
+            budgetMs: activity?.protected ? playerBudget : idleBudget
         }).catch((error) => {
             utils.infoWarn('ClanSimulation', 'action resolve failed: %s', error.message);
             return { attempted: 0, claimed: 0, resolved: 0, released: 0, succeeded: 0, failed: 0, leftRunning: 0, error: error.message };
@@ -1280,7 +1281,7 @@ const PopulationService = {
         if (ClanSimulationConfig.enabled === false) return Promise.resolve(null);
         const activity = this.playerActivityProfile();
         const startedAt = Date.now();
-        return this.resolveClanActions().then((actions) => this.resolveClanFounders(activity).then((founder) => ({
+        return this.resolveClanActions(activity).then((actions) => this.resolveClanFounders(activity).then((founder) => ({
             actions,
             founder,
             playerProtected: !!activity?.protected,

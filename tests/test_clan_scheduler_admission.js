@@ -16,6 +16,7 @@ async function main() {
     const originalConfig = {
         enabled: Config.enabled,
         resolveBudgetMs: Config.resolveBudgetMs,
+        actionPlayerBudgetMs: Config.actionPlayerBudgetMs,
         founderResolveBudgetMs: Config.founderResolveBudgetMs,
         founderPlayerBudgetMs: Config.founderPlayerBudgetMs,
         actionBatchSize: Config.actionBatchSize,
@@ -25,6 +26,7 @@ async function main() {
     try {
         Config.enabled = true;
         Config.resolveBudgetMs = 80;
+        Config.actionPlayerBudgetMs = 20;
         Config.founderResolveBudgetMs = 20;
         Config.founderPlayerBudgetMs = 5;
         Config.actionBatchSize = 8;
@@ -60,13 +62,15 @@ async function main() {
         const combined = await PopulationService.resolveClanSimulation();
         assert.strictEqual(combined.playerProtected, true);
         assert.strictEqual(calls[0].service, 'actions');
-        assert.strictEqual(calls[0].budgetMs, 80);
+        assert.strictEqual(calls[0].budgetMs, 20, 'action admission must switch to the protected-player budget');
         assert.strictEqual(calls[1].service, 'founders');
         assert.strictEqual(calls[1].budgetMs, 5, 'founder admission must receive its full player budget, not action leftovers');
 
         let releaseAction;
         let founderRanWhileActionBusy = false;
-        ClanActionService.resolveBatch = () => new Promise((resolve) => {
+        let idleActionBudget = 0;
+        ClanActionService.resolveBatch = (options) => new Promise((resolve) => {
+            idleActionBudget = options.budgetMs;
             releaseAction = resolve;
         });
         ClanSimulationService.resolveBatch = async (_limit, options) => {
@@ -74,9 +78,10 @@ async function main() {
             return { attempted: 0, budgetMs: options.budgetMs };
         };
 
-        const pendingAction = PopulationService.resolveClanActions();
-        const duplicateAction = await PopulationService.resolveClanActions();
+        const pendingAction = PopulationService.resolveClanActions({ protected: false });
+        const duplicateAction = await PopulationService.resolveClanActions({ protected: false });
         assert.deepStrictEqual(duplicateAction, { skipped: true, reason: 'already_running' });
+        assert.strictEqual(idleActionBudget, 80, 'idle action admission must retain the full budget');
         const independentFounder = await PopulationService.resolveClanFounders({ protected: false });
         assert.strictEqual(founderRanWhileActionBusy, true, 'founder admission must not share the action running guard');
         assert.strictEqual(independentFounder.budgetMs, 20);
