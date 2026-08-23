@@ -537,10 +537,20 @@ async function releaseColdBatch(limit = 8, deadlineAt = Infinity) {
         if (enchantIds[index]) backgroundIds.push(enchantIds[index]);
         if (marketIds[index]) backgroundIds.push(marketIds[index]);
     }
+    const hydrationIds = [];
+    const hydrationClaims = new Set(claimed);
     for (const characterId of backgroundIds) {
-        if (states.length >= remainingLimit) break;
-        if (claimed.has(Number(characterId))) continue;
-        const state = await LifeState.findByCharacterId(characterId);
+        const id = Number(characterId);
+        if (!id || hydrationClaims.has(id)) continue;
+        hydrationIds.push(id);
+        hydrationClaims.add(id);
+        if (hydrationIds.length >= remainingLimit - states.length) break;
+    }
+    const hydrated = await LifeState.statesByIds(hydrationIds, { ownerId: 'legacy_main', unassigned: true });
+    if (Date.now() >= deadlineAt) return released;
+    const hydratedById = new Map(hydrated.map((state) => [Number(state.characterId), state]));
+    for (const characterId of hydrationIds) {
+        const state = hydratedById.get(Number(characterId));
         if (!state) continue;
         states.push(state);
         claimed.add(Number(characterId));

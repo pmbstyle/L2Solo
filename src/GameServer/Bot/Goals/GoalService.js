@@ -79,10 +79,15 @@ const GoalService = {
             const cached = GoalState.snapshot(state.characterId);
             return cached ? Promise.resolve(cached) : GoalState.load(state.characterId);
         })).then((existingGoals) => {
-            const decisions = candidates.map((state, index) => ({
-                state,
-                decision: reviewDecision(state, existingGoals[index], options, timestamp)
-            }));
+            const decisions = candidates.map((state, index) => {
+                const stateOptions = typeof options.optionsForState === 'function'
+                    ? { ...options, ...(options.optionsForState(state) || {}) }
+                    : options;
+                return {
+                    state,
+                    decision: reviewDecision(state, existingGoals[index], stateOptions, timestamp)
+                };
+            });
             const pending = decisions.filter(({ decision }) => !decision.unchanged).map(({ state, decision }) => ({
                 characterId: state.characterId,
                 goal: decision.goal

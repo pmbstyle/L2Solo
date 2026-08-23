@@ -25,6 +25,7 @@ const originals = {
     applyNpcLiquidation: LifeState.applyNpcLiquidation,
     applyWarehouseGearCleanup: LifeState.applyWarehouseGearCleanup,
     findByCharacterId: LifeState.findByCharacterId,
+    statesByIds: LifeState.statesByIds,
     allStates: LifeState.allStates,
     bestBuyOffer: MarketOpportunity.bestBuyOffer,
     activeBuyDemandSelfIds: MarketOpportunity.activeBuyDemandSelfIds,
@@ -283,6 +284,22 @@ async function run() {
     assert.deepStrictEqual(BotWarehouse.craftReleaseCandidates(1, 100).map((state) => state.characterId), [58],
         'the bounded in-memory rotation must inspect only active craft owners');
 
+    LifeState.allStates = () => [];
+    Database.execute = (statement) => statement[0].includes('warehouse.selfId IN')
+        ? Promise.resolve([{ characterId: 59 }, { characterId: 60 }])
+        : Promise.resolve([]);
+    let hydratedIds = null;
+    LifeState.statesByIds = (ids, options) => {
+        hydratedIds = { ids, options };
+        return Promise.resolve(ids.map((characterId) => ({
+            characterId, name: `Hydrated${characterId}`, phase: 'cold', activity: 'hunting', party: {}, stats: {}
+        })));
+    };
+    Database.fetchWarehouseItems = () => Promise.resolve([]);
+    await BotWarehouse.releaseColdBatch(2);
+    assert.deepStrictEqual(hydratedIds.ids, [59, 60], 'warehouse candidates must hydrate in one bounded state query');
+    assert.deepStrictEqual(hydratedIds.options, { ownerId: 'legacy_main', unassigned: true });
+
     const historicalRows = [
         { id: 81, selfId: 94, name: 'Bec de Corbin', amount: 1, enchant: 0 },
         { id: 82, selfId: 94, name: 'Bec de Corbin', amount: 1, enchant: 3 },
@@ -359,6 +376,7 @@ run().catch((err) => {
     LifeState.applyNpcLiquidation = originals.applyNpcLiquidation;
     LifeState.applyWarehouseGearCleanup = originals.applyWarehouseGearCleanup;
     LifeState.findByCharacterId = originals.findByCharacterId;
+    LifeState.statesByIds = originals.statesByIds;
     LifeState.allStates = originals.allStates;
     MarketOpportunity.bestBuyOffer = originals.bestBuyOffer;
     MarketOpportunity.activeBuyDemandSelfIds = originals.activeBuyDemandSelfIds;

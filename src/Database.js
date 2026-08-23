@@ -1309,13 +1309,13 @@ const Database = {
         })).filter((entry) => Number.isSafeInteger(entry.characterId) && entry.characterId > 0 && entry.goalJson);
         if (!batch.length) return Promise.resolve(0);
         return inTransaction(() => {
-            for (const entry of batch) {
-                write(`INSERT INTO bot_goal_state (characterId, goalJson, updatedAt)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT(characterId) DO UPDATE SET
-                        goalJson = excluded.goalJson,
-                        updatedAt = excluded.updatedAt`, [entry.characterId, entry.goalJson, entry.updatedAt]);
-            }
+            const values = batch.map(() => '(?, ?, ?)').join(', ');
+            const params = batch.flatMap((entry) => [entry.characterId, entry.goalJson, entry.updatedAt]);
+            write(`INSERT INTO bot_goal_state (characterId, goalJson, updatedAt)
+                VALUES ${values}
+                ON CONFLICT(characterId) DO UPDATE SET
+                    goalJson = excluded.goalJson,
+                    updatedAt = excluded.updatedAt`, params);
             return batch.length;
         }, 'bot-goals:batch-save');
     },

@@ -182,6 +182,11 @@ Every background admission should use the same snapshot:
 - Stale goal projection now primes the goal cache and persists changed entries
   from the review slice in one SQLite transaction instead of issuing one read
   and one write per bot. The batch size and goal semantics remain unchanged.
+- Market review reuses that batch path while retaining a per-bot spot, and
+  warehouse candidate IDs are hydrated with one bounded state query. Neither
+  change reduces candidate limits or suppresses world activity.
+- Goal persistence uses one multi-row UPSERT inside the serialized transaction,
+  rather than preparing and running one UPSERT statement per changed bot.
 - Cache immutable reference data indefinitely.
 - Cache dynamic projections only with an explicit owner, TTL/version, and
   invalidation event.

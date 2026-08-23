@@ -2525,12 +2525,23 @@ const PopulationService = {
             return results;
         };
         if (Date.now() >= deadlineAt) return Promise.resolve(annotate([], 0));
+        const projectionStartedAt = Date.now();
         return LifeState.marketGoalCandidates(limit)
             .then((states) => {
+                BackgroundWorkGovernor.recordStage('goal_metadata', 'market_projection', Date.now() - projectionStartedAt);
                 if (Date.now() >= deadlineAt) return annotate([], states.length);
-                return this.runInSchedulerSlices(states, (state) => {
-                    const spot = SpotProfiles.findForState(state);
-                    return GoalService.review(state, { spot }).then((goalSnapshot) => {
+                const reviewStartedAt = Date.now();
+                return GoalService.reviewBatch(states, {
+                    now: Date.now(),
+                    optionsForState: (state) => ({ spot: SpotProfiles.findForState(state) })
+                }).then((goalSnapshots) => {
+                    BackgroundWorkGovernor.recordStage('goal_metadata', 'market_review', Date.now() - reviewStartedAt);
+                    if (Date.now() >= deadlineAt) return annotate([], states.length);
+                    const travelStartedAt = Date.now();
+                    return this.runInSchedulerSlices(states.map((state, index) => ({
+                        state,
+                        goalSnapshot: goalSnapshots[index]
+                    })), ({ state, goalSnapshot }) => {
                         const travel = GoalExecutor.beginMarketTravel(state, goalSnapshot?.current);
                         if (!travel) return null;
                         return LifeState.upsertState(travel, 'reconciled_market_travel').then((saved) => {
@@ -2539,8 +2550,10 @@ const PopulationService = {
                             }
                             return saved;
                         });
+                    }, deadlineAt).then((results) => annotate(results.filter(Boolean), states.length)).finally(() => {
+                        BackgroundWorkGovernor.recordStage('goal_metadata', 'market_travel', Date.now() - travelStartedAt);
                     });
-                }, deadlineAt).then((results) => annotate(results.filter(Boolean), states.length));
+                });
             })
             .catch((err) => {
                 utils.infoWarn('BotPopulation', 'market-goal reconcile failed: %s', err.message);
