@@ -2441,7 +2441,8 @@ const BotLifeState = {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
         return Database.execute([
-            `SELECT states.* FROM ${TABLE} states
+            `SELECT states.*, goals.goalJson AS currentGoalJson,
+                goals.updatedAt AS currentGoalUpdatedAt FROM ${TABLE} states
             INNER JOIN bot_goal_state goals ON goals.characterId = states.characterId
             WHERE states.phase = 'cold'
             AND (states.partyId IS NULL OR states.partyId = '')
@@ -2452,6 +2453,11 @@ const BotLifeState = {
             [Number(timestamp) || now()]
         ]).then((rows) => rows.map((row) => {
             const state = normalize(row);
+            invoke('GameServer/Bot/Goals/GoalState').prime(
+                state.characterId,
+                row.currentGoalJson,
+                row.currentGoalUpdatedAt
+            );
             cache.set(state.characterId, state);
             return state;
         })).catch((err) => {

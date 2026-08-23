@@ -14,6 +14,24 @@ function reviewSpot(state, explicitSpot = null, existingGoal = null) {
         : null;
 }
 
+function reviewDecision(state, existing, options, timestamp) {
+    const candidates = NeedsEvaluator.evaluate(state, {
+        spot: reviewSpot(state, options.spot, existing?.current),
+        now: timestamp
+    });
+    const marketCandidate = candidates.find((candidate) => candidate?.type === 'sell_inventory' || candidate?.type === 'buy_craft_material'
+        || ['market_search_for_weapon', 'market_search_for_gear'].includes(candidate?.plan?.expectedBenefit));
+    const activeMarketGoal = existing?.current?.type === 'sell_inventory' || existing?.current?.type === 'buy_craft_material'
+        || ['market_search_for_weapon', 'market_search_for_gear'].includes(existing?.current?.plan?.expectedBenefit);
+    if (existing?.current?.nextReviewAt > timestamp && existing.current.status === 'active'
+        && !marketCandidate && !activeMarketGoal) return { result: existing, unchanged: true, goal: null };
+
+    const goal = GoalPlanner.plan(candidates, timestamp);
+    if (!goal) return { result: null, unchanged: true, goal: null };
+    if (existing?.current?.type === goal.type) goal.createdAt = existing.current.createdAt;
+    return { result: null, unchanged: false, goal };
+}
+
 const GoalService = {
     initialized: false,
 
@@ -45,26 +63,37 @@ const GoalService = {
         const cached = GoalState.snapshot(state.characterId);
 
         const choose = (existing) => {
-            const candidates = NeedsEvaluator.evaluate(state, {
-                spot: reviewSpot(state, options.spot, existing?.current),
-                now: timestamp
-            });
-            const marketCandidate = candidates.find((candidate) => candidate?.type === 'sell_inventory' || candidate?.type === 'buy_craft_material'
-                || ['market_search_for_weapon', 'market_search_for_gear'].includes(candidate?.plan?.expectedBenefit));
-            const activeMarketGoal = existing?.current?.type === 'sell_inventory' || existing?.current?.type === 'buy_craft_material'
-                || ['market_search_for_weapon', 'market_search_for_gear'].includes(existing?.current?.plan?.expectedBenefit);
-            if (existing?.current?.nextReviewAt > timestamp && existing.current.status === 'active'
-                && !marketCandidate && !activeMarketGoal) return existing;
-
-            const goal = GoalPlanner.plan(candidates, timestamp);
-            if (!goal) return null;
-            if (existing?.current?.type === goal.type) {
-                goal.createdAt = existing.current.createdAt;
-            }
-            return GoalState.set(state.characterId, goal);
+            const decision = reviewDecision(state, existing, options, timestamp);
+            if (decision.unchanged) return decision.result;
+            return GoalState.set(state.characterId, decision.goal);
         };
 
         return (cached ? Promise.resolve(cached) : GoalState.load(state.characterId)).then(choose);
+    },
+
+    reviewBatch(states = [], options = {}) {
+        const candidates = (states || []).filter((state) => state?.characterId && state.phase !== 'hot');
+        if (!candidates.length) return Promise.resolve([]);
+        const timestamp = Number(options.now) || Date.now();
+        return Promise.all(candidates.map((state) => {
+            const cached = GoalState.snapshot(state.characterId);
+            return cached ? Promise.resolve(cached) : GoalState.load(state.characterId);
+        })).then((existingGoals) => {
+            const decisions = candidates.map((state, index) => ({
+                state,
+                decision: reviewDecision(state, existingGoals[index], options, timestamp)
+            }));
+            const pending = decisions.filter(({ decision }) => !decision.unchanged).map(({ state, decision }) => ({
+                characterId: state.characterId,
+                goal: decision.goal
+            }));
+            return GoalState.setBatch(pending).then((saved) => {
+                const savedById = new Map(saved.map((snapshot) => [Number(snapshot.characterId), snapshot]));
+                return decisions.map(({ state, decision }) => (
+                    decision.unchanged ? decision.result : savedById.get(Number(state.characterId)) || null
+                ));
+            });
+        });
     }
 };
 

@@ -1301,6 +1301,25 @@ const Database = {
         return run(statement[0], statement[1] || [], operation, statement[2]?.read ?? null);
     },
 
+    upsertBotGoalStates(entries = []) {
+        const batch = (entries || []).map((entry) => ({
+            characterId: Number(entry?.characterId || 0),
+            goalJson: String(entry?.goalJson || ''),
+            updatedAt: Number(entry?.updatedAt || now())
+        })).filter((entry) => Number.isSafeInteger(entry.characterId) && entry.characterId > 0 && entry.goalJson);
+        if (!batch.length) return Promise.resolve(0);
+        return inTransaction(() => {
+            for (const entry of batch) {
+                write(`INSERT INTO bot_goal_state (characterId, goalJson, updatedAt)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(characterId) DO UPDATE SET
+                        goalJson = excluded.goalJson,
+                        updatedAt = excluded.updatedAt`, [entry.characterId, entry.goalJson, entry.updatedAt]);
+            }
+            return batch.length;
+        }, 'bot-goals:batch-save');
+    },
+
     ensureSocialEntity(entity) {
         return inTransaction(() => ensureSocialEntityUnsafe(entity, now()), 'social:entity-upsert');
     },

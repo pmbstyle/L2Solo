@@ -42,10 +42,32 @@ function jobMetrics(job) {
             overruns: 0,
             grantedMs: 0,
             actualMs: 0,
-            reasons: new Map()
+            reasons: new Map(),
+            stages: new Map()
         });
     }
     return metrics.jobs.get(key);
+}
+
+function recordStage(job, stage, durationMs) {
+    const name = String(stage || 'unknown');
+    const values = jobMetrics(job).stages;
+    if (!values.has(name)) values.set(name, []);
+    const samples = values.get(name);
+    samples.push(Math.max(0, number(durationMs)));
+    if (samples.length > 128) samples.splice(0, samples.length - 128);
+}
+
+function stageStats(values = []) {
+    if (!values.length) return { count: 0, avgMs: 0, p95Ms: 0, maxMs: 0 };
+    const sorted = [...values].sort((left, right) => left - right);
+    const total = values.reduce((sum, value) => sum + value, 0);
+    return {
+        count: values.length,
+        avgMs: Math.round(total / values.length),
+        p95Ms: Math.round(sorted[Math.max(0, Math.ceil(sorted.length * 0.95) - 1)]),
+        maxMs: Math.round(sorted[sorted.length - 1])
+    };
 }
 
 function windowMs() {
@@ -197,7 +219,8 @@ function serializeJobMetrics() {
         overruns: value.overruns,
         grantedMs: value.grantedMs,
         actualMs: value.actualMs,
-        reasons: Object.fromEntries(value.reasons.entries())
+        reasons: Object.fromEntries(value.reasons.entries()),
+        stages: Object.fromEntries([...value.stages.entries()].map(([stage, samples]) => [stage, stageStats(samples)]))
     }]));
 }
 
@@ -241,4 +264,4 @@ function reset() {
     metrics.jobs.clear();
 }
 
-module.exports = { admit, complete, pressureSnapshot, snapshot, reset };
+module.exports = { admit, complete, recordStage, pressureSnapshot, snapshot, reset };

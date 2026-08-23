@@ -520,6 +520,7 @@ async function releaseColdBatch(limit = 8, deadlineAt = Infinity) {
         const resumed = await resumeReleasedMarket(state);
         if (resumed.resumed) released.push(resumed);
     }
+    if (Date.now() >= deadlineAt) return released;
     const remainingLimit = Math.max(0, safeLimit - released.length);
     if (remainingLimit <= 0) return released;
     const craftLimit = Math.max(1, Math.floor(remainingLimit / 2));
@@ -528,6 +529,7 @@ async function releaseColdBatch(limit = 8, deadlineAt = Infinity) {
         releaseCandidates(remainingLimit),
         enchantReleaseCandidates(remainingLimit)
     ]);
+    if (Date.now() >= deadlineAt) return released;
     const states = [...craftStates];
     const claimed = new Set(states.map((state) => Number(state.characterId)));
     const backgroundIds = [];

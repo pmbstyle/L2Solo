@@ -90,6 +90,12 @@ const GoalState = {
         return cache.get(Number(characterId)) || null;
     },
 
+    prime(characterId, goalJson, updatedAt = now()) {
+        const snapshot = normalize({ characterId, goalJson, updatedAt });
+        if (snapshot) cache.set(snapshot.characterId, snapshot);
+        return snapshot;
+    },
+
     load(characterId) {
         const id = Number(characterId || 0);
         if (!id) return Promise.resolve(null);
@@ -127,6 +133,30 @@ const GoalState = {
         }).catch((err) => {
             utils.infoWarn('BotGoals', 'failed to save goal state for %d: %s', id, err.message);
             return null;
+        });
+    },
+
+    setBatch(entries = []) {
+        const snapshots = (entries || []).map((entry) => {
+            const characterId = Number(entry?.characterId || 0);
+            const current = normalizeGoal(entry?.goal);
+            if (!characterId || !current) return null;
+            return { characterId, current, updatedAt: now() };
+        }).filter(Boolean);
+        if (!snapshots.length) return Promise.resolve([]);
+        return this.init().then((ready) => {
+            if (!ready) return [];
+            return Database.upsertBotGoalStates(snapshots.map((snapshot) => ({
+                characterId: snapshot.characterId,
+                goalJson: safeJson(snapshot.current),
+                updatedAt: snapshot.updatedAt
+            }))).then(() => {
+                snapshots.forEach((snapshot) => cache.set(snapshot.characterId, snapshot));
+                return snapshots;
+            });
+        }).catch((err) => {
+            utils.infoWarn('BotGoals', 'failed to save %d goal states: %s', snapshots.length, err.message);
+            return [];
         });
     },
 

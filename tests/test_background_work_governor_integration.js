@@ -16,13 +16,17 @@ async function main() {
         backgroundGovernorIdleDbQueueMax: Config.backgroundGovernorIdleDbQueueMax,
         backgroundGovernorPlayerDbQueueMax: Config.backgroundGovernorPlayerDbQueueMax,
         backgroundGovernorLagAbortMs: Config.backgroundGovernorLagAbortMs,
+        backgroundJobTickMs: Config.backgroundJobTickMs,
+        goalMetadataReconcileIntervalMs: Config.goalMetadataReconcileIntervalMs,
         goalMetadataIdleBudgetMs: Config.goalMetadataIdleBudgetMs,
-        goalMetadataIdleBatchSize: Config.goalMetadataIdleBatchSize
+        goalMetadataIdleBatchSize: Config.goalMetadataIdleBatchSize,
+        maxWarehouseReleasesPerTick: Config.maxWarehouseReleasesPerTick
     };
     const originalProfile = PopulationService.playerActivityProfile;
     const originalStaleCandidates = LifeState.staleGoalCandidates;
     const originalReleaseWarehouse = PopulationService.releaseWarehouseMaterials;
     const originalReconcileMarket = PopulationService.reconcileMarketGoals;
+    const originalNextGoalMetadataAt = PopulationService.nextGoalMetadataAt;
 
     try {
         Object.assign(Config, {
@@ -33,8 +37,11 @@ async function main() {
             backgroundGovernorIdleDbQueueMax: 8,
             backgroundGovernorPlayerDbQueueMax: 0,
             backgroundGovernorLagAbortMs: 120,
+            backgroundJobTickMs: 250,
+            goalMetadataReconcileIntervalMs: 10000,
             goalMetadataIdleBudgetMs: 1000,
-            goalMetadataIdleBatchSize: 32
+            goalMetadataIdleBatchSize: 32,
+            maxWarehouseReleasesPerTick: 8
         });
         Governor.reset();
         PopulationService.goalMetadataRunning = false;
@@ -67,6 +74,13 @@ async function main() {
         assert.strictEqual(snapshot.jobs.goal_metadata.completed, 1);
         assert.strictEqual(snapshot.jobs.goal_metadata.grantedMs, 60, 'the shared governor must cap the old 1000ms local budget');
         assert.deepStrictEqual(snapshot.resources, {});
+
+        let delayMs = PopulationService.nextGoalMetadataAt - Date.now();
+        assert(delayMs > 9000 && delayMs <= 10000, 'an exhausted-free pass must return to its normal cadence');
+        PopulationService.releaseWarehouseMaterials = async () => Array.from({ length: 8 }, () => ({}));
+        await PopulationService.reconcileGoalMetadata();
+        delayMs = PopulationService.nextGoalMetadataAt - Date.now();
+        assert(delayMs > 900 && delayMs <= 1000, 'a full batch must continue in the next governor window');
         console.log('Background work governor integration checks passed');
     } finally {
         Object.assign(Config, originalConfig);
@@ -75,6 +89,7 @@ async function main() {
         PopulationService.releaseWarehouseMaterials = originalReleaseWarehouse;
         PopulationService.reconcileMarketGoals = originalReconcileMarket;
         PopulationService.goalMetadataRunning = false;
+        PopulationService.nextGoalMetadataAt = originalNextGoalMetadataAt;
         Governor.reset();
     }
 }

@@ -167,15 +167,21 @@ Every background admission should use the same snapshot:
   re-entry protection.
 - These first jobs use deterministic offsets of zero, one quarter of the goal
   interval, and one half of the clan interval instead of phase-aligned timers.
+- Goal metadata keeps its normal ten-second cadence when caught up, but a
+  full or deadline-limited pass continues in the next governor window. This
+  preserves backlog throughput while keeping every individual burst bounded.
 - Migrate the remaining low-frequency maintenance intervals incrementally
   after their local admission contracts are explicit.
 - Keep high-frequency actor/effect timers outside this registry; they are a
   different player-facing workload class.
 
-### Slice E: projection and cache discipline
+### Slice E - in progress: projection and cache discipline
 
 - Require `EXPLAIN QUERY PLAN` and a representative-size performance test for
   population-wide projections.
+- Stale goal projection now primes the goal cache and persists changed entries
+  from the review slice in one SQLite transaction instead of issuing one read
+  and one write per bot. The batch size and goal semantics remain unchanged.
 - Cache immutable reference data indefinitely.
 - Cache dynamic projections only with an explicit owner, TTL/version, and
   invalidation event.

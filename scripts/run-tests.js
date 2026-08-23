@@ -82,6 +82,7 @@ const tests = [
     'tests/test_bot_hunting_ground_rules.js',
     'tests/test_population_starter_party_grouping.js',
     'tests/test_bot_goal_state.js',
+    'tests/test_bot_goal_state_batch.js',
     'tests/test_bot_persona.js',
     'tests/test_bot_persona_background_intent.js',
     'tests/test_bot_persona_economic_policy.js',

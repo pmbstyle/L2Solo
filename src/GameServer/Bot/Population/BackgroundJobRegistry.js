@@ -26,7 +26,10 @@ class Registry {
         if (this.jobs.has(name)) throw new Error(`background job already registered: ${name}`);
         if (typeof options.run !== 'function') throw new Error(`background job run callback is required: ${name}`);
         const intervalMs = Math.max(this.tickMs, Math.floor(finiteNumber(options.intervalMs, this.tickMs)));
-        const offsetMs = Math.max(0, Math.floor(finiteNumber(options.offsetMs, 0))) % intervalMs;
+        // The initial phase may be longer than the recurring interval. This is
+        // useful for fast continuation polling without moving startup work
+        // back into the bootstrap burst.
+        const offsetMs = Math.max(0, Math.floor(finiteNumber(options.offsetMs, 0)));
         this.jobs.set(name, {
             name,
             intervalMs,

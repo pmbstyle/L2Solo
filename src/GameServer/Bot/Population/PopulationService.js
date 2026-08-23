@@ -699,6 +699,7 @@ const PopulationService = {
     coldCombatProfileMigrationRunning: false,
     marketTownMigrationRunning: false,
     goalMetadataRunning: false,
+    nextGoalMetadataAt: 0,
     marketExpiryCleanupRunning: false,
     coldOwnerRecoveryRunning: false,
     warehouseCleanupRunning: false,
@@ -923,6 +924,7 @@ const PopulationService = {
             this.marketExpiryCleanupTimer = null;
         }
         this.goalMetadataRunning = false;
+        this.nextGoalMetadataAt = 0;
         this.partyRequestCleanupRunning = false;
         if (this.personaBackfillTimer) {
             clearInterval(this.personaBackfillTimer);
@@ -1222,11 +1224,20 @@ const PopulationService = {
 
         if (Config.backgroundResolverEnabled !== false) {
             const goalIntervalMs = Math.max(5000, Number(Config.goalMetadataReconcileIntervalMs) || 30000);
+            const continuationIntervalMs = Math.max(
+                Math.max(50, Number(Config.backgroundJobTickMs) || 250),
+                Math.max(100, Number(Config.backgroundGovernorWindowMs) || 1000)
+            );
             registry.register({
                 name: 'goal_metadata',
-                intervalMs: goalIntervalMs,
+                intervalMs: continuationIntervalMs,
                 offsetMs: Math.min(5000, Math.max(250, Math.floor(goalIntervalMs / 4))),
-                run: () => this.reconcileGoalMetadata()
+                run: () => {
+                    if (this.nextGoalMetadataAt > Date.now()) {
+                        return { skipped: true, reason: 'not_due' };
+                    }
+                    return this.reconcileGoalMetadata();
+                }
             });
         }
 
@@ -1312,6 +1323,23 @@ const PopulationService = {
         })));
     },
 
+    goalMetadataCadenceMs() {
+        return Math.max(5000, Number(Config.goalMetadataReconcileIntervalMs) || 30000);
+    },
+
+    goalMetadataContinuationMs() {
+        return Math.max(
+            Math.max(50, Number(Config.backgroundJobTickMs) || 250),
+            Math.max(100, Number(Config.backgroundGovernorWindowMs) || 1000)
+        );
+    },
+
+    scheduleGoalMetadata(continuation = false) {
+        const delayMs = continuation ? this.goalMetadataContinuationMs() : this.goalMetadataCadenceMs();
+        this.nextGoalMetadataAt = Date.now() + delayMs;
+        return this.nextGoalMetadataAt;
+    },
+
     reconcileGoalMetadata() {
         if (this.goalMetadataRunning || Config.enabled === false || Config.backgroundResolverEnabled === false) {
             return Promise.resolve([]);
@@ -1336,11 +1364,13 @@ const PopulationService = {
             lagMs
         });
         if (!admission.ok) {
+            this.scheduleGoalMetadata(true);
             Metrics.recordBackgroundDeferral();
             return Promise.resolve([]);
         }
         if (lagAbort > 0 && lagMs >= lagAbort) {
             BackgroundWorkGovernor.complete(admission.lease, { durationMs: 0 });
+            this.scheduleGoalMetadata(true);
             Metrics.recordBackgroundDeferral();
             return Promise.resolve([]);
         }
@@ -1348,34 +1378,61 @@ const PopulationService = {
         const deadlineAt = Date.now() + budgetMs;
         const staleDeadlineAt = Date.now() + Math.max(25, Math.floor(budgetMs / 2));
         const startedAt = Date.now();
+        let needsContinuation = false;
         this.goalMetadataRunning = true;
 
         const reviewStale = () => {
-            if (Date.now() >= staleDeadlineAt) return Promise.resolve([]);
-            return LifeState.staleGoalCandidates(batchSize, Date.now()).then((states) => (
-                this.runInSchedulerSlices(states, (state) => GoalService.review(state).catch((error) => {
-                    utils.infoWarn('BotGoals', 'bounded metadata review failed for %s: %s', state.name, error?.message || error);
-                    return null;
-                }), staleDeadlineAt)
-            ));
+            if (Date.now() >= staleDeadlineAt) {
+                needsContinuation = true;
+                return Promise.resolve([]);
+            }
+            const projectionStartedAt = Date.now();
+            return LifeState.staleGoalCandidates(batchSize, Date.now()).then((states) => {
+                BackgroundWorkGovernor.recordStage('goal_metadata', 'stale_projection', Date.now() - projectionStartedAt);
+                if (states.length >= batchSize) needsContinuation = true;
+                if (Date.now() >= staleDeadlineAt) {
+                    needsContinuation = true;
+                    return [];
+                }
+                const reviewStartedAt = Date.now();
+                return GoalService.reviewBatch(states, { now: Date.now() }).finally(() => {
+                    BackgroundWorkGovernor.recordStage('goal_metadata', 'stale_review', Date.now() - reviewStartedAt);
+                });
+            });
         };
 
         return reviewStale()
-            .then((staleResults) => this.releaseWarehouseMaterials(deadlineAt).then((warehouseResults) => ({
-                staleResults,
-                warehouseResults
-            })))
-            .then(({ staleResults, warehouseResults }) => this.reconcileMarketGoals(deadlineAt, batchSize).then((marketResults) => [
-                ...staleResults,
-                ...warehouseResults,
-                ...marketResults
-            ]))
+            .then((staleResults) => {
+                const warehouseStartedAt = Date.now();
+                return this.releaseWarehouseMaterials(deadlineAt).then((warehouseResults) => {
+                    if (warehouseResults.length >= Math.max(1, Number(Config.maxWarehouseReleasesPerTick) || 8)) {
+                        needsContinuation = true;
+                    }
+                    return { staleResults, warehouseResults };
+                }).finally(() => {
+                    BackgroundWorkGovernor.recordStage('goal_metadata', 'warehouse_release', Date.now() - warehouseStartedAt);
+                });
+            })
+            .then(({ staleResults, warehouseResults }) => {
+                const marketStartedAt = Date.now();
+                return this.reconcileMarketGoals(deadlineAt, batchSize).then((marketResults) => {
+                    if (Number(marketResults.candidateCount || 0) >= batchSize) needsContinuation = true;
+                    return [...staleResults, ...warehouseResults, ...marketResults];
+                }).finally(() => {
+                    BackgroundWorkGovernor.recordStage('goal_metadata', 'market_reconcile', Date.now() - marketStartedAt);
+                });
+            })
             .catch((error) => {
+                needsContinuation = true;
                 utils.infoWarn('BotGoals', 'bounded metadata reconcile failed: %s', error?.message || error);
                 return [];
             })
             .finally(() => {
-                BackgroundWorkGovernor.complete(admission.lease, { durationMs: Date.now() - startedAt });
+                const durationMs = Date.now() - startedAt;
+                if (Date.now() >= deadlineAt) needsContinuation = true;
+                BackgroundWorkGovernor.complete(admission.lease, { durationMs });
+                BackgroundWorkGovernor.recordStage('goal_metadata', 'total', durationMs);
+                this.scheduleGoalMetadata(needsContinuation);
                 this.goalMetadataRunning = false;
             });
     },
@@ -2463,8 +2520,15 @@ const PopulationService = {
     },
 
     reconcileMarketGoals(deadlineAt = Infinity, limit = Config.maxMarketGoalReconcilesPerTick) {
+        const annotate = (results, candidateCount) => {
+            Object.defineProperty(results, 'candidateCount', { value: candidateCount, configurable: true });
+            return results;
+        };
+        if (Date.now() >= deadlineAt) return Promise.resolve(annotate([], 0));
         return LifeState.marketGoalCandidates(limit)
-            .then((states) => this.runInSchedulerSlices(states, (state) => {
+            .then((states) => {
+                if (Date.now() >= deadlineAt) return annotate([], states.length);
+                return this.runInSchedulerSlices(states, (state) => {
                     const spot = SpotProfiles.findForState(state);
                     return GoalService.review(state, { spot }).then((goalSnapshot) => {
                         const travel = GoalExecutor.beginMarketTravel(state, goalSnapshot?.current);
@@ -2476,10 +2540,11 @@ const PopulationService = {
                             return saved;
                         });
                     });
-                }, deadlineAt).then((results) => results.filter(Boolean)))
+                }, deadlineAt).then((results) => annotate(results.filter(Boolean), states.length));
+            })
             .catch((err) => {
                 utils.infoWarn('BotPopulation', 'market-goal reconcile failed: %s', err.message);
-                return [];
+                return annotate([], 0);
             });
     },
 
