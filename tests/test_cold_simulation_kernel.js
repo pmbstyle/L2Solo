@@ -70,6 +70,9 @@ function state(characterId = 1, overrides = {}) {
     }] });
     await kernel.resolveChain;
     assert.strictEqual(kernel.snapshot().resolved, 1);
+    kernel.flushDue();
+    assert(!emitted.some((entry) => entry.type === 'proposal_batch'),
+        'an ordinary partial window must still wait for the flush target');
     now += 2000;
     kernel.flushDue();
     const proposalMessage = emitted.find((entry) => entry.type === 'proposal_batch');
@@ -898,6 +901,44 @@ function state(characterId = 1, overrides = {}) {
         'an oversized first proposal must not remain stuck in the dirty queue');
     assert.strictEqual(oversizedKernel.snapshot().proposalCompactions, 1);
     assert.strictEqual(oversizedKernel.snapshot().proposalOversize, 1);
+
+    const capacityFlushMessages = [];
+    const capacityFlushKernel = new ColdSimulationKernel({
+        resolveSolo: resolver,
+        emit: (type, payload) => capacityFlushMessages.push({ type, payload }),
+        now: () => now,
+        maxBatch: 64,
+        maxInFlight: 8,
+        flushTargetMs: 2000,
+        flushHardMs: 5000
+    });
+    const capacityFlushStates = Array.from({ length: 8 }, (_, index) => state(200 + index));
+    capacityFlushStates.forEach((entry) => capacityFlushKernel.upsert({
+        state: entry,
+        context: { spot: { id: 'spot', rewards: {} } }
+    }));
+    capacityFlushKernel.tick();
+    const capacityFlushClaim = capacityFlushMessages.shift();
+    assert.strictEqual(capacityFlushClaim.payload.candidates.length, 8);
+    capacityFlushKernel.onClaimAck({
+        grants: capacityFlushStates.map((entry) => ({
+            ok: true,
+            characterId: entry.characterId,
+            ownerId: 'cold_simulation_owner',
+            revision: 4,
+            leaseId: `capacity-flush-${entry.characterId}`,
+            leaseUntil: now + 30000
+        }))
+    });
+    await capacityFlushKernel.resolveChain;
+    assert.strictEqual(capacityFlushKernel.snapshot().dirty, 8);
+    assert.strictEqual(capacityFlushKernel.flushDue(), 8,
+        'a full ownership window must flush immediately instead of waiting two seconds');
+    const capacityFlushBatch = capacityFlushMessages.find((entry) => entry.type === 'proposal_batch');
+    assert.strictEqual(capacityFlushBatch.payload.proposals.length, 8);
+    assert.strictEqual(capacityFlushKernel.snapshot().dirty, 0);
+    assert.strictEqual(capacityFlushKernel.snapshot().flushReasons.capacity, 1);
+    assert.strictEqual(capacityFlushKernel.snapshot().lastFlushRows, 8);
 
     const capacityMessages = [];
     const capacityKernel = new ColdSimulationKernel({

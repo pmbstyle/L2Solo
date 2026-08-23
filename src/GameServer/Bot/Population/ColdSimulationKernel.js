@@ -358,6 +358,11 @@ class ColdSimulationKernel {
             proposalCompactions: 0,
             proposalOversize: 0,
             proposalOversizeRejected: 0,
+            flushes: 0,
+            flushRows: 0,
+            lastFlushRows: 0,
+            maxFlushRows: 0,
+            flushReasons: {},
             orphanRecoveries: 0,
             loopRuns: 0,
             lastLoopAt: 0,
@@ -1080,7 +1085,9 @@ class ColdSimulationKernel {
             };
             this.dirty.set(Number(characterId), proposal);
             this.stats.resolved += 1;
-            if (priority !== 'P2' || this.dirty.size >= this.maxBatch) this.flush(priority);
+            if (priority !== 'P2' || this.dirty.size >= this.maxBatch) {
+                this.flush(priority, false, { reason: priority !== 'P2' ? 'priority' : 'batch' });
+            }
         } catch (error) {
             this.stats.errors += 1;
             this.emit('fault', { reason: error?.message || 'resolver_error', stage: 'solo_project', characterId: Number(characterId) });
@@ -1095,8 +1102,12 @@ class ColdSimulationKernel {
         }
     }
 
-    flush(priority = null, force = false) {
+    flush(priority = null, force = false, options = {}) {
         const timestamp = this.now();
+        const limit = Math.max(1, Math.min(
+            this.maxBatch,
+            Number(options.limit) || this.maxBatch
+        ));
         const eligible = [...this.dirty.values()]
             .filter((proposal) => force || priority === null || proposal.priority === priority
                 || timestamp - proposal.enqueuedAt >= this.flushHardMs)
@@ -1104,7 +1115,7 @@ class ColdSimulationKernel {
                 const rank = { P0: 0, P1: 1, P2: 2 };
                 return rank[a.priority] - rank[b.priority] || a.enqueuedAt - b.enqueuedAt;
             })
-            .slice(0, this.maxBatch);
+            .slice(0, limit);
         const proposals = [];
         const oversized = [];
         for (const proposal of eligible) {
@@ -1136,6 +1147,12 @@ class ColdSimulationKernel {
         if (!proposals.length) return 0;
         proposals.forEach((proposal) => this.dirty.delete(Number(proposal.characterId)));
         this.stats.proposals += proposals.length;
+        this.stats.flushes += 1;
+        this.stats.flushRows += proposals.length;
+        this.stats.lastFlushRows = proposals.length;
+        this.stats.maxFlushRows = Math.max(this.stats.maxFlushRows, proposals.length);
+        const reason = String(options.reason || (force ? 'forced' : 'direct'));
+        this.stats.flushReasons[reason] = Number(this.stats.flushReasons[reason] || 0) + 1;
         this.emit('proposal_batch', { proposals });
         return proposals.length;
     }
@@ -1143,9 +1160,26 @@ class ColdSimulationKernel {
     flushDue() {
         const now = this.now();
         const oldest = Math.min(...[...this.dirty.values()].map((proposal) => Number(proposal.enqueuedAt || now)), now);
-        if (this.dirty.size && (now - oldest >= this.flushTargetMs || this.dirty.size >= this.maxBatch)) {
-            this.flush(null, now - oldest >= this.flushHardMs);
+        if (!this.dirty.size) return 0;
+        const ageMs = now - oldest;
+        const capacity = this.maxInFlight - this.claiming.size - this.inFlight.size - this.commanding.size;
+        if (capacity <= 0) {
+            // A player-aware ownership window can be smaller than maxBatch.
+            // Do not wait for an unreachable batch threshold while completed
+            // proposals occupy every lease; the main commit queue still
+            // coalesces these bounded batches before touching SQLite.
+            return this.flush(null, false, { reason: 'capacity', limit: this.maxInFlight });
         }
+        if (this.dirty.size >= this.maxBatch) {
+            return this.flush(null, false, { reason: 'batch' });
+        }
+        if (ageMs >= this.flushHardMs) {
+            return this.flush(null, true, { reason: 'hard_age' });
+        }
+        if (ageMs >= this.flushTargetMs) {
+            return this.flush(null, false, { reason: 'target_age' });
+        }
+        return 0;
     }
 
     onCommitAck(payload = {}) {
