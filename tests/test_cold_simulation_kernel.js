@@ -932,13 +932,6 @@ function state(characterId = 1, overrides = {}) {
     });
     await capacityFlushKernel.resolveChain;
     assert.strictEqual(capacityFlushKernel.snapshot().dirty, 8);
-    const deferredCapacityEntries = [...capacityFlushKernel.dirty.entries()].slice(1);
-    deferredCapacityEntries.forEach(([characterId]) => capacityFlushKernel.dirty.delete(characterId));
-    assert.strictEqual(capacityFlushKernel.flushDue(), 0,
-        'a partially computed ownership window must not emit one proposal per serial resolve');
-    deferredCapacityEntries.forEach(([characterId, proposal]) => {
-        capacityFlushKernel.dirty.set(characterId, proposal);
-    });
     assert.strictEqual(capacityFlushKernel.flushDue(), 8,
         'a full ownership window must flush immediately instead of waiting two seconds');
     const capacityFlushBatch = capacityFlushMessages.find((entry) => entry.type === 'proposal_batch');
@@ -946,6 +939,41 @@ function state(characterId = 1, overrides = {}) {
     assert.strictEqual(capacityFlushKernel.snapshot().dirty, 0);
     assert.strictEqual(capacityFlushKernel.snapshot().flushReasons.capacity, 1);
     assert.strictEqual(capacityFlushKernel.snapshot().lastFlushRows, 8);
+
+    const throttledPartyMessages = [];
+    const throttledPartyKernel = new ColdSimulationKernel({
+        resolveSolo: resolver,
+        resolveParty: () => ({ memberResults: [], events: [], partyPatch: {}, nextResolveAt: now + 60000 }),
+        emit: (type, payload) => throttledPartyMessages.push({ type, payload }),
+        now: () => now,
+        maxBatch: 64,
+        maxInFlight: 4
+    });
+    const throttledPartyMembers = Array.from({ length: 5 }, (_, index) => state(40 + index, {
+        party: { partyId: 'throttled-party' }
+    }));
+    const throttledParty = {
+        partyId: 'throttled-party',
+        leaderId: 40,
+        memberIds: throttledPartyMembers.map((member) => member.characterId)
+    };
+    throttledPartyMembers.forEach((member, index) => throttledPartyKernel.upsert({
+        state: member,
+        context: index === 0 ? {
+            isPartyLeader: true,
+            party: throttledParty,
+            partyMembers: throttledPartyMembers,
+            spot: { id: 'spot' }
+        } : {}
+    }));
+    throttledPartyKernel.upsert({ state: state(100), context: { spot: { id: 'spot' } } });
+    throttledPartyKernel.tick();
+    const throttledClaim = throttledPartyMessages.find((entry) => entry.type === 'claim_request');
+    assert.deepStrictEqual(throttledClaim.payload.candidates.map((candidate) => candidate.characterId), [100],
+        'an atomic party larger than the temporary limit must not block eligible solo work');
+    assert.strictEqual(throttledPartyKernel.snapshot().partyCapacityDeferrals, 1);
+    assert(throttledPartyMembers.every((member) => !throttledPartyKernel.claiming.has(member.characterId)),
+        'a throttled atomic party must remain unclaimed until the ownership window recovers');
 
     const capacityMessages = [];
     const capacityKernel = new ColdSimulationKernel({

@@ -358,6 +358,7 @@ class ColdSimulationKernel {
             proposalCompactions: 0,
             proposalOversize: 0,
             proposalOversizeRejected: 0,
+            partyCapacityDeferrals: 0,
             flushes: 0,
             flushRows: 0,
             lastFlushRows: 0,
@@ -531,6 +532,15 @@ class ColdSimulationKernel {
                         : members.filter((member) => Number(member.characterId) === id))
                     : members;
                 const candidateMemberIds = partyMembers.map((member) => Number(member.characterId)).filter(Boolean);
+                if (candidateMemberIds.length > this.maxInFlight) {
+                    // A temporary lag throttle may shrink the ownership window
+                    // below an otherwise valid atomic party. Move that party
+                    // behind currently eligible solo work instead of pinning
+                    // the due-heap head until pressure recovers.
+                    this.schedule(id, current.version, this.now() + 250);
+                    this.stats.partyCapacityDeferrals += 1;
+                    continue;
+                }
                 if (!party || !partyMembers.length
                     || candidateMemberIds.some((memberId) => this.claiming.has(memberId) || this.inFlight.has(memberId))) {
                     this.requeue(id, this.now() + 1000);
@@ -1163,14 +1173,11 @@ class ColdSimulationKernel {
         if (!this.dirty.size) return 0;
         const ageMs = now - oldest;
         const capacity = this.maxInFlight - this.claiming.size - this.inFlight.size - this.commanding.size;
-        const resolvedWindowComplete = this.inFlight.size > 0
-            && this.claiming.size === 0
-            && this.dirty.size === this.inFlight.size;
-        if (capacity <= 0 && resolvedWindowComplete) {
+        if (capacity <= 0) {
             // A player-aware ownership window can be smaller than maxBatch.
-            // Flush once the whole occupied window is computed instead of
-            // sending one proposal per serial resolve. The age fallback below
-            // still drains a partially completed or mixed-priority window.
+            // Do not wait for an unreachable batch threshold while completed
+            // proposals occupy every lease; the main commit queue still
+            // coalesces these bounded batches before touching SQLite.
             return this.flush(null, false, { reason: 'capacity', limit: this.maxInFlight });
         }
         if (this.dirty.size >= this.maxBatch) {
