@@ -296,9 +296,14 @@ async function run() {
         })));
     };
     Database.fetchWarehouseItems = () => Promise.resolve([]);
-    await BotWarehouse.releaseColdBatch(2);
+    const releaseStages = [];
+    await BotWarehouse.releaseColdBatch(2, Infinity, {
+        onStage: (stage) => releaseStages.push(stage)
+    });
     assert.deepStrictEqual(hydratedIds.ids, [59, 60], 'warehouse candidates must hydrate in one bounded state query');
     assert.deepStrictEqual(hydratedIds.options, { ownerId: 'legacy_main', unassigned: true });
+    assert.deepStrictEqual(releaseStages, ['resume', 'candidates', 'hydrate', 'release_items'],
+        'warehouse release telemetry must preserve every bounded batch phase');
 
     const historicalRows = [
         { id: 81, selfId: 94, name: 'Bec de Corbin', amount: 1, enchant: 0 },

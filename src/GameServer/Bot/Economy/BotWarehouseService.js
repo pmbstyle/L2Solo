@@ -511,24 +511,38 @@ function craftReleaseCandidates(limit = 4, timestamp = Date.now()) {
     return candidates;
 }
 
-async function releaseColdBatch(limit = 8, deadlineAt = Infinity) {
+async function releaseColdBatch(limit = 8, deadlineAt = Infinity, options = {}) {
     const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
     const released = [];
     const resumedStates = pendingMarketReleaseCandidates(safeLimit);
-    for (const state of resumedStates) {
-        if (Date.now() >= deadlineAt) return released;
-        const resumed = await resumeReleasedMarket(state);
-        if (resumed.resumed) released.push(resumed);
+    const recordStage = (stage, startedAt) => options.onStage?.(stage, Date.now() - startedAt);
+    const resumeStartedAt = Date.now();
+    try {
+        for (const state of resumedStates) {
+            if (Date.now() >= deadlineAt) return released;
+            const resumed = await resumeReleasedMarket(state);
+            if (resumed.resumed) released.push(resumed);
+        }
+    } finally {
+        recordStage('resume', resumeStartedAt);
     }
     if (Date.now() >= deadlineAt) return released;
     const remainingLimit = Math.max(0, safeLimit - released.length);
     if (remainingLimit <= 0) return released;
     const craftLimit = Math.max(1, Math.floor(remainingLimit / 2));
-    const craftStates = craftReleaseCandidates(craftLimit);
-    const [marketIds, enchantIds] = await Promise.all([
-        releaseCandidates(remainingLimit),
-        enchantReleaseCandidates(remainingLimit)
-    ]);
+    let craftStates;
+    let marketIds;
+    let enchantIds;
+    const candidatesStartedAt = Date.now();
+    try {
+        craftStates = craftReleaseCandidates(craftLimit);
+        [marketIds, enchantIds] = await Promise.all([
+            releaseCandidates(remainingLimit),
+            enchantReleaseCandidates(remainingLimit)
+        ]);
+    } finally {
+        recordStage('candidates', candidatesStartedAt);
+    }
     if (Date.now() >= deadlineAt) return released;
     const states = [...craftStates];
     const claimed = new Set(states.map((state) => Number(state.characterId)));
@@ -546,7 +560,9 @@ async function releaseColdBatch(limit = 8, deadlineAt = Infinity) {
         hydrationClaims.add(id);
         if (hydrationIds.length >= remainingLimit - states.length) break;
     }
-    const hydrated = await LifeState.statesByIds(hydrationIds, { ownerId: 'legacy_main', unassigned: true });
+    const hydrationStartedAt = Date.now();
+    const hydrated = await LifeState.statesByIds(hydrationIds, { ownerId: 'legacy_main', unassigned: true })
+        .finally(() => recordStage('hydrate', hydrationStartedAt));
     if (Date.now() >= deadlineAt) return released;
     const hydratedById = new Map(hydrated.map((state) => [Number(state.characterId), state]));
     for (const characterId of hydrationIds) {
@@ -555,14 +571,19 @@ async function releaseColdBatch(limit = 8, deadlineAt = Infinity) {
         states.push(state);
         claimed.add(Number(characterId));
     }
-    for (const state of states) {
-        if (Date.now() >= deadlineAt) break;
-        try {
-            const result = await releaseCold(state);
-            if (result.released) released.push(result);
-        } catch (error) {
-            utils.infoWarn('BotWarehouse', 'cold warehouse release failed for %s: %s', state.name, error?.message || String(error));
+    const releaseStartedAt = Date.now();
+    try {
+        for (const state of states) {
+            if (Date.now() >= deadlineAt) break;
+            try {
+                const result = await releaseCold(state);
+                if (result.released) released.push(result);
+            } catch (error) {
+                utils.infoWarn('BotWarehouse', 'cold warehouse release failed for %s: %s', state.name, error?.message || String(error));
+            }
         }
+    } finally {
+        recordStage('release_items', releaseStartedAt);
     }
     return released;
 }

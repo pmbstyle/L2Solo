@@ -2585,7 +2585,13 @@ const PopulationService = {
 
     releaseWarehouseMaterials(deadlineAt = Infinity) {
         if (Date.now() >= deadlineAt) return Promise.resolve([]);
-        return BotWarehouse.releaseColdBatch(Config.maxWarehouseReleasesPerTick, deadlineAt)
+        return BotWarehouse.releaseColdBatch(Config.maxWarehouseReleasesPerTick, deadlineAt, {
+            onStage: (stage, durationMs) => BackgroundWorkGovernor.recordStage(
+                'goal_warehouse_release',
+                stage,
+                durationMs
+            )
+        })
             .then((released) => {
                 if (released.length) {
                     const resumedMarkets = released.filter((result) => result.resumed).length;
