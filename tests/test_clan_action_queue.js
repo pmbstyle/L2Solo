@@ -300,6 +300,8 @@ async function main() {
         );
         assert(ClanActionService.metrics().deferred >= 1, 'transient action deferrals must be observable');
         assert(ClanActionService.metrics().stages.defer.count >= 1, 'defer settlement latency must be observable');
+        assert(ClanActionService.metrics().stages['execute:party'].count >= 1,
+            'party execution latency must remain separately observable');
 
         const readyRoster = [4, 15, 21, 11, 56].map((classId) => ({ classId, phase: 'cold' }));
         assert.strictEqual(ClanGoalPolicy.hasReadyRoles(readyRoster), true);
