@@ -195,6 +195,7 @@ function startKernel(config = {}) {
         emit: send,
         maxBatch: config.maxBatch,
         maxInFlight: config.maxInFlight,
+        maxAtomicPartySize: config.maxAtomicPartySize,
         flushTargetMs: config.flushTargetMs,
         flushHardMs: config.flushHardMs
     });

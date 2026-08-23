@@ -367,6 +367,7 @@ class ColdSimulationCoordinator {
         return {
             maxBatch: Math.max(1, Math.min(64, Number(Config.coldWorkerBatchSize) || 64)),
             maxInFlight: this.desiredWorkerPressure().maxInFlight,
+            maxAtomicPartySize: Math.max(2, Number(Config.partyMaxSize) || 5),
             claimAckTimeoutMs: 5000,
             flushTargetMs: Math.max(100, Number(Config.coldWorkerOrdinaryFlushMs) || 2000),
             flushHardMs: Math.max(1000, Number(Config.coldWorkerOrdinaryHardMaxMs) || 5000),

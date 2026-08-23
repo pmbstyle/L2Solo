@@ -324,6 +324,10 @@ class ColdSimulationKernel {
         this.flushHardMs = Math.max(this.flushTargetMs, Number(options.flushHardMs) || 5000);
         this.partySession = options.partySession || {};
         this.partyMinSize = Math.max(2, Number(options.partyMinSize) || 2);
+        this.maxAtomicPartySize = Math.max(
+            this.partyMinSize,
+            Math.min(this.maxBatch, Number(options.maxAtomicPartySize) || 5)
+        );
         this.states = new Map();
         this.versions = new Map();
         this.heap = new DueHeap();
@@ -358,6 +362,7 @@ class ColdSimulationKernel {
             proposalCompactions: 0,
             proposalOversize: 0,
             proposalOversizeRejected: 0,
+            partyCapacityBursts: 0,
             partyCapacityDeferrals: 0,
             flushes: 0,
             flushRows: 0,
@@ -532,7 +537,11 @@ class ColdSimulationKernel {
                         : members.filter((member) => Number(member.characterId) === id))
                     : members;
                 const candidateMemberIds = partyMembers.map((member) => Number(member.characterId)).filter(Boolean);
-                if (candidateMemberIds.length > this.maxInFlight) {
+                const occupiedOwnership = this.claiming.size + this.inFlight.size + this.commanding.size;
+                const atomicCapacityBurst = candidateMemberIds.length > this.maxInFlight
+                    && candidateMemberIds.length <= this.maxAtomicPartySize
+                    && occupiedOwnership === 0;
+                if (candidateMemberIds.length > this.maxInFlight && !atomicCapacityBurst) {
                     // A temporary lag throttle may shrink the ownership window
                     // below an otherwise valid atomic party. Move that party
                     // behind currently eligible solo work instead of pinning
@@ -546,13 +555,14 @@ class ColdSimulationKernel {
                     this.requeue(id, this.now() + 1000);
                     continue;
                 }
-                if (candidates.length + candidateMemberIds.length > limit) {
+                if (candidates.length + candidateMemberIds.length > limit && !atomicCapacityBurst) {
                     // Keep the original overdue priority. Moving a party to
                     // now+100 on every partially free tick lets an endless
                     // stream of overdue solo work starve the atomic claim.
                     this.schedule(id, current.version, entry.dueAt);
                     break;
                 }
+                if (atomicCapacityBurst) this.stats.partyCapacityBursts += 1;
                 const purpose = {
                     kind: 'party',
                     partyId: party.partyId,
@@ -1309,6 +1319,7 @@ class ColdSimulationKernel {
             commanding: this.commanding.size,
             commandingAgeMs: this.commanding.size ? Math.max(0, now - oldestCommandAt) : 0,
             maxInFlight: this.maxInFlight,
+            maxAtomicPartySize: this.maxAtomicPartySize,
             paused: this.paused,
             stopping: this.stopping
         };
