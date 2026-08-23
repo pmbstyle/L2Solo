@@ -239,7 +239,7 @@ const tests = [
     'tests/test_c4_forge_of_the_gods.js',
     'tests/test_c4_fields_of_silence_and_whispers.js',
     'tests/test_c4_alligator_island.js',
-    'tests/test_c4_giants_cave_vitals.js',
+    'tests/test_c4_legacy_monsters.js',
     'tests/test_c4_heathen_camp.js',
     'tests/test_c4_imperial_tomb.js',
     'tests/test_c4_tower_of_insolence.js',

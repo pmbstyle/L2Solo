@@ -8,6 +8,8 @@ const DataCache = {
         // Generated NPC templates predate the source AI enum; merge the
         // source-backed profile before any NPC instance is spawned.
         const npcAiTypes = invoke(path + 'Npcs/ai');
+        const c4LegacyMonsters = validateModel(path + 'Npcs/c4_legacy_monsters');
+        const c4LegacyMonsterIds = new Set(c4LegacyMonsters.map((npc) => Number(npc.selfId)));
 
         DataCache.classTemplates  = validateModel(path + 'Templates/templates');
         ClassProgression.expandTemplates(DataCache.classTemplates);
@@ -20,7 +22,8 @@ const DataCache = {
         const C4LateTownGatekeepers = invoke('GameServer/World/C4LateTownGatekeepers');
         const C4SevenSignsDungeonTeleports = invoke('GameServer/World/C4SevenSignsDungeonTeleports');
         DataCache.npcs            = applyNpcAiTypes([
-            ...validateModel(path + 'Npcs/npcs').filter((npc) => npc.selfId !== 135),
+            ...validateModel(path + 'Npcs/npcs').filter((npc) => npc.selfId !== 135 && !c4LegacyMonsterIds.has(Number(npc.selfId))),
+            ...c4LegacyMonsters,
             ...validateModel(path + 'Npcs/summons'),
             ...validateModel(path + 'Npcs/c4_swamp_of_screams'),
             ...validateModel(path + 'Npcs/c4_garden_of_beasts'),

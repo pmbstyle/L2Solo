@@ -66,6 +66,12 @@ function execute(session, actor, target, skill, context = {}) {
         return finish();
     }
 
+    if (semantic.skillType === C4SkillRules.GET_PLAYER) {
+        result.pulled = applyGetPlayer(actor, target, rng);
+        result.rejected = !result.pulled;
+        return finish();
+    }
+
     if (semantic.skillType === C4SkillRules.SOULSHOT || semantic.skillType === C4SkillRules.SPIRITSHOT) {
         result.shotLoaded = applyShot(actor, semantic);
         return finish();
@@ -522,6 +528,35 @@ function applyRecall(session, target, semantic) {
         ? TownRespawn.getChaoticRespawnCoords(target.fetchLocX(), target.fetchLocY(), target.fetchLocZ())
         : TownRespawn.getRespawnCoords(target.fetchLocX(), target.fetchLocY(), target.fetchLocZ());
     invoke('GameServer/Actor/Generics/TeleportTo')(targetSession, target, coords);
+    return true;
+}
+
+function applyGetPlayer(actor, target, rng = Math.random, updatePosition = null) {
+    const targetSession = target?.session;
+    if (!actor || !targetSession || target?.isDead?.() || target?.state?.fetchDead?.()) return false;
+
+    const randomOffset = () => Math.floor(Math.max(0, Math.min(0.999999, Number(rng()) || 0)) * 21) - 10;
+    const coords = {
+        locX: Number(actor.fetchLocX?.()) + randomOffset(),
+        locY: Number(actor.fetchLocY?.()) + randomOffset(),
+        locZ: Number(actor.fetchLocZ?.())
+    };
+    if (!Object.values(coords).every(Number.isFinite)) return false;
+
+    target.clearDestId?.();
+    target.automation?.abortAll?.(target);
+    target.state?.setCasts?.(false);
+    target.unselect?.();
+    targetSession.currentTargetId = undefined;
+    targetSession.dataSendToMeAndOthers?.(
+        ServerResponse.teleportToLocation(target.fetchId(), coords),
+        target
+    );
+    const placeTarget = updatePosition || invoke(path.actor).updatePosition;
+    placeTarget(targetSession, target, coords, {
+        immediateNpcInfo: true,
+        forceRefresh: true
+    });
     return true;
 }
 
@@ -1334,6 +1369,7 @@ function applyBalanceLife(session, actor) {
 
 module.exports = {
     execute,
+    applyGetPlayer,
     seedPower,
     validateSummonUse,
     hasRequiredSkillItems
