@@ -932,6 +932,13 @@ function state(characterId = 1, overrides = {}) {
     });
     await capacityFlushKernel.resolveChain;
     assert.strictEqual(capacityFlushKernel.snapshot().dirty, 8);
+    const deferredCapacityEntries = [...capacityFlushKernel.dirty.entries()].slice(1);
+    deferredCapacityEntries.forEach(([characterId]) => capacityFlushKernel.dirty.delete(characterId));
+    assert.strictEqual(capacityFlushKernel.flushDue(), 0,
+        'a partially computed ownership window must not emit one proposal per serial resolve');
+    deferredCapacityEntries.forEach(([characterId, proposal]) => {
+        capacityFlushKernel.dirty.set(characterId, proposal);
+    });
     assert.strictEqual(capacityFlushKernel.flushDue(), 8,
         'a full ownership window must flush immediately instead of waiting two seconds');
     const capacityFlushBatch = capacityFlushMessages.find((entry) => entry.type === 'proposal_batch');

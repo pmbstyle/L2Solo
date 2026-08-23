@@ -1163,11 +1163,14 @@ class ColdSimulationKernel {
         if (!this.dirty.size) return 0;
         const ageMs = now - oldest;
         const capacity = this.maxInFlight - this.claiming.size - this.inFlight.size - this.commanding.size;
-        if (capacity <= 0) {
+        const resolvedWindowComplete = this.inFlight.size > 0
+            && this.claiming.size === 0
+            && this.dirty.size === this.inFlight.size;
+        if (capacity <= 0 && resolvedWindowComplete) {
             // A player-aware ownership window can be smaller than maxBatch.
-            // Do not wait for an unreachable batch threshold while completed
-            // proposals occupy every lease; the main commit queue still
-            // coalesces these bounded batches before touching SQLite.
+            // Flush once the whole occupied window is computed instead of
+            // sending one proposal per serial resolve. The age fallback below
+            // still drains a partially completed or mixed-priority window.
             return this.flush(null, false, { reason: 'capacity', limit: this.maxInFlight });
         }
         if (this.dirty.size >= this.maxBatch) {
