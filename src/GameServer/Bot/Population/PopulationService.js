@@ -1806,6 +1806,7 @@ const PopulationService = {
             utils.infoWarn('BotPopulation', 'party requirement refresh spot index unavailable: %s', err.message);
             return Promise.resolve([]);
         }
+        const occupancy = SpotProfiles.currentOccupancy(spots);
         return statesForParties(refreshable.map((party) => party.partyId)).then((membersByParty) => refreshable.reduce((chain, party) => chain.then(async (refreshed) => {
             if (budgetReached()) return refreshed;
             const members = membersByParty.get(String(party.partyId)) || [];
@@ -1816,7 +1817,7 @@ const PopulationService = {
                 const previousPlan = member.stats?.equipmentPlan;
                 let nextPlan;
                 try {
-                    nextPlan = GearAcquisitionPlanner.planFor(member, { spots });
+                    nextPlan = GearAcquisitionPlanner.planFor(member, { spots, occupancy });
                 } catch (err) {
                     utils.infoWarn('BotPopulation', 'party requirement refresh failed for %s: %s', member.name, err.message);
                     continue;
@@ -2700,10 +2701,29 @@ const PopulationService = {
         // gear plan still needs the complete atlas.  Passing [] here turned every
         // in-progress craft route into `blocked` on its first travel tick.
         const spots = SpotProfiles.ensure();
+        const occupancy = SpotProfiles.currentOccupancy(spots);
         const replanContext = workerPlan
             ? { failure: workerPlan.replanFailure || null }
             : GearAcquisitionPlanner.replanContextFor(state, previousPlan, startedAt);
         let acquisitionPlan = workerPlan?.acquisitionPlan || null;
+        const workerPlanHasSource = acquisitionPlan?.status === 'active'
+            && ['direct_drop', 'craft'].includes(acquisitionPlan.strategy)
+            && !!acquisitionPlan.next?.spotId;
+        if (workerPlanHasSource) {
+            const availableSource = GearAcquisitionPlanner.bestSourceForPlan(
+                state,
+                acquisitionPlan,
+                spots,
+                { occupancy }
+            );
+            if (!availableSource || String(availableSource.spotId) !== String(acquisitionPlan.next.spotId)) {
+                acquisitionPlan = GearAcquisitionPlanner.planFor(state, {
+                    spots,
+                    occupancy,
+                    ...replanContext
+                });
+            }
+        }
         if (!acquisitionPlan) {
             const reusablePartyRequest = !state.party?.partyId
                 && previousPlan?.next
@@ -2713,9 +2733,9 @@ const PopulationService = {
                 && Number(state.stats.partyRequest.reviewAt || 0) > startedAt;
             const upgradedPlan = reusablePartyRequest
                 ? previousPlan
-                : GearAcquisitionPlanner.planFor(state, { spots, ...replanContext });
+                : GearAcquisitionPlanner.planFor(state, { spots, occupancy, ...replanContext });
             const previousRefresh = previousPlan?.recipeId && !reusablePartyRequest
-                ? GearAcquisitionPlanner.planFor(state, { spots, recipeId: previousPlan.recipeId, ...replanContext })
+                ? GearAcquisitionPlanner.planFor(state, { spots, occupancy, recipeId: previousPlan.recipeId, ...replanContext })
                 : null;
             const rawAcquisitionPlan = GearAcquisitionPlanner.shouldFinishPreviousPlan(previousPlan, previousRefresh)
                 ? { ...previousRefresh, finishBeforeUpgrade: true }
@@ -2819,7 +2839,7 @@ const PopulationService = {
         const partyRouteWaiting = (requiredPartyRequest || deferredPartyRequest)
             && !state.party?.partyId;
         const partyFallback = partyRouteWaiting && !passiveActivity
-            ? GearAcquisitionPlanner.safeFallbackForPlan(state, acquisitionPlan, spots)
+            ? GearAcquisitionPlanner.safeFallbackForPlan(state, acquisitionPlan, spots, { occupancy })
             : null;
         const fallbackSpot = partyRouteWaiting && !passiveActivity
             ? (partyFallback && SpotProfiles.findById(partyFallback.spotId)) || SpotProfiles.findForState({

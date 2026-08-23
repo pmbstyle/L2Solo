@@ -3,6 +3,7 @@ const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const C4DualSwordCombinations = invoke('GameServer/Items/C4DualSwordCombinations');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
@@ -264,7 +265,7 @@ function candidateEffort(candidate, state, options = {}) {
     // diagnostics and a pre-route preview). Do not scan every NPC reward and
     // every component tree when no spot atlas is available.
     if (!spots.length) return marketEffortValue;
-    const direct = bestSourceForState(sourceForItem(item.selfId, spots, state, options), state);
+    const direct = bestSourceForState(sourceForItem(item.selfId, spots, state, options), state, options);
     const directEffort = direct
         ? (1 / Math.max(Number(direct.expectedYield || 0), 0.000001))
             * (soloSafeForSource(state, direct) ? 1 : 1.35)
@@ -1009,18 +1010,55 @@ function partyNeedReasonForSource(state = {}, source = {}) {
     return partyNeedAssessmentForSource(state, source).reason;
 }
 
-function bestSourceForState(sources = [], state = {}) {
-    return sources.find((source) => soloSafeForSource(state, source)) || sources[0] || null;
+function sourceOccupancyEntry(source, occupancy) {
+    if (!occupancy || !source?.spotId) return null;
+    return occupancy instanceof Map ? occupancy.get(source.spotId) : occupancy[source.spotId];
 }
 
-function safeFallbackForPlan(state = {}, plan = {}, spots = []) {
+function sourceStateKey(state = {}) {
+    return String(state.characterId || state.name || state.stats?.generatedIndex || '');
+}
+
+function sourceHasCapacity(source, state, options = {}) {
+    const entry = sourceOccupancyEntry(source, options.occupancy);
+    if (!entry) return true;
+    const count = typeof entry === 'object' ? Number(entry.count || 0) : Number(entry || 0);
+    const capacity = typeof entry === 'object' && Number(entry.capacity || 0) > 0
+        ? Number(entry.capacity)
+        : Number(source.capacity || LevelingRoutes.capacityForSpot(source));
+    if (entry.retained instanceof Set && entry.retained.has(sourceStateKey(state))) return true;
+    return count < Math.max(1, capacity);
+}
+
+function bestSourceForState(sources = [], state = {}, options = {}) {
+    const safeSources = sources.filter((source) => soloSafeForSource(state, source));
+    if (!options.occupancy) return safeSources[0] || sources[0] || null;
+    const safeAvailable = safeSources.filter((source) => sourceHasCapacity(source, state, options));
+    if (safeAvailable.length) return safeAvailable[0];
+    const available = sources.filter((source) => sourceHasCapacity(source, state, options));
+    return available[0] || null;
+}
+
+function itemIdForPlan(plan = {}) {
+    return plan.strategy === 'direct_drop'
+        ? Number(plan.target?.selfId || 0)
+        : Number(plan.next?.itemId || 0);
+}
+
+function bestSourceForPlan(state = {}, plan = {}, spots = [], options = {}) {
+    if (plan?.status !== 'active') return null;
+    const itemId = itemIdForPlan(plan);
+    if (!itemId) return null;
+    return bestSourceForState(sourceForItem(itemId, spots, state, options), state, options);
+}
+
+function safeFallbackForPlan(state = {}, plan = {}, spots = [], options = {}) {
     if (!plan || !['active', 'blocked'].includes(plan.status)) return null;
     const itemId = plan.strategy === 'direct_drop'
         ? Number(plan.target?.selfId || 0)
         : Number(plan.next?.itemId || 0);
     if (!itemId) return null;
-    return sourceForItem(itemId, spots, state)
-        .find((source) => partyNeedForSource(state, source) === 'solo_ok') || null;
+    return bestSourceForState(sourceForItem(itemId, spots, state, options), state, options);
 }
 
 function sourceIndexFor(spots = []) {
@@ -1090,7 +1128,17 @@ function sourceForItem(itemId, spots = [], state = {}, options = {}) {
             killerLevel: Number(state.level || 0)
         });
         if (!chance) return null;
-        return { npcId: Number(reward.selfId), npcName: reward.template?.name || `NPC ${reward.selfId}`, kind: 'drop', chance, expectedYield, spotId: spot.id, spotLevel: Number(spot.avgLevel || 1), npcLevel: sourceLevel };
+        return {
+            npcId: Number(reward.selfId),
+            npcName: reward.template?.name || `NPC ${reward.selfId}`,
+            kind: 'drop',
+            chance,
+            expectedYield,
+            spotId: spot.id,
+            spotLevel: Number(spot.avgLevel || 1),
+            npcLevel: sourceLevel,
+            capacity: LevelingRoutes.capacityForSpot(spot)
+        };
     }).filter(Boolean).sort((a, b) => b.expectedYield - a.expectedYield);
     if (sourceIndexCache.resolved.size >= MAX_RESOLVED_SOURCE_CACHE) {
         sourceIndexCache.resolved.delete(sourceIndexCache.resolved.keys().next().value);
@@ -1109,7 +1157,7 @@ function stationRecipeIds() {
 }
 
 function farmSourceForMaterial(itemId, state, spots, allowedRecipeIds, requiredAmount = 1, visited = new Set(), options = {}) {
-    const direct = bestSourceForState(sourceForItem(itemId, spots, state, options), state);
+    const direct = bestSourceForState(sourceForItem(itemId, spots, state, options), state, options);
     if (direct) return { ...direct, itemId: Number(itemId) };
     if (visited.has(Number(itemId))) return null;
 
@@ -1227,7 +1275,7 @@ function planFor(state = {}, options = {}) {
     if (!GearLifecycle.allowsCrafting(state) || gradeForLevel(state.level) === 'none') {
         const target = preferredNoGradeTarget(state, planningOptions) || preferredDropTarget(state, planningOptions);
         const source = target
-            ? bestSourceForState(sourceForItem(target.selfId, planningOptions.spots || [], state, planningOptions), state)
+            ? bestSourceForState(sourceForItem(target.selfId, planningOptions.spots || [], state, planningOptions), state, planningOptions)
             : null;
         const offer = marketOfferForTarget(target, state, planningOptions);
         const directKills = source ? 1 / Math.max(source.expectedYield, 0.000001) : Infinity;
@@ -1259,7 +1307,7 @@ function planFor(state = {}, options = {}) {
     const bladeMarketPlan = combinationBladeMarketPlan(target, materials, state, planningOptions);
     if (bladeMarketPlan) return bladeMarketPlan;
     const directSources = sourceForItem(target.item.selfId, spots, state, planningOptions);
-    const direct = bestSourceForState(directSources, state);
+    const direct = bestSourceForState(directSources, state, planningOptions);
     const allowedRecipeIds = planningOptions.allowedRecipeIds;
     const materialPlans = materials.map((material) => ({
         ...material,
@@ -1346,4 +1394,4 @@ function sameObjective(left, right) {
     );
 }
 
-module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, bestSourceForState, safeFallbackForPlan, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, replanContextFor, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
+module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, replanContextFor, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };

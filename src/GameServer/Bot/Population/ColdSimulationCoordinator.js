@@ -433,7 +433,8 @@ class ColdSimulationCoordinator {
                 fallback = GearAcquisitionPlanner.safeFallbackForPlan(
                     state,
                     state.stats?.equipmentPlan,
-                    [...index.spots.values()]
+                    [...index.spots.values()],
+                    { occupancy: index.occupancy }
                 );
             } catch (_) { fallback = null; }
             fallbackSpot = (fallback && index.spots.get(String(fallback.spotId))) || null;

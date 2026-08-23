@@ -183,18 +183,31 @@ const SpotProfiles = {
         }
 
         if (acquisitionPlan?.status === 'active') {
-            const planned = this.ensure()
-                .map((spot) => ({ spot, score: GearAcquisitionPlanner.scoreSpot(spot, acquisitionPlan) }))
-                .filter((candidate) => candidate.score > 0)
-                .sort((a, b) => b.score - a.score)[0];
+            // A gear objective may have several valid drop sources. Select an
+            // available source instead of letting the persisted objective
+            // override the live spot capacity forever.
+            const plannedSource = GearAcquisitionPlanner.bestSourceForPlan(
+                state,
+                acquisitionPlan,
+                profiles,
+                { occupancy }
+            );
+            const planned = plannedSource
+                ? this.findById(plannedSource.spotId)
+                // Lightweight callers may provide only the persisted route
+                // metadata, without a source atlas or occupancy snapshot.
+                // Preserve that route until live capacity data is available.
+                : Object.keys(occupancy || {}).length === 0
+                    ? this.findById(acquisitionPlan.next?.spotId)
+                    : null;
             if (planned) {
                 // A drop source may be valid for the item but still be a
                 // starter-level camp for the bot. Never let an active gear
                 // plan pin an outleveled bot to that source indefinitely.
-                const hasLevelBounds = Number.isFinite(Number(planned.spot.minLevel))
-                    && Number.isFinite(Number(planned.spot.maxLevel));
-                if (!currentSpot || !hasLevelBounds || SpotService.isSuitable(planned.spot, targetLevel, options)) {
-                    return planned.spot;
+                const hasLevelBounds = Number.isFinite(Number(planned.minLevel))
+                    && Number.isFinite(Number(planned.maxLevel));
+                if (!currentSpot || !hasLevelBounds || SpotService.isSuitable(planned, targetLevel, options)) {
+                    return planned;
                 }
             }
         }
