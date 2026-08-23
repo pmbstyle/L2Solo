@@ -89,7 +89,7 @@ try {
             && entry.sql.includes("'$.partyRequest.status', 'deferred'"));
         assert(stalePartyRequestCleanup, 'startup must defer party requests that already exceeded their priority-specific TTL');
         assert(stalePartyRequestCleanup.sql.includes('partyRequestPriority'), 'TTL cleanup must use the generated priority projection');
-        const invalidPlanMigration = statements.find((entry) => entry.sql.includes("json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan')"));
+        const invalidPlanMigration = statements.find((entry) => entry.sql.includes("json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan'"));
         assert(invalidPlanMigration, 'startup must discard malformed persisted equipment plans that passive bots would not otherwise replan');
         assert(invalidPlanMigration.sql.includes("'$.equipmentPlan.target.selfId'"), 'the invalid-plan migration must validate the persisted target identity');
         const fulfilledPlanMigration = statements.find((entry) => entry.sql.includes('fulfilled_equipment_plans'));

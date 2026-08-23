@@ -21,6 +21,9 @@ function deadActor(id, name) {
         fetchId: () => id,
         fetchName: () => name,
         fetchIsOnline: () => true,
+        fetchLocX: () => 0,
+        fetchLocY: () => 0,
+        fetchLocZ: () => 0,
         isDead: () => true,
         state: {
             fetchDead: () => true
