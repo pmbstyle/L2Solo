@@ -10,6 +10,7 @@ const ShoppingState = invoke('GameServer/Bot/AI/States/ShoppingState');
 const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const BotManager = invoke('GameServer/Bot/BotManager');
+const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const BotStatus = invoke('GameServer/Bot/AI/BotStatus');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
@@ -2750,6 +2751,20 @@ try {
 
     assert.strictEqual(shoppingSession.plan, 'following', 'shopping companion should return to follow state');
     assert.strictEqual(shoppingSession.shoppingTarget, undefined, 'shopping target should be cleared for companions');
+
+    const followingStages = HotActorLodPolicy.snapshot([]).subsystems;
+    [
+        'following.revival',
+        'following.raidContext',
+        'following.pullContext',
+        'following.partyVitals',
+        'following.townErrand',
+        'following.supportPlan',
+        'following.rebuffPlan',
+        'following.partyAggro'
+    ].forEach((stage) => {
+        assert(followingStages[stage]?.count > 0, `${stage} telemetry must sample its live decision phase`);
+    });
 } finally {
     Math.random = originalRandom;
     World.user = originalUsers;

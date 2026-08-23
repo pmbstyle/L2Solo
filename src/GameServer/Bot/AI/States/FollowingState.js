@@ -20,6 +20,7 @@ const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
 const PartyClassTactics = invoke('GameServer/Bot/AI/PartyClassTactics');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
+const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
 
 const FOLLOW_RUN_DISTANCE = 250;
 const FOLLOW_RETARGET_DISTANCE = 900;
@@ -44,6 +45,15 @@ const PARTY_RETREAT_REPATH_MS = 1500;
 const SUPPORT_APPROACH_TIMEOUT_MS = 10000;
 const SUPPORT_APPROACH_REPATH_MS = 1500;
 const SUPPORT_TARGET_DRIFT = 120;
+
+function timedFollowingStage(name, callback, items = 1) {
+    const startedAt = performance.now();
+    try {
+        return callback();
+    } finally {
+        HotActorLodPolicy.recordSubsystem(`following.${name}`, performance.now() - startedAt, items);
+    }
+}
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -515,23 +525,25 @@ function partyActorIds(leaderSession) {
 }
 
 function partyAggroMonsters(leaderSession) {
-    const ids = partyActorIds(leaderSession);
-    if (ids.size === 0) return [];
+    return timedFollowingStage('partyAggro', () => {
+        const ids = partyActorIds(leaderSession);
+        if (ids.size === 0) return [];
 
-    const seen = new Set();
-    return PartyAwareness.partyActors(leaderSession).flatMap((actor) => (
-        // Match PartyAwareness' full NPC combat envelope. A ranged mob can
-        // continue attacking from beyond the old 900-unit support check.
-        World.fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), 1500)
-    ))
-        .filter((npc) => {
-            const id = npc.fetchId?.() || npc;
-            if (seen.has(id)) return false;
-            seen.add(id);
-            return true;
-        })
-        .filter((npc) => !BotRaidSafety.isProtectedRaidEntity(npc) || BotRaidSafety.isEngagedPlayerPartyRaidTarget(leaderSession, npc))
-        .filter((npc) => npc.fetchAttackable() && !npc.isDead() && ids.has(npc.fetchDestId()));
+        const seen = new Set();
+        return PartyAwareness.partyActors(leaderSession).flatMap((actor) => (
+            // Match PartyAwareness' full NPC combat envelope. A ranged mob can
+            // continue attacking from beyond the old 900-unit support check.
+            World.fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), 1500)
+        ))
+            .filter((npc) => {
+                const id = npc.fetchId?.() || npc;
+                if (seen.has(id)) return false;
+                seen.add(id);
+                return true;
+            })
+            .filter((npc) => !BotRaidSafety.isProtectedRaidEntity(npc) || BotRaidSafety.isEngagedPlayerPartyRaidTarget(leaderSession, npc))
+            .filter((npc) => npc.fetchAttackable() && !npc.isDead() && ids.has(npc.fetchDestId()));
+    });
 }
 
 function unsafeSupportMoment(bot, activeMobs) {
@@ -854,7 +866,9 @@ module.exports = {
         // Resurrection is autonomous.  It must win over follow/catch-up and
         // over a stale pull target; chat is only conversation, never a switch
         // required to make companions revive their leader.
-        const revival = PartyRevivalService.tick(session, playerSession, Generics);
+        const revival = timedFollowingStage('revival', () => (
+            PartyRevivalService.tick(session, playerSession, Generics)
+        ));
         if (revival.handled) {
             recordRoleDecision(session, bot, 'resurrect_party', revival.source || 'waiting', {
                 targetId: revival.target?.fetchId?.() || revival.targetId || null
@@ -893,7 +907,9 @@ module.exports = {
             : distance;
         const partySettings = PartyCompanionService.getSettings(playerSession);
         const combatMode = partySettings.combatMode || 'assist';
-        const partyRaid = BotRaidSafety.syncPlayerPartyRaid(playerSession);
+        const partyRaid = timedFollowingStage('raidContext', () => (
+            BotRaidSafety.syncPlayerPartyRaid(playerSession)
+        ));
         if (partyRaid) PartyPulling.cancel(playerSession);
         if (partyRaid?.phase === 'opening') {
             const raidBoss = BotRaidSafety.raidBossByObjectId(partyRaid.bossId);
@@ -978,8 +994,10 @@ module.exports = {
         const configuredLeaderTargetId = combatMode === 'assist' || partySettings.pullMode === 'leader'
             ? selectedLeaderTargetId
             : undefined;
-        PartyPulling.observeLeaderTarget(playerSession, partySettings, configuredLeaderTargetId);
-        let pulling = PartyPulling.current(playerSession, partySettings);
+        let pulling = timedFollowingStage('pullContext', () => {
+            PartyPulling.observeLeaderTarget(playerSession, partySettings, configuredLeaderTargetId);
+            return PartyPulling.current(playerSession, partySettings);
+        });
         if (partyRaid) {
             pulling = { enabled: false, target: null, puller: null, engageable: false, phase: null };
         }
@@ -1153,7 +1171,9 @@ module.exports = {
             hpRatio: ratio(player.fetchHp(), player.fetchMaxHp()),
             mpRatio: ratio(player.fetchMp(), player.fetchMaxMp())
         };
-        const partyVitals = weakestPartyVitals(playerSession, bot) || leaderVitals;
+        const partyVitals = timedFollowingStage('partyVitals', () => (
+            weakestPartyVitals(playerSession, bot) || leaderVitals
+        ));
         const botRecovering = botVitals.hpRatio < 0.95 || (
             BotRoles.shouldRestForMana(bot) && botVitals.mpRatio < 0.95
         );
@@ -1279,7 +1299,9 @@ module.exports = {
         }
 
         if (!partyThreat && !leaderTargetId && !isBusy(bot)) {
-            const errand = companionTownErrand(session, bot, player, BotAI);
+            const errand = timedFollowingStage('townErrand', () => (
+                companionTownErrand(session, bot, player, BotAI)
+            ));
             if (errand) {
                 beginCompanionTownErrand(session, bot, playerSession, errand, BotAI);
                 recordRoleDecision(session, bot, 'town_errand', errand.kind, {
@@ -1290,11 +1312,13 @@ module.exports = {
             }
         }
 
-        const supportBuffTarget = BotSupportPlanner.nextAction(
-            bot,
-            partySupportMembers(playerSession, pulling.puller),
-            PartyPulling.supportProviders(playerSession)
-        );
+        const supportBuffTarget = timedFollowingStage('supportPlan', () => (
+            BotSupportPlanner.nextAction(
+                bot,
+                partySupportMembers(playerSession, pulling.puller),
+                PartyPulling.supportProviders(playerSession)
+            )
+        ));
         const routineHealCandidate = role === 'healer' ? BotSkillCapabilities.selectHealSkill(bot) : null;
         const emergencyHealCandidate = role === 'healer' ? BotSkillCapabilities.selectHealSkill(bot, { emergency: true }) : null;
         const rechargeSkill = role === 'healer' ? BotSkillCapabilities.manaRechargeSkill(bot) : null;
@@ -1345,7 +1369,9 @@ module.exports = {
             healerNeedsAction
         );
         const rebuff = !partyThreat && !leaderTargetId && !isBusy(bot)
-            ? BotSupportPlanner.rebuffRequest(bot, PartyPulling.supportProviders(playerSession))
+            ? timedFollowingStage('rebuffPlan', () => (
+                BotSupportPlanner.rebuffRequest(bot, PartyPulling.supportProviders(playerSession))
+            ))
             : null;
         if (rebuff && rebuff.provider !== bot && Date.now() - (session.lastRebuffRequestAt || 0) > 90000) {
             session.lastRebuffRequestAt = Date.now();
