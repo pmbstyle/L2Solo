@@ -38,7 +38,7 @@ function requestSetPledgeCrest(session, buffer) {
 
     packet.readB(length);
     utils.infoSuccess('ClanCrest', 'upload actor=%s bytes=%d packetBytes=%d signature=%s',
-        actorName, length, buffer.length, packet.data[1]?.toString('ascii', 0, 2) || '');
+        actorName, length, buffer.length, packet.data[1]?.toString('ascii', 0, 4) || '');
 
     return ClanService.setSmallCrest(session.actor, packet.data[1]).then((result) => {
         if (!result.ok) {

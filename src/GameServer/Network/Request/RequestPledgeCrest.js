@@ -27,7 +27,7 @@ function requestPledgeCrest(session, buffer) {
 
         const response = ServerResponse.pledgeCrest(crest.id, crest.data);
         utils.infoSuccess('ClanCrest', 'response actor=%s crest=%d clan=%d bytes=%d signature=%s',
-            actorName, crest.id, crest.clanId, crest.data.length, crest.data.toString('ascii', 0, 2));
+            actorName, crest.id, crest.clanId, crest.data.length, crest.data.toString('ascii', 0, 4));
         session.dataSendToMe(response);
     }).catch((error) => {
         utils.infoWarn('ClanCrest', 'request failed actor=%s crest=%d clan=%d: %s',

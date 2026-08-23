@@ -67,14 +67,30 @@ async function main() {
         assert(crestData.length > 54);
         assert.strictEqual(crestData.toString('ascii', 0, 2), 'BM');
         const clientData = ClanCrestService.clientCrestData(crestData, 'clan');
-        assert.deepStrictEqual(clientData, crestData, 'C4 must receive the stored crest file without transcoding');
-        assert.strictEqual(clientData.readUInt16LE(28), 8, 'C4 crest response should preserve the source 8-bit BMP');
+        assert.strictEqual(clientData.length, 256, '16x12 crest should be padded to a 16x16 DXT1 texture');
+        assert.strictEqual(clientData.toString('ascii', 0, 4), 'DDS ');
+        assert.strictEqual(clientData.readUInt32LE(12), 16);
+        assert.strictEqual(clientData.readUInt32LE(16), 16);
+        assert.strictEqual(clientData.toString('ascii', 84, 88), 'DXT1');
+        assert.deepStrictEqual(
+            ClanCrestService.clientCrestData(clientData),
+            clientData,
+            'client-uploaded DDS payloads must remain byte-exact'
+        );
+        const crest180 = fs.readFileSync(path.join(rootDir, 'data', 'crests', 'clan', 'crest-180.bmp'));
+        const dds180 = ClanCrestService.bmpToDxt1Dds(crest180);
+        assert.strictEqual(crest180.readUInt32LE(10), 810, 'regression asset should exercise a compact palette');
+        assert.strictEqual(dds180.length, 256);
+        assert.strictEqual(dds180.toString('ascii', 0, 4), 'DDS ');
+        assert.strictEqual(dds180.readUInt32LE(12), 16);
+        assert.strictEqual(dds180.readUInt32LE(16), 16);
+        assert.strictEqual(dds180.toString('ascii', 84, 88), 'DXT1');
         const requested = await ClanService.findSmallCrest(Number(promotedRows[0].crestId));
-        assert.deepStrictEqual(requested.data, crestData, 'crest request path must preserve the stored BMP');
+        assert.deepStrictEqual(requested.data, clientData, 'crest request path must encode autonomous assets as DDS');
         const packet = ServerResponse.pledgeCrest(requested.id, requested.data);
         assert.strictEqual(packet.readInt32LE(1), requested.id);
-        assert.strictEqual(packet.readInt32LE(5), crestData.length);
-        assert.strictEqual(packet.toString('ascii', 9, 11), 'BM', 'PledgeCrest must start with the BMP header');
+        assert.strictEqual(packet.readInt32LE(5), clientData.length);
+        assert.strictEqual(packet.toString('ascii', 9, 13), 'DDS ', 'PledgeCrest must carry raw DDS bytes');
 
         const requestSession = {
             actor: { fetchName: () => 'CrestTester' },
@@ -91,7 +107,7 @@ async function main() {
         assert.strictEqual(requestSession.sent[0][0], 0x6c);
         assert.strictEqual(requestSession.sent[0].readInt32LE(1), requested.id);
         assert.strictEqual(requestSession.sent[0].readInt32LE(5), clientData.length);
-        assert.strictEqual(requestSession.sent[0].toString('ascii', 9, 11), 'BM');
+        assert.strictEqual(requestSession.sent[0].toString('ascii', 9, 13), 'DDS ');
 
         const extendedRequestSession = {
             actor: { fetchName: () => 'CrestTesterExtended' },
@@ -137,7 +153,7 @@ async function main() {
                     this.sent.push(response);
                 }
             };
-            const uploadData = Buffer.from([0x42, 0x4d, 0x01, 0x02]);
+            const uploadData = clientData;
             const uploadRequest = Buffer.alloc(1 + 4 + uploadData.length);
             uploadRequest[0] = 0x53;
             uploadRequest.writeInt32LE(uploadData.length, 1);

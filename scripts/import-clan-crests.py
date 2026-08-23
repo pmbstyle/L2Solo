@@ -54,6 +54,33 @@ def normalize_image(kind: str, source: Path) -> Image.Image:
     return indexed
 
 
+def canonicalize_classic_bmp(data: bytes) -> bytes:
+    if len(data) < 54 or data[:2] != b"BM":
+        raise ValueError("not a Windows BMP")
+    dib_size = int.from_bytes(data[14:18], "little")
+    pixel_offset = int.from_bytes(data[10:14], "little")
+    bits = int.from_bytes(data[28:30], "little")
+    compression = int.from_bytes(data[30:34], "little")
+    if dib_size != 40 or bits != 8 or compression != 0:
+        raise ValueError("crest must be an uncompressed 8-bit BITMAPINFOHEADER BMP")
+    if pixel_offset < 54 or pixel_offset > len(data):
+        raise ValueError("invalid BMP pixel offset")
+
+    classic_offset = 14 + dib_size + (256 * 4)
+    pixels = data[pixel_offset:]
+    result = bytearray(classic_offset + len(pixels))
+    result[:14 + dib_size] = data[:14 + dib_size]
+    palette_end = min(pixel_offset, classic_offset)
+    result[14 + dib_size:palette_end] = data[14 + dib_size:palette_end]
+    result[classic_offset:] = pixels
+    result[2:6] = len(result).to_bytes(4, "little")
+    result[10:14] = classic_offset.to_bytes(4, "little")
+    result[34:38] = len(pixels).to_bytes(4, "little")
+    result[46:50] = (256).to_bytes(4, "little")
+    result[50:54] = (256).to_bytes(4, "little")
+    return bytes(result)
+
+
 def bmp_info(path: Path) -> dict:
     data = path.read_bytes()
     if data[:2] != b"BM":
@@ -61,10 +88,14 @@ def bmp_info(path: Path) -> dict:
     width = int.from_bytes(data[18:22], "little", signed=True)
     height = int.from_bytes(data[22:26], "little", signed=True)
     bits = int.from_bytes(data[28:30], "little")
+    pixel_offset = int.from_bytes(data[10:14], "little")
+    colors_used = int.from_bytes(data[46:50], "little")
     return {
         "width": abs(width),
         "height": abs(height),
         "bitsPerPixel": bits,
+        "pixelOffset": pixel_offset,
+        "colorsUsed": colors_used,
         "bytes": len(data),
         "sha256": hashlib.sha256(data).hexdigest(),
     }
@@ -85,6 +116,7 @@ def import_kind(kind: str, count: int) -> list[dict]:
             image = normalize_image(kind, source)
             candidate = destination / f"crest-{len(entries) + 1:03d}.bmp"
             image.save(candidate, format="BMP")
+            candidate.write_bytes(canonicalize_classic_bmp(candidate.read_bytes()))
             info = bmp_info(candidate)
             if info["sha256"] in seen_hashes:
                 candidate.unlink()
