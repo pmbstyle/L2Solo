@@ -812,6 +812,27 @@ function targetCombatCounter(state = {}, npcId) {
     };
 }
 
+function isClanOwnedPlan(plan = {}) {
+    return Number(plan?.clanGoal?.clanId || 0) > 0
+        && String(plan?.clanGoal?.goalKey || '').trim() !== '';
+}
+
+function equipmentTargetFulfilled(state = {}, plan = {}) {
+    const targetId = Number(plan?.target?.selfId || 0);
+    const targetSlot = Number(plan?.target?.slot || 0);
+    if (!targetId || !targetSlot) return false;
+    const item = state?.inventory?.[String(targetId)];
+    if (!item?.equipped) return false;
+    return equippedSlotsFor(item, item.slot).some((slot) => (
+        slot === targetSlot
+        || [7, 14].includes(slot) && [7, 14].includes(targetSlot)
+    ));
+}
+
+function clanGoalPlanLocked(state = {}, plan = state?.stats?.equipmentPlan) {
+    return isClanOwnedPlan(plan) && !equipmentTargetFulfilled(state, plan);
+}
+
 function directPlanFailure(state = {}, plan = {}, timestamp = Date.now()) {
     if (plan?.status !== 'active' || plan.strategy !== 'direct_drop') return null;
     const targetId = Number(plan.target?.selfId || 0);
@@ -905,6 +926,9 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
 }
 
 function finalizePlan(state = {}, previousPlan = null, rawPlan = {}, context = {}, timestamp = Date.now()) {
+    if (clanGoalPlanLocked(state, previousPlan) && context?.allowClanGoalReplan !== true) {
+        return previousPlan;
+    }
     const sameDirectTarget = previousPlan?.status === 'active'
         && previousPlan.strategy === 'direct_drop'
         && rawPlan?.status === 'active'
@@ -914,6 +938,9 @@ function finalizePlan(state = {}, previousPlan = null, rawPlan = {}, context = {
     const samePlan = previousPlan?.strategy === rawPlan?.strategy
         && Number(previousPlan?.target?.selfId || 0) === Number(rawPlan?.target?.selfId || 0)
         && Number(previousPlan?.next?.itemId || 0) === Number(rawPlan?.next?.itemId || 0);
+    const sameClanTarget = previousPlan?.clanGoal
+        && Number(previousPlan?.target?.selfId || 0) === Number(rawPlan?.target?.selfId || 0)
+        && Number(previousPlan?.target?.slot || 0) === Number(rawPlan?.target?.slot || 0);
     const targetProgress = rawPlan?.status === 'active' && rawPlan.strategy === 'direct_drop'
         ? (sameDirectTarget && previousPlan.targetProgress
             ? previousPlan.targetProgress
@@ -932,6 +959,10 @@ function finalizePlan(state = {}, previousPlan = null, rawPlan = {}, context = {
     }
     return {
         ...rawPlan,
+        // Clan-owned gear objectives must survive the normal solo replan. The
+        // route/item may be refreshed, but ownership of the beneficiary goal
+        // remains durable until the target is equipped.
+        ...(sameClanTarget ? { clanGoal: { ...previousPlan.clanGoal } } : {}),
         startedAt: samePlan ? Number(previousPlan?.startedAt || timestamp) : timestamp,
         plannedForLevel: Number(state.level || 1),
         plannedForGrade: gradeForLevel(state.level),
@@ -1394,4 +1425,4 @@ function sameObjective(left, right) {
     );
 }
 
-module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, replanContextFor, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
+module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, replanContextFor, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };

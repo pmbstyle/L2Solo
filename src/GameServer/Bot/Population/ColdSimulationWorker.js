@@ -132,6 +132,7 @@ function startKernel(config = {}) {
             const previousPlan = state.stats?.equipmentPlan || null;
             const spots = planningSpots;
             const replanContext = GearAcquisitionPlanner.replanContextFor(state, previousPlan, timestamp);
+            const clanGoalLocked = GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan);
             const reusablePartyRequest = !state.party?.partyId
                 && previousPlan?.next
                 && replanContext.planCurrent
@@ -139,15 +140,17 @@ function startKernel(config = {}) {
                 && state.stats?.partyRequest?.status === 'open'
                 && Number(state.stats.partyRequest.reviewAt || 0) > timestamp;
             const upgradedPlan = reusablePartyRequest
+                || clanGoalLocked
                 ? previousPlan
                 : GearAcquisitionPlanner.planFor(state, { spots, ...replanContext });
-            const previousRefresh = previousPlan?.recipeId && !reusablePartyRequest
+            const previousRefresh = previousPlan?.recipeId && !reusablePartyRequest && !clanGoalLocked
                 ? GearAcquisitionPlanner.planFor(state, { spots, recipeId: previousPlan.recipeId, ...replanContext })
                 : null;
             const rawPlan = GearAcquisitionPlanner.shouldFinishPreviousPlan(previousPlan, previousRefresh)
                 ? { ...previousRefresh, finishBeforeUpgrade: true }
                 : upgradedPlan;
             const finalizedPlan = reusablePartyRequest
+                || clanGoalLocked
                 ? previousPlan
                 : GearAcquisitionPlanner.finalizePlan(state, previousPlan, rawPlan, replanContext, timestamp);
             const acquisitionPlan = {

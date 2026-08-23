@@ -10,6 +10,7 @@ const databasePath = path.join(rootDir, 'tmp', 'test-clan-crest-assets.sqlite');
 const Database = invoke('Database');
 const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
 const ClanService = invoke('GameServer/Clan/ClanService');
+const ClientRequest = invoke('GameServer/Network/Request');
 const ServerResponse = invoke('GameServer/Network/Response');
 
 function removeDatabaseFiles() {
@@ -66,13 +67,56 @@ async function main() {
         assert(crestData.length > 54);
         assert.strictEqual(crestData.toString('ascii', 0, 2), 'BM');
         const clientData = ClanCrestService.clientCrestData(crestData, 'clan');
-        assert.strictEqual(clientData.length, 16 * 12, 'C4 must receive the raw 16x12 clan crest payload');
-        assert.notStrictEqual(clientData.toString('ascii', 0, 2), 'BM', 'C4 payload must not include the BMP header');
+        assert.strictEqual(clientData.readUInt32LE(10), 118, 'C4 crest BMP must use the compact 16-color palette');
+        assert.strictEqual(clientData.length, 118 + (8 * 12), 'C4 crest BMP must fit the native upload limit');
+        assert.strictEqual(clientData.readUInt16LE(28), 4, 'C4 crest BMP must use the compact 4-bit layout');
+        assert.strictEqual(clientData.readUInt32LE(34), 8 * 12, 'C4 crest BMP must describe its pixel payload');
+        assert.strictEqual(clientData.readInt32LE(38), 0, 'C4 crest BMP should use a neutral horizontal resolution');
+        assert.strictEqual(clientData.readInt32LE(42), 0, 'C4 crest BMP should use a neutral vertical resolution');
+        assert.strictEqual(clientData.readUInt32LE(46), 0, 'C4 crest BMP should use the default palette-count field');
+        assert.strictEqual(clientData.readUInt32LE(50), 0, 'C4 crest BMP should use the default important-colors field');
+        assert.deepStrictEqual(clientData.subarray(54, 58), Buffer.from([0, 0, 0, 0]),
+            'C4 crest BMP must start with the classic black palette entry');
+        assert.notDeepStrictEqual(clientData.subarray(54, 118), Buffer.alloc(64),
+            'C4 crest BMP must contain a populated 16-color palette');
         const requested = await ClanService.findSmallCrest(Number(promotedRows[0].crestId));
-        assert.strictEqual(requested.data.length, 16 * 12, 'crest request path must normalize legacy BMP rows');
+        assert.deepStrictEqual(requested.data, clientData, 'crest request path must normalize compact BMP rows');
         const packet = ServerResponse.pledgeCrest(requested.id, requested.data);
         assert.strictEqual(packet.readInt32LE(1), requested.id);
-        assert.strictEqual(packet.readInt32LE(5), 16 * 12);
+        assert.strictEqual(packet.readInt32LE(5), clientData.length);
+        assert.strictEqual(packet.toString('ascii', 9, 11), 'BM', 'PledgeCrest must start with the BMP header');
+
+        const requestSession = {
+            actor: { fetchName: () => 'CrestTester' },
+            sent: [],
+            dataSendToMe(response) {
+                this.sent.push(response);
+            }
+        };
+        const request = Buffer.alloc(1 + 4);
+        request[0] = 0x68;
+        request.writeInt32LE(requested.id, 1);
+        await ClientRequest.requestPledgeCrest(requestSession, request);
+        assert.strictEqual(requestSession.sent.length, 1, 'crest request should produce one response');
+        assert.strictEqual(requestSession.sent[0][0], 0x6c);
+        assert.strictEqual(requestSession.sent[0].readInt32LE(1), requested.id);
+        assert.strictEqual(requestSession.sent[0].readInt32LE(5), clientData.length);
+        assert.strictEqual(requestSession.sent[0].toString('ascii', 9, 11), 'BM');
+
+        const extendedRequestSession = {
+            actor: { fetchName: () => 'CrestTesterExtended' },
+            sent: [],
+            dataSendToMe(response) {
+                this.sent.push(response);
+            }
+        };
+        const extendedRequest = Buffer.alloc(1 + 4 + 4);
+        extendedRequest[0] = 0x68;
+        extendedRequest.writeInt32LE(requested.id, 1);
+        extendedRequest.writeInt32LE(requested.clanId, 5);
+        await ClientRequest.requestPledgeCrest(extendedRequestSession, extendedRequest);
+        assert.strictEqual(extendedRequestSession.sent.length, 1, 'extended crest request should produce one response');
+        assert.strictEqual(extendedRequestSession.sent[0][0], 0x6c);
         console.log('Clan crest asset checks passed');
     } finally {
         await Database.close();

@@ -5,6 +5,7 @@ const ContributionPolicy = invoke('GameServer/Clan/ClanContributionPolicy');
 const GoalPolicy = invoke('GameServer/Clan/ClanGoalPolicy');
 const ClanSimulationPolicy = invoke('GameServer/Clan/ClanSimulationPolicy');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const ClanEquipmentService = invoke('GameServer/Clan/ClanEquipmentService');
 
 const metrics = {
     resolves: 0,
@@ -57,7 +58,8 @@ async function clanProjection(clanId = null) {
                clans.name, clans.level, clans.leaderId,
                members.id AS characterId, members.name AS memberName,
                members.classId, members.level AS memberLevel, members.clanId AS memberClanId,
-               life.accountName, life.activity, life.phase, life.adena,
+               life.accountName, life.activity, life.phase, life.adena, life.currentRegion,
+               life.partyId,
                life.simulationRevision, life.inventorySummary, life.statsJson
         FROM clan_simulation_clans simulated
         JOIN clans ON clans.id = simulated.clanId
@@ -89,6 +91,8 @@ async function clanProjection(clanId = null) {
             accountName: String(row.accountName || ''),
             activity: String(row.activity || ''),
             phase: String(row.phase || ''),
+            currentRegion: String(row.currentRegion || ''),
+            partyId: row.partyId || null,
             adena: number(row.adena),
             simulationRevision: number(row.simulationRevision),
             inventory: parseJson(row.inventorySummary, {}),
@@ -195,7 +199,57 @@ async function ensureDemand(clan, goal, context) {
 }
 
 async function resolveClan(clan, options = {}) {
-    if (!clan || number(clan.level) >= 3) return { ok: true, skipped: true, reason: 'terminal_level' };
+    if (!clan) return { ok: true, skipped: true, reason: 'target_not_autonomous' };
+    if (number(clan.level) >= 3) {
+        const previous = clan.state?.goal || null;
+        const equipment = await ClanEquipmentService.resolveClan(clan, previous, options);
+        if (equipment.skipped) {
+            return {
+                ok: true,
+                clanId: clan.id,
+                level: number(clan.level),
+                changed: false,
+                skipped: true,
+                reason: equipment.reason,
+                goal: previous,
+                context: { members: clan.members || [] }
+            };
+        }
+        if (!equipment.ok) {
+            return equipment;
+        }
+        const goal = equipment.goal;
+        const changed = JSON.stringify(goalComparable(previous)) !== JSON.stringify(goalComparable(goal));
+        let persisted = { ok: true, goal: previous };
+        if (changed) {
+            const eventType = !previous ? 'equipment_goal_created'
+                : equipment.previousFulfilled ? 'equipment_goal_advanced'
+                    : 'equipment_goal_updated';
+            persisted = await Database.updateAutonomousClanGoal({
+                clanId: clan.id,
+                goal,
+                expectedUpdatedAt: number(equipment.expectedUpdatedAt ?? clan.state?.updatedAt) || null,
+                eventType,
+                reasonCode: goal.plan?.reasonCode || ''
+            });
+            if (persisted.ok) {
+                if (!previous) metrics.goalsCreated += 1;
+                else metrics.goalsUpdated += 1;
+            }
+        }
+        record(metrics.planCounts, goal.plan?.kind);
+        metrics.activeGoals += goal.status !== 'completed' ? 1 : 0;
+        return {
+            ok: !!persisted.ok,
+            clanId: clan.id,
+            level: number(clan.level),
+            changed,
+            goal: persisted.goal || goal,
+            context: { members: clan.members || [], plans: equipment.plans },
+            assignment: equipment.assignment,
+            reason: persisted.code || null
+        };
+    }
     const context = await contextFor(clan);
     const previous = clan.state?.goal || null;
     let goal = GoalPolicy.buildGoal(clan, context, previous, {
@@ -317,7 +371,8 @@ const ClanGoalService = {
             catastrophicFailures: metrics.catastrophicFailures,
             budgetStops: metrics.budgetStops,
             planCounts: Object.fromEntries(metrics.planCounts.entries()),
-            reasonCounts: Object.fromEntries(metrics.reasonCounts.entries())
+            reasonCounts: Object.fromEntries(metrics.reasonCounts.entries()),
+            equipment: ClanEquipmentService.metrics()
         };
     },
 

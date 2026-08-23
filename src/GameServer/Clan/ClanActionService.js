@@ -61,6 +61,10 @@ function actionPayload(action) {
 
 function actionTypeFor(clan, goal) {
     if (!clan || !goal || goal.status === 'completed') return null;
+    // L3 equipment goals are consumed by the beneficiary's normal gear and
+    // party lifecycle. Keeping them out of this queue avoids turning a durable
+    // objective into a per-tick clan scheduler job.
+    if (goal.type === 'equipment') return null;
     if (number(clan.level) <= 1) return ACTION_TYPES.CONTRIBUTION;
     switch (String(goal.plan?.kind || '')) {
         case 'warehouse': return ACTION_TYPES.WAREHOUSE;

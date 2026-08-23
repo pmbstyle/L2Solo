@@ -229,6 +229,7 @@ function reconcileFulfilledEquipmentPlan(state = {}) {
     const stats = { ...(state.stats || {}) };
     delete stats.equipmentPlan;
     delete stats.partyRequest;
+    delete stats.clanPartyObjective;
     return { ...state, stats };
 }
 
@@ -241,6 +242,33 @@ function reconcileEquipmentInventory(state = {}) {
             ...(state.stats || {}),
             equipment: equipmentSummaryFromInventory(inventory)
         }
+    });
+}
+
+function equipmentCompletionSignal(state = {}) {
+    const clanGoal = state.stats?.equipmentPlan?.clanGoal;
+    if (!clanGoal?.clanId || !clanGoal?.goalKey) return null;
+    if (!equipmentTargetFulfilled(state.stats, state.inventory)) return null;
+    return {
+        clanId: Number(clanGoal.clanId),
+        goalKey: String(clanGoal.goalKey)
+    };
+}
+
+function enqueueEquipmentGoalAdvance(signal) {
+    if (!signal?.clanId || !signal.goalKey) return Promise.resolve(null);
+    return Database.enqueueClanAction({
+        clanId: signal.clanId,
+        actionKey: `clan:${signal.clanId}:equipment-advance:${signal.goalKey}`,
+        actionType: 'goal_plan',
+        priority: 100,
+        payload: {
+            reason: 'equipment_goal_completed',
+            goalKey: signal.goalKey
+        }
+    }).catch((error) => {
+        utils.infoWarn('BotLife', 'failed to enqueue clan equipment advance for %s: %s', signal.goalKey, error.message || error);
+        return null;
     });
 }
 
@@ -509,9 +537,11 @@ function recordFromSession(session, phase, reason = '') {
 }
 
 function rowFromState(state) {
+    const inventory = InventorySummary.canonicalize(state?.inventory);
+    const equipmentAdvance = equipmentCompletionSignal({ ...state, inventory });
     const persistedState = reconcileFulfilledEquipmentPlan({
         ...state,
-        inventory: InventorySummary.canonicalize(state?.inventory)
+        inventory
     });
     return {
         characterId: persistedState.characterId,
@@ -551,6 +581,7 @@ function rowFromState(state) {
         simulationRevision: Math.max(0, Number(persistedState.simulation?.revision || 0)),
         simulationLeaseId: persistedState.simulation?.leaseId || null,
         simulationLeaseUntil: Math.max(0, Number(persistedState.simulation?.leaseUntil || 0)),
+        equipmentAdvance,
         updatedAt: now()
     };
 }
@@ -632,7 +663,7 @@ function save(row) {
             throw error;
         }
         Metrics.recordDbFlush();
-        return result;
+        return enqueueEquipmentGoalAdvance(row.equipmentAdvance).then(() => result);
     });
 }
 
@@ -1180,7 +1211,7 @@ function discardInvalidEquipmentPlans() {
     const timestamp = now();
     return Database.execute([
         `UPDATE ${TABLE}
-        SET statsJson = json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan'),
+        SET statsJson = json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan', '$.partyRequest', '$.clanPartyObjective'),
             updatedAt = ?
         WHERE json_extract(statsJson, '$.equipmentPlan.target') IS NOT NULL
         AND (
@@ -1230,7 +1261,7 @@ function discardFulfilledEquipmentPlans() {
               )
         )
         UPDATE ${TABLE}
-        SET statsJson = json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan', '$.partyRequest'),
+        SET statsJson = json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan', '$.partyRequest', '$.clanPartyObjective'),
             updatedAt = ?
         WHERE characterId IN (SELECT characterId FROM fulfilled_equipment_plans)`,
         [timestamp]

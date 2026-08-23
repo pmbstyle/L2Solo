@@ -135,6 +135,32 @@ async function main() {
         });
         assert.strictEqual(released.ok, true);
 
+        const handoff = await Database.transferClanWarehouseToMember({
+            clanId: created.clanId,
+            characterId: 4300002,
+            selfId: 1864,
+            amount: 5,
+            goalKey: 'slice3-equipment:4300002:1864',
+            expectedWarehouseRevision: Number(released.warehouseRevision),
+            expectedSimulationRevision: Number(stateAfter.simulationRevision)
+        });
+        assert.strictEqual(handoff.ok, true);
+        assert.strictEqual(handoff.code, 'warehouse_withdraw_applied');
+        const [memberStem] = await Database.execute(['SELECT amount FROM items WHERE characterId = ? AND selfId = ?', [4300002, 1864]]);
+        assert.strictEqual(Number(memberStem.amount), 5, 'craft materials must move from clan warehouse to the beneficiary inventory');
+        const [warehouseStem] = await Database.execute(['SELECT amount FROM clan_warehouse_items WHERE clanId = ? AND selfId = ?', [created.clanId, 1864]]);
+        assert.strictEqual(Number(warehouseStem.amount), 10, 'warehouse stock must decrease by the handed-off amount');
+        const [withdrawLedger] = await Database.execute(["SELECT COUNT(*) AS count FROM clan_warehouse_ledger WHERE clanId = ? AND operation = 'withdraw' AND resolveKey = ?", [created.clanId, 'slice3-equipment:4300002:1864']]);
+        assert.strictEqual(Number(withdrawLedger.count), 1, 'warehouse handoff must be idempotently auditable');
+        const duplicateHandoff = await Database.transferClanWarehouseToMember({
+            clanId: created.clanId,
+            characterId: 4300002,
+            selfId: 1864,
+            amount: 5,
+            goalKey: 'slice3-equipment:4300002:1864'
+        });
+        assert.strictEqual(duplicateHandoff.code, 'warehouse_withdraw_already_applied');
+
         console.log('Clan simulation Slice 3 checks passed');
     } finally {
         await Database.close();

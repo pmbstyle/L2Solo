@@ -3521,6 +3521,182 @@ const Database = {
             };
         }, 'clan-warehouse:deposit'));
     },
+    transferClanWarehouseToMember({
+        clanId,
+        characterId,
+        selfId,
+        amount,
+        goalKey,
+        expectedWarehouseRevision = null,
+        expectedSimulationRevision = null
+    } = {}) {
+        const clan = Number(clanId);
+        const beneficiary = Number(characterId);
+        const itemId = Number(selfId || 0);
+        const requested = Math.floor(Number(amount) || 0);
+        const key = String(goalKey || '').trim();
+        if (!clan || !beneficiary || !itemId || requested <= 0 || !key) {
+            return Promise.resolve({ ok: false, code: 'warehouse_transfer_failed' });
+        }
+
+        return withCharacterFlush(beneficiary, () => inTransaction(() => {
+            const simulation = one('SELECT clanId, stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan]);
+            const member = one('SELECT id, clanId FROM characters WHERE id = ?', [beneficiary]);
+            const life = one(`SELECT phase, simulationOwner, simulationRevision, partyId
+                FROM bot_life_state WHERE characterId = ?`, [beneficiary]);
+            if (!simulation || !member || Number(member.clanId) !== clan || !life) {
+                return { ok: false, code: 'warehouse_transfer_failed' };
+            }
+            if (String(life.phase || '') !== 'cold'
+                || String(life.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER
+                || String(life.partyId || '') !== '') {
+                return { ok: false, code: 'stale_snapshot' };
+            }
+            if (expectedSimulationRevision !== null
+                && Number(life.simulationRevision || 0) !== Number(expectedSimulationRevision)) {
+                return { ok: false, code: 'stale_snapshot', simulationRevision: Number(life.simulationRevision || 0) };
+            }
+
+            const previousState = jsonObject(simulation.stateJson);
+            const currentWarehouseRevision = Math.max(0, Number(previousState.warehouseRevision) || 0);
+            if (expectedWarehouseRevision !== null
+                && currentWarehouseRevision !== Number(expectedWarehouseRevision)) {
+                return { ok: false, code: 'ownership_conflict', warehouseRevision: currentWarehouseRevision };
+            }
+
+            const existingLedger = one(`SELECT id, amount, warehouseRevision
+                FROM clan_warehouse_ledger
+                WHERE clanId = ? AND characterId = ? AND selfId = ?
+                  AND operation = 'withdraw' AND resolveKey = ?`, [clan, beneficiary, itemId, key]);
+            if (existingLedger) {
+                return {
+                    ok: true,
+                    code: 'warehouse_withdraw_already_applied',
+                    amount: Number(existingLedger.amount),
+                    warehouseRevision: Number(existingLedger.warehouseRevision),
+                    ledgerId: Number(existingLedger.id)
+                };
+            }
+
+            const reservation = one(`SELECT id, amount, status
+                FROM clan_warehouse_reservations
+                WHERE clanId = ? AND selfId = ? AND goalKey = ?`, [clan, itemId, key]);
+            if (reservation?.status === 'reserved') {
+                return { ok: false, code: 'warehouse_item_reserved', available: 0 };
+            }
+            if (reservation?.status === 'consumed') {
+                return { ok: false, code: 'warehouse_transfer_failed' };
+            }
+
+            const stockRows = all(`SELECT id, selfId, name, kind, amount, enchant, petData, reservedAmount
+                FROM clan_warehouse_items
+                WHERE clanId = ? AND selfId = ? AND amount > 0
+                ORDER BY id`, [clan, itemId]);
+            const available = stockRows.reduce((sum, row) => sum + Math.max(
+                0,
+                Number(row.amount || 0) - Number(row.reservedAmount || 0)
+            ), 0);
+            if (available < requested) {
+                return { ok: false, code: 'warehouse_no_stock', available };
+            }
+
+            const timestamp = now();
+            let remaining = requested;
+            const consumedRows = [];
+            for (const stock of stockRows) {
+                if (remaining <= 0) break;
+                const stockAmount = Math.max(0, Number(stock.amount || 0));
+                const reservedAmount = Math.max(0, Number(stock.reservedAmount || 0));
+                const take = Math.min(remaining, Math.max(0, stockAmount - reservedAmount));
+                if (take <= 0) continue;
+
+                const nextAmount = stockAmount - take;
+                if (nextAmount <= 0 && reservedAmount <= 0) {
+                    write('DELETE FROM clan_warehouse_items WHERE id = ? AND clanId = ?', [stock.id, clan]);
+                } else {
+                    write(`UPDATE clan_warehouse_items
+                        SET amount = ?, updatedAt = ? WHERE id = ? AND clanId = ?`, [nextAmount, timestamp, stock.id, clan]);
+                }
+
+                const targetItem = one(`SELECT id, amount FROM items
+                    WHERE characterId = ? AND selfId = ? AND enchant = ? AND equipped = 0
+                    ORDER BY id LIMIT 1`, [beneficiary, itemId, Number(stock.enchant || 0)]);
+                if (targetItem) {
+                    write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [
+                        Number(targetItem.amount || 0) + take,
+                        targetItem.id,
+                        beneficiary
+                    ]);
+                } else {
+                    write(`INSERT INTO items
+                        (selfId, name, amount, enchant, equipped, slot, petData, characterId)
+                        VALUES (?, ?, ?, ?, 0, 0, ?, ?)`, [
+                        itemId,
+                        String(stock.name || `Item ${itemId}`),
+                        take,
+                        Math.max(0, Number(stock.enchant || 0)),
+                        stock.petData || null,
+                        beneficiary
+                    ]);
+                }
+                consumedRows.push({ warehouseId: Number(stock.id), amount: take });
+                remaining -= take;
+            }
+            if (remaining > 0) throw new Error('clan warehouse handoff source changed');
+
+            const lifeUpdate = updateColdInventorySnapshotUnsafe(beneficiary, itemId, {
+                clanId: clan,
+                selfId: itemId,
+                amount: requested,
+                warehouseId: consumedRows[0]?.warehouseId || null,
+                at: timestamp,
+                operation: 'withdraw'
+            }, expectedSimulationRevision === null
+                ? Number(life.simulationRevision || 0)
+                : Number(expectedSimulationRevision));
+            if (!lifeUpdate.ok) throw new Error(`clan warehouse handoff rejected: ${lifeUpdate.code}`);
+
+            const nextWarehouseRevision = currentWarehouseRevision + 1;
+            const state = simulationState(simulation.stateJson, clan, previousState.leaderId, previousState.memberIds || [], timestamp);
+            state.warehouseRevision = nextWarehouseRevision;
+            const stateUpdate = write(`UPDATE clan_simulation_clans
+                SET updatedAt = ?, stateJson = ?
+                WHERE clanId = ? AND json_extract(stateJson, '$.warehouseRevision') = ?`, [
+                timestamp,
+                JSON.stringify(state),
+                clan,
+                currentWarehouseRevision
+            ]);
+            if (Number(stateUpdate.affectedRows || 0) !== 1) throw new Error('clan warehouse revision changed');
+
+            const reservationResult = reservation
+                ? write(`UPDATE clan_warehouse_reservations
+                    SET amount = ?, beneficiaryId = ?, status = 'consumed', updatedAt = ?
+                    WHERE id = ? AND clanId = ?`, [requested, beneficiary, timestamp, reservation.id, clan])
+                : write(`INSERT INTO clan_warehouse_reservations
+                    (clanId, selfId, amount, beneficiaryId, goalKey, status, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, ?, 'consumed', ?, ?)`, [
+                    clan, itemId, requested, beneficiary, key, timestamp, timestamp
+                ]);
+            const ledger = write(`INSERT INTO clan_warehouse_ledger
+                (clanId, characterId, selfId, amount, operation, resolveKey, warehouseRevision, createdAt)
+                VALUES (?, ?, ?, ?, 'withdraw', ?, ?, ?)`, [
+                clan, beneficiary, itemId, requested, key, nextWarehouseRevision, timestamp
+            ]);
+            return {
+                ok: true,
+                code: 'warehouse_withdraw_applied',
+                clanId: clan,
+                characterId: beneficiary,
+                selfId: itemId,
+                amount: requested,
+                warehouseRevision: nextWarehouseRevision,
+                simulationRevision: lifeUpdate.simulationRevision,
+                reservationId: Number(reservation?.id || reservationResult.insertId || 0),
+                ledgerId: Number(ledger.insertId)
+            };
+        }, 'clan-warehouse:withdraw'));
+    },
     transferClanAdenaToWarehouse({
         clanId,
         characterId,

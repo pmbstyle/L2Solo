@@ -1815,6 +1815,10 @@ const PopulationService = {
             for (const member of members) {
                 if (budgetReached()) return refreshed;
                 const previousPlan = member.stats?.equipmentPlan;
+                if (GearAcquisitionPlanner.clanGoalPlanLocked(member, previousPlan)) {
+                    refreshedPlans.set(Number(member.characterId), previousPlan);
+                    continue;
+                }
                 let nextPlan;
                 try {
                     nextPlan = GearAcquisitionPlanner.planFor(member, { spots, occupancy });

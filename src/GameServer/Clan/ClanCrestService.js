@@ -11,6 +11,7 @@ const EXPECTED = {
 };
 
 let library = null;
+let classicPalette = null;
 
 function number(value, fallback = 0) {
     const parsed = Number(value);
@@ -40,6 +41,55 @@ function readBmp(entry, kind) {
     };
 }
 
+function classicC4Palette() {
+    if (classicPalette) return classicPalette;
+
+    // C4 crest uploads are limited to 256 bytes. A canonical 16x12 4-bit
+    // BMP is 214 bytes (54-byte header + 16-color palette + 96 pixels).
+    // This is the old Windows palette used by compact C4 crest files.
+    const palette = Buffer.from(
+        '0000000000008000008000000080800080000000800080008080000080808000'
+        + 'c0c0c0000000ff0000ff000000ffff00ff000000ff00ff00ffff0000ffffff00',
+        'hex'
+    );
+    classicPalette = palette;
+    return palette;
+}
+
+function nearestClassicPaletteIndex(palette, sourceIndex) {
+    const sourceOffset = sourceIndex * 4;
+    const blue = palette[sourceOffset] || 0;
+    const green = palette[sourceOffset + 1] || 0;
+    const red = palette[sourceOffset + 2] || 0;
+    const targetPalette = classicC4Palette();
+    let bestIndex = 0;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (let index = 0; index < 16; index += 1) {
+        const offset = index * 4;
+        const blueDelta = blue - targetPalette[offset];
+        const greenDelta = green - targetPalette[offset + 1];
+        const redDelta = red - targetPalette[offset + 2];
+        const distance = (blueDelta * blueDelta) + (greenDelta * greenDelta)
+            + (redDelta * redDelta);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestIndex = index;
+        }
+    }
+
+    return bestIndex;
+}
+
+function sourcePixelIndex(bytes, pixelOffset, rowStride, bitsPerPixel, row, column) {
+    const rowOffset = pixelOffset + (row * rowStride);
+    if (bitsPerPixel === 4) {
+        const value = bytes[rowOffset + Math.floor(column / 2)] || 0;
+        return column % 2 === 0 ? (value >> 4) & 0x0f : value & 0x0f;
+    }
+    return bytes[rowOffset + column] || 0;
+}
+
 function clientCrestData(data, kind = 'clan') {
     const bytes = Buffer.from(data || []);
     if (bytes.length < 54 || bytes.toString('ascii', 0, 2) !== 'BM') return bytes;
@@ -48,27 +98,54 @@ function clientCrestData(data, kind = 'clan') {
     const pixelOffset = bytes.readUInt32LE(10);
     const width = Math.abs(bytes.readInt32LE(18));
     const height = Math.abs(bytes.readInt32LE(22));
+    const planes = bytes.readUInt16LE(26);
     const bitsPerPixel = bytes.readUInt16LE(28);
     const compression = bytes.readUInt32LE(30);
     const rowBytes = Math.ceil(width * bitsPerPixel / 8);
     const rowStride = Math.ceil(rowBytes / 4) * 4;
+    const sourcePixelBytes = rowStride * height;
 
-    if (width !== expected.width || height !== expected.height || bitsPerPixel !== expected.bitsPerPixel
-        || compression !== 0 || pixelOffset + rowStride * height > bytes.length) {
+    if (width !== expected.width || height !== expected.height || planes !== 1
+        || ![4, expected.bitsPerPixel].includes(bitsPerPixel) || compression !== 0
+        || pixelOffset < 54 || pixelOffset + sourcePixelBytes > bytes.length) {
         return bytes;
     }
 
-    // C4's RequestSetPledgeCrest accepts the indexed pixel payload (16x12
-    // bytes for a clan crest), not the BMP header/palette. Normalize both the
-    // imported BMP assets and legacy database rows before PledgeCrest sends it.
-    const payload = Buffer.alloc(rowBytes * height);
-    const sourceHeight = bytes.readInt32LE(22);
+    // Convert modern 8-bit assets (or a legacy 4-bit row) to the compact C4
+    // representation. The source palette can be sparse; the response uses a
+    // fixed 16-color palette and remaps every source pixel to its nearest
+    // classic color so the client receives a genuinely valid small BMP.
+    const targetPixelOffset = 54 + (16 * 4);
+    const targetRowBytes = Math.ceil(width * 4 / 8);
+    const targetPixelBytes = targetRowBytes * height;
+    const target = Buffer.alloc(targetPixelOffset + targetPixelBytes);
+    bytes.copy(target, 0, 0, 54);
+    target.writeUInt32LE(target.length, 2);
+    target.writeUInt32LE(targetPixelOffset, 10);
+    target.writeUInt16LE(4, 28);
+    target.writeUInt32LE(targetPixelBytes, 34);
+    target.writeInt32LE(0, 38);
+    target.writeInt32LE(0, 42);
+    target.writeUInt32LE(0, 46);
+    target.writeUInt32LE(0, 50);
+
+    const sourcePaletteBytes = Math.max(0, Math.min(pixelOffset - 54, 256 * 4));
+    const sourcePalette = Buffer.alloc(256 * 4);
+    bytes.copy(sourcePalette, 0, 54, 54 + sourcePaletteBytes);
+    const targetPalette = classicC4Palette();
+    targetPalette.copy(target, 54);
     for (let row = 0; row < height; row += 1) {
-        const sourceRow = sourceHeight > 0 ? height - 1 - row : row;
-        bytes.copy(payload, row * rowBytes, pixelOffset + sourceRow * rowStride,
-            pixelOffset + sourceRow * rowStride + rowBytes);
+        for (let column = 0; column < width; column += 1) {
+            const sourceIndex = sourcePixelIndex(
+                bytes, pixelOffset, rowStride, bitsPerPixel, row, column
+            );
+            const targetIndex = nearestClassicPaletteIndex(sourcePalette, sourceIndex);
+            const targetOffset = targetPixelOffset + (row * targetRowBytes) + Math.floor(column / 2);
+            if (column % 2 === 0) target[targetOffset] = targetIndex << 4;
+            else target[targetOffset] |= targetIndex;
+        }
     }
-    return payload;
+    return target;
 }
 
 function loadLibrary() {
@@ -146,7 +223,11 @@ async function ensureAutonomousClans() {
 
 const ClanCrestService = {
     assets(kind = 'clan') {
-        return [...(loadLibrary()[kind] || [])].map(({ data, ...asset }) => asset);
+        return [...(loadLibrary()[kind] || [])].map((asset) => {
+            const publicAsset = { ...asset };
+            delete publicAsset.data;
+            return publicAsset;
+        });
     },
     clientCrestData,
     assetFor,
@@ -154,6 +235,7 @@ const ClanCrestService = {
     ensureAutonomousClans,
     reset() {
         library = null;
+        classicPalette = null;
     }
 };
 

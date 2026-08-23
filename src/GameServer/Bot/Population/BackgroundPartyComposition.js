@@ -11,6 +11,16 @@ function roleForState(state) {
     return state?.party?.role || state?.stats?.role || 'dps';
 }
 
+function clanIdForState(state) {
+    return Number(
+        state?.stats?.clanGoal?.clanId
+        || state?.stats?.clanPartyObjective?.clanId
+        || state?.stats?.clanId
+        || state?.clanId
+        || 0
+    );
+}
+
 function roleCoverage(states) {
     return states.reduce((coverage, state) => {
         const role = roleForState(state);
@@ -26,6 +36,13 @@ function compareCandidate(anchor, coverage, peers = [anchor]) {
         const aSupport = SUPPORT_ROLES.includes(aRole) && !coverage[aRole] ? 0 : 1;
         const bSupport = SUPPORT_ROLES.includes(bRole) && !coverage[bRole] ? 0 : 1;
         if (aSupport !== bSupport) return aSupport - bSupport;
+
+        const anchorClanId = clanIdForState(anchor);
+        if (anchorClanId > 0) {
+            const aClan = clanIdForState(a) === anchorClanId ? 0 : 1;
+            const bClan = clanIdForState(b) === anchorClanId ? 0 : 1;
+            if (aClan !== bClan) return aClan - bClan;
+        }
 
         const aAffinity = PartyAffinity.affinity(a, peers);
         const bAffinity = PartyAffinity.affinity(b, peers);
@@ -96,11 +113,15 @@ function buildAround(anchor, candidates, maxSize, levelRange) {
     const levels = selected.map(levelOf);
     const levelSpread = Math.max(...levels) - Math.min(...levels);
     const supportCount = SUPPORT_ROLES.filter((role) => coverage[role]).length;
+    const anchorClanId = clanIdForState(anchor);
+    const clanCount = anchorClanId > 0
+        ? selected.filter((state) => clanIdForState(state) === anchorClanId).length
+        : 0;
     return {
         members: selected,
         coverage,
         levelSpread,
-        score: supportCount * 1000 + selected.length * 100 - levelSpread
+        score: supportCount * 1000 + clanCount * 100 + selected.length * 10 - levelSpread
     };
 }
 

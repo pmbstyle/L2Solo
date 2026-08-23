@@ -46,7 +46,12 @@ def normalize_image(kind: str, source: Path) -> Image.Image:
             image = image.crop((16, 0, 24, 12))
         else:
             image = image.resize((8, 12), Image.Resampling.NEAREST)
-    return image.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
+    indexed = image.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
+    # The C4 crest loader assumes the classic 8-bit BMP layout with all 256
+    # palette entries present, even when the image uses fewer colors.
+    palette = indexed.getpalette() or []
+    indexed.putpalette(palette + [0] * (768 - len(palette)))
+    return indexed
 
 
 def bmp_info(path: Path) -> dict:

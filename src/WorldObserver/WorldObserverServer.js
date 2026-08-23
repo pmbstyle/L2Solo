@@ -494,17 +494,26 @@ function clanNumber(value, fallback = 0) {
 function compactClanGoal(raw) {
     const goal = raw && raw.goal ? raw.goal : raw;
     if (!goal || typeof goal !== 'object') return null;
+    const target = goal.target ? {
+        itemId: clanNumber(goal.target.itemId) || null,
+        itemName: goal.target.itemName || null,
+        npcId: clanNumber(goal.target.npcId || goal.plan?.sourceId) || null,
+        npcName: goal.target.npcName || null
+    } : null;
+    if (target && clanNumber(goal.target.memberId) > 0) {
+        target.memberId = clanNumber(goal.target.memberId);
+        target.memberName = goal.target.memberName || null;
+        target.memberLevel = clanNumber(goal.target.memberLevel) || null;
+        target.slot = clanNumber(goal.target.slot) || null;
+        target.grade = goal.target.grade || null;
+        target.strategy = goal.target.strategy || null;
+    }
     return {
         status: String(goal.status || ''),
         type: String(goal.type || ''),
         progress: clanNumber(goal.progress),
         required: clanNumber(goal.required),
-        target: goal.target ? {
-            itemId: clanNumber(goal.target.itemId) || null,
-            itemName: goal.target.itemName || null,
-            npcId: clanNumber(goal.target.npcId) || null,
-            npcName: goal.target.npcName || null
-        } : null,
+        target,
         plan: goal.plan ? {
             kind: goal.plan.kind || null,
             reasonCode: goal.plan.reasonCode || null,
