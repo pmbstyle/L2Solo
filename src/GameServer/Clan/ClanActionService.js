@@ -25,6 +25,7 @@ const metrics = {
     succeeded: 0,
     failed: 0,
     retried: 0,
+    deferred: 0,
     budgetStops: 0,
     budgetOverruns: 0,
     releasedUnstarted: 0,
@@ -126,6 +127,18 @@ function workDone(actionType, result = {}) {
     if (actionType === ACTION_TYPES.MARKET) return result.purchased === true || result.advanced?.ok === true;
     if (actionType === ACTION_TYPES.PARTY) return result.started === true || result.resolved === true || result.succeeded === true;
     return result.changed === true;
+}
+
+function deferredRetryDelay(actionType, result = {}) {
+    const reason = String(result?.code || result?.reason || '');
+    if (
+        actionType === ACTION_TYPES.PARTY &&
+        result?.skipped === true &&
+        reason === Contracts.REASON_CODES.PARTY_NOT_READY
+    ) {
+        return Config.actionRetryMs;
+    }
+    return null;
 }
 
 async function bootstrap() {
@@ -273,6 +286,32 @@ async function resolveAction(action, options = {}) {
         const result = await execute(action, options);
         const ok = result?.ok !== false;
         const reasonCode = result?.code || result?.reason || (ok ? '' : 'clan_action_failed');
+        const retryDelay = deferredRetryDelay(String(action.actionType), result);
+        if (retryDelay !== null) {
+            const deferStartedAt = Date.now();
+            const released = await Database.releaseClanAction({
+                actionId: action.id,
+                availableAt: Date.now() + retryDelay,
+                expectedAttempt: action.attempt,
+                expectedLeaseUntil: action.leaseUntil
+            }).finally(() => {
+                StageMetrics.record(metrics.stages, 'defer', Date.now() - deferStartedAt);
+            });
+            if (!released.ok) {
+                metrics.releaseConflicts += 1;
+                return released;
+            }
+            metrics.deferred += 1;
+            metrics.retried += 1;
+            recordAction(action, 'deferred');
+            record(metrics.reasonCounts, reasonCode);
+            return {
+                ...released,
+                deferred: true,
+                result,
+                durationMs: Date.now() - startedAt
+            };
+        }
         const settleStartedAt = Date.now();
         const resolved = await Database.resolveClanAction({
             actionId: action.id,
@@ -447,6 +486,7 @@ const ClanActionService = {
             succeeded: metrics.succeeded,
             failed: metrics.failed,
             retried: metrics.retried,
+            deferred: metrics.deferred,
             budgetStops: metrics.budgetStops,
             budgetOverruns: metrics.budgetOverruns,
             releasedUnstarted: metrics.releasedUnstarted,

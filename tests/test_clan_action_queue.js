@@ -10,6 +10,7 @@ const databasePath = path.join(rootDir, 'tmp', 'test-clan-action-queue.sqlite');
 const Database = invoke('Database');
 const ClanActionService = invoke('GameServer/Clan/ClanActionService');
 const ClanGoalPolicy = invoke('GameServer/Clan/ClanGoalPolicy');
+const ClanPartyService = invoke('GameServer/Clan/ClanPartyService');
 
 function removeDatabaseFiles() {
     [databasePath, `${databasePath}-wal`, `${databasePath}-shm`].forEach((file) => fs.rmSync(file, { force: true }));
@@ -260,6 +261,45 @@ async function main() {
         assert.strictEqual(replannedGoal.plan.kind, 'farm', 'a stale market demand must fall back to farm');
         const replannedActions = await Database.fetchClanActions({ clanId: replanCreated.clanId, limit: 8 });
         assert(replannedActions.some((action) => action.actionType === 'party' && action.status === 'pending'));
+
+        const transientPartyAction = await Database.enqueueClanAction({
+            clanId: replanCreated.clanId,
+            actionKey: `test:${replanCreated.clanId}:party-not-ready`,
+            actionType: 'party',
+            priority: 1000,
+            payload: { reason: 'test_party_not_ready' }
+        });
+        const [claimedParty] = await Database.claimClanActions({ limit: 1 });
+        assert.strictEqual(claimedParty.id, transientPartyAction.actionId);
+        const actionCountBeforeDeferral = (await Database.fetchClanActions({ clanId: replanCreated.clanId, limit: 20 })).length;
+        const deferStartedAt = Date.now();
+        const originalResolveClanParty = ClanPartyService.resolveClan;
+        let deferredParty;
+        try {
+            ClanPartyService.resolveClan = async () => ({
+                ok: false,
+                skipped: true,
+                code: 'party_not_ready'
+            });
+            deferredParty = await ClanActionService.resolveAction(claimedParty);
+        } finally {
+            ClanPartyService.resolveClan = originalResolveClanParty;
+        }
+        assert.strictEqual(deferredParty.deferred, true, 'party readiness must defer the durable action instead of failing it');
+        assert.strictEqual(deferredParty.status, 'pending');
+        const actionsAfterDeferral = await Database.fetchClanActions({ clanId: replanCreated.clanId, limit: 20 });
+        assert.strictEqual(actionsAfterDeferral.length, actionCountBeforeDeferral, 'transient readiness must not append another action row');
+        const samePartyAction = actionsAfterDeferral.find((action) => Number(action.id) === Number(claimedParty.id));
+        assert.strictEqual(samePartyAction.status, 'pending');
+        assert(Number(samePartyAction.availableAt) >= deferStartedAt + ClanActionService.config.actionRetryMs,
+            'the same party action must retain the configured retry delay');
+        assert.strictEqual(
+            actionsAfterDeferral.some((action) => action.actionType === 'party' && action.status === 'failed'),
+            false,
+            'party_not_ready is a transient state, not a terminal failure'
+        );
+        assert(ClanActionService.metrics().deferred >= 1, 'transient action deferrals must be observable');
+        assert(ClanActionService.metrics().stages.defer.count >= 1, 'defer settlement latency must be observable');
 
         const readyRoster = [4, 15, 21, 11, 56].map((classId) => ({ classId, phase: 'cold' }));
         assert.strictEqual(ClanGoalPolicy.hasReadyRoles(readyRoster), true);
