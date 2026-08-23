@@ -188,7 +188,26 @@ async function run() {
         }), { ...(coldState.inventory || {}) })
     });
     LifeState.upsertState = (coldState) => Promise.resolve(coldState);
-    MarketOpportunity.bestBuyOffer = () => ({ count: 50, town: 'Giran' });
+    let bestBuyLookups = 0;
+    MarketOpportunity.bestBuyOffer = () => {
+        bestBuyLookups += 1;
+        return { count: 50, town: 'Giran' };
+    };
+    MarketOpportunity.activeBuyDemandSelfIds = () => [5220];
+    const sparseDemandRows = Array.from({ length: 150 }, (_, index) => ({
+        selfId: 6000 + index,
+        amount: 1
+    })).concat([{ selfId: 5220, amount: 25 }, { selfId: 5220, amount: 25 }]);
+    const sparseDemand = BotWarehouse.marketRequests(
+        { characterId: 59 },
+        sparseDemandRows,
+        new Map(),
+        { marketDemandSelfIds: [5220] }
+    );
+    assert.strictEqual(bestBuyLookups, 1,
+        'warehouse planning must resolve offers once per demanded item instead of once per stored row');
+    assert(sparseDemand.every((request) => request.selfId === 5220));
+    bestBuyLookups = 0;
     const itemStages = [];
     const craftRelease = await BotWarehouse.releaseCold({
         characterId: 58,

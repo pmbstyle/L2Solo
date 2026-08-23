@@ -327,12 +327,17 @@ function craftRequests(state, warehouseItems) {
     });
 }
 
-function marketRequests(state, warehouseItems, reserved = new Map()) {
+function marketRequests(state, warehouseItems, reserved = new Map(), options = {}) {
+    const demandSelfIds = new Set(options.marketDemandSelfIds || MarketOpportunity.activeBuyDemandSelfIds());
+    const offers = new Map();
     return (warehouseItems || []).flatMap((item) => {
         const selfId = Number(item.selfId || 0);
         const stored = Math.max(0, Number(item.amount || 0) - Number(reserved.get(selfId) || 0));
-        if (!selfId || stored <= 0) return [];
-        const offer = MarketOpportunity.bestBuyOffer(selfId, { sellerCharacterId: state.characterId });
+        if (!selfId || stored <= 0 || !demandSelfIds.has(selfId)) return [];
+        if (!offers.has(selfId)) {
+            offers.set(selfId, MarketOpportunity.bestBuyOffer(selfId, { sellerCharacterId: state.characterId }));
+        }
+        const offer = offers.get(selfId);
         if (!offer) return [];
         const amount = Math.min(stored, Number(offer.count || 0));
         return amount > 0 ? [{ selfId, amount, reason: 'market', town: offer.town || null }] : [];
@@ -391,7 +396,7 @@ async function releaseCold(state, options = {}) {
         Number(amounts.get(item.selfId) || 0) + Number(item.amount || 0)
     ), new Map());
     const enchanting = ColdSafeEnchantService.warehouseRequests(state, warehouseItems);
-    const selling = marketRequests(state, warehouseItems, reserved);
+    const selling = marketRequests(state, warehouseItems, reserved, options);
     const requests = [...crafting, ...enchanting, ...selling].reduce((merged, request) => {
         const key = `${request.selfId}:${request.reason}`;
         const previous = merged.get(key);
@@ -495,9 +500,9 @@ function enchantReleaseCandidates(limit = 8) {
     });
 }
 
-function releaseCandidates(limit = 8) {
+function releaseCandidates(limit = 8, demandSelfIds = null) {
     const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
-    const demandIds = MarketOpportunity.activeBuyDemandSelfIds();
+    const demandIds = demandSelfIds || MarketOpportunity.activeBuyDemandSelfIds();
     if (!demandIds.length) return Promise.resolve([]);
     return Database.execute([`
         SELECT DISTINCT states.characterId
@@ -553,11 +558,13 @@ async function releaseColdBatch(limit = 8, deadlineAt = Infinity, options = {}) 
     let craftStates;
     let marketIds;
     let enchantIds;
+    let marketDemandSelfIds;
     const candidatesStartedAt = Date.now();
     try {
+        marketDemandSelfIds = MarketOpportunity.activeBuyDemandSelfIds();
         craftStates = craftReleaseCandidates(craftLimit);
         [marketIds, enchantIds] = await Promise.all([
-            releaseCandidates(remainingLimit),
+            releaseCandidates(remainingLimit, marketDemandSelfIds),
             enchantReleaseCandidates(remainingLimit)
         ]);
     } finally {
@@ -596,7 +603,7 @@ async function releaseColdBatch(limit = 8, deadlineAt = Infinity, options = {}) 
         for (const state of states) {
             if (Date.now() >= deadlineAt) break;
             try {
-                const result = await releaseCold(state, options);
+                const result = await releaseCold(state, { ...options, marketDemandSelfIds });
                 if (result.released) released.push(result);
             } catch (error) {
                 utils.infoWarn('BotWarehouse', 'cold warehouse release failed for %s: %s', state.name, error?.message || String(error));
