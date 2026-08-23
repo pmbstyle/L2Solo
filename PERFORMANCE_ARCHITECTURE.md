@@ -162,14 +162,17 @@ Every background admission should use the same snapshot:
 
 ### Slice D - in progress: timer consolidation
 
-- Clan action, clan founder, and goal metadata passes now share one due-job
-  registry with absolute deadlines, missed-period coalescing, and per-job
-  re-entry protection.
-- These first jobs use deterministic offsets of zero, one quarter of the goal
-  interval, and one half of the clan interval instead of phase-aligned timers.
-- Goal metadata keeps its normal ten-second cadence when caught up, but a
-  full or deadline-limited pass continues in the next governor window. This
-  preserves backlog throughput while keeping every individual burst bounded.
+- Clan action, clan founder, stale-goal review, warehouse release, and market
+  reconciliation now share one due-job registry with absolute deadlines,
+  missed-period coalescing, and per-job re-entry protection.
+- The three former goal-metadata stages are independently admitted against the
+  same `sqlite-heavy` lease and shared token window. Their polling phases are
+  staggered by one registry tick, so a slow stage cannot implicitly claim the
+  next stage or permanently win same-tick admission order.
+- Each stage keeps its normal ten-second cadence when caught up, but a full or
+  deadline-limited pass continues in the next governor window. This preserves
+  backlog throughput while allowing player/lag/DB pressure to be rechecked
+  between stale goals, warehouse work, and market work.
 - Migrate the remaining low-frequency maintenance intervals incrementally
   after their local admission contracts are explicit.
 - Keep high-frequency actor/effect timers outside this registry; they are a
@@ -187,6 +190,9 @@ Every background admission should use the same snapshot:
   change reduces candidate limits or suppresses world activity.
 - Goal persistence uses one multi-row UPSERT inside the serialized transaction,
   rather than preparing and running one UPSERT statement per changed bot.
+- Market discovery uses a bounded `(updatedAt, characterId)` keyset rotation
+  backed by a lifecycle index. A bot that does not need market travel can no
+  longer pin the oldest batch and starve the rest of the population.
 - Cache immutable reference data indefinitely.
 - Cache dynamic projections only with an explicit owner, TTL/version, and
   invalidation event.

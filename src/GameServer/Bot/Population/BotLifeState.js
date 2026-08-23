@@ -20,6 +20,7 @@ const pendingWrites = new Map();
 let initialized = false;
 let initStarted = false;
 let initPromise = null;
+let marketGoalCursor = { updatedAt: 0, characterId: 0 };
 
 function isCriticalSnapshotReason(reason = '', state = null) {
     if (state?.activity === 'dead') return true;
@@ -2328,7 +2329,7 @@ const BotLifeState = {
     marketGoalCandidates(limit = 8, timestamp = now()) {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
-        return Database.execute([
+        const fetchAfter = (cursor) => Database.execute([
             `SELECT states.*, goals.goalJson AS currentGoalJson,
                 goals.updatedAt AS currentGoalUpdatedAt FROM ${TABLE} states
             LEFT JOIN bot_goal_state goals ON goals.characterId = states.characterId
@@ -2336,21 +2337,42 @@ const BotLifeState = {
             AND (states.partyId IS NULL OR states.partyId = '')
             AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting')
             AND COALESCE(CAST(json_extract(states.statsJson, '$.marketSellRetryAfter') AS INTEGER), 0) <= ?
-            ORDER BY states.updatedAt ASC
+            AND (COALESCE(states.updatedAt, 0) > ?
+                OR (COALESCE(states.updatedAt, 0) = ? AND states.characterId > ?))
+            ORDER BY COALESCE(states.updatedAt, 0) ASC, states.characterId ASC
             LIMIT ${safeLimit}`,
-            [Number(timestamp) || now()]
-        ]).then((rows) => rows.map((row) => {
-            const state = normalize(row);
-            if (row.currentGoalJson) {
-                invoke('GameServer/Bot/Goals/GoalState').prime(
-                    state.characterId,
-                    row.currentGoalJson,
-                    row.currentGoalUpdatedAt
-                );
+            [
+                Number(timestamp) || now(),
+                Number(cursor?.updatedAt || 0),
+                Number(cursor?.updatedAt || 0),
+                Number(cursor?.characterId || 0)
+            ]
+        ], 'bot-life:market-goal-candidates');
+        return fetchAfter(marketGoalCursor).then(async (rows) => {
+            if (!rows.length && (marketGoalCursor.updatedAt > 0 || marketGoalCursor.characterId > 0)) {
+                marketGoalCursor = { updatedAt: 0, characterId: 0 };
+                rows = await fetchAfter(marketGoalCursor);
             }
-            cache.set(state.characterId, state);
-            return state;
-        })).catch((err) => {
+            if (rows.length) {
+                const last = rows[rows.length - 1];
+                marketGoalCursor = {
+                    updatedAt: Math.max(0, Number(last.updatedAt || 0)),
+                    characterId: Math.max(0, Number(last.characterId || 0))
+                };
+            }
+            return rows.map((row) => {
+                const state = normalize(row);
+                if (row.currentGoalJson) {
+                    invoke('GameServer/Bot/Goals/GoalState').prime(
+                        state.characterId,
+                        row.currentGoalJson,
+                        row.currentGoalUpdatedAt
+                    );
+                }
+                cache.set(state.characterId, state);
+                return state;
+            });
+        }).catch((err) => {
             utils.infoWarn('BotLife', 'failed to fetch market-goal candidates: %s', err.message);
             return [];
         });
@@ -3124,6 +3146,10 @@ const BotLifeState = {
         return Array.from(cache.values())
             .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
             .slice(0, safeLimit);
+    },
+
+    marketGoalCursorSnapshot() {
+        return { ...marketGoalCursor };
     },
 
     levelHistogram() {

@@ -749,6 +749,10 @@ function applySchemaMigrations() {
                 ON clan_actions(status, availableAt, priority DESC, id ASC);
             CREATE INDEX IF NOT EXISTS clan_actions_clan_status
                 ON clan_actions(clanId, status, updatedAt DESC, id DESC);
+        `)],
+        [25, () => connection.exec(`
+            CREATE INDEX IF NOT EXISTS bot_life_state_market_reconcile
+                ON bot_life_state(phase, updatedAt, characterId);
         `)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));

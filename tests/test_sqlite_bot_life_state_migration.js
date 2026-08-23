@@ -248,6 +248,9 @@ if (process.argv[2] === '--bootstrap') {
         assert.strictEqual(Number(db.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 14').get().count), 1, 'v14 must be recorded exactly once');
         assert.strictEqual(Number(db.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 15').get().count), 1, 'v15 must be recorded exactly once');
         assert.strictEqual(Number(db.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 17').get().count), 1, 'v17 must be recorded exactly once');
+        assert.strictEqual(Number(db.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 25').get().count), 1, 'v25 must be recorded exactly once');
+        const marketIndex = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'bot_life_state_market_reconcile'").get();
+        assert(marketIndex?.sql?.includes('phase, updatedAt, characterId'), 'market rotation must have a keyset-compatible lifecycle index');
         assert.deepStrictEqual(legacyRows(db), expectedRows, 'migration must preserve every pre-v10 bot lifecycle value');
         const owners = db.prepare(`SELECT simulationOwner, simulationRevision, simulationLeaseId, simulationLeaseUntil
             FROM bot_life_state ORDER BY characterId`).all();

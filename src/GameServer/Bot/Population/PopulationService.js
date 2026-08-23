@@ -698,8 +698,12 @@ const PopulationService = {
     classProgressionMigrationRunning: false,
     coldCombatProfileMigrationRunning: false,
     marketTownMigrationRunning: false,
-    goalMetadataRunning: false,
-    nextGoalMetadataAt: 0,
+    staleGoalReviewRunning: false,
+    warehouseReleaseRunning: false,
+    marketGoalReconcileRunning: false,
+    nextStaleGoalReviewAt: 0,
+    nextWarehouseReleaseAt: 0,
+    nextMarketGoalReconcileAt: 0,
     marketExpiryCleanupRunning: false,
     coldOwnerRecoveryRunning: false,
     warehouseCleanupRunning: false,
@@ -923,8 +927,12 @@ const PopulationService = {
             clearInterval(this.marketExpiryCleanupTimer);
             this.marketExpiryCleanupTimer = null;
         }
-        this.goalMetadataRunning = false;
-        this.nextGoalMetadataAt = 0;
+        this.staleGoalReviewRunning = false;
+        this.warehouseReleaseRunning = false;
+        this.marketGoalReconcileRunning = false;
+        this.nextStaleGoalReviewAt = 0;
+        this.nextWarehouseReleaseAt = 0;
+        this.nextMarketGoalReconcileAt = 0;
         this.partyRequestCleanupRunning = false;
         if (this.personaBackfillTimer) {
             clearInterval(this.personaBackfillTimer);
@@ -1224,20 +1232,37 @@ const PopulationService = {
 
         if (Config.backgroundResolverEnabled !== false) {
             const goalIntervalMs = Math.max(5000, Number(Config.goalMetadataReconcileIntervalMs) || 30000);
+            const registryTickMs = Math.max(50, Number(Config.backgroundJobTickMs) || 250);
             const continuationIntervalMs = Math.max(
-                Math.max(50, Number(Config.backgroundJobTickMs) || 250),
+                registryTickMs,
                 Math.max(100, Number(Config.backgroundGovernorWindowMs) || 1000)
             );
-            registry.register({
-                name: 'goal_metadata',
+            const baseOffsetMs = Math.min(5000, Math.max(registryTickMs, Math.floor(goalIntervalMs / 4)));
+            const registerGoalJob = ({ name, offsetMs, nextAtKey, run }) => registry.register({
+                name,
                 intervalMs: continuationIntervalMs,
-                offsetMs: Math.min(5000, Math.max(250, Math.floor(goalIntervalMs / 4))),
-                run: () => {
-                    if (this.nextGoalMetadataAt > Date.now()) {
-                        return { skipped: true, reason: 'not_due' };
-                    }
-                    return this.reconcileGoalMetadata();
-                }
+                offsetMs,
+                run: () => this[nextAtKey] > Date.now()
+                    ? { skipped: true, reason: 'not_due' }
+                    : run()
+            });
+            registerGoalJob({
+                name: 'goal_stale_review',
+                offsetMs: baseOffsetMs,
+                nextAtKey: 'nextStaleGoalReviewAt',
+                run: () => this.reconcileStaleGoals()
+            });
+            registerGoalJob({
+                name: 'goal_warehouse_release',
+                offsetMs: baseOffsetMs + registryTickMs,
+                nextAtKey: 'nextWarehouseReleaseAt',
+                run: () => this.reconcileWarehouseReleases()
+            });
+            registerGoalJob({
+                name: 'goal_market_reconcile',
+                offsetMs: baseOffsetMs + (registryTickMs * 2),
+                nextAtKey: 'nextMarketGoalReconcileAt',
+                run: () => this.reconcileMarketGoalBatch()
             });
         }
 
@@ -1334,14 +1359,17 @@ const PopulationService = {
         );
     },
 
-    scheduleGoalMetadata(continuation = false) {
+    scheduleGoalBackgroundJob(nextAtKey, continuation = false) {
         const delayMs = continuation ? this.goalMetadataContinuationMs() : this.goalMetadataCadenceMs();
-        this.nextGoalMetadataAt = Date.now() + delayMs;
-        return this.nextGoalMetadataAt;
+        this[nextAtKey] = Date.now() + delayMs;
+        return this[nextAtKey];
     },
 
-    reconcileGoalMetadata() {
-        if (this.goalMetadataRunning || Config.enabled === false || Config.backgroundResolverEnabled === false) {
+    runGovernedGoalBackgroundJob(options = {}) {
+        const job = String(options.job || 'goal_background');
+        const runningKey = String(options.runningKey || 'staleGoalReviewRunning');
+        const nextAtKey = String(options.nextAtKey || 'nextStaleGoalReviewAt');
+        if (this[runningKey] || Config.enabled === false || Config.backgroundResolverEnabled === false) {
             return Promise.resolve([]);
         }
         const activity = this.playerActivityProfile();
@@ -1355,7 +1383,7 @@ const PopulationService = {
             ? Config.goalMetadataPlayerBudgetMs
             : Config.goalMetadataIdleBudgetMs) || (protectedPass ? 75 : 500));
         const admission = BackgroundWorkGovernor.admit({
-            job: 'goal_metadata',
+            job,
             resource: 'sqlite-heavy',
             requestedBudgetMs,
             minimumBudgetMs: 25,
@@ -1364,77 +1392,111 @@ const PopulationService = {
             lagMs
         });
         if (!admission.ok) {
-            this.scheduleGoalMetadata(true);
+            this.scheduleGoalBackgroundJob(nextAtKey, true);
             Metrics.recordBackgroundDeferral();
             return Promise.resolve([]);
         }
         if (lagAbort > 0 && lagMs >= lagAbort) {
             BackgroundWorkGovernor.complete(admission.lease, { durationMs: 0 });
-            this.scheduleGoalMetadata(true);
+            this.scheduleGoalBackgroundJob(nextAtKey, true);
             Metrics.recordBackgroundDeferral();
             return Promise.resolve([]);
         }
         const budgetMs = admission.budgetMs;
         const deadlineAt = Date.now() + budgetMs;
-        const staleDeadlineAt = Date.now() + Math.max(25, Math.floor(budgetMs / 2));
         const startedAt = Date.now();
         let needsContinuation = false;
-        this.goalMetadataRunning = true;
+        this[runningKey] = true;
 
-        const reviewStale = () => {
-            if (Date.now() >= staleDeadlineAt) {
-                needsContinuation = true;
-                return Promise.resolve([]);
-            }
-            const projectionStartedAt = Date.now();
-            return LifeState.staleGoalCandidates(batchSize, Date.now()).then((states) => {
-                BackgroundWorkGovernor.recordStage('goal_metadata', 'stale_projection', Date.now() - projectionStartedAt);
-                if (states.length >= batchSize) needsContinuation = true;
-                if (Date.now() >= staleDeadlineAt) {
-                    needsContinuation = true;
-                    return [];
-                }
-                const reviewStartedAt = Date.now();
-                return GoalService.reviewBatch(states, { now: Date.now() }).finally(() => {
-                    BackgroundWorkGovernor.recordStage('goal_metadata', 'stale_review', Date.now() - reviewStartedAt);
-                });
-            });
-        };
-
-        return reviewStale()
-            .then((staleResults) => {
-                const warehouseStartedAt = Date.now();
-                return this.releaseWarehouseMaterials(deadlineAt).then((warehouseResults) => {
-                    if (warehouseResults.length >= Math.max(1, Number(Config.maxWarehouseReleasesPerTick) || 8)) {
-                        needsContinuation = true;
-                    }
-                    return { staleResults, warehouseResults };
-                }).finally(() => {
-                    BackgroundWorkGovernor.recordStage('goal_metadata', 'warehouse_release', Date.now() - warehouseStartedAt);
-                });
-            })
-            .then(({ staleResults, warehouseResults }) => {
-                const marketStartedAt = Date.now();
-                return this.reconcileMarketGoals(deadlineAt, batchSize).then((marketResults) => {
-                    if (Number(marketResults.candidateCount || 0) >= batchSize) needsContinuation = true;
-                    return [...staleResults, ...warehouseResults, ...marketResults];
-                }).finally(() => {
-                    BackgroundWorkGovernor.recordStage('goal_metadata', 'market_reconcile', Date.now() - marketStartedAt);
-                });
-            })
+        return Promise.resolve().then(() => options.run({
+            job,
+            batchSize,
+            budgetMs,
+            deadlineAt,
+            activity,
+            markContinuation: () => { needsContinuation = true; }
+        })).then((result) => {
+            if (result?.continuation) needsContinuation = true;
+            return Array.isArray(result?.results) ? result.results : [];
+        })
             .catch((error) => {
                 needsContinuation = true;
-                utils.infoWarn('BotGoals', 'bounded metadata reconcile failed: %s', error?.message || error);
+                utils.infoWarn('BotGoals', '%s failed: %s', job, error?.message || error);
                 return [];
             })
             .finally(() => {
                 const durationMs = Date.now() - startedAt;
                 if (Date.now() >= deadlineAt) needsContinuation = true;
                 BackgroundWorkGovernor.complete(admission.lease, { durationMs });
-                BackgroundWorkGovernor.recordStage('goal_metadata', 'total', durationMs);
-                this.scheduleGoalMetadata(needsContinuation);
-                this.goalMetadataRunning = false;
+                BackgroundWorkGovernor.recordStage(job, 'total', durationMs);
+                this.scheduleGoalBackgroundJob(nextAtKey, needsContinuation);
+                this[runningKey] = false;
             });
+    },
+
+    reconcileStaleGoals() {
+        return this.runGovernedGoalBackgroundJob({
+            job: 'goal_stale_review',
+            runningKey: 'staleGoalReviewRunning',
+            nextAtKey: 'nextStaleGoalReviewAt',
+            run: ({ job, batchSize, deadlineAt }) => {
+                if (Date.now() >= deadlineAt) return { results: [], continuation: true };
+                const projectionStartedAt = Date.now();
+                return LifeState.staleGoalCandidates(batchSize, Date.now()).then((states) => {
+                    BackgroundWorkGovernor.recordStage(job, 'projection', Date.now() - projectionStartedAt);
+                    const continuation = states.length >= batchSize || Date.now() >= deadlineAt;
+                    if (Date.now() >= deadlineAt) return { results: [], continuation: true };
+                    const reviewStartedAt = Date.now();
+                    return GoalService.reviewBatch(states, { now: Date.now() }).then((results) => ({
+                        results,
+                        continuation
+                    })).finally(() => {
+                        BackgroundWorkGovernor.recordStage(job, 'review', Date.now() - reviewStartedAt);
+                    });
+                });
+            }
+        });
+    },
+
+    reconcileWarehouseReleases() {
+        return this.runGovernedGoalBackgroundJob({
+            job: 'goal_warehouse_release',
+            runningKey: 'warehouseReleaseRunning',
+            nextAtKey: 'nextWarehouseReleaseAt',
+            run: ({ job, deadlineAt }) => {
+                const limit = Math.max(1, Number(Config.maxWarehouseReleasesPerTick) || 8);
+                const releaseStartedAt = Date.now();
+                return this.releaseWarehouseMaterials(deadlineAt).then((results) => ({
+                    results,
+                    continuation: results.length >= limit || Date.now() >= deadlineAt
+                })).finally(() => {
+                    BackgroundWorkGovernor.recordStage(job, 'release', Date.now() - releaseStartedAt);
+                });
+            }
+        });
+    },
+
+    reconcileMarketGoalBatch() {
+        return this.runGovernedGoalBackgroundJob({
+            job: 'goal_market_reconcile',
+            runningKey: 'marketGoalReconcileRunning',
+            nextAtKey: 'nextMarketGoalReconcileAt',
+            run: ({ batchSize, deadlineAt }) => this.reconcileMarketGoals(
+                deadlineAt,
+                batchSize,
+                'goal_market_reconcile'
+            ).then((results) => ({
+                results,
+                continuation: Number(results.candidateCount || 0) >= batchSize || Date.now() >= deadlineAt
+            }))
+        });
+    },
+
+    // Compatibility entrypoint for targeted tooling written before the three
+    // independently admitted jobs were split. Production scheduling uses the
+    // explicit stage methods above.
+    reconcileGoalMetadata() {
+        return this.reconcileStaleGoals();
     },
 
     isRestingActivationState(state) {
@@ -2519,7 +2581,7 @@ const PopulationService = {
             });
     },
 
-    reconcileMarketGoals(deadlineAt = Infinity, limit = Config.maxMarketGoalReconcilesPerTick) {
+    reconcileMarketGoals(deadlineAt = Infinity, limit = Config.maxMarketGoalReconcilesPerTick, telemetryJob = 'goal_market_reconcile') {
         const annotate = (results, candidateCount) => {
             Object.defineProperty(results, 'candidateCount', { value: candidateCount, configurable: true });
             return results;
@@ -2528,14 +2590,14 @@ const PopulationService = {
         const projectionStartedAt = Date.now();
         return LifeState.marketGoalCandidates(limit)
             .then((states) => {
-                BackgroundWorkGovernor.recordStage('goal_metadata', 'market_projection', Date.now() - projectionStartedAt);
+                BackgroundWorkGovernor.recordStage(telemetryJob, 'projection', Date.now() - projectionStartedAt);
                 if (Date.now() >= deadlineAt) return annotate([], states.length);
                 const reviewStartedAt = Date.now();
                 return GoalService.reviewBatch(states, {
                     now: Date.now(),
                     optionsForState: (state) => ({ spot: SpotProfiles.findForState(state) })
                 }).then((goalSnapshots) => {
-                    BackgroundWorkGovernor.recordStage('goal_metadata', 'market_review', Date.now() - reviewStartedAt);
+                    BackgroundWorkGovernor.recordStage(telemetryJob, 'review', Date.now() - reviewStartedAt);
                     if (Date.now() >= deadlineAt) return annotate([], states.length);
                     const travelStartedAt = Date.now();
                     return this.runInSchedulerSlices(states.map((state, index) => ({
@@ -2551,7 +2613,7 @@ const PopulationService = {
                             return saved;
                         });
                     }, deadlineAt).then((results) => annotate(results.filter(Boolean), states.length)).finally(() => {
-                        BackgroundWorkGovernor.recordStage('goal_metadata', 'market_travel', Date.now() - travelStartedAt);
+                        BackgroundWorkGovernor.recordStage(telemetryJob, 'travel', Date.now() - travelStartedAt);
                     });
                 });
             })
