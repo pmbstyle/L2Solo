@@ -189,6 +189,7 @@ async function run() {
     });
     LifeState.upsertState = (coldState) => Promise.resolve(coldState);
     MarketOpportunity.bestBuyOffer = () => ({ count: 50, town: 'Giran' });
+    const itemStages = [];
     const craftRelease = await BotWarehouse.releaseCold({
         characterId: 58,
         name: 'CraftOwner',
@@ -203,12 +204,15 @@ async function run() {
                 materials: [{ selfId: 5220, amount: 60, owned: 0, missing: 60 }]
             }
         }
-    });
+    }, { onStage: (stage) => itemStages.push(stage) });
     assert.strictEqual(craftRelease.released, true);
     assert.deepStrictEqual(craftRelease.items.map((item) => [item.reason, item.amount]), [['craft', 60]],
         'an owner recipe must reserve its full stored requirement before market demand is considered');
     assert.strictEqual(craftRelease.state.inventory[5220].amount, 60);
     assert(craftRelease.state.timing.nextResolveAt <= Date.now(), 'released craft materials must make a hunting bot due for replanning');
+    assert.deepStrictEqual(itemStages, [
+        'item_fetch', 'item_plan', 'item_transfer', 'item_refresh', 'item_enchant', 'item_persist'
+    ], 'a released warehouse item must expose every physical and lifecycle phase');
 
     warehouseRows = [{ id: 72, selfId: 5220, name: 'Metal Hardener', amount: 100 }];
     withdrawals.length = 0;
@@ -302,7 +306,9 @@ async function run() {
     });
     assert.deepStrictEqual(hydratedIds.ids, [59, 60], 'warehouse candidates must hydrate in one bounded state query');
     assert.deepStrictEqual(hydratedIds.options, { ownerId: 'legacy_main', unassigned: true });
-    assert.deepStrictEqual(releaseStages, ['resume', 'candidates', 'hydrate', 'release_items'],
+    assert.deepStrictEqual(
+        releaseStages.filter((stage) => !stage.startsWith('item_')),
+        ['resume', 'candidates', 'hydrate', 'release_items'],
         'warehouse release telemetry must preserve every bounded batch phase');
 
     const historicalRows = [

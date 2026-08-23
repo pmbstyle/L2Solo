@@ -374,13 +374,17 @@ async function resumeReleasedMarket(state, timestamp = Date.now()) {
     return { state: saved || nextState, resumed: true, released: false, items: [] };
 }
 
-async function releaseCold(state) {
+async function releaseCold(state, options = {}) {
     if (!state || !isLegacyMainState(state) || state.phase === 'hot' || state.party?.partyId || !['hunting', 'resting'].includes(state.activity)) {
         return { state, released: false, items: [] };
     }
-    const warehouseItems = await Database.fetchWarehouseItems(state.characterId);
+    const recordStage = (stage, startedAt) => options.onStage?.(stage, Date.now() - startedAt);
+    const fetchStartedAt = Date.now();
+    const warehouseItems = await Database.fetchWarehouseItems(state.characterId)
+        .finally(() => recordStage('item_fetch', fetchStartedAt));
     if (!warehouseItems.length) return { state, released: false, items: [] };
 
+    const planStartedAt = Date.now();
     const crafting = craftRequests(state, warehouseItems);
     const reserved = crafting.reduce((amounts, item) => amounts.set(
         item.selfId,
@@ -394,35 +398,49 @@ async function releaseCold(state) {
         merged.set(key, previous ? { ...previous, amount: previous.amount + request.amount } : request);
         return merged;
     }, new Map());
+    recordStage('item_plan', planStartedAt);
     if (!requests.size) return { state, released: false, items: [] };
 
     const remainingByRequest = new Map([...requests.entries()].map(([key, request]) => [key, Number(request.amount || 0)]));
     const released = [];
-    for (const row of warehouseItems) {
-        for (const reason of ['craft', 'enchant', 'market']) {
-            const key = `${Number(row.selfId)}:${reason}`;
-            const remaining = Number(remainingByRequest.get(key) || 0);
-            if (remaining <= 0 || Number(row.amount || 0) <= 0) continue;
-            const amount = Math.min(remaining, Number(row.amount));
-            const template = templateFor(row.selfId);
-            await Database.transferWarehouseToInventory(state.characterId, {
-                id: Number(row.id),
-                selfId: Number(row.selfId),
-                name: row.name || template?.template?.name || `Item ${row.selfId}`,
-                amount,
-                stackable: !!template?.etc?.stackable
-            });
-            row.amount = Number(row.amount) - amount;
-            remainingByRequest.set(key, remaining - amount);
-            released.push({ selfId: Number(row.selfId), name: row.name || template?.template?.name || `Item ${row.selfId}`, amount, reason });
+    const transferStartedAt = Date.now();
+    try {
+        for (const row of warehouseItems) {
+            for (const reason of ['craft', 'enchant', 'market']) {
+                const key = `${Number(row.selfId)}:${reason}`;
+                const remaining = Number(remainingByRequest.get(key) || 0);
+                if (remaining <= 0 || Number(row.amount || 0) <= 0) continue;
+                const amount = Math.min(remaining, Number(row.amount));
+                const template = templateFor(row.selfId);
+                await Database.transferWarehouseToInventory(state.characterId, {
+                    id: Number(row.id),
+                    selfId: Number(row.selfId),
+                    name: row.name || template?.template?.name || `Item ${row.selfId}`,
+                    amount,
+                    stackable: !!template?.etc?.stackable
+                });
+                row.amount = Number(row.amount) - amount;
+                remainingByRequest.set(key, remaining - amount);
+                released.push({ selfId: Number(row.selfId), name: row.name || template?.template?.name || `Item ${row.selfId}`, amount, reason });
+            }
         }
+    } finally {
+        recordStage('item_transfer', transferStartedAt);
     }
     if (!released.length) return { state, released: false, items: [] };
 
-    const refreshed = await LifeState.refreshInventory(state);
-    const enchantResult = released.some((item) => item.reason === 'enchant')
-        ? await ColdSafeEnchantService.enchantSafe(refreshed)
-        : { state: refreshed, enchanted: false, operations: [] };
+    const refreshStartedAt = Date.now();
+    const refreshed = await LifeState.refreshInventory(state)
+        .finally(() => recordStage('item_refresh', refreshStartedAt));
+    const enchantStartedAt = Date.now();
+    let enchantResult;
+    try {
+        enchantResult = released.some((item) => item.reason === 'enchant')
+            ? await ColdSafeEnchantService.enchantSafe(refreshed)
+            : { state: refreshed, enchanted: false, operations: [] };
+    } finally {
+        recordStage('item_enchant', enchantStartedAt);
+    }
     const releasedState = enchantResult.state || refreshed;
     const timestamp = Date.now();
     const releasedForMarket = released.some((item) => item.reason === 'market');
@@ -440,7 +458,9 @@ async function releaseCold(state) {
                 : releasedState.timing?.nextResolveAt
         }
     };
-    const saved = await LifeState.upsertState(nextState, 'cold_warehouse_release');
+    const persistStartedAt = Date.now();
+    const saved = await LifeState.upsertState(nextState, 'cold_warehouse_release')
+        .finally(() => recordStage('item_persist', persistStartedAt));
     return { state: saved || nextState, released: true, items: released };
 }
 
@@ -576,7 +596,7 @@ async function releaseColdBatch(limit = 8, deadlineAt = Infinity, options = {}) 
         for (const state of states) {
             if (Date.now() >= deadlineAt) break;
             try {
-                const result = await releaseCold(state);
+                const result = await releaseCold(state, options);
                 if (result.released) released.push(result);
             } catch (error) {
                 utils.infoWarn('BotWarehouse', 'cold warehouse release failed for %s: %s', state.name, error?.message || String(error));
