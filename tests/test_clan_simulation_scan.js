@@ -73,9 +73,13 @@ async function main() {
     ClanSimulationService.resetMetrics();
 
     try {
+        const characterIndexes = await Database.execute(['PRAGMA index_list(characters)', []]);
+        assert(characterIndexes.some((entry) => entry.name === 'characters_clan_level_id'), 'founder scan ordering index must exist');
+
         const first = await ClanSimulationService.resolveBatch(16, { budgetMs: 5000 });
         assert.strictEqual(first.created, 0, 'the blocked first page must not create a clan');
         assert.strictEqual(first.blocked, 16, 'the first page should contain only blocked founders');
+        assert(ClanSimulationService.metrics().stages.scan_loop.count > 0, 'founder scan-loop latency must be observable');
 
         const second = await ClanSimulationService.resolveBatch(16, { budgetMs: 5000 });
         assert.strictEqual(second.created, 1, 'the rotating scan must reach the eligible next page');

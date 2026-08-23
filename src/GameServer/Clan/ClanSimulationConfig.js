@@ -26,6 +26,8 @@ const DEFAULTS = {
     resolveIntervalMs: 60000,
     resolveBatchSize: 16,
     resolveBudgetMs: 80,
+    founderResolveBudgetMs: 20,
+    founderPlayerBudgetMs: 5,
     actionBatchSize: 8,
     actionLeaseMs: 120000,
     actionRetryMs: 60000
@@ -59,6 +61,8 @@ const ENV_KEYS = {
     resolveIntervalMs: 'CLAN_SIMULATION_RESOLVE_INTERVAL_MS',
     resolveBatchSize: 'CLAN_SIMULATION_RESOLVE_BATCH_SIZE',
     resolveBudgetMs: 'CLAN_SIMULATION_RESOLVE_BUDGET_MS',
+    founderResolveBudgetMs: 'CLAN_SIMULATION_FOUNDER_RESOLVE_BUDGET_MS',
+    founderPlayerBudgetMs: 'CLAN_SIMULATION_FOUNDER_PLAYER_BUDGET_MS',
     actionBatchSize: 'CLAN_SIMULATION_ACTION_BATCH_SIZE',
     actionLeaseMs: 'CLAN_SIMULATION_ACTION_LEASE_MS',
     actionRetryMs: 'CLAN_SIMULATION_ACTION_RETRY_MS'
@@ -117,6 +121,8 @@ config.catastrophicFailureThreshold = Math.max(1, Math.floor(config.catastrophic
 config.resolveIntervalMs = Math.max(1000, Math.floor(config.resolveIntervalMs));
 config.resolveBatchSize = Math.max(1, Math.floor(config.resolveBatchSize));
 config.resolveBudgetMs = Math.max(1, Math.floor(config.resolveBudgetMs));
+config.founderResolveBudgetMs = Math.max(1, Math.floor(config.founderResolveBudgetMs));
+config.founderPlayerBudgetMs = Math.max(1, Math.min(config.founderResolveBudgetMs, Math.floor(config.founderPlayerBudgetMs)));
 config.actionBatchSize = Math.max(1, Math.floor(config.actionBatchSize));
 config.actionLeaseMs = Math.max(1000, Math.floor(config.actionLeaseMs));
 config.actionRetryMs = Math.max(1000, Math.floor(config.actionRetryMs));

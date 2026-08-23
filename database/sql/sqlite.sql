@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS characters (
 );
 CREATE INDEX IF NOT EXISTS characters_username ON characters(username);
 CREATE INDEX IF NOT EXISTS characters_clanId ON characters(clanId);
+CREATE INDEX IF NOT EXISTS characters_clan_level_id ON characters(clanId, level DESC, id ASC);
 
 CREATE TABLE IF NOT EXISTS clans (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

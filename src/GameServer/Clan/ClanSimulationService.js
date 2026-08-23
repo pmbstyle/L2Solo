@@ -6,6 +6,7 @@ const Contracts = invoke('GameServer/Clan/ClanSimulationContracts');
 const Policy = invoke('GameServer/Clan/ClanSimulationPolicy');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
+const StageMetrics = invoke('GameServer/Clan/ClanStageMetrics');
 
 const metrics = {
     founderCandidates: 0,
@@ -15,6 +16,12 @@ const metrics = {
     existingClanJoins: 0,
     joinBlocked: 0,
     budgetStops: 0,
+    budgetOverruns: 0,
+    runs: 0,
+    durationMs: 0,
+    durationSamples: 0,
+    durationMaxMs: 0,
+    stages: new Map(),
     reasonCounts: new Map()
 };
 
@@ -91,58 +98,68 @@ function candidateFilterSql() {
 }
 
 async function candidateProjection(limit = 512, offset = 0) {
+    const startedAt = Date.now();
     const safeLimit = Math.max(1, Math.min(2000, Math.floor(number(limit, 512))));
     const safeOffset = Math.max(0, Math.floor(number(offset)));
-    const rows = await Database.execute([`
-        SELECT c.id AS characterId, c.name, c.username, c.classId, c.level, c.clanId,
-               life.accountName, life.activity, life.phase, life.statsJson,
-               persona.traitsJson
-        FROM characters c
-        LEFT JOIN bot_life_state life ON life.characterId = c.id
-        LEFT JOIN bot_personas persona ON persona.characterId = c.id
-        WHERE ${candidateFilterSql()}
-        ORDER BY c.level DESC, c.id ASC
-        LIMIT ${safeLimit} OFFSET ${safeOffset}
-    `, []], 'clan-simulation:founder-projection');
-    return rows.map(normalizeCandidate).filter((candidate) => !Policy.isStaticService(candidate));
+    try {
+        const rows = await Database.execute([`
+            SELECT c.id AS characterId, c.name, c.username, c.classId, c.level, c.clanId,
+                   life.accountName, life.activity, life.phase, life.statsJson,
+                   persona.traitsJson
+            FROM characters c
+            LEFT JOIN bot_life_state life ON life.characterId = c.id
+            LEFT JOIN bot_personas persona ON persona.characterId = c.id
+            WHERE ${candidateFilterSql()}
+            ORDER BY c.level DESC, c.id ASC
+            LIMIT ${safeLimit} OFFSET ${safeOffset}
+        `, []], 'clan-simulation:founder-projection');
+        return rows.map(normalizeCandidate).filter((candidate) => !Policy.isStaticService(candidate));
+    } finally {
+        StageMetrics.record(metrics.stages, 'candidate_projection', Date.now() - startedAt);
+    }
 }
 
 async function autonomousClanProjection() {
-    const rows = await Database.execute([`
-        SELECT simulated.clanId, simulated.stateJson,
-               clans.name, clans.level, clans.leaderId,
-               members.id AS characterId, members.name AS memberName,
-               members.classId, members.level AS memberLevel, members.clanId AS memberClanId
-        FROM clan_simulation_clans simulated
-        JOIN clans ON clans.id = simulated.clanId
-        LEFT JOIN characters members ON members.clanId = simulated.clanId
-        ORDER BY simulated.clanId ASC, members.id ASC
-    `, []], 'clan-simulation:clan-projection');
-    const byId = new Map();
-    rows.forEach((row) => {
-        const clanId = number(row.clanId);
-        if (!byId.has(clanId)) {
-            byId.set(clanId, {
-                id: clanId,
-                name: String(row.name || ''),
-                level: number(row.level),
-                leaderId: number(row.leaderId),
-                state: parseJson(row.stateJson, {}),
-                members: []
-            });
-        }
-        if (row.characterId) {
-            byId.get(clanId).members.push({
-                characterId: number(row.characterId),
-                id: number(row.characterId),
-                name: String(row.memberName || ''),
-                classId: number(row.classId, -1),
-                level: number(row.memberLevel),
-                clanId: number(row.memberClanId)
-            });
-        }
-    });
-    return [...byId.values()];
+    const startedAt = Date.now();
+    try {
+        const rows = await Database.execute([`
+            SELECT simulated.clanId, simulated.stateJson,
+                   clans.name, clans.level, clans.leaderId,
+                   members.id AS characterId, members.name AS memberName,
+                   members.classId, members.level AS memberLevel, members.clanId AS memberClanId
+            FROM clan_simulation_clans simulated
+            JOIN clans ON clans.id = simulated.clanId
+            LEFT JOIN characters members ON members.clanId = simulated.clanId
+            ORDER BY simulated.clanId ASC, members.id ASC
+        `, []], 'clan-simulation:clan-projection');
+        const byId = new Map();
+        rows.forEach((row) => {
+            const clanId = number(row.clanId);
+            if (!byId.has(clanId)) {
+                byId.set(clanId, {
+                    id: clanId,
+                    name: String(row.name || ''),
+                    level: number(row.level),
+                    leaderId: number(row.leaderId),
+                    state: parseJson(row.stateJson, {}),
+                    members: []
+                });
+            }
+            if (row.characterId) {
+                byId.get(clanId).members.push({
+                    characterId: number(row.characterId),
+                    id: number(row.characterId),
+                    name: String(row.memberName || ''),
+                    classId: number(row.classId, -1),
+                    level: number(row.memberLevel),
+                    clanId: number(row.memberClanId)
+                });
+            }
+        });
+        return [...byId.values()];
+    } finally {
+        StageMetrics.record(metrics.stages, 'clan_projection', Date.now() - startedAt);
+    }
 }
 
 function recruitmentScore(founder, candidate, members) {
@@ -192,56 +209,61 @@ async function joinExisting(candidate, clan, suitability) {
 }
 
 async function resolveCandidate(candidate, options = {}) {
-    const clans = options.clans || await autonomousClanProjection();
-    const existing = Policy.selectExistingClan(candidate, clans, {
-        threshold: Config.existingClanSuitabilityThreshold
-    });
-    if (existing) {
-        recordReason(Contracts.REASON_CODES.FOUNDER_EXISTING_CLAN);
-        return joinExisting(candidate, existing.clan, existing.suitability);
-    }
+    const startedAt = Date.now();
+    try {
+        const clans = options.clans || await autonomousClanProjection();
+        const existing = Policy.selectExistingClan(candidate, clans, {
+            threshold: Config.existingClanSuitabilityThreshold
+        });
+        if (existing) {
+            recordReason(Contracts.REASON_CODES.FOUNDER_EXISTING_CLAN);
+            return joinExisting(candidate, existing.clan, existing.suitability);
+        }
 
-    const pool = options.pool || await candidateProjection();
-    const recruits = selectRecruitment(candidate, pool, Config.founderQuorum - 1);
-    const eligibility = Policy.founderEligibility(candidate, {
-        quorumCandidates: [candidate, ...recruits]
-    });
-    metrics.founderEvaluations += 1;
-    recordReasons(eligibility.reasons);
-    if (!eligibility.ok) {
-        metrics.founderBlocked += 1;
-        return { ok: false, code: eligibility.reasons[0] || Contracts.REASON_CODES.FOUNDER_NO_QUORUM, eligibility, recruits };
-    }
+        const pool = options.pool || await candidateProjection();
+        const recruits = selectRecruitment(candidate, pool, Config.founderQuorum - 1);
+        const eligibility = Policy.founderEligibility(candidate, {
+            quorumCandidates: [candidate, ...recruits]
+        });
+        metrics.founderEvaluations += 1;
+        recordReasons(eligibility.reasons);
+        if (!eligibility.ok) {
+            metrics.founderBlocked += 1;
+            return { ok: false, code: eligibility.reasons[0] || Contracts.REASON_CODES.FOUNDER_NO_QUORUM, eligibility, recruits };
+        }
 
-    const name = options.name || defaultClanName(candidate);
-    const result = await Database.createAutonomousClan({
-        name,
-        leaderId: candidate.characterId,
-        memberIds: [candidate.characterId, ...recruits.map((entry) => entry.characterId)],
-        founderQuorum: Config.founderQuorum,
-        maxBotClans: Config.maxBotClans,
-        maxBotMemberShare: Config.maxBotMemberShare,
-        stateJson: {
+        const name = options.name || defaultClanName(candidate);
+        const result = await Database.createAutonomousClan({
+            name,
             leaderId: candidate.characterId,
             memberIds: [candidate.characterId, ...recruits.map((entry) => entry.characterId)],
-            level: 0,
-            goal: null
+            founderQuorum: Config.founderQuorum,
+            maxBotClans: Config.maxBotClans,
+            maxBotMemberShare: Config.maxBotMemberShare,
+            stateJson: {
+                leaderId: candidate.characterId,
+                memberIds: [candidate.characterId, ...recruits.map((entry) => entry.characterId)],
+                level: 0,
+                goal: null
+            }
+        });
+        if (!result.ok) {
+            metrics.founderBlocked += 1;
+            recordReason(result.code);
+            return { ...result, eligibility, recruits };
         }
-    });
-    if (!result.ok) {
-        metrics.founderBlocked += 1;
-        recordReason(result.code);
+        metrics.founderCreated += 1;
+        try {
+            const crest = await ClanCrestService.ensureAutonomousCrest(result.clanId);
+            if (!crest.ok) utils.infoWarn('ClanCrest', 'could not assign crest to clan %d: %s', result.clanId, crest.code);
+        } catch (error) {
+            utils.infoWarn('ClanCrest', 'crest assignment failed for clan %d: %s', result.clanId, error.message);
+        }
+        await ClanService.reload();
         return { ...result, eligibility, recruits };
+    } finally {
+        StageMetrics.record(metrics.stages, 'resolve_candidate', Date.now() - startedAt);
     }
-    metrics.founderCreated += 1;
-    try {
-        const crest = await ClanCrestService.ensureAutonomousCrest(result.clanId);
-        if (!crest.ok) utils.infoWarn('ClanCrest', 'could not assign crest to clan %d: %s', result.clanId, crest.code);
-    } catch (error) {
-        utils.infoWarn('ClanCrest', 'crest assignment failed for clan %d: %s', result.clanId, error.message);
-    }
-    await ClanService.reload();
-    return { ...result, eligibility, recruits };
 }
 
 const ClanSimulationService = {
@@ -269,27 +291,45 @@ const ClanSimulationService = {
 
     resolveCandidate,
 
-    resolveBatch(limit = Config.resolveBatchSize, options = {}) {
-        if (!Config.enabled) return Promise.resolve({ attempted: 0, created: 0, joined: 0, blocked: 0 });
+    async resolveBatch(limit = Config.resolveBatchSize, options = {}) {
+        if (!Config.enabled) return { attempted: 0, created: 0, joined: 0, blocked: 0, budgetStopped: false };
+        const startedAt = Date.now();
+        const deadlineAt = startedAt + Math.max(1, number(options.budgetMs, Config.founderResolveBudgetMs));
         const safeLimit = Math.max(1, Math.min(2000, Math.floor(number(limit, Config.resolveBatchSize))));
         const scanOffset = founderScanOffset;
-        return candidateProjection(safeLimit, scanOffset).then(async (candidates) => {
+        const summary = { attempted: 0, created: 0, joined: 0, blocked: 0, budgetStopped: false };
+        metrics.runs += 1;
+        const stopForBudget = () => {
+            if (!summary.budgetStopped) metrics.budgetStops += 1;
+            summary.budgetStopped = true;
+        };
+        try {
+            let candidates = await candidateProjection(safeLimit, scanOffset);
+            if (Date.now() >= deadlineAt) {
+                stopForBudget();
+                return summary;
+            }
             if (!candidates.length && scanOffset > 0) {
                 founderScanOffset = 0;
-                return candidateProjection(safeLimit, 0);
+                candidates = await candidateProjection(safeLimit, 0);
             }
-            return candidates;
-        }).then(async (candidates) => {
+            if (Date.now() >= deadlineAt) {
+                stopForBudget();
+                return summary;
+            }
+            if (!candidates.length) return summary;
             const clans = await autonomousClanProjection();
-            if (!candidates.length) return { attempted: 0, created: 0, joined: 0, blocked: 0 };
+            if (Date.now() >= deadlineAt) {
+                stopForBudget();
+                return summary;
+            }
             const pool = candidates;
-            const deadlineAt = Date.now() + Math.max(1, number(options.budgetMs, Config.resolveBudgetMs));
-            const summary = { attempted: 0, created: 0, joined: 0, blocked: 0 };
+            const scanStartedAt = Date.now();
             const reservedIds = new Set();
             let processed = 0;
             for (const candidate of candidates) {
                 if (Date.now() >= deadlineAt) {
-                    metrics.budgetStops += 1;
+                    stopForBudget();
                     break;
                 }
                 processed += 1;
@@ -317,8 +357,16 @@ const ClanSimulationService = {
             }
             founderScanOffset += processed;
             if (processed >= candidates.length && candidates.length < safeLimit) founderScanOffset = 0;
+            StageMetrics.record(metrics.stages, 'scan_loop', Date.now() - scanStartedAt);
             return summary;
-        });
+        } finally {
+            const durationMs = Math.max(0, Date.now() - startedAt);
+            metrics.durationMs += durationMs;
+            metrics.durationSamples += 1;
+            metrics.durationMaxMs = Math.max(metrics.durationMaxMs, durationMs);
+            if (Date.now() > deadlineAt) metrics.budgetOverruns += 1;
+            StageMetrics.record(metrics.stages, 'total', durationMs);
+        }
     },
 
     metrics() {
@@ -330,6 +378,11 @@ const ClanSimulationService = {
             existingClanJoins: metrics.existingClanJoins,
             joinBlocked: metrics.joinBlocked,
             budgetStops: metrics.budgetStops,
+            budgetOverruns: metrics.budgetOverruns,
+            runs: metrics.runs,
+            durationAvgMs: metrics.durationSamples ? Math.round(metrics.durationMs / metrics.durationSamples) : 0,
+            durationMaxMs: metrics.durationMaxMs,
+            stages: StageMetrics.snapshot(metrics.stages),
             reasonCounts: Object.fromEntries(metrics.reasonCounts.entries())
         };
     },

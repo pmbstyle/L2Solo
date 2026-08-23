@@ -666,7 +666,9 @@ const PopulationService = {
     summaryTimer: null,
     initialSummaryTimer: null,
     schedulerTimer: null,
-    clanSimulationTimer: null,
+    clanActionTimer: null,
+    clanFounderTimer: null,
+    clanFounderStartTimer: null,
     warehouseCleanupTimer: null,
     stateRetentionTimer: null,
     partyFormationTimer: null,
@@ -706,7 +708,8 @@ const PopulationService = {
     partyFormationPending: false,
     partyRequestCleanupRunning: false,
     phasePolicyRunning: false,
-    clanSimulationRunning: false,
+    clanActionRunning: false,
+    clanFounderRunning: false,
 
     init() {
         if (this.initialized || Config.enabled === false) return;
@@ -760,13 +763,30 @@ const PopulationService = {
         if (Config.backgroundResolverEnabled !== false) ColdSimulationCoordinator.start(this);
 
         if (ClanSimulationConfig.enabled !== false) {
-            this.clanSimulationTimer = setInterval(() => {
-                this.resolveClanSimulation();
-            }, ClanSimulationConfig.resolveIntervalMs);
-            if (typeof this.clanSimulationTimer.unref === 'function') {
-                this.clanSimulationTimer.unref();
+            const intervalMs = Math.max(1000, Number(ClanSimulationConfig.resolveIntervalMs) || 60000);
+            this.clanActionTimer = setInterval(() => {
+                this.resolveClanActions();
+            }, intervalMs);
+            if (typeof this.clanActionTimer.unref === 'function') {
+                this.clanActionTimer.unref();
             }
-            this.resolveClanSimulation();
+            this.resolveClanActions();
+
+            // Keep both SQLite-heavy passes independent and out of phase. The
+            // founder scan must not wait for or share the action queue budget.
+            this.clanFounderStartTimer = setTimeout(() => {
+                this.clanFounderStartTimer = null;
+                this.resolveClanFounders();
+                this.clanFounderTimer = setInterval(() => {
+                    this.resolveClanFounders();
+                }, intervalMs);
+                if (typeof this.clanFounderTimer.unref === 'function') {
+                    this.clanFounderTimer.unref();
+                }
+            }, Math.max(250, Math.floor(intervalMs / 2)));
+            if (typeof this.clanFounderStartTimer.unref === 'function') {
+                this.clanFounderStartTimer.unref();
+            }
         }
 
         this.classProgressionMigrationTimer = setInterval(() => {
@@ -881,10 +901,20 @@ const PopulationService = {
             clearInterval(this.schedulerTimer);
             this.schedulerTimer = null;
         }
-        if (this.clanSimulationTimer) {
-            clearInterval(this.clanSimulationTimer);
-            this.clanSimulationTimer = null;
+        if (this.clanActionTimer) {
+            clearInterval(this.clanActionTimer);
+            this.clanActionTimer = null;
         }
+        if (this.clanFounderTimer) {
+            clearInterval(this.clanFounderTimer);
+            this.clanFounderTimer = null;
+        }
+        if (this.clanFounderStartTimer) {
+            clearTimeout(this.clanFounderStartTimer);
+            this.clanFounderStartTimer = null;
+        }
+        this.clanActionRunning = false;
+        this.clanFounderRunning = false;
         if (this.warehouseCleanupTimer) {
             clearInterval(this.warehouseCleanupTimer);
             this.warehouseCleanupTimer = null;
@@ -1214,35 +1244,48 @@ const PopulationService = {
         return profile;
     },
 
-    resolveClanSimulation() {
-        if (this.clanSimulationRunning || ClanSimulationConfig.enabled === false) return Promise.resolve(null);
-        const activity = this.playerActivityProfile();
-
-        this.clanSimulationRunning = true;
-        const startedAt = Date.now();
+    resolveClanActions() {
+        if (ClanSimulationConfig.enabled === false) return Promise.resolve({ skipped: true, reason: 'disabled' });
+        if (this.clanActionRunning) return Promise.resolve({ skipped: true, reason: 'already_running' });
+        this.clanActionRunning = true;
         const actionBudget = Math.max(10, Number(ClanSimulationConfig.resolveBudgetMs) || 80);
-        const founderBudget = activity?.protected ? 5 : Math.min(20, actionBudget);
         return ClanActionService.resolveBatch({
             limit: ClanSimulationConfig.actionBatchSize,
             budgetMs: actionBudget
-        }).then((actions) => ClanSimulationService.resolveBatch(ClanSimulationConfig.resolveBatchSize, {
-            budgetMs: Math.max(1, founderBudget - (Date.now() - startedAt))
-        }).then((founder) => ({
+        }).catch((error) => {
+            utils.infoWarn('ClanSimulation', 'action resolve failed: %s', error.message);
+            return { attempted: 0, claimed: 0, resolved: 0, released: 0, succeeded: 0, failed: 0, leftRunning: 0, error: error.message };
+        }).finally(() => {
+            this.clanActionRunning = false;
+        });
+    },
+
+    resolveClanFounders(activity = this.playerActivityProfile()) {
+        if (ClanSimulationConfig.enabled === false) return Promise.resolve({ skipped: true, reason: 'disabled' });
+        if (this.clanFounderRunning) return Promise.resolve({ skipped: true, reason: 'already_running' });
+        this.clanFounderRunning = true;
+        const idleBudget = Math.max(1, Number(ClanSimulationConfig.founderResolveBudgetMs) || 20);
+        const playerBudget = Math.max(1, Math.min(idleBudget, Number(ClanSimulationConfig.founderPlayerBudgetMs) || 5));
+        return ClanSimulationService.resolveBatch(ClanSimulationConfig.resolveBatchSize, {
+            budgetMs: activity?.protected ? playerBudget : idleBudget
+        }).catch((error) => {
+            utils.infoWarn('ClanSimulation', 'founder resolve failed: %s', error.message);
+            return { attempted: 0, created: 0, joined: 0, blocked: 0, error: error.message };
+        }).finally(() => {
+            this.clanFounderRunning = false;
+        });
+    },
+
+    resolveClanSimulation() {
+        if (ClanSimulationConfig.enabled === false) return Promise.resolve(null);
+        const activity = this.playerActivityProfile();
+        const startedAt = Date.now();
+        return this.resolveClanActions().then((actions) => this.resolveClanFounders(activity).then((founder) => ({
             actions,
             founder,
             playerProtected: !!activity?.protected,
             elapsedMs: Date.now() - startedAt
-        }))).catch((error) => {
-            utils.infoWarn('ClanSimulation', 'bounded resolve failed: %s', error.message);
-            return {
-                actions: { attempted: 0, claimed: 0, resolved: 0, released: 0, succeeded: 0, failed: 0, leftRunning: 0 },
-                founder: { attempted: 0, created: 0, joined: 0, blocked: 0 },
-                playerProtected: !!activity?.protected,
-                error: error.message
-            };
-        }).finally(() => {
-            this.clanSimulationRunning = false;
-        });
+        })));
     },
 
     reconcileGoalMetadata() {

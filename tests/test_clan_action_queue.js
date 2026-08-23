@@ -158,7 +158,13 @@ async function main() {
         ClanActionService.resetMetrics();
         const recovered = await ClanActionService.resolveBatch({ limit: 2, budgetMs: 2000 });
         assert(recovered.attempted > 0, 'the durable action queue must continue after a restart');
-        assert(ClanActionService.metrics().leaseRecoveries >= 1, 'expired running actions must be visible as lease recoveries');
+        const recoveredMetrics = ClanActionService.metrics();
+        assert(recoveredMetrics.leaseRecoveries >= 1, 'expired running actions must be visible as lease recoveries');
+        assert(recoveredMetrics.stages.claim.count > 0, 'claim latency must be observable');
+        assert(recoveredMetrics.stages.projection.count > 0, 'projection latency must be observable');
+        assert(recoveredMetrics.stages.execute.count > 0, 'execution latency must be observable');
+        assert(recoveredMetrics.stages.settle.count > 0, 'settlement latency must be observable');
+        assert(recoveredMetrics.stages.total.p95Ms >= 0, 'action p95 must be exposed');
         assert.strictEqual((await Database.fetchClanActionQueueStats()).running, 0, 'recovery must not leave another claimed batch behind');
 
         const actionRows = await Database.fetchClanActions({ clanId: created.clanId, limit: 20 });

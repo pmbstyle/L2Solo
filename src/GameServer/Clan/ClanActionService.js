@@ -6,6 +6,7 @@ const EconomyService = invoke('GameServer/Clan/ClanEconomyService');
 const WarehouseService = invoke('GameServer/Clan/ClanWarehouseService');
 const MarketService = invoke('GameServer/Clan/ClanMarketService');
 const PartyService = invoke('GameServer/Clan/ClanPartyService');
+const StageMetrics = invoke('GameServer/Clan/ClanStageMetrics');
 
 const ACTION_TYPES = Object.freeze({
     PLAN: 'goal_plan',
@@ -43,6 +44,7 @@ const metrics = {
     queueOldestRunningAgeMs: 0,
     queueMaxAttempt: 0,
     queueObservedAt: 0,
+    stages: new Map(),
     actionCounts: new Map(),
     reasonCounts: new Map()
 };
@@ -89,9 +91,14 @@ function recordQueueStats(stats = {}) {
 }
 
 async function refreshQueueStats() {
-    const stats = await Database.fetchClanActionQueueStats();
-    recordQueueStats(stats);
-    return stats;
+    const startedAt = Date.now();
+    try {
+        const stats = await Database.fetchClanActionQueueStats();
+        recordQueueStats(stats);
+        return stats;
+    } finally {
+        StageMetrics.record(metrics.stages, 'queue_stats', Date.now() - startedAt);
+    }
 }
 
 function actionTypeFor(clan, goal) {
@@ -203,7 +210,10 @@ async function loadClan(clanId) {
 }
 
 async function execute(action, options = {}) {
-    const clan = await loadClan(action.clanId);
+    const projectionStartedAt = Date.now();
+    const clan = await loadClan(action.clanId).finally(() => {
+        StageMetrics.record(metrics.stages, 'projection', Date.now() - projectionStartedAt);
+    });
     if (!clan) return { ok: false, code: 'target_not_autonomous' };
     const payload = actionPayload(action);
     const requestedDeadline = Number(options.deadlineAt);
@@ -211,37 +221,45 @@ async function execute(action, options = {}) {
     const deadlineAt = Number.isFinite(requestedDeadline)
         ? Math.min(requestedDeadline, leaseDeadline)
         : leaseDeadline;
+    const actionType = String(action.actionType);
+    const executeStartedAt = Date.now();
     let result;
-    switch (String(action.actionType)) {
-        case ACTION_TYPES.PLAN:
-            result = await GoalService.resolveClan(clan, { actionId: Number(action.id) });
-            break;
-        case ACTION_TYPES.CONTRIBUTION:
-            result = await EconomyService.resolveClan(clan, {
-                batchSize: 1,
-                deadlineAt,
-                actionId: Number(action.id),
-                goalUpdatedAt: Number(payload.goalUpdatedAt) || null
-            });
-            break;
-        case ACTION_TYPES.WAREHOUSE:
-            result = await WarehouseService.resolveClan(clan, {
-                batchSize: 1,
-                deadlineAt,
-                actionId: Number(action.id)
-            });
-            break;
-        case ACTION_TYPES.MARKET:
-            result = await MarketService.resolveClan(clan, { actionId: Number(action.id) });
-            break;
-        case ACTION_TYPES.PARTY:
-            result = await PartyService.resolveClan(clan, {
-                actionId: Number(action.id),
-                rng: Math.random
-            });
-            break;
-        default:
-            return { ok: false, code: 'unknown_clan_action_type' };
+    try {
+        switch (actionType) {
+            case ACTION_TYPES.PLAN:
+                result = await GoalService.resolveClan(clan, { actionId: Number(action.id) });
+                break;
+            case ACTION_TYPES.CONTRIBUTION:
+                result = await EconomyService.resolveClan(clan, {
+                    batchSize: 1,
+                    deadlineAt,
+                    actionId: Number(action.id),
+                    goalUpdatedAt: Number(payload.goalUpdatedAt) || null
+                });
+                break;
+            case ACTION_TYPES.WAREHOUSE:
+                result = await WarehouseService.resolveClan(clan, {
+                    batchSize: 1,
+                    deadlineAt,
+                    actionId: Number(action.id)
+                });
+                break;
+            case ACTION_TYPES.MARKET:
+                result = await MarketService.resolveClan(clan, { actionId: Number(action.id) });
+                break;
+            case ACTION_TYPES.PARTY:
+                result = await PartyService.resolveClan(clan, {
+                    actionId: Number(action.id),
+                    rng: Math.random
+                });
+                break;
+            default:
+                return { ok: false, code: 'unknown_clan_action_type' };
+        }
+    } finally {
+        const durationMs = Date.now() - executeStartedAt;
+        StageMetrics.record(metrics.stages, 'execute', durationMs);
+        StageMetrics.record(metrics.stages, `execute:${actionType}`, durationMs);
     }
     return result || { ok: true };
 }
@@ -255,11 +273,14 @@ async function resolveAction(action, options = {}) {
         const result = await execute(action, options);
         const ok = result?.ok !== false;
         const reasonCode = result?.code || result?.reason || (ok ? '' : 'clan_action_failed');
+        const settleStartedAt = Date.now();
         const resolved = await Database.resolveClanAction({
             actionId: action.id,
             status: ok ? 'succeeded' : 'failed',
             result,
             reasonCode
+        }).finally(() => {
+            StageMetrics.record(metrics.stages, 'settle', Date.now() - settleStartedAt);
         });
         if (!resolved.ok) {
             metrics.releaseConflicts += 1;
@@ -269,20 +290,25 @@ async function resolveAction(action, options = {}) {
         resolutionRecorded = true;
         if (resolved.idempotent) return resolved;
 
-        const clan = await loadClan(action.clanId);
-        const goal = clan?.state?.goal || null;
-        const advanced = result?.advanced?.ok === true || result?.advanced === true;
-        const marketMiss = String(action.actionType) === ACTION_TYPES.MARKET
-            && String(result?.reason || result?.code || '') === Contracts.REASON_CODES.MARKET_NO_OFFER;
-        if (clan && advanced) {
-            await schedulePlanAfterLevelUp(clan, action, result);
-        } else if (clan && marketMiss) {
-            await schedulePlanAfterMarketMiss(clan, action, result);
-        } else if (clan && goal && !(String(action.actionType) === ACTION_TYPES.PLAN && goal.status === 'completed')) {
-            const productive = ok && workDone(String(action.actionType), result);
-            const delay = ok && productive ? 0 : Config.actionRetryMs;
-            await scheduleNext(clan, goal, action, result, delay);
-            if (delay > 0) metrics.retried += 1;
+        const followUpStartedAt = Date.now();
+        try {
+            const clan = await loadClan(action.clanId);
+            const goal = clan?.state?.goal || null;
+            const advanced = result?.advanced?.ok === true || result?.advanced === true;
+            const marketMiss = String(action.actionType) === ACTION_TYPES.MARKET
+                && String(result?.reason || result?.code || '') === Contracts.REASON_CODES.MARKET_NO_OFFER;
+            if (clan && advanced) {
+                await schedulePlanAfterLevelUp(clan, action, result);
+            } else if (clan && marketMiss) {
+                await schedulePlanAfterMarketMiss(clan, action, result);
+            } else if (clan && goal && !(String(action.actionType) === ACTION_TYPES.PLAN && goal.status === 'completed')) {
+                const productive = ok && workDone(String(action.actionType), result);
+                const delay = ok && productive ? 0 : Config.actionRetryMs;
+                await scheduleNext(clan, goal, action, result, delay);
+                if (delay > 0) metrics.retried += 1;
+            }
+        } finally {
+            StageMetrics.record(metrics.stages, 'follow_up', Date.now() - followUpStartedAt);
         }
         if (ok) {
             metrics.succeeded += 1;
@@ -295,11 +321,14 @@ async function resolveAction(action, options = {}) {
         return { ...resolved, result, durationMs: Date.now() - startedAt };
     } catch (error) {
         const reasonCode = error?.message || 'clan_action_exception';
+        const settleStartedAt = Date.now();
         const resolved = await Database.resolveClanAction({
             actionId: action.id,
             status: 'failed',
             result: { error: reasonCode },
             reasonCode: 'clan_action_exception'
+        }).finally(() => {
+            StageMetrics.record(metrics.stages, 'settle', Date.now() - settleStartedAt);
         });
         if (resolved?.ok) {
             if (!resolved.idempotent && !resolutionRecorded) metrics.resolved += 1;
@@ -315,6 +344,7 @@ async function resolveAction(action, options = {}) {
         metrics.durationMs += durationMs;
         metrics.durationSamples += 1;
         metrics.durationMaxMs = Math.max(metrics.durationMaxMs, durationMs);
+        StageMetrics.record(metrics.stages, 'total', durationMs);
         if (Number.isFinite(Number(options.deadlineAt)) && Date.now() > Number(options.deadlineAt)) {
             metrics.budgetOverruns += 1;
         }
@@ -333,7 +363,11 @@ const ClanActionService = {
         const budgetMs = Math.max(1, number(options.budgetMs, Config.resolveBudgetMs));
         const deadlineAt = Date.now() + budgetMs;
         const safeLimit = Math.max(1, Math.min(100, Math.floor(number(options.limit, Config.actionBatchSize))));
-        return bootstrap().then(async (boot) => {
+        const batchStartedAt = Date.now();
+        const bootstrapStartedAt = Date.now();
+        return bootstrap().finally(() => {
+            StageMetrics.record(metrics.stages, 'bootstrap', Date.now() - bootstrapStartedAt);
+        }).then(async (boot) => {
             const summary = {
                 bootstrap: boot,
                 attempted: 0,
@@ -352,8 +386,11 @@ const ClanActionService = {
                     metrics.budgetStops += 1;
                     break;
                 }
+                const claimStartedAt = Date.now();
                 const claim = await Database.claimClanAction({
                     leaseMs: Config.actionLeaseMs
+                }).finally(() => {
+                    StageMetrics.record(metrics.stages, 'claim', Date.now() - claimStartedAt);
                 });
                 metrics.leaseRecoveries += number(claim?.recovered);
                 const action = claim?.action || null;
@@ -365,10 +402,13 @@ const ClanActionService = {
                 recordAction(action);
 
                 if (Date.now() >= deadlineAt) {
+                    const releaseStartedAt = Date.now();
                     const released = await Database.releaseClanAction({
                         actionId: action.id,
                         expectedAttempt: action.attempt,
                         expectedLeaseUntil: action.leaseUntil
+                    }).finally(() => {
+                        StageMetrics.record(metrics.stages, 'release', Date.now() - releaseStartedAt);
                     });
                     if (released.ok) {
                         metrics.releasedUnstarted += 1;
@@ -392,6 +432,8 @@ const ClanActionService = {
             summary.leftRunning = number(queue.running);
             summary.queue = queue;
             return summary;
+        }).finally(() => {
+            StageMetrics.record(metrics.stages, 'batch_total', Date.now() - batchStartedAt);
         });
     },
 
@@ -424,6 +466,7 @@ const ClanActionService = {
             queueOldestRunningAgeMs: metrics.queueOldestRunningAgeMs,
             queueMaxAttempt: metrics.queueMaxAttempt,
             queueObservedAt: metrics.queueObservedAt,
+            stages: StageMetrics.snapshot(metrics.stages),
             actionCounts: Object.fromEntries(metrics.actionCounts.entries()),
             reasonCounts: Object.fromEntries(metrics.reasonCounts.entries())
         };
