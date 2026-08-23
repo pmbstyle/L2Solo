@@ -11,6 +11,7 @@ const ClanWarehouseService = invoke('GameServer/Clan/ClanWarehouseService');
 const ClanGoalService = invoke('GameServer/Clan/ClanGoalService');
 const ClanPartyService = invoke('GameServer/Clan/ClanPartyService');
 const ClanMarketService = invoke('GameServer/Clan/ClanMarketService');
+const BackgroundWorkGovernor = invoke('GameServer/Bot/Population/BackgroundWorkGovernor');
 
 function isBotSession(session) {
     return session && session.accountId && String(session.accountId).startsWith('bot_');
@@ -69,6 +70,7 @@ const PopulationStatus = {
         const raidIndex = invoke('GameServer/World/RaidEntityIndex').stats(invoke('GameServer/World/World'));
         const hotLod = invoke('GameServer/Bot/AI/HotActorLodPolicy').snapshot(invoke('GameServer/Bot/BotManager').sessions || []);
         const hotDispatch = invoke('GameServer/Bot/AI/HotAiDispatcher').snapshot();
+        const governor = BackgroundWorkGovernor.snapshot();
         const clanSimulation = {
             founder: ClanSimulationService.metrics(),
             actions: ClanActionService.metrics(),
@@ -83,6 +85,9 @@ const PopulationStatus = {
             .join('|');
         const clanActionStages = stageP95(clanSimulation.actions.stages, ['claim', 'projection', 'execute', 'settle', 'follow_up', 'total']);
         const clanFounderStages = stageP95(clanSimulation.founder.stages, ['candidate_projection', 'clan_projection', 'resolve_candidate', 'scan_loop', 'total']);
+        const governorDeferrals = Object.entries(governor.deferralReasons || {})
+            .map(([reason, count]) => `${reason}:${count}`)
+            .join('|') || 'none';
         const partyRequiredReasons = Object.entries(counts.partyRequests.requiredReasons || {})
             .map(([reason, count]) => `${reason}:${count}`)
             .join('|') || 'none';
@@ -119,6 +124,7 @@ const PopulationStatus = {
         const summary = {
             ...counts,
             metrics,
+            governor,
             clanSimulation,
             director: Director.snapshot(),
             market,
@@ -132,6 +138,7 @@ const PopulationStatus = {
         summary.line += ` warehouseCleanup=${metrics.delta.warehouseCleanupRuns || 0}/${metrics.delta.warehouseCleanupOwners || 0}/${metrics.delta.warehouseCleanupCompacted || 0}/${metrics.delta.warehouseCleanupRows || 0}/${metrics.delta.warehouseCleanupUnits || 0}/${metrics.delta.warehouseCleanupPayout || 0} warehouseCleanupP95=${warehouseCleanup.p95Ms || 0}ms warehouseCleanupCursor=${warehouseCleanup.cursor || 0} warehouseCleanupDeferrals=${metrics.delta.warehouseCleanupDeferrals || 0}:${warehouseCleanupDeferrals} warehouseCleanupErrors=${metrics.delta.warehouseCleanupErrors || 0} warehouseCleanupBudgetStops=${metrics.delta.warehouseCleanupBudgetStops || 0}`;
         summary.line += ` stateRetention=${metrics.delta.stateRetentionRuns || 0}/${metrics.delta.stateRetentionRows || 0}/${stateRetention.policy || 'none'} stateRetentionNext=${stateRetention.nextPolicy || 'none'} stateRetentionP95=${stateRetention.p95Ms || 0}ms stateRetentionRows=${stateRetentionPolicyRows} stateRetentionDeferrals=${metrics.delta.stateRetentionDeferrals || 0}:${stateRetentionDeferrals} stateRetentionErrors=${metrics.delta.stateRetentionErrors || 0} stateRetentionOverruns=${metrics.delta.stateRetentionOverruns || 0}`;
         summary.line += ` clanSim=${clanSimulation.founder.founderCreated || 0}/${clanSimulation.founder.existingClanJoins || 0}/${clanSimulation.founder.founderBlocked || 0} clanActions=${clanSimulation.actions.claimed || 0}/${clanSimulation.actions.succeeded || 0}/${clanSimulation.actions.failed || 0}/${clanSimulation.actions.queueAgeAvgMs || 0}ms clanActionFlow=${clanSimulation.actions.claimed || 0}/${clanSimulation.actions.resolved || 0}/${clanSimulation.actions.releasedUnstarted || 0} clanActionQueue=${clanSimulation.actions.queuePending || 0}/${clanSimulation.actions.queueReady || 0}/${clanSimulation.actions.queueRunning || 0}/${Math.round(Number(clanSimulation.actions.queueOldestReadyAgeMs || 0) / 1000)}s clanActionLease=${clanSimulation.actions.leaseRecoveries || 0}/${clanSimulation.actions.releaseConflicts || 0}/${clanSimulation.actions.budgetOverruns || 0} clanActionP95=${clanActionStages} clanFounderP95=${clanFounderStages} clanFounderBudget=${clanSimulation.founder.budgetStops || 0}/${clanSimulation.founder.budgetOverruns || 0} clanLevels=${clanSimulation.economy.levelUps || 0} clanDeposits=${clanSimulation.warehouse.depositsApplied || 0} clanGoals=${clanSimulation.goals.activeGoals || 0}/${clanSimulation.goals.replans || 0} clanMarket=${clanSimulation.market.purchases || 0}/${clanSimulation.market.deposited || 0} clanParty=${clanSimulation.party.operationsStarted || 0}/${clanSimulation.party.operationsSucceeded || 0}/${clanSimulation.party.operationsFailed || 0}`;
+        summary.line += ` bgGovernor=${governor.mode || 'idle'}/${governor.usedMs || 0}/${governor.capMs || 0}/${Object.keys(governor.resources || {}).length} bgGovernorFlow=${governor.admitted || 0}/${governor.deferred || 0}/${governor.completed || 0}/${governor.overruns || 0} bgGovernorDeferrals=${governorDeferrals}`;
         const coldWorker = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot();
         const worker = coldWorker.worker || {};
         const commitQueue = coldWorker.queue || {};

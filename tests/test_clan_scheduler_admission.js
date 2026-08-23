@@ -7,6 +7,7 @@ const ClanActionService = invoke('GameServer/Clan/ClanActionService');
 const ClanSimulationService = invoke('GameServer/Clan/ClanSimulationService');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
 const Database = invoke('Database');
+const Governor = invoke('GameServer/Bot/Population/BackgroundWorkGovernor');
 
 async function main() {
     const originalActionResolve = ClanActionService.resolveBatch;
@@ -31,6 +32,7 @@ async function main() {
         Config.founderPlayerBudgetMs = 5;
         Config.actionBatchSize = 8;
         Config.resolveBatchSize = 16;
+        Governor.reset();
         PopulationService.clanActionRunning = false;
         PopulationService.clanFounderRunning = false;
         PopulationService.playerActivityProfile = () => ({ protected: true, realPlayers: 1 });
@@ -82,11 +84,13 @@ async function main() {
         const duplicateAction = await PopulationService.resolveClanActions({ protected: false });
         assert.deepStrictEqual(duplicateAction, { skipped: true, reason: 'already_running' });
         assert.strictEqual(idleActionBudget, 80, 'idle action admission must retain the full budget');
-        const independentFounder = await PopulationService.resolveClanFounders({ protected: false });
-        assert.strictEqual(founderRanWhileActionBusy, true, 'founder admission must not share the action running guard');
-        assert.strictEqual(independentFounder.budgetMs, 20);
+        const deferredFounder = await PopulationService.resolveClanFounders({ protected: false });
+        assert.deepStrictEqual(deferredFounder, { skipped: true, reason: 'governor_resource_busy' });
+        assert.strictEqual(founderRanWhileActionBusy, false, 'SQLite-heavy passes must not overlap');
         releaseAction({ attempted: 0 });
         await pendingAction;
+        const independentFounder = await PopulationService.resolveClanFounders({ protected: false });
+        assert.strictEqual(independentFounder.budgetMs, 20, 'founder must retain its own full budget after the resource is released');
 
         assert.strictEqual(PopulationService.clanActionRunning, false);
         assert.strictEqual(PopulationService.clanFounderRunning, false);
@@ -99,6 +103,7 @@ async function main() {
         Object.assign(Config, originalConfig);
         PopulationService.clanActionRunning = false;
         PopulationService.clanFounderRunning = false;
+        Governor.reset();
     }
 }
 

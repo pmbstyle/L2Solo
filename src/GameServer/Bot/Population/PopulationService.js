@@ -34,6 +34,7 @@ const PlayerActivitySignal = invoke('GameServer/Bot/Population/PlayerActivitySig
 const FloorAwareActivationPolicy = invoke('GameServer/Bot/Population/FloorAwareActivationPolicy');
 const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const ColdSimulationCoordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+const BackgroundWorkGovernor = invoke('GameServer/Bot/Population/BackgroundWorkGovernor');
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const BackgroundPartyLifecycle = invoke('GameServer/Bot/Population/BackgroundPartyLifecycle');
 const ClanSimulationConfig = invoke('GameServer/Clan/ClanSimulationConfig');
@@ -1247,16 +1248,32 @@ const PopulationService = {
     resolveClanActions(activity = this.playerActivityProfile()) {
         if (ClanSimulationConfig.enabled === false) return Promise.resolve({ skipped: true, reason: 'disabled' });
         if (this.clanActionRunning) return Promise.resolve({ skipped: true, reason: 'already_running' });
-        this.clanActionRunning = true;
         const idleBudget = Math.max(10, Number(ClanSimulationConfig.resolveBudgetMs) || 80);
         const playerBudget = Math.max(1, Math.min(idleBudget, Number(ClanSimulationConfig.actionPlayerBudgetMs) || 20));
-        return ClanActionService.resolveBatch({
+        const requestedBudgetMs = activity?.protected ? playerBudget : idleBudget;
+        const admission = BackgroundWorkGovernor.admit({
+            job: 'clan_actions',
+            resource: 'sqlite-heavy',
+            requestedBudgetMs,
+            minimumBudgetMs: Math.min(10, requestedBudgetMs),
+            playerProtected: !!activity?.protected,
+            realPlayers: activity?.realPlayers
+        });
+        if (!admission.ok) {
+            Metrics.recordBackgroundDeferral();
+            return Promise.resolve({ skipped: true, reason: `governor_${admission.reason}` });
+        }
+
+        this.clanActionRunning = true;
+        const startedAt = Date.now();
+        return Promise.resolve().then(() => ClanActionService.resolveBatch({
             limit: ClanSimulationConfig.actionBatchSize,
-            budgetMs: activity?.protected ? playerBudget : idleBudget
-        }).catch((error) => {
+            budgetMs: admission.budgetMs
+        })).catch((error) => {
             utils.infoWarn('ClanSimulation', 'action resolve failed: %s', error.message);
             return { attempted: 0, claimed: 0, resolved: 0, released: 0, succeeded: 0, failed: 0, leftRunning: 0, error: error.message };
         }).finally(() => {
+            BackgroundWorkGovernor.complete(admission.lease, { durationMs: Date.now() - startedAt });
             this.clanActionRunning = false;
         });
     },
@@ -1264,15 +1281,31 @@ const PopulationService = {
     resolveClanFounders(activity = this.playerActivityProfile()) {
         if (ClanSimulationConfig.enabled === false) return Promise.resolve({ skipped: true, reason: 'disabled' });
         if (this.clanFounderRunning) return Promise.resolve({ skipped: true, reason: 'already_running' });
-        this.clanFounderRunning = true;
         const idleBudget = Math.max(1, Number(ClanSimulationConfig.founderResolveBudgetMs) || 20);
         const playerBudget = Math.max(1, Math.min(idleBudget, Number(ClanSimulationConfig.founderPlayerBudgetMs) || 5));
-        return ClanSimulationService.resolveBatch(ClanSimulationConfig.resolveBatchSize, {
-            budgetMs: activity?.protected ? playerBudget : idleBudget
-        }).catch((error) => {
+        const requestedBudgetMs = activity?.protected ? playerBudget : idleBudget;
+        const admission = BackgroundWorkGovernor.admit({
+            job: 'clan_founders',
+            resource: 'sqlite-heavy',
+            requestedBudgetMs,
+            minimumBudgetMs: Math.min(5, requestedBudgetMs),
+            playerProtected: !!activity?.protected,
+            realPlayers: activity?.realPlayers
+        });
+        if (!admission.ok) {
+            Metrics.recordBackgroundDeferral();
+            return Promise.resolve({ skipped: true, reason: `governor_${admission.reason}` });
+        }
+
+        this.clanFounderRunning = true;
+        const startedAt = Date.now();
+        return Promise.resolve().then(() => ClanSimulationService.resolveBatch(ClanSimulationConfig.resolveBatchSize, {
+            budgetMs: admission.budgetMs
+        })).catch((error) => {
             utils.infoWarn('ClanSimulation', 'founder resolve failed: %s', error.message);
             return { attempted: 0, created: 0, joined: 0, blocked: 0, error: error.message };
         }).finally(() => {
+            BackgroundWorkGovernor.complete(admission.lease, { durationMs: Date.now() - startedAt });
             this.clanFounderRunning = false;
         });
     },
@@ -1296,20 +1329,35 @@ const PopulationService = {
         const activity = this.playerActivityProfile();
         const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
         const lagAbort = Math.max(0, Number(Config.schedulerLagAbortMs) || 0);
-        if (lagAbort > 0 && lagMs >= lagAbort) {
-            Metrics.recordBackgroundDeferral();
-            return Promise.resolve([]);
-        }
-
         const protectedPass = !!activity?.protected;
         const batchSize = Math.max(1, Number(protectedPass
             ? Config.goalMetadataPlayerBatchSize
             : Config.goalMetadataIdleBatchSize) || (protectedPass ? 2 : 8));
-        const budgetMs = Math.max(25, Number(protectedPass
+        const requestedBudgetMs = Math.max(25, Number(protectedPass
             ? Config.goalMetadataPlayerBudgetMs
             : Config.goalMetadataIdleBudgetMs) || (protectedPass ? 75 : 500));
+        const admission = BackgroundWorkGovernor.admit({
+            job: 'goal_metadata',
+            resource: 'sqlite-heavy',
+            requestedBudgetMs,
+            minimumBudgetMs: 25,
+            playerProtected: protectedPass,
+            realPlayers: activity?.realPlayers,
+            lagMs
+        });
+        if (!admission.ok) {
+            Metrics.recordBackgroundDeferral();
+            return Promise.resolve([]);
+        }
+        if (lagAbort > 0 && lagMs >= lagAbort) {
+            BackgroundWorkGovernor.complete(admission.lease, { durationMs: 0 });
+            Metrics.recordBackgroundDeferral();
+            return Promise.resolve([]);
+        }
+        const budgetMs = admission.budgetMs;
         const deadlineAt = Date.now() + budgetMs;
         const staleDeadlineAt = Date.now() + Math.max(25, Math.floor(budgetMs / 2));
+        const startedAt = Date.now();
         this.goalMetadataRunning = true;
 
         const reviewStale = () => {
@@ -1337,6 +1385,7 @@ const PopulationService = {
                 return [];
             })
             .finally(() => {
+                BackgroundWorkGovernor.complete(admission.lease, { durationMs: Date.now() - startedAt });
                 this.goalMetadataRunning = false;
             });
     },

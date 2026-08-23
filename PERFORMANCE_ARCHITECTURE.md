@@ -149,13 +149,16 @@ Every background admission should use the same snapshot:
 - Add rolling p95 metrics for queue, projection, execution, settlement,
   follow-up, scan loop, and total duration.
 
-### Slice C - next: governor foundation
+### Slice C - completed: governor foundation
 
-- Add the shared activity/lag/DB-pressure admission snapshot.
-- Add lane token accounting and deferral telemetry.
-- Wire clan action/founder and goal metadata first; do not migrate every timer
-  in one change.
-- Preserve each service's existing running guard as a second safety boundary.
+- Added a process-wide token window with separate idle and protected-player
+  caps, plus event-loop lag and database-queue admission gates.
+- Added an exclusive `sqlite-heavy` resource lease, reservation refund,
+  overrun debt, per-job flow counters, and explicit deferral reasons.
+- Wired clan action, clan founder, and goal metadata passes first; remaining
+  timers stay on their existing local admission until later slices.
+- Preserved each service's existing running guard and local deadline as a
+  second safety boundary.
 
 ### Slice D: timer consolidation
 
