@@ -1235,7 +1235,7 @@ const PopulationService = {
         }))).catch((error) => {
             utils.infoWarn('ClanSimulation', 'bounded resolve failed: %s', error.message);
             return {
-                actions: { attempted: 0, claimed: 0, succeeded: 0, failed: 0 },
+                actions: { attempted: 0, claimed: 0, resolved: 0, released: 0, succeeded: 0, failed: 0, leftRunning: 0 },
                 founder: { attempted: 0, created: 0, joined: 0, blocked: 0 },
                 playerProtected: !!activity?.protected,
                 error: error.message

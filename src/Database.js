@@ -2638,25 +2638,75 @@ const Database = {
         }, 'clan-action:enqueue');
     },
     claimClanActions({ limit = 8, at = null, leaseMs = 120000 } = {}) {
-        const safeLimit = Math.max(1, Math.min(100, Math.floor(Number(limit) || 8)));
+        // Compatibility wrapper intentionally admits a single action. Claiming a
+        // batch before the caller has execution capacity strands the remainder
+        // in `running` until their leases expire.
+        void limit;
+        return Database.claimClanAction({ at, leaseMs }).then((claim) => claim.action ? [claim.action] : []);
+    },
+    claimClanAction({ at = null, leaseMs = 120000 } = {}) {
         return inTransaction(() => {
             const timestamp = at !== null && at !== undefined && Number.isFinite(Number(at))
                 ? Number(at)
                 : now();
             const leaseUntil = timestamp + Math.max(1000, Math.floor(Number(leaseMs) || 120000));
-            write(`UPDATE clan_actions SET status = 'pending', leaseUntil = NULL, updatedAt = ?
+            const recovery = write(`UPDATE clan_actions SET status = 'pending', leaseUntil = NULL, updatedAt = ?
                 WHERE status = 'running' AND leaseUntil IS NOT NULL AND leaseUntil <= ?`, [timestamp, timestamp]);
-            const pending = all(`SELECT * FROM clan_actions
+            const pending = one(`SELECT * FROM clan_actions
                 WHERE status = 'pending' AND availableAt <= ?
-                ORDER BY priority DESC, availableAt ASC, id ASC LIMIT ${safeLimit}`, [timestamp]);
-            return pending.map((action) => {
-                const updated = write(`UPDATE clan_actions
-                    SET status = 'running', attempt = attempt + 1, leaseUntil = ?, updatedAt = ?
-                    WHERE id = ? AND status = 'pending'`, [leaseUntil, timestamp, Number(action.id)]);
-                if (Number(updated.affectedRows || 0) !== 1) return null;
-                return one('SELECT * FROM clan_actions WHERE id = ?', [Number(action.id)]);
-            }).filter(Boolean);
-        }, 'clan-action:claim');
+                ORDER BY priority DESC, availableAt ASC, id ASC LIMIT 1`, [timestamp]);
+            if (!pending) {
+                return {
+                    action: null,
+                    recovered: Number(recovery.affectedRows || 0)
+                };
+            }
+            const updated = write(`UPDATE clan_actions
+                SET status = 'running', attempt = attempt + 1, leaseUntil = ?, updatedAt = ?
+                WHERE id = ? AND status = 'pending'`, [leaseUntil, timestamp, Number(pending.id)]);
+            return {
+                action: Number(updated.affectedRows || 0) === 1
+                    ? one('SELECT * FROM clan_actions WHERE id = ?', [Number(pending.id)])
+                    : null,
+                recovered: Number(recovery.affectedRows || 0)
+            };
+        }, 'clan-action:claim-one');
+    },
+    releaseClanAction({ actionId, availableAt = null, expectedAttempt = null, expectedLeaseUntil = null } = {}) {
+        const id = Number(actionId);
+        if (!id) return Promise.resolve({ ok: false, code: 'invalid_clan_action' });
+        return inTransaction(() => {
+            const action = one('SELECT * FROM clan_actions WHERE id = ?', [id]);
+            if (!action) return { ok: false, code: 'clan_action_missing' };
+            if (String(action.status) === 'pending') {
+                return { ok: true, idempotent: true, actionId: id, status: 'pending', action };
+            }
+            if (String(action.status) !== 'running') {
+                return { ok: false, code: 'clan_action_not_running', actionId: id, status: String(action.status) };
+            }
+            const timestamp = now();
+            const dueAt = availableAt !== null && availableAt !== undefined && Number.isFinite(Number(availableAt))
+                ? Math.max(0, Number(availableAt))
+                : Number(action.availableAt || timestamp);
+            const expectedAttemptValue = expectedAttempt !== null && expectedAttempt !== undefined
+                ? Number(expectedAttempt)
+                : Number(action.attempt);
+            const expectedLeaseValue = expectedLeaseUntil !== null && expectedLeaseUntil !== undefined
+                ? Number(expectedLeaseUntil)
+                : Number(action.leaseUntil);
+            const updated = write(`UPDATE clan_actions
+                SET status = 'pending', leaseUntil = NULL, availableAt = ?, updatedAt = ?
+                WHERE id = ? AND status = 'running' AND attempt = ? AND leaseUntil = ?`, [
+                dueAt, timestamp, id, expectedAttemptValue, expectedLeaseValue
+            ]);
+            if (Number(updated.affectedRows || 0) !== 1) return { ok: false, code: 'ownership_conflict', actionId: id };
+            return {
+                ok: true,
+                actionId: id,
+                status: 'pending',
+                action: one('SELECT * FROM clan_actions WHERE id = ?', [id])
+            };
+        }, 'clan-action:release');
     },
     resolveClanAction({ actionId, status = 'succeeded', result = {}, reasonCode = '' } = {}) {
         const id = Number(actionId);
@@ -2715,6 +2765,40 @@ const Database = {
         const safeLimit = Math.max(1, Math.min(200, Math.floor(Number(limit) || 50)));
         return run(`SELECT * FROM clan_actions${clauses.length ? ` WHERE ${clauses.join(' AND ')}` : ''}
             ORDER BY updatedAt DESC, id DESC LIMIT ${safeLimit}`, params, 'clan-action:list');
+    },
+    fetchClanActionQueueStats({ at = null } = {}) {
+        const timestamp = at !== null && at !== undefined && Number.isFinite(Number(at))
+            ? Number(at)
+            : now();
+        return run(`SELECT
+                COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+                COALESCE(SUM(CASE WHEN status = 'pending' AND availableAt <= ? THEN 1 ELSE 0 END), 0) AS ready,
+                COALESCE(SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END), 0) AS running,
+                COALESCE(SUM(CASE WHEN status = 'running' AND leaseUntil IS NOT NULL AND leaseUntil <= ? THEN 1 ELSE 0 END), 0) AS expiredRunning,
+                MIN(CASE WHEN status = 'pending' THEN createdAt END) AS oldestPendingAt,
+                MIN(CASE WHEN status = 'pending' AND availableAt <= ? THEN createdAt END) AS oldestReadyAt,
+                MIN(CASE WHEN status = 'running' THEN updatedAt END) AS oldestRunningAt,
+                COALESCE(MAX(CASE WHEN status IN ('pending', 'running') THEN attempt ELSE 0 END), 0) AS maxAttempt
+            FROM clan_actions`, [timestamp, timestamp, timestamp], 'clan-action:queue-stats').then((rows) => {
+            const row = rows[0] || {};
+            const oldestPendingAt = Number(row.oldestPendingAt || 0);
+            const oldestReadyAt = Number(row.oldestReadyAt || 0);
+            const oldestRunningAt = Number(row.oldestRunningAt || 0);
+            return {
+                pending: Number(row.pending || 0),
+                ready: Number(row.ready || 0),
+                running: Number(row.running || 0),
+                expiredRunning: Number(row.expiredRunning || 0),
+                oldestPendingAt,
+                oldestPendingAgeMs: oldestPendingAt > 0 ? Math.max(0, timestamp - oldestPendingAt) : 0,
+                oldestReadyAt,
+                oldestReadyAgeMs: oldestReadyAt > 0 ? Math.max(0, timestamp - oldestReadyAt) : 0,
+                oldestRunningAt,
+                oldestRunningAgeMs: oldestRunningAt > 0 ? Math.max(0, timestamp - oldestRunningAt) : 0,
+                maxAttempt: Number(row.maxAttempt || 0),
+                observedAt: timestamp
+            };
+        });
     },
     fetchClansNeedingAction(limit = 64) {
         const safeLimit = Math.max(1, Math.min(500, Math.floor(Number(limit) || 64)));

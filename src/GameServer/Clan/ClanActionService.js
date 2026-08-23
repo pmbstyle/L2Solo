@@ -19,13 +19,30 @@ const metrics = {
     bootstraps: 0,
     planned: 0,
     claimed: 0,
+    resolved: 0,
     running: 0,
     succeeded: 0,
     failed: 0,
     retried: 0,
     budgetStops: 0,
+    budgetOverruns: 0,
+    releasedUnstarted: 0,
+    releaseConflicts: 0,
+    leaseRecoveries: 0,
+    durationMs: 0,
+    durationSamples: 0,
+    durationMaxMs: 0,
     queueAgeMs: 0,
     queueAgeSamples: 0,
+    queuePending: 0,
+    queueReady: 0,
+    queueRunning: 0,
+    queueExpiredRunning: 0,
+    queueOldestPendingAgeMs: 0,
+    queueOldestReadyAgeMs: 0,
+    queueOldestRunningAgeMs: 0,
+    queueMaxAttempt: 0,
+    queueObservedAt: 0,
     actionCounts: new Map(),
     reasonCounts: new Map()
 };
@@ -57,6 +74,24 @@ function recordAction(action, field = 'claimed') {
 
 function actionPayload(action) {
     return parseJson(action?.payloadJson, {});
+}
+
+function recordQueueStats(stats = {}) {
+    metrics.queuePending = number(stats.pending);
+    metrics.queueReady = number(stats.ready);
+    metrics.queueRunning = number(stats.running);
+    metrics.queueExpiredRunning = number(stats.expiredRunning);
+    metrics.queueOldestPendingAgeMs = number(stats.oldestPendingAgeMs);
+    metrics.queueOldestReadyAgeMs = number(stats.oldestReadyAgeMs);
+    metrics.queueOldestRunningAgeMs = number(stats.oldestRunningAgeMs);
+    metrics.queueMaxAttempt = number(stats.maxAttempt);
+    metrics.queueObservedAt = number(stats.observedAt, Date.now());
+}
+
+async function refreshQueueStats() {
+    const stats = await Database.fetchClanActionQueueStats();
+    recordQueueStats(stats);
+    return stats;
 }
 
 function actionTypeFor(clan, goal) {
@@ -167,10 +202,15 @@ async function loadClan(clanId) {
     return GoalService.clanProjectionById(clanId);
 }
 
-async function execute(action) {
+async function execute(action, options = {}) {
     const clan = await loadClan(action.clanId);
     if (!clan) return { ok: false, code: 'target_not_autonomous' };
     const payload = actionPayload(action);
+    const requestedDeadline = Number(options.deadlineAt);
+    const leaseDeadline = Date.now() + Math.max(1, Config.actionLeaseMs - 1000);
+    const deadlineAt = Number.isFinite(requestedDeadline)
+        ? Math.min(requestedDeadline, leaseDeadline)
+        : leaseDeadline;
     let result;
     switch (String(action.actionType)) {
         case ACTION_TYPES.PLAN:
@@ -179,7 +219,7 @@ async function execute(action) {
         case ACTION_TYPES.CONTRIBUTION:
             result = await EconomyService.resolveClan(clan, {
                 batchSize: 1,
-                deadlineAt: Date.now() + Math.max(1, Config.actionLeaseMs - 1000),
+                deadlineAt,
                 actionId: Number(action.id),
                 goalUpdatedAt: Number(payload.goalUpdatedAt) || null
             });
@@ -187,7 +227,7 @@ async function execute(action) {
         case ACTION_TYPES.WAREHOUSE:
             result = await WarehouseService.resolveClan(clan, {
                 batchSize: 1,
-                deadlineAt: Date.now() + Math.max(1, Config.actionLeaseMs - 1000),
+                deadlineAt,
                 actionId: Number(action.id)
             });
             break;
@@ -206,12 +246,13 @@ async function execute(action) {
     return result || { ok: true };
 }
 
-async function resolveAction(action) {
+async function resolveAction(action, options = {}) {
     const startedAt = Date.now();
+    let resolutionRecorded = false;
     metrics.running += 1;
     recordAction(action, 'running');
     try {
-        const result = await execute(action);
+        const result = await execute(action, options);
         const ok = result?.ok !== false;
         const reasonCode = result?.code || result?.reason || (ok ? '' : 'clan_action_failed');
         const resolved = await Database.resolveClanAction({
@@ -220,7 +261,12 @@ async function resolveAction(action) {
             result,
             reasonCode
         });
-        if (!resolved.ok) return resolved;
+        if (!resolved.ok) {
+            metrics.releaseConflicts += 1;
+            return resolved;
+        }
+        if (!resolved.idempotent) metrics.resolved += 1;
+        resolutionRecorded = true;
         if (resolved.idempotent) return resolved;
 
         const clan = await loadClan(action.clanId);
@@ -249,16 +295,29 @@ async function resolveAction(action) {
         return { ...resolved, result, durationMs: Date.now() - startedAt };
     } catch (error) {
         const reasonCode = error?.message || 'clan_action_exception';
-        await Database.resolveClanAction({
+        const resolved = await Database.resolveClanAction({
             actionId: action.id,
             status: 'failed',
             result: { error: reasonCode },
             reasonCode: 'clan_action_exception'
         });
+        if (resolved?.ok) {
+            if (!resolved.idempotent && !resolutionRecorded) metrics.resolved += 1;
+            resolutionRecorded = true;
+        } else {
+            metrics.releaseConflicts += 1;
+        }
         metrics.failed += 1;
         record(metrics.reasonCounts, 'clan_action_exception');
         return { ok: false, code: 'clan_action_exception', error: reasonCode };
     } finally {
+        const durationMs = Math.max(0, Date.now() - startedAt);
+        metrics.durationMs += durationMs;
+        metrics.durationSamples += 1;
+        metrics.durationMaxMs = Math.max(metrics.durationMaxMs, durationMs);
+        if (Number.isFinite(Number(options.deadlineAt)) && Date.now() > Number(options.deadlineAt)) {
+            metrics.budgetOverruns += 1;
+        }
         metrics.running = Math.max(0, metrics.running - 1);
     }
 }
@@ -270,7 +329,7 @@ const ClanActionService = {
     resolveAction,
 
     resolveBatch(options = {}) {
-        if (!Config.enabled) return Promise.resolve({ attempted: 0, claimed: 0, succeeded: 0, failed: 0, budgetStopped: false });
+        if (!Config.enabled) return Promise.resolve({ attempted: 0, claimed: 0, resolved: 0, released: 0, succeeded: 0, failed: 0, leftRunning: 0, budgetStopped: false });
         const budgetMs = Math.max(1, number(options.budgetMs, Config.resolveBudgetMs));
         const deadlineAt = Date.now() + budgetMs;
         const safeLimit = Math.max(1, Math.min(100, Math.floor(number(options.limit, Config.actionBatchSize))));
@@ -279,41 +338,59 @@ const ClanActionService = {
                 bootstrap: boot,
                 attempted: 0,
                 claimed: 0,
+                resolved: 0,
+                released: 0,
                 succeeded: 0,
                 failed: 0,
+                leftRunning: 0,
                 budgetStopped: false
             };
+            await refreshQueueStats();
             while (summary.attempted < safeLimit) {
                 if (Date.now() >= deadlineAt) {
                     summary.budgetStopped = true;
                     metrics.budgetStops += 1;
                     break;
                 }
-                const actions = await Database.claimClanActions({
-                    limit: Math.min(safeLimit - summary.attempted, Config.actionBatchSize),
+                const claim = await Database.claimClanAction({
                     leaseMs: Config.actionLeaseMs
                 });
-                if (!actions.length) break;
-                metrics.claimed += actions.length;
-                summary.claimed += actions.length;
-                actions.forEach((action) => {
-                    metrics.queueAgeMs += Math.max(0, Date.now() - number(action.createdAt, Date.now()));
-                    metrics.queueAgeSamples += 1;
-                    recordAction(action);
-                });
-                for (const action of actions) {
-                    if (Date.now() >= deadlineAt) {
-                        summary.budgetStopped = true;
-                        metrics.budgetStops += 1;
-                        break;
+                metrics.leaseRecoveries += number(claim?.recovered);
+                const action = claim?.action || null;
+                if (!action) break;
+                metrics.claimed += 1;
+                summary.claimed += 1;
+                metrics.queueAgeMs += Math.max(0, Date.now() - number(action.createdAt, Date.now()));
+                metrics.queueAgeSamples += 1;
+                recordAction(action);
+
+                if (Date.now() >= deadlineAt) {
+                    const released = await Database.releaseClanAction({
+                        actionId: action.id,
+                        expectedAttempt: action.attempt,
+                        expectedLeaseUntil: action.leaseUntil
+                    });
+                    if (released.ok) {
+                        metrics.releasedUnstarted += 1;
+                        summary.released += 1;
+                    } else {
+                        metrics.releaseConflicts += 1;
                     }
-                    const result = await resolveAction(action);
-                    summary.attempted += 1;
-                    if (result.status === 'succeeded') summary.succeeded += 1;
-                    if (result.status === 'failed' || result.ok === false) summary.failed += 1;
+                    summary.budgetStopped = true;
+                    metrics.budgetStops += 1;
+                    break;
                 }
-                if (summary.budgetStopped) break;
+
+                const resolvedBefore = metrics.resolved;
+                const result = await resolveAction(action, { deadlineAt });
+                summary.attempted += 1;
+                if (result.status === 'succeeded') summary.succeeded += 1;
+                if (result.status === 'failed' || result.ok === false) summary.failed += 1;
+                if (metrics.resolved > resolvedBefore) summary.resolved += 1;
             }
+            const queue = await refreshQueueStats();
+            summary.leftRunning = number(queue.running);
+            summary.queue = queue;
             return summary;
         });
     },
@@ -323,14 +400,30 @@ const ClanActionService = {
             bootstraps: metrics.bootstraps,
             planned: metrics.planned,
             claimed: metrics.claimed,
+            resolved: metrics.resolved,
             running: metrics.running,
             succeeded: metrics.succeeded,
             failed: metrics.failed,
             retried: metrics.retried,
             budgetStops: metrics.budgetStops,
+            budgetOverruns: metrics.budgetOverruns,
+            releasedUnstarted: metrics.releasedUnstarted,
+            releaseConflicts: metrics.releaseConflicts,
+            leaseRecoveries: metrics.leaseRecoveries,
+            durationAvgMs: metrics.durationSamples ? Math.round(metrics.durationMs / metrics.durationSamples) : 0,
+            durationMaxMs: metrics.durationMaxMs,
             queueAgeMs: metrics.queueAgeMs,
             queueAgeSamples: metrics.queueAgeSamples,
             queueAgeAvgMs: metrics.queueAgeSamples ? Math.round(metrics.queueAgeMs / metrics.queueAgeSamples) : 0,
+            queuePending: metrics.queuePending,
+            queueReady: metrics.queueReady,
+            queueRunning: metrics.queueRunning,
+            queueExpiredRunning: metrics.queueExpiredRunning,
+            queueOldestPendingAgeMs: metrics.queueOldestPendingAgeMs,
+            queueOldestReadyAgeMs: metrics.queueOldestReadyAgeMs,
+            queueOldestRunningAgeMs: metrics.queueOldestRunningAgeMs,
+            queueMaxAttempt: metrics.queueMaxAttempt,
+            queueObservedAt: metrics.queueObservedAt,
             actionCounts: Object.fromEntries(metrics.actionCounts.entries()),
             reasonCounts: Object.fromEntries(metrics.reasonCounts.entries())
         };

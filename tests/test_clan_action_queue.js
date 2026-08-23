@@ -71,9 +71,68 @@ async function main() {
         assert.strictEqual(initialActions[0].actionType, 'goal_plan');
         assert.strictEqual(initialActions[0].status, 'pending');
 
-        const first = await ClanActionService.resolveBatch({ limit: 2, budgetMs: 2000 });
+        const compatibilityClaims = await Database.claimClanActions({ limit: 8 });
+        assert.strictEqual(compatibilityClaims.length, 1, 'the legacy batch API must not pre-claim unadmitted work');
+        const compatibilityClaim = compatibilityClaims[0];
+        const staleRelease = await Database.releaseClanAction({
+            actionId: compatibilityClaim.id,
+            expectedAttempt: Number(compatibilityClaim.attempt) + 1,
+            expectedLeaseUntil: compatibilityClaim.leaseUntil
+        });
+        assert.strictEqual(staleRelease.code, 'ownership_conflict', 'release must be fenced by the exact claim attempt');
+        const compatibilityRelease = await Database.releaseClanAction({
+            actionId: compatibilityClaim.id,
+            expectedAttempt: compatibilityClaim.attempt,
+            expectedLeaseUntil: compatibilityClaim.leaseUntil
+        });
+        assert.strictEqual(compatibilityRelease.ok, true);
+
+        await ClanActionService.bootstrap();
+        const originalClaimClanAction = Database.claimClanAction;
+        Database.claimClanAction = async (options) => {
+            const claim = await originalClaimClanAction.call(Database, options);
+            await new Promise((resolve) => setTimeout(resolve, 250));
+            return claim;
+        };
+        let budgetStopped;
+        try {
+            budgetStopped = await ClanActionService.resolveBatch({ limit: 8, budgetMs: 200 });
+        } finally {
+            Database.claimClanAction = originalClaimClanAction;
+        }
+        assert.strictEqual(budgetStopped.claimed, 1, 'the scheduler may acquire only the action currently being admitted');
+        assert.strictEqual(budgetStopped.attempted, 0, 'an action claimed after the deadline must not start');
+        assert.strictEqual(budgetStopped.released, 1, 'an unstarted action must return to pending immediately');
+        assert.strictEqual(budgetStopped.leftRunning, 0, 'budget exhaustion must not leak a running action');
+        assert.strictEqual(budgetStopped.budgetStopped, true);
+        const queueAfterBudgetStop = await Database.fetchClanActionQueueStats();
+        assert.strictEqual(queueAfterBudgetStop.running, 0);
+        assert(queueAfterBudgetStop.pending >= 1);
+        assert.strictEqual(ClanActionService.metrics().releasedUnstarted, 1);
+
+        let claimCalls = 0;
+        let maxRunning = 0;
+        Database.claimClanAction = async (options) => {
+            const before = await Database.fetchClanActionQueueStats();
+            assert.strictEqual(before.running, 0, 'the previous action must settle before another claim');
+            const claim = await originalClaimClanAction.call(Database, options);
+            const after = await Database.fetchClanActionQueueStats();
+            maxRunning = Math.max(maxRunning, after.running);
+            claimCalls += claim.action ? 1 : 0;
+            return claim;
+        };
+        let first;
+        try {
+            first = await ClanActionService.resolveBatch({ limit: 2, budgetMs: 2000 });
+        } finally {
+            Database.claimClanAction = originalClaimClanAction;
+        }
         assert.strictEqual(first.claimed >= 2, true, 'planner and first executable action must be claimed');
         assert.strictEqual(first.succeeded >= 2, true, 'claimed actions must resolve');
+        assert.strictEqual(first.resolved, 2, 'each admitted claim must reach a terminal state');
+        assert.strictEqual(first.leftRunning, 0);
+        assert.strictEqual(claimCalls, 2);
+        assert.strictEqual(maxRunning, 1, 'durable action concurrency must remain one');
 
         const [ledger] = await Database.execute([
             'SELECT COUNT(*) AS entries, COALESCE(SUM(amount), 0) AS amount FROM clan_contributions WHERE clanId = ?',
@@ -85,12 +144,22 @@ async function main() {
         const actionsAfterFirst = await Database.fetchClanActions({ clanId: created.clanId, limit: 20 });
         assert(actionsAfterFirst.some((action) => action.actionType === 'contribution' && action.status === 'succeeded'));
         assert(actionsAfterFirst.some((action) => action.status === 'pending' || action.status === 'running'));
+        const pendingForRecovery = actionsAfterFirst.find((action) => action.status === 'pending');
+        assert(pendingForRecovery, 'the action chain must leave a pending recovery fixture');
+        const expiredAt = Date.now() - 1000;
+        await Database.execute([
+            `UPDATE clan_actions SET status = 'running', leaseUntil = ?, updatedAt = ?
+                WHERE id = ? AND status = 'pending'`,
+            [expiredAt, expiredAt, pendingForRecovery.id]
+        ]);
 
         await Database.close();
         Database.init();
         ClanActionService.resetMetrics();
         const recovered = await ClanActionService.resolveBatch({ limit: 2, budgetMs: 2000 });
         assert(recovered.attempted > 0, 'the durable action queue must continue after a restart');
+        assert(ClanActionService.metrics().leaseRecoveries >= 1, 'expired running actions must be visible as lease recoveries');
+        assert.strictEqual((await Database.fetchClanActionQueueStats()).running, 0, 'recovery must not leave another claimed batch behind');
 
         const actionRows = await Database.fetchClanActions({ clanId: created.clanId, limit: 20 });
         console.log(JSON.stringify({
