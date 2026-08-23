@@ -12,6 +12,7 @@ const ClanGoalService = invoke('GameServer/Clan/ClanGoalService');
 const ClanPartyService = invoke('GameServer/Clan/ClanPartyService');
 const ClanMarketService = invoke('GameServer/Clan/ClanMarketService');
 const BackgroundWorkGovernor = invoke('GameServer/Bot/Population/BackgroundWorkGovernor');
+const BackgroundJobRegistry = invoke('GameServer/Bot/Population/BackgroundJobRegistry');
 
 function isBotSession(session) {
     return session && session.accountId && String(session.accountId).startsWith('bot_');
@@ -71,6 +72,7 @@ const PopulationStatus = {
         const hotLod = invoke('GameServer/Bot/AI/HotActorLodPolicy').snapshot(invoke('GameServer/Bot/BotManager').sessions || []);
         const hotDispatch = invoke('GameServer/Bot/AI/HotAiDispatcher').snapshot();
         const governor = BackgroundWorkGovernor.snapshot();
+        const backgroundJobs = BackgroundJobRegistry.snapshot();
         const clanSimulation = {
             founder: ClanSimulationService.metrics(),
             actions: ClanActionService.metrics(),
@@ -125,6 +127,7 @@ const PopulationStatus = {
             ...counts,
             metrics,
             governor,
+            backgroundJobs,
             clanSimulation,
             director: Director.snapshot(),
             market,
@@ -139,6 +142,7 @@ const PopulationStatus = {
         summary.line += ` stateRetention=${metrics.delta.stateRetentionRuns || 0}/${metrics.delta.stateRetentionRows || 0}/${stateRetention.policy || 'none'} stateRetentionNext=${stateRetention.nextPolicy || 'none'} stateRetentionP95=${stateRetention.p95Ms || 0}ms stateRetentionRows=${stateRetentionPolicyRows} stateRetentionDeferrals=${metrics.delta.stateRetentionDeferrals || 0}:${stateRetentionDeferrals} stateRetentionErrors=${metrics.delta.stateRetentionErrors || 0} stateRetentionOverruns=${metrics.delta.stateRetentionOverruns || 0}`;
         summary.line += ` clanSim=${clanSimulation.founder.founderCreated || 0}/${clanSimulation.founder.existingClanJoins || 0}/${clanSimulation.founder.founderBlocked || 0} clanActions=${clanSimulation.actions.claimed || 0}/${clanSimulation.actions.succeeded || 0}/${clanSimulation.actions.failed || 0}/${clanSimulation.actions.queueAgeAvgMs || 0}ms clanActionFlow=${clanSimulation.actions.claimed || 0}/${clanSimulation.actions.resolved || 0}/${clanSimulation.actions.releasedUnstarted || 0} clanActionQueue=${clanSimulation.actions.queuePending || 0}/${clanSimulation.actions.queueReady || 0}/${clanSimulation.actions.queueRunning || 0}/${Math.round(Number(clanSimulation.actions.queueOldestReadyAgeMs || 0) / 1000)}s clanActionLease=${clanSimulation.actions.leaseRecoveries || 0}/${clanSimulation.actions.releaseConflicts || 0}/${clanSimulation.actions.budgetOverruns || 0} clanActionP95=${clanActionStages} clanFounderP95=${clanFounderStages} clanFounderBudget=${clanSimulation.founder.budgetStops || 0}/${clanSimulation.founder.budgetOverruns || 0} clanLevels=${clanSimulation.economy.levelUps || 0} clanDeposits=${clanSimulation.warehouse.depositsApplied || 0} clanGoals=${clanSimulation.goals.activeGoals || 0}/${clanSimulation.goals.replans || 0} clanMarket=${clanSimulation.market.purchases || 0}/${clanSimulation.market.deposited || 0} clanParty=${clanSimulation.party.operationsStarted || 0}/${clanSimulation.party.operationsSucceeded || 0}/${clanSimulation.party.operationsFailed || 0}`;
         summary.line += ` bgGovernor=${governor.mode || 'idle'}/${governor.usedMs || 0}/${governor.capMs || 0}/${Object.keys(governor.resources || {}).length} bgGovernorFlow=${governor.admitted || 0}/${governor.deferred || 0}/${governor.completed || 0}/${governor.overruns || 0} bgGovernorDeferrals=${governorDeferrals}`;
+        summary.line += ` bgJobs=${backgroundJobs.registered || 0}/${backgroundJobs.inFlight || 0}/${backgroundJobs.tickMs || 0}ms bgJobFlow=${backgroundJobs.due || 0}/${backgroundJobs.started || 0}/${backgroundJobs.completed || 0}/${backgroundJobs.deferred || 0}/${backgroundJobs.coalesced || 0}/${backgroundJobs.errors || 0}`;
         const coldWorker = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot();
         const worker = coldWorker.worker || {};
         const commitQueue = coldWorker.queue || {};

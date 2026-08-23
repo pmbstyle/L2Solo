@@ -35,6 +35,7 @@ const FloorAwareActivationPolicy = invoke('GameServer/Bot/Population/FloorAwareA
 const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const ColdSimulationCoordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
 const BackgroundWorkGovernor = invoke('GameServer/Bot/Population/BackgroundWorkGovernor');
+const BackgroundJobRegistry = invoke('GameServer/Bot/Population/BackgroundJobRegistry');
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const BackgroundPartyLifecycle = invoke('GameServer/Bot/Population/BackgroundPartyLifecycle');
 const ClanSimulationConfig = invoke('GameServer/Clan/ClanSimulationConfig');
@@ -667,9 +668,7 @@ const PopulationService = {
     summaryTimer: null,
     initialSummaryTimer: null,
     schedulerTimer: null,
-    clanActionTimer: null,
-    clanFounderTimer: null,
-    clanFounderStartTimer: null,
+    backgroundJobRegistry: null,
     warehouseCleanupTimer: null,
     stateRetentionTimer: null,
     partyFormationTimer: null,
@@ -678,7 +677,6 @@ const PopulationService = {
     seedTimer: null,
     classProgressionMigrationTimer: null,
     marketTownMigrationTimer: null,
-    goalMetadataTimer: null,
     nextColdCombatProfileMigrationAt: 0,
     nextMarketTownMigrationAt: 0,
     nextPartyRequestCleanupAt: 0,
@@ -763,32 +761,7 @@ const PopulationService = {
 
         if (Config.backgroundResolverEnabled !== false) ColdSimulationCoordinator.start(this);
 
-        if (ClanSimulationConfig.enabled !== false) {
-            const intervalMs = Math.max(1000, Number(ClanSimulationConfig.resolveIntervalMs) || 60000);
-            this.clanActionTimer = setInterval(() => {
-                this.resolveClanActions();
-            }, intervalMs);
-            if (typeof this.clanActionTimer.unref === 'function') {
-                this.clanActionTimer.unref();
-            }
-            this.resolveClanActions();
-
-            // Keep both SQLite-heavy passes independent and out of phase. The
-            // founder scan must not wait for or share the action queue budget.
-            this.clanFounderStartTimer = setTimeout(() => {
-                this.clanFounderStartTimer = null;
-                this.resolveClanFounders();
-                this.clanFounderTimer = setInterval(() => {
-                    this.resolveClanFounders();
-                }, intervalMs);
-                if (typeof this.clanFounderTimer.unref === 'function') {
-                    this.clanFounderTimer.unref();
-                }
-            }, Math.max(250, Math.floor(intervalMs / 2)));
-            if (typeof this.clanFounderStartTimer.unref === 'function') {
-                this.clanFounderStartTimer.unref();
-            }
-        }
+        this.startBackgroundJobRegistry();
 
         this.classProgressionMigrationTimer = setInterval(() => {
             this.migrateLegacyClassProgression();
@@ -812,17 +785,6 @@ const PopulationService = {
 
         if (typeof this.marketExpiryCleanupTimer.unref === 'function') {
             this.marketExpiryCleanupTimer.unref();
-        }
-
-        if (Config.backgroundResolverEnabled !== false) {
-            this.reconcileGoalMetadata();
-            this.goalMetadataTimer = setInterval(() => {
-                this.reconcileGoalMetadata();
-            }, Math.max(5000, Number(Config.goalMetadataReconcileIntervalMs) || 30000));
-
-            if (typeof this.goalMetadataTimer.unref === 'function') {
-                this.goalMetadataTimer.unref();
-            }
         }
 
         if (Config.warehouseCleanupEnabled !== false) {
@@ -902,17 +864,9 @@ const PopulationService = {
             clearInterval(this.schedulerTimer);
             this.schedulerTimer = null;
         }
-        if (this.clanActionTimer) {
-            clearInterval(this.clanActionTimer);
-            this.clanActionTimer = null;
-        }
-        if (this.clanFounderTimer) {
-            clearInterval(this.clanFounderTimer);
-            this.clanFounderTimer = null;
-        }
-        if (this.clanFounderStartTimer) {
-            clearTimeout(this.clanFounderStartTimer);
-            this.clanFounderStartTimer = null;
+        if (this.backgroundJobRegistry) {
+            this.backgroundJobRegistry.stop();
+            this.backgroundJobRegistry = null;
         }
         this.clanActionRunning = false;
         this.clanFounderRunning = false;
@@ -967,10 +921,6 @@ const PopulationService = {
         if (this.marketExpiryCleanupTimer) {
             clearInterval(this.marketExpiryCleanupTimer);
             this.marketExpiryCleanupTimer = null;
-        }
-        if (this.goalMetadataTimer) {
-            clearInterval(this.goalMetadataTimer);
-            this.goalMetadataTimer = null;
         }
         this.goalMetadataRunning = false;
         this.partyRequestCleanupRunning = false;
@@ -1243,6 +1193,46 @@ const PopulationService = {
         const profile = this.schedulerProfile();
         Metrics.recordSchedulerProfile(profile);
         return profile;
+    },
+
+    startBackgroundJobRegistry() {
+        if (this.backgroundJobRegistry) return this.backgroundJobRegistry;
+        const registry = BackgroundJobRegistry.create({
+            tickMs: Math.max(50, Number(Config.backgroundJobTickMs) || 250),
+            onError: (job, error) => {
+                utils.infoWarn('BotPopulation', 'background job %s failed: %s', job, error?.message || error);
+            }
+        });
+
+        if (ClanSimulationConfig.enabled !== false) {
+            const clanIntervalMs = Math.max(1000, Number(ClanSimulationConfig.resolveIntervalMs) || 60000);
+            registry.register({
+                name: 'clan_actions',
+                intervalMs: clanIntervalMs,
+                offsetMs: 0,
+                run: () => this.resolveClanActions()
+            });
+            registry.register({
+                name: 'clan_founders',
+                intervalMs: clanIntervalMs,
+                offsetMs: Math.max(250, Math.floor(clanIntervalMs / 2)),
+                run: () => this.resolveClanFounders()
+            });
+        }
+
+        if (Config.backgroundResolverEnabled !== false) {
+            const goalIntervalMs = Math.max(5000, Number(Config.goalMetadataReconcileIntervalMs) || 30000);
+            registry.register({
+                name: 'goal_metadata',
+                intervalMs: goalIntervalMs,
+                offsetMs: Math.min(5000, Math.max(250, Math.floor(goalIntervalMs / 4))),
+                run: () => this.reconcileGoalMetadata()
+            });
+        }
+
+        this.backgroundJobRegistry = registry;
+        registry.start();
+        return registry;
     },
 
     resolveClanActions(activity = this.playerActivityProfile()) {

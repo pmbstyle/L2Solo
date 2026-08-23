@@ -160,10 +160,15 @@ Every background admission should use the same snapshot:
 - Preserved each service's existing running guard and local deadline as a
   second safety boundary.
 
-### Slice D: timer consolidation
+### Slice D - in progress: timer consolidation
 
-- Replace phase-aligned maintenance intervals with one due-job registry.
-- Give every job a deterministic offset.
+- Clan action, clan founder, and goal metadata passes now share one due-job
+  registry with absolute deadlines, missed-period coalescing, and per-job
+  re-entry protection.
+- These first jobs use deterministic offsets of zero, one quarter of the goal
+  interval, and one half of the clan interval instead of phase-aligned timers.
+- Migrate the remaining low-frequency maintenance intervals incrementally
+  after their local admission contracts are explicit.
 - Keep high-frequency actor/effect timers outside this registry; they are a
   different player-facing workload class.
 

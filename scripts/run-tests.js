@@ -144,6 +144,8 @@ const tests = [
     'tests/test_bot_population_scheduler_telemetry.js',
     'tests/test_background_work_governor.js',
     'tests/test_background_work_governor_integration.js',
+    'tests/test_background_job_registry.js',
+    'tests/test_background_job_registry_integration.js',
     'tests/test_persistent_state_retention.js',
     'tests/test_cold_simulation_owner.js',
     'tests/test_cold_owner_batches.js',
