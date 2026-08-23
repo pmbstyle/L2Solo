@@ -99,5 +99,6 @@ module.exports = {
  pledgeShowMemberListAdd: require('./PledgeShowMemberListAdd'),
  pledgeShowMemberListAll: require('./PledgeShowMemberListAll'),
  pledgeShowMemberListUpdate: require('./PledgeShowMemberListUpdate'),
- pledgeShowMemberListDelete: require('./PledgeShowMemberListDelete')
+ pledgeShowMemberListDelete: require('./PledgeShowMemberListDelete'),
+ pledgeShowMemberListDeleteAll: require('./PledgeShowMemberListDeleteAll')
 };

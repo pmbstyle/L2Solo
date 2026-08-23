@@ -4157,6 +4157,39 @@ const Database = {
     updateClanLevel(id, level) { return update('clans', { level }, 'id = ?', [id], 'clan:level'); },
     updateCharacterClan(id, clanId, clanPrivileges, clanJoinExpiryTime, clanCreateExpiryTime) { return update('characters', { clanId, clanPrivileges, clanJoinExpiryTime, clanCreateExpiryTime }, 'id = ?', [id], 'character:clan'); },
     updateCharacterClanPrivileges(id, clanPrivileges) { return update('characters', { clanPrivileges }, 'id = ?', [id], 'character:clan-privileges'); },
+    updateCharacterTitle(id, title) { return withCharacterFlush(id, () => update('characters', { title: String(title || '') }, 'id = ?', [id], 'character:title')); },
+    removeCharacterFromClan(id) {
+        return withCharacterFlush(id, () => update('characters', {
+            clanId: 0,
+            clanPrivileges: 0,
+            clanJoinExpiryTime: 0,
+            clanCreateExpiryTime: 0,
+            title: ''
+        }, 'id = ?', [id], 'character:clan-remove'));
+    },
+    dissolveClan({ clanId, leaderId } = {}) {
+        const id = Number(clanId);
+        const leader = Number(leaderId);
+        if (!id || !leader) return Promise.resolve({ ok: false, code: 'invalid_clan' });
+
+        return select('characters', ['id'], 'clanId = ?', [id], 'clan:dissolve-members')
+            .then((members) => withCharacterFlushes(members.map((member) => member.id), () => inTransaction(() => {
+                const clan = one('SELECT id, leaderId FROM clans WHERE id = ?', [id]);
+                if (!clan) return { ok: false, code: 'clan_missing' };
+                if (Number(clan.leaderId) !== leader) return { ok: false, code: 'not_leader' };
+
+                const currentMembers = all('SELECT id FROM characters WHERE clanId = ? ORDER BY id', [id]);
+                write(`UPDATE characters
+                    SET clanId = 0,
+                        clanPrivileges = 0,
+                        clanJoinExpiryTime = 0,
+                        clanCreateExpiryTime = 0,
+                        title = ''
+                    WHERE clanId = ?`, [id]);
+                write('DELETE FROM clans WHERE id = ?', [id]);
+                return { ok: true, clanId: id, memberIds: currentMembers.map((member) => Number(member.id)) };
+            }, 'clan:dissolve')));
+    },
     deleteGearItems(characterId) { return withCharacterFlush(characterId, () => remove('items', 'characterId = ? AND selfId != 57', [characterId], 'item:delete-gear')); },
     setShortcut(characterId, shortcut) { return run(`INSERT INTO shortcuts (id, kind, slot, unknown, characterId) VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(characterId, slot) DO UPDATE SET id = excluded.id, kind = excluded.kind, unknown = excluded.unknown`, [shortcut.id, shortcut.kind, shortcut.slot, shortcut.unknown, characterId], 'shortcut:upsert'); },

@@ -135,6 +135,7 @@ const SERVER_PACKET_NAMES = {
     0x55: 'PledgeShowMemberListAdd',
     0x56: 'PledgeShowMemberListDelete',
     0x6c: 'PledgeCrest',
+    0x82: 'PledgeShowMemberListDeleteAll',
     0x83: 'PledgeInfo',
     0x88: 'PledgeShowInfoUpdate',
     0x99: 'SkillCoolTime',

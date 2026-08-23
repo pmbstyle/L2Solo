@@ -41,6 +41,7 @@ assert.strictEqual(GameOpcodes.table[0x26], GameRequest.requestWithdrawalPledge,
 assert.strictEqual(GameOpcodes.table[0x27], GameRequest.requestOustPledgeMember, 'C4 RequestOustPledgeMember opcode should be wired');
 assert.strictEqual(GameOpcodes.table[0x3c], GameRequest.requestPledgeMemberList, 'C4 RequestPledgeMemberList opcode should be wired');
 assert.strictEqual(GameOpcodes.table[0x53], GameRequest.requestSetPledgeCrest, 'C4 RequestSetPledgeCrest opcode should be wired');
+assert.strictEqual(GameOpcodes.table[0x55], GameRequest.requestGiveNickName, 'C4 RequestGiveNickName opcode should be wired');
 assert.strictEqual(GameOpcodes.table[0x66], GameRequest.requestPledgeInfo, 'C4 RequestPledgeInfo opcode should be wired');
 assert.strictEqual(GameOpcodes.table[0x68], GameRequest.requestPledgeCrest, 'C4 RequestPledgeCrest opcode should be wired');
 assert.strictEqual(GameOpcodes.table[0xc0], GameRequest.requestPledgePower, 'C4 RequestPledgePower opcode should be wired');
@@ -73,6 +74,17 @@ const oustPledgeRequest = Buffer.concat([
 const oustPledgePacket = new ReceivePacket(oustPledgeRequest);
 oustPledgePacket.readS();
 assert.strictEqual(oustPledgePacket.data[0], 'Mina', 'RequestOustPledgeMember should read target name');
+
+const giveNickNameRequest = Buffer.concat([
+    Buffer.from([0x55]),
+    Buffer.from('Mina', 'ucs2'),
+    Buffer.alloc(2),
+    Buffer.from('Guardian', 'ucs2'),
+    Buffer.alloc(2)
+]);
+const giveNickNamePacket = new ReceivePacket(giveNickNameRequest);
+giveNickNamePacket.readS().readS();
+assert.deepStrictEqual(giveNickNamePacket.data, ['Mina', 'Guardian'], 'RequestGiveNickName should read target name and title');
 
 const askJoinPledge = ServerResponse.askJoinPledge(2000001, 'Nocturne');
 assert.strictEqual(askJoinPledge[0], 0x32);
@@ -201,6 +213,9 @@ const pledgeDelete = ServerResponse.pledgeShowMemberListDelete('Mina');
 assert.strictEqual(pledgeDelete[0], 0x56);
 const deleteNameEnd = findUtf16Terminator(pledgeDelete, 1);
 assert.strictEqual(pledgeDelete.toString('ucs2', 1, deleteNameEnd), 'Mina');
+
+const pledgeDeleteAll = ServerResponse.pledgeShowMemberListDeleteAll();
+assert.strictEqual(pledgeDeleteAll[0], 0x82, 'PledgeShowMemberListDeleteAll should use the empty C4 0x82 packet');
 
 const relationActor = {
     fetchId: () => 2000001,
