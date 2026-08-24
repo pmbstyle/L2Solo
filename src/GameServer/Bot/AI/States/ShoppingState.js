@@ -303,12 +303,12 @@ module.exports = {
         setTimeout(() => {
             const plan = ShotStock.planForActor(bot);
             const current = ShotStock.shotAmount(bot, plan);
-            const amount = Math.max(0, ShotStock.DEFAULT_TARGET_AMOUNT - current);
+            const amount = Math.max(0, ShotStock.PURCHASE_TARGET_AMOUNT - current);
             const expectedCost = amount * Number(plan.price || 0);
 
             ShotStock.purchaseActorRestock(bot, {
                 plan,
-                targetAmount: ShotStock.DEFAULT_TARGET_AMOUNT
+                targetAmount: ShotStock.PURCHASE_TARGET_AMOUNT
             }).then((result) => {
                 if (!result.ok) {
                     BotAI.say(session, `Not enough Adena to buy ${ShotStock.describe(plan)} (Have ${result.adena || 0}/${result.cost || expectedCost} Adena). Skipping restocking.`);
