@@ -10,6 +10,7 @@ const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const Director = invoke('GameServer/Bot/Population/PopulationDirector');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
@@ -422,6 +423,14 @@ class ColdSimulationCoordinator {
         if (!eligibleActivity) return null;
         if (partyRoute && partyMembers.some((member) => ['resting', 'traveling', 'dead'].includes(member.activity))) return null;
 
+        let physical = null;
+        try { physical = SpotService.findCurrentSpot(state.loc); } catch (_) { physical = null; }
+        const currentId = physical?.id || currentSpot?.id || state.spotId || party?.spotId || null;
+        const timestamp = Number(index.timestamp || Date.now());
+        const routedMembers = partyRoute ? partyMembers : [state];
+        const excludedSpotIds = SpotRiskPolicy.excludedSpotIdsForStates(routedMembers, timestamp);
+        const spotBackoff = SpotRiskPolicy.backoffForStates(routedMembers, currentId, timestamp);
+
         const role = partyRoute ? PartyComposition.roleForState(state) : null;
         const partyRequired = !partyRoute
             && !state.party?.partyId
@@ -435,7 +444,7 @@ class ColdSimulationCoordinator {
                     state,
                     state.stats?.equipmentPlan,
                     [...index.spots.values()],
-                    { occupancy: index.occupancy }
+                    { occupancy: index.occupancy, excludedSpotIds }
                 );
             } catch (_) { fallback = null; }
             fallbackSpot = (fallback && index.spots.get(String(fallback.spotId))) || null;
@@ -446,7 +455,7 @@ class ColdSimulationCoordinator {
                         spotId: null,
                         stats: Object.fromEntries(Object.entries(state.stats || {})
                             .filter(([key]) => key !== 'equipmentPlan'))
-                    }, { occupancy: index.occupancy });
+                    }, { occupancy: index.occupancy, excludedSpotIds, timestamp });
                 } catch (_) { fallbackSpot = null; }
             }
         }
@@ -462,6 +471,8 @@ class ColdSimulationCoordinator {
                 : state;
         const options = {
             occupancy: index.occupancy,
+            excludedSpotIds,
+            timestamp,
             ...(partyRoute ? { mode: 'party', role } : {})
         };
         let selected = fallbackSpot;
@@ -470,9 +481,6 @@ class ColdSimulationCoordinator {
         } catch (_) { selected = null; }
         if (!selected) return null;
 
-        let physical = null;
-        try { physical = SpotService.findCurrentSpot(state.loc); } catch (_) { physical = null; }
-        const currentId = physical?.id || currentSpot?.id || state.spotId || party?.spotId || null;
         if (String(selected.id) === String(currentId || '')) return null;
 
         const members = partyRoute ? partyMembers : [state];
@@ -493,7 +501,9 @@ class ColdSimulationCoordinator {
             travelMs: HUNTING_TRAVEL_MS,
             reason: partyRoute
                 ? 'party_spot_replan'
-                : activeEquipmentPlan ? 'equipment_source_replan' : 'level_replan',
+                : spotBackoff ? 'death_pressure_replan'
+                    : activeEquipmentPlan ? 'equipment_source_replan' : 'level_replan',
+            ...(spotBackoff ? { cause: 'death_pressure', spotBackoff } : {}),
             to: destinations[String(state.characterId)] || null,
             destinations
         };

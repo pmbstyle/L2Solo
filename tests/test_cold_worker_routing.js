@@ -133,6 +133,30 @@ try {
     assert.strictEqual(Object.keys(partyRoute.destinations).length, 2);
     assert.deepStrictEqual(partyRoute.destinations['3'], destinationFor(members[1]));
 
+    const pressuredMembers = [
+        members[0],
+        {
+            ...members[1],
+            stats: {
+                deaths: 2,
+                fightsResolved: 5,
+                spotRisk: { spotId: currentSpot.id, deathsAtEntry: 0, fightsAtEntry: 0 }
+            }
+        }
+    ];
+    const pressuredPartyRoute = coordinator.routeFor(
+        pressuredMembers[0],
+        currentSpot,
+        party,
+        pressuredMembers,
+        { occupancy: {}, timestamp: 5000 }
+    );
+    assert.strictEqual(pressuredPartyRoute.reason, 'party_spot_replan');
+    assert.strictEqual(pressuredPartyRoute.cause, 'death_pressure');
+    assert.strictEqual(pressuredPartyRoute.spotBackoff.spotId, currentSpot.id,
+        'one member hitting the death threshold must move the whole party without splitting it');
+    assert.strictEqual(pressuredPartyRoute.spotBackoff.until, 5000 + 60 * 60 * 1000);
+
     const requestPlan = {
         status: 'active',
         strategy: 'direct_drop',

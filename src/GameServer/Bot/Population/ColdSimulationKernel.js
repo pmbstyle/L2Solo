@@ -3,6 +3,7 @@ const HUNTING_TRAVEL_MS = 25000;
 const PROPOSAL_PAYLOAD_LIMIT_BYTES = 240 * 1024;
 const BackgroundPartyLifecycle = require('./BackgroundPartyLifecycle');
 const Protocol = require('./ColdSimulationProtocol');
+const SpotRiskPolicy = require('./SpotRiskPolicy');
 
 class DueHeap {
     constructor() {
@@ -142,8 +143,11 @@ function beginRouteTravelState(state = {}, route = null, timestamp = Date.now(),
     if (!destination || !hasFiniteCoordinate(from.locX) || !hasFiniteCoordinate(from.locY)) return null;
     const arrivalAt = timestamp + Math.max(1000, Number(route.travelMs) || HUNTING_TRAVEL_MS);
     const isPartyRoute = route.mode === 'party';
+    const routedState = route.spotBackoff
+        ? SpotRiskPolicy.withBackoff(state, route.spotBackoff, timestamp)
+        : state;
     return {
-        ...state,
+        ...routedState,
         activity: 'traveling',
         timing: {
             ...(state.timing || {}),
@@ -151,7 +155,7 @@ function beginRouteTravelState(state = {}, route = null, timestamp = Date.now(),
             nextResolveAt: arrivalAt
         },
         stats: {
-            ...(state.stats || {}),
+            ...(routedState.stats || {}),
             travel: {
                 from,
                 to: { ...destination },
@@ -166,7 +170,8 @@ function beginRouteTravelState(state = {}, route = null, timestamp = Date.now(),
                     ? 'party_spot_replan'
                     : route.reason || (state.stats?.equipmentPlan?.status === 'active'
                         ? 'equipment_source_replan'
-                        : 'level_replan')
+                        : 'level_replan'),
+                ...(route.cause ? { cause: route.cause } : {})
             }
         }
     };

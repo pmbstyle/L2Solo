@@ -1,7 +1,8 @@
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
+const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 
-const MIN_DEATHS_AT_NEW_SPOT = 2;
-const MIN_DEATH_RATE = 0.2;
+const MIN_DEATHS_AT_NEW_SPOT = SpotRiskPolicy.MIN_DEATHS_AT_SPOT;
+const MIN_DEATH_RATE = SpotRiskPolicy.MIN_DEATH_RATE;
 const MIN_ADENA_RESERVE = 500;
 const RESERVE_RATE = 0.2;
 
@@ -14,13 +15,7 @@ function personaFor(state = {}) {
 // an old failure at a starter camp must not cause a purchase at every future
 // town visit.
 function spotDeathPressure(state = {}) {
-    const risk = state.stats?.spotRisk;
-    if (!risk || String(risk.spotId || '') !== String(state.spotId || '')) return null;
-    const deaths = Math.max(0, Number(state.stats?.deaths || 0) - Number(risk.deathsAtEntry || 0));
-    const fights = Math.max(0, Number(state.stats?.fightsResolved || 0) - Number(risk.fightsAtEntry || 0));
-    const deathRate = deaths / Math.max(1, fights);
-    if (deaths < MIN_DEATHS_AT_NEW_SPOT || deathRate < MIN_DEATH_RATE) return null;
-    return { spotId: risk.spotId, deaths, fights, deathRate };
+    return SpotRiskPolicy.deathPressure(state);
 }
 
 function investmentOpportunity(state = {}, estimatedCost = 0) {

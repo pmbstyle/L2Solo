@@ -731,6 +731,24 @@ assert.strictEqual(
     null,
     'an equipment objective must not keep selecting a drop source after its capacity is exhausted'
 );
+assert.strictEqual(
+    GearAcquisitionPlanner.bestSourceForState(
+        [crowdedGearSource, availableGearSource],
+        { ...gearedLevel30, characterId: 7004 },
+        { excludedSpotIds: new Set([crowdedGearSource.spotId]) }
+    ).spotId,
+    availableGearSource.spotId,
+    'a death backoff must exclude the dangerous source even when it would otherwise rank first'
+);
+assert.strictEqual(
+    GearAcquisitionPlanner.bestSourceForState(
+        [crowdedGearSource],
+        { ...gearedLevel30, characterId: 7004 },
+        { excludedSpotIds: new Set([crowdedGearSource.spotId]) }
+    ),
+    null,
+    'a death backoff must never fall through to the only excluded equipment source'
+);
 
 const timakDropSource = {
     id: '15_-1',

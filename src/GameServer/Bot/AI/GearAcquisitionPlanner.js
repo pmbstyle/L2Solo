@@ -1061,12 +1061,21 @@ function sourceHasCapacity(source, state, options = {}) {
     return count < Math.max(1, capacity);
 }
 
+function sourceIsExcluded(source, options = {}) {
+    const excluded = options.excludedSpotIds;
+    if (!excluded || !source?.spotId) return false;
+    return excluded instanceof Set
+        ? excluded.has(String(source.spotId)) || excluded.has(source.spotId)
+        : Array.isArray(excluded) && excluded.map(String).includes(String(source.spotId));
+}
+
 function bestSourceForState(sources = [], state = {}, options = {}) {
-    const safeSources = sources.filter((source) => soloSafeForSource(state, source));
-    if (!options.occupancy) return safeSources[0] || sources[0] || null;
+    const allowedSources = sources.filter((source) => !sourceIsExcluded(source, options));
+    const safeSources = allowedSources.filter((source) => soloSafeForSource(state, source));
+    if (!options.occupancy) return safeSources[0] || allowedSources[0] || null;
     const safeAvailable = safeSources.filter((source) => sourceHasCapacity(source, state, options));
     if (safeAvailable.length) return safeAvailable[0];
-    const available = sources.filter((source) => sourceHasCapacity(source, state, options));
+    const available = allowedSources.filter((source) => sourceHasCapacity(source, state, options));
     return available[0] || null;
 }
 

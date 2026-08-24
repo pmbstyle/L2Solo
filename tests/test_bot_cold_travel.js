@@ -139,6 +139,43 @@ try {
         locY: availableSpot.center.locY - 91,
         locZ: availableSpot.center.locZ
     }, 'market returns must use a distributed spawn-aware arrival point');
+
+    const deathRerouted = GoalExecutor.finishMarketVisit({
+        ...shoppingState,
+        spotId: legacyMineSpot.id,
+        stats: {
+            ...shoppingState.stats,
+            deaths: 3,
+            fightsResolved: 8,
+            spotRisk: { spotId: legacyMineSpot.id, deathsAtEntry: 1, fightsAtEntry: 0 },
+            marketReturn: {
+                spotId: legacyMineSpot.id,
+                regionName: legacyMineSpot.name,
+                loc: { ...legacyMineSpot.center }
+            }
+        }
+    }, 1000);
+    assert.strictEqual(deathRerouted.stats.travel.reason, 'death_pressure_replan');
+    assert.strictEqual(deathRerouted.stats.travel.arrivalEvent, 'arrived_hunting_ground');
+    assert.strictEqual(deathRerouted.stats.spotBackoffs[0].spotId, legacyMineSpot.id,
+        'a market return must persist the death cooldown before resetting the spot baseline');
+
+    SpotProfiles.findForState = () => null;
+    assert.strictEqual(GoalExecutor.finishMarketVisit({
+        ...shoppingState,
+        spotId: legacyMineSpot.id,
+        stats: {
+            ...shoppingState.stats,
+            deaths: 2,
+            fightsResolved: 5,
+            spotRisk: { spotId: legacyMineSpot.id, deathsAtEntry: 0, fightsAtEntry: 0 },
+            marketReturn: {
+                spotId: legacyMineSpot.id,
+                regionName: legacyMineSpot.name,
+                loc: { ...legacyMineSpot.center }
+            }
+        }
+    }, 1000), null, 'a bot must wait in town when no safe replacement spot is available');
 } finally {
     SpotService.findById = originalFindById;
     SpotService.arrivalPointForState = originalArrivalPointForState;

@@ -3,6 +3,7 @@ const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
+const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 
 let occupancyCache = null;
 let occupancyCachedAt = 0;
@@ -166,11 +167,19 @@ const SpotProfiles = {
         const savedSpot = state?.spotId ? this.findById(state.spotId) : null;
         const currentSpot = physicalSpot || savedSpot;
         const targetLevel = LevelingRoutes.targetLevelForState(state);
+        const timestamp = Number(options.timestamp || Date.now());
+        const excludedSpotIds = new Set([
+            ...SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp),
+            ...((options.excludedSpotIds instanceof Set || Array.isArray(options.excludedSpotIds))
+                ? [...options.excludedSpotIds].map(String)
+                : [])
+        ]);
         const occupancy = options.occupancy || currentOccupancy(profiles);
-        const routeOptions = { ...options, occupancy };
+        const routeOptions = { ...options, occupancy, excludedSpotIds };
         const currentMatch = currentSpot ? LevelingRoutes.scoreSpot(currentSpot, state, routeOptions) : null;
         const mustRelocate = currentSpot && (currentMatch.localityPenalty > 0
-            || shouldLeaveOverCapacity(state, currentSpot, occupancy));
+            || shouldLeaveOverCapacity(state, currentSpot, occupancy)
+            || excludedSpotIds.has(String(currentSpot.id)));
         const keepCurrentSpot = currentSpot && (!acquisitionPlan || protectedStarterCohort)
             && !mustRelocate
             && (protectedStarterCohort || SpotService.isSuitable(currentSpot, targetLevel, options));
@@ -190,7 +199,7 @@ const SpotProfiles = {
                 state,
                 acquisitionPlan,
                 profiles,
-                { occupancy }
+                { occupancy, excludedSpotIds }
             );
             const planned = plannedSource
                 ? this.findById(plannedSource.spotId)
@@ -200,7 +209,7 @@ const SpotProfiles = {
                 : Object.keys(occupancy || {}).length === 0
                     ? this.findById(acquisitionPlan.next?.spotId)
                     : null;
-            if (planned) {
+            if (planned && !excludedSpotIds.has(String(planned.id))) {
                 // A drop source may be valid for the item but still be a
                 // starter-level camp for the bot. Never let an active gear
                 // plan pin an outleveled bot to that source indefinitely.
@@ -217,6 +226,7 @@ const SpotProfiles = {
         }
 
         const candidates = profiles
+            .filter((profile) => !excludedSpotIds.has(String(profile.id)))
             .filter((profile) => profile.minLevel <= targetLevel + 4 && profile.maxLevel >= targetLevel - 4);
         const relocationCandidates = mustRelocate
             ? candidates.filter((profile) => profile.id !== currentSpot.id)

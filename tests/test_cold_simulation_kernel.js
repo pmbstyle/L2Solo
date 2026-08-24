@@ -150,6 +150,29 @@ function state(characterId = 1, overrides = {}) {
     assert.strictEqual(travelState.stats.travel.spotId, 'mid-level-field');
     assert.strictEqual(travelState.stats.travel.arrivalAt, 30000);
 
+    const deathPressureRoute = {
+        ...route,
+        reason: 'death_pressure_replan',
+        cause: 'death_pressure',
+        spotBackoff: {
+            spotId: 'starter-field',
+            reason: 'death_pressure',
+            deaths: 2,
+            fights: 5,
+            deathRate: 0.4,
+            startedAt: 5000,
+            until: 3605000
+        }
+    };
+    const backedOffTravelState = beginRouteTravelState(state(72, {
+        spotId: 'starter-field',
+        loc: { locX: 115000, locY: -176000, locZ: -1000 }
+    }), deathPressureRoute, 5000);
+    assert.strictEqual(backedOffTravelState.stats.travel.reason, 'death_pressure_replan');
+    assert.strictEqual(backedOffTravelState.stats.travel.cause, 'death_pressure');
+    assert.strictEqual(backedOffTravelState.stats.spotBackoffs[0].spotId, 'starter-field',
+        'the travel transition must persist the cooldown before the spot baseline changes on arrival');
+
     const arrivedPartyMember = finishPartyRouteTravelState({
         ...travelState,
         stats: {

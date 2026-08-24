@@ -6,6 +6,7 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
+const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const BackgroundPartyResolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
@@ -98,9 +99,14 @@ function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
     const currentId = physical?.id || options.currentSpotId || state.spotId || null;
     if (currentId === spot.id) return null;
     const destination = SpotService.arrivalPointForState(state, spot);
+    const spotBackoff = options.spotBackoff
+        || SpotRiskPolicy.backoffForStates([state], currentId, timestamp);
+    const routedState = spotBackoff
+        ? SpotRiskPolicy.withBackoff(state, spotBackoff, timestamp)
+        : state;
 
     return {
-        ...state,
+        ...routedState,
         activity: 'traveling',
         timing: {
             ...(state.timing || {}),
@@ -108,7 +114,7 @@ function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
             nextResolveAt: timestamp + HUNTING_TRAVEL_MS
         },
         stats: {
-            ...(state.stats || {}),
+            ...(routedState.stats || {}),
             travel: {
                 from,
                 to: destination,
@@ -119,16 +125,19 @@ function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
                 spotId: spot.id,
                 arrivalActivity: 'hunting',
                 arrivalEvent: 'arrived_hunting_ground',
-                reason: state.stats?.equipmentPlan?.status === 'active'
-                    ? 'equipment_source_replan'
-                    : 'level_replan'
+                reason: spotBackoff
+                    ? 'death_pressure_replan'
+                    : state.stats?.equipmentPlan?.status === 'active'
+                        ? 'equipment_source_replan'
+                        : 'level_replan',
+                ...(spotBackoff ? { cause: 'death_pressure' } : {})
             }
         }
     };
 }
 
-function beginPartySpotTravel(state, spot, timestamp = Date.now()) {
-    const travelling = beginHuntingTravel(state, spot, timestamp);
+function beginPartySpotTravel(state, spot, timestamp = Date.now(), options = {}) {
+    const travelling = beginHuntingTravel(state, spot, timestamp, options);
     if (!travelling) return null;
     return {
         ...travelling,
@@ -137,6 +146,7 @@ function beginPartySpotTravel(state, spot, timestamp = Date.now()) {
             travel: {
                 ...(travelling.stats?.travel || {}),
                 reason: 'party_spot_replan',
+                ...(options.spotBackoff ? { cause: 'death_pressure' } : {}),
                 arrivalActivity: 'grouped',
                 arrivalEvent: 'party_arrived_hunting_ground'
             }
@@ -2731,7 +2741,16 @@ const PopulationService = {
 
             const leader = members.find((state) => state.characterId === party.leaderId) || members[0];
             const objectiveSpotId = party.stats?.objective?.spotId || null;
-            const objectiveSpot = objectiveSpotId ? SpotProfiles.findById(objectiveSpotId) : null;
+            const excludedSpotIds = SpotRiskPolicy.excludedSpotIdsForStates(members, startedAt);
+            const objectiveSpot = objectiveSpotId && !excludedSpotIds.has(String(objectiveSpotId))
+                ? SpotProfiles.findById(objectiveSpotId)
+                : null;
+            const partyRouteOptions = {
+                mode: 'party',
+                role: PartyComposition.roleForState(leader),
+                excludedSpotIds,
+                timestamp: startedAt
+            };
             const spot = objectiveSpot || SpotProfiles.findForState({
                 ...leader,
                 spotId: party.spotId,
@@ -2744,7 +2763,10 @@ const PopulationService = {
                     ...(leader.stats || {}),
                     routeMode: 'party'
                 }
-            }, { mode: 'party', role: PartyComposition.roleForState(leader) }) || SpotProfiles.findForState(leader);
+            }, partyRouteOptions) || SpotProfiles.findForState(leader, {
+                excludedSpotIds,
+                timestamp: startedAt
+            });
             if (!spot) {
                 Metrics.recordSkippedResolve('party_missing_spot');
                 return { ok: false, reason: 'missing_spot', party };
@@ -2754,7 +2776,13 @@ const PopulationService = {
             const leaderPhysicalSpot = SpotService.findCurrentSpot(leader.loc);
             const physicalSpotId = leaderPhysicalSpot?.id || leader.spotId || party.spotId;
             if (physicalSpotId && physicalSpotId !== spot.id) {
-                const travellingMembers = members.map((member) => beginPartySpotTravel(member, spot, startedAt) || member);
+                const spotBackoff = SpotRiskPolicy.backoffForStates(members, physicalSpotId, startedAt);
+                const travellingMembers = members.map((member) => beginPartySpotTravel(
+                    member,
+                    spot,
+                    startedAt,
+                    { currentSpotId: physicalSpotId, spotBackoff }
+                ) || member);
                 const arrivalAt = startedAt + HUNTING_TRAVEL_MS;
                 return travellingMembers.reduce((chain, member) => (
                     chain.then(() => LifeState.upsertState(member, 'party_spot_travel'))
@@ -2766,6 +2794,7 @@ const PopulationService = {
                         ...(party.stats || {}),
                         travel: {
                             reason: 'party_spot_replan',
+                            ...(spotBackoff ? { cause: 'death_pressure' } : {}),
                             regionName: spot.name,
                             spotId: spot.id,
                             startedAt,
@@ -3095,8 +3124,12 @@ const PopulationService = {
                 || acquisitionPlan?.requiresParty === true);
         const partyRouteWaiting = (requiredPartyRequest || deferredPartyRequest)
             && !state.party?.partyId;
+        const excludedSpotIds = SpotRiskPolicy.excludedSpotIdsForStates([plannedState], startedAt);
         const partyFallback = partyRouteWaiting && !passiveActivity
-            ? GearAcquisitionPlanner.safeFallbackForPlan(state, acquisitionPlan, spots, { occupancy })
+            ? GearAcquisitionPlanner.safeFallbackForPlan(state, acquisitionPlan, spots, {
+                occupancy,
+                excludedSpotIds
+            })
             : null;
         const fallbackSpot = partyRouteWaiting && !passiveActivity
             ? (partyFallback && SpotProfiles.findById(partyFallback.spotId)) || SpotProfiles.findForState({
@@ -3104,7 +3137,7 @@ const PopulationService = {
                 spotId: null,
                 stats: Object.fromEntries(Object.entries(plannedState.stats || {})
                     .filter(([key]) => key !== 'equipmentPlan'))
-            })
+            }, { excludedSpotIds, timestamp: startedAt })
             : null;
         const routedState = fallbackSpot
             ? { ...plannedState, activity: 'hunting', spotId: fallbackSpot.id }
@@ -3117,7 +3150,10 @@ const PopulationService = {
             : [];
         const selectedSpot = passiveActivity
             ? null
-            : fallbackSpot || SpotProfiles.findForState(travellingState);
+            : fallbackSpot || SpotProfiles.findForState(travellingState, {
+                excludedSpotIds,
+                timestamp: startedAt
+            });
         const huntingTravelState = selectedSpot && !passiveActivity
             ? beginHuntingTravel(travellingState, selectedSpot, startedAt, { currentSpotId })
             : null;
