@@ -16,6 +16,7 @@ const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
 const HotAiDispatcher = invoke('GameServer/Bot/AI/HotAiDispatcher');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
+const BotRangedCombatPositioning = invoke('GameServer/Bot/AI/BotRangedCombatPositioning');
 const { performance } = require('perf_hooks');
 
 const CHAT_PHRASES = {
@@ -598,6 +599,9 @@ const BotAI = {
             return false;
         }
         const role = BotRoles.inferRole(bot);
+        if (BotRangedCombatPositioning.reposition(session, bot, npc, { role })) {
+            return true;
+        }
         const BOW_ATTACK_RANGE = 700;
         const hasBow = bot?.backpack?.fetchTotalWeaponKind?.() === 'Weapon.Bow';
         // Healers and buffers may assist the party with their weapon, but

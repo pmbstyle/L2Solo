@@ -97,6 +97,29 @@ function recentIncomingNpc(session, npcRadius = 2500) {
     return npc;
 }
 
+function npcThreateningActor(session, npcRadius = 2500) {
+    const actor = session?.actor;
+    if (!actor) return null;
+
+    // A fresh hit is authoritative even when a lightweight NPC fixture or an
+    // in-flight retarget has not exposed fetchDestId yet.
+    const recent = recentIncomingNpc(session, npcRadius);
+    if (recent) return recent;
+
+    const id = Number(actorId(actor) || 0);
+    if (!id) return null;
+    return (world().fetchNpcsInRadius?.(
+        actor.fetchLocX(),
+        actor.fetchLocY(),
+        npcRadius
+    ) || []).find((npc) => (
+        npc.fetchAttackable?.() === true &&
+        npc.isDead?.() !== true &&
+        npc.state?.fetchDead?.() !== true &&
+        (Number(npc.fetchDestId?.() || 0) === id || Number(npc.getHating?.(actor) || 0) > 0)
+    )) || null;
+}
+
 function recentIncomingNpcThreat(leaderSession, memberSessions, npcRadius) {
     for (const memberSession of memberSessions) {
         const npc = recentIncomingNpc(memberSession, npcRadius);
@@ -333,6 +356,7 @@ module.exports = {
     invalidateThreatProjection,
     isPartySession,
     leaderCombatTargetId,
+    npcThreateningActor,
     partyActors,
     partySessions,
     recentIncomingNpc,
