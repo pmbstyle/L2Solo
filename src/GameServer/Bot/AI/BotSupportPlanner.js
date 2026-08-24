@@ -25,6 +25,9 @@ const SITUATIONAL_BUFF_EFFECTS = new Set([
 ]);
 const ENCOUNTER_CONTEXT_CACHE_MS = 500;
 const encounterContextCache = new WeakMap();
+const PARTY_ACTION_CACHE_MS = 250;
+const partyActionCache = new WeakMap();
+let supportPlanRevision = 0;
 
 // These are single-target buffs whose value depends on the recipient's combat
 // role. Defensive, resistance and movement buffs intentionally stay universal.
@@ -180,6 +183,44 @@ function cachedEncounterContext(members) {
     return context;
 }
 
+function partyActionCacheOwner(members) {
+    return members.find((member) => member?.leader)?.actor || members[0]?.actor || null;
+}
+
+function actorSupportStateKey(actor) {
+    const effects = Object.values(actor?.effects || {})
+        .map((effect) => Number(effect?.sequence) || `${effect?.key}:${effect?.id}:${effect?.level}`)
+        .sort()
+        .join('.');
+    const reservations = Object.entries(actor?.supportReservations || {})
+        .filter(([, reservation]) => Number(reservation?.expiresAt || 0) > Date.now())
+        .map(([key, reservation]) => `${key}:${reservation?.casterId}:${reservation?.expiresAt}`)
+        .sort()
+        .join('.');
+    return [
+        actorOrder(actor),
+        actor?.state?.fetchDead?.() ? 1 : 0,
+        Number(actor?.fetchMp?.() || 0),
+        isBusy(actor) ? 1 : 0,
+        effects,
+        reservations
+    ].join(':');
+}
+
+function partyActionCacheKey(members, providers) {
+    const memberKey = members.map((member) => [
+        actorSupportStateKey(member?.actor),
+        member?.leader === true ? 1 : 0,
+        member?.puller === true ? 1 : 0
+    ].join(':')).join(',');
+    const providerKey = providers.map(actorSupportStateKey).join(',');
+    return `${memberKey}|${providerKey}`;
+}
+
+function invalidatePartyActionCache() {
+    supportPlanRevision += 1;
+}
+
 function situationalBuffUseful(effect, context = {}) {
     const key = normalizedEffect(effect);
     if (!SITUATIONAL_BUFF_EFFECTS.has(key)) return true;
@@ -189,6 +230,24 @@ function situationalBuffUseful(effect, context = {}) {
     // Inventory load is not yet exposed as authoritative runtime state. Keep
     // Decrease Weight on-demand instead of making every field party cast it.
     return false;
+}
+
+function createPlanningContext() {
+    return {
+        effects: new Map(),
+        capacity: new Map(),
+        providerSkills: new Map(),
+        auraRecipients: new Map(),
+        auraCapacity: new Map()
+    };
+}
+
+function planningEffects(target, planning = null) {
+    if (!planning) return EffectStore.list(target);
+    if (!planning.effects.has(target)) {
+        planning.effects.set(target, EffectStore.list(target));
+    }
+    return planning.effects.get(target);
 }
 
 function isUsefulForTarget(target, skill, provider = null, context = {}) {
@@ -259,27 +318,30 @@ function isCountedBuff(effect) {
         !['hp_recover', 'life_force_orc'].includes(effect?.stackFamily);
 }
 
-function buffCapacity(target) {
-    const effects = EffectStore.list(target);
+function buffCapacity(target, planning = null) {
+    if (planning?.capacity.has(target)) return planning.capacity.get(target);
+    const effects = planningEffects(target, planning);
     const debuffCount = effects.filter((effect) => effect.type === 'debuff').length;
     const limit = Number(EffectStore.BUFF_LIMIT) || 20;
     const reservedDebuffs = Number(EffectStore.DEBUFF_RESERVED_SLOTS) || 10;
     const allowed = Math.max(0, limit - Math.max(0, debuffCount - reservedDebuffs));
     const used = effects.filter(isCountedBuff).length;
-    return { allowed, used };
+    const capacity = { allowed, used };
+    planning?.capacity.set(target, capacity);
+    return capacity;
 }
 
-function supportEffectReusesSlot(target, skill) {
+function supportEffectReusesSlot(target, skill, planning = null) {
     const semantic = skill?.fetchSemantic?.() || {};
     const effectKey = normalizedEffect(semantic.effect);
     const stackFamily = semantic.stackFamily;
-    return EffectStore.list(target).some((effect) => (
+    return planningEffects(target, planning).some((effect) => (
         normalizedEffect(effect.key) === effectKey ||
         (!!stackFamily && effect.stackFamily === stackFamily)
     ));
 }
 
-function hasSupportBuffCapacity(target, skill) {
+function hasSupportBuffCapacity(target, skill, planning = null) {
     const semantic = skill?.fetchSemantic?.() || {};
     const incoming = {
         type: semantic.effectType || 'buff',
@@ -291,14 +353,21 @@ function hasSupportBuffCapacity(target, skill) {
     // A refresh or a native stack replacement reuses an existing slot. This
     // also preserves deliberate upgrades such as a stronger Might family
     // effect while preventing a new unrelated buff from evicting an older one.
-    if (supportEffectReusesSlot(target, skill)) return true;
+    if (supportEffectReusesSlot(target, skill, planning)) return true;
 
-    const capacity = buffCapacity(target);
+    const capacity = buffCapacity(target, planning);
     return capacity.used < capacity.allowed;
 }
 
-function partyAuraRecipients(members, provider, skill) {
+function partyAuraRecipients(members, provider, skill, planning = null) {
     if (partyAuraRadius(skill) === null) return [];
+
+    let providerCache = planning?.auraRecipients.get(provider);
+    if (providerCache?.has(skill)) return providerCache.get(skill);
+    if (planning && !providerCache) {
+        providerCache = new Map();
+        planning.auraRecipients.set(provider, providerCache);
+    }
 
     const actors = [];
     const seen = new Set();
@@ -335,26 +404,37 @@ function partyAuraRecipients(members, provider, skill) {
             }
         } catch (_) {}
     });
+    providerCache?.set(skill, recipients);
     return recipients;
 }
 
-function canPlanSupportAction(target, provider, skill, members) {
-    const recipients = partyAuraRecipients(members, provider, skill);
-    if (recipients.length === 0) return hasSupportBuffCapacity(target, skill);
+function canPlanSupportAction(target, provider, skill, members, planning = null) {
+    const recipients = partyAuraRecipients(members, provider, skill, planning);
+    if (recipients.length === 0) return hasSupportBuffCapacity(target, skill, planning);
+
+    let providerCache = planning?.auraCapacity.get(provider);
+    if (providerCache?.has(skill)) return providerCache.get(skill);
+    if (planning && !providerCache) {
+        providerCache = new Map();
+        planning.auraCapacity.set(provider, providerCache);
+    }
 
     // A party aura is applied to every recipient in range, not only to the
     // selected primary target. A single full recipient without this effect
     // would otherwise cause the native cast to evict another buff and restart
     // the planner's rotation.
-    return recipients.every((recipient) => (
-        !needsSkill(recipient, skill) || hasSupportBuffCapacity(recipient, skill)
+    const canPlan = recipients.every((recipient) => (
+        !needsSkill(recipient, skill, planning) || hasSupportBuffCapacity(recipient, skill, planning)
     ));
+    providerCache?.set(skill, canPlan);
+    return canPlan;
 }
 
-function needsSkill(target, skill) {
+function needsSkill(target, skill, planning = null) {
     const keys = statKeys(skill);
     const level = Number(skill.fetchLevel?.() || 1);
-    const current = EffectStore.list(target, { includeDebuffs: false })
+    const current = planningEffects(target, planning)
+        .filter((effect) => effect.type !== 'debuff')
         // The effect id is the authoritative identity for a completed cast.
         // Keep the stat/effect-key fallback for old saved effects, but do not
         // re-request a buff merely because an older payload lacked its modern
@@ -384,14 +464,16 @@ function isBusy(actor) {
     );
 }
 
-function canStartSupportCast(action) {
+function canStartSupportCast(action, planning = null) {
     const actor = action?.provider;
     const mp = Number(actor?.fetchMp?.() || 0);
     const maxMp = Math.max(1, Number(actor?.fetchMaxMp?.() || mp || 1));
     return canCast(actor, action?.skill) &&
         actor?.canUseSkill?.(action?.skill) !== false &&
         mp / maxMp >= MIN_SUPPORT_MP_RATIO &&
-        !EffectStore.impairments(actor).silenced &&
+        !planningEffects(actor, planning).some((effect) => (
+            effect.type === 'debuff' && (effect.key === 'silence' || effect.category === 'silence')
+        )) &&
         !isBusy(actor);
 }
 
@@ -418,6 +500,7 @@ function reserve(action) {
         // window was shorter than some C4 casts and let pulling resume early.
         expiresAt: Date.now() + Math.max(CAST_RESERVATION_MS, hitTime + 1000)
     };
+    invalidatePartyActionCache();
 }
 
 function actionCompare(a, b) {
@@ -439,12 +522,17 @@ function actionCompare(a, b) {
     return actorOrder(a.provider) - actorOrder(b.provider);
 }
 
-function allActions(members, providers, respectReservations = true) {
+function allActions(members, providers, respectReservations = true, planning = createPlanningContext()) {
     const context = cachedEncounterContext(members);
+    providers.forEach((provider) => {
+        if (!planning.providerSkills.has(provider)) {
+            planning.providerSkills.set(provider, supportSkills(provider));
+        }
+    });
     return members
         .filter((member) => member?.actor && !member.actor.state?.fetchDead?.())
-        .flatMap((member) => providers.flatMap((provider) => supportSkills(provider)
-            .filter((skill) => isUsefulForTarget(member.actor, skill, provider, context) && canCast(provider, skill) && needsSkill(member.actor, skill) && canPlanSupportAction(member.actor, provider, skill, members) && (!respectReservations || !isReserved(member.actor, skill)))
+        .flatMap((member) => providers.flatMap((provider) => planning.providerSkills.get(provider)
+            .filter((skill) => isUsefulForTarget(member.actor, skill, provider, context) && canCast(provider, skill) && needsSkill(member.actor, skill, planning) && canPlanSupportAction(member.actor, provider, skill, members, planning) && (!respectReservations || !isReserved(member.actor, skill)))
             .map((skill) => ({
                 provider,
                 target: member.actor,
@@ -466,6 +554,7 @@ function queueSupportCast(session, action) {
         // abandoned after the old fixed five-second window.
         expiresAt: Date.now() + PENDING_SUPPORT_CAST_TIMEOUT_MS
     };
+    invalidatePartyActionCache();
     return true;
 }
 
@@ -600,6 +689,7 @@ function cancelSupportCast(session, provider) {
         session.currentTargetId = undefined;
         provider?.unselect?.();
     }
+    if (active || pending) invalidatePartyActionCache();
     return !!(active || pending);
 }
 
@@ -612,12 +702,57 @@ function hasPendingAction(members, providers = members.map((member) => member.ac
     const hasQueuedCast = providers.some((provider) => (
         Number(provider?.session?.pendingSupportCast?.expiresAt || 0) > Date.now()
     ));
-    return hasActiveReservation || hasQueuedCast || allActions(members, providers, false).some(canStartSupportCast);
+    const planning = createPlanningContext();
+    return hasActiveReservation || hasQueuedCast || allActions(members, providers, false, planning)
+        .some((action) => canStartSupportCast(action, planning));
 }
 
 function nextAction(caster, members, providers = members.map((member) => member.actor).filter(Boolean)) {
-    const next = allActions(members, providers).filter(canStartSupportCast).sort(actionCompare)[0] || null;
+    const cacheOwner = partyActionCacheOwner(members);
+    const cacheKey = partyActionCacheKey(members, providers);
+    const now = Date.now();
+    const cached = cacheOwner && partyActionCache.get(cacheOwner);
+    let next;
+    let reused = false;
+    if (
+        cached &&
+        cached.key === cacheKey &&
+        cached.revision === supportPlanRevision &&
+        now - cached.at < PARTY_ACTION_CACHE_MS
+    ) {
+        next = cached.action;
+        reused = true;
+    } else {
+        const planning = createPlanningContext();
+        next = allActions(members, providers, true, planning)
+            .filter((action) => canStartSupportCast(action, planning))
+            .sort(actionCompare)[0] || null;
+        if (cacheOwner) {
+            partyActionCache.set(cacheOwner, {
+                key: cacheKey,
+                revision: supportPlanRevision,
+                at: now,
+                action: next
+            });
+        }
+    }
     if (next?.provider !== caster) return null;
+
+    // Other companions can reuse the party-wide choice without touching the
+    // effect graph again. The selected provider still validates the cached
+    // action immediately before using it, so movement, death, reservations,
+    // MP and a freshly landed effect cannot turn a short cache hit into a
+    // stale cast.
+    if (reused && (
+        next.target?.state?.fetchDead?.() ||
+        !canStartSupportCast(next) ||
+        !needsSkill(next.target, next.skill) ||
+        !canPlanSupportAction(next.target, next.provider, next.skill, members) ||
+        isReserved(next.target, next.skill)
+    )) {
+        partyActionCache.delete(cacheOwner);
+        return nextAction(caster, members, providers);
+    }
     return next;
 }
 

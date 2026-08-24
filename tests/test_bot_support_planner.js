@@ -605,6 +605,72 @@ World.fetchNpcsInRadius = () => {
 BotSupportPlanner.nextAction(holyBuffer, [{ actor: cachedTarget, leader: true }], [holyBuffer]);
 BotSupportPlanner.nextAction(holyBuffer, [{ actor: cachedTarget, leader: true }], [holyBuffer]);
 assert.strictEqual(encounterScans, 1, 'companion planning passes must reuse the same short-lived party encounter scan');
+
+const sharedPlanTarget = actor('SharedPlanTarget', 0);
+const sharedPlanSkill = skill(99001, 'Shared Plan Shield', 1, 'shared_plan_shield', { pDefMul: 1.05 });
+let sharedPlanSkillScans = 0;
+const lowerManaProvider = actor('LowerManaProvider', 25, [sharedPlanSkill], 80, 100);
+const selectedProvider = actor('SelectedProvider', 25, [sharedPlanSkill], 100, 100);
+lowerManaProvider.skillset.fetchSkills = () => {
+    sharedPlanSkillScans += 1;
+    return [sharedPlanSkill];
+};
+selectedProvider.skillset.fetchSkills = () => {
+    sharedPlanSkillScans += 1;
+    return [sharedPlanSkill];
+};
+assert.strictEqual(
+    BotSupportPlanner.nextAction(
+        lowerManaProvider,
+        [{ actor: sharedPlanTarget, leader: true }],
+        [lowerManaProvider, selectedProvider]
+    ),
+    null,
+    'a companion that does not own the shared party action must keep its action slot free'
+);
+const sharedPlanScansAfterFirstCompanion = sharedPlanSkillScans;
+assert.strictEqual(
+    BotSupportPlanner.nextAction(
+        selectedProvider,
+        [{ actor: sharedPlanTarget, leader: true }],
+        [lowerManaProvider, selectedProvider]
+    )?.provider,
+    selectedProvider,
+    'the selected provider must receive the same shared party action'
+);
+assert.strictEqual(
+    sharedPlanSkillScans,
+    sharedPlanScansAfterFirstCompanion,
+    'companions in one party planning window must not rebuild the same support skill matrix'
+);
+
+const snapshotSkill = skill(99002, 'Snapshot Shield', 1, 'snapshot_shield', { pDefMul: 1.04 });
+const snapshotProviderA = actor('SnapshotProviderA', 25, [snapshotSkill], 90, 100);
+const snapshotProviderB = actor('SnapshotProviderB', 25, [snapshotSkill], 100, 100);
+const snapshotMembers = [
+    { actor: actor('SnapshotLeader', 0), leader: true },
+    { actor: actor('SnapshotMemberA', 0) },
+    { actor: actor('SnapshotMemberB', 0) }
+];
+const originalEffectList = EffectStore.list;
+const effectListCalls = new Map();
+EffectStore.list = (targetActor, ...args) => {
+    effectListCalls.set(targetActor, (effectListCalls.get(targetActor) || 0) + 1);
+    return originalEffectList(targetActor, ...args);
+};
+try {
+    BotSupportPlanner.nextAction(
+        snapshotProviderB,
+        snapshotMembers,
+        [snapshotProviderA, snapshotProviderB]
+    );
+} finally {
+    EffectStore.list = originalEffectList;
+}
+assert.ok(
+    [...effectListCalls.values()].every((calls) => calls === 1),
+    'one support matrix build must snapshot each actor effect list only once'
+);
 World.npc = originalNpcWorld;
 World.fetchNpcsInRadius = originalFetchNpcsInRadius;
 
