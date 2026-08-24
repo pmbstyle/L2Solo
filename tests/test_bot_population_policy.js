@@ -94,8 +94,10 @@ async function run() {
         return Promise.resolve(coldStates);
     };
     const activated = [];
-    PopulationService.requestActivation = (state) => {
+    const activationRequests = [];
+    PopulationService.requestActivation = (state, reason, options) => {
         activated.push(state.name);
+        activationRequests.push({ state, reason, options });
         return Promise.resolve({ ok: true, state });
     };
 
@@ -103,6 +105,25 @@ async function run() {
     assert.strictEqual(coldLimit, 100, 'activation must inspect the complete local service row');
     assert.deepStrictEqual(activated, ['ServiceCrafter', 'ServiceCrafterTwo', 'ServiceCrafterThree', 'ColdA'],
         'craft services must not be capped by the ambient budget and the uncapped local population must ramp one ambient bot');
+    const ambientRequest = activationRequests.find((entry) => entry.state.name === 'ColdA');
+    assert.strictEqual(ambientRequest.reason, 'near_player');
+    assert.strictEqual(ambientRequest.options.readyOnActivation, true,
+        'near-player ambient activation must request a ready actor before client publication');
+
+    let stoppedReplenish = 0;
+    let filledVitals = 0;
+    const readyActor = {
+        automation: { stopReplenish() { stoppedReplenish++; } },
+        fillupVitals() { filledVitals++; },
+        state: {
+            seated: true,
+            setSeated(value) { this.seated = value; }
+        }
+    };
+    assert.strictEqual(BotManager.finalizeReadyActivation({ actor: readyActor }, { readyOnActivation: true }), true);
+    assert.strictEqual(stoppedReplenish, 1, 'ready activation must stop the provisional regeneration timer');
+    assert.strictEqual(filledVitals, 1, 'ready activation must refill against the final enterWorld stat caps');
+    assert.strictEqual(readyActor.state.seated, false, 'ready activation must be standing before its visible CharInfo');
 
     const cooled = [];
     PopulationService.cooldownSession = (botSession) => {
