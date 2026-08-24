@@ -21,6 +21,22 @@ Support, updates, and communication. Join the Discord to be up to date with deve
 ⚔️ [Game client](https://drive.google.com/file/d/1u0nW3m9c6Hql8sR9POQAcvglxIno23lv/view?usp=sharing)
 Clean C4 client protocol 656
 
+## Latest updates
+
+- **2026-08-24** Bot clans, better cold/hot performance, bug fixes, and more
+- **2026-08-20** Loot and mob skills bug fixes, bot social graph base
+- **2026-08-19** Runtime optimization, cold bot progression bottlenecks fix, bot equipment enchantment
+- **2026-08-18** Fixes, cold bots progression, better AI compatibility
+- **2026-08-17** Fix cold bots progression, melee and polearm attack range, raid minion party fear
+- **2026-08-16** Summoners, BD, SWS, agro skills and Observer update
+- **2026-08-15** Blade Dancers and Sword Singers bot progression update
+- **2026-08-15** Raid Encounter and Gameplay Stability Update
+- **2026-08-15** Server stability and performance update
+- **2026-08-13** Fix hot party performance issues, fix raid boss atk freeze
+- **2026-08-13** Raid bosses, better bot progression and market use, skill fixes, party finder update
+- **2026-08-11** Expand C4 world content and bot progression systems
+- **2026-08-09** Expand C4 world content and runtime fidelity
+
 ## Game Checklist
 
 ### ✅ What's done
