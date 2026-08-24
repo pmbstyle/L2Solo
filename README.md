@@ -6,14 +6,17 @@
 
 # L2Solo (C4: Scions of Destiny)
 
-Old-school Lineage 2 solo play, locally in a live world with over 1500 bot population.
+Old-school Lineage 2 solo play, locally in a live world with over 1700 bot population.
 
 L2Solo is a local-first Lineage II C4 server emulator, tuned for a solo MMO experiment: one real player, a live world, and bots with AI that makes the server feel alive.
+Nothing is auto-generated. Everything in the world is the result of a player's or a bot's actions.
+
+**Project status:** public alpha
 
 🏗️ Work in progress. Playable.
 
 💬 [Discord](https://discord.gg/dXsQ8SJA7k)
-support and communication
+Support, updates, and communication. Join the Discord to be up to date with development.
 
 ⚔️ [Game client](https://drive.google.com/file/d/1u0nW3m9c6Hql8sR9POQAcvglxIno23lv/view?usp=sharing)
 Clean C4 client protocol 656
@@ -40,6 +43,7 @@ Clean C4 client protocol 656
 - Auto-learn skills (no books or NPC needed)
 - Quests (0-20lvl + 1st profession change)
 - Private trade or craft
+- Clans, including bot clans
 
 **Character:**
 - Progression depending on chosen rates
@@ -79,10 +83,10 @@ Clean C4 client protocol 656
 - Bots join and fight in a party with a player
 - Bots have a memory about interaction with a player; they act correspondingly 
 - Bot persona traits: Sociability, Commitment, Caution, Ambition, Assertiveness, Empathy, Resilience
+- Bots create clans, level clans up, form clan farm parties
 
 ### ✴️ Will be added
 
-- Clans, including bot clans
 - Clan halls
 - Clan wars
 - Wars for a farm spot
