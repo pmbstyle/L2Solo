@@ -8,16 +8,40 @@ function boatObjectId(actor) {
     return Number(actor?.fetchBoatId?.() ?? boat?.fetchId?.() ?? boat?.id ?? 0) || 0;
 }
 
+function movementInfo(actor) {
+    const collectiveRun = Math.max(0, Number(actor.fetchCollectiveRunSpd?.()) || 0);
+    const collectiveWalk = Math.max(0, Number(actor.fetchCollectiveWalkSpd?.()) || 0);
+    const running = actor.state?.fetchWalkin?.() !== true;
+    const baseRun = Math.max(0, Number(actor.fetchRunSpd?.()) || collectiveRun);
+    const baseWalk = Math.max(0, Number(actor.fetchWalkSpd?.()) || collectiveWalk);
+    const activeCollective = running ? collectiveRun : collectiveWalk;
+    const activeBase = running ? baseRun : baseWalk;
+    const multiplier = activeBase > 0 && activeCollective > 0
+        ? activeCollective / activeBase
+        : 1;
+    const safeMultiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
+
+    // C4 keeps template speeds and the current stat multiplier in separate
+    // fields.  Sending the already-modified speed with a hard-coded 1.0 makes
+    // remote-character interpolation and animation disagree with the server.
+    return {
+        run: Math.round(baseRun),
+        walk: Math.round(baseWalk),
+        multiplier: safeMultiplier
+    };
+}
+
 function charInfo(actor) {
     const packet = new SendPacket(0x03);
     const weaponDisplayId = actor.backpack.fetchPaperdollSelfId(7) || actor.backpack.fetchPaperdollSelfId(14) || 0;
     const pvpFlag = actor.fetchPvpFlag();
     const karma = actor.fetchKarma();
-    const runSpeed = actor.fetchCollectiveRunSpd();
-    const walkSpeed = actor.fetchCollectiveWalkSpd();
+    const movement = movementInfo(actor);
+    const runSpeed = movement.run;
+    const walkSpeed = movement.walk;
     const swimSpeed = actor.fetchSwim && actor.fetchSwim();
-    const swimRunSpeed = swimSpeed || runSpeed;
-    const swimWalkSpeed = swimSpeed || walkSpeed;
+    const swimRunSpeed = swimSpeed ? Math.round(swimSpeed / movement.multiplier) : runSpeed;
+    const swimWalkSpeed = swimSpeed ? Math.round(swimSpeed / movement.multiplier) : walkSpeed;
     const privateStoreType = actor.fetchPrivateStoreType();
     const standingState = actor.state.fetchSeated() ? 0x00 : 0x01;
     const runningState = actor.state.fetchWalkin?.() ? 0x00 : 0x01;
@@ -66,7 +90,7 @@ function charInfo(actor) {
         .writeD(walkSpeed)  // Floating walk speed
         .writeD(runSpeed)   // Flying run speed
         .writeD(walkSpeed)  // Flying walk speed
-        .writeF(1.0)   // Move multiplier
+        .writeF(movement.multiplier)
         .writeF(actor.fetchAtkSpdMultiplier())
         .writeF(actor.fetchRadius())
         .writeF(actor.fetchSize())
@@ -112,8 +136,9 @@ function charInfo(actor) {
         .writeD(0xffffff); // Name color
 
     const buffer = packet.fetchBuffer();
-    buffer.__packetTrace = `char=${actor.fetchId()}:${actor.fetchName()}:store=${actor.fetchPrivateStoreType()}:stand=${standingState}:run=${runningState}:combat=${combatState}:dead=${deadState}:titleLen=${title.length}`;
+    buffer.__packetTrace = `char=${actor.fetchId()}:${actor.fetchName()}:store=${actor.fetchPrivateStoreType()}:stand=${standingState}:run=${runningState}:baseRun=${runSpeed}:baseWalk=${walkSpeed}:moveMult=${movement.multiplier}:collectiveRun=${actor.fetchCollectiveRunSpd?.()}:combat=${combatState}:dead=${deadState}:titleLen=${title.length}`;
     return buffer;
 }
 
 module.exports = charInfo;
+module.exports.movementInfo = movementInfo;

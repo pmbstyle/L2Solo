@@ -10,6 +10,22 @@ const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool')
 const CLIENT_VISIBILITY_RADIUS = 6000;
 const COMPANION_DIRECT_DISTANCE = 256;
 const COMPANION_PATH_TIMEOUT_MS = 2000;
+const ACTIVE_GOAL_XY_TOLERANCE = 32;
+const ACTIVE_GOAL_Z_TOLERANCE = 64;
+const INITIAL_WAYPOINT_SKIP_DISTANCE = 24;
+const MOVE_PROGRESS_SAMPLE_MS = 750;
+const MOVE_PROGRESS_DISTANCE = 8;
+const MOVE_STALL_SAMPLES = 3;
+const MOVEMENT_TRACE_LIMIT = 24;
+
+function recordMovementTrace(session, entry) {
+    if (!session) return;
+    if (!Array.isArray(session.movementTrace)) session.movementTrace = [];
+    session.movementTrace.push({ at: Date.now(), ...entry });
+    if (session.movementTrace.length > MOVEMENT_TRACE_LIMIT) {
+        session.movementTrace.splice(0, session.movementTrace.length - MOVEMENT_TRACE_LIMIT);
+    }
+}
 
 function locOf(actor) {
     return {
@@ -25,11 +41,65 @@ function sameLoc(first, second, tolerance = 1) {
         Math.abs(Number(first?.locZ) - Number(second?.locZ)) <= tolerance;
 }
 
-function startPathMovement({ session, actor, path, isClose, approachingObservers }) {
+function sameMoveGoal(first, second) {
+    return Math.abs(Number(first?.locX) - Number(second?.locX)) <= ACTIVE_GOAL_XY_TOLERANCE &&
+        Math.abs(Number(first?.locY) - Number(second?.locY)) <= ACTIVE_GOAL_XY_TOLERANCE &&
+        Math.abs(Number(first?.locZ) - Number(second?.locZ)) <= ACTIVE_GOAL_Z_TOLERANCE;
+}
+
+function activeMoveGoal(session, actor, now = Date.now()) {
+    if (!session?.activeMoveGoal) return null;
+    if (session.pendingPathRequest) return session.activeMoveGoal;
+    if (!session.moveTimer) return null;
+
+    const goal = session.activeMoveGoal;
+    if (now - Number(goal.lastProgressSampleAt || 0) < MOVE_PROGRESS_SAMPLE_MS) return goal;
+
+    const current = locOf(actor);
+    const previous = goal.lastProgressLoc || current;
+    const progressed = distance2d(current, previous) >= MOVE_PROGRESS_DISTANCE;
+    goal.lastProgressSampleAt = now;
+    if (progressed) {
+        goal.lastProgressLoc = current;
+        goal.stalledSamples = 0;
+        return goal;
+    }
+
+    goal.stalledSamples = Number(goal.stalledSamples || 0) + 1;
+    return goal.stalledSamples >= MOVE_STALL_SAMPLES ? null : goal;
+}
+
+function beginMoveGoal(session, actor, requestedTo, targetActor = null) {
+    const goal = {
+        generation: Number(session.moveRouteGeneration || 0),
+        requestedTo: { ...requestedTo },
+        targetId: Number(targetActor?.fetchId?.()) || null,
+        startedAt: Date.now(),
+        lastProgressSampleAt: Date.now(),
+        lastProgressLoc: locOf(actor),
+        stalledSamples: 0
+    };
+    session.activeMoveGoal = goal;
+    return goal;
+}
+
+function clearMoveGoal(session, goal) {
+    if (session && goal && session.activeMoveGoal === goal) session.activeMoveGoal = null;
+}
+
+function shouldSkipInitialWaypoint(index, path, distance, dz) {
+    return index === 0 &&
+        path.length > 1 &&
+        distance <= INITIAL_WAYPOINT_SKIP_DISTANCE &&
+        Math.abs(dz) <= ACTIVE_GOAL_Z_TOLERANCE;
+}
+
+function startPathMovement({ session, actor, path, isClose, approachingObservers, moveGoal }) {
     const moveAlongPath = (index) => {
         if (index >= path.length) {
             session.moveTimer = null;
             actor.state.setTowards(false);
+            clearMoveGoal(session, moveGoal);
             return;
         }
 
@@ -39,6 +109,15 @@ function startPathMovement({ session, actor, path, isClose, approachingObservers
         const dy = nextLoc.locY - currentLoc.locY;
         const dz = nextLoc.locZ - currentLoc.locZ;
         const distance = Math.sqrt(dx * dx + dy * dy);
+
+        // A* begins at the centre of the actor's current 16-unit geodata cell.
+        // Announcing that tiny correction before the real leg makes C4 briefly
+        // turn or stop at the start of every route. Keep the authoritative
+        // current coordinate and begin with the first meaningful waypoint.
+        if (shouldSkipInitialWaypoint(index, path, distance, dz)) {
+            moveAlongPath(index + 1);
+            return;
+        }
 
         if (distance === 0) {
             actor.setLocXYZ(nextLoc);
@@ -62,29 +141,52 @@ function startPathMovement({ session, actor, path, isClose, approachingObservers
         });
 
         const speed = actor.fetchCollectiveRunSpd() || 120;
-        const duration = (distance / speed) * 1000;
+        const duration = Math.max(1, (distance / speed) * 1000);
         const tickRate = isClose ? 100 : 250;
-        const steps = Math.ceil(duration / tickRate);
-        let step = 0;
+        const segmentStartedAt = Date.now();
+        recordMovementTrace(session, {
+            event: 'move',
+            index,
+            pathLength: path.length,
+            from: { ...currentLoc },
+            to: { ...nextLoc },
+            distance,
+            speed,
+            duration,
+            baseRunSpeed: Number(actor.fetchRunSpd?.()) || 0,
+            walking: actor.state?.fetchWalkin?.() === true
+        });
 
-        session.moveTimer = setInterval(() => {
+        const advanceSegment = () => {
             if (!session.moveTimer) return;
-            step++;
-            if (step >= steps) {
-                clearInterval(session.moveTimer);
+            const elapsed = Math.max(0, Date.now() - segmentStartedAt);
+            const ratio = Math.min(1, elapsed / duration);
+            if (ratio >= 1) {
                 actor.setLocXYZ(nextLoc);
                 invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
+                session.moveTimer = null;
+                recordMovementTrace(session, {
+                    event: 'arrive',
+                    index,
+                    pathLength: path.length,
+                    to: { ...nextLoc },
+                    elapsed,
+                    duration
+                });
                 moveAlongPath(index + 1);
             } else {
-                const ratio = step / steps;
                 const nextX = Math.round(currentLoc.locX + dx * ratio);
                 const nextY = Math.round(currentLoc.locY + dy * ratio);
                 const nextZ = Math.round(currentLoc.locZ + dz * ratio);
                 const snappedZ = GeodataEngine.getHeight(nextX, nextY, nextZ);
                 actor.setLocXYZ({ locX: nextX, locY: nextY, locZ: snappedZ });
                 invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
+                const remaining = Math.max(1, duration - elapsed);
+                session.moveTimer = setTimeout(advanceSegment, Math.min(tickRate, remaining));
             }
-        }, tickRate);
+        };
+
+        session.moveTimer = setTimeout(advanceSegment, Math.min(tickRate, duration));
     };
 
     actor.state.setTowards('move');
@@ -147,15 +249,26 @@ function moveTo(session, actor, coords) {
         return;
     }
 
+    const isBot = session && (session.constructor.name === 'BotSession' || (session.accountId && session.accountId.startsWith('bot_')));
+    const requestedTo = { ...coords.to };
+    let townRouteDiagnostics = null;
+
+    // Hot AI states may evaluate the same fixed destination every second. A
+    // repeated command to the active goal must not abort movement, rerun A*,
+    // or broadcast StopMove + MoveToLocation again. Recovery callers can
+    // explicitly replace a healthy-looking route with forceRepath.
+    if (!previewOnly && isBot && coords.forceRepath !== true) {
+        const activeGoal = activeMoveGoal(session, actor);
+        if (activeGoal && sameMoveGoal(activeGoal.requestedTo, requestedTo)) {
+            return session.lastPathfinding;
+        }
+    }
+
     // A route preview must not alter the actor or emit a false movement packet.
     if (!previewOnly) {
         // Abort scheduled movement, user redirected the actor
         actor.automation.abortAll(actor);
     }
-
-    const isBot = session && (session.constructor.name === 'BotSession' || (session.accountId && session.accountId.startsWith('bot_')));
-    const requestedTo = { ...coords.to };
-    let townRouteDiagnostics = null;
 
     if (!isBot) {
         // Normal player movement
@@ -230,6 +343,7 @@ function moveTo(session, actor, coords) {
 
         let pathTarget = { ...requestedTo };
         const pathStartedAt = Date.now();
+        const moveGoal = previewOnly ? null : beginMoveGoal(session, actor, requestedTo, coords.targetActor);
 
         if (isCompanion && !previewOnly) {
             const pool = session.pathfindingWorkerPool || PathfindingWorkerPool;
@@ -241,12 +355,13 @@ function moveTo(session, actor, coords) {
             const targetStart = targetActor ? locOf(targetActor) : null;
             const start = { locX: startX, locY: startY, locZ: startZ };
             const requestKey = `companion:${actorId}`;
-            const clearPending = () => {
+            const clearPending = ({ clearGoal = false } = {}) => {
                 const pending = session.pendingPathRequest;
                 if (pending?.key === requestKey && pending.generation === routeGeneration) {
                     session.pendingPathRequest = null;
                     if (actor.state?.fetchTowards?.() === 'path') actor.state.setTowards(false);
                 }
+                if (clearGoal) clearMoveGoal(session, moveGoal);
             };
             const isCurrent = () => (
                 Number(session.moveRouteGeneration || 0) === routeGeneration &&
@@ -266,7 +381,10 @@ function moveTo(session, actor, coords) {
                 sameLoc(coords.to, pathTarget)
             );
             const finish = (candidatePath, strategy, error = null) => {
-                if (!isCurrent()) return null;
+                if (!isCurrent()) {
+                    clearPending({ clearGoal: true });
+                    return null;
+                }
                 clearPending();
                 const routeFound = Array.isArray(candidatePath) && candidatePath.length > 1;
                 const fallbackLineOfSight = !routeFound && GeodataEngine.hasLineOfSight(
@@ -292,7 +410,9 @@ function moveTo(session, actor, coords) {
                     at: Date.now()
                 };
                 if (movementPath.length) {
-                    startPathMovement({ session, actor, path: movementPath, isClose, approachingObservers });
+                    startPathMovement({ session, actor, path: movementPath, isClose, approachingObservers, moveGoal });
+                } else {
+                    clearMoveGoal(session, moveGoal);
                 }
                 return session.lastPathfinding;
             };
@@ -307,7 +427,7 @@ function moveTo(session, actor, coords) {
                 timeoutMs: COMPANION_PATH_TIMEOUT_MS
             }).then((candidatePath) => {
                 if (!isCurrent()) {
-                    clearPending();
+                    clearPending({ clearGoal: true });
                     return null;
                 }
                 if (Array.isArray(candidatePath) && candidatePath.length > 1) {
@@ -338,7 +458,7 @@ function moveTo(session, actor, coords) {
                 }).then((fallbackPath) => finish(fallbackPath, fallbackStrategy));
             }).catch((error) => {
                 if (error?.code === 'STALE_PATH' || !isCurrent()) {
-                    clearPending();
+                    clearPending({ clearGoal: true });
                     return null;
                 }
                 return finish(null, `${strategy}_error_fallback`, error);
@@ -420,8 +540,14 @@ function moveTo(session, actor, coords) {
             startX, startY, startZ,
             pathTarget.locX, pathTarget.locY, pathTarget.locZ
         );
-        if (!path || path.length <= 1) {
-            path = [{ locX: pathTarget.locX, locY: pathTarget.locY, locZ: pathTarget.locZ }];
+        if (!routeFound) {
+            // Never announce a straight segment through blocked geodata. In a
+            // multilevel town cell that can also snap the authoritative Z to
+            // a roof while the C4 client remains on the street, stretching
+            // its animation until the next packet visibly corrects it.
+            path = fallbackLineOfSight
+                ? [{ locX: pathTarget.locX, locY: pathTarget.locY, locZ: pathTarget.locZ }]
+                : [];
         }
         session.lastPathfinding = {
             requestedTo,
@@ -439,13 +565,21 @@ function moveTo(session, actor, coords) {
         if (previewOnly) {
             return session.lastPathfinding;
         }
-        startPathMovement({ session, actor, path, isClose, approachingObservers });
+        if (path.length > 0) {
+            startPathMovement({ session, actor, path, isClose, approachingObservers, moveGoal });
+        } else {
+            clearMoveGoal(session, moveGoal);
+        }
         return session.lastPathfinding;
     }
 }
 
 module.exports = moveTo;
+module.exports.recordMovementTrace = recordMovementTrace;
 module.exports.shouldUseLowLodWarp = shouldUseLowLodWarp;
 module.exports.shouldPreannounceVisibleMove = shouldPreannounceVisibleMove;
 module.exports.CLIENT_VISIBILITY_RADIUS = CLIENT_VISIBILITY_RADIUS;
 module.exports.COMPANION_DIRECT_DISTANCE = COMPANION_DIRECT_DISTANCE;
+module.exports.ACTIVE_GOAL_XY_TOLERANCE = ACTIVE_GOAL_XY_TOLERANCE;
+module.exports.INITIAL_WAYPOINT_SKIP_DISTANCE = INITIAL_WAYPOINT_SKIP_DISTANCE;
+module.exports.MOVE_STALL_SAMPLES = MOVE_STALL_SAMPLES;

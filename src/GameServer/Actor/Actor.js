@@ -50,7 +50,7 @@ class Actor extends ActorModel {
     // Request packets
 
     enterWorld() {
-        invoke(path.actor).enterWorld(
+        return invoke(path.actor).enterWorld(
             this.session, this
         );
     }

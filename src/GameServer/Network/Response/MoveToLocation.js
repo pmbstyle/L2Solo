@@ -12,7 +12,9 @@ function moveToLocation(actorId, coords) {
         .writeD(coords.from.locY)
         .writeD(coords.from.locZ);
 
-    return packet.fetchBuffer();
+    const buffer = packet.fetchBuffer();
+    buffer.__packetTrace = `actor=${actorId}:from=${coords.from.locX},${coords.from.locY},${coords.from.locZ}:to=${coords.to.locX},${coords.to.locY},${coords.to.locZ}`;
+    return buffer;
 }
 
 module.exports = moveToLocation;

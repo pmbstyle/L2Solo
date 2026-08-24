@@ -1396,6 +1396,9 @@ function compactPlayerDetail(session) {
         pvp: Number(actor.fetchPvp?.() || 0),
         pk: Number(actor.fetchPk?.() || 0),
         karma: Number(actor.fetchKarma?.() || 0),
+        movementPacketTrace: Array.isArray(session.movementPacketTrace)
+            ? session.movementPacketTrace.slice(-160)
+            : [],
         updatedAt: Date.now()
     };
 }

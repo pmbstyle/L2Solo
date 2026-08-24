@@ -706,7 +706,12 @@ const BotManager = {
                         // Spawn the bot actor in the World only after its
                         // durable lifecycle has become hot.
                         World.insertUser(session);
-                        session.actor.enterWorld();
+                        // Wait for the asynchronous skillbook load. Until
+                        // Expertise is present, the provisional stat pass can
+                        // apply a 0.22 grade penalty and advertise run speed
+                        // around 30 to real C4 clients while AI moves at the
+                        // corrected 120-150 speed.
+                        await session.actor.enterWorld();
 
                         // Explicitly send the bot's CharInfo to other players in the world
                         const ServerResponse = invoke('GameServer/Network/Response');

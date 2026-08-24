@@ -73,6 +73,8 @@ function fakeActor(paperdoll = fakePaperdoll()) {
         fetchKarma: () => 0,
         fetchCollectiveRunSpd: () => 120,
         fetchCollectiveWalkSpd: () => 80,
+        fetchRunSpd: () => 120,
+        fetchWalkSpd: () => 80,
         fetchSwim: () => 0,
         fetchAtkSpdMultiplier: () => 1,
         fetchRadius: () => 8,
@@ -303,6 +305,34 @@ assert.strictEqual(charInfo[0], 0x03);
 assert.strictEqual(charInfo.readInt32LE(13), 0, 'C4 CharInfo must send boat object id, not character heading');
 assert.ok(charInfo.includes(0xff), 'C4 CharInfo should include trailing name-color bytes');
 assert.strictEqual(charInfoEquipment(charInfo).weapon, 1007, 'C4 CharInfo should display right-hand weapons');
+const speedActor = fakeActor();
+speedActor.fetchRunSpd = () => 115;
+speedActor.fetchWalkSpd = () => 80;
+speedActor.fetchCollectiveRunSpd = () => 125.32994306319671;
+speedActor.fetchCollectiveWalkSpd = () => 87.18604734831075;
+const speedInfo = ServerResponse.charInfo(speedActor);
+const speedNameEnd = findUtf16Terminator(speedInfo, 21);
+const speedOffset = speedNameEnd + 2 + (20 * 4);
+assert.strictEqual(speedInfo.readInt32LE(speedOffset), 115, 'C4 CharInfo must send base run speed separately from its multiplier');
+assert.strictEqual(speedInfo.readInt32LE(speedOffset + 4), 80, 'C4 CharInfo must send base walk speed separately from its multiplier');
+assert(
+    Math.abs(speedInfo.readDoubleLE(speedOffset + (8 * 4)) - 1.0898255918538844) < 0.000001,
+    'C4 CharInfo must send the current movement-speed multiplier for remote interpolation'
+);
+const penalizedSpeedActor = fakeActor();
+penalizedSpeedActor.fetchRunSpd = () => 115;
+penalizedSpeedActor.fetchWalkSpd = () => 80;
+penalizedSpeedActor.fetchCollectiveRunSpd = () => 28;
+penalizedSpeedActor.fetchCollectiveWalkSpd = () => 87.18604734831075;
+const penalizedSpeedInfo = ServerResponse.charInfo(penalizedSpeedActor);
+const penalizedSpeedNameEnd = findUtf16Terminator(penalizedSpeedInfo, 21);
+const penalizedSpeedOffset = penalizedSpeedNameEnd + 2 + (20 * 4);
+assert.strictEqual(penalizedSpeedInfo.readInt32LE(penalizedSpeedOffset), 115, 'C4 CharInfo must retain template run speed during a run-only penalty');
+assert.strictEqual(penalizedSpeedInfo.readInt32LE(penalizedSpeedOffset + 4), 80, 'C4 CharInfo must not inflate template walk speed using the run multiplier');
+assert(
+    Math.abs(penalizedSpeedInfo.readDoubleLE(penalizedSpeedOffset + (8 * 4)) - (28 / 115)) < 0.000001,
+    'C4 CharInfo must encode the temporary run penalty only in its movement multiplier'
+);
 const enchantedActor = fakeActor();
 enchantedActor.backpack.fetchItemRaw = () => ({ fetchEnchantLevel: () => 12 });
 const enchantedUserInfo = ServerResponse.userInfo(enchantedActor);
