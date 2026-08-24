@@ -6,6 +6,7 @@ const EffectStore = invoke('GameServer/Effects/EffectStore');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
 
 const PROFILE_VERSION = 4;
 
@@ -522,7 +523,7 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
     const rawEntries = Array.isArray(spot.npcEntries) && spot.npcEntries.length ? spot.npcEntries : (spot.npcSelfIds || []).map((selfId) => ({ selfId, count: 1 }));
     const entries = rawEntries.filter((entry) => {
         const npc = (DataCache.npcs || []).find((candidate) => number(candidate.selfId) === number(entry.selfId));
-        return npc && !BotRaidSafety.isProtectedRaidEntity(npc);
+        return npc && !BotRaidSafety.isProtectedRaidEntity(npc) && BotHuntingTargetPolicy.canHunt(npc);
     });
     if (entries.length === 0) return null;
     const pickEntry = (candidates) => {

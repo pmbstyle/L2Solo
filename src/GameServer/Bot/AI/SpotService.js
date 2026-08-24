@@ -5,6 +5,7 @@ const DEFAULT_MAX_HUNT_LEVEL_GAP = 3;
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
+const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
 
 const anonymousStateIds = new WeakMap();
 let nextAnonymousStateId = 1;
@@ -135,6 +136,7 @@ const SpotService = {
         World.npc.spawns.forEach((npc) => {
             if (!npc.fetchAttackable || !npc.fetchAttackable()) return;
             if (BotRaidSafety.isProtectedRaidEntity(npc)) return;
+            if (!BotHuntingTargetPolicy.canHunt(npc)) return;
 
             const gx = Math.floor(npc.fetchLocX() / GRID_SIZE);
             const gy = Math.floor(npc.fetchLocY() / GRID_SIZE);

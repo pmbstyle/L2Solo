@@ -17,6 +17,7 @@ const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
 const BotRaidSafety   = invoke('GameServer/Bot/AI/BotRaidSafety');
 const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
 const BotRangedCombatPositioning = invoke('GameServer/Bot/AI/BotRangedCombatPositioning');
+const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
 
 const TARGET_STALL_TICKS = 5;
 const TARGET_RETRY_COOLDOWN_MS = 15000;
@@ -95,6 +96,7 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     const eligibleNearbyNpcs = allNearbyNpcs
         .filter((npc) => !options.excludeTargetId || npc.fetchId() !== options.excludeTargetId)
         .filter((npc) => !BotRaidSafety.isProtectedRaidEntity(npc))
+        .filter((npc) => BotHuntingTargetPolicy.canHunt(npc))
         .filter((npc) => npc.fetchAttackable() && !npc.isDead());
     const nearbyNpcs = limitTargetCandidates(session, bot, eligibleNearbyNpcs);
     const claimedIds = claimedTargetIds(session);
