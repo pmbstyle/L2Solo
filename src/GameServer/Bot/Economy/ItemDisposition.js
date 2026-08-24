@@ -3,6 +3,7 @@ const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const C4EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
+const ClanSimulationConfig = invoke('GameServer/Clan/ClanSimulationConfig');
 
 const SELLABLE_KINDS = ['Weapon.', 'Armor.', 'Other.Material'];
 const NPC_ONLY_KINDS = ['Other.Recipe', 'Other.Spellbook'];
@@ -11,10 +12,19 @@ const WAREHOUSE_GEAR_MIN_BASE_PRICE = 1000;
 const TRADE_MIN_LEVEL = 10;
 const INVENTORY_SLOT_LIMIT = 80;
 const NPC_ONLY_CLEANUP_MIN_SLOTS = 3;
+const CLAN_PROGRESSION_ITEM_IDS = new Set([1419]);
 const GRADE_ORDER = Object.freeze({ none: 0, d: 1, c: 2, b: 3, a: 4, s: 5 });
 
+let templateIndexSource = null;
+let templateIndex = new Map();
+
 function templateFor(selfId) {
-    return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId)) || null;
+    const items = DataCache.items || [];
+    if (templateIndexSource !== items) {
+        templateIndexSource = items;
+        templateIndex = new Map(items.map((item) => [Number(item.selfId), item]));
+    }
+    return templateIndex.get(Number(selfId)) || null;
 }
 
 function priceFor(state, item, template) {
@@ -53,6 +63,10 @@ function isRecipeItem(item, template = templateFor(item?.selfId)) {
     return !!recipeInfo(item)
         && (kindFor(item, template).startsWith('Other.Recipe')
             || String(item?.name || template?.template?.name || '').toLowerCase().startsWith('recipe'));
+}
+
+function isClanProgressionItem(item) {
+    return CLAN_PROGRESSION_ITEM_IDS.has(Number(item?.selfId || 0));
 }
 
 function isBelowCGrade(item) {
@@ -116,11 +130,13 @@ function inventoryCleanupNeed(state = {}, options = {}) {
     const slots = inventorySlotCount(state);
     const npcOnlySlots = npcOnlySlotCount(state);
     const overCapacity = slots > INVENTORY_SLOT_LIMIT;
-    const accumulatedNpcOnly = npcOnlySlots >= NPC_ONLY_CLEANUP_MIN_SLOTS;
+    const accumulatedNpcOnly = isTradeEligible(state)
+        && npcOnlySlots >= NPC_ONLY_CLEANUP_MIN_SLOTS;
     // A normal market retry cooldown prevents pointless town loops. Residual
-    // NPC-only books/recipes and a genuinely full inventory are different:
-    // they are deterministic cleanup work and must get another visit even
-    // when the previous market attempt ended with no player demand.
+    // NPC-only books/recipes become deterministic cleanup work once a
+    // generated character reaches its trading phase. Before that point they
+    // are deferred instead of creating a market trip that cannot execute.
+    // A genuinely full inventory remains actionable at every level.
     if (Number(state.stats?.marketSellRetryAfter || 0) > timestamp
         && !overCapacity
         && !accumulatedNpcOnly) return null;
@@ -214,7 +230,7 @@ function protectedStarterLootAmount(item, kind) {
 }
 
 function saleCandidates(state, options = {}) {
-    if (!isTradeEligible(state)) return [];
+    if (!isTradeEligible(state) && !options.allowPreTradeCleanup) return [];
     const limit = options.unlimited
         ? Number.MAX_SAFE_INTEGER
         : Math.max(1, Math.min(20, Number(options.limit) || 8));
@@ -231,7 +247,8 @@ function saleCandidates(state, options = {}) {
         const kind = kindFor(item, template);
         const npcOnly = isNpcOnlyItem(item, template);
         if (options.onlyNpc === true && !npcOnly) return [];
-        if (!npcOnly
+        const clanProgression = isClanProgressionItem(item);
+        if (!npcOnly && !clanProgression
             && !isEnchantScroll(item)
             && !SELLABLE_KINDS.some((prefix) => kind.startsWith(prefix))) return [];
 
@@ -243,7 +260,14 @@ function saleCandidates(state, options = {}) {
         const base = basePrice(item, template);
         // Recipes and spellbooks must still be liquidatable when their datapack
         // price is zero. The NPC path applies its own minimum price of one.
-        const price = npcOnly ? Math.max(1, priceFor(state, item, template), Math.floor(base * 0.5)) : priceFor(state, item, template);
+        const clanPrice = clanProgression
+            ? Math.max(1, Number(state?.stats?.clanMarketDemand?.itemId) === selfId
+                ? Number(state?.stats?.clanMarketDemand?.maxPrice || 0)
+                : Number(ClanSimulationConfig.bloodMarkMaxPrice || 1))
+            : 0;
+        const price = clanProgression
+            ? clanPrice
+            : npcOnly ? Math.max(1, priceFor(state, item, template), Math.floor(base * 0.5)) : priceFor(state, item, template);
         if (price <= 0 || sellableCount <= 0) return [];
         return [{
             selfId,
@@ -263,7 +287,11 @@ function npcLiquidationCandidates(state, options = {}) {
     // intrinsically NPC-only, but the market policy deliberately routes them
     // to the NPC shop during cleanup. Filter the unified sale set after the
     // starter-loot protection has been applied.
-    return saleCandidates(state, { unlimited: true }).filter((item) => {
+    return saleCandidates(state, {
+        unlimited: true,
+        allowPreTradeCleanup: options.allowPreTradeCleanup === true
+    }).filter((item) => {
+        if (isClanProgressionItem(item)) return false;
         const gear = String(item.kind || '').startsWith('Weapon.') || String(item.kind || '').startsWith('Armor.');
         const lowGradeGear = gear && gradeIndex(item.rank) < gradeIndex('c');
         return isNpcOnlyItem(item) || lowGradeGear || item.basePrice <= maxUnitPrice;
@@ -281,6 +309,7 @@ function isWarehouseCandidate(item, template = templateFor(item?.selfId)) {
     const amount = Number(item?.amount || 0);
     const kind = item?.kind || template?.template?.kind || '';
     if (!selfId || selfId === 57 || amount <= 0 || item?.equipped) return false;
+    if (isClanProgressionItem(item)) return true;
     if (isNpcOnlyItem(item, template)) return false;
     if (kind.startsWith('Other.Material')) return true;
     // Many C4 enchant scrolls are intentionally non-stackable. Preserve
@@ -315,6 +344,7 @@ module.exports = {
     NPC_ONLY_CLEANUP_MIN_SLOTS,
     NPC_LIQUIDATION_MAX_UNIT_PRICE,
     NPC_ONLY_KINDS,
+    CLAN_PROGRESSION_ITEM_IDS,
     TRADE_MIN_LEVEL,
     WAREHOUSE_GEAR_MIN_BASE_PRICE,
     basePrice,
@@ -324,7 +354,9 @@ module.exports = {
     gradeIndex,
     isTradeEligible,
     isBelowCGrade,
+    isClanProgressionItem,
     isNpcOnlyItem,
+    isRecipeItem,
     inventoryCleanupNeed,
     inventorySlotCount,
     npcOnlySlotCount,

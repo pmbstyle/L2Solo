@@ -9,6 +9,9 @@ const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const ClanService = invoke('GameServer/Clan/ClanService');
+const ClanSimulationConfig = invoke('GameServer/Clan/ClanSimulationConfig');
+const Database = invoke('Database');
 const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
 const PlayerActivitySignal = invoke('GameServer/Bot/Population/PlayerActivitySignal');
 const DataCache = invoke('GameServer/DataCache');
@@ -24,8 +27,12 @@ const MIME_TYPES = {
     '.jpeg': 'image/jpeg'
 };
 const OBSERVER_IDLE_CACHE_MS = 2000;
-const OBSERVER_PLAYER_CACHE_MS = 5000;
-const OBSERVER_PARTY_CACHE_MS = 10000;
+// The observer refreshes its map every 2s, but bot state is deliberately much
+// slower-moving than the player-facing game world. Reuse the expensive
+// 1776-state snapshot for 30s while a player is online instead of rebuilding
+// it every 5-10s and adding avoidable main-process allocation/GC pressure.
+const OBSERVER_PLAYER_CACHE_MS = 30000;
+const OBSERVER_PARTY_CACHE_MS = 30000;
 const snapshotCache = {
     json: null,
     generatedAt: 0,
@@ -456,6 +463,555 @@ function normalizeItemName(value) {
         .trim();
 }
 
+const CLAN_BOT_MEMBER_SQL = `(
+    (
+        c.username LIKE 'bot_pop_%'
+        OR c.username LIKE 'bot_scale_%'
+        OR life.accountName LIKE 'bot_pop_%'
+        OR life.accountName LIKE 'bot_scale_%'
+        OR json_extract(CASE WHEN json_valid(COALESCE(life.statsJson, '{}')) THEN life.statsJson ELSE '{}' END, '$.generatedCold') = 1
+    )
+    AND c.username NOT LIKE 'bot_craft_%'
+    AND COALESCE(life.accountName, '') NOT LIKE 'bot_craft_%'
+    AND COALESCE(json_extract(CASE WHEN json_valid(COALESCE(life.statsJson, '{}')) THEN life.statsJson ELSE '{}' END, '$.craftStationId'), '') = ''
+    AND COALESCE(json_extract(CASE WHEN json_valid(COALESCE(life.statsJson, '{}')) THEN life.statsJson ELSE '{}' END, '$.craftShop'), '') = ''
+)`;
+
+function observerJson(raw, fallback = {}) {
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw;
+    try {
+        const value = JSON.parse(raw || '{}');
+        return value && typeof value === 'object' && !Array.isArray(value) ? value : fallback;
+    } catch (_) {
+        return fallback;
+    }
+}
+
+function clanNumber(value, fallback = 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function compactClanGoal(raw) {
+    const goal = raw && raw.goal ? raw.goal : raw;
+    if (!goal || typeof goal !== 'object') return null;
+    const target = goal.target ? {
+        itemId: clanNumber(goal.target.itemId) || null,
+        itemName: goal.target.itemName || null,
+        npcId: clanNumber(goal.target.npcId || goal.plan?.sourceId) || null,
+        npcName: goal.target.npcName || null
+    } : null;
+    if (target && clanNumber(goal.target.memberId) > 0) {
+        target.memberId = clanNumber(goal.target.memberId);
+        target.memberName = goal.target.memberName || null;
+        target.memberLevel = clanNumber(goal.target.memberLevel) || null;
+        target.slot = clanNumber(goal.target.slot) || null;
+        target.grade = goal.target.grade || null;
+        target.strategy = goal.target.strategy || null;
+    }
+    return {
+        status: String(goal.status || ''),
+        type: String(goal.type || ''),
+        progress: clanNumber(goal.progress),
+        required: clanNumber(goal.required),
+        target,
+        plan: goal.plan ? {
+            kind: goal.plan.kind || null,
+            reasonCode: goal.plan.reasonCode || null,
+            label: goal.plan.label || null
+        } : null,
+        failureCount: clanNumber(goal.failureCount),
+        updatedAt: clanNumber(goal.updatedAt || raw.updatedAt)
+    };
+}
+
+function clanOverviewQuery() {
+    return Database.execute([`
+        WITH member_projection AS (
+            SELECT c.id, c.clanId, c.level, c.isOnline,
+                   CASE WHEN ${CLAN_BOT_MEMBER_SQL} THEN 1 ELSE 0 END AS isBot,
+                   CASE WHEN c.isOnline = 1 OR life.phase = 'hot' THEN 1 ELSE 0 END AS isOnlineNow,
+                   CASE WHEN life.phase = 'hot' THEN 1 ELSE 0 END AS isHot
+            FROM characters c
+            LEFT JOIN bot_life_state life ON life.characterId = c.id
+            WHERE c.clanId != 0
+        )
+        SELECT clans.id, clans.name, clans.level, clans.leaderId,
+               clans.crestId, clans.allyCrestId,
+               leader.name AS leaderName,
+               simulated.version AS simulationVersion,
+               simulated.createdAt AS simulationCreatedAt,
+               simulated.updatedAt AS simulationUpdatedAt,
+               simulated.stateJson,
+               COUNT(member_projection.id) AS memberCount,
+               COALESCE(SUM(member_projection.isBot), 0) AS botMembers,
+               COALESCE(SUM(CASE WHEN member_projection.isBot = 0 THEN 1 ELSE 0 END), 0) AS playerMembers,
+               COALESCE(SUM(member_projection.isOnlineNow), 0) AS onlineMembers,
+               COALESCE(SUM(CASE WHEN member_projection.isBot = 1 THEN member_projection.isOnlineNow ELSE 0 END), 0) AS botOnlineMembers,
+               COALESCE(SUM(member_projection.isHot), 0) AS hotMembers,
+               COALESCE(AVG(member_projection.level), 0) AS averageLevel,
+               COALESCE(MAX(member_projection.level), 0) AS highestLevel,
+               COALESCE(MIN(member_projection.level), 0) AS lowestLevel
+        FROM clans
+        LEFT JOIN characters leader ON leader.id = clans.leaderId
+        LEFT JOIN member_projection ON member_projection.clanId = clans.id
+        LEFT JOIN clan_simulation_clans simulated ON simulated.clanId = clans.id
+        GROUP BY clans.id
+        ORDER BY clans.level DESC, memberCount DESC, clans.name COLLATE NOCASE ASC
+    `, [], { read: true }], 'observer:clans');
+}
+
+function clanAuxiliaryRows() {
+    const bloodMarkId = Number(ClanSimulationConfig.bloodMarkItemId || 1419);
+    return Promise.all([
+        Database.execute([`
+            SELECT clanId,
+                   COALESCE(SUM(CASE WHEN selfId = 57 THEN amount ELSE 0 END), 0) AS adena,
+                   COALESCE(SUM(CASE WHEN selfId = ? THEN amount ELSE 0 END), 0) AS bloodMarks,
+                   COUNT(*) AS itemStacks
+            FROM clan_warehouse_items
+            WHERE amount > 0
+            GROUP BY clanId
+        `, [bloodMarkId]], 'observer:clan-warehouse'),
+        Database.execute([`
+            SELECT clanId, targetLevel, COUNT(*) AS entries, COALESCE(SUM(amount), 0) AS amount
+            FROM clan_contributions
+            GROUP BY clanId, targetLevel
+            ORDER BY clanId ASC, targetLevel ASC
+        `, []], 'observer:clan-contributions'),
+        Database.execute([`
+            SELECT clanId, COUNT(*) AS openDemands,
+                   COALESCE(SUM(amount), 0) AS requestedUnits,
+                   MAX(updatedAt) AS latestDemandAt
+            FROM clan_market_demands
+            WHERE status = 'open'
+            GROUP BY clanId
+        `, []], 'observer:clan-demands'),
+        Database.execute([`
+            SELECT clanId, COUNT(*) AS activeOperations,
+                   MAX(createdAt) AS latestOperationAt
+            FROM clan_operations
+            WHERE status = 'active'
+            GROUP BY clanId
+        `, []], 'observer:clan-operations'),
+        Database.execute([`
+            SELECT clanId,
+                   COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+                   COALESCE(SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END), 0) AS running,
+                   MAX(updatedAt) AS latestActionAt
+            FROM clan_actions
+            WHERE status IN ('pending', 'running')
+            GROUP BY clanId
+        `, []], 'observer:clan-actions')
+    ]).then(([warehouse, contributions, demands, operations, actions]) => ({ warehouse, contributions, demands, operations, actions }));
+}
+
+function compactClanOverview(row, auxiliary = {}) {
+    const state = observerJson(row.stateJson);
+    const warehouse = auxiliary.warehouse || {};
+    const demand = auxiliary.demand || {};
+    const operation = auxiliary.operation || {};
+    const actions = auxiliary.actions || {};
+    const memberCount = clanNumber(row.memberCount);
+    const botMembers = clanNumber(row.botMembers);
+    const id = clanNumber(row.id);
+    const level = clanNumber(row.level);
+    const crestId = clanNumber(row.crestId);
+    return {
+        id,
+        name: String(row.name || ''),
+        level,
+        crestId,
+        crestUrl: level >= 3 && id > 0 && crestId > 0 ? `/observer/api/clan/${id}/crest` : null,
+        allyCrestId: clanNumber(row.allyCrestId),
+        leaderId: clanNumber(row.leaderId) || null,
+        leaderName: row.leaderName || null,
+        autonomous: Number(row.simulationVersion || 0) > 0,
+        createdAt: clanNumber(row.simulationCreatedAt),
+        updatedAt: clanNumber(row.simulationUpdatedAt || state.updatedAt),
+        memberCount,
+        botMembers,
+        playerMembers: clanNumber(row.playerMembers),
+        onlineMembers: clanNumber(row.onlineMembers),
+        botOnlineMembers: clanNumber(row.botOnlineMembers),
+        hotMembers: clanNumber(row.hotMembers),
+        averageLevel: Math.round(clanNumber(row.averageLevel) * 10) / 10,
+        highestLevel: clanNumber(row.highestLevel),
+        lowestLevel: clanNumber(row.lowestLevel),
+        warehouse: {
+            adena: clanNumber(warehouse.adena),
+            bloodMarks: clanNumber(warehouse.bloodMarks),
+            itemStacks: clanNumber(warehouse.itemStacks)
+        },
+        contributions: auxiliary.contributions || [],
+        market: {
+            openDemands: clanNumber(demand.openDemands),
+            requestedUnits: clanNumber(demand.requestedUnits),
+            latestDemandAt: clanNumber(demand.latestDemandAt)
+        },
+        actions: {
+            pending: clanNumber(actions.pending),
+            running: clanNumber(actions.running),
+            latestActionAt: clanNumber(actions.latestActionAt)
+        },
+        operations: {
+            active: clanNumber(operation.activeOperations),
+            latestAt: clanNumber(operation.latestOperationAt)
+        },
+        goal: compactClanGoal(state.goal)
+    };
+}
+
+async function clanSnapshot() {
+    const [rows, auxiliary] = await Promise.all([clanOverviewQuery(), clanAuxiliaryRows()]);
+    const warehouseByClan = new Map(auxiliary.warehouse.map((row) => [Number(row.clanId), row]));
+    const contributionsByClan = new Map();
+    auxiliary.contributions.forEach((row) => {
+        const clanId = Number(row.clanId);
+        if (!contributionsByClan.has(clanId)) contributionsByClan.set(clanId, []);
+        contributionsByClan.get(clanId).push({
+            targetLevel: clanNumber(row.targetLevel),
+            entries: clanNumber(row.entries),
+            amount: clanNumber(row.amount)
+        });
+    });
+    const demandsByClan = new Map(auxiliary.demands.map((row) => [Number(row.clanId), row]));
+    const operationsByClan = new Map(auxiliary.operations.map((row) => [Number(row.clanId), row]));
+    const actionsByClan = new Map(auxiliary.actions.map((row) => [Number(row.clanId), row]));
+    const clans = rows.map((row) => compactClanOverview(row, {
+        warehouse: warehouseByClan.get(Number(row.id)),
+        contributions: contributionsByClan.get(Number(row.id)) || [],
+        demand: demandsByClan.get(Number(row.id)),
+        operation: operationsByClan.get(Number(row.id)),
+        actions: actionsByClan.get(Number(row.id))
+    }));
+    const totals = clans.reduce((summary, clan) => {
+        summary.members += clan.memberCount;
+        summary.bots += clan.botMembers;
+        summary.players += clan.playerMembers;
+        summary.online += clan.onlineMembers;
+        summary.autonomous += clan.autonomous ? 1 : 0;
+        summary.levels[clan.level] = (summary.levels[clan.level] || 0) + 1;
+        return summary;
+    }, { members: 0, bots: 0, players: 0, online: 0, autonomous: 0, levels: {} });
+    return { generatedAt: Date.now(), total: clans.length, totals, clans };
+}
+
+function clanMemberQuery(clanId) {
+    return Database.execute([`
+        SELECT c.id, c.name, c.classId, c.race, c.level, c.exp, c.sp, c.clanId,
+               c.isOnline, c.locX, c.locY, c.locZ, c.karma, c.pvp, c.pk,
+               life.accountName, life.level AS lifeLevel, life.adena AS lifeAdena,
+               life.activity, life.phase, life.homeRegion, life.currentRegion, life.spotId,
+               life.partyId, life.locX AS lifeLocX, life.locY AS lifeLocY, life.locZ AS lifeLocZ,
+               life.updatedAt AS lifeUpdatedAt, life.inventorySummary, life.statsJson,
+               CASE WHEN ${CLAN_BOT_MEMBER_SQL} THEN 1 ELSE 0 END AS isBot
+        FROM characters c
+        LEFT JOIN bot_life_state life ON life.characterId = c.id
+        WHERE c.clanId = ?
+        ORDER BY c.level DESC, c.name COLLATE NOCASE ASC
+    `, [Number(clanId)]], 'observer:clan-members');
+}
+
+function hotBotStatuses() {
+    const BotManager = invoke('GameServer/Bot/BotManager');
+    return new Map(BotManager.getAllBotStatuses()
+        .filter((status) => status && status.available)
+        .map((status) => [Number(status.id), {
+            status,
+            session: BotManager.findSessionById(Number(status.id))
+        }]));
+}
+
+function compactClanMember(row, hotEntry = null, leaderId = 0) {
+    const id = clanNumber(row.id);
+    const stats = observerJson(row.statsJson);
+    const isBot = Number(row.isBot) === 1;
+    const hot = hotEntry?.status ? compactHotBot(hotEntry.status, new Set(), hotEntry.session) : null;
+    const classId = hot?.classId ?? normalizedClassId(row.classId);
+    const race = hot ? { raceId: hot.raceId, raceName: hot.raceName } : raceMetadata(row.race, classId);
+    const loc = hot?.loc || {
+        locX: clanNumber(row.lifeLocX || row.locX),
+        locY: clanNumber(row.lifeLocY || row.locY),
+        locZ: clanNumber(row.lifeLocZ || row.locZ)
+    };
+    const area = hot?.area || WorldAreaCatalog.publicArea(WorldAreaCatalog.resolve(loc));
+    const inventory = observerJson(row.inventorySummary);
+    const equipment = coldEquipmentValue({ inventory, stats });
+    const online = !!hot || Number(row.isOnline) === 1 || String(row.phase || '') === 'hot';
+    return {
+        id,
+        name: hot?.name || String(row.name || ''),
+        kind: isBot ? 'bot' : 'player',
+        isBot,
+        isLeader: id === Number(leaderId),
+        online,
+        phase: hot ? 'hot' : isBot ? String(row.phase || 'cold') : online ? 'player' : 'offline',
+        level: clanNumber(hot?.level || row.level || row.lifeLevel, 1),
+        classId,
+        className: hot?.className || className(classId),
+        ...race,
+        role: hot?.role || stats.role || 'member',
+        activity: hot?.intent || String(row.activity || (online ? 'online' : 'offline')),
+        mode: hot?.mode || null,
+        region: hot?.region || area?.name || row.currentRegion || row.homeRegion || null,
+        area,
+        loc,
+        partyId: hot?.party?.id || row.partyId || null,
+        adena: hot ? hot.adena : Math.max(0, clanNumber(row.lifeAdena)),
+        equipmentValue: hot ? hot.equipmentValue : equipment,
+        exp: clanNumber(hot?.exp || row.exp),
+        sp: clanNumber(row.sp),
+        pvp: clanNumber(row.pvp),
+        pk: clanNumber(row.pk),
+        karma: clanNumber(row.karma),
+        updatedAt: clanNumber(hot ? Date.now() : row.lifeUpdatedAt)
+    };
+}
+
+function compactClanEvent(row) {
+    const payload = observerJson(row.payloadJson);
+    return {
+        id: clanNumber(row.id),
+        eventType: row.eventType || null,
+        goalType: row.goalType || null,
+        plan: row.plan || null,
+        reasonCode: row.reasonCode || null,
+        occurredAt: clanNumber(row.occurredAt),
+        payload: compactClanGoal(payload)
+    };
+}
+
+async function clanDetail(clanId) {
+    const id = Number(clanId);
+    if (!Number.isSafeInteger(id) || id <= 0) return null;
+    const [directory, members, events, warehouse, contributions, demands, operation, actions] = await Promise.all([
+        clanSnapshot(),
+        clanMemberQuery(id),
+        Database.fetchClanGoalEvents(id, 24),
+        Database.fetchClanWarehouseItems(id),
+        Database.fetchClanContributionSummary(id),
+        Database.fetchClanMarketDemands({ clanId: id, status: null, limit: 40 }),
+        Database.execute([`
+            SELECT operations.*, COALESCE(member_counts.memberCount, 0) AS memberCount
+            FROM clan_operations operations
+            LEFT JOIN (
+                SELECT operationId, COUNT(*) AS memberCount
+                FROM clan_operation_members
+                GROUP BY operationId
+            ) member_counts ON member_counts.operationId = operations.id
+            WHERE operations.clanId = ?
+            ORDER BY operations.createdAt DESC, operations.id DESC
+            LIMIT 1
+        `, [id]], 'observer:clan-operation')
+        , Database.fetchClanActions({ clanId: id, limit: 24 })
+    ]);
+    const overview = directory.clans.find((clan) => clan.id === id);
+    if (!overview) return null;
+    const row = await Database.execute([`
+        SELECT clans.leaderId, simulated.stateJson
+        FROM clans
+        LEFT JOIN clan_simulation_clans simulated ON simulated.clanId = clans.id
+        WHERE clans.id = ?
+    `, [id]], 'observer:clan-detail');
+    const leaderId = clanNumber(row[0]?.leaderId || overview.leaderId);
+    const hot = hotBotStatuses();
+    const memberViews = members.map((member) => compactClanMember(member, hot.get(Number(member.id)), leaderId));
+    const operationRow = operation[0] || null;
+    const operationMembers = operationRow
+        ? await Database.execute([`
+            SELECT members.characterId, characters.name, members.status
+            FROM clan_operation_members members
+            LEFT JOIN characters ON characters.id = members.characterId
+            WHERE members.operationId = ?
+            ORDER BY members.characterId ASC
+        `, [Number(operationRow.id)]], 'observer:clan-operation-members')
+        : [];
+    return {
+        generatedAt: Date.now(),
+        clan: overview,
+        members: memberViews,
+        bots: memberViews.filter((member) => member.isBot),
+        warehouse: warehouse.map((item) => ({
+            id: clanNumber(item.id),
+            selfId: clanNumber(item.selfId),
+            name: item.name || `Item ${item.selfId}`,
+            kind: item.kind || null,
+            amount: clanNumber(item.amount),
+            enchant: clanNumber(item.enchant),
+            reservedAmount: clanNumber(item.reservedAmount)
+        })),
+        contributions: contributions.map((entry) => ({
+            targetLevel: clanNumber(entry.targetLevel),
+            entries: clanNumber(entry.entries),
+            amount: clanNumber(entry.amount)
+        })),
+        demands: demands.map((demand) => ({
+            id: clanNumber(demand.id),
+            itemId: clanNumber(demand.itemId),
+            amount: clanNumber(demand.amount),
+            maxPrice: clanNumber(demand.maxPrice),
+            goalKey: demand.goalKey || null,
+            status: demand.status || null,
+            createdAt: clanNumber(demand.createdAt),
+            updatedAt: clanNumber(demand.updatedAt)
+        })),
+        actions: actions.map((action) => ({
+            id: clanNumber(action.id),
+            key: action.actionKey || null,
+            type: action.actionType || null,
+            priority: clanNumber(action.priority),
+            status: action.status || null,
+            attempt: clanNumber(action.attempt),
+            availableAt: clanNumber(action.availableAt),
+            updatedAt: clanNumber(action.updatedAt),
+            resolvedAt: clanNumber(action.resolvedAt),
+            reasonCode: action.reasonCode || null,
+            result: observerJson(action.resultJson)
+        })),
+        operation: operationRow ? {
+            id: clanNumber(operationRow.id),
+            type: operationRow.operationType || null,
+            status: operationRow.status || null,
+            targetNpcId: clanNumber(operationRow.targetNpcId) || null,
+            startedAt: clanNumber(operationRow.createdAt),
+            completedAt: clanNumber(operationRow.resolvedAt),
+            memberCount: clanNumber(operationRow.memberCount),
+            members: operationMembers.map((member) => ({
+                characterId: clanNumber(member.characterId),
+                name: member.name || null,
+                role: memberViews.find((view) => view.id === Number(member.characterId))?.role || null,
+                status: member.status || null
+            }))
+        } : null,
+        events: events.map(compactClanEvent)
+    };
+}
+
+async function clanCrest(clanId) {
+    const id = Number(clanId);
+    if (!Number.isSafeInteger(id) || id <= 0) return null;
+    const rows = await Database.execute([`
+        SELECT clans.id AS clanId, clans.level, clans.crestId,
+               crests.id, crests.kind, crests.data
+        FROM clans
+        JOIN clan_crests crests
+          ON crests.id = clans.crestId
+         AND crests.clanId = clans.id
+         AND crests.kind = 'pledge'
+        WHERE clans.id = ? AND clans.level >= 3
+        LIMIT 1
+    `, [id], { read: true }], 'observer:clan-crest');
+    const row = rows[0];
+    if (!row || Number(row.crestId || 0) <= 0 || !row.data) return null;
+    const data = browserClanCrestData(row.data);
+    return {
+        clanId: clanNumber(row.clanId),
+        id: clanNumber(row.id),
+        kind: row.kind || 'pledge',
+        data
+    };
+}
+
+function dxt1Color(value) {
+    const red = (value >> 11) & 0x1f;
+    const green = (value >> 5) & 0x3f;
+    const blue = value & 0x1f;
+    return {
+        r: (red << 3) | (red >> 2),
+        g: (green << 2) | (green >> 4),
+        b: (blue << 3) | (blue >> 2)
+    };
+}
+
+function decodeDxt1Dds(source) {
+    if (source.length < 136 || source.toString('ascii', 0, 4) !== 'DDS ' || source.toString('ascii', 84, 88) !== 'DXT1') return null;
+    const width = source.readUInt32LE(16);
+    const height = source.readUInt32LE(12);
+    const blocksWide = Math.ceil(width / 4);
+    const blocksHigh = Math.ceil(height / 4);
+    if (width <= 0 || height <= 0 || width > 128 || height > 128 || source.length < 128 + (blocksWide * blocksHigh * 8)) return null;
+    const pixels = Array.from({ length: width * height }, () => ({ r: 0, g: 0, b: 0, a: 0 }));
+    let offset = 128;
+    for (let blockY = 0; blockY < blocksHigh; blockY += 1) {
+        for (let blockX = 0; blockX < blocksWide; blockX += 1) {
+            const firstValue = source.readUInt16LE(offset);
+            const secondValue = source.readUInt16LE(offset + 2);
+            const first = { ...dxt1Color(firstValue), a: 255 };
+            const second = { ...dxt1Color(secondValue), a: 255 };
+            const palette = [first, second];
+            if (firstValue > secondValue) {
+                palette.push(
+                    { r: Math.round(((2 * first.r) + second.r) / 3), g: Math.round(((2 * first.g) + second.g) / 3), b: Math.round(((2 * first.b) + second.b) / 3), a: 255 },
+                    { r: Math.round((first.r + (2 * second.r)) / 3), g: Math.round((first.g + (2 * second.g)) / 3), b: Math.round((first.b + (2 * second.b)) / 3), a: 255 }
+                );
+            } else {
+                palette.push(
+                    { r: Math.round((first.r + second.r) / 2), g: Math.round((first.g + second.g) / 2), b: Math.round((first.b + second.b) / 2), a: 255 },
+                    { r: 0, g: 0, b: 0, a: 0 }
+                );
+            }
+            const indices = source.readUInt32LE(offset + 4);
+            for (let pixel = 0; pixel < 16; pixel += 1) {
+                const x = (blockX * 4) + (pixel % 4);
+                const y = (blockY * 4) + Math.floor(pixel / 4);
+                if (x < width && y < height) pixels[(y * width) + x] = palette[(indices >>> (pixel * 2)) & 0x03];
+            }
+            offset += 8;
+        }
+    }
+    return { width, height, pixels };
+}
+
+function bmp24(pixels, width, height, sourceY = 0) {
+    const rowStride = Math.ceil((width * 3) / 4) * 4;
+    const pixelBytes = rowStride * height;
+    const result = Buffer.alloc(54 + pixelBytes);
+    result.write('BM', 0, 'ascii');
+    result.writeUInt32LE(result.length, 2);
+    result.writeUInt32LE(54, 10);
+    result.writeUInt32LE(40, 14);
+    result.writeInt32LE(width, 18);
+    result.writeInt32LE(-height, 22);
+    result.writeUInt16LE(1, 26);
+    result.writeUInt16LE(24, 28);
+    result.writeUInt32LE(pixelBytes, 34);
+    for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+            const color = pixels[((sourceY + y) * width) + x];
+            const target = 54 + (y * rowStride) + (x * 3);
+            result[target] = color.a ? color.b : 0;
+            result[target + 1] = color.a ? color.g : 0;
+            result[target + 2] = color.a ? color.r : 0;
+        }
+    }
+    return result;
+}
+
+function crestRowScore(decoded, startY, height) {
+    let score = 0;
+    for (let y = startY; y < startY + height; y += 1) {
+        for (let x = 0; x < decoded.width; x += 1) {
+            const color = decoded.pixels[(y * decoded.width) + x];
+            if (color.a) score += Math.max(color.r, color.g, color.b);
+        }
+    }
+    return score;
+}
+
+function browserClanCrestData(data) {
+    const source = Buffer.from(data || []);
+    if (source.toString('ascii', 0, 2) === 'BM') return source;
+    const decoded = decodeDxt1Dds(source);
+    if (!decoded) return source;
+    const displayHeight = decoded.width === 16 && decoded.height === 16 ? 12 : decoded.height;
+    const bottomOffset = decoded.height - displayHeight;
+    const sourceY = bottomOffset > 0 && crestRowScore(decoded, bottomOffset, displayHeight) > crestRowScore(decoded, 0, displayHeight)
+        ? bottomOffset
+        : 0;
+    return bmp24(decoded.pixels, decoded.width, displayHeight, sourceY);
+}
+
 function itemIconCategory(kind) {
     const normalized = String(kind || '').toLowerCase();
     if (normalized.startsWith('weapon.')) return 'weapon';
@@ -878,6 +1434,21 @@ function compactColdPlan(state) {
     };
 }
 
+function compactActorClan(subject) {
+    const characterId = Number(subject?.fetchId?.() || subject?.characterId || 0);
+    const directClan = subject?.fetchClan?.() || null;
+    const memberClan = characterId > 0
+        ? ClanService.all().find((clan) => clan.members.some((member) => Number(member.id) === characterId))
+        : null;
+    const clanId = Number(directClan?.id || memberClan?.id || subject?.fetchClanId?.() || subject?.clanId || subject?.stats?.clanId || 0);
+    if (clanId <= 0) return null;
+    const clan = directClan || memberClan || ClanService.findById(clanId);
+    return {
+        id: clanId,
+        name: clan?.name || null
+    };
+}
+
 function compactHotDetail(status, session) {
     const context = BotBrainContext.compactStatus(session, status, '', {
         includeInventory: false,
@@ -887,6 +1458,7 @@ function compactHotDetail(status, session) {
     return {
         ...compactHotBot(status, pkIds, session),
         kind: 'bot',
+        clan: compactActorClan(session?.actor),
         vitals: fullVitals(status.vitals),
         movement: status.movement || null,
         nearby: status.nearby || null,
@@ -914,6 +1486,7 @@ function compactPlayerDetail(session) {
     return {
         ...compact,
         kind: 'player',
+        clan: compactActorClan(actor),
         phase: 'player',
         mode: compact.online ? 'online' : 'offline',
         intent: compact.online ? 'online' : 'offline',
@@ -941,6 +1514,9 @@ function compactPlayerDetail(session) {
         pvp: Number(actor.fetchPvp?.() || 0),
         pk: Number(actor.fetchPk?.() || 0),
         karma: Number(actor.fetchKarma?.() || 0),
+        movementPacketTrace: Array.isArray(session.movementPacketTrace)
+            ? session.movementPacketTrace.slice(-160)
+            : [],
         updatedAt: Date.now()
     };
 }
@@ -953,6 +1529,7 @@ function compactColdDetail(state, leaderState = null) {
     return {
         ...compact,
         kind: 'bot',
+        clan: compactActorClan(state),
         classId,
         className: className(classId),
         phase: state.phase || 'cold',
@@ -1024,7 +1601,35 @@ function buildSyntheticEvents(bots) {
         });
 }
 
-function snapshot() {
+function mapCooperatively(items, mapper, sliceBudgetMs = 4) {
+    const values = Array.isArray(items) ? items : [];
+    const result = [];
+    let index = 0;
+
+    return new Promise((resolve) => {
+        const runSlice = () => {
+            const deadline = Date.now() + Math.max(1, Number(sliceBudgetMs) || 1);
+            while (index < values.length && Date.now() < deadline) {
+                result.push(mapper(values[index], index));
+                index += 1;
+            }
+
+            if (index >= values.length) {
+                resolve(result);
+                return;
+            }
+
+            // Observer work is diagnostic and must yield to game/network
+            // callbacks between chunks. A full 1776-bot snapshot can otherwise
+            // occupy the main event loop long enough to look like player lag.
+            setImmediate(runSlice);
+        };
+
+        runSlice();
+    });
+}
+
+async function snapshot() {
     const BotManager = invoke('GameServer/Bot/BotManager');
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
     const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
@@ -1047,9 +1652,11 @@ function snapshot() {
     // but do not hide the rest of the world from the map.
     const states = LifeState.allStates(2000);
     const stateById = new Map(states.map((state) => [Number(state.characterId), state]));
-    const stateBots = states
-        .map((state) => compactStateBot(state, hotIds, stateById.get(Number(state.party?.leaderId || state.stats?.leaderId))))
-        .filter(Boolean);
+    const stateBots = (await mapCooperatively(states, (state) => compactStateBot(
+        state,
+        hotIds,
+        stateById.get(Number(state.party?.leaderId || state.stats?.leaderId))
+    ))).filter(Boolean);
     const bots = [...hotBots, ...stateBots];
     const players = realPlayerSessions().map(compactPlayer);
     const memory = process.memoryUsage();
@@ -1171,6 +1778,15 @@ function sendJsonText(response, json, statusCode = 200) {
     response.end(json);
 }
 
+function sendClanCrest(response, crest) {
+    response.writeHead(200, {
+        'Content-Type': 'image/bmp',
+        'Content-Length': crest.data.length,
+        'Cache-Control': 'no-store'
+    });
+    response.end(crest.data);
+}
+
 function sendFile(response, filePath) {
     fs.readFile(filePath, (err, body) => {
         if (err) {
@@ -1198,6 +1814,33 @@ function route(request, response) {
     if (url.pathname === '/observer/api/snapshot') {
         snapshotJson()
             .then((json) => sendJsonText(response, json))
+            .catch((err) => sendJson(response, { error: err.message }, 500));
+        return;
+    }
+
+    if (url.pathname === '/observer/api/clans') {
+        clanSnapshot()
+            .then((data) => sendJson(response, data))
+            .catch((err) => sendJson(response, { error: err.message }, 500));
+        return;
+    }
+
+    const clanCrestMatch = url.pathname.match(/^\/observer\/api\/clan\/(\d+)\/crest$/);
+    if (clanCrestMatch) {
+        clanCrest(clanCrestMatch[1])
+            .then((crest) => crest
+                ? sendClanCrest(response, crest)
+                : sendJson(response, { error: 'Clan crest not found' }, 404))
+            .catch((err) => sendJson(response, { error: err.message }, 500));
+        return;
+    }
+
+    const clanMatch = url.pathname.match(/^\/observer\/api\/clan\/(\d+)$/);
+    if (clanMatch) {
+        clanDetail(clanMatch[1])
+            .then((data) => data
+                ? sendJson(response, data)
+                : sendJson(response, { error: 'Clan not found' }, 404))
             .catch((err) => sendJson(response, { error: err.message }, 500));
         return;
     }
@@ -1265,6 +1908,14 @@ const WorldObserverServer = {
     compactStateBot,
     compactColdDetail,
     compactHotDetail,
+    compactClanGoal,
+    compactClanOverview,
+    compactClanMember,
+    compactActorClan,
+    browserClanCrestData,
+    clanCrest,
+    clanSnapshot,
+    clanDetail,
     compactItem,
     itemIconFilePath,
     classCatalog,

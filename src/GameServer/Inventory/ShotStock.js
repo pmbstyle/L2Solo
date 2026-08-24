@@ -4,6 +4,7 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 
 const DEFAULT_TARGET_AMOUNT = 1000;
+const PURCHASE_TARGET_AMOUNT = 3000;
 const WEAPON_SLOTS = new Set([7, 14]);
 
 const SOULSHOT_BY_RANK = {
@@ -259,24 +260,29 @@ function purchaseActorRestock(actor, options = {}) {
         return Promise.resolve({ ok: false, reason: 'missing_actor' });
     }
 
-    const targetAmount = Number(options.targetAmount || DEFAULT_TARGET_AMOUNT);
+    const targetAmount = Number(options.targetAmount || PURCHASE_TARGET_AMOUNT);
     const plan = options.plan || planForActor(actor);
     const currentAmount = shotAmount(actor, plan);
-    const delta = Math.max(0, targetAmount - currentAmount);
-    if (delta <= 0) return Promise.resolve({ ok: true, changed: false, plan, amount: currentAmount, cost: 0 });
+    const missingAmount = Math.max(0, targetAmount - currentAmount);
+    if (missingAmount <= 0) return Promise.resolve({ ok: true, changed: false, plan, amount: currentAmount, cost: 0 });
 
-    const cost = delta * Number(plan.price || 0);
+    const unitPrice = Math.max(0, Number(plan.price || 0));
+    const fullCost = missingAmount * unitPrice;
     const adenaItem = actor.backpack.fetchItemFromSelfId(57);
     const adena = Number(adenaItem?.fetchAmount ? adenaItem.fetchAmount() : 0);
-    if (!adenaItem || adena < cost) {
-        return Promise.resolve({ ok: false, reason: 'not_enough_adena', plan, cost, adena });
+    const affordableAmount = unitPrice > 0 ? Math.floor(adena / unitPrice) : missingAmount;
+    const delta = Math.min(missingAmount, affordableAmount);
+    if (!adenaItem || delta <= 0) {
+        return Promise.resolve({ ok: false, reason: 'not_enough_adena', plan, cost: fullCost, adena });
     }
 
+    const cost = delta * unitPrice;
     const nextAdena = adena - cost;
+    const nextAmount = currentAmount + delta;
     return Database.updateItemAmount(actor.fetchId(), adenaItem.fetchId(), nextAdena)
         .then(() => {
             adenaItem.setAmount(nextAdena);
-            return ensureActorStock(actor, { targetAmount, plan });
+            return ensureActorStock(actor, { targetAmount: nextAmount, plan });
         })
         .then((result) => ({ ok: true, ...result, cost, adena: nextAdena }));
 }
@@ -292,6 +298,7 @@ function describe(plan) {
 
 module.exports = {
     DEFAULT_TARGET_AMOUNT,
+    PURCHASE_TARGET_AMOUNT,
     SOULSHOT_IDS,
     SPIRITSHOT_IDS,
     BLESSED_SPIRITSHOT_IDS,

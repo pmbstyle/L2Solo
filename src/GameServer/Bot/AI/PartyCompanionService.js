@@ -322,7 +322,7 @@ function availableGroundLoot(leaderSession) {
 function hasCampThreat(leaderSession) {
     if (!world().user?.sessions) return false;
 
-    const threat = PartyAwareness.findThreatTargetingParty(leaderSession);
+    const threat = PartyAwareness.findThreatTargetingPartyProjected(leaderSession);
     if (!threat) return false;
 
     const pullState = leaderSession?.partyPullState || {};
@@ -337,10 +337,11 @@ function hasCampThreat(leaderSession) {
 
 function reconcileGroundLoot(looterSession) {
     const leaderSession = partyLeaderSession(looterSession);
-    if (!leaderSession || partyCombatInProgress(leaderSession) || hasCampThreat(leaderSession)) return 0;
+    if (!leaderSession) return 0;
 
     const now = Date.now();
     if (now - Number(leaderSession.lastGroundLootScanAt || 0) < GROUND_LOOT_SCAN_INTERVAL_MS) return 0;
+    if (partyCombatInProgress(leaderSession) || hasCampThreat(leaderSession)) return 0;
     const items = availableGroundLoot(leaderSession);
     // This shared timestamp protects the hot party from every companion
     // walking the entire world-item list on every AI tick. Fresh NPC drops do

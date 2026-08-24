@@ -7,6 +7,7 @@ const World = invoke('GameServer/World/World');
 const DataCache = invoke('GameServer/DataCache');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const BotManager = invoke('GameServer/Bot/BotManager');
+const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const ActorGenerics = require('../src/GameServer/Actor/Generics');
 const Attack = invoke('GameServer/Actor/Attack');
@@ -246,6 +247,18 @@ try {
         true,
         'an idle ground-loot scan should retain its shared throttle when no items are available'
     );
+    const originalFetchNpcsForThrottle = World.fetchNpcsInRadius;
+    let throttledThreatScans = 0;
+    World.fetchNpcsInRadius = (...args) => {
+        throttledThreatScans += 1;
+        return originalFetchNpcsForThrottle(...args);
+    };
+    for (let index = 0; index < 8; index += 1) {
+        PartyCompanionService.reconcileGroundLoot(botSession);
+    }
+    assert.strictEqual(throttledThreatScans, 0,
+        'the shared loot throttle must run before repeated party-wide combat scans');
+    World.fetchNpcsInRadius = originalFetchNpcsForThrottle;
 
     // A returning puller is travelling, not fighting at camp. It must not
     // block recovery of an older drop that another companion can collect.
@@ -280,6 +293,7 @@ try {
     };
     World.user = { sessions: [leaderSession, botSession, distantBotSession] };
     World.fetchNpcsInRadius = () => [incomingThreat];
+    PartyAwareness.invalidateThreatProjection(leaderSession);
     World.items = {
         spawns: [{
             partyLootLeaderId: leaderSession.actor.fetchId(),

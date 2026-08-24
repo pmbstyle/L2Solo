@@ -89,7 +89,7 @@ function partyMemberSummary(memberSession, leaderSession, bot) {
 }
 
 function partyThreatSummary(leaderSession, bot) {
-    const threat = PartyAwareness.findThreatTargetingParty(leaderSession);
+    const threat = PartyAwareness.findThreatTargetingPartyProjected(leaderSession);
     if (!threat?.actor) return null;
 
     return {
@@ -349,6 +349,17 @@ const BotStatus = {
             movement: {
                 moving: !!session.moveTimer || !!bot.state.fetchTowards(),
                 towards: bot.state.fetchTowards() || false,
+                speed: {
+                    baseRun: Number(bot.fetchRunSpd?.()) || 0,
+                    collectiveRun: Number(bot.fetchCollectiveRunSpd?.()) || 0,
+                    baseWalk: Number(bot.fetchWalkSpd?.()) || 0,
+                    collectiveWalk: Number(bot.fetchCollectiveWalkSpd?.()) || 0,
+                    multiplier: (Number(bot.fetchRunSpd?.()) || 0) > 0
+                        ? (Number(bot.fetchCollectiveRunSpd?.()) || 0) / Number(bot.fetchRunSpd?.())
+                        : 1,
+                    walking: bot.state.fetchWalkin?.() === true
+                },
+                trace: Array.isArray(session.movementTrace) ? session.movementTrace.slice(-24) : [],
                 stuckTicks: session.stuckTicks || 0,
                 followTarget: session.lastFollowMoveTarget || null,
                 followHeldAt: session.lastFollowMoveHeldAt || null,

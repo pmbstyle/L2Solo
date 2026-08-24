@@ -56,6 +56,12 @@ try {
 
     const budgetStore = { storeType: 3, budgetBacked: true, items: [{ selfId: 1864, price: 100, count: 3 }] };
     const budgetBuyer = { characterId: 9200, adena: 150, stats: { marketStore: budgetStore } };
+    World.user.sessions = [{
+        actor: { fetchId: () => 9200, fetchPrivateStore: () => budgetStore },
+        coldMarketState: budgetBuyer
+    }];
+    assert.deepStrictEqual(MarketOpportunity.activeBuyDemandSelfIds(), [1864],
+        'budget-backed live WTB demand must participate in warehouse admission');
     const firstBudgetOffer = { sourceType: 'cold_buy_store', selfId: 1864, price: 100, count: 1, buyerState: budgetBuyer, store: budgetStore, storeItem: budgetStore.items[0] };
     const overlappingBudgetOffer = { ...firstBudgetOffer };
     assert.strictEqual(MarketOpportunity.reserveBuy(firstBudgetOffer, 1), true);

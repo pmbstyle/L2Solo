@@ -15,12 +15,34 @@ function npcTalkResponse(session, data) {
     }
 
     if (parts[0] === 'html') {
+        const activeNpc = session.activeNpcTalk;
+        const questPage = /^(\d+)-quest$/.exec(parts[1] || '');
+        if (questPage && activeNpc && Number(questPage[1]) === Number(activeNpc.selfId)) {
+            const QuestService = invoke('GameServer/Quest/QuestService');
+            const npc = {
+                fetchSelfId: () => activeNpc.selfId,
+                fetchId: () => activeNpc.objectId
+            };
+            QuestService.onTalk(session, npc).then((handled) => {
+                if (handled) return;
+                session.dataSendToMe(ServerResponse.npcHtml(
+                    activeNpc.objectId,
+                    '<html><body>You are either not on a quest that involves this NPC, or you don\'t meet this NPC\'s minimum quest requirements.<br></body></html>'
+                ));
+                session.dataSendToMe(ServerResponse.actionFailed());
+            }).catch((error) => {
+                utils.infoWarn('Quest', 'failed to open NPC quest dialog: %s', error.message);
+                session.dataSendToMe(ServerResponse.actionFailed());
+            });
+            return;
+        }
+
         const path = 'data/Html/';
         const filename = path + parts[1] + '.html';
 
         if (utils.fileExists(filename)) {
             session.dataSendToMe(
-                ServerResponse.npcHtml(7146, utils.parseRawFile(filename))
+                ServerResponse.npcHtml(session.activeNpcTalk?.objectId ?? 7146, utils.parseRawFile(filename))
             );
             session.dataSendToMe(ServerResponse.actionFailed());
             return;

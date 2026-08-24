@@ -125,6 +125,8 @@ assert.strictEqual(staleRecoverIntent.shouldOpen, true,
     'forced cleanup arrival must open the sale lifecycle even when goal metadata still says recover');
 assert.strictEqual(staleRecoverIntent.state.stats.forcedMarketCleanup, null,
     'consuming forced cleanup intent must prevent the marker itself from starting another town loop');
+assert.strictEqual(staleRecoverIntent.cleanup.cleanupReason, 'inventory_capacity',
+    'forced cleanup intent must retain its reason for the dedicated pre-trade path');
 
 const scrollState = {
     ...state,
@@ -210,6 +212,34 @@ const npcState = {
         instances: [{ id: 9100000 + index, amount: 1, equipped: false, slot: 0 }]
     }]))
 };
+const preTradeNpcState = {
+    ...npcState,
+    level: 9,
+    stats: { generatedCold: true },
+    inventory: Object.fromEntries(npcFixtures.slice(0, 3).map((item, index) => [String(item.selfId), {
+        selfId: item.selfId,
+        name: item.template.name,
+        kind: item.template.kind,
+        stackable: false,
+        amount: 1,
+        instances: [{ id: 9150000 + index, amount: 1, equipped: false, slot: 0 }]
+    }]))
+};
+assert.strictEqual(
+    ItemDisposition.inventoryCleanupNeed(preTradeNpcState, { now }),
+    null,
+    'pre-trade NPC-only inventory must not create a standalone market trip'
+);
+assert.strictEqual(
+    ItemDisposition.npcLiquidationCandidates(preTradeNpcState).length,
+    0,
+    'ordinary NPC liquidation must retain the pre-trade market boundary'
+);
+assert.strictEqual(
+    ItemDisposition.npcLiquidationCandidates(preTradeNpcState, { allowPreTradeCleanup: true }).length,
+    3,
+    'forced pre-trade cleanup must still expose NPC-only candidates'
+);
 assert.strictEqual(ItemDisposition.npcLiquidationCandidates(npcState).length, npcFixtures.length);
 assert.strictEqual(MarketListingPolicy.evaluate(npcState).npc.length, npcFixtures.length);
 const protectedNpcState = {

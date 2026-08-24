@@ -22,8 +22,12 @@ const c4ImperialTombSkills = require('../../../data/Npcs/Skills/c4_imperial_tomb
 const c4LowLevelRaidBossSkills = require('../../../data/Npcs/Skills/c4_low_level_raid_bosses_templates.json');
 const c4RaidBossSkills = require('../../../data/Npcs/Skills/c4_raid_bosses_templates.json');
 const c4RaidBossMinionSkills = require('../../../data/Npcs/Skills/c4_raid_boss_minions_templates.json');
+const c4LegacyMonsterSkillTemplates = require('../../../data/Npcs/Skills/c4_legacy_monster_templates.json');
+const c4LegacyMonsterSkillRows = require('../../../data/Npcs/Skills/c4_legacy_monsters.json');
+const c4LegacyMonsterIds = new Set(c4LegacyMonsterSkillRows.map((row) => Number(row.npcId)));
 const npcSkillRows = [
-    ...require('../../../data/Npcs/Skills/skills.json'),
+    ...require('../../../data/Npcs/Skills/skills.json').filter((row) => !c4LegacyMonsterIds.has(Number(row.npcId))),
+    ...c4LegacyMonsterSkillRows,
     ...require('../../../data/Npcs/Skills/c4_swamp_of_screams.json'),
     ...require('../../../data/Npcs/Skills/c4_garden_of_beasts.json'),
     ...require('../../../data/Npcs/Skills/c4_valley_of_saints.json'),
@@ -83,7 +87,7 @@ const summonActionSkillIds = new Map([
 ]);
 
 const skillTemplates = new Map(
-    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4SwampSkills, ...c4GardenSkills, ...c4ValleySkills, ...summonActionSkills, ...c4ForestSkills, ...c4DevilsIsleSkills, ...c4NecropolisSacrificeSkills, ...c4DevastatedCastleSkills, ...c4KetraOrcOutpostSkills, ...c4VarkaSilenosStrongholdSkills, ...c4HotSpringsSkills, ...c4WallOfArgosSkills, ...c4ForgeOfTheGodsSkills, ...c4FieldsSkills, ...c4HeathenCampSkills, ...c4ImperialTombSkills, ...c4LowLevelRaidBossSkills, ...c4RaidBossSkills, ...c4RaidBossMinionSkills]
+    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4LegacyMonsterSkillTemplates, ...c4SwampSkills, ...c4GardenSkills, ...c4ValleySkills, ...summonActionSkills, ...c4ForestSkills, ...c4DevilsIsleSkills, ...c4NecropolisSacrificeSkills, ...c4DevastatedCastleSkills, ...c4KetraOrcOutpostSkills, ...c4VarkaSilenosStrongholdSkills, ...c4HotSpringsSkills, ...c4WallOfArgosSkills, ...c4ForgeOfTheGodsSkills, ...c4FieldsSkills, ...c4HeathenCampSkills, ...c4ImperialTombSkills, ...c4LowLevelRaidBossSkills, ...c4RaidBossSkills, ...c4RaidBossMinionSkills]
         .map((skill) => [Number(skill.selfId), skill])
 );
 
@@ -107,7 +111,8 @@ const COMBAT_SKILL_TYPES = new Set([
     C4SkillRules.DRAIN,
     C4SkillRules.BLOW,
     C4SkillRules.EFFECT,
-    C4SkillRules.AGGRO_DAMAGE
+    C4SkillRules.AGGRO_DAMAGE,
+    C4SkillRules.GET_PLAYER
 ]);
 
 function instantiate(row) {

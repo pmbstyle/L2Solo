@@ -2,6 +2,7 @@ const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
+const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 
 const MARKET_TRAVEL_MS = 25 * 1000;
 const GATEKEEPER_SPOT_TRAVEL_MS = 25 * 1000;
@@ -71,28 +72,42 @@ function finishMarketVisit(state, timestamp = Date.now()) {
 
     const from = { ...state.loc };
     const savedSpot = destination.spotId ? SpotService.findById(destination.spotId) : null;
-    const selectedSpot = savedSpot
-        ? invoke('GameServer/Bot/Population/SpotProfiles').findForState({
+    const returnState = savedSpot
+        ? {
             ...state,
             activity: 'hunting',
             currentRegion: destination.regionName || state.currentRegion,
             loc: { ...destination.loc },
             spotId: destination.spotId
-        }) || savedSpot
+        }
         : null;
+    const spotBackoff = returnState
+        ? SpotRiskPolicy.backoffForStates([returnState], destination.spotId, timestamp)
+        : null;
+    const selectedSpot = returnState
+        ? invoke('GameServer/Bot/Population/SpotProfiles').findForState(returnState, { timestamp })
+            || (spotBackoff ? null : savedSpot)
+        : null;
+    // Remaining in town is safer than silently returning to a spot that is
+    // already over the death threshold. A later lifecycle pass can retry
+    // once another suitable route becomes available.
+    if (spotBackoff && !selectedSpot) return null;
     const to = selectedSpot
         ? SpotService.arrivalPointForState(state, selectedSpot) || { ...destination.loc }
         : { ...destination.loc };
     const regionName = selectedSpot?.name || destination.regionName;
     const spotId = selectedSpot?.id || destination.spotId;
     const destinationTown = TownRespawn.getClosestTown(to.locX, to.locY, to.locZ);
+    const routedState = spotBackoff
+        ? SpotRiskPolicy.withBackoff(state, spotBackoff, timestamp)
+        : state;
     return {
-        ...state,
+        ...routedState,
         activity: 'traveling',
         stats: {
-            ...(state.stats || {}),
+            ...(routedState.stats || {}),
             travel: {
-                reason: 'return_after_market',
+                reason: spotBackoff ? 'death_pressure_replan' : 'return_after_market',
                 from,
                 to,
                 regionName,
@@ -101,7 +116,8 @@ function finishMarketVisit(state, timestamp = Date.now()) {
                 viaTown: destinationTown?.name || null,
                 method: 'gatekeeper_spot',
                 arrivalActivity: 'hunting',
-                arrivalEvent: 'returned_to_spot',
+                arrivalEvent: spotBackoff ? 'arrived_hunting_ground' : 'returned_to_spot',
+                ...(spotBackoff ? { cause: 'death_pressure' } : {}),
                 clearMarketReturn: true,
                 startedAt: timestamp,
                 arrivalAt: timestamp + GATEKEEPER_SPOT_TRAVEL_MS

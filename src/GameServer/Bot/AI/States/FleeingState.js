@@ -42,7 +42,7 @@ module.exports = {
         const now = Date.now();
         const moving = stillMoving(session, bot);
         const partyRaidThreat = session.raidSafetyResumePlan === 'following' && session.followPlayerSession
-            ? PartyAwareness.findThreatTargetingParty(session.followPlayerSession)
+            ? PartyAwareness.findThreatTargetingPartyProjected(session.followPlayerSession)
             : null;
         if (partyRaidThreat?.type === 'raid') {
             const threatChanged = Number(partyRaidThreat.actor.fetchId?.()) !== Number(session.lastRetreatPlan?.threatId);

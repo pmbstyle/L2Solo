@@ -10,6 +10,7 @@ module.exports = {
     requestAnswerJoinPledge: require('./RequestAnswerJoinPledge'),
          requestJoinPledge: require('./RequestJoinPledge'),
       requestOustPledgeMember: require('./RequestOustPledgeMember'),
+          requestGiveNickName: require('./RequestGiveNickName'),
        requestPledgeMemberList: require('./RequestPledgeMemberList'),
               requestPledgeInfo: require('./RequestPledgeInfo'),
              requestPledgeCrest: require('./RequestPledgeCrest'),

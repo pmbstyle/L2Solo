@@ -149,7 +149,7 @@ module.exports = {
                 });
                 return;
             }
-            const threat = PartyAwareness.findThreatTargetingParty(playerSession);
+            const threat = PartyAwareness.findThreatTargetingPartyProjected(playerSession);
             if (threat?.type === 'raid' && BotRaidSafety.retreat(session, bot, threat.actor, { distance: EMERGENCY_RETREAT_DISTANCE })) {
                 recordWakeDecision(session, bot, 'retreat', 'raid_entity_protected', {
                     targetId: threat.actor.fetchId?.() || null
@@ -220,7 +220,7 @@ module.exports = {
         }
 
         if (!session.followPlayerSession && session.partyCompanion !== true) {
-            const threat = PartyAwareness.recentIncomingNpc(session);
+            const threat = PartyAwareness.npcThreateningActor(session);
             if (threat) {
                 if (BotRaidSafety.retreat(session, bot, threat, { distance: EMERGENCY_RETREAT_DISTANCE })) {
                     recordWakeDecision(session, bot, 'retreat', 'raid_entity_protected', {
@@ -278,7 +278,7 @@ module.exports = {
         } else {
             // skillExec marks the actor as casting immediately.  Do not sit
             // on the next brain tick while the native self-cast is still live.
-            if (bot.state.fetchCasts?.()) return;
+            if (bot.state.fetchHits?.() || bot.state.fetchCasts?.()) return;
             if (maybeCastManaRegeneration(session, bot, Generics)) return;
             sitDown(session, bot);
             // 3% chance per tick to attempt conversation when resting near other bots

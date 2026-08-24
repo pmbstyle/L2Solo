@@ -20,6 +20,7 @@ const pendingWrites = new Map();
 let initialized = false;
 let initStarted = false;
 let initPromise = null;
+let marketGoalCursor = { updatedAt: 0, characterId: 0 };
 
 function isCriticalSnapshotReason(reason = '', state = null) {
     if (state?.activity === 'dead') return true;
@@ -229,6 +230,7 @@ function reconcileFulfilledEquipmentPlan(state = {}) {
     const stats = { ...(state.stats || {}) };
     delete stats.equipmentPlan;
     delete stats.partyRequest;
+    delete stats.clanPartyObjective;
     return { ...state, stats };
 }
 
@@ -241,6 +243,33 @@ function reconcileEquipmentInventory(state = {}) {
             ...(state.stats || {}),
             equipment: equipmentSummaryFromInventory(inventory)
         }
+    });
+}
+
+function equipmentCompletionSignal(state = {}) {
+    const clanGoal = state.stats?.equipmentPlan?.clanGoal;
+    if (!clanGoal?.clanId || !clanGoal?.goalKey) return null;
+    if (!equipmentTargetFulfilled(state.stats, state.inventory)) return null;
+    return {
+        clanId: Number(clanGoal.clanId),
+        goalKey: String(clanGoal.goalKey)
+    };
+}
+
+function enqueueEquipmentGoalAdvance(signal) {
+    if (!signal?.clanId || !signal.goalKey) return Promise.resolve(null);
+    return Database.enqueueClanAction({
+        clanId: signal.clanId,
+        actionKey: `clan:${signal.clanId}:equipment-advance:${signal.goalKey}`,
+        actionType: 'goal_plan',
+        priority: 100,
+        payload: {
+            reason: 'equipment_goal_completed',
+            goalKey: signal.goalKey
+        }
+    }).catch((error) => {
+        utils.infoWarn('BotLife', 'failed to enqueue clan equipment advance for %s: %s', signal.goalKey, error.message || error);
+        return null;
     });
 }
 
@@ -509,9 +538,11 @@ function recordFromSession(session, phase, reason = '') {
 }
 
 function rowFromState(state) {
+    const inventory = InventorySummary.canonicalize(state?.inventory);
+    const equipmentAdvance = equipmentCompletionSignal({ ...state, inventory });
     const persistedState = reconcileFulfilledEquipmentPlan({
         ...state,
-        inventory: InventorySummary.canonicalize(state?.inventory)
+        inventory
     });
     return {
         characterId: persistedState.characterId,
@@ -551,6 +582,7 @@ function rowFromState(state) {
         simulationRevision: Math.max(0, Number(persistedState.simulation?.revision || 0)),
         simulationLeaseId: persistedState.simulation?.leaseId || null,
         simulationLeaseUntil: Math.max(0, Number(persistedState.simulation?.leaseUntil || 0)),
+        equipmentAdvance,
         updatedAt: now()
     };
 }
@@ -632,7 +664,7 @@ function save(row) {
             throw error;
         }
         Metrics.recordDbFlush();
-        return result;
+        return enqueueEquipmentGoalAdvance(row.equipmentAdvance).then(() => result);
     });
 }
 
@@ -1180,7 +1212,7 @@ function discardInvalidEquipmentPlans() {
     const timestamp = now();
     return Database.execute([
         `UPDATE ${TABLE}
-        SET statsJson = json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan'),
+        SET statsJson = json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan', '$.partyRequest', '$.clanPartyObjective'),
             updatedAt = ?
         WHERE json_extract(statsJson, '$.equipmentPlan.target') IS NOT NULL
         AND (
@@ -1230,7 +1262,7 @@ function discardFulfilledEquipmentPlans() {
               )
         )
         UPDATE ${TABLE}
-        SET statsJson = json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan', '$.partyRequest'),
+        SET statsJson = json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan', '$.partyRequest', '$.clanPartyObjective'),
             updatedAt = ?
         WHERE characterId IN (SELECT characterId FROM fulfilled_equipment_plans)`,
         [timestamp]
@@ -2060,6 +2092,28 @@ const BotLifeState = {
         });
     },
 
+    releaseDissolvedPartyMembers(partyId, reason = 'orphaned_dissolved_party') {
+        if (!initialized || !partyId) return Promise.resolve(0);
+
+        // A runtime party reconciliation can discover members after the
+        // party row has already been dissolved. Release every cold member
+        // here, handing worker-owned rows back to the main lifecycle owner
+        // before applying the normal party departure transition.
+        return this.statesForParty(partyId).then((members) => (
+            members.reduce((chain, member) => (
+                chain.then((released) => {
+                    const ownerHandoff = member.simulation?.ownerId
+                        && member.simulation.ownerId !== 'legacy_main';
+                    return this.leaveParty(member, reason, { ownerHandoff: !!ownerHandoff })
+                        .then((updated) => released + (updated ? 1 : 0));
+                })
+            ), Promise.resolve(0))
+        )).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to release dissolved party %s: %s', partyId, err.message);
+            return 0;
+        });
+    },
+
     prepareResolve(state, result, options = {}) {
         if (!state || !result) return Promise.resolve(null);
 
@@ -2275,20 +2329,51 @@ const BotLifeState = {
     marketGoalCandidates(limit = 8, timestamp = now()) {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
-        return Database.execute([
-            `SELECT states.* FROM ${TABLE} states
+        const fetchAfter = (cursor) => Database.execute([
+            `SELECT states.*, goals.goalJson AS currentGoalJson,
+                goals.updatedAt AS currentGoalUpdatedAt FROM ${TABLE} states
+            INDEXED BY bot_life_state_market_reconcile
+            LEFT JOIN bot_goal_state goals ON goals.characterId = states.characterId
             WHERE states.phase = 'cold'
             AND (states.partyId IS NULL OR states.partyId = '')
             AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting')
             AND COALESCE(CAST(json_extract(states.statsJson, '$.marketSellRetryAfter') AS INTEGER), 0) <= ?
-            ORDER BY states.updatedAt ASC
+            AND (states.updatedAt > ?
+                OR (states.updatedAt = ? AND states.characterId > ?))
+            ORDER BY states.updatedAt ASC, states.characterId ASC
             LIMIT ${safeLimit}`,
-            [Number(timestamp) || now()]
-        ]).then((rows) => rows.map((row) => {
-            const state = normalize(row);
-            cache.set(state.characterId, state);
-            return state;
-        })).catch((err) => {
+            [
+                Number(timestamp) || now(),
+                Number(cursor?.updatedAt || 0),
+                Number(cursor?.updatedAt || 0),
+                Number(cursor?.characterId || 0)
+            ]
+        ], 'bot-life:market-goal-candidates');
+        return fetchAfter(marketGoalCursor).then(async (rows) => {
+            if (!rows.length && (marketGoalCursor.updatedAt > 0 || marketGoalCursor.characterId > 0)) {
+                marketGoalCursor = { updatedAt: 0, characterId: 0 };
+                rows = await fetchAfter(marketGoalCursor);
+            }
+            if (rows.length) {
+                const last = rows[rows.length - 1];
+                marketGoalCursor = {
+                    updatedAt: Math.max(0, Number(last.updatedAt || 0)),
+                    characterId: Math.max(0, Number(last.characterId || 0))
+                };
+            }
+            return rows.map((row) => {
+                const state = normalize(row);
+                if (row.currentGoalJson) {
+                    invoke('GameServer/Bot/Goals/GoalState').prime(
+                        state.characterId,
+                        row.currentGoalJson,
+                        row.currentGoalUpdatedAt
+                    );
+                }
+                cache.set(state.characterId, state);
+                return state;
+            });
+        }).catch((err) => {
             utils.infoWarn('BotLife', 'failed to fetch market-goal candidates: %s', err.message);
             return [];
         });
@@ -2388,7 +2473,8 @@ const BotLifeState = {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
         return Database.execute([
-            `SELECT states.* FROM ${TABLE} states
+            `SELECT states.*, goals.goalJson AS currentGoalJson,
+                goals.updatedAt AS currentGoalUpdatedAt FROM ${TABLE} states
             INNER JOIN bot_goal_state goals ON goals.characterId = states.characterId
             WHERE states.phase = 'cold'
             AND (states.partyId IS NULL OR states.partyId = '')
@@ -2399,6 +2485,11 @@ const BotLifeState = {
             [Number(timestamp) || now()]
         ]).then((rows) => rows.map((row) => {
             const state = normalize(row);
+            invoke('GameServer/Bot/Goals/GoalState').prime(
+                state.characterId,
+                row.currentGoalJson,
+                row.currentGoalUpdatedAt
+            );
             cache.set(state.characterId, state);
             return state;
         })).catch((err) => {
@@ -3056,6 +3147,10 @@ const BotLifeState = {
         return Array.from(cache.values())
             .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
             .slice(0, safeLimit);
+    },
+
+    marketGoalCursorSnapshot() {
+        return { ...marketGoalCursor };
     },
 
     levelHistogram() {

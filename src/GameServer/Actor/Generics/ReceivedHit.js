@@ -17,6 +17,7 @@ function wakeBotOnDamage(victimSession, attacker) {
         victimSession.incomingThreatId = attacker.fetchId();
         victimSession.incomingThreatAt = Date.now();
     }
+    invoke('GameServer/Bot/AI/PartyAwareness').invalidateThreatProjection(victimSession);
 
     const now = Date.now();
     if (now - Number(victimSession.lastDamageWakeAt || 0) < BOT_WAKEUP_THROTTLE_MS) return;

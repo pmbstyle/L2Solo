@@ -41,6 +41,32 @@ assert.strictEqual(C4GradePenalty.sync(loginActor), true);
 assert.strictEqual(loginActor.fetchExpertisePenalty(), 0);
 assert.strictEqual(EffectStore.list(loginActor).length, 0);
 
+const enterWorld = invoke('GameServer/Actor/Generics/EnterWorld');
+const refreshPackets = [];
+const refreshActor = {
+    skillset: { fetchSkills: () => ['expertise'] },
+    fetchCollectiveRunSpd: () => 145
+};
+let refreshedStats = false;
+enterWorld.refreshLoadedSkillState({
+    dataSendToMe: (packet) => refreshPackets.push(['self', packet]),
+    dataSendToOthers: (packet, actorValue) => refreshPackets.push(['others', packet, actorValue])
+}, refreshActor, {
+    calculateStats() { refreshedStats = true; }
+}, {
+    skillsList: () => 'skills',
+    userInfo: () => 'user-info',
+    abnormalStatusUpdate: { fromActor: () => 'effects' },
+    shortBuffStatusUpdate: { fromActor: () => 'short-buffs' },
+    charInfo: (actorValue) => `char-info:${actorValue.fetchCollectiveRunSpd()}`
+});
+assert.strictEqual(refreshedStats, true, 'skill-load completion must recalculate provisional login stats');
+assert.deepStrictEqual(
+    refreshPackets.at(-1),
+    ['others', 'char-info:145', refreshActor],
+    'skill-load completion must refresh corrected movement stats for remote clients'
+);
+
 const mixedEquipment = actor([item('D'), item('A'), item('S', false)], 1);
 assert.strictEqual(C4GradePenalty.penalty(mixedEquipment), 3, 'C4 uses the highest equipped item grade');
 C4GradePenalty.sync(mixedEquipment);

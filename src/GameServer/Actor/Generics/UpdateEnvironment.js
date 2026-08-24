@@ -1,9 +1,16 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const World          = invoke('GameServer/World/World');
 const SpeckMath      = invoke('GameServer/SpeckMath');
-const BotAI          = invoke('GameServer/Bot/BotAI');
 const TownGuard      = invoke('GameServer/Npc/TownGuard');
 const NpcAggro       = invoke('GameServer/Npc/NpcAggro');
+
+function isBotSession(session) {
+    return !!session && (
+        session.botSession === true ||
+        session.constructor?.name === 'BotSession' ||
+        String(session.accountId || '').startsWith('bot_')
+    );
+}
 
 function updateEnvironment(session, actor, { immediateNpcInfo = false, forceRefresh = false } = {}) {
     const actorArea = new SpeckMath.Circle(actor.fetchLocX(), actor.fetchLocY(), 6000);
@@ -20,34 +27,44 @@ function updateEnvironment(session, actor, { immediateNpcInfo = false, forceRefr
             }
         });
 
-        World.fetchVisibleUsers(session, actor).forEach((user) => {
-            session.dataSendToMe(ServerResponse.charInfo(user.actor));
-            session.dataSendToMe(ServerResponse.relationChanged(user.actor));
+        const sourceIsBot = isBotSession(session);
+        // Bot observers do not consume visibility packets and do not need an
+        // event-driven AI wakeup just because another actor crossed their
+        // radius. Their regular LOD tick, plus the explicit player
+        // interaction paths (select, damage, chat), is sufficient. Avoiding
+        // the bot-to-bot fan-out is important when hundreds of hot actors
+        // share one field: a single movement must not enqueue a wakeup for
+        // the whole local population.
+        const visibleUsers = sourceIsBot && typeof World.fetchVisibleRealPlayers === 'function'
+            ? World.fetchVisibleRealPlayers(session, actor)
+            : World.fetchVisibleUsers(session, actor);
+        visibleUsers.forEach((user) => {
+            const userIsBot = isBotSession(user);
 
-            const visibleStoreType = user.actor.fetchPrivateStoreType && user.actor.fetchPrivateStoreType();
-            const storeTitle = user.actor.fetchPrivateStore?.()?.title || user.actor.fetchTitle();
-            if (visibleStoreType === 1) {
-                session.dataSendToMe(ServerResponse.privateStoreMsg(user.actor, storeTitle));
-            } else if (visibleStoreType === 3) {
-                session.dataSendToMe(ServerResponse.privateStoreBuyMsg(user.actor, storeTitle));
-            } else if (visibleStoreType === 5) {
-                session.dataSendToMe(ServerResponse.recipeShopMsg(user.actor));
+            // BotSession.dataSendToMe() intentionally discards packets. Do not
+            // build the expensive CharInfo/relation/store payloads for a bot
+            // observer, and do not build the source snapshot for a bot source.
+            // Real clients still receive the complete visibility refresh.
+            if (!sourceIsBot) {
+                session.dataSendToMe(ServerResponse.charInfo(user.actor));
+                session.dataSendToMe(ServerResponse.relationChanged(user.actor));
+
+                const visibleStoreType = user.actor.fetchPrivateStoreType && user.actor.fetchPrivateStoreType();
+                const storeTitle = user.actor.fetchPrivateStore?.()?.title || user.actor.fetchTitle();
+                if (visibleStoreType === 1) {
+                    session.dataSendToMe(ServerResponse.privateStoreMsg(user.actor, storeTitle));
+                } else if (visibleStoreType === 3) {
+                    session.dataSendToMe(ServerResponse.privateStoreBuyMsg(user.actor, storeTitle));
+                } else if (visibleStoreType === 5) {
+                    session.dataSendToMe(ServerResponse.recipeShopMsg(user.actor));
+                }
             }
 
-            user.dataSendToMe(ServerResponse.charInfo(actor));
-            user.dataSendToMe(ServerResponse.relationChanged(actor));
-
-            // Immediate bot AI wakeup when entering player's visibility range (within 6000 range)
-            const dx = actor.fetchLocX() - user.actor.fetchLocX();
-            const dy = actor.fetchLocY() - user.actor.fetchLocY();
-            if (dx * dx + dy * dy <= 6000 * 6000) {
-                if (user.constructor.name === 'BotSession') {
-                    BotAI.wakeup(user);
-                }
-                if (session.constructor.name === 'BotSession') {
-                    BotAI.wakeup(session);
-                }
+            if (!userIsBot) {
+                user.dataSendToMe(ServerResponse.charInfo(actor));
+                user.dataSendToMe(ServerResponse.relationChanged(actor));
             }
+
         });
 
         actor.previousXY = actorArea.toCoords();
@@ -63,3 +80,4 @@ function updateEnvironment(session, actor, { immediateNpcInfo = false, forceRefr
 }
 
 module.exports = updateEnvironment;
+module.exports.isBotSession = isBotSession;

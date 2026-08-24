@@ -8,6 +8,7 @@ const BotAI = invoke('GameServer/Bot/BotAI');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyClassTactics = invoke('GameServer/Bot/AI/PartyClassTactics');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
+const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
 const FleeingState = invoke('GameServer/Bot/AI/States/FleeingState');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 
@@ -28,6 +29,7 @@ function actor(id, options = {}) {
         fetchMp: () => options.mp ?? 100,
         fetchMaxMp: () => options.maxMp ?? 100,
         fetchPDef: () => options.pDef ?? 50,
+        fetchClanName: () => options.clanName || '',
         fetchAttackable: () => options.attackable === true,
         fetchIsRaidBoss: () => options.raidBoss === true,
         fetchDestId: () => options.targetId,
@@ -84,20 +86,59 @@ const regular = actor(6003, {
     attackable: true,
     locX: 140
 });
+const siegeGuard = actor(6005, {
+    selfId: 12114,
+    name: 'Dion Bow Guard s E',
+    clanName: 'Door, Dion Siege',
+    attackable: true,
+    locX: 180
+});
 
 assert.strictEqual(BotRaidSafety.isProtectedRaidEntity(boss), true, 'a live raid boss must be protected');
 assert.strictEqual(BotRaidSafety.isProtectedRaidEntity(minion), true, 'a live linked raid minion must be protected');
 assert.strictEqual(BotRaidSafety.isProtectedRaidEntity({ selfId: 10002 }), true,
     'a cold raid minion template must be protected without a live boss object');
 assert.strictEqual(BotRaidSafety.isProtectedRaidEntity(regular), false, 'ordinary monsters must remain eligible');
+assert.strictEqual(BotHuntingTargetPolicy.isSiegeGuard(siegeGuard), true,
+    'runtime castle defenders must retain their sourced siege identity');
+assert.strictEqual(BotHuntingTargetPolicy.isSiegeGuard({ clan: { clanName: 'Door, Oren Siege' } }), true,
+    'cold castle-defender records must retain their sourced siege identity');
+assert.strictEqual(BotHuntingTargetPolicy.canHunt({ template: { name: 'Oren Royal Gatekeeper' } }), false,
+    'misclassified castle teleporters must not keep castle sectors in the hunting atlas');
+assert.strictEqual(BotHuntingTargetPolicy.canHunt({ clan: { clanName: 'ant_clan' } }), true,
+    'ordinary monster clans must remain eligible even when the NPC name contains Guard');
 
 World.user = { sessions: [leaderSession, companionSession] };
-World.npc = { spawns: [boss, minion, regular], grid: {} };
-World.fetchNpcsInRadius = () => [boss, minion, regular];
+World.npc = { spawns: [boss, minion, regular, siegeGuard], grid: {} };
+World.fetchNpcsInRadius = () => [boss, minion, regular, siegeGuard];
 
 const threat = PartyAwareness.findThreatTargetingParty(leaderSession);
 assert.strictEqual(threat.type, 'raid', 'a raid entity targeting the party must be reported as an escape threat');
 assert.strictEqual(threat.actor, boss, 'raid safety must outrank ordinary party combat decisions');
+
+const originalFetchNpcsInRadius = World.fetchNpcsInRadius;
+const originalBossTarget = boss.fetchDestId;
+let projectedSpatialScans = 0;
+World.fetchNpcsInRadius = (...args) => {
+    projectedSpatialScans += 1;
+    return originalFetchNpcsInRadius(...args);
+};
+PartyAwareness.invalidateThreatProjection(leaderSession);
+assert.strictEqual(PartyAwareness.findThreatTargetingPartyProjected(leaderSession)?.actor, boss,
+    'the shared party projection must preserve normal threat selection');
+const scansAfterProjectionMiss = projectedSpatialScans;
+assert(scansAfterProjectionMiss > 0, 'the first party projection must perform a real spatial scan');
+assert.strictEqual(PartyAwareness.findThreatTargetingPartyProjected(leaderSession)?.actor, boss,
+    'a repeated hot decision must reuse the same short-lived party projection');
+assert.strictEqual(projectedSpatialScans, scansAfterProjectionMiss,
+    'the cached party projection must not repeat per-member spatial scans');
+boss.fetchDestId = () => undefined;
+PartyAwareness.invalidateThreatProjection(leaderSession);
+assert.strictEqual(PartyAwareness.findThreatTargetingPartyProjected(leaderSession), null,
+    'explicit invalidation must expose a changed threat immediately');
+boss.fetchDestId = originalBossTarget;
+PartyAwareness.invalidateThreatProjection(leaderSession);
+World.fetchNpcsInRadius = originalFetchNpcsInRadius;
 
 leader.fetchDestId = () => boss.fetchId();
 assert.strictEqual(PartyAwareness.leaderCombatTargetId(leaderSession), null,
@@ -109,6 +150,7 @@ const indexedIds = spots.flatMap((spot) => spot.npcSelfIds || []);
 assert(indexedIds.includes(regular.fetchSelfId()), 'ordinary monsters must remain in hunting-ground profiles');
 assert(!indexedIds.includes(boss.fetchSelfId()), 'raid bosses must not create bot hunting grounds');
 assert(!indexedIds.includes(minion.fetchSelfId()), 'raid minions must not create bot hunting grounds');
+assert(!indexedIds.includes(siegeGuard.fetchSelfId()), 'castle guards must not create bot hunting grounds');
 
 const tank = actor(5100, { classId: 5, hp: 500, maxHp: 1000, pDef: 500, heavyArmor: true });
 const heavyFighter = actor(5101, { classId: 1, hp: 1000, maxHp: 1000, pDef: 600, heavyArmor: true });
@@ -263,6 +305,7 @@ delete leaderSession.partyRaidEngagement;
 leader.fetchDestId = () => undefined;
 boss.fetchDestId = () => leader.fetchId();
 World.user.sessions = [leaderSession, holdingCompanion];
+PartyAwareness.invalidateThreatProjection(leaderSession);
 FleeingState.tick(holdingCompanion, safeCompanion, {}, {});
 assert.strictEqual(holdingCompanion.plan, 'fleeing',
     'a companion already at safe range must stay away while its leader is still fighting a raid entity');
@@ -275,6 +318,7 @@ const fleeingCompanion = {
 };
 boss.fetchDestId = () => undefined;
 World.user.sessions = [leaderSession, fleeingCompanion];
+PartyAwareness.invalidateThreatProjection(leaderSession);
 FleeingState.tick(fleeingCompanion, companion, {}, {});
 assert.strictEqual(fleeingCompanion.plan, 'following', 'a companion must return to its party after escaping a raid entity');
 assert.strictEqual(fleeingCompanion.followPlayerSession, leaderSession, 'raid retreat must preserve the companion relationship');

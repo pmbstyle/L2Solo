@@ -1135,6 +1135,10 @@ module.exports = {
         return flatten(NPC_LISTS[npcSelfId]);
     },
 
+    npcIds() {
+        return Object.keys(NPC_LISTS).map(Number);
+    },
+
     fetchFallback(key) {
         return flatten(FALLBACKS[key]);
     },

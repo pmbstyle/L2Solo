@@ -26,6 +26,7 @@ const RECALL = 'recall';
 const SOULSHOT = 'soulshot';
 const SPIRITSHOT = 'spiritshot';
 const SUMMON = 'summon';
+const GET_PLAYER = 'getPlayer';
 const SUMMON_PET = 'summonPet';
 const FEED_PET = 'feedPet';
 const BEAST_FEED = 'beastFeed';
@@ -831,11 +832,13 @@ const RULES = {
     4278: { skillType: NOT_DONE, trait: 'not_done', target: 'none', ssBoost: 0 },
     4279: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { fireVuln: [1.1, 1.15, 1.2, 1.3, 1.5] } },
     4009: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { fireVuln: [0.85, 0.7, 0.5, 0.3, 0.1, 0] } },
+    4011: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { windVuln: [0.85, 0.7, 0.5, 0.3, 0.1, 0] } },
     4229: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, levelDepend: 1, castRange: 700, effectRange: 1200 },
     4228: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, levelDepend: 1, castRange: 700, effectRange: 1200 },
     4280: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { waterVuln: [1.1, 1.15, 1.2, 1.3, 1.5] } },
     4284: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { bleedVuln: [0.85, 0.7, 0.5, 0.3, 0.1, 0] } },
     4281: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { windVuln: [1.1, 1.15, 1.2, 1.3, 1.5] } },
+    4282: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { earthVuln: [1.1, 1.15, 1.2, 1.3, 1.5] } },
     4285: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { sleepVuln: [0.85, 0.7, 0.5, 0.3, 0.1, 0] } },
     4287: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { rootVuln: [0.85, 0.7, 0.5, 0.3, 0.1, 0] } },
     4290: { skillType: PASSIVE, trait: 'race_undead', target: 'self' },
@@ -856,7 +859,9 @@ const RULES = {
     4305: { skillType: PASSIVE, trait: 'passive', target: 'self', stats: { maxHpMul: 4 } },
     4306: { skillType: PASSIVE, trait: 'passive', target: 'self', stats: { maxHpMul: 5 } },
     4307: { skillType: PASSIVE, trait: 'passive', target: 'self', stats: { maxHpMul: 6 } },
+    4310: { skillType: PASSIVE, trait: 'passive', target: 'self', stats: { maxHpMul: 9 } },
     4317: { skillType: EFFECT, trait: 'buff', effect: 'increase_rage_might', effectType: 'buff', target: 'self', baseLandRate: 100, statsByLevel: { pAtkMul: [1.15, 1.2, 1.25, 1.3, 1.35] } },
+    4320: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', target: 'enemy', ssBoost: 0, baseLandRateByLevel: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16], levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 1500, effectRange: 2000, dot: { count: 10, intervalMs: 3000, damageByLevel: [12, 18, 24, 31, 38, 44, 48, 48, 50, 50, 51, 51] } },
     4333: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { darkVuln: [0.85, 0.7, 0.5, 0.3, 0.1, 0] } },
     4336: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { darkVuln: [1.1, 1.15, 1.2, 1.3, 1.5] } },
     4335: { skillType: NOT_DONE, trait: 'not_done', target: 'none', ssBoost: 0 },
@@ -985,6 +990,7 @@ const RULES = {
     4100: { skillType: DAMAGE, trait: 'fire', target: 'enemy', ssBoost: 1, levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 600, effectRange: 1100 },
     4101: { skillType: DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'aura', radius: 150, ssBoost: 1, levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95] },
     4102: { skillType: EFFECT, trait: 'fire', effect: 'npc_fire_weakness', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 100, levelDepend: 1, magicLevelByLevel: [20, 70], castRange: 600, effectRange: 1100, statsByLevel: { fireVuln: [1.15, 1.20] } },
+    4161: { skillType: GET_PLAYER, trait: 'magic', target: 'enemy', ssBoost: 0, castRange: 600, effectRange: 1100 },
     4103: { skillType: EFFECT, trait: 'buff', effect: 'npc_ultimate_evasion', effectType: 'buff', target: 'self', ssBoost: 0, baseLandRate: 100, aggroPoints: 100, statsByLevel: { pEvasionRateAdd: [20, 25] } },
     4104: { skillType: EFFECT, trait: 'fire', effect: 'flame', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRateByLevel: [2, 3, 4, 5, 6, 7, 8, 8, 9, 9, 10, 10], levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 600, effectRange: 1100, dot: { count: 30, intervalMs: 3000, damageByLevel: [14, 21, 30, 40, 51, 61, 68, 68, 75, 75, 81, 81] } },
     4105: { skillType: DAMAGE, trait: 'magic', target: 'enemy', ssBoost: 1, levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 600, effectRange: 1100 },
@@ -1416,6 +1422,7 @@ module.exports = {
     SOULSHOT,
     SPIRITSHOT,
     SUMMON,
+    GET_PLAYER,
     SUMMON_PET,
     FEED_PET,
     BEAST_FEED,

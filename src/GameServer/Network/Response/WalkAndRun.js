@@ -8,7 +8,9 @@ function walkAndRun(creatureId, movement) {
         .writeD(movement)
         .writeD(0x00); // Unknown legacy tail.
 
-    return packet.fetchBuffer();
+    const buffer = packet.fetchBuffer();
+    buffer.__packetTrace = `actor=${creatureId}:running=${movement ? 1 : 0}`;
+    return buffer;
 }
 
 module.exports = walkAndRun;

@@ -4,6 +4,7 @@ require('../src/Global');
 
 const World = invoke('GameServer/World/World');
 const BotManager = invoke('GameServer/Bot/BotManager');
+const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
 const PartyRevivalService = invoke('GameServer/Bot/AI/PartyRevivalService');
 const FollowingState = invoke('GameServer/Bot/AI/States/FollowingState');
 const C4SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
@@ -95,6 +96,21 @@ try {
     World.npc = { spawns: [] };
     World.fetchNpcsInRadius = () => [];
     BotManager.sessions = [healerSession, fallenSession];
+
+    leader.state.setDead(false);
+    fallen.state.setDead(false);
+    let corpseFallbackScans = 0;
+    const livingPartySpawns = [];
+    livingPartySpawns.find = () => {
+        corpseFallbackScans += 1;
+        return undefined;
+    };
+    World.npc.spawns = livingPartySpawns;
+    assert.strictEqual(PartyCombatState.combatState(leaderSession).active, false, 'a safe living party must remain out of combat');
+    assert.strictEqual(corpseFallbackScans, 0, 'a living party must not scan every NPC for corpse attackers');
+    leader.state.setDead(true);
+    fallen.state.setDead(true);
+    World.npc.spawns = [];
 
     const frustrationStart = 1_000_000;
     assert.deepStrictEqual(

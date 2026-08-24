@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS characters (
 );
 CREATE INDEX IF NOT EXISTS characters_username ON characters(username);
 CREATE INDEX IF NOT EXISTS characters_clanId ON characters(clanId);
+CREATE INDEX IF NOT EXISTS characters_clan_level_id ON characters(clanId, level DESC, id ASC);
 
 CREATE TABLE IF NOT EXISTS clans (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,6 +70,160 @@ CREATE TABLE IF NOT EXISTS clans (
     charPenaltyExpiryTime INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS clans_leaderId ON clans(leaderId);
+
+CREATE TABLE IF NOT EXISTS clan_simulation_clans (
+    clanId INTEGER PRIMARY KEY REFERENCES clans(id) ON DELETE CASCADE,
+    version INTEGER NOT NULL DEFAULT 1,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    stateJson TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS clan_simulation_clans_updatedAt ON clan_simulation_clans(updatedAt);
+
+CREATE TABLE IF NOT EXISTS clan_contributions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+    characterId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    targetLevel INTEGER NOT NULL,
+    amount INTEGER NOT NULL CHECK(amount > 0),
+    source TEXT NOT NULL DEFAULT 'adena',
+    resolveKey TEXT NOT NULL,
+    createdAt INTEGER NOT NULL,
+    UNIQUE(clanId, characterId, targetLevel, resolveKey)
+);
+CREATE INDEX IF NOT EXISTS clan_contributions_clan_level ON clan_contributions(clanId, targetLevel, createdAt);
+
+CREATE TABLE IF NOT EXISTS clan_warehouse_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+    selfId INTEGER NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT '',
+    amount INTEGER NOT NULL DEFAULT 1 CHECK(amount > 0),
+    enchant INTEGER NOT NULL DEFAULT 0 CHECK(enchant >= 0),
+    petData TEXT,
+    reservedAmount INTEGER NOT NULL DEFAULT 0 CHECK(reservedAmount >= 0),
+    createdAt INTEGER NOT NULL DEFAULT 0,
+    updatedAt INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(clanId, selfId, enchant)
+);
+CREATE INDEX IF NOT EXISTS clan_warehouse_items_clan_self
+    ON clan_warehouse_items(clanId, selfId, amount);
+
+CREATE TABLE IF NOT EXISTS clan_warehouse_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+    characterId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    selfId INTEGER NOT NULL,
+    amount INTEGER NOT NULL CHECK(amount > 0),
+    operation TEXT NOT NULL,
+    resolveKey TEXT NOT NULL,
+    warehouseRevision INTEGER NOT NULL DEFAULT 0,
+    createdAt INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(clanId, characterId, selfId, operation, resolveKey)
+);
+CREATE INDEX IF NOT EXISTS clan_warehouse_ledger_clan_item
+    ON clan_warehouse_ledger(clanId, selfId, createdAt);
+
+CREATE TABLE IF NOT EXISTS clan_warehouse_reservations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+    selfId INTEGER NOT NULL,
+    amount INTEGER NOT NULL CHECK(amount > 0),
+    beneficiaryId INTEGER REFERENCES characters(id) ON DELETE SET NULL,
+    goalKey TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'reserved' CHECK(status IN ('reserved', 'released', 'consumed')),
+    createdAt INTEGER NOT NULL DEFAULT 0,
+    updatedAt INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(clanId, selfId, goalKey)
+);
+CREATE INDEX IF NOT EXISTS clan_warehouse_reservations_active
+    ON clan_warehouse_reservations(clanId, selfId, status, updatedAt);
+
+CREATE TABLE IF NOT EXISTS clan_goal_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+    eventType TEXT NOT NULL,
+    goalType TEXT NOT NULL DEFAULT '',
+    plan TEXT NOT NULL DEFAULT '',
+    reasonCode TEXT NOT NULL DEFAULT '',
+    payloadJson TEXT NOT NULL DEFAULT '{}',
+    occurredAt INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS clan_goal_events_clan_recent
+    ON clan_goal_events(clanId, occurredAt DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS clan_market_demands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+    itemId INTEGER NOT NULL,
+    amount INTEGER NOT NULL CHECK(amount > 0),
+    maxPrice INTEGER NOT NULL CHECK(maxPrice > 0),
+    goalKey TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'fulfilled', 'cancelled')),
+    createdAt INTEGER NOT NULL DEFAULT 0,
+    updatedAt INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(clanId, itemId, goalKey)
+);
+CREATE INDEX IF NOT EXISTS clan_market_demands_item_status
+    ON clan_market_demands(itemId, status, updatedAt);
+
+CREATE TABLE IF NOT EXISTS clan_operations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+    operationKey TEXT NOT NULL UNIQUE,
+    operationType TEXT NOT NULL,
+    targetNpcId INTEGER NOT NULL DEFAULT 0,
+    leaderId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    memberIdsJson TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'succeeded', 'failed', 'cancelled')),
+    wins INTEGER NOT NULL DEFAULT 0,
+    deaths INTEGER NOT NULL DEFAULT 0,
+    reasonCode TEXT NOT NULL DEFAULT '',
+    rewardJson TEXT NOT NULL DEFAULT '[]',
+    createdAt INTEGER NOT NULL DEFAULT 0,
+    updatedAt INTEGER NOT NULL DEFAULT 0,
+    resolvedAt INTEGER
+);
+CREATE INDEX IF NOT EXISTS clan_operations_clan_status
+    ON clan_operations(clanId, status, updatedAt);
+
+CREATE TABLE IF NOT EXISTS clan_operation_members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    operationId INTEGER NOT NULL REFERENCES clan_operations(id) ON DELETE CASCADE,
+    clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+    characterId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'released')),
+    reservedAt INTEGER NOT NULL DEFAULT 0,
+    releasedAt INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS clan_operation_members_active_character
+    ON clan_operation_members(characterId) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS clan_operation_members_operation
+    ON clan_operation_members(operationId, status, characterId);
+
+CREATE TABLE IF NOT EXISTS clan_actions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+    actionKey TEXT NOT NULL UNIQUE,
+    actionType TEXT NOT NULL,
+    priority INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending', 'running', 'succeeded', 'failed', 'cancelled')),
+    attempt INTEGER NOT NULL DEFAULT 0,
+    availableAt INTEGER NOT NULL DEFAULT 0,
+    leaseUntil INTEGER,
+    payloadJson TEXT NOT NULL DEFAULT '{}',
+    resultJson TEXT NOT NULL DEFAULT '{}',
+    reasonCode TEXT NOT NULL DEFAULT '',
+    createdAt INTEGER NOT NULL DEFAULT 0,
+    updatedAt INTEGER NOT NULL DEFAULT 0,
+    resolvedAt INTEGER
+);
+CREATE INDEX IF NOT EXISTS clan_actions_due
+    ON clan_actions(status, availableAt, priority DESC, id ASC);
+CREATE INDEX IF NOT EXISTS clan_actions_clan_status
+    ON clan_actions(clanId, status, updatedAt DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS clan_crests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -205,6 +360,7 @@ CREATE INDEX IF NOT EXISTS bot_life_state_phase_nextResolveAt ON bot_life_state(
 CREATE INDEX IF NOT EXISTS bot_life_state_phase_partyId ON bot_life_state(phase, partyId);
 CREATE INDEX IF NOT EXISTS bot_life_state_accountName ON bot_life_state(accountName);
 CREATE INDEX IF NOT EXISTS bot_life_state_characterName ON bot_life_state(characterName COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS bot_life_state_market_reconcile ON bot_life_state(phase, updatedAt, characterId);
 CREATE TABLE IF NOT EXISTS bot_goal_state (
     characterId INTEGER PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
     goalJson TEXT,

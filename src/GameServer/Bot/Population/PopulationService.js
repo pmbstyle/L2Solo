@@ -6,6 +6,7 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
+const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const BackgroundPartyResolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
@@ -34,8 +35,17 @@ const PlayerActivitySignal = invoke('GameServer/Bot/Population/PlayerActivitySig
 const FloorAwareActivationPolicy = invoke('GameServer/Bot/Population/FloorAwareActivationPolicy');
 const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const ColdSimulationCoordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+const BackgroundWorkGovernor = invoke('GameServer/Bot/Population/BackgroundWorkGovernor');
+const BackgroundJobRegistry = invoke('GameServer/Bot/Population/BackgroundJobRegistry');
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const BackgroundPartyLifecycle = invoke('GameServer/Bot/Population/BackgroundPartyLifecycle');
+const ClanSimulationConfig = invoke('GameServer/Clan/ClanSimulationConfig');
+const ClanSimulationService = invoke('GameServer/Clan/ClanSimulationService');
+const ClanActionService = invoke('GameServer/Clan/ClanActionService');
+const ClanEconomyService = invoke('GameServer/Clan/ClanEconomyService');
+const ClanGoalService = invoke('GameServer/Clan/ClanGoalService');
+const ClanPartyService = invoke('GameServer/Clan/ClanPartyService');
+const ClanMarketService = invoke('GameServer/Clan/ClanMarketService');
 
 const {
     partyObjectiveForPlan,
@@ -89,9 +99,14 @@ function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
     const currentId = physical?.id || options.currentSpotId || state.spotId || null;
     if (currentId === spot.id) return null;
     const destination = SpotService.arrivalPointForState(state, spot);
+    const spotBackoff = options.spotBackoff
+        || SpotRiskPolicy.backoffForStates([state], currentId, timestamp);
+    const routedState = spotBackoff
+        ? SpotRiskPolicy.withBackoff(state, spotBackoff, timestamp)
+        : state;
 
     return {
-        ...state,
+        ...routedState,
         activity: 'traveling',
         timing: {
             ...(state.timing || {}),
@@ -99,7 +114,7 @@ function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
             nextResolveAt: timestamp + HUNTING_TRAVEL_MS
         },
         stats: {
-            ...(state.stats || {}),
+            ...(routedState.stats || {}),
             travel: {
                 from,
                 to: destination,
@@ -110,16 +125,19 @@ function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
                 spotId: spot.id,
                 arrivalActivity: 'hunting',
                 arrivalEvent: 'arrived_hunting_ground',
-                reason: state.stats?.equipmentPlan?.status === 'active'
-                    ? 'equipment_source_replan'
-                    : 'level_replan'
+                reason: spotBackoff
+                    ? 'death_pressure_replan'
+                    : state.stats?.equipmentPlan?.status === 'active'
+                        ? 'equipment_source_replan'
+                        : 'level_replan',
+                ...(spotBackoff ? { cause: 'death_pressure' } : {})
             }
         }
     };
 }
 
-function beginPartySpotTravel(state, spot, timestamp = Date.now()) {
-    const travelling = beginHuntingTravel(state, spot, timestamp);
+function beginPartySpotTravel(state, spot, timestamp = Date.now(), options = {}) {
+    const travelling = beginHuntingTravel(state, spot, timestamp, options);
     if (!travelling) return null;
     return {
         ...travelling,
@@ -128,6 +146,7 @@ function beginPartySpotTravel(state, spot, timestamp = Date.now()) {
             travel: {
                 ...(travelling.stats?.travel || {}),
                 reason: 'party_spot_replan',
+                ...(options.spotBackoff ? { cause: 'death_pressure' } : {}),
                 arrivalActivity: 'grouped',
                 arrivalEvent: 'party_arrived_hunting_ground'
             }
@@ -393,7 +412,7 @@ function canTakePartyMarketBreak(party, members, member, timestamp = Date.now())
 
 function dissolveBackgroundParty(party, reason, memberCount = 0) {
     return BackgroundPartyState.setStatus(party.partyId, 'dissolved')
-        .then(() => LifeState.clearParty(party.partyId, reason))
+        .then(() => LifeState.releaseDissolvedPartyMembers(party.partyId, reason))
         .then((cleared) => {
             Metrics.recordPartyDissolution();
             console.info(
@@ -522,6 +541,7 @@ function marketListingIntent(state, goal = null) {
 
     return {
         shouldOpen: true,
+        cleanup: forcedCleanup,
         state: {
             ...state,
             stats: {
@@ -649,18 +669,6 @@ function distance2d(a, b) {
     return Math.sqrt((dx * dx) + (dy * dy));
 }
 
-function nearbyHotCount(sessions, player) {
-    const playerLevel = Number(player.fetchLevel?.() || 1);
-    return sessions.filter((session) => {
-        const actor = session?.actor;
-        if (!actor || !session.accountId || !String(session.accountId).startsWith('bot_')) return false;
-        if (actor.fetchIsOnline && !actor.fetchIsOnline()) return false;
-        if (session.plan === 'merchant') return false;
-        if (distance2d(actor, player) > Config.activationRadius) return false;
-        return Math.abs(Number(actor.fetchLevel?.() || 1) - playerLevel) <= Config.activationLevelRange;
-    }).length;
-}
-
 const PopulationService = {
     groupBySpot,
     partySpotForLeader,
@@ -670,6 +678,7 @@ const PopulationService = {
     summaryTimer: null,
     initialSummaryTimer: null,
     schedulerTimer: null,
+    backgroundJobRegistry: null,
     warehouseCleanupTimer: null,
     stateRetentionTimer: null,
     partyFormationTimer: null,
@@ -678,7 +687,6 @@ const PopulationService = {
     seedTimer: null,
     classProgressionMigrationTimer: null,
     marketTownMigrationTimer: null,
-    goalMetadataTimer: null,
     nextColdCombatProfileMigrationAt: 0,
     nextMarketTownMigrationAt: 0,
     nextPartyRequestCleanupAt: 0,
@@ -700,7 +708,12 @@ const PopulationService = {
     classProgressionMigrationRunning: false,
     coldCombatProfileMigrationRunning: false,
     marketTownMigrationRunning: false,
-    goalMetadataRunning: false,
+    staleGoalReviewRunning: false,
+    warehouseReleaseRunning: false,
+    marketGoalReconcileRunning: false,
+    nextStaleGoalReviewAt: 0,
+    nextWarehouseReleaseAt: 0,
+    nextMarketGoalReconcileAt: 0,
     marketExpiryCleanupRunning: false,
     coldOwnerRecoveryRunning: false,
     warehouseCleanupRunning: false,
@@ -709,6 +722,9 @@ const PopulationService = {
     partyFormationPending: false,
     partyRequestCleanupRunning: false,
     phasePolicyRunning: false,
+    clanActionRunning: false,
+    clanFounderRunning: false,
+    nextClanActionAt: 0,
 
     init() {
         if (this.initialized || Config.enabled === false) return;
@@ -761,6 +777,8 @@ const PopulationService = {
 
         if (Config.backgroundResolverEnabled !== false) ColdSimulationCoordinator.start(this);
 
+        this.startBackgroundJobRegistry();
+
         this.classProgressionMigrationTimer = setInterval(() => {
             this.migrateLegacyClassProgression();
         }, Config.classProgressionMigrationIntervalMs);
@@ -783,17 +801,6 @@ const PopulationService = {
 
         if (typeof this.marketExpiryCleanupTimer.unref === 'function') {
             this.marketExpiryCleanupTimer.unref();
-        }
-
-        if (Config.backgroundResolverEnabled !== false) {
-            this.reconcileGoalMetadata();
-            this.goalMetadataTimer = setInterval(() => {
-                this.reconcileGoalMetadata();
-            }, Math.max(5000, Number(Config.goalMetadataReconcileIntervalMs) || 30000));
-
-            if (typeof this.goalMetadataTimer.unref === 'function') {
-                this.goalMetadataTimer.unref();
-            }
         }
 
         if (Config.warehouseCleanupEnabled !== false) {
@@ -873,6 +880,13 @@ const PopulationService = {
             clearInterval(this.schedulerTimer);
             this.schedulerTimer = null;
         }
+        if (this.backgroundJobRegistry) {
+            this.backgroundJobRegistry.stop();
+            this.backgroundJobRegistry = null;
+        }
+        this.clanActionRunning = false;
+        this.clanFounderRunning = false;
+        this.nextClanActionAt = 0;
         if (this.warehouseCleanupTimer) {
             clearInterval(this.warehouseCleanupTimer);
             this.warehouseCleanupTimer = null;
@@ -925,11 +939,12 @@ const PopulationService = {
             clearInterval(this.marketExpiryCleanupTimer);
             this.marketExpiryCleanupTimer = null;
         }
-        if (this.goalMetadataTimer) {
-            clearInterval(this.goalMetadataTimer);
-            this.goalMetadataTimer = null;
-        }
-        this.goalMetadataRunning = false;
+        this.staleGoalReviewRunning = false;
+        this.warehouseReleaseRunning = false;
+        this.marketGoalReconcileRunning = false;
+        this.nextStaleGoalReviewAt = 0;
+        this.nextWarehouseReleaseAt = 0;
+        this.nextMarketGoalReconcileAt = 0;
         this.partyRequestCleanupRunning = false;
         if (this.personaBackfillTimer) {
             clearInterval(this.personaBackfillTimer);
@@ -1202,56 +1217,320 @@ const PopulationService = {
         return profile;
     },
 
-    reconcileGoalMetadata() {
-        if (this.goalMetadataRunning || Config.enabled === false || Config.backgroundResolverEnabled === false) {
+    startBackgroundJobRegistry() {
+        if (this.backgroundJobRegistry) return this.backgroundJobRegistry;
+        const registry = BackgroundJobRegistry.create({
+            tickMs: Math.max(50, Number(Config.backgroundJobTickMs) || 250),
+            onError: (job, error) => {
+                utils.infoWarn('BotPopulation', 'background job %s failed: %s', job, error?.message || error);
+            }
+        });
+
+        if (ClanSimulationConfig.enabled !== false) {
+            const clanIntervalMs = Math.max(1000, Number(ClanSimulationConfig.resolveIntervalMs) || 60000);
+            const clanContinuationMs = Math.max(
+                Math.max(50, Number(Config.backgroundJobTickMs) || 250),
+                Math.max(100, Number(Config.backgroundGovernorWindowMs) || 1000)
+            );
+            registry.register({
+                name: 'clan_actions',
+                intervalMs: clanContinuationMs,
+                offsetMs: 0,
+                run: () => this.nextClanActionAt > Date.now()
+                    ? { skipped: true, reason: 'not_due' }
+                    : this.resolveClanActions()
+            });
+            registry.register({
+                name: 'clan_founders',
+                intervalMs: clanIntervalMs,
+                offsetMs: Math.max(250, Math.floor(clanIntervalMs / 2)),
+                run: () => this.resolveClanFounders()
+            });
+        }
+
+        if (Config.backgroundResolverEnabled !== false) {
+            const goalIntervalMs = Math.max(5000, Number(Config.goalMetadataReconcileIntervalMs) || 30000);
+            const registryTickMs = Math.max(50, Number(Config.backgroundJobTickMs) || 250);
+            const continuationIntervalMs = Math.max(
+                registryTickMs,
+                Math.max(100, Number(Config.backgroundGovernorWindowMs) || 1000)
+            );
+            const baseOffsetMs = Math.min(5000, Math.max(registryTickMs, Math.floor(goalIntervalMs / 4)));
+            const registerGoalJob = ({ name, offsetMs, nextAtKey, run }) => registry.register({
+                name,
+                intervalMs: continuationIntervalMs,
+                offsetMs,
+                run: () => this[nextAtKey] > Date.now()
+                    ? { skipped: true, reason: 'not_due' }
+                    : run()
+            });
+            registerGoalJob({
+                name: 'goal_stale_review',
+                offsetMs: baseOffsetMs,
+                nextAtKey: 'nextStaleGoalReviewAt',
+                run: () => this.reconcileStaleGoals()
+            });
+            registerGoalJob({
+                name: 'goal_warehouse_release',
+                offsetMs: baseOffsetMs + registryTickMs,
+                nextAtKey: 'nextWarehouseReleaseAt',
+                run: () => this.reconcileWarehouseReleases()
+            });
+            registerGoalJob({
+                name: 'goal_market_reconcile',
+                offsetMs: baseOffsetMs + (registryTickMs * 2),
+                nextAtKey: 'nextMarketGoalReconcileAt',
+                run: () => this.reconcileMarketGoalBatch()
+            });
+        }
+
+        this.backgroundJobRegistry = registry;
+        registry.start();
+        return registry;
+    },
+
+    scheduleClanActions(continuation = false) {
+        const normalMs = Math.max(1000, Number(ClanSimulationConfig.resolveIntervalMs) || 60000);
+        const continuationMs = Math.max(
+            Math.max(50, Number(Config.backgroundJobTickMs) || 250),
+            Math.max(100, Number(Config.backgroundGovernorWindowMs) || 1000)
+        );
+        this.nextClanActionAt = Date.now() + (continuation ? continuationMs : normalMs);
+        return this.nextClanActionAt;
+    },
+
+    resolveClanActions(activity = this.playerActivityProfile()) {
+        if (ClanSimulationConfig.enabled === false) return Promise.resolve({ skipped: true, reason: 'disabled' });
+        if (this.clanActionRunning) return Promise.resolve({ skipped: true, reason: 'already_running' });
+        const idleBudget = Math.max(10, Number(ClanSimulationConfig.resolveBudgetMs) || 80);
+        const playerBudget = Math.max(1, Math.min(idleBudget, Number(ClanSimulationConfig.actionPlayerBudgetMs) || 20));
+        const requestedBudgetMs = activity?.protected ? playerBudget : idleBudget;
+        const admission = BackgroundWorkGovernor.admit({
+            job: 'clan_actions',
+            resource: 'sqlite-heavy',
+            requestedBudgetMs,
+            minimumBudgetMs: Math.min(10, requestedBudgetMs),
+            playerProtected: !!activity?.protected,
+            realPlayers: activity?.realPlayers
+        });
+        if (!admission.ok) {
+            this.scheduleClanActions(true);
+            Metrics.recordBackgroundDeferral();
+            return Promise.resolve({ skipped: true, reason: `governor_${admission.reason}` });
+        }
+
+        this.clanActionRunning = true;
+        const startedAt = Date.now();
+        let needsContinuation = true;
+        return Promise.resolve().then(() => ClanActionService.resolveBatch({
+            limit: ClanSimulationConfig.actionBatchSize,
+            budgetMs: admission.budgetMs
+        })).then((result) => {
+            needsContinuation = !!result?.budgetStopped || Number(result?.queue?.ready || 0) > 0;
+            return result;
+        }).catch((error) => {
+            utils.infoWarn('ClanSimulation', 'action resolve failed: %s', error.message);
+            return { attempted: 0, claimed: 0, resolved: 0, released: 0, succeeded: 0, failed: 0, leftRunning: 0, error: error.message };
+        }).finally(() => {
+            BackgroundWorkGovernor.complete(admission.lease, { durationMs: Date.now() - startedAt });
+            this.scheduleClanActions(needsContinuation);
+            this.clanActionRunning = false;
+        });
+    },
+
+    resolveClanFounders(activity = this.playerActivityProfile()) {
+        if (ClanSimulationConfig.enabled === false) return Promise.resolve({ skipped: true, reason: 'disabled' });
+        if (this.clanFounderRunning) return Promise.resolve({ skipped: true, reason: 'already_running' });
+        const idleBudget = Math.max(1, Number(ClanSimulationConfig.founderResolveBudgetMs) || 20);
+        const playerBudget = Math.max(1, Math.min(idleBudget, Number(ClanSimulationConfig.founderPlayerBudgetMs) || 5));
+        const requestedBudgetMs = activity?.protected ? playerBudget : idleBudget;
+        const admission = BackgroundWorkGovernor.admit({
+            job: 'clan_founders',
+            resource: 'sqlite-heavy',
+            requestedBudgetMs,
+            minimumBudgetMs: Math.min(5, requestedBudgetMs),
+            playerProtected: !!activity?.protected,
+            realPlayers: activity?.realPlayers
+        });
+        if (!admission.ok) {
+            Metrics.recordBackgroundDeferral();
+            return Promise.resolve({ skipped: true, reason: `governor_${admission.reason}` });
+        }
+
+        this.clanFounderRunning = true;
+        const startedAt = Date.now();
+        return Promise.resolve().then(() => ClanSimulationService.resolveBatch(ClanSimulationConfig.resolveBatchSize, {
+            budgetMs: admission.budgetMs
+        })).catch((error) => {
+            utils.infoWarn('ClanSimulation', 'founder resolve failed: %s', error.message);
+            return { attempted: 0, created: 0, joined: 0, blocked: 0, error: error.message };
+        }).finally(() => {
+            BackgroundWorkGovernor.complete(admission.lease, { durationMs: Date.now() - startedAt });
+            this.clanFounderRunning = false;
+        });
+    },
+
+    resolveClanSimulation() {
+        if (ClanSimulationConfig.enabled === false) return Promise.resolve(null);
+        const activity = this.playerActivityProfile();
+        const startedAt = Date.now();
+        return this.resolveClanActions(activity).then((actions) => this.resolveClanFounders(activity).then((founder) => ({
+            actions,
+            founder,
+            playerProtected: !!activity?.protected,
+            elapsedMs: Date.now() - startedAt
+        })));
+    },
+
+    goalMetadataCadenceMs() {
+        return Math.max(5000, Number(Config.goalMetadataReconcileIntervalMs) || 30000);
+    },
+
+    goalMetadataContinuationMs() {
+        return Math.max(
+            Math.max(50, Number(Config.backgroundJobTickMs) || 250),
+            Math.max(100, Number(Config.backgroundGovernorWindowMs) || 1000)
+        );
+    },
+
+    scheduleGoalBackgroundJob(nextAtKey, continuation = false) {
+        const delayMs = continuation ? this.goalMetadataContinuationMs() : this.goalMetadataCadenceMs();
+        this[nextAtKey] = Date.now() + delayMs;
+        return this[nextAtKey];
+    },
+
+    runGovernedGoalBackgroundJob(options = {}) {
+        const job = String(options.job || 'goal_background');
+        const runningKey = String(options.runningKey || 'staleGoalReviewRunning');
+        const nextAtKey = String(options.nextAtKey || 'nextStaleGoalReviewAt');
+        if (this[runningKey] || Config.enabled === false || Config.backgroundResolverEnabled === false) {
             return Promise.resolve([]);
         }
         const activity = this.playerActivityProfile();
         const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
         const lagAbort = Math.max(0, Number(Config.schedulerLagAbortMs) || 0);
-        if (lagAbort > 0 && lagMs >= lagAbort) {
-            Metrics.recordBackgroundDeferral();
-            return Promise.resolve([]);
-        }
-
         const protectedPass = !!activity?.protected;
         const batchSize = Math.max(1, Number(protectedPass
             ? Config.goalMetadataPlayerBatchSize
             : Config.goalMetadataIdleBatchSize) || (protectedPass ? 2 : 8));
-        const budgetMs = Math.max(25, Number(protectedPass
+        const requestedBudgetMs = Math.max(25, Number(protectedPass
             ? Config.goalMetadataPlayerBudgetMs
             : Config.goalMetadataIdleBudgetMs) || (protectedPass ? 75 : 500));
+        const admission = BackgroundWorkGovernor.admit({
+            job,
+            resource: 'sqlite-heavy',
+            requestedBudgetMs,
+            minimumBudgetMs: 25,
+            playerProtected: protectedPass,
+            realPlayers: activity?.realPlayers,
+            lagMs
+        });
+        if (!admission.ok) {
+            this.scheduleGoalBackgroundJob(nextAtKey, true);
+            Metrics.recordBackgroundDeferral();
+            return Promise.resolve([]);
+        }
+        if (lagAbort > 0 && lagMs >= lagAbort) {
+            BackgroundWorkGovernor.complete(admission.lease, { durationMs: 0 });
+            this.scheduleGoalBackgroundJob(nextAtKey, true);
+            Metrics.recordBackgroundDeferral();
+            return Promise.resolve([]);
+        }
+        const budgetMs = admission.budgetMs;
         const deadlineAt = Date.now() + budgetMs;
-        const staleDeadlineAt = Date.now() + Math.max(25, Math.floor(budgetMs / 2));
-        this.goalMetadataRunning = true;
+        const startedAt = Date.now();
+        let needsContinuation = false;
+        this[runningKey] = true;
 
-        const reviewStale = () => {
-            if (Date.now() >= staleDeadlineAt) return Promise.resolve([]);
-            return LifeState.staleGoalCandidates(batchSize, Date.now()).then((states) => (
-                this.runInSchedulerSlices(states, (state) => GoalService.review(state).catch((error) => {
-                    utils.infoWarn('BotGoals', 'bounded metadata review failed for %s: %s', state.name, error?.message || error);
-                    return null;
-                }), staleDeadlineAt)
-            ));
-        };
-
-        return reviewStale()
-            .then((staleResults) => this.releaseWarehouseMaterials(deadlineAt).then((warehouseResults) => ({
-                staleResults,
-                warehouseResults
-            })))
-            .then(({ staleResults, warehouseResults }) => this.reconcileMarketGoals(deadlineAt, batchSize).then((marketResults) => [
-                ...staleResults,
-                ...warehouseResults,
-                ...marketResults
-            ]))
+        return Promise.resolve().then(() => options.run({
+            job,
+            batchSize,
+            budgetMs,
+            deadlineAt,
+            activity,
+            markContinuation: () => { needsContinuation = true; }
+        })).then((result) => {
+            if (result?.continuation) needsContinuation = true;
+            return Array.isArray(result?.results) ? result.results : [];
+        })
             .catch((error) => {
-                utils.infoWarn('BotGoals', 'bounded metadata reconcile failed: %s', error?.message || error);
+                needsContinuation = true;
+                utils.infoWarn('BotGoals', '%s failed: %s', job, error?.message || error);
                 return [];
             })
             .finally(() => {
-                this.goalMetadataRunning = false;
+                const durationMs = Date.now() - startedAt;
+                if (Date.now() >= deadlineAt) needsContinuation = true;
+                BackgroundWorkGovernor.complete(admission.lease, { durationMs });
+                BackgroundWorkGovernor.recordStage(job, 'total', durationMs);
+                this.scheduleGoalBackgroundJob(nextAtKey, needsContinuation);
+                this[runningKey] = false;
             });
+    },
+
+    reconcileStaleGoals() {
+        return this.runGovernedGoalBackgroundJob({
+            job: 'goal_stale_review',
+            runningKey: 'staleGoalReviewRunning',
+            nextAtKey: 'nextStaleGoalReviewAt',
+            run: ({ job, batchSize, deadlineAt }) => {
+                if (Date.now() >= deadlineAt) return { results: [], continuation: true };
+                const projectionStartedAt = Date.now();
+                return LifeState.staleGoalCandidates(batchSize, Date.now()).then((states) => {
+                    BackgroundWorkGovernor.recordStage(job, 'projection', Date.now() - projectionStartedAt);
+                    const continuation = states.length >= batchSize || Date.now() >= deadlineAt;
+                    if (Date.now() >= deadlineAt) return { results: [], continuation: true };
+                    const reviewStartedAt = Date.now();
+                    return GoalService.reviewBatch(states, { now: Date.now() }).then((results) => ({
+                        results,
+                        continuation
+                    })).finally(() => {
+                        BackgroundWorkGovernor.recordStage(job, 'review', Date.now() - reviewStartedAt);
+                    });
+                });
+            }
+        });
+    },
+
+    reconcileWarehouseReleases() {
+        return this.runGovernedGoalBackgroundJob({
+            job: 'goal_warehouse_release',
+            runningKey: 'warehouseReleaseRunning',
+            nextAtKey: 'nextWarehouseReleaseAt',
+            run: ({ job, deadlineAt }) => {
+                const limit = Math.max(1, Number(Config.maxWarehouseReleasesPerTick) || 8);
+                const releaseStartedAt = Date.now();
+                return this.releaseWarehouseMaterials(deadlineAt).then((results) => ({
+                    results,
+                    continuation: results.length >= limit || Date.now() >= deadlineAt
+                })).finally(() => {
+                    BackgroundWorkGovernor.recordStage(job, 'release', Date.now() - releaseStartedAt);
+                });
+            }
+        });
+    },
+
+    reconcileMarketGoalBatch() {
+        return this.runGovernedGoalBackgroundJob({
+            job: 'goal_market_reconcile',
+            runningKey: 'marketGoalReconcileRunning',
+            nextAtKey: 'nextMarketGoalReconcileAt',
+            run: ({ batchSize, deadlineAt }) => this.reconcileMarketGoals(
+                deadlineAt,
+                batchSize,
+                'goal_market_reconcile'
+            ).then((results) => ({
+                results,
+                continuation: Number(results.candidateCount || 0) >= batchSize || Date.now() >= deadlineAt
+            }))
+        });
+    },
+
+    // Compatibility entrypoint for targeted tooling written before the three
+    // independently admitted jobs were split. Production scheduling uses the
+    // explicit stage methods above.
+    reconcileGoalMetadata() {
+        return this.reconcileStaleGoals();
     },
 
     isRestingActivationState(state) {
@@ -1281,8 +1560,6 @@ const PopulationService = {
                     locY: actor.fetchLocY(),
                     locZ: actor.fetchLocZ()
                 };
-                const existingNearby = nearbyHotCount(BotManager.sessions, actor);
-                const densityDeficit = Math.max(0, Config.nearPlayerHotTarget - existingNearby);
                 // Craft shops are persistent town infrastructure. They must not
                 // compete with the ambient-density budget, otherwise a full row
                 // of public stations can only appear in several policy ticks.
@@ -1302,9 +1579,16 @@ const PopulationService = {
                         ));
                         const merchants = available.filter((state) => state.activity === 'merchant' && state.stats?.marketStore);
                         const crafters = available.filter((state) => state.activity === 'crafting' && state.stats?.craftShop);
-                        const ambientRemaining = Math.min(
-                            Math.max(0, Config.maxActivationsPerScan - ambientActivated.length),
-                            Math.max(0, densityDeficit - crafters.length)
+                        // There is intentionally no local population target
+                        // here. The old fixed local target made a player see
+                        // only a fixed handful of bots even when hundreds of
+                        // eligible cold states occupied the same area. Keep a
+                        // bounded per-pass activation budget so the population
+                        // converges gradually and player pressure can still
+                        // interrupt the work between scans.
+                        const ambientRemaining = Math.max(
+                            0,
+                            Config.maxActivationsPerScan - ambientActivated.length
                         );
                         const candidates = [...crafters, ...merchants, ...activationCandidatesForPlayer(
                             available.filter((state) => state.activity !== 'merchant' && state.activity !== 'crafting'),
@@ -1409,6 +1693,16 @@ const PopulationService = {
             return Promise.resolve([]);
         }
         const activity = this.playerActivityProfile();
+        if (activity.protected) {
+            // Background party formation starts with a large SQLite projection
+            // query. It is useful for world convergence, but never worth
+            // spending hundreds of milliseconds of the player event loop on
+            // while a real client is online. The interval will retry after
+            // player protection ends.
+            this.partyFormationPending = true;
+            Metrics.recordPartyFormationDeferral();
+            return Promise.resolve([]);
+        }
         if (this.partyRequestCleanupRunning) {
             this.partyFormationPending = true;
             return Promise.resolve([]);
@@ -1748,6 +2042,7 @@ const PopulationService = {
             utils.infoWarn('BotPopulation', 'party requirement refresh spot index unavailable: %s', err.message);
             return Promise.resolve([]);
         }
+        const occupancy = SpotProfiles.currentOccupancy(spots);
         return statesForParties(refreshable.map((party) => party.partyId)).then((membersByParty) => refreshable.reduce((chain, party) => chain.then(async (refreshed) => {
             if (budgetReached()) return refreshed;
             const members = membersByParty.get(String(party.partyId)) || [];
@@ -1756,9 +2051,13 @@ const PopulationService = {
             for (const member of members) {
                 if (budgetReached()) return refreshed;
                 const previousPlan = member.stats?.equipmentPlan;
+                if (GearAcquisitionPlanner.clanGoalPlanLocked(member, previousPlan)) {
+                    refreshedPlans.set(Number(member.characterId), previousPlan);
+                    continue;
+                }
                 let nextPlan;
                 try {
-                    nextPlan = GearAcquisitionPlanner.planFor(member, { spots });
+                    nextPlan = GearAcquisitionPlanner.planFor(member, { spots, occupancy });
                 } catch (err) {
                     utils.infoWarn('BotPopulation', 'party requirement refresh failed for %s: %s', member.name, err.message);
                     continue;
@@ -2146,12 +2445,12 @@ const PopulationService = {
         const busyTimeoutMs = Math.max(1, Math.min(250, Number(options.default.Database?.checkpointResetBusyTimeoutMs) || 50));
         this.walResetRunning = true;
         this.nextWalResetAt = timestamp + retryMs;
-        return Database.checkpoint({ mode: 'restart', busyTimeoutMs }).then((result) => {
+        return Database.checkpoint({ mode: 'truncate', busyTimeoutMs }).then((result) => {
             this.lastWalResetResult = { ...result, requestedAt: timestamp };
             if (result?.ok && Number(result.busy || 0) === 0) {
                 this.nextWalResetAt = Date.now() + cooldownMs;
                 console.info(
-                    'DB          :: adaptive WAL restart complete wal=%dMB frames=%d/%d duration=%dms',
+                    'DB          :: adaptive WAL truncate complete wal=%dMB frames=%d/%d duration=%dms',
                     Math.round(Number(result.afterBytes || walBytes) / 1024 / 1024),
                     Number(result.checkpointedFrames || 0),
                     Number(result.logFrames || 0),
@@ -2296,7 +2595,13 @@ const PopulationService = {
 
     releaseWarehouseMaterials(deadlineAt = Infinity) {
         if (Date.now() >= deadlineAt) return Promise.resolve([]);
-        return BotWarehouse.releaseColdBatch(Config.maxWarehouseReleasesPerTick, deadlineAt)
+        return BotWarehouse.releaseColdBatch(Config.maxWarehouseReleasesPerTick, deadlineAt, {
+            onStage: (stage, durationMs) => BackgroundWorkGovernor.recordStage(
+                'goal_warehouse_release',
+                stage,
+                durationMs
+            )
+        })
             .then((released) => {
                 if (released.length) {
                     const resumedMarkets = released.filter((result) => result.resumed).length;
@@ -2316,11 +2621,29 @@ const PopulationService = {
             });
     },
 
-    reconcileMarketGoals(deadlineAt = Infinity, limit = Config.maxMarketGoalReconcilesPerTick) {
+    reconcileMarketGoals(deadlineAt = Infinity, limit = Config.maxMarketGoalReconcilesPerTick, telemetryJob = 'goal_market_reconcile') {
+        const annotate = (results, candidateCount) => {
+            Object.defineProperty(results, 'candidateCount', { value: candidateCount, configurable: true });
+            return results;
+        };
+        if (Date.now() >= deadlineAt) return Promise.resolve(annotate([], 0));
+        const projectionStartedAt = Date.now();
         return LifeState.marketGoalCandidates(limit)
-            .then((states) => this.runInSchedulerSlices(states, (state) => {
-                    const spot = SpotProfiles.findForState(state);
-                    return GoalService.review(state, { spot }).then((goalSnapshot) => {
+            .then((states) => {
+                BackgroundWorkGovernor.recordStage(telemetryJob, 'projection', Date.now() - projectionStartedAt);
+                if (Date.now() >= deadlineAt) return annotate([], states.length);
+                const reviewStartedAt = Date.now();
+                return GoalService.reviewBatch(states, {
+                    now: Date.now(),
+                    optionsForState: (state) => ({ spot: SpotProfiles.findForState(state) })
+                }).then((goalSnapshots) => {
+                    BackgroundWorkGovernor.recordStage(telemetryJob, 'review', Date.now() - reviewStartedAt);
+                    if (Date.now() >= deadlineAt) return annotate([], states.length);
+                    const travelStartedAt = Date.now();
+                    return this.runInSchedulerSlices(states.map((state, index) => ({
+                        state,
+                        goalSnapshot: goalSnapshots[index]
+                    })), ({ state, goalSnapshot }) => {
                         const travel = GoalExecutor.beginMarketTravel(state, goalSnapshot?.current);
                         if (!travel) return null;
                         return LifeState.upsertState(travel, 'reconciled_market_travel').then((saved) => {
@@ -2329,11 +2652,14 @@ const PopulationService = {
                             }
                             return saved;
                         });
+                    }, deadlineAt).then((results) => annotate(results.filter(Boolean), states.length)).finally(() => {
+                        BackgroundWorkGovernor.recordStage(telemetryJob, 'travel', Date.now() - travelStartedAt);
                     });
-                }, deadlineAt).then((results) => results.filter(Boolean)))
+                });
+            })
             .catch((err) => {
                 utils.infoWarn('BotPopulation', 'market-goal reconcile failed: %s', err.message);
-                return [];
+                return annotate([], 0);
             });
     },
 
@@ -2415,7 +2741,16 @@ const PopulationService = {
 
             const leader = members.find((state) => state.characterId === party.leaderId) || members[0];
             const objectiveSpotId = party.stats?.objective?.spotId || null;
-            const objectiveSpot = objectiveSpotId ? SpotProfiles.findById(objectiveSpotId) : null;
+            const excludedSpotIds = SpotRiskPolicy.excludedSpotIdsForStates(members, startedAt);
+            const objectiveSpot = objectiveSpotId && !excludedSpotIds.has(String(objectiveSpotId))
+                ? SpotProfiles.findById(objectiveSpotId)
+                : null;
+            const partyRouteOptions = {
+                mode: 'party',
+                role: PartyComposition.roleForState(leader),
+                excludedSpotIds,
+                timestamp: startedAt
+            };
             const spot = objectiveSpot || SpotProfiles.findForState({
                 ...leader,
                 spotId: party.spotId,
@@ -2428,7 +2763,10 @@ const PopulationService = {
                     ...(leader.stats || {}),
                     routeMode: 'party'
                 }
-            }, { mode: 'party', role: PartyComposition.roleForState(leader) }) || SpotProfiles.findForState(leader);
+            }, partyRouteOptions) || SpotProfiles.findForState(leader, {
+                excludedSpotIds,
+                timestamp: startedAt
+            });
             if (!spot) {
                 Metrics.recordSkippedResolve('party_missing_spot');
                 return { ok: false, reason: 'missing_spot', party };
@@ -2438,7 +2776,13 @@ const PopulationService = {
             const leaderPhysicalSpot = SpotService.findCurrentSpot(leader.loc);
             const physicalSpotId = leaderPhysicalSpot?.id || leader.spotId || party.spotId;
             if (physicalSpotId && physicalSpotId !== spot.id) {
-                const travellingMembers = members.map((member) => beginPartySpotTravel(member, spot, startedAt) || member);
+                const spotBackoff = SpotRiskPolicy.backoffForStates(members, physicalSpotId, startedAt);
+                const travellingMembers = members.map((member) => beginPartySpotTravel(
+                    member,
+                    spot,
+                    startedAt,
+                    { currentSpotId: physicalSpotId, spotBackoff }
+                ) || member);
                 const arrivalAt = startedAt + HUNTING_TRAVEL_MS;
                 return travellingMembers.reduce((chain, member) => (
                     chain.then(() => LifeState.upsertState(member, 'party_spot_travel'))
@@ -2450,6 +2794,7 @@ const PopulationService = {
                         ...(party.stats || {}),
                         travel: {
                             reason: 'party_spot_replan',
+                            ...(spotBackoff ? { cause: 'death_pressure' } : {}),
                             regionName: spot.name,
                             spotId: spot.id,
                             startedAt,
@@ -2642,10 +2987,29 @@ const PopulationService = {
         // gear plan still needs the complete atlas.  Passing [] here turned every
         // in-progress craft route into `blocked` on its first travel tick.
         const spots = SpotProfiles.ensure();
+        const occupancy = SpotProfiles.currentOccupancy(spots);
         const replanContext = workerPlan
             ? { failure: workerPlan.replanFailure || null }
             : GearAcquisitionPlanner.replanContextFor(state, previousPlan, startedAt);
         let acquisitionPlan = workerPlan?.acquisitionPlan || null;
+        const workerPlanHasSource = acquisitionPlan?.status === 'active'
+            && ['direct_drop', 'craft'].includes(acquisitionPlan.strategy)
+            && !!acquisitionPlan.next?.spotId;
+        if (workerPlanHasSource) {
+            const availableSource = GearAcquisitionPlanner.bestSourceForPlan(
+                state,
+                acquisitionPlan,
+                spots,
+                { occupancy }
+            );
+            if (!availableSource || String(availableSource.spotId) !== String(acquisitionPlan.next.spotId)) {
+                acquisitionPlan = GearAcquisitionPlanner.planFor(state, {
+                    spots,
+                    occupancy,
+                    ...replanContext
+                });
+            }
+        }
         if (!acquisitionPlan) {
             const reusablePartyRequest = !state.party?.partyId
                 && previousPlan?.next
@@ -2655,9 +3019,9 @@ const PopulationService = {
                 && Number(state.stats.partyRequest.reviewAt || 0) > startedAt;
             const upgradedPlan = reusablePartyRequest
                 ? previousPlan
-                : GearAcquisitionPlanner.planFor(state, { spots, ...replanContext });
+                : GearAcquisitionPlanner.planFor(state, { spots, occupancy, ...replanContext });
             const previousRefresh = previousPlan?.recipeId && !reusablePartyRequest
-                ? GearAcquisitionPlanner.planFor(state, { spots, recipeId: previousPlan.recipeId, ...replanContext })
+                ? GearAcquisitionPlanner.planFor(state, { spots, occupancy, recipeId: previousPlan.recipeId, ...replanContext })
                 : null;
             const rawAcquisitionPlan = GearAcquisitionPlanner.shouldFinishPreviousPlan(previousPlan, previousRefresh)
                 ? { ...previousRefresh, finishBeforeUpgrade: true }
@@ -2760,8 +3124,12 @@ const PopulationService = {
                 || acquisitionPlan?.requiresParty === true);
         const partyRouteWaiting = (requiredPartyRequest || deferredPartyRequest)
             && !state.party?.partyId;
+        const excludedSpotIds = SpotRiskPolicy.excludedSpotIdsForStates([plannedState], startedAt);
         const partyFallback = partyRouteWaiting && !passiveActivity
-            ? GearAcquisitionPlanner.safeFallbackForPlan(state, acquisitionPlan, spots)
+            ? GearAcquisitionPlanner.safeFallbackForPlan(state, acquisitionPlan, spots, {
+                occupancy,
+                excludedSpotIds
+            })
             : null;
         const fallbackSpot = partyRouteWaiting && !passiveActivity
             ? (partyFallback && SpotProfiles.findById(partyFallback.spotId)) || SpotProfiles.findForState({
@@ -2769,7 +3137,7 @@ const PopulationService = {
                 spotId: null,
                 stats: Object.fromEntries(Object.entries(plannedState.stats || {})
                     .filter(([key]) => key !== 'equipmentPlan'))
-            })
+            }, { excludedSpotIds, timestamp: startedAt })
             : null;
         const routedState = fallbackSpot
             ? { ...plannedState, activity: 'hunting', spotId: fallbackSpot.id }
@@ -2782,7 +3150,10 @@ const PopulationService = {
             : [];
         const selectedSpot = passiveActivity
             ? null
-            : fallbackSpot || SpotProfiles.findForState(travellingState);
+            : fallbackSpot || SpotProfiles.findForState(travellingState, {
+                excludedSpotIds,
+                timestamp: startedAt
+            });
         const huntingTravelState = selectedSpot && !passiveActivity
             ? beginHuntingTravel(travellingState, selectedSpot, startedAt, { currentSpotId })
             : null;
@@ -2858,7 +3229,9 @@ const PopulationService = {
                     }
                     const listingIntent = marketListingIntent(purchasedState, goal);
                     const listingPromise = !marketLifecycle.closed && listingIntent.shouldOpen
-                        ? ColdMarketListingService.open(listingIntent.state)
+                        ? ColdMarketListingService.open(listingIntent.state, {
+                            forcedCleanup: listingIntent.cleanup || null
+                        })
                         : Promise.resolve({ state: purchasedState, listed: false });
                     const marketStatePromise = listingPromise.then((listingResult) => {
                         const listingState = listingResult.state || purchasedState;

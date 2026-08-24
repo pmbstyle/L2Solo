@@ -42,12 +42,16 @@ function npcTalk(session, npc) {
         return;
     }
 
-    // Quest dialogue has priority over generic NPC HTML.  The service loads
-    // persistent state before selecting a quest, so an unrelated NPC keeps its
-    // normal dialog while a quest NPC resumes exactly where the player stopped.
+    // A merchant can also be a quest NPC. Keep the merchant's main dialog
+    // reachable; its Quest link is routed through NpcTalkResponse so the
+    // quest service can still render the stateful branch on demand.
     const QuestService = invoke('GameServer/Quest/QuestService');
-    if (!QuestService.handlesNpc(npc)) {
-        showDefaultTalk(session, npc);
+    const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
+    const hasNpcShop = NpcShopBuyLists.fetchForNpc(npc.fetchSelfId()).length > 0;
+    if (!QuestService.handlesNpc(npc) || hasNpcShop) {
+        showDefaultTalk(session, npc, {
+            questLink: hasNpcShop && QuestService.handlesNpc(npc)
+        });
         return;
     }
     QuestService.onTalk(session, npc).then((handled) => {
@@ -67,7 +71,7 @@ function showGatekeeperTalk(session, npc, hasQuest) {
     session.dataSendToMe(ServerResponse.actionFailed());
 }
 
-function showDefaultTalk(session, npc) {
+function showDefaultTalk(session, npc, options = {}) {
     const path = 'data/Html/';
     const filename = path + npc.fetchSelfId() + '.html';
     const title = npc.fetchTitle?.() || '';
@@ -82,15 +86,23 @@ function showDefaultTalk(session, npc) {
         return;
     }
 
-    session.dataSendToMe(
-        ServerResponse.npcHtml(npc.fetchId(), utils.parseRawFile(
-            utils.fileExists(filename) ? filename : path + 'noquest.html'
-        ))
+    let html = utils.parseRawFile(
+        utils.fileExists(filename) ? filename : path + 'noquest.html'
     );
+    if (options.questLink) html = withQuestLink(html, npc.fetchSelfId());
+
+    session.dataSendToMe(ServerResponse.npcHtml(npc.fetchId(), html));
     // C4 keeps the interaction pending until the response is terminated.
     // Without this, closing the HTML leaves movement blocked while the NPC
     // remains selected.
     session.dataSendToMe(ServerResponse.actionFailed());
+}
+
+function withQuestLink(html, npcId) {
+    const questAction = `<a action="bypass -h html ${npcId}-quest">Quest</a>`;
+    const questLink = /<a action="bypass -h html (?:noquest|\d+-quest)">Quest<\/a>/i;
+    if (questLink.test(html)) return html.replace(questLink, questAction);
+    return html.replace(/<\/body>/i, `${questAction}<br>\n</body>`);
 }
 
 module.exports = npcTalk;

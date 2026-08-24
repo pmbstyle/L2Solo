@@ -10,6 +10,7 @@ const { ColdSimulationCoordinator: ColdSimulationCoordinatorClass } = require('.
 const originalActive = BackgroundPartyState.active;
 const originalSetStatus = BackgroundPartyState.setStatus;
 const originalCachedState = LifeState.cachedState;
+const originalReleaseDissolvedPartyMembers = LifeState.releaseDissolvedPartyMembers;
 const originalLifeInit = LifeState.init;
 const originalPartyInit = BackgroundPartyState.init;
 const originalPurgeHistory = BackgroundPartyState.purgeHistory;
@@ -18,6 +19,7 @@ const originalPurgeHistory = BackgroundPartyState.purgeHistory;
     const orphan = { partyId: 'bgp_orphan', leaderId: 9001, memberIds: [9001, 9002], status: 'active' };
     const attached = { partyId: 'bgp_attached', leaderId: 9010, memberIds: [9010, 9011], status: 'active' };
     const statuses = [];
+    const releases = [];
     BackgroundPartyState.active = () => [orphan, attached];
     LifeState.cachedState = (characterId) => [9010, 9011].includes(Number(characterId))
         ? { characterId: Number(characterId) }
@@ -26,10 +28,15 @@ const originalPurgeHistory = BackgroundPartyState.purgeHistory;
         statuses.push({ partyId, status });
         return { partyId, status };
     };
+    LifeState.releaseDissolvedPartyMembers = async (partyId, reason) => {
+        releases.push({ partyId, reason });
+        return 2;
+    };
 
     const orphaned = await ColdSimulationCoordinator.reconcileOrphanedBackgroundParties();
     assert.deepStrictEqual(orphaned.map((party) => party.partyId), ['bgp_orphan']);
     assert.deepStrictEqual(statuses, [{ partyId: 'bgp_orphan', status: 'dissolved' }]);
+    assert.deepStrictEqual(releases, [{ partyId: 'bgp_orphan', reason: 'orphaned_dissolved_party' }]);
 
     let purges = 0;
     let workersStarted = 0;
@@ -57,6 +64,7 @@ const originalPurgeHistory = BackgroundPartyState.purgeHistory;
     BackgroundPartyState.active = originalActive;
     BackgroundPartyState.setStatus = originalSetStatus;
     LifeState.cachedState = originalCachedState;
+    LifeState.releaseDissolvedPartyMembers = originalReleaseDissolvedPartyMembers;
     LifeState.init = originalLifeInit;
     BackgroundPartyState.init = originalPartyInit;
     BackgroundPartyState.purgeHistory = originalPurgeHistory;

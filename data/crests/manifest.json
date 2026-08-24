@@ -1,0 +1,4870 @@
+{
+  "source": "https://l2topzone.com/crests",
+  "generatedAt": "2026-08-22",
+  "format": {
+    "clan": {
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8
+    },
+    "ally": {
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8
+    }
+  },
+  "clan": [
+    {
+      "id": 1,
+      "file": "data/crests/clan/crest-001.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-1.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 846,
+      "sha256": "23b135aea1ae0f61bdc47513b5e49b98d9ed1d3be80bea98527b62b33ca810c5"
+    },
+    {
+      "id": 2,
+      "file": "data/crests/clan/crest-002.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-2.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 702,
+      "sha256": "ffec4128d2ead768c4f1b7ad7da4faa1b12efade4650e1c8ea066a9ff2a508e1"
+    },
+    {
+      "id": 3,
+      "file": "data/crests/clan/crest-003.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-3.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "485a34f338b09327c0a9b91d74133492bc4e3a294df23a6654645457d30207d8"
+    },
+    {
+      "id": 4,
+      "file": "data/crests/clan/crest-004.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-4.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 982,
+      "sha256": "9ad94c70dee8a4580fce19ca2e3593e390cf500b23b92a90ae67661301cb1453"
+    },
+    {
+      "id": 5,
+      "file": "data/crests/clan/crest-005.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-5.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 970,
+      "sha256": "21c55d171b54de2896ea393958ba4d2d21e065cbd46bc35775f03d1876eb8a82"
+    },
+    {
+      "id": 6,
+      "file": "data/crests/clan/crest-006.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-6.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1006,
+      "sha256": "967022e83773dff25eb084ee9dbfc5bd606046c0fcc4985e98116289a39dfaa9"
+    },
+    {
+      "id": 7,
+      "file": "data/crests/clan/crest-007.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-7.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "f869236b5e94bab5c3781494901835f9be7607ba4e9fe49afae562fc6eea9e34"
+    },
+    {
+      "id": 8,
+      "file": "data/crests/clan/crest-008.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-8.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 994,
+      "sha256": "5f71b585ed902ca333d85a155da236c842c4a31f13a999393263ab42fc70aee6"
+    },
+    {
+      "id": 9,
+      "file": "data/crests/clan/crest-009.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-9.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 998,
+      "sha256": "a21fccb474ee25706197057354146da2c55a093bbcb175be6ab5b7600a89bd6d"
+    },
+    {
+      "id": 10,
+      "file": "data/crests/clan/crest-010.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-10.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 810,
+      "sha256": "32e9d31716f224929a55e31e0df647e7ee640c06d646ecd43fec3e94e7b17e39"
+    },
+    {
+      "id": 11,
+      "file": "data/crests/clan/crest-011.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-11.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 994,
+      "sha256": "cd0835ea2deea7df2772b8cedea3dbc2d9ad15a5a85772b81723463bc2c6d957"
+    },
+    {
+      "id": 12,
+      "file": "data/crests/clan/crest-012.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-12.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "c53c0e075856cfb1d7bcf314df3b575c428f21bfa922dd37e7bd83e6a0f7d296"
+    },
+    {
+      "id": 13,
+      "file": "data/crests/clan/crest-013.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-14.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 998,
+      "sha256": "967b8ab2b8efbe69ba0b3163fa33503106b064044157b4af24ac954c924646bc"
+    },
+    {
+      "id": 14,
+      "file": "data/crests/clan/crest-014.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-15.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 986,
+      "sha256": "336c1a58dd3510b5f74ee4195298b195f7faf41f7c9f6f34e2679778ea95d150"
+    },
+    {
+      "id": 15,
+      "file": "data/crests/clan/crest-015.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-16.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 978,
+      "sha256": "f7701c273b88a11c5ea2eba0af7d36f4aa7e032c9277672df7d2e623bdb89ace"
+    },
+    {
+      "id": 16,
+      "file": "data/crests/clan/crest-016.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-17.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 990,
+      "sha256": "5755b2f10fa4a8b350c35ef3a41887acf65611aae9056c5896e1bc8682893db4"
+    },
+    {
+      "id": 17,
+      "file": "data/crests/clan/crest-017.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-18.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 714,
+      "sha256": "cfd56c059d034526f85defe09907854841ffb44597628b849e4be328af069e78"
+    },
+    {
+      "id": 18,
+      "file": "data/crests/clan/crest-018.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-19.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 934,
+      "sha256": "da2c9d1dae25e00ce17284e89af0d0623ecf3dc3062431ca6b88fd5989f35100"
+    },
+    {
+      "id": 19,
+      "file": "data/crests/clan/crest-019.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-20.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 970,
+      "sha256": "1a803c2cbec98d8b5a77e95c3c90c33e16bae65c76e8844397c4e5ada345d1d3"
+    },
+    {
+      "id": 20,
+      "file": "data/crests/clan/crest-020.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-21.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 954,
+      "sha256": "a0380a583b40ba7ae8abaa36daae6c3d4804e4c9d7155bbcfa4c0f35f2bc7484"
+    },
+    {
+      "id": 21,
+      "file": "data/crests/clan/crest-021.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-22.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 982,
+      "sha256": "9479f149df1f2d8f90b9669483a65b9490e87a719ceeedaaf3664fdc515d1a22"
+    },
+    {
+      "id": 22,
+      "file": "data/crests/clan/crest-022.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-23.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1002,
+      "sha256": "a56e204c5403b2a36ca1f19a46218ba501812e561e69700b5a549b340f20bb14"
+    },
+    {
+      "id": 23,
+      "file": "data/crests/clan/crest-023.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-24.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1006,
+      "sha256": "6f474f999b493d0d44b018c149f15b77bd615e015d332528f7096bf39b71e249"
+    },
+    {
+      "id": 24,
+      "file": "data/crests/clan/crest-024.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-25.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 938,
+      "sha256": "c35f9ef2206930d83a9533a6a8b1f9cf9b53200ceda451b431b1640205925c21"
+    },
+    {
+      "id": 25,
+      "file": "data/crests/clan/crest-025.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-26.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 998,
+      "sha256": "445481628cad18c81b77e3ef1724f395f68c1100683984b22b9ed62bf1875521"
+    },
+    {
+      "id": 26,
+      "file": "data/crests/clan/crest-026.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-27.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1002,
+      "sha256": "fa73edf19ee9a04706cfd9320ab0a3277e79f68d1c2e939f2221a25b992f51b8"
+    },
+    {
+      "id": 27,
+      "file": "data/crests/clan/crest-027.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-28.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 978,
+      "sha256": "423daa20a6e35a6d2f4730734a2ed7379d685d0365b9aa7dba3bddf3bf55b85e"
+    },
+    {
+      "id": 28,
+      "file": "data/crests/clan/crest-028.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-29.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "5ac1ad4d2c403984cab3485c3845db1abdd5f575be194a0e7d1dac22c6597846"
+    },
+    {
+      "id": 29,
+      "file": "data/crests/clan/crest-029.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-30.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 974,
+      "sha256": "f6da2f930b98c2f663e5d1bd64a0acd2ce78e24426207db8603adaba8c558c23"
+    },
+    {
+      "id": 30,
+      "file": "data/crests/clan/crest-030.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-31.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 986,
+      "sha256": "95c19009740e464fc40b6151300edf7d0b0643328a867375ed9984566ec1d41f"
+    },
+    {
+      "id": 31,
+      "file": "data/crests/clan/crest-031.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-33.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 906,
+      "sha256": "1b949b064501a3d8dcec2cb09d0234e053249c0cf27b56971509d7de4cdb3d59"
+    },
+    {
+      "id": 32,
+      "file": "data/crests/clan/crest-032.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-34.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 694,
+      "sha256": "9031b84a80ed47f96f6f7e9a80c578e1ce0e6d9852f9e6daee9faafb0ff964ba"
+    },
+    {
+      "id": 33,
+      "file": "data/crests/clan/crest-033.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-35.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "6b475bbf7626bc5e76a049aa4e97776a26dbb82e4e5592ac5d9fb1682b92f494"
+    },
+    {
+      "id": 34,
+      "file": "data/crests/clan/crest-034.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-36.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 970,
+      "sha256": "5c86b3d7a55666708c593d471f2f2b9916ce39ca09ccb4d58f1fb4eda722cfa0"
+    },
+    {
+      "id": 35,
+      "file": "data/crests/clan/crest-035.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-37.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 990,
+      "sha256": "0573c3541d76ca8b0bd334cf2b683d3ca9c222b85e5ab5c46a256b4baae1a55e"
+    },
+    {
+      "id": 36,
+      "file": "data/crests/clan/crest-036.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-38.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 990,
+      "sha256": "3cccd6d3de29aea887bca210a026e7aff7c6f07836e68999ba0584a5c4b7b6d8"
+    },
+    {
+      "id": 37,
+      "file": "data/crests/clan/crest-037.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-39.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1002,
+      "sha256": "1ce0d227b5206ecfafae9d65a298386e5584ece8b53fb924ab25789cddcaf5b6"
+    },
+    {
+      "id": 38,
+      "file": "data/crests/clan/crest-038.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-40.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1006,
+      "sha256": "eaaab5aa964a235328f330b9f56d2dd363db9df0fa63d98a522b55cce34206d2"
+    },
+    {
+      "id": 39,
+      "file": "data/crests/clan/crest-039.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-41.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 966,
+      "sha256": "1b2838b16b07e15202e9809dcadcc3e643ee0d97270f83084b9fd4086bf101d1"
+    },
+    {
+      "id": 40,
+      "file": "data/crests/clan/crest-040.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-42.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 958,
+      "sha256": "235753ecdcc1ad7e42d483ac9b0db9f740eab4e8b95dfff806fa9f1209de137b"
+    },
+    {
+      "id": 41,
+      "file": "data/crests/clan/crest-041.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-43.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 934,
+      "sha256": "f9c8d63188cb795979d865ac77dc7e471ac75035f4d9a5a982290957bcc83319"
+    },
+    {
+      "id": 42,
+      "file": "data/crests/clan/crest-042.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-44.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 998,
+      "sha256": "a50df29b1364f8c344bdc81ac67c9c9ae2682b5c970b098dd6e33f044745a9ad"
+    },
+    {
+      "id": 43,
+      "file": "data/crests/clan/crest-043.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-45.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 906,
+      "sha256": "dfc27e3271b33ce0dbe50abf1b37e18fd03bb972d7c39b01931c2379eebe8cf7"
+    },
+    {
+      "id": 44,
+      "file": "data/crests/clan/crest-044.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-46.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 978,
+      "sha256": "966c67dd03c24a6102c72f13fb76ba419aa8dd0b403286d5e67f25be86e5fa57"
+    },
+    {
+      "id": 45,
+      "file": "data/crests/clan/crest-045.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-47.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "dddf956846ec7d43f709f7b07970d2e4ac3bfab7b1ab9304d80f50e14b38d505"
+    },
+    {
+      "id": 46,
+      "file": "data/crests/clan/crest-046.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-48.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 974,
+      "sha256": "06bad509c8b095730b46a9eb864c5299cd5f6b83e3508a766f60a87bbcb9f15b"
+    },
+    {
+      "id": 47,
+      "file": "data/crests/clan/crest-047.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-49.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1002,
+      "sha256": "a25f354f9c7845712bdf43ee92a33acefe127e052a3fc61249b44ba96ee6c3cf"
+    },
+    {
+      "id": 48,
+      "file": "data/crests/clan/crest-048.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-50.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 942,
+      "sha256": "544b9fd2d01c14f0b79dfc883956328ced31a6a45c4618e97bf1cc2ceae99a40"
+    },
+    {
+      "id": 49,
+      "file": "data/crests/clan/crest-049.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-51.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 954,
+      "sha256": "ea5f55dbb3977d3af67fceba5064c2422284271aca8d49a0922b89176817164b"
+    },
+    {
+      "id": 50,
+      "file": "data/crests/clan/crest-050.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-52.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 954,
+      "sha256": "da9122e6c9749b39c3f1306365ff1b76a052c78ec3954d9b5b1c3ebab010de72"
+    },
+    {
+      "id": 51,
+      "file": "data/crests/clan/crest-051.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-53.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 986,
+      "sha256": "f690765bcb0e5c56a3b34e30bb7001b9a99b322fabe5823f63c512d4e52e0812"
+    },
+    {
+      "id": 52,
+      "file": "data/crests/clan/crest-052.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-54.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 962,
+      "sha256": "8359f57a3c0573b30b0bc3d59afa5c2c90bc388478f87d9fbbd77ccf1e8ec496"
+    },
+    {
+      "id": 53,
+      "file": "data/crests/clan/crest-053.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-55.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1002,
+      "sha256": "e01d847213956077e866eb27f16064a7647d08487570c8992d885ef536ad09b5"
+    },
+    {
+      "id": 54,
+      "file": "data/crests/clan/crest-054.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-56.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1002,
+      "sha256": "6a7827b760276a9205196e8302ad0b1dfd97cd1d7f8f89922c2e3c82f0a340fa"
+    },
+    {
+      "id": 55,
+      "file": "data/crests/clan/crest-055.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-57.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 990,
+      "sha256": "d175907fb84e1c0aacd706f0dd2924fce025a3142b1b4ef15945421b4a303180"
+    },
+    {
+      "id": 56,
+      "file": "data/crests/clan/crest-056.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-58.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 974,
+      "sha256": "cb453a7ee54c80adc127dc22465655a44a41232379209696162523ec958a6db4"
+    },
+    {
+      "id": 57,
+      "file": "data/crests/clan/crest-057.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-59.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 966,
+      "sha256": "7beba2d6b5dacac93bea88270b0809c97568295c213b4a6d53ddd2e139bd5048"
+    },
+    {
+      "id": 58,
+      "file": "data/crests/clan/crest-058.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-60.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "1e54e558eeb58212dfb31cd63301d73795f2a0ed374977191caa124cd25fed85"
+    },
+    {
+      "id": 59,
+      "file": "data/crests/clan/crest-059.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-62.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 914,
+      "sha256": "37b43dc0f3cc071ad1f119850e4d868ab284ea363e1cbb792645d4b446dfb1e6"
+    },
+    {
+      "id": 60,
+      "file": "data/crests/clan/crest-060.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-63.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 998,
+      "sha256": "b66759f244ab0c202a73598472cdcfaa6998e9ef619037b1cf2c8df3f1f46de6"
+    },
+    {
+      "id": 61,
+      "file": "data/crests/clan/crest-061.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-64.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 926,
+      "sha256": "d3fad0aa5e27e52a7e552279d1fd04dd9d17ff2b6442e4704544cb9ad8ac0ba7"
+    },
+    {
+      "id": 62,
+      "file": "data/crests/clan/crest-062.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-65.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 990,
+      "sha256": "ed9fadc4b83a82e5097124018e9bb56c4933cfc0b65bd173495445b1f7d3b08d"
+    },
+    {
+      "id": 63,
+      "file": "data/crests/clan/crest-063.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-66.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "1c57e221334b14d670d022d138480b6164078fd0478dd00677cb055f35d399fb"
+    },
+    {
+      "id": 64,
+      "file": "data/crests/clan/crest-064.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-67.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 866,
+      "sha256": "030a90580c6123a63ef525cd52c7023d397dbbb3dbc439861838aedcabfcb273"
+    },
+    {
+      "id": 65,
+      "file": "data/crests/clan/crest-065.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-68.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 982,
+      "sha256": "217faa4d43ad1fd2349a89dfe51801cec0f64cbb139a17258043876535420d89"
+    },
+    {
+      "id": 66,
+      "file": "data/crests/clan/crest-066.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-70.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 986,
+      "sha256": "70aae576c3749a9a8c9e822e35d71cd5e091cee6991e751ddefa26debed2caf3"
+    },
+    {
+      "id": 67,
+      "file": "data/crests/clan/crest-067.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-71.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "8031f533ad349026cfcab6bdfdebbd3a39009fdd1dc47ef9bbf3f87315549712"
+    },
+    {
+      "id": 68,
+      "file": "data/crests/clan/crest-068.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-73.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 978,
+      "sha256": "3569b3b8d05eb255273ada7bdaf56c9492d27ea6e863e467d6042742a83dfe8a"
+    },
+    {
+      "id": 69,
+      "file": "data/crests/clan/crest-069.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-74.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 982,
+      "sha256": "96a217b31a9abd5477cd0e82373c2c66af644122b520134cf48e012058a6da56"
+    },
+    {
+      "id": 70,
+      "file": "data/crests/clan/crest-070.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-75.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 998,
+      "sha256": "23d80abedce8aac8270c0c922d603bba6531935b3d81c8e1f377a5e56850c1ba"
+    },
+    {
+      "id": 71,
+      "file": "data/crests/clan/crest-071.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-76.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 962,
+      "sha256": "c02b8851bc731b0d83db5e48264c19c0ffb5f1797a9aee721d563248a4d26574"
+    },
+    {
+      "id": 72,
+      "file": "data/crests/clan/crest-072.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-77.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 974,
+      "sha256": "e9c2820f786c7e272af68260ae28703423bb6351a7c353b9e9cc0d4e977187d1"
+    },
+    {
+      "id": 73,
+      "file": "data/crests/clan/crest-073.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-78.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 954,
+      "sha256": "841099df0d285d93cd5cf21e21b98f70cebfd81f1c99fb76ceef78f47f004aca"
+    },
+    {
+      "id": 74,
+      "file": "data/crests/clan/crest-074.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-79.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 674,
+      "sha256": "9ede5700d5ab249f68c8b4c661449099cdbc13f3459c62318777329aedb24bce"
+    },
+    {
+      "id": 75,
+      "file": "data/crests/clan/crest-075.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-80.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "6c61afa14b0fe34461564b872c9cff25c108f0d1b7aa2984543df1e11f994669"
+    },
+    {
+      "id": 76,
+      "file": "data/crests/clan/crest-076.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-81.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 906,
+      "sha256": "c34eebaa8dfedb6c2875db3efde223eca8bf0fa373e2d1a0a5440e9d478ff8a0"
+    },
+    {
+      "id": 77,
+      "file": "data/crests/clan/crest-077.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-82.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "3a0e7d05428815992dfdf002a1772d208efe572807a8ff1303fbe24d27ddd840"
+    },
+    {
+      "id": 78,
+      "file": "data/crests/clan/crest-078.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-83.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "3a6e47b582c78f6c3f83c18ad82db72b869d30ec68a3936dd656648251bf287f"
+    },
+    {
+      "id": 79,
+      "file": "data/crests/clan/crest-079.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-85.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "c9e47fe90273063943edb34102cd526e6c05c19b6344ab2fc5c137ddd6417f2b"
+    },
+    {
+      "id": 80,
+      "file": "data/crests/clan/crest-080.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-86.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 998,
+      "sha256": "b538ef356015f7119a6ba5209e39182acf15421b2ff81ab4c67bcee00377f050"
+    },
+    {
+      "id": 81,
+      "file": "data/crests/clan/crest-081.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-87.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "b698a498e26a33ccb4fca7d579bf9fde65fe2e151f6da22652396c01a87d34a7"
+    },
+    {
+      "id": 82,
+      "file": "data/crests/clan/crest-082.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-88.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "e191f11da62a28f4cf62a49166214346e02f0905ef27866c10af644b9532e98b"
+    },
+    {
+      "id": 83,
+      "file": "data/crests/clan/crest-083.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-89.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 990,
+      "sha256": "738975883fa1cb4c918ad8efe06c56b99bde93f5ff0956554b73d9582827bda4"
+    },
+    {
+      "id": 84,
+      "file": "data/crests/clan/crest-084.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-90.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1002,
+      "sha256": "dd9e5778173edef59e520df743db98e44554f08acff613a3eb6fb8068ad7ccd6"
+    },
+    {
+      "id": 85,
+      "file": "data/crests/clan/crest-085.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-91.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1006,
+      "sha256": "1b3eafee193ebf9e5280515636b6a9ae278965d77496d2585773f5c9c1012530"
+    },
+    {
+      "id": 86,
+      "file": "data/crests/clan/crest-086.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-92.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 990,
+      "sha256": "a50be4352636f1d8bbc366613816d4093ccf849a18ff8b445d6bdc318588051e"
+    },
+    {
+      "id": 87,
+      "file": "data/crests/clan/crest-087.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-93.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 998,
+      "sha256": "d1805a5d7ea742bbc52e589d8e96cde91f077cedf649ae79ec7c66a6e4528d93"
+    },
+    {
+      "id": 88,
+      "file": "data/crests/clan/crest-088.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-94.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "6c8dbbccb132046f2bb17b28532caf010444df4b121b917975a14da6ec965c77"
+    },
+    {
+      "id": 89,
+      "file": "data/crests/clan/crest-089.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-95.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 994,
+      "sha256": "c2fb20109e87ddc24efdbabede86e01770a2a095537a4b08e83fe266863c20d9"
+    },
+    {
+      "id": 90,
+      "file": "data/crests/clan/crest-090.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-96.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "1f62117e217f2447fb31499b3cc87c89751055709b4ef792d0971325015062f2"
+    },
+    {
+      "id": 91,
+      "file": "data/crests/clan/crest-091.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-97.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "5fb1c47716cacedc6d0094d0752e86657480bdc0434192442ad13a63176779e0"
+    },
+    {
+      "id": 92,
+      "file": "data/crests/clan/crest-092.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-98.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 982,
+      "sha256": "c191f1003438778f9b39d646dcb71e6409f416c9c2330bdaeb01ad0ba101ca3a"
+    },
+    {
+      "id": 93,
+      "file": "data/crests/clan/crest-093.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-99.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 978,
+      "sha256": "dd42dd84b3c1364f828c50ce405ab0a6547381c9252cfae1bfc1b76d65905678"
+    },
+    {
+      "id": 94,
+      "file": "data/crests/clan/crest-094.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-100.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "843594a4da9962bf2c0b24ab29cec42c5d90651fff98172e72d02dabc7171fc9"
+    },
+    {
+      "id": 95,
+      "file": "data/crests/clan/crest-095.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-101.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "941f5116b2cc74c4c57a23b2f978c76eed2d000901220f7b9623846f0d0f0e5f"
+    },
+    {
+      "id": 96,
+      "file": "data/crests/clan/crest-096.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-102.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 906,
+      "sha256": "62c213b20bf9a6624153a15873bc4342008cd508c812eaa793880cf07c6125e2"
+    },
+    {
+      "id": 97,
+      "file": "data/crests/clan/crest-097.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-103.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "5a19bcd4b32047242b6bb6eabcb0e18925cec67b0fda6b25abf8cc72394881a3"
+    },
+    {
+      "id": 98,
+      "file": "data/crests/clan/crest-098.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-104.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "30110738996a3d0547d1b643d57eb694011ed9ccc2df9a80a73057c2867ffc47"
+    },
+    {
+      "id": 99,
+      "file": "data/crests/clan/crest-099.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-105.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "e89b46973520db2c2a8e183e54923c8f7612e23dc7157e4a721588e08f08ad9d"
+    },
+    {
+      "id": 100,
+      "file": "data/crests/clan/crest-100.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-106.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 958,
+      "sha256": "28ea2bbb3a5e76b1aa1cedfc1d94de30ee9cce4313b1aee891af62aaf7521fa4"
+    },
+    {
+      "id": 101,
+      "file": "data/crests/clan/crest-101.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-107.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1002,
+      "sha256": "88578cc17fde2c3d236b75ce3b5aabe52c3c7ad52f37cf0e6a4224064615000b"
+    },
+    {
+      "id": 102,
+      "file": "data/crests/clan/crest-102.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-108.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 966,
+      "sha256": "9066039ea082a91ffb56048391f7c812dc924e8dbd70995a578891acba6445d1"
+    },
+    {
+      "id": 103,
+      "file": "data/crests/clan/crest-103.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-109.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 950,
+      "sha256": "e89de072c6ee1014062e528c7898e0cb2230caa3c92692227d257f04414c8d0e"
+    },
+    {
+      "id": 104,
+      "file": "data/crests/clan/crest-104.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-110.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 994,
+      "sha256": "00220f0d61b2f708a491aad5a88daca84b6cfa82017c5c8f3a89a9434a5d0f3f"
+    },
+    {
+      "id": 105,
+      "file": "data/crests/clan/crest-105.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-111.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 942,
+      "sha256": "0e1d8e38a8084f171d38651fb2d4ffa678a27ce4fed5d167123175228bfbaa47"
+    },
+    {
+      "id": 106,
+      "file": "data/crests/clan/crest-106.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-112.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "f3093c231bf917ca013fbfda9bb8c3dceb574aa1464d2f0deed68c2c44f3398e"
+    },
+    {
+      "id": 107,
+      "file": "data/crests/clan/crest-107.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-113.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 690,
+      "sha256": "5642dbb5dff19a32fdfed777e3124c23c9490619c86971fc1d764d31c213f273"
+    },
+    {
+      "id": 108,
+      "file": "data/crests/clan/crest-108.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-114.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "9aacd1b2c132f151d757f4271accdaefbb0aa7464a2b6409e95c4dab2c2e1fea"
+    },
+    {
+      "id": 109,
+      "file": "data/crests/clan/crest-109.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-115.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 822,
+      "sha256": "4a67766736e9f27e620390ff2cd415fad42693dfc43955f901f9a06c2d1b1960"
+    },
+    {
+      "id": 110,
+      "file": "data/crests/clan/crest-110.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-116.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "d1459dd5b0ae68adcd17a34bab8fd4dc21bbf20c11608e6071f638650a15352c"
+    },
+    {
+      "id": 111,
+      "file": "data/crests/clan/crest-111.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-117.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 946,
+      "sha256": "d85e60f3603c24f512d9243ee7895e2aa62bcdd43380ca0b918ab3fb593b096a"
+    },
+    {
+      "id": 112,
+      "file": "data/crests/clan/crest-112.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-118.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 982,
+      "sha256": "800bef0eba44bb232b920c65a553f9c80e0e0ad2749ff51c1da9d41386a91fe4"
+    },
+    {
+      "id": 113,
+      "file": "data/crests/clan/crest-113.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-119.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 930,
+      "sha256": "675f76f589539738a31d5843a4bfa5c58ae2cf7db9e8413ee43cf8f42e0887ad"
+    },
+    {
+      "id": 114,
+      "file": "data/crests/clan/crest-114.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-120.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 966,
+      "sha256": "de20b1e111fb29a0a503b8c1206e3f79f7334fc3953672714e3c48d62d7026c3"
+    },
+    {
+      "id": 115,
+      "file": "data/crests/clan/crest-115.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-121.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 998,
+      "sha256": "5dbaaec3d46fc9f6bdb2bb59811a8031c716e5566aed5388ef5f8b28ab0d9543"
+    },
+    {
+      "id": 116,
+      "file": "data/crests/clan/crest-116.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-122.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1006,
+      "sha256": "00740afceadd4bc1a8677bfcdd7f12dc891b9aacf6701c677c10822d6b71bb82"
+    },
+    {
+      "id": 117,
+      "file": "data/crests/clan/crest-117.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-123.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 998,
+      "sha256": "a715b7bac7fa3f631c8bae8863e6d8544eecd1867fe0aee78900ceabb581a45a"
+    },
+    {
+      "id": 118,
+      "file": "data/crests/clan/crest-118.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-124.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 978,
+      "sha256": "74468b097d753440effffe72627333c5b7c5085e25d8843ee73be12d7b37bde7"
+    },
+    {
+      "id": 119,
+      "file": "data/crests/clan/crest-119.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-125.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 890,
+      "sha256": "67119345c5f5a15adb34923f77b5c9d70b91e675834b993791d07db7ba8a182f"
+    },
+    {
+      "id": 120,
+      "file": "data/crests/clan/crest-120.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-126.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1002,
+      "sha256": "4f12107218c0ab381422de3963d86403dc66d0a2cb391acf333bb28cd078e1e4"
+    },
+    {
+      "id": 121,
+      "file": "data/crests/clan/crest-121.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-127.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1002,
+      "sha256": "3ffe6f2a0f9775988255f2b4d352814a234e73ad95680540d0ea4c2d43051b9c"
+    },
+    {
+      "id": 122,
+      "file": "data/crests/clan/crest-122.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-128.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 994,
+      "sha256": "86ee7618d8c4485aca74010b5815a9d646dbf820a014d0e1905fb8348930f16b"
+    },
+    {
+      "id": 123,
+      "file": "data/crests/clan/crest-123.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-129.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "9ec24a9024777ac52601f4f0439924eab9bf21374ad04f43256b4d32dfe3b0ff"
+    },
+    {
+      "id": 124,
+      "file": "data/crests/clan/crest-124.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-130.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 950,
+      "sha256": "0842c17973351f3f1349baac1ff02a6ec3b6c894b97ee6c104e5e60f9e600bfd"
+    },
+    {
+      "id": 125,
+      "file": "data/crests/clan/crest-125.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-131.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 790,
+      "sha256": "7e0f90dde0f452ac15c32892f74e2150fea51410657a8cd995a8d3519599e808"
+    },
+    {
+      "id": 126,
+      "file": "data/crests/clan/crest-126.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-132.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 922,
+      "sha256": "7c9110718ea7787d554fa79992bee09617bccec1cd5c98161ef8673f106672b1"
+    },
+    {
+      "id": 127,
+      "file": "data/crests/clan/crest-127.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-133.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 978,
+      "sha256": "2d4c05ea14d0ad39e68eb31bdffa5d31e69173c7c1cf026162bc35b4195e59b8"
+    },
+    {
+      "id": 128,
+      "file": "data/crests/clan/crest-128.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-134.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 974,
+      "sha256": "8aac002b4051c48725ecfc306a1d9d47881014097b90131afb85cf207d8b23e9"
+    },
+    {
+      "id": 129,
+      "file": "data/crests/clan/crest-129.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-135.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 994,
+      "sha256": "11072bf39c7fe60b82f58fa1e0cf7ada376e5b4e07d49140d63e1d9b0cb22f94"
+    },
+    {
+      "id": 130,
+      "file": "data/crests/clan/crest-130.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-136.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 986,
+      "sha256": "a6ff42027605391c5ed3da1d14548a06ab6f3527ee48e1343f3f6e51a45deac5"
+    },
+    {
+      "id": 131,
+      "file": "data/crests/clan/crest-131.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-137.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 918,
+      "sha256": "adef9d176c666d1687769b065767224f2c39dff8a3290e18420d8526a0d9edbb"
+    },
+    {
+      "id": 132,
+      "file": "data/crests/clan/crest-132.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-138.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 974,
+      "sha256": "1c47268403fd50c30d6c2c3f70b5bf63c3f403008ff3e70036257782899c0cad"
+    },
+    {
+      "id": 133,
+      "file": "data/crests/clan/crest-133.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-139.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 990,
+      "sha256": "c4a02963eebe4f072d677dc4f7b45bdfdc95876f10d462240bbd5f208bcc1bfb"
+    },
+    {
+      "id": 134,
+      "file": "data/crests/clan/crest-134.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-140.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 730,
+      "sha256": "c2ffd54eaf4ca6202dd15383c563fb583e166050b78a615284a47f9c5ca47c24"
+    },
+    {
+      "id": 135,
+      "file": "data/crests/clan/crest-135.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-141.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 986,
+      "sha256": "ab3d07ad9ca3fb5aea66cc8d2b75c993c3c478e1be94292a0ad6ed4fae0c2e59"
+    },
+    {
+      "id": 136,
+      "file": "data/crests/clan/crest-136.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-142.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "9e3ac19061164431a5e1339e5dc26b3b1ab435dfdac58dc7d3de891fa0d1116c"
+    },
+    {
+      "id": 137,
+      "file": "data/crests/clan/crest-137.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-143.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 998,
+      "sha256": "9db6fc4319e6f4860e121267c05d66d04e947a66d1a7da4b85617306addab1d5"
+    },
+    {
+      "id": 138,
+      "file": "data/crests/clan/crest-138.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-144.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 946,
+      "sha256": "fb5cc65d697c0c74fb0cf120462ae47e396a00737955536cc8cdfba8e2f150a4"
+    },
+    {
+      "id": 139,
+      "file": "data/crests/clan/crest-139.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-145.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 990,
+      "sha256": "c58b0bc9d97f1b02c9f183fbfdc0bc97ab3aa2f18e03fe016a87e4e21475ec54"
+    },
+    {
+      "id": 140,
+      "file": "data/crests/clan/crest-140.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-146.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 990,
+      "sha256": "8f85c5c2371e35156f86b07e17f14ffefdad5dc2e3b70e744fc5b04643af41c1"
+    },
+    {
+      "id": 141,
+      "file": "data/crests/clan/crest-141.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-147.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 986,
+      "sha256": "4996445ce598b90115586b6016006f4a0d7d539be49f988c5db60b5a4733ebac"
+    },
+    {
+      "id": 142,
+      "file": "data/crests/clan/crest-142.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-148.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "1ccecd5dc51e98628033a6c96b71cedb369e2b85ddb31f13ecf4e789bd80a502"
+    },
+    {
+      "id": 143,
+      "file": "data/crests/clan/crest-143.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-149.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 930,
+      "sha256": "578940d14a89fb827409309ecd5ef20f428f62ce762242f7113d47d774c9852c"
+    },
+    {
+      "id": 144,
+      "file": "data/crests/clan/crest-144.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-150.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 958,
+      "sha256": "f3109e22bc27e7bf52b11d5951483a6fba8f02bb9230567f8e7f0b4cd05b109f"
+    },
+    {
+      "id": 145,
+      "file": "data/crests/clan/crest-145.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-151.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 634,
+      "sha256": "f09f545e763a1e0d4408085f9fff8f50428ae01ee3d5dfc60f178e41324d76e0"
+    },
+    {
+      "id": 146,
+      "file": "data/crests/clan/crest-146.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-152.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "ae85b9bbd6706cd55061d1ae7e51445a402268e4963e5d2252a9d29a05cce456"
+    },
+    {
+      "id": 147,
+      "file": "data/crests/clan/crest-147.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-153.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 998,
+      "sha256": "53d742837affe47db411bff59f0907d562bc23d27db4e5045e2fe4a08df76801"
+    },
+    {
+      "id": 148,
+      "file": "data/crests/clan/crest-148.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-154.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 610,
+      "sha256": "3a5bb564ead631ce8888fa121a44ac47b11eba95844c3009b8d13293884546d2"
+    },
+    {
+      "id": 149,
+      "file": "data/crests/clan/crest-149.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-155.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 986,
+      "sha256": "460ea678b09ae135b7e0d2aaf501620f692517059cb20e6b216a544dc41bd4ee"
+    },
+    {
+      "id": 150,
+      "file": "data/crests/clan/crest-150.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-156.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1002,
+      "sha256": "85d0715f36d75c8150ab2df207be3e9ebef080c0600e869983cca9832573fc1c"
+    },
+    {
+      "id": 151,
+      "file": "data/crests/clan/crest-151.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-157.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 686,
+      "sha256": "d09a7c7904bc46ceb16f347cfe10fd4fe301a3f75ef14bb0e802a1db17226f87"
+    },
+    {
+      "id": 152,
+      "file": "data/crests/clan/crest-152.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-158.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 962,
+      "sha256": "b1e470540ef4a40668d2bfb09cd8df27f776caf7067b39f5f11dd6528df14b9f"
+    },
+    {
+      "id": 153,
+      "file": "data/crests/clan/crest-153.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-159.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 986,
+      "sha256": "755b7eceb91f5585da1ea72b80e086f377ea9f1c7f958d4081fb388257ce41be"
+    },
+    {
+      "id": 154,
+      "file": "data/crests/clan/crest-154.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-161.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 686,
+      "sha256": "736e6449856b8332a1ad7fe7bce93620aff73842b203dedef2bef0b98c532c37"
+    },
+    {
+      "id": 155,
+      "file": "data/crests/clan/crest-155.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-162.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "160bb0e84ba5a9d01de8d33a19ca4fdf5b02ce5ec74842808cedc482a2197998"
+    },
+    {
+      "id": 156,
+      "file": "data/crests/clan/crest-156.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-163.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 990,
+      "sha256": "277691782cc159212db210097be33e0980c1184585fd859430e85cd9c76f24c5"
+    },
+    {
+      "id": 157,
+      "file": "data/crests/clan/crest-157.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-164.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 934,
+      "sha256": "7fb9f8ce75d3ff2b77ccd60f687be8539a4bc71b6acbc94df0bda6d2b91f47ea"
+    },
+    {
+      "id": 158,
+      "file": "data/crests/clan/crest-158.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-165.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 698,
+      "sha256": "b745cacf549ec1f158eb7cb072598062d6a3370951acdb8eb1802059f0cef388"
+    },
+    {
+      "id": 159,
+      "file": "data/crests/clan/crest-159.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-166.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 954,
+      "sha256": "522397d4027c25dd24cb4b0d940d3fb183a757ba813536c0b524fd20ec69e00e"
+    },
+    {
+      "id": 160,
+      "file": "data/crests/clan/crest-160.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-167.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "c7f8d249a02cbc80cf6412f7837c2d47ad2fbbd8046d0c9a657c00775be0dfc0"
+    },
+    {
+      "id": 161,
+      "file": "data/crests/clan/crest-161.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-168.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 762,
+      "sha256": "92ce7e1e9b10b8a7f14bd91cc51e4d660f153eadb89b4d43cc0307c8ebfb470c"
+    },
+    {
+      "id": 162,
+      "file": "data/crests/clan/crest-162.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-169.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 986,
+      "sha256": "48af3bafbe26352e19d6f851b222bf27912c55a6513bde2156833bd97e58e815"
+    },
+    {
+      "id": 163,
+      "file": "data/crests/clan/crest-163.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-170.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 958,
+      "sha256": "cbfc70d3639fd3689fd9994479cf819b422be5f1775eac33ea05401e0c94fa5a"
+    },
+    {
+      "id": 164,
+      "file": "data/crests/clan/crest-164.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-171.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "4bb38f3d28d3df23806f8f2af9c3e5fec0e1cb304cfde19452ce8b699d2f41cd"
+    },
+    {
+      "id": 165,
+      "file": "data/crests/clan/crest-165.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-172.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "18b53186cc9764719ed8a5ce867158283eac08b7fd3ab16ad68da4dc1220cb7b"
+    },
+    {
+      "id": 166,
+      "file": "data/crests/clan/crest-166.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-173.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 906,
+      "sha256": "2d4cde17e979342747e2fa711ea10b42883322b52f92711921685695bdad9f2f"
+    },
+    {
+      "id": 167,
+      "file": "data/crests/clan/crest-167.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-174.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 954,
+      "sha256": "40c1d2665358ef5288e9b6bd093b5047790f2621c41c66c8b997b35f22b50d2f"
+    },
+    {
+      "id": 168,
+      "file": "data/crests/clan/crest-168.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-175.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 962,
+      "sha256": "c0c492160405016bcd68b499265f64ab8bc2eb3543f80660acfdfbac01c03996"
+    },
+    {
+      "id": 169,
+      "file": "data/crests/clan/crest-169.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-176.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 934,
+      "sha256": "7624f39ec5b3b4e000512673212e35e24a6eb3305a783776071b4f81af35f161"
+    },
+    {
+      "id": 170,
+      "file": "data/crests/clan/crest-170.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-178.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "e57189671ca8ded4f2dc92ab4da98d8b8dbf32764ee96689278e199e6ad76e6d"
+    },
+    {
+      "id": 171,
+      "file": "data/crests/clan/crest-171.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-179.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1006,
+      "sha256": "7d443cedab6d4771e39eda11f8a51da3735fb573230acc5a65cbcb7778c30af0"
+    },
+    {
+      "id": 172,
+      "file": "data/crests/clan/crest-172.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-180.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 958,
+      "sha256": "b93b98f02cce6828640eb8127f9b01c82e9654c284efe89fd8f4ee68ebb2ec0c"
+    },
+    {
+      "id": 173,
+      "file": "data/crests/clan/crest-173.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-181.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1002,
+      "sha256": "e95a772037745ef0539ab34a6d403cb900070b7e4e1d1787f72b96f8c183dba4"
+    },
+    {
+      "id": 174,
+      "file": "data/crests/clan/crest-174.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-182.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 990,
+      "sha256": "8726d1aaf8379754c61b52c912ccb9461b140adec37613643756f97b7378895f"
+    },
+    {
+      "id": 175,
+      "file": "data/crests/clan/crest-175.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-183.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 990,
+      "sha256": "8da7f5c143ef7e085a1f6a321f2d244f6b4a845a69f2f523308ffe4d3529a394"
+    },
+    {
+      "id": 176,
+      "file": "data/crests/clan/crest-176.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-184.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 958,
+      "sha256": "741258e10b04ef2ef8d98b0aa1570f7356d8dc22d47d16a0a1472ecfd0291fb5"
+    },
+    {
+      "id": 177,
+      "file": "data/crests/clan/crest-177.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-185.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 950,
+      "sha256": "2a6d951720b9f00a64fcf283ece5fb25044552ba56b63af3221c98f465496180"
+    },
+    {
+      "id": 178,
+      "file": "data/crests/clan/crest-178.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-186.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 902,
+      "sha256": "030b9c43b6d7929b5ea6ad837d42b405eecc063094c40aebe00d0ded0bb1829a"
+    },
+    {
+      "id": 179,
+      "file": "data/crests/clan/crest-179.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-188.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 962,
+      "sha256": "9b0bb8166715d867ed57eba7567c8f19849a45cba68c31a663ee77352effb154"
+    },
+    {
+      "id": 180,
+      "file": "data/crests/clan/crest-180.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-189.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1002,
+      "sha256": "bde33cb28e0bacc7aba7989369f3781fdbd5399e40b89991f09f02dcf6ef1644"
+    },
+    {
+      "id": 181,
+      "file": "data/crests/clan/crest-181.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-190.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 990,
+      "sha256": "9500e8ac91d48573f14e51f4757178208eab3047f6c4360b87036b00c7829bf4"
+    },
+    {
+      "id": 182,
+      "file": "data/crests/clan/crest-182.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-191.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "6dc347be20d92a28f3b2c4903a0b1db3f6bf827dee121807744ab7274da25896"
+    },
+    {
+      "id": 183,
+      "file": "data/crests/clan/crest-183.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-192.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 926,
+      "sha256": "6fca038cc32ff396fd787c17f28fedf2247bf1482587baa62846309dbb186854"
+    },
+    {
+      "id": 184,
+      "file": "data/crests/clan/crest-184.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-193.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 950,
+      "sha256": "893b04f85d4ee7bac90a7825320bc44ea0df4793a54d0d18e10a7d502c235f7b"
+    },
+    {
+      "id": 185,
+      "file": "data/crests/clan/crest-185.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-194.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 922,
+      "sha256": "955a44f5595e03a894e68a3464dbb970cfe5d82b66b6d8429935eddf9059d33e"
+    },
+    {
+      "id": 186,
+      "file": "data/crests/clan/crest-186.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-195.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "405349e72858fe5c89ebbc9ef67de8d194a2f86f4bd59ab23a3d93914554394a"
+    },
+    {
+      "id": 187,
+      "file": "data/crests/clan/crest-187.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-196.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 922,
+      "sha256": "6a1dc78c4b7cbbbb8d467ace0dc73dc1982cb8312fdd6856127e81d11dab10ba"
+    },
+    {
+      "id": 188,
+      "file": "data/crests/clan/crest-188.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-197.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1002,
+      "sha256": "80573aa6925660bed0362f7e34903aac65a5cd5376afbe6153fae64c3fffacae"
+    },
+    {
+      "id": 189,
+      "file": "data/crests/clan/crest-189.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-198.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 942,
+      "sha256": "98870dbfc733df948ecb0b1923d11ad8231e0e2e43b456ef8ca85098a9de5074"
+    },
+    {
+      "id": 190,
+      "file": "data/crests/clan/crest-190.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-199.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 954,
+      "sha256": "eebcdf4de4836388c152af68fb6578e69bc7c9a8fd3e1c774794daeeea7847e3"
+    },
+    {
+      "id": 191,
+      "file": "data/crests/clan/crest-191.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-200.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "18a81a74c44a33dd8aa9174fa28ea1e0c824f81aac4e54d7c4b75c0e1e3b03f4"
+    },
+    {
+      "id": 192,
+      "file": "data/crests/clan/crest-192.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-201.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 670,
+      "sha256": "16f34da520edb0ae632e3486d074b2655531e7fb56777791fbb1a1726244eb80"
+    },
+    {
+      "id": 193,
+      "file": "data/crests/clan/crest-193.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-202.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "9a2643b63502e02eaf578b61f113495e5d0126c3e70e38b147da6267971d2b73"
+    },
+    {
+      "id": 194,
+      "file": "data/crests/clan/crest-194.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-203.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "df1e7df3de5ac69bab4aa21555201e3082364e61af44e32aa922e0e706796b14"
+    },
+    {
+      "id": 195,
+      "file": "data/crests/clan/crest-195.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-204.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 954,
+      "sha256": "378fa085733500bc86eb87a07fe9b882d861a75d7610014d09020fac024e875f"
+    },
+    {
+      "id": 196,
+      "file": "data/crests/clan/crest-196.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-205.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 994,
+      "sha256": "49e427027e8b1216461f1111826070873d536a1aebe14fac36f6fe73a46ff9ff"
+    },
+    {
+      "id": 197,
+      "file": "data/crests/clan/crest-197.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-206.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "aeac8b9b7684ae0a37c7581c9644857bd1a5d2b35fdb094911c7a18207d040b7"
+    },
+    {
+      "id": 198,
+      "file": "data/crests/clan/crest-198.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-207.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 946,
+      "sha256": "f0d391a4517c6d817d30d40749bf2a13f4954e39433fa10f062c75f8ce4d644d"
+    },
+    {
+      "id": 199,
+      "file": "data/crests/clan/crest-199.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-208.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 938,
+      "sha256": "17f8ece953facfacdf6b6ec3122eb2c77c1cad27f15671be57533eeefaf41ce6"
+    },
+    {
+      "id": 200,
+      "file": "data/crests/clan/crest-200.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-209.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 986,
+      "sha256": "84db6a28b4c43cf957ab22cafbaf99af9038a0361b2083d39e7e85748d5ec302"
+    },
+    {
+      "id": 201,
+      "file": "data/crests/clan/crest-201.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-210.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 866,
+      "sha256": "db744cfd6d6c08112771c55e22b6c925c4c29c22ee16b09f276601cb25c0d3dd"
+    },
+    {
+      "id": 202,
+      "file": "data/crests/clan/crest-202.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-211.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 998,
+      "sha256": "7a2f351613219150226554517631772a12cacd8d25fc0d3c5668a142a6478a72"
+    },
+    {
+      "id": 203,
+      "file": "data/crests/clan/crest-203.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-212.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 990,
+      "sha256": "3e9d2cdebb548094dbf1adfec5d5c4c0635e813e71bed213f9aa9ecf4589073f"
+    },
+    {
+      "id": 204,
+      "file": "data/crests/clan/crest-204.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-213.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 678,
+      "sha256": "39c409ff4c5730fd98be22ac16252ff15eda77ec0ce435702ac7a50364e3f91d"
+    },
+    {
+      "id": 205,
+      "file": "data/crests/clan/crest-205.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-215.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 750,
+      "sha256": "108ae0298c579b7e29b3ac3c8ed06e89497bb2200358801242a44cf42bad884c"
+    },
+    {
+      "id": 206,
+      "file": "data/crests/clan/crest-206.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-216.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 986,
+      "sha256": "646f92c48b34c97ee329574765986714874b890385bb671c566cb497e8eead30"
+    },
+    {
+      "id": 207,
+      "file": "data/crests/clan/crest-207.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-217.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 914,
+      "sha256": "8a8d1090062053c397e3333c0e21087fb20380f05040d7ee33ca0b96985ef4ad"
+    },
+    {
+      "id": 208,
+      "file": "data/crests/clan/crest-208.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-218.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 994,
+      "sha256": "ef8e6a6c27beee73de14b1b94ba56dd7b71a16efbabf6cddba22ab751224dae2"
+    },
+    {
+      "id": 209,
+      "file": "data/crests/clan/crest-209.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-219.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 998,
+      "sha256": "4823c470b466a16c44dfa8412369ae6e0d64eaac84854c670199962c93e890b5"
+    },
+    {
+      "id": 210,
+      "file": "data/crests/clan/crest-210.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-220.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "cdbcbd8e761af7510be1e91db9b9bc304506a54c663790a93a4d06940a00779c"
+    },
+    {
+      "id": 211,
+      "file": "data/crests/clan/crest-211.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-221.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 982,
+      "sha256": "c14c2c667cc6d71596b21e4d94e9882d24cc46a4f705337d6fb403866935a27e"
+    },
+    {
+      "id": 212,
+      "file": "data/crests/clan/crest-212.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-222.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 998,
+      "sha256": "32a6553617fe96b8d71bfbd7b3800c33b611a8ec938c11a179382ef596aedef7"
+    },
+    {
+      "id": 213,
+      "file": "data/crests/clan/crest-213.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-223.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 954,
+      "sha256": "dc5ea9dc10c4f57d6461af632d0c6edcf2c9d31710ed064bc75ef4729d8af1aa"
+    },
+    {
+      "id": 214,
+      "file": "data/crests/clan/crest-214.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-224.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 922,
+      "sha256": "235de2f91be023ed4531cb8a8454055bfac1fa129d2742f89d70e35031ab65a1"
+    },
+    {
+      "id": 215,
+      "file": "data/crests/clan/crest-215.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-225.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 990,
+      "sha256": "c819ec83ee162bb589d506255f51e7eb15cb55ad6ceb13440feb5f0f333e9b56"
+    },
+    {
+      "id": 216,
+      "file": "data/crests/clan/crest-216.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-226.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 666,
+      "sha256": "7881ef75d7fd746242d1425febc4346cdc6187802577d2a72b3dc8f5309a3433"
+    },
+    {
+      "id": 217,
+      "file": "data/crests/clan/crest-217.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-227.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 982,
+      "sha256": "697832bef88ae5737ec573f1cf801eaf1b40b03f3da1e8f794c7c5cba43a4833"
+    },
+    {
+      "id": 218,
+      "file": "data/crests/clan/crest-218.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-228.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 990,
+      "sha256": "59dddbfc4a2e639286eedd2cc87cdb23fb2f996cff41be6f1bde366abe73a7d4"
+    },
+    {
+      "id": 219,
+      "file": "data/crests/clan/crest-219.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-229.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "f9cf289714eeda0b7051c7a71d3d5855bdc68cff907def97ce9780361bfc965b"
+    },
+    {
+      "id": 220,
+      "file": "data/crests/clan/crest-220.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-230.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "68f8a556aaf2ed0a7edf33e5b2bd44bc296df42ca5f88e6f361bbee354ecf7c6"
+    },
+    {
+      "id": 221,
+      "file": "data/crests/clan/crest-221.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-231.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1002,
+      "sha256": "6fc2f76ac67b5367a1de3c66c8b6aeadc8ef420f84639917345d9a5393cfce0c"
+    },
+    {
+      "id": 222,
+      "file": "data/crests/clan/crest-222.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-232.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 942,
+      "sha256": "f7243567330f2911f3684c32716279c19c17dd3002934438fad93a18948930ca"
+    },
+    {
+      "id": 223,
+      "file": "data/crests/clan/crest-223.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-233.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1002,
+      "sha256": "f316e88307543fb0bcecd291f7dd3994980a593349cf710ddacd5dbfe8bdd16c"
+    },
+    {
+      "id": 224,
+      "file": "data/crests/clan/crest-224.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-234.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 898,
+      "sha256": "66c3e0cf2f46348ed9e9c0e2eec5cc425e9afa157ef0b51f6623a4a7087f979f"
+    },
+    {
+      "id": 225,
+      "file": "data/crests/clan/crest-225.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-235.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 982,
+      "sha256": "1350a0397be58a92ed4fce2e1583a25cc5124ad585afbd59797f104bc3342ffc"
+    },
+    {
+      "id": 226,
+      "file": "data/crests/clan/crest-226.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-236.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 906,
+      "sha256": "94f0035c524a80b1ba5842c9f20bb61b5e135bd0629626cb941ba85e9031d42b"
+    },
+    {
+      "id": 227,
+      "file": "data/crests/clan/crest-227.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-237.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 998,
+      "sha256": "16fa10edae5a08f4064ca89394c314f8f43d28a349b5fa38d7e3cdbaf3943a7f"
+    },
+    {
+      "id": 228,
+      "file": "data/crests/clan/crest-228.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-238.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1002,
+      "sha256": "054b1f16890250b8f0c8f4e8b90913774369654ec4a10044a48249364d217a50"
+    },
+    {
+      "id": 229,
+      "file": "data/crests/clan/crest-229.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-239.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 710,
+      "sha256": "cfc050de254fe1f433014184c1346cf22a82ed6e5c925f4dd0f3bab46a56d2f1"
+    },
+    {
+      "id": 230,
+      "file": "data/crests/clan/crest-230.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-240.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 994,
+      "sha256": "b874b717fc8a2c00455a67e47ee40a6ca7560195292e0e04eff4279c3a8b09e5"
+    },
+    {
+      "id": 231,
+      "file": "data/crests/clan/crest-231.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-241.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 962,
+      "sha256": "c24f38b8c62010fc8c8a5aa5be7aa0f2d4aa2360169cf7ecd19dff8b0903c598"
+    },
+    {
+      "id": 232,
+      "file": "data/crests/clan/crest-232.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-242.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1010,
+      "sha256": "d836a30ce7fd4847dae841b5bb3e84ba6ade01d38b3e4fd0f837e6159e82c20f"
+    },
+    {
+      "id": 233,
+      "file": "data/crests/clan/crest-233.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-243.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 762,
+      "sha256": "878e85804c05cbdbb8ff55d693c7a0bb4e184bb7238181d1620d17af71146731"
+    },
+    {
+      "id": 234,
+      "file": "data/crests/clan/crest-234.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-244.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1014,
+      "sha256": "7f6ee9ff80d6e0cf436ebf90d28e44ff541d4a20634676b032e1c6af2b5c2b1d"
+    },
+    {
+      "id": 235,
+      "file": "data/crests/clan/crest-235.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-245.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 962,
+      "sha256": "7e14ee43de842838262a2bb68baa3ef9599b445e4d8f3851275ec86975fc0053"
+    },
+    {
+      "id": 236,
+      "file": "data/crests/clan/crest-236.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-246.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 954,
+      "sha256": "f3684c2caf663bb0ff071af1a8863471eb7f13b71660321bc8fdb964060d5334"
+    },
+    {
+      "id": 237,
+      "file": "data/crests/clan/crest-237.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-247.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 982,
+      "sha256": "85582fd391cc8c3bc5febd8fa6865f00dea3bec5011e2070994fa0c0f0eac124"
+    },
+    {
+      "id": 238,
+      "file": "data/crests/clan/crest-238.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-248.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 1002,
+      "sha256": "d1319fefd3904eb8c93e8309e7a7a7d4f442aacb78383a386263806fa33d230a"
+    },
+    {
+      "id": 239,
+      "file": "data/crests/clan/crest-239.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-249.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 930,
+      "sha256": "e9283c83827543673ac4a1c55bb9da8e1b021f288187fb6435674ef93597750d"
+    },
+    {
+      "id": 240,
+      "file": "data/crests/clan/crest-240.bmp",
+      "source": "https://cdn.l2topzone.com/crestclan/crest-clan-250.jpg",
+      "width": 16,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 982,
+      "sha256": "a75842e274de27d29a708dc493753031d131a10f461f1292f6cfae631a33240e"
+    }
+  ],
+  "ally": [
+    {
+      "id": 1,
+      "file": "data/crests/ally/crest-001.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-1.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 198,
+      "sha256": "437259718e1588e9b39703384dc1c29e93b5d19aaf0775e330728ea17e50f789"
+    },
+    {
+      "id": 2,
+      "file": "data/crests/ally/crest-002.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-2.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 186,
+      "sha256": "96097f79a2070271efcc6623c197d0490fe8ffce1541a3b6a44809740aceb826"
+    },
+    {
+      "id": 3,
+      "file": "data/crests/ally/crest-003.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-3.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 162,
+      "sha256": "1a72e264a37392db9f1abe543957910c5f9e612764564df49b908ae64653502a"
+    },
+    {
+      "id": 4,
+      "file": "data/crests/ally/crest-004.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-4.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 194,
+      "sha256": "32db16a5907cf2560ae9dd4550e06fa505d5e7d8c7346faa3bfae3576f995f58"
+    },
+    {
+      "id": 5,
+      "file": "data/crests/ally/crest-005.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-5.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 190,
+      "sha256": "c53104022bf0933889012cbcd539a427731d2eccfd5952f2a0f0b92bfb1d2be4"
+    },
+    {
+      "id": 6,
+      "file": "data/crests/ally/crest-006.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-6.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 242,
+      "sha256": "88fa308ea8008aab8db051f6f1820899e34b3af2eed0adba0403aa3f5555cc07"
+    },
+    {
+      "id": 7,
+      "file": "data/crests/ally/crest-007.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-7.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 190,
+      "sha256": "4343747c8fc7e348978ceacdcd6a3a95cbfe801e4f4eac1bcea96a6e3fff2975"
+    },
+    {
+      "id": 8,
+      "file": "data/crests/ally/crest-008.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-8.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 202,
+      "sha256": "4e5ca1494564fe451b7db63dbc402fa27b039f8ab2d7a4b43c5e46dd2625d7c4"
+    },
+    {
+      "id": 9,
+      "file": "data/crests/ally/crest-009.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-9.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 170,
+      "sha256": "c9d05e91acced61f7d929a239b5685f0b9bd143a462cfdb55bd24884bf35634b"
+    },
+    {
+      "id": 10,
+      "file": "data/crests/ally/crest-010.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-10.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 210,
+      "sha256": "9a0b393ebcbed2fa3fe640d3a2b00efd45fff2700022f93f09dba37cbe7b4136"
+    },
+    {
+      "id": 11,
+      "file": "data/crests/ally/crest-011.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-11.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 194,
+      "sha256": "cc6da4c000c9653e468ddbeedb25508ff05c247995e16a6d9936ded401f5a255"
+    },
+    {
+      "id": 12,
+      "file": "data/crests/ally/crest-012.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-12.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 206,
+      "sha256": "26919954739edd6e70f351ed10649388a622f397ee191f06938aa1d2debbb363"
+    },
+    {
+      "id": 13,
+      "file": "data/crests/ally/crest-013.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-13.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 390,
+      "sha256": "4bca84317b5f6cbfb8470f4225b3c81ecd0f27ccce6aa561ff7a19c389c781a0"
+    },
+    {
+      "id": 14,
+      "file": "data/crests/ally/crest-014.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-14.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 330,
+      "sha256": "48c7f239fc5f1685340318dc3baaa57ad3594e36d484a9dc6d520d1aeb704e18"
+    },
+    {
+      "id": 15,
+      "file": "data/crests/ally/crest-015.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-15.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 190,
+      "sha256": "2547954002b322187e42838ca102ebe5e6f6244caee2c80367a689707a36601d"
+    },
+    {
+      "id": 16,
+      "file": "data/crests/ally/crest-016.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-16.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 410,
+      "sha256": "f271a289ba8bf87b41370bd9e9647ced0526eaad3935680f38d521a9b44b91e5"
+    },
+    {
+      "id": 17,
+      "file": "data/crests/ally/crest-017.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-17.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 178,
+      "sha256": "060be16c48779e1a77b0cda8ca93999c81a263fbbf862b4bdd2d26396ad89bc5"
+    },
+    {
+      "id": 18,
+      "file": "data/crests/ally/crest-018.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-18.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 226,
+      "sha256": "6d0f7c3fcaa1ccaf94cd20a7c04181544bafcc1b3aa453b3a074e4bdf6e0d295"
+    },
+    {
+      "id": 19,
+      "file": "data/crests/ally/crest-019.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-19.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "efdfb7cad5eb17f830a2de56240823940b6dca9482ffb8cabe5bb27a3668eb7f"
+    },
+    {
+      "id": 20,
+      "file": "data/crests/ally/crest-020.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-20.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "4c0fc8bee362186ff3d3aa713d77abb5f0d1c9b0fe5458c7a1ae45f95b6cc185"
+    },
+    {
+      "id": 21,
+      "file": "data/crests/ally/crest-021.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-21.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "63fd878ba210724b75f095b335e68b964b92f4ea935f65e83550783a119c8a71"
+    },
+    {
+      "id": 22,
+      "file": "data/crests/ally/crest-022.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-22.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 218,
+      "sha256": "8337691615136203f9fb4a9179d06f4935effc7f52f7f468128ae378a5ae81db"
+    },
+    {
+      "id": 23,
+      "file": "data/crests/ally/crest-023.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-23.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 378,
+      "sha256": "dcbb26e69d0986bdfc25597b61f296a0936d217e76f026321f363a34d32f57b8"
+    },
+    {
+      "id": 24,
+      "file": "data/crests/ally/crest-024.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-24.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 174,
+      "sha256": "29d57690ac0fc621ad2b4be9e34a466509c74d52ff4bd187e46c3c7ccc3d58e5"
+    },
+    {
+      "id": 25,
+      "file": "data/crests/ally/crest-025.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-25.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 170,
+      "sha256": "6fad3fd479cd157cf9b47227f3a221f8d3bbc063f92a1c7e1d60339b113187ed"
+    },
+    {
+      "id": 26,
+      "file": "data/crests/ally/crest-026.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-26.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "2db3493e4501a38f309b248d014ae4b1049dd6bf30d6dad6f20870943ece9133"
+    },
+    {
+      "id": 27,
+      "file": "data/crests/ally/crest-027.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-27.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "1f6c8ab714f908ca16157e4ed67850f41b34ccfa727d647c2b9dcd72d9c8a446"
+    },
+    {
+      "id": 28,
+      "file": "data/crests/ally/crest-028.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-28.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 238,
+      "sha256": "d06fd4ffaf113b49534e9fb9c942264b0f5118cc9a87b7fcefd2ec6c12f1214a"
+    },
+    {
+      "id": 29,
+      "file": "data/crests/ally/crest-029.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-29.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "c311cbf39187dcb55b16cd96d0122a9a2b2f834e55f9918eb731837e39b2dfaa"
+    },
+    {
+      "id": 30,
+      "file": "data/crests/ally/crest-030.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-30.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "78248c5470b1f8db54c61bc656b38fc50a5b95267e3e7f8a8058b280461fdec5"
+    },
+    {
+      "id": 31,
+      "file": "data/crests/ally/crest-031.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-31.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 426,
+      "sha256": "9ef96e9e220bec9a44d1c98800d05e6b68c44e91265edbba4cbcd31ea84913fa"
+    },
+    {
+      "id": 32,
+      "file": "data/crests/ally/crest-032.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-32.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "07642650149e201de8fd8f2072ba3b1e7ba71e52c94914fc02b82cfce085bd2b"
+    },
+    {
+      "id": 33,
+      "file": "data/crests/ally/crest-033.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-33.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 522,
+      "sha256": "1b523df5693d577247923ee4e08a38c5bfe2b7b532933f7d20c70b4fde382555"
+    },
+    {
+      "id": 34,
+      "file": "data/crests/ally/crest-034.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-34.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 242,
+      "sha256": "0c914ac72009230bf9057540e081951a00164020b513d482557de7756707e1a3"
+    },
+    {
+      "id": 35,
+      "file": "data/crests/ally/crest-035.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-35.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "caf9b39d8357bff20909007bb778d7494e34410f7a5f8176a0646b0926d1a3a2"
+    },
+    {
+      "id": 36,
+      "file": "data/crests/ally/crest-036.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-36.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "b4dd24678c5eab2b2b180426ecd0373178803a6f5ee6e3dadc2e7090519964fd"
+    },
+    {
+      "id": 37,
+      "file": "data/crests/ally/crest-037.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-37.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 522,
+      "sha256": "940687610ec5a94f634499b3cde9c1f7a88c0adbd63b27c75520328b9a363938"
+    },
+    {
+      "id": 38,
+      "file": "data/crests/ally/crest-038.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-38.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 218,
+      "sha256": "45ce1a0888fb72bb1ab3b0451c437ce4a0eedea61539e9e701bfc7888fc4452e"
+    },
+    {
+      "id": 39,
+      "file": "data/crests/ally/crest-039.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-39.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "2bd612b4925db241057645928c3ac7b31b3bca5d325bc34162a75bee0bd97dca"
+    },
+    {
+      "id": 40,
+      "file": "data/crests/ally/crest-040.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-40.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 522,
+      "sha256": "8ceacb65af7394bb51cdc16ecaa54141ed75712f8159feeafe17f23f80b7b45e"
+    },
+    {
+      "id": 41,
+      "file": "data/crests/ally/crest-041.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-41.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 454,
+      "sha256": "1081af8606ec137f6f12d30d27bd12a61a3ece0d192c8865896d16751c6d23bc"
+    },
+    {
+      "id": 42,
+      "file": "data/crests/ally/crest-042.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-42.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 182,
+      "sha256": "dfa1e13daf875ba76d8a8155e73ff8783e12c88c79518e03b7bf07a5608d3147"
+    },
+    {
+      "id": 43,
+      "file": "data/crests/ally/crest-043.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-43.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 278,
+      "sha256": "76da3a5525ca50342ab3c53ba9342e626871f2e51d6dadbc5ac4cb10849bf658"
+    },
+    {
+      "id": 44,
+      "file": "data/crests/ally/crest-044.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-44.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "6b9cff36177846fced4bbcc173188781262c7ec4c90280070ca971cb857c1a36"
+    },
+    {
+      "id": 45,
+      "file": "data/crests/ally/crest-045.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-45.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "c4bae84a7a4efe6354790478101d2453473dd0c51060c17ca694738d5d05bec4"
+    },
+    {
+      "id": 46,
+      "file": "data/crests/ally/crest-046.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-46.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "233aa73e513beb6b62573629df29934f2ad3a06d71dd9a0b5ad3b51164390c38"
+    },
+    {
+      "id": 47,
+      "file": "data/crests/ally/crest-047.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-47.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "625563ff097d4b39dbc4be9efc98ea6a7d35b16a5d82286215f4800c4dfe74cf"
+    },
+    {
+      "id": 48,
+      "file": "data/crests/ally/crest-048.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-48.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 506,
+      "sha256": "04c2a42298e8df334d360dfb2a51e5685eb8384fca024532142a2c9c801101ab"
+    },
+    {
+      "id": 49,
+      "file": "data/crests/ally/crest-049.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-49.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 178,
+      "sha256": "089df5535f9f2343295d70420ae2fdbb27580fb78ce3a91f63c597a951a02f9a"
+    },
+    {
+      "id": 50,
+      "file": "data/crests/ally/crest-050.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-50.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "fe4e152d675cc15bbb663a33e87774a706978957811064c6d0047b9429d17c0c"
+    },
+    {
+      "id": 51,
+      "file": "data/crests/ally/crest-051.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-51.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 514,
+      "sha256": "a101ed05286aaa0bd3d0361c89c80a14bb22336137011568034da39ea1a792a9"
+    },
+    {
+      "id": 52,
+      "file": "data/crests/ally/crest-052.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-52.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "7ad9ffebddc0908d7db6ee247c0f0ac0e574e2eb28e265f134fe539bb7092f11"
+    },
+    {
+      "id": 53,
+      "file": "data/crests/ally/crest-053.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-53.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 374,
+      "sha256": "40f25a09015df29c3269cc3593c60c2436c007c30e2a94829a6fa1b8ef8a3ea0"
+    },
+    {
+      "id": 54,
+      "file": "data/crests/ally/crest-054.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-54.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 374,
+      "sha256": "4be1af4ca641dda68f175ae63c617771f38262054b8e4458ce0fd41f2b92a9d2"
+    },
+    {
+      "id": 55,
+      "file": "data/crests/ally/crest-055.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-56.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 502,
+      "sha256": "99f48054831a6420232a474576793da05ff9164afd6849bc4cbfac398b2f8772"
+    },
+    {
+      "id": 56,
+      "file": "data/crests/ally/crest-056.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-57.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 514,
+      "sha256": "d2279529fedc35c8711b7c23fda77d46d3f4ee47b16b31cfa04c16c3439826f7"
+    },
+    {
+      "id": 57,
+      "file": "data/crests/ally/crest-057.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-58.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "d7c47dba17effe415ee995dc2f38df04e98c42c24a5873783e23560b5d1f782b"
+    },
+    {
+      "id": 58,
+      "file": "data/crests/ally/crest-058.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-59.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "054103809595dd6a991107bc50a10b2b5b4b746704b0f1aeea9a811410227543"
+    },
+    {
+      "id": 59,
+      "file": "data/crests/ally/crest-059.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-60.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 462,
+      "sha256": "0be639c0e1bffe0544a33be590c2567d8b00ab03c57bf52d88d3cca275b60b12"
+    },
+    {
+      "id": 60,
+      "file": "data/crests/ally/crest-060.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-61.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 518,
+      "sha256": "ed52a9f4b93c5349a5860ced0c2c30723113f380982198e182ac2a23ab8e6154"
+    },
+    {
+      "id": 61,
+      "file": "data/crests/ally/crest-061.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-62.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 522,
+      "sha256": "b05139a9a11624dba5699665e7e5554c41a80dddfb4475d8c12d2e318f274e2c"
+    },
+    {
+      "id": 62,
+      "file": "data/crests/ally/crest-062.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-63.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "886ff018fa2a4e4afe9475024fb7c0a36c625eca9c0011ad1cd4df76b610e901"
+    },
+    {
+      "id": 63,
+      "file": "data/crests/ally/crest-063.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-64.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 418,
+      "sha256": "19fffe64095c6d004b54c7bc098a24d198c0665fc96622e1d92d897f18565bcd"
+    },
+    {
+      "id": 64,
+      "file": "data/crests/ally/crest-064.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-65.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 246,
+      "sha256": "cfb54a031d70443a4b7c215337d129e58a6b166d42ba7841491cb1f3fbc7b348"
+    },
+    {
+      "id": 65,
+      "file": "data/crests/ally/crest-065.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-66.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "366a6135b983df26140ecceb9e4d6c2631c22261e576626dbd88d96892d2065b"
+    },
+    {
+      "id": 66,
+      "file": "data/crests/ally/crest-066.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-67.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 518,
+      "sha256": "2035a1169f24d18ef96fff57a3fc5fa63604ccc8ec6178d874bd193e526820b1"
+    },
+    {
+      "id": 67,
+      "file": "data/crests/ally/crest-067.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-68.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "33336d5898779d3b819eaa34d76f86c59d4ccfa9c20aca63420cbaacf20c8efd"
+    },
+    {
+      "id": 68,
+      "file": "data/crests/ally/crest-068.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-69.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "85f6ef64ec32bf89ff92e9962a95e0dc92d149fbdbe2ab691a48b663d4acb4a0"
+    },
+    {
+      "id": 69,
+      "file": "data/crests/ally/crest-069.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-70.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 502,
+      "sha256": "a45be4ca7dc0919bc40dd473414bb9fbb4af9cdb524244466e698086203cdd42"
+    },
+    {
+      "id": 70,
+      "file": "data/crests/ally/crest-070.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-71.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 210,
+      "sha256": "e6d297431db1e360ef16b9fcd7284c952aaf14085d0f53dac44c8beacfe92ae7"
+    },
+    {
+      "id": 71,
+      "file": "data/crests/ally/crest-071.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-72.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "95a331b6e73f9bafd40d0ade44251688113e2f1fb65f840021c92002fa7a3b5b"
+    },
+    {
+      "id": 72,
+      "file": "data/crests/ally/crest-072.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-73.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "d2eacb55bc5bb34e1d7a1b54deff41e932c3020765cebc220d4bd3f4767673f5"
+    },
+    {
+      "id": 73,
+      "file": "data/crests/ally/crest-073.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-74.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 270,
+      "sha256": "f565bb850270ff453a33b1f1a544ed1c006553cae12085eaebe9428ba680819d"
+    },
+    {
+      "id": 74,
+      "file": "data/crests/ally/crest-074.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-75.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "7df8120cfc20ded22847e3cf40e0ed6e79a0b2ad998eb45a6ddabc788a40d7b0"
+    },
+    {
+      "id": 75,
+      "file": "data/crests/ally/crest-075.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-76.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "6da75f1cc825d41255e61623211a65ac1729f7a9ee8911694381d8d28cdfe6f6"
+    },
+    {
+      "id": 76,
+      "file": "data/crests/ally/crest-076.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-77.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 438,
+      "sha256": "151ac841ab25a29169c38dcab347535f9a64c35f3a304834596641fd3538be80"
+    },
+    {
+      "id": 77,
+      "file": "data/crests/ally/crest-077.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-78.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "c7ab58ee733ea83f3c0930474a1667166fd2dfbbc3eae8aee802cf9b0ef7296c"
+    },
+    {
+      "id": 78,
+      "file": "data/crests/ally/crest-078.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-79.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "af6b1fb0281014fec320311329ca98aa9a9c0727cd4c6b3bff394e07ba2431b7"
+    },
+    {
+      "id": 79,
+      "file": "data/crests/ally/crest-079.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-80.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "61b22943d36356ccf26141d37474048b5891f116bc74b9e354664f48bedaaa29"
+    },
+    {
+      "id": 80,
+      "file": "data/crests/ally/crest-080.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-81.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 506,
+      "sha256": "2bb0568b07c227e4fa03199ff5349b879e826f19932c15cc792b8212a6da143a"
+    },
+    {
+      "id": 81,
+      "file": "data/crests/ally/crest-081.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-82.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "499a017e09c85ef49f76bce797414cd65e59dcb0a94cfe27319fa73ab293c693"
+    },
+    {
+      "id": 82,
+      "file": "data/crests/ally/crest-082.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-83.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "5d01d48dbe46c70074f5b2620efa5b04bdc2a16570fa8e979700de3ee3690df4"
+    },
+    {
+      "id": 83,
+      "file": "data/crests/ally/crest-083.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-84.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 522,
+      "sha256": "bc9c30d321df59d668197437a6128b2f573fdfea377710c06e407c482b2ac31f"
+    },
+    {
+      "id": 84,
+      "file": "data/crests/ally/crest-084.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-85.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 518,
+      "sha256": "0ee43f7af15199461f6381b70466b3e25a1d7e14d23f2cc8bb00d75fceb08625"
+    },
+    {
+      "id": 85,
+      "file": "data/crests/ally/crest-085.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-86.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "4b8fcef6cc54630e689c8f2f253723d20021f581914a7101b55c335396d5e4f4"
+    },
+    {
+      "id": 86,
+      "file": "data/crests/ally/crest-086.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-87.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "fd4504a91dba01f77bdd0958cdd99105da928cefeebf67747fc776709db527b4"
+    },
+    {
+      "id": 87,
+      "file": "data/crests/ally/crest-087.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-88.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "b9f932b4f1e4e8df416878d9829c3b64c9d7f5fefa9587b9df1ed12e90bd81e1"
+    },
+    {
+      "id": 88,
+      "file": "data/crests/ally/crest-088.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-89.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "7b93f9279fc2cf46a7a6a41b8fbf5607941e010f24f93305f4ded24b3145bd49"
+    },
+    {
+      "id": 89,
+      "file": "data/crests/ally/crest-089.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-90.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "27ef08528d73ae41a91de4581027836c2b199e7580da610079802abf3c2b4c46"
+    },
+    {
+      "id": 90,
+      "file": "data/crests/ally/crest-090.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-91.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 230,
+      "sha256": "1cca1953c6582776859603379c029baba8e859d7c79f0cc3db91ba07e406f77e"
+    },
+    {
+      "id": 91,
+      "file": "data/crests/ally/crest-091.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-92.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "ba49e2362b3b83e4831abac4a57381b3cc3e738708038ec891de7bd2d57f3691"
+    },
+    {
+      "id": 92,
+      "file": "data/crests/ally/crest-092.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-93.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 418,
+      "sha256": "bf86d2ba9f510de08f4423819ceb95e101394f736ebdd6d4c463075b95169cb2"
+    },
+    {
+      "id": 93,
+      "file": "data/crests/ally/crest-093.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-94.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "ab21d538f37568016bcbde7cbd115d8aefff49089e3c585d1296deb7e1ab93bf"
+    },
+    {
+      "id": 94,
+      "file": "data/crests/ally/crest-094.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-96.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 514,
+      "sha256": "0a6ccb3aa82632c8c6e8f7303280ffa73d51f76027a91806a50d98c80ec206c8"
+    },
+    {
+      "id": 95,
+      "file": "data/crests/ally/crest-095.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-97.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 522,
+      "sha256": "d5399699dc9cbffcd05ea3cb367c4f24a0ce57dbf409f0bffe90b62e1abf8051"
+    },
+    {
+      "id": 96,
+      "file": "data/crests/ally/crest-096.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-98.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 518,
+      "sha256": "a406f5a52c8595bbaf0aeb75a850bd349e225c9a8bc2725d8a8702efb56a8993"
+    },
+    {
+      "id": 97,
+      "file": "data/crests/ally/crest-097.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-99.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 502,
+      "sha256": "429add44283a2910a33a499c547573e2ff4c18a37a605b31814020b3f9e2c662"
+    },
+    {
+      "id": 98,
+      "file": "data/crests/ally/crest-098.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-100.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "0b7911bb4e25ad82c313c1d8884f72ba80e5ca89fc52b1d6a915e26e480f2039"
+    },
+    {
+      "id": 99,
+      "file": "data/crests/ally/crest-099.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-101.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "4177296a05a229db4d53da965160ee01a9237312c480caf180cae092196ece29"
+    },
+    {
+      "id": 100,
+      "file": "data/crests/ally/crest-100.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-102.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "eced78188395d0402cfe59aea27b3acfb01d33758417ab81a963cadcb3678c07"
+    },
+    {
+      "id": 101,
+      "file": "data/crests/ally/crest-101.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-103.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 442,
+      "sha256": "4e93cd40e501eadc07a4604c6387cc8184a6a08f371a2a589d9b7db3b76e0cc8"
+    },
+    {
+      "id": 102,
+      "file": "data/crests/ally/crest-102.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-104.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "f5b466771f59b6f32a0540a44217668ab44f38882ba58fbd9f4e645a2647e750"
+    },
+    {
+      "id": 103,
+      "file": "data/crests/ally/crest-103.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-105.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "f46c645695f7bd1315c44e19091aff7391ba6fb9edd4af9aba9b626cfe8c73f4"
+    },
+    {
+      "id": 104,
+      "file": "data/crests/ally/crest-104.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-106.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "b19bb8ef8f0ddad0cfe297c1c549e7410e8835dcbe5c12101220d274fe4738b5"
+    },
+    {
+      "id": 105,
+      "file": "data/crests/ally/crest-105.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-107.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "d0e9e6a2a3984664cbf6fa7487887f7769dae3c9faeba5bee8bd8c2bef23f7ee"
+    },
+    {
+      "id": 106,
+      "file": "data/crests/ally/crest-106.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-108.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "56b34fd320a4a27dbdb50ed8faefc25bbe1e2ac8de23e42753add8ca0abbb14b"
+    },
+    {
+      "id": 107,
+      "file": "data/crests/ally/crest-107.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-109.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 510,
+      "sha256": "f92804185c17d35873ca7eff289851946b430f3537d4539fc713428844edae09"
+    },
+    {
+      "id": 108,
+      "file": "data/crests/ally/crest-108.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-110.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "c68157ac3366c027f5d08b221129b0e68289ef124c8526154daeb81fa4668d81"
+    },
+    {
+      "id": 109,
+      "file": "data/crests/ally/crest-109.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-111.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 514,
+      "sha256": "607d239e83f1aa60d64f884a32853f38153d27023ac561e3b55f26f036f9d647"
+    },
+    {
+      "id": 110,
+      "file": "data/crests/ally/crest-110.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-112.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 434,
+      "sha256": "baa13aee41724b1a45828b1adc4dab00554662a1cff246d093aa7a428fd91570"
+    },
+    {
+      "id": 111,
+      "file": "data/crests/ally/crest-111.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-113.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 518,
+      "sha256": "0984bb0ae142d51d838666483fe06673bbda9d3e8fb9b3ece4a943e6a5677bf5"
+    },
+    {
+      "id": 112,
+      "file": "data/crests/ally/crest-112.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-114.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 202,
+      "sha256": "c17f2a9a9910295f297b8c33c9b00ee64cde821351eee9d8ce95a03a23d21f97"
+    },
+    {
+      "id": 113,
+      "file": "data/crests/ally/crest-113.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-115.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "012e6da98645100b1c4c02f0820407bb784281bb3188bed0c723c50b3e41f6f6"
+    },
+    {
+      "id": 114,
+      "file": "data/crests/ally/crest-114.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-116.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "058235edd1c59e471b231c51a15e0f1e9d4bb170d04766279cf96eb2c659a127"
+    },
+    {
+      "id": 115,
+      "file": "data/crests/ally/crest-115.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-117.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 510,
+      "sha256": "d44efee0d60aeafabab80b40dca4dc1b11d1b5590ca70ebfbf3d8ad6ebee37cb"
+    },
+    {
+      "id": 116,
+      "file": "data/crests/ally/crest-116.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-118.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "dbc72d963dd6bc0f55738d25ef199a6e5204fd9120a25032e9503ce34d0132c6"
+    },
+    {
+      "id": 117,
+      "file": "data/crests/ally/crest-117.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-119.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 514,
+      "sha256": "5497c209c051c720629d8e6837df98fe3ceaa670a58741fbf6ec1bc5599f9850"
+    },
+    {
+      "id": 118,
+      "file": "data/crests/ally/crest-118.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-120.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "15b10baa2487eec4ba8230be0fb054fe3aeae1cdfcee73be080d5cf57d8d544a"
+    },
+    {
+      "id": 119,
+      "file": "data/crests/ally/crest-119.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-121.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 514,
+      "sha256": "526c2b1c079c36389248d955dad24ef8f92dc65befb29055b77b7169df9e0f6e"
+    },
+    {
+      "id": 120,
+      "file": "data/crests/ally/crest-120.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-122.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 522,
+      "sha256": "681c13498e907487c94c035118aacf716babe79c5f3ffbbd1001cda589281bf6"
+    },
+    {
+      "id": 121,
+      "file": "data/crests/ally/crest-121.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-123.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "a36b5464fafd9051f3be478f86514d4bc23e1e45050be0654ac5e7c3c81ebfd7"
+    },
+    {
+      "id": 122,
+      "file": "data/crests/ally/crest-122.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-124.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 426,
+      "sha256": "114bdd13d3175bad46d5f188707327fb5719683688311923682030c49615228b"
+    },
+    {
+      "id": 123,
+      "file": "data/crests/ally/crest-123.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-125.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "b88d00c57811ce642a045169c9f8fc045fe8aa94f9f50b3339e481eecd19783e"
+    },
+    {
+      "id": 124,
+      "file": "data/crests/ally/crest-124.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-126.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 498,
+      "sha256": "bf7854c9ec6f0feac79034fb3f2d3ece73c6e68eface23325fbfa8f857779b40"
+    },
+    {
+      "id": 125,
+      "file": "data/crests/ally/crest-125.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-127.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 230,
+      "sha256": "a0df89f470de587a9c7a119cad64080eb4ce788d0f86fe2d6abfb88685b512aa"
+    },
+    {
+      "id": 126,
+      "file": "data/crests/ally/crest-126.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-128.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "7f1e825805330e3bbfdafec564562743469281fca43381df0ec96c5e65f5983f"
+    },
+    {
+      "id": 127,
+      "file": "data/crests/ally/crest-127.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-129.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 518,
+      "sha256": "adb7d60d6a51cb4fc5b46e83debec6008d7515d0d71aef615aeb302addd53c7d"
+    },
+    {
+      "id": 128,
+      "file": "data/crests/ally/crest-128.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-130.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "c63bd4a67b864c2ec9350de4881b9b4d2449e9d167b9b105a3149d93f65b8bc6"
+    },
+    {
+      "id": 129,
+      "file": "data/crests/ally/crest-129.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-131.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "987f7d3efa0a331a9a8f8ab326af55c268680a25b33b6e4541c91687e9c9b071"
+    },
+    {
+      "id": 130,
+      "file": "data/crests/ally/crest-130.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-132.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 494,
+      "sha256": "61e460c9fa8d11e9ec1e639a938608acfacddbcf5543ebe97238df5cd66a5bc6"
+    },
+    {
+      "id": 131,
+      "file": "data/crests/ally/crest-131.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-133.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 382,
+      "sha256": "64a577341c616ad9fc9e774b7ad6e05a5874aa341e2d99580ff63e18e2a768c9"
+    },
+    {
+      "id": 132,
+      "file": "data/crests/ally/crest-132.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-134.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 474,
+      "sha256": "41c278344f3793de03e60d11ad8a9f7855ea784e064fe50af8d880d21ee7ade5"
+    },
+    {
+      "id": 133,
+      "file": "data/crests/ally/crest-133.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-135.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "70966bf680eaa256724cf5030b4593d055fbd3b5b6b8b58384d9933952768096"
+    },
+    {
+      "id": 134,
+      "file": "data/crests/ally/crest-134.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-136.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 518,
+      "sha256": "87af720fd1f093e5dba81c2c570e9c03f7878fb3178508ac1f0e9641d61f6930"
+    },
+    {
+      "id": 135,
+      "file": "data/crests/ally/crest-135.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-137.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 514,
+      "sha256": "4c49db5870564444e6bf8b0568af83bf00ade9340df552b7b0d9e84041f96b2b"
+    },
+    {
+      "id": 136,
+      "file": "data/crests/ally/crest-136.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-138.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 498,
+      "sha256": "95172fb2bcccf1dcaab89210d59b2bca026bfe8e2fdd3e5e6124a5c3e2f4f95a"
+    },
+    {
+      "id": 137,
+      "file": "data/crests/ally/crest-137.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-139.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 518,
+      "sha256": "bbc92d383ff4ebc0a95d7b1337db1693521132627be85d0da7767efcf7a3ff66"
+    },
+    {
+      "id": 138,
+      "file": "data/crests/ally/crest-138.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-140.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 206,
+      "sha256": "fdfec6f370ca46e9a4a2fd7e0f355c063c40a4b2d9edf3dd291246723e8f722d"
+    },
+    {
+      "id": 139,
+      "file": "data/crests/ally/crest-139.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-141.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "87364a6fe3727d5705ccbb2633f6f16a01bd3e523188416cd6718755564a399a"
+    },
+    {
+      "id": 140,
+      "file": "data/crests/ally/crest-140.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-142.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "5f1f75faa9c89ce0df0d76e566024f5fe81fe55de5864c9b73b8165e31fe4021"
+    },
+    {
+      "id": 141,
+      "file": "data/crests/ally/crest-141.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-143.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "9e3f1198c01686af8fff2f9eba41dbd2f8bc056f814983b9049d831da38356f5"
+    },
+    {
+      "id": 142,
+      "file": "data/crests/ally/crest-142.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-144.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 514,
+      "sha256": "e3d85956eef3d5355f3f269b2f2141f353b3382d0a45848d4f55e2609fbb84c1"
+    },
+    {
+      "id": 143,
+      "file": "data/crests/ally/crest-143.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-145.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "68d8572177836889f43289b03745cc9d4e76e0a0f10a91d7f9e75fb435f96c43"
+    },
+    {
+      "id": 144,
+      "file": "data/crests/ally/crest-144.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-146.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "2409e0ce14e18e081a6fe3faa639fb54c4dbf649c4fbc5afe883463c65336880"
+    },
+    {
+      "id": 145,
+      "file": "data/crests/ally/crest-145.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-147.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "3bb3f8720ae9d7720162a853156481f8db2b8c4891091b5fcbb6c726a3e51471"
+    },
+    {
+      "id": 146,
+      "file": "data/crests/ally/crest-146.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-148.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 466,
+      "sha256": "12bb8a6039f69e775b4093c389413422c6ff061de8d260881796c37230b3a302"
+    },
+    {
+      "id": 147,
+      "file": "data/crests/ally/crest-147.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-149.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "a080a07b933167c2b6f33f76338cb867dca256c9d801e1182bf4e01b089e8139"
+    },
+    {
+      "id": 148,
+      "file": "data/crests/ally/crest-148.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-150.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "cad1f50ecd1d312989cf4770a6c77a467fcd6c242264305fca00e306284cb7fe"
+    },
+    {
+      "id": 149,
+      "file": "data/crests/ally/crest-149.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-151.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "d687ec84112c45b72eb5b7bfc23178dcdb884346c94adb482c7de167a4a0ea44"
+    },
+    {
+      "id": 150,
+      "file": "data/crests/ally/crest-150.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-152.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 514,
+      "sha256": "c397caa8998ccbcbf1ac858a2b1965ac4194df6a5ee9063667dec9c607f5559e"
+    },
+    {
+      "id": 151,
+      "file": "data/crests/ally/crest-151.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-153.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 510,
+      "sha256": "52d94f730f4acf8a6bd579180154bc16edca4705d340e78d5e2f0c89c3472085"
+    },
+    {
+      "id": 152,
+      "file": "data/crests/ally/crest-152.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-154.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 234,
+      "sha256": "49f1b309b59b1a0fc565ace0a2b1d513ac5ac8e83909f1a4efaf39daaead077e"
+    },
+    {
+      "id": 153,
+      "file": "data/crests/ally/crest-153.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-155.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 510,
+      "sha256": "d02d26f06c2924d523df05366ef0b445909dc78246703c643cc4093e4284ed12"
+    },
+    {
+      "id": 154,
+      "file": "data/crests/ally/crest-154.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-156.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "69d7d002c03ed4d9b28f34037c1179bbef01f334b272e1efaf8c187b2bf21749"
+    },
+    {
+      "id": 155,
+      "file": "data/crests/ally/crest-155.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-157.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 406,
+      "sha256": "37d7f1b6be7bdc4f80001511e7d2d46b51ad9eaf152f56b5cc1f8f8c87cb33ec"
+    },
+    {
+      "id": 156,
+      "file": "data/crests/ally/crest-156.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-158.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 222,
+      "sha256": "c8cfac0cbcd410192a76f52b49d4957356b167efb5c43a2b1256e21d8b6e3f45"
+    },
+    {
+      "id": 157,
+      "file": "data/crests/ally/crest-157.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-159.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "bc74a647b8c3876596d11f1cb9889d760ae8833b36f69b56fdc64d52837b524d"
+    },
+    {
+      "id": 158,
+      "file": "data/crests/ally/crest-158.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-160.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "90e359fca25bb0451bd95c6a281d75547cf1dc8377c3214204465f0a0d6639c6"
+    },
+    {
+      "id": 159,
+      "file": "data/crests/ally/crest-159.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-161.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "14b9db51fe64065ed7139a1754e1575263aa6852f810b785e2565bdbf12d4596"
+    },
+    {
+      "id": 160,
+      "file": "data/crests/ally/crest-160.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-162.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "4c646ef6b33cc98a4434953ca0c6d9e870804abae5206c7c18f82ebb3b0d099f"
+    },
+    {
+      "id": 161,
+      "file": "data/crests/ally/crest-161.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-163.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 510,
+      "sha256": "5e187cdb4d10cb1548c90c87b4687f4de27b350312a65b1f058938e9b5adf259"
+    },
+    {
+      "id": 162,
+      "file": "data/crests/ally/crest-162.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-164.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 518,
+      "sha256": "5b42b4243a85042bc809a4fe210ee0d51c874dfe1ba378f3b5f2e6dde394b0ca"
+    },
+    {
+      "id": 163,
+      "file": "data/crests/ally/crest-163.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-165.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "f6af030eb9c73165dbdfea4442db4ca29d580b4beda0f72f2ce731402d138527"
+    },
+    {
+      "id": 164,
+      "file": "data/crests/ally/crest-164.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-166.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 454,
+      "sha256": "5a15fe1cb569177a0ef6ec032780176fc3915a05a23e80d9f6a99095976db672"
+    },
+    {
+      "id": 165,
+      "file": "data/crests/ally/crest-165.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-167.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 170,
+      "sha256": "999d428e8bab567dec7c5bbbc6661f814ad719e068ba7d1d92822033d5a13065"
+    },
+    {
+      "id": 166,
+      "file": "data/crests/ally/crest-166.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-168.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 230,
+      "sha256": "93127df3ba216586a2553e641f9d759a8d178140424cc79c0c3a13a4523cb2e5"
+    },
+    {
+      "id": 167,
+      "file": "data/crests/ally/crest-167.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-169.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "f34e0d3cc28bc34e903c77fd12933475430cbd9d257c899a58b72654921a9315"
+    },
+    {
+      "id": 168,
+      "file": "data/crests/ally/crest-168.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-170.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 522,
+      "sha256": "1b64e1efd7aa3bc6d972564c0981950ce297b3180c35b5795672cd8c3b22d4cf"
+    },
+    {
+      "id": 169,
+      "file": "data/crests/ally/crest-169.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-171.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 230,
+      "sha256": "078eda3c12964c2be8911131380ff39a3d1ddf21b364a3677aa6f9c609c221f3"
+    },
+    {
+      "id": 170,
+      "file": "data/crests/ally/crest-170.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-172.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 238,
+      "sha256": "4727cd1e1778bee32f35f9096db810bde8a77b560f5891aa860b009efb906acc"
+    },
+    {
+      "id": 171,
+      "file": "data/crests/ally/crest-171.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-173.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 210,
+      "sha256": "93484df656a939370f7364276c3748b480fdbecd6afcccc5b2ca8e7c4b13693a"
+    },
+    {
+      "id": 172,
+      "file": "data/crests/ally/crest-172.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-174.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 506,
+      "sha256": "c9545ff51b9f0cfb2eb0c681919c1b06e0c581b4cb351ccee6c50ebf48cf509c"
+    },
+    {
+      "id": 173,
+      "file": "data/crests/ally/crest-173.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-175.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 238,
+      "sha256": "df7b6bc823cd0e0bce3d8157ee295acd558312884e94e421116606ac5501a9f0"
+    },
+    {
+      "id": 174,
+      "file": "data/crests/ally/crest-174.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-176.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 198,
+      "sha256": "ae418652b2a4c6790b089d26abc9c3b22fca05dbe78907d49c994866aea82e90"
+    },
+    {
+      "id": 175,
+      "file": "data/crests/ally/crest-175.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-177.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 242,
+      "sha256": "4f3876507c07034db94ce1ff957a5c10425539ce0c8bff56894c5e1956dc56dc"
+    },
+    {
+      "id": 176,
+      "file": "data/crests/ally/crest-176.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-178.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 218,
+      "sha256": "174c3104ed18e20a821985e4c6d66c8c78d11df487b733c5fabe64d2d21dab3e"
+    },
+    {
+      "id": 177,
+      "file": "data/crests/ally/crest-177.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-179.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "4e2796a64b56d1ba9c2cbc0c56d83419cc237574549f3e996bc61f2f01648814"
+    },
+    {
+      "id": 178,
+      "file": "data/crests/ally/crest-178.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-182.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 206,
+      "sha256": "fd229a298c2ceb9b841339be24067f56823f8f3e4be77ac2a5ea6b23e2129681"
+    },
+    {
+      "id": 179,
+      "file": "data/crests/ally/crest-179.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-183.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 226,
+      "sha256": "4cd8991c89e67b6843abfbb5e5f278e4f10d85e06c5572308062ce78988d0506"
+    },
+    {
+      "id": 180,
+      "file": "data/crests/ally/crest-180.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-184.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 514,
+      "sha256": "6101d1d47fd6e7db9613edec8ec5c3d281270ed7198ab97999245fb8d2ac7e5f"
+    },
+    {
+      "id": 181,
+      "file": "data/crests/ally/crest-181.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-185.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 206,
+      "sha256": "48e70314517d9032b9d18f0ddba15c6c248c4ba9f11954d52a7d672569bcdaea"
+    },
+    {
+      "id": 182,
+      "file": "data/crests/ally/crest-182.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-186.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "e4ec02706a6c69cd75a574e9e3f4f4e59790c91a455bd3cf0f5a8bcab16ad6e9"
+    },
+    {
+      "id": 183,
+      "file": "data/crests/ally/crest-183.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-187.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 318,
+      "sha256": "8324724b1d3e3a5562b3eb7839c003efe7b54da0318cc477ce8d7698b5f0606c"
+    },
+    {
+      "id": 184,
+      "file": "data/crests/ally/crest-184.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-188.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 294,
+      "sha256": "98ec1406862b1f8b893f14ae39c2348f9e067cba591ba20aaf08f3cab89ea395"
+    },
+    {
+      "id": 185,
+      "file": "data/crests/ally/crest-185.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-189.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 262,
+      "sha256": "b23b7cf73c88061fa236d38b4946d59b306e8108c412085e1075d5d507ac67a1"
+    },
+    {
+      "id": 186,
+      "file": "data/crests/ally/crest-186.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-190.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "b234adab627130dceb979134ff03df0a655d3ff3ea1f226a13b2626fe07d1342"
+    },
+    {
+      "id": 187,
+      "file": "data/crests/ally/crest-187.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-191.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 198,
+      "sha256": "757f744648f929268b6ee328ea040e2ca6a6453269c57ab6b69084e1869a785a"
+    },
+    {
+      "id": 188,
+      "file": "data/crests/ally/crest-188.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-192.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 310,
+      "sha256": "63d2ca6d065dff1d916d52e7ddb79534760ce11ba7896c3533b67f5517105ffb"
+    },
+    {
+      "id": 189,
+      "file": "data/crests/ally/crest-189.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-193.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 190,
+      "sha256": "c9fc6f4775cf4b59766e3e4d0281b47a77cd698ab2e429c11b775e9bd7b35082"
+    },
+    {
+      "id": 190,
+      "file": "data/crests/ally/crest-190.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-194.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 282,
+      "sha256": "459461d515ab96a1bd3332e19ec53d782cc8bac2eb68fe4c41803848816d1634"
+    },
+    {
+      "id": 191,
+      "file": "data/crests/ally/crest-191.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-195.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 210,
+      "sha256": "5f8c614c2ec65faa26ef131a1be59703f74e9a60b08342f71064b2da962e918b"
+    },
+    {
+      "id": 192,
+      "file": "data/crests/ally/crest-192.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-196.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 190,
+      "sha256": "fd26e1cfbc02ef39bc4d0bef5894aa931dadf57bb9de64e4481e1281f3d9edc8"
+    },
+    {
+      "id": 193,
+      "file": "data/crests/ally/crest-193.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-198.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 218,
+      "sha256": "ba9cab50fae44c3902e5d1a6b6e8dd4ae0fcd0a31b32704ba92f6701e9dfa425"
+    },
+    {
+      "id": 194,
+      "file": "data/crests/ally/crest-194.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-199.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 218,
+      "sha256": "4fce40d3e2bddb448faa3c8aeae729231e62e1a8c7b8bca177a39b07ca7c8a3b"
+    },
+    {
+      "id": 195,
+      "file": "data/crests/ally/crest-195.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-200.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 522,
+      "sha256": "4ac437bda01170b6484c01a60d9ef084aec591dc829fab1b1cb35714a4eb788d"
+    },
+    {
+      "id": 196,
+      "file": "data/crests/ally/crest-196.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-201.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "b55aac35d44f294f68026b7e5b6d00380d509b3d7ca3f59bf309406e79d6d26e"
+    },
+    {
+      "id": 197,
+      "file": "data/crests/ally/crest-197.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-202.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 238,
+      "sha256": "db14fc3c22607a4025099da4fd7fe28d3dcf2f3c7e3a9df3cd5b3bf5862de5dd"
+    },
+    {
+      "id": 198,
+      "file": "data/crests/ally/crest-198.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-203.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 230,
+      "sha256": "4a68f9af07e0aa7c5fa5a074fd5100fdb58bc71b01d22658b831153c0c1104af"
+    },
+    {
+      "id": 199,
+      "file": "data/crests/ally/crest-199.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-204.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 338,
+      "sha256": "e04d9970a7891eb2bd5e8a59cbe892fe14fc869f98e70d481e1e9cf8186220a0"
+    },
+    {
+      "id": 200,
+      "file": "data/crests/ally/crest-200.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-205.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 226,
+      "sha256": "4f717c31d59254dfe2f94b361fba02d59555f17ef0270d0fdb08cf0a485f1d52"
+    },
+    {
+      "id": 201,
+      "file": "data/crests/ally/crest-201.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-206.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 206,
+      "sha256": "e2648819ddbf320057d4912c809b754540166729480bfa2837bb7a4e81f804ed"
+    },
+    {
+      "id": 202,
+      "file": "data/crests/ally/crest-202.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-207.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 218,
+      "sha256": "1050f8c1495703fbbc62592b6edeec93f2dabfe141267d1f1639b38e5ea89634"
+    },
+    {
+      "id": 203,
+      "file": "data/crests/ally/crest-203.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-208.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 234,
+      "sha256": "794f90c7183d88c16b021951717a4322d0730bfa9e027c4de8ae0a295c60b176"
+    },
+    {
+      "id": 204,
+      "file": "data/crests/ally/crest-204.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-209.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 246,
+      "sha256": "8a15a0557ca8cf986083136c74398192aefc878015f63c922f229205bed9b50b"
+    },
+    {
+      "id": 205,
+      "file": "data/crests/ally/crest-205.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-210.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 238,
+      "sha256": "9e58a0a767f0b076deeffdc3472e90451aa5b8e463fd6d1e27a0dae38d4d11ba"
+    },
+    {
+      "id": 206,
+      "file": "data/crests/ally/crest-206.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-211.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 310,
+      "sha256": "63da753c1d10e6de6b50f7c8c868653a2007fadc3eb707e27b0313e6e2ca41fb"
+    },
+    {
+      "id": 207,
+      "file": "data/crests/ally/crest-207.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-212.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 226,
+      "sha256": "11c5bde609424cbb14c42219ae12f08147b172b79464ba884330c7afee6b2c30"
+    },
+    {
+      "id": 208,
+      "file": "data/crests/ally/crest-208.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-213.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 278,
+      "sha256": "37fe14323f9d8ce9dc1a324652179c1fee8b61b15ae4d6b39e5a608cab6922c5"
+    },
+    {
+      "id": 209,
+      "file": "data/crests/ally/crest-209.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-214.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 238,
+      "sha256": "d43ef3dcc8e73fde15e5d54bcb911fe61b85f2ed09d07e9a41814fccea732e49"
+    },
+    {
+      "id": 210,
+      "file": "data/crests/ally/crest-210.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-215.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 242,
+      "sha256": "96979286ae62bd825146c85877d96373f6c9b8849f73b392edb1096ec340bc7a"
+    },
+    {
+      "id": 211,
+      "file": "data/crests/ally/crest-211.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-216.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 450,
+      "sha256": "216a224fc3309fe9673bb6935452c6e7c2af668bbd9f81f368d125d9d99788ee"
+    },
+    {
+      "id": 212,
+      "file": "data/crests/ally/crest-212.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-217.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 522,
+      "sha256": "c65feb5b5e850b0f9c3cd13a99ad7ae2dbde116906e8725f0e4b5d1bb25ea199"
+    },
+    {
+      "id": 213,
+      "file": "data/crests/ally/crest-213.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-218.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "6b466ca241af491b9d991a0e907b1a7a033ccd7bafed5658a5df5eac14549d73"
+    },
+    {
+      "id": 214,
+      "file": "data/crests/ally/crest-214.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-219.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 398,
+      "sha256": "a21f83298044ccbaaf1c3b2d5d108a74229b5ea2deeb07dc1680bfa00100e061"
+    },
+    {
+      "id": 215,
+      "file": "data/crests/ally/crest-215.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-220.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 330,
+      "sha256": "43abe17a6cb65b2a93880606afa5cd24bf1fd2de3e963b4099bdf22e7032f1f4"
+    },
+    {
+      "id": 216,
+      "file": "data/crests/ally/crest-216.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-221.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "2ec4653e65b7eb4a5a02e023665984538f091622223c9d4d12e536b999688f9d"
+    },
+    {
+      "id": 217,
+      "file": "data/crests/ally/crest-217.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-222.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "652b860b10981eb67933baed378c7167f6d269a56ff24a363e182d2dbed442d3"
+    },
+    {
+      "id": 218,
+      "file": "data/crests/ally/crest-218.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-223.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 238,
+      "sha256": "c40cba877f3b985711aee1df1fa3f3968ff4308f01259c542ff092c6fc127afc"
+    },
+    {
+      "id": 219,
+      "file": "data/crests/ally/crest-219.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-224.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "b106fcfca0a3aee9cad41df1aaa9bdba7a65efc91f510eb2dca6de301d523d29"
+    },
+    {
+      "id": 220,
+      "file": "data/crests/ally/crest-220.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-225.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 270,
+      "sha256": "44b868e0992410041712a1eaec1e007a16717e39a1ae8960100d0cc3a8d7c84d"
+    },
+    {
+      "id": 221,
+      "file": "data/crests/ally/crest-221.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-226.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "0a0058303996852136cf86f3e22ef4b63c3e197787b138c200b828075a4f14f8"
+    },
+    {
+      "id": 222,
+      "file": "data/crests/ally/crest-222.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-227.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 514,
+      "sha256": "5f86c65d52fbe6dcc8ee612511a2197e92ca42ee1e6784eb43ed7d2caba49387"
+    },
+    {
+      "id": 223,
+      "file": "data/crests/ally/crest-223.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-228.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 242,
+      "sha256": "4046818e0270ec299247b5138e7f7f8dddd4e8896668e76ff893e09b0ed51bf2"
+    },
+    {
+      "id": 224,
+      "file": "data/crests/ally/crest-224.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-229.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "79fc09b3018f43224cc2e431dcec749d75fb0b98ab5a66c6b4f866b783e68397"
+    },
+    {
+      "id": 225,
+      "file": "data/crests/ally/crest-225.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-230.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 526,
+      "sha256": "08069748ea5620d39e46eebbfc20cc99ff06dfa70b1125fff681d9e166b723a9"
+    },
+    {
+      "id": 226,
+      "file": "data/crests/ally/crest-226.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-231.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 514,
+      "sha256": "e55cb08ce61a8d904891d6f9a2baf67769db9f23f45cc714613ce8b8efa5e8b3"
+    },
+    {
+      "id": 227,
+      "file": "data/crests/ally/crest-227.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-232.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 374,
+      "sha256": "16657c102accc2815ee5f3293fb7f22ad457d7700ac81746f95da3c65ff45979"
+    },
+    {
+      "id": 228,
+      "file": "data/crests/ally/crest-228.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-233.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 238,
+      "sha256": "8031e5bf6c14a6a01e8b91a74968abb25806212dc384d0d5a4b86730564d0ff4"
+    },
+    {
+      "id": 229,
+      "file": "data/crests/ally/crest-229.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-234.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "bf1e169d739b9e5830728bb1032910fce7e030cb002e91b675f713b3347720fa"
+    },
+    {
+      "id": 230,
+      "file": "data/crests/ally/crest-230.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-235.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "9ece898140e318064cd24ee49b591603ef776f16fd3c1eb61e7431f95ed72d8d"
+    },
+    {
+      "id": 231,
+      "file": "data/crests/ally/crest-231.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-236.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "06f53afba0f84cc5917e2fa8ff9a22a06a42bce76cde524fdd5f65df7cbbd53d"
+    },
+    {
+      "id": 232,
+      "file": "data/crests/ally/crest-232.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-237.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 510,
+      "sha256": "ba928940a3736a4579583c3533970083f190f8f5a41b7fb7a665b2b28830bc0d"
+    },
+    {
+      "id": 233,
+      "file": "data/crests/ally/crest-233.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-238.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "c37a9c7ea4efef4195dfc2ba53fe20c2bee79ea96366e837f55f80b4e645f843"
+    },
+    {
+      "id": 234,
+      "file": "data/crests/ally/crest-234.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-239.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 534,
+      "sha256": "442322fb96c8dba1ef62fad9d8da4f6ca7a332f03f0bf91afab81d2f0070142d"
+    },
+    {
+      "id": 235,
+      "file": "data/crests/ally/crest-235.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-240.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 502,
+      "sha256": "4931d508ed06ca431c8e42372894eff59594e8b9662ff08cf106f2ccab8f2471"
+    },
+    {
+      "id": 236,
+      "file": "data/crests/ally/crest-236.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-241.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "be91dc8c0004de27874461ce054a9bcd4cab87d0d4b335834e2af5570247db77"
+    },
+    {
+      "id": 237,
+      "file": "data/crests/ally/crest-237.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-242.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 530,
+      "sha256": "4a6daa2adaf22f93ebb0fe592c8b6b5735533704b12a74aa5f3358a334bc375e"
+    },
+    {
+      "id": 238,
+      "file": "data/crests/ally/crest-238.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-243.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 514,
+      "sha256": "7055f947d588a8a3dca6ec841bc538fa5f9008d8dedd921525dd9a17c26907a4"
+    },
+    {
+      "id": 239,
+      "file": "data/crests/ally/crest-239.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-244.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 482,
+      "sha256": "a2c4f28e53a9ade037adab9dfa9881a58d041b9efb9a741bf210c15ab5fda8a8"
+    },
+    {
+      "id": 240,
+      "file": "data/crests/ally/crest-240.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-245.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 454,
+      "sha256": "9a9c29ba40343f0c3886e6e1b8688f9ccd121d705381e91fc8f67c55426b7a38"
+    },
+    {
+      "id": 241,
+      "file": "data/crests/ally/crest-241.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-246.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 454,
+      "sha256": "3de338c0088a8c40b68a94cd408c0bc937bb94dfbe1cac25888a4ee5075b3b7d"
+    },
+    {
+      "id": 242,
+      "file": "data/crests/ally/crest-242.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-247.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 386,
+      "sha256": "54bc5ca7d543a68bb419b53a9790e357a00b6201261476a6fb033a5be22d8af1"
+    },
+    {
+      "id": 243,
+      "file": "data/crests/ally/crest-243.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-248.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 458,
+      "sha256": "431be8dd3a37fe1ef1dea90b579bd7e2af9e5e2588b34e0709f91f7c3da55682"
+    },
+    {
+      "id": 244,
+      "file": "data/crests/ally/crest-244.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-249.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 302,
+      "sha256": "7a10ff77a0d714e825ef478e8c9be4a28808c3e6dfa566d60430caf11fd1d391"
+    },
+    {
+      "id": 245,
+      "file": "data/crests/ally/crest-245.bmp",
+      "source": "https://cdn.l2topzone.com/crestally/crest-ally-250.jpg",
+      "width": 8,
+      "height": 12,
+      "bitsPerPixel": 8,
+      "bytes": 458,
+      "sha256": "63423012bc48265e1f1913f8aac6e07a366a15c68a7f50b7663a44706efcc39b"
+    }
+  ]
+}

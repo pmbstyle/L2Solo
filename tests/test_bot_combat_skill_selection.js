@@ -6,6 +6,7 @@ const BotAI = invoke('GameServer/Bot/BotAI');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
+const World = invoke('GameServer/World/World');
 
 function skill(selfId, options = {}) {
     return {
@@ -67,9 +68,11 @@ function generics() {
 }
 
 const originalRandom = Math.random;
+const originalFetchNpcsInRadius = World.fetchNpcsInRadius;
 
 try {
     Math.random = () => 0;
+    World.fetchNpcsInRadius = () => [];
 
     const mage = bot(10, []);
     const mageGenerics = generics();
@@ -83,6 +86,57 @@ try {
     BotAI.executeCombat({}, archer, npc(1102), archerGenerics);
     assert.deepStrictEqual(archerGenerics.skills[0], { id: 1102, selfId: 56, ctrl: true });
     assert.strictEqual(archerGenerics.attacks.length, 0, 'archer with learned Power Shot should cast it before ranged attack fallback');
+
+    let closeTargetX = 120;
+    const closeTarget = {
+        ...npc(11020),
+        fetchLocX: () => closeTargetX,
+        fetchLocZ: () => 0,
+        fetchAttackable: () => true,
+        isDead: () => false
+    };
+    const closeArcher = bot(9, [skill(56, {
+        name: 'Power Shot',
+        mp: 5,
+        range: 700,
+        power: 24,
+        semantic: { requires: { weaponsAllowed: 32 } }
+    })], 100, 'Weapon.Bow');
+    closeArcher.fetchId = () => 2001102;
+    closeArcher.fetchLocZ = () => 0;
+    closeArcher.state = {
+        fetchTowards: () => false,
+        fetchCasts: () => false,
+        fetchHits: () => false
+    };
+    closeArcher.moves = [];
+    closeArcher.moveTo = (data) => closeArcher.moves.push(data);
+    const closeArcherSession = { plan: 'hunting' };
+    const closeArcherGenerics = generics();
+    BotAI.executeCombat(closeArcherSession, closeArcher, closeTarget, closeArcherGenerics);
+    assert.strictEqual(closeArcher.moves.length, 1, 'an autonomous archer must reposition before any offensive skill in melee range');
+    assert.strictEqual(closeArcherGenerics.skills.length, 0, 'a close autonomous archer must not unload Power Shot before kiting');
+    assert.strictEqual(closeArcherGenerics.attacks.length, 0, 'a close autonomous archer must not replace the blocked skill with a point-blank attack');
+    assert.strictEqual(closeArcherSession.lastCombatDecision.action, 'kite');
+
+    BotAI.executeCombat(closeArcherSession, closeArcher, closeTarget, closeArcherGenerics);
+    assert.strictEqual(closeArcher.moves.length, 1, 'the kite cooldown must suppress duplicate movement commands');
+    assert.strictEqual(closeArcherGenerics.skills.length, 0, 'the kite cooldown must still block point-blank offensive skills');
+    assert.strictEqual(closeArcherSession.lastCombatDecision.action, 'hold_range');
+
+    closeTargetX = 650;
+    BotAI.executeCombat(closeArcherSession, closeArcher, closeTarget, closeArcherGenerics);
+    assert.strictEqual(closeArcherGenerics.skills.length, 1, 'the archer should use Power Shot after restoring ranged spacing');
+
+    closeTargetX = 120;
+    const playerPartyGenerics = generics();
+    BotAI.executeCombat({
+        plan: 'following',
+        partyCompanion: true,
+        followPlayerSession: {}
+    }, closeArcher, closeTarget, playerPartyGenerics);
+    assert.strictEqual(playerPartyGenerics.skills.length, 1,
+        'the autonomous kite boundary must not override player-party combat positioning');
 
     const bowWithMeleeSkill = bot(9, [skill(3, { name: 'Power Strike', mp: 5, range: 50, power: 500 })], 100, 'Weapon.Bow');
     const bowWithMeleeSkillGenerics = generics();
@@ -148,6 +202,27 @@ try {
     BotAI.executeCombat(utilitySession, utilityMage, npc(1104), utilityGenerics);
     assert.strictEqual(utilityGenerics.skills[0].selfId, 1234, 'mage should choose the stronger learned offensive spell');
     assert.strictEqual(utilitySession.lastCombatDecision.skillId, 1234, 'combat choice should be observable');
+
+    const undeadNuke = skill(1028, {
+        name: 'Might of Heaven',
+        mp: 35,
+        power: 42,
+        spell: true,
+        semantic: { undeadOnly: true }
+    });
+    const ordinaryNuke = skill(1177, { name: 'Wind Strike', mp: 8, power: 12, spell: true });
+    const healerWithUndeadNuke = bot(30, [undeadNuke, ordinaryNuke], 100);
+    const livingTarget = { ...npc(11045), fetchUndead: () => false };
+    const livingTargetGenerics = generics();
+    BotAI.executeCombat({}, healerWithUndeadNuke, livingTarget, livingTargetGenerics);
+    assert.strictEqual(livingTargetGenerics.skills[0].selfId, 1177,
+        'a healer must not select an undead-only nuke against a living target');
+
+    const undeadTarget = { ...npc(11046), fetchUndead: () => true };
+    const undeadTargetGenerics = generics();
+    BotAI.executeCombat({}, healerWithUndeadNuke, undeadTarget, undeadTargetGenerics);
+    assert.strictEqual(undeadTargetGenerics.skills[0].selfId, 1028,
+        'a healer may select Might of Heaven against an undead target');
 
     const summon = skill(1276, {
         name: 'Summon Kai the Cat',
@@ -424,4 +499,5 @@ try {
     console.log('Bot combat skill selection checks passed');
 } finally {
     Math.random = originalRandom;
+    World.fetchNpcsInRadius = originalFetchNpcsInRadius;
 }

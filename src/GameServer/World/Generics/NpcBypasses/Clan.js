@@ -34,8 +34,48 @@ function menu(session) {
         `Status: <font color="LEVEL">${role}</font><br><br>` +
         '<a action="bypass -h clan create-form">Create a Clan</a><br1>' +
         '<a action="bypass -h clan level-info">Increase Clan Level</a><br1>' +
-        '<a action="bypass -h clan members">Clan Members</a>'
+        '<a action="bypass -h clan members">Clan Members</a><br1>' +
+        '<a action="bypass -h clan dissolve-confirm">Dissolve Clan</a>'
     ));
+}
+
+function dissolveConfirm(session) {
+    const clan = ClanService.clanForActor(session.actor);
+    if (!clan || !ClanService.isLeader(session.actor, clan)) {
+        sendHtml(session, page('Only the clan leader may dissolve the clan.' + returnLink()));
+        return;
+    }
+
+    sendHtml(session, page(
+        `Dissolve <font color="LEVEL">${clan.name}</font>?<br>` +
+        'All members will be released immediately and clan titles will be cleared.<br>' +
+        'No clan penalties will be applied.<br><br>' +
+        '<button value="Dissolve" action="bypass -h clan dissolve" width=70 height=15 back="sek.cbui94" fore="sek.cbui92">' +
+        returnLink()
+    ));
+}
+
+function dissolveClan(session) {
+    return ClanService.dissolve(session.actor).then((result) => {
+        if (!result.ok) {
+            sendHtml(session, page(errorText(result.code) + returnLink()));
+            return result;
+        }
+
+        result.sessions.forEach((memberSession) => {
+            memberSession.dataSendToMe(ServerResponse.pledgeShowMemberListDeleteAll());
+            memberSession.dataSendToMe(ServerResponse.userInfo(memberSession.actor));
+            memberSession.dataSendToOthers?.(ServerResponse.charInfo(memberSession.actor), memberSession.actor);
+            memberSession.dataSendToOthers?.(ServerResponse.relationChanged(memberSession.actor), memberSession.actor);
+        });
+        speak(session, `Clan ${result.clan.name} has been dissolved.`);
+        sendHtml(session, page(`Clan <font color="LEVEL">${result.clan.name}</font> has been dissolved.`));
+        return result;
+    }).catch((err) => {
+        utils.infoWarn('Clan', 'dissolve clan failed: %s', err.message);
+        sendHtml(session, page('Failed to dissolve clan.' + returnLink()));
+        return { ok: false, code: 'dissolve_failed' };
+    });
 }
 
 function createForm(session) {
@@ -188,7 +228,8 @@ function errorText(code, details = {}) {
         no_privilege: 'You are not authorized.',
         not_enough_sp: 'You do not have enough SP.',
         not_enough_adena: 'You do not have enough Adena.',
-        missing_item: `You need ${details.itemName || 'the required item'}.`
+        missing_item: `You need ${details.itemName || 'the required item'}.`,
+        not_leader: 'Only the clan leader may dissolve the clan.'
     })[code] || 'Action failed.';
 }
 
@@ -203,6 +244,8 @@ module.exports = function(session, parts) {
     if (action === 'level-info') return levelInfo(session);
     if (action === 'level-up') return levelUp(session);
     if (action === 'members') return members(session);
+    if (action === 'dissolve-confirm') return dissolveConfirm(session);
+    if (action === 'dissolve') return dissolveClan(session);
 
     return menu(session);
 };

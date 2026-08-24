@@ -25,7 +25,10 @@ class BotSession {
     }
 
     dataSendToOthers(data, creature) {
-        const recipients = World.fetchVisibleUsers(this, creature).filter((user) => (
+        const visibleUsers = typeof World.fetchVisibleRealPlayers === 'function'
+            ? World.fetchVisibleRealPlayers(this, creature)
+            : World.fetchVisibleUsers(this, creature);
+        const recipients = visibleUsers.filter((user) => (
             user.socket &&
             typeof user.socket.write === 'function' &&
             user.accountId !== this.accountId &&

@@ -25,6 +25,7 @@ const originals = {
     assignParty: LifeState.assignParty,
     partyRequirementCounts: LifeState.partyRequirementCounts,
     clearParty: LifeState.clearParty,
+    releaseDissolvedPartyMembers: LifeState.releaseDissolvedPartyMembers,
     cachedState: LifeState.cachedState,
     createOrUpdate: PartyState.createOrUpdate,
     setStatus: PartyState.setStatus,
@@ -186,12 +187,16 @@ async function run() {
     const electiveParty = { partyId: 'bgp_elective', leaderId: 11, memberIds: [11, 12], spotId: 'cruma', startedAt: 1 };
     const requiredParty = { partyId: 'bgp_required', leaderId: 21, memberIds: [21, 22], spotId: 'dion', startedAt: 2 };
     const reclaimed = [];
+    const dissolvedReleases = [];
     PartyState.active = () => [electiveParty, requiredParty];
     PartyState.setStatus = (partyId, status) => {
         reclaimed.push({ partyId, status });
         return Promise.resolve({ partyId, status });
     };
-    LifeState.clearParty = () => Promise.resolve(2);
+    LifeState.releaseDissolvedPartyMembers = (partyId, reason) => {
+        dissolvedReleases.push({ partyId, reason });
+        return Promise.resolve(2);
+    };
     LifeState.partyRequirementCounts = () => Promise.resolve([
         { partyId: 'bgp_elective', requiredMembers: 0 },
         { partyId: 'bgp_required', requiredMembers: 2 }
@@ -205,6 +210,7 @@ async function run() {
     ]);
     assert.deepStrictEqual(released.map((party) => party.partyId), ['bgp_elective']);
     assert.deepStrictEqual(reclaimed, [{ partyId: 'bgp_elective', status: 'dissolved' }]);
+    assert.deepStrictEqual(dissolvedReleases, [{ partyId: 'bgp_elective', reason: 'party_capacity_reclaimed' }]);
 
     const activationOrder = [];
     ColdSimulationOwner.handoffToMain = async (state) => {
@@ -236,8 +242,8 @@ async function run() {
     PartyState.setStatus = async (partyId, status) => {
         activationOrder.push(`status:${partyId}:${status}`);
     };
-    LifeState.clearParty = async (partyId, reason) => {
-        activationOrder.push(`clear:${partyId}:${reason}`);
+    LifeState.releaseDissolvedPartyMembers = async (partyId, reason) => {
+        activationOrder.push(`release:${partyId}:${reason}`);
         return 2;
     };
     LifeState.cachedState = (characterId) => characterId === groupedState.characterId ? releasedState : null;
@@ -254,7 +260,7 @@ async function run() {
         [
             'handoff:91001',
             'status:bgp_activation_probe:dissolved',
-            'clear:bgp_activation_probe:hot_activation_party_invite',
+            'release:bgp_activation_probe:hot_activation_party_invite',
             'spawn:solo'
         ],
         'background party cleanup must finish before a member spawns from the released solo snapshot'
@@ -266,7 +272,7 @@ async function run() {
         characterId: 91002,
         name: 'BlockedActivationProbe'
     };
-    LifeState.clearParty = async () => 0;
+    LifeState.releaseDissolvedPartyMembers = async () => 0;
     LifeState.cachedState = (characterId) => characterId === blockedState.characterId ? blockedState : null;
     const blockedActivation = await HotActivation.activate(blockedState, 'party_invite', { keepStoreLocation: true });
     assert.strictEqual(blockedActivation.ok, false, 'a member must not spawn while its persisted party link is still present');
@@ -279,7 +285,7 @@ async function run() {
         characterId: 91004,
         name: 'FailedSpawnProbe'
     };
-    LifeState.clearParty = async () => 2;
+    LifeState.releaseDissolvedPartyMembers = async () => 2;
     LifeState.cachedState = (characterId) => characterId === failedSpawnState.characterId
         ? { ...releasedState, characterId: failedSpawnState.characterId, name: failedSpawnState.name }
         : null;
@@ -310,7 +316,7 @@ async function run() {
     let releaseStatus;
     const releaseGate = new Promise((resolve) => { releaseStatus = resolve; });
     PartyState.setStatus = async () => releaseGate;
-    LifeState.clearParty = async () => 2;
+    LifeState.releaseDissolvedPartyMembers = async () => 2;
     LifeState.cachedState = (characterId) => characterId === concurrentState.characterId ? concurrentReleasedState : null;
 
     const firstActivation = HotActivation.activate(concurrentState, 'concurrent_first', { keepStoreLocation: true });
@@ -339,6 +345,7 @@ run().catch((err) => {
     LifeState.assignParty = originals.assignParty;
     LifeState.partyRequirementCounts = originals.partyRequirementCounts;
     LifeState.clearParty = originals.clearParty;
+    LifeState.releaseDissolvedPartyMembers = originals.releaseDissolvedPartyMembers;
     LifeState.cachedState = originals.cachedState;
     PartyState.createOrUpdate = originals.createOrUpdate;
     PartyState.setStatus = originals.setStatus;

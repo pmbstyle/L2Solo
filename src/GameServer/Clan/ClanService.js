@@ -1,5 +1,6 @@
 const Database = invoke('Database');
 const ClanRules = invoke('GameServer/Clan/ClanRules');
+const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
 
 const DAY_MS = 86400000;
 const JOIN_COOLDOWN_MS = 5 * DAY_MS;
@@ -40,6 +41,7 @@ function normalizeMember(row) {
     return {
         id: number(row.id),
         name: String(row.name || ''),
+        title: String(row.title || ''),
         level: number(row.level),
         classId: number(row.classId),
         clanId: number(row.clanId),
@@ -52,6 +54,7 @@ function actorMember(actor) {
     return normalizeMember({
         id: actor.fetchId(),
         name: actor.fetchName(),
+        title: actor.fetchTitle?.() || '',
         level: actor.fetchLevel(),
         classId: actor.fetchClassId(),
         clanId: actor.fetchClanId(),
@@ -85,6 +88,7 @@ function liveMember(member) {
         ...member,
         id: session.actor.fetchId(),
         name: session.actor.fetchName(),
+        title: session.actor.fetchTitle?.() ?? member.title ?? '',
         level: session.actor.fetchLevel(),
         classId: session.actor.fetchClassId(),
         clanId: session.actor.fetchClanId(),
@@ -109,6 +113,13 @@ function setActorClan(actor, clanId, privileges) {
     actor.setClanPrivileges?.(number(privileges));
 }
 
+function clearActorClan(actor) {
+    setActorClan(actor, 0, 0);
+    actor.setClanJoinExpiryTime?.(0);
+    actor.setClanCreateExpiryTime?.(0);
+    actor.setTitle?.('');
+}
+
 function ensureSchema() {
     return Database.execute(['SELECT 1', []], 'schema:clans');
 }
@@ -121,6 +132,8 @@ const ClanService = {
     init() {
         return ensureSchema()
             .then(() => this.reload())
+            .then(() => ClanCrestService.ensureAutonomousClans())
+            .then((result) => result.assigned ? this.reload() : this.all())
             .then(() => utils.infoSuccess('Clan', 'loaded %d clans', state.clans.size))
             .catch((err) => {
                 utils.infoWarn('Clan', 'clan tables unavailable: %s', err.message);
@@ -225,12 +238,61 @@ const ClanService = {
         if (!clan) return Promise.resolve({ ok: false, code: 'no_clan' });
         if (!options.force && this.isLeader(actor, clan)) return Promise.resolve({ ok: false, code: 'leader_cannot_leave' });
 
-        const joinExpiry = nowMs() + JOIN_COOLDOWN_MS;
-        return Database.updateCharacterClan(actor.fetchId(), 0, 0, joinExpiry, number(actor.fetchClanCreateExpiryTime?.())).then(() => {
-            setActorClan(actor, 0, 0);
-            actor.setClanJoinExpiryTime?.(joinExpiry);
-            removeMemberFromCache(clanId, actor.fetchId());
-            return { ok: true, clan };
+        return this.removeMemberById(clan, actor.fetchId(), { ...options, actor });
+    },
+
+    removeMemberById(clan, memberId, options = {}) {
+        if (!clan) return Promise.resolve({ ok: false, code: 'no_clan' });
+        const member = clan.members.find((entry) => number(entry.id) === number(memberId));
+        if (!member) return Promise.resolve({ ok: false, code: 'not_member' });
+        if (number(member.id) === number(clan.leaderId)) {
+            return Promise.resolve({ ok: false, code: 'leader_cannot_leave' });
+        }
+
+        return Database.isAutonomousBotMember(member.id, clan.id).then((permanent) => {
+            if (permanent) return { ok: false, code: 'autonomous_membership_permanent' };
+            return Database.removeCharacterFromClan(member.id).then(() => {
+                if (options.actor) clearActorClan(options.actor);
+                removeMemberFromCache(clan.id, member.id);
+                return { ok: true, clan, member, actor: options.actor || null };
+            });
+        });
+    },
+
+    setMemberTitle(actor, targetActor, title) {
+        const clan = this.clanForActor(actor);
+        if (!clan) return Promise.resolve({ ok: false, code: 'no_clan' });
+        if (!ClanRules.hasPrivilege(actor, ClanRules.CP_CL_GIVE_TITLE)) {
+            return Promise.resolve({ ok: false, code: 'no_privilege' });
+        }
+        if (number(clan.level) < 3) return Promise.resolve({ ok: false, code: 'level_too_low' });
+        if (!targetActor || number(targetActor.fetchClanId?.()) !== number(clan.id)) {
+            return Promise.resolve({ ok: false, code: 'not_member' });
+        }
+
+        const value = String(title || '');
+        if (value.length > 32) return Promise.resolve({ ok: false, code: 'title_too_long' });
+
+        return Database.updateCharacterTitle(targetActor.fetchId(), value).then(() => {
+            targetActor.setTitle?.(value);
+            replaceMember(clan, actorMember(targetActor));
+            return { ok: true, clan, member: actorMember(targetActor), actor: targetActor };
+        });
+    },
+
+    dissolve(actor) {
+        const clan = this.clanForActor(actor);
+        if (!clan) return Promise.resolve({ ok: false, code: 'no_clan' });
+        if (!this.isLeader(actor, clan)) return Promise.resolve({ ok: false, code: 'not_leader' });
+
+        const sessions = clanOnlineSessions(clan);
+        return Database.dissolveClan({ clanId: clan.id, leaderId: actor.fetchId() }).then((result) => {
+            if (!result.ok) return result;
+            sessions.forEach((memberSession) => {
+                if (memberSession.actor) clearActorClan(memberSession.actor);
+            });
+            state.clans.delete(number(clan.id));
+            return { ok: true, clan, sessions, memberIds: result.memberIds || [] };
         });
     },
 
@@ -294,13 +356,13 @@ const ClanService = {
         const crestId = number(id);
         if (crestId === 0) return Promise.resolve(null);
 
-        return Database.fetchClanCrest(crestId).then((row) => {
+        return Database.fetchClanCrest(crestId).then(([row]) => {
             if (!row || String(row.kind || SMALL_CREST_KIND) !== SMALL_CREST_KIND) return null;
             return {
                 id: number(row.id),
                 clanId: number(row.clanId),
                 kind: String(row.kind || SMALL_CREST_KIND),
-                data: Buffer.from(row.data || [])
+                data: ClanCrestService.clientCrestData(row.data, 'clan')
             };
         });
     },

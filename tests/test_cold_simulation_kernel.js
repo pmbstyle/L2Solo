@@ -70,6 +70,9 @@ function state(characterId = 1, overrides = {}) {
     }] });
     await kernel.resolveChain;
     assert.strictEqual(kernel.snapshot().resolved, 1);
+    kernel.flushDue();
+    assert(!emitted.some((entry) => entry.type === 'proposal_batch'),
+        'an ordinary partial window must still wait for the flush target');
     now += 2000;
     kernel.flushDue();
     const proposalMessage = emitted.find((entry) => entry.type === 'proposal_batch');
@@ -146,6 +149,29 @@ function state(characterId = 1, overrides = {}) {
     assert.strictEqual(travelState.spotId, 'starter-field', 'the old spot remains current until arrival');
     assert.strictEqual(travelState.stats.travel.spotId, 'mid-level-field');
     assert.strictEqual(travelState.stats.travel.arrivalAt, 30000);
+
+    const deathPressureRoute = {
+        ...route,
+        reason: 'death_pressure_replan',
+        cause: 'death_pressure',
+        spotBackoff: {
+            spotId: 'starter-field',
+            reason: 'death_pressure',
+            deaths: 2,
+            fights: 5,
+            deathRate: 0.4,
+            startedAt: 5000,
+            until: 3605000
+        }
+    };
+    const backedOffTravelState = beginRouteTravelState(state(72, {
+        spotId: 'starter-field',
+        loc: { locX: 115000, locY: -176000, locZ: -1000 }
+    }), deathPressureRoute, 5000);
+    assert.strictEqual(backedOffTravelState.stats.travel.reason, 'death_pressure_replan');
+    assert.strictEqual(backedOffTravelState.stats.travel.cause, 'death_pressure');
+    assert.strictEqual(backedOffTravelState.stats.spotBackoffs[0].spotId, 'starter-field',
+        'the travel transition must persist the cooldown before the spot baseline changes on arrival');
 
     const arrivedPartyMember = finishPartyRouteTravelState({
         ...travelState,
@@ -898,6 +924,143 @@ function state(characterId = 1, overrides = {}) {
         'an oversized first proposal must not remain stuck in the dirty queue');
     assert.strictEqual(oversizedKernel.snapshot().proposalCompactions, 1);
     assert.strictEqual(oversizedKernel.snapshot().proposalOversize, 1);
+
+    const capacityFlushMessages = [];
+    const capacityFlushKernel = new ColdSimulationKernel({
+        resolveSolo: resolver,
+        emit: (type, payload) => capacityFlushMessages.push({ type, payload }),
+        now: () => now,
+        maxBatch: 64,
+        maxInFlight: 8,
+        flushTargetMs: 2000,
+        flushHardMs: 5000
+    });
+    const capacityFlushStates = Array.from({ length: 8 }, (_, index) => state(200 + index));
+    capacityFlushStates.forEach((entry) => capacityFlushKernel.upsert({
+        state: entry,
+        context: { spot: { id: 'spot', rewards: {} } }
+    }));
+    capacityFlushKernel.tick();
+    const capacityFlushClaim = capacityFlushMessages.shift();
+    assert.strictEqual(capacityFlushClaim.payload.candidates.length, 8);
+    capacityFlushKernel.onClaimAck({
+        grants: capacityFlushStates.map((entry) => ({
+            ok: true,
+            characterId: entry.characterId,
+            ownerId: 'cold_simulation_owner',
+            revision: 4,
+            leaseId: `capacity-flush-${entry.characterId}`,
+            leaseUntil: now + 30000
+        }))
+    });
+    await capacityFlushKernel.resolveChain;
+    assert.strictEqual(capacityFlushKernel.snapshot().dirty, 8);
+    assert.strictEqual(capacityFlushKernel.flushDue(), 8,
+        'a full ownership window must flush immediately instead of waiting two seconds');
+    const capacityFlushBatch = capacityFlushMessages.find((entry) => entry.type === 'proposal_batch');
+    assert.strictEqual(capacityFlushBatch.payload.proposals.length, 8);
+    assert.strictEqual(capacityFlushKernel.snapshot().dirty, 0);
+    assert.strictEqual(capacityFlushKernel.snapshot().flushReasons.capacity, 1);
+    assert.strictEqual(capacityFlushKernel.snapshot().lastFlushRows, 8);
+
+    const throttledPartyMessages = [];
+    const throttledPartyKernel = new ColdSimulationKernel({
+        resolveSolo: resolver,
+        resolveParty: () => ({ memberResults: [], events: [], partyPatch: {}, nextResolveAt: now + 60000 }),
+        emit: (type, payload) => throttledPartyMessages.push({ type, payload }),
+        now: () => now,
+        maxBatch: 64,
+        maxInFlight: 4
+    });
+    const throttledPartyMembers = Array.from({ length: 5 }, (_, index) => state(40 + index, {
+        party: { partyId: 'throttled-party' }
+    }));
+    const throttledParty = {
+        partyId: 'throttled-party',
+        leaderId: 40,
+        memberIds: throttledPartyMembers.map((member) => member.characterId)
+    };
+    throttledPartyKernel.upsert({ state: state(39), context: { spot: { id: 'spot' } } });
+    throttledPartyMembers.forEach((member, index) => throttledPartyKernel.upsert({
+        state: member,
+        context: index === 0 ? {
+            isPartyLeader: true,
+            party: throttledParty,
+            partyMembers: throttledPartyMembers,
+            spot: { id: 'spot' }
+        } : {}
+    }));
+    throttledPartyKernel.upsert({ state: state(100), context: { spot: { id: 'spot' } } });
+    throttledPartyKernel.tick();
+    const throttledClaim = throttledPartyMessages.find((entry) => entry.type === 'claim_request');
+    assert.deepStrictEqual(throttledClaim.payload.candidates.map((candidate) => candidate.characterId), [39, 100],
+        'a busy ownership window must defer an oversized atomic party without blocking eligible solo work');
+    assert.strictEqual(throttledPartyKernel.snapshot().partyCapacityDeferrals, 1);
+    assert(throttledPartyMembers.every((member) => !throttledPartyKernel.claiming.has(member.characterId)),
+        'a throttled atomic party must remain unclaimed until the ownership window recovers');
+
+    const atomicBurstMessages = [];
+    const atomicBurstKernel = new ColdSimulationKernel({
+        resolveSolo: resolver,
+        resolveParty: () => ({ memberResults: [], events: [], partyPatch: {}, nextResolveAt: now + 60000 }),
+        emit: (type, payload) => atomicBurstMessages.push({ type, payload }),
+        now: () => now,
+        maxBatch: 64,
+        maxInFlight: 2,
+        maxAtomicPartySize: 5
+    });
+    throttledPartyMembers.forEach((member, index) => atomicBurstKernel.upsert({
+        state: member,
+        context: index === 0 ? {
+            isPartyLeader: true,
+            party: throttledParty,
+            partyMembers: throttledPartyMembers,
+            spot: { id: 'spot' }
+        } : {}
+    }));
+    atomicBurstKernel.tick();
+    const atomicBurstClaim = atomicBurstMessages.find((entry) => entry.type === 'claim_request');
+    assert.deepStrictEqual(
+        atomicBurstClaim.payload.candidates.map((candidate) => candidate.characterId),
+        [40, 41, 42, 43, 44],
+        'an empty throttled ownership window must admit one bounded atomic party'
+    );
+    assert.strictEqual(atomicBurstKernel.snapshot().partyCapacityBursts, 1);
+    assert.strictEqual(atomicBurstKernel.snapshot().partyCapacityDeferrals, 0);
+
+    const boundedBurstMessages = [];
+    const boundedBurstKernel = new ColdSimulationKernel({
+        resolveSolo: resolver,
+        emit: (type, payload) => boundedBurstMessages.push({ type, payload }),
+        now: () => now,
+        maxBatch: 64,
+        maxInFlight: 2,
+        maxAtomicPartySize: 5
+    });
+    const oversizedPartyMembers = Array.from({ length: 6 }, (_, index) => state(50 + index, {
+        party: { partyId: 'oversized-party' }
+    }));
+    const oversizedParty = {
+        partyId: 'oversized-party',
+        leaderId: 50,
+        memberIds: oversizedPartyMembers.map((member) => member.characterId)
+    };
+    oversizedPartyMembers.forEach((member, index) => boundedBurstKernel.upsert({
+        state: member,
+        context: index === 0 ? {
+            isPartyLeader: true,
+            party: oversizedParty,
+            partyMembers: oversizedPartyMembers,
+            spot: { id: 'spot' }
+        } : {}
+    }));
+    boundedBurstKernel.upsert({ state: state(100), context: { spot: { id: 'spot' } } });
+    boundedBurstKernel.tick();
+    const boundedBurstClaim = boundedBurstMessages.find((entry) => entry.type === 'claim_request');
+    assert.deepStrictEqual(boundedBurstClaim.payload.candidates.map((candidate) => candidate.characterId), [100],
+        'a party above the configured atomic bound must defer without blocking solo work');
+    assert.strictEqual(boundedBurstKernel.snapshot().partyCapacityBursts, 0);
+    assert.strictEqual(boundedBurstKernel.snapshot().partyCapacityDeferrals, 1);
 
     const capacityMessages = [];
     const capacityKernel = new ColdSimulationKernel({

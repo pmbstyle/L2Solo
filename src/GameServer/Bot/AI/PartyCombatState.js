@@ -88,7 +88,7 @@ function combatState(leaderSession, options = {}) {
         .map((id) => Number(id || 0))
         .filter(Boolean));
 
-    const threat = PartyAwareness.findThreatTargetingParty(leaderSession);
+    const threat = PartyAwareness.findThreatTargetingPartyProjected(leaderSession);
     if (threat?.actor && !ignoredTargetIds.has(actorId(threat.actor))) {
         const isTravellingPullTarget = pull.active &&
             options.ignoreTravellingPuller === true &&
@@ -116,17 +116,19 @@ function combatState(leaderSession, options = {}) {
     // lethal hit. Include dead members here so a resurrection cannot begin
     // in front of that mob, while still ignoring stale action flags.
     const fallenMembers = members.filter((member) => !isAlive(member));
-    const fallenIds = new Set(fallenMembers.map((member) => actorId(member.actor)).filter(Boolean));
-    const attackingCorpse = (world().npc?.spawns || []).find((npc) => (
-        isHostileNpc(npc) &&
-        npc.state?.fetchCombats?.() === true &&
-        npc.fetchStateAttack?.() === true &&
-        fallenIds.has(Number(npc.fetchDestId?.() || 0)) &&
-        fallenMembers.some((member) => distance2d(npc, member.actor) <= CORPSE_COMBAT_DANGER_DISTANCE) &&
-        !ignoredTargetIds.has(actorId(npc))
-    ));
-    if (attackingCorpse) {
-        return { active: true, reason: 'hostile_combat_record', target: attackingCorpse };
+    if (fallenMembers.length > 0) {
+        const fallenIds = new Set(fallenMembers.map((member) => actorId(member.actor)).filter(Boolean));
+        const attackingCorpse = (world().npc?.spawns || []).find((npc) => (
+            isHostileNpc(npc) &&
+            npc.state?.fetchCombats?.() === true &&
+            npc.fetchStateAttack?.() === true &&
+            fallenIds.has(Number(npc.fetchDestId?.() || 0)) &&
+            fallenMembers.some((member) => distance2d(npc, member.actor) <= CORPSE_COMBAT_DANGER_DISTANCE) &&
+            !ignoredTargetIds.has(actorId(npc))
+        ));
+        if (attackingCorpse) {
+            return { active: true, reason: 'hostile_combat_record', target: attackingCorpse };
+        }
     }
 
     return { active: false, reason: null, target: null };

@@ -192,6 +192,7 @@ class Automation extends SelectedModel {
     }
 
     scheduleAction(session, src, dst, radius, callback, options = {}) {
+        if (session) session.activeMoveGoal = null;
         const movementRadius = options.collisionAware
             ? AttackRange.effectiveRange(src, dst, radius)
             : Math.max(0, Number(radius) || 0);
@@ -270,6 +271,7 @@ class Automation extends SelectedModel {
     }
 
     scheduleMoveToCoords(session, src, to, callback = () => {}) {
+        if (session) session.activeMoveGoal = null;
         const from = {
             locX: src.fetchLocX(),
             locY: src.fetchLocY(),
@@ -324,6 +326,7 @@ class Automation extends SelectedModel {
     }
 
     schedulePickup(session, src, dst, callback) {
+        if (session) session.activeMoveGoal = null;
         const from = {
             locX: src.fetchLocX(),
             locY: src.fetchLocY(),
@@ -401,6 +404,7 @@ class Automation extends SelectedModel {
 
         const session = creature.session;
         if (session) {
+            session.activeMoveGoal = null;
             session.moveRouteGeneration = Number(session.moveRouteGeneration || 0) + 1;
             if (session.pendingPathRequest?.cancel) {
                 session.pendingPathRequest.cancel();
@@ -420,6 +424,16 @@ class Automation extends SelectedModel {
         // a StopMove, C4 keeps animating the old route until a later combat
         // packet or CharInfo forces an obvious position correction.
         if (wasMoving && notifyClient && botSession && session.dataSendToMeAndOthers && creature?.fetchId) {
+            invoke('GameServer/Actor/Generics/MoveTo').recordMovementTrace(session, {
+                event: 'stop',
+                at: Date.now(),
+                loc: {
+                    locX: creature.fetchLocX?.() || 0,
+                    locY: creature.fetchLocY?.() || 0,
+                    locZ: creature.fetchLocZ?.() || 0
+                },
+                towards: creature.state?.fetchTowards?.() || false
+            });
             session.dataSendToMeAndOthers(
                 ServerResponse.stopMove(creature.fetchId(), {
                     locX: creature.fetchLocX?.() || 0,

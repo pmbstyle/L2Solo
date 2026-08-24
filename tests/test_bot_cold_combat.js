@@ -305,6 +305,26 @@ assert.strictEqual(
     null,
     'a raid-only cold spot must not produce a simulated fight'
 );
+const siegeMixedSpot = {
+    ...spot,
+    npcEntries: [{ selfId: 12114, count: 100 }, { selfId: 1, count: 1 }],
+    npcSelfIds: [12114, 1]
+};
+assert.strictEqual(
+    ColdCombatProfile.npcForSpot(siegeMixedSpot, () => 0).selfId,
+    1,
+    'cold combat must exclude castle guards even when they dominate the sector'
+);
+assert.strictEqual(
+    ColdCombatProfile.npcForSpot({ ...spot, npcEntries: [{ selfId: 12114, count: 1 }] }),
+    null,
+    'a castle-guard-only cold spot must not produce a simulated fight'
+);
+assert.strictEqual(
+    ColdCombatProfile.npcForSpot({ ...spot, npcEntries: [{ selfId: 12161, count: 1 }] }),
+    null,
+    'a misclassified castle gatekeeper must not produce a simulated fight'
+);
 assert.strictEqual(
     ColdCombatProfile.npcForSpot(mixedSpot, () => 0.9, { preferredNpcId: 1 }).selfId,
     1,

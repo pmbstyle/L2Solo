@@ -156,6 +156,15 @@ try {
     assert.strictEqual(diagnostics.routeUsable, true, 'preview should preserve a usable direct fallback');
     assert.deepStrictEqual(diagnostics.route, [previewPlan.waypoint], 'preview diagnostics should expose the route MoveTo will execute');
     assert.strictEqual(previewPlan.updatedAt, 123, 'previewing a sticky town route must not mutate the live route plan');
+
+    GeodataEngine.hasLineOfSight = () => false;
+    const blockedDiagnostics = moveTo(previewSession, previewActor, {
+        from: { locX: 0, locY: 0, locZ: 0 },
+        to: { locX: 500, locY: 0, locZ: 0 },
+        previewOnly: true
+    });
+    assert.strictEqual(blockedDiagnostics.routeUsable, false, 'blocked direct fallback must remain unusable');
+    assert.deepStrictEqual(blockedDiagnostics.route, [], 'blocked direct fallback must not announce a through-wall segment');
 } finally {
     GeodataEngine.findPath = originalFindPath;
     GeodataEngine.hasLineOfSight = originalHasLineOfSight;

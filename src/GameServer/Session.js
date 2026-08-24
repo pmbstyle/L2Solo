@@ -4,6 +4,8 @@ const World   = invoke('GameServer/World/World');
 const NpcVisibility = invoke('GameServer/World/NpcVisibility');
 
 const TRACE_LIMIT = 40;
+const MOVEMENT_TRACE_LIMIT = 160;
+const MOVEMENT_PACKET_OPCODES = new Set([0x01, 0x03, 0x2e, 0x47]);
 
 const CLIENT_PACKET_NAMES = {
     0x00: 'ProtocolVersion',
@@ -68,7 +70,7 @@ const CLIENT_PACKET_NAMES = {
 
 const SERVER_PACKET_NAMES = {
     0x00: 'Die',
-    0x01: 'Revive',
+    0x01: 'MoveToLocation',
     0x03: 'CharInfo',
     0x04: 'UserInfo',
     0x05: 'Attack',
@@ -94,7 +96,7 @@ const SERVER_PACKET_NAMES = {
     0x28: 'NpcSay',
     0x2f: 'MoveToPawn',
     0x30: 'SocialAction',
-    0x31: 'ChangeMoveType',
+    0x2e: 'ChangeMoveType',
     0x32: 'ChangeWaitType',
     0x39: 'SkillList',
     0x3a: 'VehicleInfo',
@@ -135,6 +137,7 @@ const SERVER_PACKET_NAMES = {
     0x55: 'PledgeShowMemberListAdd',
     0x56: 'PledgeShowMemberListDelete',
     0x6c: 'PledgeCrest',
+    0x82: 'PledgeShowMemberListDeleteAll',
     0x83: 'PledgeInfo',
     0x88: 'PledgeShowInfoUpdate',
     0x99: 'SkillCoolTime',
@@ -163,6 +166,7 @@ class Session {
         this.socket   = socket;
         this.serverId = optn.id;
         this.packetTrace = [];
+        this.movementPacketTrace = [];
     }
 
     setAccountId(username) {
@@ -204,7 +208,10 @@ class Session {
 
     dataSendToOthers(data, creature) {
         const packet = this.packData(data);
-        World.fetchVisibleUsers(this, creature).forEach((user) => {
+        const visibleUsers = typeof World.fetchVisibleRealPlayers === 'function'
+            ? World.fetchVisibleRealPlayers(this, creature)
+            : World.fetchVisibleUsers(this, creature);
+        visibleUsers.forEach((user) => {
             NpcVisibility.trackNpcPacket(user, data);
             if (user.recordOutboundPacket) {
                 user.recordOutboundPacket(data);
@@ -244,7 +251,21 @@ class Session {
     }
 
     recordOutboundPacket(data) {
-        this.tracePacket('out', data, packetName(SERVER_PACKET_NAMES, packetOpcode(data)));
+        const opcode = packetOpcode(data);
+        const name = packetName(SERVER_PACKET_NAMES, opcode);
+        this.tracePacket('out', data, name);
+
+        if (!MOVEMENT_PACKET_OPCODES.has(opcode)) return;
+        this.movementPacketTrace.push({
+            at: new Date().toISOString(),
+            opcode,
+            name,
+            length: utils.size(data),
+            detail: data && data.__packetTrace ? data.__packetTrace : ''
+        });
+        if (this.movementPacketTrace.length > MOVEMENT_TRACE_LIMIT) {
+            this.movementPacketTrace.shift();
+        }
     }
 
     traceLabel() {

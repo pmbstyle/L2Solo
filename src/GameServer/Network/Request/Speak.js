@@ -2,6 +2,21 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const ReceivePacket  = invoke('Packet/Receive');
 const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
 
+const BOT_COMMAND_ALIASES = Object.freeze({
+    '.b': '.bot',
+    '.bf': '.botfriends',
+    '.bp': '.botparty',
+    '.bs': '.botstatus',
+    '.bpath': '.botpath'
+});
+
+function expandBotCommandAlias(text) {
+    const source = String(text || '');
+    const command = source.match(/^\S+/)?.[0];
+    const canonical = BOT_COMMAND_ALIASES[command];
+    return canonical ? canonical + source.slice(command.length) : source;
+}
+
 function logPlayerChat(session, data) {
     if (PopulationConfig.devLogPlayerChat === false) return;
     if (!session?.actor || String(session.accountId || '').startsWith('bot_')) return;
@@ -91,6 +106,8 @@ function consume(session, data) {
     }
 
     if (data.kind === 0) { // TODO: Remove, temp solution
+        const botCommandText = expandBotCommandAlias(data.text);
+
         if (data.text === '.admin') {
             invoke(path.actor).adminPanel(session, session.actor);
             return;
@@ -110,12 +127,12 @@ function consume(session, data) {
             World.oustPartyMember(session, session.actor, { name: name });
             return;
         }
-        if (data.text === '.bot' || data.text === '.companion') {
+        if (botCommandText === '.bot' || data.text === '.companion') {
             const CompanionControl = invoke('GameServer/World/Generics/NpcBypasses/CompanionControl');
             CompanionControl.render(session);
             return;
         }
-        if (data.text === '.botparty') {
+        if (botCommandText === '.botparty') {
             const BotParty = invoke('GameServer/World/Generics/NpcBypasses/BotParty');
             BotParty.open(session);
             return;
@@ -126,9 +143,9 @@ function consume(session, data) {
             World.inviteBotByName(session, session.actor, name, undefined, 'chat_invite');
             return;
         }
-        if (data.text === '.botfriends' || data.text.startsWith('.botfriends ')) {
+        if (botCommandText === '.botfriends' || botCommandText.startsWith('.botfriends ')) {
             const BotFriends = invoke('GameServer/World/Generics/NpcBypasses/BotFriends');
-            BotFriends.render(session, data.text.includes(' add') ? 'add' : 'friends');
+            BotFriends.render(session, botCommandText.includes(' add') ? 'add' : 'friends');
             return;
         }
         if (/^(\/tell|\.tell|\/w|\.w)\s+/i.test(data.text)) {
@@ -149,15 +166,15 @@ function consume(session, data) {
             UiTest.render(session);
             return;
         }
-        if (data.text === '.botstatus' || data.text.startsWith('.botstatus ')) {
+        if (botCommandText === '.botstatus' || botCommandText.startsWith('.botstatus ')) {
             const BotStatus = invoke('GameServer/World/Generics/NpcBypasses/BotStatus');
-            const parts = data.text.split(/\s+/);
+            const parts = botCommandText.split(/\s+/);
             BotStatus(session, ['bot-status', parts[1]]);
             return;
         }
-        if (data.text === '.botpath' || data.text.startsWith('.botpath ')) {
+        if (botCommandText === '.botpath' || botCommandText.startsWith('.botpath ')) {
             const BotPath = invoke('GameServer/World/Generics/NpcBypasses/BotPath');
-            const parts = data.text.split(/\s+/);
+            const parts = botCommandText.split(/\s+/);
             BotPath(session, ['bot-path', parts[1]]);
             return;
         }
@@ -203,3 +220,4 @@ function consume(session, data) {
 }
 
 module.exports = speak;
+module.exports.expandBotCommandAlias = expandBotCommandAlias;

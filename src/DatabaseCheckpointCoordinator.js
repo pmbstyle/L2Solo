@@ -72,7 +72,7 @@ function record(result = {}) {
         at: Date.now()
     };
     last = normalized;
-    const reset = normalized.mode === 'restart';
+    const reset = normalized.mode === 'restart' || normalized.mode === 'truncate';
     if (!normalized.ok) counters.errors += 1;
     else if (normalized.skipped) counters.skipped += 1;
     else {

@@ -16,6 +16,8 @@ const BotSpotTravel  = invoke('GameServer/Bot/AI/BotSpotTravel');
 const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
 const BotRaidSafety   = invoke('GameServer/Bot/AI/BotRaidSafety');
 const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
+const BotRangedCombatPositioning = invoke('GameServer/Bot/AI/BotRangedCombatPositioning');
+const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
 
 const TARGET_STALL_TICKS = 5;
 const TARGET_RETRY_COOLDOWN_MS = 15000;
@@ -30,6 +32,8 @@ const SPOT_ARRIVAL_RADIUS = 1000;
 const MAX_SPOT_RELOCATION_MS = 120000;
 const FULL_TARGET_CANDIDATE_LIMIT = 96;
 const VISIBLE_TARGET_CANDIDATE_LIMIT = 32;
+const ENCOUNTER_BASE_HP_RATIO = 0.70;
+const ENCOUNTER_BASE_MP_RATIO = 0.45;
 
 function isSoloHunter(session) {
     return session.plan === 'hunting' && session.partyCompanion !== true && !session.followPlayerSession;
@@ -92,6 +96,7 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     const eligibleNearbyNpcs = allNearbyNpcs
         .filter((npc) => !options.excludeTargetId || npc.fetchId() !== options.excludeTargetId)
         .filter((npc) => !BotRaidSafety.isProtectedRaidEntity(npc))
+        .filter((npc) => BotHuntingTargetPolicy.canHunt(npc))
         .filter((npc) => npc.fetchAttackable() && !npc.isDead());
     const nearbyNpcs = limitTargetCandidates(session, bot, eligibleNearbyNpcs);
     const claimedIds = claimedTargetIds(session);
@@ -122,7 +127,13 @@ function findPreferredMonster(session, bot, radius, options = {}) {
                 claimed,
                 socialAllies: clan ? Math.max(0, (clanCounts.get(clan) || 1) - 1) : 0
             };
-            return { npc, evaluation: BotTargetScorer.score(scoreContext), scoreContext, claimed };
+            return {
+                npc,
+                evaluation: BotTargetScorer.score(scoreContext),
+                readiness: options.readyOnly ? encounterReadiness(bot, npc) : null,
+                scoreContext,
+                claimed
+            };
         })
         .filter((candidate) => !options.freeOnly || !candidate.claimed);
 
@@ -142,7 +153,15 @@ function findPreferredMonster(session, bot, radius, options = {}) {
         };
     }));
 
-    const selected = ranked[0] || null;
+    const selected = (options.readyOnly
+        ? ranked.find((candidate) => candidate.readiness.ready)
+        : ranked[0]) || null;
+    const readinessCandidate = options.readyOnly ? (selected || ranked[0] || null) : null;
+    session.lastEncounterReadiness = readinessCandidate ? {
+        ...readinessCandidate.readiness,
+        targetId: readinessCandidate.npc.fetchId(),
+        at: Date.now()
+    } : undefined;
     session.lastTargetEvaluation = selected ? {
         targetId: selected.npc.fetchId(),
         targetName: selected.npc.fetchName(),
@@ -157,6 +176,79 @@ function findPreferredMonster(session, bot, radius, options = {}) {
 function targetDistance(bot, target) {
     return new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ())
         .distance(new SpeckMath.Point3D(target.fetchLocX(), target.fetchLocY(), target.fetchLocZ()));
+}
+
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
+function encounterReadiness(bot, target) {
+    const hpRatio = bot.fetchHp() / Math.max(1, bot.fetchMaxHp());
+    const mpRatio = bot.fetchMp() / Math.max(1, bot.fetchMaxMp());
+    const levelGap = Number(target?.fetchLevel?.() || bot.fetchLevel()) - Number(bot.fetchLevel());
+    const targetHpRatio = clamp(
+        Number(target?.fetchHp?.() ?? target?.fetchMaxHp?.() ?? 1) /
+            Math.max(1, Number(target?.fetchMaxHp?.() ?? target?.fetchHp?.() ?? 1)),
+        0,
+        1
+    );
+    const fullTargetHpNeed = clamp(
+        ENCOUNTER_BASE_HP_RATIO + (Math.max(0, levelGap) * 0.04) + (Math.min(0, levelGap) * 0.025),
+        0.55,
+        0.90
+    );
+    const hpNeeded = clamp(0.40 + ((fullTargetHpNeed - 0.40) * targetHpRatio), 0.40, 0.90);
+    const manaDependent = BotRoles.shouldRestForMana(bot);
+    const fullTargetMpNeed = clamp(
+        ENCOUNTER_BASE_MP_RATIO + (Math.max(0, levelGap) * 0.03),
+        0.35,
+        0.70
+    );
+    const mpNeeded = manaDependent
+        ? clamp(0.20 + ((fullTargetMpNeed - 0.20) * targetHpRatio), 0.20, 0.70)
+        : 0;
+    const ready = hpRatio >= hpNeeded && (!manaDependent || mpRatio >= mpNeeded);
+
+    return {
+        ready,
+        reason: hpRatio < hpNeeded ? 'hp_reserve' : (!ready ? 'mp_reserve' : 'ready'),
+        hpRatio,
+        hpNeeded,
+        mpRatio,
+        mpNeeded,
+        targetHpRatio,
+        levelGap
+    };
+}
+
+function rememberEncounterReadiness(session, target, readiness) {
+    session.lastEncounterReadiness = {
+        ...readiness,
+        targetId: target?.fetchId?.() || null,
+        at: Date.now()
+    };
+}
+
+function beginVoluntaryRecovery(session, bot, BotAI, readiness = null) {
+    if (session.currentTargetId) clearTarget(session, bot, session.currentTargetId);
+    session.lastTargetEvaluation = undefined;
+    session.lastCombatDecision = undefined;
+    session.lastPvpDecision = undefined;
+    session.plan = 'resting';
+    if (!bot.state.fetchSeated()) {
+        bot.state.setSeated(true);
+        session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
+    }
+    session.lastDecision = {
+        action: 'recover_before_encounter',
+        reason: readiness?.reason || 'low_resources',
+        hpRatio: readiness?.hpRatio ?? (bot.fetchHp() / Math.max(1, bot.fetchMaxHp())),
+        hpNeeded: readiness?.hpNeeded ?? EMERGENCY_RETREAT_HP_RATIO,
+        mpRatio: readiness?.mpRatio ?? (bot.fetchMp() / Math.max(1, bot.fetchMaxMp())),
+        mpNeeded: readiness?.mpNeeded ?? EMERGENCY_RETREAT_MP_RATIO,
+        at: Date.now()
+    };
+    BotAI.say(session, "Phew! My HP/MP is low. Sitting down to recover.");
 }
 
 function targetOnCooldown(session, targetId) {
@@ -434,7 +526,9 @@ module.exports = {
 
         // 3. Immediate self-defense outranks recovery. Sitting while a mob is
         // actively hitting the bot only turns the recovery state into a death loop.
-        const incomingMonster = PartyAwareness.recentIncomingNpc(session);
+        const incomingMonster = isSoloHunter(session)
+            ? PartyAwareness.npcThreateningActor(session)
+            : PartyAwareness.recentIncomingNpc(session);
         if (incomingMonster) {
             if (session.spotRelocation) BotSpotTravel.cancel(session, bot, 'incoming_threat');
             if (BotRaidSafety.retreat(session, bot, incomingMonster, { distance: EMERGENCY_RETREAT_DISTANCE })) {
@@ -449,6 +543,8 @@ module.exports = {
                 bot.state.setSeated(false);
                 session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
             }
+            if (BotRangedCombatPositioning.reposition(session, bot, incomingMonster)) return;
+            if (bot.state.fetchTowards() || bot.state.fetchHits() || bot.state.fetchCasts()) return;
             BotAI.executeCombat(session, bot, incomingMonster, Generics);
             return;
         }
@@ -461,18 +557,16 @@ module.exports = {
         // 4. HP/MP resting check
         const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
         const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
+        const encounterActionInFlight = !!session.currentTargetId && (
+            bot.state.fetchTowards() || bot.state.fetchHits() || bot.state.fetchCasts()
+        );
         // Match RestingState's role-aware wake policy.  Melee/dps bots are
         // allowed to keep hunting with low MP; otherwise they immediately
         // wake again at full HP and oscillate between hunting and resting.
-        if (hpRatio < 0.35 || (BotRoles.shouldRestForMana(bot) && mpRatio < 0.20)) {
-            if (session.currentTargetId) clearTarget(session, bot, session.currentTargetId);
-            session.lastTargetEvaluation = undefined;
-            session.lastCombatDecision = undefined;
-            session.lastPvpDecision = undefined;
-            session.plan = 'resting';
-            bot.state.setSeated(true);
-            session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
-            BotAI.say(session, "Phew! My HP/MP is low. Sitting down to recover.");
+        if (!encounterActionInFlight && (
+            hpRatio < 0.35 || (BotRoles.shouldRestForMana(bot) && mpRatio < 0.20)
+        )) {
+            beginVoluntaryRecovery(session, bot, BotAI);
             return;
         }
 
@@ -522,6 +616,16 @@ module.exports = {
                         }
                         clearTarget(session, bot, targetId);
                     } else {
+                        const npcAggroedOnBot = Number(npc.fetchDestId?.() || 0) === Number(bot.fetchId());
+                        if (isSoloHunter(session) && !npcAggroedOnBot &&
+                            !bot.state.fetchTowards() && !bot.state.fetchHits() && !bot.state.fetchCasts()) {
+                            const readiness = encounterReadiness(bot, npc);
+                            rememberEncounterReadiness(session, npc, readiness);
+                            if (!readiness.ready) {
+                                beginVoluntaryRecovery(session, bot, BotAI, readiness);
+                                return;
+                            }
+                        }
                         if (!targetProgressing(session, bot, npc)) {
                             clearTarget(session, bot, targetId, true);
                             session.lastDecision = {
@@ -532,6 +636,7 @@ module.exports = {
                             };
                             return;
                         }
+                        if (BotRangedCombatPositioning.reposition(session, bot, npc)) return;
                         if (bot.state.fetchTowards() || bot.state.fetchHits() || bot.state.fetchCasts()) {
                             return;
                         }
@@ -557,7 +662,9 @@ module.exports = {
         } else {
             reconcilePhysicalSpot(session, bot);
             // Prefer unclaimed mobs so solo bots do not form accidental trains.
-            const closestMonster = findPreferredMonster(session, bot, 2500);
+            const closestMonster = findPreferredMonster(session, bot, 2500, {
+                readyOnly: isSoloHunter(session)
+            });
 
             if (closestMonster) {
                 session.noTargetTicks = 0;
@@ -577,6 +684,10 @@ module.exports = {
                 }
                 BotAI.executeCombat(session, bot, closestMonster, Generics);
             } else {
+                if (isSoloHunter(session) && session.lastEncounterReadiness?.ready === false) {
+                    beginVoluntaryRecovery(session, bot, BotAI, session.lastEncounterReadiness);
+                    return;
+                }
                 session.noTargetTicks = (session.noTargetTicks || 0) + 1;
 
                 if (isPartyCompanion(session)) {

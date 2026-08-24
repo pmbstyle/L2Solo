@@ -45,7 +45,7 @@ Clean C4 client protocol 656
 - Progression depending on chosen rates
 - Full C4 skill coverage: self, targeted, AoE, effects, items, and class skills
 - Potions, scrolls, spoil, SA, manor, etc
-- Party with bots with native (/invite, /leave), plus .botpaty to find nearby bots and invite to the party
+- Party with bots with native (/invite, /leave), plus `.botparty` / `.bp` to find bots and invite them to the party
 - All armor sets
 - Soulshots/Spiritshots
 - Death, respawn
@@ -170,12 +170,12 @@ benefits from explicit reasoning.
 
 - `.admin` - open the admin menu.
 - `.sell` - sell all unequipped non-Adena items for 50% item value.
-- `.bot` - open the party control panel.
-- `.botparty`- search active bots to join the player party; distant companions catch up after joining
-- `.botfriends` - friend list and const party management
-- `.botstatus` - show a bot overview panel.
-- `.botstatus <name>` - show detailed status for a specific bot.
-- `.botpath` / `.botpath <name>` - inspect bot movement, town-route waypoints, and geodata path diagnostics.
+- `.bot` / `.b` - open companion controls.
+- `.botparty` / `.bp` - search active bots to join the player party; distant companions catch up after joining.
+- `.botfriends` / `.bf` - friend list and const party management.
+- `.botstatus` / `.bs` - show a bot overview panel.
+- `.botstatus <name>` / `.bs <name>` - show detailed status for a specific bot.
+- `.botpath` / `.bpath` (optionally with `<name>`) - inspect bot movement, town-route waypoints, and geodata path diagnostics.
 - `.trade` or `/trade` - open the bot trade window with the targeted SimPlayer, useful as a fallback to the native client trade action.
 - `.leave` - dismiss all companion bots.
 - `.kick <name>` - dismiss one companion bot.

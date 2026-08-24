@@ -11,7 +11,7 @@ const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const originals = {
     candidates: LifeState.marketGoalCandidates,
     upsert: LifeState.upsertState,
-    review: GoalService.review,
+    reviewBatch: GoalService.reviewBatch,
     travel: GoalExecutor.beginMarketTravel,
     spot: SpotProfiles.findForState
 };
@@ -20,7 +20,12 @@ async function run() {
     const seller = { characterId: 51, name: 'Seller', phase: 'cold', activity: 'hunting', loc: { locX: 1, locY: 2, locZ: 3 }, stats: {} };
     LifeState.marketGoalCandidates = () => Promise.resolve([seller]);
     SpotProfiles.findForState = () => null;
-    GoalService.review = () => Promise.resolve({ current: { type: 'sell_inventory', plan: { expectedBenefit: 'market_sale_inventory' } } });
+    GoalService.reviewBatch = (states, options) => {
+        assert.strictEqual(options.optionsForState(states[0]).spot, null);
+        return Promise.resolve(states.map(() => ({
+            current: { type: 'sell_inventory', plan: { expectedBenefit: 'market_sale_inventory' } }
+        })));
+    };
     GoalExecutor.beginMarketTravel = (state) => ({ ...state, activity: 'traveling' });
     const saved = [];
     LifeState.upsertState = (state) => {
@@ -40,7 +45,7 @@ run().catch((err) => {
 }).finally(() => {
     LifeState.marketGoalCandidates = originals.candidates;
     LifeState.upsertState = originals.upsert;
-    GoalService.review = originals.review;
+    GoalService.reviewBatch = originals.reviewBatch;
     GoalExecutor.beginMarketTravel = originals.travel;
     SpotProfiles.findForState = originals.spot;
 });

@@ -191,7 +191,7 @@ casterNpc.automation.replenishVitals = () => {};
 let casterRolls = [0.99, 0];
 const casterSkill = casterNpc.selectCombatSkill(target, () => casterRolls.shift());
 assert(casterSkill, 'NPC with sourced combat skills should select a spell before falling back to melee');
-assert.strictEqual(casterSkill.fetchSelfId(), 4001, 'Salamander should select its sourced NPC Wind Strike skill');
+assert.strictEqual(casterSkill.fetchSelfId(), 4100, 'Salamander should select its sourced NPC Prominence skill');
 casterSkill.model.reuse = 1;
 assert.strictEqual(casterNpc.fetchSkillCastRange(casterSkill, target), 600, 'NPC spell should preserve sourced cast range');
 
@@ -219,7 +219,8 @@ casterNpc.castSkill(session, target, casterSkill);
 
 const castPacket = session.packets.find((packet) => packet[0] === 0x48);
 assert(castPacket, 'spellcasting NPC should broadcast MagicSkillUse instead of opening with melee');
-assert.strictEqual(castPacket.readInt32LE(9), 4001, 'MagicSkillUse should carry the selected NPC skill id');
+assert.strictEqual(castPacket.readInt32LE(9), casterSkill.fetchSelfId(),
+    'MagicSkillUse should carry the selected NPC skill id');
 assert.strictEqual(castPacket.readInt32LE(25), castStop.locX, 'MagicSkillUse should start from the ranged stop point');
 assert.strictEqual(session.packets.some((packet) => packet[0] === 0x05), false, 'spellcasting path should not emit an immediate melee attack');
 casterNpc.state.setCasts(false);

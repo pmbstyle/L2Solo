@@ -327,12 +327,17 @@ function craftRequests(state, warehouseItems) {
     });
 }
 
-function marketRequests(state, warehouseItems, reserved = new Map()) {
+function marketRequests(state, warehouseItems, reserved = new Map(), options = {}) {
+    const demandSelfIds = new Set(options.marketDemandSelfIds || MarketOpportunity.activeBuyDemandSelfIds());
+    const offers = new Map();
     return (warehouseItems || []).flatMap((item) => {
         const selfId = Number(item.selfId || 0);
         const stored = Math.max(0, Number(item.amount || 0) - Number(reserved.get(selfId) || 0));
-        if (!selfId || stored <= 0) return [];
-        const offer = MarketOpportunity.bestBuyOffer(selfId, { sellerCharacterId: state.characterId });
+        if (!selfId || stored <= 0 || !demandSelfIds.has(selfId)) return [];
+        if (!offers.has(selfId)) {
+            offers.set(selfId, MarketOpportunity.bestBuyOffer(selfId, { sellerCharacterId: state.characterId }));
+        }
+        const offer = offers.get(selfId);
         if (!offer) return [];
         const amount = Math.min(stored, Number(offer.count || 0));
         return amount > 0 ? [{ selfId, amount, reason: 'market', town: offer.town || null }] : [];
@@ -374,55 +379,73 @@ async function resumeReleasedMarket(state, timestamp = Date.now()) {
     return { state: saved || nextState, resumed: true, released: false, items: [] };
 }
 
-async function releaseCold(state) {
+async function releaseCold(state, options = {}) {
     if (!state || !isLegacyMainState(state) || state.phase === 'hot' || state.party?.partyId || !['hunting', 'resting'].includes(state.activity)) {
         return { state, released: false, items: [] };
     }
-    const warehouseItems = await Database.fetchWarehouseItems(state.characterId);
+    const recordStage = (stage, startedAt) => options.onStage?.(stage, Date.now() - startedAt);
+    const fetchStartedAt = Date.now();
+    const warehouseItems = await Database.fetchWarehouseItems(state.characterId)
+        .finally(() => recordStage('item_fetch', fetchStartedAt));
     if (!warehouseItems.length) return { state, released: false, items: [] };
 
+    const planStartedAt = Date.now();
     const crafting = craftRequests(state, warehouseItems);
     const reserved = crafting.reduce((amounts, item) => amounts.set(
         item.selfId,
         Number(amounts.get(item.selfId) || 0) + Number(item.amount || 0)
     ), new Map());
     const enchanting = ColdSafeEnchantService.warehouseRequests(state, warehouseItems);
-    const selling = marketRequests(state, warehouseItems, reserved);
+    const selling = marketRequests(state, warehouseItems, reserved, options);
     const requests = [...crafting, ...enchanting, ...selling].reduce((merged, request) => {
         const key = `${request.selfId}:${request.reason}`;
         const previous = merged.get(key);
         merged.set(key, previous ? { ...previous, amount: previous.amount + request.amount } : request);
         return merged;
     }, new Map());
+    recordStage('item_plan', planStartedAt);
     if (!requests.size) return { state, released: false, items: [] };
 
     const remainingByRequest = new Map([...requests.entries()].map(([key, request]) => [key, Number(request.amount || 0)]));
     const released = [];
-    for (const row of warehouseItems) {
-        for (const reason of ['craft', 'enchant', 'market']) {
-            const key = `${Number(row.selfId)}:${reason}`;
-            const remaining = Number(remainingByRequest.get(key) || 0);
-            if (remaining <= 0 || Number(row.amount || 0) <= 0) continue;
-            const amount = Math.min(remaining, Number(row.amount));
-            const template = templateFor(row.selfId);
-            await Database.transferWarehouseToInventory(state.characterId, {
-                id: Number(row.id),
-                selfId: Number(row.selfId),
-                name: row.name || template?.template?.name || `Item ${row.selfId}`,
-                amount,
-                stackable: !!template?.etc?.stackable
-            });
-            row.amount = Number(row.amount) - amount;
-            remainingByRequest.set(key, remaining - amount);
-            released.push({ selfId: Number(row.selfId), name: row.name || template?.template?.name || `Item ${row.selfId}`, amount, reason });
+    const transferStartedAt = Date.now();
+    try {
+        for (const row of warehouseItems) {
+            for (const reason of ['craft', 'enchant', 'market']) {
+                const key = `${Number(row.selfId)}:${reason}`;
+                const remaining = Number(remainingByRequest.get(key) || 0);
+                if (remaining <= 0 || Number(row.amount || 0) <= 0) continue;
+                const amount = Math.min(remaining, Number(row.amount));
+                const template = templateFor(row.selfId);
+                await Database.transferWarehouseToInventory(state.characterId, {
+                    id: Number(row.id),
+                    selfId: Number(row.selfId),
+                    name: row.name || template?.template?.name || `Item ${row.selfId}`,
+                    amount,
+                    stackable: !!template?.etc?.stackable
+                });
+                row.amount = Number(row.amount) - amount;
+                remainingByRequest.set(key, remaining - amount);
+                released.push({ selfId: Number(row.selfId), name: row.name || template?.template?.name || `Item ${row.selfId}`, amount, reason });
+            }
         }
+    } finally {
+        recordStage('item_transfer', transferStartedAt);
     }
     if (!released.length) return { state, released: false, items: [] };
 
-    const refreshed = await LifeState.refreshInventory(state);
-    const enchantResult = released.some((item) => item.reason === 'enchant')
-        ? await ColdSafeEnchantService.enchantSafe(refreshed)
-        : { state: refreshed, enchanted: false, operations: [] };
+    const refreshStartedAt = Date.now();
+    const refreshed = await LifeState.refreshInventory(state)
+        .finally(() => recordStage('item_refresh', refreshStartedAt));
+    const enchantStartedAt = Date.now();
+    let enchantResult;
+    try {
+        enchantResult = released.some((item) => item.reason === 'enchant')
+            ? await ColdSafeEnchantService.enchantSafe(refreshed)
+            : { state: refreshed, enchanted: false, operations: [] };
+    } finally {
+        recordStage('item_enchant', enchantStartedAt);
+    }
     const releasedState = enchantResult.state || refreshed;
     const timestamp = Date.now();
     const releasedForMarket = released.some((item) => item.reason === 'market');
@@ -440,7 +463,9 @@ async function releaseCold(state) {
                 : releasedState.timing?.nextResolveAt
         }
     };
-    const saved = await LifeState.upsertState(nextState, 'cold_warehouse_release');
+    const persistStartedAt = Date.now();
+    const saved = await LifeState.upsertState(nextState, 'cold_warehouse_release')
+        .finally(() => recordStage('item_persist', persistStartedAt));
     return { state: saved || nextState, released: true, items: released };
 }
 
@@ -475,9 +500,9 @@ function enchantReleaseCandidates(limit = 8) {
     });
 }
 
-function releaseCandidates(limit = 8) {
+function releaseCandidates(limit = 8, demandSelfIds = null) {
     const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
-    const demandIds = MarketOpportunity.activeBuyDemandSelfIds();
+    const demandIds = demandSelfIds || MarketOpportunity.activeBuyDemandSelfIds();
     if (!demandIds.length) return Promise.resolve([]);
     return Database.execute([`
         SELECT DISTINCT states.characterId
@@ -511,23 +536,41 @@ function craftReleaseCandidates(limit = 4, timestamp = Date.now()) {
     return candidates;
 }
 
-async function releaseColdBatch(limit = 8, deadlineAt = Infinity) {
+async function releaseColdBatch(limit = 8, deadlineAt = Infinity, options = {}) {
     const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
     const released = [];
     const resumedStates = pendingMarketReleaseCandidates(safeLimit);
-    for (const state of resumedStates) {
-        if (Date.now() >= deadlineAt) return released;
-        const resumed = await resumeReleasedMarket(state);
-        if (resumed.resumed) released.push(resumed);
+    const recordStage = (stage, startedAt) => options.onStage?.(stage, Date.now() - startedAt);
+    const resumeStartedAt = Date.now();
+    try {
+        for (const state of resumedStates) {
+            if (Date.now() >= deadlineAt) return released;
+            const resumed = await resumeReleasedMarket(state);
+            if (resumed.resumed) released.push(resumed);
+        }
+    } finally {
+        recordStage('resume', resumeStartedAt);
     }
+    if (Date.now() >= deadlineAt) return released;
     const remainingLimit = Math.max(0, safeLimit - released.length);
     if (remainingLimit <= 0) return released;
     const craftLimit = Math.max(1, Math.floor(remainingLimit / 2));
-    const craftStates = craftReleaseCandidates(craftLimit);
-    const [marketIds, enchantIds] = await Promise.all([
-        releaseCandidates(remainingLimit),
-        enchantReleaseCandidates(remainingLimit)
-    ]);
+    let craftStates;
+    let marketIds;
+    let enchantIds;
+    let marketDemandSelfIds;
+    const candidatesStartedAt = Date.now();
+    try {
+        marketDemandSelfIds = MarketOpportunity.activeBuyDemandSelfIds();
+        craftStates = craftReleaseCandidates(craftLimit);
+        [marketIds, enchantIds] = await Promise.all([
+            releaseCandidates(remainingLimit, marketDemandSelfIds),
+            enchantReleaseCandidates(remainingLimit)
+        ]);
+    } finally {
+        recordStage('candidates', candidatesStartedAt);
+    }
+    if (Date.now() >= deadlineAt) return released;
     const states = [...craftStates];
     const claimed = new Set(states.map((state) => Number(state.characterId)));
     const backgroundIds = [];
@@ -535,22 +578,39 @@ async function releaseColdBatch(limit = 8, deadlineAt = Infinity) {
         if (enchantIds[index]) backgroundIds.push(enchantIds[index]);
         if (marketIds[index]) backgroundIds.push(marketIds[index]);
     }
+    const hydrationIds = [];
+    const hydrationClaims = new Set(claimed);
     for (const characterId of backgroundIds) {
-        if (states.length >= remainingLimit) break;
-        if (claimed.has(Number(characterId))) continue;
-        const state = await LifeState.findByCharacterId(characterId);
+        const id = Number(characterId);
+        if (!id || hydrationClaims.has(id)) continue;
+        hydrationIds.push(id);
+        hydrationClaims.add(id);
+        if (hydrationIds.length >= remainingLimit - states.length) break;
+    }
+    const hydrationStartedAt = Date.now();
+    const hydrated = await LifeState.statesByIds(hydrationIds, { ownerId: 'legacy_main', unassigned: true })
+        .finally(() => recordStage('hydrate', hydrationStartedAt));
+    if (Date.now() >= deadlineAt) return released;
+    const hydratedById = new Map(hydrated.map((state) => [Number(state.characterId), state]));
+    for (const characterId of hydrationIds) {
+        const state = hydratedById.get(Number(characterId));
         if (!state) continue;
         states.push(state);
         claimed.add(Number(characterId));
     }
-    for (const state of states) {
-        if (Date.now() >= deadlineAt) break;
-        try {
-            const result = await releaseCold(state);
-            if (result.released) released.push(result);
-        } catch (error) {
-            utils.infoWarn('BotWarehouse', 'cold warehouse release failed for %s: %s', state.name, error?.message || String(error));
+    const releaseStartedAt = Date.now();
+    try {
+        for (const state of states) {
+            if (Date.now() >= deadlineAt) break;
+            try {
+                const result = await releaseCold(state, { ...options, marketDemandSelfIds });
+                if (result.released) released.push(result);
+            } catch (error) {
+                utils.infoWarn('BotWarehouse', 'cold warehouse release failed for %s: %s', state.name, error?.message || String(error));
+            }
         }
+    } finally {
+        recordStage('release_items', releaseStartedAt);
     }
     return released;
 }

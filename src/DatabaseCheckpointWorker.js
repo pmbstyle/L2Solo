@@ -45,7 +45,7 @@ function checkpoint(message = {}) {
     }
 
     const mode = checkpointMode(message);
-    const resetMode = mode === 'RESTART';
+    const resetMode = mode === 'RESTART' || mode === 'TRUNCATE';
     if (resetMode) {
         connection.exec(`PRAGMA busy_timeout = ${Math.max(0, Math.min(250, Number(message.busyTimeoutMs) || 50))};`);
     }

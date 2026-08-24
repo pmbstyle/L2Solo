@@ -29,6 +29,10 @@ const DEFAULTS = {
     coldOwnerRecoveryIntervalMs: 5000,
     coldWorkerBatchSize: 64,
     coldWorkerCommitBatchSize: 32,
+    // Cold simulation remains alive while a player is online, but its IPC
+    // and commit burst must yield the main event loop to player traffic.
+    coldWorkerPlayerMaxInFlight: 8,
+    coldWorkerLagMaxInFlight: 2,
     // Resolver work is serialized inside the worker. Keep the lease window
     // bounded so a catch-up burst cannot create a large queue of expiring
     // claims while preserving the full candidate throughput on later ticks.
@@ -57,6 +61,14 @@ const DEFAULTS = {
     // gradual throttle avoids turning one noisy sample into a long backlog.
     schedulerLagThrottleMs: 40,
     schedulerLagAbortMs: 120,
+    backgroundGovernorEnabled: true,
+    backgroundJobTickMs: 250,
+    backgroundGovernorWindowMs: 1000,
+    backgroundGovernorIdleBudgetMs: 250,
+    backgroundGovernorPlayerBudgetMs: 50,
+    backgroundGovernorIdleDbQueueMax: 8,
+    backgroundGovernorPlayerDbQueueMax: 0,
+    backgroundGovernorLagAbortMs: 120,
     partyFormationIdleBudgetMs: 3000,
     partyFormationPlayerBudgetMs: 600,
     partyFormationSliceMs: 12,
@@ -160,7 +172,6 @@ const DEFAULTS = {
     cooldownRadius: 11000,
     activationRadius: 9000,
     activationLevelRange: 5,
-    nearPlayerHotTarget: 12,
     maxActivationsPerScan: 6,
     activationPlacementRadius: 1400,
     activationMinPlayerDistance: 450,
@@ -213,7 +224,6 @@ const ENV_KEYS = {
     cooldownRadius: 'BOT_COOLDOWN_RADIUS',
     activationRadius: 'BOT_ACTIVATION_RADIUS',
     activationLevelRange: 'BOT_ACTIVATION_LEVEL_RANGE',
-    nearPlayerHotTarget: 'BOT_NEAR_PLAYER_HOT_TARGET',
     maxActivationsPerScan: 'BOT_MAX_ACTIVATIONS_PER_SCAN',
     activationFloorDirectZ: 'BOT_ACTIVATION_FLOOR_DIRECT_Z',
     activationFloorGeoChecksPerScan: 'BOT_ACTIVATION_FLOOR_GEO_CHECKS_PER_SCAN',
@@ -256,6 +266,14 @@ const ENV_KEYS = {
     playerProtectionGraceMs: 'BOT_POPULATION_PLAYER_PROTECTION_GRACE_MS',
     schedulerLagThrottleMs: 'BOT_POPULATION_SCHEDULER_LAG_THROTTLE_MS',
     schedulerLagAbortMs: 'BOT_POPULATION_SCHEDULER_LAG_ABORT_MS',
+    backgroundGovernorEnabled: 'BOT_BACKGROUND_GOVERNOR_ENABLED',
+    backgroundJobTickMs: 'BOT_BACKGROUND_JOB_TICK_MS',
+    backgroundGovernorWindowMs: 'BOT_BACKGROUND_GOVERNOR_WINDOW_MS',
+    backgroundGovernorIdleBudgetMs: 'BOT_BACKGROUND_GOVERNOR_IDLE_BUDGET_MS',
+    backgroundGovernorPlayerBudgetMs: 'BOT_BACKGROUND_GOVERNOR_PLAYER_BUDGET_MS',
+    backgroundGovernorIdleDbQueueMax: 'BOT_BACKGROUND_GOVERNOR_IDLE_DB_QUEUE_MAX',
+    backgroundGovernorPlayerDbQueueMax: 'BOT_BACKGROUND_GOVERNOR_PLAYER_DB_QUEUE_MAX',
+    backgroundGovernorLagAbortMs: 'BOT_BACKGROUND_GOVERNOR_LAG_ABORT_MS',
     partyFormationIdleBudgetMs: 'BOT_POPULATION_PARTY_FORMATION_IDLE_BUDGET_MS',
     partyFormationPlayerBudgetMs: 'BOT_POPULATION_PARTY_FORMATION_PLAYER_BUDGET_MS',
     marketTradeChatEnabled: 'BOT_MARKET_TRADE_CHAT_ENABLED',

@@ -3,8 +3,10 @@ const assert = require('assert');
 require('../src/Global');
 
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
+const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 
 const originalCache = SpotProfiles.cache;
+const originalBestSourceForPlan = GearAcquisitionPlanner.bestSourceForPlan;
 SpotProfiles.cache = [
     {
         id: 'starter_human_01',
@@ -93,8 +95,59 @@ try {
     ]);
     assert.strictEqual(occupancyByPresence[crowded.id].count, 2,
         'spot occupancy must include hunters and inbound travelers, not actors currently trading, crafting, or traveling to town');
+
+    const dangerous = {
+        id: 'dangerous_01', name: 'Dangerous field', avgLevel: 8, minLevel: 6, maxLevel: 10,
+        density: 10, capacity: 10, center: { locX: 3000, locY: 3000, locZ: 0 }
+    };
+    const safer = {
+        id: 'safer_01', name: 'Safer field', avgLevel: 8, minLevel: 6, maxLevel: 10,
+        density: 9, capacity: 10, center: { locX: 4000, locY: 4000, locZ: 0 }
+    };
+    SpotProfiles.cache = [dangerous, safer];
+    GearAcquisitionPlanner.bestSourceForPlan = (state, plan, profiles, options) => (
+        options.excludedSpotIds.has(dangerous.id)
+            ? { spotId: safer.id }
+            : { spotId: dangerous.id }
+    );
+    const deathPressured = {
+        characterId: 20,
+        level: 8,
+        spotId: dangerous.id,
+        stats: {
+            deaths: 2,
+            fightsResolved: 6,
+            spotRisk: { spotId: dangerous.id, deathsAtEntry: 0, fightsAtEntry: 0 },
+            equipmentPlan: { status: 'active', strategy: 'direct_drop', target: { selfId: 1 } }
+        }
+    };
+    assert.strictEqual(
+        SpotProfiles.findForState(deathPressured, { occupancy: {}, timestamp: 1000 }).id,
+        safer.id,
+        'death pressure must override an active equipment source and choose another available source'
+    );
+    const persistedBackoff = {
+        ...deathPressured,
+        spotId: safer.id,
+        stats: {
+            ...deathPressured.stats,
+            spotRisk: { spotId: safer.id, deathsAtEntry: 2, fightsAtEntry: 6 },
+            spotBackoffs: [{ spotId: dangerous.id, reason: 'death_pressure', startedAt: 1000, until: 5000 }]
+        }
+    };
+    assert.strictEqual(
+        SpotProfiles.findForState(persistedBackoff, { occupancy: {}, timestamp: 2000 }).id,
+        safer.id,
+        'a persisted backoff must stop the equipment plan from immediately pulling the bot back'
+    );
+    assert.strictEqual(
+        SpotProfiles.findForState(persistedBackoff, { occupancy: {}, timestamp: 5001 }).id,
+        dangerous.id,
+        'the original equipment source may be reconsidered after its cooldown expires'
+    );
 } finally {
     SpotProfiles.cache = originalCache;
+    GearAcquisitionPlanner.bestSourceForPlan = originalBestSourceForPlan;
 }
 
 console.log('Spot profile state-priority checks passed');

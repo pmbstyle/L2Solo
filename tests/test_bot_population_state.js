@@ -24,6 +24,7 @@ const originalRecoverStartupLeases = ColdSimulationOwner.recoverStartupLeases;
 const statements = [];
 const classUpdates = [];
 let stalePartyRows = [];
+let marketCandidateRows = [];
 
 try {
     ColdSimulationOwner.recoverStartupLeases = () => Promise.resolve({ affectedRows: 0 });
@@ -38,6 +39,9 @@ try {
         if (String(sql).startsWith('UPDATE bot_life_state')) {
             if (String(sql).includes("'$.partyRequest.lastReason'")) return Promise.resolve({ affectedRows: 1 });
             return Promise.resolve({ affectedRows: 2 });
+        }
+        if (String(sql).includes('marketSellRetryAfter') && String(sql).includes('FROM bot_life_state states')) {
+            return Promise.resolve(marketCandidateRows);
         }
         if (String(sql).startsWith('SELECT * FROM bot_life_state')) {
             return Promise.resolve([]);
@@ -89,7 +93,7 @@ try {
             && entry.sql.includes("'$.partyRequest.status', 'deferred'"));
         assert(stalePartyRequestCleanup, 'startup must defer party requests that already exceeded their priority-specific TTL');
         assert(stalePartyRequestCleanup.sql.includes('partyRequestPriority'), 'TTL cleanup must use the generated priority projection');
-        const invalidPlanMigration = statements.find((entry) => entry.sql.includes("json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan')"));
+        const invalidPlanMigration = statements.find((entry) => entry.sql.includes("json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan'"));
         assert(invalidPlanMigration, 'startup must discard malformed persisted equipment plans that passive bots would not otherwise replan');
         assert(invalidPlanMigration.sql.includes("'$.equipmentPlan.target.selfId'"), 'the invalid-plan migration must validate the persisted target identity');
         const fulfilledPlanMigration = statements.find((entry) => entry.sql.includes('fulfilled_equipment_plans'));
@@ -208,8 +212,13 @@ try {
                 const classUpdate = classUpdates.at(-1);
                 assert(classUpdate, 'migration must persist the profession on the physical character');
                 assert.ok([36, 37].includes(classUpdate.classId), 'migration must use the physical character class as its source of truth');
+                marketCandidateRows = [
+                    { characterId: 71, characterName: 'MarketCursorA', phase: 'cold', activity: 'hunting', updatedAt: 10 },
+                    { characterId: 72, characterName: 'MarketCursorB', phase: 'cold', activity: 'hunting', updatedAt: 10 }
+                ];
                 return BotLifeState.dueCold(5, 1000)
-                    .then(() => BotLifeState.marketGoalCandidates(5, 123456));
+                    .then(() => BotLifeState.marketGoalCandidates(5, 123456))
+                    .then(() => BotLifeState.marketGoalCandidates(5, 123457));
             }))
         .then(() => {
             const due = statements.find((entry) => entry.sql.includes("WHEN activity IN ('traveling', 'shopping', 'crafting') THEN 1"));
@@ -222,12 +231,20 @@ try {
             assert(due.sql.includes("json_extract(statsJson, '$.equipmentPlan.next.spotId')"), 'due cold states must prioritize active gear plans whose source spot differs from the saved spot');
             assert(due.sql.includes("startup_craft_wait_recovery"), 'startup craft recovery must immediately replan before the ordinary hunting backlog');
             assert(due.sql.includes('COALESCE(nextResolveAt, 0) ASC'), 'due cold states must remain fair by schedule within each lifecycle bucket');
-            const marketCandidates = statements.find((entry) => entry.sql.includes("FROM bot_life_state states")
+            const marketCandidateQueries = statements.filter((entry) => entry.sql.includes("FROM bot_life_state states")
                 && entry.sql.includes("marketSellRetryAfter"));
+            const marketCandidates = marketCandidateQueries[0];
             assert(marketCandidates, 'market reconciliation must query current lifecycle market state');
             assert(!marketCandidates.sql.includes('goalJson LIKE'), 'market reconciliation must not trust stale goal metadata');
             assert(marketCandidates.sql.includes("'$.marketSellRetryAfter'"), 'market reconciliation must exclude sellers whose retry cooldown is still active');
-            assert.deepStrictEqual(marketCandidates.params, [123456], 'market reconciliation must bind the current retry cutoff');
+            assert(marketCandidates.sql.includes('INDEXED BY bot_life_state_market_reconcile'),
+                'market reconciliation must use its keyset-compatible lifecycle index');
+            assert(!marketCandidates.sql.includes('COALESCE(states.updatedAt'),
+                'a redundant updatedAt expression must not force a temporary sort');
+            assert(marketCandidates.sql.includes('states.characterId > ?'), 'market reconciliation must advance with a stable keyset cursor');
+            assert.deepStrictEqual(marketCandidates.params, [123456, 0, 0, 0], 'the first market pass must start at the beginning of the rotation');
+            assert.deepStrictEqual(marketCandidateQueries[1].params, [123457, 10, 10, 72],
+                'the next market pass must continue after the last projected lifecycle row');
             return BotLifeState.staleGoalCandidates(5, 123456).then(() => {
                 const staleGoals = statements.at(-1);
                 assert(staleGoals.sql.includes('INNER JOIN bot_goal_state goals'), 'goal metadata review must read persisted goal rows');

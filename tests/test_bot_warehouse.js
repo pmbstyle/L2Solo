@@ -25,6 +25,7 @@ const originals = {
     applyNpcLiquidation: LifeState.applyNpcLiquidation,
     applyWarehouseGearCleanup: LifeState.applyWarehouseGearCleanup,
     findByCharacterId: LifeState.findByCharacterId,
+    statesByIds: LifeState.statesByIds,
     allStates: LifeState.allStates,
     bestBuyOffer: MarketOpportunity.bestBuyOffer,
     activeBuyDemandSelfIds: MarketOpportunity.activeBuyDemandSelfIds,
@@ -187,7 +188,27 @@ async function run() {
         }), { ...(coldState.inventory || {}) })
     });
     LifeState.upsertState = (coldState) => Promise.resolve(coldState);
-    MarketOpportunity.bestBuyOffer = () => ({ count: 50, town: 'Giran' });
+    let bestBuyLookups = 0;
+    MarketOpportunity.bestBuyOffer = () => {
+        bestBuyLookups += 1;
+        return { count: 50, town: 'Giran' };
+    };
+    MarketOpportunity.activeBuyDemandSelfIds = () => [5220];
+    const sparseDemandRows = Array.from({ length: 150 }, (_, index) => ({
+        selfId: 6000 + index,
+        amount: 1
+    })).concat([{ selfId: 5220, amount: 25 }, { selfId: 5220, amount: 25 }]);
+    const sparseDemand = BotWarehouse.marketRequests(
+        { characterId: 59 },
+        sparseDemandRows,
+        new Map(),
+        { marketDemandSelfIds: [5220] }
+    );
+    assert.strictEqual(bestBuyLookups, 1,
+        'warehouse planning must resolve offers once per demanded item instead of once per stored row');
+    assert(sparseDemand.every((request) => request.selfId === 5220));
+    bestBuyLookups = 0;
+    const itemStages = [];
     const craftRelease = await BotWarehouse.releaseCold({
         characterId: 58,
         name: 'CraftOwner',
@@ -202,12 +223,15 @@ async function run() {
                 materials: [{ selfId: 5220, amount: 60, owned: 0, missing: 60 }]
             }
         }
-    });
+    }, { onStage: (stage) => itemStages.push(stage) });
     assert.strictEqual(craftRelease.released, true);
     assert.deepStrictEqual(craftRelease.items.map((item) => [item.reason, item.amount]), [['craft', 60]],
         'an owner recipe must reserve its full stored requirement before market demand is considered');
     assert.strictEqual(craftRelease.state.inventory[5220].amount, 60);
     assert(craftRelease.state.timing.nextResolveAt <= Date.now(), 'released craft materials must make a hunting bot due for replanning');
+    assert.deepStrictEqual(itemStages, [
+        'item_fetch', 'item_plan', 'item_transfer', 'item_refresh', 'item_enchant', 'item_persist'
+    ], 'a released warehouse item must expose every physical and lifecycle phase');
 
     warehouseRows = [{ id: 72, selfId: 5220, name: 'Metal Hardener', amount: 100 }];
     withdrawals.length = 0;
@@ -282,6 +306,29 @@ async function run() {
     }];
     assert.deepStrictEqual(BotWarehouse.craftReleaseCandidates(1, 100).map((state) => state.characterId), [58],
         'the bounded in-memory rotation must inspect only active craft owners');
+
+    LifeState.allStates = () => [];
+    Database.execute = (statement) => statement[0].includes('warehouse.selfId IN')
+        ? Promise.resolve([{ characterId: 59 }, { characterId: 60 }])
+        : Promise.resolve([]);
+    let hydratedIds = null;
+    LifeState.statesByIds = (ids, options) => {
+        hydratedIds = { ids, options };
+        return Promise.resolve(ids.map((characterId) => ({
+            characterId, name: `Hydrated${characterId}`, phase: 'cold', activity: 'hunting', party: {}, stats: {}
+        })));
+    };
+    Database.fetchWarehouseItems = () => Promise.resolve([]);
+    const releaseStages = [];
+    await BotWarehouse.releaseColdBatch(2, Infinity, {
+        onStage: (stage) => releaseStages.push(stage)
+    });
+    assert.deepStrictEqual(hydratedIds.ids, [59, 60], 'warehouse candidates must hydrate in one bounded state query');
+    assert.deepStrictEqual(hydratedIds.options, { ownerId: 'legacy_main', unassigned: true });
+    assert.deepStrictEqual(
+        releaseStages.filter((stage) => !stage.startsWith('item_')),
+        ['resume', 'candidates', 'hydrate', 'release_items'],
+        'warehouse release telemetry must preserve every bounded batch phase');
 
     const historicalRows = [
         { id: 81, selfId: 94, name: 'Bec de Corbin', amount: 1, enchant: 0 },
@@ -359,6 +406,7 @@ run().catch((err) => {
     LifeState.applyNpcLiquidation = originals.applyNpcLiquidation;
     LifeState.applyWarehouseGearCleanup = originals.applyWarehouseGearCleanup;
     LifeState.findByCharacterId = originals.findByCharacterId;
+    LifeState.statesByIds = originals.statesByIds;
     LifeState.allStates = originals.allStates;
     MarketOpportunity.bestBuyOffer = originals.bestBuyOffer;
     MarketOpportunity.activeBuyDemandSelfIds = originals.activeBuyDemandSelfIds;

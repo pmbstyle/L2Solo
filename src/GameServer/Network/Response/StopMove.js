@@ -10,7 +10,9 @@ function stopMove(id, data) {
         .writeD(data.locZ)
         .writeD(data.head);
 
-    return packet.fetchBuffer();
+    const buffer = packet.fetchBuffer();
+    buffer.__packetTrace = `actor=${id}:at=${data.locX},${data.locY},${data.locZ}:head=${data.head}`;
+    return buffer;
 }
 
 module.exports = stopMove;

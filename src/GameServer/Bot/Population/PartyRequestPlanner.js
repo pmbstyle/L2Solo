@@ -2,7 +2,9 @@ const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 
 function partyObjectiveForPlan(plan) {
     if (!plan || !['active', 'blocked'].includes(plan.status) || !plan.next?.spotId) return null;
-    const partyNeed = plan.partyNeed || (plan.requiresParty ? 'required' : 'solo_ok');
+    const partyNeed = plan.clanGoal?.partyNeed
+        || plan.partyNeed
+        || (plan.requiresParty ? 'required' : 'solo_ok');
     if (!['required', 'preferred'].includes(partyNeed)) return null;
     const strategy = plan.strategy || 'acquisition';
     const targetItemId = Number(plan.next.itemId || plan.target?.selfId || 0);
@@ -23,7 +25,10 @@ function partyObjectiveForPlan(plan) {
         spotId: plan.next.spotId,
         npcId: npcId || null,
         itemId: targetItemId || null,
-        targetId: Number(plan.target?.selfId || 0) || null
+        targetId: Number(plan.target?.selfId || 0) || null,
+        clanId: Number(plan.clanGoal?.clanId || 0) || null,
+        clanGoalKey: plan.clanGoal?.goalKey || null,
+        partyPreference: plan.clanGoal?.partyPreference || null
     };
 }
 
@@ -32,9 +37,14 @@ function partyRequestEligible(state) {
         && ['hunting', 'resting', 'party_wait'].includes(state?.activity);
 }
 
+function clanPartyObjectiveForState(state) {
+    const objective = state?.stats?.clanPartyObjective;
+    return objective && ['open', 'deferred'].includes(objective.status) ? objective : null;
+}
+
 function partyRequestForPlan(state, plan, timestamp = Date.now()) {
     if (!partyRequestEligible(state)) return null;
-    const objective = partyObjectiveForPlan(plan);
+    const objective = partyObjectiveForPlan(plan) || clanPartyObjectiveForState(state);
     if (!objective) return null;
     const previous = state.stats?.partyRequest;
     const sameRequest = ['open', 'deferred'].includes(previous?.status)
@@ -86,11 +96,12 @@ function partyObjectiveForState(state) {
     if (state?.stats?.partyRequest) {
         return state.stats.partyRequest.status === 'open' ? state.stats.partyRequest : null;
     }
-    return partyObjectiveForPlan(state?.stats?.equipmentPlan);
+    return partyObjectiveForPlan(state?.stats?.equipmentPlan) || clanPartyObjectiveForState(state);
 }
 
 module.exports = {
     partyObjectiveForPlan,
+    clanPartyObjectiveForState,
     partyRequestForPlan,
     partyObjectiveForState
 };

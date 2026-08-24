@@ -54,6 +54,16 @@ function actor(id) {
     };
 }
 
+function tickHunting(session, bot, db, BotAI) {
+    const originalRandom = Math.random;
+    Math.random = () => 0.5;
+    try {
+        HuntingState.tick(session, bot, db, BotAI);
+    } finally {
+        Math.random = originalRandom;
+    }
+}
+
 const threatNpc = {
     fetchId: () => 1101,
     fetchName: () => 'angry mob',
@@ -78,7 +88,7 @@ World.user = { sessions: [session] };
 World.npc = { spawns: [threatNpc] };
 World.fetchNpcsInRadius = () => [];
 
-HuntingState.tick(session, bot, {}, {
+tickHunting(session, bot, {}, {
     say() {},
     getStatus() { return {}; },
     executeCombat(_session, _bot, npc) {
@@ -111,7 +121,7 @@ let raidCounterattacks = 0;
 World.user = { sessions: [raidSession] };
 World.npc = { spawns: [raidThreat] };
 World.fetchNpcsInRadius = () => [];
-HuntingState.tick(raidSession, raidBot, {}, {
+tickHunting(raidSession, raidBot, {}, {
     say() {},
     executeCombat() { raidCounterattacks++; }
 });
@@ -144,7 +154,7 @@ World.user = { sessions: [woundedSession] };
 World.npc = { spawns: [threatNpc] };
 World.fetchNpcsInRadius = () => [retreatHazard];
 
-HuntingState.tick(woundedSession, woundedBot, {}, {
+tickHunting(woundedSession, woundedBot, {}, {
     say() {},
     executeCombat(_session, _bot, npc) {
         woundedAttackId = npc.fetchId();
@@ -199,7 +209,7 @@ const exhaustedSession = {
 World.user = { sessions: [exhaustedSession] };
 World.npc = { spawns: [] };
 World.fetchNpcsInRadius = () => [];
-HuntingState.tick(exhaustedSession, exhaustedBot, {}, { say() {}, executeCombat() {} });
+tickHunting(exhaustedSession, exhaustedBot, {}, { say() {}, executeCombat() {} });
 assert.strictEqual(exhaustedSession.plan, 'resting', 'low-MP hunter should enter recovery');
 assert.strictEqual(exhaustedSession.currentTargetId, undefined, 'voluntary recovery should release the combat target');
 assert.strictEqual(exhaustedBot.selected, undefined, 'voluntary recovery should clear the visible selection');
@@ -219,7 +229,7 @@ const lowManaDpsChat = [];
 World.user = { sessions: [lowManaDpsSession] };
 World.npc = { spawns: [] };
 World.fetchNpcsInRadius = () => [];
-HuntingState.tick(lowManaDpsSession, lowManaDps, {}, {
+tickHunting(lowManaDpsSession, lowManaDps, {}, {
     say(_session, text) {
         lowManaDpsChat.push(text);
     },
@@ -230,6 +240,171 @@ assert.strictEqual(lowManaDpsSession.plan, 'hunting',
     'a melee/dps hunter must not enter a recovery loop only because MP is low');
 assert(!lowManaDpsChat.includes('Phew! My HP/MP is low. Sitting down to recover.'),
     'low-MP melee/dps hunters must not emit the recovery spam line');
+
+let openingAttackSeated = false;
+const openingAttackBot = actor(2000022);
+openingAttackBot.fetchHp = () => 30;
+openingAttackBot.state.fetchHits = () => true;
+openingAttackBot.state.fetchSeated = () => openingAttackSeated;
+openingAttackBot.state.setSeated = (value) => { openingAttackSeated = value; };
+const openingAttackSession = {
+    accountId: 'bot_opening_attack_in_flight',
+    actor: openingAttackBot,
+    plan: 'hunting',
+    currentTargetId: threatNpc.fetchId(),
+    spotRelocation: { method: 'soe_gatekeeper', startedAt: Date.now() },
+    dataSendToOthers() {}
+};
+World.user = { sessions: [openingAttackSession] };
+World.npc = { spawns: [threatNpc] };
+World.fetchNpcsInRadius = () => [];
+tickHunting(openingAttackSession, openingAttackBot, {}, { say() {}, executeCombat() {} });
+assert.strictEqual(openingAttackSession.plan, 'hunting',
+    'a hunter must not enter resting while its opening attack is still in flight');
+assert.strictEqual(openingAttackSeated, false, 'an in-flight combat action must keep the hunter standing');
+
+let oldAggroSeated = false;
+const oldAggroBot = actor(2000016);
+oldAggroBot.fetchHp = () => 30;
+oldAggroBot.state.fetchSeated = () => oldAggroSeated;
+oldAggroBot.state.setSeated = (value) => { oldAggroSeated = value; };
+const oldAggroNpc = {
+    ...threatNpc,
+    fetchId: () => 1103,
+    fetchDestId: () => oldAggroBot.fetchId(),
+    fetchLevel: () => 5
+};
+const oldAggroSession = {
+    accountId: 'bot_old_aggro',
+    actor: oldAggroBot,
+    plan: 'hunting',
+    currentTargetId: oldAggroNpc.fetchId(),
+    dataSendToOthers() {}
+};
+World.user = { sessions: [oldAggroSession] };
+World.npc = { spawns: [oldAggroNpc] };
+World.fetchNpcsInRadius = () => [oldAggroNpc];
+tickHunting(oldAggroSession, oldAggroBot, {}, { say() {}, executeCombat() {} });
+assert.strictEqual(oldAggroSession.plan, 'fleeing',
+    'a critically wounded hunter must react to persistent NPC targeting even after the recent-hit window expires');
+assert.strictEqual(oldAggroSeated, false, 'a hunter must never sit while an NPC still targets it');
+
+let prematureAttacks = 0;
+let reserveSeated = false;
+const reserveBot = actor(2000017);
+reserveBot.fetchHp = () => 60;
+reserveBot.state.fetchSeated = () => reserveSeated;
+reserveBot.state.setSeated = (value) => { reserveSeated = value; };
+const fullHealthNpc = {
+    ...threatNpc,
+    fetchId: () => 1104,
+    fetchLevel: () => 5,
+    fetchHp: () => 100,
+    fetchMaxHp: () => 100
+};
+const reserveSession = {
+    accountId: 'bot_encounter_reserve',
+    actor: reserveBot,
+    plan: 'hunting',
+    dataSendToOthers() {}
+};
+World.user = { sessions: [reserveSession] };
+World.npc = { spawns: [fullHealthNpc] };
+World.fetchNpcsInRadius = () => [fullHealthNpc];
+tickHunting(reserveSession, reserveBot, {}, {
+    say() {},
+    getStatus() { return {}; },
+    executeCombat() { prematureAttacks++; }
+});
+assert.strictEqual(reserveSession.plan, 'resting',
+    'a solo hunter without enough HP reserve for a fresh equal-level mob must recover before pulling');
+assert.strictEqual(reserveSeated, true, 'pre-encounter recovery should seat the safe idle hunter');
+assert.strictEqual(prematureAttacks, 0, 'pre-encounter readiness must block the opening attack');
+assert.strictEqual(reserveSession.lastDecision.reason, 'hp_reserve', 'the blocked pull should expose its resource reason');
+
+let lowManaPulls = 0;
+const lowManaMage = actor(2000019);
+lowManaMage.fetchClassId = () => 10;
+lowManaMage.fetchMp = () => 40;
+const lowManaPullSession = {
+    accountId: 'bot_encounter_mana_reserve',
+    actor: lowManaMage,
+    plan: 'hunting',
+    dataSendToOthers() {}
+};
+World.user = { sessions: [lowManaPullSession] };
+World.npc = { spawns: [fullHealthNpc] };
+World.fetchNpcsInRadius = () => [fullHealthNpc];
+tickHunting(lowManaPullSession, lowManaMage, {}, {
+    say() {},
+    getStatus() { return {}; },
+    executeCombat() { lowManaPulls++; }
+});
+assert.strictEqual(lowManaPullSession.plan, 'resting',
+    'a mana-dependent solo hunter should recover before pulling without enough MP for the encounter');
+assert.strictEqual(lowManaPullSession.lastDecision.reason, 'mp_reserve');
+assert.strictEqual(lowManaPulls, 0);
+
+let companionPulls = 0;
+const companionBot = actor(2000020);
+companionBot.fetchHp = () => 60;
+const companionSession = {
+    accountId: 'bot_player_party_exclusion',
+    actor: companionBot,
+    plan: 'hunting',
+    partyCompanion: true,
+    followPlayerSession: { actor: actor(2000021) },
+    dataSendToOthers() {}
+};
+World.user = { sessions: [companionSession] };
+World.npc = { spawns: [fullHealthNpc] };
+World.fetchNpcsInRadius = () => [fullHealthNpc];
+tickHunting(companionSession, companionBot, {}, {
+    say() {},
+    getStatus() { return {}; },
+    executeCombat() { companionPulls++; }
+});
+assert.strictEqual(companionPulls, 1,
+    'the conservative solo encounter reserve must not change player-party hunting tactics');
+
+let archerHits = true;
+let archerTargetX = 120;
+let archerAttacks = 0;
+const kitingArcher = actor(2000018);
+kitingArcher.fetchClassId = () => 9;
+kitingArcher.state.fetchHits = () => archerHits;
+const closeArcherThreat = {
+    ...threatNpc,
+    fetchId: () => 1105,
+    fetchDestId: () => kitingArcher.fetchId(),
+    fetchLevel: () => 5,
+    fetchLocX: () => archerTargetX
+};
+const archerSession = {
+    accountId: 'bot_archer_kite',
+    actor: kitingArcher,
+    plan: 'hunting',
+    currentTargetId: closeArcherThreat.fetchId(),
+    dataSendToOthers() {}
+};
+World.user = { sessions: [archerSession] };
+World.npc = { spawns: [closeArcherThreat] };
+World.fetchNpcsInRadius = () => [closeArcherThreat];
+tickHunting(archerSession, kitingArcher, {}, {
+    say() {},
+    executeCombat() { archerAttacks++; }
+});
+assert.strictEqual(kitingArcher.moves.length, 1, 'an archer should queue movement away when its target reaches melee range');
+assert.strictEqual(archerSession.lastCombatDecision.action, 'kite', 'the archer reposition should be visible as a combat decision');
+assert.strictEqual(archerAttacks, 0, 'the archer should finish repositioning before firing again');
+
+archerHits = false;
+archerTargetX = 650;
+tickHunting(archerSession, kitingArcher, {}, {
+    say() {},
+    executeCombat() { archerAttacks++; }
+});
+assert.strictEqual(archerAttacks, 1, 'the archer should resume attacking once distance has been restored');
 
 async function targetLifecycleChecks() {
     const originalRandom = Math.random;

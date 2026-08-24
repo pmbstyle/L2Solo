@@ -1,4 +1,5 @@
 const SendPacket = invoke('Packet/Send');
+const WireD = invoke('Packet/WireD');
 
 function bodyPart(item) {
     return item.isWearable() ? 2 ** item.fetchSlot() : 0;
@@ -8,7 +9,7 @@ function purchaseList(items, adena) {
     const packet = new SendPacket(0x11);
 
     packet
-        .writeD(adena)
+        .writeD(WireD.bounded(adena))
         .writeD(0x00) // List Id?
         .writeH(utils.size(items));
 
@@ -17,14 +18,14 @@ function purchaseList(items, adena) {
             .writeH(item.fetchClass1())
             .writeD(item.fetchId())
             .writeD(item.fetchSelfId())
-            .writeD(item.fetchAmount())
+            .writeD(WireD.bounded(item.fetchAmount()))
             .writeH(item.fetchClass2())
             .writeH(0x00) // ?
             .writeD(bodyPart(item))
             .writeH(item.fetchEnchantLevel?.() || 0)  // Enchant
             .writeH(0x00)  // ?
             .writeH(0x00)  // ?
-            .writeD(item.fetchPrice());
+            .writeD(WireD.bounded(item.fetchPrice()));
     });
 
     return packet.fetchBuffer();

@@ -61,6 +61,10 @@ function evaluate(bot, target, skill, role, policy = {}) {
     if (bot.canUseSkill?.(skill) === false) return null;
     const semantic = skill.fetchSemantic?.() || {};
     if (semantic.notUsedInC4) return null;
+    // Internal bot casts bypass the packet-level target restriction checks.
+    // Remove undead-only skills before scoring so a living mob cannot make a
+    // holy nuke look like the best combat action and waste a cast window.
+    if (semantic.undeadOnly && target?.fetchUndead?.() !== true) return null;
     if (policy.avoidAreaDamage === true && AREA_SOURCE_TARGETS.has(String(semantic.sourceTarget || '').toLowerCase())) return null;
     const allowedWeapons = Number(semantic.requires?.weaponsAllowed) || 0;
     if (allowedWeapons && (allowedWeapons & Attack.weaponMaskFor(bot)) === 0) return null;

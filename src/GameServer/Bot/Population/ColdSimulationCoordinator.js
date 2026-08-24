@@ -10,6 +10,7 @@ const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const Director = invoke('GameServer/Bot/Population/PopulationDirector');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
@@ -20,6 +21,14 @@ const { ColdCommitQueue } = require('./ColdCommitQueue');
 const { ColdSnapshotQueue } = require('./ColdSnapshotQueue');
 
 const HUNTING_TRAVEL_MS = 25000;
+const OWNERSHIP_REBASE_REASONS = new Set([
+    'stale_revision',
+    'cas_failed',
+    'owner_changed',
+    'lease_changed',
+    'lease_expired',
+    'lease_active'
+]);
 
 function wait(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -68,6 +77,7 @@ class ColdSimulationCoordinator {
         this.snapshotsLoaded = false;
         this.lastHeartbeatAt = 0;
         this.lastWorkerSnapshot = {};
+        this.workerMaxInFlight = null;
         this.restartCount = 0;
         this.restartTimer = null;
         this.watchdogTimer = null;
@@ -305,6 +315,7 @@ class ColdSimulationCoordinator {
                 this.post('init', { config: this.workerConfig(), catalogVersion: utils.buildNumber() });
             } else if (payload.phase === 'running') {
                 this.ready = true;
+                this.syncWorkerPressure();
                 if (this.pauseReasons.size) this.post('pause', { reasons: [...this.pauseReasons] });
                 await this.sendSnapshots(true);
             } else if (payload.phase === 'snapshots_loaded') {
@@ -356,7 +367,8 @@ class ColdSimulationCoordinator {
     workerConfig() {
         return {
             maxBatch: Math.max(1, Math.min(64, Number(Config.coldWorkerBatchSize) || 64)),
-            maxInFlight: Math.max(1, Math.min(128, Number(Config.coldWorkerMaxInFlight) || 32)),
+            maxInFlight: this.desiredWorkerPressure().maxInFlight,
+            maxAtomicPartySize: Math.max(2, Number(Config.partyMaxSize) || 5),
             claimAckTimeoutMs: 5000,
             flushTargetMs: Math.max(100, Number(Config.coldWorkerOrdinaryFlushMs) || 2000),
             flushHardMs: Math.max(1000, Number(Config.coldWorkerOrdinaryHardMaxMs) || 5000),
@@ -411,6 +423,14 @@ class ColdSimulationCoordinator {
         if (!eligibleActivity) return null;
         if (partyRoute && partyMembers.some((member) => ['resting', 'traveling', 'dead'].includes(member.activity))) return null;
 
+        let physical = null;
+        try { physical = SpotService.findCurrentSpot(state.loc); } catch (_) { physical = null; }
+        const currentId = physical?.id || currentSpot?.id || state.spotId || party?.spotId || null;
+        const timestamp = Number(index.timestamp || Date.now());
+        const routedMembers = partyRoute ? partyMembers : [state];
+        const excludedSpotIds = SpotRiskPolicy.excludedSpotIdsForStates(routedMembers, timestamp);
+        const spotBackoff = SpotRiskPolicy.backoffForStates(routedMembers, currentId, timestamp);
+
         const role = partyRoute ? PartyComposition.roleForState(state) : null;
         const partyRequired = !partyRoute
             && !state.party?.partyId
@@ -423,7 +443,8 @@ class ColdSimulationCoordinator {
                 fallback = GearAcquisitionPlanner.safeFallbackForPlan(
                     state,
                     state.stats?.equipmentPlan,
-                    [...index.spots.values()]
+                    [...index.spots.values()],
+                    { occupancy: index.occupancy, excludedSpotIds }
                 );
             } catch (_) { fallback = null; }
             fallbackSpot = (fallback && index.spots.get(String(fallback.spotId))) || null;
@@ -434,7 +455,7 @@ class ColdSimulationCoordinator {
                         spotId: null,
                         stats: Object.fromEntries(Object.entries(state.stats || {})
                             .filter(([key]) => key !== 'equipmentPlan'))
-                    }, { occupancy: index.occupancy });
+                    }, { occupancy: index.occupancy, excludedSpotIds, timestamp });
                 } catch (_) { fallbackSpot = null; }
             }
         }
@@ -450,6 +471,8 @@ class ColdSimulationCoordinator {
                 : state;
         const options = {
             occupancy: index.occupancy,
+            excludedSpotIds,
+            timestamp,
             ...(partyRoute ? { mode: 'party', role } : {})
         };
         let selected = fallbackSpot;
@@ -458,9 +481,6 @@ class ColdSimulationCoordinator {
         } catch (_) { selected = null; }
         if (!selected) return null;
 
-        let physical = null;
-        try { physical = SpotService.findCurrentSpot(state.loc); } catch (_) { physical = null; }
-        const currentId = physical?.id || currentSpot?.id || state.spotId || party?.spotId || null;
         if (String(selected.id) === String(currentId || '')) return null;
 
         const members = partyRoute ? partyMembers : [state];
@@ -481,7 +501,9 @@ class ColdSimulationCoordinator {
             travelMs: HUNTING_TRAVEL_MS,
             reason: partyRoute
                 ? 'party_spot_replan'
-                : activeEquipmentPlan ? 'equipment_source_replan' : 'level_replan',
+                : spotBackoff ? 'death_pressure_replan'
+                    : activeEquipmentPlan ? 'equipment_source_replan' : 'level_replan',
+            ...(spotBackoff ? { cause: 'death_pressure', spotBackoff } : {}),
             to: destinations[String(state.characterId)] || null,
             destinations
         };
@@ -636,7 +658,14 @@ class ColdSimulationCoordinator {
         for (const party of orphaned) {
             const dissolved = await BackgroundPartyState.setStatus(party.partyId, 'dissolved');
             if (dissolved) {
-                console.info('ColdWorker :: dissolved orphaned background party %s declaredMembers=%d', party.partyId, party.memberIds?.length || 0);
+                const released = await LifeState.releaseDissolvedPartyMembers(
+                    party.partyId,
+                    'orphaned_dissolved_party'
+                );
+                console.info('ColdWorker :: dissolved orphaned background party %s declaredMembers=%d releasedMembers=%d',
+                    party.partyId,
+                    party.memberIds?.length || 0,
+                    released);
             }
         }
         return orphaned;
@@ -823,9 +852,31 @@ class ColdSimulationCoordinator {
             leaseMs: Math.max(2000, Number(Config.coldOwnerLeaseMs) || 30000)
         });
         const index = this.contextIndex({ compactPartyMembers: true });
+        const rebaseIds = [...new Set((claimed.rejected || [])
+            .filter((result) => OWNERSHIP_REBASE_REASONS.has(String(result.reason || '')))
+            .map((result) => Number(result.characterId))
+            .filter((characterId) => Number.isSafeInteger(characterId) && characterId > 0))];
+        // Clan warehouse/contribution writes advance simulationRevision in the
+        // same legacy row that the worker snapshots. A rejected claim must
+        // rebase from SQLite; returning the cached row simply emits the same
+        // stale CAS again and turns one legitimate handoff into an IPC storm.
+        const authoritativeStates = rebaseIds.length
+            ? await LifeState.statesByIds(rebaseIds)
+            : [];
+        const authoritativeById = new Map(authoritativeStates.map((state) => [
+            Number(state.characterId), state
+        ]));
         const rejected = [...missing, ...(claimed.rejected || [])].map((result) => {
-            const state = LifeState.cachedState(result.characterId);
-            return state ? { ...result, state, context: this.contextFor(state, index) } : result;
+            const state = authoritativeById.get(Number(result.characterId))
+                || LifeState.cachedState(result.characterId);
+            if (!state) return result;
+            const needsRetryDelay = OWNERSHIP_REBASE_REASONS.has(String(result.reason || ''));
+            return {
+                ...result,
+                ...(needsRetryDelay ? { retryAfterMs: Math.max(1000, Number(result.retryAfterMs) || 1000) } : {}),
+                state,
+                context: this.contextFor(state, index)
+            };
         });
         this.postCollections('claim_ack', {
             grants: (claimed.grants || []).map((grant) => ({ ...grant, purpose: purposes.get(Number(grant.characterId)) || null })),
@@ -1010,6 +1061,7 @@ class ColdSimulationCoordinator {
 
     watchdog() {
         if (!this.worker || this.stopping) return;
+        this.syncWorkerPressure();
         const age = Date.now() - this.lastHeartbeatAt;
         if (age <= Math.max(5000, Number(Config.coldWorkerUnhealthyMs) || 5000)) {
             this.setPauseReason('heartbeat_stale', false);
@@ -1019,6 +1071,42 @@ class ColdSimulationCoordinator {
         if (age > Math.max(10000, Number(Config.coldWorkerDeadMs) || 10000)) {
             this.worker.terminate().catch(() => null);
         }
+    }
+
+    desiredWorkerPressure() {
+        const scheduler = Metrics.schedulerState || {};
+        const lagMs = Math.max(
+            Number(Metrics.currentEventLoopLag?.() || 0),
+            Number(scheduler.lagMs || 0)
+        );
+        const player = Number(scheduler.realPlayers || 0) > 0 || scheduler.mode === 'player';
+        const idleLimit = Math.max(1, Math.min(128, Number(Config.coldWorkerMaxInFlight) || 32));
+        const playerLimit = Math.max(1, Math.min(idleLimit, Number(Config.coldWorkerPlayerMaxInFlight) || 8));
+        const lagLimit = Math.max(1, Math.min(playerLimit, Number(Config.coldWorkerLagMaxInFlight) || 2));
+        const throttleMs = Math.max(0, Number(Config.schedulerLagThrottleMs) || 0);
+        const abortMs = Math.max(0, Number(Config.schedulerLagAbortMs) || 0);
+        let maxInFlight = player ? playerLimit : idleLimit;
+
+        if (abortMs > 0 && lagMs >= abortMs) {
+            maxInFlight = lagLimit;
+        } else if (throttleMs > 0 && lagMs > throttleMs) {
+            maxInFlight = Math.max(lagLimit, Math.floor(maxInFlight / 2));
+        }
+
+        return { maxInFlight, lagMs, player };
+    }
+
+    syncWorkerPressure() {
+        if (!this.worker || !this.ready) return null;
+        const pressure = this.desiredWorkerPressure();
+        if (this.workerMaxInFlight === pressure.maxInFlight) return pressure;
+        this.workerMaxInFlight = pressure.maxInFlight;
+        this.post('throttle', {
+            maxInFlight: pressure.maxInFlight,
+            lagMs: pressure.lagMs,
+            player: pressure.player
+        });
+        return pressure;
     }
 
     setPauseReason(reason, active, detail = {}) {
@@ -1040,6 +1128,7 @@ class ColdSimulationCoordinator {
     onWorkerExit(code) {
         this.counters.workerExits += 1;
         this.worker = null;
+        this.workerMaxInFlight = null;
         this.ready = false;
         this.snapshotsLoaded = false;
         this.waiters.forEach((waiter) => waiter.reject(new Error('cold_worker_exited')));

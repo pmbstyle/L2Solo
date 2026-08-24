@@ -3,6 +3,7 @@ const HUNTING_TRAVEL_MS = 25000;
 const PROPOSAL_PAYLOAD_LIMIT_BYTES = 240 * 1024;
 const BackgroundPartyLifecycle = require('./BackgroundPartyLifecycle');
 const Protocol = require('./ColdSimulationProtocol');
+const SpotRiskPolicy = require('./SpotRiskPolicy');
 
 class DueHeap {
     constructor() {
@@ -142,8 +143,11 @@ function beginRouteTravelState(state = {}, route = null, timestamp = Date.now(),
     if (!destination || !hasFiniteCoordinate(from.locX) || !hasFiniteCoordinate(from.locY)) return null;
     const arrivalAt = timestamp + Math.max(1000, Number(route.travelMs) || HUNTING_TRAVEL_MS);
     const isPartyRoute = route.mode === 'party';
+    const routedState = route.spotBackoff
+        ? SpotRiskPolicy.withBackoff(state, route.spotBackoff, timestamp)
+        : state;
     return {
-        ...state,
+        ...routedState,
         activity: 'traveling',
         timing: {
             ...(state.timing || {}),
@@ -151,7 +155,7 @@ function beginRouteTravelState(state = {}, route = null, timestamp = Date.now(),
             nextResolveAt: arrivalAt
         },
         stats: {
-            ...(state.stats || {}),
+            ...(routedState.stats || {}),
             travel: {
                 from,
                 to: { ...destination },
@@ -166,7 +170,8 @@ function beginRouteTravelState(state = {}, route = null, timestamp = Date.now(),
                     ? 'party_spot_replan'
                     : route.reason || (state.stats?.equipmentPlan?.status === 'active'
                         ? 'equipment_source_replan'
-                        : 'level_replan')
+                        : 'level_replan'),
+                ...(route.cause ? { cause: route.cause } : {})
             }
         }
     };
@@ -324,6 +329,10 @@ class ColdSimulationKernel {
         this.flushHardMs = Math.max(this.flushTargetMs, Number(options.flushHardMs) || 5000);
         this.partySession = options.partySession || {};
         this.partyMinSize = Math.max(2, Number(options.partyMinSize) || 2);
+        this.maxAtomicPartySize = Math.max(
+            this.partyMinSize,
+            Math.min(this.maxBatch, Number(options.maxAtomicPartySize) || 5)
+        );
         this.states = new Map();
         this.versions = new Map();
         this.heap = new DueHeap();
@@ -358,6 +367,13 @@ class ColdSimulationKernel {
             proposalCompactions: 0,
             proposalOversize: 0,
             proposalOversizeRejected: 0,
+            partyCapacityBursts: 0,
+            partyCapacityDeferrals: 0,
+            flushes: 0,
+            flushRows: 0,
+            lastFlushRows: 0,
+            maxFlushRows: 0,
+            flushReasons: {},
             orphanRecoveries: 0,
             loopRuns: 0,
             lastLoopAt: 0,
@@ -526,18 +542,32 @@ class ColdSimulationKernel {
                         : members.filter((member) => Number(member.characterId) === id))
                     : members;
                 const candidateMemberIds = partyMembers.map((member) => Number(member.characterId)).filter(Boolean);
+                const occupiedOwnership = this.claiming.size + this.inFlight.size + this.commanding.size;
+                const atomicCapacityBurst = candidateMemberIds.length > this.maxInFlight
+                    && candidateMemberIds.length <= this.maxAtomicPartySize
+                    && occupiedOwnership === 0;
+                if (candidateMemberIds.length > this.maxInFlight && !atomicCapacityBurst) {
+                    // A temporary lag throttle may shrink the ownership window
+                    // below an otherwise valid atomic party. Move that party
+                    // behind currently eligible solo work instead of pinning
+                    // the due-heap head until pressure recovers.
+                    this.schedule(id, current.version, this.now() + 250);
+                    this.stats.partyCapacityDeferrals += 1;
+                    continue;
+                }
                 if (!party || !partyMembers.length
                     || candidateMemberIds.some((memberId) => this.claiming.has(memberId) || this.inFlight.has(memberId))) {
                     this.requeue(id, this.now() + 1000);
                     continue;
                 }
-                if (candidates.length + candidateMemberIds.length > limit) {
+                if (candidates.length + candidateMemberIds.length > limit && !atomicCapacityBurst) {
                     // Keep the original overdue priority. Moving a party to
                     // now+100 on every partially free tick lets an endless
                     // stream of overdue solo work starve the atomic claim.
                     this.schedule(id, current.version, entry.dueAt);
                     break;
                 }
+                if (atomicCapacityBurst) this.stats.partyCapacityBursts += 1;
                 const purpose = {
                     kind: 'party',
                     partyId: party.partyId,
@@ -713,7 +743,12 @@ class ColdSimulationKernel {
             // snapshot. Party claims must absorb it just like solo claims do;
             // otherwise the next party attempt repeats the same stale revision
             // forever and creates a CAS/IPC retry storm.
-            if (result.state) this.upsert(result);
+            if (result.state) {
+                this.upsert(result);
+                if (Number(result.retryAfterMs) > 0) {
+                    this.requeue(id, this.now() + Math.max(1000, Number(result.retryAfterMs)));
+                }
+            }
             if (result.purpose?.kind === 'party') {
                 const run = this.partyRuns.get(String(result.purpose.partyId));
                 if (run) run.rejected = true;
@@ -1075,7 +1110,9 @@ class ColdSimulationKernel {
             };
             this.dirty.set(Number(characterId), proposal);
             this.stats.resolved += 1;
-            if (priority !== 'P2' || this.dirty.size >= this.maxBatch) this.flush(priority);
+            if (priority !== 'P2' || this.dirty.size >= this.maxBatch) {
+                this.flush(priority, false, { reason: priority !== 'P2' ? 'priority' : 'batch' });
+            }
         } catch (error) {
             this.stats.errors += 1;
             this.emit('fault', { reason: error?.message || 'resolver_error', stage: 'solo_project', characterId: Number(characterId) });
@@ -1090,8 +1127,12 @@ class ColdSimulationKernel {
         }
     }
 
-    flush(priority = null, force = false) {
+    flush(priority = null, force = false, options = {}) {
         const timestamp = this.now();
+        const limit = Math.max(1, Math.min(
+            this.maxBatch,
+            Number(options.limit) || this.maxBatch
+        ));
         const eligible = [...this.dirty.values()]
             .filter((proposal) => force || priority === null || proposal.priority === priority
                 || timestamp - proposal.enqueuedAt >= this.flushHardMs)
@@ -1099,7 +1140,7 @@ class ColdSimulationKernel {
                 const rank = { P0: 0, P1: 1, P2: 2 };
                 return rank[a.priority] - rank[b.priority] || a.enqueuedAt - b.enqueuedAt;
             })
-            .slice(0, this.maxBatch);
+            .slice(0, limit);
         const proposals = [];
         const oversized = [];
         for (const proposal of eligible) {
@@ -1131,6 +1172,12 @@ class ColdSimulationKernel {
         if (!proposals.length) return 0;
         proposals.forEach((proposal) => this.dirty.delete(Number(proposal.characterId)));
         this.stats.proposals += proposals.length;
+        this.stats.flushes += 1;
+        this.stats.flushRows += proposals.length;
+        this.stats.lastFlushRows = proposals.length;
+        this.stats.maxFlushRows = Math.max(this.stats.maxFlushRows, proposals.length);
+        const reason = String(options.reason || (force ? 'forced' : 'direct'));
+        this.stats.flushReasons[reason] = Number(this.stats.flushReasons[reason] || 0) + 1;
         this.emit('proposal_batch', { proposals });
         return proposals.length;
     }
@@ -1138,9 +1185,26 @@ class ColdSimulationKernel {
     flushDue() {
         const now = this.now();
         const oldest = Math.min(...[...this.dirty.values()].map((proposal) => Number(proposal.enqueuedAt || now)), now);
-        if (this.dirty.size && (now - oldest >= this.flushTargetMs || this.dirty.size >= this.maxBatch)) {
-            this.flush(null, now - oldest >= this.flushHardMs);
+        if (!this.dirty.size) return 0;
+        const ageMs = now - oldest;
+        const capacity = this.maxInFlight - this.claiming.size - this.inFlight.size - this.commanding.size;
+        if (capacity <= 0) {
+            // A player-aware ownership window can be smaller than maxBatch.
+            // Do not wait for an unreachable batch threshold while completed
+            // proposals occupy every lease; the main commit queue still
+            // coalesces these bounded batches before touching SQLite.
+            return this.flush(null, false, { reason: 'capacity', limit: this.maxInFlight });
         }
+        if (this.dirty.size >= this.maxBatch) {
+            return this.flush(null, false, { reason: 'batch' });
+        }
+        if (ageMs >= this.flushHardMs) {
+            return this.flush(null, true, { reason: 'hard_age' });
+        }
+        if (ageMs >= this.flushTargetMs) {
+            return this.flush(null, false, { reason: 'target_age' });
+        }
+        return 0;
     }
 
     onCommitAck(payload = {}) {
@@ -1210,6 +1274,11 @@ class ColdSimulationKernel {
         this.paused = false;
     }
 
+    setMaxInFlight(value) {
+        this.maxInFlight = Math.max(1, Math.min(128, Number(value) || this.maxInFlight));
+        return this.maxInFlight;
+    }
+
     async shutdown() {
         this.stopping = true;
         await this.resolveChain.catch(() => null);
@@ -1254,6 +1323,8 @@ class ColdSimulationKernel {
             dirtyAgeMs: this.dirty.size ? Math.max(0, now - oldestDirtyAt) : 0,
             commanding: this.commanding.size,
             commandingAgeMs: this.commanding.size ? Math.max(0, now - oldestCommandAt) : 0,
+            maxInFlight: this.maxInFlight,
+            maxAtomicPartySize: this.maxAtomicPartySize,
             paused: this.paused,
             stopping: this.stopping
         };

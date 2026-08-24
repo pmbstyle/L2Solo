@@ -555,6 +555,22 @@ const BotManager = {
         return { buffs: [], expiresAt: null };
     },
 
+    finalizeReadyActivation(session, botData = {}) {
+        const actor = session?.actor;
+        if (!actor || botData.readyOnActivation !== true) return false;
+
+        // enterWorld restores the absolute pre-load vitals after calculating
+        // the final skill/equipment-derived caps. A bot filled before that
+        // calculation can therefore enter its first AI tick at only a few
+        // percent HP/MP and immediately sit back down. Refill against the
+        // final caps and clear the seated flag before the visible CharInfo and
+        // before BotAI starts.
+        actor.automation?.stopReplenish?.();
+        actor.fillupVitals();
+        actor.state.setSeated(false);
+        return true;
+    },
+
     loadAndSpawnBot(username, botData = {}) {
         const session = new BotSession(username);
 
@@ -706,7 +722,14 @@ const BotManager = {
                         // Spawn the bot actor in the World only after its
                         // durable lifecycle has become hot.
                         World.insertUser(session);
-                        session.actor.enterWorld();
+                        // Wait for the asynchronous skillbook load. Until
+                        // Expertise is present, the provisional stat pass can
+                        // apply a 0.22 grade penalty and advertise run speed
+                        // around 30 to real C4 clients while AI moves at the
+                        // corrected 120-150 speed.
+                        await session.actor.enterWorld();
+
+                        this.finalizeReadyActivation(session, botData);
 
                         // Explicitly send the bot's CharInfo to other players in the world
                         const ServerResponse = invoke('GameServer/Network/Response');

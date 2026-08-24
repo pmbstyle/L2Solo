@@ -26,6 +26,7 @@ const originalStateRetention = PersistentStateRetention.runNextBatch;
 const originalStateRetentionRunning = PopulationService.stateRetentionRunning;
 const originalStateRetentionPassRows = PopulationService.stateRetentionPassRows;
 const originalNextStateRetentionAt = PopulationService.nextStateRetentionAt;
+const originalPartyFormationPending = PopulationService.partyFormationPending;
 const originalDatabaseStats = Database.stats;
 const originalDatabaseCheckpoint = Database.checkpoint;
 const originalWalResetRunning = PopulationService.walResetRunning;
@@ -66,6 +67,13 @@ async function run() {
     assert.strictEqual(playerProfile.maxResolvesPerTick, Config.schedulerPlayerMaxResolvesPerTick, 'player scheduler must use the smaller cold batch cap');
     assert.strictEqual(PopulationService.partyFormationBudgetMs(), Config.partyFormationPlayerBudgetMs,
         'player presence must keep a bounded background party formation budget');
+    PopulationService.resolving = false;
+    PopulationService.partyFormationRunning = false;
+    PopulationService.partyFormationPending = false;
+    assert.deepStrictEqual(await PopulationService.formBackgroundParties(), [],
+        'player protection must defer the expensive background party projection');
+    assert.strictEqual(PopulationService.partyFormationPending, true,
+        'deferred party formation must remain pending for the next idle interval');
 
     PopulationService.playerActivityProfile = () => ({ protected: true, activeParty: true, realPlayers: 1, companionCount: 8, mode: 'party' });
     const partyProfile = PopulationService.schedulerProfile();
@@ -112,9 +120,9 @@ async function run() {
     Database.stats = () => checkpointState;
     Database.checkpoint = async (checkpointOptions) => {
         checkpointCalls += 1;
-        assert.strictEqual(checkpointOptions.mode, 'restart');
+        assert.strictEqual(checkpointOptions.mode, 'truncate');
         assert.strictEqual(checkpointOptions.busyTimeoutMs, 10);
-        return { ok: true, mode: 'restart', busy: 0, afterBytes: 300, logFrames: 20, checkpointedFrames: 20 };
+        return { ok: true, mode: 'truncate', busy: 0, afterBytes: 300, logFrames: 20, checkpointedFrames: 20 };
     };
     PopulationService.walResetRunning = false;
     PopulationService.nextWalResetAt = 0;
@@ -129,7 +137,7 @@ async function run() {
     assert.strictEqual(checkpointCalls, 0);
     PopulationService.playerActivityProfile = () => ({ protected: false, realPlayers: 0, connectingPlayers: 0 });
     const reset = await PopulationService.runAdaptiveWalReset(1000);
-    assert.strictEqual(reset.mode, 'restart');
+    assert.strictEqual(reset.mode, 'truncate');
     assert.strictEqual(checkpointCalls, 1, 'idle, drained WAL pressure must request exactly one bounded reset');
     assert(PopulationService.nextWalResetAt > 1000, 'a successful reset must install a cooldown');
     checkpointState = {
@@ -137,7 +145,7 @@ async function run() {
         checkpoint: {
             inFlight: false,
             last: { ok: true, mode: 'passive', busy: 0, afterBytes: 330, logFrames: 3, checkpointedFrames: 3 },
-            lastReset: { ok: true, mode: 'restart', busy: 0, afterBytes: 300, at: 1000 }
+            lastReset: { ok: true, mode: 'truncate', busy: 0, afterBytes: 300, at: 1000 }
         }
     };
     PopulationService.nextWalResetAt = 0;
@@ -155,7 +163,7 @@ async function run() {
     };
     PopulationService.nextWalResetAt = 0;
     const reusedGenerationReset = await PopulationService.runAdaptiveWalReset(3500);
-    assert.strictEqual(reusedGenerationReset.mode, 'restart',
+    assert.strictEqual(reusedGenerationReset.mode, 'truncate',
         'logical generation growth must trigger another reset even while the reused WAL file size is unchanged');
     assert.strictEqual(checkpointCalls, 2);
 
@@ -176,7 +184,7 @@ async function run() {
     PopulationService.stateRetentionRunning = false;
     PopulationService.nextWarehouseCleanupAt = 0;
     const maintenanceReset = await PopulationService.runWarehouseCleanup(4000);
-    assert.strictEqual(maintenanceReset.mode, 'restart',
+    assert.strictEqual(maintenanceReset.mode, 'truncate',
         'due WAL pressure must receive the maintenance timer quiet window even when intervals share a phase');
     assert.strictEqual(checkpointCalls, 3);
     assert.strictEqual(phaseLockedCleanupCalls, 0, 'warehouse cleanup must yield before opening a competing transaction');
@@ -304,6 +312,7 @@ run()
         PopulationService.stateRetentionRunning = originalStateRetentionRunning;
         PopulationService.stateRetentionPassRows = originalStateRetentionPassRows;
         PopulationService.nextStateRetentionAt = originalNextStateRetentionAt;
+        PopulationService.partyFormationPending = originalPartyFormationPending;
         PopulationService.walResetRunning = originalWalResetRunning;
         PopulationService.nextWalResetAt = originalNextWalResetAt;
         PopulationService.lastWalResetResult = originalLastWalResetResult;

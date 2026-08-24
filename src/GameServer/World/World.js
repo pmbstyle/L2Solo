@@ -36,6 +36,23 @@ function coldBotTell(playerSession, state, text) {
     });
 }
 
+const CLIENT_VISIBILITY_RADIUS = 6000;
+const CLIENT_VISIBILITY_RADIUS_SQUARED = CLIENT_VISIBILITY_RADIUS * CLIENT_VISIBILITY_RADIUS;
+
+function isBotSession(session) {
+    return !!session && (
+        session.botSession === true ||
+        session.constructor?.name === 'BotSession' ||
+        String(session.accountId || '').startsWith('bot_')
+    );
+}
+
+function isVisibleFrom(creature, candidate) {
+    const dx = Number(candidate.actor.fetchLocX() ?? 0) - Number(creature.fetchLocX());
+    const dy = Number(candidate.actor.fetchLocY() ?? 0) - Number(creature.fetchLocY());
+    return (dx * dx) + (dy * dy) < CLIENT_VISIBILITY_RADIUS_SQUARED;
+}
+
 function nameDistance(left, right) {
     const a = String(left || '').toLowerCase();
     const b = String(right || '').toLowerCase();
@@ -112,6 +129,7 @@ const World = {
         this.gameTime = GameTime;
         this.npc   = {
             spawns: [], grid: {}, nextId: 1000000,
+            threatRevision: 0,
             gridKeys: new WeakMap(),
             periodMode: GameTime.mode(), periodRevision: 0, periodDefinitions: [],
             raidBossRespawnTimers: new Map(), raidBossState: new Map()
@@ -172,8 +190,20 @@ const World = {
     },
 
     fetchVisibleUsers(session, creature) {
-        const actorArea = new SpeckMath.Circle(creature.fetchLocX(), creature.fetchLocY(), 6000);
-        return this.user.sessions.filter((ob) => session !== ob && ob.actor?.fetchIsOnline() === true && actorArea.contains(new SpeckMath.Point(ob.actor?.fetchLocX() ?? 0, ob.actor?.fetchLocY() ?? 0))) ?? [];
+        return (this.user.sessions || []).filter((ob) => (
+            session !== ob &&
+            ob.actor?.fetchIsOnline() === true &&
+            isVisibleFrom(creature, ob)
+        ));
+    },
+
+    fetchVisibleRealPlayers(session, creature) {
+        return (this.user.sessions || []).filter((ob) => (
+            session !== ob &&
+            !isBotSession(ob) &&
+            ob.actor?.fetchIsOnline() === true &&
+            isVisibleFrom(creature, ob)
+        ));
     },
 
     askForTeamUp(session, actor, data) {

@@ -16,6 +16,8 @@ const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
 const HotAiDispatcher = invoke('GameServer/Bot/AI/HotAiDispatcher');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
+const BotRangedCombatPositioning = invoke('GameServer/Bot/AI/BotRangedCombatPositioning');
+const { performance } = require('perf_hooks');
 
 const CHAT_PHRASES = {
     foundTarget: [
@@ -118,6 +120,10 @@ function clearTacticalState(session) {
     session.lastTargetEvaluation = undefined;
     session.lastCombatDecision = undefined;
     session.lastPvpDecision = undefined;
+}
+
+function recordHotStage(name, startedAt) {
+    HotActorLodPolicy.recordSubsystem(name, performance.now() - startedAt, 1);
 }
 
 const BotAI = {
@@ -430,7 +436,9 @@ const BotAI = {
 
         // If bot is a companion, dynamically refresh player's party HUD sidebar HP/MP bars
         if (session.followPlayerSession && session.partyCompanion === true) {
+            const partyMemberStartedAt = performance.now();
             PartyCompanionService.updateMember(session);
+            recordHotStage('partyMemberSync', partyMemberStartedAt);
         }
 
         const Generics = invoke(path.actor);
@@ -533,15 +541,20 @@ const BotAI = {
             session.plan = 'hunting';
         }
 
+        const equipmentStartedAt = performance.now();
         BotEquipmentUpgrade.applyBestUpgrades(session);
+        recordHotStage('equipmentUpgrade', equipmentStartedAt);
 
         // Ground drops belong to the party, not to a particular movement
         // plan. Reconcile them before routing follow/hold/rest/pull states so
         // idle companions can collect available loot in every party stance.
         // PartyCompanionService itself blocks real combat and incoming adds.
         if (isCompanion) {
+            const groundLootStartedAt = performance.now();
             PartyCompanionService.reconcileGroundLoot(session);
-            if (PartyCompanionService.startQueuedGroundPickup(session)) {
+            const startedGroundPickup = PartyCompanionService.startQueuedGroundPickup(session);
+            recordHotStage('partyGroundLoot', groundLootStartedAt);
+            if (startedGroundPickup) {
                 return;
             }
         }
@@ -549,10 +562,14 @@ const BotAI = {
         // 3. Dynamic State Machine Routing
         const state = States[session.plan];
         if (state) {
+            const stateName = session.plan;
+            const stateStartedAt = performance.now();
             try {
                 state.tick(session, bot, Generics, BotAI);
             } catch (err) {
                 console.error(`Error in Bot AI State (${session.plan}) tick:`, err);
+            } finally {
+                recordHotStage(`state.${stateName}`, stateStartedAt);
             }
         } else {
             utils.infoWarn('GameServer', 'Unhandled Bot plan: %s', session.plan);
@@ -582,6 +599,9 @@ const BotAI = {
             return false;
         }
         const role = BotRoles.inferRole(bot);
+        if (BotRangedCombatPositioning.reposition(session, bot, npc, { role })) {
+            return true;
+        }
         const BOW_ATTACK_RANGE = 700;
         const hasBow = bot?.backpack?.fetchTotalWeaponKind?.() === 'Weapon.Bow';
         // Healers and buffers may assist the party with their weapon, but
@@ -695,8 +715,11 @@ const BotAI = {
                 return dx * dx + dy * dy <= 6000 * 6000;
             });
         }
-        if (typeof World.fetchVisibleUsers !== 'function') return [];
-        return World.fetchVisibleUsers(session, bot).filter(isRealPlayerSession);
+        const fetchVisiblePlayers = typeof World.fetchVisibleRealPlayers === 'function'
+            ? World.fetchVisibleRealPlayers.bind(World)
+            : World.fetchVisibleUsers?.bind(World);
+        if (!fetchVisiblePlayers) return [];
+        return fetchVisiblePlayers(session, bot).filter(isRealPlayerSession);
     },
 
     getStatus(session) {

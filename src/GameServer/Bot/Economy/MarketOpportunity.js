@@ -331,7 +331,18 @@ function bestBuyOffer(selfId, options = {}) {
 }
 
 function activeBuyDemandSelfIds(timestamp = Date.now()) {
-    return [...new Set(coldMarketStates().flatMap((state) => {
+    const privateDemand = (World.user?.sessions || []).flatMap((session) => {
+        const actor = session?.actor;
+        const store = actor?.fetchPrivateStore?.();
+        const buyerState = session?.coldMarketState || null;
+        if (!actor || Number(store?.storeType) !== 3 || store.budgetBacked !== true) return [];
+        return (store.items || []).flatMap((item) => (
+            Number(item.selfId || 0) > 0 && affordableBuyCount(buyerState, store, item) > 0
+                ? [Number(item.selfId)]
+                : []
+        ));
+    });
+    const coldDemand = coldMarketStates().flatMap((state) => {
         const store = state?.stats?.marketStore;
         if (!store || Number(store.storeType) !== 3 || store.budgetBacked !== true || state.activity !== 'merchant') return [];
         if (Number(store.expiresAt || 0) > 0 && Number(store.expiresAt) <= Number(timestamp)) return [];
@@ -340,7 +351,8 @@ function activeBuyDemandSelfIds(timestamp = Date.now()) {
                 ? [Number(item.selfId)]
                 : []
         ));
-    }))];
+    });
+    return [...new Set([...privateDemand, ...coldDemand])];
 }
 
 function reserveBuy(offer, qty = 1) {

@@ -137,4 +137,10 @@ try {
     World.user = originalUsers;
 }
 
+Policy.recordSubsystem('testStage', 3, 1);
+const subsystemSnapshot = Policy.snapshot([]).subsystems.testStage;
+assert.strictEqual(subsystemSnapshot.count, 1, 'hot subsystem telemetry must retain stage sample counts');
+assert.strictEqual(subsystemSnapshot.p95Ms, 3, 'hot subsystem telemetry must expose stage p95 duration');
+assert.strictEqual(subsystemSnapshot.items, 1, 'hot subsystem telemetry must retain measured stage work');
+
 console.log('Hot actor LOD policy checks passed');
