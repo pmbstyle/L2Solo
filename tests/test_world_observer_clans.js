@@ -77,6 +77,22 @@ const crestOverview = Observer.compactClanOverview({
 });
 assert.strictEqual(crestOverview.crestUrl, '/observer/api/clan/8/crest', 'eligible assigned clan crests must expose an observer URL');
 
+assert.deepStrictEqual(Observer.compactActorClan({
+    fetchId: () => 42,
+    fetchClanId: () => 8,
+    fetchClan: () => ({ id: 8, name: 'Silver Oath' })
+}), { id: 8, name: 'Silver Oath' }, 'actor details must expose a compact clan link target');
+assert.strictEqual(Observer.compactActorClan({ fetchId: () => 43, fetchClanId: () => 0 }), null,
+    'clanless actor details must not expose a link target');
+
+const autonomousCrest = fs.readFileSync(path.join(__dirname, '..', 'data', 'crests', 'clan', 'crest-001.bmp'));
+assert.deepStrictEqual(Observer.browserClanCrestData(autonomousCrest), autonomousCrest, 'browser-ready BMP crests must remain byte-exact');
+const clientCrest = invoke('GameServer/Clan/ClanCrestService').clientCrestData(autonomousCrest);
+const browserClientCrest = Observer.browserClanCrestData(clientCrest);
+assert.strictEqual(browserClientCrest.toString('ascii', 0, 2), 'BM', 'client DDS crests must be decoded for browsers');
+assert.strictEqual(browserClientCrest.readInt32LE(18), 16);
+assert.strictEqual(browserClientCrest.readInt32LE(22), -12);
+
 const botMember = Observer.compactClanMember({
     id: 42,
     name: 'Aster',
@@ -193,6 +209,11 @@ async function databaseBackedChecks() {
         assert.strictEqual(crest.clanId, 91);
         assert.strictEqual(crest.kind, 'pledge');
         assert.strictEqual(crest.data.toString('ascii', 0, 2), 'BM');
+
+        const uploadedCrest = invoke('GameServer/Clan/ClanCrestService').clientCrestData(crest.data);
+        await Database.execute(['UPDATE clan_crests SET data = ? WHERE id = 91001', [uploadedCrest]], 'test:observer-uploaded-crest');
+        const decodedUpload = await Observer.clanCrest(91);
+        assert.strictEqual(decodedUpload.data.toString('ascii', 0, 2), 'BM', 'observer must render byte-exact client DDS uploads as BMP');
 
         const detail = await Observer.clanDetail(91);
         assert.strictEqual(detail.clan.id, 91);

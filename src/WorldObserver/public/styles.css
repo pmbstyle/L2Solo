@@ -443,6 +443,7 @@ h1 { font-size: 25px; line-height: 1; font-weight: 790; letter-spacing: -0.025em
 .detail-grid strong { display: block; margin-top: 4px; overflow: hidden; color: var(--text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .inspector-link { color: var(--gold); text-decoration: underline; text-decoration-color: rgba(216, 185, 109, 0.42); text-underline-offset: 2px; cursor: pointer; }
 .inspector-link:hover { color: var(--text); text-decoration-color: var(--text); }
+.inspector-link:focus-visible { border-radius: 2px; outline: 1px solid var(--gold); outline-offset: 2px; }
 .signal-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
 .signal-list > div { min-width: 0; padding: 7px; border-radius: 6px; background: var(--surface-soft); }
 .signal-list span { display: block; color: var(--faint); font-size: 9px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
@@ -751,6 +752,9 @@ h1 { font-size: 25px; line-height: 1; font-weight: 790; letter-spacing: -0.025em
 .clan-identity, .clan-row-side { min-width: 0; }
 .clan-identity strong, .clan-identity span, .clan-row-side strong, .clan-row-side span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .clan-identity strong { font-size: 12px; }
+.clan-identity .clan-name-line { display: flex; align-items: center; min-width: 0; }
+.clan-identity .clan-name-line .clan-crest { display: inline-grid; }
+.clan-identity .clan-name { min-width: 0; margin-top: 0; color: inherit; font-size: inherit; }
 .clan-crest { display: inline-grid; flex: 0 0 auto; place-items: center; margin-right: 7px; border: 1px solid rgba(216, 185, 109, 0.38); border-radius: 3px; background: rgba(216, 185, 109, 0.08); vertical-align: -3px; }
 .clan-crest img { display: block; image-rendering: pixelated; object-fit: contain; }
 .clan-crest-small { width: 18px; height: 15px; }
@@ -777,6 +781,7 @@ h1 { font-size: 25px; line-height: 1; font-weight: 790; letter-spacing: -0.025em
 .clan-goal-title { display: block; margin-top: 10px; overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .clan-info-block p, .clan-events p { margin-top: 7px; color: var(--muted); font-size: 10px; line-height: 1.45; }
 .clan-member-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding-bottom: 7px; border-bottom: 1px solid var(--line-soft); color: var(--faint); font-size: 10px; }
+.clan-member-toolbar strong { color: var(--text); font-size: 11px; }
 .clan-member-list { display: grid; gap: 3px; margin-top: 4px; }
 .clan-member-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(105px, 0.7fr); align-items: center; gap: 9px; width: 100%; padding: 8px 6px; border: 0; border-bottom: 1px solid var(--line-soft); color: var(--text); text-align: left; background: transparent; cursor: pointer; transition: background 140ms ease, transform 140ms ease; }
 .clan-member-row:hover, .clan-member-row:focus-visible { background: rgba(216, 185, 109, 0.065); transform: translateX(3px); outline: none; }

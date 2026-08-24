@@ -33,7 +33,6 @@ const state = {
     clanOpen: false,
     clanSort: 'level',
     clanSearch: '',
-    clanMemberFilter: 'bots',
     clanDirectory: null,
     selectedClanId: null,
     clanDetail: null,
@@ -638,7 +637,7 @@ function renderClans() {
         <button class="clan-row${Number(clan.id) === Number(state.selectedClanId) ? ' is-selected' : ''}" type="button" data-clan-id="${escapeHtml(clan.id)}">
             <span class="clan-level">L${number(clan.level, 0)}</span>
             <span class="clan-identity">
-                <strong>${clanCrestMarkup(clan)}${text(clan.name, 'Unnamed clan')}</strong>
+                <strong class="clan-name-line">${clanCrestMarkup(clan)}<span class="clan-name">${text(clan.name, 'Unnamed clan')}</span></strong>
                 <span>${text(clan.leaderName, 'Unknown leader')} · ${number(clan.botMembers)}/${number(clan.memberCount)} bots</span>
             </span>
             <span class="clan-row-side"><strong>${number(clan.memberCount)}</strong><span>members</span></span>
@@ -672,10 +671,7 @@ function renderClanDetail() {
     }
     const clan = detail.clan;
     const goal = clanGoalSummary(clan.goal);
-    const members = (detail.members || []).filter((member) => {
-        if (state.clanMemberFilter === 'all') return true;
-        return member.isBot;
-    });
+    const members = detail.members || [];
     const warehouse = clan.warehouse || {};
     const operation = detail.operation;
     const events = (detail.events || []).slice(0, 6);
@@ -706,10 +702,8 @@ function renderClanDetail() {
             </section>
         </div>
         <div class="clan-member-toolbar">
-            <div class="ranking-tabs" id="clanMemberTabs" role="group" aria-label="Clan member filter">
-                ${['bots', 'all'].map((filter) => `<button class="ranking-tab${state.clanMemberFilter === filter ? ' is-active' : ''}" type="button" aria-pressed="${state.clanMemberFilter === filter}" data-clan-member-filter="${filter}">${filter === 'bots' ? 'Bots' : 'All members'}</button>`).join('')}
-            </div>
-            <span>${number(members.length)} shown</span>
+            <strong>Members</strong>
+            <span>${number(members.length)} total</span>
         </div>
         <div class="clan-member-list" role="list">
             ${members.length ? members.map((member) => `
@@ -717,7 +711,7 @@ function renderClanDetail() {
                     <span class="clan-member-main"><strong>${text(member.isLeader ? `♛ ${member.name}` : member.name)}</strong><span>${text(member.className, 'Unknown class')} · ${text(roleLabel(member.role || 'member'))} · Lv ${number(member.level, '?')}</span></span>
                     <span class="clan-member-state"><strong>${text(activityLabel(member.activity || member.phase), member.phase)}</strong><span>${text(member.region, 'Unknown location')}</span></span>
                 </button>
-            `).join('') : '<div class="list-empty">No members match this view.</div>'}
+            `).join('') : '<div class="list-empty">No clan members found.</div>'}
         </div>
         <div class="clan-events">
             <div class="clan-block-title"><span>Recent clan events</span><b>${number(events.length)} shown</b></div>
@@ -763,22 +757,31 @@ async function loadClanDirectory({ force = false, selectFirst = false } = {}) {
         const selectedExists = clanItems().some((clan) => Number(clan.id) === Number(state.selectedClanId));
         if ((selectFirst || !selectedExists) && clanItems().length) state.selectedClanId = Number(clanItems()[0].id);
         renderClans();
-        if (state.clanOpen && state.selectedClanId && (!state.clanDetail || selectFirst)) loadClanDetail(state.selectedClanId);
+        const detailClanId = Number(state.clanDetail?.clan?.id || 0);
+        if (state.clanOpen && state.selectedClanId && (selectFirst || detailClanId !== Number(state.selectedClanId))) loadClanDetail(state.selectedClanId);
     } catch (error) {
         state.clanError = error.message;
         renderClans();
     }
 }
 
-function openClans() {
+function openClans(clanId = null) {
     if (state.rankingOpen) closeRankings();
     if (state.raidBossOpen) closeRaidBosses();
+    const requestedClanId = Number(clanId) || null;
+    if (requestedClanId) {
+        state.selectedClanId = requestedClanId;
+        state.clanSearch = '';
+        state.clanDetail = null;
+        state.clanError = null;
+        if (els.clanSearch) els.clanSearch.value = '';
+    }
     state.clanOpen = true;
     state.clanFocusReturn = document.activeElement;
     els.clansModal.hidden = false;
     document.body.classList.add('rankings-open');
     renderClans();
-    loadClanDirectory({ force: true, selectFirst: true });
+    loadClanDirectory({ force: true, selectFirst: !requestedClanId });
     requestAnimationFrame(() => els.closeClans.focus());
 }
 
@@ -1487,6 +1490,13 @@ function partyLeaderLink(actor) {
     return `${text(roleLabel(party.role || actor.role || 'member'))} · leader ${leaderValue}`;
 }
 
+function actorClanLink(actor) {
+    const clanId = Number(actor.clan?.id || 0);
+    if (!clanId) return '—';
+    const clanName = actor.clan?.name || `Clan #${clanId}`;
+    return `<a class="inspector-link" href="#clan-${escapeHtml(clanId)}" data-actor-clan-id="${escapeHtml(clanId)}">${text(clanName)}</a>`;
+}
+
 function statCell(label, value) {
     return `<div class="stat-cell"><span>${text(label)}</span><strong>${number(value)}</strong></div>`;
 }
@@ -1792,6 +1802,7 @@ function renderInspector() {
     const family = actorClassName(actor);
     const location = actor.loc ? `${Math.round(actor.loc.locX)}, ${Math.round(actor.loc.locY)}, ${Math.round(actor.loc.locZ || 0)}` : 'unknown';
     const party = partyLeaderLink(actor);
+    const clan = actorClanLink(actor);
     const freshness = actor.updatedAt ? formatRelative(actor.updatedAt) : 'live';
     els.inspectorFreshness.textContent = state.detailError ? 'stale' : freshness;
     const detailWarning = state.detailError ? `<div class="detail-error">
@@ -1814,7 +1825,7 @@ function renderInspector() {
             <div><span>Activity</span><strong>${text(activityLabel(actor.mode))}</strong></div>
             <div><span>Race</span><strong>${text(Leaderboards.raceName(actor))}</strong></div>
             <div><span>Region</span><strong>${text(readablePlace(actor.region || actor.home?.region))}</strong></div>
-            <div><span>Spot</span><strong>${text(readablePlace(actor.spot?.name || actor.spot?.id))}</strong></div>
+            <div><span>Clan</span><strong>${clan}</strong></div>
             <div><span>Party</span><strong>${party}</strong></div>
             <div><span>Position</span><strong>${text(location)}</strong></div>
             <div><span>Blockers</span><strong>${text(actor.blockers?.length ? actor.blockers.map(activityLabel).join(' · ') : 'None')}</strong></div>
@@ -1983,7 +1994,7 @@ els.openRankings?.addEventListener('click', openRankings);
 els.closeRankings?.addEventListener('click', closeRankings);
 els.openRaidBosses?.addEventListener('click', openRaidBosses);
 els.closeRaidBosses?.addEventListener('click', closeRaidBosses);
-els.openClans?.addEventListener('click', openClans);
+els.openClans?.addEventListener('click', () => openClans());
 els.closeClans?.addEventListener('click', closeClans);
 
 els.rankingsModal?.addEventListener('click', (event) => {
@@ -2010,12 +2021,6 @@ els.clansModal?.addEventListener('click', (event) => {
     if (member) {
         selectActor(member.dataset.clanMemberId, member.dataset.clanMemberKind || 'bot', true);
         closeClans();
-        return;
-    }
-    const memberFilter = event.target.closest('[data-clan-member-filter]');
-    if (memberFilter) {
-        state.clanMemberFilter = memberFilter.dataset.clanMemberFilter || 'bots';
-        renderClanDetail();
         return;
     }
     const clan = event.target.closest('[data-clan-id]');
@@ -2109,6 +2114,12 @@ els.fitButton.addEventListener('click', () => {
 });
 
 document.addEventListener('click', (event) => {
+    const clanLink = event.target.closest('[data-actor-clan-id]');
+    if (clanLink) {
+        event.preventDefault();
+        openClans(clanLink.dataset.actorClanId);
+        return;
+    }
     const leaderLink = event.target.closest('[data-party-leader-id]');
     if (leaderLink) {
         event.preventDefault();

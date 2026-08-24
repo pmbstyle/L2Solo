@@ -9,6 +9,7 @@ const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const ClanService = invoke('GameServer/Clan/ClanService');
 const ClanSimulationConfig = invoke('GameServer/Clan/ClanSimulationConfig');
 const Database = invoke('Database');
 const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
@@ -903,12 +904,112 @@ async function clanCrest(clanId) {
     `, [id], { read: true }], 'observer:clan-crest');
     const row = rows[0];
     if (!row || Number(row.crestId || 0) <= 0 || !row.data) return null;
+    const data = browserClanCrestData(row.data);
     return {
         clanId: clanNumber(row.clanId),
         id: clanNumber(row.id),
         kind: row.kind || 'pledge',
-        data: Buffer.from(row.data)
+        data
     };
+}
+
+function dxt1Color(value) {
+    const red = (value >> 11) & 0x1f;
+    const green = (value >> 5) & 0x3f;
+    const blue = value & 0x1f;
+    return {
+        r: (red << 3) | (red >> 2),
+        g: (green << 2) | (green >> 4),
+        b: (blue << 3) | (blue >> 2)
+    };
+}
+
+function decodeDxt1Dds(source) {
+    if (source.length < 136 || source.toString('ascii', 0, 4) !== 'DDS ' || source.toString('ascii', 84, 88) !== 'DXT1') return null;
+    const width = source.readUInt32LE(16);
+    const height = source.readUInt32LE(12);
+    const blocksWide = Math.ceil(width / 4);
+    const blocksHigh = Math.ceil(height / 4);
+    if (width <= 0 || height <= 0 || width > 128 || height > 128 || source.length < 128 + (blocksWide * blocksHigh * 8)) return null;
+    const pixels = Array.from({ length: width * height }, () => ({ r: 0, g: 0, b: 0, a: 0 }));
+    let offset = 128;
+    for (let blockY = 0; blockY < blocksHigh; blockY += 1) {
+        for (let blockX = 0; blockX < blocksWide; blockX += 1) {
+            const firstValue = source.readUInt16LE(offset);
+            const secondValue = source.readUInt16LE(offset + 2);
+            const first = { ...dxt1Color(firstValue), a: 255 };
+            const second = { ...dxt1Color(secondValue), a: 255 };
+            const palette = [first, second];
+            if (firstValue > secondValue) {
+                palette.push(
+                    { r: Math.round(((2 * first.r) + second.r) / 3), g: Math.round(((2 * first.g) + second.g) / 3), b: Math.round(((2 * first.b) + second.b) / 3), a: 255 },
+                    { r: Math.round((first.r + (2 * second.r)) / 3), g: Math.round((first.g + (2 * second.g)) / 3), b: Math.round((first.b + (2 * second.b)) / 3), a: 255 }
+                );
+            } else {
+                palette.push(
+                    { r: Math.round((first.r + second.r) / 2), g: Math.round((first.g + second.g) / 2), b: Math.round((first.b + second.b) / 2), a: 255 },
+                    { r: 0, g: 0, b: 0, a: 0 }
+                );
+            }
+            const indices = source.readUInt32LE(offset + 4);
+            for (let pixel = 0; pixel < 16; pixel += 1) {
+                const x = (blockX * 4) + (pixel % 4);
+                const y = (blockY * 4) + Math.floor(pixel / 4);
+                if (x < width && y < height) pixels[(y * width) + x] = palette[(indices >>> (pixel * 2)) & 0x03];
+            }
+            offset += 8;
+        }
+    }
+    return { width, height, pixels };
+}
+
+function bmp24(pixels, width, height, sourceY = 0) {
+    const rowStride = Math.ceil((width * 3) / 4) * 4;
+    const pixelBytes = rowStride * height;
+    const result = Buffer.alloc(54 + pixelBytes);
+    result.write('BM', 0, 'ascii');
+    result.writeUInt32LE(result.length, 2);
+    result.writeUInt32LE(54, 10);
+    result.writeUInt32LE(40, 14);
+    result.writeInt32LE(width, 18);
+    result.writeInt32LE(-height, 22);
+    result.writeUInt16LE(1, 26);
+    result.writeUInt16LE(24, 28);
+    result.writeUInt32LE(pixelBytes, 34);
+    for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+            const color = pixels[((sourceY + y) * width) + x];
+            const target = 54 + (y * rowStride) + (x * 3);
+            result[target] = color.a ? color.b : 0;
+            result[target + 1] = color.a ? color.g : 0;
+            result[target + 2] = color.a ? color.r : 0;
+        }
+    }
+    return result;
+}
+
+function crestRowScore(decoded, startY, height) {
+    let score = 0;
+    for (let y = startY; y < startY + height; y += 1) {
+        for (let x = 0; x < decoded.width; x += 1) {
+            const color = decoded.pixels[(y * decoded.width) + x];
+            if (color.a) score += Math.max(color.r, color.g, color.b);
+        }
+    }
+    return score;
+}
+
+function browserClanCrestData(data) {
+    const source = Buffer.from(data || []);
+    if (source.toString('ascii', 0, 2) === 'BM') return source;
+    const decoded = decodeDxt1Dds(source);
+    if (!decoded) return source;
+    const displayHeight = decoded.width === 16 && decoded.height === 16 ? 12 : decoded.height;
+    const bottomOffset = decoded.height - displayHeight;
+    const sourceY = bottomOffset > 0 && crestRowScore(decoded, bottomOffset, displayHeight) > crestRowScore(decoded, 0, displayHeight)
+        ? bottomOffset
+        : 0;
+    return bmp24(decoded.pixels, decoded.width, displayHeight, sourceY);
 }
 
 function itemIconCategory(kind) {
@@ -1333,6 +1434,21 @@ function compactColdPlan(state) {
     };
 }
 
+function compactActorClan(subject) {
+    const characterId = Number(subject?.fetchId?.() || subject?.characterId || 0);
+    const directClan = subject?.fetchClan?.() || null;
+    const memberClan = characterId > 0
+        ? ClanService.all().find((clan) => clan.members.some((member) => Number(member.id) === characterId))
+        : null;
+    const clanId = Number(directClan?.id || memberClan?.id || subject?.fetchClanId?.() || subject?.clanId || subject?.stats?.clanId || 0);
+    if (clanId <= 0) return null;
+    const clan = directClan || memberClan || ClanService.findById(clanId);
+    return {
+        id: clanId,
+        name: clan?.name || null
+    };
+}
+
 function compactHotDetail(status, session) {
     const context = BotBrainContext.compactStatus(session, status, '', {
         includeInventory: false,
@@ -1342,6 +1458,7 @@ function compactHotDetail(status, session) {
     return {
         ...compactHotBot(status, pkIds, session),
         kind: 'bot',
+        clan: compactActorClan(session?.actor),
         vitals: fullVitals(status.vitals),
         movement: status.movement || null,
         nearby: status.nearby || null,
@@ -1369,6 +1486,7 @@ function compactPlayerDetail(session) {
     return {
         ...compact,
         kind: 'player',
+        clan: compactActorClan(actor),
         phase: 'player',
         mode: compact.online ? 'online' : 'offline',
         intent: compact.online ? 'online' : 'offline',
@@ -1411,6 +1529,7 @@ function compactColdDetail(state, leaderState = null) {
     return {
         ...compact,
         kind: 'bot',
+        clan: compactActorClan(state),
         classId,
         className: className(classId),
         phase: state.phase || 'cold',
@@ -1792,6 +1911,8 @@ const WorldObserverServer = {
     compactClanGoal,
     compactClanOverview,
     compactClanMember,
+    compactActorClan,
+    browserClanCrestData,
     clanCrest,
     clanSnapshot,
     clanDetail,
