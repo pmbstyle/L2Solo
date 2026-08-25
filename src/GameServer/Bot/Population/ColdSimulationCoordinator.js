@@ -368,7 +368,9 @@ class ColdSimulationCoordinator {
         return {
             maxBatch: Math.max(1, Math.min(64, Number(Config.coldWorkerBatchSize) || 64)),
             maxInFlight: this.desiredWorkerPressure().maxInFlight,
-            maxAtomicPartySize: Math.max(2, Number(Config.partyMaxSize) || 5),
+            // Normal ambient parties keep their configured cap, while a clan
+            // equipment operation may use the native C4 party limit of nine.
+            maxAtomicPartySize: Math.max(9, Number(Config.partyMaxSize) || 5),
             claimAckTimeoutMs: 5000,
             flushTargetMs: Math.max(100, Number(Config.coldWorkerOrdinaryFlushMs) || 2000),
             flushHardMs: Math.max(1000, Number(Config.coldWorkerOrdinaryHardMaxMs) || 5000),

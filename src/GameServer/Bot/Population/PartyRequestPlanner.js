@@ -93,10 +93,19 @@ function partyRequestForPlan(state, plan, timestamp = Date.now()) {
 }
 
 function partyObjectiveForState(state) {
-    if (state?.stats?.partyRequest) {
-        return state.stats.partyRequest.status === 'open' ? state.stats.partyRequest : null;
+    const request = state?.stats?.partyRequest;
+    const clanObjective = clanPartyObjectiveForState(state);
+    if (clanObjective?.status === 'open') {
+        if (request?.status === 'open'
+            && String(request.clanGoalKey || '') === String(clanObjective.clanGoalKey || '')) {
+            return { ...request, ...clanObjective, requestedAt: request.requestedAt || clanObjective.requestedAt };
+        }
+        return clanObjective;
     }
-    return partyObjectiveForPlan(state?.stats?.equipmentPlan) || clanPartyObjectiveForState(state);
+    if (request) {
+        return request.status === 'open' ? request : null;
+    }
+    return partyObjectiveForPlan(state?.stats?.equipmentPlan) || clanObjective;
 }
 
 module.exports = {

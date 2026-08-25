@@ -246,6 +246,29 @@ function reconcileEquipmentInventory(state = {}) {
     });
 }
 
+function preserveClanOwnedEquipmentState(incoming = {}, reason = '', current = null) {
+    const authoritative = current || cache.get(Number(incoming.characterId)) || null;
+    const currentPlan = authoritative?.stats?.equipmentPlan;
+    if (!GearAcquisitionPlanner.clanGoalPlanLocked(authoritative || {}, currentPlan)) return incoming;
+    if (['clan_equipment_goal', 'clan_equipment_beneficiary_rotated'].includes(String(reason))) return incoming;
+    if (equipmentTargetFulfilled(authoritative.stats || {}, incoming.inventory || {})) return incoming;
+
+    const currentGoalKey = String(currentPlan?.clanGoal?.goalKey || '');
+    const incomingGoalKey = String(incoming?.stats?.equipmentPlan?.clanGoal?.goalKey || '');
+    if (currentGoalKey && incomingGoalKey === currentGoalKey) return incoming;
+
+    const stats = {
+        ...(incoming.stats || {}),
+        equipmentPlan: currentPlan
+    };
+    const currentObjective = authoritative.stats?.clanPartyObjective;
+    if (!stats.clanPartyObjective
+        && String(currentObjective?.clanGoalKey || '') === currentGoalKey) {
+        stats.clanPartyObjective = currentObjective;
+    }
+    return { ...incoming, stats };
+}
+
 function equipmentCompletionSignal(state = {}) {
     const clanGoal = state.stats?.equipmentPlan?.clanGoal;
     if (!clanGoal?.clanId || !clanGoal?.goalKey) return null;
@@ -2404,6 +2427,7 @@ const BotLifeState = {
                 json_extract(statsJson, '$.role') AS role,
                 json_extract(statsJson, '$.generatedIndex') AS generatedIndex,
                 json_extract(statsJson, '$.partyRequest') AS partyRequestJson,
+                json_extract(statsJson, '$.clanPartyObjective') AS clanPartyObjectiveJson,
                 json_extract(statsJson, '$.equipmentPlan') AS equipmentPlanJson,
                 json_extract(statsJson, '$.partyHistory') AS partyHistoryJson
             FROM ${TABLE} INDEXED BY bot_life_state_party_candidate_projection
@@ -2422,6 +2446,7 @@ const BotLifeState = {
         ], 'bot-life:party-candidate-projection').then((rows) => rows.map((row) => {
             const role = row.role || null;
             const partyRequest = parseJson(row.partyRequestJson, null);
+            const clanPartyObjective = parseJson(row.clanPartyObjectiveJson, null);
             const equipmentPlan = parseJson(row.equipmentPlanJson, null);
             const partyHistory = parseJson(row.partyHistoryJson, null);
             return {
@@ -2441,6 +2466,7 @@ const BotLifeState = {
                         ? { generatedIndex: row.generatedIndex }
                         : {}),
                     ...(partyRequest ? { partyRequest } : {}),
+                    ...(clanPartyObjective ? { clanPartyObjective } : {}),
                     ...(equipmentPlan ? { equipmentPlan } : {}),
                     ...(partyHistory ? { partyHistory } : {})
                 },
@@ -3014,22 +3040,23 @@ const BotLifeState = {
             },
             updatedAt: timestamp
         };
-        const row = rowFromState(nextState);
-        const characterId = row.characterId;
+        const characterId = Number(nextState.characterId);
         const previous = pendingWrites.get(characterId) || Promise.resolve();
         const ready = initialized ? Promise.resolve(true) : this.init();
         const next = previous.then(() => ready).then((isReady) => {
             if (!isReady) {
                 throw new Error('state table unavailable');
             }
-            return save(row);
-        }).then(() => Database.updateCharacterLocation(row.characterId, {
+            const protectedState = preserveClanOwnedEquipmentState(nextState, reason, cache.get(characterId));
+            const row = rowFromState(protectedState);
+            return save(row).then(() => row);
+        }).then((row) => Database.updateCharacterLocation(row.characterId, {
             locX: row.locX,
             locY: row.locY,
             locZ: row.locZ
-        })).then(() => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp))
-            .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
-            .then(() => {
+        }).then(() => row)).then((row) => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp).then(() => row))
+            .then((row) => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp).then(() => row))
+            .then((row) => {
                 const snapshot = normalize(row);
                 cache.set(characterId, snapshot);
                 notifyColdSnapshot(snapshot, reason);
@@ -3037,7 +3064,7 @@ const BotLifeState = {
             })
             .catch((err) => {
                 if (err?.code !== 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT') {
-                    utils.infoWarn('BotLife', 'failed to upsert %s: %s', row.characterName, err.message);
+                    utils.infoWarn('BotLife', 'failed to upsert %s: %s', nextState.name || characterId, err.message);
                 }
                 return null;
             });
@@ -3215,6 +3242,7 @@ BotLifeState.canonicalizeAreaState = canonicalizeAreaState;
 BotLifeState.inventorySummaryFromItems = inventorySummaryFromItems;
 BotLifeState.marketPurchaseBlocker = marketPurchaseBlocker;
 BotLifeState.normalizeInventoryStackability = normalizeInventoryStackability;
+BotLifeState.preserveClanOwnedEquipmentState = preserveClanOwnedEquipmentState;
 BotLifeState.reconcileEquipmentInventory = reconcileEquipmentInventory;
 BotLifeState.reconcileFulfilledEquipmentPlan = reconcileFulfilledEquipmentPlan;
 BotLifeState.reconcileIncompatibleShieldState = reconcileIncompatibleShieldState;

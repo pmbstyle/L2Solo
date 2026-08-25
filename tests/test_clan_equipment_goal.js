@@ -105,6 +105,9 @@ async function main() {
         assert.strictEqual(Number(firstGoal.target.memberId), 4700001);
         assert.strictEqual(firstGoal.plan.kind, 'farm');
         assert.strictEqual(firstGoal.target.itemId, 4709101);
+        assert.deepStrictEqual(firstGoal.assignedMemberIds.sort((a, b) => a - b),
+            [4700001, 4700002, 4700003, 4700004, 4700005],
+            'an L3 equipment goal must reserve one cohesive clan roster');
 
         const [targetState] = await Database.execute([
             'SELECT statsJson FROM bot_life_state WHERE characterId = ?',
@@ -119,6 +122,10 @@ async function main() {
         ]);
         const helperStats = JSON.parse(helperState.statsJson);
         assert.strictEqual(Number(helperStats.clanPartyObjective.clanId), Number(created.clanId));
+        assert.strictEqual(helperStats.clanPartyObjective.priority, 'required');
+        assert.strictEqual(helperStats.clanPartyObjective.clanOperation, 'equipment');
+        assert.strictEqual(helperStats.clanPartyObjective.maxPartySize, 5);
+        assert.strictEqual(helperStats.clanPartyObjective.minPartySize, 5);
         assert.strictEqual(
             PartyRequestPlanner.partyObjectiveForState({ stats: helperStats }).clanGoalKey,
             firstGoal.goalKey,
@@ -168,6 +175,11 @@ async function main() {
         const thirdGoal = JSON.parse(thirdRow.stateJson).goal;
         assert.strictEqual(thirdGoal.type, 'equipment');
         assert.notStrictEqual(Number(thirdGoal.target.memberId), Number(firstGoal.target.memberId));
+        const [followUp] = await Database.execute([`SELECT status, availableAt
+            FROM clan_actions WHERE clanId = ? AND actionType = 'goal_plan' AND status = 'pending'
+            ORDER BY id DESC LIMIT 1`, [created.clanId]]);
+        assert(followUp, 'an L3 equipment goal must keep a bounded periodic priority review queued');
+        assert(Number(followUp.availableAt) >= Date.now(), 'an unchanged equipment review must use the retry cadence');
 
         console.log('Clan equipment goal checks passed');
     } finally {

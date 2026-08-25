@@ -30,6 +30,9 @@ const clanPlan = {
 async function main() {
     const originalPlanFor = GearAcquisitionPlanner.planFor;
     const originalStatesForParties = LifeState.statesForParties;
+    const originalReleaseDissolvedPartyMembers = LifeState.releaseDissolvedPartyMembers;
+    const originalActiveParties = PartyState.active;
+    const originalSetPartyStatus = PartyState.setStatus;
     const originalCreateOrUpdate = PartyState.createOrUpdate;
     const originalSpotEnsure = SpotProfiles.ensure;
 
@@ -164,10 +167,90 @@ async function main() {
         assert.strictEqual(selected.member.characterId, 1002,
             'a blocked previous beneficiary must yield to another member with an actionable plan');
 
+        const currentPlan = {
+            ...clanPlan,
+            grade: 'c',
+            target: { selfId: 9301, name: 'Current Upgrade', slot: 7 },
+            clanGoal: { ...clanPlan.clanGoal, beneficiaryId: 1003, goalKey: 'clan-equipment:77:1003:9301:7' }
+        };
+        const weakHealerPlan = {
+            ...clanPlan,
+            grade: 'b',
+            target: { selfId: 9302, name: 'Healer Upgrade', slot: 10 },
+            clanGoal: undefined
+        };
+        const prioritySelection = ClanEquipmentPolicy.selectTargetMember([
+            {
+                characterId: 1003,
+                level: 45,
+                phase: 'cold',
+                stats: { role: 'dps', equipment: [{ selfId: 1, slot: 7, rank: 'd' }] },
+                inventory: {}
+            },
+            {
+                characterId: 1004,
+                level: 45,
+                phase: 'cold',
+                stats: { role: 'healer', equipment: [] },
+                inventory: {}
+            }
+        ], new Map([
+            [1003, currentPlan],
+            [1004, weakHealerPlan]
+        ]), {
+            status: 'executing',
+            target: { memberId: 1003, itemId: 9301, slot: 7 }
+        });
+        assert.strictEqual(prioritySelection.member.characterId, 1004,
+            'a materially weaker healer must take over from a lower-priority beneficiary before full dressing');
+        assert.strictEqual(prioritySelection.rotated, true);
+
+        const staleLifecycleState = {
+            characterId: 1001,
+            phase: 'cold',
+            inventory: {},
+            stats: {
+                equipmentPlan: {
+                    ...clanPlan,
+                    target: { selfId: 9202, name: 'Stale Personal Target', slot: 7 },
+                    clanGoal: undefined
+                }
+            }
+        };
+        const protectedState = LifeState.preserveClanOwnedEquipmentState(staleLifecycleState, 'market_visit_complete', {
+            ...staleLifecycleState,
+            stats: { equipmentPlan: clanPlan, clanPartyObjective: { clanGoalKey: clanPlan.clanGoal.goalKey } }
+        });
+        assert.strictEqual(protectedState.stats.equipmentPlan.target.selfId, clanPlan.target.selfId,
+            'a late lifecycle callback must not overwrite a clan-owned equipment plan');
+        assert.strictEqual(protectedState.stats.equipmentPlan.clanGoal.goalKey, clanPlan.clanGoal.goalKey);
+
+        const dissolved = [];
+        PartyState.active = () => [
+            { partyId: 'same-clean', memberIds: [1001, 1002], stats: { objective: { clanGoalKey: clanPlan.clanGoal.goalKey } } },
+            { partyId: 'same-mixed', memberIds: [1001, 9999], stats: { objective: { clanGoalKey: clanPlan.clanGoal.goalKey } } },
+            { partyId: 'wrong-goal', memberIds: [1002, 1003], stats: { objective: { clanGoalKey: 'clan-equipment:78:1002:9202:7' } } }
+        ];
+        PartyState.setStatus = async (partyId, status) => {
+            dissolved.push({ partyId, status });
+            return { partyId, status };
+        };
+        LifeState.releaseDissolvedPartyMembers = async () => 2;
+        const reformed = await ClanEquipmentService.releaseConflictingRosterParties(
+            [1001, 1002, 1003],
+            { goalKey: clanPlan.clanGoal.goalKey }
+        );
+        assert.deepStrictEqual(dissolved.map((entry) => entry.partyId), ['same-mixed', 'wrong-goal']);
+        assert.deepStrictEqual(reformed, { parties: 2, releasedMembers: 4 },
+            'a clan equipment review must dissolve mixed or foreign parties before rebuilding its roster');
+
         console.log('Clan equipment plan lock checks passed');
     } finally {
         GearAcquisitionPlanner.planFor = originalPlanFor;
         LifeState.statesForParties = originalStatesForParties;
+        LifeState.releaseDissolvedPartyMembers = originalReleaseDissolvedPartyMembers;
+        PartyState.active = originalActiveParties;
+        PartyState.setStatus = originalSetPartyStatus;
         PartyState.createOrUpdate = originalCreateOrUpdate;
         SpotProfiles.ensure = originalSpotEnsure;
     }
