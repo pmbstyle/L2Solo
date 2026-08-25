@@ -285,6 +285,17 @@ async function resolveClan(clan, options = {}) {
         if (advanced.code !== 'level_already_advanced') {
             return { ok: false, clanId: clan.id, level: 2, changed: false, goal: previous, advanced, context, reason: advanced.code };
         }
+        return {
+            ok: true,
+            clanId: clan.id,
+            level: number(advanced.level, 3),
+            changed: false,
+            skipped: true,
+            goal: previous,
+            advanced,
+            context,
+            reason: advanced.code
+        };
     }
     let goal = GoalPolicy.buildGoal(clan, context, previous, {
         timestamp: Date.now(),

@@ -967,7 +967,11 @@ class ColdSimulationCoordinator {
     async afterCommit(entry) {
         const state = LifeState.cachedState(entry.nextState.characterId) || entry.nextState;
         await LifeEvents.recordMany(state.characterId, entry.proposal.result?.events || []);
-        await LifeState.enqueueEquipmentGoalAdvanceForState(state);
+        await LifeState.enqueueEquipmentGoalAdvanceForState(state)
+            .catch((error) => {
+                utils.infoWarn('BotGoals', 'equipment goal advance enqueue failed for %s: %s',
+                    state.characterId, error?.message || error);
+            });
         if (entry.proposal.partyResolution?.party) {
             const party = entry.proposal.partyResolution.party;
             await BackgroundPartyState.createOrUpdate(party);

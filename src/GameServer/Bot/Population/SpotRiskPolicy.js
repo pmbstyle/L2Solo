@@ -74,9 +74,10 @@ function withBackoff(state = {}, backoff = null, timestamp = Date.now()) {
     const continuing = prior
         && Number(prior.until || 0) > timestamp
         && Number(prior.startedAt || 0) === Number(backoff.startedAt || 0);
+    const priorAttempts = prior ? Math.max(1, Number(prior.attempts || 1)) : 0;
     const attempts = continuing
-        ? Math.max(1, Number(prior.attempts || 1))
-        : Math.max(1, Number(prior?.attempts || 0) + 1);
+        ? priorAttempts
+        : Math.max(1, priorAttempts + 1);
     const escalationMs = Math.min(MAX_BACKOFF_MS, BACKOFF_MS * (2 ** Math.min(3, attempts - 1)));
     const retained = activeBackoffs(state, timestamp)
         .filter((entry) => entry.spotId !== spotId);

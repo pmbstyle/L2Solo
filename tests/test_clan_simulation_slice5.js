@@ -231,6 +231,33 @@ async function main() {
         assert.strictEqual(terminal.started, 0);
         assert.strictEqual(terminal.resolved, 0);
 
+        const timestamp = Date.now();
+        await Database.execute([`INSERT INTO clan_warehouse_items
+            (clanId, selfId, name, amount, createdAt, updatedAt)
+            VALUES (?, ?, 'Blood Mark', 1, ?, ?)`, [created.clanId, Config.bloodMarkItemId, timestamp, timestamp]]);
+        const currentProjection = await ClanGoalService.clanProjectionById(created.clanId);
+        const staleProjection = {
+            ...currentProjection,
+            level: 2,
+            state: { ...currentProjection.state, level: 2, goal: null }
+        };
+        const goalEventsBefore = await Database.fetchClanGoalEvents(created.clanId, 200);
+        const staleResolve = await ClanGoalService.resolveClan(staleProjection);
+        assert.strictEqual(staleResolve.ok, true);
+        assert.strictEqual(staleResolve.skipped, true,
+            'an already-advanced clan must skip planning from its stale level-2 projection');
+        assert.strictEqual(staleResolve.reason, 'level_already_advanced');
+        assert.strictEqual(Number(staleResolve.level), 3);
+        const [stateAfterStaleResolve] = await Database.execute([
+            'SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?',
+            [created.clanId]
+        ]);
+        assert.strictEqual(JSON.parse(stateAfterStaleResolve.stateJson).goal, null,
+            'a stale level-2 projection must not persist a Blood Mark goal onto a level-3 clan');
+        const goalEventsAfter = await Database.fetchClanGoalEvents(created.clanId, 200);
+        assert.strictEqual(goalEventsAfter.length, goalEventsBefore.length,
+            'skipping an already-advanced clan must not emit a misleading goal event');
+
         console.log('Clan simulation Slice 5 checks passed');
     } finally {
         await Database.close();

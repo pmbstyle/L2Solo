@@ -31,6 +31,8 @@ const NPC_GEAR_MAX_RANK = 'd';
 let staticNpcItemIdsCache = null;
 let itemCatalogSource = null;
 let itemCatalogById = new Map();
+let npcCatalogSource = null;
+let npcCatalogById = new Map();
 
 function catalogItem(selfId) {
     const items = DataCache.items || [];
@@ -39,6 +41,15 @@ function catalogItem(selfId) {
         itemCatalogById = new Map(items.map((item) => [Number(item.selfId), item]));
     }
     return itemCatalogById.get(Number(selfId)) || null;
+}
+
+function catalogNpc(selfId) {
+    const npcs = DataCache.npcs || [];
+    if (npcCatalogSource !== npcs) {
+        npcCatalogSource = npcs;
+        npcCatalogById = new Map(npcs.map((npc) => [Number(npc.selfId), npc]));
+    }
+    return npcCatalogById.get(Number(selfId)) || null;
 }
 
 function isRealCatalogItem(item = {}) {
@@ -839,7 +850,7 @@ function clanGoalPlanLocked(state = {}, plan = state?.stats?.equipmentPlan) {
 }
 
 function isBotEligibleSourceNpcId(npcId) {
-    const npc = (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(npcId));
+    const npc = catalogNpc(npcId);
     return !!npc && BotHuntingTargetPolicy.canHunt(npc);
 }
 

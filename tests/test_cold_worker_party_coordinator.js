@@ -13,6 +13,7 @@ const Owner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const { ColdSimulationCoordinator } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
 const databasePath = path.join(process.cwd(), 'tmp', 'test-cold-worker-party-coordinator.sqlite');
+const originalEnqueueEquipmentGoalAdvanceForState = LifeState.enqueueEquipmentGoalAdvanceForState;
 
 fs.rmSync(databasePath, { force: true });
 options.default.Database.path = path.relative(process.cwd(), databasePath);
@@ -77,6 +78,9 @@ let coordinator = null;
     let mainCommands = 0;
     let partyGoalReconciles = 0;
     const partyResolvesBefore = Number(Metrics.counters.partyResolves || 0);
+    LifeState.enqueueEquipmentGoalAdvanceForState = async () => {
+        throw new Error('synthetic equipment goal wakeup failure');
+    };
     await coordinator.start({
         executeWorkerLifecycleCommand() { mainCommands += 1; },
         reconcileWorkerPartyGoals(party) {
@@ -124,6 +128,7 @@ let coordinator = null;
     console.error(error);
     process.exitCode = 1;
 }).finally(async () => {
+    LifeState.enqueueEquipmentGoalAdvanceForState = originalEnqueueEquipmentGoalAdvanceForState;
     if (coordinator?.started) await coordinator.stop().catch(() => null);
     Database.close();
 });

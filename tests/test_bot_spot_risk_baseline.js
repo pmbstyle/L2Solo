@@ -80,6 +80,28 @@ async function run() {
     assert(repeatedBackoff.stats.spotBackoffs[0].until
         >= firstBackoff.stats.spotBackoffs[0].until + 1 + SpotRiskPolicy.BACKOFF_MS * 2,
     'a repeated death loop must stay excluded longer than the first occurrence');
+    const legacyUntil = 2000 + SpotRiskPolicy.BACKOFF_MS;
+    const legacyRepeatedBackoff = SpotRiskPolicy.withBackoff({
+        ...state,
+        stats: {
+            ...state.stats,
+            spotBackoffs: [{
+                spotId: 'legacy_spot',
+                reason: 'death_pressure',
+                startedAt: 2000,
+                until: legacyUntil
+            }]
+        }
+    }, {
+        spotId: 'legacy_spot',
+        reason: 'death_pressure',
+        startedAt: legacyUntil + 1
+    }, legacyUntil + 1);
+    assert.strictEqual(legacyRepeatedBackoff.stats.spotBackoffs[0].attempts, 2,
+        'a persisted pre-attempts backoff must count as the first failed visit');
+    assert(legacyRepeatedBackoff.stats.spotBackoffs[0].until
+        >= legacyUntil + 1 + SpotRiskPolicy.BACKOFF_MS * 2,
+    'returning after a legacy backoff must use the second-attempt duration');
     console.log('Bot spot risk baseline checks passed');
 }
 
