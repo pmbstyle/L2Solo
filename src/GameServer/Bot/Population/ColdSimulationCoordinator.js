@@ -610,8 +610,11 @@ class ColdSimulationCoordinator {
     }
 
     async sendFullSnapshot() {
-        const states = LifeState.allStates(Math.max(1, Number(Config.maxPlayingPopulation) + 300 || 2000));
         await this.reconcileOrphanedBackgroundParties();
+        // Re-read after reconciliation: releasing an invalid party updates
+        // cached member ownership and membership. Sending the pre-repair
+        // array would immediately seed the worker with the stale party again.
+        const states = LifeState.allStates(Math.max(1, Number(Config.maxPlayingPopulation) + 300 || 2000));
         const compactPartyMemberIds = new Set(states.map((state) => Number(state.characterId || 0)).filter(Boolean));
         const index = this.contextIndex({ compactPartyMemberIds });
         const pageSize = this.snapshotQueue.pageSize;
@@ -651,24 +654,49 @@ class ColdSimulationCoordinator {
     }
 
     async reconcileOrphanedBackgroundParties() {
-        const orphaned = BackgroundPartyState.active().filter((party) => {
+        const allStates = typeof LifeState.allStates === 'function'
+            ? LifeState.allStates(Math.max(2000, Number(Config.maxPlayingPopulation || 0) + 300))
+            : [];
+        const invalid = BackgroundPartyState.active().map((party) => {
             const memberIds = (party.memberIds || []).map((id) => Number(id)).filter(Boolean);
-            return !memberIds.length || memberIds.every((id) => !LifeState.cachedState(id));
-        });
-        for (const party of orphaned) {
+            const states = memberIds.map((id) => LifeState.cachedState(id)).filter(Boolean);
+            const hasPartyField = (state) => (
+                Object.prototype.hasOwnProperty.call(state?.party || {}, 'partyId')
+                || Object.prototype.hasOwnProperty.call(state || {}, 'partyId')
+            );
+            const statePartyId = (state) => state?.party?.partyId ?? state?.partyId ?? null;
+            const attached = states.filter((state) => (
+                !hasPartyField(state) || String(statePartyId(state) || '') === String(party.partyId)
+            ));
+            const leaderAttached = attached.some((state) => Number(state.characterId) === Number(party.leaderId));
+            const declared = new Set(memberIds);
+            const extraAttached = allStates.some((state) => (
+                String(statePartyId(state) || '') === String(party.partyId)
+                && !declared.has(Number(state.characterId))
+            ));
+            const reason = !memberIds.length || !states.length
+                ? 'orphaned_dissolved_party'
+                : !leaderAttached || attached.length !== memberIds.length || extraAttached
+                    ? 'party_membership_mismatch'
+                    : null;
+            return reason ? { party, reason } : null;
+        }).filter(Boolean);
+        for (const entry of invalid) {
+            const { party, reason } = entry;
             const dissolved = await BackgroundPartyState.setStatus(party.partyId, 'dissolved');
             if (dissolved) {
                 const released = await LifeState.releaseDissolvedPartyMembers(
                     party.partyId,
-                    'orphaned_dissolved_party'
+                    reason
                 );
-                console.info('ColdWorker :: dissolved orphaned background party %s declaredMembers=%d releasedMembers=%d',
+                console.info('ColdWorker :: dissolved invalid background party %s reason=%s declaredMembers=%d releasedMembers=%d',
                     party.partyId,
+                    reason,
                     party.memberIds?.length || 0,
                     released);
             }
         }
-        return orphaned;
+        return invalid.map((entry) => entry.party);
     }
 
     startSnapshotJob(mode, work, pressure = {}) {
@@ -937,6 +965,7 @@ class ColdSimulationCoordinator {
     async afterCommit(entry) {
         const state = LifeState.cachedState(entry.nextState.characterId) || entry.nextState;
         await LifeEvents.recordMany(state.characterId, entry.proposal.result?.events || []);
+        await LifeState.enqueueEquipmentGoalAdvanceForState(state);
         if (entry.proposal.partyResolution?.party) {
             const party = entry.proposal.partyResolution.party;
             await BackgroundPartyState.createOrUpdate(party);

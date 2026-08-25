@@ -15,6 +15,9 @@ const ACTION_TYPES = Object.freeze({
     MARKET: 'market',
     PARTY: 'party'
 });
+// Bump when a deploy adds a recovery behavior that must revisit durable goals
+// whose previous bootstrap action already succeeded under older code.
+const BOOTSTRAP_RECOVERY_VERSION = 3;
 
 const metrics = {
     bootstraps: 0,
@@ -149,7 +152,7 @@ async function bootstrap() {
     for (const clan of clans) {
         const result = await Database.enqueueClanAction({
             clanId: clan.clanId,
-            actionKey: `clan:${Number(clan.clanId)}:recovery:${Number(clan.updatedAt) || 0}`,
+            actionKey: `clan:${Number(clan.clanId)}:recovery:v${BOOTSTRAP_RECOVERY_VERSION}:${Number(clan.updatedAt) || 0}`,
             actionType: ACTION_TYPES.PLAN,
             priority: 75,
             payload: { reason: 'runtime_bootstrap', clanId: Number(clan.clanId) }

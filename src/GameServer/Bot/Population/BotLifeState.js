@@ -273,6 +273,10 @@ function enqueueEquipmentGoalAdvance(signal) {
     });
 }
 
+function enqueueEquipmentGoalAdvanceForState(state = {}) {
+    return enqueueEquipmentGoalAdvance(equipmentCompletionSignal(state));
+}
+
 function hasEquippedTwoHandedWeapon(state = {}) {
     return Object.values(state.inventory || {}).some((item) => {
         const template = itemTemplate(item?.selfId);
@@ -1218,12 +1222,18 @@ function discardInvalidEquipmentPlans() {
         AND (
             COALESCE(CAST(json_extract(statsJson, '$.equipmentPlan.target.selfId') AS INTEGER), 0) <= 0
             OR TRIM(COALESCE(json_extract(statsJson, '$.equipmentPlan.target.name'), '')) IN ('', '0')
+            OR (
+                activity = 'hunting'
+                AND json_extract(statsJson, '$.equipmentPlan.status') = 'active'
+                AND json_extract(statsJson, '$.equipmentPlan.expectedKills') IS NOT NULL
+                AND COALESCE(CAST(json_extract(statsJson, '$.equipmentPlan.rateModelVersion') AS INTEGER), 0) < ?
+            )
         )`,
-        [timestamp]
+        [timestamp, GearAcquisitionPlanner.RATE_MODEL_VERSION]
     ]).then((result) => {
         const discarded = Number(result?.affectedRows || 0);
         if (discarded > 0) {
-            utils.infoWarn('BotLife', 'discarded %d invalid equipment plans on startup', discarded);
+            utils.infoWarn('BotLife', 'discarded %d invalid or stale equipment plans on startup', discarded);
         }
         return discarded;
     });
@@ -2323,8 +2333,11 @@ const BotLifeState = {
         return Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp)
             .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
             .then(() => syncInventorySummary(row.characterId, state.inventory || {}))
+            .then(() => enqueueEquipmentGoalAdvance(row.equipmentAdvance))
             .then(() => state);
     },
+
+    enqueueEquipmentGoalAdvanceForState,
 
     marketGoalCandidates(limit = 8, timestamp = now()) {
         if (!initialized) return Promise.resolve([]);
@@ -2397,6 +2410,11 @@ const BotLifeState = {
             WHERE phase = 'cold'
             AND simulationOwner = 'legacy_main'
             AND (partyId IS NULL OR partyId = '')
+            AND NOT EXISTS (
+                SELECT 1 FROM clan_operation_members reserved
+                WHERE reserved.characterId = bot_life_state.characterId
+                AND reserved.status = 'active'
+            )
             AND spotId IS NOT NULL
             AND activity IN ('hunting', 'resting', 'party_wait')`,
             [],
@@ -2449,7 +2467,12 @@ const BotLifeState = {
         const placeholders = ids.map(() => '?').join(', ');
         const ownerId = options.ownerId ? String(options.ownerId) : null;
         const ownerClause = ownerId ? 'AND simulationOwner = ?' : '';
-        const unassignedClause = options.unassigned ? "AND (partyId IS NULL OR partyId = '')" : '';
+        const unassignedClause = options.unassigned ? `AND (partyId IS NULL OR partyId = '')
+            AND NOT EXISTS (
+                SELECT 1 FROM clan_operation_members reserved
+                WHERE reserved.characterId = bot_life_state.characterId
+                AND reserved.status = 'active'
+            )` : '';
         const params = [...ids, ...(ownerId ? [ownerId] : [])];
 
         return Database.execute([

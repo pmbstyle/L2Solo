@@ -65,6 +65,7 @@ function selectTargetMember(members = [], plans = new Map(), previousGoal = null
     // This prevents a replan from jumping to another member while the current
     // member is still waiting for a drop, craft, or market purchase.
     if (previousMember && isAcquisitionPlan(previousPlan)
+        && previousPlan.status !== 'blocked'
         && previousGoal?.status !== 'completed'
         && !options.previousFulfilled) {
         return { member: previousMember, plan: previousPlan, preserved: true };

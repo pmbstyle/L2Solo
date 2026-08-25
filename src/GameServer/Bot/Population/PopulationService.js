@@ -3013,7 +3013,7 @@ const PopulationService = {
         if (!acquisitionPlan) {
             const reusablePartyRequest = !state.party?.partyId
                 && previousPlan?.next
-                && replanContext.planCurrent
+                && replanContext.routeCurrent
                 && !replanContext.failure
                 && state.stats?.partyRequest?.status === 'open'
                 && Number(state.stats.partyRequest.reviewAt || 0) > startedAt;

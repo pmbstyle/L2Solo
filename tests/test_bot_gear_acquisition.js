@@ -23,6 +23,38 @@ const ironSources = GearAcquisitionPlanner.sourceForItem(1869, [stoneGolemSpot])
 assert(ironSources.length > 0, 'known material drops must resolve to their real NPC source');
 assert.strictEqual(ironSources[0].spotId, stoneGolemSpot.id, 'source lookup must retain the matching farming spot');
 assert(ironSources[0].chance > 0, 'source lookup must retain an expected drop chance');
+const antharasSpot = {
+    id: 'antharas-nest',
+    avgLevel: 70,
+    npcEntries: [{ selfId: 12211, name: 'Antharas', count: 1 }]
+};
+assert.strictEqual(GearAcquisitionPlanner.isBotEligibleSourceNpcId(12211), false,
+    'legacy kind=Boss grandboss rows must never become bot equipment sources');
+assert.deepStrictEqual(GearAcquisitionPlanner.sourceForItem(91, [antharasSpot], { level: 60 }), [],
+    'grandboss-only drops must be absent from the bot source index');
+const protectedClanPlan = {
+    status: 'active',
+    grade: 'b',
+    strategy: 'direct_drop',
+    plannedForLevel: 60,
+    rateModelVersion: GearAcquisitionPlanner.RATE_MODEL_VERSION - 1,
+    target: { selfId: 91, name: 'Heavy War Axe', slot: 7 },
+    next: { npcId: 12211, spotId: antharasSpot.id, itemId: 91 },
+    clanGoal: { clanId: 1, goalKey: 'raid-source-regression' }
+};
+const protectedContext = GearAcquisitionPlanner.replanContextFor({
+    level: 60,
+    stats: { classId: 0, role: 'dps', equipmentPlan: protectedClanPlan },
+    inventory: {}
+}, protectedClanPlan, Date.now());
+assert.strictEqual(protectedContext.routeCurrent, false,
+    'persisted raid-source routes must be forced through the new source model');
+assert.strictEqual(protectedContext.invalidSource?.npcId, 12211);
+assert.strictEqual(GearAcquisitionPlanner.clanGoalPlanLocked({
+    level: 60,
+    stats: { equipmentPlan: protectedClanPlan },
+    inventory: {}
+}, protectedClanPlan), false, 'a clan goal lock must not preserve an illegal raid source');
 const handAxe = DataCache.items.find((item) => item.template?.name === 'Hand Axe');
 const boneStaff = DataCache.items.find((item) => item.template?.name === 'Bone Staff');
 const scallopJamadhr = DataCache.items.find((item) => item.template?.name === 'Scallop Jamadhr');

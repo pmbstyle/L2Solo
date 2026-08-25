@@ -3,6 +3,8 @@ const assert = require('assert');
 require('../src/Global');
 
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const ClanEquipmentPolicy = invoke('GameServer/Clan/ClanEquipmentPolicy');
+const ClanEquipmentService = invoke('GameServer/Clan/ClanEquipmentService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const PartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
@@ -15,7 +17,7 @@ const clanPlan = {
     partyNeedReason: 'underleveled',
     requiresParty: true,
     target: { selfId: 9101, name: 'Clan Blade', slot: 7 },
-    next: { spotId: 'clan-spot', npcId: 1234, itemId: 9101 },
+    next: { spotId: 'clan-spot', npcId: 0, itemId: 9101 },
     clanGoal: {
         clanId: 77,
         goalKey: 'clan-equipment:77:1001:9101:7',
@@ -117,6 +119,50 @@ async function main() {
             false,
             'an equipped clan target must be allowed to advance'
         );
+
+        const blockedPlan = {
+            ...clanPlan,
+            status: 'blocked',
+            strategy: 'blocked',
+            next: null
+        };
+        assert.strictEqual(
+            GearAcquisitionPlanner.clanGoalPlanLocked({ inventory: {} }, blockedPlan),
+            false,
+            'an unobtainable clan target must not remain locked forever'
+        );
+        const replannedBlocked = ClanEquipmentService.planForMember({
+            characterId: 1001,
+            name: 'ClanMember',
+            level: 35,
+            phase: 'cold',
+            inventory: {},
+            stats: { equipmentPlan: blockedPlan }
+        });
+        assert.strictEqual(plannerCalls, 1, 'a blocked clan plan must return to the acquisition planner');
+        assert.strictEqual(replannedBlocked.target.selfId, 9202,
+            'blocked-plan replanning must exclude the unobtainable target and accept a replacement');
+
+        const replacementMember = {
+            characterId: 1002,
+            name: 'ReplacementMember',
+            level: 35,
+            phase: 'cold',
+            inventory: {}
+        };
+        const selected = ClanEquipmentPolicy.selectTargetMember(
+            [{ characterId: 1001, phase: 'cold' }, replacementMember],
+            new Map([
+                [1001, blockedPlan],
+                [1002, clanPlan]
+            ]),
+            {
+                status: 'blocked',
+                target: { memberId: 1001, itemId: blockedPlan.target.selfId, slot: blockedPlan.target.slot }
+            }
+        );
+        assert.strictEqual(selected.member.characterId, 1002,
+            'a blocked previous beneficiary must yield to another member with an actionable plan');
 
         console.log('Clan equipment plan lock checks passed');
     } finally {

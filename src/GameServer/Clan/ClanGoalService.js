@@ -6,6 +6,8 @@ const GoalPolicy = invoke('GameServer/Clan/ClanGoalPolicy');
 const ClanSimulationPolicy = invoke('GameServer/Clan/ClanSimulationPolicy');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const ClanEquipmentService = invoke('GameServer/Clan/ClanEquipmentService');
+const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
+const ClanService = invoke('GameServer/Clan/ClanService');
 
 const metrics = {
     resolves: 0,
@@ -18,6 +20,7 @@ const metrics = {
     preparationCycles: 0,
     replans: 0,
     catastrophicFailures: 0,
+    levelUps: 0,
     budgetStops: 0,
     planCounts: new Map(),
     reasonCounts: new Map()
@@ -60,7 +63,7 @@ async function clanProjection(clanId = null) {
                members.classId, members.level AS memberLevel, members.clanId AS memberClanId,
                life.accountName, life.activity, life.phase, life.adena, life.currentRegion,
                life.partyId,
-               life.simulationRevision, life.inventorySummary, life.statsJson
+               life.simulationOwner, life.simulationRevision, life.inventorySummary, life.statsJson
         FROM clan_simulation_clans simulated
         JOIN clans ON clans.id = simulated.clanId
         JOIN characters members ON members.clanId = simulated.clanId
@@ -93,6 +96,7 @@ async function clanProjection(clanId = null) {
             phase: String(row.phase || ''),
             currentRegion: String(row.currentRegion || ''),
             partyId: row.partyId || null,
+            simulationOwner: String(row.simulationOwner || 'legacy_main'),
             adena: number(row.adena),
             simulationRevision: number(row.simulationRevision),
             inventory: parseJson(row.inventorySummary, {}),
@@ -252,6 +256,36 @@ async function resolveClan(clan, options = {}) {
     }
     const context = await contextFor(clan);
     const previous = clan.state?.goal || null;
+    if (number(clan.level) === 2 && number(context.progress) >= number(context.required)) {
+        const advanced = await Database.advanceAutonomousClanLevel({
+            clanId: clan.id,
+            fromLevel: 2,
+            toLevel: 3,
+            requiredAmount: 1,
+            requiredItemId: Config.bloodMarkItemId,
+            requiredItemAmount: 1
+        });
+        if (advanced.ok) {
+            metrics.levelUps += 1;
+            metrics.goalsCompleted += previous?.status === 'completed' ? 0 : 1;
+            record(metrics.reasonCounts, Contracts.REASON_CODES.CONTRIBUTION_LEVEL_UP);
+            await ClanCrestService.ensureAutonomousCrest(clan.id);
+            if (typeof ClanService.reload === 'function') await ClanService.reload();
+            return {
+                ok: true,
+                clanId: clan.id,
+                level: 3,
+                changed: true,
+                goal: null,
+                advanced,
+                context,
+                reason: advanced.code || null
+            };
+        }
+        if (advanced.code !== 'level_already_advanced') {
+            return { ok: false, clanId: clan.id, level: 2, changed: false, goal: previous, advanced, context, reason: advanced.code };
+        }
+    }
     let goal = GoalPolicy.buildGoal(clan, context, previous, {
         timestamp: Date.now(),
         failureThreshold: Config.catastrophicFailureThreshold
@@ -369,6 +403,7 @@ const ClanGoalService = {
             preparationCycles: metrics.preparationCycles,
             replans: metrics.replans,
             catastrophicFailures: metrics.catastrophicFailures,
+            levelUps: metrics.levelUps,
             budgetStops: metrics.budgetStops,
             planCounts: Object.fromEntries(metrics.planCounts.entries()),
             reasonCounts: Object.fromEntries(metrics.reasonCounts.entries()),

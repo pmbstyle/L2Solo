@@ -308,6 +308,20 @@ async function main() {
         assert.strictEqual(ClanGoalPolicy.hasReadyRoles(readyRoster.map((member) => (
             member.classId === 21 ? { ...member, partyId: 'background-party' } : member
         ))), false, 'a background-party member must not count as an available role');
+        const expandedRoster = [4, 4, 4, 4, 15, 21, 11].map((classId, index) => ({
+            characterId: 8000 + index,
+            classId,
+            level: 60 - index,
+            phase: 'cold'
+        }));
+        const expandedIds = ClanGoalPolicy.operationMembers(expandedRoster, 9);
+        assert.strictEqual(expandedIds.length, 7, 'a clan operation may use more than five available members');
+        assert(expandedIds.includes(8005), 'role-first selection must retain the buffer behind several stronger tanks');
+        assert.strictEqual(ClanGoalPolicy.hasReadyRoles(expandedRoster), true,
+            'a larger role-balanced clan roster must be ready');
+        assert.strictEqual(ClanGoalPolicy.hasReadyRoles(expandedRoster.map((member) => (
+            member.characterId === 8005 ? { ...member, simulationOwner: 'cold_simulation_owner' } : member
+        ))), false, 'a worker-owned support must not be reserved by the main-owned clan operation');
         console.log('Clan action queue checks passed');
     } finally {
         await Database.close();

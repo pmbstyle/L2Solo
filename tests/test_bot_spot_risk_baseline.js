@@ -5,6 +5,7 @@ require('../src/Global');
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 
 DataCache.init();
 
@@ -63,6 +64,22 @@ async function run() {
     assert.strictEqual(saved.stats.spotRisk.spotId, 'new_spot');
     assert.strictEqual(saved.stats.spotRisk.deathsAtEntry, 4);
     assert.strictEqual(saved.stats.spotRisk.fightsAtEntry, 20);
+    const firstBackoff = SpotRiskPolicy.withBackoff(state, {
+        spotId: 'old_spot',
+        reason: 'death_pressure',
+        startedAt: 1000,
+        until: 1000 + SpotRiskPolicy.BACKOFF_MS
+    }, 1000);
+    const repeatedBackoff = SpotRiskPolicy.withBackoff(firstBackoff, {
+        spotId: 'old_spot',
+        reason: 'death_pressure',
+        startedAt: firstBackoff.stats.spotBackoffs[0].until + 1
+    }, firstBackoff.stats.spotBackoffs[0].until + 1);
+    assert.strictEqual(repeatedBackoff.stats.spotBackoffs[0].attempts, 2,
+        'returning to the same lethal spot must escalate its persistent backoff');
+    assert(repeatedBackoff.stats.spotBackoffs[0].until
+        >= firstBackoff.stats.spotBackoffs[0].until + 1 + SpotRiskPolicy.BACKOFF_MS * 2,
+    'a repeated death loop must stay excluded longer than the first occurrence');
     console.log('Bot spot risk baseline checks passed');
 }
 

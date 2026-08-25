@@ -22,6 +22,8 @@ const DEFAULTS = {
     marketDemandTimeoutMs: 300000,
     bloodMarkItemId: 1419,
     bloodMarkSourceNpcId: 12079,
+    operationMinMembers: 5,
+    operationMaxMembers: 9,
     catastrophicFailureThreshold: 5,
     resolveIntervalMs: 60000,
     resolveBatchSize: 16,
@@ -58,6 +60,8 @@ const ENV_KEYS = {
     marketDemandTimeoutMs: 'CLAN_SIMULATION_MARKET_DEMAND_TIMEOUT_MS',
     bloodMarkItemId: 'CLAN_SIMULATION_BLOOD_MARK_ITEM_ID',
     bloodMarkSourceNpcId: 'CLAN_SIMULATION_BLOOD_MARK_SOURCE_NPC_ID',
+    operationMinMembers: 'CLAN_SIMULATION_OPERATION_MIN_MEMBERS',
+    operationMaxMembers: 'CLAN_SIMULATION_OPERATION_MAX_MEMBERS',
     catastrophicFailureThreshold: 'CLAN_SIMULATION_CATASTROPHIC_FAILURE_THRESHOLD',
     resolveIntervalMs: 'CLAN_SIMULATION_RESOLVE_INTERVAL_MS',
     resolveBatchSize: 'CLAN_SIMULATION_RESOLVE_BATCH_SIZE',
@@ -119,6 +123,11 @@ config.contributionBatchSize = Math.max(1, Math.floor(config.contributionBatchSi
 config.warehouseDepositBatchSize = Math.max(1, Math.floor(config.warehouseDepositBatchSize));
 config.bloodMarkMaxPrice = Math.max(1, Math.floor(config.bloodMarkMaxPrice));
 config.marketDemandTimeoutMs = Math.max(1000, Math.floor(config.marketDemandTimeoutMs));
+config.operationMinMembers = Math.max(2, Math.min(9, Math.floor(config.operationMinMembers)));
+config.operationMaxMembers = Math.max(
+    config.operationMinMembers,
+    Math.min(9, Math.floor(config.operationMaxMembers))
+);
 config.catastrophicFailureThreshold = Math.max(1, Math.floor(config.catastrophicFailureThreshold));
 config.resolveIntervalMs = Math.max(1000, Math.floor(config.resolveIntervalMs));
 config.resolveBatchSize = Math.max(1, Math.floor(config.resolveBatchSize));

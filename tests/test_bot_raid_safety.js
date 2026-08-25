@@ -98,6 +98,8 @@ assert.strictEqual(BotRaidSafety.isProtectedRaidEntity(boss), true, 'a live raid
 assert.strictEqual(BotRaidSafety.isProtectedRaidEntity(minion), true, 'a live linked raid minion must be protected');
 assert.strictEqual(BotRaidSafety.isProtectedRaidEntity({ selfId: 10002 }), true,
     'a cold raid minion template must be protected without a live boss object');
+assert.strictEqual(BotRaidSafety.isProtectedRaidEntity({ template: { kind: 'Boss' } }), true,
+    'legacy grandboss templates must be protected even without a raidBoss flag');
 assert.strictEqual(BotRaidSafety.isProtectedRaidEntity(regular), false, 'ordinary monsters must remain eligible');
 assert.strictEqual(BotHuntingTargetPolicy.isSiegeGuard(siegeGuard), true,
     'runtime castle defenders must retain their sourced siege identity');
@@ -105,6 +107,8 @@ assert.strictEqual(BotHuntingTargetPolicy.isSiegeGuard({ clan: { clanName: 'Door
     'cold castle-defender records must retain their sourced siege identity');
 assert.strictEqual(BotHuntingTargetPolicy.canHunt({ template: { name: 'Oren Royal Gatekeeper' } }), false,
     'misclassified castle teleporters must not keep castle sectors in the hunting atlas');
+assert.strictEqual(BotHuntingTargetPolicy.canHunt({ template: { kind: 'Boss', name: 'Antharas' } }), false,
+    'boss templates without a raidBoss flag must still be absent from bot hunting logic');
 assert.strictEqual(BotHuntingTargetPolicy.canHunt({ clan: { clanName: 'ant_clan' } }), true,
     'ordinary monster clans must remain eligible even when the NPC name contains Guard');
 
@@ -152,6 +156,7 @@ assert(!indexedIds.includes(boss.fetchSelfId()), 'raid bosses must not create bo
 assert(!indexedIds.includes(minion.fetchSelfId()), 'raid minions must not create bot hunting grounds');
 assert(!indexedIds.includes(siegeGuard.fetchSelfId()), 'castle guards must not create bot hunting grounds');
 
+if (BotRaidSafety.BOT_RAID_PARTICIPATION_ENABLED) {
 const tank = actor(5100, { classId: 5, hp: 500, maxHp: 1000, pDef: 500, heavyArmor: true });
 const heavyFighter = actor(5101, { classId: 1, hp: 1000, maxHp: 1000, pDef: 600, heavyArmor: true });
 const mage = actor(5102, { classId: 10, hp: 700, maxHp: 700, mp: 900, maxMp: 1000, pDef: 200 });
@@ -291,6 +296,18 @@ delete leaderSession.partyRaidEngagement;
 World.user.sessions = [leaderSession, mageSession];
 engagement = BotRaidSafety.syncPlayerPartyRaid(leaderSession, 1200);
 assert.strictEqual(engagement.openerId, mage.fetchId(), 'any remaining companion must be able to open when no tank or heavy armor exists');
+} else {
+    leader.fetchDestId = () => boss.fetchId();
+    leaderSession.partyRaidEngagement = { bossId: boss.fetchId(), phase: 'combat' };
+    assert.strictEqual(BotRaidSafety.syncPlayerPartyRaid(leaderSession), null,
+        'bot raid participation must stay disabled even when a real player selects the boss');
+    assert.strictEqual(leaderSession.partyRaidEngagement, undefined,
+        'disabled raid participation must clear stale companion engagement state');
+    assert.strictEqual(BotRaidSafety.canEngagePlayerPartyRaid(companionSession, boss, leaderSession), false,
+        'no companion may receive a raid combat exception');
+    assert.strictEqual(PartyAwareness.leaderCombatTargetId(leaderSession, { allowPlayerRaid: true }), null,
+        'raid targets must remain hidden even from the former explicit assist path');
+}
 
 const safeCompanion = actor(5003, { locX: 2500 });
 const holdingCompanion = {

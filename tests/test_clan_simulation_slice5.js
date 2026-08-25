@@ -12,6 +12,8 @@ const databasePath = path.join(rootDir, 'tmp', 'test-clan-simulation-slice5.sqli
 const Database = invoke('Database');
 const ClanGoalService = invoke('GameServer/Clan/ClanGoalService');
 const ClanPartyService = invoke('GameServer/Clan/ClanPartyService');
+const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
 
 function removeDatabaseFiles() {
@@ -48,6 +50,8 @@ async function main() {
     seedDatabase();
     options.default.Database.path = path.relative(rootDir, databasePath);
     Database.init();
+    await LifeState.init();
+    await BackgroundPartyState.init();
 
     try {
         const created = await Database.createAutonomousClan({
@@ -101,10 +105,49 @@ async function main() {
         }
         assert.strictEqual(notReady.started, 0, 'an unavailable required role must keep the clan party pending');
         assert.strictEqual(activeOperationLookups, 0, 'a not-ready roster without goal.partyId must not query for an impossible active operation');
-        await Database.execute(['UPDATE bot_life_state SET partyId = NULL WHERE characterId = ?', [4500002]]);
+        const [beforeRefreshStart] = await Database.execute([
+            'SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?',
+            [created.clanId]
+        ]);
+        const staleRosterState = JSON.parse(beforeRefreshStart.stateJson);
+        const staleRosterGoal = {
+            ...staleRosterState.goal,
+            assignedMemberIds: [4500001, 4500003, 4500004, 4500005]
+        };
+        const staleRosterUpdate = await Database.updateAutonomousClanGoal({
+            clanId: created.clanId,
+            goal: staleRosterGoal,
+            expectedUpdatedAt: staleRosterState.updatedAt,
+            eventType: 'test_stale_roster_setup',
+            reasonCode: 'party_not_ready'
+        });
+        assert.strictEqual(staleRosterUpdate.ok, true);
+
+        const busyParty = await BackgroundPartyState.createOrUpdate({
+            partyId: 'busy-party',
+            leaderId: 4500001,
+            memberIds: [4500001, 4500002, 4500003, 4500004, 4500005],
+            spotId: 'test-spot',
+            startedAt: Date.now(),
+            nextResolveAt: Date.now() + 30000,
+            status: 'active',
+            stats: { objective: { clanId: null } }
+        });
+        assert(busyParty);
+        await Database.execute([
+            'UPDATE bot_life_state SET partyId = ? WHERE characterId BETWEEN ? AND ?',
+            ['busy-party', 4500001, 4500005]
+        ]);
 
         const started = await ClanPartyService.resolveBatch(4, { budgetMs: 1000, rng: () => 0 });
-        assert.strictEqual(started.started, 1, 'first party pass must persist the operation');
+        assert.strictEqual(started.started, 1,
+            'a required support must be reclaimed and a refreshed roster started in the same pass');
+        assert.strictEqual(BackgroundPartyState.find('busy-party').status, 'dissolved');
+        const lingeringBusyMembers = await Database.execute([
+            'SELECT characterId FROM bot_life_state WHERE partyId = ?',
+            ['busy-party']
+        ]);
+        assert.deepStrictEqual(lingeringBusyMembers, [], 'reclaimed party members must be durably detached');
         const [activeOperation] = await Database.execute([
             "SELECT * FROM clan_operations WHERE clanId = ? AND status = 'active'",
             [created.clanId]
@@ -115,6 +158,36 @@ async function main() {
             [activeOperation.id]
         ]);
         assert.strictEqual(activeMembers.length, 5);
+        const activeMemberIds = activeMembers.map((member) => Number(member.characterId));
+        const activeStates = await LifeState.statesByIds(activeMemberIds, { ownerId: 'legacy_main' });
+        const competingParty = BackgroundPartyState.prepareCommit({
+            partyId: 'competing-party',
+            leaderId: activeMemberIds[0],
+            memberIds: activeMemberIds,
+            spotId: 'test-spot',
+            startedAt: Date.now(),
+            nextResolveAt: Date.now() + 30000,
+            status: 'active'
+        });
+        const competingMembers = activeStates.map((member) => LifeState.preparePartyAssignment(
+            member,
+            competingParty.snapshot.partyId,
+            member.stats?.role || 'dps',
+            competingParty.snapshot.leaderId,
+            competingParty.snapshot.nextResolveAt
+        ));
+        const competingCommit = await Database.commitBackgroundPartyMembership({
+            party: competingParty.row,
+            members: competingMembers
+        });
+        assert.strictEqual(competingCommit.ok, false);
+        assert.strictEqual(competingCommit.reason, 'clan_operation_reserved',
+            'atomic ordinary-party commit must respect the clan operation reservation');
+        const reservedCandidates = await LifeState.statesByIds(
+            activeMemberIds,
+            { ownerId: 'legacy_main', unassigned: true }
+        );
+        assert.deepStrictEqual(reservedCandidates, [], 'active clan operation members must be excluded from ordinary party hydration');
 
         const resolved = await ClanPartyService.resolveBatch(4, { budgetMs: 1000, rng: () => 0 });
         assert.strictEqual(resolved.succeeded, 1, 'second pass must resolve the persistent operation');

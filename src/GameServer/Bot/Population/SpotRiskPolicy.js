@@ -1,6 +1,7 @@
 const MIN_DEATHS_AT_SPOT = 2;
 const MIN_DEATH_RATE = 0.2;
 const BACKOFF_MS = 60 * 60 * 1000;
+const MAX_BACKOFF_MS = 6 * 60 * 60 * 1000;
 const MAX_BACKOFFS = 8;
 
 function normalizedSpotId(value) {
@@ -67,14 +68,25 @@ function withBackoff(state = {}, backoff = null, timestamp = Date.now()) {
     const spotId = normalizedSpotId(backoff?.spotId);
     if (!spotId) return state;
 
+    const prior = (Array.isArray(state.stats?.spotBackoffs) ? state.stats.spotBackoffs : [])
+        .filter((entry) => normalizedSpotId(entry?.spotId) === spotId)
+        .sort((left, right) => Number(right.startedAt || 0) - Number(left.startedAt || 0))[0];
+    const continuing = prior
+        && Number(prior.until || 0) > timestamp
+        && Number(prior.startedAt || 0) === Number(backoff.startedAt || 0);
+    const attempts = continuing
+        ? Math.max(1, Number(prior.attempts || 1))
+        : Math.max(1, Number(prior?.attempts || 0) + 1);
+    const escalationMs = Math.min(MAX_BACKOFF_MS, BACKOFF_MS * (2 ** Math.min(3, attempts - 1)));
     const retained = activeBackoffs(state, timestamp)
         .filter((entry) => entry.spotId !== spotId);
     const next = {
         ...backoff,
         spotId,
         reason: backoff.reason || 'death_pressure',
+        attempts,
         startedAt: Number(backoff.startedAt || timestamp),
-        until: Math.max(timestamp + 1000, Number(backoff.until || timestamp + BACKOFF_MS))
+        until: Math.max(timestamp + escalationMs, Number(backoff.until || 0))
     };
     const spotBackoffs = [...retained, next]
         .sort((left, right) => Number(right.until) - Number(left.until))
@@ -92,6 +104,7 @@ module.exports = {
     MIN_DEATHS_AT_SPOT,
     MIN_DEATH_RATE,
     BACKOFF_MS,
+    MAX_BACKOFF_MS,
     MAX_BACKOFFS,
     deathPressure,
     activeBackoffs,

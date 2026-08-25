@@ -85,6 +85,13 @@ function overlayWarehouseMaterials(state, plan, warehouseRows = []) {
 
 function planForMember(member, spots = [], warehouseRows = []) {
     const existing = existingPlanFor(member);
+    if (existing?.status === 'blocked') {
+        const targetId = number(existing.target?.selfId);
+        return GearAcquisitionPlanner.planFor(plannerState(member), {
+            spots,
+            ...(targetId ? { excludedTargetIds: [targetId] } : {})
+        });
+    }
     if (existing && GearAcquisitionPlanner.clanGoalPlanLocked(member, existing)) {
         if (existing.strategy !== 'craft') return existing;
         const overlay = overlayWarehouseMaterials(plannerState(member), existing, warehouseRows);
