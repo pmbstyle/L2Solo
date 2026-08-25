@@ -662,13 +662,9 @@ class ColdSimulationCoordinator {
         const invalid = BackgroundPartyState.active().map((party) => {
             const memberIds = (party.memberIds || []).map((id) => Number(id)).filter(Boolean);
             const states = memberIds.map((id) => LifeState.cachedState(id)).filter(Boolean);
-            const hasPartyField = (state) => (
-                Object.prototype.hasOwnProperty.call(state?.party || {}, 'partyId')
-                || Object.prototype.hasOwnProperty.call(state || {}, 'partyId')
-            );
             const statePartyId = (state) => state?.party?.partyId ?? state?.partyId ?? null;
             const attached = states.filter((state) => (
-                !hasPartyField(state) || String(statePartyId(state) || '') === String(party.partyId)
+                String(statePartyId(state) || '') === String(party.partyId)
             ));
             const leaderAttached = attached.some((state) => Number(state.characterId) === Number(party.leaderId));
             const declared = new Set(memberIds);

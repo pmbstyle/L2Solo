@@ -102,6 +102,16 @@ async function run() {
     assert(legacyRepeatedBackoff.stats.spotBackoffs[0].until
         >= legacyUntil + 1 + SpotRiskPolicy.BACKOFF_MS * 2,
     'returning after a legacy backoff must use the second-attempt duration');
+    const overCapTimestamp = legacyRepeatedBackoff.stats.spotBackoffs[0].until + 1;
+    const cappedBackoff = SpotRiskPolicy.withBackoff(legacyRepeatedBackoff, {
+        spotId: 'over_cap_spot',
+        reason: 'death_pressure',
+        startedAt: overCapTimestamp,
+        until: overCapTimestamp + SpotRiskPolicy.MAX_BACKOFF_MS * 2
+    }, overCapTimestamp);
+    assert.strictEqual(cappedBackoff.stats.spotBackoffs[0].until,
+        overCapTimestamp + SpotRiskPolicy.MAX_BACKOFF_MS,
+        'a persisted deadline must not extend a spot backoff beyond the maximum duration');
     console.log('Bot spot risk baseline checks passed');
 }
 

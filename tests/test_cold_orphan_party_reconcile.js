@@ -24,8 +24,8 @@ const originalPurgeHistory = BackgroundPartyState.purgeHistory;
     BackgroundPartyState.active = () => [orphan, attached, detachedLeader];
     LifeState.cachedState = (characterId) => {
         const id = Number(characterId);
-        if ([9010, 9011].includes(id)) return { characterId: id };
-        if (id === 9020) return { characterId: id, party: { partyId: null } };
+        if ([9010, 9011].includes(id)) return { characterId: id, party: { partyId: 'bgp_attached' } };
+        if (id === 9020) return { characterId: id };
         if (id === 9021) return { characterId: id, party: { partyId: 'bgp_detached_leader' } };
         return null;
     };

@@ -87,7 +87,10 @@ function withBackoff(state = {}, backoff = null, timestamp = Date.now()) {
         reason: backoff.reason || 'death_pressure',
         attempts,
         startedAt: Number(backoff.startedAt || timestamp),
-        until: Math.max(timestamp + escalationMs, Number(backoff.until || 0))
+        until: Math.min(
+            timestamp + MAX_BACKOFF_MS,
+            Math.max(timestamp + escalationMs, Number(backoff.until || 0))
+        )
     };
     const spotBackoffs = [...retained, next]
         .sort((left, right) => Number(right.until) - Number(left.until))
