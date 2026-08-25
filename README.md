@@ -22,7 +22,7 @@ Support, updates, and communication. Join the Discord to be up to date with deve
 Clean C4 client protocol 656
 
 ## Latest updates
-
+- **2026-08-25** Bot clans update follow-up, bug fixes
 - **2026-08-24** Bot clans, better cold/hot performance, bug fixes, and more
 - **2026-08-20** Loot and mob skills bug fixes, bot social graph base
 - **2026-08-19** Runtime optimization, cold bot progression bottlenecks fix, bot equipment enchantment
