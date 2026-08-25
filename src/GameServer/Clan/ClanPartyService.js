@@ -3,8 +3,11 @@ const Config = invoke('GameServer/Clan/ClanSimulationConfig');
 const Contracts = invoke('GameServer/Clan/ClanSimulationContracts');
 const GoalService = invoke('GameServer/Clan/ClanGoalService');
 const GoalPolicy = invoke('GameServer/Clan/ClanGoalPolicy');
+const ClanPolicy = invoke('GameServer/Clan/ClanSimulationPolicy');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
+const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
 
 const metrics = {
@@ -17,6 +20,8 @@ const metrics = {
     levelUps: 0,
     catastrophicFailures: 0,
     memberReservationConflicts: 0,
+    supportPartiesReclaimed: 0,
+    supportMembersReleased: 0,
     budgetStops: 0,
     reasonCounts: new Map()
 };
@@ -54,13 +59,91 @@ function operationKey(clan, goal) {
 }
 
 function operationRoster(clan, goal) {
-    const members = parseIds(goal.assignedMemberIds);
-    const selected = members.length ? members : GoalPolicy.operationMembers(clan.members, 5);
+    const assigned = parseIds(goal.assignedMemberIds);
+    const candidates = assigned.length
+        ? assigned.map((id) => memberById(clan, id)).filter(Boolean)
+        : clan.members;
+    const selected = GoalPolicy.operationMembers(candidates, Config.operationMaxMembers);
     const selectedMembers = selected.map((id) => memberById(clan, id)).filter(Boolean);
     return {
         selected,
-        ready: selected.length >= 5 && GoalPolicy.hasReadyRoles(selectedMembers)
+        ready: selected.length >= Config.operationMinMembers && GoalPolicy.hasReadyRoles(selectedMembers)
     };
+}
+
+function sameIds(left = [], right = []) {
+    return left.length === right.length && left.every((id, index) => Number(id) === Number(right[index]));
+}
+
+function protectedClanParty(party) {
+    return Number(party?.stats?.objective?.clanId || party?.stats?.acquisitionGoal?.clanGoal?.clanId || 0) > 0;
+}
+
+function requiredRoleParties(clan) {
+    const readyRoles = new Set((clan?.members || [])
+        .filter(GoalPolicy.operationAvailable)
+        .map((member) => ClanPolicy.rosterRole(member)));
+    const missingRoles = ['tank', 'healer', 'buffer'].filter((role) => !readyRoles.has(role));
+    const selectedPartyIds = [];
+    const selected = new Set();
+    missingRoles.forEach((role) => {
+        const candidate = (clan?.members || [])
+            .filter((member) => member?.phase === 'cold'
+                && String(member?.partyId || '')
+                && ClanPolicy.rosterRole(member) === role)
+            .sort((left, right) => number(right.level) - number(left.level)
+                || number(left.characterId ?? left.id) - number(right.characterId ?? right.id))
+            .find((member) => {
+                const partyId = String(member.partyId || '');
+                const party = BackgroundPartyState.find(partyId);
+                return party?.status === 'active' && !protectedClanParty(party) && !selected.has(partyId);
+            });
+        if (!candidate) return;
+        const partyId = String(candidate.partyId);
+        selected.add(partyId);
+        selectedPartyIds.push(partyId);
+    });
+    return selectedPartyIds;
+}
+
+async function reclaimRequiredRoleParties(clan) {
+    const partyIds = requiredRoleParties(clan);
+    let releasedMembers = 0;
+    const reclaimedPartyIds = [];
+    for (const partyId of partyIds) {
+        const dissolved = await BackgroundPartyState.setStatus(partyId, 'dissolved');
+        if (!dissolved) continue;
+        const released = await LifeState.releaseDissolvedPartyMembers(partyId, 'clan_operation_reclaimed');
+        releasedMembers += number(released);
+        reclaimedPartyIds.push(partyId);
+    }
+    metrics.supportPartiesReclaimed += reclaimedPartyIds.length;
+    metrics.supportMembersReleased += releasedMembers;
+    return { reclaimedPartyIds, releasedMembers };
+}
+
+async function refreshOperationRoster(clan, goal) {
+    const assigned = parseIds(goal.assignedMemberIds).sort((left, right) => left - right);
+    const clanMemberIds = new Set((clan.members || []).map((member) => number(member.characterId ?? member.id)).filter(Boolean));
+    const retained = assigned.filter((id) => clanMemberIds.has(Number(id)));
+    const available = GoalPolicy.operationMembers(clan.members, Config.operationMaxMembers);
+    const projected = [...available, ...retained.filter((id) => !available.includes(Number(id)))]
+        .slice(0, Config.operationMaxMembers)
+        .sort((left, right) => left - right);
+    if (sameIds(assigned, projected)) return { changed: false, goal };
+    const nextGoal = {
+        ...goal,
+        assignedMemberIds: projected,
+        updatedAt: Date.now()
+    };
+    const persisted = await Database.updateAutonomousClanGoal({
+        clanId: clan.id,
+        goal: nextGoal,
+        expectedUpdatedAt: number(clan.state?.updatedAt) || null,
+        eventType: 'party_roster_refreshed',
+        reasonCode: Contracts.REASON_CODES.PARTY_NOT_READY
+    });
+    return { ...persisted, changed: !!persisted.ok, goal: persisted.goal || nextGoal };
 }
 
 async function startOperation(clan, goal) {
@@ -175,26 +258,58 @@ async function resolveActiveOperation(clan, goal, operation, options = {}) {
 
 async function resolveClan(clan, options = {}) {
     if (!clan || number(clan.level) !== 2) return { ok: true, skipped: true, reason: 'level_not_farmable' };
-    const goal = clan.state?.goal;
+    let currentClan = clan;
+    let goal = clan.state?.goal;
     if (!goal || goal.type !== 'item' || goal.plan?.kind !== 'farm' || number(goal.progress) >= number(goal.required)) {
         return { ok: true, skipped: true, reason: 'farm_goal_missing' };
+    }
+
+    let reclaimed = { reclaimedPartyIds: [], releasedMembers: 0 };
+    if (!String(goal.partyId || '')) {
+        reclaimed = await reclaimRequiredRoleParties(currentClan);
+        if (reclaimed.reclaimedPartyIds.length) {
+            const projected = await GoalService.clanProjectionById(currentClan.id);
+            if (projected?.state?.goal) {
+                currentClan = projected;
+                goal = projected.state.goal;
+            }
+        }
+        const refreshed = await refreshOperationRoster(currentClan, goal);
+        if (!refreshed.ok && refreshed.code) return refreshed;
+        if (refreshed.changed) {
+            goal = refreshed.goal;
+            currentClan = {
+                ...currentClan,
+                state: {
+                    ...(currentClan.state || {}),
+                    goal,
+                    updatedAt: number(refreshed.updatedAt, number(currentClan.state?.updatedAt))
+                }
+            };
+        }
     }
 
     // Starting an operation atomically writes goal.partyId together with the
     // active operation row. If there is no party id yet and the projected
     // roster is unavailable, no active operation can require resolution. Skip
     // the database lookup and retain the durable action for a later retry.
-    if (!String(goal.partyId || '') && !operationRoster(clan, goal).ready) {
+    if (!String(goal.partyId || '') && !operationRoster(currentClan, goal).ready) {
         recordReason(Contracts.REASON_CODES.PARTY_NOT_READY);
         return { ok: false, code: Contracts.REASON_CODES.PARTY_NOT_READY, skipped: true };
     }
 
-    const active = await Database.fetchActiveAutonomousClanOperation(clan.id);
+    const active = await Database.fetchActiveAutonomousClanOperation(currentClan.id);
     if (!active) {
-        const started = await startOperation(clan, goal);
-        return { ...started, started: !!started.ok && !started.idempotent };
+        const started = await startOperation(currentClan, goal);
+        return {
+            ...started,
+            rosterRefreshed: currentClan !== clan,
+            reclaimedPartyIds: reclaimed.reclaimedPartyIds,
+            releasedMembers: reclaimed.releasedMembers,
+            started: !!started.ok && !started.idempotent
+        };
     }
-    return resolveActiveOperation(clan, goal, active, options);
+    return resolveActiveOperation(currentClan, goal, active, options);
 }
 
 const ClanPartyService = {
@@ -252,6 +367,8 @@ const ClanPartyService = {
             levelUps: metrics.levelUps,
             catastrophicFailures: metrics.catastrophicFailures,
             memberReservationConflicts: metrics.memberReservationConflicts,
+            supportPartiesReclaimed: metrics.supportPartiesReclaimed,
+            supportMembersReleased: metrics.supportMembersReleased,
             budgetStops: metrics.budgetStops,
             reasonCounts: Object.fromEntries(metrics.reasonCounts.entries())
         };

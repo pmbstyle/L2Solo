@@ -18,12 +18,17 @@ const originalPurgeHistory = BackgroundPartyState.purgeHistory;
 (async () => {
     const orphan = { partyId: 'bgp_orphan', leaderId: 9001, memberIds: [9001, 9002], status: 'active' };
     const attached = { partyId: 'bgp_attached', leaderId: 9010, memberIds: [9010, 9011], status: 'active' };
+    const detachedLeader = { partyId: 'bgp_detached_leader', leaderId: 9020, memberIds: [9020, 9021], status: 'active' };
     const statuses = [];
     const releases = [];
-    BackgroundPartyState.active = () => [orphan, attached];
-    LifeState.cachedState = (characterId) => [9010, 9011].includes(Number(characterId))
-        ? { characterId: Number(characterId) }
-        : null;
+    BackgroundPartyState.active = () => [orphan, attached, detachedLeader];
+    LifeState.cachedState = (characterId) => {
+        const id = Number(characterId);
+        if ([9010, 9011].includes(id)) return { characterId: id, party: { partyId: 'bgp_attached' } };
+        if (id === 9020) return { characterId: id };
+        if (id === 9021) return { characterId: id, party: { partyId: 'bgp_detached_leader' } };
+        return null;
+    };
     BackgroundPartyState.setStatus = async (partyId, status) => {
         statuses.push({ partyId, status });
         return { partyId, status };
@@ -34,9 +39,15 @@ const originalPurgeHistory = BackgroundPartyState.purgeHistory;
     };
 
     const orphaned = await ColdSimulationCoordinator.reconcileOrphanedBackgroundParties();
-    assert.deepStrictEqual(orphaned.map((party) => party.partyId), ['bgp_orphan']);
-    assert.deepStrictEqual(statuses, [{ partyId: 'bgp_orphan', status: 'dissolved' }]);
-    assert.deepStrictEqual(releases, [{ partyId: 'bgp_orphan', reason: 'orphaned_dissolved_party' }]);
+    assert.deepStrictEqual(orphaned.map((party) => party.partyId), ['bgp_orphan', 'bgp_detached_leader']);
+    assert.deepStrictEqual(statuses, [
+        { partyId: 'bgp_orphan', status: 'dissolved' },
+        { partyId: 'bgp_detached_leader', status: 'dissolved' }
+    ]);
+    assert.deepStrictEqual(releases, [
+        { partyId: 'bgp_orphan', reason: 'orphaned_dissolved_party' },
+        { partyId: 'bgp_detached_leader', reason: 'party_membership_mismatch' }
+    ]);
 
     let purges = 0;
     let workersStarted = 0;

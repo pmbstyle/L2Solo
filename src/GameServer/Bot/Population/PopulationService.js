@@ -297,6 +297,11 @@ function acquisitionRequirementKey(plan) {
 }
 
 function partyObjectivesShareRoute(left, right) {
+    const leftClanGoal = String(left?.clanGoalKey || '');
+    const rightClanGoal = String(right?.clanGoalKey || '');
+    if (leftClanGoal || rightClanGoal) {
+        return Boolean(leftClanGoal && leftClanGoal === rightClanGoal);
+    }
     return Boolean(left && right
         && String(left.spotId || '') === String(right.spotId || '')
         && Number(left.npcId || 0) > 0
@@ -338,8 +343,13 @@ function expirePartyRequestForState(state, timestamp = Date.now()) {
     };
 }
 
+function partyObjectiveGroupingKey(objective) {
+    const clanGoalKey = String(objective?.clanGoalKey || '');
+    return clanGoalKey ? `clan-goal:${clanGoalKey}` : objective?.objectiveKey;
+}
+
 function partyObjectiveKeyForState(state) {
-    return partyObjectiveForState(state)?.objectiveKey
+    return partyObjectiveGroupingKey(partyObjectiveForState(state))
         || `spot:${state?.spotId || 'unknown'}`;
 }
 
@@ -424,6 +434,29 @@ function dissolveBackgroundParty(party, reason, memberCount = 0) {
             );
             return { ok: false, reason, party, cleared };
         });
+}
+
+function partyLimitsForObjective(objective = null) {
+    const clanEquipment = objective?.clanOperation === 'equipment'
+        && Number(objective?.clanId || 0) > 0;
+    const maxSize = clanEquipment
+        ? Math.max(2, Math.min(9, Number(objective.maxPartySize) || Config.partyMaxSize))
+        : Config.partyMaxSize;
+    return {
+        maxSize,
+        minSize: clanEquipment
+            ? Math.max(2, Math.min(maxSize, Number(objective.minPartySize) || Config.partyMinSize))
+            : Config.partyMinSize,
+        levelRange: clanEquipment ? Math.max(4, Number(objective.levelRange) || 99) : undefined
+    };
+}
+
+function requiresClanEquipmentParty(state) {
+    const objective = partyObjectiveForState(state);
+    return objective?.status === 'open'
+        && objective?.priority === 'required'
+        && objective?.clanOperation === 'equipment'
+        && Number(objective?.clanId || 0) > 0;
 }
 
 async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
@@ -1756,17 +1789,20 @@ const PopulationService = {
             .then(() => timedStage('candidate_projection', () => LifeState.coldPartyCandidateProjections()
                 .then((states) => ({
                     states,
-                    partyRequestBacklog: states.some((state) => state.stats?.partyRequest?.status === 'open'),
+                    partyRequestBacklog: states.some((state) => partyObjectiveForState(state)?.status === 'open'),
                     requiredPartyRequestCount: states.filter((state) => (
-                        state.stats?.partyRequest?.status === 'open'
-                        && state.stats?.partyRequest?.priority === 'required'
+                        partyObjectiveForState(state)?.status === 'open'
+                        && partyObjectiveForState(state)?.priority === 'required'
                     )).length
                 }))))
             .then(({ states, partyRequestBacklog, requiredPartyRequestCount }) => {
-                const willingStates = states.filter((state) => PersonaPartyPolicy.backgroundIntent(state).accept);
+                const willingStates = states.filter((state) => (
+                    requiresClanEquipmentParty(state)
+                    || PersonaPartyPolicy.backgroundIntent(state).accept
+                ));
                 const requiredStates = willingStates.filter((state) => (
-                    state.stats?.partyRequest?.status === 'open'
-                    && state.stats?.partyRequest?.priority === 'required'
+                    partyObjectiveForState(state)?.status === 'open'
+                    && partyObjectiveForState(state)?.priority === 'required'
                 ));
                 const reclaim = activity.protected
                     ? Promise.resolve([])
@@ -1808,13 +1844,19 @@ const PopulationService = {
 
                 return groups.reduce((chain, group) => chain.then(() => {
                     if (created.length >= maxNewParties || budgetReached()) return null;
-                    if (group.length < Config.partyMinSize) return null;
+                    const requestedObjective = group
+                        .map((state) => partyObjectiveForState(state))
+                        .find((objective) => objective?.priority === 'required')
+                        || partyObjectiveForState(group[0]);
+                    const partyLimits = partyLimitsForObjective(requestedObjective);
+                    if (group.length < partyLimits.minSize) return null;
 
                     const selectedMembers = PartyComposition.selectMembers(group, {
-                        minSize: Config.partyMinSize,
-                        maxSize: Config.partyMaxSize
+                        minSize: partyLimits.minSize,
+                        maxSize: partyLimits.maxSize,
+                        levelRange: partyLimits.levelRange
                     });
-                    if (selectedMembers.length < Config.partyMinSize) {
+                    if (selectedMembers.length < partyLimits.minSize) {
                         const requiredIds = group
                             .filter((state) => state.stats?.partyRequest?.status === 'open'
                                 && state.stats?.partyRequest?.priority === 'required')
@@ -1995,10 +2037,12 @@ const PopulationService = {
                 key,
                 spotId: partyObjectiveSpotForState(group[0]),
                 states: group.sort((a, b) => Number(a.level || 1) - Number(b.level || 1)),
+                clanEquipment: partyObjectiveForState(group[0])?.clanOperation === 'equipment',
                 partyWaiters: group.filter((state) => state.activity === 'party_wait'
-                    || state.stats?.partyRequest?.status === 'open').length
+                    || partyObjectiveForState(state)?.status === 'open').length
             }))
             .sort((a, b) => {
+                if (a.clanEquipment !== b.clanEquipment) return a.clanEquipment ? -1 : 1;
                 if (options.prioritizePartyWait && a.partyWaiters !== b.partyWaiters) {
                     return b.partyWaiters - a.partyWaiters;
                 }
@@ -2128,6 +2172,15 @@ const PopulationService = {
         );
         const reclaimCount = Math.max(0, wantedSlots - availableSlots);
         if (!reclaimCount || !activeParties.length) return Promise.resolve([]);
+        const requestedClanGoals = new Set(partyWaitStates
+            .map((state) => partyObjectiveForState(state))
+            .filter((objective) => objective?.clanOperation === 'equipment' && objective.clanGoalKey)
+            .map((objective) => String(objective.clanGoalKey)));
+        activeParties.forEach((party) => {
+            const goalKey = String(party?.stats?.objective?.clanGoalKey || '');
+            if (goalKey) requestedClanGoals.delete(goalKey);
+        });
+        const clanPrioritySlots = requestedClanGoals.size;
 
         return this.refreshBackgroundPartyRequirements(activeParties, options)
             .then(() => {
@@ -2140,10 +2193,18 @@ const PopulationService = {
             .then((counts) => {
                 if (!counts) return [];
                 const countByPartyId = new Map(counts.map((count) => [count.partyId, count]));
-                return activeParties
+                const elective = activeParties
                     .filter((party) => Number(countByPartyId.get(party.partyId)?.requiredMembers || 0) === 0)
                     .sort((a, b) => Number(a.startedAt || 0) - Number(b.startedAt || 0))
                     .slice(0, reclaimCount);
+                if (elective.length >= reclaimCount || clanPrioritySlots <= 0) return elective;
+                const selected = new Set(elective.map((party) => String(party.partyId)));
+                const clanFallback = activeParties
+                    .filter((party) => !selected.has(String(party.partyId)))
+                    .filter((party) => party?.stats?.objective?.clanOperation !== 'equipment')
+                    .sort((a, b) => Number(a.startedAt || 0) - Number(b.startedAt || 0))
+                    .slice(0, Math.min(clanPrioritySlots, reclaimCount - elective.length));
+                return [...elective, ...clanFallback];
             })
             .then((parties) => parties.reduce((chain, party) => (
                 chain.then((reclaimed) => dissolveBackgroundParty(party, 'party_capacity_reclaimed', party.memberIds?.length || 0)
@@ -2160,17 +2221,21 @@ const PopulationService = {
         };
         const claimed = new Set();
         const parties = BackgroundPartyState.active()
-            .filter((party) => (party.memberIds || []).length < Config.partyMaxSize)
+            .filter((party) => {
+                const limits = partyLimitsForObjective(party?.stats?.objective || null);
+                return (party.memberIds || []).length < limits.maxSize;
+            })
             .sort((a, b) => (a.memberIds || []).length - (b.memberIds || []).length);
 
         return statesForParties(parties.map((party) => party.partyId)).then((membersByParty) => parties.reduce((chain, party) => chain.then(() => {
             if (budgetReached()) return null;
-            const members = membersByParty.get(String(party.partyId)) || [];
+                const members = membersByParty.get(String(party.partyId)) || [];
+                const partyLimits = partyLimitsForObjective(party?.stats?.objective || null);
                 if (members.length < Config.partyMinSize) return null;
                 const persistedMemberIds = new Set((party.memberIds || []).map(Number));
                 const membershipMismatch = members.length !== persistedMemberIds.size
                     || members.some((member) => !persistedMemberIds.has(Number(member.characterId)));
-                if (members.length >= Config.partyMaxSize) {
+                if (members.length >= partyLimits.maxSize) {
                     if (!membershipMismatch) return null;
                     const electedLeaderId = leaderIdForMembers(party, members);
                     const reconciledParty = {
@@ -2194,13 +2259,17 @@ const PopulationService = {
                 const nearby = candidates.filter((state) => (
                     !claimed.has(Number(state.characterId))
                     && (partyObjective
-                        ? (partyObjectiveKeyForState(state) === partyObjective.objectiveKey
+                        ? (partyObjectiveKeyForState(state) === partyObjectiveGroupingKey(partyObjective)
                             || partyObjectivesShareRoute(partyObjective, partyObjectiveForState(state))
-                            || (state.stats?.partyRequest?.priority !== 'required'
+                            || (!partyObjective.clanGoalKey
+                                && state.stats?.partyRequest?.priority !== 'required'
                                 && partyObjectiveSpotForState(state) === partyObjective.spotId))
                         : state.spotId === party.spotId)
                 ));
-                const recruits = PartyComposition.selectRecruits(members, nearby, { maxSize: Config.partyMaxSize });
+                const recruits = PartyComposition.selectRecruits(members, nearby, {
+                    maxSize: partyLimits.maxSize,
+                    levelRange: partyLimits.levelRange
+                });
                 if (!recruits.length) return null;
 
                 return hydratePartyCandidates(recruits).then((hydratedRecruits) => {
@@ -3013,7 +3082,7 @@ const PopulationService = {
         if (!acquisitionPlan) {
             const reusablePartyRequest = !state.party?.partyId
                 && previousPlan?.next
-                && replanContext.planCurrent
+                && replanContext.routeCurrent
                 && !replanContext.failure
                 && state.stats?.partyRequest?.status === 'open'
                 && Number(state.stats.partyRequest.reviewAt || 0) > startedAt;
@@ -3304,5 +3373,8 @@ PopulationService.beginPartySpotTravel = beginPartySpotTravel;
 PopulationService.finishPartySpotTravel = finishPartySpotTravel;
 PopulationService.finishPartyTravelRecord = finishPartyTravelRecord;
 PopulationService.marketListingIntent = marketListingIntent;
+PopulationService.partyLimitsForObjective = partyLimitsForObjective;
+PopulationService.requiresClanEquipmentParty = requiresClanEquipmentParty;
+PopulationService.partyObjectivesShareRoute = partyObjectivesShareRoute;
 
 module.exports = PopulationService;

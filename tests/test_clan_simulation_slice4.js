@@ -99,6 +99,21 @@ async function main() {
         const events = await Database.fetchClanGoalEvents(created.clanId, 20);
         assert(events.filter((event) => event.eventType === 'goal_replanned').length >= Config.catastrophicFailureThreshold);
 
+        const timestamp = Date.now();
+        await Database.execute([`INSERT INTO clan_warehouse_items(
+            clanId, selfId, name, kind, amount, reservedAmount, createdAt, updatedAt
+        ) VALUES (?, ?, 'Blood Mark', 'quest', 1, 0, ?, ?)`, [created.clanId, Config.bloodMarkItemId, timestamp, timestamp]]);
+        const completed = await ClanGoalService.resolveBatch(4, { budgetMs: 1000 });
+        assert.strictEqual(completed.changed, 1, 'fulfilled L2 conditions must be consumed by the goal resolver');
+        const [advancedClan] = await Database.execute(['SELECT level FROM clans WHERE id = ?', [created.clanId]]);
+        assert.strictEqual(Number(advancedClan.level), 3,
+            'an already warehoused Blood Mark must advance L2 without a market or party completion callback');
+        const [remainingMark] = await Database.execute([
+            'SELECT amount FROM clan_warehouse_items WHERE clanId = ? AND selfId = ?',
+            [created.clanId, Config.bloodMarkItemId]
+        ]);
+        assert.strictEqual(Number(remainingMark?.amount || 0), 0, 'the direct level-up must consume its Blood Mark');
+
         console.log('Clan simulation Slice 4 checks passed');
     } finally {
         await Database.close();

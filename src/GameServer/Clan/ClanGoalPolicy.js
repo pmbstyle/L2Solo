@@ -1,6 +1,6 @@
-const ClanRules = invoke('GameServer/Clan/ClanRules');
 const ClanPolicy = invoke('GameServer/Clan/ClanSimulationPolicy');
 const Contracts = invoke('GameServer/Clan/ClanSimulationContracts');
+const Config = invoke('GameServer/Clan/ClanSimulationConfig');
 
 function number(value, fallback = 0) {
     const parsed = Number(value);
@@ -15,9 +15,15 @@ function roleRank(role) {
     return { tank: 0, healer: 1, buffer: 2, dps: 3, mage: 4, crafter: 5, spoiler: 6 }[role] ?? 9;
 }
 
-function operationMembers(members = [], limit = 5) {
-    return members
-        .filter((member) => member?.phase === 'cold' && !member?.partyId)
+function operationAvailable(member) {
+    return member?.phase === 'cold'
+        && !member?.partyId
+        && String(member?.simulationOwner || 'legacy_main') === 'legacy_main';
+}
+
+function operationMembers(members = [], limit = Config.operationMaxMembers) {
+    const ranked = members
+        .filter(operationAvailable)
         .map((member) => ({
             member,
             role: ClanPolicy.rosterRole(member),
@@ -26,15 +32,29 @@ function operationMembers(members = [], limit = 5) {
         }))
         .sort((left, right) => roleRank(left.role) - roleRank(right.role)
             || right.level - left.level
-            || left.id - right.id)
-        .slice(0, Math.max(1, Math.min(5, number(limit, 5))))
-        .map((entry) => entry.id);
+            || left.id - right.id);
+    const maxMembers = Math.max(1, Math.min(9, number(limit, Config.operationMaxMembers)));
+    const selected = [];
+    const selectedIds = new Set();
+    ['tank', 'healer', 'buffer'].forEach((role) => {
+        const entry = ranked.find((candidate) => candidate.role === role && !selectedIds.has(candidate.id));
+        if (!entry || selected.length >= maxMembers) return;
+        selected.push(entry);
+        selectedIds.add(entry.id);
+    });
+    ranked.forEach((entry) => {
+        if (selected.length >= maxMembers || selectedIds.has(entry.id)) return;
+        selected.push(entry);
+        selectedIds.add(entry.id);
+    });
+    return selected.map((entry) => entry.id);
 }
 
 function hasReadyRoles(members = []) {
-    const available = members.filter((member) => member?.phase === 'cold' && !member?.partyId);
+    const available = members.filter(operationAvailable);
     const roles = new Set(available.map((member) => ClanPolicy.rosterRole(member)));
-    return available.length >= 5 && roles.has('tank') && roles.has('healer') && roles.has('buffer');
+    return available.length >= Config.operationMinMembers
+        && roles.has('tank') && roles.has('healer') && roles.has('buffer');
 }
 
 function planReason(plan, context = {}) {
@@ -126,7 +146,7 @@ function buildGoal(clan = {}, context = {}, previousGoal = null, options = {}) {
         progress: shape.progress,
         plan,
         assignedMemberIds: shape.type === 'item' && plan.kind !== 'prepare'
-            ? operationMembers(shape.members, 5)
+            ? operationMembers(shape.members, Config.operationMaxMembers)
             : [],
         partyId: null,
         catastrophicFailures,
@@ -172,6 +192,7 @@ module.exports = {
     buildGoal,
     goalEquivalent,
     hasReadyRoles,
+    operationAvailable,
     operationMembers,
     planCandidates,
     replanGoal,

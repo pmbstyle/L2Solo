@@ -4,6 +4,16 @@ function number(value, fallback = 0) {
 }
 
 const PLAN_STATUSES = new Set(['active', 'blocked', 'component_ready', 'ready_to_craft']);
+const GRADE_RANK = Object.freeze({ none: 0, d: 1, c: 2, b: 3, a: 4, s: 5 });
+const ROLE_PRIORITY = Object.freeze({
+    tank: 45,
+    healer: 40,
+    buffer: 20,
+    dps: 8,
+    mage: 8,
+    crafter: 4,
+    spoiler: 4
+});
 
 function memberId(member) {
     return number(member?.characterId ?? member?.id);
@@ -35,6 +45,64 @@ function planPriority(plan) {
         + Math.min(100, Math.max(0, number(plan?.expectedKills) / 10));
 }
 
+function rankFor(value) {
+    return GRADE_RANK[String(value || 'none').toLowerCase()] || 0;
+}
+
+function memberRole(member, options = {}) {
+    if (typeof options.roleFor === 'function') return String(options.roleFor(member) || 'dps');
+    return String(member?.stats?.role || member?.party?.role || 'dps');
+}
+
+function equippedItems(member) {
+    const summarized = Array.isArray(member?.stats?.equipment) ? member.stats.equipment : [];
+    if (summarized.length) return summarized;
+    return Object.values(member?.inventory || {}).filter((item) => item?.equipped);
+}
+
+function itemSlots(item) {
+    if (Array.isArray(item?.equippedSlots) && item.equippedSlots.length) return item.equippedSlots.map(Number);
+    const slot = number(item?.slot ?? item?.etc?.slot);
+    return slot > 0 ? [slot] : [];
+}
+
+function itemRank(item) {
+    return rankFor(item?.rank ?? item?.etc?.rank ?? item?.template?.rank);
+}
+
+function slotMatches(left, right) {
+    return left === right || [7, 14].includes(left) && [7, 14].includes(right);
+}
+
+function equipmentPriority(member, plan, options = {}) {
+    const items = equippedItems(member);
+    const targetSlot = number(plan?.target?.slot);
+    const targetRank = rankFor(plan?.grade);
+    const currentTargetRank = items.reduce((best, item) => (
+        itemSlots(item).some((slot) => slotMatches(slot, targetSlot))
+            ? Math.max(best, itemRank(item))
+            : best
+    ), 0);
+    const representedSlots = new Set(items.flatMap(itemSlots).filter((slot) => slot > 0));
+    const overallStrength = items.reduce((sum, item) => sum + itemRank(item), 0);
+    const expectedStrength = Math.max(1, targetRank) * 8;
+    const overallDebt = Math.max(0, expectedStrength - overallStrength);
+    const targetDebt = Math.max(1, targetRank - currentTargetRank);
+    const missingTargetSlot = ![...representedSlots].some((slot) => slotMatches(slot, targetSlot));
+    const readiness = {
+        ready_to_craft: 24,
+        component_ready: 14,
+        active: 8,
+        blocked: -100
+    }[String(plan?.status || '')] || 0;
+    const role = memberRole(member, options);
+    return targetDebt * 100
+        + overallDebt * 5
+        + (missingTargetSlot ? 20 : 0)
+        + (ROLE_PRIORITY[role] || 0)
+        + readiness;
+}
+
 function goalKey(clanId, member, plan) {
     return [
         'clan-equipment',
@@ -61,27 +129,44 @@ function selectTargetMember(members = [], plans = new Map(), previousGoal = null
     const previousMember = members.find((member) => memberId(member) === previousMemberId);
     const previousPlan = plans.get(previousMemberId);
 
-    // One clan goal owns one beneficiary until the item is actually equipped.
-    // This prevents a replan from jumping to another member while the current
-    // member is still waiting for a drop, craft, or market purchase.
-    if (previousMember && isAcquisitionPlan(previousPlan)
-        && previousGoal?.status !== 'completed'
-        && !options.previousFulfilled) {
-        return { member: previousMember, plan: previousPlan, preserved: true };
-    }
-
-    return members
-        .filter((member) => member?.phase === 'cold' && !member?.partyId)
-        .map((member) => ({ member, plan: plans.get(memberId(member)) }))
+    const ranked = members
+        .filter((member) => member?.phase === 'cold'
+            && (!member?.partyId || memberId(member) === previousMemberId))
+        .map((member) => {
+            const plan = plans.get(memberId(member));
+            return { member, plan, priority: equipmentPriority(member, plan, options) };
+        })
         .filter((entry) => isAcquisitionPlan(entry.plan))
         .sort((left, right) => (
-            planPriority(right.plan) - planPriority(left.plan)
+            right.priority - left.priority
+            || planPriority(right.plan) - planPriority(left.plan)
             || number(left.member.level) - number(right.member.level)
             || memberId(left.member) - memberId(right.member)
-        ))[0] || null;
+        ));
+    const selected = ranked[0] || null;
+    if (!selected) return null;
+
+    // Keep a current beneficiary only while its equipment debt is at least as
+    // important as the best alternative. This gives a nearly-finished craft a
+    // small stability bonus, but lets a weaker tank/healer or a materially
+    // worse-equipped member take over at the next clan review.
+    if (previousMember && isAcquisitionPlan(previousPlan)
+        && previousPlan.status !== 'blocked'
+        && previousGoal?.status !== 'completed'
+        && !options.previousFulfilled) {
+        const previousPriority = equipmentPriority(previousMember, previousPlan, options);
+        if (memberId(selected.member) === previousMemberId || previousPriority >= selected.priority) {
+            return { member: previousMember, plan: previousPlan, priority: previousPriority, preserved: true };
+        }
+    }
+    return {
+        ...selected,
+        rotated: previousMemberId > 0 && previousMemberId !== memberId(selected.member),
+        previousMemberId: previousMemberId || null
+    };
 }
 
-function buildGoal(clan, selection, previousGoal = null, timestamp = Date.now()) {
+function buildGoal(clan, selection, previousGoal = null, timestamp = Date.now(), options = {}) {
     if (!selection?.member || !selection?.plan) return null;
     const member = selection.member;
     const plan = selection.plan;
@@ -119,12 +204,16 @@ function buildGoal(clan, selection, previousGoal = null, timestamp = Date.now())
             selectedAt: timestamp,
             reasonCode: `clan_equipment_${route}`
         },
-        assignedMemberIds: [memberIdValue],
+        assignedMemberIds: Array.isArray(options.assignedMemberIds) && options.assignedMemberIds.length
+            ? [...new Set(options.assignedMemberIds.map(number).filter(Boolean))]
+            : [memberIdValue],
         partyId: null,
         catastrophicFailures: sameTarget ? number(previousGoal.catastrophicFailures) : 0,
         status,
         reasonCodes: [`clan_equipment_${route}`],
         goalKey: goalKey(clan.id, member, plan),
+        priorityScore: number(selection.priority),
+        beneficiaryRole: String(options.roleFor?.(member) || member?.stats?.role || 'dps'),
         createdAt: sameTarget ? number(previousGoal.createdAt, timestamp) : timestamp,
         updatedAt: timestamp
     };
@@ -136,6 +225,7 @@ module.exports = {
     goalKey,
     hasTarget,
     isAcquisitionPlan,
+    equipmentPriority,
     planPriority,
     routeFor,
     selectTargetMember,

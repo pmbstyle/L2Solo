@@ -1,4 +1,5 @@
 const assert = require('assert');
+const { DatabaseSync } = require('node:sqlite');
 
 require('../src/Global');
 
@@ -96,6 +97,49 @@ try {
         const invalidPlanMigration = statements.find((entry) => entry.sql.includes("json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan'"));
         assert(invalidPlanMigration, 'startup must discard malformed persisted equipment plans that passive bots would not otherwise replan');
         assert(invalidPlanMigration.sql.includes("'$.equipmentPlan.target.selfId'"), 'the invalid-plan migration must validate the persisted target identity');
+        assert(invalidPlanMigration.sql.includes("'$.equipmentPlan.rateModelVersion'"),
+            'startup must immediately discard routes from a superseded source model');
+        assert(invalidPlanMigration.sql.includes("activity = 'hunting'"),
+            'startup model invalidation must not reset passive market, craft, or blocked workflows');
+        assert(invalidPlanMigration.sql.includes("'$.equipmentPlan.status') = 'active'"),
+            'startup model invalidation must preserve inactive acquisition plans');
+        assert(invalidPlanMigration.sql.includes("'$.equipmentPlan.expectedKills') IS NOT NULL"),
+            'startup model invalidation must only reset combat-rate routes');
+        assert.strictEqual(invalidPlanMigration.params[1], GearPlanner.RATE_MODEL_VERSION,
+            'startup invalidation must track the current planner model instead of a stale literal');
+        const migrationProbe = new DatabaseSync(':memory:');
+        try {
+            migrationProbe.exec(`CREATE TABLE bot_life_state (
+                characterId INTEGER PRIMARY KEY,
+                activity TEXT NOT NULL,
+                statsJson TEXT NOT NULL,
+                updatedAt INTEGER NOT NULL
+            )`);
+            const insertProbe = migrationProbe.prepare(`INSERT INTO bot_life_state
+                (characterId, activity, statsJson, updatedAt) VALUES (?, ?, ?, 0)`);
+            const staleVersion = GearPlanner.RATE_MODEL_VERSION - 1;
+            const validTarget = { selfId: 100, name: 'Valid Target' };
+            [
+                [1, 'hunting', { status: 'active', strategy: 'direct_drop', expectedKills: 10, rateModelVersion: staleVersion, target: validTarget }],
+                [2, 'hunting', { status: 'blocked', strategy: 'blocked', rateModelVersion: staleVersion, target: validTarget }],
+                [3, 'shopping', { status: 'active', strategy: 'market', rateModelVersion: staleVersion, target: validTarget }],
+                [4, 'crafting', { status: 'ready_to_craft', strategy: 'craft', rateModelVersion: staleVersion, target: validTarget }],
+                [5, 'crafting', { status: 'component_ready', strategy: 'craft', rateModelVersion: staleVersion, target: validTarget }],
+                [6, 'merchant', { status: 'blocked', strategy: 'blocked', rateModelVersion: GearPlanner.RATE_MODEL_VERSION, target: { selfId: 0, name: '' } }]
+            ].forEach(([characterId, activity, equipmentPlan]) => insertProbe.run(
+                characterId,
+                activity,
+                JSON.stringify({ equipmentPlan, partyRequest: { status: 'open' }, clanPartyObjective: { clanId: 1 } })
+            ));
+            migrationProbe.prepare(invalidPlanMigration.sql).run(...invalidPlanMigration.params);
+            const retainedPlanIds = migrationProbe.prepare(`SELECT characterId FROM bot_life_state
+                WHERE json_extract(statsJson, '$.equipmentPlan.target') IS NOT NULL ORDER BY characterId`).all()
+                .map((row) => Number(row.characterId));
+            assert.deepStrictEqual(retainedPlanIds, [2, 3, 4, 5],
+                'startup model invalidation must remove only stale combat routes and malformed plans');
+        } finally {
+            migrationProbe.close();
+        }
         const fulfilledPlanMigration = statements.find((entry) => entry.sql.includes('fulfilled_equipment_plans'));
         assert(fulfilledPlanMigration, 'startup must discard equipment plans whose exact target slot is already equipped');
         assert(fulfilledPlanMigration.sql.includes('json_each'), 'fulfilled paired-slot plans must inspect their persisted equipped slots');

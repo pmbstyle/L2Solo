@@ -8,6 +8,10 @@ const RaidEntityIndex = invoke('GameServer/World/RaidEntityIndex');
 const DEFAULT_RETREAT_DISTANCE = 1100;
 const RAID_DISENGAGE_GRACE_MS = 15000;
 const RAID_OPENER_MIN_HP_RATIO = 0.55;
+// Bots currently have no supported raid-boss progression path. Keep the raid
+// index for avoidance and retreat, but never authorize autonomous or
+// player-led companion combat against a raid entity.
+const BOT_RAID_PARTICIPATION_ENABLED = false;
 
 function world() {
     return invoke('GameServer/World/World');
@@ -30,7 +34,10 @@ function templateId(target) {
 function isRaidBoss(target) {
     return target?.fetchIsRaidBoss?.() === true
         || target?.model?.raidBoss === true
-        || target?.template?.raidBoss === true;
+        || target?.template?.raidBoss === true
+        || String(target?.fetchKind?.() || '').toLowerCase() === 'boss'
+        || String(target?.template?.kind || '').toLowerCase() === 'boss'
+        || String(target?.model?.template?.kind || '').toLowerCase() === 'boss';
 }
 
 function isRaidMinion(target) {
@@ -124,6 +131,7 @@ function selectRaidOpener(leaderSession) {
 }
 
 function leaderDesignatedRaidTarget(leaderSession) {
+    if (!BOT_RAID_PARTICIPATION_ENABLED) return null;
     const leader = leaderSession?.actor;
     if (!leader || leader.fetchIsOnline?.() !== true || leader.isDead?.() || leader.state?.fetchDead?.()) return null;
     const targetId = Number(leader.fetchDestId?.() || 0);
@@ -183,6 +191,10 @@ function startPlayerPartyRaid(leaderSession, boss, target, now) {
 }
 
 function syncPlayerPartyRaid(leaderSession, now = Date.now()) {
+    if (!BOT_RAID_PARTICIPATION_ENABLED) {
+        if (leaderSession) leaderSession.partyRaidEngagement = undefined;
+        return null;
+    }
     if (playerPartySessions(leaderSession).length === 0) {
         if (leaderSession) leaderSession.partyRaidEngagement = undefined;
         return null;
@@ -247,6 +259,7 @@ function syncPlayerPartyRaid(leaderSession, now = Date.now()) {
 }
 
 function canEngagePlayerPartyRaid(session, target, leaderSession = session?.followPlayerSession) {
+    if (!BOT_RAID_PARTICIPATION_ENABLED) return false;
     if (!isOnlineCompanion(session, leaderSession)) return false;
     const raid = syncPlayerPartyRaid(leaderSession);
     if (!raid || !belongsToRaid(target, raid)) return false;
@@ -257,6 +270,7 @@ function canEngagePlayerPartyRaid(session, target, leaderSession = session?.foll
 }
 
 function isEngagedPlayerPartyRaidTarget(leaderSession, target) {
+    if (!BOT_RAID_PARTICIPATION_ENABLED) return false;
     const raid = syncPlayerPartyRaid(leaderSession);
     return raid?.phase === 'combat' && belongsToRaid(target, raid);
 }
@@ -325,6 +339,7 @@ function retreat(session, bot, threat, options = {}) {
 }
 
 module.exports = {
+    BOT_RAID_PARTICIPATION_ENABLED,
     RAID_MINION_TEMPLATE_IDS,
     isRaidBoss,
     isRaidMinion,

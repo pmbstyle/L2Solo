@@ -1,5 +1,6 @@
 const SIEGE_CLAN = /\bsiege\b/i;
 const CASTLE_ROYAL_GATEKEEPER = /^(?:Gludio|Dion|Giran|Oren|Aden) Royal Gatekeeper$/i;
+const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 
 function npcName(npc) {
     if (!npc) return '';
@@ -28,7 +29,10 @@ function isCastleUtility(npc) {
 }
 
 function canHunt(npc) {
-    return !!npc && !isSiegeGuard(npc) && !isCastleUtility(npc);
+    return !!npc
+        && !BotRaidSafety.isProtectedRaidEntity(npc)
+        && !isSiegeGuard(npc)
+        && !isCastleUtility(npc);
 }
 
 module.exports = { npcName, clanName, isSiegeGuard, isCastleUtility, canHunt };

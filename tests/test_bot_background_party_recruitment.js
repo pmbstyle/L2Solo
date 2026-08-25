@@ -7,6 +7,7 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const PartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const HotActivation = invoke('GameServer/Bot/Population/HotActivation');
 const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const BotManager = invoke('GameServer/Bot/BotManager');
@@ -178,6 +179,61 @@ async function run() {
     ], { prioritizePartyWait: true });
     assert.strictEqual(objectiveGroups.length, 2, 'party formation must keep different acquisition objectives separate even on one spot');
     assert.strictEqual(objectiveGroups[0].length, 2, 'compatible requesters must share an objective group');
+    const clanObjectiveGroups = PopulationService.groupPartyCandidatesByObjective([
+        { characterId: 114, level: 25, stats: { partyRequest: { status: 'open', priority: 'required', objectiveKey: 'direct_drop:cruma:701', clanGoalKey: 'clan-equipment:77:114:88:7' } } },
+        { characterId: 115, level: 25, stats: { partyRequest: { status: 'open', priority: 'required', objectiveKey: 'direct_drop:cruma:701', clanGoalKey: 'clan-equipment:78:115:88:7' } } }
+    ]);
+    assert.strictEqual(clanObjectiveGroups.length, 2,
+        'different clan equipment goals must never merge merely because they hunt the same NPC');
+    const prioritizedClanGroups = PopulationService.groupPartyCandidatesByObjective([
+        { characterId: 116, level: 25, stats: { partyRequest: { status: 'open', priority: 'required', objectiveKey: 'large-normal' } } },
+        { characterId: 117, level: 25, stats: { partyRequest: { status: 'open', priority: 'required', objectiveKey: 'large-normal' } } },
+        { characterId: 118, level: 25, stats: { clanPartyObjective: { status: 'open', priority: 'required', objectiveKey: 'clan-route', clanId: 77, clanGoalKey: 'clan-equipment:77:118:88:7', clanOperation: 'equipment' } } }
+    ], { prioritizePartyWait: true });
+    assert.strictEqual(prioritizedClanGroups[0][0].characterId, 118,
+        'clan equipment groups must be admitted before larger ordinary required queues');
+    assert.strictEqual(PopulationService.partyObjectivesShareRoute(
+        { spotId: 'cruma', npcId: 701, clanGoalKey: 'clan-equipment:77:114:88:7' },
+        { spotId: 'cruma', npcId: 701, clanGoalKey: 'clan-equipment:78:115:88:7' }
+    ), false, 'route compatibility must preserve clan ownership');
+    assert.deepStrictEqual(
+        PopulationService.partyLimitsForObjective({
+            clanId: 77,
+            clanOperation: 'equipment',
+            minPartySize: 5,
+            maxPartySize: 9,
+            levelRange: 99
+        }),
+        { minSize: 5, maxSize: 9, levelRange: 99 },
+        'a clan equipment objective may form one native nine-member party'
+    );
+    assert.strictEqual(
+        PopulationService.requiresClanEquipmentParty({
+            stats: {
+                partyRequest: {
+                    status: 'open',
+                    priority: 'required',
+                    clanId: 77,
+                    clanOperation: 'equipment'
+                }
+            }
+        }),
+        true,
+        'a required clan equipment roster must override elective persona party preferences'
+    );
+    assert.strictEqual(
+        PartyRequestPlanner.partyObjectiveForState({
+            stats: {
+                partyRequest: { status: 'open', priority: 'required', objectiveKey: 'personal-route' },
+                clanPartyObjective: {
+                    status: 'open', priority: 'required', objectiveKey: 'clan-route', clanId: 77,
+                    clanGoalKey: 'clan-equipment:77:114:88:7', clanOperation: 'equipment'
+                }
+            }
+        }).objectiveKey,
+        'clan-route',
+        'a stale personal request must not hide the durable clan party objective'
+    );
     assert.strictEqual(
         PopulationService.partyTargetNpcId({ stats: { objective: { strategy: 'craft', npcId: 701 } } }, { stats: {} }),
         701,
@@ -211,6 +267,28 @@ async function run() {
     assert.deepStrictEqual(released.map((party) => party.partyId), ['bgp_elective']);
     assert.deepStrictEqual(reclaimed, [{ partyId: 'bgp_elective', status: 'dissolved' }]);
     assert.deepStrictEqual(dissolvedReleases, [{ partyId: 'bgp_elective', reason: 'party_capacity_reclaimed' }]);
+
+    reclaimed.length = 0;
+    dissolvedReleases.length = 0;
+    const ordinaryRequiredA = { ...requiredParty, partyId: 'bgp_required_a', startedAt: 1, stats: { objective: { priority: 'required' } } };
+    const ordinaryRequiredB = { ...requiredParty, partyId: 'bgp_required_b', startedAt: 2, stats: { objective: { priority: 'required' } } };
+    PartyState.active = () => [ordinaryRequiredA, ordinaryRequiredB];
+    LifeState.partyRequirementCounts = () => Promise.resolve([
+        { partyId: 'bgp_required_a', requiredMembers: 2 },
+        { partyId: 'bgp_required_b', requiredMembers: 2 }
+    ]);
+    const clanWaiters = Array.from({ length: 5 }, (_, index) => ({
+        characterId: 40 + index,
+        stats: {
+            clanPartyObjective: {
+                status: 'open', priority: 'required', clanId: 77, clanOperation: 'equipment',
+                clanGoalKey: 'clan-equipment:77:40:88:7', objectiveKey: 'clan-route'
+            }
+        }
+    }));
+    const clanReleased = await PopulationService.reclaimBackgroundPartyCapacity(clanWaiters);
+    assert.deepStrictEqual(clanReleased.map((party) => party.partyId), ['bgp_required_a'],
+        'a saturated queue must yield one ordinary required party slot to a missing clan equipment group');
 
     const activationOrder = [];
     ColdSimulationOwner.handoffToMain = async (state) => {

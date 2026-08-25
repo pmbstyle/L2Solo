@@ -15,12 +15,13 @@ const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
+const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
 
 const RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
 const WEAPON_SLOTS = new Set([7, 14]);
 const ARMOR_SLOTS = new Set([6, 9, 10, 11, 12, 15]);
 const JEWEL_SLOTS = new Set([1, 2, 3, 4, 5]);
-const RATE_MODEL_VERSION = 6;
+const RATE_MODEL_VERSION = 7;
 const DIRECT_FAILURE_RESOLVE_LIMIT = 8;
 const DIRECT_DROP_EXHAUSTION_MULTIPLIER = 3;
 const DIRECT_ROUTE_COOLDOWN_MS = 60 * 60 * 1000;
@@ -30,6 +31,8 @@ const NPC_GEAR_MAX_RANK = 'd';
 let staticNpcItemIdsCache = null;
 let itemCatalogSource = null;
 let itemCatalogById = new Map();
+let npcCatalogSource = null;
+let npcCatalogById = new Map();
 
 function catalogItem(selfId) {
     const items = DataCache.items || [];
@@ -38,6 +41,15 @@ function catalogItem(selfId) {
         itemCatalogById = new Map(items.map((item) => [Number(item.selfId), item]));
     }
     return itemCatalogById.get(Number(selfId)) || null;
+}
+
+function catalogNpc(selfId) {
+    const npcs = DataCache.npcs || [];
+    if (npcCatalogSource !== npcs) {
+        npcCatalogSource = npcs;
+        npcCatalogById = new Map(npcs.map((npc) => [Number(npc.selfId), npc]));
+    }
+    return npcCatalogById.get(Number(selfId)) || null;
 }
 
 function isRealCatalogItem(item = {}) {
@@ -830,7 +842,16 @@ function equipmentTargetFulfilled(state = {}, plan = {}) {
 }
 
 function clanGoalPlanLocked(state = {}, plan = state?.stats?.equipmentPlan) {
-    return isClanOwnedPlan(plan) && !equipmentTargetFulfilled(state, plan);
+    const npcId = Number(plan?.next?.npcId || 0);
+    return isClanOwnedPlan(plan)
+        && plan?.status !== 'blocked'
+        && !equipmentTargetFulfilled(state, plan)
+        && (!npcId || isBotEligibleSourceNpcId(npcId));
+}
+
+function isBotEligibleSourceNpcId(npcId) {
+    const npc = catalogNpc(npcId);
+    return !!npc && BotHuntingTargetPolicy.canHunt(npc);
 }
 
 function directPlanFailure(state = {}, plan = {}, timestamp = Date.now()) {
@@ -892,6 +913,9 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
     const currentGrade = gradeForLevel(state.level);
     const currentLevel = Number(state.level || 1);
     const sameGrade = previousPlan?.grade === currentGrade;
+    const sourceNpcId = Number(previousPlan?.next?.npcId || 0);
+    const sourceAllowed = !sourceNpcId || isBotEligibleSourceNpcId(sourceNpcId);
+    const modelCurrent = Number(previousPlan?.rateModelVersion || 0) >= RATE_MODEL_VERSION;
     const recoveryTargets = sameGrade ? (previousPlan.recoveryTargets || [])
         .filter((entry) => Number(entry.until || 0) > timestamp && Number(entry.targetId || 0) > 0)
         : [];
@@ -918,6 +942,12 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
         planCurrent: Boolean(previousPlan)
             && sameGrade
             && Number(previousPlan.plannedForLevel || 0) === currentLevel,
+        routeCurrent: Boolean(previousPlan)
+            && sameGrade
+            && sourceAllowed
+            && modelCurrent
+            && Number(previousPlan.plannedForLevel || 0) === currentLevel,
+        invalidSource: sourceAllowed ? null : { npcId: sourceNpcId, reason: 'protected_raid_source' },
         failure,
         recoveryTargets,
         excludedTargetIds: recoveryTargets.map((entry) => Number(entry.targetId)),
@@ -1434,4 +1464,4 @@ function sameObjective(left, right) {
     );
 }
 
-module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, replanContextFor, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
+module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, replanContextFor, isBotEligibleSourceNpcId, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };

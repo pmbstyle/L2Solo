@@ -15,6 +15,9 @@ const ACTION_TYPES = Object.freeze({
     MARKET: 'market',
     PARTY: 'party'
 });
+// Bump when a deploy adds a recovery behavior that must revisit durable goals
+// whose previous bootstrap action already succeeded under older code.
+const BOOTSTRAP_RECOVERY_VERSION = 4;
 
 const metrics = {
     bootstraps: 0,
@@ -104,10 +107,11 @@ async function refreshQueueStats() {
 
 function actionTypeFor(clan, goal) {
     if (!clan || !goal || goal.status === 'completed') return null;
-    // L3 equipment goals are consumed by the beneficiary's normal gear and
-    // party lifecycle. Keeping them out of this queue avoids turning a durable
-    // objective into a per-tick clan scheduler job.
-    if (goal.type === 'equipment') return null;
+    // The bots execute an equipment route through their normal lifecycle, but
+    // the clan re-evaluates the weakest/highest-priority beneficiary on the
+    // bounded retry cadence. This also repairs a lost durable plan binding
+    // without turning equipment into a per-combat-tick scheduler job.
+    if (goal.type === 'equipment') return ACTION_TYPES.PLAN;
     if (number(clan.level) <= 1) return ACTION_TYPES.CONTRIBUTION;
     switch (String(goal.plan?.kind || '')) {
         case 'warehouse': return ACTION_TYPES.WAREHOUSE;
@@ -149,7 +153,7 @@ async function bootstrap() {
     for (const clan of clans) {
         const result = await Database.enqueueClanAction({
             clanId: clan.clanId,
-            actionKey: `clan:${Number(clan.clanId)}:recovery:${Number(clan.updatedAt) || 0}`,
+            actionKey: `clan:${Number(clan.clanId)}:recovery:v${BOOTSTRAP_RECOVERY_VERSION}:${Number(clan.updatedAt) || 0}`,
             actionType: ACTION_TYPES.PLAN,
             priority: 75,
             payload: { reason: 'runtime_bootstrap', clanId: Number(clan.clanId) }

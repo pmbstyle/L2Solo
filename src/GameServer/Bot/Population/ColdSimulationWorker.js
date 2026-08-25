@@ -22,6 +22,8 @@ const stubs = new Map([
     ['GameServer/Bot/AI/BotRaidSafety', {
         isProtectedRaidEntity: (target) => target?.raidBoss === true
             || target?.template?.raidBoss === true
+            || String(target?.kind || '').toLowerCase() === 'boss'
+            || String(target?.template?.kind || '').toLowerCase() === 'boss'
             || Number(target?.minionBossObjectId || target?.minionBossTemplateId || 0) > 0
     }],
     ['GameServer/Bot/Economy/CraftShopService', {
@@ -135,7 +137,7 @@ function startKernel(config = {}) {
             const clanGoalLocked = GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan);
             const reusablePartyRequest = !state.party?.partyId
                 && previousPlan?.next
-                && replanContext.planCurrent
+                && replanContext.routeCurrent
                 && !replanContext.failure
                 && state.stats?.partyRequest?.status === 'open'
                 && Number(state.stats.partyRequest.reviewAt || 0) > timestamp;
