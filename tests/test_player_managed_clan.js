@@ -20,6 +20,7 @@ function seedDatabase() {
     const seed = new DatabaseSync(databasePath);
     seed.exec(fs.readFileSync(path.join(rootDir, 'database', 'sql', 'sqlite.sql'), 'utf8'));
     seed.exec('ALTER TABLE clan_simulation_clans DROP COLUMN mode');
+    seed.exec('DROP TABLE clan_orders');
     seed.prepare('INSERT INTO accounts(username, password) VALUES (?, ?)').run('managed_player', 'test-only');
     seed.prepare('INSERT INTO accounts(username, password) VALUES (?, ?)').run('bot_pop_managed', 'test-only');
     const insertCharacter = seed.prepare(`INSERT INTO characters(
@@ -48,6 +49,8 @@ async function main() {
     try {
         const columns = await Database.execute(['PRAGMA table_info(clan_simulation_clans)', []]);
         assert(columns.some((column) => column.name === 'mode'), 'migration 26 must add the clan automation mode');
+        const orderColumns = await Database.execute(['PRAGMA table_info(clan_orders)', []]);
+        assert(orderColumns.some((column) => column.name === 'strategy'), 'migration 27 must add durable clan orders');
 
         const enabled = await Database.syncPlayerManagedClan(6200001);
         assert.strictEqual(enabled.ok, true);
@@ -66,12 +69,11 @@ async function main() {
         assert.strictEqual(state.level, 3);
         assert.deepStrictEqual(state.memberIds, [5200002]);
 
-        const [action] = await Database.execute([
-            `SELECT actionType, status, reasonCode FROM clan_actions
-             WHERE clanId = ? ORDER BY id DESC LIMIT 1`,
+        const actions = await Database.execute([
+            'SELECT id FROM clan_actions WHERE clanId = ?',
             [6200001]
         ]);
-        assert.deepStrictEqual(action, { actionType: 'goal_plan', status: 'pending', reasonCode: 'player_managed_sync' });
+        assert.strictEqual(actions.length, 0, 'a player-managed clan without an order must stay idle');
         assert.strictEqual(await Database.isAutonomousClan(6200001), false,
             'player-managed clans must not consume autonomous founder capacity');
         assert.strictEqual(await Database.isAutonomousBotMember(5200002, 6200001), false,
@@ -82,6 +84,35 @@ async function main() {
         assert.strictEqual(projection.leaderId, 5200001);
         assert(projection.members.some((member) => member.characterId === 5200002 && member.phase === 'cold'));
 
+        const legacyState = { ...state, goal: {
+            type: 'equipment',
+            status: 'executing',
+            target: { itemId: 2406, itemName: 'Avadon Robe' },
+            plan: { kind: 'farm' }
+        } };
+        await Database.execute([
+            'UPDATE clan_simulation_clans SET stateJson = ? WHERE clanId = ?',
+            [JSON.stringify(legacyState), 6200001]
+        ]);
+        await Database.enqueueClanAction({
+            clanId: 6200001,
+            actionKey: 'test:legacy-player-goal',
+            actionType: 'party'
+        });
+        const cleaned = await Database.syncPlayerManagedClan(6200001);
+        assert.strictEqual(cleaned.changed, true);
+        const [cleanedSimulation] = await Database.execute([
+            'SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?',
+            [6200001]
+        ]);
+        assert.strictEqual(JSON.parse(cleanedSimulation.stateJson).goal, null,
+            'legacy autonomous goals must not survive in a player-managed clan without an order');
+        const [cleanedAction] = await Database.execute([
+            'SELECT status, reasonCode FROM clan_actions WHERE clanId = ? ORDER BY id DESC LIMIT 1',
+            [6200001]
+        ]);
+        assert.deepStrictEqual(cleanedAction, { status: 'cancelled', reasonCode: 'player_managed_legacy_goal_cleared' });
+
         await Database.removeCharacterFromClan(5200002);
         const disabled = await Database.syncPlayerManagedClan(6200001);
         assert.strictEqual(disabled.disabled, true);
@@ -90,11 +121,11 @@ async function main() {
             [6200001]
         ]);
         assert.strictEqual(remaining.length, 0, 'automation should switch off after the last bot leaves');
-        const [cancelled] = await Database.execute([
-            'SELECT status, reasonCode FROM clan_actions WHERE clanId = ? ORDER BY id DESC LIMIT 1',
+        const remainingActions = await Database.execute([
+            "SELECT id FROM clan_actions WHERE clanId = ? AND status IN ('pending', 'running')",
             [6200001]
         ]);
-        assert.deepStrictEqual(cancelled, { status: 'cancelled', reasonCode: 'player_managed_disabled' });
+        assert.strictEqual(remainingActions.length, 0);
 
         console.log('Player-managed clan checks passed');
     } finally {

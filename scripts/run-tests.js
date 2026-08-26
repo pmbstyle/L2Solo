@@ -201,6 +201,7 @@ const tests = [
     'tests/test_change_class.js',
     'tests/test_clan_bot_invite.js',
     'tests/test_player_managed_clan.js',
+    'tests/test_clan_orders.js',
     'tests/test_clan_simulation_slice0.js',
     'tests/test_clan_simulation_slice1.js',
     'tests/test_clan_simulation_slice2.js',

@@ -189,6 +189,33 @@ CREATE TABLE IF NOT EXISTS clan_operations (
 CREATE INDEX IF NOT EXISTS clan_operations_clan_status
     ON clan_operations(clanId, status, updatedAt);
 
+CREATE TABLE IF NOT EXISTS clan_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+    revision INTEGER NOT NULL DEFAULT 1,
+    kind TEXT NOT NULL CHECK(kind IN ('gather_item')),
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK(status IN ('active', 'paused', 'completed', 'cancelled', 'blocked')),
+    itemId INTEGER NOT NULL,
+    itemName TEXT NOT NULL DEFAULT '',
+    amount INTEGER NOT NULL CHECK(amount > 0),
+    strategy TEXT NOT NULL DEFAULT 'auto' CHECK(strategy IN ('auto', 'farm', 'market', 'craft')),
+    maxUnitPrice INTEGER NOT NULL DEFAULT 0 CHECK(maxUnitPrice >= 0),
+    budget INTEGER NOT NULL DEFAULT 0 CHECK(budget >= 0),
+    spent INTEGER NOT NULL DEFAULT 0 CHECK(spent >= 0),
+    memberIdsJson TEXT NOT NULL DEFAULT '[]',
+    planJson TEXT NOT NULL DEFAULT '{}',
+    reasonCode TEXT NOT NULL DEFAULT '',
+    createdAt INTEGER NOT NULL DEFAULT 0,
+    updatedAt INTEGER NOT NULL DEFAULT 0,
+    resolvedAt INTEGER,
+    UNIQUE(clanId, revision)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS clan_orders_current
+    ON clan_orders(clanId) WHERE status IN ('active', 'paused', 'blocked');
+CREATE INDEX IF NOT EXISTS clan_orders_clan_recent
+    ON clan_orders(clanId, updatedAt DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS clan_operation_members (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     operationId INTEGER NOT NULL REFERENCES clan_operations(id) ON DELETE CASCADE,

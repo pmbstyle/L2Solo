@@ -20,6 +20,8 @@
 
         let match = pathname.match(/^\/observer\/raid-bosses\/(\d+)$/);
         if (match) return { name: 'raid-bosses', id: Number(match[1]) };
+        match = pathname.match(/^\/observer\/clans\/(\d+)\/map$/);
+        if (match) return { name: 'world', clanId: Number(match[1]) };
         match = pathname.match(/^\/observer\/clans\/(\d+)$/);
         if (match) return { name: 'clans', id: Number(match[1]) };
         match = pathname.match(/^\/observer\/actors\/(bot|player)\/(\d+)$/);
@@ -29,6 +31,7 @@
 
     function href(route = {}) {
         if (route.name === 'rankings') return `${BASE}/rankings`;
+        if (route.name === 'world' && Number(route.clanId)) return `${BASE}/clans/${Number(route.clanId)}/map`;
         if (route.name === 'raid-bosses') return route.id ? `${BASE}/raid-bosses/${Number(route.id)}` : `${BASE}/raid-bosses`;
         if (route.name === 'clans') return route.id ? `${BASE}/clans/${Number(route.id)}` : `${BASE}/clans`;
         if (route.name === 'actor' && (route.kind === 'bot' || route.kind === 'player') && Number(route.id)) {

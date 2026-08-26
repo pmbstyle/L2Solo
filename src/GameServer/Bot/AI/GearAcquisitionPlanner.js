@@ -454,6 +454,15 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
             if (Number(template?.etc?.slot || 0) === 8) setUnequipped(owned);
         });
     }
+    Object.values(next).forEach((owned) => {
+        if (!Array.isArray(owned?.instances)) return;
+        const slots = equippedSlotsFor(owned, owned.slot);
+        owned.instances = owned.instances.map((instance, index) => ({
+            ...instance,
+            equipped: Number(slots[index] || 0) > 0,
+            slot: Number(slots[index] || 0)
+        }));
+    });
     return next;
 }
 

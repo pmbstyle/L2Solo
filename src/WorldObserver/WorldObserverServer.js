@@ -10,6 +10,8 @@ const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
+const ClanGoalService = invoke('GameServer/Clan/ClanGoalService');
+const ClanOrderService = invoke('GameServer/Clan/ClanOrderService');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const ClanSimulationConfig = invoke('GameServer/Clan/ClanSimulationConfig');
 const Database = invoke('Database');
@@ -470,6 +472,8 @@ function equipmentSlot(slot) {
 let itemTemplateIndex = null;
 let itemTemplateSource = null;
 let itemIconCatalogCache = null;
+let clanOrderItemCatalogSource = null;
+let clanOrderItemCatalogCache = null;
 
 function normalizeItemName(value) {
     return String(value || '')
@@ -811,10 +815,64 @@ function compactClanEvent(row) {
     };
 }
 
+function compactClanOrder(order) {
+    if (!order) return null;
+    const icon = itemIconFor(null, order.itemId, order.itemName, null);
+    return {
+        id: clanNumber(order.id),
+        revision: clanNumber(order.revision),
+        kind: order.kind || 'gather_item',
+        status: order.status || null,
+        itemId: clanNumber(order.itemId),
+        itemName: order.itemName || `Item ${order.itemId}`,
+        iconUrl: icon?.url || null,
+        amount: clanNumber(order.amount),
+        strategy: order.strategy || 'auto',
+        maxUnitPrice: clanNumber(order.maxUnitPrice),
+        budget: clanNumber(order.budget),
+        spent: clanNumber(order.spent),
+        memberIds: (order.memberIds || []).map(Number).filter(Boolean),
+        plan: order.plan || {},
+        reasonCode: order.reasonCode || null,
+        createdAt: clanNumber(order.createdAt),
+        updatedAt: clanNumber(order.updatedAt),
+        resolvedAt: clanNumber(order.resolvedAt) || null
+    };
+}
+
+function clanOrderItems(query = '', limit = 40) {
+    const needle = String(query || '').trim().toLowerCase().slice(0, 80);
+    const safeLimit = Math.max(1, Math.min(80, Math.floor(Number(limit) || 40)));
+    const source = DataCache.items || [];
+    if (clanOrderItemCatalogSource !== source || !clanOrderItemCatalogCache) {
+        clanOrderItemCatalogSource = source;
+        clanOrderItemCatalogCache = source
+            .map((item) => ClanOrderService.itemSnapshot(item))
+            .filter((item) => item && item.itemId !== 57 && item.itemName
+                && !/^\s*(?:\(not used\)|[_\d]+\s*$)/i.test(item.itemName))
+            .sort((left, right) => left.itemName.localeCompare(right.itemName) || left.itemId - right.itemId);
+    }
+    return clanOrderItemCatalogCache
+        .filter((item) => !needle
+            || item.itemName.toLowerCase().includes(needle)
+            || String(item.itemId) === needle)
+        .slice(0, safeLimit)
+        .map((item) => {
+            const icon = itemIconFor(null, item.itemId, item.itemName, item.itemKind);
+            return {
+                id: item.itemId,
+                name: item.itemName,
+                kind: item.itemKind,
+                price: item.itemPrice,
+                iconUrl: icon?.url || null
+            };
+        });
+}
+
 async function clanDetail(clanId) {
     const id = Number(clanId);
     if (!Number.isSafeInteger(id) || id <= 0) return null;
-    const [directory, members, events, warehouse, contributions, demands, operation, actions] = await Promise.all([
+    const [directory, members, events, warehouse, contributions, demands, operation, actions, orders] = await Promise.all([
         clanSnapshot(),
         clanMemberQuery(id),
         Database.fetchClanGoalEvents(id, 24),
@@ -833,7 +891,8 @@ async function clanDetail(clanId) {
             ORDER BY operations.createdAt DESC, operations.id DESC
             LIMIT 1
         `, [id]], 'observer:clan-operation')
-        , Database.fetchClanActions({ clanId: id, limit: 24 })
+        , Database.fetchClanActions({ clanId: id, limit: 24 }),
+        Database.fetchPlayerManagedClanOrders({ clanId: id, limit: 12 })
     ]);
     const overview = directory.clans.find((clan) => clan.id === id);
     if (!overview) return null;
@@ -898,6 +957,8 @@ async function clanDetail(clanId) {
             reasonCode: action.reasonCode || null,
             result: observerJson(action.resultJson)
         })),
+        order: compactClanOrder(orders.find((entry) => ['active', 'paused', 'blocked'].includes(String(entry.status))) || null),
+        orderHistory: orders.map(compactClanOrder),
         operation: operationRow ? {
             id: clanNumber(operationRow.id),
             type: operationRow.operationType || null,
@@ -915,6 +976,36 @@ async function clanDetail(clanId) {
         } : null,
         events: events.map(compactClanEvent)
     };
+}
+
+async function createPlayerManagedClanOrder(clanId, payload) {
+    const id = Number(clanId);
+    if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, code: 'invalid_clan' };
+    const clan = await ClanGoalService.clanProjectionById(id);
+    if (!clan) return { ok: false, code: 'target_not_player_managed' };
+    const result = await ClanOrderService.create(clan, payload || {});
+    return result.ok ? { ...result, order: compactClanOrder(result.order), goal: compactClanGoal(result.goal) } : result;
+}
+
+async function transitionPlayerManagedClanOrder(clanId, orderId, transition, payload) {
+    const id = Number(clanId);
+    const targetOrder = Number(orderId);
+    if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(targetOrder) || targetOrder <= 0) {
+        return { ok: false, code: 'invalid_clan_order' };
+    }
+    const clan = await ClanGoalService.clanProjectionById(id);
+    if (!clan) return { ok: false, code: 'target_not_player_managed' };
+    const current = await ClanOrderService.current(id);
+    if (!current || Number(current.id) !== targetOrder) return { ok: false, code: 'clan_order_not_active' };
+    const result = await ClanOrderService.transition(clan, transition, payload || {});
+    return result.ok ? { ...result, order: compactClanOrder(result.order), goal: compactClanGoal(result.goal) } : result;
+}
+
+function clanOrderMutationStatus(result) {
+    if (result?.ok) return 200;
+    if (result?.code === 'target_not_player_managed' || result?.code === 'clan_order_revision_conflict') return 409;
+    if (result?.code === 'clan_order_not_active') return 404;
+    return 400;
 }
 
 async function clanCrest(clanId) {
@@ -2159,6 +2250,56 @@ function route(request, response) {
         return;
     }
 
+    if (url.pathname === '/observer/api/clan-order-items') {
+        if (request.method !== 'GET') {
+            response.writeHead(405, { Allow: 'GET' });
+            response.end();
+            return;
+        }
+        try {
+            sendJson(response, {
+                query: String(url.searchParams.get('q') || ''),
+                items: clanOrderItems(url.searchParams.get('q'), url.searchParams.get('limit'))
+            });
+        } catch (err) {
+            sendJson(response, { error: err.message }, 500);
+        }
+        return;
+    }
+
+    const clanOrderCreateMatch = url.pathname.match(/^\/observer\/api\/clan\/(\d+)\/orders$/);
+    if (clanOrderCreateMatch) {
+        if (request.method !== 'POST') {
+            response.writeHead(405, { Allow: 'POST' });
+            response.end();
+            return;
+        }
+        readJsonBody(request, 32768)
+            .then((payload) => createPlayerManagedClanOrder(clanOrderCreateMatch[1], payload))
+            .then((result) => sendJson(response, result, clanOrderMutationStatus(result)))
+            .catch((err) => sendJson(response, { ok: false, error: err.message }, err.statusCode || 500));
+        return;
+    }
+
+    const clanOrderTransitionMatch = url.pathname.match(/^\/observer\/api\/clan\/(\d+)\/orders\/(\d+)\/(pause|resume|replan|cancel)$/);
+    if (clanOrderTransitionMatch) {
+        if (request.method !== 'POST') {
+            response.writeHead(405, { Allow: 'POST' });
+            response.end();
+            return;
+        }
+        readJsonBody(request)
+            .then((payload) => transitionPlayerManagedClanOrder(
+                clanOrderTransitionMatch[1],
+                clanOrderTransitionMatch[2],
+                clanOrderTransitionMatch[3],
+                payload
+            ))
+            .then((result) => sendJson(response, result, clanOrderMutationStatus(result)))
+            .catch((err) => sendJson(response, { ok: false, error: err.message }, err.statusCode || 500));
+        return;
+    }
+
     const clanCrestMatch = url.pathname.match(/^\/observer\/api\/clan\/(\d+)\/crest$/);
     if (clanCrestMatch) {
         if (request.method === 'POST') {
@@ -2235,7 +2376,7 @@ function route(request, response) {
         return;
     }
 
-    if (/^\/observer\/(?:world|rankings|raid-bosses(?:\/\d+)?|clans(?:\/\d+)?|actors\/(?:bot|player)\/\d+)\/?$/.test(url.pathname)) {
+    if (/^\/observer\/(?:world|rankings|raid-bosses(?:\/\d+)?|clans(?:\/\d+)?(?:\/map)?|actors\/(?:bot|player)\/\d+)\/?$/.test(url.pathname)) {
         sendFile(request, response, path.join(PUBLIC_DIR, 'index.html'));
         return;
     }
@@ -2268,6 +2409,7 @@ const WorldObserverServer = {
     compactClanGoal,
     compactClanOverview,
     compactClanMember,
+    compactClanOrder,
     compactActorClan,
     browserClanCrestData,
     decodeClanCrestPixels,
@@ -2276,6 +2418,9 @@ const WorldObserverServer = {
     clanCrest,
     clanSnapshot,
     clanDetail,
+    clanOrderItems,
+    createPlayerManagedClanOrder,
+    transitionPlayerManagedClanOrder,
     compactItem,
     itemIconFilePath,
     classCatalog,

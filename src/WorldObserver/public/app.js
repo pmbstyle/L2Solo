@@ -29,6 +29,8 @@ const state = {
     detailError: null,
     detailRequest: 0,
     clusterScope: null,
+    clanMapScope: null,
+    clanMapRequest: 0,
     rankingOpen: false,
     rankingMetric: 'level',
     rankingRaceKey: 'all',
@@ -47,6 +49,7 @@ const state = {
     clanDetail: null,
     clanDetailSignature: null,
     clanDetailLoading: false,
+    clanDetailDeferredRender: false,
     clanError: null,
     clanRequest: 0,
     clanLastLoadedAt: 0,
@@ -57,6 +60,14 @@ const state = {
     clanCrestDraft: null,
     clanCrestSaving: false,
     clanCrestMessage: null,
+    clanOrderDraft: null,
+    clanOrderItems: [],
+    clanOrderSearchLoading: false,
+    clanOrderSearchError: null,
+    clanOrderSearchRequest: 0,
+    clanOrderSearchTimer: null,
+    clanOrderSaving: false,
+    clanOrderMessage: null,
     applyingRoute: false,
     pendingRoute: null
 };
@@ -87,14 +98,23 @@ function applyRoute(route = Router.parse(window.location.pathname)) {
     try {
         if (route.name === 'world') {
             document.title = 'World Observer';
+            const clanId = Number(route.clanId) || null;
+            const scopeChanged = Number(state.clanMapScope?.id || 0) !== Number(clanId || 0);
+            setClanMapScope(clanId, route.clanName || null, { resetFilters: Boolean(clanId && scopeChanged) });
+            if (clanId && (scopeChanged || !state.clanMapScope?.actorKeys)) loadClanMapMembers(clanId);
             closeRankings({ updateRoute: false });
             closeRaidBosses({ updateRoute: false });
             closeClans({ updateRoute: false });
             clearActorSelection();
             if (state.snapshot) {
+                renderClassFilter();
+                renderFilterCounts();
                 renderPoints();
                 renderRoster();
                 renderSelected();
+                if (clanId) focusClanMap();
+            } else if (clanId) {
+                state.pendingRoute = route;
             }
             return;
         }
@@ -207,6 +227,9 @@ const els = {
     zoomInButton: document.querySelector('#zoomInButton'),
     zoomOutButton: document.querySelector('#zoomOutButton'),
     filterStrip: document.querySelector('#filterStrip'),
+    mapScope: document.querySelector('#mapScope'),
+    mapScopeName: document.querySelector('#mapScopeName'),
+    clearMapScope: document.querySelector('#clearMapScope'),
     actorSearch: document.querySelector('#actorSearch'),
     minLevelFilter: document.querySelector('#minLevelFilter'),
     maxLevelFilter: document.querySelector('#maxLevelFilter'),
@@ -495,6 +518,122 @@ function actors() {
     ];
 }
 
+function clanMapName(clanId) {
+    const id = Number(clanId);
+    return clanItems().find((clan) => Number(clan.id) === id)?.name
+        || (Number(state.clanDetail?.clan?.id) === id ? state.clanDetail.clan.name : null)
+        || `Clan #${id}`;
+}
+
+function resetClanMapFilters() {
+    state.phase = 'all';
+    state.search = '';
+    state.minLevel = null;
+    state.maxLevel = null;
+    state.classKey = 'all';
+    state.classOptionsSignature = null;
+    state.clusterScope = null;
+    state.selectedRaidBossId = null;
+    if (els.actorSearch) els.actorSearch.value = '';
+    if (els.minLevelFilter) els.minLevelFilter.value = '';
+    if (els.maxLevelFilter) els.maxLevelFilter.value = '';
+    els.filterStrip?.querySelectorAll('.filter').forEach((button) => {
+        button.classList.toggle('is-active', button.dataset.phase === 'all');
+    });
+}
+
+function setClanMapScope(clanId, clanName = null, { resetFilters = false } = {}) {
+    const id = Number(clanId) || null;
+    if (resetFilters) resetClanMapFilters();
+    const existingKeys = Number(state.clanMapScope?.id) === id ? state.clanMapScope.actorKeys : null;
+    if (!id) state.clanMapRequest += 1;
+    state.clanMapScope = id ? {
+        id,
+        name: clanName || (Number(state.clanMapScope?.id) === id ? state.clanMapScope.name : null) || clanMapName(id),
+        actorKeys: existingKeys
+    } : null;
+    renderMapScope();
+}
+
+function clanScopedActors() {
+    const items = eligibleActors();
+    const scope = state.clanMapScope;
+    if (!scope) return items;
+    if (!scope.actorKeys) return [];
+    return items.filter((actor) => scope.actorKeys.has(actorKey(actor)));
+}
+
+async function loadClanMapMembers(clanId) {
+    const id = Number(clanId);
+    if (!id) return;
+    const requestId = ++state.clanMapRequest;
+    try {
+        const response = await fetch(`/observer/api/clan/${encodeURIComponent(id)}`, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const detail = await response.json();
+        if (requestId !== state.clanMapRequest || Number(state.clanMapScope?.id) !== id) return;
+        state.clanMapScope.name = detail.clan?.name || state.clanMapScope.name;
+        state.clanMapScope.actorKeys = new Set((detail.members || [])
+            .filter((member) => Number(member.id))
+            .map((member) => `${member.kind === 'player' ? 'player' : 'bot'}:${Number(member.id)}`));
+        state.classOptionsSignature = null;
+        renderClassFilter();
+        renderFilteredActorViews();
+        renderSelected();
+        focusClanMap();
+    } catch (error) {
+        if (requestId !== state.clanMapRequest || Number(state.clanMapScope?.id) !== id) return;
+        state.clanMapScope.actorKeys = new Set();
+        state.clanMapScope.error = error.message;
+        renderMapScope();
+        renderFilteredActorViews();
+    }
+}
+
+function renderMapScope() {
+    if (!els.mapScope || !els.mapScopeName) return;
+    const scope = state.clanMapScope;
+    els.mapScope.hidden = !scope;
+    const raidBossFilter = els.filterStrip?.querySelector('[data-phase="raidbosses"]');
+    if (raidBossFilter) raidBossFilter.hidden = Boolean(scope);
+    if (!scope) return;
+    const mapped = clanScopedActors().filter((actor) => isSurfaceActor(actor) && mapLocation(actor)).length;
+    const suffix = scope.error ? 'unavailable' : scope.actorKeys ? `${number(mapped)} mapped` : 'loading…';
+    els.mapScopeName.textContent = `${scope.name || clanMapName(scope.id)} · ${suffix}`;
+}
+
+function focusClanMap() {
+    if (!state.clanMapScope || !state.snapshot) return;
+    const points = clanScopedActors()
+        .filter((actor) => isSurfaceActor(actor) && mapLocation(actor))
+        .map((actor) => worldToMap(mapLocation(actor)));
+    if (points.length) focusMapPoints(points, 70);
+}
+
+function showClanOnMap(clanId, clanName = null) {
+    const id = Number(clanId);
+    if (!id) return;
+    commitRoute({ name: 'world', clanId: id });
+    applyRoute({ name: 'world', clanId: id, clanName });
+}
+
+function clearClanMapScope({ updateRoute = true, resetViewport = true } = {}) {
+    setClanMapScope(null);
+    state.classOptionsSignature = null;
+    if (updateRoute) commitRoute({ name: 'world' });
+    renderClassFilter();
+    renderFilterCounts();
+    if (resetViewport) {
+        state.fit = true;
+        els.fitButton.classList.add('is-live');
+        setSvgViewBox();
+        renderLabels();
+    }
+    renderPoints();
+    renderRoster();
+    renderSelected();
+}
+
 function raidBossItems() {
     return state.snapshot?.raidBosses?.bosses || [];
 }
@@ -632,6 +771,7 @@ function renderRankings() {
 }
 
 function openRankings({ updateRoute = true } = {}) {
+    if (state.clanMapScope) clearClanMapScope({ updateRoute: false });
     if (state.raidBossOpen) closeRaidBosses({ updateRoute: false });
     if (state.clanOpen) closeClans({ updateRoute: false });
     state.rankingOpen = true;
@@ -654,6 +794,7 @@ function closeRankings({ updateRoute = true } = {}) {
 }
 
 function openRaidBosses({ updateRoute = true } = {}) {
+    if (state.clanMapScope) clearClanMapScope({ updateRoute: false });
     if (state.rankingOpen) closeRankings({ updateRoute: false });
     if (state.clanOpen) closeClans({ updateRoute: false });
     state.raidBossOpen = true;
@@ -735,7 +876,7 @@ function clanCrestMarkup(clan, size = 'small') {
     return `<span class="clan-crest clan-crest-${size}"><img src="${escapeHtml(clan.crestUrl)}" alt="${escapeHtml(label)}" loading="lazy"></span>`;
 }
 
-function renderClans() {
+function renderClans({ renderDetail = true } = {}) {
     const directory = state.clanDirectory;
     const totals = directory?.totals || { members: 0, bots: 0, players: 0, online: 0, autonomous: 0, playerManaged: 0 };
     const clans = filteredClans();
@@ -755,7 +896,7 @@ function renderClans() {
     if (!els.clanList) return;
     if (state.clanError && !directory) {
         els.clanList.innerHTML = `<div class="list-empty">Clan data failed: ${text(state.clanError)}</div>`;
-        renderClanDetail();
+        if (renderDetail) renderClanDetail();
         return;
     }
     els.clanList.innerHTML = clans.length ? clans.map((clan) => `
@@ -768,7 +909,7 @@ function renderClans() {
             <span class="clan-row-side"><strong>${number(clan.memberCount)}</strong><span>members</span></span>
         </button>
     `).join('') : '<div class="list-empty">No clans match this search.</div>';
-    renderClanDetail();
+    if (renderDetail) renderClanDetail();
 }
 
 function clanGoalSummary(goal, clan = null) {
@@ -797,6 +938,33 @@ function resetClanCrestDraft() {
     state.clanCrestSource = null;
     state.clanCrestDraft = null;
     state.clanCrestSaving = false;
+}
+
+function resetClanOrderDraft() {
+    window.clearTimeout(state.clanOrderSearchTimer);
+    state.clanOrderSearchTimer = null;
+    state.clanOrderSearchRequest += 1;
+    state.clanOrderDraft = null;
+    state.clanOrderItems = [];
+    state.clanOrderSearchLoading = false;
+    state.clanOrderSearchError = null;
+    state.clanOrderSaving = false;
+    state.clanOrderMessage = null;
+}
+
+function clanOrderDraft() {
+    if (!state.clanOrderDraft) {
+        state.clanOrderDraft = {
+            item: null,
+            query: '',
+            amount: 1,
+            strategy: 'auto',
+            maxUnitPrice: '',
+            budget: '',
+            memberIds: null
+        };
+    }
+    return state.clanOrderDraft;
 }
 
 function clanCrestPixelsBase64(bytes) {
@@ -836,14 +1004,149 @@ function clanCrestPreview(clan) {
         : `<span>${uiIcon('shield')}<small>No crest</small></span>`;
 }
 
+function clanOrderStatusLabel(status) {
+    return uiLabel('status', status || 'active');
+}
+
+function clanOrderStrategyLabel(strategy) {
+    return ({ auto: 'Auto', farm: 'Farm', market: 'Market' })[strategy] || readableToken(strategy);
+}
+
+function clanOrderDelivery(order = null, item = null) {
+    const delivery = order?.plan?.delivery || null;
+    if (delivery?.kind === 'best_upgrade') {
+        const recipient = delivery.nextRecipient || delivery.recipients?.at?.(-1) || null;
+        return {
+            member: true,
+            title: recipient?.memberName || 'Best clan upgrade',
+            description: recipient
+                ? `${roleLabel(recipient.role || 'member')} · Lv ${number(recipient.level, '?')} · equipped after delivery`
+                : 'The server selects and equips the member who benefits most.'
+        };
+    }
+    const kind = String(item?.kind || '');
+    if (kind.startsWith('Weapon.') || kind.startsWith('Armor.')) {
+        return {
+            member: true,
+            title: 'Best clan upgrade',
+            description: 'The server selects and equips the member who benefits most.'
+        };
+    }
+    return {
+        member: false,
+        title: 'Clan warehouse',
+        description: 'Shared materials and resources remain available to the clan.'
+    };
+}
+
+function clanOrderItemResultsMarkup(draft = clanOrderDraft()) {
+    if (draft.item || (!String(draft.query || '').trim() && !state.clanOrderSearchLoading && !state.clanOrderSearchError)) return '';
+    if (state.clanOrderSearchLoading) return '<div class="clan-order-search-empty">Searching item catalog…</div>';
+    if (state.clanOrderSearchError) return `<div class="clan-order-search-empty is-error">${text(state.clanOrderSearchError)}</div>`;
+    if (!state.clanOrderItems.length) return '<div class="clan-order-search-empty">No matching items</div>';
+    return state.clanOrderItems.slice(0, 12).map((item) => `
+        <button type="button" class="clan-order-item-result" data-clan-order-item="${escapeHtml(item.id)}">
+            <span class="clan-order-item-icon">${item.iconUrl ? `<img src="${text(item.iconUrl)}" alt="" loading="lazy">` : uiIcon('target')}</span>
+            <span><strong>${text(item.name)}</strong><small>#${number(item.id)} · ${text(readableToken(item.kind), 'Item')}</small></span>
+            <b>${item.price ? `${compactNumber(item.price)} A` : '—'}</b>
+        </button>
+    `).join('');
+}
+
+function renderClanOrderSearchResults() {
+    const results = els.clansModal?.querySelector('[data-clan-order-results]');
+    if (!results) return;
+    const markup = clanOrderItemResultsMarkup();
+    results.hidden = !markup;
+    results.innerHTML = markup;
+}
+
+function clanOrderMarkup(clan) {
+    const detail = state.clanDetail || {};
+    const order = detail.order;
+    const draft = clanOrderDraft();
+    const members = (detail.members || []).filter((member) => member.kind === 'bot');
+    const assigned = new Set(draft.memberIds === null ? members.map((member) => Number(member.id)) : draft.memberIds);
+    const rosterReady = draft.strategy === 'market' ? assigned.size >= 1 : assigned.size >= 3;
+    const goal = clanGoalSummary(clan.goal, clan);
+    const progress = order ? `${number(clan.goal?.progress)}/${number(order.amount)}` : null;
+    const message = state.clanOrderMessage;
+    const itemResults = clanOrderItemResultsMarkup(draft);
+    const activeDelivery = clanOrderDelivery(order);
+    const draftDelivery = clanOrderDelivery(null, draft.item);
+    return `
+        <section class="clan-order-control" aria-label="Clan order">
+            <div class="clan-management-heading">
+                <div><span class="section-kicker">Clan control</span><strong>${order ? 'Active order' : 'Set an order'}</strong></div>
+                <p>Give the clan one durable objective. The server keeps executing it after this page is closed.</p>
+            </div>
+            <div class="clan-order-main">
+                ${order ? `
+                    <div class="clan-order-current">
+                        <span class="clan-order-current-icon">${order.iconUrl ? `<img src="${text(order.iconUrl)}" alt="">` : uiIcon('target')}</span>
+                        <div class="clan-order-current-copy">
+                            <span>${text(clanOrderStatusLabel(order.status))} · ${text(clanOrderStrategyLabel(order.strategy))}</span>
+                            <strong>${text(order.itemName)}</strong>
+                            <small>${text(goal.meta)} · Delivery: ${text(activeDelivery.title)} · ${compactNumber(order.spent)}${order.budget ? ` / ${compactNumber(order.budget)}` : ''} A spent</small>
+                        </div>
+                        <b>${text(progress)}</b>
+                    </div>
+                    <div class="clan-order-progress"><i style="width:${number(goal.percent)}%"></i></div>
+                    <div class="clan-order-actions">
+                        ${order.status === 'paused'
+                            ? `<button type="button" data-clan-order-transition="resume">${uiIcon('target')}Resume</button>`
+                            : `<button type="button" data-clan-order-transition="pause">Pause</button>`}
+                        <button type="button" data-clan-order-transition="replan">${uiIcon('crosshair')}Replan</button>
+                        <button class="is-danger" type="button" data-clan-order-transition="cancel">${uiIcon('trash')}Cancel</button>
+                    </div>
+                ` : '<div class="clan-order-empty"><span>No active order</span><strong>Choose an item below to put the clan to work.</strong></div>'}
+                <div class="clan-order-editor">
+                    <div class="clan-order-editor-title"><span>${order ? 'Replace order' : 'New order'}</span><small>Gather item</small></div>
+                    <label class="clan-order-search-field">
+                        <span>Item</span>
+                        <div>${uiIcon('search')}<input type="search" data-clan-order-search value="${escapeHtml(draft.query)}" placeholder="Search by item name or ID" autocomplete="off"></div>
+                    </label>
+                    <div class="clan-order-item-results" data-clan-order-results ${itemResults ? '' : 'hidden'}>${itemResults}</div>
+                    ${draft.item ? `<div class="clan-order-selected"><span>${draft.item.iconUrl ? `<img src="${text(draft.item.iconUrl)}" alt="">` : uiIcon('target')}</span><div><small>Selected item</small><strong>${text(draft.item.name)}</strong></div><b>#${number(draft.item.id)}</b></div>` : ''}
+                    <div class="clan-order-delivery ${draftDelivery.member ? 'is-member' : ''}"><span>${uiIcon(draftDelivery.member ? 'users' : 'warehouse')}</span><div><small>Delivery</small><strong>${text(draftDelivery.title)}</strong><p>${text(draftDelivery.description)}</p></div></div>
+                    <div class="clan-order-fields">
+                        <label><span>Quantity</span><input type="number" min="1" max="1000000" step="1" data-clan-order-amount value="${escapeHtml(draft.amount)}"></label>
+                        <label><span>Max unit price</span><input type="number" min="1" step="1" data-clan-order-price value="${escapeHtml(draft.maxUnitPrice)}" placeholder="Auto"></label>
+                        <label><span>Total budget</span><input type="number" min="0" step="1" data-clan-order-budget value="${escapeHtml(draft.budget)}" placeholder="Unlimited"></label>
+                    </div>
+                    <div class="clan-order-policy">
+                        <span>Execution policy</span>
+                        <div role="group" aria-label="Execution policy">
+                            ${['auto', 'farm', 'market'].map((strategy) => `<button type="button" class="${draft.strategy === strategy ? 'is-active' : ''}" data-clan-order-strategy="${strategy}" aria-pressed="${draft.strategy === strategy}">${clanOrderStrategyLabel(strategy)}</button>`).join('')}
+                        </div>
+                        <small>${draft.strategy === 'auto' ? 'Use a suitable market offer, then fall back to farming.' : draft.strategy === 'farm' ? 'Farm a known drop source with the selected bots.' : 'Wait for and buy a suitable player offer.'}</small>
+                    </div>
+                    <fieldset class="clan-order-members">
+                        <legend>Executors <small>${assigned.size || members.length} selected</small></legend>
+                        <div>${members.map((member) => `
+                            <label><input type="checkbox" data-clan-order-member="${escapeHtml(member.id)}" ${assigned.has(Number(member.id)) ? 'checked' : ''}><span><strong>${text(member.name)}</strong><small>${text(roleLabel(member.role || 'member'))} · Lv ${number(member.level, '?')}</small></span></label>
+                        `).join('') || '<p>No bot members available.</p>'}</div>
+                    </fieldset>
+                    <div class="clan-order-submit">
+                        <span class="${message?.kind === 'error' || !rosterReady ? 'is-error' : ''}">${text(message?.text || (!rosterReady ? 'Auto and Farm need at least 3 executors' : draft.item ? `${draft.item.name} ready` : 'Select an item to continue'))}</span>
+                        <button type="button" data-create-clan-order ${draft.item && rosterReady && !state.clanOrderSaving ? '' : 'disabled'}>${state.clanOrderSaving ? 'Saving…' : order ? 'Replace order' : 'Start order'}</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    `;
+}
+
 function clanManagementMarkup(clan) {
     if (!state.clanManagerOpen || !clan.playerManaged) return '';
     const hasDraft = !!state.clanCrestDraft;
     const message = state.clanCrestMessage;
     return `
-        <section class="clan-management" aria-label="Clan management">
+        <div class="clan-management" aria-label="Clan management">
+            ${clanOrderMarkup(clan)}
+            <section class="clan-identity-control">
             <div class="clan-management-heading">
-                <div><span class="section-kicker">Clan management</span><strong>Identity</strong></div>
+                <div><span class="section-kicker">Appearance</span><strong>Identity</strong></div>
                 <p>Upload a normal image. Observer prepares the 16 × 12 crest required by the C4 client.</p>
             </div>
             <div class="clan-crest-editor">
@@ -871,12 +1174,14 @@ function clanManagementMarkup(clan) {
                     <span class="${message?.kind === 'error' ? 'is-error' : ''}">${text(message?.text || (hasDraft ? `${state.clanCrestDraft.fileName || 'Image'} ready to save` : 'Only the selected clan will change'))}</span>
                 </div>
             </div>
-        </section>
+            </section>
+        </div>
     `;
 }
 
 function renderClanDetail() {
     if (!els.clanDetail) return;
+    state.clanDetailDeferredRender = false;
     const detail = state.clanDetail;
     if (state.clanDetailLoading && !detail) {
         els.clanDetail.innerHTML = '<div class="inspector-empty"><span class="loading-orbit"></span><strong>Loading clan</strong><p>Reading members and durable clan state.</p></div>';
@@ -903,6 +1208,7 @@ function renderClanDetail() {
                 <p>Level ${number(clan.level, 0)} · leader ${text(clan.leaderName, 'Unknown')} · ${number(clan.memberCount)} members</p>
             </div>
             <div class="clan-detail-actions">
+                <a class="clan-manage-button clan-map-button" href="${Router.href({ name: 'world', clanId: clan.id })}" data-clan-map-id="${escapeHtml(clan.id)}" data-clan-map-name="${text(clan.name)}">${uiIcon('map')}Show on map</a>
                 ${clan.playerManaged ? `<button class="clan-manage-button${state.clanManagerOpen ? ' is-active' : ''}" type="button" data-clan-manage aria-expanded="${state.clanManagerOpen}">${uiIcon('settings')}Manage clan</button>` : ''}
                 <span class="clan-level-badge">L${number(clan.level, 0)}</span>
             </div>
@@ -959,18 +1265,22 @@ async function loadClanDetail(id, { updateRoute = true } = {}) {
     const clanId = Number(id);
     if (!clanId) return;
     const requestId = ++state.clanRequest;
+    const switchingClan = Number(state.clanDetail?.clan?.id || 0) !== clanId;
     if (Number(state.selectedClanId) !== clanId) {
         resetClanCrestDraft();
+        resetClanOrderDraft();
         state.clanManagerOpen = false;
         state.clanCrestMessage = null;
     }
     state.selectedClanId = clanId;
-    state.clanDetail = null;
-    state.clanDetailSignature = null;
+    if (switchingClan) {
+        state.clanDetail = null;
+        state.clanDetailSignature = null;
+    }
     state.clanDetailLoading = true;
     state.clanError = null;
     if (updateRoute) commitRoute({ name: 'clans', id: clanId });
-    renderClans();
+    if (switchingClan) renderClans();
     revealSelectedClan();
     try {
         const response = await fetch(`/observer/api/clan/${encodeURIComponent(clanId)}`, { cache: 'no-store' });
@@ -985,7 +1295,9 @@ async function loadClanDetail(id, { updateRoute = true } = {}) {
     } finally {
         if (requestId === state.clanRequest) {
             state.clanDetailLoading = false;
-            renderClans();
+            const editor = els.clansModal?.querySelector('.clan-order-editor');
+            if (editor?.contains(document.activeElement)) state.clanDetailDeferredRender = true;
+            else renderClans();
         }
     }
 }
@@ -999,6 +1311,119 @@ function clanCrestErrorMessage(code, fallback = 'Could not update the crest') {
         target_not_player_managed: 'Only the player-managed clan can be edited'
     };
     return messages[code] || fallback;
+}
+
+function clanOrderErrorMessage(code, fallback = 'Could not update the clan order') {
+    const messages = {
+        invalid_clan: 'The selected clan is invalid',
+        target_not_player_managed: 'Only the player-managed clan can receive orders',
+        invalid_clan_order: 'The clan order is invalid',
+        invalid_clan_order_item: 'Choose a valid item',
+        invalid_clan_order_amount: 'Quantity must be between 1 and 1,000,000',
+        invalid_clan_order_strategy: 'Choose a valid execution policy',
+        invalid_clan_order_members: 'One or more selected bots no longer belong to this clan',
+        clan_order_not_active: 'This order is no longer active',
+        clan_order_revision_conflict: 'The order changed on the server. Refresh and try again'
+    };
+    return messages[code] || fallback;
+}
+
+async function searchClanOrderItems(query = clanOrderDraft().query, { showLoading = true } = {}) {
+    const requestId = ++state.clanOrderSearchRequest;
+    const needle = String(query || '').trim();
+    if (!needle) {
+        state.clanOrderItems = [];
+        state.clanOrderSearchLoading = false;
+        state.clanOrderSearchError = null;
+        renderClanOrderSearchResults();
+        return;
+    }
+    state.clanOrderSearchLoading = true;
+    state.clanOrderSearchError = null;
+    if (showLoading) renderClanOrderSearchResults();
+    try {
+        const response = await fetch(`/observer/api/clan-order-items?q=${encodeURIComponent(needle)}&limit=40`, { cache: 'no-store' });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+        if (requestId !== state.clanOrderSearchRequest) return;
+        state.clanOrderItems = Array.isArray(result.items) ? result.items : [];
+    } catch (error) {
+        if (requestId !== state.clanOrderSearchRequest) return;
+        state.clanOrderItems = [];
+        state.clanOrderSearchError = error.message || 'Could not search the item catalog';
+    } finally {
+        if (requestId === state.clanOrderSearchRequest) {
+            state.clanOrderSearchLoading = false;
+            renderClanOrderSearchResults();
+        }
+    }
+}
+
+async function createClanOrder() {
+    const clanId = Number(state.clanDetail?.clan?.id || 0);
+    const draft = clanOrderDraft();
+    if (!clanId || !draft.item || state.clanOrderSaving) return;
+    const memberIds = draft.memberIds === null
+        ? (state.clanDetail?.members || []).filter((member) => member.kind === 'bot').map((member) => Number(member.id))
+        : draft.memberIds;
+    if (!memberIds.length) {
+        state.clanOrderMessage = { kind: 'error', text: 'Select at least one bot executor' };
+        renderClanDetail();
+        return;
+    }
+    if (state.clanDetail?.order && !window.confirm('Replace the active clan order? Its queued work will be cancelled.')) return;
+    state.clanOrderSaving = true;
+    state.clanOrderMessage = null;
+    renderClanDetail();
+    try {
+        const response = await fetch(`/observer/api/clan/${encodeURIComponent(clanId)}/orders`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                itemId: Number(draft.item.id),
+                amount: Number(draft.amount),
+                strategy: draft.strategy,
+                maxUnitPrice: draft.maxUnitPrice === '' ? undefined : Number(draft.maxUnitPrice),
+                budget: draft.budget === '' ? undefined : Number(draft.budget),
+                memberIds
+            })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(clanOrderErrorMessage(result.code, result.error));
+        resetClanOrderDraft();
+        state.clanOrderMessage = { kind: 'success', text: 'Clan order started' };
+        await refreshManagedClan(clanId);
+    } catch (error) {
+        state.clanOrderSaving = false;
+        state.clanOrderMessage = { kind: 'error', text: error.message || 'Could not start the clan order' };
+        renderClanDetail();
+    }
+}
+
+async function transitionClanOrder(transition) {
+    const clanId = Number(state.clanDetail?.clan?.id || 0);
+    const order = state.clanDetail?.order;
+    if (!clanId || !order || state.clanOrderSaving) return;
+    if (transition === 'cancel' && !window.confirm('Cancel this clan order? Its queued work will stop.')) return;
+    state.clanOrderSaving = true;
+    state.clanOrderMessage = null;
+    renderClanDetail();
+    try {
+        const response = await fetch(`/observer/api/clan/${encodeURIComponent(clanId)}/orders/${encodeURIComponent(order.id)}/${encodeURIComponent(transition)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ revision: order.revision })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(clanOrderErrorMessage(result.code, result.error));
+        state.clanOrderSaving = false;
+        state.clanOrderMessage = { kind: 'success', text: `${transition === 'cancel' ? 'Order cancelled' : transition === 'pause' ? 'Order paused' : transition === 'resume' ? 'Order resumed' : 'New plan queued'}` };
+        await refreshManagedClan(clanId);
+    } catch (error) {
+        state.clanOrderSaving = false;
+        state.clanOrderMessage = { kind: 'error', text: error.message || 'Could not update the clan order' };
+        renderClanDetail();
+    }
 }
 
 async function decodeClanCrestImage(file) {
@@ -1115,9 +1540,13 @@ async function loadClanDirectory({ force = false, selectFirst = false } = {}) {
         state.clanDirectory = directory;
         state.clanLastLoadedAt = Date.now();
         state.clanError = null;
+        if (state.clanMapScope) {
+            state.clanMapScope.name = clanMapName(state.clanMapScope.id);
+            renderMapScope();
+        }
         const selectedExists = clanItems().some((clan) => Number(clan.id) === Number(state.selectedClanId));
         if ((selectFirst || !selectedExists) && clanItems().length) state.selectedClanId = Number(clanItems()[0].id);
-        renderClans();
+        renderClans({ renderDetail: !state.clanDetail });
         const detailClanId = Number(state.clanDetail?.clan?.id || 0);
         const selectedOverview = clanItems().find((clan) => Number(clan.id) === Number(state.selectedClanId));
         const selectedSignature = clanOverviewSignature(selectedOverview);
@@ -1132,6 +1561,7 @@ async function loadClanDirectory({ force = false, selectFirst = false } = {}) {
 }
 
 function openClans(clanId = null, { updateRoute = true } = {}) {
+    if (state.clanMapScope) clearClanMapScope({ updateRoute: false });
     if (state.rankingOpen) closeRankings({ updateRoute: false });
     if (state.raidBossOpen) closeRaidBosses({ updateRoute: false });
     const requestedClanId = Number(clanId) || null;
@@ -1169,6 +1599,7 @@ function closeClans({ updateRoute = true } = {}) {
     state.clanManagerOpen = false;
     state.clanCrestMessage = null;
     resetClanCrestDraft();
+    resetClanOrderDraft();
     if (updateRoute) commitRoute({ name: 'world' });
 }
 
@@ -1206,7 +1637,7 @@ function isVisible(actor) {
 
 function filteredActors() {
     const scope = state.clusterScope?.actorKeys;
-    return eligibleActors().filter((actor) => (!scope || scope.has(actorKey(actor))) && isVisible(actor));
+    return clanScopedActors().filter((actor) => (!scope || scope.has(actorKey(actor))) && isVisible(actor));
 }
 
 function actorKey(actor) {
@@ -1225,6 +1656,7 @@ function mapActorSignature(actor) {
         phaseColor(actor),
         actorSearchText(actor),
         Number(actor.level || 0),
+        Number(actor.clan?.id || 0),
         ActorFilters.classKey(actor),
         ActorFilters.isEligible(actor),
         ActorFilters.isSurfaceActor(actor)
@@ -1591,7 +2023,8 @@ function focusMapPoints(points, paddingPixels = 44) {
 }
 
 function renderFilterCounts() {
-    const items = eligibleActors().filter((actor) => (
+    renderMapScope();
+    const items = clanScopedActors().filter((actor) => (
         (!state.search || actorSearchText(actor).includes(state.search))
         && ActorFilters.matches(actor, state)
     ));
@@ -1601,7 +2034,7 @@ function renderFilterCounts() {
         warm: items.filter((actor) => actor.phase === 'warm').length,
         cold: items.filter((actor) => actor.phase === 'cold').length,
         players: items.filter((actor) => actor.kind === 'player').length,
-        raidbosses: Number(state.snapshot?.raidBosses?.counts?.alive || 0)
+        raidbosses: state.clanMapScope ? 0 : Number(state.snapshot?.raidBosses?.counts?.alive || 0)
     };
     Object.entries(counts).forEach(([key, value]) => {
         const count = els.filterStrip.querySelector(`[data-count-for="${key}"]`);
@@ -1610,7 +2043,7 @@ function renderFilterCounts() {
 }
 
 function renderClassFilter() {
-    const options = ActorFilters.classOptions(eligibleActors(), state.snapshot?.classes || []);
+    const options = ActorFilters.classOptions(clanScopedActors(), state.snapshot?.classes || []);
     const signature = options.map((option) => `${option.key}:${option.label}`).join('|');
     if (signature === state.classOptionsSignature) return;
     state.classOptionsSignature = signature;
@@ -2539,12 +2972,55 @@ els.raidBossesModal?.addEventListener('click', (event) => {
 });
 
 els.clansModal?.addEventListener('click', (event) => {
+    const mapLink = event.target.closest('[data-clan-map-id]');
+    if (mapLink) {
+        event.preventDefault();
+        showClanOnMap(mapLink.dataset.clanMapId, mapLink.dataset.clanMapName);
+        return;
+    }
     const manage = event.target.closest('[data-clan-manage]');
     if (manage) {
         state.clanManagerOpen = !state.clanManagerOpen;
         state.clanCrestMessage = null;
-        if (!state.clanManagerOpen) resetClanCrestDraft();
+        state.clanOrderMessage = null;
+        if (!state.clanManagerOpen) {
+            resetClanCrestDraft();
+            resetClanOrderDraft();
+        }
         renderClanDetail();
+        return;
+    }
+    const item = event.target.closest('[data-clan-order-item]');
+    if (item) {
+        const selected = state.clanOrderItems.find((entry) => Number(entry.id) === Number(item.dataset.clanOrderItem));
+        if (selected) {
+            const draft = clanOrderDraft();
+            draft.item = selected;
+            draft.query = selected.name;
+            if (draft.maxUnitPrice === '' && Number(selected.price) > 0) draft.maxUnitPrice = Number(selected.price) * 2;
+            state.clanOrderSearchRequest += 1;
+            state.clanOrderItems = [];
+            state.clanOrderSearchLoading = false;
+            state.clanOrderSearchError = null;
+            state.clanOrderMessage = null;
+            renderClanDetail();
+        }
+        return;
+    }
+    const strategy = event.target.closest('[data-clan-order-strategy]');
+    if (strategy) {
+        clanOrderDraft().strategy = strategy.dataset.clanOrderStrategy || 'auto';
+        state.clanOrderMessage = null;
+        renderClanDetail();
+        return;
+    }
+    if (event.target.closest('[data-create-clan-order]')) {
+        createClanOrder();
+        return;
+    }
+    const transition = event.target.closest('[data-clan-order-transition]');
+    if (transition) {
+        transitionClanOrder(transition.dataset.clanOrderTransition);
         return;
     }
     const fit = event.target.closest('[data-crest-fit]');
@@ -2579,6 +3055,51 @@ els.clansModal?.addEventListener('click', (event) => {
 els.clansModal?.addEventListener('change', (event) => {
     const input = event.target.closest('[data-clan-crest-file]');
     if (input) loadClanCrestFile(input.files?.[0]);
+    const member = event.target.closest('[data-clan-order-member]');
+    if (member) {
+        state.clanOrderDraft.memberIds = [...els.clansModal.querySelectorAll('[data-clan-order-member]:checked')]
+            .map((entry) => Number(entry.dataset.clanOrderMember))
+            .filter(Boolean);
+        state.clanOrderMessage = null;
+        renderClanDetail();
+    }
+});
+
+els.clansModal?.addEventListener('focusout', () => {
+    requestAnimationFrame(() => {
+        if (!state.clanDetailDeferredRender) return;
+        const editor = els.clansModal?.querySelector('.clan-order-editor');
+        if (editor?.contains(document.activeElement)) return;
+        renderClanDetail();
+    });
+});
+
+els.clansModal?.addEventListener('input', (event) => {
+    const search = event.target.closest('[data-clan-order-search]');
+    if (search) {
+        const draft = clanOrderDraft();
+        draft.query = search.value;
+        if (draft.item && draft.item.name !== search.value) {
+            draft.item = null;
+            state.clanOrderItems = [];
+            state.clanOrderSearchError = null;
+            els.clansModal?.querySelector('.clan-order-selected')?.remove();
+            const submit = els.clansModal?.querySelector('[data-create-clan-order]');
+            if (submit) submit.disabled = true;
+            const status = els.clansModal?.querySelector('.clan-order-submit span');
+            if (status) status.textContent = 'Select an item to continue';
+            renderClanOrderSearchResults();
+        }
+        window.clearTimeout(state.clanOrderSearchTimer);
+        state.clanOrderSearchTimer = window.setTimeout(() => searchClanOrderItems(draft.query, { showLoading: false }), 180);
+        return;
+    }
+    const amount = event.target.closest('[data-clan-order-amount]');
+    if (amount) clanOrderDraft().amount = amount.value;
+    const price = event.target.closest('[data-clan-order-price]');
+    if (price) clanOrderDraft().maxUnitPrice = price.value;
+    const budget = event.target.closest('[data-clan-order-budget]');
+    if (budget) clanOrderDraft().budget = budget.value;
 });
 
 els.clansModal?.addEventListener('dragover', (event) => {
@@ -2724,6 +3245,8 @@ document.addEventListener('click', (event) => {
     if (!event.target.closest('[data-clear-cluster]')) return;
     clearClusterScope(true);
 });
+
+els.clearMapScope?.addEventListener('click', () => clearClanMapScope());
 
 els.filterStrip.addEventListener('click', (event) => {
     const button = event.target.closest('[data-phase]');

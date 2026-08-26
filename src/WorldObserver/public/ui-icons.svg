@@ -38,4 +38,7 @@
     <symbol id="trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <path d="M4 7h16M9 7V4h6v3m3 0-1 14H7L6 7"/><path d="M10 11v6M14 11v6"/>
     </symbol>
+    <symbol id="warehouse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 9.5 12 4l9 5.5M5 10.5V20h14v-9.5M9 20v-6h6v6M3 20h18"/>
+    </symbol>
 </svg>

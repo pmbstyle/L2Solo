@@ -43,6 +43,27 @@ const itemGoal = Observer.compactClanGoal({
 assert.strictEqual(itemGoal.target.iconUrl, '/observer/item-icons/armor_t59_ul_i00.png',
     'item goals must reuse the local Observer item-icon catalog');
 
+const compactOrder = Observer.compactClanOrder({
+    id: 4,
+    revision: 2,
+    status: 'active',
+    itemId: 2406,
+    itemName: 'Avadon Robe',
+    amount: 1,
+    strategy: 'farm',
+    maxUnitPrice: 500000,
+    budget: 800000,
+    spent: 0,
+    memberIds: [42],
+    plan: { kind: 'farm' },
+    createdAt: 100,
+    updatedAt: 200
+});
+assert.strictEqual(compactOrder.iconUrl, '/observer/item-icons/armor_t59_ul_i00.png');
+assert.deepStrictEqual(compactOrder.memberIds, [42]);
+assert(Observer.clanOrderItems('Avadon Robe', 5).some((item) => item.id === 2406 && item.iconUrl),
+    'the order item catalog must expose searchable item icons');
+
 const overview = Observer.compactClanOverview({
     id: 7,
     name: 'Dawn Covenant',
@@ -220,6 +241,11 @@ async function databaseBackedChecks() {
         VALUES (91, 9101, 4, 50000, 'observer:test', 200)`).run();
     seed.prepare(`INSERT INTO clan_goal_events(clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt)
         VALUES (91, 'goal_updated', 'item', 'market', 'observer_test', '{}', 300)`).run();
+    seed.prepare(`INSERT INTO clan_orders(
+        clanId, revision, kind, status, itemId, itemName, amount, strategy,
+        maxUnitPrice, budget, spent, memberIdsJson, planJson, reasonCode, createdAt, updatedAt
+    ) VALUES (91, 1, 'gather_item', 'active', 1419, 'Blood Mark', 3, 'market',
+        500000, 1500000, 0, '[9101,9102]', '{"kind":"market"}', 'market_demand_open', 200, 300)`).run();
     seed.prepare(`INSERT INTO clan_market_demands(clanId, itemId, amount, maxPrice, goalKey, status, createdAt, updatedAt)
         VALUES (91, 1419, 2, 500000, 'observer:test', 'open', 200, 300)`).run();
     seed.prepare(`INSERT INTO clan_operations(
@@ -274,6 +300,9 @@ async function databaseBackedChecks() {
         assert.strictEqual(detail.operation.startedAt, 400);
         assert.strictEqual(detail.operation.members[0].role, 'tank');
         assert.strictEqual(detail.events.length, 1);
+        assert.strictEqual(detail.order.itemName, 'Blood Mark');
+        assert.deepStrictEqual(detail.order.memberIds, [9101, 9102]);
+        assert.strictEqual(detail.orderHistory.length, 1);
     } finally {
         await Database.close();
         [databasePath, `${databasePath}-wal`, `${databasePath}-shm`].forEach((file) => fs.rmSync(file, { force: true }));
