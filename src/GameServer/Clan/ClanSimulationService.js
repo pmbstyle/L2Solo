@@ -130,6 +130,7 @@ async function autonomousClanProjection() {
             FROM clan_simulation_clans simulated
             JOIN clans ON clans.id = simulated.clanId
             LEFT JOIN characters members ON members.clanId = simulated.clanId
+            WHERE simulated.mode = 'autonomous'
             ORDER BY simulated.clanId ASC, members.id ASC
         `, []], 'clan-simulation:clan-projection');
         const byId = new Map();

@@ -4,35 +4,32 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>World Observer</title>
-    <link rel="icon" href="data:,">
+    <link rel="icon" type="image/png" href="/observer/world-observer-logo.png">
     <link rel="stylesheet" href="/observer/styles.css">
 </head>
 <body>
     <main class="observer-shell">
         <section class="map-panel" aria-label="World map">
             <header class="topbar">
-                <div class="brand-lockup">
-                    <span class="brand-mark">W</span>
+                <a class="brand-lockup" href="/observer/" data-spa-route="world" aria-label="Open world map">
+                    <img class="brand-logo" src="/observer/world-observer-logo.png" alt="" width="35" height="35" aria-hidden="true">
                     <div>
                         <h1>World Observer</h1>
                         <p id="serverLine">Waiting for server snapshot</p>
                     </div>
-                </div>
+                </a>
                 <div class="topbar-actions">
                     <button class="rankings-button" id="openRankings" type="button" aria-haspopup="dialog" aria-controls="rankingsModal">
-                        <span aria-hidden="true">♛</span>
+                        <svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#trophy"></use></svg>
                         Rankings
                     </button>
                     <button class="rankings-button raid-boss-button" id="openRaidBosses" type="button" aria-haspopup="dialog" aria-controls="raidBossesModal">
-                        <span aria-hidden="true">♜</span>
+                        <svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#skull"></use></svg>
                         Raid bosses <b id="raidBossAliveCount">0</b>
                     </button>
-                    <button class="rankings-button clan-button" id="openClans" type="button" aria-haspopup="dialog" aria-controls="clansModal">
-                        <span aria-hidden="true">♘</span>
+                    <button class="rankings-button clan-button" id="openClans" type="button" aria-controls="clansModal">
+                        <svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#shield"></use></svg>
                         Clans <b id="clanCount">0</b>
-                    </button>
-                    <button class="icon-button" id="fitButton" title="Fit all points" aria-label="Fit all points">
-                        <span>⌖</span>
                     </button>
                     <button class="live-toggle is-live" id="liveToggle" title="Pause live refresh" aria-label="Pause live refresh">
                         <span class="pulse"></span>
@@ -66,7 +63,7 @@
                     <button class="filter-reset" id="clearActorFilters" type="button" title="Clear level and class filters" hidden>Reset</button>
                 </div>
                 <label class="search-field">
-                    <span aria-hidden="true">⌕</span>
+                    <svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#search"></use></svg>
                     <input id="actorSearch" type="search" placeholder="Find a bot, role, town…" autocomplete="off">
                     <kbd>/</kbd>
                 </label>
@@ -94,7 +91,12 @@
                     <g class="points" id="pointsLayer"></g>
                     <g class="raid-boss-points" id="raidBossLayer"></g>
                 </svg>
-                <div class="map-hint">Scroll to zoom · drag to pan · click a cluster to drill down</div>
+                <div class="map-zoom-controls" aria-label="Map zoom controls">
+                    <button id="zoomInButton" type="button" title="Zoom in" aria-label="Zoom in">+</button>
+                    <button id="zoomOutButton" type="button" title="Zoom out" aria-label="Zoom out">−</button>
+                    <button id="fitButton" type="button" title="Fit all actors" aria-label="Fit all actors"><svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#crosshair"></use></svg></button>
+                </div>
+                <div class="map-hint">Select a cluster to zoom in · drag to pan · scroll to zoom</div>
                 <div class="map-legend" aria-label="Map legend">
                     <span><i class="legend-dot hot"></i>active</span>
                     <span><i class="legend-dot warm"></i>background</span>
@@ -131,9 +133,9 @@
                 <div class="section-title market-title">
                     <div>
                         <span class="section-kicker">Bot market</span>
-                        <h2>Liquidity</h2>
+                        <h2 class="title-with-icon"><svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#coins"></use></svg>Trading</h2>
                     </div>
-                    <span id="marketScope">current stores</span>
+                    <span id="marketScope">open stores</span>
                 </div>
                 <div class="market-totals">
                     <div><span>WTS</span><strong id="marketWts">0</strong></div>
@@ -142,18 +144,18 @@
                     <div><span>Adena</span><strong id="marketAdena">0</strong></div>
                 </div>
                 <div class="market-town-list" id="marketTowns">
-                    <div class="list-empty">Waiting for market data.</div>
+                    <div class="list-empty">Loading market activity.</div>
                 </div>
-                <p class="market-top-item" id="marketTopItem">No active item flow yet</p>
+                <p class="market-top-item" id="marketTopItem">No active listings yet</p>
                 <div class="market-trade-list" id="marketRecentTrades">
-                    <div class="list-empty">No bot-to-bot trades yet.</div>
+                    <div class="list-empty">No trades yet.</div>
                 </div>
-                <p class="market-top-item" id="marketTradeTop">No completed item flow yet</p>
+                <p class="market-top-item" id="marketTradeTop">No completed trades yet</p>
             </section>
 
             <section class="panel-section inspector-section">
                 <div class="section-title">
-                    <h2>Selected actor</h2>
+                    <h2 class="title-with-icon"><svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#crosshair"></use></svg>Selected actor</h2>
                     <span id="inspectorFreshness">live</span>
                 </div>
                 <div id="selectedInspector" class="selected-inspector">
@@ -167,7 +169,7 @@
 
             <section class="panel-section roster-section">
                 <div class="section-title">
-                    <h2>Roster</h2>
+                    <h2 class="title-with-icon"><svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#users"></use></svg>Roster</h2>
                     <span id="visibleCount">0 shown</span>
                 </div>
                 <div class="actor-list" id="actorList"></div>
@@ -181,7 +183,7 @@
                 <div>
                     <span class="section-kicker">World standings</span>
                     <h2 id="rankingsTitle">Hall of Fame</h2>
-                    <p>Bots and online players ranked from the current world snapshot.</p>
+                    <p>Current bot and player standings.</p>
                 </div>
                 <button class="rankings-close" id="closeRankings" type="button" aria-label="Close rankings">×</button>
             </header>
@@ -211,7 +213,7 @@
             <div class="ranking-podium" id="rankingPodium" aria-label="Top three characters"></div>
             <div class="ranking-list-head">
                 <span id="rankingScope">0 characters</span>
-                <span>Open a character for full details</span>
+                <span>Select a character to inspect</span>
             </div>
             <div class="ranking-list" id="rankingList" role="list"></div>
         </section>
@@ -223,7 +225,7 @@
                 <div>
                     <span class="section-kicker">World threats</span>
                     <h2 id="raidBossesTitle">Raid bosses</h2>
-                    <p>Every ordinary C4 raid boss, with its live world status and spawn location.</p>
+                    <p>Live spawn status and locations for C4 raid bosses.</p>
                 </div>
                 <button class="rankings-close" id="closeRaidBosses" type="button" aria-label="Close raid bosses">×</button>
             </header>
@@ -236,7 +238,7 @@
                     <button class="ranking-tab" type="button" aria-pressed="false" data-raid-filter="missing">Missing</button>
                 </div>
                 <label class="raid-boss-search">
-                    <span aria-hidden="true">⌕</span>
+                    <svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#search"></use></svg>
                     <input id="raidBossSearch" type="search" placeholder="Find a raid boss…" autocomplete="off">
                 </label>
             </div>
@@ -247,18 +249,24 @@
         </section>
     </div>
 
-    <div class="rankings-backdrop" id="clansModal" role="dialog" aria-modal="true" aria-labelledby="clansTitle" hidden>
+    <div class="rankings-backdrop clans-view" id="clansModal" role="region" aria-labelledby="clansTitle" hidden>
         <section class="rankings-modal clans-modal">
-            <header class="rankings-header">
-                <div>
-                    <span class="section-kicker">World society</span>
-                    <h2 id="clansTitle">Clans</h2>
-                    <p>Track clan progression, bot membership, shared resources, and the current operation.</p>
+            <header class="clan-page-header">
+                <div class="clan-page-identity">
+                    <a class="clan-page-brand" href="/observer/" data-spa-route="world" aria-label="Open world map">
+                        <img class="brand-logo" src="/observer/world-observer-logo.png" alt="" width="35" height="35" aria-hidden="true">
+                        <span><b>World Observer</b><small>Live world</small></span>
+                    </a>
+                    <span class="clan-page-divider" aria-hidden="true"></span>
+                    <div class="clan-page-heading">
+                        <span class="section-kicker">Clan network</span>
+                        <h2 id="clansTitle">Clans</h2>
+                        <p id="clanSummary">Waiting for clan data.</p>
+                    </div>
                 </div>
-                <button class="rankings-close" id="closeClans" type="button" aria-label="Close clans">×</button>
+                <button class="clan-world-return" id="closeClans" type="button" aria-label="Return to world map"><svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#map"></use></svg>World map</button>
             </header>
 
-            <div class="clan-summary" id="clanSummary">Waiting for clan data.</div>
             <div class="clan-workspace">
                 <section class="clan-directory" aria-label="Clan directory">
                     <div class="clan-controls">
@@ -267,7 +275,7 @@
                             <button class="ranking-tab" type="button" aria-pressed="false" data-clan-sort="members">Members</button>
                         </div>
                         <label class="clan-search">
-                            <span aria-hidden="true">⌕</span>
+                            <svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#search"></use></svg>
                             <input id="clanSearch" type="search" placeholder="Find a clan…" autocomplete="off">
                         </label>
                     </div>
@@ -280,9 +288,9 @@
 
                 <section class="clan-detail" id="clanDetail" aria-live="polite">
                     <div class="inspector-empty">
-                        <span class="empty-glyph">♘</span>
+                        <svg class="empty-glyph ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#shield"></use></svg>
                         <strong>Select a clan</strong>
-                        <p>Open a clan to inspect its bots, goal, warehouse, and operation history.</p>
+                        <p>Inspect its goal, members, resources, and recent decisions.</p>
                     </div>
                 </section>
             </div>
@@ -291,6 +299,10 @@
 
     <script src="/observer/actorFilters.js"></script>
     <script src="/observer/leaderboards.js"></script>
+    <script src="/observer/worldState.js"></script>
+    <script src="/observer/mapClusters.js"></script>
+    <script src="/observer/spaRouter.js"></script>
+    <script src="/observer/uiLanguage.js"></script>
     <script src="/observer/app.js"></script>
 </body>
 </html>

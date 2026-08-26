@@ -77,6 +77,45 @@ async function main() {
             clientData,
             'client-uploaded DDS payloads must remain byte-exact'
         );
+        const rgba = Buffer.alloc(16 * 12 * 4);
+        for (let pixel = 0; pixel < 16 * 12; pixel += 1) {
+            rgba[(pixel * 4)] = (pixel % 16) * 16;
+            rgba[(pixel * 4) + 1] = Math.floor(pixel / 16) * 20;
+            rgba[(pixel * 4) + 2] = 180;
+            rgba[(pixel * 4) + 3] = 255;
+        }
+        const observerCrest = ClanCrestService.rgbaToDxt1Dds(rgba, 16, 12);
+        assert.strictEqual(observerCrest.length, 256);
+        assert.strictEqual(observerCrest.toString('ascii', 0, 4), 'DDS ');
+        assert.strictEqual(observerCrest.readUInt32LE(12), 16);
+        assert.strictEqual(observerCrest.readUInt32LE(16), 16);
+        assert(observerCrest.subarray(128, 160).every((value) => value === 0),
+            'C4 clan crests must reserve the top four texture rows so the client displays the lower 12 rows');
+        assert(observerCrest.subarray(160).some((value) => value !== 0),
+            'converted crest pixels must occupy the client-visible lower 12 rows');
+        assert.throws(() => ClanCrestService.rgbaToDxt1Dds(Buffer.alloc(16), 16, 12), /pixel bytes/);
+
+        await Database.execute(['INSERT INTO clans(id, name, leaderId, level) VALUES (?, ?, ?, ?)',
+            [6000003, 'PlayerCrest', 3, 3]], 'test:player-crest-clan');
+        await Database.execute([`INSERT INTO clan_simulation_clans(clanId, version, mode, createdAt, updatedAt, stateJson)
+            VALUES (?, 1, 'player_managed', 1, 1, '{}')`, [6000003]], 'test:player-crest-mode');
+        await ClanService.reload();
+        const firstManaged = await ClanService.setPlayerManagedCrest(6000003, observerCrest);
+        assert.strictEqual(firstManaged.ok, true);
+        assert(Number(firstManaged.crestId) > 0);
+        assert.strictEqual(ClanService.findById(6000003).crestId, firstManaged.crestId);
+        const secondManaged = await ClanService.setPlayerManagedCrest(6000003, clientData);
+        assert.strictEqual(secondManaged.ok, true);
+        assert.notStrictEqual(secondManaged.crestId, firstManaged.crestId);
+        const managedRows = await Database.execute([`SELECT id, data FROM clan_crests
+            WHERE clanId = ? AND kind = 'pledge'`, [6000003]], 'test:player-crest-rows');
+        assert.strictEqual(managedRows.length, 1, 'replacing a managed crest must remove the previous blob');
+        assert.deepStrictEqual(Buffer.from(managedRows[0].data), clientData);
+        const autonomousRejected = await ClanService.setPlayerManagedCrest(6000001, observerCrest);
+        assert.strictEqual(autonomousRejected.code, 'target_not_player_managed');
+        const deletedManaged = await ClanService.setPlayerManagedCrest(6000003, Buffer.alloc(0));
+        assert.strictEqual(deletedManaged.deleted, true);
+        assert.strictEqual(ClanService.findById(6000003).crestId, 0);
         const crest180 = fs.readFileSync(path.join(rootDir, 'data', 'crests', 'clan', 'crest-180.bmp'));
         const dds180 = ClanCrestService.bmpToDxt1Dds(crest180);
         assert.strictEqual(crest180.readUInt32LE(10), 810, 'regression asset should exercise a compact palette');
@@ -85,6 +124,8 @@ async function main() {
         assert.strictEqual(dds180.readUInt32LE(12), 16);
         assert.strictEqual(dds180.readUInt32LE(16), 16);
         assert.strictEqual(dds180.toString('ascii', 84, 88), 'DXT1');
+        assert(dds180.subarray(128, 160).every((value) => value === 0),
+            'BMP conversion must use the same top padding as Observer uploads');
         const requested = await ClanService.findSmallCrest(Number(promotedRows[0].crestId));
         assert.deepStrictEqual(requested.data, clientData, 'crest request path must encode autonomous assets as DDS');
         const packet = ServerResponse.pledgeCrest(requested.id, requested.data);

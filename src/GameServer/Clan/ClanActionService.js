@@ -148,6 +148,7 @@ function deferredRetryDelay(actionType, result = {}) {
 async function bootstrap() {
     if (bootstrapped) return { attempted: 0, created: 0 };
     bootstrapped = true;
+    const playerManaged = await Database.ensurePlayerManagedClans();
     const clans = await Database.fetchClansNeedingAction(Config.resolveBatchSize * 4);
     let created = 0;
     for (const clan of clans) {
@@ -162,7 +163,7 @@ async function bootstrap() {
     }
     metrics.bootstraps += 1;
     metrics.planned += created;
-    return { attempted: clans.length, created };
+    return { attempted: clans.length, created, playerManaged };
 }
 
 async function scheduleNext(clan, goal, parentAction, result, delayMs = 0) {
@@ -404,7 +405,6 @@ const ClanActionService = {
     resolveBatch(options = {}) {
         if (!Config.enabled) return Promise.resolve({ attempted: 0, claimed: 0, resolved: 0, released: 0, succeeded: 0, failed: 0, leftRunning: 0, budgetStopped: false });
         const budgetMs = Math.max(1, number(options.budgetMs, Config.resolveBudgetMs));
-        const deadlineAt = Date.now() + budgetMs;
         const safeLimit = Math.max(1, Math.min(100, Math.floor(number(options.limit, Config.actionBatchSize))));
         const batchStartedAt = Date.now();
         const bootstrapStartedAt = Date.now();
@@ -423,6 +423,11 @@ const ClanActionService = {
                 budgetStopped: false
             };
             await refreshQueueStats();
+            // Bootstrap and queue telemetry are admission overhead, not clan
+            // work. Starting the execution budget before those reads caused a
+            // live queue to claim and release the same oldest action forever
+            // whenever SQLite needed more than the 80ms idle budget.
+            const deadlineAt = Date.now() + budgetMs;
             while (summary.attempted < safeLimit) {
                 if (Date.now() >= deadlineAt) {
                     summary.budgetStopped = true;

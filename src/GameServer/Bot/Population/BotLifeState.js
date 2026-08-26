@@ -17,6 +17,7 @@ const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const cache = new Map();
 const pendingWrites = new Map();
+const changeListeners = new Set();
 let initialized = false;
 let initStarted = false;
 let initPromise = null;
@@ -28,6 +29,13 @@ function isCriticalSnapshotReason(reason = '', state = null) {
 }
 
 function notifyColdSnapshot(state, reason = 'state_changed', options = {}) {
+    changeListeners.forEach((listener) => {
+        try {
+            listener(state, reason);
+        } catch (error) {
+            utils.infoWarn('BotLife', 'state change listener failed: %s', error.message);
+        }
+    });
     if (!state?.characterId || state.phase !== 'cold') return;
     const critical = options.critical === true || isCriticalSnapshotReason(reason, state);
     const handle = setImmediate(() => {
@@ -3172,6 +3180,12 @@ const BotLifeState = {
 
     cachedState(characterId) {
         return cache.get(Number(characterId)) || null;
+    },
+
+    subscribeChanges(listener) {
+        if (typeof listener !== 'function') return () => {};
+        changeListeners.add(listener);
+        return () => changeListeners.delete(listener);
     },
 
     acceptSimulationOwnership(characterId, result = {}, committedState = null) {

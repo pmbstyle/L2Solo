@@ -80,6 +80,16 @@ function clanOnlineSessions(clan) {
     ));
 }
 
+function broadcastClanAppearance(clan) {
+    if (!clan) return;
+    const ServerResponse = invoke('GameServer/Network/Response');
+    clanOnlineSessions(clan).forEach((memberSession) => {
+        memberSession.dataSendToMe(ServerResponse.userInfo(memberSession.actor));
+        memberSession.dataSendToOthers(ServerResponse.charInfo(memberSession.actor), memberSession.actor);
+        memberSession.dataSendToOthers(ServerResponse.relationChanged(memberSession.actor), memberSession.actor);
+    });
+}
+
 function liveMember(member) {
     const session = onlineSessionByActorId(member.id);
     if (!session?.actor) return normalizeMember(member);
@@ -228,7 +238,15 @@ const ClanService = {
             setActorClan(actor, clan.id, privileges);
             actor.setClanJoinExpiryTime?.(0);
             replaceMember(clan, actorMember(actor));
-            return { ok: true, clan, member: actorMember(actor) };
+            return Database.syncPlayerManagedClan(clan.id).catch((error) => {
+                utils.infoWarn('Clan', 'player-managed sync failed after member join: %s', error.message);
+                return { ok: false, code: 'automation_sync_failed' };
+            }).then((automation) => ({
+                ok: true,
+                clan,
+                member: actorMember(actor),
+                automation
+            }));
         });
     },
 
@@ -254,7 +272,16 @@ const ClanService = {
             return Database.removeCharacterFromClan(member.id).then(() => {
                 if (options.actor) clearActorClan(options.actor);
                 removeMemberFromCache(clan.id, member.id);
-                return { ok: true, clan, member, actor: options.actor || null };
+                return Database.syncPlayerManagedClan(clan.id).catch((error) => {
+                    utils.infoWarn('Clan', 'player-managed sync failed after member removal: %s', error.message);
+                    return { ok: false, code: 'automation_sync_failed' };
+                }).then((automation) => ({
+                    ok: true,
+                    clan,
+                    member,
+                    actor: options.actor || null,
+                    automation
+                }));
             });
         });
     },
@@ -352,6 +379,33 @@ const ClanService = {
         });
     },
 
+    setPlayerManagedCrest(clanId, data) {
+        const id = number(clanId);
+        const crestData = Buffer.from(data || []);
+        if (!id) return Promise.resolve({ ok: false, code: 'invalid_clan_crest' });
+        if (crestData.length && (
+            crestData.length !== SMALL_CREST_MAX_BYTES
+            || crestData.toString('ascii', 0, 4) !== 'DDS '
+            || crestData.readUInt32LE(12) !== 16
+            || crestData.readUInt32LE(16) !== 16
+            || crestData.toString('ascii', 84, 88) !== 'DXT1'
+        )) return Promise.resolve({ ok: false, code: 'invalid_clan_crest' });
+
+        return Database.replacePlayerManagedClanCrest({ clanId: id, data: crestData }).then((result) => {
+            if (!result.ok) return result;
+            const clan = this.findById(id);
+            if (clan) {
+                clan.crestId = number(result.crestId);
+                const ServerResponse = invoke('GameServer/Network/Response');
+                clanOnlineSessions(clan).forEach((memberSession) => {
+                    memberSession.dataSendToMe(ServerResponse.pledgeShowInfoUpdate(clan));
+                });
+                broadcastClanAppearance(clan);
+            }
+            return { ...result, clan };
+        });
+    },
+
     findSmallCrest(id) {
         const crestId = number(id);
         if (crestId === 0) return Promise.resolve(null);
@@ -395,7 +449,8 @@ const ClanService = {
         return { clan, member };
     },
 
-    onlineSessions: clanOnlineSessions
+    onlineSessions: clanOnlineSessions,
+    broadcastAppearance: broadcastClanAppearance
 };
 
 module.exports = ClanService;

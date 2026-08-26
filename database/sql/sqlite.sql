@@ -74,6 +74,7 @@ CREATE INDEX IF NOT EXISTS clans_leaderId ON clans(leaderId);
 CREATE TABLE IF NOT EXISTS clan_simulation_clans (
     clanId INTEGER PRIMARY KEY REFERENCES clans(id) ON DELETE CASCADE,
     version INTEGER NOT NULL DEFAULT 1,
+    mode TEXT NOT NULL DEFAULT 'autonomous',
     createdAt INTEGER NOT NULL,
     updatedAt INTEGER NOT NULL,
     stateJson TEXT NOT NULL DEFAULT '{}'

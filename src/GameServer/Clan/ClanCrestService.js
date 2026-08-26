@@ -156,6 +156,7 @@ function bmpToDxt1Dds(data) {
     const rowStride = Math.ceil(width / 4) * 4;
     const textureWidth = nextPowerOfTwo(width);
     const textureHeight = nextPowerOfTwo(height);
+    const topPadding = textureHeight - height;
     if (dibSize !== 40 || width <= 0 || height <= 0 || width % 4 !== 0 || height % 4 !== 0) return source;
     if (bitsPerPixel !== 8 || compression !== 0 || pixelOffset < paletteOffset || pixelOffset > source.length) return source;
     if (source.length < pixelOffset + (rowStride * height)) return source;
@@ -170,11 +171,12 @@ function bmpToDxt1Dds(data) {
                 const imageY = blockY + y;
                 for (let x = 0; x < 4; x += 1) {
                     const imageX = blockX + x;
-                    if (imageX >= width || imageY >= height) {
+                    const sourceImageY = imageY - topPadding;
+                    if (imageX >= width || sourceImageY < 0 || sourceImageY >= height) {
                         colors.push({ r: 0, g: 0, b: 0 });
                         continue;
                     }
-                    const sourceY = signedHeight > 0 ? (height - 1 - imageY) : imageY;
+                    const sourceY = signedHeight > 0 ? (height - 1 - sourceImageY) : sourceImageY;
                     const paletteIndex = source[pixelOffset + (sourceY * rowStride) + blockX + x];
                     const colorOffset = paletteOffset + (paletteIndex * 4);
                     colors.push(colorOffset + 2 < pixelOffset ? {
@@ -182,6 +184,51 @@ function bmpToDxt1Dds(data) {
                         g: source[colorOffset + 1],
                         b: source[colorOffset]
                     } : { r: 0, g: 0, b: 0 });
+                }
+            }
+            encodeDxt1Block(colors, result, outputOffset);
+            outputOffset += 8;
+        }
+    }
+    return result;
+}
+
+function rgbaToDxt1Dds(data, width = EXPECTED.clan.width, height = EXPECTED.clan.height) {
+    const source = Buffer.from(data || []);
+    const sourceWidth = number(width);
+    const sourceHeight = number(height);
+    if (sourceWidth !== EXPECTED.clan.width || sourceHeight !== EXPECTED.clan.height) {
+        throw new RangeError(`unexpected clan crest geometry: ${sourceWidth}x${sourceHeight}`);
+    }
+    if (source.length !== sourceWidth * sourceHeight * 4) {
+        throw new RangeError(`unexpected clan crest pixel bytes: ${source.length}`);
+    }
+
+    const textureWidth = nextPowerOfTwo(sourceWidth);
+    const textureHeight = nextPowerOfTwo(sourceHeight);
+    const topPadding = textureHeight - sourceHeight;
+    const result = Buffer.alloc(128 + ((textureWidth * textureHeight) / 2));
+    dxt1Header(textureWidth, textureHeight).copy(result);
+    let outputOffset = 128;
+    for (let blockY = 0; blockY < textureHeight; blockY += 4) {
+        for (let blockX = 0; blockX < textureWidth; blockX += 4) {
+            const colors = [];
+            for (let y = 0; y < 4; y += 1) {
+                for (let x = 0; x < 4; x += 1) {
+                    const imageX = blockX + x;
+                    const imageY = blockY + y;
+                    const sourceImageY = imageY - topPadding;
+                    if (imageX >= sourceWidth || sourceImageY < 0 || sourceImageY >= sourceHeight) {
+                        colors.push({ r: 0, g: 0, b: 0 });
+                        continue;
+                    }
+                    const offset = ((sourceImageY * sourceWidth) + imageX) * 4;
+                    const alpha = source[offset + 3] / 255;
+                    colors.push({
+                        r: Math.round(source[offset] * alpha),
+                        g: Math.round(source[offset + 1] * alpha),
+                        b: Math.round(source[offset + 2] * alpha)
+                    });
                 }
             }
             encodeDxt1Block(colors, result, outputOffset);
@@ -280,6 +327,7 @@ const ClanCrestService = {
         });
     },
     bmpToDxt1Dds,
+    rgbaToDxt1Dds,
     clientCrestData,
     assetFor,
     ensureAutonomousCrest,

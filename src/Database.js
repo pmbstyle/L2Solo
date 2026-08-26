@@ -753,7 +753,20 @@ function applySchemaMigrations() {
         [25, () => connection.exec(`
             CREATE INDEX IF NOT EXISTS bot_life_state_market_reconcile
                 ON bot_life_state(phase, updatedAt, characterId);
-        `)]
+        `)],
+        [26, () => {
+            const columns = connection.prepare('PRAGMA table_info(clan_simulation_clans)').all();
+            if (!columns.some((column) => column.name === 'mode')) {
+                connection.exec("ALTER TABLE clan_simulation_clans ADD COLUMN mode TEXT NOT NULL DEFAULT 'autonomous'");
+            }
+            connection.exec(`
+                UPDATE clan_simulation_clans
+                SET mode = 'autonomous'
+                WHERE mode IS NULL OR mode = '';
+                CREATE INDEX IF NOT EXISTS clan_simulation_clans_mode_updatedAt
+                    ON clan_simulation_clans(mode, updatedAt);
+            `);
+        }]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
@@ -846,7 +859,8 @@ function botPopulationUnsafe() {
 
 function executeReadAutonomousBotMember(characterId, clanId) {
     return selectOne(`characters`, ['id'], `id = ? AND clanId = ? AND EXISTS (
-        SELECT 1 FROM clan_simulation_clans simulated WHERE simulated.clanId = characters.clanId
+        SELECT 1 FROM clan_simulation_clans simulated
+        WHERE simulated.clanId = characters.clanId AND simulated.mode = 'autonomous'
     ) AND (
         username LIKE 'bot_pop_%'
         OR username LIKE 'bot_scale_%'
@@ -871,6 +885,7 @@ function simulationState(raw, clanId, leaderId, memberIds, timestamp) {
     return {
         ...value,
         version: 1,
+        mode: value.mode === 'player_managed' ? 'player_managed' : 'autonomous',
         clanId: Number(clanId),
         leaderId: Number(leaderId),
         level: Math.max(0, Math.min(3, Number(value.level) || 0)),
@@ -879,6 +894,80 @@ function simulationState(raw, clanId, leaderId, memberIds, timestamp) {
         contributionLedgerVersion: Math.max(0, Number(value.contributionLedgerVersion) || 0),
         warehouseRevision: Math.max(0, Number(value.warehouseRevision) || 0),
         updatedAt: Number(timestamp) || now()
+    };
+}
+
+function syncPlayerManagedClanUnsafe(clanId) {
+    const clan = one(`SELECT clans.id, clans.level, clans.leaderId,
+            leader.username, leaderLife.accountName, leaderLife.statsJson
+        FROM clans
+        JOIN characters leader ON leader.id = clans.leaderId
+        LEFT JOIN bot_life_state leaderLife ON leaderLife.characterId = leader.id
+        WHERE clans.id = ?`, [Number(clanId)]);
+    if (!clan || generatedBotRow(clan)) {
+        return { ok: true, skipped: true, code: clan ? 'leader_not_player' : 'clan_missing' };
+    }
+
+    const members = all(`SELECT members.id, members.username, life.accountName, life.statsJson
+        FROM characters members
+        LEFT JOIN bot_life_state life ON life.characterId = members.id
+        WHERE members.clanId = ?
+        ORDER BY members.id ASC`, [Number(clanId)]);
+    const botMemberIds = members.filter(generatedBotRow).map((member) => Number(member.id));
+    const simulation = one('SELECT clanId, mode, stateJson, updatedAt FROM clan_simulation_clans WHERE clanId = ?', [Number(clanId)]);
+    if (simulation && String(simulation.mode || 'autonomous') === 'autonomous') {
+        return { ok: true, skipped: true, code: 'autonomous_clan', mode: 'autonomous' };
+    }
+
+    const timestamp = now();
+    if (!botMemberIds.length) {
+        if (!simulation) return { ok: true, skipped: true, code: 'no_bot_members' };
+        write(`UPDATE clan_actions
+            SET status = 'cancelled', leaseUntil = NULL, reasonCode = 'player_managed_disabled',
+                updatedAt = ?, resolvedAt = ?
+            WHERE clanId = ? AND status IN ('pending', 'running')`, [timestamp, timestamp, Number(clanId)]);
+        write('DELETE FROM clan_simulation_clans WHERE clanId = ? AND mode = ?', [Number(clanId), 'player_managed']);
+        return { ok: true, disabled: true, clanId: Number(clanId), mode: 'player_managed' };
+    }
+
+    const previousState = jsonObject(simulation?.stateJson);
+    const previousIds = Array.isArray(previousState.memberIds)
+        ? [...new Set(previousState.memberIds.map(Number).filter(Boolean))].sort((left, right) => left - right)
+        : [];
+    const membershipChanged = JSON.stringify(previousIds) !== JSON.stringify(botMemberIds);
+    if (simulation && !membershipChanged) {
+        return { ok: true, created: false, changed: false, clanId: Number(clanId), mode: 'player_managed', memberIds: botMemberIds };
+    }
+
+    const state = simulationState({ ...previousState, mode: 'player_managed' }, clanId, clan.leaderId, botMemberIds, timestamp);
+    state.mode = 'player_managed';
+    state.level = Math.max(0, Math.min(3, Number(clan.level) || 0));
+    if (simulation) {
+        write(`UPDATE clan_simulation_clans
+            SET mode = 'player_managed', updatedAt = ?, stateJson = ?
+            WHERE clanId = ?`, [timestamp, JSON.stringify(state), Number(clanId)]);
+    } else {
+        write(`INSERT INTO clan_simulation_clans (clanId, version, mode, createdAt, updatedAt, stateJson)
+            VALUES (?, 1, 'player_managed', ?, ?, ?)`, [Number(clanId), timestamp, timestamp, JSON.stringify(state)]);
+    }
+    write(`INSERT OR IGNORE INTO clan_actions
+        (clanId, actionKey, actionType, priority, status, attempt, availableAt,
+         payloadJson, resultJson, reasonCode, createdAt, updatedAt)
+        VALUES (?, ?, 'goal_plan', 100, 'pending', 0, ?, ?, '{}', 'player_managed_sync', ?, ?)`, [
+        Number(clanId),
+        `clan:${Number(clanId)}:player-managed:${timestamp}`,
+        timestamp,
+        JSON.stringify({ reason: simulation ? 'player_managed_membership_changed' : 'player_managed_enabled', clanId: Number(clanId) }),
+        timestamp,
+        timestamp
+    ]);
+    return {
+        ok: true,
+        created: !simulation,
+        changed: true,
+        clanId: Number(clanId),
+        mode: 'player_managed',
+        memberIds: botMemberIds
     };
 }
 
@@ -2618,6 +2707,36 @@ const Database = {
                 state: jsonObject(row.stateJson)
             })));
     },
+    syncPlayerManagedClan(clanId) {
+        return inTransaction(() => syncPlayerManagedClanUnsafe(clanId), 'clan-simulation:player-managed-sync');
+    },
+    ensurePlayerManagedClans(limit = 500) {
+        const safeLimit = Math.max(1, Math.min(2000, Math.floor(Number(limit) || 500)));
+        return run(`SELECT clans.id
+            FROM clans
+            LEFT JOIN clan_simulation_clans simulated ON simulated.clanId = clans.id
+            WHERE simulated.mode = 'player_managed'
+               OR (simulated.clanId IS NULL AND EXISTS (
+                    SELECT 1
+                    FROM characters c
+                    LEFT JOIN bot_life_state life ON life.characterId = c.id
+                    WHERE c.clanId = clans.id AND ${GENERATED_BOT_FILTER}
+               ))
+            ORDER BY clans.id ASC
+            LIMIT ${safeLimit}`, [], 'clan-simulation:player-managed-candidates').then(async (rows) => {
+            const summary = { attempted: rows.length, created: 0, changed: 0, disabled: 0 };
+            for (const row of rows) {
+                const result = await inTransaction(
+                    () => syncPlayerManagedClanUnsafe(row.id),
+                    'clan-simulation:player-managed-sync'
+                );
+                if (result.created) summary.created += 1;
+                if (result.changed) summary.changed += 1;
+                if (result.disabled) summary.disabled += 1;
+            }
+            return summary;
+        });
+    },
     enqueueClanAction({
         clanId,
         actionKey,
@@ -2841,7 +2960,7 @@ const Database = {
             LIMIT ${safeLimit}`, [], 'clan-action:bootstrap');
     },
     isAutonomousClan(clanId) {
-        return selectOne('clan_simulation_clans', ['clanId'], 'clanId = ?', [Number(clanId)], 'clan-simulation:membership')
+        return selectOne('clan_simulation_clans', ['clanId'], 'clanId = ? AND mode = ?', [Number(clanId), 'autonomous'], 'clan-simulation:membership')
             .then((rows) => !!rows[0]);
     },
     isAutonomousBotMember(characterId, clanId) {
@@ -2866,7 +2985,7 @@ const Database = {
                 return { ok: false, code: 'founder_no_quorum' };
             }
 
-            const autonomousCount = Number(one('SELECT COUNT(*) AS count FROM clan_simulation_clans').count || 0);
+            const autonomousCount = Number(one("SELECT COUNT(*) AS count FROM clan_simulation_clans WHERE mode = 'autonomous'").count || 0);
             if (autonomousCount >= Math.max(0, Number(maxBotClans) || 0)) {
                 return { ok: false, code: 'founder_clan_limit' };
             }
@@ -2902,8 +3021,8 @@ const Database = {
 
             const timestamp = now();
             const state = simulationState(stateJson, clanId, leaderId, uniqueMemberIds, timestamp);
-            write(`INSERT INTO clan_simulation_clans (clanId, version, createdAt, updatedAt, stateJson)
-                VALUES (?, ?, ?, ?, ?)`, [clanId, 1, timestamp, timestamp, JSON.stringify(state)]);
+            write(`INSERT INTO clan_simulation_clans (clanId, version, mode, createdAt, updatedAt, stateJson)
+                VALUES (?, ?, 'autonomous', ?, ?, ?)`, [clanId, 1, timestamp, timestamp, JSON.stringify(state)]);
             write(`INSERT INTO clan_actions
                 (clanId, actionKey, actionType, priority, status, attempt, availableAt,
                  payloadJson, resultJson, reasonCode, createdAt, updatedAt)
@@ -2939,7 +3058,7 @@ const Database = {
         const id = Number(characterId);
         const targetClanId = Number(clanId);
         return inTransaction(() => {
-            const simulation = one('SELECT clanId, stateJson FROM clan_simulation_clans WHERE clanId = ?', [targetClanId]);
+            const simulation = one("SELECT clanId, stateJson FROM clan_simulation_clans WHERE clanId = ? AND mode = 'autonomous'", [targetClanId]);
             if (!simulation) return { ok: false, code: 'target_not_autonomous' };
 
             const memberCount = Number(one('SELECT COUNT(*) AS count FROM characters WHERE clanId = ?', [targetClanId]).count || 0);
@@ -4107,6 +4226,7 @@ const Database = {
             FROM clans
             JOIN clan_simulation_clans simulated ON simulated.clanId = clans.id
             LEFT JOIN clan_crests crests ON crests.id = clans.crestId AND crests.kind = 'pledge'
+            WHERE simulated.mode = 'autonomous'
             ORDER BY clans.id ASC`, [], 'clan:crest-autonomous', true);
     },
     assignAutonomousClanCrest({ clanId, data, kind = 'pledge' } = {}) {
@@ -4116,7 +4236,7 @@ const Database = {
             return Promise.resolve({ ok: false, code: 'invalid_clan_crest' });
         }
         return inTransaction(() => {
-            if (!one('SELECT clanId FROM clan_simulation_clans WHERE clanId = ?', [clan])) {
+            if (!one("SELECT clanId FROM clan_simulation_clans WHERE clanId = ? AND mode = 'autonomous'", [clan])) {
                 return { ok: false, code: 'target_not_autonomous' };
             }
             const crestColumn = String(kind) === 'ally' ? 'allyCrestId' : 'crestId';
@@ -4142,7 +4262,7 @@ const Database = {
             return Promise.resolve({ ok: false, code: 'invalid_clan_crest' });
         }
         return inTransaction(() => {
-            if (!one('SELECT clanId FROM clan_simulation_clans WHERE clanId = ?', [clan])) {
+            if (!one("SELECT clanId FROM clan_simulation_clans WHERE clanId = ? AND mode = 'autonomous'", [clan])) {
                 return { ok: false, code: 'target_not_autonomous' };
             }
             const crestColumn = String(kind) === 'ally' ? 'allyCrestId' : 'crestId';
@@ -4154,6 +4274,34 @@ const Database = {
             write('DELETE FROM clan_crests WHERE id = ? AND clanId = ? AND kind = ?', [crestId, clan, String(kind)]);
             return { ok: true, cleared: true, crestId };
         }, 'clan:crest-autonomous-clear');
+    },
+    replacePlayerManagedClanCrest({ clanId, data } = {}) {
+        const clan = Number(clanId);
+        const crestData = Buffer.from(data || []);
+        if (!clan) return Promise.resolve({ ok: false, code: 'invalid_clan_crest' });
+        return inTransaction(() => {
+            const current = one(`SELECT clans.level, clans.crestId
+                FROM clans
+                JOIN clan_simulation_clans simulated ON simulated.clanId = clans.id
+                WHERE clans.id = ? AND simulated.mode = 'player_managed'`, [clan]);
+            if (!current) return { ok: false, code: 'target_not_player_managed' };
+            if (crestData.length && Number(current.level || 0) < 3) {
+                return { ok: false, code: 'level_too_low' };
+            }
+
+            const previousCrestId = Number(current.crestId || 0);
+            let crestId = 0;
+            if (crestData.length) {
+                const created = write(`INSERT INTO clan_crests (clanId, kind, data, createdAt)
+                    VALUES (?, 'pledge', ?, ?)`, [clan, crestData, now()]);
+                crestId = Number(created.insertId);
+            }
+            write('UPDATE clans SET crestId = ? WHERE id = ?', [crestId, clan]);
+            if (previousCrestId > 0 && previousCrestId !== crestId) {
+                write("DELETE FROM clan_crests WHERE id = ? AND clanId = ? AND kind = 'pledge'", [previousCrestId, clan]);
+            }
+            return { ok: true, clanId: clan, crestId, previousCrestId, deleted: crestId === 0 };
+        }, 'clan:crest-player-managed-replace');
     },
     createClanCrest(clanId, kind, data) { return insert('clan_crests', { clanId, kind, data, createdAt: now() }, 'clan:crest-create'); },
     fetchClanCrest(id) { return selectOne('clan_crests', ['*'], 'id = ?', [id], 'clan:crest'); },
