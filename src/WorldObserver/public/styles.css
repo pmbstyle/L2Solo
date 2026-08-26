@@ -15,10 +15,33 @@
     --blue: #7aa7ff;
     --red: #e66d61;
     --shadow: 0 22px 70px rgba(0, 0, 0, 0.32);
+    --scrollbar-track: rgba(2, 7, 8, 0.32);
+    --scrollbar-thumb: rgba(128, 143, 135, 0.42);
+    --scrollbar-thumb-hover: rgba(216, 185, 109, 0.62);
+    --scrollbar-thumb-active: rgba(216, 185, 109, 0.82);
     font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-* { box-sizing: border-box; }
+* {
+    box-sizing: border-box;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-track { border-radius: 999px; background: var(--scrollbar-track); }
+*::-webkit-scrollbar-thumb {
+    min-width: 34px;
+    min-height: 34px;
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-color: var(--scrollbar-thumb);
+    background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover { background-color: var(--scrollbar-thumb-hover); }
+*::-webkit-scrollbar-thumb:active { background-color: var(--scrollbar-thumb-active); }
+*::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+*::-webkit-scrollbar-corner { background: transparent; }
 
 body {
     margin: 0;
@@ -448,7 +471,7 @@ h1 { font-size: 25px; line-height: 1; font-weight: 790; letter-spacing: -0.025em
 .section-title h2 { font-size: 14px; font-weight: 820; }
 .section-title span { color: var(--faint); font-size: 11px; font-weight: 720; }
 .inspector-section, .roster-section { overflow: hidden; }
-.selected-inspector, .actor-list { min-height: 0; overflow: auto; padding-right: 2px; }
+.selected-inspector, .actor-list { min-height: 0; overflow: auto; padding-right: 2px; scrollbar-gutter: stable; }
 .selected-inspector { height: calc(100% - 29px); }
 
 .inspector-empty { display: grid; min-height: 220px; place-items: center; align-content: center; padding: 24px; text-align: center; }
@@ -726,7 +749,7 @@ svg.empty-glyph { width: 38px; height: 38px; }
     font-size: 10px;
 }
 .ranking-list-head span:first-child { color: var(--muted); font-weight: 780; }
-.ranking-list { min-height: 0; overflow: auto; padding: 0 28px 24px; }
+.ranking-list { min-height: 0; overflow: auto; padding: 0 28px 24px; scrollbar-gutter: stable; }
 .ranking-row {
     display: grid;
     grid-template-columns: 44px minmax(170px, 1.2fr) minmax(150px, 1fr) 112px 126px;
@@ -764,7 +787,7 @@ svg.empty-glyph { width: 38px; height: 38px; }
 .raid-boss-summary { margin: 0 28px; padding: 12px 0 5px; color: var(--muted); font-size: 11px; }
 .raid-boss-list-head { display: flex; justify-content: space-between; gap: 14px; padding: 10px 30px 9px; color: var(--faint); font-size: 10px; }
 .raid-boss-list-head span:first-child { color: var(--muted); font-weight: 780; }
-.raid-boss-list { min-height: 0; overflow: auto; padding: 0 28px 24px; }
+.raid-boss-list { min-height: 0; overflow: auto; padding: 0 28px 24px; scrollbar-gutter: stable; }
 .raid-boss-row { display: grid; grid-template-columns: 10px minmax(150px, 1.25fr) minmax(145px, 1fr) minmax(105px, 0.8fr) 118px; align-items: center; gap: 12px; width: 100%; padding: 11px 8px; border: 0; border-bottom: 1px solid var(--line-soft); color: var(--text); text-align: left; background: transparent; cursor: pointer; transition: color 140ms ease, background 140ms ease, transform 140ms ease; }
 .raid-boss-row:hover, .raid-boss-row:focus-visible { color: #fff; background: rgba(216, 185, 109, 0.065); transform: translateX(3px); outline: none; }
 .raid-boss-row.is-missing { cursor: default; opacity: 0.64; }
@@ -827,7 +850,7 @@ svg.empty-glyph { width: 38px; height: 38px; }
 .clan-search input::placeholder { color: var(--faint); }
 .clan-list-head { display: flex; justify-content: space-between; gap: 12px; padding: 12px 20px 8px; color: var(--faint); font-size: 10px; }
 .clan-list-head span:first-child { color: var(--muted); font-weight: 780; }
-.clan-list { min-height: 0; overflow: auto; padding: 0 14px 20px; }
+.clan-list { min-height: 0; overflow: auto; padding: 0 14px 20px; scrollbar-gutter: stable; }
 .clan-row { display: grid; grid-template-columns: 38px minmax(0, 1fr) 72px; align-items: center; gap: 10px; width: 100%; padding: 11px 7px; border: 0; border-bottom: 1px solid var(--line-soft); color: var(--text); text-align: left; background: transparent; cursor: pointer; transition: color 140ms ease, background 140ms ease, transform 140ms ease; }
 .clan-row:hover, .clan-row.is-selected { color: #fff; background: rgba(216, 185, 109, 0.08); transform: translateX(3px); }
 .clan-row.is-selected { box-shadow: inset 2px 0 var(--gold); }
@@ -847,7 +870,7 @@ svg.empty-glyph { width: 38px; height: 38px; }
 .clan-identity span, .clan-row-side span { margin-top: 4px; color: var(--faint); font-size: 9px; }
 .clan-row-side { text-align: right; }
 .clan-row-side strong { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.clan-detail { overflow: auto; padding: 28px clamp(24px, 4vw, 58px) 42px; }
+.clan-detail { overflow: auto; padding: 28px clamp(24px, 4vw, 58px) 42px; scrollbar-gutter: stable; }
 .clan-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding-bottom: 22px; border-bottom: 1px solid var(--line-soft); }
 .clan-detail-header h3 { display: flex; align-items: center; margin-top: 6px; font-size: clamp(25px, 3vw, 38px); letter-spacing: -0.04em; }
 .clan-detail-header p { margin-top: 6px; color: var(--muted); font-size: 10px; }
@@ -893,7 +916,7 @@ svg.empty-glyph { width: 38px; height: 38px; }
 .clan-order-search-field > div:focus-within { border-color: rgba(216, 185, 109, 0.56); }
 .clan-order-search-field .ui-icon { width: 13px; height: 13px; color: var(--gold); }
 .clan-order-search-field input { min-width: 0; width: 100%; border: 0; outline: 0; color: var(--text); background: transparent; font-size: 10px; }
-.clan-order-item-results { max-height: 204px; margin-top: 6px; overflow: auto; border: 1px solid var(--line-soft); border-radius: 8px; background: rgba(3, 8, 9, 0.32); }
+.clan-order-item-results { max-height: 204px; margin-top: 6px; overflow: auto; scrollbar-gutter: stable; border: 1px solid var(--line-soft); border-radius: 8px; background: rgba(3, 8, 9, 0.32); }
 .clan-order-item-results[hidden] { display: none; }
 .clan-order-item-result { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 9px; width: 100%; padding: 7px 9px; border: 0; border-bottom: 1px solid var(--line-soft); color: var(--text); text-align: left; background: transparent; cursor: pointer; }
 .clan-order-item-result:last-child { border-bottom: 0; }
