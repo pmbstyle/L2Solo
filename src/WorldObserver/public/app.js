@@ -1,8 +1,17 @@
 const ActorFilters = window.WorldObserverActorFilters;
 const Leaderboards = window.WorldObserverLeaderboards;
+const WorldState = window.WorldObserverWorldState;
+const MapClusters = window.WorldObserverMapClusters;
+const Router = window.WorldObserverSpaRouter;
+const UiLanguage = window.WorldObserverUiLanguage;
 
 const state = {
     snapshot: null,
+    refreshing: false,
+    worldRevision: 0,
+    worldEpoch: null,
+    worldStatusAt: 0,
+    worldStatusLoading: false,
     selectedId: null,
     phase: 'all',
     search: '',
@@ -20,6 +29,8 @@ const state = {
     detailError: null,
     detailRequest: 0,
     clusterScope: null,
+    clanMapScope: null,
+    clanMapRequest: 0,
     rankingOpen: false,
     rankingMetric: 'level',
     rankingRaceKey: 'all',
@@ -36,12 +47,112 @@ const state = {
     clanDirectory: null,
     selectedClanId: null,
     clanDetail: null,
+    clanDetailSignature: null,
     clanDetailLoading: false,
+    clanDetailDeferredRender: false,
     clanError: null,
     clanRequest: 0,
     clanLastLoadedAt: 0,
-    clanFocusReturn: null
+    clanFocusReturn: null,
+    clanManagerOpen: false,
+    clanCrestFit: 'cover',
+    clanCrestSource: null,
+    clanCrestDraft: null,
+    clanCrestSaving: false,
+    clanCrestMessage: null,
+    clanOrderDraft: null,
+    clanOrderItems: [],
+    clanOrderSearchLoading: false,
+    clanOrderSearchError: null,
+    clanOrderSearchRequest: 0,
+    clanOrderSearchTimer: null,
+    clanOrderSaving: false,
+    clanOrderMessage: null,
+    applyingRoute: false,
+    pendingRoute: null
 };
+
+function commitRoute(route, { replace = false } = {}) {
+    if (state.applyingRoute) return;
+    const href = Router.href(route);
+    if (window.location.pathname === href) return;
+    window.history[replace ? 'replaceState' : 'pushState']({}, '', href);
+}
+
+function clearActorSelection() {
+    state.selectedId = null;
+    state.selectedRaidBossId = null;
+    state.detail = null;
+    state.detailError = null;
+    state.detailLoading = false;
+    state.detailRequest += 1;
+}
+
+function applyRoute(route = Router.parse(window.location.pathname)) {
+    if (route.name === 'not-found') {
+        window.history.replaceState({}, '', Router.href({ name: 'world' }));
+        route = { name: 'world' };
+    }
+    state.applyingRoute = true;
+    state.pendingRoute = null;
+    try {
+        if (route.name === 'world') {
+            document.title = 'World Observer';
+            const clanId = Number(route.clanId) || null;
+            const scopeChanged = Number(state.clanMapScope?.id || 0) !== Number(clanId || 0);
+            setClanMapScope(clanId, route.clanName || null, { resetFilters: Boolean(clanId && scopeChanged) });
+            if (clanId && (scopeChanged || !state.clanMapScope?.actorKeys)) loadClanMapMembers(clanId);
+            closeRankings({ updateRoute: false });
+            closeRaidBosses({ updateRoute: false });
+            closeClans({ updateRoute: false });
+            clearActorSelection();
+            if (state.snapshot) {
+                renderClassFilter();
+                renderFilterCounts();
+                renderPoints();
+                renderRoster();
+                renderSelected();
+                if (clanId) focusClanMap();
+            } else if (clanId) {
+                state.pendingRoute = route;
+            }
+            return;
+        }
+        if (route.name === 'rankings') {
+            openRankings({ updateRoute: false });
+            return;
+        }
+        if (route.name === 'clans') {
+            openClans(route.id, { updateRoute: false });
+            return;
+        }
+        if (route.name === 'raid-bosses') {
+            if (route.id) {
+                if (!state.snapshot) state.pendingRoute = route;
+                else focusRaidBoss(route.id, false);
+            } else openRaidBosses({ updateRoute: false });
+            return;
+        }
+        if (route.name === 'actor') {
+            if (!state.snapshot) state.pendingRoute = route;
+            else selectActor(route.id, route.kind, true, false);
+        }
+    } finally {
+        state.applyingRoute = false;
+    }
+}
+
+function worldEpochChanged(epoch) {
+    return Boolean(epoch && state.worldEpoch && String(epoch) !== String(state.worldEpoch));
+}
+
+function restartWorldBootstrap(epoch = null) {
+    state.snapshot = null;
+    state.worldRevision = 0;
+    state.worldEpoch = epoch || null;
+    state.worldStatusAt = 0;
+    setTimeout(refresh, 0);
+}
 
 const COLORS = {
     hot: '#63d37b',
@@ -108,11 +219,17 @@ const ACTIVITY_LABELS = Object.freeze({
 const RANKING_DISPLAY_LIMIT = 250;
 
 const els = {
+    observerShell: document.querySelector('.observer-shell'),
     serverLine: document.querySelector('#serverLine'),
     liveToggle: document.querySelector('#liveToggle'),
     liveLabel: document.querySelector('.live-label'),
     fitButton: document.querySelector('#fitButton'),
+    zoomInButton: document.querySelector('#zoomInButton'),
+    zoomOutButton: document.querySelector('#zoomOutButton'),
     filterStrip: document.querySelector('#filterStrip'),
+    mapScope: document.querySelector('#mapScope'),
+    mapScopeName: document.querySelector('#mapScopeName'),
+    clearMapScope: document.querySelector('#clearMapScope'),
     actorSearch: document.querySelector('#actorSearch'),
     minLevelFilter: document.querySelector('#minLevelFilter'),
     maxLevelFilter: document.querySelector('#maxLevelFilter'),
@@ -401,6 +518,122 @@ function actors() {
     ];
 }
 
+function clanMapName(clanId) {
+    const id = Number(clanId);
+    return clanItems().find((clan) => Number(clan.id) === id)?.name
+        || (Number(state.clanDetail?.clan?.id) === id ? state.clanDetail.clan.name : null)
+        || `Clan #${id}`;
+}
+
+function resetClanMapFilters() {
+    state.phase = 'all';
+    state.search = '';
+    state.minLevel = null;
+    state.maxLevel = null;
+    state.classKey = 'all';
+    state.classOptionsSignature = null;
+    state.clusterScope = null;
+    state.selectedRaidBossId = null;
+    if (els.actorSearch) els.actorSearch.value = '';
+    if (els.minLevelFilter) els.minLevelFilter.value = '';
+    if (els.maxLevelFilter) els.maxLevelFilter.value = '';
+    els.filterStrip?.querySelectorAll('.filter').forEach((button) => {
+        button.classList.toggle('is-active', button.dataset.phase === 'all');
+    });
+}
+
+function setClanMapScope(clanId, clanName = null, { resetFilters = false } = {}) {
+    const id = Number(clanId) || null;
+    if (resetFilters) resetClanMapFilters();
+    const existingKeys = Number(state.clanMapScope?.id) === id ? state.clanMapScope.actorKeys : null;
+    if (!id) state.clanMapRequest += 1;
+    state.clanMapScope = id ? {
+        id,
+        name: clanName || (Number(state.clanMapScope?.id) === id ? state.clanMapScope.name : null) || clanMapName(id),
+        actorKeys: existingKeys
+    } : null;
+    renderMapScope();
+}
+
+function clanScopedActors() {
+    const items = eligibleActors();
+    const scope = state.clanMapScope;
+    if (!scope) return items;
+    if (!scope.actorKeys) return [];
+    return items.filter((actor) => scope.actorKeys.has(actorKey(actor)));
+}
+
+async function loadClanMapMembers(clanId) {
+    const id = Number(clanId);
+    if (!id) return;
+    const requestId = ++state.clanMapRequest;
+    try {
+        const response = await fetch(`/observer/api/clan/${encodeURIComponent(id)}`, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const detail = await response.json();
+        if (requestId !== state.clanMapRequest || Number(state.clanMapScope?.id) !== id) return;
+        state.clanMapScope.name = detail.clan?.name || state.clanMapScope.name;
+        state.clanMapScope.actorKeys = new Set((detail.members || [])
+            .filter((member) => Number(member.id))
+            .map((member) => `${member.kind === 'player' ? 'player' : 'bot'}:${Number(member.id)}`));
+        state.classOptionsSignature = null;
+        renderClassFilter();
+        renderFilteredActorViews();
+        renderSelected();
+        focusClanMap();
+    } catch (error) {
+        if (requestId !== state.clanMapRequest || Number(state.clanMapScope?.id) !== id) return;
+        state.clanMapScope.actorKeys = new Set();
+        state.clanMapScope.error = error.message;
+        renderMapScope();
+        renderFilteredActorViews();
+    }
+}
+
+function renderMapScope() {
+    if (!els.mapScope || !els.mapScopeName) return;
+    const scope = state.clanMapScope;
+    els.mapScope.hidden = !scope;
+    const raidBossFilter = els.filterStrip?.querySelector('[data-phase="raidbosses"]');
+    if (raidBossFilter) raidBossFilter.hidden = Boolean(scope);
+    if (!scope) return;
+    const mapped = clanScopedActors().filter((actor) => isSurfaceActor(actor) && mapLocation(actor)).length;
+    const suffix = scope.error ? 'unavailable' : scope.actorKeys ? `${number(mapped)} mapped` : 'loading…';
+    els.mapScopeName.textContent = `${scope.name || clanMapName(scope.id)} · ${suffix}`;
+}
+
+function focusClanMap() {
+    if (!state.clanMapScope || !state.snapshot) return;
+    const points = clanScopedActors()
+        .filter((actor) => isSurfaceActor(actor) && mapLocation(actor))
+        .map((actor) => worldToMap(mapLocation(actor)));
+    if (points.length) focusMapPoints(points, 70);
+}
+
+function showClanOnMap(clanId, clanName = null) {
+    const id = Number(clanId);
+    if (!id) return;
+    commitRoute({ name: 'world', clanId: id });
+    applyRoute({ name: 'world', clanId: id, clanName });
+}
+
+function clearClanMapScope({ updateRoute = true, resetViewport = true } = {}) {
+    setClanMapScope(null);
+    state.classOptionsSignature = null;
+    if (updateRoute) commitRoute({ name: 'world' });
+    renderClassFilter();
+    renderFilterCounts();
+    if (resetViewport) {
+        state.fit = true;
+        els.fitButton.classList.add('is-live');
+        setSvgViewBox();
+        renderLabels();
+    }
+    renderPoints();
+    renderRoster();
+    renderSelected();
+}
+
 function raidBossItems() {
     return state.snapshot?.raidBosses?.bosses || [];
 }
@@ -537,44 +770,50 @@ function renderRankings() {
     els.rankingList.scrollTop = scrollTop;
 }
 
-function openRankings() {
-    if (state.raidBossOpen) closeRaidBosses();
-    if (state.clanOpen) closeClans();
+function openRankings({ updateRoute = true } = {}) {
+    if (state.clanMapScope) clearClanMapScope({ updateRoute: false });
+    if (state.raidBossOpen) closeRaidBosses({ updateRoute: false });
+    if (state.clanOpen) closeClans({ updateRoute: false });
     state.rankingOpen = true;
     state.rankingFocusReturn = document.activeElement;
     renderRankings();
     els.rankingsModal.hidden = false;
     document.body.classList.add('rankings-open');
     requestAnimationFrame(() => els.closeRankings.focus());
+    if (updateRoute) commitRoute({ name: 'rankings' });
 }
 
-function closeRankings() {
+function closeRankings({ updateRoute = true } = {}) {
     if (!state.rankingOpen) return;
     state.rankingOpen = false;
     els.rankingsModal.hidden = true;
     if (!state.raidBossOpen && !state.clanOpen) document.body.classList.remove('rankings-open');
     state.rankingFocusReturn?.focus?.();
     state.rankingFocusReturn = null;
+    if (updateRoute) commitRoute({ name: 'world' });
 }
 
-function openRaidBosses() {
-    if (state.rankingOpen) closeRankings();
-    if (state.clanOpen) closeClans();
+function openRaidBosses({ updateRoute = true } = {}) {
+    if (state.clanMapScope) clearClanMapScope({ updateRoute: false });
+    if (state.rankingOpen) closeRankings({ updateRoute: false });
+    if (state.clanOpen) closeClans({ updateRoute: false });
     state.raidBossOpen = true;
     state.raidBossFocusReturn = document.activeElement;
     renderRaidBosses();
     els.raidBossesModal.hidden = false;
     document.body.classList.add('rankings-open');
     requestAnimationFrame(() => els.closeRaidBosses.focus());
+    if (updateRoute) commitRoute({ name: 'raid-bosses' });
 }
 
-function closeRaidBosses() {
+function closeRaidBosses({ updateRoute = true } = {}) {
     if (!state.raidBossOpen) return;
     state.raidBossOpen = false;
     els.raidBossesModal.hidden = true;
     if (!state.rankingOpen && !state.clanOpen) document.body.classList.remove('rankings-open');
     state.raidBossFocusReturn?.focus?.();
     state.raidBossFocusReturn = null;
+    if (updateRoute) commitRoute({ name: 'world' });
 }
 
 function clanItems() {
@@ -604,20 +843,47 @@ function clanSortLabel() {
     return state.clanSort === 'members' ? 'members' : 'level';
 }
 
+function clanOverviewSignature(clan) {
+    if (!clan) return null;
+    return JSON.stringify([
+        clan.crestId,
+        clan.crestUrl,
+        clan.updatedAt,
+        clan.memberCount,
+        clan.onlineMembers,
+        clan.hotMembers,
+        clan.averageLevel,
+        clan.highestLevel,
+        clan.lowestLevel,
+        clan.warehouse,
+        clan.contributions,
+        clan.market,
+        clan.actions,
+        clan.operations,
+        clan.goal
+    ]);
+}
+
+function revealSelectedClan() {
+    requestAnimationFrame(() => {
+        els.clanList?.querySelector('.clan-row.is-selected')?.scrollIntoView({ block: 'nearest' });
+    });
+}
+
 function clanCrestMarkup(clan, size = 'small') {
     if (!clan?.crestUrl) return '';
     const label = `${clan.name || 'Clan'} crest`;
     return `<span class="clan-crest clan-crest-${size}"><img src="${escapeHtml(clan.crestUrl)}" alt="${escapeHtml(label)}" loading="lazy"></span>`;
 }
 
-function renderClans() {
+function renderClans({ renderDetail = true } = {}) {
     const directory = state.clanDirectory;
-    const totals = directory?.totals || { members: 0, bots: 0, players: 0, online: 0, autonomous: 0 };
+    const totals = directory?.totals || { members: 0, bots: 0, players: 0, online: 0, autonomous: 0, playerManaged: 0 };
     const clans = filteredClans();
     if (els.clanCount) els.clanCount.textContent = Number(directory?.total || 0).toLocaleString();
     if (els.clanSummary) {
         els.clanSummary.textContent = directory
-            ? `${number(directory.total)} clans · ${number(totals.bots)} bots · ${number(totals.autonomous)} autonomous`
+            ? `${number(directory.total)} clans · ${number(totals.bots)} bots · ${number(totals.autonomous)} autonomous · ${number(totals.playerManaged)} player-managed`
             : 'Waiting for clan data.';
     }
     if (els.clanScope) {
@@ -630,7 +896,7 @@ function renderClans() {
     if (!els.clanList) return;
     if (state.clanError && !directory) {
         els.clanList.innerHTML = `<div class="list-empty">Clan data failed: ${text(state.clanError)}</div>`;
-        renderClanDetail();
+        if (renderDetail) renderClanDetail();
         return;
     }
     els.clanList.innerHTML = clans.length ? clans.map((clan) => `
@@ -643,21 +909,279 @@ function renderClans() {
             <span class="clan-row-side"><strong>${number(clan.memberCount)}</strong><span>members</span></span>
         </button>
     `).join('') : '<div class="list-empty">No clans match this search.</div>';
-    renderClanDetail();
+    if (renderDetail) renderClanDetail();
 }
 
-function clanGoalSummary(goal) {
-    if (!goal) return { title: 'No active goal', meta: 'Waiting for the next clan decision' };
-    const target = goal.target?.itemName || goal.target?.npcName || goal.plan?.label || goal.type || 'operation';
-    const progress = goal.required > 0 ? `${number(goal.progress)}/${number(goal.required)}` : 'ready';
+function clanGoalSummary(goal, clan = null) {
+    if (!goal) return clan?.automated
+        ? { title: 'No active goal', progress: 'Waiting', percent: 0, meta: 'Waiting for the next clan decision' }
+        : { title: 'No active goal', progress: 'Player directed', percent: 0, meta: 'No clan objective has been selected' };
+    const target = goal.target?.itemName || goal.target?.npcName || goal.plan?.label || uiLabel('type', goal.type, 'Operation');
+    const progressValue = number(goal.progress);
+    const required = number(goal.required);
+    const progress = required > 0 ? `${progressValue}/${required}` : 'Ready';
+    const status = uiLabel('status', goal.status || 'active');
+    const plan = uiLabel('plan', goal.plan?.kind, null);
+    const reason = uiLabel('reason', goal.plan?.reasonCode, null);
     return {
-        title: `${target} · ${progress}`,
-        meta: `${goal.status || 'active'}${goal.plan?.kind ? ` · ${goal.plan.kind}` : ''}${goal.plan?.reasonCode ? ` · ${goal.plan.reasonCode}` : ''}`
+        title: target,
+        progress,
+        percent: required > 0 ? Math.max(0, Math.min(100, Math.round((progressValue / required) * 100))) : 100,
+        itemId: Number(goal.target?.itemId || 0) || null,
+        iconUrl: goal.target?.iconUrl || null,
+        meta: [status, reason || plan].filter(Boolean).join(' · ')
     };
+}
+
+function resetClanCrestDraft() {
+    state.clanCrestSource?.close?.();
+    state.clanCrestSource = null;
+    state.clanCrestDraft = null;
+    state.clanCrestSaving = false;
+}
+
+function resetClanOrderDraft() {
+    window.clearTimeout(state.clanOrderSearchTimer);
+    state.clanOrderSearchTimer = null;
+    state.clanOrderSearchRequest += 1;
+    state.clanOrderDraft = null;
+    state.clanOrderItems = [];
+    state.clanOrderSearchLoading = false;
+    state.clanOrderSearchError = null;
+    state.clanOrderSaving = false;
+    state.clanOrderMessage = null;
+}
+
+function clanOrderDraft() {
+    if (!state.clanOrderDraft) {
+        state.clanOrderDraft = {
+            item: null,
+            query: '',
+            amount: 1,
+            strategy: 'auto',
+            maxUnitPrice: '',
+            budget: '',
+            memberIds: null
+        };
+    }
+    return state.clanOrderDraft;
+}
+
+function clanCrestPixelsBase64(bytes) {
+    let binary = '';
+    for (let offset = 0; offset < bytes.length; offset += 1) binary += String.fromCharCode(bytes[offset]);
+    return window.btoa(binary);
+}
+
+function buildClanCrestDraft(source, fileName = '') {
+    const canvas = document.createElement('canvas');
+    canvas.width = 16;
+    canvas.height = 12;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    const sourceWidth = Number(source.width || source.naturalWidth);
+    const sourceHeight = Number(source.height || source.naturalHeight);
+    const scale = state.clanCrestFit === 'contain'
+        ? Math.min(canvas.width / sourceWidth, canvas.height / sourceHeight)
+        : Math.max(canvas.width / sourceWidth, canvas.height / sourceHeight);
+    const width = sourceWidth * scale;
+    const height = sourceHeight * scale;
+    context.drawImage(source, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    state.clanCrestDraft = {
+        fileName,
+        pixels: clanCrestPixelsBase64(pixels),
+        previewUrl: canvas.toDataURL('image/png')
+    };
+}
+
+function clanCrestPreview(clan) {
+    const source = state.clanCrestDraft?.previewUrl || clan.crestUrl;
+    return source
+        ? `<img src="${escapeHtml(source)}" alt="${escapeHtml(clan.name || 'Clan')} crest preview">`
+        : `<span>${uiIcon('shield')}<small>No crest</small></span>`;
+}
+
+function clanOrderStatusLabel(status) {
+    return uiLabel('status', status || 'active');
+}
+
+function clanOrderStrategyLabel(strategy) {
+    return ({ auto: 'Auto', farm: 'Farm', market: 'Market' })[strategy] || readableToken(strategy);
+}
+
+function clanOrderDelivery(order = null, item = null) {
+    const delivery = order?.plan?.delivery || null;
+    if (delivery?.kind === 'best_upgrade') {
+        const recipient = delivery.nextRecipient || delivery.recipients?.at?.(-1) || null;
+        return {
+            member: true,
+            title: recipient?.memberName || 'Best clan upgrade',
+            description: recipient
+                ? `${roleLabel(recipient.role || 'member')} · Lv ${number(recipient.level, '?')} · equipped after delivery`
+                : 'The server selects and equips the member who benefits most.'
+        };
+    }
+    const kind = String(item?.kind || '');
+    if (kind.startsWith('Weapon.') || kind.startsWith('Armor.')) {
+        return {
+            member: true,
+            title: 'Best clan upgrade',
+            description: 'The server selects and equips the member who benefits most.'
+        };
+    }
+    return {
+        member: false,
+        title: 'Clan warehouse',
+        description: 'Shared materials and resources remain available to the clan.'
+    };
+}
+
+function clanOrderItemResultsMarkup(draft = clanOrderDraft()) {
+    if (draft.item || (!String(draft.query || '').trim() && !state.clanOrderSearchLoading && !state.clanOrderSearchError)) return '';
+    if (state.clanOrderSearchLoading) return '<div class="clan-order-search-empty">Searching item catalog…</div>';
+    if (state.clanOrderSearchError) return `<div class="clan-order-search-empty is-error">${text(state.clanOrderSearchError)}</div>`;
+    if (!state.clanOrderItems.length) return '<div class="clan-order-search-empty">No matching items</div>';
+    return state.clanOrderItems.slice(0, 12).map((item) => `
+        <button type="button" class="clan-order-item-result" data-clan-order-item="${escapeHtml(item.id)}">
+            <span class="clan-order-item-icon">${item.iconUrl ? `<img src="${text(item.iconUrl)}" alt="" loading="lazy">` : uiIcon('target')}</span>
+            <span><strong>${text(item.name)}</strong><small>#${number(item.id)} · ${text(readableToken(item.kind), 'Item')}</small></span>
+            <b>${item.price ? `${compactNumber(item.price)} A` : '—'}</b>
+        </button>
+    `).join('');
+}
+
+function renderClanOrderSearchResults() {
+    const results = els.clansModal?.querySelector('[data-clan-order-results]');
+    if (!results) return;
+    const markup = clanOrderItemResultsMarkup();
+    results.hidden = !markup;
+    results.innerHTML = markup;
+}
+
+function clanOrderMarkup(clan) {
+    const detail = state.clanDetail || {};
+    const order = detail.order;
+    const draft = clanOrderDraft();
+    const members = (detail.members || []).filter((member) => member.kind === 'bot');
+    const assigned = new Set(draft.memberIds === null ? members.map((member) => Number(member.id)) : draft.memberIds);
+    const rosterReady = draft.strategy === 'market' ? assigned.size >= 1 : assigned.size >= 3;
+    const goal = clanGoalSummary(clan.goal, clan);
+    const progress = order ? `${number(clan.goal?.progress)}/${number(order.amount)}` : null;
+    const message = state.clanOrderMessage;
+    const itemResults = clanOrderItemResultsMarkup(draft);
+    const activeDelivery = clanOrderDelivery(order);
+    const draftDelivery = clanOrderDelivery(null, draft.item);
+    return `
+        <section class="clan-order-control" aria-label="Clan order">
+            <div class="clan-management-heading">
+                <div><span class="section-kicker">Clan control</span><strong>${order ? 'Active order' : 'Set an order'}</strong></div>
+                <p>Give the clan one durable objective. The server keeps executing it after this page is closed.</p>
+            </div>
+            <div class="clan-order-main">
+                ${order ? `
+                    <div class="clan-order-current">
+                        <span class="clan-order-current-icon">${order.iconUrl ? `<img src="${text(order.iconUrl)}" alt="">` : uiIcon('target')}</span>
+                        <div class="clan-order-current-copy">
+                            <span>${text(clanOrderStatusLabel(order.status))} · ${text(clanOrderStrategyLabel(order.strategy))}</span>
+                            <strong>${text(order.itemName)}</strong>
+                            <small>${text(goal.meta)} · Delivery: ${text(activeDelivery.title)} · ${compactNumber(order.spent)}${order.budget ? ` / ${compactNumber(order.budget)}` : ''} A spent</small>
+                        </div>
+                        <b>${text(progress)}</b>
+                    </div>
+                    <div class="clan-order-progress"><i style="width:${number(goal.percent)}%"></i></div>
+                    <div class="clan-order-actions">
+                        ${order.status === 'paused'
+                            ? `<button type="button" data-clan-order-transition="resume">${uiIcon('target')}Resume</button>`
+                            : `<button type="button" data-clan-order-transition="pause">Pause</button>`}
+                        <button type="button" data-clan-order-transition="replan">${uiIcon('crosshair')}Replan</button>
+                        <button class="is-danger" type="button" data-clan-order-transition="cancel">${uiIcon('trash')}Cancel</button>
+                    </div>
+                ` : '<div class="clan-order-empty"><span>No active order</span><strong>Choose an item below to put the clan to work.</strong></div>'}
+                <div class="clan-order-editor">
+                    <div class="clan-order-editor-title"><span>${order ? 'Replace order' : 'New order'}</span><small>Gather item</small></div>
+                    <label class="clan-order-search-field">
+                        <span>Item</span>
+                        <div>${uiIcon('search')}<input type="search" data-clan-order-search value="${escapeHtml(draft.query)}" placeholder="Search by item name or ID" autocomplete="off"></div>
+                    </label>
+                    <div class="clan-order-item-results" data-clan-order-results ${itemResults ? '' : 'hidden'}>${itemResults}</div>
+                    ${draft.item ? `<div class="clan-order-selected"><span>${draft.item.iconUrl ? `<img src="${text(draft.item.iconUrl)}" alt="">` : uiIcon('target')}</span><div><small>Selected item</small><strong>${text(draft.item.name)}</strong></div><b>#${number(draft.item.id)}</b></div>` : ''}
+                    <div class="clan-order-delivery ${draftDelivery.member ? 'is-member' : ''}"><span>${uiIcon(draftDelivery.member ? 'users' : 'warehouse')}</span><div><small>Delivery</small><strong>${text(draftDelivery.title)}</strong><p>${text(draftDelivery.description)}</p></div></div>
+                    <div class="clan-order-fields">
+                        <label><span>Quantity</span><input type="number" min="1" max="1000000" step="1" data-clan-order-amount value="${escapeHtml(draft.amount)}"></label>
+                        <label><span>Max unit price</span><input type="number" min="1" step="1" data-clan-order-price value="${escapeHtml(draft.maxUnitPrice)}" placeholder="Auto"></label>
+                        <label><span>Total budget</span><input type="number" min="0" step="1" data-clan-order-budget value="${escapeHtml(draft.budget)}" placeholder="Unlimited"></label>
+                    </div>
+                    <div class="clan-order-policy">
+                        <span>Execution policy</span>
+                        <div role="group" aria-label="Execution policy">
+                            ${['auto', 'farm', 'market'].map((strategy) => `<button type="button" class="${draft.strategy === strategy ? 'is-active' : ''}" data-clan-order-strategy="${strategy}" aria-pressed="${draft.strategy === strategy}">${clanOrderStrategyLabel(strategy)}</button>`).join('')}
+                        </div>
+                        <small>${draft.strategy === 'auto' ? 'Use a suitable market offer, then fall back to farming.' : draft.strategy === 'farm' ? 'Farm a known drop source with the selected bots.' : 'Wait for and buy a suitable player offer.'}</small>
+                    </div>
+                    <fieldset class="clan-order-members">
+                        <legend>Executors <small>${assigned.size || members.length} selected</small></legend>
+                        <div>${members.map((member) => `
+                            <label><input type="checkbox" data-clan-order-member="${escapeHtml(member.id)}" ${assigned.has(Number(member.id)) ? 'checked' : ''}><span><strong>${text(member.name)}</strong><small>${text(roleLabel(member.role || 'member'))} · Lv ${number(member.level, '?')}</small></span></label>
+                        `).join('') || '<p>No bot members available.</p>'}</div>
+                    </fieldset>
+                    <div class="clan-order-submit">
+                        <span class="${message?.kind === 'error' || !rosterReady ? 'is-error' : ''}">${text(message?.text || (!rosterReady ? 'Auto and Farm need at least 3 executors' : draft.item ? `${draft.item.name} ready` : 'Select an item to continue'))}</span>
+                        <button type="button" data-create-clan-order ${draft.item && rosterReady && !state.clanOrderSaving ? '' : 'disabled'}>${state.clanOrderSaving ? 'Saving…' : order ? 'Replace order' : 'Start order'}</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    `;
+}
+
+function clanManagementMarkup(clan) {
+    if (!state.clanManagerOpen || !clan.playerManaged) return '';
+    const hasDraft = !!state.clanCrestDraft;
+    const message = state.clanCrestMessage;
+    return `
+        <div class="clan-management" aria-label="Clan management">
+            ${clanOrderMarkup(clan)}
+            <section class="clan-identity-control">
+            <div class="clan-management-heading">
+                <div><span class="section-kicker">Appearance</span><strong>Identity</strong></div>
+                <p>Upload a normal image. Observer prepares the 16 × 12 crest required by the C4 client.</p>
+            </div>
+            <div class="clan-crest-editor">
+                <div class="clan-crest-preview">${clanCrestPreview(clan)}</div>
+                <div class="clan-crest-editor-main">
+                    <div class="clan-crest-editor-copy">
+                        <strong>Clan crest</strong>
+                        <span>PNG, JPEG, WebP, GIF or BMP · up to 5 MB</span>
+                    </div>
+                    <div class="clan-crest-fit" role="group" aria-label="Image fit">
+                        <button class="${state.clanCrestFit === 'cover' ? 'is-active' : ''}" type="button" data-crest-fit="cover" aria-pressed="${state.clanCrestFit === 'cover'}">Crop</button>
+                        <button class="${state.clanCrestFit === 'contain' ? 'is-active' : ''}" type="button" data-crest-fit="contain" aria-pressed="${state.clanCrestFit === 'contain'}">Fit</button>
+                    </div>
+                    <div class="clan-crest-actions">
+                        <label class="clan-crest-upload">
+                            ${uiIcon('upload')}<span>${hasDraft ? 'Choose another' : 'Choose image'}</span>
+                            <input type="file" data-clan-crest-file accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" hidden>
+                        </label>
+                        <button class="clan-crest-remove" type="button" data-remove-clan-crest ${clan.crestUrl && !state.clanCrestSaving ? '' : 'disabled'}>${uiIcon('trash')}Remove</button>
+                    </div>
+                    <div class="clan-crest-dropzone" data-clan-crest-dropzone>or drop an image here</div>
+                </div>
+                <div class="clan-management-save">
+                    <button type="button" data-save-clan-crest ${hasDraft && !state.clanCrestSaving ? '' : 'disabled'}>${state.clanCrestSaving ? 'Saving…' : 'Save crest'}</button>
+                    <span class="${message?.kind === 'error' ? 'is-error' : ''}">${text(message?.text || (hasDraft ? `${state.clanCrestDraft.fileName || 'Image'} ready to save` : 'Only the selected clan will change'))}</span>
+                </div>
+            </div>
+            </section>
+        </div>
+    `;
 }
 
 function renderClanDetail() {
     if (!els.clanDetail) return;
+    state.clanDetailDeferredRender = false;
     const detail = state.clanDetail;
     if (state.clanDetailLoading && !detail) {
         els.clanDetail.innerHTML = '<div class="inspector-empty"><span class="loading-orbit"></span><strong>Loading clan</strong><p>Reading members and durable clan state.</p></div>';
@@ -670,82 +1194,344 @@ function renderClanDetail() {
         return;
     }
     const clan = detail.clan;
-    const goal = clanGoalSummary(clan.goal);
+    const goal = clanGoalSummary(clan.goal, clan);
     const members = detail.members || [];
     const warehouse = clan.warehouse || {};
     const operation = detail.operation;
-    const events = (detail.events || []).slice(0, 6);
+    const events = (detail.events || []).slice(0, 8);
+    const actionCount = Number(clan.actions?.pending || 0) + Number(clan.actions?.running || 0);
     els.clanDetail.innerHTML = `
         <div class="clan-detail-header">
             <div>
-                <span class="section-kicker">${clan.autonomous ? 'Autonomous clan' : 'Player clan'}</span>
+                <span class="section-kicker">${clan.autonomous ? 'Autonomous clan' : clan.playerManaged ? 'Player-managed clan' : 'Player clan'}</span>
                 <h3>${clanCrestMarkup(clan, 'large')}${text(clan.name, 'Unnamed clan')}</h3>
                 <p>Level ${number(clan.level, 0)} · leader ${text(clan.leaderName, 'Unknown')} · ${number(clan.memberCount)} members</p>
             </div>
-            <span class="clan-level-badge">L${number(clan.level, 0)}</span>
+            <div class="clan-detail-actions">
+                <a class="clan-manage-button clan-map-button" href="${Router.href({ name: 'world', clanId: clan.id })}" data-clan-map-id="${escapeHtml(clan.id)}" data-clan-map-name="${text(clan.name)}">${uiIcon('map')}Show on map</a>
+                ${clan.playerManaged ? `<button class="clan-manage-button${state.clanManagerOpen ? ' is-active' : ''}" type="button" data-clan-manage aria-expanded="${state.clanManagerOpen}">${uiIcon('settings')}Manage clan</button>` : ''}
+                <span class="clan-level-badge">L${number(clan.level, 0)}</span>
+            </div>
         </div>
+        ${clanManagementMarkup(clan)}
         <div class="clan-metric-grid">
             <div><span>Members</span><strong>${number(clan.memberCount)}</strong><small>${number(clan.botMembers)} bots</small></div>
             <div><span>Average level</span><strong>${number(clan.averageLevel)}</strong><small>range ${number(clan.lowestLevel)}–${number(clan.highestLevel)}</small></div>
             <div><span>Warehouse</span><strong>${compactNumber(warehouse.adena)} A</strong><small>${number(warehouse.bloodMarks)} Blood Marks</small></div>
-            <div><span>Operation</span><strong>${operation ? text(operation.status, 'active') : 'Idle'}</strong><small>${operation ? text(operation.type, 'operation') : 'No active party'}</small></div>
+            <div><span>Operation</span><strong>${operation ? text(uiLabel('status', operation.status, 'Active')) : 'Idle'}</strong><small>${operation ? text(uiLabel('plan', operation.type, 'Operation')) : 'No active party'}</small></div>
         </div>
-        <div class="clan-info-grid">
-            <section class="clan-info-block">
-                <div class="clan-block-title"><span>Current goal</span><b>${text(goal.meta)}</b></div>
-                <strong class="clan-goal-title">${text(goal.title)}</strong>
-                <p>${clan.market?.openDemands ? `${number(clan.market.openDemands)} market demand(s) open · ${number(clan.market.requestedUnits)} unit(s) requested` : 'No open market demand.'}</p>
+        <div class="clan-briefing">
+            <section class="clan-goal-brief">
+                <div class="clan-block-title"><span>${uiIcon('target')}Current goal</span><b>${text(goal.progress)}</b></div>
+                <div class="clan-goal-primary">
+                    ${goal.iconUrl ? `<span class="clan-goal-icon"><img src="${text(goal.iconUrl)}" alt="${text(goal.title)}" loading="lazy" decoding="async"></span>` : ''}
+                    <div>
+                        <strong class="clan-goal-title">${text(goal.title)}</strong>
+                        <p>${text(goal.meta)}</p>
+                    </div>
+                </div>
+                <div class="clan-goal-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${number(goal.percent)}"><i style="width:${number(goal.percent)}%"></i></div>
             </section>
-            <section class="clan-info-block">
-                <div class="clan-block-title"><span>Progression</span><b>${number(clan.contributions?.length || 0)} levels funded</b></div>
-                <p>${(clan.contributions || []).length ? clan.contributions.map((entry) => `L${number(entry.targetLevel)} · ${number(entry.amount)} A · ${number(entry.entries)} contributors`).join(' · ') : 'No contribution ledger entries yet.'}</p>
+            <div class="clan-briefing-facts">
+                <div><span>Market demand</span><strong>${number(clan.market?.openDemands)} open</strong><small>${number(clan.market?.requestedUnits)} units requested</small></div>
+                <div><span>Action queue</span><strong>${actionCount || 'Clear'}</strong><small>${number(clan.actions?.running)} running · ${number(clan.actions?.pending)} pending</small></div>
+                <div><span>Progression</span><strong>${number(clan.contributions?.length || 0)} levels funded</strong><small>${(clan.contributions || []).length ? clan.contributions.map((entry) => `L${number(entry.targetLevel)} · ${compactNumber(entry.amount)} A`).join(' · ') : 'No ledger entries'}</small></div>
+            </div>
+        </div>
+        <div class="clan-roster-layout">
+            <section class="clan-members-section">
+                <div class="clan-member-toolbar">
+                    <strong>${uiIcon('users')}Members</strong>
+                    <span>${number(members.length)} total · open a member on the map</span>
+                </div>
+                <div class="clan-member-list" role="list">
+                    ${members.length ? members.map((member) => `
+                        <button class="clan-member-row" type="button" data-clan-member-id="${escapeHtml(member.id)}" data-clan-member-kind="${escapeHtml(member.kind)}">
+                            <span class="clan-member-main"><strong>${text(member.isLeader ? `♛ ${member.name}` : member.name)}</strong><span>${text(member.className, 'Unknown class')} · ${text(roleLabel(member.role || 'member'))} · Lv ${number(member.level, '?')}</span></span>
+                            <span class="clan-member-state"><strong>${text(activityLabel(member.activity || member.phase), member.phase)}</strong><span>${text(member.region, 'Unknown location')}</span></span>
+                        </button>
+                    `).join('') : '<div class="list-empty">No clan members found.</div>'}
+                </div>
             </section>
-        </div>
-        <div class="clan-member-toolbar">
-            <strong>Members</strong>
-            <span>${number(members.length)} total</span>
-        </div>
-        <div class="clan-member-list" role="list">
-            ${members.length ? members.map((member) => `
-                <button class="clan-member-row" type="button" data-clan-member-id="${escapeHtml(member.id)}" data-clan-member-kind="${escapeHtml(member.kind)}">
-                    <span class="clan-member-main"><strong>${text(member.isLeader ? `♛ ${member.name}` : member.name)}</strong><span>${text(member.className, 'Unknown class')} · ${text(roleLabel(member.role || 'member'))} · Lv ${number(member.level, '?')}</span></span>
-                    <span class="clan-member-state"><strong>${text(activityLabel(member.activity || member.phase), member.phase)}</strong><span>${text(member.region, 'Unknown location')}</span></span>
-                </button>
-            `).join('') : '<div class="list-empty">No clan members found.</div>'}
-        </div>
-        <div class="clan-events">
-            <div class="clan-block-title"><span>Recent clan events</span><b>${number(events.length)} shown</b></div>
-            ${events.length ? events.map((event) => `<div class="clan-event-row"><strong>${text(event.eventType, 'event')}</strong><span>${text(event.plan || event.reasonCode, 'state update')}</span><time>${text(formatTime(event.occurredAt))}</time></div>`).join('') : '<p>No durable clan events yet.</p>'}
+            <aside class="clan-events">
+                <div class="clan-block-title"><span>${uiIcon('history')}Recent events</span><b>${number(events.length)} shown</b></div>
+                ${events.length ? events.map((event) => `<div class="clan-event-row"><strong>${text(uiLabel('event', event.eventType, 'Clan update'))}</strong><span>${text(uiLabel('reason', event.reasonCode, null) || uiLabel('plan', event.plan, 'State update'))}</span><time>${text(formatTime(event.occurredAt))}</time></div>`).join('') : '<p>No clan events yet.</p>'}
+            </aside>
         </div>
     `;
 }
 
-async function loadClanDetail(id) {
+async function loadClanDetail(id, { updateRoute = true } = {}) {
     const clanId = Number(id);
     if (!clanId) return;
     const requestId = ++state.clanRequest;
+    const switchingClan = Number(state.clanDetail?.clan?.id || 0) !== clanId;
+    if (Number(state.selectedClanId) !== clanId) {
+        resetClanCrestDraft();
+        resetClanOrderDraft();
+        state.clanManagerOpen = false;
+        state.clanCrestMessage = null;
+    }
     state.selectedClanId = clanId;
-    state.clanDetail = null;
+    if (switchingClan) {
+        state.clanDetail = null;
+        state.clanDetailSignature = null;
+    }
     state.clanDetailLoading = true;
     state.clanError = null;
-    renderClans();
+    if (updateRoute) commitRoute({ name: 'clans', id: clanId });
+    if (switchingClan) renderClans();
+    revealSelectedClan();
     try {
         const response = await fetch(`/observer/api/clan/${encodeURIComponent(clanId)}`, { cache: 'no-store' });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const detail = await response.json();
         if (requestId !== state.clanRequest || Number(state.selectedClanId) !== clanId) return;
         state.clanDetail = detail;
+        state.clanDetailSignature = clanOverviewSignature(clanItems().find((clan) => Number(clan.id) === clanId));
+        if (state.clanOpen && detail.clan?.name) document.title = `${detail.clan.name} · Clans · World Observer`;
     } catch (error) {
         if (requestId === state.clanRequest) state.clanError = error.message;
     } finally {
         if (requestId === state.clanRequest) {
             state.clanDetailLoading = false;
-            renderClans();
+            const editor = els.clansModal?.querySelector('.clan-order-editor');
+            if (editor?.contains(document.activeElement)) state.clanDetailDeferredRender = true;
+            else renderClans();
         }
     }
 }
 
+function clanCrestErrorMessage(code, fallback = 'Could not update the crest') {
+    const messages = {
+        invalid_clan: 'The selected clan is invalid',
+        invalid_clan_crest: 'The generated crest is invalid',
+        invalid_crest_pixels: 'The image could not be converted',
+        level_too_low: 'Clan level 3 is required for a crest',
+        target_not_player_managed: 'Only the player-managed clan can be edited'
+    };
+    return messages[code] || fallback;
+}
+
+function clanOrderErrorMessage(code, fallback = 'Could not update the clan order') {
+    const messages = {
+        invalid_clan: 'The selected clan is invalid',
+        target_not_player_managed: 'Only the player-managed clan can receive orders',
+        invalid_clan_order: 'The clan order is invalid',
+        invalid_clan_order_item: 'Choose a valid item',
+        invalid_clan_order_amount: 'Quantity must be between 1 and 1,000,000',
+        invalid_clan_order_strategy: 'Choose a valid execution policy',
+        invalid_clan_order_members: 'One or more selected bots no longer belong to this clan',
+        clan_order_not_active: 'This order is no longer active',
+        clan_order_revision_conflict: 'The order changed on the server. Refresh and try again'
+    };
+    return messages[code] || fallback;
+}
+
+async function searchClanOrderItems(query = clanOrderDraft().query, { showLoading = true } = {}) {
+    const requestId = ++state.clanOrderSearchRequest;
+    const needle = String(query || '').trim();
+    if (!needle) {
+        state.clanOrderItems = [];
+        state.clanOrderSearchLoading = false;
+        state.clanOrderSearchError = null;
+        renderClanOrderSearchResults();
+        return;
+    }
+    state.clanOrderSearchLoading = true;
+    state.clanOrderSearchError = null;
+    if (showLoading) renderClanOrderSearchResults();
+    try {
+        const response = await fetch(`/observer/api/clan-order-items?q=${encodeURIComponent(needle)}&limit=40`, { cache: 'no-store' });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+        if (requestId !== state.clanOrderSearchRequest) return;
+        state.clanOrderItems = Array.isArray(result.items) ? result.items : [];
+    } catch (error) {
+        if (requestId !== state.clanOrderSearchRequest) return;
+        state.clanOrderItems = [];
+        state.clanOrderSearchError = error.message || 'Could not search the item catalog';
+    } finally {
+        if (requestId === state.clanOrderSearchRequest) {
+            state.clanOrderSearchLoading = false;
+            renderClanOrderSearchResults();
+        }
+    }
+}
+
+async function createClanOrder() {
+    const clanId = Number(state.clanDetail?.clan?.id || 0);
+    const draft = clanOrderDraft();
+    if (!clanId || !draft.item || state.clanOrderSaving) return;
+    const memberIds = draft.memberIds === null
+        ? (state.clanDetail?.members || []).filter((member) => member.kind === 'bot').map((member) => Number(member.id))
+        : draft.memberIds;
+    if (!memberIds.length) {
+        state.clanOrderMessage = { kind: 'error', text: 'Select at least one bot executor' };
+        renderClanDetail();
+        return;
+    }
+    if (state.clanDetail?.order && !window.confirm('Replace the active clan order? Its queued work will be cancelled.')) return;
+    state.clanOrderSaving = true;
+    state.clanOrderMessage = null;
+    renderClanDetail();
+    try {
+        const response = await fetch(`/observer/api/clan/${encodeURIComponent(clanId)}/orders`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                itemId: Number(draft.item.id),
+                amount: Number(draft.amount),
+                strategy: draft.strategy,
+                maxUnitPrice: draft.maxUnitPrice === '' ? undefined : Number(draft.maxUnitPrice),
+                budget: draft.budget === '' ? undefined : Number(draft.budget),
+                memberIds
+            })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(clanOrderErrorMessage(result.code, result.error));
+        resetClanOrderDraft();
+        state.clanOrderMessage = { kind: 'success', text: 'Clan order started' };
+        await refreshManagedClan(clanId);
+    } catch (error) {
+        state.clanOrderSaving = false;
+        state.clanOrderMessage = { kind: 'error', text: error.message || 'Could not start the clan order' };
+        renderClanDetail();
+    }
+}
+
+async function transitionClanOrder(transition) {
+    const clanId = Number(state.clanDetail?.clan?.id || 0);
+    const order = state.clanDetail?.order;
+    if (!clanId || !order || state.clanOrderSaving) return;
+    if (transition === 'cancel' && !window.confirm('Cancel this clan order? Its queued work will stop.')) return;
+    state.clanOrderSaving = true;
+    state.clanOrderMessage = null;
+    renderClanDetail();
+    try {
+        const response = await fetch(`/observer/api/clan/${encodeURIComponent(clanId)}/orders/${encodeURIComponent(order.id)}/${encodeURIComponent(transition)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ revision: order.revision })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(clanOrderErrorMessage(result.code, result.error));
+        state.clanOrderSaving = false;
+        state.clanOrderMessage = { kind: 'success', text: `${transition === 'cancel' ? 'Order cancelled' : transition === 'pause' ? 'Order paused' : transition === 'resume' ? 'Order resumed' : 'New plan queued'}` };
+        await refreshManagedClan(clanId);
+    } catch (error) {
+        state.clanOrderSaving = false;
+        state.clanOrderMessage = { kind: 'error', text: error.message || 'Could not update the clan order' };
+        renderClanDetail();
+    }
+}
+
+async function decodeClanCrestImage(file) {
+    if (window.createImageBitmap) {
+        try {
+            return await window.createImageBitmap(file);
+        } catch (error) {
+            // Fall through to the browser image decoder for formats such as BMP.
+        }
+    }
+    return new Promise((resolve, reject) => {
+        const sourceUrl = URL.createObjectURL(file);
+        const image = new Image();
+        image.onload = () => {
+            URL.revokeObjectURL(sourceUrl);
+            resolve(image);
+        };
+        image.onerror = () => {
+            URL.revokeObjectURL(sourceUrl);
+            reject(new Error('Unsupported or damaged image'));
+        };
+        image.src = sourceUrl;
+    });
+}
+
+async function loadClanCrestFile(file) {
+    if (!file) return;
+    const extensionAllowed = /\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name || '');
+    if ((!String(file.type || '').startsWith('image/') && !extensionAllowed) || String(file.type || '').includes('svg')) {
+        state.clanCrestMessage = { kind: 'error', text: 'Choose a PNG, JPEG, WebP, GIF or BMP image' };
+        renderClanDetail();
+        return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+        state.clanCrestMessage = { kind: 'error', text: 'The image must be 5 MB or smaller' };
+        renderClanDetail();
+        return;
+    }
+    try {
+        const source = await decodeClanCrestImage(file);
+        const sourceWidth = Number(source.width || source.naturalWidth || 0);
+        const sourceHeight = Number(source.height || source.naturalHeight || 0);
+        if (!sourceWidth || !sourceHeight || sourceWidth > 8192 || sourceHeight > 8192 || sourceWidth * sourceHeight > 24000000) {
+            source.close?.();
+            throw new Error('Image dimensions are too large');
+        }
+        resetClanCrestDraft();
+        state.clanCrestSource = source;
+        buildClanCrestDraft(source, file.name || 'Image');
+        state.clanCrestMessage = null;
+    } catch (error) {
+        state.clanCrestMessage = { kind: 'error', text: error.message || 'Could not read this image' };
+    }
+    renderClanDetail();
+}
+
+async function refreshManagedClan(clanId) {
+    state.clanLastLoadedAt = 0;
+    await loadClanDirectory({ force: true });
+    await loadClanDetail(clanId, { updateRoute: false });
+}
+
+async function saveClanCrest() {
+    const clanId = Number(state.clanDetail?.clan?.id || 0);
+    if (!clanId || !state.clanCrestDraft || state.clanCrestSaving) return;
+    state.clanCrestSaving = true;
+    state.clanCrestMessage = null;
+    renderClanDetail();
+    try {
+        const response = await fetch(`/observer/api/clan/${encodeURIComponent(clanId)}/crest`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ width: 16, height: 12, pixels: state.clanCrestDraft.pixels })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(clanCrestErrorMessage(result.code, result.error));
+        resetClanCrestDraft();
+        state.clanCrestMessage = { kind: 'success', text: 'Crest saved and sent to the game client' };
+        await refreshManagedClan(clanId);
+    } catch (error) {
+        state.clanCrestSaving = false;
+        state.clanCrestMessage = { kind: 'error', text: error.message || 'Could not save the crest' };
+        renderClanDetail();
+    }
+}
+
+async function removeClanCrest() {
+    const clanId = Number(state.clanDetail?.clan?.id || 0);
+    if (!clanId || state.clanCrestSaving || !window.confirm('Remove the clan crest? This cannot be undone.')) return;
+    state.clanCrestSaving = true;
+    state.clanCrestMessage = null;
+    renderClanDetail();
+    try {
+        const response = await fetch(`/observer/api/clan/${encodeURIComponent(clanId)}/crest`, { method: 'DELETE' });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(clanCrestErrorMessage(result.code, result.error));
+        resetClanCrestDraft();
+        state.clanCrestMessage = { kind: 'success', text: 'Crest removed' };
+        await refreshManagedClan(clanId);
+    } catch (error) {
+        state.clanCrestSaving = false;
+        state.clanCrestMessage = { kind: 'error', text: error.message || 'Could not remove the crest' };
+        renderClanDetail();
+    }
+}
+
 async function loadClanDirectory({ force = false, selectFirst = false } = {}) {
+    if (!force && !state.clanOpen && state.clanDirectory) return;
     if (!force && Date.now() - state.clanLastLoadedAt < 10000) return;
     try {
         const response = await fetch('/observer/api/clans', { cache: 'no-store' });
@@ -754,44 +1540,67 @@ async function loadClanDirectory({ force = false, selectFirst = false } = {}) {
         state.clanDirectory = directory;
         state.clanLastLoadedAt = Date.now();
         state.clanError = null;
+        if (state.clanMapScope) {
+            state.clanMapScope.name = clanMapName(state.clanMapScope.id);
+            renderMapScope();
+        }
         const selectedExists = clanItems().some((clan) => Number(clan.id) === Number(state.selectedClanId));
         if ((selectFirst || !selectedExists) && clanItems().length) state.selectedClanId = Number(clanItems()[0].id);
-        renderClans();
+        renderClans({ renderDetail: !state.clanDetail });
         const detailClanId = Number(state.clanDetail?.clan?.id || 0);
-        if (state.clanOpen && state.selectedClanId && (selectFirst || detailClanId !== Number(state.selectedClanId))) loadClanDetail(state.selectedClanId);
+        const selectedOverview = clanItems().find((clan) => Number(clan.id) === Number(state.selectedClanId));
+        const selectedSignature = clanOverviewSignature(selectedOverview);
+        const detailChanged = Boolean(state.clanDetail && selectedSignature !== state.clanDetailSignature);
+        if (state.clanOpen && state.selectedClanId && (selectFirst || detailClanId !== Number(state.selectedClanId) || detailChanged)) {
+            loadClanDetail(state.selectedClanId, { updateRoute: false });
+        }
     } catch (error) {
         state.clanError = error.message;
         renderClans();
     }
 }
 
-function openClans(clanId = null) {
-    if (state.rankingOpen) closeRankings();
-    if (state.raidBossOpen) closeRaidBosses();
+function openClans(clanId = null, { updateRoute = true } = {}) {
+    if (state.clanMapScope) clearClanMapScope({ updateRoute: false });
+    if (state.rankingOpen) closeRankings({ updateRoute: false });
+    if (state.raidBossOpen) closeRaidBosses({ updateRoute: false });
     const requestedClanId = Number(clanId) || null;
     if (requestedClanId) {
         state.selectedClanId = requestedClanId;
         state.clanSearch = '';
         state.clanDetail = null;
+        state.clanDetailSignature = null;
         state.clanError = null;
         if (els.clanSearch) els.clanSearch.value = '';
     }
     state.clanOpen = true;
     state.clanFocusReturn = document.activeElement;
     els.clansModal.hidden = false;
+    els.observerShell?.setAttribute('aria-hidden', 'true');
+    if (els.observerShell) els.observerShell.inert = true;
     document.body.classList.add('rankings-open');
+    document.title = 'Clans · World Observer';
     renderClans();
     loadClanDirectory({ force: true, selectFirst: !requestedClanId });
     requestAnimationFrame(() => els.closeClans.focus());
+    if (updateRoute) commitRoute({ name: 'clans', id: requestedClanId });
 }
 
-function closeClans() {
+function closeClans({ updateRoute = true } = {}) {
     if (!state.clanOpen) return;
     state.clanOpen = false;
     els.clansModal.hidden = true;
+    els.observerShell?.removeAttribute('aria-hidden');
+    if (els.observerShell) els.observerShell.inert = false;
     if (!state.rankingOpen && !state.raidBossOpen) document.body.classList.remove('rankings-open');
+    document.title = 'World Observer';
     state.clanFocusReturn?.focus?.();
     state.clanFocusReturn = null;
+    state.clanManagerOpen = false;
+    state.clanCrestMessage = null;
+    resetClanCrestDraft();
+    resetClanOrderDraft();
+    if (updateRoute) commitRoute({ name: 'world' });
 }
 
 function eligibleActors() {
@@ -828,11 +1637,30 @@ function isVisible(actor) {
 
 function filteredActors() {
     const scope = state.clusterScope?.actorKeys;
-    return eligibleActors().filter((actor) => (!scope || scope.has(actorKey(actor))) && isVisible(actor));
+    return clanScopedActors().filter((actor) => (!scope || scope.has(actorKey(actor))) && isVisible(actor));
 }
 
 function actorKey(actor) {
     return `${actor.kind || 'bot'}:${actor.id}`;
+}
+
+function mapActorSignature(actor) {
+    if (!actor) return null;
+    const loc = mapLocation(actor);
+    return JSON.stringify([
+        actorKey(actor),
+        Number(loc?.locX || 0),
+        Number(loc?.locY || 0),
+        Number(loc?.locZ || 0),
+        actor.phase,
+        phaseColor(actor),
+        actorSearchText(actor),
+        Number(actor.level || 0),
+        Number(actor.clan?.id || 0),
+        ActorFilters.classKey(actor),
+        ActorFilters.isEligible(actor),
+        ActorFilters.isSurfaceActor(actor)
+    ]);
 }
 
 function isSurfaceActor(actor) {
@@ -906,7 +1734,7 @@ function renderLabels() {
 }
 
 function clusterCellSize() {
-    return Math.max(12, screenUnits(66));
+    return screenUnits(58);
 }
 
 function screenUnits(pixels) {
@@ -926,47 +1754,20 @@ function pointHitElement(screenSize = 30) {
 }
 
 function clusterActors(items) {
-    const mergeDistance = clusterCellSize();
-    const groups = [];
-
-    items.forEach((actor) => {
+    const projected = items.map((actor) => {
         const loc = mapLocation(actor);
-        if (!loc) return;
-        const point = project(loc);
-        let group = groups.find((candidate) => Math.hypot(point.x - candidate.x, point.y - candidate.y) <= mergeDistance);
-        if (!group) {
-            group = { members: [], x: point.x, y: point.y };
-            groups.push(group);
-        }
-        group.members.push({ actor, point });
-        const size = group.members.length;
-        group.x += (point.x - group.x) / size;
-        group.y += (point.y - group.y) / size;
+        return loc ? { actor, point: project(loc) } : null;
+    }).filter(Boolean);
+    const groups = MapClusters.clusterProjected(projected, {
+        cellSize: clusterCellSize(),
+        viewport: state.viewport,
+        margin: screenUnits(72)
     });
-
-    let merged = true;
-    while (merged) {
-        merged = false;
-        mergeLoop: for (let left = 0; left < groups.length; left += 1) {
-            for (let right = left + 1; right < groups.length; right += 1) {
-                const a = groups[left];
-                const b = groups[right];
-                if (Math.hypot(a.x - b.x, a.y - b.y) > mergeDistance) continue;
-                const total = a.members.length + b.members.length;
-                a.x = ((a.x * a.members.length) + (b.x * b.members.length)) / total;
-                a.y = ((a.y * a.members.length) + (b.y * b.members.length)) / total;
-                a.members.push(...b.members);
-                groups.splice(right, 1);
-                merged = true;
-                break mergeLoop;
-            }
-        }
-    }
 
     return groups.map((group) => ({
         members: group.members,
-        point: { x: group.x, y: group.y },
-        size: group.members.length,
+        point: group.point,
+        size: group.size,
         color: clusterColor(group.members),
         selected: group.members.some(({ actor }) => String(actor.id) === String(state.selectedId?.id))
     }));
@@ -1035,7 +1836,7 @@ function renderSinglePoint(cluster) {
 }
 
 function renderCluster(cluster) {
-    const radiusPx = clamp(16 + (Math.log2(cluster.size) * 2.1), 18, 29);
+    const radiusPx = clamp(12 + (Math.log2(cluster.size) * 1.05), 14, 21);
     const radius = screenUnits(radiusPx);
     const selected = cluster.selected;
     const first = cluster.members[0].actor;
@@ -1055,7 +1856,7 @@ function renderCluster(cluster) {
         x: 0,
         y: screenUnits(4.5),
         'text-anchor': 'middle',
-        style: `font-size:${screenUnits(clamp(12 + Math.log2(cluster.size) * 0.55, 12, 16))}px`
+        style: `font-size:${screenUnits(clamp(10.5 + Math.log2(cluster.size) * 0.38, 11, 13.5))}px`
     });
     count.textContent = cluster.size.toLocaleString();
     group.appendChild(count);
@@ -1094,41 +1895,89 @@ function renderPoints() {
 function renderRaidBossPoints() {
     if (!els.raidBossLayer) return;
     els.raidBossLayer.innerHTML = '';
-    if (state.phase !== 'all' && state.phase !== 'raidbosses') return;
+    if (state.phase !== 'raidbosses' && !state.selectedRaidBossId) return;
     const viewportWidth = state.viewport?.width || 99999;
-    raidBossItems()
-        .filter((boss) => boss.status === 'alive' && boss.loc)
-        .forEach((boss) => {
-            const point = project(boss.loc);
-            const selected = String(boss.id) === String(state.selectedRaidBossId);
-            const radius = screenUnits(9);
-            const group = svgEl('g', {
-                class: `raid-boss-point${selected ? ' is-selected' : ''}`,
-                transform: `translate(${point.x}, ${point.y})`,
-                tabindex: 0,
-                role: 'button',
-                'aria-label': `${boss.name}, level ${boss.level}, ${boss.location?.name || 'unknown location'}`
-            });
-            addPointHandlers(group, () => focusRaidBoss(boss.id));
-            group.appendChild(pointHitElement(34));
-            group.appendChild(svgEl('circle', { class: 'raid-boss-ring', r: radius + screenUnits(4), 'vector-effect': 'non-scaling-stroke' }));
-            group.appendChild(svgEl('path', {
-                class: 'raid-boss-core',
-                d: `M 0 ${-radius} L ${radius} 0 L 0 ${radius} L ${-radius} 0 Z`,
-                'vector-effect': 'non-scaling-stroke'
-            }));
-            if (selected || viewportWidth < 4200) {
-                const label = svgEl('text', {
-                    class: 'raid-boss-label',
-                    x: radius + screenUnits(8),
-                    y: screenUnits(4),
-                    style: `font-size:${screenUnits(11)}px`
-                });
-                label.textContent = boss.name;
-                group.appendChild(label);
-            }
-            els.raidBossLayer.appendChild(group);
+    const bosses = raidBossItems()
+        .filter((boss) => boss.status === 'alive' && boss.loc && (
+            state.phase === 'raidbosses' || String(boss.id) === String(state.selectedRaidBossId)
+        ));
+    const clusters = state.phase === 'raidbosses'
+        ? MapClusters.clusterProjected(bosses.map((boss) => ({ boss, point: project(boss.loc) })), {
+            cellSize: screenUnits(48),
+            viewport: state.viewport,
+            margin: screenUnits(64)
+        })
+        : bosses.map((boss) => ({ members: [{ boss, point: project(boss.loc) }], point: project(boss.loc), size: 1 }));
+
+    clusters.forEach((cluster) => {
+        if (cluster.size > 1) {
+            renderRaidBossCluster(cluster);
+            return;
+        }
+        const boss = cluster.members[0].boss;
+        const point = cluster.point;
+        const selected = String(boss.id) === String(state.selectedRaidBossId);
+        const radius = screenUnits(9);
+        const group = svgEl('g', {
+            class: `raid-boss-point${selected ? ' is-selected' : ''}`,
+            transform: `translate(${point.x}, ${point.y})`,
+            tabindex: 0,
+            role: 'button',
+            'aria-label': `${boss.name}, level ${boss.level}, ${boss.location?.name || 'unknown location'}`
         });
+        addPointHandlers(group, () => focusRaidBoss(boss.id));
+        group.appendChild(pointHitElement(34));
+        group.appendChild(svgEl('circle', { class: 'raid-boss-ring', r: radius + screenUnits(4), 'vector-effect': 'non-scaling-stroke' }));
+        group.appendChild(svgEl('path', {
+            class: 'raid-boss-core',
+            d: `M 0 ${-radius} L ${radius} 0 L 0 ${radius} L ${-radius} 0 Z`,
+            'vector-effect': 'non-scaling-stroke'
+        }));
+        if (selected || viewportWidth < 4200) {
+            const label = svgEl('text', {
+                class: 'raid-boss-label',
+                x: radius + screenUnits(8),
+                y: screenUnits(4),
+                style: `font-size:${screenUnits(11)}px`
+            });
+            label.textContent = boss.name;
+            group.appendChild(label);
+        }
+        els.raidBossLayer.appendChild(group);
+    });
+}
+
+function raidBossClusterLocation(cluster) {
+    const labels = cluster.members.map(({ boss }) => boss.location?.name).filter(Boolean);
+    if (!labels.length) return 'this area';
+    const counts = labels.reduce((result, label) => result.set(label, (result.get(label) || 0) + 1), new Map());
+    return [...counts.entries()].sort((left, right) => right[1] - left[1])[0][0];
+}
+
+function renderRaidBossCluster(cluster) {
+    const radiusPx = clamp(12 + Math.log2(cluster.size) * 1.2, 15, 21);
+    const radius = screenUnits(radiusPx);
+    const group = svgEl('g', {
+        class: 'raid-boss-cluster',
+        transform: `translate(${cluster.point.x}, ${cluster.point.y})`,
+        tabindex: 0,
+        role: 'button',
+        'aria-label': `${cluster.size} raid bosses near ${raidBossClusterLocation(cluster)}`
+    });
+    addPointHandlers(group, () => focusMapPoints(cluster.members.map(({ point }) => point), 38));
+    group.appendChild(pointHitElement(Math.max(36, radiusPx * 2 + 8)));
+    group.appendChild(svgEl('circle', { class: 'raid-boss-cluster-ring', r: radius + screenUnits(3), 'vector-effect': 'non-scaling-stroke' }));
+    group.appendChild(svgEl('circle', { class: 'raid-boss-cluster-core', r: radius, 'vector-effect': 'non-scaling-stroke' }));
+    const count = svgEl('text', {
+        class: 'raid-boss-cluster-count',
+        x: 0,
+        y: screenUnits(4),
+        'text-anchor': 'middle',
+        style: `font-size:${screenUnits(12)}px`
+    });
+    count.textContent = cluster.size.toLocaleString();
+    group.appendChild(count);
+    els.raidBossLayer.appendChild(group);
 }
 
 function focusRaidBoss(id) {
@@ -1139,7 +1988,7 @@ function focusRaidBoss(id) {
     state.clusterScope = null;
     state.detail = null;
     state.detailRequest += 1;
-    closeRaidBosses();
+    closeRaidBosses({ updateRoute: false });
     const viewport = state.viewport || { x: 0, y: 0, width: mapMeta().width, height: mapMeta().height };
     const point = worldToMap(boss.loc);
     applyViewport({
@@ -1151,10 +2000,31 @@ function focusRaidBoss(id) {
     renderRaidBossPoints();
     renderRoster();
     renderSelected();
+    commitRoute({ name: 'raid-bosses', id: boss.id });
+}
+
+function focusMapPoints(points, paddingPixels = 44) {
+    if (!points.length) return;
+    const xs = points.map((point) => point.x);
+    const ys = points.map((point) => point.y);
+    const pad = screenUnits(paddingPixels);
+    const rect = els.worldMap.getBoundingClientRect();
+    const aspect = Math.max(1, rect.width / Math.max(1, rect.height));
+    let width = Math.max(240, Math.max(...xs) - Math.min(...xs) + pad * 2);
+    let height = Math.max(170, Math.max(...ys) - Math.min(...ys) + pad * 2);
+    if (width / height < aspect) width = height * aspect;
+    else height = width / aspect;
+    applyViewport({
+        x: ((Math.min(...xs) + Math.max(...xs)) / 2) - width / 2,
+        y: ((Math.min(...ys) + Math.max(...ys)) / 2) - height / 2,
+        width,
+        height
+    });
 }
 
 function renderFilterCounts() {
-    const items = eligibleActors().filter((actor) => (
+    renderMapScope();
+    const items = clanScopedActors().filter((actor) => (
         (!state.search || actorSearchText(actor).includes(state.search))
         && ActorFilters.matches(actor, state)
     ));
@@ -1164,7 +2034,7 @@ function renderFilterCounts() {
         warm: items.filter((actor) => actor.phase === 'warm').length,
         cold: items.filter((actor) => actor.phase === 'cold').length,
         players: items.filter((actor) => actor.kind === 'player').length,
-        raidbosses: Number(state.snapshot?.raidBosses?.counts?.alive || 0)
+        raidbosses: state.clanMapScope ? 0 : Number(state.snapshot?.raidBosses?.counts?.alive || 0)
     };
     Object.entries(counts).forEach(([key, value]) => {
         const count = els.filterStrip.querySelector(`[data-count-for="${key}"]`);
@@ -1173,7 +2043,7 @@ function renderFilterCounts() {
 }
 
 function renderClassFilter() {
-    const options = ActorFilters.classOptions(eligibleActors(), state.snapshot?.classes || []);
+    const options = ActorFilters.classOptions(clanScopedActors(), state.snapshot?.classes || []);
     const signature = options.map((option) => `${option.key}:${option.label}`).join('|');
     if (signature === state.classOptionsSignature) return;
     state.classOptionsSignature = signature;
@@ -1254,7 +2124,7 @@ function renderMarket() {
     els.marketWtb.textContent = compactNumber(dynamic.wtb);
     els.marketTrades.textContent = compactNumber(trades);
     els.marketAdena.textContent = compactNumber(tradedAdena);
-    els.marketScope.textContent = `${number(fixed.wts || 0)}/${number(fixed.wtb || 0)} fixed WTS/WTB`;
+    els.marketScope.textContent = `${number(fixed.wts || 0)} sell · ${number(fixed.wtb || 0)} buy stores`;
 
     const towns = Object.entries(market.byTown || {}).map(([name, town]) => ({ name, ...town }))
         .filter((town) => Number(town.dynamicWts || 0) + Number(town.dynamicWtb || 0) > 0)
@@ -1270,16 +2140,16 @@ function renderMarket() {
             <strong>${text(town.name)}</strong>
             <span><b>${number(town.dynamicWts || 0)}</b> WTS</span>
             <span><b>${number(town.dynamicWtb || 0)}</b> WTB</span>
-            <span><b>${number(tradeTown.trades || 0)}</b> tx</span>
+            <span><b>${number(tradeTown.trades || 0)}</b> trades</span>
         </div>
     `;
-    }).join('') : '<div class="list-empty">No dynamic stores open.</div>';
+    }).join('') : '<div class="list-empty">No bot stores open.</div>';
 
     const top = (market.topItems || [])[0];
     const demand = top?.demand || {};
     els.marketTopItem.innerHTML = top
-        ? `Most active <strong>${text(top.name)}</strong> · ${number(top.wtsUnits || 0)} for sale (${number(top.speculativeWtsUnits || 0)} speculative) / ${number(top.wtbUnits || 0)} wanted · ${number(demand.fundedUnits || 0)} funded now, ${number(demand.bots || 0)} planned`
-        : 'No active item flow yet';
+        ? `Most active <strong>${text(top.name)}</strong> · ${number(top.wtsUnits || 0)} listed · ${number(top.wtbUnits || 0)} wanted · ${number(demand.fundedUnits || 0)} funded · ${number(demand.bots || 0)} planned`
+        : 'No active listings yet';
 
     const recent = (transactions.recentPeerTrades || []).slice(0, 3);
     els.marketRecentTrades.innerHTML = recent.length ? recent.map((trade) => {
@@ -1294,13 +2164,13 @@ function renderMarket() {
             <strong>${text(`${trade.itemName || `Item ${trade.selfId}`} x${number(trade.quantity || 0)} ${action} ${counterparty || 'bot'}`)}</strong>
             <time>${text(at)}</time>
         </div>`;
-    }).join('') : '<div class="list-empty">No bot-to-bot trades yet.</div>';
+    }).join('') : '<div class="list-empty">No trades yet.</div>';
 
     const topTrade = (transactions.byPeerItem || [])[0];
     const peerTrades = Number(topTrade?.channels?.wts?.trades || 0) + Number(topTrade?.channels?.wtb?.trades || 0);
     els.marketTradeTop.innerHTML = topTrade
         ? `Top traded <strong>${text(topTrade.name)}</strong> · ${number(peerTrades)} deals / ${compactNumber(topTrade.adena || 0)} Adena`
-        : 'No completed item flow yet';
+        : 'No completed trades yet';
 }
 
 function displayActivity(actor) {
@@ -1329,7 +2199,7 @@ function renderRoster() {
                 <strong>${text(actor.isPk ? `PK ${actor.name}` : actor.name)}</strong>
                 <span>${text(actor.kind === 'player' ? actorClassName(actor) : `${phaseLabel(actor.phase)} · ${actorClassName(actor)} · ${roleLabel(actor.role || 'dps')} · ${displayActivity(actor)}`)} · Lv ${number(actor.level, '?')}</span>
             </span>
-            <span class="actor-loc">${text(readablePlace(actor.home?.region || actor.spot?.name, ''))}</span>
+            <span class="actor-loc">${text(readablePlace(actor.region || actor.home?.region || actor.spot?.name, ''))}</span>
         </button>
     `).join('') : '<div class="list-empty">No actors match this view.</div>';
 }
@@ -1428,18 +2298,19 @@ const PRIORITY_LABELS = Object.freeze({
 });
 
 function humanizeToken(value) {
-    return String(value || '')
-        .replaceAll('_', ' ')
-        .replace(/\bone handed\b/gi, 'one-handed')
-        .replace(/\b\w/g, (letter) => letter.toUpperCase());
+    return UiLanguage.humanize(value, '');
 }
 
 function readableToken(value) {
-    if (value === null || value === undefined || value === '') return '—';
-    const raw = String(value);
-    if (!/[_-]/.test(raw)) return raw;
-    const words = raw.replaceAll('_', ' ').replaceAll('-', ' ').replace(/\s+/g, ' ').trim();
-    return words ? words.charAt(0).toUpperCase() + words.slice(1) : '—';
+    return UiLanguage.humanize(value, '—');
+}
+
+function uiLabel(group, value, fallback = '—') {
+    return UiLanguage.label(group, value, fallback);
+}
+
+function uiIcon(name, className = '') {
+    return `<svg class="ui-icon${className ? ` ${escapeHtml(className)}` : ''}" aria-hidden="true"><use href="/observer/ui-icons.svg#${escapeHtml(name)}"></use></svg>`;
 }
 
 function phaseLabel(value) {
@@ -1476,13 +2347,13 @@ function readablePriority(value) {
 
 function partyLeaderLink(actor) {
     const party = actor.party;
-    if (!party) return 'solo';
+    if (!party) return 'Solo';
 
     const leader = party.leader && typeof party.leader === 'object'
         ? party.leader
         : { name: party.leader || party.leaderName || null };
     const leaderId = Number(party.leaderId || leader.id || 0) || null;
-    const leaderName = leader.name || (leaderId ? `#${leaderId}` : 'unknown');
+    const leaderName = leader.name || (leaderId ? `#${leaderId}` : 'Unknown');
     const leaderKind = ActorFilters.actorKind(leaderId, leader.kind, state.snapshot);
     const leaderValue = leaderId
         ? `<a class="inspector-link" href="#${escapeHtml(leaderKind)}-${escapeHtml(leaderId)}" data-party-leader-id="${escapeHtml(leaderId)}" data-party-leader-kind="${escapeHtml(leaderKind)}">${text(leaderName)}</a>`
@@ -1649,7 +2520,7 @@ function renderAction(actor) {
             ? `${plan.next.npcName} at ${readablePlace(plan.next.spotId, 'next destination')}`
             : target
                 ? `near ${target}`
-                : actor.blockers?.[0] ? activityLabel(actor.blockers[0]) : 'no active target';
+                : actor.blockers?.[0] ? activityLabel(actor.blockers[0]) : 'No active target';
     return `<div class="activity-callout">
         <span>Doing now</span>
         <strong>${text(displayActivity(actor))}</strong>
@@ -1669,7 +2540,7 @@ function readableDecisionValue(value) {
     const parts = Object.entries(value)
         .map(([key, entry]) => {
             const readable = typeof entry === 'object' ? null : readableDecisionValue(entry);
-            return readable ? `${key} ${readable}` : null;
+            return readable ? `${UiLanguage.humanize(key)}: ${readable}` : null;
         })
         .filter(Boolean)
         .slice(0, 3);
@@ -1702,7 +2573,7 @@ function renderSignals(actor) {
     const ambient = actor.ambient;
     if (!buffs && !nearby && !store && !ambient) return '';
     const buffText = buffs
-        ? (buffs.needsRefresh ? 'refresh needed' : `${buffs.active?.length || 0} active`)
+        ? (buffs.needsRefresh ? 'Refresh needed' : `${buffs.active?.length || 0} active`)
         : null;
     const nearbyText = nearby
         ? `${nearby.realPlayers || 0} players · ${nearby.friendlyBots || 0} bots · ${nearby.attackableNpcs || 0} mobs`
@@ -1710,7 +2581,7 @@ function renderSignals(actor) {
     const tradeText = store ? `${activityLabel(store.type || 'store')} · ${store.title || 'open'} · ${store.items || 0} lines` : null;
     const moodText = ambient ? `${activityLabel(ambient.mood || 'neutral')} · ${activityLabel(ambient.intent || 'idle')}` : null;
     return `<section class="inspector-block compact-block">
-        <div class="inspector-block-title"><h3>Runtime signals</h3><span>bot info</span></div>
+        <div class="inspector-block-title"><h3>Live context</h3><span>current</span></div>
         <div class="signal-list">
             ${buffText ? `<div><span>Buffs</span><strong>${text(buffText)}</strong></div>` : ''}
             ${nearbyText ? `<div><span>Nearby</span><strong>${text(nearbyText)}</strong></div>` : ''}
@@ -1800,7 +2671,7 @@ function renderInspector() {
 
     const build = actor.build;
     const family = actorClassName(actor);
-    const location = actor.loc ? `${Math.round(actor.loc.locX)}, ${Math.round(actor.loc.locY)}, ${Math.round(actor.loc.locZ || 0)}` : 'unknown';
+    const location = actor.loc ? `${Math.round(actor.loc.locX)}, ${Math.round(actor.loc.locY)}, ${Math.round(actor.loc.locZ || 0)}` : 'Unknown';
     const party = partyLeaderLink(actor);
     const clan = actorClanLink(actor);
     const freshness = actor.updatedAt ? formatRelative(actor.updatedAt) : 'live';
@@ -1863,6 +2734,18 @@ function renderSnapshot() {
     renderSelected();
 }
 
+function renderActorUpdates({ mapChanged = true } = {}) {
+    if (!state.snapshot) return;
+    renderFilterCounts();
+    if (mapChanged) {
+        setSvgViewBox();
+        renderPoints();
+    }
+    renderPopulation();
+    renderRoster();
+    renderSelected();
+}
+
 async function loadActorDetail(id, kind = state.selectedId?.kind || 'bot', showLoading = true) {
     if (!id || state.detailLoading) return;
     const requestId = ++state.detailRequest;
@@ -1891,7 +2774,7 @@ async function loadActorDetail(id, kind = state.selectedId?.kind || 'bot', showL
     }
 }
 
-function selectActor(id, kind = 'bot', focus = false) {
+function selectActor(id, kind = 'bot', focus = false, updateRoute = true) {
     state.selectedRaidBossId = null;
     state.selectedId = { id, kind };
     state.detail = null;
@@ -1915,6 +2798,7 @@ function selectActor(id, kind = 'bot', focus = false) {
     renderRoster();
     renderSelected();
     loadActorDetail(id, kind);
+    if (updateRoute) commitRoute({ name: 'actor', kind, id });
 }
 
 function focusCluster(cluster) {
@@ -1931,23 +2815,9 @@ function focusCluster(cluster) {
     state.detail = null;
     state.detailLoading = false;
     state.detailRequest += 1;
+    commitRoute({ name: 'world' });
 
-    const points = cluster.members.map(({ point }) => point);
-    const xs = points.map((point) => point.x);
-    const ys = points.map((point) => point.y);
-    const pad = screenUnits(44);
-    const rect = els.worldMap.getBoundingClientRect();
-    const aspect = Math.max(1, rect.width / Math.max(1, rect.height));
-    let width = Math.max(240, Math.max(...xs) - Math.min(...xs) + pad * 2);
-    let height = Math.max(170, Math.max(...ys) - Math.min(...ys) + pad * 2);
-    if (width / height < aspect) width = height * aspect;
-    else height = width / aspect;
-    applyViewport({
-        x: ((Math.min(...xs) + Math.max(...xs)) / 2) - width / 2,
-        y: ((Math.min(...ys) + Math.max(...ys)) / 2) - height / 2,
-        width,
-        height
-    });
+    focusMapPoints(cluster.members.map(({ point }) => point));
     renderRoster();
     renderSelected();
 }
@@ -1974,19 +2844,104 @@ function clearClusterScope(resetViewport = false) {
     renderSelected();
 }
 
-async function refresh() {
-    if (!state.live) return;
+function applyWorldChanges(data) {
+    if (!state.snapshot) return false;
+    const mapChanged = Boolean(data.reset || data.removals?.length || data.upserts?.some((next) => {
+        const kind = next.kind || 'bot';
+        return mapActorSignature(actorById(next.id, kind)) !== mapActorSignature(next);
+    }));
+    const applied = WorldState.applyChanges(state.snapshot, data, Date.now());
+    state.worldRevision = applied.revision;
+    state.snapshot = applied.snapshot;
+    const selected = state.selectedId;
+    return {
+        mapChanged,
+        selectedChanged: !!selected && (data.reset || applied.changedKeys.has(`${selected.kind}:${Number(selected.id)}`))
+    };
+}
+
+async function loadWorldStatus(force = false) {
+    if (!state.snapshot || state.worldStatusLoading) return;
+    if (!force && Date.now() - state.worldStatusAt < 30000) return;
+    state.worldStatusLoading = true;
     try {
-        const response = await fetch('/observer/api/snapshot', { cache: 'no-store' });
+        const response = await fetch('/observer/api/world/status', { cache: 'no-store' });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        state.snapshot = await response.json();
+        const status = await response.json();
+        if (worldEpochChanged(status.epoch)) {
+            restartWorldBootstrap(status.epoch);
+            return;
+        }
+        state.worldEpoch = status.epoch || state.worldEpoch;
+        state.worldStatusAt = Date.now();
+        state.snapshot = { ...state.snapshot, ...status };
+        const population = state.snapshot.population || {};
+        els.serverLine.textContent = `${number(population.total || state.snapshot.bots.length)} bots in simulation · ${number(population.hot || 0)} active · uptime ${formatDuration(state.snapshot.uptimeMs)}`;
+        renderFilterCounts();
+        renderPopulation();
+        renderMarket();
+        renderRaidBosses();
+        if (state.phase === 'raidbosses' || state.selectedRaidBossId) {
+            renderRaidBossPoints();
+            renderRoster();
+            renderSelected();
+        }
+    } catch (error) {
+        els.serverLine.textContent = `Observer status failed: ${error.message}`;
+    } finally {
+        state.worldStatusLoading = false;
+    }
+}
+
+async function refresh() {
+    if (!state.live || document.hidden || state.refreshing) return;
+    state.refreshing = true;
+    try {
+        if (!state.snapshot) {
+            const response = await fetch('/observer/api/world/bootstrap', { cache: 'no-store' });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const bootstrap = WorldState.decodeBootstrap(await response.json());
+            state.worldEpoch = bootstrap.epoch || null;
+            state.worldRevision = Number(bootstrap.revision || 0);
+            state.worldStatusAt = Date.now();
+            state.snapshot = bootstrap;
+            reconcileSelectedActor();
+            renderSnapshot();
+            loadClanDirectory();
+            if (state.pendingRoute) applyRoute(state.pendingRoute);
+            return;
+        }
+        const response = await fetch(`/observer/api/world/changes?since=${encodeURIComponent(state.worldRevision)}`, { cache: 'no-store' });
+        if (response.status === 204) {
+            const epoch = response.headers.get('X-Observer-Epoch');
+            if (worldEpochChanged(epoch)) {
+                restartWorldBootstrap(epoch);
+                return;
+            }
+            state.worldEpoch = epoch || state.worldEpoch;
+            loadWorldStatus();
+            return;
+        }
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const changes = await response.json();
+        if (worldEpochChanged(changes.epoch)) {
+            restartWorldBootstrap(changes.epoch);
+            return;
+        }
+        state.worldEpoch = changes.epoch || state.worldEpoch;
+        const changed = applyWorldChanges(changes);
         reconcileSelectedActor();
-        renderSnapshot();
-        if (state.selectedId && !state.detailLoading) loadActorDetail(state.selectedId.id, state.selectedId.kind, false);
+        renderActorUpdates({ mapChanged: changed.mapChanged });
+        if (changed.selectedChanged && state.selectedId && !state.detailLoading) {
+            loadActorDetail(state.selectedId.id, state.selectedId.kind, false);
+        }
         if (state.rankingOpen) renderRankings();
         loadClanDirectory();
+        loadWorldStatus();
     } catch (error) {
         els.serverLine.textContent = `Observer snapshot failed: ${error.message}`;
+    } finally {
+        state.refreshing = false;
     }
 }
 
@@ -2001,7 +2956,7 @@ els.rankingsModal?.addEventListener('click', (event) => {
     const actor = event.target.closest('[data-ranking-id]');
     if (actor) {
         selectActor(actor.dataset.rankingId, actor.dataset.rankingKind, true);
-        closeRankings();
+        closeRankings({ updateRoute: false });
         return;
     }
     if (event.target === els.rankingsModal) closeRankings();
@@ -2017,10 +2972,76 @@ els.raidBossesModal?.addEventListener('click', (event) => {
 });
 
 els.clansModal?.addEventListener('click', (event) => {
+    const mapLink = event.target.closest('[data-clan-map-id]');
+    if (mapLink) {
+        event.preventDefault();
+        showClanOnMap(mapLink.dataset.clanMapId, mapLink.dataset.clanMapName);
+        return;
+    }
+    const manage = event.target.closest('[data-clan-manage]');
+    if (manage) {
+        state.clanManagerOpen = !state.clanManagerOpen;
+        state.clanCrestMessage = null;
+        state.clanOrderMessage = null;
+        if (!state.clanManagerOpen) {
+            resetClanCrestDraft();
+            resetClanOrderDraft();
+        }
+        renderClanDetail();
+        return;
+    }
+    const item = event.target.closest('[data-clan-order-item]');
+    if (item) {
+        const selected = state.clanOrderItems.find((entry) => Number(entry.id) === Number(item.dataset.clanOrderItem));
+        if (selected) {
+            const draft = clanOrderDraft();
+            draft.item = selected;
+            draft.query = selected.name;
+            if (draft.maxUnitPrice === '' && Number(selected.price) > 0) draft.maxUnitPrice = Number(selected.price) * 2;
+            state.clanOrderSearchRequest += 1;
+            state.clanOrderItems = [];
+            state.clanOrderSearchLoading = false;
+            state.clanOrderSearchError = null;
+            state.clanOrderMessage = null;
+            renderClanDetail();
+        }
+        return;
+    }
+    const strategy = event.target.closest('[data-clan-order-strategy]');
+    if (strategy) {
+        clanOrderDraft().strategy = strategy.dataset.clanOrderStrategy || 'auto';
+        state.clanOrderMessage = null;
+        renderClanDetail();
+        return;
+    }
+    if (event.target.closest('[data-create-clan-order]')) {
+        createClanOrder();
+        return;
+    }
+    const transition = event.target.closest('[data-clan-order-transition]');
+    if (transition) {
+        transitionClanOrder(transition.dataset.clanOrderTransition);
+        return;
+    }
+    const fit = event.target.closest('[data-crest-fit]');
+    if (fit) {
+        state.clanCrestFit = fit.dataset.crestFit === 'contain' ? 'contain' : 'cover';
+        if (state.clanCrestSource) buildClanCrestDraft(state.clanCrestSource, state.clanCrestDraft?.fileName || 'Image');
+        renderClanDetail();
+        return;
+    }
+    if (event.target.closest('[data-save-clan-crest]')) {
+        saveClanCrest();
+        return;
+    }
+    if (event.target.closest('[data-remove-clan-crest]')) {
+        removeClanCrest();
+        return;
+    }
     const member = event.target.closest('[data-clan-member-id]');
     if (member) {
         selectActor(member.dataset.clanMemberId, member.dataset.clanMemberKind || 'bot', true);
-        closeClans();
+        closeClans({ updateRoute: false });
         return;
     }
     const clan = event.target.closest('[data-clan-id]');
@@ -2029,6 +3050,75 @@ els.clansModal?.addEventListener('click', (event) => {
         return;
     }
     if (event.target === els.clansModal) closeClans();
+});
+
+els.clansModal?.addEventListener('change', (event) => {
+    const input = event.target.closest('[data-clan-crest-file]');
+    if (input) loadClanCrestFile(input.files?.[0]);
+    const member = event.target.closest('[data-clan-order-member]');
+    if (member) {
+        state.clanOrderDraft.memberIds = [...els.clansModal.querySelectorAll('[data-clan-order-member]:checked')]
+            .map((entry) => Number(entry.dataset.clanOrderMember))
+            .filter(Boolean);
+        state.clanOrderMessage = null;
+        renderClanDetail();
+    }
+});
+
+els.clansModal?.addEventListener('focusout', () => {
+    requestAnimationFrame(() => {
+        if (!state.clanDetailDeferredRender) return;
+        const editor = els.clansModal?.querySelector('.clan-order-editor');
+        if (editor?.contains(document.activeElement)) return;
+        renderClanDetail();
+    });
+});
+
+els.clansModal?.addEventListener('input', (event) => {
+    const search = event.target.closest('[data-clan-order-search]');
+    if (search) {
+        const draft = clanOrderDraft();
+        draft.query = search.value;
+        if (draft.item && draft.item.name !== search.value) {
+            draft.item = null;
+            state.clanOrderItems = [];
+            state.clanOrderSearchError = null;
+            els.clansModal?.querySelector('.clan-order-selected')?.remove();
+            const submit = els.clansModal?.querySelector('[data-create-clan-order]');
+            if (submit) submit.disabled = true;
+            const status = els.clansModal?.querySelector('.clan-order-submit span');
+            if (status) status.textContent = 'Select an item to continue';
+            renderClanOrderSearchResults();
+        }
+        window.clearTimeout(state.clanOrderSearchTimer);
+        state.clanOrderSearchTimer = window.setTimeout(() => searchClanOrderItems(draft.query, { showLoading: false }), 180);
+        return;
+    }
+    const amount = event.target.closest('[data-clan-order-amount]');
+    if (amount) clanOrderDraft().amount = amount.value;
+    const price = event.target.closest('[data-clan-order-price]');
+    if (price) clanOrderDraft().maxUnitPrice = price.value;
+    const budget = event.target.closest('[data-clan-order-budget]');
+    if (budget) clanOrderDraft().budget = budget.value;
+});
+
+els.clansModal?.addEventListener('dragover', (event) => {
+    const dropzone = event.target.closest('[data-clan-crest-dropzone]');
+    if (!dropzone) return;
+    event.preventDefault();
+    dropzone.classList.add('is-dragging');
+});
+
+els.clansModal?.addEventListener('dragleave', (event) => {
+    event.target.closest('[data-clan-crest-dropzone]')?.classList.remove('is-dragging');
+});
+
+els.clansModal?.addEventListener('drop', (event) => {
+    const dropzone = event.target.closest('[data-clan-crest-dropzone]');
+    if (!dropzone) return;
+    event.preventDefault();
+    dropzone.classList.remove('is-dragging');
+    loadClanCrestFile(event.dataTransfer?.files?.[0]);
 });
 
 els.clanSortTabs?.addEventListener('click', (event) => {
@@ -2113,7 +3203,29 @@ els.fitButton.addEventListener('click', () => {
     renderSelected();
 });
 
+function zoomMap(factor) {
+    const viewport = state.viewport || { x: 0, y: 0, width: mapMeta().width, height: mapMeta().height };
+    const width = viewport.width * factor;
+    const height = viewport.height * factor;
+    applyViewport({
+        x: viewport.x + (viewport.width - width) / 2,
+        y: viewport.y + (viewport.height - height) / 2,
+        width,
+        height
+    });
+}
+
+els.zoomInButton?.addEventListener('click', () => zoomMap(0.7));
+els.zoomOutButton?.addEventListener('click', () => zoomMap(1.3));
+
 document.addEventListener('click', (event) => {
+    const worldLink = event.target.closest('[data-spa-route="world"]');
+    if (worldLink) {
+        event.preventDefault();
+        commitRoute({ name: 'world' });
+        applyRoute({ name: 'world' });
+        return;
+    }
     const clanLink = event.target.closest('[data-actor-clan-id]');
     if (clanLink) {
         event.preventDefault();
@@ -2134,11 +3246,15 @@ document.addEventListener('click', (event) => {
     clearClusterScope(true);
 });
 
+els.clearMapScope?.addEventListener('click', () => clearClanMapScope());
+
 els.filterStrip.addEventListener('click', (event) => {
     const button = event.target.closest('[data-phase]');
     if (!button) return;
+    let selectionCleared = false;
     state.phase = button.dataset.phase;
     if (state.phase === 'raidbosses') {
+        selectionCleared = Boolean(state.selectedId);
         state.selectedId = null;
         state.detail = null;
         state.detailError = null;
@@ -2146,8 +3262,10 @@ els.filterStrip.addEventListener('click', (event) => {
         state.clusterScope = null;
         state.detailRequest += 1;
     } else if (state.phase !== 'all') {
+        selectionCleared = Boolean(state.selectedRaidBossId);
         state.selectedRaidBossId = null;
     }
+    if (selectionCleared) commitRoute({ name: 'world' });
     els.filterStrip.querySelectorAll('.filter').forEach((item) => item.classList.toggle('is-active', item === button));
     renderFilteredActorViews({ counts: false });
     renderSelected();
@@ -2239,6 +3357,14 @@ document.addEventListener('keydown', (event) => {
         closeRankings();
         return;
     }
+    if (event.key === 'Escape' && state.clanOpen && state.clanManagerOpen) {
+        event.preventDefault();
+        state.clanManagerOpen = false;
+        state.clanCrestMessage = null;
+        resetClanCrestDraft();
+        renderClanDetail();
+        return;
+    }
     if (event.key === 'Escape' && state.clanOpen) {
         event.preventDefault();
         closeClans();
@@ -2306,5 +3432,10 @@ document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && state.clusterScope) clearClusterScope(true);
 });
 
+window.addEventListener('popstate', () => applyRoute());
+applyRoute();
 refresh();
 setInterval(refresh, 2000);
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refresh();
+});

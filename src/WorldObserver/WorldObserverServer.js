@@ -9,6 +9,9 @@ const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
+const ClanGoalService = invoke('GameServer/Clan/ClanGoalService');
+const ClanOrderService = invoke('GameServer/Clan/ClanOrderService');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const ClanSimulationConfig = invoke('GameServer/Clan/ClanSimulationConfig');
 const Database = invoke('Database');
@@ -16,6 +19,7 @@ const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
 const PlayerActivitySignal = invoke('GameServer/Bot/Population/PlayerActivitySignal');
 const DataCache = invoke('GameServer/DataCache');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
+const WorldProjection = invoke('WorldObserver/WorldObserverProjection');
 const MIME_TYPES = {
     '.html': 'text/html; charset=utf-8',
     '.css': 'text/css; charset=utf-8',
@@ -27,6 +31,7 @@ const MIME_TYPES = {
     '.jpeg': 'image/jpeg'
 };
 const OBSERVER_IDLE_CACHE_MS = 2000;
+const WORLD_EPOCH = `${process.pid}-${Date.now().toString(36)}`;
 // The observer refreshes its map every 2s, but bot state is deliberately much
 // slower-moving than the player-facing game world. Reuse the expensive
 // 1776-state snapshot for 30s while a player is online instead of rebuilding
@@ -35,6 +40,9 @@ const OBSERVER_PLAYER_CACHE_MS = 30000;
 const OBSERVER_PARTY_CACHE_MS = 30000;
 const snapshotCache = {
     json: null,
+    etag: null,
+    revision: 0,
+    bytes: 0,
     generatedAt: 0,
     inFlight: null,
     builds: 0,
@@ -444,6 +452,17 @@ const EQUIPMENT_SLOTS = {
     14: 'two-handed weapon',
     15: 'full armor'
 };
+const projectionRuntime = {
+    initialized: false,
+    initializing: null,
+    dynamicKeys: new Set(),
+    unsubscribe: null
+};
+const PROJECTION_FIELDS = Object.freeze([
+    'id', 'name', 'phase', 'mode', 'intent', 'role', 'level', 'classId', 'className',
+    'raceId', 'exp', 'adena', 'equipmentValue', 'loc', 'area', 'region', 'online',
+    'staticService', 'isPk', 'blockers', 'updatedAt'
+]);
 
 function equipmentSlot(slot) {
     if (typeof slot === 'string' && slot.trim() && !/^\d+$/.test(slot.trim())) return slot;
@@ -453,6 +472,8 @@ function equipmentSlot(slot) {
 let itemTemplateIndex = null;
 let itemTemplateSource = null;
 let itemIconCatalogCache = null;
+let clanOrderItemCatalogSource = null;
+let clanOrderItemCatalogCache = null;
 
 function normalizeItemName(value) {
     return String(value || '')
@@ -495,9 +516,13 @@ function clanNumber(value, fallback = 0) {
 function compactClanGoal(raw) {
     const goal = raw && raw.goal ? raw.goal : raw;
     if (!goal || typeof goal !== 'object') return null;
+    const targetItemId = clanNumber(goal.target?.itemId) || null;
+    const targetItemName = goal.target?.itemName || null;
+    const targetIcon = targetItemId ? itemIconFor(null, targetItemId, targetItemName, null) : null;
     const target = goal.target ? {
-        itemId: clanNumber(goal.target.itemId) || null,
-        itemName: goal.target.itemName || null,
+        itemId: targetItemId,
+        itemName: targetItemName,
+        iconUrl: targetIcon?.url || null,
         npcId: clanNumber(goal.target.npcId || goal.plan?.sourceId) || null,
         npcName: goal.target.npcName || null
     } : null;
@@ -540,6 +565,7 @@ function clanOverviewQuery() {
                clans.crestId, clans.allyCrestId,
                leader.name AS leaderName,
                simulated.version AS simulationVersion,
+               simulated.mode AS simulationMode,
                simulated.createdAt AS simulationCreatedAt,
                simulated.updatedAt AS simulationUpdatedAt,
                simulated.stateJson,
@@ -617,16 +643,22 @@ function compactClanOverview(row, auxiliary = {}) {
     const id = clanNumber(row.id);
     const level = clanNumber(row.level);
     const crestId = clanNumber(row.crestId);
+    const automationMode = row.simulationVersion
+        ? String(row.simulationMode || 'autonomous')
+        : null;
     return {
         id,
         name: String(row.name || ''),
         level,
         crestId,
-        crestUrl: level >= 3 && id > 0 && crestId > 0 ? `/observer/api/clan/${id}/crest` : null,
+        crestUrl: level >= 3 && id > 0 && crestId > 0 ? `/observer/api/clan/${id}/crest?v=${crestId}` : null,
         allyCrestId: clanNumber(row.allyCrestId),
         leaderId: clanNumber(row.leaderId) || null,
         leaderName: row.leaderName || null,
-        autonomous: Number(row.simulationVersion || 0) > 0,
+        automated: automationMode !== null,
+        automationMode,
+        autonomous: automationMode === 'autonomous',
+        playerManaged: automationMode === 'player_managed',
         createdAt: clanNumber(row.simulationCreatedAt),
         updatedAt: clanNumber(row.simulationUpdatedAt || state.updatedAt),
         memberCount,
@@ -691,9 +723,10 @@ async function clanSnapshot() {
         summary.players += clan.playerMembers;
         summary.online += clan.onlineMembers;
         summary.autonomous += clan.autonomous ? 1 : 0;
+        summary.playerManaged += clan.playerManaged ? 1 : 0;
         summary.levels[clan.level] = (summary.levels[clan.level] || 0) + 1;
         return summary;
-    }, { members: 0, bots: 0, players: 0, online: 0, autonomous: 0, levels: {} });
+    }, { members: 0, bots: 0, players: 0, online: 0, autonomous: 0, playerManaged: 0, levels: {} });
     return { generatedAt: Date.now(), total: clans.length, totals, clans };
 }
 
@@ -782,10 +815,64 @@ function compactClanEvent(row) {
     };
 }
 
+function compactClanOrder(order) {
+    if (!order) return null;
+    const icon = itemIconFor(null, order.itemId, order.itemName, null);
+    return {
+        id: clanNumber(order.id),
+        revision: clanNumber(order.revision),
+        kind: order.kind || 'gather_item',
+        status: order.status || null,
+        itemId: clanNumber(order.itemId),
+        itemName: order.itemName || `Item ${order.itemId}`,
+        iconUrl: icon?.url || null,
+        amount: clanNumber(order.amount),
+        strategy: order.strategy || 'auto',
+        maxUnitPrice: clanNumber(order.maxUnitPrice),
+        budget: clanNumber(order.budget),
+        spent: clanNumber(order.spent),
+        memberIds: (order.memberIds || []).map(Number).filter(Boolean),
+        plan: order.plan || {},
+        reasonCode: order.reasonCode || null,
+        createdAt: clanNumber(order.createdAt),
+        updatedAt: clanNumber(order.updatedAt),
+        resolvedAt: clanNumber(order.resolvedAt) || null
+    };
+}
+
+function clanOrderItems(query = '', limit = 40) {
+    const needle = String(query || '').trim().toLowerCase().slice(0, 80);
+    const safeLimit = Math.max(1, Math.min(80, Math.floor(Number(limit) || 40)));
+    const source = DataCache.items || [];
+    if (clanOrderItemCatalogSource !== source || !clanOrderItemCatalogCache) {
+        clanOrderItemCatalogSource = source;
+        clanOrderItemCatalogCache = source
+            .map((item) => ClanOrderService.itemSnapshot(item))
+            .filter((item) => item && item.itemId !== 57 && item.itemName
+                && !/^\s*(?:\(not used\)|[_\d]+\s*$)/i.test(item.itemName))
+            .sort((left, right) => left.itemName.localeCompare(right.itemName) || left.itemId - right.itemId);
+    }
+    return clanOrderItemCatalogCache
+        .filter((item) => !needle
+            || item.itemName.toLowerCase().includes(needle)
+            || String(item.itemId) === needle)
+        .slice(0, safeLimit)
+        .map((item) => {
+            const icon = itemIconFor(null, item.itemId, item.itemName, item.itemKind);
+            return {
+                id: item.itemId,
+                name: item.itemName,
+                kind: item.itemKind,
+                price: item.itemPrice,
+                iconUrl: icon?.url || null
+            };
+        });
+}
+
 async function clanDetail(clanId) {
     const id = Number(clanId);
     if (!Number.isSafeInteger(id) || id <= 0) return null;
-    const [directory, members, events, warehouse, contributions, demands, operation, actions] = await Promise.all([
+    const [directory, members, events, warehouse, contributions, demands, operation, actions, orders] = await Promise.all([
         clanSnapshot(),
         clanMemberQuery(id),
         Database.fetchClanGoalEvents(id, 24),
@@ -804,7 +891,8 @@ async function clanDetail(clanId) {
             ORDER BY operations.createdAt DESC, operations.id DESC
             LIMIT 1
         `, [id]], 'observer:clan-operation')
-        , Database.fetchClanActions({ clanId: id, limit: 24 })
+        , Database.fetchClanActions({ clanId: id, limit: 24 }),
+        Database.fetchPlayerManagedClanOrders({ clanId: id, limit: 12 })
     ]);
     const overview = directory.clans.find((clan) => clan.id === id);
     if (!overview) return null;
@@ -869,6 +957,8 @@ async function clanDetail(clanId) {
             reasonCode: action.reasonCode || null,
             result: observerJson(action.resultJson)
         })),
+        order: compactClanOrder(orders.find((entry) => ['active', 'paused', 'blocked'].includes(String(entry.status))) || null),
+        orderHistory: orders.map(compactClanOrder),
         operation: operationRow ? {
             id: clanNumber(operationRow.id),
             type: operationRow.operationType || null,
@@ -886,6 +976,36 @@ async function clanDetail(clanId) {
         } : null,
         events: events.map(compactClanEvent)
     };
+}
+
+async function createPlayerManagedClanOrder(clanId, payload) {
+    const id = Number(clanId);
+    if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, code: 'invalid_clan' };
+    const clan = await ClanGoalService.clanProjectionById(id);
+    if (!clan) return { ok: false, code: 'target_not_player_managed' };
+    const result = await ClanOrderService.create(clan, payload || {});
+    return result.ok ? { ...result, order: compactClanOrder(result.order), goal: compactClanGoal(result.goal) } : result;
+}
+
+async function transitionPlayerManagedClanOrder(clanId, orderId, transition, payload) {
+    const id = Number(clanId);
+    const targetOrder = Number(orderId);
+    if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(targetOrder) || targetOrder <= 0) {
+        return { ok: false, code: 'invalid_clan_order' };
+    }
+    const clan = await ClanGoalService.clanProjectionById(id);
+    if (!clan) return { ok: false, code: 'target_not_player_managed' };
+    const current = await ClanOrderService.current(id);
+    if (!current || Number(current.id) !== targetOrder) return { ok: false, code: 'clan_order_not_active' };
+    const result = await ClanOrderService.transition(clan, transition, payload || {});
+    return result.ok ? { ...result, order: compactClanOrder(result.order), goal: compactClanGoal(result.goal) } : result;
+}
+
+function clanOrderMutationStatus(result) {
+    if (result?.ok) return 200;
+    if (result?.code === 'target_not_player_managed' || result?.code === 'clan_order_revision_conflict') return 409;
+    if (result?.code === 'clan_order_not_active') return 404;
+    return 400;
 }
 
 async function clanCrest(clanId) {
@@ -1629,11 +1749,9 @@ function mapCooperatively(items, mapper, sliceBudgetMs = 4) {
     });
 }
 
-async function snapshot() {
+async function collectWorldActors() {
     const BotManager = invoke('GameServer/Bot/BotManager');
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
-    const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
-    const PopulationStatus = invoke('GameServer/Bot/Population/PopulationStatus');
 
     const pkHotIds = new Set(BotManager.sessions
         .filter((session) => isPkActor(session.actor))
@@ -1659,6 +1777,162 @@ async function snapshot() {
     ))).filter(Boolean);
     const bots = [...hotBots, ...stateBots];
     const players = realPlayerSessions().map(compactPlayer);
+    return { hotBots, bots, players, states, stateById };
+}
+
+function projectionActor(actor, kind) {
+    const projected = {
+        id: Number(actor.id),
+        kind,
+        name: actor.name || (kind === 'player' ? 'Player' : 'Bot'),
+        phase: kind === 'player' ? 'player' : actor.phase,
+        mode: kind === 'player' ? 'player' : actor.mode,
+        intent: kind === 'player' ? (actor.online ? 'online' : 'offline') : actor.intent,
+        role: kind === 'player' ? 'player' : actor.role,
+        level: Number(actor.level || 1),
+        classId: actor.classId,
+        className: actor.className || null,
+        raceId: actor.raceId,
+        exp: Number(actor.exp || 0),
+        adena: Number(actor.adena || 0),
+        equipmentValue: Number(actor.equipmentValue || 0),
+        loc: actor.loc || null,
+        area: actor.area || null,
+        region: actor.region || null,
+        online: kind === 'player' ? !!actor.online : undefined,
+        staticService: kind === 'bot' ? !!actor.staticService : undefined,
+        isPk: !!actor.isPk,
+        blockers: actor.blockers?.includes('dead') ? ['dead'] : [],
+        updatedAt: Number(actor.updatedAt || 0) || undefined
+    };
+    return Object.fromEntries(Object.entries(projected).filter(([, value]) => value !== undefined));
+}
+
+function projectionRow(actor) {
+    return PROJECTION_FIELDS.map((field) => actor[field] ?? null);
+}
+
+function bindColdProjection() {
+    if (projectionRuntime.unsubscribe) return;
+    const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+    projectionRuntime.unsubscribe = LifeState.subscribeChanges((state) => {
+        if (!projectionRuntime.initialized || !state?.characterId) return;
+        const BotManager = invoke('GameServer/Bot/BotManager');
+        if (BotManager.findSessionById(Number(state.characterId))) return;
+        const leaderId = Number(state.party?.leaderId || state.stats?.leaderId || 0);
+        const actor = compactStateBot(state, new Set(), LifeState.cachedState(leaderId));
+        if (actor) WorldProjection.apply({ upserts: [projectionActor(actor, 'bot')] });
+    });
+}
+
+async function ensureWorldProjection() {
+    if (projectionRuntime.initialized) return WorldProjection.snapshot();
+    if (projectionRuntime.initializing) return projectionRuntime.initializing;
+    projectionRuntime.initializing = collectWorldActors().then(({ bots, players }) => {
+        const actors = [
+            ...bots.map((actor) => projectionActor(actor, 'bot')),
+            ...players.map((actor) => projectionActor(actor, 'player'))
+        ];
+        const result = WorldProjection.reset(actors);
+        projectionRuntime.dynamicKeys = new Set([
+            ...bots.filter((actor) => actor.phase === 'hot').map((actor) => `bot:${Number(actor.id)}`),
+            ...players.map((actor) => `player:${Number(actor.id)}`)
+        ]);
+        projectionRuntime.initialized = true;
+        bindColdProjection();
+        return result;
+    }).finally(() => {
+        projectionRuntime.initializing = null;
+    });
+    return projectionRuntime.initializing;
+}
+
+async function refreshDynamicProjection() {
+    await ensureWorldProjection();
+    const BotManager = invoke('GameServer/Bot/BotManager');
+    const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+    const pkHotIds = new Set(BotManager.sessions
+        .filter((session) => isPkActor(session.actor))
+        .map((session) => Number(session.actor.fetchId())));
+    const hot = BotManager.getAllBotStatuses()
+        .filter((status) => status && status.available)
+        .map((status) => projectionActor(compactHotBot(
+            status,
+            pkHotIds,
+            BotManager.findSessionById(Number(status.id))
+        ), 'bot'));
+    const players = realPlayerSessions().map((session) => projectionActor(compactPlayer(session), 'player'));
+    const nextDynamicKeys = new Set([
+        ...hot.map((actor) => `bot:${Number(actor.id)}`),
+        ...players.map((actor) => `player:${Number(actor.id)}`)
+    ]);
+    const upserts = [...hot, ...players];
+    const removals = [];
+    projectionRuntime.dynamicKeys.forEach((key) => {
+        if (nextDynamicKeys.has(key)) return;
+        const [kind, rawId] = key.split(':');
+        const id = Number(rawId);
+        if (kind === 'bot') {
+            const state = LifeState.cachedState(id);
+            if (state) {
+                const leaderId = Number(state.party?.leaderId || state.stats?.leaderId || 0);
+                const actor = compactStateBot(state, new Set(), LifeState.cachedState(leaderId));
+                if (actor) upserts.push(projectionActor(actor, 'bot'));
+                else removals.push({ kind, id });
+            } else removals.push({ kind, id });
+        } else removals.push({ kind, id });
+    });
+    projectionRuntime.dynamicKeys = nextDynamicKeys;
+    return WorldProjection.apply({ upserts, removals });
+}
+
+async function worldBootstrap() {
+    await ensureWorldProjection();
+    await refreshDynamicProjection();
+    const projection = WorldProjection.snapshot();
+    const actors = projection.actors;
+    const status = worldStatus();
+    return {
+        ...status,
+        epoch: WORLD_EPOCH,
+        revision: projection.revision,
+        bounds: WORLD_BOUNDS,
+        mapTiles: MAP_TILES,
+        labels: REGION_LABELS,
+        classes: classCatalog(),
+        actorFormat: 'row-v1',
+        actorFields: PROJECTION_FIELDS,
+        bots: actors.filter((actor) => actor.kind === 'bot').map(projectionRow),
+        players: actors.filter((actor) => actor.kind === 'player').map(projectionRow)
+    };
+}
+
+function worldStatus() {
+    const PopulationStatus = invoke('GameServer/Bot/Population/PopulationStatus');
+    const memory = process.memoryUsage();
+    return {
+        epoch: WORLD_EPOCH,
+        generatedAt: Date.now(),
+        uptimeMs: Math.round(process.uptime() * 1000),
+        raidBosses: raidBossSnapshot(),
+        population: PopulationStatus.counts(),
+        runtime: {
+            heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
+            rssMb: Math.round(memory.rss / 1024 / 1024)
+        }
+    };
+}
+
+async function worldChanges(revision) {
+    await ensureWorldProjection();
+    await refreshDynamicProjection();
+    return { epoch: WORLD_EPOCH, ...WorldProjection.changesSince(revision) };
+}
+
+async function snapshot() {
+    const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
+    const PopulationStatus = invoke('GameServer/Bot/Population/PopulationStatus');
+    const { hotBots, bots, players } = await collectWorldActors();
     const memory = process.memoryUsage();
 
     return LifeEvents.recent(18).then((events) => ({
@@ -1706,6 +1980,9 @@ function snapshotJson(now = Date.now()) {
         .then((json) => {
             snapshotCache.json = json;
             snapshotCache.generatedAt = Date.now();
+            snapshotCache.revision += 1;
+            snapshotCache.bytes = Buffer.byteLength(json);
+            snapshotCache.etag = `W/"world-${snapshotCache.revision}-${snapshotCache.bytes}"`;
             return json;
         })
         .finally(() => {
@@ -1770,36 +2047,150 @@ function sendJson(response, data, statusCode = 200) {
     response.end(JSON.stringify(data));
 }
 
-function sendJsonText(response, json, statusCode = 200) {
-    response.writeHead(statusCode, {
+function sendSnapshotJson(request, response, json) {
+    const etag = snapshotCache.etag || `W/"world-0-${Buffer.byteLength(json)}"`;
+    const headers = {
+        'Cache-Control': 'no-cache',
+        ETag: etag,
+        'X-Observer-Revision': String(snapshotCache.revision || 0)
+    };
+    if (String(request.headers['if-none-match'] || '') === etag) {
+        response.writeHead(304, headers);
+        response.end();
+        return;
+    }
+    response.writeHead(200, {
+        ...headers,
         'Content-Type': 'application/json; charset=utf-8',
-        'Cache-Control': 'no-store'
+        'Content-Length': Buffer.byteLength(json)
     });
     response.end(json);
 }
 
-function sendClanCrest(response, crest) {
-    response.writeHead(200, {
+function readJsonBody(request, maxBytes = 16384) {
+    return new Promise((resolve, reject) => {
+        const chunks = [];
+        let bytes = 0;
+        let settled = false;
+        request.on('data', (chunk) => {
+            if (settled) return;
+            bytes += chunk.length;
+            if (bytes > maxBytes) {
+                settled = true;
+                const error = new Error('Request body is too large');
+                error.statusCode = 413;
+                reject(error);
+                return;
+            }
+            chunks.push(chunk);
+        });
+        request.on('end', () => {
+            if (settled) return;
+            try {
+                const json = Buffer.concat(chunks).toString('utf8');
+                resolve(json ? JSON.parse(json) : {});
+            } catch (error) {
+                error.statusCode = 400;
+                reject(error);
+            }
+        });
+        request.on('error', (error) => {
+            if (!settled) reject(error);
+        });
+    });
+}
+
+function decodeClanCrestPixels(payload) {
+    const width = Number(payload?.width);
+    const height = Number(payload?.height);
+    const encoded = String(payload?.pixels || '').trim();
+    if (width !== 16 || height !== 12 || !encoded || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
+        return { ok: false, code: 'invalid_crest_pixels' };
+    }
+    const pixels = Buffer.from(encoded, 'base64');
+    if (pixels.length !== width * height * 4) return { ok: false, code: 'invalid_crest_pixels' };
+    return { ok: true, width, height, pixels };
+}
+
+async function updatePlayerManagedClanCrest(clanId, payload) {
+    const id = Number(clanId);
+    if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, code: 'invalid_clan' };
+    const decoded = decodeClanCrestPixels(payload);
+    if (!decoded.ok) return decoded;
+    const crestData = ClanCrestService.rgbaToDxt1Dds(decoded.pixels, decoded.width, decoded.height);
+    const result = await ClanService.setPlayerManagedCrest(id, crestData);
+    if (!result.ok) return result;
+    return {
+        ok: true,
+        clanId: id,
+        crestId: Number(result.crestId || 0),
+        crestUrl: result.crestId ? `/observer/api/clan/${id}/crest?v=${Number(result.crestId)}` : null
+    };
+}
+
+async function deletePlayerManagedClanCrest(clanId) {
+    const id = Number(clanId);
+    if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, code: 'invalid_clan' };
+    const result = await ClanService.setPlayerManagedCrest(id, Buffer.alloc(0));
+    return result.ok ? { ok: true, clanId: id, crestId: 0, crestUrl: null, deleted: true } : result;
+}
+
+function clanCrestMutationStatus(result) {
+    if (result?.ok) return 200;
+    if (result?.code === 'target_not_player_managed' || result?.code === 'level_too_low') return 409;
+    return 400;
+}
+
+function sendClanCrest(request, response, crest, url) {
+    const etag = `W/"clan-crest-${crest.id}-${crest.data.length}"`;
+    const versioned = String(url?.searchParams?.get('v') || '') === String(crest.id);
+    const headers = {
         'Content-Type': 'image/bmp',
         'Content-Length': crest.data.length,
-        'Cache-Control': 'no-store'
-    });
+        'Cache-Control': versioned ? 'public, max-age=31536000, immutable' : 'no-cache',
+        ETag: etag
+    };
+    if (String(request.headers['if-none-match'] || '') === etag) {
+        delete headers['Content-Length'];
+        response.writeHead(304, headers);
+        response.end();
+        return;
+    }
+    response.writeHead(200, headers);
     response.end(crest.data);
 }
 
-function sendFile(response, filePath) {
-    fs.readFile(filePath, (err, body) => {
-        if (err) {
+function sendFile(request, response, filePath) {
+    fs.stat(filePath, (statError, stat) => {
+        if (statError || !stat.isFile()) {
             response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
             response.end('Not found');
             return;
         }
-
-        response.writeHead(200, {
-            'Content-Type': MIME_TYPES[path.extname(filePath)] || 'application/octet-stream',
-            'Cache-Control': 'no-cache'
+        const etag = `W/"asset-${stat.size}-${Math.floor(stat.mtimeMs)}"`;
+        const cacheHeaders = {
+            'Cache-Control': 'public, max-age=0, must-revalidate',
+            ETag: etag,
+            'Last-Modified': stat.mtime.toUTCString()
+        };
+        if (String(request.headers['if-none-match'] || '') === etag) {
+            response.writeHead(304, cacheHeaders);
+            response.end();
+            return;
+        }
+        fs.readFile(filePath, (err, body) => {
+            if (err) {
+                response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+                response.end('Not found');
+                return;
+            }
+            response.writeHead(200, {
+                ...cacheHeaders,
+                'Content-Type': MIME_TYPES[path.extname(filePath)] || 'application/octet-stream',
+                'Content-Length': body.length
+            });
+            response.end(body);
         });
-        response.end(body);
     });
 }
 
@@ -1813,7 +2204,41 @@ function route(request, response) {
 
     if (url.pathname === '/observer/api/snapshot') {
         snapshotJson()
-            .then((json) => sendJsonText(response, json))
+            .then((json) => sendSnapshotJson(request, response, json))
+            .catch((err) => sendJson(response, { error: err.message }, 500));
+        return;
+    }
+
+    if (url.pathname === '/observer/api/world/bootstrap') {
+        worldBootstrap()
+            .then((data) => sendJson(response, data))
+            .catch((err) => sendJson(response, { error: err.message }, 500));
+        return;
+    }
+
+    if (url.pathname === '/observer/api/world/status') {
+        try {
+            sendJson(response, worldStatus());
+        } catch (err) {
+            sendJson(response, { error: err.message }, 500);
+        }
+        return;
+    }
+
+    if (url.pathname === '/observer/api/world/changes') {
+        worldChanges(url.searchParams.get('since'))
+            .then((data) => {
+                if (!data.reset && !data.upserts.length && !data.removals.length) {
+                    response.writeHead(204, {
+                        'Cache-Control': 'no-store',
+                        'X-Observer-Epoch': data.epoch,
+                        'X-Observer-Revision': String(data.revision || 0)
+                    });
+                    response.end();
+                    return;
+                }
+                sendJson(response, data);
+            })
             .catch((err) => sendJson(response, { error: err.message }, 500));
         return;
     }
@@ -1825,11 +2250,79 @@ function route(request, response) {
         return;
     }
 
+    if (url.pathname === '/observer/api/clan-order-items') {
+        if (request.method !== 'GET') {
+            response.writeHead(405, { Allow: 'GET' });
+            response.end();
+            return;
+        }
+        try {
+            sendJson(response, {
+                query: String(url.searchParams.get('q') || ''),
+                items: clanOrderItems(url.searchParams.get('q'), url.searchParams.get('limit'))
+            });
+        } catch (err) {
+            sendJson(response, { error: err.message }, 500);
+        }
+        return;
+    }
+
+    const clanOrderCreateMatch = url.pathname.match(/^\/observer\/api\/clan\/(\d+)\/orders$/);
+    if (clanOrderCreateMatch) {
+        if (request.method !== 'POST') {
+            response.writeHead(405, { Allow: 'POST' });
+            response.end();
+            return;
+        }
+        readJsonBody(request, 32768)
+            .then((payload) => createPlayerManagedClanOrder(clanOrderCreateMatch[1], payload))
+            .then((result) => sendJson(response, result, clanOrderMutationStatus(result)))
+            .catch((err) => sendJson(response, { ok: false, error: err.message }, err.statusCode || 500));
+        return;
+    }
+
+    const clanOrderTransitionMatch = url.pathname.match(/^\/observer\/api\/clan\/(\d+)\/orders\/(\d+)\/(pause|resume|replan|cancel)$/);
+    if (clanOrderTransitionMatch) {
+        if (request.method !== 'POST') {
+            response.writeHead(405, { Allow: 'POST' });
+            response.end();
+            return;
+        }
+        readJsonBody(request)
+            .then((payload) => transitionPlayerManagedClanOrder(
+                clanOrderTransitionMatch[1],
+                clanOrderTransitionMatch[2],
+                clanOrderTransitionMatch[3],
+                payload
+            ))
+            .then((result) => sendJson(response, result, clanOrderMutationStatus(result)))
+            .catch((err) => sendJson(response, { ok: false, error: err.message }, err.statusCode || 500));
+        return;
+    }
+
     const clanCrestMatch = url.pathname.match(/^\/observer\/api\/clan\/(\d+)\/crest$/);
     if (clanCrestMatch) {
+        if (request.method === 'POST') {
+            readJsonBody(request)
+                .then((payload) => updatePlayerManagedClanCrest(clanCrestMatch[1], payload))
+                .then((result) => sendJson(response, result, clanCrestMutationStatus(result)))
+                .catch((err) => sendJson(response, { ok: false, error: err.message }, err.statusCode || 500));
+            return;
+        }
+        if (request.method === 'DELETE') {
+            deletePlayerManagedClanCrest(clanCrestMatch[1])
+                .then((result) => sendJson(response, result, clanCrestMutationStatus(result)))
+                .catch((err) => sendJson(response, { ok: false, error: err.message }, 500));
+            return;
+        }
+        if (request.method !== 'GET') {
+            response.writeHead(405, { Allow: 'GET, POST, DELETE' });
+            response.end();
+            return;
+        }
         clanCrest(clanCrestMatch[1])
             .then((crest) => crest
-                ? sendClanCrest(response, crest)
+                ? sendClanCrest(request, response, crest, url)
                 : sendJson(response, { error: 'Clan crest not found' }, 404))
             .catch((err) => sendJson(response, { error: err.message }, 500));
         return;
@@ -1879,7 +2372,12 @@ function route(request, response) {
             response.end('Not found');
             return;
         }
-        sendFile(response, filePath);
+        sendFile(request, response, filePath);
+        return;
+    }
+
+    if (/^\/observer\/(?:world|rankings|raid-bosses(?:\/\d+)?|clans(?:\/\d+)?(?:\/map)?|actors\/(?:bot|player)\/\d+)\/?$/.test(url.pathname)) {
+        sendFile(request, response, path.join(PUBLIC_DIR, 'index.html'));
         return;
     }
 
@@ -1892,7 +2390,7 @@ function route(request, response) {
             response.end('Forbidden');
             return;
         }
-        sendFile(response, filePath);
+        sendFile(request, response, filePath);
         return;
     }
 
@@ -1911,11 +2409,18 @@ const WorldObserverServer = {
     compactClanGoal,
     compactClanOverview,
     compactClanMember,
+    compactClanOrder,
     compactActorClan,
     browserClanCrestData,
+    decodeClanCrestPixels,
+    updatePlayerManagedClanCrest,
+    deletePlayerManagedClanCrest,
     clanCrest,
     clanSnapshot,
     clanDetail,
+    clanOrderItems,
+    createPlayerManagedClanOrder,
+    transitionPlayerManagedClanOrder,
     compactItem,
     itemIconFilePath,
     classCatalog,
@@ -1932,10 +2437,18 @@ const WorldObserverServer = {
         };
     },
     snapshotJson,
+    sendSnapshotJson,
+    sendFile,
+    worldBootstrap,
+    worldChanges,
+    worldStatus,
     observerCacheTtl,
     snapshotCacheStats() {
         return {
             generatedAt: snapshotCache.generatedAt,
+            etag: snapshotCache.etag,
+            revision: snapshotCache.revision,
+            bytes: snapshotCache.bytes,
             builds: snapshotCache.builds,
             hits: snapshotCache.hits,
             hasValue: !!snapshotCache.json,

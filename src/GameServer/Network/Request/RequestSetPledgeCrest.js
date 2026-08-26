@@ -2,14 +2,6 @@ const ReceivePacket = invoke('Packet/Receive');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const ServerResponse = invoke('GameServer/Network/Response');
 
-function broadcastClanAppearance(clan) {
-    ClanService.onlineSessions(clan).forEach((memberSession) => {
-        memberSession.dataSendToMe(ServerResponse.userInfo(memberSession.actor));
-        memberSession.dataSendToOthers(ServerResponse.charInfo(memberSession.actor), memberSession.actor);
-        memberSession.dataSendToOthers(ServerResponse.relationChanged(memberSession.actor), memberSession.actor);
-    });
-}
-
 function requestSetPledgeCrest(session, buffer) {
     const actorName = session?.actor?.fetchName?.() || session?.accountId || 'unknown';
     if (!buffer || buffer.length < 5) {
@@ -51,7 +43,7 @@ function requestSetPledgeCrest(session, buffer) {
         utils.infoSuccess('ClanCrest', 'upload stored actor=%s clan=%d crest=%d bytes=%d deleted=%s',
             actorName, result.clan.id, result.crestId || 0, length, result.deleted ? 'yes' : 'no');
         session.dataSendToMe(ServerResponse.pledgeShowInfoUpdate(result.clan));
-        broadcastClanAppearance(result.clan);
+        ClanService.broadcastAppearance(result.clan);
         return result;
     }).catch((error) => {
         utils.infoWarn('ClanCrest', 'upload failed actor=%s bytes=%d: %s', actorName, length, error.message);

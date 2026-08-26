@@ -6,6 +6,7 @@ const EconomyService = invoke('GameServer/Clan/ClanEconomyService');
 const WarehouseService = invoke('GameServer/Clan/ClanWarehouseService');
 const MarketService = invoke('GameServer/Clan/ClanMarketService');
 const PartyService = invoke('GameServer/Clan/ClanPartyService');
+const OrderService = invoke('GameServer/Clan/ClanOrderService');
 const StageMetrics = invoke('GameServer/Clan/ClanStageMetrics');
 
 const ACTION_TYPES = Object.freeze({
@@ -17,7 +18,7 @@ const ACTION_TYPES = Object.freeze({
 });
 // Bump when a deploy adds a recovery behavior that must revisit durable goals
 // whose previous bootstrap action already succeeded under older code.
-const BOOTSTRAP_RECOVERY_VERSION = 4;
+const BOOTSTRAP_RECOVERY_VERSION = 5;
 
 const metrics = {
     bootstraps: 0,
@@ -148,6 +149,7 @@ function deferredRetryDelay(actionType, result = {}) {
 async function bootstrap() {
     if (bootstrapped) return { attempted: 0, created: 0 };
     bootstrapped = true;
+    const playerManaged = await Database.ensurePlayerManagedClans();
     const clans = await Database.fetchClansNeedingAction(Config.resolveBatchSize * 4);
     let created = 0;
     for (const clan of clans) {
@@ -162,7 +164,7 @@ async function bootstrap() {
     }
     metrics.bootstraps += 1;
     metrics.planned += created;
-    return { attempted: clans.length, created };
+    return { attempted: clans.length, created, playerManaged };
 }
 
 async function scheduleNext(clan, goal, parentAction, result, delayMs = 0) {
@@ -244,7 +246,14 @@ async function execute(action, options = {}) {
     try {
         switch (actionType) {
             case ACTION_TYPES.PLAN:
-                result = await GoalService.resolveClan(clan, { actionId: Number(action.id) });
+                result = String(clan.state?.mode || '') === 'player_managed'
+                    ? await OrderService.resolveClan(clan, {
+                        actionId: Number(action.id),
+                        reasonCode: String(payload.reason || '') === Contracts.REASON_CODES.MARKET_NO_OFFER
+                            ? Contracts.REASON_CODES.MARKET_NO_OFFER
+                            : ''
+                    })
+                    : await GoalService.resolveClan(clan, { actionId: Number(action.id) });
                 break;
             case ACTION_TYPES.CONTRIBUTION:
                 result = await EconomyService.resolveClan(clan, {
@@ -340,8 +349,14 @@ async function resolveAction(action, options = {}) {
             const advanced = result?.advanced?.ok === true || result?.advanced === true;
             const marketMiss = String(action.actionType) === ACTION_TYPES.MARKET
                 && String(result?.reason || result?.code || '') === Contracts.REASON_CODES.MARKET_NO_OFFER;
+            const playerMarketWait = marketMiss
+                && String(clan?.state?.mode || '') === 'player_managed'
+                && String(goal?.policy?.strategy || '') === 'market';
             if (clan && advanced) {
                 await schedulePlanAfterLevelUp(clan, action, result);
+            } else if (clan && playerMarketWait) {
+                await scheduleNext(clan, goal, action, result, Config.actionRetryMs);
+                metrics.retried += 1;
             } else if (clan && marketMiss) {
                 await schedulePlanAfterMarketMiss(clan, action, result);
             } else if (clan && goal && !(String(action.actionType) === ACTION_TYPES.PLAN && goal.status === 'completed')) {
@@ -404,7 +419,6 @@ const ClanActionService = {
     resolveBatch(options = {}) {
         if (!Config.enabled) return Promise.resolve({ attempted: 0, claimed: 0, resolved: 0, released: 0, succeeded: 0, failed: 0, leftRunning: 0, budgetStopped: false });
         const budgetMs = Math.max(1, number(options.budgetMs, Config.resolveBudgetMs));
-        const deadlineAt = Date.now() + budgetMs;
         const safeLimit = Math.max(1, Math.min(100, Math.floor(number(options.limit, Config.actionBatchSize))));
         const batchStartedAt = Date.now();
         const bootstrapStartedAt = Date.now();
@@ -423,6 +437,11 @@ const ClanActionService = {
                 budgetStopped: false
             };
             await refreshQueueStats();
+            // Bootstrap and queue telemetry are admission overhead, not clan
+            // work. Starting the execution budget before those reads caused a
+            // live queue to claim and release the same oldest action forever
+            // whenever SQLite needed more than the 80ms idle budget.
+            const deadlineAt = Date.now() + budgetMs;
             while (summary.attempted < safeLimit) {
                 if (Date.now() >= deadlineAt) {
                     summary.budgetStopped = true;

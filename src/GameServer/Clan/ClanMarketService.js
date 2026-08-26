@@ -7,6 +7,7 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
+const ClanOrderService = invoke('GameServer/Clan/ClanOrderService');
 
 const metrics = {
     resolves: 0,
@@ -36,14 +37,25 @@ async function stateFor(characterId) {
 }
 
 async function resolveClan(clan) {
-    if (!clan || number(clan.level) !== 2) return { ok: true, skipped: true, reason: 'level_not_marketable' };
+    const playerControlled = String(clan?.state?.mode || '') === 'player_managed'
+        && String(clan?.state?.goal?.controlledBy || '') === 'player';
+    if (!clan || !playerControlled && number(clan.level) !== 2) {
+        return { ok: true, skipped: true, reason: 'level_not_marketable' };
+    }
     const goal = clan.state?.goal;
     if (!goal || goal.type !== 'item' || goal.plan?.kind !== 'market' || number(goal.progress) >= number(goal.required)) {
         return { ok: true, skipped: true, reason: 'market_goal_missing' };
     }
     const itemId = number(goal.target?.itemId);
+    const assigned = new Set((goal.assignedMemberIds || []).map(Number).filter(Boolean));
+    const order = playerControlled ? await ClanOrderService.current(clan.id) : null;
+    const remainingBudget = order && number(order.budget) > 0
+        ? Math.max(0, number(order.budget) - number(order.spent))
+        : Infinity;
+    const maxUnitPrice = order ? number(order.maxUnitPrice) : Infinity;
     const candidates = (clan.members || [])
-        .filter((member) => member.phase === 'cold' && number(member.characterId) > 0)
+        .filter((member) => member.phase === 'cold' && number(member.characterId) > 0
+            && (!assigned.size || assigned.has(number(member.characterId))))
         .sort((left, right) => number(right.adena) - number(left.adena) || number(left.characterId) - number(right.characterId));
     let offer = null;
     let buyer = null;
@@ -52,7 +64,7 @@ async function resolveClan(clan) {
         if (!state || state.phase !== 'cold' || String(state.partyId || '') !== '') continue;
         const nextOffer = MarketOpportunity.bestOffer(itemId, {
             town: state.currentRegion || 'Giran',
-            budget: number(state.adena),
+            budget: Math.min(number(state.adena), maxUnitPrice, remainingBudget),
             buyerCharacterId: state.characterId
         });
         if (nextOffer) {
@@ -113,22 +125,24 @@ async function resolveClan(clan) {
     }
     metrics.deposited += 1;
     recordReason('market_item_to_clan_warehouse');
-    const demandKey = `${clan.id}:level-${number(clan.level)}:${itemId}`;
+    const demandKey = playerControlled ? `player-order:${number(order?.id)}:${itemId}` : `${clan.id}:level-${number(clan.level)}:${itemId}`;
+    const remaining = playerControlled ? Math.max(1, number(goal.required) - number(goal.progress) - 1) : 1;
+    const demandMaxPrice = playerControlled ? Math.max(1, number(order?.maxUnitPrice)) : Config.bloodMarkMaxPrice;
     await Database.upsertClanMarketDemand({
         clanId: clan.id,
         itemId,
-        amount: 1,
-        maxPrice: Config.bloodMarkMaxPrice,
+        amount: remaining,
+        maxPrice: demandMaxPrice,
         goalKey: demandKey,
-        status: 'fulfilled'
+        status: playerControlled && number(goal.progress) + 1 < number(goal.required) ? 'open' : 'fulfilled'
     });
     await Database.syncClanMarketDemandSignal({
         clanId: clan.id,
         itemId,
-        amount: 1,
-        maxPrice: Config.bloodMarkMaxPrice,
+        amount: remaining,
+        maxPrice: demandMaxPrice,
         goalKey: demandKey,
-        status: 'fulfilled'
+        status: playerControlled && number(goal.progress) + 1 < number(goal.required) ? 'open' : 'fulfilled'
     });
     await Database.recordClanGoalEvent({
         clanId: clan.id,
@@ -138,6 +152,10 @@ async function resolveClan(clan) {
         reasonCode: 'market_item_to_clan_warehouse',
         payload: { itemId, amount: 1, buyerCharacterId: buyer.characterId, sourceType: offer.sourceType, sourceId: offer.sourceId }
     });
+    if (playerControlled) {
+        const progress = await ClanOrderService.syncProgress(clan, number(offer.price), 'market_item_to_clan_warehouse');
+        return { ok: !!progress.ok, purchased: true, deposited, order: progress.order, goal: progress.goal, offer };
+    }
     const advanced = await Database.advanceAutonomousClanLevel({
         clanId: clan.id,
         fromLevel: 2,

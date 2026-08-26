@@ -1,6 +1,7 @@
 const ClanSimulationConfig = invoke('GameServer/Clan/ClanSimulationConfig');
 
 const STATE_VERSION = 1;
+const AUTOMATION_MODES = Object.freeze(['autonomous', 'player_managed']);
 const GOAL_STATUSES = Object.freeze(['planned', 'preparing', 'executing', 'blocked', 'completed']);
 const GOAL_TYPES = Object.freeze(['adena', 'item', 'readiness', 'equipment', 'level']);
 const EXECUTION_PLANS = Object.freeze(['warehouse', 'market', 'craft', 'farm', 'prepare']);
@@ -119,6 +120,7 @@ function normalizeState(state = {}, timestamp = Date.now()) {
 
     return {
         version: STATE_VERSION,
+        mode: AUTOMATION_MODES.includes(text(state.mode)) ? text(state.mode) : 'autonomous',
         clanId,
         leaderId: positiveInteger(state.leaderId),
         level: Math.max(0, Math.min(3, nonNegativeInteger(state.level, 0))),
@@ -136,6 +138,7 @@ function isReasonCode(code) {
 
 module.exports = {
     STATE_VERSION,
+    AUTOMATION_MODES,
     GOAL_STATUSES,
     GOAL_TYPES,
     EXECUTION_PLANS,

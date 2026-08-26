@@ -27,11 +27,42 @@ assert.deepStrictEqual(goal, {
     type: 'item',
     progress: 0,
     required: 1,
-    target: { itemId: 1419, itemName: 'Blood Mark', npcId: 12079, npcName: null },
+    target: { itemId: 1419, itemName: 'Blood Mark', iconUrl: null, npcId: 12079, npcName: null },
     plan: { kind: 'market', reasonCode: 'market_purchase', label: 'Buy a Blood Mark' },
     failureCount: 2,
     updatedAt: 1234
 }, 'clan goals must expose a bounded observer-friendly summary');
+
+const itemGoal = Observer.compactClanGoal({
+    status: 'executing',
+    type: 'equipment',
+    progress: 0,
+    required: 1,
+    target: { itemId: 2406, itemName: 'Avadon Robe' }
+});
+assert.strictEqual(itemGoal.target.iconUrl, '/observer/item-icons/armor_t59_ul_i00.png',
+    'item goals must reuse the local Observer item-icon catalog');
+
+const compactOrder = Observer.compactClanOrder({
+    id: 4,
+    revision: 2,
+    status: 'active',
+    itemId: 2406,
+    itemName: 'Avadon Robe',
+    amount: 1,
+    strategy: 'farm',
+    maxUnitPrice: 500000,
+    budget: 800000,
+    spent: 0,
+    memberIds: [42],
+    plan: { kind: 'farm' },
+    createdAt: 100,
+    updatedAt: 200
+});
+assert.strictEqual(compactOrder.iconUrl, '/observer/item-icons/armor_t59_ul_i00.png');
+assert.deepStrictEqual(compactOrder.memberIds, [42]);
+assert(Observer.clanOrderItems('Avadon Robe', 5).some((item) => item.id === 2406 && item.iconUrl),
+    'the order item catalog must expose searchable item icons');
 
 const overview = Observer.compactClanOverview({
     id: 7,
@@ -60,6 +91,7 @@ const overview = Observer.compactClanOverview({
     operation: { activeOperations: 1, latestOperationAt: 400 }
 });
 assert.strictEqual(overview.autonomous, true);
+assert.strictEqual(overview.automationMode, 'autonomous');
 assert.strictEqual(overview.memberCount, 5);
 assert.strictEqual(overview.botMembers, 5);
 assert.strictEqual(overview.warehouse.bloodMarks, 1);
@@ -75,7 +107,23 @@ const crestOverview = Observer.compactClanOverview({
     memberCount: 1,
     botMembers: 1
 });
-assert.strictEqual(crestOverview.crestUrl, '/observer/api/clan/8/crest', 'eligible assigned clan crests must expose an observer URL');
+assert.strictEqual(crestOverview.crestUrl, '/observer/api/clan/8/crest?v=18', 'eligible assigned clan crests must expose a versioned observer URL');
+
+const playerManagedOverview = Observer.compactClanOverview({
+    id: 9,
+    name: 'Player Vanguard',
+    level: 3,
+    leaderId: 43,
+    simulationVersion: 1,
+    simulationMode: 'player_managed',
+    stateJson: '{}',
+    memberCount: 2,
+    botMembers: 1,
+    playerMembers: 1
+});
+assert.strictEqual(playerManagedOverview.automated, true);
+assert.strictEqual(playerManagedOverview.autonomous, false);
+assert.strictEqual(playerManagedOverview.playerManaged, true);
 
 assert.deepStrictEqual(Observer.compactActorClan({
     fetchId: () => 42,
@@ -92,6 +140,16 @@ const browserClientCrest = Observer.browserClanCrestData(clientCrest);
 assert.strictEqual(browserClientCrest.toString('ascii', 0, 2), 'BM', 'client DDS crests must be decoded for browsers');
 assert.strictEqual(browserClientCrest.readInt32LE(18), 16);
 assert.strictEqual(browserClientCrest.readInt32LE(22), -12);
+
+const observerPixels = Buffer.alloc(16 * 12 * 4, 255);
+const decodedObserverPixels = Observer.decodeClanCrestPixels({
+    width: 16,
+    height: 12,
+    pixels: observerPixels.toString('base64')
+});
+assert.strictEqual(decodedObserverPixels.ok, true);
+assert.deepStrictEqual(decodedObserverPixels.pixels, observerPixels);
+assert.strictEqual(Observer.decodeClanCrestPixels({ width: 16, height: 12, pixels: 'AAAA' }).code, 'invalid_crest_pixels');
 
 const botMember = Observer.compactClanMember({
     id: 42,
@@ -170,8 +228,8 @@ async function databaseBackedChecks() {
         JSON.stringify({ '57': { selfId: 57, name: 'Adena', amount: 120000 } }), JSON.stringify({ role: 'tank' }), 1000);
     insertState.run(9102, 'bot_pop_observer', 'ObserverHealer', 40, 90000, 'resting', 'cold', 'Giran',
         JSON.stringify({ '57': { selfId: 57, name: 'Adena', amount: 90000 } }), JSON.stringify({ role: 'healer' }), 1000);
-    seed.prepare(`INSERT INTO clan_simulation_clans(clanId, version, createdAt, updatedAt, stateJson)
-        VALUES (91, 1, 100, 200, ?)`).run(JSON.stringify({
+    seed.prepare(`INSERT INTO clan_simulation_clans(clanId, version, mode, createdAt, updatedAt, stateJson)
+        VALUES (91, 1, 'player_managed', 100, 200, ?)`).run(JSON.stringify({
         updatedAt: 200,
         goal: { status: 'active', type: 'item', progress: 1, required: 3, target: { itemId: 1419, itemName: 'Blood Mark' } }
     }));
@@ -183,6 +241,11 @@ async function databaseBackedChecks() {
         VALUES (91, 9101, 4, 50000, 'observer:test', 200)`).run();
     seed.prepare(`INSERT INTO clan_goal_events(clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt)
         VALUES (91, 'goal_updated', 'item', 'market', 'observer_test', '{}', 300)`).run();
+    seed.prepare(`INSERT INTO clan_orders(
+        clanId, revision, kind, status, itemId, itemName, amount, strategy,
+        maxUnitPrice, budget, spent, memberIdsJson, planJson, reasonCode, createdAt, updatedAt
+    ) VALUES (91, 1, 'gather_item', 'active', 1419, 'Blood Mark', 3, 'market',
+        500000, 1500000, 0, '[9101,9102]', '{"kind":"market"}', 'market_demand_open', 200, 300)`).run();
     seed.prepare(`INSERT INTO clan_market_demands(clanId, itemId, amount, maxPrice, goalKey, status, createdAt, updatedAt)
         VALUES (91, 1419, 2, 500000, 'observer:test', 'open', 200, 300)`).run();
     seed.prepare(`INSERT INTO clan_operations(
@@ -203,7 +266,7 @@ async function databaseBackedChecks() {
         assert.strictEqual(directory.clans[0].botMembers, 2);
         assert.strictEqual(directory.clans[0].warehouse.bloodMarks, 2);
         assert.strictEqual(directory.clans[0].operations.active, 1);
-        assert.strictEqual(directory.clans[0].crestUrl, '/observer/api/clan/91/crest');
+        assert.strictEqual(directory.clans[0].crestUrl, '/observer/api/clan/91/crest?v=91001');
 
         const crest = await Observer.clanCrest(91);
         assert.strictEqual(crest.clanId, 91);
@@ -215,6 +278,20 @@ async function databaseBackedChecks() {
         const decodedUpload = await Observer.clanCrest(91);
         assert.strictEqual(decodedUpload.data.toString('ascii', 0, 2), 'BM', 'observer must render byte-exact client DDS uploads as BMP');
 
+        const managedPixels = Buffer.alloc(16 * 12 * 4, 255);
+        const managedUpdate = await Observer.updatePlayerManagedClanCrest(91, {
+            width: 16,
+            height: 12,
+            pixels: managedPixels.toString('base64')
+        });
+        assert.strictEqual(managedUpdate.ok, true);
+        assert(Number(managedUpdate.crestId) > 0);
+        assert.strictEqual(managedUpdate.crestUrl, `/observer/api/clan/91/crest?v=${managedUpdate.crestId}`);
+        const managedCrests = await Database.execute([`SELECT id, data FROM clan_crests
+            WHERE clanId = 91 AND kind = 'pledge'`, []], 'test:observer-managed-crest');
+        assert.strictEqual(managedCrests.length, 1, 'Observer crest replacement must not retain stale blobs');
+        assert.strictEqual(Buffer.from(managedCrests[0].data).length, 256);
+
         const detail = await Observer.clanDetail(91);
         assert.strictEqual(detail.clan.id, 91);
         assert.strictEqual(detail.members.length, 3);
@@ -223,6 +300,9 @@ async function databaseBackedChecks() {
         assert.strictEqual(detail.operation.startedAt, 400);
         assert.strictEqual(detail.operation.members[0].role, 'tank');
         assert.strictEqual(detail.events.length, 1);
+        assert.strictEqual(detail.order.itemName, 'Blood Mark');
+        assert.deepStrictEqual(detail.order.memberIds, [9101, 9102]);
+        assert.strictEqual(detail.orderHistory.length, 1);
     } finally {
         await Database.close();
         [databasePath, `${databasePath}-wal`, `${databasePath}-shm`].forEach((file) => fs.rmSync(file, { force: true }));

@@ -9,6 +9,7 @@ const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropR
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
+const ClanOrderService = invoke('GameServer/Clan/ClanOrderService');
 
 const metrics = {
     resolves: 0,
@@ -65,9 +66,11 @@ function operationRoster(clan, goal) {
         : clan.members;
     const selected = GoalPolicy.operationMembers(candidates, Config.operationMaxMembers);
     const selectedMembers = selected.map((id) => memberById(clan, id)).filter(Boolean);
+    const playerControlled = String(goal.controlledBy || '') === 'player';
     return {
         selected,
-        ready: selected.length >= Config.operationMinMembers && GoalPolicy.hasReadyRoles(selectedMembers)
+        ready: selected.length >= Config.operationMinMembers
+            && (playerControlled || GoalPolicy.hasReadyRoles(selectedMembers))
     };
 }
 
@@ -122,8 +125,35 @@ async function reclaimRequiredRoleParties(clan) {
     return { reclaimedPartyIds, releasedMembers };
 }
 
+async function reclaimPlayerOrderParties(clan, goal) {
+    const assigned = new Set(parseIds(goal.assignedMemberIds));
+    const partyIds = [...new Set((clan?.members || [])
+        .filter((member) => assigned.has(number(member.characterId ?? member.id)) && String(member.partyId || ''))
+        .map((member) => String(member.partyId)))]
+        .filter((partyId) => {
+            const party = BackgroundPartyState.find(partyId);
+            // A direct player order supersedes any earlier autonomous clan
+            // objective carried by the selected members. Once the new goal
+            // has a partyId this reclaim path is no longer entered.
+            return party?.status === 'active';
+        });
+    let releasedMembers = 0;
+    const reclaimedPartyIds = [];
+    for (const partyId of partyIds) {
+        const dissolved = await BackgroundPartyState.setStatus(partyId, 'dissolved');
+        if (!dissolved) continue;
+        const released = await LifeState.releaseDissolvedPartyMembers(partyId, 'player_clan_order_reclaimed');
+        releasedMembers += number(released);
+        reclaimedPartyIds.push(partyId);
+    }
+    metrics.supportPartiesReclaimed += reclaimedPartyIds.length;
+    metrics.supportMembersReleased += releasedMembers;
+    return { reclaimedPartyIds, releasedMembers };
+}
+
 async function refreshOperationRoster(clan, goal) {
     const assigned = parseIds(goal.assignedMemberIds).sort((left, right) => left - right);
+    if (String(goal.controlledBy || '') === 'player' && assigned.length) return { changed: false, goal };
     const clanMemberIds = new Set((clan.members || []).map((member) => number(member.characterId ?? member.id)).filter(Boolean));
     const retained = assigned.filter((id) => clanMemberIds.has(Number(id)));
     const available = GoalPolicy.operationMembers(clan.members, Config.operationMaxMembers);
@@ -157,7 +187,7 @@ async function startOperation(clan, goal) {
         clanId: clan.id,
         operationKey: operationKey(clan, goal),
         operationType: 'farm',
-        targetNpcId: number(goal.plan?.sourceId) || Config.bloodMarkSourceNpcId,
+        targetNpcId: number(goal.plan?.sourceId) || (String(goal.controlledBy || '') === 'player' ? 0 : Config.bloodMarkSourceNpcId),
         leaderId: number(clan.leaderId),
         memberIds: selected,
         expectedGoalUpdatedAt: number(clan.state?.updatedAt) || null
@@ -176,13 +206,14 @@ async function resolveActiveOperation(clan, goal, operation, options = {}) {
     const forceFailure = options.forceFailure === true;
     let drops = [];
     if (!forceFailure) {
+        const targetNpcId = number(operation.targetNpcId) || (String(goal.controlledBy || '') === 'player' ? 0 : Config.bloodMarkSourceNpcId);
         drops = BackgroundDropResolver.rollForFight({
             spot: {
-                npcSelfIds: [number(operation.targetNpcId) || Config.bloodMarkSourceNpcId],
-                avgLevel: Math.max(1, number(goal.target?.sourceLevel, 60))
+                npcSelfIds: [targetNpcId].filter(Boolean),
+                avgLevel: Math.max(1, number(goal.target?.sourceLevel || goal.plan?.sourceLevel, 60))
             },
             killerLevel,
-            npcSelfId: number(operation.targetNpcId) || Config.bloodMarkSourceNpcId,
+            npcSelfId: targetNpcId,
             rng: typeof options.rng === 'function' ? options.rng : Math.random,
             maxItems: 1
         });
@@ -218,6 +249,10 @@ async function resolveActiveOperation(clan, goal, operation, options = {}) {
     const rewardAmount = drops
         .filter((drop) => number(drop.selfId) === Config.bloodMarkItemId)
         .reduce((sum, drop) => sum + number(drop.amount), 0);
+    if (String(goal.controlledBy || '') === 'player') {
+        const progress = await ClanOrderService.syncProgress(clan, 0, success ? 'party_reward_applied' : reasonCode);
+        return { ...completion, drops, order: progress.order, goal: progress.goal, advanced: false };
+    }
     if (success && rewardAmount > 0 && number(clan.level) === 2) {
         const demandKey = `${clan.id}:level-${number(clan.level)}:${Config.bloodMarkItemId}`;
         await Database.upsertClanMarketDemand({
@@ -257,7 +292,9 @@ async function resolveActiveOperation(clan, goal, operation, options = {}) {
 }
 
 async function resolveClan(clan, options = {}) {
-    if (!clan || number(clan.level) !== 2) return { ok: true, skipped: true, reason: 'level_not_farmable' };
+    const playerControlled = String(clan?.state?.mode || '') === 'player_managed'
+        && String(clan?.state?.goal?.controlledBy || '') === 'player';
+    if (!clan || !playerControlled && number(clan.level) !== 2) return { ok: true, skipped: true, reason: 'level_not_farmable' };
     let currentClan = clan;
     let goal = clan.state?.goal;
     if (!goal || goal.type !== 'item' || goal.plan?.kind !== 'farm' || number(goal.progress) >= number(goal.required)) {
@@ -266,7 +303,9 @@ async function resolveClan(clan, options = {}) {
 
     let reclaimed = { reclaimedPartyIds: [], releasedMembers: 0 };
     if (!String(goal.partyId || '')) {
-        reclaimed = await reclaimRequiredRoleParties(currentClan);
+        reclaimed = playerControlled
+            ? await reclaimPlayerOrderParties(currentClan, goal)
+            : await reclaimRequiredRoleParties(currentClan);
         if (reclaimed.reclaimedPartyIds.length) {
             const projected = await GoalService.clanProjectionById(currentClan.id);
             if (projected?.state?.goal) {
