@@ -679,6 +679,11 @@ function equippedItemAtSlot(state = {}, slot) {
         WEAPON_SLOTS.has(wanted)
             ? WEAPON_SLOTS.has(Number(item.etc?.slot || 0))
             : Number(item.etc?.slot || 0) === wanted
+                // Full-body armour occupies both paperdoll body slots. Treat
+                // it as the current chest/legs item while evaluating the NPC
+                // bridge kit, otherwise a stronger full-body set repeatedly
+                // generates weaker chest and legs purchases.
+                || Number(item.etc?.slot || 0) === 15 && [10, 11].includes(wanted)
     )) || null;
 }
 

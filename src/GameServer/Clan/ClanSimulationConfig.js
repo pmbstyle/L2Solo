@@ -24,6 +24,7 @@ const DEFAULTS = {
     bloodMarkSourceNpcId: 12079,
     operationMinMembers: 5,
     operationMaxMembers: 9,
+    operationMaxTargetLevelGap: 5,
     catastrophicFailureThreshold: 5,
     resolveIntervalMs: 60000,
     resolveBatchSize: 16,
@@ -62,6 +63,7 @@ const ENV_KEYS = {
     bloodMarkSourceNpcId: 'CLAN_SIMULATION_BLOOD_MARK_SOURCE_NPC_ID',
     operationMinMembers: 'CLAN_SIMULATION_OPERATION_MIN_MEMBERS',
     operationMaxMembers: 'CLAN_SIMULATION_OPERATION_MAX_MEMBERS',
+    operationMaxTargetLevelGap: 'CLAN_SIMULATION_OPERATION_MAX_TARGET_LEVEL_GAP',
     catastrophicFailureThreshold: 'CLAN_SIMULATION_CATASTROPHIC_FAILURE_THRESHOLD',
     resolveIntervalMs: 'CLAN_SIMULATION_RESOLVE_INTERVAL_MS',
     resolveBatchSize: 'CLAN_SIMULATION_RESOLVE_BATCH_SIZE',
@@ -128,6 +130,7 @@ config.operationMaxMembers = Math.max(
     config.operationMinMembers,
     Math.min(9, Math.floor(config.operationMaxMembers))
 );
+config.operationMaxTargetLevelGap = Math.max(0, Math.floor(config.operationMaxTargetLevelGap));
 config.catastrophicFailureThreshold = Math.max(1, Math.floor(config.catastrophicFailureThreshold));
 config.resolveIntervalMs = Math.max(1000, Math.floor(config.resolveIntervalMs));
 config.resolveBatchSize = Math.max(1, Math.floor(config.resolveBatchSize));

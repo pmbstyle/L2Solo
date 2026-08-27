@@ -3682,13 +3682,20 @@ const Database = {
         targetNpcId = 0,
         leaderId = 0,
         memberIds = [],
+        guestMemberIds = [],
         expectedGoalUpdatedAt = null
     } = {}) {
         const clan = Number(clanId);
         const key = String(operationKey || '').trim();
         const members = [...new Set((memberIds || []).map(Number).filter((id) => Number.isSafeInteger(id) && id > 0))]
             .sort((left, right) => left - right);
-        if (!clan || !key || members.length < 2) return Promise.resolve({ ok: false, code: 'party_not_ready' });
+        const clanMembers = new Set(members);
+        const guests = [...new Set((guestMemberIds || []).map(Number).filter((id) => (
+            Number.isSafeInteger(id) && id > 0 && !clanMembers.has(id)
+        )))].sort((left, right) => left - right);
+        const allMembers = [...members, ...guests].sort((left, right) => left - right);
+        const guestSet = new Set(guests);
+        if (!clan || !key || allMembers.length < 2) return Promise.resolve({ ok: false, code: 'party_not_ready' });
 
         return inTransaction(() => {
             const existingByKey = one('SELECT * FROM clan_operations WHERE operationKey = ?', [key]);
@@ -3720,14 +3727,14 @@ const Database = {
             const selectedIds = new Set((goal.assignedMemberIds || []).map(Number));
             if (members.some((id) => !selectedIds.has(id))) return { ok: false, code: 'party_goal_changed' };
 
-            const placeholders = members.map(() => '?').join(', ');
+            const placeholders = allMembers.map(() => '?').join(', ');
             const rows = all(`SELECT c.id, c.clanId, c.username, life.accountName, life.statsJson,
                     life.phase, life.simulationOwner, life.simulationRevision, life.partyId
                 FROM characters c
                 LEFT JOIN bot_life_state life ON life.characterId = c.id
-                WHERE c.id IN (${placeholders})`, members);
-            if (rows.length !== members.length || rows.some((row) => (
-                Number(row.clanId) !== clan
+                WHERE c.id IN (${placeholders})`, allMembers);
+            if (rows.length !== allMembers.length || rows.some((row) => (
+                (!guestSet.has(Number(row.id)) && Number(row.clanId) !== clan)
                 || !generatedBotRow(row)
                 || String(row.phase || '') !== 'cold'
                 || String(row.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER
@@ -3735,7 +3742,7 @@ const Database = {
             ))) return { ok: false, code: 'party_not_ready' };
 
             const activeMember = one(`SELECT characterId FROM clan_operation_members
-                WHERE characterId IN (${placeholders}) AND status = 'active' LIMIT 1`, members);
+                WHERE characterId IN (${placeholders}) AND status = 'active' LIMIT 1`, allMembers);
             if (activeMember) {
                 return { ok: false, code: 'party_member_reservation_conflict', characterId: Number(activeMember.characterId) };
             }
@@ -3765,11 +3772,11 @@ const Database = {
                 String(operationType),
                 Math.max(0, Number(targetNpcId) || 0),
                 resolvedLeader,
-                JSON.stringify(members),
+                JSON.stringify(allMembers),
                 timestamp,
                 timestamp
             ]);
-            members.forEach((characterId) => write(`INSERT INTO clan_operation_members
+            allMembers.forEach((characterId) => write(`INSERT INTO clan_operation_members
                 (operationId, clanId, characterId, status, reservedAt)
                 VALUES (?, ?, ?, 'active', ?)`, [Number(inserted.insertId), clan, characterId, timestamp]));
             write(`INSERT INTO clan_goal_events
@@ -3778,7 +3785,12 @@ const Database = {
                 clan,
                 String(goal.type || ''),
                 String(operationType),
-                JSON.stringify({ operationKey: key, operationId: Number(inserted.insertId), memberIds: members }),
+                JSON.stringify({
+                    operationKey: key,
+                    operationId: Number(inserted.insertId),
+                    memberIds: allMembers,
+                    guestMemberIds: guests
+                }),
                 timestamp
             ]);
             return {
@@ -3786,7 +3798,8 @@ const Database = {
                 code: 'party_operation_started',
                 operationId: Number(inserted.insertId),
                 operationKey: key,
-                memberIds: members,
+                memberIds: allMembers,
+                guestMemberIds: guests,
                 updatedAt: timestamp
             };
         }, 'clan-party:start');

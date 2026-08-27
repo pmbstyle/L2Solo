@@ -381,13 +381,15 @@ function joinedBackgroundParty(state) {
     return !!current?.party?.partyId;
 }
 
-function canResumeAffordableWeaponMarketPlan(state, timestamp = Date.now()) {
+function canResumeAffordableMarketPlan(state, timestamp = Date.now()) {
     const plan = state?.stats?.equipmentPlan;
     const targetId = Number(plan?.target?.selfId || 0);
+    const targetSlot = Number(plan?.target?.slot || 0);
+    const requiredClanPurchase = plan?.clanGoal?.priority === 'required';
     if (state?.activity !== 'hunting'
         || plan?.status !== 'active'
         || plan?.strategy !== 'market'
-        || Number(plan?.target?.slot || 0) !== 7
+        || (targetSlot !== 7 && !requiredClanPurchase)
         || targetId <= 0
         || Number(state.stats?.marketRetryAfter || 0) > timestamp) return false;
 
@@ -399,7 +401,7 @@ function canResumeAffordableWeaponMarketPlan(state, timestamp = Date.now()) {
         .find((entry) => Number(entry.selfId) === targetId);
     const required = Math.max(1, Number(combinationRequirement?.amount || 1));
     const owned = Number(state.inventory?.[String(targetId)]?.amount || 0);
-    return owned < required;
+    return owned < required || LifeState.marketPurchaseBlocker(state, { selfId: targetId }, 1) === null;
 }
 
 function canResumeWarehouseMarketSale(state) {
@@ -3014,7 +3016,7 @@ const PopulationService = {
                 Metrics.recordBackgroundResolve();
                 Metrics.recordCombat(result.debug);
                 const recoveredForMarket = state.activity === 'resting'
-                    && (canResumeAffordableWeaponMarketPlan(updatedState)
+                    && (canResumeAffordableMarketPlan(updatedState)
                         || canResumeWarehouseMarketSale(updatedState));
                 const marketHandoff = recoveredForMarket
                     ? GoalService.review(updatedState).then((goalSnapshot) => {

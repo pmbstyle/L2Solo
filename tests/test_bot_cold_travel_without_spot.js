@@ -183,6 +183,60 @@ async function run() {
     assert.strictEqual(recoveryGoalReviews, 1, 'completed recovery must immediately reconsider the affordable weapon goal');
     assert.strictEqual(recoveryMarketTravel, 1, 'completed recovery must begin one market trip');
 
+    recoveryGoalReviews = 0;
+    recoveryMarketTravel = 0;
+    const clanJewelleryState = {
+        ...restingMarketState,
+        characterId: 77,
+        name: 'RecoveredClanJewelleryBuyer',
+        inventory: {
+            847: {
+                selfId: 847,
+                name: 'Red Crescent Earring',
+                amount: 1,
+                equipped: true,
+                equippedCount: 1,
+                equippedSlots: [1],
+                slot: 1,
+                kind: 'Armor.Jewel'
+            }
+        },
+        stats: {
+            ...restingMarketState.stats,
+            equipmentPlan: {
+                status: 'active',
+                strategy: 'market',
+                target: { selfId: 847, name: 'Red Crescent Earring', slot: 2 },
+                market: { town: 'Giran', price: 29_590, reserve: 500_000, sourceType: 'npc' },
+                clanGoal: { clanId: 6000009, priority: 'required' }
+            }
+        }
+    };
+    LifeState.applyResolve = () => Promise.resolve({
+        ...clanJewelleryState,
+        activity: 'hunting',
+        stats: { ...clanJewelleryState.stats, restUntil: null }
+    });
+    GoalService.review = () => {
+        recoveryGoalReviews += 1;
+        return Promise.resolve({
+            current: {
+                type: 'upgrade_gear',
+                target: { itemId: 847 },
+                plan: { expectedBenefit: 'market_search_for_gear', marketTown: 'Giran' }
+            }
+        });
+    };
+    GoalExecutor.beginMarketTravel = (value, goal) => {
+        recoveryMarketTravel += 1;
+        assert.strictEqual(goal.target.itemId, 847, 'recovery handoff must retain the required clan jewellery target');
+        return { ...value, activity: 'traveling', stats: { ...value.stats, travel: { reason: goal.plan.expectedBenefit } } };
+    };
+    const recoveredClanJewellery = await PopulationService.resolveColdState(clanJewelleryState);
+    assert.strictEqual(recoveredClanJewellery.state.activity, 'traveling', 'a funded required clan jewellery plan must leave for market before another fight');
+    assert.strictEqual(recoveryGoalReviews, 1);
+    assert.strictEqual(recoveryMarketTravel, 1);
+
     const unaffordableMarketState = { ...restingMarketState, characterId: 75, adena: 1_000_000 };
     LifeState.applyResolve = () => Promise.resolve({ ...recoveredMarketState, characterId: 75, adena: 1_000_000 });
     const unaffordableResult = await PopulationService.resolveColdState(unaffordableMarketState);

@@ -7,6 +7,7 @@ const Config = invoke('GameServer/Clan/ClanSimulationConfig');
 const GoalPolicy = invoke('GameServer/Clan/ClanGoalPolicy');
 const ClanPolicy = invoke('GameServer/Clan/ClanSimulationPolicy');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
+const DataCache = invoke('GameServer/DataCache');
 
 const metrics = {
     resolves: 0,
@@ -87,25 +88,29 @@ function overlayWarehouseMaterials(state, plan, warehouseRows = []) {
     };
 }
 
-function planForMember(member, spots = [], warehouseRows = []) {
-    const existing = existingPlanFor(member);
+function planForMember(member, spots = [], warehouseRows = [], options = {}) {
+    const planningMember = options.ignoreExistingPlan ? {
+        ...member,
+        stats: { ...(member?.stats || {}), equipmentPlan: undefined }
+    } : member;
+    const existing = existingPlanFor(planningMember);
     if (existing?.status === 'blocked') {
         const targetId = number(existing.target?.selfId);
-        return GearAcquisitionPlanner.planFor(plannerState(member), {
+        return GearAcquisitionPlanner.planFor(plannerState(planningMember), {
             spots,
             ...(targetId ? { excludedTargetIds: [targetId] } : {})
         });
     }
-    if (existing && GearAcquisitionPlanner.clanGoalPlanLocked(member, existing)) {
+    if (existing && GearAcquisitionPlanner.clanGoalPlanLocked(planningMember, existing)) {
         if (existing.strategy !== 'craft') return existing;
-        const overlay = overlayWarehouseMaterials(plannerState(member), existing, warehouseRows);
+        const overlay = overlayWarehouseMaterials(plannerState(planningMember), existing, warehouseRows);
         return overlay.materials.length
             ? { ...existing, warehouseMaterials: overlay.materials }
             : existing;
     }
     if (existing && existing.strategy !== 'craft') return existing;
     try {
-        const state = plannerState(member);
+        const state = plannerState(planningMember);
         const initial = existing || GearAcquisitionPlanner.planFor(state, { spots });
         if (initial?.strategy !== 'craft' || !number(initial.recipeId)) return initial;
         const overlay = overlayWarehouseMaterials(state, initial, warehouseRows);
@@ -396,17 +401,25 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
             return [];
         }
     })();
-    const warehouseRows = await Database.fetchClanWarehouseItems(clan.id);
-    const plans = new Map((clan.members || []).map((member) => [
-        number(member.characterId ?? member.id),
-        planForMember(member, spots, warehouseRows)
-    ]));
     const previousMember = (clan.members || []).find((member) => (
         number(member.characterId ?? member.id) === number(previousGoal?.target?.memberId)
     ));
     const previousFulfilled = previousMember
-        ? Policy.targetFulfilled(previousMember, previousGoal, GearAcquisitionPlanner.equippedSlotsFor)
+        ? Policy.targetFulfilled(
+            previousMember,
+            previousGoal,
+            GearAcquisitionPlanner.equippedSlotsFor,
+            (selfId) => (DataCache.items || []).find((item) => number(item.selfId) === number(selfId)) || null
+        )
         : false;
+    const warehouseRows = await Database.fetchClanWarehouseItems(clan.id);
+    const previousMemberId = number(previousGoal?.target?.memberId);
+    const plans = new Map((clan.members || []).map((member) => {
+        const id = number(member.characterId ?? member.id);
+        return [id, planForMember(member, spots, warehouseRows, {
+            ignoreExistingPlan: previousFulfilled && id === previousMemberId
+        })];
+    }));
     const selection = Policy.selectTargetMember(clan.members, plans, previousGoal, {
         previousFulfilled,
         roleFor: ClanPolicy.rosterRole

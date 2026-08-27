@@ -65,6 +65,14 @@ function isRecipeItem(item, template = templateFor(item?.selfId)) {
             || String(item?.name || template?.template?.name || '').toLowerCase().startsWith('recipe'));
 }
 
+function isSkillBookItem(item, template = templateFor(item?.selfId)) {
+    const kind = kindFor(item, template);
+    const name = String(item?.name || template?.template?.name || '').toLowerCase();
+    return kind.startsWith('Other.Spellbook')
+        || name.includes('spellbook')
+        || /^amulet\b/.test(name);
+}
+
 function isClanProgressionItem(item) {
     return CLAN_PROGRESSION_ITEM_IDS.has(Number(item?.selfId || 0));
 }
@@ -76,10 +84,13 @@ function isBelowCGrade(item) {
 
 function isNpcOnlyItem(item, template = templateFor(item?.selfId)) {
     const kind = kindFor(item, template);
-    const name = String(item?.name || template?.template?.name || '').toLowerCase();
     return NPC_ONLY_KINDS.some((prefix) => kind.startsWith(prefix))
         || isRecipeItem(item, template)
-        || name.includes('spellbook');
+        // Some later C4 skill books lost their canonical Other.Spellbook
+        // kind in the source datapack. Orc skill books are named Amulet.
+        // Neither is useful bot inventory: every class liquidates them at an
+        // NPC shop instead of listing or warehousing them.
+        || isSkillBookItem(item, template);
 }
 
 function canLearnRecipe(state, item) {
@@ -125,13 +136,25 @@ function npcOnlySlotCount(state = {}) {
     }, 0);
 }
 
+function skillBookSlotCount(state = {}) {
+    return Object.values(state.inventory || {}).reduce((total, item) => {
+        if (!isSkillBookItem(item)) return total;
+        const amount = Math.max(0, Number(item?.amount || 0));
+        if (amount <= 0) return total;
+        if (Array.isArray(item?.instances)) return total + Math.min(amount, item.instances.length);
+        if (item?.stackable === false) return total + amount;
+        return total + 1;
+    }, 0);
+}
+
 function inventoryCleanupNeed(state = {}, options = {}) {
     const timestamp = Number(options.now) || Date.now();
     const slots = inventorySlotCount(state);
     const npcOnlySlots = npcOnlySlotCount(state);
+    const skillBookSlots = skillBookSlotCount(state);
     const overCapacity = slots > INVENTORY_SLOT_LIMIT;
     const accumulatedNpcOnly = isTradeEligible(state)
-        && npcOnlySlots >= NPC_ONLY_CLEANUP_MIN_SLOTS;
+        && (skillBookSlots > 0 || npcOnlySlots >= NPC_ONLY_CLEANUP_MIN_SLOTS);
     // A normal market retry cooldown prevents pointless town loops. Residual
     // NPC-only books/recipes become deterministic cleanup work once a
     // generated character reaches its trading phase. Before that point they
@@ -357,9 +380,11 @@ module.exports = {
     isClanProgressionItem,
     isNpcOnlyItem,
     isRecipeItem,
+    isSkillBookItem,
     inventoryCleanupNeed,
     inventorySlotCount,
     npcOnlySlotCount,
+    skillBookSlotCount,
     isWarehouseCandidate,
     npcLiquidationCandidates,
     priceFor,

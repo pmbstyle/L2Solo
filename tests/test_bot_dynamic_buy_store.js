@@ -138,6 +138,47 @@ async function run() {
     assert.strictEqual(trade.buyer.name, 'BudgetBuyer');
     assert.strictEqual(tradedSnapshot.transactions.byItem[0].channels.wtb.items, 2);
 
+    const chantOfRevenge = DataCache.items.find((item) => item.template?.name === 'Amulet: Chant of Revenge');
+    assert(chantOfRevenge);
+    const bookBuyer = {
+        ...buyer,
+        characterId: 503,
+        stats: {
+            ...buyer.stats,
+            marketStore: {
+                ...buyer.stats.marketStore,
+                items: [{
+                    selfId: chantOfRevenge.selfId,
+                    name: chantOfRevenge.template.name,
+                    kind: chantOfRevenge.template.kind,
+                    price: 5000,
+                    count: 1
+                }]
+            }
+        }
+    };
+    const bookSeller = {
+        ...seller,
+        characterId: 504,
+        inventory: {
+            57: { selfId: 57, name: 'Adena', amount: 0 },
+            [chantOfRevenge.selfId]: {
+                selfId: chantOfRevenge.selfId,
+                name: chantOfRevenge.template.name,
+                kind: chantOfRevenge.template.kind,
+                amount: 1,
+                stackable: false,
+                equipped: false
+            }
+        }
+    };
+    MarketOpportunity.resetColdStores();
+    MarketOpportunity.indexColdStore(bookBuyer);
+    assert.strictEqual(BuyStoreService.bestTownFor(bookSeller), null,
+        'NPC-only skill books must ignore peer buy-store demand');
+    const bookSale = await BuyStoreService.sellToBestBuyer(bookSeller, 'Giran');
+    assert.strictEqual(bookSale.sold, false, 'Amulet: Chant of Revenge must wait for NPC liquidation');
+
     const rollbackBuyer = {
         ...buyer,
         adena: 1000,

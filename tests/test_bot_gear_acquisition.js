@@ -421,6 +421,30 @@ assert.strictEqual(
     null,
     'a level-40 bot with an adequate D kit must not invent an ordinary NPC C-grade upgrade'
 );
+const compositeArmor = DataCache.items.find((item) => Number(item.selfId) === 60);
+assert(compositeArmor && Number(compositeArmor.etc?.slot) === 15,
+    'the datapack must expose Composite Armor as a full-body fixture');
+const fullBodyBridgeInventory = Object.fromEntries(Object.entries(adequateDInventory)
+    .filter(([, item]) => ![10, 11].includes(Number(item.slot))));
+fullBodyBridgeInventory[compositeArmor.selfId] = {
+    selfId: compositeArmor.selfId,
+    name: compositeArmor.template.name,
+    amount: 1,
+    equipped: true,
+    equippedCount: 1,
+    equippedSlots: [15],
+    slot: 15,
+    rank: compositeArmor.etc.rank,
+    kind: compositeArmor.template.kind
+};
+assert.strictEqual(
+    GearAcquisitionPlanner.staticNpcUpgradePlan({
+        ...cGradeWithAdequateD,
+        inventory: fullBodyBridgeInventory
+    }, { spots: [stoneGolemSpot] }),
+    null,
+    'a stronger full-body set must satisfy both NPC bridge chest and legs slots'
+);
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const wingedSpear = DataCache.items.find((item) => Number(item.selfId) === 93);
 const bronzeShield = DataCache.items.find((item) => Number(item.selfId) === 626);

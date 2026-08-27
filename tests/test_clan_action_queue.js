@@ -187,6 +187,8 @@ async function main() {
         });
         assert.strictEqual(replanCreated.ok, true);
         await Database.execute(['UPDATE clans SET level = 2 WHERE id = ?', [replanCreated.clanId]]);
+        await Database.execute(['UPDATE characters SET level = 60 WHERE id BETWEEN 4700006 AND 4700010']);
+        await Database.execute(['UPDATE bot_life_state SET level = 60 WHERE characterId BETWEEN 4700006 AND 4700010']);
 
         const [simulation] = await Database.execute([
             'SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?',

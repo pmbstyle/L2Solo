@@ -123,6 +123,50 @@ async function main() {
             'an equipped clan target must be allowed to advance'
         );
 
+        plannerCalls = 0;
+        const advancedFromFulfilled = ClanEquipmentService.planForMember({
+            characterId: 1001,
+            name: 'ClanMember',
+            level: 35,
+            phase: 'cold',
+            inventory: {},
+            stats: { equipmentPlan: clanPlan }
+        }, [], [], { ignoreExistingPlan: true });
+        assert.strictEqual(plannerCalls, 1,
+            'a fulfilled clan target must bypass its old goal lock and return to planning');
+        assert.strictEqual(advancedFromFulfilled.target.selfId, 9202);
+        plannerCalls = 0;
+
+        const staleChestGoal = {
+            target: { memberId: 1001, itemId: 347, slot: 10 }
+        };
+        assert.strictEqual(ClanEquipmentPolicy.targetFulfilled({
+            inventory: {
+                347: { selfId: 347, amount: 1, equipped: false, slot: 10, rank: 'd' }
+            },
+            stats: {
+                equipment: [
+                    { selfId: 60, equipped: true, equippedSlots: [15], slot: 15, rank: 'c' }
+                ]
+            }
+        }, staleChestGoal, GearAcquisitionPlanner.equippedSlotsFor), true,
+        'a stronger equipped full-body set must complete a stale weaker chest goal');
+
+        assert.strictEqual(ClanEquipmentPolicy.targetFulfilled({
+            inventory: {
+                847: { selfId: 847, amount: 1, equipped: true, equippedSlots: [1], slot: 1, rank: 'd' }
+            },
+            stats: {
+                equipment: [
+                    { selfId: 847, equipped: true, equippedSlots: [1], slot: 1, rank: 'd' },
+                    { selfId: 114, equipped: true, equippedSlots: [2], slot: 2, rank: 'none' }
+                ]
+            }
+        }, {
+            target: { memberId: 1001, itemId: 847, slot: 2 }
+        }, GearAcquisitionPlanner.equippedSlotsFor), false,
+        'one D-grade earring must not fulfill the second earring slot while it still holds no-grade gear');
+
         const blockedPlan = {
             ...clanPlan,
             status: 'blocked',

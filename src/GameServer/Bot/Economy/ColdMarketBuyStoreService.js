@@ -217,7 +217,9 @@ async function settleLine(sellerState, line, town) {
 async function sellToBestBuyer(state, town = state?.currentRegion) {
     let seller = state;
     const sales = [];
-    for (const line of ItemDisposition.saleCandidates(state, { limit: 20 })) {
+    const peerMarketLines = ItemDisposition.saleCandidates(state, { limit: 20 })
+        .filter((line) => !ItemDisposition.isNpcOnlyItem(line));
+    for (const line of peerMarketLines) {
         const result = await settleLine(seller, line, town);
         seller = result.state || seller;
         if (result.sold) sales.push(result);
@@ -232,7 +234,8 @@ async function sellToBestBuyer(state, town = state?.currentRegion) {
 }
 
 function bestTownFor(state) {
-    const candidates = ItemDisposition.saleCandidates(state, { limit: 20 });
+    const candidates = ItemDisposition.saleCandidates(state, { limit: 20 })
+        .filter((item) => !ItemDisposition.isNpcOnlyItem(item));
     const towns = [...new Set(candidates.flatMap((item) => MarketOpportunity.findBuyOffers(item.selfId, {
         sellerCharacterId: state.characterId
     }).map((offer) => offer.town)).filter(Boolean))];

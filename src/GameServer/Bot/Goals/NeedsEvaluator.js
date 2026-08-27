@@ -120,6 +120,7 @@ function equipmentNeed(state) {
         },
         marketTown: plannedMarket?.town || null,
         reserve: Number(plannedMarket?.reserve || 0),
+        clanRequired: acquisitionPlan?.clanGoal?.priority === 'required',
         npcProgression: plannedMarket?.sourceType === 'npc'
             || acquisitionPlan?.partyNeedReason === 'npc_progression'
     };
@@ -161,6 +162,7 @@ function evaluate(state = {}, options = {}) {
         const weaponUpgrade = gear.slot === 7;
         const wealthInvestment = WealthInvestmentPolicy.investmentOpportunity(state, gear.desiredItem.price);
         const npcPurchasePriority = requiredAdena === 0 ? affordableNpcGearPriority(gear) : null;
+        const clanPurchasePriority = requiredAdena === 0 && gear.clanRequired ? 89 : null;
         candidates.push({
             type: 'upgrade_gear',
             // An affordable static-shop upgrade must outrank inventory sales,
@@ -168,7 +170,10 @@ function evaluate(state = {}, options = {}) {
             // enough Adena for the weapon or armour that unlocks progression.
             // Recovery remains higher at 90, and jewellery stays below the
             // weapon/core-armour priorities while still beating a normal sale.
-            priority: npcPurchasePriority
+            // A funded clan assignment is stronger than a voluntary wealth
+            // sale, but recovery and forced inventory cleanup still win.
+            priority: clanPurchasePriority
+                || npcPurchasePriority
                 || (wealthInvestment?.affordable ? 81 : requiredAdena > 0 ? 72 : 58),
             target: {
                 equipmentSlot: gear.slotName,
