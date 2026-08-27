@@ -5,6 +5,9 @@ const ContributionPolicy = invoke('GameServer/Clan/ClanContributionPolicy');
 const GoalPolicy = invoke('GameServer/Clan/ClanGoalPolicy');
 const ClanSimulationPolicy = invoke('GameServer/Clan/ClanSimulationPolicy');
 const ClanEquipmentService = invoke('GameServer/Clan/ClanEquipmentService');
+const ClanGoalCandidateService = invoke('GameServer/Clan/ClanGoalCandidateService');
+const ClanContextAssembler = invoke('GameServer/Clan/ClanContextAssembler');
+const ClanBrain = invoke('GameServer/Clan/ClanBrain');
 const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const DataCache = invoke('GameServer/DataCache');
@@ -225,7 +228,31 @@ async function resolveClan(clan, options = {}) {
     if (!clan) return { ok: true, skipped: true, reason: 'target_not_autonomous' };
     if (number(clan.level) >= 3) {
         const previous = clan.state?.goal || null;
-        const equipment = await ClanEquipmentService.resolveClan(clan, previous, options);
+        const candidateSnapshot = await ClanGoalCandidateService.snapshotFor(clan, previous, options);
+        const brain = candidateSnapshot.decisionNeeded
+            ? ClanBrain.choose(clan, candidateSnapshot, options)
+            : null;
+        if (brain?.pending) {
+            return {
+                ok: true,
+                clanId: clan.id,
+                level: number(clan.level),
+                changed: false,
+                skipped: true,
+                pending: true,
+                reason: brain.reasonCode,
+                decisionKey: brain.key,
+                context: {
+                    candidateCount: candidateSnapshot.candidates.length,
+                    cacheHit: candidateSnapshot.cacheHit
+                }
+            };
+        }
+        const equipment = await ClanEquipmentService.resolveClan(clan, previous, {
+            ...options,
+            planning: candidateSnapshot.planning,
+            selectedCandidate: brain?.candidate || null
+        });
         if (equipment.skipped) {
             return {
                 ok: true,
@@ -258,6 +285,22 @@ async function resolveClan(clan, options = {}) {
             if (persisted.ok) {
                 if (!previous) metrics.goalsCreated += 1;
                 else metrics.goalsUpdated += 1;
+                if (brain?.source === 'llm') {
+                    await Database.recordClanGoalEvent({
+                        clanId: clan.id,
+                        eventType: 'llm_goal_selected',
+                        goalType: goal.type,
+                        plan: goal.plan?.kind || '',
+                        reasonCode: brain.reasonCode || 'llm_goal_selected',
+                        payload: {
+                            candidateId: brain.candidateId,
+                            route: brain.route,
+                            target: goal.target,
+                            context: brain.contextTelemetry || null,
+                            usage: brain.usage || null
+                        }
+                    });
+                }
             }
         }
         record(metrics.planCounts, goal.plan?.kind);
@@ -268,7 +311,14 @@ async function resolveClan(clan, options = {}) {
             level: number(clan.level),
             changed,
             goal: persisted.goal || goal,
-            context: { members: clan.members || [], plans: equipment.plans },
+            context: {
+                members: clan.members || [],
+                plans: equipment.plans,
+                candidateCount: candidateSnapshot.candidates.length,
+                candidateCacheHit: candidateSnapshot.cacheHit,
+                decisionSource: brain?.source || 'deterministic',
+                decisionReason: brain?.reasonCode || candidateSnapshot.decisionReason
+            },
             assignment: equipment.assignment,
             reason: persisted.code || null
         };
@@ -439,7 +489,10 @@ const ClanGoalService = {
             budgetStops: metrics.budgetStops,
             planCounts: Object.fromEntries(metrics.planCounts.entries()),
             reasonCounts: Object.fromEntries(metrics.reasonCounts.entries()),
-            equipment: ClanEquipmentService.metrics()
+            equipment: ClanEquipmentService.metrics(),
+            candidates: ClanGoalCandidateService.metrics(),
+            context: ClanContextAssembler.metrics(),
+            llm: ClanBrain.metrics()
         };
     },
 

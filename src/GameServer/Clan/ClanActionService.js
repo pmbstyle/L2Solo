@@ -137,6 +137,13 @@ function workDone(actionType, result = {}) {
 function deferredRetryDelay(actionType, result = {}) {
     const reason = String(result?.code || result?.reason || '');
     if (
+        actionType === ACTION_TYPES.PLAN &&
+        result?.pending === true &&
+        reason === 'clan_llm_pending'
+    ) {
+        return Math.min(1000, Config.actionRetryMs);
+    }
+    if (
         actionType === ACTION_TYPES.PARTY &&
         result?.skipped === true &&
         reason === Contracts.REASON_CODES.PARTY_NOT_READY

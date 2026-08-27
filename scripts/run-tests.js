@@ -210,6 +210,7 @@ const tests = [
     'tests/test_clan_simulation_slice5.js',
     'tests/test_clan_blood_mark_support.js',
     'tests/test_clan_simulation_slice6.js',
+    'tests/test_clan_llm_goal_management.js',
       'tests/test_clan_simulation_scan.js',
       'tests/test_clan_action_queue.js',
       'tests/test_clan_scheduler_admission.js',

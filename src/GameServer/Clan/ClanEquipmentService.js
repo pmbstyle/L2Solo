@@ -388,11 +388,7 @@ async function assignPlan(member, plan, clan, goal) {
     return { ok: true, changed: true, memberId: id, handoff };
 }
 
-async function resolveClan(clan, previousGoal = null, options = {}) {
-    metrics.resolves += 1;
-    if (!clan || number(clan.level) < 3) {
-        return { ok: true, skipped: true, reason: 'equipment_level_unavailable' };
-    }
+async function planningForClan(clan, previousGoal = null, options = {}) {
     const spots = options.spots || (() => {
         try {
             return SpotProfiles.ensure();
@@ -424,6 +420,42 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
         previousFulfilled,
         roleFor: ClanPolicy.rosterRole
     });
+    return {
+        spots,
+        warehouseRows,
+        plans,
+        selection,
+        previousFulfilled
+    };
+}
+
+function selectedPlanningTarget(clan, previousGoal, planning, selectedCandidate = null) {
+    const memberIdValue = number(selectedCandidate?.memberId);
+    const itemId = number(selectedCandidate?.itemId);
+    const slot = number(selectedCandidate?.slot);
+    if (!memberIdValue) return planning.selection;
+    const member = (clan.members || []).find((entry) => memberId(entry) === memberIdValue);
+    const plan = planning.plans.get(memberIdValue);
+    if (!member || !Policy.isAcquisitionPlan(plan)) return planning.selection;
+    if (itemId && number(plan.target?.selfId) !== itemId) return planning.selection;
+    if (slot && number(plan.target?.slot) !== slot) return planning.selection;
+    return {
+        member,
+        plan,
+        priority: Policy.equipmentPriority(member, plan, { roleFor: ClanPolicy.rosterRole }),
+        selectedBy: 'clan_brain',
+        previousMemberId: number(previousGoal?.target?.memberId) || null
+    };
+}
+
+async function resolveClan(clan, previousGoal = null, options = {}) {
+    metrics.resolves += 1;
+    if (!clan || number(clan.level) < 3) {
+        return { ok: true, skipped: true, reason: 'equipment_level_unavailable' };
+    }
+    const planning = options.planning || await planningForClan(clan, previousGoal, options);
+    const { plans, previousFulfilled } = planning;
+    const selection = selectedPlanningTarget(clan, previousGoal, planning, options.selectedCandidate);
     if (!selection) {
         metrics.noDebt += 1;
         recordReason('no_equipment_debt');
@@ -477,6 +509,7 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
 
 const ClanEquipmentService = {
     resolveClan,
+    planningForClan,
     planForMember,
     releaseConflictingRosterParties,
     metrics() {
