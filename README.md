@@ -11,6 +11,14 @@ Old-school Lineage 2 solo play, locally in a live world with over 1700 bot popul
 L2Solo is a local-first Lineage II C4 server emulator, tuned for a solo MMO experiment: one real player, a live world, and bots with AI that makes the server feel alive.
 Nothing is auto-generated. Everything in the world is the result of a player's or a bot's actions.
 
+💻 Simulation - everything that is happening in the game world besides player actions.
+
+🧊 Cold bots - bots in the background, everywhere on the server where the player cannot see. Works like a less detailed simulation but keeps base bot abilities, stats, and goals, including cold bot parties, clans, etc. Bots become cold when goes out of the player's view range. Can communicate, including with the player (optional LLM integration). Uses much less compute.
+
+🔥 Hot bots - bots that the player can see, or within maximum client view range. Any cold bot can become hot if the player is nearby. Highest detail level, uses much more compute for realistic movement, actions, etc.
+
+🌳 Static bots - mostly static traders in towns and crafting stations in Giran. Needed only for a specific function, no brain, no communication or goals.
+
 **Project status:** public alpha
 
 🏗️ Work in progress. Playable.
