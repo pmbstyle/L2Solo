@@ -732,7 +732,7 @@ async function clanSnapshot() {
 
 function clanMemberQuery(clanId) {
     return Database.execute([`
-        SELECT c.id, c.name, c.classId, c.race, c.level, c.exp, c.sp, c.clanId,
+        SELECT c.id, c.name, c.title, c.classId, c.race, c.level, c.exp, c.sp, c.clanId,
                c.isOnline, c.locX, c.locY, c.locZ, c.karma, c.pvp, c.pk,
                life.accountName, life.level AS lifeLevel, life.adena AS lifeAdena,
                life.activity, life.phase, life.homeRegion, life.currentRegion, life.spotId,
@@ -775,6 +775,7 @@ function compactClanMember(row, hotEntry = null, leaderId = 0) {
     return {
         id,
         name: hot?.name || String(row.name || ''),
+        title: String(hotEntry?.session?.actor?.fetchTitle?.() ?? row.title ?? ''),
         kind: isBot ? 'bot' : 'player',
         isBot,
         isLeader: id === Number(leaderId),

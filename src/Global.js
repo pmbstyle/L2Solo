@@ -131,13 +131,16 @@ function mergeConfig(base, override) {
 const ini = require('js-ini');
 const defaultConfig = ini.parse(utils.parseRawFile('./config/default.ini'));
 const configOverridePath = process.env.L2NODE_CONFIG_FILE;
-const localConfigPath = configOverridePath || './config/local.ini';
-const localConfig = utils.fileExists(localConfigPath)
-    ? ini.parse(utils.parseRawFile(localConfigPath))
-    : {};
+const sharedConfigPath = process.env.L2NODE_SHARED_CONFIG_FILE;
+const localConfigPath = configOverridePath ? null : './config/local.ini';
+const configLayers = [sharedConfigPath, localConfigPath, configOverridePath]
+    .filter(Boolean)
+    .map((configPath) => (utils.fileExists(configPath)
+        ? ini.parse(utils.parseRawFile(configPath))
+        : {}));
 
 global.options = {
-    default: mergeConfig(defaultConfig, localConfig)
+    default: configLayers.reduce((config, layer) => mergeConfig(config, layer), defaultConfig)
 };
 
 global.path = {

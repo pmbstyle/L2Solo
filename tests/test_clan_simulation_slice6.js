@@ -15,6 +15,7 @@ const ContributionPolicy = invoke('GameServer/Clan/ClanContributionPolicy');
 const ClanSimulationService = invoke('GameServer/Clan/ClanSimulationService');
 const ClanGoalService = invoke('GameServer/Clan/ClanGoalService');
 const ClanMarketService = invoke('GameServer/Clan/ClanMarketService');
+const ClanPartyService = invoke('GameServer/Clan/ClanPartyService');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
 
@@ -125,18 +126,22 @@ async function main() {
         const [goalRow] = await Database.execute(['SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?', [clanId]]);
         const goal = JSON.parse(goalRow.stateJson).goal;
         assert(goal && goal.type === 'item');
-        assert.strictEqual(goal.plan.kind, 'market', 'a real Blood Mark offer must be preferred by the goal planner');
+        assert.strictEqual(goal.plan.kind, 'farm', 'Blood Mark must be farmed even when another bot lists one');
         const [signalState] = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId = (SELECT leaderId FROM clans WHERE id = ?)', [clanId]]);
-        assert.strictEqual(Number(JSON.parse(signalState.statsJson).marketWanted.itemId), Config.bloodMarkItemId);
+        assert.notStrictEqual(Number(JSON.parse(signalState.statsJson).marketWanted?.itemId || 0), Config.bloodMarkItemId);
 
         const market = await ClanMarketService.resolveBatch(16, { budgetMs: 3000 });
-        assert.strictEqual(market.purchases, 1, 'clan market resolver must use the normal cold purchase path');
+        assert.strictEqual(market.purchases, 0, 'Blood Mark must not re-enter the clan market path');
+        const partyStarted = await ClanPartyService.resolveBatch(16, { budgetMs: 3000, rng: () => 0 });
+        assert.strictEqual(partyStarted.started, 1);
+        const partyResolved = await ClanPartyService.resolveBatch(16, { budgetMs: 3000, rng: () => 0 });
+        assert.strictEqual(partyResolved.succeeded, 1, 'the Blood Mark farming operation must resolve');
         const [advanced] = await Database.execute(['SELECT level FROM clans WHERE id = ?', [clanId]]);
         assert.strictEqual(Number(advanced.level), 3);
         const [seller] = await Database.execute(['SELECT amount FROM items WHERE characterId = ? AND selfId = ?', [4600061, Config.bloodMarkItemId]]);
-        assert.strictEqual(Number(seller?.amount || 0), 0, 'market settlement must remove the seller item exactly once');
-        const [marketLedger] = await Database.execute(["SELECT COUNT(*) AS count FROM clan_warehouse_ledger WHERE clanId = ? AND operation = 'deposit'", [clanId]]);
-        assert.strictEqual(Number(marketLedger.count), 1);
+        assert.strictEqual(Number(seller?.amount || 0), 1, 'the unrelated seller offer must remain untouched');
+        const [partyLedger] = await Database.execute(["SELECT COUNT(*) AS count FROM clan_warehouse_ledger WHERE clanId = ? AND operation = 'party_reward'", [clanId]]);
+        assert.strictEqual(Number(partyLedger.count), 1);
         const [fulfilledDemand] = await Database.execute(['SELECT status FROM clan_market_demands WHERE clanId = ?', [clanId]]);
         assert.strictEqual(fulfilledDemand.status, 'fulfilled');
         const [clearedSignal] = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId = (SELECT leaderId FROM clans WHERE id = ?)', [clanId]]);
@@ -166,7 +171,7 @@ async function main() {
         const persistedEvents = await Database.fetchClanGoalEvents(clanId, 50);
         const persistedLedger = await Database.execute(['SELECT COUNT(*) AS count FROM clan_warehouse_ledger WHERE clanId = ?', [clanId]]);
         assert(persistedClans.some((clan) => Number(clan.clanId) === clanId));
-        assert(persistedEvents.some((event) => event.eventType === 'market_purchase'));
+        assert(persistedEvents.some((event) => event.eventType === 'party_operation_started'));
         assert(Number(persistedLedger[0].count) >= 1);
 
         const originalProfile = PopulationService.playerActivityProfile;
@@ -178,16 +183,20 @@ async function main() {
 
         const metrics = {
             founder: ClanSimulationService.metrics(),
-            market: ClanMarketService.metrics()
+            market: ClanMarketService.metrics(),
+            party: ClanPartyService.metrics()
         };
         assert(metrics.founder.founderCreated > 0);
-        assert(metrics.market.purchases > 0);
+        assert.strictEqual(metrics.market.purchases, 0);
+        assert(metrics.party.operationsSucceeded > 0);
         console.log(JSON.stringify({
             rates: requirements,
             firstHours,
             population: { total: Number(population.total), clanMembers: Number(population.clanMembers) },
             autonomousClans: Number(autonomous.count),
             market,
+            partyStarted,
+            partyResolved,
             metrics
         }));
         console.log('Clan simulation Slice 6 checks passed');

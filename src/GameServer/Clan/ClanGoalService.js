@@ -4,10 +4,13 @@ const Contracts = invoke('GameServer/Clan/ClanSimulationContracts');
 const ContributionPolicy = invoke('GameServer/Clan/ClanContributionPolicy');
 const GoalPolicy = invoke('GameServer/Clan/ClanGoalPolicy');
 const ClanSimulationPolicy = invoke('GameServer/Clan/ClanSimulationPolicy');
-const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const ClanEquipmentService = invoke('GameServer/Clan/ClanEquipmentService');
+const ClanGoalCandidateService = invoke('GameServer/Clan/ClanGoalCandidateService');
+const ClanContextAssembler = invoke('GameServer/Clan/ClanContextAssembler');
+const ClanBrain = invoke('GameServer/Clan/ClanBrain');
 const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
 const ClanService = invoke('GameServer/Clan/ClanService');
+const DataCache = invoke('GameServer/DataCache');
 
 const metrics = {
     resolves: 0,
@@ -60,8 +63,8 @@ async function clanProjection(clanId = null) {
         SELECT simulated.clanId, simulated.stateJson,
                clans.name, clans.level, clans.leaderId,
                members.id AS characterId, members.name AS memberName,
-               members.classId, members.level AS memberLevel, members.clanId AS memberClanId,
-               life.accountName, life.activity, life.phase, life.adena, life.currentRegion,
+               members.title AS memberTitle, members.classId, members.level AS memberLevel, members.clanId AS memberClanId,
+               life.accountName, life.activity, life.phase, life.adena, life.currentRegion, life.spotId,
                life.partyId,
                life.simulationOwner, life.simulationRevision, life.inventorySummary, life.statsJson
         FROM clan_simulation_clans simulated
@@ -88,6 +91,7 @@ async function clanProjection(clanId = null) {
             characterId: number(row.characterId),
             id: number(row.characterId),
             name: String(row.memberName || ''),
+            title: String(row.memberTitle || ''),
             classId: number(row.classId, -1),
             level: number(row.memberLevel),
             clanId: number(row.memberClanId),
@@ -95,6 +99,7 @@ async function clanProjection(clanId = null) {
             activity: String(row.activity || ''),
             phase: String(row.phase || ''),
             currentRegion: String(row.currentRegion || ''),
+            spotId: row.spotId || null,
             partyId: row.partyId || null,
             simulationOwner: String(row.simulationOwner || 'legacy_main'),
             adena: number(row.adena),
@@ -112,12 +117,24 @@ async function clanProjectionById(clanId) {
     return clans[0] || null;
 }
 
-function marketOffer(itemId) {
-    try {
-        return MarketOpportunity.bestOffer(itemId) || null;
-    } catch (_) {
-        return null;
-    }
+function bloodMarkSourceLevel() {
+    return number((DataCache.npcs || [])
+        .find((npc) => number(npc.selfId) === number(Config.bloodMarkSourceNpcId))
+        ?.template?.level, 60);
+}
+
+function levelingProgress(members = [], count = Config.operationMinMembers) {
+    const requiredMembers = Math.max(1, number(count, Config.operationMinMembers));
+    const levels = members
+        .filter(GoalPolicy.operationAvailable)
+        .map((member) => number(member.level))
+        .filter((level) => level > 0)
+        .sort((left, right) => right - left)
+        .slice(0, requiredMembers);
+    // The fifth fighter is the gating member for a five-bot operation. An
+    // average could mark the preparation goal complete while one member is
+    // still below the source threshold, which would stop future replans.
+    return levels.length >= requiredMembers ? Math.min(...levels) : 0;
 }
 
 async function contextFor(clan) {
@@ -146,8 +163,26 @@ async function contextFor(clan) {
         .reduce((sum, item) => sum + Math.max(0, number(item.amount) - number(item.reservedAmount)), 0);
     const demands = await Database.fetchClanMarketDemands({ clanId: clan.id, itemId: Config.bloodMarkItemId, status: 'open', limit: 4 });
     const latestDemand = demands.sort((left, right) => number(right.updatedAt) - number(left.updatedAt))[0] || null;
-    const offer = marketOffer(Config.bloodMarkItemId);
-    const demandFresh = latestDemand && Date.now() - number(latestDemand.updatedAt) < Config.marketDemandTimeoutMs;
+    const sourceLevel = bloodMarkSourceLevel();
+    const targetLevel = GoalPolicy.operationLevelThreshold(sourceLevel);
+    const readyMembers = GoalPolicy.levelReadyMembers(members, sourceLevel);
+    if (stock < 1 && readyMembers.length < Config.operationMinMembers) {
+        return {
+            required: targetLevel,
+            progress: levelingProgress(members),
+            warehouse: stock,
+            itemId: Config.bloodMarkItemId,
+            itemName: 'Blood Mark',
+            sourceNpcId: Config.bloodMarkSourceNpcId,
+            sourceLevel,
+            levelingTargetLevel: targetLevel,
+            levelingProgress: levelingProgress(members),
+            marketDemand: latestDemand,
+            partyReady: false,
+            craftReady: false,
+            members
+        };
+    }
     return {
         required: 1,
         progress: stock,
@@ -155,58 +190,71 @@ async function contextFor(clan) {
         itemId: Config.bloodMarkItemId,
         itemName: 'Blood Mark',
         sourceNpcId: Config.bloodMarkSourceNpcId,
-        marketOffer: !!offer,
-        marketOfferPrice: number(offer?.price),
-        marketDemandFresh: !!demandFresh,
+        sourceLevel,
+        marketOffer: false,
+        marketOfferPrice: 0,
+        marketDemandFresh: false,
         marketDemand: latestDemand,
-        partyReady: GoalPolicy.hasReadyRoles(members),
+        // Missing support inside the clan is repaired by ClanPartyService.
+        // It must not keep a level-ready Blood Mark goal in prepare forever.
+        partyReady: true,
         craftReady: false,
-        members
+        members,
+        operationMembers: readyMembers
     };
 }
 
-async function ensureDemand(clan, goal, context) {
-    if (goal.type !== 'item' || goal.progress >= goal.required) return null;
-    const key = `${clan.id}:level-${number(clan.level)}:${goal.target.itemId}`;
-    if (context.marketDemand) {
-        await Database.syncClanMarketDemandSignal({
-            clanId: clan.id,
-            itemId: goal.target.itemId,
-            amount: Math.max(1, goal.required - goal.progress),
-            maxPrice: Config.bloodMarkMaxPrice,
-            goalKey: key,
-            status: 'open'
-        });
-        return { ok: true, created: false, existing: true, demandId: number(context.marketDemand.id) };
-    }
-    const demand = await Database.upsertClanMarketDemand({
+async function cancelLegacyBloodMarkDemand(clan, context) {
+    const demand = context?.marketDemand;
+    if (!demand) return null;
+    const cancelled = await Database.upsertClanMarketDemand({
         clanId: clan.id,
-        itemId: goal.target.itemId,
-        amount: Math.max(1, goal.required - goal.progress),
-        maxPrice: Config.bloodMarkMaxPrice,
-        goalKey: key,
-        status: 'open'
+        itemId: Config.bloodMarkItemId,
+        amount: Math.max(1, number(demand.amount, 1)),
+        maxPrice: Math.max(1, number(demand.maxPrice, Config.bloodMarkMaxPrice)),
+        goalKey: demand.goalKey,
+        status: 'cancelled'
     });
-    if (demand.ok) {
-        await Database.syncClanMarketDemandSignal({
-            clanId: clan.id,
-            itemId: goal.target.itemId,
-            amount: Math.max(1, goal.required - goal.progress),
-            maxPrice: Config.bloodMarkMaxPrice,
-            goalKey: key,
-            status: 'open'
-        });
-    }
-    if (demand.created) metrics.demandCreated += 1;
-    else metrics.demandRefreshed += 1;
-    return demand;
+    await Database.syncClanMarketDemandSignal({
+        clanId: clan.id,
+        itemId: Config.bloodMarkItemId,
+        amount: Math.max(1, number(demand.amount, 1)),
+        maxPrice: Math.max(1, number(demand.maxPrice, Config.bloodMarkMaxPrice)),
+        goalKey: demand.goalKey,
+        status: 'cancelled'
+    });
+    return cancelled;
 }
 
 async function resolveClan(clan, options = {}) {
     if (!clan) return { ok: true, skipped: true, reason: 'target_not_autonomous' };
     if (number(clan.level) >= 3) {
         const previous = clan.state?.goal || null;
-        const equipment = await ClanEquipmentService.resolveClan(clan, previous, options);
+        const candidateSnapshot = await ClanGoalCandidateService.snapshotFor(clan, previous, options);
+        const brain = candidateSnapshot.decisionNeeded
+            ? ClanBrain.choose(clan, candidateSnapshot, options)
+            : null;
+        if (brain?.pending) {
+            return {
+                ok: true,
+                clanId: clan.id,
+                level: number(clan.level),
+                changed: false,
+                skipped: true,
+                pending: true,
+                reason: brain.reasonCode,
+                decisionKey: brain.key,
+                context: {
+                    candidateCount: candidateSnapshot.candidates.length,
+                    cacheHit: candidateSnapshot.cacheHit
+                }
+            };
+        }
+        const equipment = await ClanEquipmentService.resolveClan(clan, previous, {
+            ...options,
+            planning: candidateSnapshot.planning,
+            selectedCandidate: brain?.candidate || null
+        });
         if (equipment.skipped) {
             return {
                 ok: true,
@@ -241,6 +289,23 @@ async function resolveClan(clan, options = {}) {
                 else metrics.goalsUpdated += 1;
             }
         }
+        if (persisted.ok && brain?.source === 'llm') {
+            await Database.recordClanGoalEvent({
+                clanId: clan.id,
+                eventType: changed ? 'llm_goal_selected' : 'llm_goal_retained',
+                goalType: goal.type,
+                plan: goal.plan?.kind || '',
+                reasonCode: brain.reasonCode || candidateSnapshot.decisionReason || 'llm_goal_selected',
+                payload: {
+                    candidateId: brain.candidateId,
+                    route: brain.route,
+                    target: goal.target,
+                    stall: candidateSnapshot.stall || null,
+                    context: brain.contextTelemetry || null,
+                    usage: brain.usage || null
+                }
+            });
+        }
         record(metrics.planCounts, goal.plan?.kind);
         metrics.activeGoals += goal.status !== 'completed' ? 1 : 0;
         return {
@@ -249,12 +314,22 @@ async function resolveClan(clan, options = {}) {
             level: number(clan.level),
             changed,
             goal: persisted.goal || goal,
-            context: { members: clan.members || [], plans: equipment.plans },
+            context: {
+                members: clan.members || [],
+                plans: equipment.plans,
+                candidateCount: candidateSnapshot.candidates.length,
+                candidateCacheHit: candidateSnapshot.cacheHit,
+                stall: candidateSnapshot.stall || null,
+                partyReform: equipment.partyReform || null,
+                decisionSource: brain?.source || 'deterministic',
+                decisionReason: brain?.reasonCode || candidateSnapshot.decisionReason
+            },
             assignment: equipment.assignment,
             reason: persisted.code || null
         };
     }
     const context = await contextFor(clan);
+    const cancelledDemand = await cancelLegacyBloodMarkDemand(clan, context);
     const previous = clan.state?.goal || null;
     if (number(clan.level) === 2 && number(context.progress) >= number(context.required)) {
         const advanced = await Database.advanceAutonomousClanLevel({
@@ -301,7 +376,7 @@ async function resolveClan(clan, options = {}) {
         timestamp: Date.now(),
         failureThreshold: Config.catastrophicFailureThreshold
     });
-    const demand = await ensureDemand(clan, goal, context);
+    const demand = null;
     if (goal.type === 'item' && demand?.created && !context.marketOffer) {
         context.marketDemandFresh = true;
         goal = GoalPolicy.buildGoal(clan, context, previous, {
@@ -341,6 +416,7 @@ async function resolveClan(clan, options = {}) {
         changed,
         goal: persisted.goal || goal,
         demand,
+        cancelledDemand,
         context,
         reason: persisted.code || null
     };
@@ -418,7 +494,10 @@ const ClanGoalService = {
             budgetStops: metrics.budgetStops,
             planCounts: Object.fromEntries(metrics.planCounts.entries()),
             reasonCounts: Object.fromEntries(metrics.reasonCounts.entries()),
-            equipment: ClanEquipmentService.metrics()
+            equipment: ClanEquipmentService.metrics(),
+            candidates: ClanGoalCandidateService.metrics(),
+            context: ClanContextAssembler.metrics(),
+            llm: ClanBrain.metrics()
         };
     },
 

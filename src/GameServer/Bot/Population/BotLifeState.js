@@ -2493,6 +2493,64 @@ const BotLifeState = {
         });
     },
 
+    clanOperationCandidates(options = {}) {
+        if (!initialized) return Promise.resolve([]);
+        const targetClanId = Math.max(0, Number(options.targetClanId) || 0);
+        const minimumLevel = Math.max(1, Math.floor(Number(options.minLevel) || 1));
+        const targetLevel = Math.max(minimumLevel, Math.floor(Number(options.targetLevel) || minimumLevel));
+        const limit = Math.max(1, Math.min(128, Math.floor(Number(options.limit) || 64)));
+
+        return Database.execute([
+            `SELECT states.*, c.clanId AS candidateClanId, c.classId AS candidateClassId,
+                c.username AS candidateUsername
+            FROM ${TABLE} states
+            INNER JOIN characters c ON c.id = states.characterId
+            WHERE states.phase = 'cold'
+            AND states.simulationOwner = 'legacy_main'
+            AND (states.partyId IS NULL OR states.partyId = '')
+            AND states.spotId IS NOT NULL
+            AND states.activity IN ('hunting', 'resting', 'party_wait')
+            AND states.level >= ?
+            AND c.clanId <> ?
+            AND (
+                c.username LIKE 'bot_pop_%'
+                OR c.username LIKE 'bot_scale_%'
+                OR states.accountName LIKE 'bot_pop_%'
+                OR states.accountName LIKE 'bot_scale_%'
+                OR CAST(json_extract(states.statsJson, '$.generatedCold') AS INTEGER) = 1
+            )
+            AND c.username NOT LIKE 'bot_craft_%'
+            AND states.accountName NOT LIKE 'bot_craft_%'
+            AND json_extract(states.statsJson, '$.craftStationId') IS NULL
+            AND json_extract(states.statsJson, '$.craftShop') IS NULL
+            AND NOT EXISTS (
+                SELECT 1 FROM clan_operation_members reserved
+                WHERE reserved.characterId = states.characterId
+                AND reserved.status = 'active'
+            )
+            ORDER BY CASE WHEN c.clanId = 0 THEN 0 ELSE 1 END,
+                ABS(states.level - ?), states.updatedAt ASC, states.characterId ASC
+            LIMIT ${limit}`,
+            [minimumLevel, targetClanId, targetLevel],
+            { read: true }
+        ], 'bot-life:clan-operation-candidates').then((rows) => rows.map((row) => {
+            const state = normalize(row);
+            state.clanId = Number(row.candidateClanId || 0);
+            state.classId = Number(row.candidateClassId || state.stats?.classId || 0);
+            state.simulationOwner = state.simulation.ownerId;
+            state.partyId = state.party.partyId;
+            state.stats = {
+                ...(state.stats || {}),
+                classId: state.classId,
+                clanId: state.clanId
+            };
+            return state;
+        })).catch((err) => {
+            utils.infoWarn('BotLife', 'failed to fetch clan operation candidates: %s', err.message);
+            return [];
+        });
+    },
+
     statesByIds(characterIds = [], options = {}) {
         if (!initialized) return Promise.resolve([]);
         const ids = [...new Set((characterIds || []).map(Number).filter((id) => Number.isSafeInteger(id) && id > 0))]

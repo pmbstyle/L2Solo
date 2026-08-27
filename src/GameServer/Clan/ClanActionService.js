@@ -7,6 +7,7 @@ const WarehouseService = invoke('GameServer/Clan/ClanWarehouseService');
 const MarketService = invoke('GameServer/Clan/ClanMarketService');
 const PartyService = invoke('GameServer/Clan/ClanPartyService');
 const OrderService = invoke('GameServer/Clan/ClanOrderService');
+const TitleService = invoke('GameServer/Clan/ClanTitleService');
 const StageMetrics = invoke('GameServer/Clan/ClanStageMetrics');
 
 const ACTION_TYPES = Object.freeze({
@@ -14,7 +15,8 @@ const ACTION_TYPES = Object.freeze({
     CONTRIBUTION: 'contribution',
     WAREHOUSE: 'warehouse',
     MARKET: 'market',
-    PARTY: 'party'
+    PARTY: 'party',
+    TITLES: 'member_titles'
 });
 // Bump when a deploy adds a recovery behavior that must revisit durable goals
 // whose previous bootstrap action already succeeded under older code.
@@ -134,8 +136,30 @@ function workDone(actionType, result = {}) {
     return result.changed === true;
 }
 
+function reviewDelayFor(actionType, goal, result = {}, ok = true, productive = workDone(actionType, result)) {
+    if (!ok) return Config.actionRetryMs;
+    if (productive) return 0;
+    if (actionType === ACTION_TYPES.PLAN) {
+        return goal?.type === 'equipment' ? Config.equipmentReviewMs : Config.goalReviewMs;
+    }
+    return Config.actionRetryMs;
+}
+
 function deferredRetryDelay(actionType, result = {}) {
     const reason = String(result?.code || result?.reason || '');
+    if (
+        actionType === ACTION_TYPES.PLAN &&
+        result?.pending === true &&
+        reason === 'clan_llm_pending'
+    ) {
+        return Math.min(1000, Config.actionRetryMs);
+    }
+    if (actionType === ACTION_TYPES.TITLES && result?.pending === true) {
+        return Math.min(1000, Config.actionRetryMs);
+    }
+    if (actionType === ACTION_TYPES.TITLES && result?.retryable === true) {
+        return Config.actionRetryMs;
+    }
     if (
         actionType === ACTION_TYPES.PARTY &&
         result?.skipped === true &&
@@ -162,9 +186,52 @@ async function bootstrap() {
         });
         if (result.created) created += 1;
     }
+    let titleCreated = 0;
+    let titleAttempted = 0;
+    if (Config.llmTitleManagementEnabled !== false && TitleService.available()) {
+        const titleClans = await Database.fetchAutonomousClansNeedingTitles(Math.max(64, Config.maxBotClans));
+        titleAttempted = titleClans.length;
+        for (const clan of titleClans) {
+            const rosterKey = `${Number(clan.memberCount)}:${Number(clan.memberIdSum)}:${Number(clan.maxMemberId)}`;
+            const result = await Database.enqueueClanAction({
+                clanId: clan.clanId,
+                actionKey: `clan:${Number(clan.clanId)}:titles:v1:${rosterKey}`,
+                actionType: ACTION_TYPES.TITLES,
+                priority: 20,
+                payload: { reason: 'untitled_members', rosterKey }
+            });
+            if (result.created) titleCreated += 1;
+        }
+    }
     metrics.bootstraps += 1;
-    metrics.planned += created;
-    return { attempted: clans.length, created, playerManaged };
+    metrics.planned += created + titleCreated;
+    return { attempted: clans.length, created, playerManaged, titleAttempted, titleCreated };
+}
+
+async function scheduleTitleReview(clan) {
+    if (Config.llmTitleManagementEnabled === false || !TitleService.available() || number(clan?.level) < 3) {
+        return { ok: true, scheduled: false, reason: 'titles_disabled_or_unavailable' };
+    }
+    const memberIds = (clan.members || [])
+        .map((member) => number(member.characterId || member.id))
+        .filter(Boolean)
+        .sort((left, right) => left - right);
+    const missingIds = (clan.members || [])
+        .filter((member) => !String(member.title || '').trim())
+        .map((member) => number(member.characterId || member.id))
+        .filter(Boolean)
+        .sort((left, right) => left - right);
+    if (!missingIds.length) return { ok: true, scheduled: false, reason: 'titles_complete' };
+    const rosterKey = `${memberIds.length}:${memberIds.reduce((sum, id) => sum + id, 0)}:${memberIds.at(-1) || 0}`;
+    const queued = await Database.enqueueClanAction({
+        clanId: clan.id,
+        actionKey: `clan:${number(clan.id)}:titles:v1:${rosterKey}`,
+        actionType: ACTION_TYPES.TITLES,
+        priority: 20,
+        payload: { reason: 'untitled_members', memberIds: missingIds, rosterKey }
+    });
+    if (queued.created) metrics.planned += 1;
+    return queued;
 }
 
 async function scheduleNext(clan, goal, parentAction, result, delayMs = 0) {
@@ -279,6 +346,9 @@ async function execute(action, options = {}) {
                     rng: Math.random
                 });
                 break;
+            case ACTION_TYPES.TITLES:
+                result = await TitleService.resolveClan(clan);
+                break;
             default:
                 return { ok: false, code: 'unknown_clan_action_type' };
         }
@@ -346,13 +416,19 @@ async function resolveAction(action, options = {}) {
         try {
             const clan = await loadClan(action.clanId);
             const goal = clan?.state?.goal || null;
+            if (clan && String(action.actionType) !== ACTION_TYPES.TITLES) {
+                await scheduleTitleReview(clan);
+            }
             const advanced = result?.advanced?.ok === true || result?.advanced === true;
             const marketMiss = String(action.actionType) === ACTION_TYPES.MARKET
                 && String(result?.reason || result?.code || '') === Contracts.REASON_CODES.MARKET_NO_OFFER;
             const playerMarketWait = marketMiss
                 && String(clan?.state?.mode || '') === 'player_managed'
                 && String(goal?.policy?.strategy || '') === 'market';
-            if (clan && advanced) {
+            if (String(action.actionType) === ACTION_TYPES.TITLES) {
+                // Titles are an auxiliary durable clan action and do not alter
+                // the goal execution chain.
+            } else if (clan && advanced) {
                 await schedulePlanAfterLevelUp(clan, action, result);
             } else if (clan && playerMarketWait) {
                 await scheduleNext(clan, goal, action, result, Config.actionRetryMs);
@@ -361,7 +437,7 @@ async function resolveAction(action, options = {}) {
                 await schedulePlanAfterMarketMiss(clan, action, result);
             } else if (clan && goal && !(String(action.actionType) === ACTION_TYPES.PLAN && goal.status === 'completed')) {
                 const productive = ok && workDone(String(action.actionType), result);
-                const delay = ok && productive ? 0 : Config.actionRetryMs;
+                const delay = reviewDelayFor(String(action.actionType), goal, result, ok, productive);
                 await scheduleNext(clan, goal, action, result, delay);
                 if (delay > 0) metrics.retried += 1;
             }
@@ -414,6 +490,8 @@ const ClanActionService = {
     config: Config,
     actionTypes: ACTION_TYPES,
     bootstrap,
+    scheduleTitleReview,
+    reviewDelayFor,
     resolveAction,
 
     resolveBatch(options = {}) {

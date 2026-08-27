@@ -10,6 +10,7 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
 const ClanOrderService = invoke('GameServer/Clan/ClanOrderService');
+const ClanRules = invoke('GameServer/Clan/ClanRules');
 
 const metrics = {
     resolves: 0,
@@ -23,6 +24,8 @@ const metrics = {
     memberReservationConflicts: 0,
     supportPartiesReclaimed: 0,
     supportMembersReleased: 0,
+    supportClanJoins: 0,
+    supportGuestsUsed: 0,
     budgetStops: 0,
     reasonCounts: new Map()
 };
@@ -59,18 +62,37 @@ function operationKey(clan, goal) {
     return `${number(clan.id)}:farm:${number(goal.updatedAt)}:${number(goal.catastrophicFailures)}`;
 }
 
-function operationRoster(clan, goal) {
+function operationMinimumLevel(goal) {
+    const sourceLevel = number(goal?.target?.sourceLevel ?? goal?.plan?.sourceLevel, 1);
+    return GoalPolicy.operationLevelThreshold(sourceLevel);
+}
+
+function eligibleClanMembers(clan, goal) {
+    if (String(goal?.controlledBy || '') === 'player') return clan.members || [];
+    const minimumLevel = operationMinimumLevel(goal);
+    return (clan.members || []).filter((member) => number(member.level) >= minimumLevel);
+}
+
+function operationRoster(clan, goal, guests = [], options = {}) {
     const assigned = parseIds(goal.assignedMemberIds);
+    const eligible = eligibleClanMembers(clan, goal);
     const candidates = assigned.length
         ? assigned.map((id) => memberById(clan, id)).filter(Boolean)
-        : clan.members;
-    const selected = GoalPolicy.operationMembers(candidates, Config.operationMaxMembers);
-    const selectedMembers = selected.map((id) => memberById(clan, id)).filter(Boolean);
+        : eligible;
+    const guestById = new Map(guests.map((guest) => [number(guest.characterId ?? guest.id), guest]));
+    const selected = GoalPolicy.operationMembers([...candidates, ...guests], Config.operationMaxMembers);
+    const clanIds = new Set((clan.members || []).map((member) => number(member.characterId ?? member.id)));
+    const selectedMembers = selected.map((id) => memberById(clan, id) || guestById.get(number(id))).filter(Boolean);
+    const guestMemberIds = selected.filter((id) => !clanIds.has(number(id)));
+    const clanMemberIds = selected.filter((id) => clanIds.has(number(id)));
     const playerControlled = String(goal.controlledBy || '') === 'player';
     return {
         selected,
+        clanMemberIds,
+        guestMemberIds,
+        selectedMembers,
         ready: selected.length >= Config.operationMinMembers
-            && (playerControlled || GoalPolicy.hasReadyRoles(selectedMembers))
+            && (playerControlled || options.allowRoleFallback || GoalPolicy.hasReadyRoles(selectedMembers))
     };
 }
 
@@ -154,9 +176,10 @@ async function reclaimPlayerOrderParties(clan, goal) {
 async function refreshOperationRoster(clan, goal) {
     const assigned = parseIds(goal.assignedMemberIds).sort((left, right) => left - right);
     if (String(goal.controlledBy || '') === 'player' && assigned.length) return { changed: false, goal };
-    const clanMemberIds = new Set((clan.members || []).map((member) => number(member.characterId ?? member.id)).filter(Boolean));
+    const eligible = eligibleClanMembers(clan, goal);
+    const clanMemberIds = new Set(eligible.map((member) => number(member.characterId ?? member.id)).filter(Boolean));
     const retained = assigned.filter((id) => clanMemberIds.has(Number(id)));
-    const available = GoalPolicy.operationMembers(clan.members, Config.operationMaxMembers);
+    const available = GoalPolicy.operationMembers(eligible, Config.operationMaxMembers);
     const projected = [...available, ...retained.filter((id) => !available.includes(Number(id)))]
         .slice(0, Config.operationMaxMembers)
         .sort((left, right) => left - right);
@@ -176,8 +199,93 @@ async function refreshOperationRoster(clan, goal) {
     return { ...persisted, changed: !!persisted.ok, goal: persisted.goal || nextGoal };
 }
 
-async function startOperation(clan, goal) {
-    const roster = operationRoster(clan, goal);
+function missingSupportRoles(members = []) {
+    const roles = new Set(members.map((member) => ClanPolicy.rosterRole(member)));
+    return ['tank', 'healer', 'buffer'].filter((role) => !roles.has(role));
+}
+
+async function prepareOperationRoster(clan, goal) {
+    if (String(goal.controlledBy || '') === 'player') {
+        return { clan, goal, roster: operationRoster(clan, goal), joinedMemberIds: [] };
+    }
+
+    let currentClan = clan;
+    let currentGoal = goal;
+    const minimumLevel = operationMinimumLevel(goal);
+    const sourceLevel = Math.max(minimumLevel, number(goal?.target?.sourceLevel ?? goal?.plan?.sourceLevel, minimumLevel));
+    let candidates = await LifeState.clanOperationCandidates({
+        targetClanId: clan.id,
+        minLevel: minimumLevel,
+        targetLevel: sourceLevel,
+        limit: 64
+    });
+    const baseRoster = operationRoster(currentClan, currentGoal);
+    const joinedMemberIds = [];
+    const attempted = new Set();
+
+    for (const role of missingSupportRoles(baseRoster.selectedMembers)) {
+        const candidate = candidates.find((entry) => number(entry.clanId) === 0
+            && ClanPolicy.rosterRole(entry) === role
+            && !attempted.has(number(entry.characterId)));
+        if (!candidate) continue;
+        attempted.add(number(candidate.characterId));
+        const joined = await Database.joinAutonomousClan({
+            clanId: currentClan.id,
+            characterId: candidate.characterId,
+            memberLimit: ClanRules.memberLimit(currentClan.level),
+            maxBotMemberShare: Config.maxBotMemberShare
+        });
+        if (joined.ok) joinedMemberIds.push(number(candidate.characterId));
+    }
+
+    if (joinedMemberIds.length) {
+        metrics.supportClanJoins += joinedMemberIds.length;
+        if (typeof ClanService.reload === 'function') await ClanService.reload();
+        const projected = await GoalService.clanProjectionById(currentClan.id);
+        if (projected?.state?.goal) {
+            currentClan = projected;
+            currentGoal = projected.state.goal;
+            const refreshed = await refreshOperationRoster(currentClan, currentGoal);
+            if (!refreshed.ok && refreshed.code) return { clan: currentClan, goal: currentGoal, error: refreshed };
+            if (refreshed.changed) {
+                currentGoal = refreshed.goal;
+                currentClan = {
+                    ...currentClan,
+                    state: {
+                        ...(currentClan.state || {}),
+                        goal: currentGoal,
+                        updatedAt: number(refreshed.updatedAt, number(currentClan.state?.updatedAt))
+                    }
+                };
+            }
+        }
+        candidates = await LifeState.clanOperationCandidates({
+            targetClanId: currentClan.id,
+            minLevel: minimumLevel,
+            targetLevel: sourceLevel,
+            limit: 64
+        });
+    }
+
+    const selectedGuests = [];
+    let roster = operationRoster(currentClan, currentGoal, selectedGuests);
+    const addGuest = (candidate) => {
+        if (!candidate || selectedGuests.some((guest) => number(guest.characterId) === number(candidate.characterId))) return;
+        selectedGuests.push(candidate);
+        roster = operationRoster(currentClan, currentGoal, selectedGuests);
+    };
+    missingSupportRoles(roster.selectedMembers).forEach((role) => {
+        addGuest(candidates.find((candidate) => ClanPolicy.rosterRole(candidate) === role));
+    });
+    for (const candidate of candidates) {
+        if (roster.selected.length >= Config.operationMinMembers) break;
+        addGuest(candidate);
+    }
+    roster = operationRoster(currentClan, currentGoal, selectedGuests, { allowRoleFallback: true });
+    return { clan: currentClan, goal: currentGoal, roster, joinedMemberIds };
+}
+
+async function startOperation(clan, goal, roster = operationRoster(clan, goal)) {
     if (!roster.ready) {
         recordReason(Contracts.REASON_CODES.PARTY_NOT_READY);
         return { ok: false, code: Contracts.REASON_CODES.PARTY_NOT_READY, skipped: true };
@@ -189,20 +297,29 @@ async function startOperation(clan, goal) {
         operationType: 'farm',
         targetNpcId: number(goal.plan?.sourceId) || (String(goal.controlledBy || '') === 'player' ? 0 : Config.bloodMarkSourceNpcId),
         leaderId: number(clan.leaderId),
-        memberIds: selected,
+        memberIds: roster.clanMemberIds,
+        guestMemberIds: roster.guestMemberIds,
         expectedGoalUpdatedAt: number(clan.state?.updatedAt) || null
     });
-    if (result.ok && !result.idempotent) metrics.operationsStarted += 1;
+    if (result.ok && !result.idempotent) {
+        metrics.operationsStarted += 1;
+        metrics.supportGuestsUsed += roster.guestMemberIds.length;
+    }
     if (!result.ok && result.code === Contracts.REASON_CODES.PARTY_MEMBER_RESERVATION_CONFLICT) {
         metrics.memberReservationConflicts += 1;
     }
     recordReason(result.code);
-    return { ...result, memberIds: selected };
+    return { ...result, memberIds: selected, guestMemberIds: roster.guestMemberIds };
 }
 
 async function resolveActiveOperation(clan, goal, operation, options = {}) {
     const memberIds = parseIds(operation.memberIdsJson);
-    const killerLevel = Math.max(1, Math.round(averageLevel(clan, memberIds)));
+    const operationStates = await LifeState.statesByIds(memberIds, { ownerId: 'legacy_main' });
+    const hydratedLevels = operationStates.map((state) => number(state.level)).filter((level) => level > 0);
+    const hydratedAverage = hydratedLevels.length
+        ? hydratedLevels.reduce((sum, level) => sum + level, 0) / hydratedLevels.length
+        : averageLevel(clan, memberIds);
+    const killerLevel = Math.max(1, Math.round(hydratedAverage));
     const forceFailure = options.forceFailure === true;
     let drops = [];
     if (!forceFailure) {
@@ -328,20 +445,26 @@ async function resolveClan(clan, options = {}) {
         }
     }
 
-    // Starting an operation atomically writes goal.partyId together with the
-    // active operation row. If there is no party id yet and the projected
-    // roster is unavailable, no active operation can require resolution. Skip
-    // the database lookup and retain the durable action for a later retry.
-    if (!String(goal.partyId || '') && !operationRoster(currentClan, goal).ready) {
-        recordReason(Contracts.REASON_CODES.PARTY_NOT_READY);
-        return { ok: false, code: Contracts.REASON_CODES.PARTY_NOT_READY, skipped: true };
+    let prepared = null;
+    if (!String(goal.partyId || '')) {
+        prepared = await prepareOperationRoster(currentClan, goal);
+        if (prepared.error) return prepared.error;
+        currentClan = prepared.clan;
+        goal = prepared.goal;
+        if (!prepared.roster.ready) {
+            recordReason(Contracts.REASON_CODES.PARTY_NOT_READY);
+            return { ok: false, code: Contracts.REASON_CODES.PARTY_NOT_READY, skipped: true };
+        }
     }
 
     const active = await Database.fetchActiveAutonomousClanOperation(currentClan.id);
     if (!active) {
-        const started = await startOperation(currentClan, goal);
+        prepared = prepared || await prepareOperationRoster(currentClan, goal);
+        if (prepared.error) return prepared.error;
+        const started = await startOperation(currentClan, goal, prepared.roster);
         return {
             ...started,
+            joinedMemberIds: prepared.joinedMemberIds,
             rosterRefreshed: currentClan !== clan,
             reclaimedPartyIds: reclaimed.reclaimedPartyIds,
             releasedMembers: reclaimed.releasedMembers,
@@ -408,6 +531,8 @@ const ClanPartyService = {
             memberReservationConflicts: metrics.memberReservationConflicts,
             supportPartiesReclaimed: metrics.supportPartiesReclaimed,
             supportMembersReleased: metrics.supportMembersReleased,
+            supportClanJoins: metrics.supportClanJoins,
+            supportGuestsUsed: metrics.supportGuestsUsed,
             budgetStops: metrics.budgetStops,
             reasonCounts: Object.fromEntries(metrics.reasonCounts.entries())
         };

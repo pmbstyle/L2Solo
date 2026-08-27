@@ -259,6 +259,31 @@ async function run() {
         'cold equipment summary must retain both identical earring instances'
     );
 
+    const secondEarringPurchase = await BotLifeState.applyMarketPurchase({
+        ...state,
+        characterId: 86,
+        level: 20,
+        adena: 1000,
+        inventory: {
+            ...state.inventory,
+            57: { selfId: 57, name: 'Adena', amount: 1000 },
+            [dEarring.selfId]: {
+                selfId: dEarring.selfId,
+                name: dEarring.template.name,
+                amount: 1,
+                equipped: true,
+                equippedCount: 1,
+                equippedSlots: [1],
+                slot: 1,
+                rank: dEarring.etc.rank,
+                kind: dEarring.template.kind
+            }
+        }
+    }, { selfId: dEarring.selfId, price: 100, sourceType: 'npc', equipSlot: 2 });
+    assert(secondEarringPurchase, 'a single equipped earring must allow buying its paired copy');
+    assert.strictEqual(secondEarringPurchase.inventory[String(dEarring.selfId)].amount, 2);
+    assert.deepStrictEqual(secondEarringPurchase.inventory[String(dEarring.selfId)].equippedSlots, [1, 2]);
+
     const workingInventorySync = Database.syncInventorySummary;
     let rejectFirstPurchaseSync = true;
     Database.syncInventorySummary = (characterId, inventory) => {

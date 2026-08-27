@@ -71,7 +71,9 @@ function itemRank(item) {
 }
 
 function slotMatches(left, right) {
-    return left === right || [7, 14].includes(left) && [7, 14].includes(right);
+    return left === right
+        || [7, 14].includes(left) && [7, 14].includes(right)
+        || left === 15 && [10, 11].includes(right);
 }
 
 function equipmentPriority(member, plan, options = {}) {
@@ -113,14 +115,28 @@ function goalKey(clanId, member, plan) {
     ].join(':');
 }
 
-function targetFulfilled(member, goal, equippedSlotsFor) {
+function targetFulfilled(member, goal, equippedSlotsFor, itemRankFor = null) {
     const itemId = number(goal?.target?.itemId);
     const slot = number(goal?.target?.slot);
     const item = member?.inventory?.[String(itemId)];
-    if (!item?.equipped || !itemId || !slot || typeof equippedSlotsFor !== 'function') return false;
-    return equippedSlotsFor(item, item.slot).some((equippedSlot) => (
-        equippedSlot === slot
-        || [7, 14].includes(equippedSlot) && [7, 14].includes(slot)
+    if (!itemId || !slot || typeof equippedSlotsFor !== 'function') return false;
+    if (item?.equipped && equippedSlotsFor(item, item.slot).some((equippedSlot) => (
+        slotMatches(equippedSlot, slot)
+    ))) return true;
+
+    // An equipment goal represents a slot debt, not a trophy request for one
+    // exact item. If another path has already equipped a strictly higher-rank
+    // item in that slot, the old goal is fulfilled and must rotate instead of
+    // repeatedly trying to buy an already-owned weaker item. This notably
+    // covers full-body armour satisfying chest and legs goals.
+    const catalogItem = typeof itemRankFor === 'function' ? itemRankFor(itemId) : null;
+    const targetRank = itemRank(item) || (catalogItem && typeof catalogItem === 'object'
+        ? itemRank(catalogItem)
+        : rankFor(catalogItem));
+    if (!targetRank) return false;
+    return equippedItems(member).some((equipped) => (
+        itemSlots(equipped).some((equippedSlot) => slotMatches(equippedSlot, slot))
+        && itemRank(equipped) > targetRank
     ));
 }
 

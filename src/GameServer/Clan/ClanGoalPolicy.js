@@ -57,18 +57,32 @@ function hasReadyRoles(members = []) {
         && roles.has('tank') && roles.has('healer') && roles.has('buffer');
 }
 
+function operationLevelThreshold(sourceLevel, maxGap = Config.operationMaxTargetLevelGap) {
+    return Math.max(1, Math.floor(number(sourceLevel, 1) - Math.max(0, number(maxGap))));
+}
+
+function levelReadyMembers(members = [], sourceLevel, maxGap = Config.operationMaxTargetLevelGap) {
+    const threshold = operationLevelThreshold(sourceLevel, maxGap);
+    return members.filter((member) => operationAvailable(member) && number(member.level) >= threshold);
+}
+
+function hasLevelReadyMembers(members = [], sourceLevel, maxGap = Config.operationMaxTargetLevelGap) {
+    return levelReadyMembers(members, sourceLevel, maxGap).length >= Config.operationMinMembers;
+}
+
 function planReason(plan, context = {}) {
     if (plan === 'warehouse') return context.progress >= context.required ? Contracts.REASON_CODES.GOAL_COMPLETED : 'warehouse_progress';
     if (plan === 'market') return context.marketOffer ? 'market_offer_available' : 'market_demand_open';
     if (plan === 'craft') return 'craft_ready';
     if (plan === 'farm') return 'party_ready';
-    return Contracts.REASON_CODES.PARTY_NOT_READY;
+    return context.leveling ? 'source_level_not_ready' : Contracts.REASON_CODES.PARTY_NOT_READY;
 }
 
 function planCandidates(goal, context = {}, options = {}) {
     const avoid = new Set((options.avoidPlans || []).map(String));
     if (context.progress >= context.required) return ['warehouse'];
     if (goal.type === 'level') {
+        if (context.leveling) return ['prepare'];
         return avoid.has('warehouse') ? ['prepare'] : ['warehouse', 'prepare'];
     }
     const ordered = [];
@@ -93,6 +107,22 @@ function selectExecutionPlan(goal, context = {}, options = {}) {
 
 function goalContext(clan = {}, context = {}) {
     const level = number(clan.level);
+    if (number(context.levelingTargetLevel) > 0) {
+        const required = Math.max(1, number(context.levelingTargetLevel));
+        return {
+            type: 'level',
+            target: { level: required },
+            required,
+            progress: Math.min(required, Math.max(0, number(context.levelingProgress))),
+            warehouse: 0,
+            marketOffer: false,
+            marketDemandFresh: false,
+            partyReady: false,
+            leveling: true,
+            sourceNpcId: number(context.sourceNpcId),
+            members: clan.members || []
+        };
+    }
     if (level <= 1) {
         const required = Math.max(1, number(context.required));
         return {
@@ -111,7 +141,8 @@ function goalContext(clan = {}, context = {}) {
         type: 'item',
         target: {
             itemId: number(context.itemId),
-            itemName: String(context.itemName || 'Blood Mark')
+            itemName: String(context.itemName || 'Blood Mark'),
+            ...(number(context.sourceLevel) > 0 ? { sourceLevel: number(context.sourceLevel) } : {})
         },
         required: Math.max(1, number(context.required, 1)),
         progress: Math.min(Math.max(1, number(context.required, 1)), Math.max(0, number(context.progress))),
@@ -122,7 +153,7 @@ function goalContext(clan = {}, context = {}) {
         partyReady: !!context.partyReady,
         sourceNpcId: number(context.sourceNpcId),
         beneficiaryId: number(context.beneficiaryId),
-        members: clan.members || []
+        members: context.operationMembers || clan.members || []
     };
 }
 
@@ -192,6 +223,9 @@ module.exports = {
     buildGoal,
     goalEquivalent,
     hasReadyRoles,
+    hasLevelReadyMembers,
+    levelReadyMembers,
+    operationLevelThreshold,
     operationAvailable,
     operationMembers,
     planCandidates,

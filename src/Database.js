@@ -3272,6 +3272,22 @@ const Database = {
             ORDER BY simulated.updatedAt ASC, simulated.clanId ASC
             LIMIT ${safeLimit}`, [], 'clan-action:bootstrap');
     },
+    fetchAutonomousClansNeedingTitles(limit = 64) {
+        const safeLimit = Math.max(1, Math.min(500, Math.floor(Number(limit) || 64)));
+        return run(`SELECT simulated.clanId,
+                           COUNT(members.id) AS memberCount,
+                           SUM(CASE WHEN TRIM(COALESCE(members.title, '')) = '' THEN 1 ELSE 0 END) AS untitledCount,
+                           COALESCE(SUM(members.id), 0) AS memberIdSum,
+                           COALESCE(MAX(members.id), 0) AS maxMemberId
+                    FROM clan_simulation_clans simulated
+                    JOIN clans ON clans.id = simulated.clanId
+                    JOIN characters members ON members.clanId = simulated.clanId
+                    WHERE simulated.mode = 'autonomous' AND clans.level >= 3
+                    GROUP BY simulated.clanId
+                    HAVING untitledCount > 0
+                    ORDER BY simulated.updatedAt ASC, simulated.clanId ASC
+                    LIMIT ${safeLimit}`, [], 'clan-title:bootstrap');
+    },
     isAutonomousClan(clanId) {
         return selectOne('clan_simulation_clans', ['clanId'], 'clanId = ? AND mode = ?', [Number(clanId), 'autonomous'], 'clan-simulation:membership')
             .then((rows) => !!rows[0]);
@@ -3682,13 +3698,20 @@ const Database = {
         targetNpcId = 0,
         leaderId = 0,
         memberIds = [],
+        guestMemberIds = [],
         expectedGoalUpdatedAt = null
     } = {}) {
         const clan = Number(clanId);
         const key = String(operationKey || '').trim();
         const members = [...new Set((memberIds || []).map(Number).filter((id) => Number.isSafeInteger(id) && id > 0))]
             .sort((left, right) => left - right);
-        if (!clan || !key || members.length < 2) return Promise.resolve({ ok: false, code: 'party_not_ready' });
+        const clanMembers = new Set(members);
+        const guests = [...new Set((guestMemberIds || []).map(Number).filter((id) => (
+            Number.isSafeInteger(id) && id > 0 && !clanMembers.has(id)
+        )))].sort((left, right) => left - right);
+        const allMembers = [...members, ...guests].sort((left, right) => left - right);
+        const guestSet = new Set(guests);
+        if (!clan || !key || allMembers.length < 2) return Promise.resolve({ ok: false, code: 'party_not_ready' });
 
         return inTransaction(() => {
             const existingByKey = one('SELECT * FROM clan_operations WHERE operationKey = ?', [key]);
@@ -3720,14 +3743,14 @@ const Database = {
             const selectedIds = new Set((goal.assignedMemberIds || []).map(Number));
             if (members.some((id) => !selectedIds.has(id))) return { ok: false, code: 'party_goal_changed' };
 
-            const placeholders = members.map(() => '?').join(', ');
+            const placeholders = allMembers.map(() => '?').join(', ');
             const rows = all(`SELECT c.id, c.clanId, c.username, life.accountName, life.statsJson,
                     life.phase, life.simulationOwner, life.simulationRevision, life.partyId
                 FROM characters c
                 LEFT JOIN bot_life_state life ON life.characterId = c.id
-                WHERE c.id IN (${placeholders})`, members);
-            if (rows.length !== members.length || rows.some((row) => (
-                Number(row.clanId) !== clan
+                WHERE c.id IN (${placeholders})`, allMembers);
+            if (rows.length !== allMembers.length || rows.some((row) => (
+                (!guestSet.has(Number(row.id)) && Number(row.clanId) !== clan)
                 || !generatedBotRow(row)
                 || String(row.phase || '') !== 'cold'
                 || String(row.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER
@@ -3735,7 +3758,7 @@ const Database = {
             ))) return { ok: false, code: 'party_not_ready' };
 
             const activeMember = one(`SELECT characterId FROM clan_operation_members
-                WHERE characterId IN (${placeholders}) AND status = 'active' LIMIT 1`, members);
+                WHERE characterId IN (${placeholders}) AND status = 'active' LIMIT 1`, allMembers);
             if (activeMember) {
                 return { ok: false, code: 'party_member_reservation_conflict', characterId: Number(activeMember.characterId) };
             }
@@ -3765,11 +3788,11 @@ const Database = {
                 String(operationType),
                 Math.max(0, Number(targetNpcId) || 0),
                 resolvedLeader,
-                JSON.stringify(members),
+                JSON.stringify(allMembers),
                 timestamp,
                 timestamp
             ]);
-            members.forEach((characterId) => write(`INSERT INTO clan_operation_members
+            allMembers.forEach((characterId) => write(`INSERT INTO clan_operation_members
                 (operationId, clanId, characterId, status, reservedAt)
                 VALUES (?, ?, ?, 'active', ?)`, [Number(inserted.insertId), clan, characterId, timestamp]));
             write(`INSERT INTO clan_goal_events
@@ -3778,7 +3801,12 @@ const Database = {
                 clan,
                 String(goal.type || ''),
                 String(operationType),
-                JSON.stringify({ operationKey: key, operationId: Number(inserted.insertId), memberIds: members }),
+                JSON.stringify({
+                    operationKey: key,
+                    operationId: Number(inserted.insertId),
+                    memberIds: allMembers,
+                    guestMemberIds: guests
+                }),
                 timestamp
             ]);
             return {
@@ -3786,7 +3814,8 @@ const Database = {
                 code: 'party_operation_started',
                 operationId: Number(inserted.insertId),
                 operationKey: key,
-                memberIds: members,
+                memberIds: allMembers,
+                guestMemberIds: guests,
                 updatedAt: timestamp
             };
         }, 'clan-party:start');
@@ -4624,6 +4653,54 @@ const Database = {
     updateCharacterClan(id, clanId, clanPrivileges, clanJoinExpiryTime, clanCreateExpiryTime) { return update('characters', { clanId, clanPrivileges, clanJoinExpiryTime, clanCreateExpiryTime }, 'id = ?', [id], 'character:clan'); },
     updateCharacterClanPrivileges(id, clanPrivileges) { return update('characters', { clanPrivileges }, 'id = ?', [id], 'character:clan-privileges'); },
     updateCharacterTitle(id, title) { return withCharacterFlush(id, () => update('characters', { title: String(title || '') }, 'id = ?', [id], 'character:title')); },
+    updateAutonomousClanMemberTitles({ clanId, assignments = [] } = {}) {
+        const clan = Number(clanId);
+        const normalized = (assignments || []).map((entry) => ({
+            characterId: Number(entry.characterId),
+            title: String(entry.title || '').trim().replace(/\s+/g, ' ')
+        }));
+        const validTitle = (title) => /^[A-Za-z0-9][A-Za-z0-9 '&+.,:!?-]{1,31}$/.test(title);
+        if (!clan || !normalized.length || normalized.some((entry) => !entry.characterId || !validTitle(entry.title))) {
+            return Promise.resolve({ ok: false, code: 'invalid_clan_titles' });
+        }
+        return withCharacterFlushes(normalized.map((entry) => entry.characterId), () => inTransaction(() => {
+            const simulated = one(`SELECT simulated.clanId, simulated.mode, clans.level
+                FROM clan_simulation_clans simulated
+                JOIN clans ON clans.id = simulated.clanId
+                WHERE simulated.clanId = ?`, [clan]);
+            if (!simulated || String(simulated.mode) !== 'autonomous') {
+                return { ok: false, code: 'target_not_autonomous' };
+            }
+            if (Number(simulated.level) < 3) return { ok: false, code: 'level_too_low' };
+            const ids = new Set();
+            const titles = new Set();
+            for (const assignment of normalized) {
+                if (ids.has(assignment.characterId)) return { ok: false, code: 'duplicate_clan_title_member' };
+                const titleKey = assignment.title.toLowerCase();
+                if (titles.has(titleKey)) return { ok: false, code: 'duplicate_clan_title' };
+                ids.add(assignment.characterId);
+                titles.add(titleKey);
+                const member = one('SELECT id, title FROM characters WHERE id = ? AND clanId = ?', [assignment.characterId, clan]);
+                if (!member) return { ok: false, code: 'not_member' };
+            }
+            const existing = all(`SELECT LOWER(TRIM(title)) AS titleKey
+                FROM characters
+                WHERE clanId = ? AND TRIM(COALESCE(title, '')) <> ''`, [clan]);
+            if (existing.some((entry) => titles.has(String(entry.titleKey || '')))) {
+                return { ok: false, code: 'duplicate_clan_title' };
+            }
+            const updated = [];
+            for (const assignment of normalized) {
+                const current = one('SELECT title FROM characters WHERE id = ? AND clanId = ?', [assignment.characterId, clan]);
+                if (String(current?.title || '').trim()) continue;
+                const result = write('UPDATE characters SET title = ? WHERE id = ? AND clanId = ?', [
+                    assignment.title, assignment.characterId, clan
+                ]);
+                if (Number(result.affectedRows || 0) === 1) updated.push(assignment);
+            }
+            return { ok: true, clanId: clan, updated };
+        }, 'clan-title:apply'));
+    },
     removeCharacterFromClan(id) {
         return withCharacterFlush(id, () => update('characters', {
             clanId: 0,

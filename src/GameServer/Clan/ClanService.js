@@ -307,6 +307,33 @@ const ClanService = {
         });
     },
 
+    applyAutonomousMemberTitles(clanId, assignments) {
+        const clan = this.findById(clanId);
+        return Database.updateAutonomousClanMemberTitles({ clanId, assignments }).then((result) => {
+            if (!result.ok || !clan) return result;
+            const ServerResponse = invoke('GameServer/Network/Response');
+            const updated = [];
+            (result.updated || []).forEach((assignment) => {
+                const member = clan.members.find((entry) => number(entry.id) === number(assignment.characterId));
+                if (member) member.title = String(assignment.title || '');
+                const session = onlineSessionByActorId(assignment.characterId);
+                if (session?.actor) {
+                    session.actor.setTitle?.(assignment.title);
+                    replaceMember(clan, actorMember(session.actor));
+                    session.dataSendToMe(ServerResponse.userInfo(session.actor));
+                    session.dataSendToOthers?.(ServerResponse.charInfo(session.actor), session.actor);
+                    session.dataSendToOthers?.(ServerResponse.relationChanged(session.actor), session.actor);
+                }
+                updated.push({
+                    characterId: number(assignment.characterId),
+                    title: String(assignment.title || ''),
+                    hot: !!session?.actor
+                });
+            });
+            return { ...result, clan, updated };
+        });
+    },
+
     dissolve(actor) {
         const clan = this.clanForActor(actor);
         if (!clan) return Promise.resolve({ ok: false, code: 'no_clan' });

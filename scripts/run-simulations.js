@@ -63,6 +63,8 @@ function launcherUrl(definition) {
 function environmentFor(definition, files, { noBrowser = false } = {}) {
     const environment = {
         ...process.env,
+        L2NODE_SHARED_CONFIG_FILE: process.env.L2NODE_SHARED_CONFIG_FILE
+            || path.join(rootDir, 'config', 'local.ini'),
         L2NODE_CONFIG_FILE: files.configPath,
         L2NODE_RUNTIME_DIR: files.runtimeDir,
         L2NODE_LAUNCHER_SETTINGS_FILE: files.launcherSettingsPath,

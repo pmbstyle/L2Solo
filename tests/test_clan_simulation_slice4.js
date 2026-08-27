@@ -65,26 +65,58 @@ async function main() {
         await Database.execute(['UPDATE clans SET level = 2 WHERE id = ?', [created.clanId]]);
         await Database.execute(['UPDATE clan_simulation_clans SET stateJson = ? WHERE clanId = ?', [JSON.stringify(state), created.clanId]]);
 
+        await Database.upsertClanMarketDemand({
+            clanId: created.clanId,
+            itemId: Config.bloodMarkItemId,
+            amount: 1,
+            maxPrice: Config.bloodMarkMaxPrice,
+            goalKey: `${created.clanId}:legacy-blood-mark`,
+            status: 'open'
+        });
+
         const first = await ClanGoalService.resolveBatch(4, { budgetMs: 1000 });
         assert.strictEqual(first.attempted, 1);
         const [afterFirst] = await Database.execute(['SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?', [created.clanId]]);
         const firstGoal = JSON.parse(afterFirst.stateJson).goal;
-        assert.strictEqual(firstGoal.type, 'item');
-        assert.strictEqual(Number(firstGoal.target.itemId), Number(Config.bloodMarkItemId));
-        assert.strictEqual(firstGoal.plan.kind, 'market', 'a fresh clan demand must expose a market execution plan');
-        assert.strictEqual(firstGoal.status, 'executing');
+        assert.strictEqual(firstGoal.type, 'level');
+        assert.strictEqual(Number(firstGoal.target.level), 55);
+        assert.strictEqual(firstGoal.plan.kind, 'prepare', 'an underlevel clan must level instead of waiting on the Blood Mark market');
+        assert.strictEqual(firstGoal.status, 'preparing');
 
-        const [demand] = await Database.fetchClanMarketDemands({ clanId: created.clanId, itemId: Config.bloodMarkItemId });
-        assert(demand, 'Blood Mark demand must persist');
-        assert.strictEqual(Number(demand.maxPrice), Number(Config.bloodMarkMaxPrice));
-        const demandUpdatedAt = Number(demand.updatedAt);
+        const [cancelledDemand] = await Database.fetchClanMarketDemands({
+            clanId: created.clanId,
+            itemId: Config.bloodMarkItemId,
+            status: 'cancelled'
+        });
+        assert(cancelledDemand, 'a legacy Blood Mark market demand must be cancelled');
         const eventsAfterFirst = await Database.fetchClanGoalEvents(created.clanId, 10);
         assert.strictEqual(eventsAfterFirst.length, 1);
 
         const second = await ClanGoalService.resolveBatch(4, { budgetMs: 1000 });
         assert.strictEqual(second.changed, 0, 'unchanged goal must not churn its persisted state');
-        const [sameDemand] = await Database.fetchClanMarketDemands({ clanId: created.clanId, itemId: Config.bloodMarkItemId });
-        assert.strictEqual(Number(sameDemand.updatedAt), demandUpdatedAt, 'open demand must not refresh every resolve');
+
+        await Database.execute(['UPDATE characters SET level = 60 WHERE id BETWEEN 4400001 AND 4400004']);
+        await Database.execute(['UPDATE bot_life_state SET level = 60 WHERE characterId BETWEEN 4400001 AND 4400004']);
+        await Database.execute(['UPDATE characters SET level = 50 WHERE id = 4400005']);
+        await Database.execute(['UPDATE bot_life_state SET level = 50 WHERE characterId = 4400005']);
+        const almostReady = await ClanGoalService.resolveBatch(4, { budgetMs: 1000 });
+        assert.strictEqual(almostReady.changed, 1);
+        const [afterAlmostReady] = await Database.execute(['SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?', [created.clanId]]);
+        const almostReadyGoal = JSON.parse(afterAlmostReady.stateJson).goal;
+        assert.strictEqual(almostReadyGoal.status, 'preparing');
+        assert.strictEqual(Number(almostReadyGoal.progress), 50,
+            'the lowest member of the required five must keep the leveling goal active');
+
+        await Database.execute(['UPDATE characters SET level = 60 WHERE clanId = ?', [created.clanId]]);
+        await Database.execute(['UPDATE bot_life_state SET level = 60 WHERE characterId BETWEEN 4400001 AND 4400005']);
+        const ready = await ClanGoalService.resolveBatch(4, { budgetMs: 1000 });
+        assert.strictEqual(ready.changed, 1);
+        const [afterReady] = await Database.execute(['SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?', [created.clanId]]);
+        const readyGoal = JSON.parse(afterReady.stateJson).goal;
+        assert.strictEqual(readyGoal.type, 'item');
+        assert.strictEqual(Number(readyGoal.target.itemId), Number(Config.bloodMarkItemId));
+        assert.strictEqual(readyGoal.plan.kind, 'farm', 'a level-ready clan must farm Blood Mark directly');
+        assert.strictEqual(readyGoal.status, 'executing');
 
         for (let failure = 0; failure < Config.catastrophicFailureThreshold; failure += 1) {
             const result = await ClanGoalService.recordCatastrophicFailure(created.clanId);
@@ -93,9 +125,8 @@ async function main() {
         const [afterFailures] = await Database.execute(['SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?', [created.clanId]]);
         const failedGoal = JSON.parse(afterFailures.stateJson).goal;
         assert.strictEqual(Number(failedGoal.catastrophicFailures), Number(Config.catastrophicFailureThreshold));
-        assert.notStrictEqual(failedGoal.plan.kind, 'market', 'threshold failures must force a different execution plan');
-        assert.strictEqual(failedGoal.plan.kind, 'farm', 'a ready role-balanced party should become the fallback plan');
-        assert.strictEqual(failedGoal.status, 'executing');
+        assert.strictEqual(failedGoal.plan.kind, 'prepare', 'repeated farm failures must force a different plan instead of hanging');
+        assert.strictEqual(failedGoal.status, 'preparing');
         const events = await Database.fetchClanGoalEvents(created.clanId, 20);
         assert(events.filter((event) => event.eventType === 'goal_replanned').length >= Config.catastrophicFailureThreshold);
 

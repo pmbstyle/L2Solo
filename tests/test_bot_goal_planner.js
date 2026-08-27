@@ -146,6 +146,35 @@ const affordableNpcJewelryGoal = affordableNpcProgressionGoal(dEarring, 1, [
 assert.strictEqual(affordableNpcJewelryGoal.type, 'upgrade_gear', 'affordable NPC jewellery must still beat an ordinary sale after weapon and armour');
 assert.strictEqual(affordableNpcJewelryGoal.priority, 78);
 
+const clanJewelryGoal = GoalPlanner.plan(NeedsEvaluator.evaluate({
+    ...base,
+    level: 20,
+    adena: Number(dEarring.template.price) + 1000000,
+    persona: { primaryDrive: 'wealth', traits: {} },
+    inventory: {
+        1864: { selfId: 1864, name: 'Stem', amount: 12, kind: 'Other.Material' }
+    },
+    stats: {
+        classId: 0,
+        build: { grade: 'd', classId: 0, level: 20 },
+        equipment: [
+            { selfId: dWeapon.selfId, slot: 7, rank: 'd', name: dWeapon.template.name },
+            { selfId: dChest.selfId, slot: 10, rank: 'd', name: dChest.template.name }
+        ],
+        equipmentPlan: {
+            status: 'active',
+            strategy: 'market',
+            partyNeedReason: 'npc_progression',
+            target: { selfId: dEarring.selfId, slot: 1 },
+            market: { town: 'Giran', price: Number(dEarring.template.price), reserve: 50000, sourceType: 'npc' },
+            clanGoal: { clanId: 77, goalKey: 'clan-equipment:77:1:earring:1', priority: 'required' }
+        }
+    }
+}, { spot, now: timestamp }), timestamp);
+assert.strictEqual(clanJewelryGoal.type, 'upgrade_gear',
+    'a funded clan jewellery assignment must outrank a voluntary wealth sale');
+assert.strictEqual(clanJewelryGoal.priority, 89);
+
 const recoveringNpcBuyer = GoalPlanner.plan(NeedsEvaluator.evaluate({
     ...base,
     level: 20,

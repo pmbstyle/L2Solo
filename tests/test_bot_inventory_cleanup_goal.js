@@ -201,6 +201,51 @@ const npcFixtures = DataCache.items
     .filter((item) => /^(recipe:|spellbook)/i.test(item?.template?.name || ''))
     .slice(0, 21);
 assert(npcFixtures.length >= 21, 'the datapack must contain enough recipe/spellbook fixtures');
+const skillBooks = DataCache.items.filter((item) => {
+    const name = String(item?.template?.name || '').toLowerCase();
+    const kind = String(item?.template?.kind || '');
+    return kind.startsWith('Other.Spellbook') || name.includes('spellbook') || /^amulet\b/.test(name);
+});
+assert(skillBooks.length > 100, 'the datapack must expose the full C4 skill-book catalog');
+assert(skillBooks.every((item) => ItemDisposition.isNpcOnlyItem({
+    selfId: item.selfId,
+    name: item.template.name,
+    kind: item.template.kind,
+    amount: 1
+})), 'every spellbook and Orc amulet must be NPC-only for every class');
+const orcAmulets = DataCache.items.filter((item) => /^amulet\b/i.test(item?.template?.name || ''));
+assert(orcAmulets.length > 40, 'the datapack must expose the C4 Orc amulet catalog');
+assert(orcAmulets.every((item) => ItemDisposition.isSkillBookItem({
+    selfId: item.selfId,
+    name: item.template.name,
+    kind: item.template.kind,
+    amount: 1
+})), 'colon and hyphen named Orc amulets must all be treated as skill books');
+const chantOfRevenge = skillBooks.find((item) => item.template.name === 'Amulet: Chant of Revenge');
+assert(chantOfRevenge, 'Amulet: Chant of Revenge must exist in the datapack fixture');
+const chantState = {
+    ...state,
+    inventory: {
+        [chantOfRevenge.selfId]: {
+            selfId: chantOfRevenge.selfId,
+            name: chantOfRevenge.template.name,
+            kind: chantOfRevenge.template.kind,
+            stackable: false,
+            amount: 1,
+            instances: [{ id: 9199999, amount: 1, equipped: false, slot: 0 }]
+        }
+    }
+};
+const chantDisposition = MarketListingPolicy.evaluate(chantState);
+assert.strictEqual(chantDisposition.npc[0]?.selfId, chantOfRevenge.selfId,
+    'Amulet: Chant of Revenge must route to NPC liquidation');
+assert.deepStrictEqual(chantDisposition.warehouse, [], 'skill books must never be warehoused');
+assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed(chantState, { now }), {
+    reason: 'npc_only_inventory',
+    slots: 1,
+    npcOnlySlots: 1,
+    limit: ItemDisposition.INVENTORY_SLOT_LIMIT
+}, 'one skill book must immediately schedule an NPC cleanup trip');
 const npcState = {
     ...state,
     inventory: Object.fromEntries(npcFixtures.map((item, index) => [String(item.selfId), {
