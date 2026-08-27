@@ -667,9 +667,8 @@ const BotManager = {
                         session.actor.state.setSeated(true);
 
                         // A C4 shop title is carried by PrivateStoreMsg, not
-                        // CharInfo.title. Keeping it out of the character
-                        // title prevents an extra coloured nameplate line.
-                        session.actor.setTitle('');
+                        // CharInfo.title. Preserve the independently persisted
+                        // clan title while publishing the store overlay.
                         session.actor.setPrivateStoreType(privateStore.storeType);
 
                         const storeItems = TradeService.normalizeStoreItems(privateStore);
@@ -687,7 +686,6 @@ const BotManager = {
                         session.plan = 'merchant';
                         session.coldCraftState = botData.coldCraftState || null;
                         session.actor.state.setSeated(true);
-                        session.actor.setTitle('');
                         session.actor.setPrivateStoreType(5);
                         const manufactureStore = session.actor.model || session.actor;
                         manufactureStore.manufactureShop = {

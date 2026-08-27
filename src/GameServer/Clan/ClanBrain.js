@@ -210,17 +210,17 @@ async function resolveDecision(entry, clan, candidateSnapshot, cfg, options = {}
 function choose(clan, candidateSnapshot, options = {}) {
     prune();
     if (!candidateSnapshot?.candidates?.length) return fallback(candidateSnapshot || { candidates: [] }, 'no_candidates');
-    const cfg = options.config || configured();
-    if (!cfg || !candidateSnapshot.decisionNeeded) {
-        if (!cfg) metrics.disabled += 1;
-        return fallback(candidateSnapshot, candidateSnapshot.decisionNeeded ? 'llm_not_configured' : 'decision_not_needed');
-    }
     const key = candidateSnapshot.key;
     const existing = decisions.get(key);
     if (existing?.state === 'resolved') return existing.result;
     if (existing?.state === 'pending') {
         metrics.pending += 1;
         return { pending: true, key, reasonCode: 'clan_llm_pending' };
+    }
+    const cfg = options.config || configured();
+    if (!cfg || !candidateSnapshot.decisionNeeded) {
+        if (!cfg) metrics.disabled += 1;
+        return fallback(candidateSnapshot, candidateSnapshot.decisionNeeded ? 'llm_not_configured' : 'decision_not_needed');
     }
 
     const entry = {

@@ -63,7 +63,7 @@ async function clanProjection(clanId = null) {
         SELECT simulated.clanId, simulated.stateJson,
                clans.name, clans.level, clans.leaderId,
                members.id AS characterId, members.name AS memberName,
-               members.classId, members.level AS memberLevel, members.clanId AS memberClanId,
+               members.title AS memberTitle, members.classId, members.level AS memberLevel, members.clanId AS memberClanId,
                life.accountName, life.activity, life.phase, life.adena, life.currentRegion,
                life.partyId,
                life.simulationOwner, life.simulationRevision, life.inventorySummary, life.statsJson
@@ -91,6 +91,7 @@ async function clanProjection(clanId = null) {
             characterId: number(row.characterId),
             id: number(row.characterId),
             name: String(row.memberName || ''),
+            title: String(row.memberTitle || ''),
             classId: number(row.classId, -1),
             level: number(row.memberLevel),
             clanId: number(row.memberClanId),

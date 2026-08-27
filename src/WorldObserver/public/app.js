@@ -1247,7 +1247,7 @@ function renderClanDetail() {
                 <div class="clan-member-list" role="list">
                     ${members.length ? members.map((member) => `
                         <button class="clan-member-row" type="button" data-clan-member-id="${escapeHtml(member.id)}" data-clan-member-kind="${escapeHtml(member.kind)}">
-                            <span class="clan-member-main"><strong>${text(member.isLeader ? `♛ ${member.name}` : member.name)}</strong><span>${text(member.className, 'Unknown class')} · ${text(roleLabel(member.role || 'member'))} · Lv ${number(member.level, '?')}</span></span>
+                            <span class="clan-member-main"><strong>${text(member.isLeader ? `♛ ${member.name}` : member.name)}</strong><span>${member.title ? `${text(member.title)} · ` : ''}${text(member.className, 'Unknown class')} · ${text(roleLabel(member.role || 'member'))} · Lv ${number(member.level, '?')}</span></span>
                             <span class="clan-member-state"><strong>${text(activityLabel(member.activity || member.phase), member.phase)}</strong><span>${text(member.region, 'Unknown location')}</span></span>
                         </button>
                     `).join('') : '<div class="list-empty">No clan members found.</div>'}

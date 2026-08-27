@@ -3272,6 +3272,22 @@ const Database = {
             ORDER BY simulated.updatedAt ASC, simulated.clanId ASC
             LIMIT ${safeLimit}`, [], 'clan-action:bootstrap');
     },
+    fetchAutonomousClansNeedingTitles(limit = 64) {
+        const safeLimit = Math.max(1, Math.min(500, Math.floor(Number(limit) || 64)));
+        return run(`SELECT simulated.clanId,
+                           COUNT(members.id) AS memberCount,
+                           SUM(CASE WHEN TRIM(COALESCE(members.title, '')) = '' THEN 1 ELSE 0 END) AS untitledCount,
+                           COALESCE(SUM(members.id), 0) AS memberIdSum,
+                           COALESCE(MAX(members.id), 0) AS maxMemberId
+                    FROM clan_simulation_clans simulated
+                    JOIN clans ON clans.id = simulated.clanId
+                    JOIN characters members ON members.clanId = simulated.clanId
+                    WHERE simulated.mode = 'autonomous' AND clans.level >= 3
+                    GROUP BY simulated.clanId
+                    HAVING untitledCount > 0
+                    ORDER BY simulated.updatedAt ASC, simulated.clanId ASC
+                    LIMIT ${safeLimit}`, [], 'clan-title:bootstrap');
+    },
     isAutonomousClan(clanId) {
         return selectOne('clan_simulation_clans', ['clanId'], 'clanId = ? AND mode = ?', [Number(clanId), 'autonomous'], 'clan-simulation:membership')
             .then((rows) => !!rows[0]);
@@ -4637,6 +4653,54 @@ const Database = {
     updateCharacterClan(id, clanId, clanPrivileges, clanJoinExpiryTime, clanCreateExpiryTime) { return update('characters', { clanId, clanPrivileges, clanJoinExpiryTime, clanCreateExpiryTime }, 'id = ?', [id], 'character:clan'); },
     updateCharacterClanPrivileges(id, clanPrivileges) { return update('characters', { clanPrivileges }, 'id = ?', [id], 'character:clan-privileges'); },
     updateCharacterTitle(id, title) { return withCharacterFlush(id, () => update('characters', { title: String(title || '') }, 'id = ?', [id], 'character:title')); },
+    updateAutonomousClanMemberTitles({ clanId, assignments = [] } = {}) {
+        const clan = Number(clanId);
+        const normalized = (assignments || []).map((entry) => ({
+            characterId: Number(entry.characterId),
+            title: String(entry.title || '').trim().replace(/\s+/g, ' ')
+        }));
+        const validTitle = (title) => /^[A-Za-z0-9][A-Za-z0-9 '&+.,:!?-]{1,31}$/.test(title);
+        if (!clan || !normalized.length || normalized.some((entry) => !entry.characterId || !validTitle(entry.title))) {
+            return Promise.resolve({ ok: false, code: 'invalid_clan_titles' });
+        }
+        return withCharacterFlushes(normalized.map((entry) => entry.characterId), () => inTransaction(() => {
+            const simulated = one(`SELECT simulated.clanId, simulated.mode, clans.level
+                FROM clan_simulation_clans simulated
+                JOIN clans ON clans.id = simulated.clanId
+                WHERE simulated.clanId = ?`, [clan]);
+            if (!simulated || String(simulated.mode) !== 'autonomous') {
+                return { ok: false, code: 'target_not_autonomous' };
+            }
+            if (Number(simulated.level) < 3) return { ok: false, code: 'level_too_low' };
+            const ids = new Set();
+            const titles = new Set();
+            for (const assignment of normalized) {
+                if (ids.has(assignment.characterId)) return { ok: false, code: 'duplicate_clan_title_member' };
+                const titleKey = assignment.title.toLowerCase();
+                if (titles.has(titleKey)) return { ok: false, code: 'duplicate_clan_title' };
+                ids.add(assignment.characterId);
+                titles.add(titleKey);
+                const member = one('SELECT id, title FROM characters WHERE id = ? AND clanId = ?', [assignment.characterId, clan]);
+                if (!member) return { ok: false, code: 'not_member' };
+            }
+            const existing = all(`SELECT LOWER(TRIM(title)) AS titleKey
+                FROM characters
+                WHERE clanId = ? AND TRIM(COALESCE(title, '')) <> ''`, [clan]);
+            if (existing.some((entry) => titles.has(String(entry.titleKey || '')))) {
+                return { ok: false, code: 'duplicate_clan_title' };
+            }
+            const updated = [];
+            for (const assignment of normalized) {
+                const current = one('SELECT title FROM characters WHERE id = ? AND clanId = ?', [assignment.characterId, clan]);
+                if (String(current?.title || '').trim()) continue;
+                const result = write('UPDATE characters SET title = ? WHERE id = ? AND clanId = ?', [
+                    assignment.title, assignment.characterId, clan
+                ]);
+                if (Number(result.affectedRows || 0) === 1) updated.push(assignment);
+            }
+            return { ok: true, clanId: clan, updated };
+        }, 'clan-title:apply'));
+    },
     removeCharacterFromClan(id) {
         return withCharacterFlush(id, () => update('characters', {
             clanId: 0,
