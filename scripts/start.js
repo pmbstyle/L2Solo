@@ -109,14 +109,18 @@ function mergeConfig(base, override) {
 
 function readConfig() {
     const defaultPath = path.join(rootDir, 'config', 'default.ini');
-    const localPath = process.env.L2NODE_CONFIG_FILE
+    const overridePath = process.env.L2NODE_CONFIG_FILE
         ? resolveRootPath(process.env.L2NODE_CONFIG_FILE)
-        : path.join(rootDir, 'config', 'local.ini');
+        : null;
+    const sharedPath = process.env.L2NODE_SHARED_CONFIG_FILE
+        ? resolveRootPath(process.env.L2NODE_SHARED_CONFIG_FILE)
+        : null;
+    const localPath = overridePath ? null : path.join(rootDir, 'config', 'local.ini');
     const config = parseIni(fs.readFileSync(defaultPath, 'utf8'));
 
-    if (fs.existsSync(localPath)) {
-        mergeConfig(config, parseIni(fs.readFileSync(localPath, 'utf8')));
-    }
+    [sharedPath, localPath, overridePath].filter(Boolean).forEach((configPath) => {
+        if (fs.existsSync(configPath)) mergeConfig(config, parseIni(fs.readFileSync(configPath, 'utf8')));
+    });
 
     return config;
 }

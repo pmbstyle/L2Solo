@@ -136,6 +136,15 @@ function workDone(actionType, result = {}) {
     return result.changed === true;
 }
 
+function reviewDelayFor(actionType, goal, result = {}, ok = true, productive = workDone(actionType, result)) {
+    if (!ok) return Config.actionRetryMs;
+    if (productive) return 0;
+    if (actionType === ACTION_TYPES.PLAN) {
+        return goal?.type === 'equipment' ? Config.equipmentReviewMs : Config.goalReviewMs;
+    }
+    return Config.actionRetryMs;
+}
+
 function deferredRetryDelay(actionType, result = {}) {
     const reason = String(result?.code || result?.reason || '');
     if (
@@ -428,7 +437,7 @@ async function resolveAction(action, options = {}) {
                 await schedulePlanAfterMarketMiss(clan, action, result);
             } else if (clan && goal && !(String(action.actionType) === ACTION_TYPES.PLAN && goal.status === 'completed')) {
                 const productive = ok && workDone(String(action.actionType), result);
-                const delay = ok && productive ? 0 : Config.actionRetryMs;
+                const delay = reviewDelayFor(String(action.actionType), goal, result, ok, productive);
                 await scheduleNext(clan, goal, action, result, delay);
                 if (delay > 0) metrics.retried += 1;
             }
@@ -482,6 +491,7 @@ const ClanActionService = {
     actionTypes: ACTION_TYPES,
     bootstrap,
     scheduleTitleReview,
+    reviewDelayFor,
     resolveAction,
 
     resolveBatch(options = {}) {

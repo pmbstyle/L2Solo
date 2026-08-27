@@ -4,7 +4,7 @@ const http = require('http');
 const net = require('net');
 const os = require('os');
 const path = require('path');
-const { spawn } = require('child_process');
+const { execFileSync, spawn } = require('child_process');
 const {
     ensureInstanceFiles,
     environmentFor,
@@ -72,9 +72,61 @@ function stopLauncher(child) {
     const children = [];
 
     try {
+        const sharedConfigPath = path.join(tmpDir, 'shared.ini');
+        const overrideConfigPath = path.join(tmpDir, 'override.ini');
+        fs.writeFileSync(sharedConfigPath, [
+            '[OpenRouter]',
+            'enabled = true',
+            'apiKey = shared-test-key',
+            '',
+            '[ClanSimulation]',
+            'llmGoalManagementEnabled = true',
+            'llmTitleManagementEnabled = true',
+            '',
+            '[WorldObserver]',
+            'port = 8198',
+            ''
+        ].join('\n'));
+        fs.writeFileSync(overrideConfigPath, [
+            '[Database]',
+            'path = tmp/shared-config-test.sqlite',
+            '',
+            '[WorldObserver]',
+            'port = 8199',
+            ''
+        ].join('\n'));
+        const probe = execFileSync(process.execPath, ['-e', [
+            "require('./src/Global')",
+            "console.log(JSON.stringify({",
+            "  key: options.default.OpenRouter.apiKey,",
+            "  goals: options.default.ClanSimulation.llmGoalManagementEnabled,",
+            "  titles: options.default.ClanSimulation.llmTitleManagementEnabled,",
+            "  observerPort: options.default.WorldObserver.port,",
+            "  databasePath: options.default.Database.path",
+            "}))"
+        ].join('\n')], {
+            cwd: path.resolve(__dirname, '..'),
+            env: {
+                ...process.env,
+                L2NODE_SHARED_CONFIG_FILE: sharedConfigPath,
+                L2NODE_CONFIG_FILE: overrideConfigPath
+            },
+            encoding: 'utf8'
+        });
+        assert.deepStrictEqual(JSON.parse(probe.trim()), {
+            key: 'shared-test-key',
+            goals: true,
+            titles: true,
+            observerPort: 8199,
+            databasePath: 'tmp/shared-config-test.sqlite'
+        }, 'shared local settings must load before the isolated instance overrides');
+
         const instanceStates = definitions.map((definition) => {
             const files = ensureInstanceFiles(definition, tmpDir);
             const environment = environmentFor(definition, files, { noBrowser: true });
+            assert.strictEqual(environment.L2NODE_SHARED_CONFIG_FILE, path.join(
+                path.resolve(__dirname, '..'), 'config', 'local.ini'
+            ));
             const child = spawn(process.execPath, [path.join('scripts', 'start.js')], {
                 cwd: path.resolve(__dirname, '..'),
                 env: environment,

@@ -271,8 +271,9 @@ async function main() {
 
         const dissolved = [];
         PartyState.active = () => [
-            { partyId: 'same-clean', memberIds: [1001, 1002], stats: { objective: { clanGoalKey: clanPlan.clanGoal.goalKey } } },
-            { partyId: 'same-mixed', memberIds: [1001, 9999], stats: { objective: { clanGoalKey: clanPlan.clanGoal.goalKey } } },
+            { partyId: 'same-clean', spotId: 'test-spot', memberIds: [1001, 1002], stats: { objective: { clanGoalKey: clanPlan.clanGoal.goalKey, objectiveKey: 'direct_drop:test-spot:701', npcId: 701 } } },
+            { partyId: 'same-wrong-route', spotId: 'old-spot', memberIds: [1001, 1002], stats: { objective: { clanGoalKey: clanPlan.clanGoal.goalKey, objectiveKey: 'direct_drop:old-spot:700', npcId: 700 } } },
+            { partyId: 'same-mixed', spotId: 'test-spot', memberIds: [1001, 9999], stats: { objective: { clanGoalKey: clanPlan.clanGoal.goalKey, objectiveKey: 'direct_drop:test-spot:701', npcId: 701 } } },
             { partyId: 'wrong-goal', memberIds: [1002, 1003], stats: { objective: { clanGoalKey: 'clan-equipment:78:1002:9202:7' } } }
         ];
         PartyState.setStatus = async (partyId, status) => {
@@ -282,11 +283,12 @@ async function main() {
         LifeState.releaseDissolvedPartyMembers = async () => 2;
         const reformed = await ClanEquipmentService.releaseConflictingRosterParties(
             [1001, 1002, 1003],
-            { goalKey: clanPlan.clanGoal.goalKey }
+            { goalKey: clanPlan.clanGoal.goalKey },
+            { spotId: 'test-spot', objectiveKey: 'direct_drop:test-spot:701', npcId: 701 }
         );
-        assert.deepStrictEqual(dissolved.map((entry) => entry.partyId), ['same-mixed', 'wrong-goal']);
-        assert.deepStrictEqual(reformed, { parties: 2, releasedMembers: 4 },
-            'a clan equipment review must dissolve mixed or foreign parties before rebuilding its roster');
+        assert.deepStrictEqual(dissolved.map((entry) => entry.partyId), ['same-wrong-route', 'same-mixed', 'wrong-goal']);
+        assert.deepStrictEqual(reformed, { parties: 3, releasedMembers: 6 },
+            'a clan equipment review must dissolve wrong-route, mixed, or foreign parties before rebuilding its roster');
 
         console.log('Clan equipment plan lock checks passed');
     } finally {

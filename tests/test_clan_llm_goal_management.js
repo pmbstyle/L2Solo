@@ -105,6 +105,76 @@ async function main() {
             'equipping a completed goal item must invalidate the clan planning cache immediately'
         );
 
+        CandidateService.reset();
+        const stalledAt = Date.now() - 20 * 60 * 1000;
+        const stalledGoal = {
+            type: 'equipment',
+            status: 'executing',
+            goalKey: 'clan-equipment:77:701:1001:7',
+            target: { memberId: 701, itemId: 1001, slot: 7 },
+            assignedMemberIds: [701, 702],
+            createdAt: stalledAt,
+            updatedAt: stalledAt
+        };
+        const requiredPlan = {
+            ...plans.get(701),
+            partyNeed: 'required',
+            requiresParty: true
+        };
+        plans.set(701, requiredPlan);
+        clan.state.goal = stalledGoal;
+        clan.state.updatedAt = stalledAt;
+        clan.members.forEach((member) => {
+            member.partyId = `old-party-${member.id}`;
+            member.spotId = 'old-spot';
+            member.stats = {
+                clanPartyObjective: {
+                    status: 'open',
+                    clanGoalKey: stalledGoal.goalKey,
+                    objectiveKey: 'direct_drop:test-spot:20001',
+                    requestedAt: stalledAt,
+                    lastMatchedAt: null
+                }
+            };
+        });
+        EquipmentService.planningForClan = async () => ({
+            spots: [],
+            warehouseRows: [],
+            plans,
+            selection: { member: clan.members[0], plan: requiredPlan, priority: 1 },
+            previousFulfilled: false
+        });
+        const stalledSnapshot = await CandidateService.snapshotFor(clan, stalledGoal, {
+            now: Date.now(),
+            partyStallMs: 15 * 60 * 1000,
+            hardStallMs: 6 * 60 * 60 * 1000
+        });
+        assert.strictEqual(stalledSnapshot.decisionReason, 'goal_party_stalled');
+        assert.strictEqual(stalledSnapshot.decisionNeeded, true,
+            'a clan party stuck on unrelated routes must be returned to the LLM');
+        assert.strictEqual(stalledSnapshot.stall.conflictingPartyCount, 2);
+        assert.strictEqual(stalledSnapshot.candidates.length, 2,
+            'background-party membership must not hide valid clan goal candidates');
+
+        CandidateService.reset();
+        clan.members[0].spotId = 'test-spot';
+        const progressingSnapshot = await CandidateService.snapshotFor(clan, stalledGoal, {
+            now: Date.now(),
+            partyStallMs: 15 * 60 * 1000,
+            hardStallMs: 6 * 60 * 60 * 1000
+        });
+        assert.strictEqual(progressingSnapshot.decisionReason, 'goal_progressing',
+            'an active party at the objective spot is productive, not stalled');
+
+        clan.state.goal = null;
+        clan.state.updatedAt = 1;
+        clan.members.forEach((member) => {
+            member.partyId = null;
+            member.spotId = null;
+            member.stats = {};
+        });
+        plans.set(701, plan(1001, 'Leader Armor'));
+
         const history = ContextAssembler.historyFromEvents([
             {
                 eventType: 'equipment_goal_updated',
@@ -187,7 +257,9 @@ async function main() {
         };
         let releaseTransport;
         let capturedBody;
+        let transportCalls = 0;
         OpenRouterGateway.setTransport(async (_url, init) => {
+            transportCalls += 1;
             capturedBody = JSON.parse(init.body);
             await new Promise((resolve) => { releaseTransport = resolve; });
             return response({
@@ -205,6 +277,7 @@ async function main() {
         });
 
         const pending = ClanBrain.choose(clan, brainSnapshot, {
+            actionId: 991,
             config: testConfig,
             assemble: async () => assembled
         });
@@ -230,8 +303,13 @@ async function main() {
             capturedBody.response_format.json_schema.schema.properties.candidateId.enum,
             candidates.map((entry) => entry.id)
         );
-        assert.strictEqual(ClanBrain.choose(clan, brainSnapshot).candidateId, candidates[1].id,
+        assert.strictEqual(ClanBrain.choose(clan, {
+            ...brainSnapshot,
+            key: 'clan-77-volatile-revision'
+        }, { actionId: 991 }).candidateId, candidates[1].id,
             'a resolved decision should be reused without another model request');
+        assert.strictEqual(transportCalls, 1,
+            'one durable clan action must not repeat inference when the volatile snapshot key changes');
 
         ClanBrain.reset();
         BotInferenceBudget.reset();

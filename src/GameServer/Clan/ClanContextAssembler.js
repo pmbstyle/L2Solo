@@ -239,6 +239,7 @@ async function assemble(clan, candidateSnapshot, options = {}) {
     const goalHistory = historyFromEvents(events, clan.state?.goal || null);
     const base = {
         decisionReason: candidateSnapshot.decisionReason,
+        stall: candidateSnapshot.stall?.stalled ? candidateSnapshot.stall : null,
         clan: clanSnapshot(clan, candidateSnapshot.planning),
         currentGoal: compactGoal(clan.state?.goal || null),
         history: {

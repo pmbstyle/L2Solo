@@ -64,7 +64,7 @@ async function clanProjection(clanId = null) {
                clans.name, clans.level, clans.leaderId,
                members.id AS characterId, members.name AS memberName,
                members.title AS memberTitle, members.classId, members.level AS memberLevel, members.clanId AS memberClanId,
-               life.accountName, life.activity, life.phase, life.adena, life.currentRegion,
+               life.accountName, life.activity, life.phase, life.adena, life.currentRegion, life.spotId,
                life.partyId,
                life.simulationOwner, life.simulationRevision, life.inventorySummary, life.statsJson
         FROM clan_simulation_clans simulated
@@ -99,6 +99,7 @@ async function clanProjection(clanId = null) {
             activity: String(row.activity || ''),
             phase: String(row.phase || ''),
             currentRegion: String(row.currentRegion || ''),
+            spotId: row.spotId || null,
             partyId: row.partyId || null,
             simulationOwner: String(row.simulationOwner || 'legacy_main'),
             adena: number(row.adena),
@@ -286,23 +287,24 @@ async function resolveClan(clan, options = {}) {
             if (persisted.ok) {
                 if (!previous) metrics.goalsCreated += 1;
                 else metrics.goalsUpdated += 1;
-                if (brain?.source === 'llm') {
-                    await Database.recordClanGoalEvent({
-                        clanId: clan.id,
-                        eventType: 'llm_goal_selected',
-                        goalType: goal.type,
-                        plan: goal.plan?.kind || '',
-                        reasonCode: brain.reasonCode || 'llm_goal_selected',
-                        payload: {
-                            candidateId: brain.candidateId,
-                            route: brain.route,
-                            target: goal.target,
-                            context: brain.contextTelemetry || null,
-                            usage: brain.usage || null
-                        }
-                    });
-                }
             }
+        }
+        if (persisted.ok && brain?.source === 'llm') {
+            await Database.recordClanGoalEvent({
+                clanId: clan.id,
+                eventType: changed ? 'llm_goal_selected' : 'llm_goal_retained',
+                goalType: goal.type,
+                plan: goal.plan?.kind || '',
+                reasonCode: brain.reasonCode || candidateSnapshot.decisionReason || 'llm_goal_selected',
+                payload: {
+                    candidateId: brain.candidateId,
+                    route: brain.route,
+                    target: goal.target,
+                    stall: candidateSnapshot.stall || null,
+                    context: brain.contextTelemetry || null,
+                    usage: brain.usage || null
+                }
+            });
         }
         record(metrics.planCounts, goal.plan?.kind);
         metrics.activeGoals += goal.status !== 'completed' ? 1 : 0;
@@ -317,6 +319,8 @@ async function resolveClan(clan, options = {}) {
                 plans: equipment.plans,
                 candidateCount: candidateSnapshot.candidates.length,
                 candidateCacheHit: candidateSnapshot.cacheHit,
+                stall: candidateSnapshot.stall || null,
+                partyReform: equipment.partyReform || null,
                 decisionSource: brain?.source || 'deterministic',
                 decisionReason: brain?.reasonCode || candidateSnapshot.decisionReason
             },

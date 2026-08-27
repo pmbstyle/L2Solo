@@ -304,6 +304,21 @@ async function main() {
         assert(ClanActionService.metrics().stages.defer.count >= 1, 'defer settlement latency must be observable');
         assert(ClanActionService.metrics().stages['execute:party'].count >= 1,
             'party execution latency must remain separately observable');
+        assert.strictEqual(
+            ClanActionService.reviewDelayFor('goal_plan', { type: 'equipment' }, { changed: false }),
+            ClanActionService.config.equipmentReviewMs,
+            'an unchanged equipment plan must use the bounded equipment review cadence'
+        );
+        assert.strictEqual(
+            ClanActionService.reviewDelayFor('goal_plan', { type: 'level' }, { changed: false }),
+            ClanActionService.config.goalReviewMs,
+            'an unchanged progression plan must not re-run every action retry minute'
+        );
+        assert.strictEqual(
+            ClanActionService.reviewDelayFor('goal_plan', { type: 'equipment' }, { changed: true }),
+            0,
+            'a productive goal change may advance immediately'
+        );
 
         const readyRoster = [4, 15, 21, 11, 56].map((classId) => ({ classId, phase: 'cold' }));
         assert.strictEqual(ClanGoalPolicy.hasReadyRoles(readyRoster), true);

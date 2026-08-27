@@ -251,15 +251,23 @@ async function releasePreviousBeneficiary(clan, previousGoal, nextGoal) {
     return { changed: !!saved || parties.length > 0, releasedMembers };
 }
 
-async function releaseConflictingRosterParties(assignedMemberIds, goal) {
+async function releaseConflictingRosterParties(assignedMemberIds, goal, expectedObjective = null) {
     const roster = new Set((assignedMemberIds || []).map(number).filter(Boolean));
     if (!roster.size) return { parties: 0, releasedMembers: 0 };
     const goalKey = String(goal?.goalKey || '');
     const parties = BackgroundPartyState.active().filter((party) => {
         const memberIds = (party.memberIds || []).map(number).filter(Boolean);
         if (!memberIds.some((id) => roster.has(id))) return false;
-        const partyGoalKey = String(party?.stats?.objective?.clanGoalKey || '');
-        return partyGoalKey !== goalKey || memberIds.some((id) => !roster.has(id));
+        const partyObjective = party?.stats?.objective || null;
+        const partyGoalKey = String(partyObjective?.clanGoalKey || '');
+        const sameRoute = !expectedObjective || (
+            String(party.spotId || '') === String(expectedObjective.spotId || '')
+            && String(partyObjective?.objectiveKey || '') === String(expectedObjective.objectiveKey || '')
+            && number(partyObjective?.npcId) === number(expectedObjective.npcId)
+        );
+        return partyGoalKey !== goalKey
+            || !sameRoute
+            || memberIds.some((id) => !roster.has(id));
     });
     let releasedMembers = 0;
     for (const party of parties) {
@@ -468,7 +476,8 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
         roleFor: ClanPolicy.rosterRole
     });
     const rotation = await releasePreviousBeneficiary(clan, previousGoal, goal);
-    const partyReform = await releaseConflictingRosterParties(assignedMemberIds, goal);
+    const expectedObjective = clanPartyObjective(selection.plan, goal, 'required', clan.id);
+    const partyReform = await releaseConflictingRosterParties(assignedMemberIds, goal, expectedObjective);
     const assignment = await assignPlan(selection.member, selection.plan, clan, goal);
     if (!assignment.ok) {
         metrics.assignmentFailures += 1;

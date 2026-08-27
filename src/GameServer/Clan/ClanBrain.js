@@ -92,6 +92,26 @@ function prune(now = Date.now()) {
     }
 }
 
+function decisionKey(candidateSnapshot, options = {}) {
+    const actionId = number(options.actionId);
+    return actionId > 0
+        ? `clan-action:${actionId}`
+        : String(candidateSnapshot?.key || '');
+}
+
+function reuseResolved(entry, candidateSnapshot) {
+    const result = entry?.result;
+    if (!result || result.source !== 'llm') return result;
+    const candidate = candidateSnapshot.candidates.find((item) => (
+        item.id === result.candidateId
+        && String(item.route?.kind || '') === String(result.route || '')
+    ));
+    if (candidate) return { ...result, candidate };
+    return fallback(candidateSnapshot, 'decision_candidate_stale', {
+        reusedDecisionKey: entry.key
+    });
+}
+
 function configured() {
     const cfg = OpenRouterGateway.config({
         maxTokens: MAX_COMPLETION_TOKENS,
@@ -210,9 +230,9 @@ async function resolveDecision(entry, clan, candidateSnapshot, cfg, options = {}
 function choose(clan, candidateSnapshot, options = {}) {
     prune();
     if (!candidateSnapshot?.candidates?.length) return fallback(candidateSnapshot || { candidates: [] }, 'no_candidates');
-    const key = candidateSnapshot.key;
+    const key = decisionKey(candidateSnapshot, options);
     const existing = decisions.get(key);
-    if (existing?.state === 'resolved') return existing.result;
+    if (existing?.state === 'resolved') return reuseResolved(existing, candidateSnapshot);
     if (existing?.state === 'pending') {
         metrics.pending += 1;
         return { pending: true, key, reasonCode: 'clan_llm_pending' };
@@ -246,6 +266,7 @@ module.exports = {
     REASON_CODES,
     systemPrompt,
     responseSchema,
+    decisionKey,
     configured,
     choose,
     async waitFor(key) {

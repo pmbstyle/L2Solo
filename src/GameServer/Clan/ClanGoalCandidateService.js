@@ -1,6 +1,7 @@
 const EquipmentService = invoke('GameServer/Clan/ClanEquipmentService');
 const EquipmentPolicy = invoke('GameServer/Clan/ClanEquipmentPolicy');
 const ClanPolicy = invoke('GameServer/Clan/ClanSimulationPolicy');
+const Config = invoke('GameServer/Clan/ClanSimulationConfig');
 
 const CACHE_TTL_MS = 30 * 1000;
 const MAX_CACHE_ENTRIES = 128;
@@ -125,19 +126,74 @@ function candidateFor(clan, member, plan, previousGoal, rank) {
     };
 }
 
-function decisionReason(previousGoal, planning, candidates) {
+function goalStallAssessment(clan, previousGoal, candidates, options = {}) {
+    if (!previousGoal || previousGoal.type !== 'equipment' || previousGoal.status !== 'executing') {
+        return { stalled: false, reason: null };
+    }
+    const now = number(options.now, Date.now());
+    const goalUpdatedAt = number(previousGoal.updatedAt || previousGoal.createdAt);
+    const ageMs = goalUpdatedAt > 0 ? Math.max(0, now - goalUpdatedAt) : 0;
+    const current = candidates.find((candidate) => candidate.assessment.current) || null;
+    if (current && !current.route.available) {
+        return { stalled: true, reason: 'goal_route_unavailable', ageMs };
+    }
+    const hardStallMs = Math.max(1000, number(options.hardStallMs, Config.equipmentHardStallMs));
+    if (ageMs >= hardStallMs) {
+        return { stalled: true, reason: 'goal_hard_stalled', ageMs, hardStallMs };
+    }
+    if (!current || current.route.partyNeed !== 'required') {
+        return { stalled: false, reason: null, ageMs };
+    }
+    const partyStallMs = Math.max(1000, number(options.partyStallMs, Config.equipmentPartyStallMs));
+    if (ageMs < partyStallMs) return { stalled: false, reason: null, ageMs, partyStallMs };
+
+    const assignedIds = new Set((previousGoal.assignedMemberIds || []).map(number).filter(Boolean));
+    const assigned = (clan?.members || []).filter((member) => assignedIds.has(memberId(member)));
+    const goalKey = String(previousGoal.goalKey || '');
+    const sourceSpotId = String(current.route.source?.spotId || '');
+    const matchingObjective = (member) => {
+        const objective = member?.stats?.clanPartyObjective;
+        return objective && String(objective.clanGoalKey || '') === goalKey ? objective : null;
+    };
+    const activeAtObjective = assigned.some((member) => member.partyId
+        && sourceSpotId
+        && String(member.spotId || '') === sourceSpotId);
+    if (activeAtObjective) {
+        return { stalled: false, reason: null, ageMs, partyStallMs, activeAtObjective: true };
+    }
+    const objectives = assigned.map(matchingObjective).filter(Boolean);
+    const recentMatchAt = objectives.reduce((latest, objective) => (
+        Math.max(latest, number(objective.lastMatchedAt))
+    ), 0);
+    if (recentMatchAt > 0 && now - recentMatchAt < partyStallMs) {
+        return { stalled: false, reason: null, ageMs, partyStallMs, recentMatchAt };
+    }
+    const conflictingPartyCount = assigned.filter((member) => member.partyId
+        && (!sourceSpotId || String(member.spotId || '') !== sourceSpotId)).length;
+    return {
+        stalled: true,
+        reason: 'goal_party_stalled',
+        ageMs,
+        partyStallMs,
+        assignedMembers: assigned.length,
+        openObjectives: objectives.filter((objective) => objective.status === 'open').length,
+        conflictingPartyCount,
+        sourceSpotId: sourceSpotId || null
+    };
+}
+
+function decisionReason(previousGoal, planning, candidates, stall = null) {
     if (!previousGoal || previousGoal.type !== 'equipment') return 'no_equipment_goal';
     if (planning.previousFulfilled) return 'goal_fulfilled';
     if (previousGoal.status === 'blocked') return 'goal_blocked';
     if (!candidates.some((candidate) => candidate.assessment.current)) return 'current_candidate_missing';
+    if (stall?.stalled) return stall.reason || 'goal_stalled';
     return 'goal_progressing';
 }
 
 function rankedCandidates(clan, previousGoal, planning, limit = DEFAULT_LIMIT) {
-    const previousMemberId = number(previousGoal?.target?.memberId);
     const ranked = (clan?.members || [])
-        .filter((member) => member?.phase === 'cold'
-            && (!member?.partyId || memberId(member) === previousMemberId))
+        .filter((member) => member?.phase === 'cold')
         .map((member) => {
             const plan = planning.plans.get(memberId(member));
             return {
@@ -193,7 +249,8 @@ async function snapshotFor(clan, previousGoal = null, options = {}) {
                 : [...candidates.slice(0, Math.max(0, safeLimit - 1)), selectedCandidate];
         }
     }
-    const reason = decisionReason(previousGoal, planning, candidates);
+    const stall = goalStallAssessment(clan, previousGoal, candidates, options);
+    const reason = decisionReason(previousGoal, planning, candidates, stall);
     const deterministic = planning.selection
         ? candidates.find((candidate) => candidate.memberId === memberId(planning.selection.member)
             && candidate.itemId === number(planning.selection.plan?.target?.selfId)
@@ -204,6 +261,7 @@ async function snapshotFor(clan, previousGoal = null, options = {}) {
         planning,
         candidates,
         deterministicCandidateId: deterministic?.id || null,
+        stall,
         decisionReason: reason,
         decisionNeeded: candidates.length > 1 && reason !== 'goal_progressing'
     };
@@ -220,6 +278,7 @@ module.exports = {
     CACHE_TTL_MS,
     DEFAULT_LIMIT,
     fingerprint,
+    goalStallAssessment,
     rankedCandidates,
     snapshotFor,
     metrics() {
