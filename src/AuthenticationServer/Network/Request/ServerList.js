@@ -28,6 +28,11 @@ function consume(session, data) {
 }
 
 function detectServerIPAddress(session) {
+    const advertisedHostname = fetchAdvertisedHostname();
+    if (advertisedHostname) {
+        return advertisedHostname;
+    }
+
     const remoteAddr = session.socket.remoteAddress;
     const host = remoteAddr.split('.');
 
@@ -42,6 +47,30 @@ function detectServerIPAddress(session) {
     // WAN / Internet
     utils.infoFail('AuthServer', 'unhandled WAN Address');
     return '';
+}
+
+function fetchAdvertisedHostname() {
+    const configuredHostname = options.default.GameServer.advertisedHostname;
+    if (configuredHostname === undefined || configuredHostname === null) {
+        return '';
+    }
+
+    const hostname = String(configuredHostname).trim();
+    if (!hostname) {
+        return '';
+    }
+
+    const octets = hostname.split('.');
+    const valid = octets.length === 4 && octets.every((octet) => {
+        return /^\d{1,3}$/.test(octet) && Number(octet) <= 255;
+    });
+
+    if (!valid) {
+        utils.infoWarn('AuthServer', 'invalid GameServer advertisedHostname: %s', hostname);
+        return '';
+    }
+
+    return octets.map(Number).join('.');
 }
 
 module.exports = serverList;
