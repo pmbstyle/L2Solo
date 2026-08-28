@@ -77,6 +77,39 @@ function state(characterId, revision, activity = 'hunting') {
 
     const initialState = state(characterId, 0);
     BotLifeState.acceptSimulationOwnership(characterId, initialState.simulation, initialState);
+    const staleLifecycleState = {
+        ...initialState,
+        stats: { generatedCold: true, generatedIndex: 700, lifecycleProbe: 'stale' }
+    };
+    const queuedBeforeMigration = BotLifeState.upsertState(staleLifecycleState, 'appearance_race_before');
+    const queuedMigration = BotLifeState.acceptAppearanceMetadata(characterId, 1, 2);
+    const queuedAfterMigration = BotLifeState.upsertState({
+        ...staleLifecycleState,
+        stats: { ...staleLifecycleState.stats, lifecycleProbe: 'after' }
+    }, 'appearance_race_after');
+    const [, migratedLifecycle, savedAfterMigration] = await Promise.all([
+        queuedBeforeMigration,
+        queuedMigration,
+        queuedAfterMigration
+    ]);
+    assert.strictEqual(migratedLifecycle.stats.appearanceVersion, 2,
+        'appearance migration must run in the per-character lifecycle write chain');
+    assert.strictEqual(savedAfterMigration.stats.appearanceVersion, 2,
+        'a stale queued lifecycle state must not erase newer appearance metadata');
+    assert.strictEqual(savedAfterMigration.stats.sex, 1,
+        'a stale queued lifecycle state must retain the sex paired with the newer appearance version');
+    assert.strictEqual(savedAfterMigration.stats.lifecycleProbe, 'after',
+        'appearance protection must preserve unrelated lifecycle changes');
+    const lifecycleStats = JSON.parse((await Database.execute([
+        'SELECT statsJson FROM bot_life_state WHERE characterId = ?', [characterId]
+    ]))[0].statsJson);
+    assert.strictEqual(lifecycleStats.appearanceVersion, 2,
+        'serialized lifecycle persistence must keep the migrated appearance version durable');
+    assert.strictEqual(lifecycleStats.sex, 1,
+        'serialized lifecycle persistence must keep the migrated sex durable');
+    assert.strictEqual(lifecycleStats.lifecycleProbe, 'after',
+        'serialized lifecycle persistence must commit unrelated state from the later write');
+
     const first = await Owner.claim(initialState, { timestamp: 1000, leaseMs: 5000, leaseId: 'lease-a' });
     assert.strictEqual(first.ok, true, 'simple cold state must be claimable');
     assert.strictEqual(first.revision, 1, 'claim must advance the persisted revision');
@@ -106,10 +139,9 @@ function state(characterId, revision, activity = 'hunting') {
     assert.strictEqual(BotLifeState.cachedState(characterId).simulation.leaseUntil, 7000,
         'renewal must update the main ownership cache for later persistence');
 
-    const migratedAppearance = await Database.updateGeneratedBotAppearance(characterId, 1, 2);
-    assert.strictEqual(migratedAppearance.ok, true,
+    const migratedAppearance = await BotLifeState.acceptAppearanceMetadata(characterId, 1, 2);
+    assert.strictEqual(migratedAppearance.stats.appearanceVersion, 2,
         'appearance metadata must patch atomically while the cold worker owns the lifecycle row');
-    BotLifeState.acceptAppearanceMetadata(characterId, 1, 2);
     assert.strictEqual(BotLifeState.cachedState(characterId).stats.appearanceVersion, 2,
         'appearance migration must patch the active lifecycle cache without replacing other state');
 

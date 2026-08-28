@@ -2,7 +2,6 @@ const assert = require('assert');
 
 require('../src/Global');
 
-const Database = invoke('Database');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const GeneratedColdSeeder = invoke('GameServer/Bot/Population/GeneratedColdSeeder');
 
@@ -26,19 +25,12 @@ assert.strictEqual(
     'generated appearance must remain deterministic across restarts'
 );
 
-const original = {
-    updateGeneratedBotAppearance: Database.updateGeneratedBotAppearance,
-    acceptAppearanceMetadata: LifeState.acceptAppearanceMetadata
-};
-const characterUpdates = [];
+const originalAcceptAppearanceMetadata = LifeState.acceptAppearanceMetadata;
 const stateUpdates = [];
 
-Database.updateGeneratedBotAppearance = (characterId, sex, appearanceVersion) => {
-    characterUpdates.push({ characterId, sex, appearanceVersion });
-    return Promise.resolve({ ok: true });
-};
 LifeState.acceptAppearanceMetadata = (characterId, sex, appearanceVersion) => {
     stateUpdates.push({ characterId, sex, appearanceVersion });
+    return Promise.resolve({ characterId, stats: { sex, appearanceVersion } });
 };
 
 (async () => {
@@ -52,18 +44,15 @@ LifeState.acceptAppearanceMetadata = (characterId, sex, appearanceVersion) => {
 
     const migrated = await GeneratedColdSeeder.migratePopulationAppearances(candidates);
     assert.strictEqual(migrated, 2, 'only stale generated appearances must be migrated');
-    assert.deepStrictEqual(characterUpdates, [
+    assert.deepStrictEqual(stateUpdates, [
         { characterId: 11, sex: GeneratedColdSeeder.sexForIndex(700), appearanceVersion: GeneratedColdSeeder.APPEARANCE_VERSION },
         { characterId: 12, sex: GeneratedColdSeeder.sexForIndex(10003), appearanceVersion: GeneratedColdSeeder.APPEARANCE_VERSION }
-    ]);
-    assert.deepStrictEqual(stateUpdates, characterUpdates,
-        'the in-memory lifecycle cache must receive the same committed appearance metadata');
+    ], 'the seeder must delegate durable migration and cache reflection to the serialized lifecycle path');
 
     console.log('Generated population appearance checks passed');
 })().catch((error) => {
     console.error(error);
     process.exitCode = 1;
 }).finally(() => {
-    Database.updateGeneratedBotAppearance = original.updateGeneratedBotAppearance;
-    LifeState.acceptAppearanceMetadata = original.acceptAppearanceMetadata;
+    LifeState.acceptAppearanceMetadata = originalAcceptAppearanceMetadata;
 });

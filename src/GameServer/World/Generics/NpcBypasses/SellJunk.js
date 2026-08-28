@@ -3,7 +3,7 @@ const Database       = invoke('Database');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 
-module.exports = function(session, parts) {
+module.exports = function(session) {
     const backpack = session.actor.backpack;
     const items = backpack.items;
 

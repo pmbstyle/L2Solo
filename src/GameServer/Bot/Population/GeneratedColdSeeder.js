@@ -202,10 +202,9 @@ function migratePopulationAppearances(states = []) {
         && Number.isFinite(Number(state.stats?.generatedIndex)));
     return cooperativeEach(candidates, (state) => {
         const sex = sexForIndex(state.stats.generatedIndex);
-        return Database.updateGeneratedBotAppearance(state.characterId, sex, APPEARANCE_VERSION)
+        return LifeState.acceptAppearanceMetadata(state.characterId, sex, APPEARANCE_VERSION)
             .then((result) => {
-                if (!result?.ok) throw new Error(result?.reason || 'generated appearance migration failed');
-                LifeState.acceptAppearanceMetadata(state.characterId, sex, APPEARANCE_VERSION);
+                if (!result) throw new Error('generated appearance migration failed');
             });
     }).then(() => candidates.length);
 }
