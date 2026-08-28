@@ -69,24 +69,12 @@ try {
     });
     for (let index = 0; index < companions.length; index++) {
         const raid = BotRaidSafety.syncPlayerPartyRaid(leaderSession, 1000 + index);
-        if (BotRaidSafety.BOT_RAID_PARTICIPATION_ENABLED) {
-            assert.strictEqual(raid?.bossId, boss.fetchId(), 'every companion tick must resolve the same authoritative raid');
-        } else {
-            assert.strictEqual(raid, null, 'companion ticks must not create raid engagement while participation is disabled');
-        }
+        assert.strictEqual(raid?.bossId, boss.fetchId(), 'every companion tick must resolve the same authoritative raid');
     }
 } finally {
     Object.entries(spawnScanMethods).forEach(([method, implementation]) => {
         World.npc.spawns[method] = implementation;
     });
-}
-if (!BotRaidSafety.BOT_RAID_PARTICIPATION_ENABLED) {
-    // The world index remains authoritative for spawning, observer telemetry,
-    // and bot avoidance even though companions cannot engage it.
-    leaderSession.partyRaidEngagement = {
-        bossId: boss.fetchId(),
-        bossTemplateId: boss.fetchSelfId()
-    };
 }
 
 let indexStats = RaidEntityIndex.stats(World);
