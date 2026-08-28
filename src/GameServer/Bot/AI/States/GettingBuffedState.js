@@ -1,8 +1,11 @@
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
 const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
+const CompanionNavigationRecovery = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
 
 const RETURN_TELEPORT_SETTLE_MS = 1250;
+const NEWBIE_GUIDE_INTERACTION_RADIUS = 260;
+const NEWBIE_GUIDE_ROUTE_RETRY_COOLDOWN_MS = 60000;
 
 function returnLocation(session) {
     const resume = session.resumeAfterBuff;
@@ -50,6 +53,7 @@ function resumePreviousPlan(session, bot) {
 function finishVisit(session, bot, Generics) {
     const resume = session.resumeAfterBuff;
     const target = returnLocation(session);
+    CompanionNavigationRecovery.clear(session);
 
     if (resume?.waitForSafePartyReturn && resume.followPlayerSession && PartyCombatState.isActive(resume.followPlayerSession)) {
         session.roleDecision = {
@@ -84,6 +88,33 @@ function finishVisit(session, bot, Generics) {
     return true;
 }
 
+function abandonUnreachableVisit(session, bot, BotAI) {
+    const resume = session.resumeAfterBuff;
+    const following = resume?.plan === 'following' && resume.followPlayerSession?.actor?.fetchIsOnline?.();
+    session.plan = following ? 'following' : (session.preBuffPlan || 'hunting');
+    if (following) {
+        session.followPlayerSession = resume.followPlayerSession;
+        session.partyCompanion = true;
+        session.botStay = resume.botStay;
+        session.stayLocation = resume.stayLocation;
+    }
+    session.newbieGuideRetryAt = Date.now() + NEWBIE_GUIDE_ROUTE_RETRY_COOLDOWN_MS;
+    session.resumeAfterBuff = undefined;
+    session.preBuffPlan = undefined;
+    session.preBuffLocation = undefined;
+    session.currentTargetId = undefined;
+    session.roleDecision = {
+        ...(session.roleDecision || {}),
+        action: 'refresh_buffs',
+        reason: 'newbie_guide_route_unreachable',
+        at: Date.now()
+    };
+    CompanionNavigationRecovery.clear(session);
+    bot.unselect?.();
+    bot.automation?.abortAll?.(bot);
+    BotAI.say(session, "I couldn't reach the Newbie Guide. Staying with you and I will retry later.");
+}
+
 module.exports = {
     tick(session, bot, Generics, BotAI) {
         const resume = session.resumeAfterBuff;
@@ -100,21 +131,20 @@ module.exports = {
         const botPt = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
         const dist = botPt.distance(guidePt);
 
-        if (dist > 250) {
-            if (dist > 5000) {
-                bot.moveTo({
-                    from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-                    to: { locX: closestGuide.locX, locY: closestGuide.locY, locZ: closestGuide.locZ }
-                });
-            } else {
-                if (Math.random() < 0.20 || !bot.state.inMotion()) {
-                    bot.moveTo({
-                        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-                        to: { locX: closestGuide.locX, locY: closestGuide.locY, locZ: closestGuide.locZ }
-                    });
-                }
+        const guideTarget = {
+            locX: closestGuide.locX,
+            locY: closestGuide.locY,
+            locZ: closestGuide.locZ
+        };
+
+        if (dist > NEWBIE_GUIDE_INTERACTION_RADIUS) {
+            const navigation = CompanionNavigationRecovery.move(session, bot, guideTarget, 'newbie_guide');
+            if (navigation.status === 'exhausted') {
+                abandonUnreachableVisit(session, bot, BotAI);
             }
         } else {
+            CompanionNavigationRecovery.clear(session);
+            session.newbieGuideRetryAt = undefined;
             BotBuffs.applyFullNewbieBlessing(session, bot, Generics);
             BotAI.say(session, session.resumeAfterBuff ? "Thank you, Newbie Guide! Fully blessed and returning to the party!" : "Thank you, Newbie Guide! Fully blessed and ready to hunt!");
             finishVisit(session, bot, Generics);

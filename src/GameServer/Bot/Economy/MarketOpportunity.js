@@ -38,7 +38,9 @@ function coldMarketStates() {
     let persisted = [];
     try {
         persisted = invoke('GameServer/Bot/Population/BotLifeState').allStates(5000) || [];
-    } catch (_) {}
+    } catch (_) {
+        // Lifecycle storage is optional in lightweight catalog/test contexts.
+    }
     const states = new Map(Array.from(coldStoreIndex.entries()));
     persisted.forEach((state) => {
         if (state?.activity === 'merchant' && state.stats?.marketStore) states.set(Number(state.characterId), state);
@@ -312,6 +314,15 @@ function findOffers(selfId, options = {}) {
         .sort((a, b) => a.price - b.price || (a.sourceType === 'npc' ? 1 : -1));
 }
 
+function hotOffers(selfId, options = {}) {
+    const town = options.town || null;
+    return [
+        ...privateOffers(selfId, town),
+        ...(town ? npcOffers(selfId, town) : [])
+    ].filter((offer) => offer.available)
+        .sort((left, right) => left.price - right.price || (left.sourceType === 'npc' ? 1 : -1));
+}
+
 function bestOffer(selfId, options = {}) {
     const budget = Number.isFinite(Number(options.budget)) ? Number(options.budget) : Infinity;
     return findOffers(selfId, options).find((offer) => offer.price <= budget) || null;
@@ -498,6 +509,7 @@ module.exports = {
     coldOffers,
     coldBuyOffers,
     findOffers,
+    hotOffers,
     findBuyOffers,
     indexColdStore,
     npcOffers,

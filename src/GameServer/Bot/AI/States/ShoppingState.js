@@ -10,6 +10,11 @@ const GoalExecutor   = invoke('GameServer/Bot/Goals/GoalExecutor');
 const Cooldown       = invoke('GameServer/Bot/Population/Cooldown');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const WorkflowTelemetry = invoke('GameServer/Bot/AI/BotWorkflowTelemetry');
+const CompanionNavigationRecovery = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
+const CompanionEquipmentShopping = invoke('GameServer/Bot/AI/CompanionEquipmentShopping');
+const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+
+const COMPANION_EQUIPMENT_FAILURE_RETRY_MS = 5 * 60 * 1000;
 
 function findStoreSession(actorId) {
     const BotManager = invoke('GameServer/Bot/BotManager');
@@ -35,17 +40,57 @@ function clearCompletedMarketPlan(session, bot, purchase) {
     session.coldLifeState = {
         ...state,
         adena: Number(bot.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() || state.adena || 0),
+        inventory: LifeState.inventorySummaryFromItems(bot.backpack?.fetchItems?.() || []),
         stats: {
             ...stats,
             lastMarketPurchase: {
                 selfId: Number(purchase.selfId),
                 price: Number(purchase.price),
-                sourceType: 'private_store',
-                sourceId: Number(purchase.sellerId),
+                sourceType: purchase.sourceType || 'private_store',
+                sourceId: Number(purchase.sourceId ?? purchase.sellerId),
                 at: Date.now()
             }
         }
     };
+}
+
+function continueEquipmentShopping(session, bot, BotAI, errand) {
+    const town = BotAI.getClosestTown?.(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ()) || {
+        name: errand.target?.town,
+        x: errand.target?.locX,
+        y: errand.target?.locY,
+        z: errand.target?.locZ
+    };
+    const excludedSlots = [...new Set([
+        ...(errand.excludedSlots || []).map(Number),
+        Number(errand.slot || 0)
+    ].filter(Boolean))];
+    const next = CompanionEquipmentShopping.planErrand(
+        session,
+        bot,
+        town,
+        Number(errand.purchaseCount || 0) + 1,
+        excludedSlots
+    );
+    if (!next) return false;
+
+    session.companionShopping = next;
+    session.shoppingTarget = next.target;
+    session.shoppingDoneAnnounced = false;
+    session.shoppingRouteFallbackUsed = undefined;
+    CompanionNavigationRecovery.clear(session);
+    return true;
+}
+
+function sameTownNpcErrand(session, currentTown, target) {
+    if (session.partyCompanion !== true || !currentTown?.name || !target?.town) return false;
+    if (!['npc_equipment_purchase', 'restock_shots'].includes(session.companionShopping?.kind)) return false;
+    return String(currentTown.name).trim().toLowerCase() === String(target.town).trim().toLowerCase();
+}
+
+function deferEquipmentRetry(session) {
+    if (!['npc_equipment_purchase', 'market_purchase'].includes(session.companionShopping?.kind)) return;
+    session.companionEquipmentRetryAt = Date.now() + COMPANION_EQUIPMENT_FAILURE_RETRY_MS;
 }
 
 module.exports = {
@@ -102,15 +147,54 @@ module.exports = {
         const distToTarget = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ())
             .distance(new SpeckMath.Point3D(target.locX, target.locY, target.locZ));
 
-        if (distToTarget > 300) {
-            bot.moveTo({
-                from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-                to: { locX: target.locX, locY: target.locY, locZ: target.locZ }
-            });
+        if (distToTarget > 300 && !sameTownNpcErrand(session, closestTown, target)) {
+            const navigation = CompanionNavigationRecovery.move(session, bot, target, 'shopping');
+            if (navigation.status === 'exhausted') {
+                if (session.partyCompanion === true && target.actorId && !session.shoppingRouteFallbackUsed) {
+                    const town = BotAI.getClosestTown?.(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
+                    if (town) {
+                        session.shoppingRouteFallbackUsed = true;
+                        session.shoppingTarget = {
+                            actorId: null,
+                            name: `${town.name} general shop`,
+                            locX: town.x,
+                            locY: town.y,
+                            locZ: town.z,
+                            town: town.name
+                        };
+                        CompanionNavigationRecovery.clear(session);
+                        BotAI.say(session, `I couldn't reach ${target.name || 'the buyer'}. Selling at the ${town.name} general shop instead.`);
+                        return;
+                    }
+                }
+
+                const companionResume = session.resumeAfterShopping;
+                const returningToCompanion = session.partyCompanion === true && companionResume?.followPlayerSession?.actor?.fetchIsOnline?.();
+                deferEquipmentRetry(session);
+                session.plan = returningToCompanion ? 'following' : 'hunting';
+                session.shoppingDoneAnnounced = false;
+                session.shoppingTarget = undefined;
+                session.companionShopping = undefined;
+                session.resumeAfterShopping = undefined;
+                session.preShopLocation = undefined;
+                session.shoppingRouteFallbackUsed = undefined;
+                session.lastCompanionTownErrandAt = Date.now();
+                session.roleDecision = {
+                    ...(session.roleDecision || {}),
+                    action: 'town_errand',
+                    reason: 'shopping_route_unreachable',
+                    at: Date.now()
+                };
+                CompanionNavigationRecovery.clear(session);
+                bot.unselect?.();
+                bot.automation?.abortAll?.(bot);
+                BotAI.say(session, "I couldn't reach the shop. Staying with you and I will retry later.");
+            }
             return;
         }
 
         // In town! Wait and pretend to shop
+        CompanionNavigationRecovery.clear(session);
         if (!session.shoppingDoneAnnounced) {
             session.shoppingDoneAnnounced = true;
             Promise.resolve(BotEventJournal.record({
@@ -192,6 +276,7 @@ module.exports = {
         }
 
         if (companionErrand?.kind === 'market_purchase') {
+            let purchaseSucceeded = false;
             const sellerSession = findStoreSession(companionErrand.target.actorId);
             const seller = sellerSession?.actor;
             const store = seller?.fetchPrivateStore?.();
@@ -210,14 +295,17 @@ module.exports = {
                         }
                         : null
                 });
+                BotEquipmentUpgrade.applyBestUpgrades(session, { force: true });
+                session.companionEquipmentRetryAt = undefined;
                 clearCompletedMarketPlan(session, bot, {
                     selfId: companionErrand.itemId,
                     price: bought.totalAdena / bought.qty,
-                    sellerId: seller.fetchId()
+                    sourceType: 'private_store',
+                    sourceId: seller.fetchId()
                 });
-                BotEquipmentUpgrade.applyBestUpgrades(session);
                 session.lastTradeSummary = `bought ${bought.qty}x ${bought.name} from ${seller.fetchName()} for ${formatAdena(bought.totalAdena)}a`;
                 BotAI.say(session, `Bought ${bought.name} from ${seller.fetchName()}.`);
+                purchaseSucceeded = true;
 
                 if (!store.items.some((item) => Number(item.count || 0) > 0) && sellerSession?.coldMarketState) {
                     const returnState = GoalExecutor.finishMarketVisit(sellerSession.coldMarketState);
@@ -229,9 +317,50 @@ module.exports = {
                     }
                 }
             } catch (err) {
+                deferEquipmentRetry(session);
                 session.lastTradeSummary = `could not buy ${companionErrand.itemName || companionErrand.itemId}`;
                 BotAI.say(session, 'That market offer is gone already. I will keep looking later.');
             }
+            if (purchaseSucceeded && continueEquipmentShopping(session, bot, BotAI, companionErrand)) return;
+            this.scheduleRestock(session, bot, Generics, BotAI);
+            return;
+        }
+
+        if (companionErrand?.kind === 'npc_equipment_purchase') {
+            let purchaseSucceeded = false;
+            try {
+                const offer = MarketOpportunity.npcOffers(companionErrand.itemId, companionErrand.target.town)
+                    .find((candidate) => (
+                        Number(candidate.sourceId) === Number(companionErrand.sourceId)
+                        && Number(candidate.price) === Number(companionErrand.price)
+                    ));
+                if (!offer) throw new Error('npc_offer_unavailable');
+                const store = {
+                    storeType: 1,
+                    items: [{ selfId: companionErrand.itemId, price: offer.price, count: 1 }]
+                };
+                const bought = await TradeService.buyFromStore(bot, store, companionErrand.itemId, 1, {
+                    expectedUnitPrice: companionErrand.price
+                });
+                BotEquipmentUpgrade.applyBestUpgrades(session, { force: true });
+                session.companionEquipmentRetryAt = undefined;
+                clearCompletedMarketPlan(session, bot, {
+                    selfId: companionErrand.itemId,
+                    price: bought.totalAdena / bought.qty,
+                    sourceType: 'npc',
+                    sourceId: companionErrand.sourceId
+                });
+                session.lastTradeSummary = `bought ${bought.qty}x ${bought.name} from ${companionErrand.target.name} for ${formatAdena(bought.totalAdena)}a`;
+                BotAI.say(session, `Bought ${bought.name} from ${companionErrand.target.name}.`);
+                purchaseSucceeded = true;
+            } catch (err) {
+                deferEquipmentRetry(session);
+                session.lastTradeSummary = `could not buy ${companionErrand.itemName || companionErrand.itemId}`;
+                BotAI.say(session, err?.message === 'Not enough Adena.'
+                    ? 'I am short on Adena for that equipment. I will try again later.'
+                    : 'That NPC offer is unavailable now. I will try again later.');
+            }
+            if (purchaseSucceeded && continueEquipmentShopping(session, bot, BotAI, companionErrand)) return;
             this.scheduleRestock(session, bot, Generics, BotAI);
             return;
         }
@@ -343,6 +472,7 @@ module.exports = {
             session.shoppingDoneAnnounced = false;
             session.shoppingTarget = undefined;
             session.companionShopping = undefined;
+            session.shoppingRouteFallbackUsed = undefined;
 
             let returnTarget = null;
             if (returningToCompanion) {

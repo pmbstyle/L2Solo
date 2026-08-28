@@ -15,7 +15,7 @@ const BotPartyChat  = invoke('GameServer/Bot/AI/BotPartyChat');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const TradeService   = invoke('GameServer/Bot/TradeService');
-const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const CompanionEquipmentShopping = invoke('GameServer/Bot/AI/CompanionEquipmentShopping');
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
 const PartyClassTactics = invoke('GameServer/Bot/AI/PartyClassTactics');
@@ -37,6 +37,7 @@ const NEWBIE_GUIDE_TOWN_RADIUS = 7500;
 const NEWBIE_GUIDE_RECOVERY_MAX_LEVEL = 20;
 const COMPANION_TOWN_ERRAND_RADIUS = 7500;
 const COMPANION_TOWN_ERRAND_COOLDOWN_MS = 60000;
+const COMPANION_EQUIPMENT_CHECK_COOLDOWN_MS = 5000;
 const TOWN_CENTER_FALLBACK_RADIUS = 1500;
 const STARTER_GUIDE_TOWN_RADIUS = 1500;
 const CRITICAL_COMBAT_HP_RATIO = 0.25;
@@ -169,55 +170,9 @@ function townForCompanionErrand(player, BotAI) {
     };
 }
 
-function actorAdena(bot) {
-    const adena = bot.backpack?.fetchItemFromSelfId?.(57);
-    return Number(adena?.fetchAmount?.() || 0);
-}
-
-function plannedMarketPurchase(session, bot, town) {
-    const plan = session.coldLifeState?.stats?.equipmentPlan;
-    const selfId = Number(plan?.strategy === 'market' ? plan.target?.selfId : 0);
-    if (!selfId) return null;
-    const owned = (bot.backpack?.fetchItems?.() || [])
-        .filter((item) => Number(item.fetchSelfId?.() || 0) === selfId)
-        .reduce((sum, item) => sum + Number(item.fetchAmount?.() || 0), 0);
-    const combinationAmount = (plan.combine?.requirements || [])
-        .filter((requirement) => Number(requirement.selfId) === selfId)
-        .reduce((sum, requirement) => sum + Number(requirement.amount || 0), 0);
-    if (owned >= Math.max(1, combinationAmount)) return null;
-
-    const offer = MarketOpportunity.findOffers(selfId, {
-        town: town.name,
-        buyerCharacterId: bot.fetchId()
-    }).find((candidate) => (
-        Number(candidate.price) <= actorAdena(bot) &&
-        candidate.sourceType === 'private_store' &&
-        candidate.session?.actor &&
-        String(candidate.session.accountId || '').startsWith('bot_')
-    ));
-    // Hot companions can transact only with a live bot merchant. Cold
-    // listings have no world actor to walk to, while player-store settlement
-    // still belongs to the native client request path.
-    if (!offer) return null;
-
-    return {
-        kind: 'market_purchase',
-        itemId: selfId,
-        itemName: offer.itemName,
-        price: Number(offer.price),
-        target: {
-            actorId: offer.session.actor.fetchId(),
-            name: offer.session.actor.fetchName(),
-            locX: offer.session.actor.fetchLocX(),
-            locY: offer.session.actor.fetchLocY(),
-            locZ: offer.session.actor.fetchLocZ(),
-            town: offer.town || town.name
-        }
-    };
-}
-
 function companionTownErrand(session, bot, player, BotAI) {
-    if (Date.now() - Number(session.lastCompanionTownErrandAt || 0) < COMPANION_TOWN_ERRAND_COOLDOWN_MS) return null;
+    const timestamp = Date.now();
+    const errandOnCooldown = timestamp - Number(session.lastCompanionTownErrandAt || 0) < COMPANION_TOWN_ERRAND_COOLDOWN_MS;
     const townContext = townForCompanionErrand(player, BotAI);
     if (!townContext) return null;
     const { town, inTown } = townContext;
@@ -226,6 +181,7 @@ function companionTownErrand(session, bot, player, BotAI) {
     // leaving the leader is reserved for an immediately useful resupply;
     // shopping and selling can wait until the party actually reaches town.
     if (!inTown) {
+        if (errandOnCooldown) return null;
         if (!ShotStock.needsActorRestock(bot, 0)) return null;
         return {
             kind: 'restock_shots',
@@ -240,8 +196,15 @@ function companionTownErrand(session, bot, player, BotAI) {
         };
     }
 
-    const purchase = plannedMarketPurchase(session, bot, town);
-    if (purchase) return purchase;
+    const equipmentRetryReady = timestamp >= Number(session.companionEquipmentRetryAt || 0);
+    if (equipmentRetryReady
+        && timestamp - Number(session.lastCompanionEquipmentCheckAt || 0) >= COMPANION_EQUIPMENT_CHECK_COOLDOWN_MS) {
+        session.lastCompanionEquipmentCheckAt = timestamp;
+        const purchase = CompanionEquipmentShopping.planErrand(session, bot, town);
+        if (purchase) return purchase;
+    }
+
+    if (errandOnCooldown) return null;
 
     const buyer = TradeService.findBestBuyerForActor(bot, World.user?.sessions || [], {
         town,
@@ -275,7 +238,7 @@ function companionTownErrand(session, bot, player, BotAI) {
     };
 }
 
-function beginCompanionTownErrand(session, bot, playerSession, errand, BotAI) {
+function beginCompanionTownErrand(session, bot, playerSession, errand) {
     session.lastCompanionTownErrandAt = Date.now();
     session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
     session.resumeAfterShopping = {
@@ -288,12 +251,13 @@ function beginCompanionTownErrand(session, bot, playerSession, errand, BotAI) {
     session.companionShopping = errand;
     session.shoppingTarget = errand.target;
     session.shoppingDoneAnnounced = false;
+    session.shoppingRouteFallbackUsed = undefined;
     session.plan = 'shopping';
     session.currentTargetId = undefined;
     bot.unselect();
     bot.automation.abortAll(bot);
 
-    const detail = errand.kind === 'market_purchase'
+    const detail = ['market_purchase', 'npc_equipment_purchase'].includes(errand.kind)
         ? `${errand.itemName} from ${errand.target.name}`
         : errand.kind === 'sell_resources'
             ? `sell these resources to ${errand.target.name}`
@@ -1281,6 +1245,11 @@ module.exports = {
                     missingBuffs: BotBuffs.missingNewbieBuffs(bot, BotBuffs.REFRESH_THRESHOLD_MS)
                 });
                 keepRoleDecision = true;
+            } else if (Number(session.newbieGuideRetryAt || 0) > Date.now()) {
+                recordRoleDecision(session, bot, 'refresh_buffs', 'wait_for_newbie_guide_route', {
+                    retryAt: session.newbieGuideRetryAt
+                });
+                keepRoleDecision = true;
             } else {
                 beginNewbieGuideVisit(session, bot, playerSession, role);
                 recordRoleDecision(session, bot, 'refresh_buffs', 'newbie_blessing', {
@@ -1303,7 +1272,7 @@ module.exports = {
                 companionTownErrand(session, bot, player, BotAI)
             ));
             if (errand) {
-                beginCompanionTownErrand(session, bot, playerSession, errand, BotAI);
+                beginCompanionTownErrand(session, bot, playerSession, errand);
                 recordRoleDecision(session, bot, 'town_errand', errand.kind, {
                     town: errand.target.town,
                     itemId: errand.itemId || null
