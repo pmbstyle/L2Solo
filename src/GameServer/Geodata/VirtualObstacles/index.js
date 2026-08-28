@@ -1,6 +1,20 @@
 const fs = require('fs');
 const path = require('path');
 
+function pointInPolygon(x, y, points) {
+    let inside = false;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+        const xi = points[i][0];
+        const yi = points[i][1];
+        const xj = points[j][0];
+        const yj = points[j][1];
+        const intersects = ((yi > y) !== (yj > y)) &&
+            (x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1) + xi);
+        if (intersects) inside = !inside;
+    }
+    return inside;
+}
+
 const VirtualObstacles = {
     obstaclesByRegion: {},
 
@@ -8,7 +22,6 @@ const VirtualObstacles = {
         this.obstaclesByRegion = {};
         const files = fs.readdirSync(__dirname);
         
-        let loadedCount = 0;
         for (const file of files) {
             if (file === 'index.js' || !file.endsWith('.js')) {
                 continue;
@@ -21,7 +34,6 @@ const VirtualObstacles = {
                     }
                     this.obstaclesByRegion[loc.region].push(loc);
                     utils.infoSuccess("GeodataEngine", "Loaded virtual obstacles for %s (Region: %s)", loc.name || file, loc.region);
-                    loadedCount++;
                 }
             } catch (err) {
                 console.error(`VirtualObstacles :: Failed to load ${file}:`, err);
@@ -46,6 +58,10 @@ const VirtualObstacles = {
                         const dx = x - b.x;
                         const dy = y - b.y;
                         if (dx * dx + dy * dy < b.r * b.r) {
+                            return true;
+                        }
+                    } else if (b.type === 'polygon' && Array.isArray(b.points) && b.points.length >= 3) {
+                        if (pointInPolygon(x, y, b.points)) {
                             return true;
                         }
                     } else if (b.type === 'box_door') {

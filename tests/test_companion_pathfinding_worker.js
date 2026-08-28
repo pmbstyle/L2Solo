@@ -136,6 +136,27 @@ async function run() {
             'material target movement must invalidate a companion-follow snapshot');
         assert.strictEqual(targetFixture.session.pendingPathRequest, null);
 
+        const budgetRequests = [];
+        const budgetPool = {
+            request(request) {
+                budgetRequests.push(request);
+                return Promise.resolve([
+                    { locX: request.startX, locY: request.startY, locZ: request.startZ },
+                    { locX: request.endX, locY: request.endY, locZ: request.endZ }
+                ]);
+            },
+            cancel() { return false; }
+        };
+        const budgetFixture = companionFixture(budgetPool, { locX: 0, locY: 0, locZ: 0 });
+        issueMove(budgetFixture, { locX: 1000, locY: 0, locZ: 0 });
+        await budgetFixture.session.pendingPathRequest.promise;
+        assert.strictEqual(
+            budgetRequests[0].maxNodes,
+            moveTo.COMPANION_PATH_MAX_NODES,
+            'hot companions should receive enough worker budget for real town detours'
+        );
+        stopMove(budgetFixture);
+
         const abortedFixture = companionFixture(delayedPool, { locX: 0, locY: 0, locZ: 0 });
         issueMove(abortedFixture, { locX: 1000, locY: 0, locZ: 0 });
         const abortedPromise = abortedFixture.session.pendingPathRequest.promise;

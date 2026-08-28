@@ -10,6 +10,7 @@ const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool')
 const CLIENT_VISIBILITY_RADIUS = 6000;
 const COMPANION_DIRECT_DISTANCE = 256;
 const COMPANION_PATH_TIMEOUT_MS = 2000;
+const COMPANION_PATH_MAX_NODES = 4000;
 const ACTIVE_GOAL_XY_TOLERANCE = 32;
 const ACTIVE_GOAL_Z_TOLERANCE = 64;
 const INITIAL_WAYPOINT_SKIP_DISTANCE = 24;
@@ -420,7 +421,8 @@ function moveTo(session, actor, coords) {
                 startX, startY, startZ,
                 endX: target.locX,
                 endY: target.locY,
-                endZ: target.locZ
+                endZ: target.locZ,
+                maxNodes: COMPANION_PATH_MAX_NODES
             }, {
                 key: requestKey,
                 priority: 100,
@@ -450,7 +452,8 @@ function moveTo(session, actor, coords) {
                     startX, startY, startZ,
                     endX: pathTarget.locX,
                     endY: pathTarget.locY,
-                    endZ: pathTarget.locZ
+                    endZ: pathTarget.locZ,
+                    maxNodes: COMPANION_PATH_MAX_NODES
                 }, {
                     key: requestKey,
                     priority: 100,
@@ -580,6 +583,7 @@ module.exports.shouldUseLowLodWarp = shouldUseLowLodWarp;
 module.exports.shouldPreannounceVisibleMove = shouldPreannounceVisibleMove;
 module.exports.CLIENT_VISIBILITY_RADIUS = CLIENT_VISIBILITY_RADIUS;
 module.exports.COMPANION_DIRECT_DISTANCE = COMPANION_DIRECT_DISTANCE;
+module.exports.COMPANION_PATH_MAX_NODES = COMPANION_PATH_MAX_NODES;
 module.exports.ACTIVE_GOAL_XY_TOLERANCE = ACTIVE_GOAL_XY_TOLERANCE;
 module.exports.INITIAL_WAYPOINT_SKIP_DISTANCE = INITIAL_WAYPOINT_SKIP_DISTANCE;
 module.exports.MOVE_STALL_SAMPLES = MOVE_STALL_SAMPLES;
