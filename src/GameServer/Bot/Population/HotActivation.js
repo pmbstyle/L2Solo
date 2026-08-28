@@ -174,10 +174,12 @@ const HotActivation = {
         return loadState.then((state) => {
             if (!state) return { ok: false, reason: 'missing_state' };
             if (state.phase === 'hot') return { ok: false, reason: 'already_hot', state };
-            if (state.activity === 'pk_hunting' && options.pkEncounter !== true) {
+            if (state.activity === 'pk_hunting'
+                && options.pkEncounter !== true
+                && options.interruptBackgroundActivity !== true) {
                 return { ok: false, reason: 'pk_encounter_only', state };
             }
-            if (state.activity === 'traveling') {
+            if (state.activity === 'traveling' && options.interruptBackgroundActivity !== true) {
                 return { ok: false, reason: 'in_transit', state };
             }
             if (!state.accountName) return { ok: false, reason: 'missing_account', state };
@@ -208,6 +210,22 @@ const HotActivation = {
                         leaseUntil: handoff.leaseUntil
                     }
                 };
+                if (options.interruptBackgroundActivity === true
+                    && ['traveling', 'pk_hunting'].includes(state.activity)) {
+                    state = {
+                        ...state,
+                        activity: 'hunting',
+                        timing: {
+                            ...(state.timing || {}),
+                            activityStartedAt: Date.now(),
+                            nextResolveAt: Date.now() + 1000
+                        },
+                        stats: {
+                            ...(state.stats || {}),
+                            travel: null
+                        }
+                    };
+                }
                 return releaseBackgroundParty(state, reason);
             }).then((releasedState) => {
                 state = releasedState;

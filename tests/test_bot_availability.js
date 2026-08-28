@@ -109,9 +109,13 @@ try {
     result = BotAvailability.evaluateState(lowPlayer, { ...farColdBot, activity: 'traveling' });
     assert.strictEqual(result.available, false, 'a cold bot that activation rejects in transit must not expose a working invite action');
     assert.strictEqual(result.reason, 'in_transit');
+    result = BotAvailability.evaluateState(lowPlayer, { ...farColdBot, activity: 'traveling' }, { forceFriend: true });
+    assert.strictEqual(result.available, true, 'a const friend summon must interrupt background travel');
     result = BotAvailability.evaluateState(lowPlayer, { ...farColdBot, activity: 'pk_hunting' });
     assert.strictEqual(result.available, false, 'a cold PK encounter bot must retain its existing activation gate in the catalog');
     assert.strictEqual(result.reason, 'pk_encounter_only');
+    result = BotAvailability.evaluateState(lowPlayer, { ...farColdBot, activity: 'pk_hunting' }, { forceFriend: true });
+    assert.strictEqual(result.available, true, 'a const friend summon must outrank a background PK hunt');
 
     const socialBot = session(actor(2000012, 20), {
         persona: { primaryDrive: 'social', traits: { sociability: 0.80, empathy: 0.80, commitment: 0.70 } }

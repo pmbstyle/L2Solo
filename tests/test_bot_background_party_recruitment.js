@@ -345,6 +345,39 @@ async function run() {
     );
 
     activationOrder.length = 0;
+    const travelingState = {
+        ...groupedState,
+        characterId: 91005,
+        name: 'TravelingConstProbe',
+        activity: 'traveling',
+        party: { partyId: null, leaderId: null },
+        stats: {
+            travel: {
+                from: groupedState.loc,
+                to: { locX: -50000, locY: 250000, locZ: -3000 },
+                arrivalAt: Date.now() + 20000
+            }
+        }
+    };
+    const blockedTravel = await HotActivation.activate(travelingState, 'remote_invite', {
+        keepStoreLocation: true
+    });
+    assert.strictEqual(blockedTravel.reason, 'in_transit', 'ordinary activation must not interrupt background travel');
+    let summonedState = null;
+    LifeState.cachedState = () => null;
+    BotManager.loadAndSpawnBot = (_accountName, options) => {
+        summonedState = options.coldLifeState;
+        return Promise.resolve({ actor: {} });
+    };
+    const summonedTravel = await HotActivation.activate(travelingState, 'remote_invite', {
+        keepStoreLocation: true,
+        interruptBackgroundActivity: true
+    });
+    assert.strictEqual(summonedTravel.ok, true, 'a const summon must interrupt background travel and activate the bot');
+    assert.strictEqual(summonedState.activity, 'hunting', 'the interrupted travel must not survive into hot AI state');
+    assert.strictEqual(summonedState.stats.travel, null, 'the stale background route must be cleared before the bot spawns');
+
+    activationOrder.length = 0;
     const blockedState = {
         ...groupedState,
         characterId: 91002,

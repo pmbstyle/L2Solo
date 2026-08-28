@@ -1,6 +1,5 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const ConsoleText    = invoke('GameServer/ConsoleText');
-const SpeckMath      = invoke('GameServer/SpeckMath');
 const NpcDecay       = invoke('GameServer/World/Generics/NpcDecay');
 const GameTime       = invoke('GameServer/World/GameTime');
 const DayNightSpawnManager = invoke('GameServer/World/DayNightSpawnManager');
@@ -385,7 +384,8 @@ const World = {
 
             return PopulationService.requestActivation(state, 'remote_invite', {
                 playerLoc: actorLoc(actor),
-                forceNearPlayer: true
+                forceNearPlayer: true,
+                interruptBackgroundActivity: options.forceFriend === true
             }).then((result) => {
                 if (!result.ok) {
                     PartyCompanionService.releaseCapacity(session, capacityReservation);
@@ -541,7 +541,7 @@ const World = {
         }
     },
 
-    dismissParty(session, actor) {
+    dismissParty(session) {
         const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
         const botsDisbanded = PartyCompanionService.detachAll(session, {
             event: 'party_dismissed',
