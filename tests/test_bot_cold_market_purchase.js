@@ -24,6 +24,7 @@ const originals = {
     clearGoal: GoalState.clear,
     user: World.user,
     bestOffer: MarketOpportunity.bestOffer,
+    npcOffers: MarketOpportunity.npcOffers,
     reserve: MarketOpportunity.reserve,
     openBuyStore: BuyStoreService.open
 };
@@ -78,7 +79,7 @@ async function run() {
         characterId: 77,
         accountName: 'bot77',
         name: 'ColdBuyer',
-        level: 10,
+        level: 40,
         adena: 1000,
         phase: 'cold',
         activity: 'shopping',
@@ -125,6 +126,64 @@ async function run() {
     assert.strictEqual(purchaseTrade.town, 'Giran');
     assert.strictEqual(playerTransactions.recentPeerTrades.length, 0, 'a real player WTS must not inflate bot-to-bot telemetry');
     assert.strictEqual(MarketTelemetry.current().peerPurchases, 0);
+
+    let lowTierPeerLookups = 0;
+    MarketOpportunity.bestOffer = () => {
+        lowTierPeerLookups += 1;
+        return { selfId: 2, price: 1, sourceType: 'private_store' };
+    };
+    MarketOpportunity.npcOffers = () => [{
+        selfId: 2,
+        itemName: 'Long Sword',
+        price: 900,
+        sourceType: 'npc',
+        available: true,
+        town: 'Giran'
+    }];
+    const lowTierNpcPurchase = await ColdMarketService.tryPurchase({
+        ...state,
+        characterId: 88,
+        level: 14
+    }, {
+        type: 'upgrade_gear',
+        status: 'active',
+        target: { itemId: 2, itemName: 'Long Sword', itemSlot: 7, requiredRank: 'none' },
+        plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' }
+    });
+    assert.strictEqual(lowTierNpcPurchase.purchased, true);
+    assert.strictEqual(lowTierNpcPurchase.offer.sourceType, 'npc',
+        'NG/D equipment must use the concrete NPC offer even when a private listing is cheaper');
+    assert.strictEqual(lowTierPeerLookups, 0, 'NG/D equipment must not search peer-market offers');
+
+    let lowTierBuyStoreCalls = 0;
+    MarketOpportunity.npcOffers = () => [];
+    BuyStoreService.open = () => {
+        lowTierBuyStoreCalls += 1;
+        return Promise.resolve({ opened: true });
+    };
+    const missingLowTierNpcGear = await ColdMarketService.tryPurchase({
+        ...state,
+        characterId: 87,
+        level: 14,
+        stats: {
+            ...state.stats,
+            equipmentPlan: {
+                status: 'complete', reason: 'npc_adequate_kit', strategy: 'none'
+            },
+            marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' }
+        }
+    }, {
+        type: 'upgrade_gear',
+        status: 'active',
+        target: { itemId: 945, itemName: 'Skeleton Buckler', itemSlot: 8, requiredRank: 'none' },
+        plan: { expectedBenefit: 'market_search_for_gear', marketTown: 'Giran' }
+    });
+    assert.strictEqual(missingLowTierNpcGear.reason, 'low_tier_npc_offer_missing');
+    assert.strictEqual(lowTierBuyStoreCalls, 0, 'missing NG/D NPC gear must replan instead of opening a WTB store');
+    assert.strictEqual(missingLowTierNpcGear.state.activity, 'traveling');
+    MarketOpportunity.npcOffers = originals.npcOffers;
+    MarketOpportunity.bestOffer = originals.bestOffer;
+    BuyStoreService.open = originals.openBuyStore;
 
     const completedGoal = await ColdMarketService.tryPurchase(state, {
         ...goal,

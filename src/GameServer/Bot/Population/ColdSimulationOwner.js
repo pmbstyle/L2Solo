@@ -92,6 +92,16 @@ function persistencePatch(state = {}, timestamp = Date.now()) {
     };
 }
 
+function withPersistedStats(state, result) {
+    if (!state || typeof result?.row?.statsJson !== 'string') return state;
+    try {
+        const stats = JSON.parse(result.row.statsJson);
+        return stats && typeof stats === 'object' ? { ...state, stats } : state;
+    } catch (_) {
+        return state;
+    }
+}
+
 function reflect(result, committedState = null) {
     if (!result?.ok || !result.characterId) return result;
     const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -207,7 +217,7 @@ function commit(claimToken, nextState, options = {}) {
         patch: persistencePatch(canonicalState, timestamp)
     }).then((result) => {
         Metrics().recordColdOwnerCommit(result, Date.now() - startedAt);
-        return reflect(result, canonicalState);
+        return reflect(result, withPersistedStats(canonicalState, result));
     }).catch(recordFailure);
 }
 
@@ -322,7 +332,8 @@ function commitAndReleaseBatch(entries = [], options = {}) {
             Metrics().recordColdOwnerCommit(result, Date.now() - startedAt);
             if (result.ok) {
                 Metrics().recordColdOwnerRelease({ ok: true });
-                reflect(result, states.get(Number(result.characterId)));
+                const state = states.get(Number(result.characterId));
+                reflect(result, withPersistedStats(state, result));
             }
         });
         return [...results, ...rejected];

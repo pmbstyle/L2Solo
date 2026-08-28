@@ -46,7 +46,7 @@ function isCompatibleWeapon(kind, role, classId) {
 
 function isSuitableWeapon(kind, name, pAtk, mAtk, role, classId) {
     if (!isCompatibleWeapon(kind, role, classId)) return false;
-    if (isCasterRole(role, classId)) return true;
+    if (isCasterRole(role, classId)) return isCasterWeapon(kind, name, pAtk, mAtk);
     return !isCasterWeapon(kind, name, pAtk, mAtk);
 }
 

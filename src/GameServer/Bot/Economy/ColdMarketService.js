@@ -77,12 +77,22 @@ const ColdMarketService = {
             return Promise.resolve({ state, purchased: false, reason: 'different_market_town' });
         }
 
-        const offer = MarketOpportunity.bestOffer(goal.target.itemId, {
-            town: state.currentRegion,
-            budget: state.adena,
-            buyerCharacterId: state.characterId
-        });
+        const npcOnlyGearPurchase = activeGearPurchase && Number(state.level || 1) < 40;
+        const offer = npcOnlyGearPurchase
+            ? (MarketOpportunity.npcOffers(goal.target.itemId, state.currentRegion) || [])
+                .filter((candidate) => candidate.available && Number(candidate.price) <= Number(state.adena || 0))
+                .sort((left, right) => Number(left.price) - Number(right.price))[0] || null
+            : MarketOpportunity.bestOffer(goal.target.itemId, {
+                town: state.currentRegion,
+                budget: state.adena,
+                buyerCharacterId: state.characterId
+            });
         if (!offer) {
+            // NG/D equipment must come from a concrete NPC-shop plan. If a
+            // stale goal reaches the wrong town or names an unavailable exact
+            // item, discard it so the acquisition planner can select another
+            // compatible NPC item instead of opening a private buy store.
+            if (npcOnlyGearPurchase) return finishBlockedPurchase(state, goal, 'low_tier_npc_offer_missing');
             return BuyStoreService.open(state, goal).catch((error) => {
                 utils.infoWarn('BotMarket', 'failed to open buy store for %s: %s', state.name, error?.message || String(error));
                 return { opened: false };

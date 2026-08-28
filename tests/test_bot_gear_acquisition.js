@@ -4,6 +4,7 @@ require('../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
@@ -343,6 +344,20 @@ const mage = { level: 40, stats: { classId: 10, role: 'mage' }, inventory: {} };
 const target = GearAcquisitionPlanner.preferredTarget(mage);
 assert(target, 'a C-grade mage without gear must receive a craftable target');
 assert(['Weapon.Etc', 'Weapon.Sword', 'Weapon.Blunt'].includes(target.item.template.kind), 'mage target must use a caster weapon family');
+assert.strictEqual(BotWeaponCompatibility.isCasterWeapon(
+    target.item.template.kind,
+    target.item.template.name,
+    target.item.stats?.pAtk,
+    target.item.stats?.mAtk
+), true, 'a mage acquisition target must be an actual caster weapon, not merely a compatible sword or blunt');
+const bGradeMageTarget = GearAcquisitionPlanner.preferredTarget({ ...mage, level: 52 });
+assert(bGradeMageTarget, 'a B-grade mage without gear must receive an equipment target');
+assert.strictEqual(BotWeaponCompatibility.isCasterWeapon(
+    bGradeMageTarget.item.template.kind,
+    bGradeMageTarget.item.template.name,
+    bGradeMageTarget.item.stats?.pAtk,
+    bGradeMageTarget.item.stats?.mAtk
+), true, 'B-grade mage planning must not fall back to a physical weapon');
 const demonFangs = DataCache.items.find((item) => Number(item.selfId) === 321);
 assert.strictEqual(GearAcquisitionPlanner.suitable(demonFangs, { level: 33, stats: { classId: 29, role: 'healer' } }, 'healer'), true,
     'caster support acquisition must recognize Demon Fangs as a D-grade equipment target');
@@ -446,6 +461,43 @@ assert.strictEqual(
     'a stronger full-body set must satisfy both NPC bridge chest and legs slots'
 );
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
+const skeletonBuckler = DataCache.items.find((item) => item.template?.name === 'Skeleton Buckler');
+const noGradeNpcShieldInventory = BotGear.planFor({ classId: 0, level: 10 }).items.reduce((inventory, item) => {
+    if (Number(item.slot) === 8) return inventory;
+    const current = inventory[item.selfId];
+    if (current) {
+        current.amount += 1;
+        current.equippedCount += 1;
+        current.equippedSlots.push(item.slot);
+    } else {
+        inventory[item.selfId] = {
+            selfId: item.selfId,
+            name: item.name,
+            amount: 1,
+            equipped: true,
+            equippedCount: 1,
+            equippedSlots: [item.slot],
+            slot: item.slot,
+            rank: item.rank,
+            kind: item.kind
+        };
+    }
+    return inventory;
+}, { 57: { selfId: 57, name: 'Adena', amount: 100000 } });
+const noGradeNpcShieldPlan = GearAcquisitionPlanner.staticNpcUpgradePlan({
+    level: 10,
+    adena: 100000,
+    stats: { classId: 0, role: 'dps' },
+    inventory: noGradeNpcShieldInventory
+}, { spots: [stoneGolemSpot] });
+assert(skeletonBuckler && noGradeNpcShieldPlan, 'the no-grade shield fixtures must produce an NPC progression plan');
+assert.strictEqual(noGradeNpcShieldPlan.market.sourceType, 'npc',
+    'a missing no-grade shield must select real NPC stock');
+assert.strictEqual(noGradeNpcShieldPlan.target.slot, 8);
+assert.notStrictEqual(noGradeNpcShieldPlan.target.selfId, skeletonBuckler.selfId,
+    'an unavailable Skeleton Buckler must be replaced by a compatible NPC-sold shield');
+assert(NpcShopBuyLists.allEntries().some((entry) => Number(entry.selfId) === Number(noGradeNpcShieldPlan.target.selfId)
+    && Number(entry.price) > 0), 'the replacement shield must have a positive NPC-shop offer');
 const wingedSpear = DataCache.items.find((item) => Number(item.selfId) === 93);
 const bronzeShield = DataCache.items.find((item) => Number(item.selfId) === 626);
 const dwarfDInventory = BotGear.planFor({ classId: 55, level: 20 }).items.reduce((inventory, item) => {

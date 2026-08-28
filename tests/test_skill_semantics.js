@@ -125,6 +125,41 @@ assert.strictEqual(heal.fetchSkillType(), C4SkillRules.HEAL, 'Heal should resolv
 assert.strictEqual(wounded.fetchHp(), 89, 'Heal should restore datapack power without invented MAtk scaling');
 assert.strictEqual(healOutcome.damage, 0, 'Heal should not be routed as damage');
 
+const spiritshotHealer = creature({ hp: 100, maxHp: 100 });
+spiritshotHealer.spiritshotLoaded = true;
+const spiritshotHealTarget = creature({ id: 2000003, hp: 100, maxHp: 1000 });
+const spiritshotHealOutcome = SkillEffects.execute(session(), spiritshotHealer, spiritshotHealTarget, heal, {
+    magicSkill: true,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(spiritshotHealOutcome.heal, 64,
+    'a regular spiritshot should multiply ordinary heal power by 1.3');
+
+const blessedHealer = creature({ hp: 100, maxHp: 100 });
+blessedHealer.spiritshotLoaded = true;
+blessedHealer.blessedSpiritshotLoaded = true;
+const blessedHealTarget = creature({ id: 2000004, hp: 100, maxHp: 1000 });
+const blessedHealOutcome = SkillEffects.execute(session(), blessedHealer, blessedHealTarget, heal, {
+    magicSkill: true,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(blessedHealOutcome.heal, 74,
+    'a blessed spiritshot should multiply ordinary heal power by 1.5');
+
+const buffCaster = creature({ hp: 100, maxHp: 100 });
+buffCaster.spiritshotLoaded = true;
+const might = skill({ selfId: 1068, name: 'Might', spell: true, power: 0, level: 1 });
+SkillEffects.execute(session(), buffCaster, buffCaster, might, {
+    magicSkill: true,
+    attack: {
+        clearLoadedShot(actor, magicSkill) {
+            if (magicSkill) actor.spiritshotLoaded = false;
+        }
+    }
+});
+assert.strictEqual(buffCaster.spiritshotLoaded, false,
+    'a completed magic buff should spend its loaded spiritshot');
+
 [
     { id: 45, name: 'Divine Heal', levels: 9, target: 'self', lastPower: 219, lastMp: 107, healLevel: 9 },
     { id: 58, name: 'Elemental Heal', levels: 55, target: 'self', lastPower: 546, lastMp: 239, healLevel: 55 },

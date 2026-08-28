@@ -219,6 +219,26 @@ for (const status of ['active', 'ready_to_craft', 'blocked']) {
         `${status} C-grade crafting must leave ordinary leveling available while no material route is executable`);
 }
 
+const completedNoGradeKitCandidates = NeedsEvaluator.evaluate({
+    ...base,
+    level: 14,
+    adena: 1000000,
+    stats: {
+        classId: 53,
+        build: { grade: 'none', classId: 53, level: 14 },
+        equipment: [{ selfId: 8, slot: 14, rank: 'none', name: 'Willow Staff' }],
+        equipmentPlan: {
+            status: 'complete',
+            reason: 'npc_adequate_kit',
+            strategy: 'none'
+        }
+    }
+}, { spot, now: timestamp });
+assert(!completedNoGradeKitCandidates.some((candidate) => candidate.type === 'upgrade_gear'),
+    'an adequate no-grade NPC kit must not fall back to an exact BotGear item or open a WTB goal');
+assert.strictEqual(GoalPlanner.plan(completedNoGradeKitCandidates, timestamp).type, 'progress_level',
+    'a completed no-grade NPC kit must return to normal progression');
+
 const staleMarketPlanGoal = GoalPlanner.plan(NeedsEvaluator.evaluate({
     ...base,
     adena: 1000000,

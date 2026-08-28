@@ -622,7 +622,25 @@ function rowFromState(state) {
     };
 }
 
+function preserveVersionedAppearanceForSave(row) {
+    const currentStats = cache.get(Number(row?.characterId))?.stats;
+    if (!currentStats) return row;
+
+    const proposedStats = parseJson(row.statsJson, {});
+    const currentVersion = Math.max(0, Number(currentStats.appearanceVersion || 0));
+    const proposedVersion = Math.max(0, Number(proposedStats.appearanceVersion || 0));
+    if (currentVersion <= proposedVersion) return row;
+
+    const protectedStats = { ...proposedStats, appearanceVersion: currentVersion };
+    if (Object.prototype.hasOwnProperty.call(currentStats, 'sex')) {
+        protectedStats.sex = Number(currentStats.sex) & 1;
+    }
+    row.statsJson = safeJson(protectedStats);
+    return row;
+}
+
 function save(row) {
+    preserveVersionedAppearanceForSave(row);
     return Database.execute([
         `INSERT INTO ${TABLE} (
             characterId, accountName, characterName, level, exp, sp, adena, homeRegion, currentRegion,
@@ -3238,6 +3256,42 @@ const BotLifeState = {
 
     cachedState(characterId) {
         return cache.get(Number(characterId)) || null;
+    },
+
+    acceptAppearanceMetadata(characterId, sex, appearanceVersion) {
+        const id = Number(characterId);
+        if (!cache.has(id)) return Promise.resolve(null);
+        const normalizedSex = Number(sex) & 1;
+        const version = Math.max(1, Number(appearanceVersion) || 1);
+        const previous = pendingWrites.get(id) || Promise.resolve();
+        const next = previous.then(() => Database.updateGeneratedBotAppearance(id, normalizedSex, version))
+            .then((result) => {
+                if (!result?.ok) throw new Error(result?.reason || 'generated appearance migration failed');
+                const current = cache.get(id);
+                if (!current) return null;
+                const snapshot = {
+                    ...current,
+                    stats: {
+                        ...(current.stats || {}),
+                        sex: normalizedSex,
+                        appearanceVersion: version
+                    }
+                };
+                cache.set(id, snapshot);
+                notifyColdSnapshot(snapshot, 'generated_appearance_migration');
+                return snapshot;
+            }).catch((error) => {
+                utils.infoWarn('BotLife', 'failed appearance migration for %s: %s', id, error.message || error);
+                return null;
+            });
+
+        const tracked = next.finally(() => {
+            if (pendingWrites.get(id) === tracked) {
+                pendingWrites.delete(id);
+            }
+        });
+        pendingWrites.set(id, tracked);
+        return next;
     },
 
     subscribeChanges(listener) {

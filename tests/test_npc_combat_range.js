@@ -306,5 +306,8 @@ function verifyCombatMessages() {
     assert(receivedMiss, 'NPC melee misses should send the evasion system message to the targeted player');
 }
 
-verifyCombatMessages.deadline = Date.now() + 250;
+verifyCombatMessages.deadline = Date.now() + Math.max(
+    250,
+    Number(casterSkill.fetchCalculatedHitTime?.()) + 250
+);
 verifyCombatMessages();

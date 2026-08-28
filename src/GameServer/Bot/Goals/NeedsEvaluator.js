@@ -94,6 +94,17 @@ function equipmentNeed(state) {
     const plannedAlreadyEquipped = plannedTarget && plannedSlot > 0 && equipment.some((item) => (
         Number(item.slot) === plannedSlot && Number(item.selfId) === Number(plannedTarget.selfId)
     ));
+    const npcOnlyTier = Number(state.level || build.level || 1) < 40;
+    const concreteNpcPlan = acquisitionPlan?.status === 'active'
+        && acquisitionPlan?.strategy === 'market'
+        && acquisitionPlan?.market?.sourceType === 'npc'
+        && plannedTarget;
+    // No-grade and D-grade equipment is owned by GearAcquisitionPlanner's
+    // concrete NPC-shop plan. Do not fall back to an exact BotGear catalog
+    // item after the NPC kit is already adequate (or while its purchased
+    // target is waiting for the next resolver pass): that loses the shop town
+    // and turns ordinary starter gear into a generic Giran WTB goal.
+    if (npcOnlyTier && (!concreteNpcPlan || plannedAlreadyEquipped)) return null;
     const selectedItem = plannedTarget && !plannedAlreadyEquipped ? plannedTarget : desiredItem;
     if (!selectedItem) return null;
 

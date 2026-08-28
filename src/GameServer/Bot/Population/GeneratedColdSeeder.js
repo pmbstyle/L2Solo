@@ -15,19 +15,20 @@ const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 
 const NAME_GENERATOR_VERSION = 2;
+const APPEARANCE_VERSION = 2;
 const TARGET_SPOT_SCORE_BAND = 90;
 const TARGET_SPOT_SHORTLIST_LIMIT = 12;
 
 const CLASS_POOL = [
-    { race: 0, classId: 0, sex: 0, role: 'dps' },
-    { race: 0, classId: 10, sex: 1, role: 'mage' },
-    { race: 1, classId: 18, sex: 0, role: 'dps' },
-    { race: 1, classId: 25, sex: 1, role: 'mage' },
-    { race: 2, classId: 31, sex: 0, role: 'dps' },
-    { race: 2, classId: 38, sex: 1, role: 'mage' },
-    { race: 3, classId: 44, sex: 0, role: 'dps' },
-    { race: 3, classId: 49, sex: 1, role: 'buffer' },
-    { race: 4, classId: 53, sex: 0, role: 'dps' }
+    { race: 0, classId: 0, role: 'dps' },
+    { race: 0, classId: 10, role: 'mage' },
+    { race: 1, classId: 18, role: 'dps' },
+    { race: 1, classId: 25, role: 'mage' },
+    { race: 2, classId: 31, role: 'dps' },
+    { race: 2, classId: 38, role: 'mage' },
+    { race: 3, classId: 44, role: 'dps' },
+    { race: 3, classId: 49, role: 'buffer' },
+    { race: 4, classId: 53, role: 'dps' }
 ];
 
 const STARTER_REGION_RACES = Object.freeze({
@@ -38,12 +39,27 @@ const STARTER_REGION_RACES = Object.freeze({
     dwarf: 4
 });
 
-const CRAFT_SERVICE_PROFILE = { race: 4, classId: 57, sex: 0, role: 'crafter', serviceCrafter: true };
+const CRAFT_SERVICE_PROFILE = { race: 4, classId: 57, role: 'crafter', serviceCrafter: true };
 const CRAFT_SERVICE_COUNT = CraftShopService.CraftStations.length;
 const CRAFT_SERVICE_INDEX_BASE = 10000;
 
 function pick(index, list) {
     return list[index % list.length];
+}
+
+function stableAppearanceNumber(value) {
+    let hash = 2166136261;
+    for (const character of String(value ?? 0)) {
+        hash ^= character.charCodeAt(0);
+        hash = Math.imul(hash, 16777619);
+    }
+    hash = Math.imul(hash ^ (hash >>> 16), 2246822507);
+    hash = Math.imul(hash ^ (hash >>> 13), 3266489909);
+    return (hash ^ (hash >>> 16)) >>> 0;
+}
+
+function sexForIndex(index) {
+    return stableAppearanceNumber(`${index}:sex`) & 1;
 }
 
 function appearance(index, sex) {
@@ -65,7 +81,7 @@ function baseForIndex(index, starterRegion = null) {
     const pool = Number.isInteger(race)
         ? CLASS_POOL.filter((entry) => entry.race === race)
         : CLASS_POOL;
-    return pick(index, pool);
+    return { ...pick(index, pool), sex: sexForIndex(index) };
 }
 
 function profileForIndex(index, base = baseForIndex(index), seedProfile = null) {
@@ -178,6 +194,19 @@ function migratePopulationNames(states = []) {
             return rename.then(() => LifeState.upsertState(nextState, 'generated_name_migration'));
         })
     )), Promise.resolve()).then(() => candidates.length);
+}
+
+function migratePopulationAppearances(states = []) {
+    const candidates = states.filter((state) => state.stats?.generatedCold
+        && Number(state.stats?.appearanceVersion || 0) < APPEARANCE_VERSION
+        && Number.isFinite(Number(state.stats?.generatedIndex)));
+    return cooperativeEach(candidates, (state) => {
+        const sex = sexForIndex(state.stats.generatedIndex);
+        return LifeState.acceptAppearanceMetadata(state.characterId, sex, APPEARANCE_VERSION)
+            .then((result) => {
+                if (!result) throw new Error('generated appearance migration failed');
+            });
+    }).then(() => candidates.length);
 }
 
 function awardBaseGear(characterId, classId) {
@@ -392,6 +421,8 @@ function stateFor(character, index, seedMeta = {}) {
             generatedCold: true,
             generatedIndex: index,
             nameGeneratorVersion: NAME_GENERATOR_VERSION,
+            appearanceVersion: APPEARANCE_VERSION,
+            sex: Number(character.sex ?? base.sex),
             levelBand: levelProfile.band,
             populationWave: seedMeta.populationWave || null,
             starterRegion: seedMeta.starterRegion || null
@@ -495,6 +526,9 @@ const GeneratedColdSeeder = {
     awardProfileSkills,
     craftServiceSeedState,
     baseForIndex,
+    sexForIndex,
+    migratePopulationAppearances,
+    APPEARANCE_VERSION,
     nameFor,
     cooperativeEach,
 
@@ -505,13 +539,14 @@ const GeneratedColdSeeder = {
         return cooperativeEach(slots, (slot) => {
             const index = CRAFT_SERVICE_INDEX_BASE + slot;
             const username = `bot_craft_${String(slot + 1).padStart(2, '0')}`;
+            const base = { ...CRAFT_SERVICE_PROFILE, sex: sexForIndex(index) };
             return ensureAccount(username)
-                .then(() => ensureCharacter(username, index, CRAFT_SERVICE_PROFILE))
+                .then(() => ensureCharacter(username, index, base))
                 .then((result) => LifeState.findByCharacterId(result.character.id).then((existingState) => {
                     // The normal population seed repeats while it fills the target.
                     // Never turn an already-hot service back into a cold database
                     // row merely because that background seeding pass ran again.
-                    const seedState = stateFor(result.character, index, { ...result, base: CRAFT_SERVICE_PROFILE });
+                    const seedState = stateFor(result.character, index, { ...result, base });
                     const { state, shouldSeedState } = craftServiceSeedState(existingState, seedState);
                     // The account slot is the durable station identity.  Do not
                     // let a previously rotated craftStationId keep this service
@@ -553,6 +588,7 @@ const GeneratedColdSeeder = {
         this.running = true;
         return Promise.resolve()
             .then(() => migratePopulationNames(LifeState.allStates(limit + 100)))
+            .then(() => migratePopulationAppearances(LifeState.allStates(limit + 100)))
             .then(() => {
             const plan = SeedPlanner.plan(
                 SpotProfiles.ensure(),

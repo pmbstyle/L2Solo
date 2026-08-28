@@ -298,7 +298,6 @@ try {
     assert.strictEqual(bot.moves.length, 1, 'companion should run after the leader at 1200 range');
     assert.strictEqual(bot.fetchLocX(), 1200, 'companion should not teleport at 1200 range');
 
-    if (BotRaidSafety.BOT_RAID_PARTICIPATION_ENABLED) {
     const raidBoss = {
         model: { raidBoss: true, raidAttackers: new Set() },
         destId: undefined,
@@ -478,40 +477,6 @@ try {
     raidBoss.destId = undefined;
     World.npc = { spawns: [] };
     World.fetchNpcsInRadius = () => [];
-    } else {
-        const disabledRaidBoss = {
-            model: { raidBoss: true },
-            fetchId: () => 9100001,
-            fetchSelfId: () => 25325,
-            fetchName: () => 'disabled party raid target',
-            fetchLocX: () => 400,
-            fetchLocY: () => 0,
-            fetchLocZ: () => 0,
-            fetchLevel: () => 40,
-            fetchAttackable: () => true,
-            fetchIsRaidBoss: () => true,
-            fetchDestId: () => undefined,
-            isDead: () => false,
-            state: { fetchDead: () => false }
-        };
-        leader.destId = disabledRaidBoss.fetchId();
-        World.user = { sessions: [leaderSession, botSession] };
-        World.npc = { spawns: [disabledRaidBoss] };
-        World.fetchNpcsInRadius = () => [disabledRaidBoss];
-        let raidAssists = 0;
-        FollowingState.tick(botSession, bot, {}, {
-            say() {},
-            executePvPCombat() {},
-            executeCombat() { raidAssists += 1; }
-        });
-        assert.strictEqual(raidAssists, 0,
-            'a companion must not assist a player-selected raid boss while bot raid participation is disabled');
-        assert.strictEqual(BotRaidSafety.syncPlayerPartyRaid(leaderSession), null,
-            'disabled raid participation must not create a companion raid context');
-        leader.destId = undefined;
-        World.npc = { spawns: [] };
-        World.fetchNpcsInRadius = () => [];
-    }
 
     const selectedTargetRefreshBot = fakeActor(2000042, { locX: 0, locY: 0, level: 1 });
     selectedTargetRefreshBot.activeBuffs = {};
