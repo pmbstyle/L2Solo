@@ -461,6 +461,43 @@ assert.strictEqual(
     'a stronger full-body set must satisfy both NPC bridge chest and legs slots'
 );
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
+const skeletonBuckler = DataCache.items.find((item) => item.template?.name === 'Skeleton Buckler');
+const noGradeNpcShieldInventory = BotGear.planFor({ classId: 0, level: 10 }).items.reduce((inventory, item) => {
+    if (Number(item.slot) === 8) return inventory;
+    const current = inventory[item.selfId];
+    if (current) {
+        current.amount += 1;
+        current.equippedCount += 1;
+        current.equippedSlots.push(item.slot);
+    } else {
+        inventory[item.selfId] = {
+            selfId: item.selfId,
+            name: item.name,
+            amount: 1,
+            equipped: true,
+            equippedCount: 1,
+            equippedSlots: [item.slot],
+            slot: item.slot,
+            rank: item.rank,
+            kind: item.kind
+        };
+    }
+    return inventory;
+}, { 57: { selfId: 57, name: 'Adena', amount: 100000 } });
+const noGradeNpcShieldPlan = GearAcquisitionPlanner.staticNpcUpgradePlan({
+    level: 10,
+    adena: 100000,
+    stats: { classId: 0, role: 'dps' },
+    inventory: noGradeNpcShieldInventory
+}, { spots: [stoneGolemSpot] });
+assert(skeletonBuckler && noGradeNpcShieldPlan, 'the no-grade shield fixtures must produce an NPC progression plan');
+assert.strictEqual(noGradeNpcShieldPlan.market.sourceType, 'npc',
+    'a missing no-grade shield must select real NPC stock');
+assert.strictEqual(noGradeNpcShieldPlan.target.slot, 8);
+assert.notStrictEqual(noGradeNpcShieldPlan.target.selfId, skeletonBuckler.selfId,
+    'an unavailable Skeleton Buckler must be replaced by a compatible NPC-sold shield');
+assert(NpcShopBuyLists.allEntries().some((entry) => Number(entry.selfId) === Number(noGradeNpcShieldPlan.target.selfId)
+    && Number(entry.price) > 0), 'the replacement shield must have a positive NPC-shop offer');
 const wingedSpear = DataCache.items.find((item) => Number(item.selfId) === 93);
 const bronzeShield = DataCache.items.find((item) => Number(item.selfId) === 626);
 const dwarfDInventory = BotGear.planFor({ classId: 55, level: 20 }).items.reduce((inventory, item) => {
