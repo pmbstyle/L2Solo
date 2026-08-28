@@ -106,6 +106,13 @@ function state(characterId, revision, activity = 'hunting') {
     assert.strictEqual(BotLifeState.cachedState(characterId).simulation.leaseUntil, 7000,
         'renewal must update the main ownership cache for later persistence');
 
+    const migratedAppearance = await Database.updateGeneratedBotAppearance(characterId, 1, 2);
+    assert.strictEqual(migratedAppearance.ok, true,
+        'appearance metadata must patch atomically while the cold worker owns the lifecycle row');
+    BotLifeState.acceptAppearanceMetadata(characterId, 1, 2);
+    assert.strictEqual(BotLifeState.cachedState(characterId).stats.appearanceVersion, 2,
+        'appearance migration must patch the active lifecycle cache without replacing other state');
+
     const resting = {
         ...state(characterId, first.revision, 'resting'),
         stats: { restUntil: 9000 },
@@ -129,6 +136,20 @@ function state(characterId, revision, activity = 'hunting') {
     ]))[0].inventorySummary);
     assert.strictEqual(committedInventory['9999'], undefined,
         'cold-owner persistence must not write a zero-amount inventory entry');
+    const committedStats = JSON.parse((await Database.execute([
+        'SELECT statsJson FROM bot_life_state WHERE characterId = ?', [characterId]
+    ]))[0].statsJson);
+    assert.strictEqual(committedStats.appearanceVersion, 2,
+        'a stale cold snapshot must not erase a newer appearance migration version');
+    assert.strictEqual(committedStats.sex, 1,
+        'a stale cold snapshot must preserve the sex paired with the newer appearance version');
+    assert.strictEqual(committedStats.restUntil, 9000,
+        'appearance preservation must retain the cold worker\'s unrelated stats changes');
+    assert.strictEqual(BotLifeState.cachedState(characterId).stats.appearanceVersion, 2,
+        'the main cache must reflect the protected stats returned by the database gateway');
+    const committedCharacter = (await Database.fetchCharacters('owner_probe'))[0];
+    assert.strictEqual(Number(committedCharacter.sex), 1,
+        'the same migration transaction must update the physical character appearance');
 
     const staleCommit = await Owner.commit(first, { ...resting, activity: 'hunting' }, { timestamp: 2100, leaseMs: 5000 });
     assert.strictEqual(staleCommit.reason, 'stale_revision', 'an old claim must never overwrite a newer revision');

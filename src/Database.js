@@ -1173,6 +1173,28 @@ function parsedObject(raw) {
     }
 }
 
+function preserveVersionedAppearanceStats(currentRaw, proposedRaw) {
+    const current = parsedObject(currentRaw);
+    const proposed = parsedObject(proposedRaw);
+    if (!current || !proposed) return proposedRaw;
+
+    const currentVersion = Math.max(0, Number(current.appearanceVersion || 0));
+    const proposedVersion = Math.max(0, Number(proposed.appearanceVersion || 0));
+    if (currentVersion <= proposedVersion) return proposedRaw;
+
+    const merged = { ...proposed, appearanceVersion: currentVersion };
+    if (Object.prototype.hasOwnProperty.call(current, 'sex')) merged.sex = current.sex;
+    return JSON.stringify(merged);
+}
+
+function preserveColdVersionedStats(row, patch = {}) {
+    const next = { ...patch };
+    if (Object.prototype.hasOwnProperty.call(next, 'statsJson')) {
+        next.statsJson = preserveVersionedAppearanceStats(row?.statsJson, next.statsJson);
+    }
+    return next;
+}
+
 function syncInventorySummaryUnsafe(characterId, inventory = {}) {
     const existing = all('SELECT id, selfId, amount, enchant, equipped, slot FROM items WHERE characterId = ? ORDER BY id', [characterId]);
     const bySelfId = new Map();
@@ -1720,8 +1742,8 @@ const Database = {
         const leaseId = String(request.leaseId || '');
         const timestamp = Number(request.timestamp || now());
         const leaseUntil = Number(request.leaseUntil || 0);
-        const patch = { ...(request.patch || {}) };
-        const invalidColumn = Object.keys(patch).find((column) => !COLD_SIMULATION_PATCH_COLUMNS.has(column));
+        const requestedPatch = { ...(request.patch || {}) };
+        const invalidColumn = Object.keys(requestedPatch).find((column) => !COLD_SIMULATION_PATCH_COLUMNS.has(column));
         if (!Number.isSafeInteger(characterId) || characterId <= 0) return Promise.resolve({ ok: false, reason: 'invalid_character' });
         if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) return Promise.resolve({ ok: false, reason: 'invalid_revision' });
         if (ownerId !== COLD_SIMULATION_OWNER || !leaseId || leaseUntil <= timestamp) return Promise.resolve({ ok: false, reason: 'invalid_lease' });
@@ -1731,6 +1753,7 @@ const Database = {
             const row = coldSimulationRow(characterId);
             const conflict = coldSimulationConflict(row, { expectedRevision, ownerId, leaseId }, timestamp);
             if (conflict !== 'cas_failed') return { ok: false, reason: conflict };
+            const patch = preserveColdVersionedStats(row, requestedPatch);
             const proposed = { ...row, ...patch, phase: patch.phase || row.phase, activity: patch.activity || row.activity };
             const partition = coldSimulationPartition(proposed, request);
             if (!partition.ok) return { ok: false, reason: 'partition_rejected', detail: partition.reason };
@@ -1787,11 +1810,13 @@ const Database = {
                     const ownerId = String(request.ownerId || COLD_SIMULATION_OWNER);
                     const leaseId = String(request.leaseId || '');
                     const timestamp = Number(request.timestamp || now());
-                    const invalidColumn = Object.keys(request.patch || {})
+                    const requestedPatch = { ...(request.patch || {}) };
+                    const invalidColumn = Object.keys(requestedPatch)
                         .find((column) => !COLD_SIMULATION_PATCH_COLUMNS.has(column));
                     const row = coldSimulationRow(characterId);
                     const conflict = coldSimulationConflict(row, { expectedRevision, ownerId, leaseId }, timestamp);
-                    const proposed = { ...row, ...(request.patch || {}), phase: request.patch?.phase || row?.phase, activity: request.patch?.activity || row?.activity };
+                    const patch = preserveColdVersionedStats(row, requestedPatch);
+                    const proposed = { ...row, ...patch, phase: patch.phase || row?.phase, activity: patch.activity || row?.activity };
                     const partition = coldSimulationPartition(proposed, request);
                     if (!Number.isSafeInteger(characterId) || characterId <= 0
                         || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0
@@ -1822,8 +1847,8 @@ const Database = {
             const ownerId = String(request.ownerId || COLD_SIMULATION_OWNER);
             const leaseId = String(request.leaseId || '');
             const timestamp = Number(request.timestamp || now());
-            const patch = { ...(request.patch || {}) };
-            const invalidColumn = Object.keys(patch).find((column) => !COLD_SIMULATION_PATCH_COLUMNS.has(column));
+            const requestedPatch = { ...(request.patch || {}) };
+            const invalidColumn = Object.keys(requestedPatch).find((column) => !COLD_SIMULATION_PATCH_COLUMNS.has(column));
             if (!Number.isSafeInteger(characterId) || characterId <= 0) return { ok: false, characterId, reason: 'invalid_character' };
             if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) return { ok: false, characterId, reason: 'invalid_revision' };
             if (ownerId !== COLD_SIMULATION_OWNER || !leaseId) return { ok: false, characterId, reason: 'invalid_lease' };
@@ -1831,6 +1856,7 @@ const Database = {
             const row = coldSimulationRow(characterId);
             const conflict = coldSimulationConflict(row, { expectedRevision, ownerId, leaseId }, timestamp);
             if (conflict !== 'cas_failed') return { ok: false, characterId, reason: conflict };
+            const patch = preserveColdVersionedStats(row, requestedPatch);
             const proposed = { ...row, ...patch, phase: patch.phase || row.phase, activity: patch.activity || row.activity };
             const partition = coldSimulationPartition(proposed, request);
             if (!partition.ok) return { ok: false, characterId, reason: 'partition_rejected', detail: partition.reason };
@@ -4746,6 +4772,30 @@ const Database = {
     deleteMacroShortcuts(characterId, macroId) { return remove('shortcuts', 'characterId = ? AND kind = 4 AND id = ?', [characterId, macroId], 'shortcut:delete-macro'); },
     updateCharacterLocation(id, coords) { return withCharacterFlush(id, () => update('characters', { locX: coords.locX, locY: coords.locY, locZ: coords.locZ, head: coords.head ?? -1 }, 'id = ?', [id], 'character:location')); },
     updateCharacterName(id, name) { return withCharacterFlush(id, () => update('characters', { name }, 'id = ?', [id], 'character:name')); },
+    updateGeneratedBotAppearance(id, sex, appearanceVersion) {
+        const characterId = Number(id);
+        const normalizedSex = Number(sex) & 1;
+        const version = Math.max(1, Number(appearanceVersion) || 1);
+        if (!Number.isSafeInteger(characterId) || characterId <= 0) {
+            return Promise.resolve({ ok: false, reason: 'invalid_character' });
+        }
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const character = write('UPDATE characters SET sex = ? WHERE id = ?', [normalizedSex, characterId]);
+            const state = write(`UPDATE bot_life_state
+                SET statsJson = json_set(
+                    COALESCE(statsJson, '{}'),
+                    '$.sex', ?,
+                    '$.appearanceVersion', ?
+                )
+                WHERE characterId = ?`, [normalizedSex, version, characterId]);
+            if (character.affectedRows !== 1 || state.affectedRows !== 1) {
+                const error = new Error(`generated appearance target missing for ${characterId}`);
+                error.code = 'BOT_APPEARANCE_TARGET_MISSING';
+                throw error;
+            }
+            return { ok: true, characterId, sex: normalizedSex, appearanceVersion: version };
+        }, 'bot-life:generated-appearance'));
+    },
     updateCharacterExperience(id, level, exp, sp) { return withCharacterFlush(id, () => update('characters', { level, exp, sp }, 'id = ?', [id], 'character:experience')); },
     updateCharacterVitals(id, hp, maxHp, mp, maxMp) { return withCharacterFlush(id, () => update('characters', { hp, maxHp, mp, maxMp }, 'id = ?', [id], 'character:vitals')); },
     updateCharacterStatus(id, { hp, mp, cp, effects }) { return withCharacterFlush(id, () => update('characters', { hp, mp, cp, effects }, 'id = ?', [id], 'character:status')); },

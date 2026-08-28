@@ -3240,6 +3240,23 @@ const BotLifeState = {
         return cache.get(Number(characterId)) || null;
     },
 
+    acceptAppearanceMetadata(characterId, sex, appearanceVersion) {
+        const id = Number(characterId);
+        const current = cache.get(id);
+        if (!current) return null;
+        const next = {
+            ...current,
+            stats: {
+                ...(current.stats || {}),
+                sex: Number(sex) & 1,
+                appearanceVersion: Math.max(1, Number(appearanceVersion) || 1)
+            }
+        };
+        cache.set(id, next);
+        notifyColdSnapshot(next, 'generated_appearance_migration');
+        return next;
+    },
+
     subscribeChanges(listener) {
         if (typeof listener !== 'function') return () => {};
         changeListeners.add(listener);

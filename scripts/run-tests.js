@@ -81,6 +81,7 @@ const tests = [
     'tests/test_bot_gear_skill_hints.js',
     'tests/test_bot_class_progression.js',
     'tests/test_generated_cold_skills.js',
+    'tests/test_generated_population_appearance.js',
     'tests/test_population_seed_planner.js',
     'tests/test_spot_profile_state_priority.js',
     'tests/test_bot_hunting_ground_rules.js',
