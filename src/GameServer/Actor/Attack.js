@@ -253,8 +253,7 @@ class Attack {
         const magicSkill = this.isMagicSkill(skill);
         this.chargeShotForSkill(session, actor, magicSkill, skill);
 
-        const attackRate = magicSkill ? actor.fetchCollectiveCastSpd() : actor.fetchCollectiveAtkSpd();
-        skill.setCalculatedHitTime(Formulas.calcRemoteAtkTime(skill.fetchHitTime(), attackRate));
+        skill.setCalculatedHitTime(this.calculatedSkillHitTime(actor, skill, magicSkill));
         // Companion support selection runs before a native cast is accepted.
         // Only create its reservation at this point, after every rejection
         // gate above has passed and the cast is about to begin. The calculated
@@ -612,7 +611,7 @@ class Attack {
     }
 
     chargeShotForSkill(session, actor, magicSkill, skill = null) {
-        if (skill?.fetchSsBoost && Number(skill.fetchSsBoost()) <= 0) {
+        if (!magicSkill && skill?.fetchSsBoost && Number(skill.fetchSsBoost()) <= 0) {
             return;
         }
 
@@ -640,6 +639,20 @@ class Attack {
                 }
             }, autoSoulshotId);
         }
+    }
+
+    calculatedSkillHitTime(actor, skill, magicSkill) {
+        const hitTime = Math.max(0, Number(skill?.fetchHitTime?.()) || 0);
+        if (skill?.fetchSemantic?.()?.staticHitTime) return hitTime;
+
+        const attackRate = magicSkill ? actor.fetchCollectiveCastSpd() : actor.fetchCollectiveAtkSpd();
+        const scaledHitTime = Formulas.calcRemoteAtkTime(hitTime, attackRate);
+        const adjustedHitTime = magicSkill && actor.spiritshotLoaded
+            ? Math.floor(scaledHitTime * 0.70)
+            : scaledHitTime;
+        return magicSkill && hitTime >= 500
+            ? Math.max(500, adjustedHitTime)
+            : adjustedHitTime;
     }
 
     skillUseConditionFailure(session, actor, skill) {

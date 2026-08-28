@@ -63,6 +63,29 @@ assert.strictEqual(Math.round(Formulas.calcMeleeAtkTime(1000)), 470, 'melee atta
 assert.strictEqual(Formulas.calcMeleeAtkTime(1), 2700, 'melee attack time should keep the L2J low-rate guard');
 assert.strictEqual(Math.round(Formulas.calcRemoteAtkTime(1500, 333)), 1500, 'skill hit time should scale with the 333/rate constant');
 
+const castActor = actor();
+const timingAttack = new Attack();
+const castSkill = {
+    fetchHitTime: () => 1500,
+    fetchSemantic: () => ({})
+};
+assert.strictEqual(timingAttack.calculatedSkillHitTime(castActor, castSkill, true), 750,
+    'magic hit time should first scale with cast speed');
+castActor.spiritshotLoaded = true;
+assert.strictEqual(timingAttack.calculatedSkillHitTime(castActor, castSkill, true), 525,
+    'a loaded spiritshot should reduce magic hit time to the sourced 70 percent');
+castActor.blessedSpiritshotLoaded = true;
+assert.strictEqual(timingAttack.calculatedSkillHitTime(castActor, castSkill, true), 525,
+    'a blessed spiritshot should use the same cast-time modifier as a regular spiritshot');
+assert.strictEqual(timingAttack.calculatedSkillHitTime(castActor, {
+    fetchHitTime: () => 1000,
+    fetchSemantic: () => ({})
+}, true), 500, 'spiritshot acceleration must preserve the sourced 500 ms minimum cast time');
+assert.strictEqual(timingAttack.calculatedSkillHitTime(castActor, {
+    fetchHitTime: () => 5000,
+    fetchSemantic: () => ({ staticHitTime: true })
+}, true), 5000, 'static hit times must ignore both cast speed and spiritshots');
+
 const attack = new Attack();
 const magicActor = actor();
 magicActor.spiritshotLoaded = true;
@@ -202,5 +225,14 @@ assert.strictEqual(soulshotConsumed, false, 'magic skill should not try to charg
 assert.strictEqual(spiritshotConsumed, true, 'magic skill should try to charge spiritshot');
 assert.strictEqual(magicChargeActor.spiritshotLoaded, true, 'magic skill should load spiritshot on successful consume');
 assert(chargePackets.some((packet) => packet[0] === 0x48 && packet.readInt32LE(9) === 2157), 'magic skill should broadcast the consumed spiritshot grade animation');
+
+magicChargeActor.spiritshotLoaded = false;
+spiritshotConsumed = false;
+attack.chargeShotForSkill({
+    actor: magicChargeActor,
+    dataSendToMeAndOthers() {}
+}, magicChargeActor, true, { fetchSsBoost: () => 0 });
+assert.strictEqual(spiritshotConsumed, true,
+    'a magic heal or buff should consume spiritshots even when it has no offensive ssBoost');
 
 console.log('Skill damage formula checks passed');

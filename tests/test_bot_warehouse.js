@@ -373,6 +373,7 @@ async function run() {
             liveItem(51, { ...trash, stackable: false, fetchPrice: () => 10 }),
             liveItem(52, saber, true),
             liveItem(53, saber),
+            liveItem(54, { selfId: 2509, name: 'Spiritshot: No Grade', amount: 1000, stackable: true, fetchPrice: () => 15 }),
             adena
         ],
         fetchItems() { return this.items; },
@@ -387,8 +388,8 @@ async function run() {
         dataSendToMe() {}
     });
     await new Promise((resolve) => setImmediate(resolve));
-    assert.deepStrictEqual(junkBackpack.items.map((item) => item.id), [52, 53, 50],
-        'sell-junk must remove only sold object rows and retain the reserved source sword');
+    assert.deepStrictEqual(junkBackpack.items.map((item) => item.id), [52, 53, 54, 50],
+        'sell-junk must retain the reserved source sword and all combat shots');
     console.log('Bot warehouse checks passed');
 }
 

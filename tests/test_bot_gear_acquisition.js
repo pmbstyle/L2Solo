@@ -4,6 +4,7 @@ require('../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
@@ -343,6 +344,20 @@ const mage = { level: 40, stats: { classId: 10, role: 'mage' }, inventory: {} };
 const target = GearAcquisitionPlanner.preferredTarget(mage);
 assert(target, 'a C-grade mage without gear must receive a craftable target');
 assert(['Weapon.Etc', 'Weapon.Sword', 'Weapon.Blunt'].includes(target.item.template.kind), 'mage target must use a caster weapon family');
+assert.strictEqual(BotWeaponCompatibility.isCasterWeapon(
+    target.item.template.kind,
+    target.item.template.name,
+    target.item.stats?.pAtk,
+    target.item.stats?.mAtk
+), true, 'a mage acquisition target must be an actual caster weapon, not merely a compatible sword or blunt');
+const bGradeMageTarget = GearAcquisitionPlanner.preferredTarget({ ...mage, level: 52 });
+assert(bGradeMageTarget, 'a B-grade mage without gear must receive an equipment target');
+assert.strictEqual(BotWeaponCompatibility.isCasterWeapon(
+    bGradeMageTarget.item.template.kind,
+    bGradeMageTarget.item.template.name,
+    bGradeMageTarget.item.stats?.pAtk,
+    bGradeMageTarget.item.stats?.mAtk
+), true, 'B-grade mage planning must not fall back to a physical weapon');
 const demonFangs = DataCache.items.find((item) => Number(item.selfId) === 321);
 assert.strictEqual(GearAcquisitionPlanner.suitable(demonFangs, { level: 33, stats: { classId: 29, role: 'healer' } }, 'healer'), true,
     'caster support acquisition must recognize Demon Fangs as a D-grade equipment target');

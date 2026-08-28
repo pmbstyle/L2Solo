@@ -360,6 +360,9 @@ function execute(session, actor, target, skill, context = {}) {
             result.effect = applyEffect(session, effectTarget, skill, semantic, actor);
             if (semantic.removeTarget === true) clearTargetState(effectTarget?.session || session, effectTarget);
         }
+        if (semantic.skillType === C4SkillRules.EFFECT) {
+            clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
+        }
     }
 
     if (semantic.selfEffect) {
@@ -420,11 +423,16 @@ function applyAggroPoints(session, actor, target, skill, semantic) {
 function applyHeal(session, actor, target, skill, semantic, magicSkill, attack) {
     const usedSpiritshot = !!actor.spiritshotLoaded;
     const usedBlessedSpiritshot = usedSpiritshot && !!actor.blessedSpiritshotLoaded;
+    const shotBoostsHeal = magicSkill && [
+        C4SkillRules.HEAL,
+        C4SkillRules.HEAL_HOT,
+        C4SkillRules.HEAL_CLEANSE
+    ].includes(semantic.skillType);
     const amount = Math.round(Formulas.calcHealAmount(
         semantic.healPower ?? skill.fetchPower(),
         {
-            spiritshot: usedSpiritshot && skill.fetchSsBoost() > 0,
-            blessedSpiritshot: usedBlessedSpiritshot && skill.fetchSsBoost() > 0
+            spiritshot: usedSpiritshot && shotBoostsHeal,
+            blessedSpiritshot: usedBlessedSpiritshot && shotBoostsHeal
         }
     ) * EffectStats.multiplier(target, 'gainHpMul'));
 
