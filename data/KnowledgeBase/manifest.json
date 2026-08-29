@@ -1,0 +1,121 @@
+{
+  "anomalies": {
+    "duplicateItemDefinitions": [
+      {
+        "differingFields": [
+          "template.class2"
+        ],
+        "id": 5550,
+        "selectedDefinition": "first loaded definition, matching DataCache.fetch*FromSelfId()"
+      },
+      {
+        "differingFields": [
+          "template.class2"
+        ],
+        "id": 5551,
+        "selectedDefinition": "first loaded definition, matching DataCache.fetch*FromSelfId()"
+      },
+      {
+        "differingFields": [
+          "template.class2"
+        ],
+        "id": 5552,
+        "selectedDefinition": "first loaded definition, matching DataCache.fetch*FromSelfId()"
+      },
+      {
+        "differingFields": [
+          "template.class2"
+        ],
+        "id": 5553,
+        "selectedDefinition": "first loaded definition, matching DataCache.fetch*FromSelfId()"
+      },
+      {
+        "differingFields": [
+          "template.class2"
+        ],
+        "id": 5554,
+        "selectedDefinition": "first loaded definition, matching DataCache.fetch*FromSelfId()"
+      }
+    ]
+  },
+  "counts": {
+    "dropEntries": 13071,
+    "items": 5062,
+    "knownReachableMobs": 1642,
+    "knownReachableSourcedItems": 1645,
+    "mobs": 2068,
+    "mobsWithDirectSpawns": 1358,
+    "skills": 1022,
+    "sourcedItems": 1655,
+    "spawnDefinitions": 13257,
+    "spawnLocations": 16488,
+    "spoilEntries": 2456,
+    "unresolvedMobAvailability": 426
+  },
+  "deterministic": true,
+  "files": {
+    "items": "items.json",
+    "mobs": "mobs.json",
+    "skills": "skills.json",
+    "spawns": "spawns.json"
+  },
+  "generator": "scripts/generate-knowledge-base.js",
+  "probabilityUnit": "percent",
+  "rateAssumptions": {
+    "attackerLevels": [],
+    "deepBluePenalty": false,
+    "note": "Rate profiles describe a same-level solo kill. Level-sensitive penalties must be calculated at display time.",
+    "playerLevel": "equal to mob level"
+  },
+  "rateProfiles": {
+    "x1": {
+      "adena": 1,
+      "drop": 1,
+      "exp": 1,
+      "multiplier": 1,
+      "preset": "x1",
+      "questAdena": 1,
+      "questDrop": 1,
+      "questExp": 1,
+      "questReward": 1,
+      "questSp": 1,
+      "sp": 1,
+      "spoil": 1
+    },
+    "x10": {
+      "adena": 10,
+      "drop": 10,
+      "exp": 10,
+      "multiplier": 10,
+      "preset": "x10",
+      "questAdena": 10,
+      "questDrop": 10,
+      "questExp": 10,
+      "questReward": 10,
+      "questSp": 10,
+      "sp": 10,
+      "spoil": 10
+    },
+    "x50": {
+      "adena": 50,
+      "drop": 50,
+      "exp": 50,
+      "multiplier": 50,
+      "preset": "x50",
+      "questAdena": 50,
+      "questDrop": 50,
+      "questExp": 50,
+      "questReward": 50,
+      "questSp": 50,
+      "sp": 50,
+      "spoil": 50
+    }
+  },
+  "schemaVersion": 1,
+  "sha256": {
+    "items.json": "6ad3ab26fab068b1795f0b4f3988cc2760619813e1643ae10eadbf39d827eefd",
+    "mobs.json": "4dae340bcb32442e2c3ac67912d025d63a26a622b0282d4bbd38d72ae7423748",
+    "skills.json": "65e34461b4e1e021b2b9c32a0d9cd9a90ccba4bcebf95ef3a15084577b0ebb92",
+    "spawns.json": "6e09ce2f468f0a2adf5ff7e599fd9d8021cfc88e57803034c9e57bf301d76e98"
+  }
+}

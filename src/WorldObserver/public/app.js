@@ -68,6 +68,9 @@ const state = {
     clanOrderSearchTimer: null,
     clanOrderSaving: false,
     clanOrderMessage: null,
+    knowledgeNpcFocus: null,
+    knowledgeNpcLoading: false,
+    knowledgeNpcRequest: 0,
     applyingRoute: false,
     pendingRoute: null
 };
@@ -75,7 +78,7 @@ const state = {
 function commitRoute(route, { replace = false } = {}) {
     if (state.applyingRoute) return;
     const href = Router.href(route);
-    if (window.location.pathname === href) return;
+    if (`${window.location.pathname}${window.location.search}` === href) return;
     window.history[replace ? 'replaceState' : 'pushState']({}, '', href);
 }
 
@@ -88,7 +91,7 @@ function clearActorSelection() {
     state.detailRequest += 1;
 }
 
-function applyRoute(route = Router.parse(window.location.pathname)) {
+function applyRoute(route = Router.parse(`${window.location.pathname}${window.location.search}`)) {
     if (route.name === 'not-found') {
         window.history.replaceState({}, '', Router.href({ name: 'world' }));
         route = { name: 'world' };
@@ -99,9 +102,11 @@ function applyRoute(route = Router.parse(window.location.pathname)) {
         if (route.name === 'world') {
             document.title = 'World Observer';
             const clanId = Number(route.clanId) || null;
+            const npcId = Number(route.npcId) || null;
             const scopeChanged = Number(state.clanMapScope?.id || 0) !== Number(clanId || 0);
             setClanMapScope(clanId, route.clanName || null, { resetFilters: Boolean(clanId && scopeChanged) });
             if (clanId && (scopeChanged || !state.clanMapScope?.actorKeys)) loadClanMapMembers(clanId);
+            if (!npcId) clearKnowledgeNpcFocus({ render: false });
             closeRankings({ updateRoute: false });
             closeRaidBosses({ updateRoute: false });
             closeClans({ updateRoute: false });
@@ -116,6 +121,7 @@ function applyRoute(route = Router.parse(window.location.pathname)) {
             } else if (clanId) {
                 state.pendingRoute = route;
             }
+            if (npcId) loadKnowledgeNpcFocus(npcId);
             return;
         }
         if (route.name === 'rankings') {
@@ -230,6 +236,9 @@ const els = {
     mapScope: document.querySelector('#mapScope'),
     mapScopeName: document.querySelector('#mapScopeName'),
     clearMapScope: document.querySelector('#clearMapScope'),
+    npcMapScope: document.querySelector('#npcMapScope'),
+    npcMapScopeName: document.querySelector('#npcMapScopeName'),
+    clearNpcMapScope: document.querySelector('#clearNpcMapScope'),
     actorSearch: document.querySelector('#actorSearch'),
     minLevelFilter: document.querySelector('#minLevelFilter'),
     maxLevelFilter: document.querySelector('#maxLevelFilter'),
@@ -241,6 +250,7 @@ const els = {
     regionLabels: document.querySelector('#regionLabels'),
     pointsLayer: document.querySelector('#pointsLayer'),
     raidBossLayer: document.querySelector('#raidBossLayer'),
+    npcSpawnLayer: document.querySelector('#npcSpawnLayer'),
     selectedCard: document.querySelector('#selectedCard'),
     selectedInspector: document.querySelector('#selectedInspector'),
     botsTotal: document.querySelector('#botsTotal'),
@@ -1883,6 +1893,7 @@ function renderPoints() {
     els.pointsLayer.innerHTML = '';
     if (!state.snapshot) {
         renderRaidBossPoints();
+        renderKnowledgeNpcPoints();
         return;
     }
 
@@ -1890,6 +1901,7 @@ function renderPoints() {
     const clusters = clusterActors(visible);
     clusters.forEach((cluster) => cluster.size === 1 ? renderSinglePoint(cluster) : renderCluster(cluster));
     renderRaidBossPoints();
+    renderKnowledgeNpcPoints();
 }
 
 function renderRaidBossPoints() {
@@ -1945,6 +1957,97 @@ function renderRaidBossPoints() {
         }
         els.raidBossLayer.appendChild(group);
     });
+}
+
+function knowledgeNpcMapPoints() {
+    return (state.knowledgeNpcFocus?.spawns || []).flatMap((spawn) => spawn.mapPoints || []);
+}
+
+function renderKnowledgeNpcScope() {
+    if (!els.npcMapScope || !els.npcMapScopeName) return;
+    const focus = state.knowledgeNpcFocus;
+    els.npcMapScope.hidden = !focus && !state.knowledgeNpcLoading;
+    els.npcMapScopeName.textContent = state.knowledgeNpcLoading
+        ? 'Loading…'
+        : focus ? `${focus.name} · ${knowledgeNpcMapPoints().length} locations` : '—';
+}
+
+function renderKnowledgeNpcPoints() {
+    if (!els.npcSpawnLayer) return;
+    els.npcSpawnLayer.innerHTML = '';
+    renderKnowledgeNpcScope();
+    const focus = state.knowledgeNpcFocus;
+    const locations = knowledgeNpcMapPoints();
+    if (!focus || !locations.length) return;
+    const projected = locations.map((location) => ({ location, point: project(location) }));
+    const clusters = MapClusters.clusterProjected(projected, {
+        cellSize: screenUnits(42),
+        viewport: state.viewport,
+        margin: screenUnits(54)
+    });
+    const viewportWidth = state.viewport?.width || 99999;
+
+    clusters.forEach((cluster) => {
+        const radius = screenUnits(cluster.size > 1 ? clamp(11 + Math.log2(cluster.size), 12, 18) : 8);
+        const group = svgEl('g', {
+            class: `npc-spawn-point${cluster.size > 1 ? ' is-cluster' : ''}`,
+            transform: `translate(${cluster.point.x}, ${cluster.point.y})`,
+            tabindex: 0,
+            role: 'button',
+            'aria-label': cluster.size > 1 ? `${cluster.size} spawn locations for ${focus.name}` : `Spawn location for ${focus.name}`
+        });
+        addPointHandlers(group, () => focusMapPoints(cluster.members.map(({ point }) => point), 38));
+        group.appendChild(pointHitElement(Math.max(32, radius * 2)));
+        group.appendChild(svgEl('circle', { class: 'npc-spawn-ring', r: radius + screenUnits(4), 'vector-effect': 'non-scaling-stroke' }));
+        group.appendChild(svgEl('circle', { class: 'npc-spawn-core', r: radius, 'vector-effect': 'non-scaling-stroke' }));
+        if (cluster.size > 1) {
+            const count = svgEl('text', {
+                class: 'npc-spawn-count', x: 0, y: screenUnits(4), 'text-anchor': 'middle', style: `font-size:${screenUnits(11)}px`
+            });
+            count.textContent = cluster.size.toLocaleString();
+            group.appendChild(count);
+        } else if (viewportWidth < 4200 || locations.length === 1) {
+            const label = svgEl('text', {
+                class: 'npc-spawn-label', x: radius + screenUnits(8), y: screenUnits(4), style: `font-size:${screenUnits(11)}px`
+            });
+            label.textContent = focus.name;
+            group.appendChild(label);
+        }
+        els.npcSpawnLayer.appendChild(group);
+    });
+}
+
+function clearKnowledgeNpcFocus({ render = true, updateRoute = false } = {}) {
+    state.knowledgeNpcFocus = null;
+    state.knowledgeNpcLoading = false;
+    state.knowledgeNpcRequest += 1;
+    if (render) renderKnowledgeNpcPoints();
+    if (updateRoute) commitRoute({ name: 'world' });
+}
+
+async function loadKnowledgeNpcFocus(id) {
+    const npcId = Number(id);
+    if (!npcId) return;
+    const request = ++state.knowledgeNpcRequest;
+    state.knowledgeNpcLoading = true;
+    renderKnowledgeNpcScope();
+    try {
+        const response = await fetch(`/observer/api/knowledge/npcs/${encodeURIComponent(npcId)}`, { cache: 'no-store' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `NPC lookup failed (${response.status})`);
+        if (request !== state.knowledgeNpcRequest) return;
+        state.knowledgeNpcFocus = data;
+        state.knowledgeNpcLoading = false;
+        renderKnowledgeNpcPoints();
+        const points = knowledgeNpcMapPoints().map(worldToMap);
+        if (points.length) focusMapPoints(points, 54);
+    } catch (error) {
+        if (request !== state.knowledgeNpcRequest) return;
+        state.knowledgeNpcFocus = null;
+        state.knowledgeNpcLoading = false;
+        renderKnowledgeNpcScope();
+        console.warn('KnowledgeBase :: failed to focus NPC %d: %s', npcId, error.message);
+    }
 }
 
 function raidBossClusterLocation(cluster) {
@@ -3247,6 +3350,7 @@ document.addEventListener('click', (event) => {
 });
 
 els.clearMapScope?.addEventListener('click', () => clearClanMapScope());
+els.clearNpcMapScope?.addEventListener('click', () => clearKnowledgeNpcFocus({ updateRoute: true }));
 
 els.filterStrip.addEventListener('click', (event) => {
     const button = event.target.closest('[data-phase]');

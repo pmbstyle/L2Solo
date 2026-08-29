@@ -214,6 +214,16 @@ h1 { font-size: 25px; line-height: 1; font-weight: 790; letter-spacing: -0.025em
     cursor: pointer;
 }
 .map-scope > button:hover, .map-scope > button:focus-visible { color: var(--text); background: rgba(216, 185, 109, 0.12); outline: none; }
+.npc-map-scope { border-color: rgba(216, 185, 109, 0.36); }
+
+.knowledge-base-button { text-decoration: none; }
+
+.npc-spawn-point { cursor: pointer; filter: url("#pinGlow"); }
+.npc-spawn-ring { fill: rgba(216, 185, 109, 0.08); stroke: var(--gold); stroke-width: 2px; }
+.npc-spawn-core { fill: rgba(216, 185, 109, 0.86); stroke: #fff0c5; stroke-width: 1px; }
+.npc-spawn-point.is-cluster .npc-spawn-core { fill: #40341e; }
+.npc-spawn-count { fill: #fff0c5; font-weight: 850; pointer-events: none; }
+.npc-spawn-label { fill: #fff0c5; paint-order: stroke; pointer-events: none; stroke: rgba(4, 8, 9, 0.92); stroke-width: 3px; }
 
 .actor-filter-controls { gap: 7px; margin-left: auto; }
 .level-filter,
