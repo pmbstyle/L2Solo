@@ -21,6 +21,10 @@ const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
 const PartyClassTactics = invoke('GameServer/Bot/AI/PartyClassTactics');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
+const TownNpcCatalog = invoke('GameServer/Bot/Economy/TownNpcCatalog');
+const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
+const CompanionTownTransit = invoke('GameServer/Bot/AI/CompanionTownTransit');
 
 const FOLLOW_RUN_DISTANCE = 250;
 const FOLLOW_RETARGET_DISTANCE = 900;
@@ -117,7 +121,7 @@ function canRecoverAtNewbieGuide(bot, BotAI) {
         isAtNewbieGuideTown(bot, BotAI);
 }
 
-function beginNewbieGuideVisit(session, bot, playerSession, role) {
+function beginNewbieGuideVisit(session, bot, playerSession, role, townVisit = null) {
     session.preBuffLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
     session.preBuffPlan = 'following';
     session.resumeAfterBuff = {
@@ -126,7 +130,8 @@ function beginNewbieGuideVisit(session, bot, playerSession, role) {
         partyCompanion: true,
         botStay: session.botStay === true,
         stayLocation: session.stayLocation ? { ...session.stayLocation } : null,
-        role
+        role,
+        townVisitKey: townVisit?.key || null
     };
     session.plan = 'getting_buffed';
     session.currentTargetId = undefined;
@@ -183,16 +188,10 @@ function companionTownErrand(session, bot, player, BotAI) {
     if (!inTown) {
         if (errandOnCooldown) return null;
         if (!ShotStock.needsActorRestock(bot, 0)) return null;
+        const shotPlan = ShotStock.planForActor(bot);
         return {
             kind: 'restock_shots',
-            target: {
-                actorId: null,
-                name: `${town.name} general shop`,
-                locX: town.x,
-                locY: town.y,
-                locZ: town.z,
-                town: town.name
-            }
+            target: townNpcTarget(town, bot, shotPlan.selfId)
         };
     }
 
@@ -224,17 +223,32 @@ function companionTownErrand(session, bot, player, BotAI) {
         };
     }
 
-    if (!ShotStock.needsActorRestock(bot, 0)) return null;
+    const needsShots = ShotStock.needsActorRestock(bot, 0);
+    const hasLoot = ItemDisposition.unreservedActorItems(
+        session.coldLifeState,
+        bot.backpack?.fetchItems?.() || []
+    ).some((item) => !item.fetchEquipped?.()
+        && Number(item.fetchSelfId?.() || 0) !== 57
+        && !ShotStock.SHOT_IDS.includes(Number(item.fetchSelfId?.() || 0)));
+    if (!needsShots && !hasLoot) return null;
+    const shotPlan = needsShots ? ShotStock.planForActor(bot) : null;
     return {
-        kind: 'restock_shots',
-        target: {
-            actorId: null,
-            name: `${town.name} general shop`,
-            locX: town.x,
-            locY: town.y,
-            locZ: town.z,
-            town: town.name
-        }
+        kind: hasLoot ? 'sell_junk' : 'restock_shots',
+        target: townNpcTarget(town, bot, shotPlan?.selfId)
+    };
+}
+
+function townNpcTarget(town, bot, selfId = 0) {
+    return TownNpcCatalog.targetFor(town.name, {
+        selfId,
+        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() }
+    }) || {
+        actorId: null,
+        name: `${town.name} general shop`,
+        locX: town.x,
+        locY: town.y,
+        locZ: town.z,
+        town: town.name
     };
 }
 
@@ -251,7 +265,6 @@ function beginCompanionTownErrand(session, bot, playerSession, errand) {
     session.companionShopping = errand;
     session.shoppingTarget = errand.target;
     session.shoppingDoneAnnounced = false;
-    session.shoppingRouteFallbackUsed = undefined;
     session.plan = 'shopping';
     session.currentTargetId = undefined;
     bot.unselect();
@@ -261,13 +274,19 @@ function beginCompanionTownErrand(session, bot, playerSession, errand) {
         ? `${errand.itemName} from ${errand.target.name}`
         : errand.kind === 'sell_resources'
             ? `sell these resources to ${errand.target.name}`
-            : 'restock my shots';
+            : errand.kind === 'sell_junk'
+                ? `sell my loot at ${errand.target.name}`
+                : 'restock my shots';
     BotPartyChat.announce(session, {
         priority: 'informational',
         key: `town-errand:${bot.fetchId()}:${errand.kind}`,
         templates: [
             `Quick ${detail}; then I'm back to camp.`,
-            `Taking a moment to ${detail}, then returning.`
+            `Taking a moment to ${detail}, then returning.`,
+            `I'll ${detail} while we're here.`,
+            `One town stop: ${detail}.`,
+            `Let me ${detail}; I won't be long.`,
+            `Handling a quick errand — ${detail}.`
         ]
     });
 }
@@ -1088,7 +1107,20 @@ module.exports = {
         // report no movement even though its server-stepped route is healthy.
         // A truly distant puller may still use the normal catch-up teleport.
         const pullerTravelling = activeBotPullTravel(session, pulling);
-        if (!pullerTravelling && (session.stuckTicks >= 3 || distance > FOLLOW_TELEPORT_DISTANCE)) {
+        if (session.companionTownTransit || distance > FOLLOW_TELEPORT_DISTANCE) {
+            const transit = CompanionTownTransit.tick(session, bot, player);
+            if (transit.handled) {
+                session.stuckTicks = 0;
+                recordRoleDecision(session, bot, 'follow_leader', 'intertown_gatekeeper', {
+                    sourceTown: transit.transit?.sourceTown || null,
+                    targetTown: transit.transit?.targetTown || null
+                });
+                return;
+            }
+        }
+        const separatedInsideTown = distance > FOLLOW_TELEPORT_DISTANCE
+            && CompanionTownTransit.sameTown(bot, player);
+        if (!pullerTravelling && (session.stuckTicks >= 3 || (distance > FOLLOW_TELEPORT_DISTANCE && !separatedInsideTown))) {
             session.stuckTicks = 0;
             recordRoleDecision(session, bot, 'follow_leader', distance > FOLLOW_TELEPORT_DISTANCE ? 'catch_up' : 'unstuck');
             const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
@@ -1182,6 +1214,7 @@ module.exports = {
             pulling.puller?.kind === 'bot' &&
             pulling.puller?.session === session &&
             !!pulling.target;
+        const hotTownRebuffVisit = HotTownRebuff.syncVisit(session, bot, BotAI);
         // The puller is the one companion who must not sit while a living
         // pull target is still assigned. A held incoming target is hidden
         // from the camp until delivery, so without this guard low HP could
@@ -1193,14 +1226,17 @@ module.exports = {
             // with a Newbie Guide, where characters through level 20 can
             // recover and renew their blessing before returning to the party.
             if (canRecoverAtNewbieGuide(bot, BotAI)) {
-                beginNewbieGuideVisit(session, bot, playerSession, role);
+                beginNewbieGuideVisit(session, bot, playerSession, role, hotTownRebuffVisit);
                 recordRoleDecision(session, bot, botVitals.hpRatio < 0.30 ? 'recover_hp' : 'save_mp', 'newbie_guide_recovery');
                 BotPartyChat.announce(session, {
                     priority: 'coordination',
                     key: `recover-guide:${bot.fetchId()}`,
                     templates: [
                         'HP/MP is low. Recovering at the Newbie Guide, then returning.',
-                        'Short Newbie Guide stop for HP/MP; I will return after.'
+                        'Short Newbie Guide stop for HP/MP; I will return after.',
+                        'I need a quick recovery at the guide before we continue.',
+                        'Using the town stop to restore HP/MP, then I am back.',
+                        'Low on resources — heading to the guide for a brief recovery.'
                     ]
                 });
                 return;
@@ -1251,7 +1287,7 @@ module.exports = {
                 });
                 keepRoleDecision = true;
             } else {
-                beginNewbieGuideVisit(session, bot, playerSession, role);
+                beginNewbieGuideVisit(session, bot, playerSession, role, hotTownRebuffVisit);
                 recordRoleDecision(session, bot, 'refresh_buffs', 'newbie_blessing', {
                     missingBuffs: BotBuffs.missingNewbieBuffs(bot, BotBuffs.REFRESH_THRESHOLD_MS)
                 });
@@ -1260,7 +1296,10 @@ module.exports = {
                     key: `newbie-rebuff:${bot.fetchId()}`,
                     templates: [
                         'Newbie buffs are fading. Refreshing, then returning.',
-                        'Quick Newbie Guide rebuff; I will be right back.'
+                        'Quick Newbie Guide rebuff; I will be right back.',
+                        'My blessing needs a refresh. Rejoining right after.',
+                        'Stopping by the guide for fresh buffs, then returning.',
+                        'Buff check failed; getting a new blessing before I come back.'
                     ]
                 });
                 return;
@@ -1279,6 +1318,29 @@ module.exports = {
                 });
                 return;
             }
+        }
+
+        if (!partyThreat
+            && !leaderTargetId
+            && !isBusy(bot)
+            && HotTownRebuff.needsVisit(session, hotTownRebuffVisit)
+            && Number(session.newbieGuideRetryAt || 0) <= Date.now()) {
+            beginNewbieGuideVisit(session, bot, playerSession, role, hotTownRebuffVisit);
+            recordRoleDecision(session, bot, 'refresh_buffs', 'town_visit_rebuff', {
+                town: hotTownRebuffVisit.town
+            });
+            BotPartyChat.announce(session, {
+                priority: 'informational',
+                key: `town-visit-rebuff:${bot.fetchId()}:${hotTownRebuffVisit.key}`,
+                templates: [
+                    'Town errands are done. Refreshing my blessing before we leave.',
+                    'Getting a fresh Newbie Guide blessing before heading out.',
+                    'Shopping is sorted; one blessing refresh and I am ready.',
+                    'I will use this town stop to renew my buffs.',
+                    'Quick visit to the guide, then town business is finished.'
+                ]
+            });
+            return;
         }
 
         const supportBuffTarget = timedFollowingStage('supportPlan', () => (

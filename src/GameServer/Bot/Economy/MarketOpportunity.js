@@ -3,7 +3,7 @@ const World = invoke('GameServer/World/World');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const TradeService = invoke('GameServer/Bot/TradeService');
-const TOWN_NPC_SELLERS = require('./TownNpcSellers');
+const TownNpcCatalog = require('./TownNpcCatalog');
 const buyStoreReservations = new WeakMap();
 const coldStoreIndex = new Map();
 const SHOT_IDS = new Set([
@@ -75,18 +75,22 @@ function normalizeItemLookup(value) {
 function npcOffers(selfId, town) {
     const offers = [];
     const seen = new Set();
-    (TOWN_NPC_SELLERS[town] || []).forEach((npcSelfId) => {
+    TownNpcCatalog.rowsForTown(town).forEach((seller) => {
+        const npcSelfId = Number(seller.npcSelfId);
         const row = NpcShopBuyLists.fetchForNpc(npcSelfId).find((item) => Number(item.selfId) === Number(selfId));
         if (!row) return;
         const price = Number(row.price || 0);
-        const key = `${npcSelfId}:${price}`;
+        const key = `${npcSelfId}:${price}:${seller.locX}:${seller.locY}:${seller.locZ}`;
         if (seen.has(key)) return;
         seen.add(key);
         offers.push({
             sourceType: 'npc',
             sourceId: npcSelfId,
-            sourceName: `NPC ${npcSelfId}`,
+            sourceName: seller.name,
             town,
+            locX: Number(seller.locX),
+            locY: Number(seller.locY),
+            locZ: Number(seller.locZ),
             selfId: Number(selfId),
             itemName: itemName(selfId),
             price,
@@ -98,7 +102,7 @@ function npcOffers(selfId, town) {
 }
 
 function npcOffersAll(selfId) {
-    return Object.keys(TOWN_NPC_SELLERS).flatMap((town) => npcOffers(selfId, town));
+    return Object.keys(TownNpcCatalog.sellersByTown()).flatMap((town) => npcOffers(selfId, town));
 }
 
 function configuredStoreSession(storeName) {
@@ -481,7 +485,6 @@ function release(offer, qty = 1) {
 }
 
 module.exports = {
-    TOWN_NPC_SELLERS,
     bestOffer,
     bestBuyOffer,
     activeBuyDemandSelfIds,
@@ -507,3 +510,8 @@ module.exports = {
     reserve,
     reserveBuy
 };
+
+Object.defineProperty(module.exports, 'TOWN_NPC_SELLERS', {
+    enumerable: true,
+    get: () => TownNpcCatalog.sellersByTown()
+});

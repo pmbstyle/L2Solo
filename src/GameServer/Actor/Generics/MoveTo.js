@@ -11,6 +11,8 @@ const CLIENT_VISIBILITY_RADIUS = 6000;
 const COMPANION_DIRECT_DISTANCE = 256;
 const COMPANION_PATH_TIMEOUT_MS = 2000;
 const COMPANION_PATH_MAX_NODES = 4000;
+const COMPANION_ERRAND_PATH_MAX_NODES = 120000;
+const COMPANION_MAX_ARRIVAL_RADIUS = 512;
 const ACTIVE_GOAL_XY_TOLERANCE = 32;
 const ACTIVE_GOAL_Z_TOLERANCE = 64;
 const INITIAL_WAYPOINT_SKIP_DISTANCE = 24;
@@ -252,6 +254,11 @@ function moveTo(session, actor, coords) {
 
     const isBot = session && (session.constructor.name === 'BotSession' || (session.accountId && session.accountId.startsWith('bot_')));
     const requestedTo = { ...coords.to };
+    const arrivalRadius = Math.min(COMPANION_MAX_ARRIVAL_RADIUS, Math.max(0, Number(coords.arrivalRadius || 0)));
+    const pathMaxNodes = Math.min(
+        COMPANION_ERRAND_PATH_MAX_NODES,
+        Math.max(COMPANION_PATH_MAX_NODES, Number(coords.pathMaxNodes || COMPANION_PATH_MAX_NODES))
+    );
     let townRouteDiagnostics = null;
 
     // Hot AI states may evaluate the same fixed destination every second. A
@@ -407,6 +414,8 @@ function moveTo(session, actor, coords) {
                     destinationDistanceToPlayer,
                     strategy,
                     worker: true,
+                    arrivalRadius,
+                    maxNodes: pathMaxNodes,
                     ...(error ? { error: error.code || error.message || String(error) } : {}),
                     at: Date.now()
                 };
@@ -422,7 +431,9 @@ function moveTo(session, actor, coords) {
                 endX: target.locX,
                 endY: target.locY,
                 endZ: target.locZ,
-                maxNodes: COMPANION_PATH_MAX_NODES
+                maxNodes: pathMaxNodes,
+                goalRadius: arrivalRadius,
+                goalZTolerance: ACTIVE_GOAL_Z_TOLERANCE
             }, {
                 key: requestKey,
                 priority: 100,
@@ -441,6 +452,9 @@ function moveTo(session, actor, coords) {
                 const routeResult = TownPathfinder.routeWithSession(session, actor, start, requestedTo);
                 pathTarget = { ...routeResult.to };
                 townRouteDiagnostics = routeResult.diagnostics;
+                const waypointArrivalRadius = Number.isFinite(routeResult.arrivalRadius)
+                    ? Math.max(0, Number(routeResult.arrivalRadius))
+                    : arrivalRadius;
                 coords.to.locX = pathTarget.locX;
                 coords.to.locY = pathTarget.locY;
                 coords.to.locZ = pathTarget.locZ;
@@ -453,7 +467,9 @@ function moveTo(session, actor, coords) {
                     endX: pathTarget.locX,
                     endY: pathTarget.locY,
                     endZ: pathTarget.locZ,
-                    maxNodes: COMPANION_PATH_MAX_NODES
+                    maxNodes: pathMaxNodes,
+                    goalRadius: waypointArrivalRadius,
+                    goalZTolerance: ACTIVE_GOAL_Z_TOLERANCE
                 }, {
                     key: requestKey,
                     priority: 100,
@@ -497,6 +513,8 @@ function moveTo(session, actor, coords) {
                 destinationDistanceToPlayer,
                 strategy: 'worker_pending',
                 worker: true,
+                arrivalRadius,
+                maxNodes: pathMaxNodes,
                 at: Date.now()
             };
             return session.lastPathfinding;
@@ -584,6 +602,7 @@ module.exports.shouldPreannounceVisibleMove = shouldPreannounceVisibleMove;
 module.exports.CLIENT_VISIBILITY_RADIUS = CLIENT_VISIBILITY_RADIUS;
 module.exports.COMPANION_DIRECT_DISTANCE = COMPANION_DIRECT_DISTANCE;
 module.exports.COMPANION_PATH_MAX_NODES = COMPANION_PATH_MAX_NODES;
+module.exports.COMPANION_ERRAND_PATH_MAX_NODES = COMPANION_ERRAND_PATH_MAX_NODES;
 module.exports.ACTIVE_GOAL_XY_TOLERANCE = ACTIVE_GOAL_XY_TOLERANCE;
 module.exports.INITIAL_WAYPOINT_SKIP_DISTANCE = INITIAL_WAYPOINT_SKIP_DISTANCE;
 module.exports.MOVE_STALL_SAMPLES = MOVE_STALL_SAMPLES;

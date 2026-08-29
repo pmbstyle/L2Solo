@@ -18,6 +18,9 @@ const BotRaidSafety   = invoke('GameServer/Bot/AI/BotRaidSafety');
 const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
 const BotRangedCombatPositioning = invoke('GameServer/Bot/AI/BotRangedCombatPositioning');
 const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
+const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
+const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
+const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
 
 const TARGET_STALL_TICKS = 5;
 const TARGET_RETRY_COOLDOWN_MS = 15000;
@@ -59,7 +62,12 @@ function startShopping(session, bot, BotAI, reason) {
         session.plan = 'following';
         session.shoppingTarget = undefined;
         session.shoppingDoneAnnounced = false;
-        BotAI.say(session, "Staying with the party. I can sell loot later.");
+        TownChatter.say(session, BotAI, 'shopping-deferred', [
+            'Staying with the party. I can sell the loot later.',
+            "The bag can wait; I'm not leaving the group for shopping.",
+            'Skipping the town run for now and keeping up with the party.',
+            "I'll handle the loot on our next town stop."
+        ]);
         return false;
     }
 
@@ -275,6 +283,7 @@ function finishWalkRelocation(session, bot, spot) {
 function expireSpotRelocation(session, bot, relocation) {
     session.spotRelocation = undefined;
     bot?.state?.setCasts?.(false);
+    TownNpcApproach.reset(session);
     session.lastSpotRelocation = {
         spotId: relocation.spotId,
         method: `${relocation.method || 'walk'}_timeout`,
@@ -301,6 +310,7 @@ function tickSpotRelocation(session, bot) {
     const relocation = session.spotRelocation;
     if (!relocation) return false;
     if (expireTimedOutSpotRelocation(session, bot)) return false;
+    if (relocation.method === 'town_gatekeeper') return BotSpotTravel.tick(session, bot);
     if (relocation.method === 'soe_gatekeeper') return true;
 
     const distance = SpotService.distance2d(botLocation(bot), relocation.destination);
@@ -320,12 +330,46 @@ function beginSpotRelocation(session, bot, spot, BotAI) {
     session.noTargetTicks = 0;
     session.lastSpotMoveAt = Date.now();
 
-    if (SpotService.distance2d(botLocation(bot), destination) > MAX_WALK_SPOT_DISTANCE) {
-        BotSpotTravel.start(session, bot, spot, destination);
-        if (Math.random() < 0.65) BotAI.say(session, `No good mobs here. Using a gatekeeper to reach ${SpotService.describe(spot)}.`);
+    const finishedTownErrands = session.pendingFarmDepartureAnnouncement === true;
+    delete session.pendingFarmDepartureAnnouncement;
+    const destinationName = SpotService.describe(spot);
+    TownChatter.say(session, BotAI, finishedTownErrands ? 'town-to-farm' : 'farm-relocation', finishedTownErrands
+        ? [
+            `Town business finished. Heading to ${destinationName} to farm.`,
+            `Supplies sorted — next stop is ${destinationName}.`,
+            `Done in town. Moving out toward ${destinationName}.`,
+            `Errands complete; time to hunt around ${destinationName}.`,
+            `Everything is ready. Leaving for ${destinationName}.`,
+            `Town stop complete. Back to farming at ${destinationName}.`
+        ]
+        : [
+            `Heading to ${destinationName} to farm.`,
+            `Moving on to ${destinationName} for the next hunt.`,
+            `The next farming route is around ${destinationName}.`,
+            `Setting out for ${destinationName}.`,
+            `I will look for targets near ${destinationName}.`,
+            `Changing hunting grounds to ${destinationName}.`
+        ]);
+
+    const travelDistance = SpotService.distance2d(botLocation(bot), destination);
+    if (travelDistance > MAX_WALK_SPOT_DISTANCE) {
+        const departureTown = finishedTownErrands
+            ? BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ())
+            : null;
+        if (!departureTown || !BotSpotTravel.startViaTownGatekeeper(
+            session,
+            bot,
+            spot,
+            destination,
+            { townName: departureTown.name }
+        )) {
+            BotSpotTravel.start(session, bot, spot, destination);
+        }
         return;
     }
 
+    // A nearby farming destination is reached on foot. TownPathfinder chooses
+    // the measured physical gate whose exit points most directly at the spot.
     session.spotRelocation = {
         mode: 'walk',
         method: 'walk',
@@ -334,7 +378,6 @@ function beginSpotRelocation(session, bot, spot, BotAI) {
         startedAt: Date.now(),
         lastCommandAt: 0
     };
-    if (Math.random() < 0.65) BotAI.say(session, `No good mobs here. Moving to ${SpotService.describe(spot)}.`);
     issueWalkRelocation(session, bot, session.spotRelocation);
 }
 
@@ -420,15 +463,34 @@ module.exports = {
             if (trip !== 'deferred') return;
         }
 
-        // 1. Expire buffs check for hunting bots
+        // 1. Expire buffs check for hunting bots. A hot bot already in a
+        // starter town also refreshes once per visit before going back out.
         if (!session.followPlayerSession) {
-            if (BotBuffs.needsNewbieRefresh(bot, 0)) {
+            const townBuffVisit = HotTownRebuff.syncVisit(session, bot, BotAI);
+            const townVisitNeedsRebuff = HotTownRebuff.needsVisit(session, townBuffVisit)
+                && Number(session.newbieGuideRetryAt || 0) <= Date.now();
+            if (townVisitNeedsRebuff || BotBuffs.needsNewbieRefresh(bot, 0)) {
                 session.preBuffLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
                 session.preBuffPlan = 'hunting';
+                session.resumeAfterBuff = townVisitNeedsRebuff
+                    ? { plan: 'hunting', townVisitKey: townBuffVisit.key }
+                    : undefined;
                 session.plan = 'getting_buffed';
                 session.currentTargetId = undefined;
                 bot.automation.abortAll(bot);
-                BotAI.say(session, "My newbie blessings have expired! Heading to the Newbie Guide to get buffed.");
+                TownChatter.say(session, BotAI, 'heading-to-newbie-guide', townVisitNeedsRebuff
+                    ? [
+                        'Since I am in town, I will refresh my blessing before farming.',
+                        'One quick Newbie Guide stop before I head back out.',
+                        'I am already in town, so this is a good time to rebuff.',
+                        'Refreshing my blessing now, then I am off to hunt.'
+                    ]
+                    : [
+                        'My newbie blessings have expired. Heading to the guide.',
+                        'Buffs are fading; I need a quick Newbie Guide visit.',
+                        'Time to refresh my blessing before the next fight.',
+                        'I am going to the Newbie Guide for a fresh set of buffs.'
+                    ]);
                 return;
             }
         }

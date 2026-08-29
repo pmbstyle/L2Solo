@@ -2,6 +2,10 @@ const MAX_ROUTE_FAILURES = 3;
 const BASE_RETRY_DELAY_MS = 1000;
 const MAX_RETRY_DELAY_MS = 5000;
 const TARGET_TOLERANCE = 96;
+const DEFAULT_ARRIVAL_RADIUS = 240;
+const INITIAL_ERRAND_PATH_MAX_NODES = 30000;
+const RECOVERY_ERRAND_PATH_MAX_NODES = 120000;
+const targetActorCache = new WeakMap();
 
 function pointOf(actor) {
     return {
@@ -54,7 +58,40 @@ function failedDiagnostic(session, target, state) {
     return diagnostic;
 }
 
-function move(session, bot, target, kind) {
+function resolveTargetActor(target) {
+    const actorId = Number(target?.actorId || 0);
+    if (!actorId) return null;
+    const cached = targetActorCache.get(target);
+    if (Number(cached?.fetchId?.() || 0) === actorId
+        && cached.fetchIsOnline?.() !== false
+        && cached.isDead?.() !== true) return cached;
+    targetActorCache.delete(target);
+
+    const World = invoke('GameServer/World/World');
+    const userActor = (World.user?.sessions || [])
+        .find((candidate) => Number(candidate?.actor?.fetchId?.() || 0) === actorId)?.actor || null;
+    const actor = userActor || (World.npc?.spawns || [])
+        .find((candidate) => Number(candidate?.fetchId?.() || 0) === actorId) || null;
+    if (actor) targetActorCache.set(target, actor);
+    return actor;
+}
+
+function refreshTarget(target, targetActor = resolveTargetActor(target)) {
+    const actor = targetActor;
+    if (!actor) return target;
+    target.locX = Number(actor.fetchLocX());
+    target.locY = Number(actor.fetchLocY());
+    target.locZ = Number(actor.fetchLocZ());
+    const head = Number(actor.fetchHead?.());
+    if (Number.isFinite(head)) target.head = ((head % 65536) + 65536) % 65536;
+    return target;
+}
+
+function move(session, bot, target, kind, options = {}) {
+    const targetActor = options.targetActor === undefined
+        ? resolveTargetActor(target)
+        : options.targetActor;
+    refreshTarget(target, targetActor);
     const now = Date.now();
     const state = recoveryState(session, kind, target);
     const failure = failedDiagnostic(session, target, state);
@@ -94,6 +131,11 @@ function move(session, bot, target, kind) {
     const moveData = {
         from: pointOf(bot),
         to: { ...target },
+        arrivalRadius: Math.max(0, Number(options.arrivalRadius ?? DEFAULT_ARRIVAL_RADIUS)),
+        pathMaxNodes: state.failures > 0
+            ? RECOVERY_ERRAND_PATH_MAX_NODES
+            : INITIAL_ERRAND_PATH_MAX_NODES,
+        targetActor,
         ...(forceRepath ? { forceRepath: true } : {})
     };
     state.lastAttemptAt = now;
@@ -105,9 +147,14 @@ module.exports = {
     BASE_RETRY_DELAY_MS,
     MAX_RETRY_DELAY_MS,
     MAX_ROUTE_FAILURES,
+    DEFAULT_ARRIVAL_RADIUS,
+    INITIAL_ERRAND_PATH_MAX_NODES,
+    RECOVERY_ERRAND_PATH_MAX_NODES,
     TARGET_TOLERANCE,
     clear,
     move,
+    refreshTarget,
+    resolveTargetActor,
     sameTarget,
     targetKey
 };

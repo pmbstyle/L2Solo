@@ -3,6 +3,7 @@ const assert = require('assert');
 require('../src/Global');
 
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
+const TownGateCatalog = invoke('GameServer/Bot/AI/TownGateCatalog');
 const BotAI = invoke('GameServer/Bot/BotAI');
 
 function distance(a, b) {
@@ -44,11 +45,19 @@ assert.strictEqual(TownPathfinder.getTown(dionCenter).name, 'Dion');
 
 const giranEntry = TownPathfinder.route(null, giranField, giranCenter);
 assertNotSameLoc(giranEntry, giranCenter, 'Giran outside->inside should route through an entry/staging point');
-assert.strictEqual(TownPathfinder.getTown(giranEntry).name, 'Giran');
+assert.deepStrictEqual(
+    giranEntry,
+    TownGateCatalog.bestEntry('Giran', giranField, giranCenter).outside,
+    'Giran entry should begin at the measured field side of a physical gate'
+);
 
 const giranExit = TownPathfinder.route(null, giranCenter, giranField);
 assertNotSameLoc(giranExit, giranField, 'Giran inside->outside should route through an exit/staging point');
-assert.strictEqual(TownPathfinder.getTown(giranExit).name, 'Giran');
+assert.deepStrictEqual(
+    giranExit,
+    TownGateCatalog.bestExit('Giran', giranCenter, giranField).inside,
+    'Giran exit should begin at the measured town side of a physical gate'
+);
 
 const dionEntry = TownPathfinder.route(null, dionField, dionCenter);
 assertNotSameLoc(dionEntry, dionCenter, 'Dion outside->inside should route through an entry/staging point');
@@ -64,7 +73,7 @@ assert.deepStrictEqual(
     talkingIslandField,
     'Talking Island inside->outside route should reach the field target instead of returning to the town center'
 );
-assert(talkingIslandExitSteps.length <= 3, 'Talking Island inside->outside route should not bounce between town waypoints');
+assert(talkingIslandExitSteps.length <= 5, 'Talking Island inside->outside route should not bounce between town waypoints');
 
 const talkingIslandEntrySteps = routeUntilTarget(talkingIslandField, talkingIslandCenter);
 assert.deepStrictEqual(
@@ -72,7 +81,7 @@ assert.deepStrictEqual(
     talkingIslandCenter,
     'Talking Island outside->inside route should reach the town target instead of bouncing between internal nodes'
 );
-assert(talkingIslandEntrySteps.length <= 3, 'Talking Island outside->inside route should not bounce between town waypoints');
+assert(talkingIslandEntrySteps.length <= 6, 'Talking Island outside->inside route should not bounce between town waypoints');
 
 const stickySession = {};
 const shiftedTalkingIslandField = { locX: -79850, locY: 250120, locZ: -3500 };

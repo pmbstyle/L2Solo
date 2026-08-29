@@ -2,6 +2,7 @@ const World = invoke('GameServer/World/World');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const TownNpcCatalog = invoke('GameServer/Bot/Economy/TownNpcCatalog');
 
 const MAX_PURCHASES_PER_VISIT = 12;
 
@@ -88,28 +89,16 @@ function checkedPlan(session, state, town, options = {}) {
 }
 
 function npcTarget(offer, bot, town) {
-    const candidates = (World.npc?.spawns || []).filter((npc) => (
-        Number(npc.fetchSelfId?.() || 0) === Number(offer.sourceId)
-    ));
-    const npc = candidates.sort((left, right) => {
-        const leftDistance = Math.hypot(
-            Number(left.fetchLocX?.() || 0) - Number(bot.fetchLocX()),
-            Number(left.fetchLocY?.() || 0) - Number(bot.fetchLocY())
-        );
-        const rightDistance = Math.hypot(
-            Number(right.fetchLocX?.() || 0) - Number(bot.fetchLocX()),
-            Number(right.fetchLocY?.() || 0) - Number(bot.fetchLocY())
-        );
-        return leftDistance - rightDistance;
-    })[0];
-
-    return {
-        actorId: npc?.fetchId?.() || null,
+    return TownNpcCatalog.targetForNpc(town.name, offer.sourceId, {
+        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
+        worldSpawns: World.npc?.spawns || []
+    }) || {
+        actorId: null,
         npcSelfId: Number(offer.sourceId),
-        name: npc?.fetchName?.() || offer.sourceName || `NPC ${offer.sourceId}`,
-        locX: Number(npc?.fetchLocX?.() ?? town.x),
-        locY: Number(npc?.fetchLocY?.() ?? town.y),
-        locZ: Number(npc?.fetchLocZ?.() ?? town.z),
+        name: offer.sourceName || `NPC ${offer.sourceId}`,
+        locX: Number(offer.locX ?? town.x),
+        locY: Number(offer.locY ?? town.y),
+        locZ: Number(offer.locZ ?? town.z),
         town: town.name
     };
 }
@@ -156,8 +145,40 @@ function planErrand(session, bot, town, purchaseCount = 0, excludedSlots = []) {
     };
 }
 
+function alternateNpcErrand(session, bot, town, errand) {
+    if (errand?.kind !== 'npc_equipment_purchase' || !town?.name) return null;
+    const state = currentState(session, bot, town);
+    const reserve = GearAcquisitionPlanner.operationalAdenaReserve(state);
+    const budget = Math.max(0, Number(state.adena || 0) - reserve);
+    const failedSourceIds = new Set([
+        ...(errand.failedSourceIds || []).map(Number),
+        Number(errand.sourceId || 0)
+    ]);
+    const offer = MarketOpportunity.npcOffers(errand.itemId, town.name)
+        .filter((candidate) => (
+            candidate.available !== false
+            && Number(candidate.price || 0) > 0
+            && Number(candidate.price) <= budget
+            && !failedSourceIds.has(Number(candidate.sourceId))
+        ))
+        .sort((left, right) => Number(left.price) - Number(right.price)
+            || Math.hypot(Number(left.locX) - bot.fetchLocX(), Number(left.locY) - bot.fetchLocY())
+                - Math.hypot(Number(right.locX) - bot.fetchLocX(), Number(right.locY) - bot.fetchLocY()))[0];
+    if (!offer) return null;
+
+    return {
+        ...errand,
+        sourceId: Number(offer.sourceId),
+        itemName: offer.itemName || errand.itemName,
+        price: Number(offer.price),
+        failedSourceIds: [...failedSourceIds],
+        target: npcTarget(offer, bot, town)
+    };
+}
+
 module.exports = {
     MAX_PURCHASES_PER_VISIT,
+    alternateNpcErrand,
     currentState,
     planErrand
 };

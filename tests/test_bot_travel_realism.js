@@ -7,6 +7,8 @@ const GettingBuffedState = invoke('GameServer/Bot/AI/States/GettingBuffedState')
 const CompanionNavigationRecovery = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
+const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
+const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
 
 function bot(loc = {}) {
     return {
@@ -23,7 +25,7 @@ function bot(loc = {}) {
         state: {
             inMotion: () => false
         },
-        fetchId: () => 2000099,
+        fetchId: () => loc.actorId ?? 2000099,
         fetchName: () => 'TravelBot',
         fetchLevel: () => loc.level ?? 21,
         fetchKarma: () => loc.karma ?? 0
@@ -60,11 +62,24 @@ try {
     };
 
     ShoppingState.scheduleRestock(shoppingSession, shopper, noTeleportGenerics, { say() {} });
-    assert.strictEqual(shopper.moves.length, 1, 'shopping return should issue a normal movement');
-    assert.deepStrictEqual(shopper.moves[0].to, { locX: 2000, locY: 2100, locZ: -120 });
+    assert.strictEqual(shopper.moves.length, 0, 'solo shopping must let hunting route through the town gatekeeper');
     assert.strictEqual(shoppingSession.preShopLocation, undefined);
+    assert.strictEqual(shoppingSession.pendingFarmDepartureAnnouncement, true,
+        'the next hunting-ground decision should announce a clear farming destination');
 
     BotBuffs.applyFullNewbieBlessing = () => ({ buffs: [], expiresAt: Date.now() + 60000 });
+
+    const starterTownAi = {
+        getClosestNewbieGuide: () => ({
+            name: 'Talking Island',
+            npcSelfId: 7598,
+            locX: -84081,
+            locY: 243227,
+            locZ: -3723,
+            head: 9000
+        }),
+        say() {}
+    };
 
     const buffBot = bot({ locX: -84081, locY: 243227, locZ: -3723 });
     const buffSession = {
@@ -78,9 +93,52 @@ try {
     });
 
     assert.strictEqual(buffBot.unselected, true, 'buff return should clear the old target');
-    assert.strictEqual(buffBot.moves.length, 1, 'buff return should issue a normal movement');
-    assert.deepStrictEqual(buffBot.moves[0].to, { locX: -83000, locY: 242000, locZ: -3700 });
+    assert.strictEqual(buffBot.moves.length, 0, 'a solo buff visit should leave town through the hunting gatekeeper flow');
     assert.strictEqual(buffSession.plan, 'hunting');
+    assert.strictEqual(buffSession.pendingFarmDepartureAnnouncement, true);
+
+    const townVisitBot = bot({ locX: -83700, locY: 243227, locZ: -3723, level: 10 });
+    const initialTownVisit = HotTownRebuff.currentVisit(townVisitBot, starterTownAi);
+    assert(initialTownVisit, 'an eligible hot bot at the starter-town guide should have a town rebuff visit');
+    const townVisitSession = {
+        plan: 'getting_buffed',
+        preBuffPlan: 'hunting',
+        resumeAfterBuff: {
+            plan: 'hunting',
+            townVisitKey: initialTownVisit.key
+        }
+    };
+    GettingBuffedState.tick(townVisitSession, townVisitBot, noTeleportGenerics, starterTownAi);
+    assert.strictEqual(townVisitBot.moves.length, 1, 'the guide visit should use one direct open-air approach');
+    Object.assign(townVisitBot, townVisitBot.moves[0].to);
+    GettingBuffedState.tick(townVisitSession, townVisitBot, noTeleportGenerics, starterTownAi);
+    assert.strictEqual(townVisitBot.moves.length, 1, 'the guide visit must not add a shared staging leg');
+    assert.strictEqual(
+        townVisitSession.hotTownRebuffCompletedVisitKey,
+        initialTownVisit.key,
+        'a successful Newbie Guide visit should complete this hot-bot town visit'
+    );
+    assert.strictEqual(
+        HotTownRebuff.needsVisit(townVisitSession, HotTownRebuff.currentVisit(townVisitBot, starterTownAi)),
+        false,
+        'the bot must not loop back to the guide during the same town visit'
+    );
+
+    townVisitBot.locX = 0;
+    townVisitBot.locY = 0;
+    HotTownRebuff.syncVisit(townVisitSession, townVisitBot, starterTownAi);
+    assert.strictEqual(
+        townVisitSession.hotTownRebuffCompletedVisitKey,
+        undefined,
+        'leaving town should reset the one-rebuff-per-visit marker'
+    );
+    townVisitBot.locX = -84081;
+    townVisitBot.locY = 243227;
+    assert.strictEqual(
+        HotTownRebuff.needsVisit(townVisitSession, HotTownRebuff.currentVisit(townVisitBot, starterTownAi)),
+        true,
+        'entering the starter town again should require a fresh rebuff'
+    );
 
     const companionLeader = {
         fetchIsOnline: () => true,
@@ -122,9 +180,17 @@ try {
         getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
         say() {}
     });
-    assert.strictEqual(edgeGuideSession.plan, 'hunting', 'a companion just beyond the old 250-unit boundary should still receive the guide buff');
-    assert.strictEqual(edgeGuideBot.moves.length, 1, 'a companion inside the guide interaction tolerance should only request its return movement');
-    assert.deepStrictEqual(edgeGuideBot.moves[0].to, { locX: -83000, locY: 242000, locZ: -3700 });
+    assert.strictEqual(edgeGuideSession.plan, 'getting_buffed',
+        'a bot outside close interaction range should approach the guide before receiving buffs');
+    assert.strictEqual(edgeGuideBot.moves.length, 1,
+        'the guide approach should stop near the NPC instead of buffing from the old wide radius');
+    Object.assign(edgeGuideBot, edgeGuideBot.moves[0].to);
+    GettingBuffedState.tick(edgeGuideSession, edgeGuideBot, noTeleportGenerics, {
+        getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
+        say() {}
+    });
+    assert.strictEqual(edgeGuideSession.plan, 'hunting');
+    assert.strictEqual(edgeGuideSession.pendingFarmDepartureAnnouncement, true);
 
     const deathRecoveryBot = bot({ locX: 46976, locY: 51511, locZ: -2976, level: 21 });
     const deathRecoverySession = {
@@ -219,9 +285,37 @@ try {
         locX: shoppingLeader.fetchLocX(), locY: shoppingLeader.fetchLocY(), locZ: shoppingLeader.fetchLocZ()
     });
 
+    const youngShoppingBot = bot({ locX: -84081, locY: 243227, locZ: -3723, level: 10 });
+    const youngShoppingSession = {
+        plan: 'shopping',
+        partyCompanion: true,
+        followPlayerSession: { actor: shoppingLeader },
+        companionShopping: { kind: 'restock_shots' },
+        resumeAfterShopping: { plan: 'following', followPlayerSession: { actor: shoppingLeader } },
+        dataSendToOthers() {}
+    };
+    ShoppingState.scheduleRestock(youngShoppingSession, youngShoppingBot, noTeleportGenerics, starterTownAi);
+    assert.strictEqual(
+        youngShoppingSession.plan,
+        'getting_buffed',
+        'an eligible hot companion should rebuff after shopping before returning to the party'
+    );
+    assert(youngShoppingSession.resumeAfterBuff?.townVisitKey, 'the post-shopping rebuff should retain its town-visit key');
+    assert.strictEqual(youngShoppingBot.moves.length, 0, 'the companion should go to the guide before moving back to the player');
+
+    const unreachableGuideBot = bot({ locX: -83800, locY: 243227, locZ: -3723 });
+    const unreachableGuideTarget = { locX: -84081, locY: 243227, locZ: -3723 };
+    const seededGuideApproach = {};
+    const unreachableGuideDestination = TownNpcApproach.planOpen(
+        seededGuideApproach,
+        unreachableGuideBot,
+        unreachableGuideTarget,
+        'newbie_guide'
+    ).destination;
     const unreachableGuideSession = {
         plan: 'getting_buffed',
         partyCompanion: true,
+        townNpcApproach: seededGuideApproach.townNpcApproach,
         resumeAfterBuff: {
             plan: 'following',
             followPlayerSession: { actor: companionLeader },
@@ -231,7 +325,7 @@ try {
             role: 'dps'
         },
         lastPathfinding: {
-            requestedTo: { locX: -84081, locY: 243227, locZ: -3723 },
+            requestedTo: unreachableGuideDestination,
             routeUsable: false,
             at: Date.now()
         }
@@ -242,7 +336,6 @@ try {
         lastFailureAt: 0,
         retryAt: 0
     };
-    const unreachableGuideBot = bot({ locX: -83800, locY: 243227, locZ: -3723 });
     const unreachableGuideMessages = [];
     GettingBuffedState.tick(unreachableGuideSession, unreachableGuideBot, noTeleportGenerics, {
         getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),

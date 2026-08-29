@@ -21,7 +21,7 @@ const Protocol = require('./ColdSimulationProtocol');
 const { ColdCommitQueue } = require('./ColdCommitQueue');
 const { ColdSnapshotQueue } = require('./ColdSnapshotQueue');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
-const TownNpcSellers = require('../Economy/TownNpcSellers');
+const TownNpcCatalog = require('../Economy/TownNpcCatalog');
 
 const HUNTING_TRAVEL_MS = 25000;
 const OWNERSHIP_REBASE_REASONS = new Set([
@@ -49,7 +49,7 @@ function directDropTargetNpcId(plan = {}) {
 function npcPlanningCatalogRows() {
     return ColdNpcPlanningCatalog.buildRows({
         items: DataCache.items || [],
-        townNpcSellers: TownNpcSellers,
+        townNpcSellers: TownNpcCatalog.sellersByTown(),
         fetchForNpc: (npcSelfId) => NpcShopBuyLists.fetchForNpc(npcSelfId)
     });
 }

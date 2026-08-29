@@ -8,6 +8,8 @@ const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const TradeService = invoke('GameServer/Bot/TradeService');
 const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
 const CompanionEquipmentShopping = invoke('GameServer/Bot/AI/CompanionEquipmentShopping');
+const CompanionNavigationRecovery = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
+const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const ShoppingState = invoke('GameServer/Bot/AI/States/ShoppingState');
 
 DataCache.init();
@@ -41,6 +43,7 @@ async function run() {
     let purchased = false;
     let equippedWith = null;
     let restocked = 0;
+    const moves = [];
     const adena = inventoryItem(57, 100000);
     const starterSword = inventoryItem(2369, 1, true, 7);
     const items = [adena, starterSword];
@@ -52,6 +55,11 @@ async function run() {
         fetchLocX: () => -84081,
         fetchLocY: () => 243227,
         fetchLocZ: () => -3723,
+        moveTo: (data) => { moves.push(data); },
+        state: {
+            inMotion: () => false,
+            fetchTowards: () => false
+        },
         backpack: {
             fetchItems: () => items,
             fetchItemFromSelfId: (selfId) => items.find((item) => Number(item.fetchSelfId()) === Number(selfId)) || null
@@ -63,7 +71,17 @@ async function run() {
         fetchName: () => 'Lector',
         fetchLocX: () => -86385,
         fetchLocY: () => 243267,
-        fetchLocZ: () => -3717
+        fetchLocZ: () => -3717,
+        fetchHead: () => 52000
+    };
+    const alternateNpc = {
+        fetchId: () => 810002,
+        fetchSelfId: () => 7002,
+        fetchName: () => 'Jackson',
+        fetchLocX: () => -86328,
+        fetchLocY: () => 244438,
+        fetchLocZ: () => -3717,
+        fetchHead: () => 61440
     };
     const offer = {
         sourceType: 'npc',
@@ -75,6 +93,15 @@ async function run() {
         price: 883,
         count: Infinity,
         available: true
+    };
+    const alternateOffer = {
+        ...offer,
+        sourceId: 7002,
+        sourceName: 'Jackson',
+        price: 900,
+        locX: -86328,
+        locY: 244438,
+        locZ: -3717
     };
     const session = {
         accountId: 'bot_hot_shop_probe',
@@ -94,7 +121,7 @@ async function run() {
     const town = { name: 'Talking Island', x: -84081, y: 243227, z: -3723 };
 
     World.user = { sessions: [] };
-    World.npc = { spawns: [npc] };
+    World.npc = { spawns: [npc, alternateNpc] };
     MarketOpportunity.hotOffers = (selfId) => Number(selfId) === 1 && !purchased ? [offer] : [];
     MarketOpportunity.npcOffers = (selfId, townName) => (
         Number(selfId) === 1 && townName === town.name ? [offer] : []
@@ -110,6 +137,17 @@ async function run() {
     assert.strictEqual(session.coldLifeState.stats.equipmentPlan.target.selfId, 1,
         'the refreshed hot equipment plan must be retained on the session');
 
+    MarketOpportunity.npcOffers = (selfId, townName) => (
+        Number(selfId) === 1 && townName === town.name ? [offer, alternateOffer] : []
+    );
+    const alternateErrand = CompanionEquipmentShopping.alternateNpcErrand(session, bot, town, errand);
+    assert.strictEqual(alternateErrand?.sourceId, 7002,
+        'an unreachable equipment seller must be replaced by another current-town NPC carrying the same item');
+    assert.strictEqual(alternateErrand.target.actorId, alternateNpc.fetchId(),
+        'the replacement errand must route to the alternate live NPC');
+    assert.deepStrictEqual(alternateErrand.failedSourceIds, [7001],
+        'the failed NPC must stay excluded from later route replans');
+
     let sameTownShoppingStarted = 0;
     ShoppingState.sellAndRestock = () => { sameTownShoppingStarted++; };
     session.companionShopping = errand;
@@ -119,9 +157,66 @@ async function run() {
         getClosestTown: () => town,
         say() {}
     });
-    assert.strictEqual(sameTownShoppingStarted, 1,
-        'a hot companion already in the NPC town must shop without pathing to the NPC door');
+    assert.strictEqual(sameTownShoppingStarted, 0,
+        'being in the same town must not complete a purchase before the companion reaches the NPC');
+    assert.strictEqual(moves.length, 1, 'a hot companion must request a real route to the selected NPC');
+    const lectorApproach = TownNpcApproach.pointsFor(errand.target);
+    assert.strictEqual(moves[0].arrivalRadius, TownNpcApproach.STAGING_ARRIVAL_RADIUS,
+        'the first NPC route should stop at the street-side staging point');
+    assert.deepStrictEqual(
+        { locX: moves[0].to.locX, locY: moves[0].to.locY, locZ: moves[0].to.locZ },
+        lectorApproach.staging,
+        'the hot companion must approach the side the shopkeeper faces instead of the nearest wall'
+    );
+    assert.strictEqual(moves[0].pathMaxNodes, CompanionNavigationRecovery.INITIAL_ERRAND_PATH_MAX_NODES,
+        'the first NPC route must use the inexpensive town-errand search budget');
+    assert.strictEqual(moves[0].targetActor, null,
+        'the static approach waypoint must not be overwritten with the exact NPC cell');
+    session.lastPathfinding = {
+        requestedTo: { ...moves[0].to },
+        routeUsable: false,
+        at: Date.now()
+    };
+    ShoppingState.tick(session, bot, null, {
+        getClosestTown: () => town,
+        say() {}
+    });
+    ShoppingState.tick(session, bot, null, {
+        getClosestTown: () => town,
+        say() {}
+    });
+    assert.deepStrictEqual(
+        { locX: moves[1].to.locX, locY: moves[1].to.locY, locZ: moves[1].to.locZ },
+        lectorApproach.interaction,
+        'an unreachable outer waypoint must fall back to the inner front-side point, not the NPC cell'
+    );
+    assert.strictEqual(moves[1].pathMaxNodes, CompanionNavigationRecovery.INITIAL_ERRAND_PATH_MAX_NODES,
+        'the inner front-side fallback should start with the inexpensive route budget');
     ShoppingState.sellAndRestock = original.sellAndRestock;
+
+    CompanionNavigationRecovery.clear(session);
+    session.companionShopping = { kind: 'sell_junk', target: errand.target };
+    session.shoppingTarget = errand.target;
+    TownNpcApproach.reset(session);
+    TownNpcApproach.plan(session, bot, session.shoppingTarget, 'shopping');
+    TownNpcApproach.skipStaging(session);
+    for (let attempt = 0; attempt < CompanionNavigationRecovery.MAX_ROUTE_FAILURES; attempt++) {
+        const failedApproach = TownNpcApproach.plan(session, bot, session.shoppingTarget, 'shopping');
+        session.lastPathfinding = {
+            requestedTo: { ...failedApproach.destination },
+            routeUsable: false,
+            at: Date.now() + attempt + 10
+        };
+        ShoppingState.tick(session, bot, null, {
+            getClosestTown: () => town,
+            say() {}
+        });
+        if (session.companionNavigationRecovery) session.companionNavigationRecovery.retryAt = 0;
+    }
+    assert.notStrictEqual(session.shoppingTarget.npcSelfId, 7001,
+        'junk selling must exclude an unreachable NPC and select another physical town merchant');
+    assert.deepStrictEqual(session.companionShopping.failedSourceIds, [7001],
+        'generic town errands must retain failed NPC sources across route replans');
 
     session.companionShopping = errand;
     TradeService.buyFromStore = async (_actor, store, selfId, qty, options) => {
