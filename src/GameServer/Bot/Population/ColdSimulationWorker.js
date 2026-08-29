@@ -53,6 +53,7 @@ const LifeStateProjector = invoke('GameServer/Bot/Population/BotLifeState');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Protocol = require('./ColdSimulationProtocol');
 const { ColdSimulationKernel, beginRouteTravelState } = require('./ColdSimulationKernel');
+const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const forbiddenLoaded = Object.keys(require.cache).filter((filename) => (
     /[\\/]src[\\/]Database\.js$/i.test(filename)
     || /[\\/]GameServer[\\/]World[\\/]World\.js$/i.test(filename)
@@ -69,6 +70,8 @@ let heartbeatTimer = null;
 let shuttingDown = false;
 let previousElu = performance.eventLoopUtilization();
 let planningSpots = [];
+let planningNpcOfferRows = [];
+let planningNpcCatalog = ColdNpcPlanningCatalog.createLookup();
 const eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
 eventLoopDelay.enable();
 
@@ -133,6 +136,7 @@ function startKernel(config = {}) {
         planLifecycle: ({ state, context, timestamp }) => {
             const previousPlan = state.stats?.equipmentPlan || null;
             const spots = planningSpots;
+            const npcPlanningOptions = planningNpcCatalog.plannerOptions;
             const replanContext = GearAcquisitionPlanner.replanContextFor(state, previousPlan, timestamp);
             const clanGoalLocked = GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan);
             const reusablePartyRequest = !state.party?.partyId
@@ -144,9 +148,14 @@ function startKernel(config = {}) {
             const upgradedPlan = reusablePartyRequest
                 || clanGoalLocked
                 ? previousPlan
-                : GearAcquisitionPlanner.planFor(state, { spots, ...replanContext });
+                : GearAcquisitionPlanner.planFor(state, { spots, ...replanContext, ...npcPlanningOptions });
             const previousRefresh = previousPlan?.recipeId && !reusablePartyRequest && !clanGoalLocked
-                ? GearAcquisitionPlanner.planFor(state, { spots, recipeId: previousPlan.recipeId, ...replanContext })
+                ? GearAcquisitionPlanner.planFor(state, {
+                    spots,
+                    recipeId: previousPlan.recipeId,
+                    ...replanContext,
+                    ...npcPlanningOptions
+                })
                 : null;
             const rawPlan = GearAcquisitionPlanner.shouldFinishPreviousPlan(previousPlan, previousRefresh)
                 ? { ...previousRefresh, finishBeforeUpgrade: true }
@@ -230,7 +239,15 @@ async function handle(message) {
     const payload = message.payload || {};
     switch (message.type) {
     case 'catalog_page':
-        planningSpots.push(...(payload.rows || []));
+        if (payload.catalog === 'npc_offers') {
+            planningNpcOfferRows.push(...(payload.rows || []));
+            if (payload.done) {
+                planningNpcCatalog = ColdNpcPlanningCatalog.createLookup(planningNpcOfferRows);
+                planningNpcOfferRows = [];
+            }
+        } else {
+            planningSpots.push(...(payload.rows || []));
+        }
         break;
     case 'init':
         startKernel(payload.config || {});
@@ -240,7 +257,9 @@ async function handle(message) {
             data: {
                 items: DataCache.items?.length || 0,
                 npcs: DataCache.npcs?.length || 0,
-                rewards: DataCache.npcRewards?.length || 0
+                rewards: DataCache.npcRewards?.length || 0,
+                npcEquipmentItems: planningNpcCatalog.itemCount,
+                npcEquipmentOffers: planningNpcCatalog.offerCount
             }
         }, message.msgId);
         break;
