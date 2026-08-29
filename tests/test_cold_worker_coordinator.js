@@ -61,7 +61,7 @@ function wait(ms) {
     while (Date.now() < deadline) {
         [row] = await Database.execute([
             `SELECT activity, lastResolvedAt, nextResolveAt, simulationOwner,
-                    simulationRevision, simulationLeaseId, simulationLeaseUntil
+                    simulationRevision, simulationLeaseId, simulationLeaseUntil, statsJson
              FROM bot_life_state WHERE characterId = ?`, [characterId]
         ]);
         if (Number(row?.simulationRevision || 0) >= 2 && Number(row?.lastResolvedAt || 0) > dueAt) break;
@@ -81,6 +81,15 @@ function wait(ms) {
     assert.strictEqual(row.simulationOwner, Owner.LEGACY_OWNER_ID);
     assert.strictEqual(row.simulationLeaseId, null);
     assert.strictEqual(Number(row.simulationLeaseUntil), 0, 'successful commit must not leak a lease');
+    const persistedStats = JSON.parse(row.statsJson || '{}');
+    const equipmentPlan = persistedStats.equipmentPlan;
+    const plannedItem = DataCache.items.find((item) => Number(item.selfId) === Number(equipmentPlan?.target?.selfId));
+    assert.strictEqual(equipmentPlan?.strategy, 'market',
+        'the real cold worker must replace an empty D-grade loadout with an NPC purchase plan');
+    assert.strictEqual(equipmentPlan?.market?.sourceType, 'npc');
+    assert.strictEqual(String(plannedItem?.etc?.rank), 'd');
+    assert.notStrictEqual(equipmentPlan?.market?.town, 'Talking Island',
+        'the worker must send a Talking Island D-grade bot to a city that sells its planned item');
 
     const stopped = await coordinator.stop();
     assert.strictEqual(stopped.stopped, true);

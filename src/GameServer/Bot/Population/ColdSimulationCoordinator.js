@@ -3,10 +3,11 @@ const { randomUUID } = require('crypto');
 const { Worker } = require('worker_threads');
 
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
-const Database = invoke('Database');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
+const DataCache = invoke('GameServer/DataCache');
+const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
@@ -19,6 +20,8 @@ const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwne
 const Protocol = require('./ColdSimulationProtocol');
 const { ColdCommitQueue } = require('./ColdCommitQueue');
 const { ColdSnapshotQueue } = require('./ColdSnapshotQueue');
+const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
+const TownNpcCatalog = require('../Economy/TownNpcCatalog');
 
 const HUNTING_TRAVEL_MS = 25000;
 const OWNERSHIP_REBASE_REASONS = new Set([
@@ -41,6 +44,14 @@ function yieldToLoop() {
 function directDropTargetNpcId(plan = {}) {
     if (!plan || plan.status !== 'active') return 0;
     return Number(plan.next?.npcId || plan.targetNpcId || 0);
+}
+
+function npcPlanningCatalogRows() {
+    return ColdNpcPlanningCatalog.buildRows({
+        items: DataCache.items || [],
+        townNpcSellers: TownNpcCatalog.sellersByTown(),
+        fetchForNpc: (npcSelfId) => NpcShopBuyLists.fetchForNpc(npcSelfId)
+    });
 }
 
 function compactPartyMemberContext(state = {}) {
@@ -380,22 +391,30 @@ class ColdSimulationCoordinator {
     }
 
     sendPlanningCatalog() {
-        const spots = SpotProfiles.ensure() || [];
-        let page = [];
-        const flush = (done = false) => {
-            if (!page.length && !done) return;
-            this.post('catalog_page', { rows: page, done });
-            page = [];
-        };
-        for (const spot of spots) {
-            const candidate = [...page, spot];
-            if (page.length && Protocol.byteLength(Protocol.envelope('catalog_page', this.workerEpoch, { rows: candidate, done: false })) > 240 * 1024) {
-                flush(false);
+        const catalogs = [
+            { catalog: 'spots', rows: SpotProfiles.ensure() || [] },
+            { catalog: 'npc_offers', rows: npcPlanningCatalogRows() }
+        ];
+        catalogs.forEach(({ catalog, rows }) => {
+            let page = [];
+            const flush = (done = false) => {
+                if (!page.length && !done) return;
+                this.post('catalog_page', { catalog, rows: page, done });
+                page = [];
+            };
+            for (const row of rows) {
+                const candidate = [...page, row];
+                const envelope = Protocol.envelope('catalog_page', this.workerEpoch, {
+                    catalog,
+                    rows: candidate,
+                    done: false
+                });
+                if (page.length && Protocol.byteLength(envelope) > 240 * 1024) flush(false);
+                page.push(row);
+                if (page.length >= Protocol.MAX_BATCH) flush(false);
             }
-            page.push(spot);
-            if (page.length >= Protocol.MAX_BATCH) flush(false);
-        }
-        flush(true);
+            flush(true);
+        });
     }
 
     contextIndex(options = {}) {
@@ -1250,3 +1269,4 @@ class ColdSimulationCoordinator {
 module.exports = new ColdSimulationCoordinator();
 module.exports.ColdSimulationCoordinator = ColdSimulationCoordinator;
 module.exports.compactPartyMemberContext = compactPartyMemberContext;
+module.exports.npcPlanningCatalogRows = npcPlanningCatalogRows;

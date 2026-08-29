@@ -5,12 +5,18 @@ require('../src/Global');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const DataCache = invoke('GameServer/DataCache');
+const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
+const ColdNpcPlanningCatalog = require('../src/GameServer/Bot/Population/ColdNpcPlanningCatalog');
 const {
     ColdSimulationCoordinator,
-    compactPartyMemberContext
+    compactPartyMemberContext,
+    npcPlanningCatalogRows
 } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
+
+DataCache.init();
 
 const originalFindForState = SpotProfiles.findForState;
 const originalFindCurrentSpot = SpotService.findCurrentSpot;
@@ -19,6 +25,47 @@ const originalSafeFallbackForPlan = GearAcquisitionPlanner.safeFallbackForPlan;
 const originalCachedState = LifeState.cachedState;
 
 try {
+    const npcCatalogRows = npcPlanningCatalogRows();
+    const npcCatalog = ColdNpcPlanningCatalog.createLookup(npcCatalogRows);
+    assert(Object.isFrozen(npcCatalogRows), 'the coordinator NPC catalog snapshot must be immutable');
+    assert(npcCatalogRows.length > 0 && npcCatalog.itemCount > 0,
+        'the cold worker must receive concrete low-tier NPC equipment offers');
+    assert(Buffer.byteLength(JSON.stringify(npcCatalogRows)) < 256 * 1024,
+        'the compact NPC equipment catalog must fit within the bounded worker transport');
+
+    const npcPlanFor = (level) => GearAcquisitionPlanner.planFor({
+        characterId: 7000000 + level,
+        level,
+        adena: 500,
+        currentRegion: 'Talking Island',
+        stats: { classId: 0, role: 'dps' },
+        inventory: { 57: { selfId: 57, amount: 500 } }
+    }, {
+        spots: [],
+        ...npcCatalog.plannerOptions
+    });
+    const noGradeNpcPlan = npcPlanFor(10);
+    assert.strictEqual(noGradeNpcPlan.strategy, 'market',
+        'a cold no-grade bot must plan an NPC purchase instead of direct-drop farming');
+    assert.strictEqual(noGradeNpcPlan.market.sourceType, 'npc');
+    assert.strictEqual(
+        String(DataCache.items.find((item) => Number(item.selfId) === Number(noGradeNpcPlan.target.selfId))?.etc?.rank),
+        'none'
+    );
+
+    const dGradeNpcPlan = npcPlanFor(20);
+    assert.strictEqual(dGradeNpcPlan.strategy, 'market',
+        'a cold D-grade bot must receive the ordinary NPC bridge plan');
+    assert.strictEqual(dGradeNpcPlan.market.sourceType, 'npc');
+    assert.strictEqual(
+        String(DataCache.items.find((item) => Number(item.selfId) === Number(dGradeNpcPlan.target.selfId))?.etc?.rank),
+        'd'
+    );
+    assert.notStrictEqual(dGradeNpcPlan.market.town, 'Talking Island',
+        'a D-grade bot in Talking Island must route to a city that actually sells its target');
+    assert(MarketOpportunity.npcOffers(dGradeNpcPlan.target.selfId, dGradeNpcPlan.market.town)
+        .some((offer) => offer.available), 'the selected D-grade destination must expose the persisted NPC offer');
+
     const compact = compactPartyMemberContext({
         characterId: 11,
         phase: 'cold',

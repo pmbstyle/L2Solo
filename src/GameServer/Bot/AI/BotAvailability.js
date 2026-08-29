@@ -131,8 +131,8 @@ const BotAvailability = {
 
         let reason = 'available';
         if (staticService) reason = 'merchant_duty';
-        else if (state.activity === 'traveling') reason = 'in_transit';
-        else if (state.activity === 'pk_hunting') reason = 'pk_encounter_only';
+        else if (!options.forceFriend && state.activity === 'traveling') reason = 'in_transit';
+        else if (!options.forceFriend && state.activity === 'pk_hunting') reason = 'pk_encounter_only';
         else if (result.clanmate) reason = 'available';
         else if (player.isDead && player.isDead()) reason = 'player_dead';
         else if (state.activity === 'dead' || Number(state.vitals?.hp || 1) <= 0) reason = 'bot_dead';

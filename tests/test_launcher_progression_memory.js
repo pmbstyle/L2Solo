@@ -88,7 +88,7 @@ async function waitForStatus(port) {
     throw lastError || new Error('launcher did not start');
 }
 
-function startLauncher(port, settingsPath) {
+function startLauncher(port, settingsPath, configPath = null) {
     const env = {
         ...process.env,
         L2NODE_LAUNCHER_PORT: String(port),
@@ -96,6 +96,15 @@ function startLauncher(port, settingsPath) {
         L2NODE_NO_BROWSER: '1'
     };
     delete env.L2NODE_PROGRESSION_RATE;
+    delete env.L2NODE_SHARED_CONFIG_FILE;
+    delete env.L2NODE_AI_API_URL;
+    delete env.L2NODE_AI_API_KEY;
+    delete env.L2NODE_AI_MODEL;
+    delete env.OPENROUTER_API_URL;
+    delete env.OPENROUTER_API_KEY;
+    delete env.OPENROUTER_MODEL;
+    if (configPath) env.L2NODE_CONFIG_FILE = configPath;
+    else delete env.L2NODE_CONFIG_FILE;
 
     return spawn(process.execPath, [path.join('scripts', 'start.js')], {
         cwd: path.resolve(__dirname, '..'),
@@ -119,10 +128,40 @@ async function stopLauncher(child) {
 (async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'l2node-launcher-'));
     const settingsPath = path.join(tmpDir, 'settings.json');
+    const configPath = path.join(tmpDir, 'llm.ini');
     const port = await freePort();
+    const modelPort = await freePort();
     let child = null;
+    let modelMode = 'success';
+    let lastModelRequest = null;
+    const modelServer = http.createServer((req, res) => {
+        let body = '';
+        req.setEncoding('utf8');
+        req.on('data', (chunk) => { body += chunk; });
+        req.on('end', () => {
+            lastModelRequest = {
+                url: req.url,
+                authorization: req.headers.authorization,
+                body: body ? JSON.parse(body) : null
+            };
+            res.setHeader('Content-Type', 'application/json');
+            if (modelMode === 'error') {
+                res.statusCode = 503;
+                res.end(JSON.stringify({ error: { message: 'model not loaded' } }));
+                return;
+            }
+            res.end(JSON.stringify({
+                id: 'launcher-test',
+                choices: [{ message: { role: 'assistant', content: 'L2SOLO_LLM_OK' }, finish_reason: 'stop' }]
+            }));
+        });
+    });
 
     try {
+        await new Promise((resolve, reject) => {
+            modelServer.once('error', reject);
+            modelServer.listen(modelPort, '127.0.0.1', resolve);
+        });
         child = startLauncher(port, settingsPath);
         let status = await waitForStatus(port);
         assert.strictEqual(status.progressionRate, 'x1');
@@ -131,6 +170,9 @@ async function stopLauncher(child) {
         assert.match(launcherHtml, /<details class="wipe-panel">/);
         assert.match(launcherHtml, /<div class="wipe-content">/);
         assert.match(launcherHtml, /logAutoScroll/);
+        assert.match(launcherHtml, /id="llmPanel"/);
+        assert.match(launcherHtml, /id="llmTest"/);
+        assert.match(launcherHtml, /Test inference/);
 
         const confirmationError = await requestFailure(port, 'POST', '/api/wipe', { scope: 'bots', confirmation: 'wipe bots' });
         assert.match(confirmationError.message, /Type WIPE BOTS/);
@@ -143,8 +185,52 @@ async function stopLauncher(child) {
         child = startLauncher(port, settingsPath);
         status = await waitForStatus(port);
         assert.strictEqual(status.progressionRate, 'x50');
+
+        await stopLauncher(child);
+        fs.writeFileSync(configPath, [
+            '[AI]',
+            'enabled = true',
+            `apiUrl = http://127.0.0.1:${modelPort}/v1/chat/completions?private=hidden`,
+            'apiKey = local-test-key',
+            'model = local-test-model',
+            'reasoningEffort = off',
+            ''
+        ].join('\n'));
+        child = startLauncher(port, settingsPath, configPath);
+        status = await waitForStatus(port);
+        assert.strictEqual(status.llm.enabled, true);
+        assert.strictEqual(status.llm.phase, 'untested');
+        assert.strictEqual(status.llm.model, 'local-test-model');
+        assert.strictEqual(status.llm.endpoint, `http://127.0.0.1:${modelPort}/v1/chat/completions`);
+        assert.doesNotMatch(JSON.stringify(status), /local-test-key|private=hidden/);
+
+        status = await request(port, 'POST', '/api/llm/test');
+        assert.strictEqual(status.llm.phase, 'online');
+        assert.match(status.llm.message, /Inference responded successfully/);
+        assert.strictEqual(lastModelRequest.url, '/v1/chat/completions?private=hidden');
+        assert.strictEqual(lastModelRequest.authorization, 'Bearer local-test-key');
+        assert.strictEqual(lastModelRequest.body.model, 'local-test-model');
+        assert.strictEqual(lastModelRequest.body.reasoning_effort, 'none');
+        assert.strictEqual(lastModelRequest.body.max_tokens, 128);
+
+        modelMode = 'error';
+        status = await request(port, 'POST', '/api/llm/test');
+        assert.strictEqual(status.llm.phase, 'error');
+        assert.match(status.llm.message, /HTTP 503: model not loaded/);
+
+        fs.writeFileSync(configPath, [
+            '[AI]',
+            'enabled = true',
+            `apiUrl = http://127.0.0.1:${modelPort}/v1/chat/completions`,
+            'model =',
+            ''
+        ].join('\n'));
+        status = await request(port, 'GET', '/api/status');
+        assert.strictEqual(status.llm.phase, 'error');
+        assert.match(status.llm.message, /model is empty/);
     } finally {
         await stopLauncher(child);
+        await new Promise((resolve) => modelServer.close(resolve));
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
 

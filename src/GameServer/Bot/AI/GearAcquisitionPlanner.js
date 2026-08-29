@@ -628,6 +628,10 @@ function marketPlan(state = {}, target, offer, options = {}) {
 
 function npcOfferForTarget(target, state = {}, options = {}) {
     if (!target) return null;
+    if (typeof options.findNpcOffer === 'function') {
+        const offer = options.findNpcOffer(target, state);
+        return offer?.sourceType === 'npc' ? offer : null;
+    }
     if (typeof options.findMarketOffer === 'function') {
         const offer = options.findMarketOffer(target, state);
         return offer?.sourceType === 'npc' ? offer : null;
@@ -714,7 +718,8 @@ function staticNpcUpgradePlan(state = {}, options = {}) {
     const targetRank = npcTargetRank(state);
     const reserve = operationalAdenaReserve(state);
     const spendable = Math.max(0, Number(state.adena || state.inventory?.[57]?.amount || 0) - reserve);
-    const slots = desiredNpcSlots(state);
+    const excludedSlots = new Set((options.excludedSlots || []).map(Number));
+    const slots = desiredNpcSlots(state).filter((slot) => !excludedSlots.has(Number(slot)));
 
     if (missingRequiredDualSword(state)) {
         const dualCandidate = npcCandidatesForSlot(state, 14, targetRank, options)[0];
@@ -760,8 +765,8 @@ function staticNpcUpgradePlan(state = {}, options = {}) {
             }));
     })
         .sort((left, right) => {
-            return (right.gain / Math.max(1, Number(right.offer.price))) - (left.gain / Math.max(1, Number(left.offer.price)))
-                || slotPriority(right.item) - slotPriority(left.item)
+            return slotPriority(right.item) - slotPriority(left.item)
+                || (right.gain / Math.max(1, Number(right.offer.price))) - (left.gain / Math.max(1, Number(left.offer.price)))
                 || Number(left.offer.price) - Number(right.offer.price);
         });
     const best = improvements[0];
@@ -776,8 +781,17 @@ function npcTargetRank(state = {}) {
     return rankIndex(gradeForLevel(state.level)) >= rankIndex('d') ? NPC_GEAR_MAX_RANK : 'none';
 }
 
-function staticNpcKitAdequate(state = {}) {
+function staticNpcKitAdequate(state = {}, options = {}) {
     const targetRank = npcTargetRank(state);
+    // A filled no-grade paperdoll is not a finished starter kit while the
+    // current NPC catalog still contains an affordable, stronger item. This
+    // distinction matters for hot companions: they may arrive in town with a
+    // stale "complete" snapshot even though their live Adena now covers an
+    // upgrade.
+    const npcUpgrade = Object.prototype.hasOwnProperty.call(options, 'evaluatedNpcUpgrade')
+        ? options.evaluatedNpcUpgrade
+        : staticNpcUpgradePlan(state, options);
+    if (targetRank === 'none' && npcUpgrade) return false;
     return desiredNpcSlots(state).every((slot) => {
         const current = equippedItemAtSlot(state, slot);
         return current && rankIndex(current.etc?.rank) >= rankIndex(targetRank);
@@ -1352,7 +1366,10 @@ function planFor(state = {}, options = {}) {
     if (!options.recipeId && !preparedCraftReady) {
         const npcPlan = staticNpcUpgradePlan(state, planningOptions);
         if (npcPlan) return npcPlan;
-        if (rankIndex(gradeForLevel(state.level)) <= rankIndex('d') && staticNpcKitAdequate(state)) {
+        if (rankIndex(gradeForLevel(state.level)) <= rankIndex('d') && staticNpcKitAdequate(state, {
+            ...planningOptions,
+            evaluatedNpcUpgrade: npcPlan
+        })) {
             return { status: 'complete', reason: 'npc_adequate_kit', strategy: 'none', recipeId: null, materials: [], next: null };
         }
     }

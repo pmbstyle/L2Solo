@@ -155,6 +155,60 @@ const marketNoGradePlan = GearAcquisitionPlanner.planFor({ level: 5, stats: { cl
 assert.strictEqual(marketNoGradePlan.strategy, 'market', 'an affordable no-grade market offer must beat an unavailable drop route');
 assert.strictEqual(marketNoGradePlan.recipeId, null, 'no-grade market purchases must never request crafting');
 
+const filledWeakNoGradeState = {
+    level: 14,
+    adena: 100000,
+    stats: { classId: 0, role: 'dps' },
+    inventory: {
+        57: { selfId: 57, amount: 100000 },
+        2369: { selfId: 2369, amount: 1, equipped: true, slot: 7, equippedSlots: [7] },
+        19: { selfId: 19, amount: 1, equipped: true, slot: 8, equippedSlots: [8] },
+        42: { selfId: 42, amount: 1, equipped: true, slot: 6, equippedSlots: [6] },
+        48: { selfId: 48, amount: 1, equipped: true, slot: 9, equippedSlots: [9] },
+        1122: { selfId: 1122, amount: 1, equipped: true, slot: 12, equippedSlots: [12] },
+        1146: { selfId: 1146, amount: 1, equipped: true, slot: 10, equippedSlots: [10] },
+        1147: { selfId: 1147, amount: 1, equipped: true, slot: 11, equippedSlots: [11] },
+        118: { selfId: 118, amount: 1, equipped: true, slot: 3, equippedSlots: [3] },
+        112: { selfId: 112, amount: 2, equipped: true, slot: 1, equippedSlots: [1, 2] },
+        116: { selfId: 116, amount: 2, equipped: true, slot: 4, equippedSlots: [4, 5] }
+    }
+};
+const shortSwordNpcOffer = (item) => Number(item.selfId) === 1
+    ? { sourceType: 'npc', sourceId: 7001, town: 'Talking Island', price: 883 }
+    : null;
+assert.strictEqual(
+    GearAcquisitionPlanner.staticNpcKitAdequate(filledWeakNoGradeState, { findNpcOffer: shortSwordNpcOffer }),
+    false,
+    'an occupied no-grade paperdoll must not be adequate while an affordable NPC upgrade exists'
+);
+assert.strictEqual(
+    GearAcquisitionPlanner.staticNpcUpgradePlan(filledWeakNoGradeState, { findNpcOffer: shortSwordNpcOffer })?.target?.selfId,
+    1,
+    'the NPC bridge must select a stronger no-grade weapon instead of accepting the starter sword'
+);
+const prioritizedNpcOffer = (item) => {
+    const prices = { 1: 883, 25: 22680, 908: 100 };
+    const price = prices[Number(item.selfId)];
+    return price ? { sourceType: 'npc', sourceId: 7001, town: 'Talking Island', price } : null;
+};
+assert.strictEqual(
+    GearAcquisitionPlanner.staticNpcUpgradePlan(filledWeakNoGradeState, {
+        findNpcOffer: prioritizedNpcOffer,
+        findMarketOffer: prioritizedNpcOffer
+    })?.target?.selfId,
+    1,
+    'weapon progression must outrank a cheaper jewelry gain during a city equipment pass'
+);
+assert.strictEqual(
+    GearAcquisitionPlanner.staticNpcUpgradePlan(filledWeakNoGradeState, {
+        findNpcOffer: prioritizedNpcOffer,
+        findMarketOffer: prioritizedNpcOffer,
+        excludedSlots: [7]
+    })?.target?.selfId,
+    25,
+    'after buying a weapon, the same city equipment pass must advance to armor before jewelry'
+);
+
 const failedDropState = {
     level: 10,
     stats: {

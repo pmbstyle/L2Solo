@@ -3,27 +3,8 @@ const World = invoke('GameServer/World/World');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const TradeService = invoke('GameServer/Bot/TradeService');
+const TownNpcCatalog = require('./TownNpcCatalog');
 const buyStoreReservations = new WeakMap();
-
-const TOWN_NPC_SELLERS = {
-    Giran: [7081, 7082, 7084, 7085, 7087, 7088, 7090, 7091, 7093, 7094, 7829],
-    Oren: [7178, 7179, 7180, 7181],
-    Gludio: [7313, 7314, 7315],
-    Gludin: [7060, 7061, 7062, 7063, 7207, 7208, 7209, 7321],
-    'Talking Island': [7001, 7002, 7003, 7004],
-    Aden: [7837, 7838, 7839, 7840, 7841, 7842, 7831, 7869],
-    'Hunter\'s Village': [7230, 7231, 7235, 7301, 7684],
-    'Dwarven Village': [7516, 7517, 7518, 7519],
-    'Elven Village': [7135, 7136, 7137, 7138],
-    'Dark Elven Village': [7147, 7148, 7149, 7150],
-    'Floran Village': [7078, 7436, 7437],
-    Cema: [7834],
-    Goddard: [8256],
-    Rune: [8300],
-    'Orc Village': [7558, 7559, 7560, 7561],
-    'Dion': [7253, 7254, 7294],
-    'Heine': [7731, 7827, 7828, 7830]
-};
 const coldStoreIndex = new Map();
 const SHOT_IDS = new Set([
     1835, 1463, 1464, 1465, 1466, 1467,
@@ -38,7 +19,9 @@ function coldMarketStates() {
     let persisted = [];
     try {
         persisted = invoke('GameServer/Bot/Population/BotLifeState').allStates(5000) || [];
-    } catch (_) {}
+    } catch (_) {
+        // Lifecycle storage is optional in lightweight catalog/test contexts.
+    }
     const states = new Map(Array.from(coldStoreIndex.entries()));
     persisted.forEach((state) => {
         if (state?.activity === 'merchant' && state.stats?.marketStore) states.set(Number(state.characterId), state);
@@ -92,18 +75,22 @@ function normalizeItemLookup(value) {
 function npcOffers(selfId, town) {
     const offers = [];
     const seen = new Set();
-    (TOWN_NPC_SELLERS[town] || []).forEach((npcSelfId) => {
+    TownNpcCatalog.rowsForTown(town).forEach((seller) => {
+        const npcSelfId = Number(seller.npcSelfId);
         const row = NpcShopBuyLists.fetchForNpc(npcSelfId).find((item) => Number(item.selfId) === Number(selfId));
         if (!row) return;
         const price = Number(row.price || 0);
-        const key = `${npcSelfId}:${price}`;
+        const key = `${npcSelfId}:${price}:${seller.locX}:${seller.locY}:${seller.locZ}`;
         if (seen.has(key)) return;
         seen.add(key);
         offers.push({
             sourceType: 'npc',
             sourceId: npcSelfId,
-            sourceName: `NPC ${npcSelfId}`,
+            sourceName: seller.name,
             town,
+            locX: Number(seller.locX),
+            locY: Number(seller.locY),
+            locZ: Number(seller.locZ),
             selfId: Number(selfId),
             itemName: itemName(selfId),
             price,
@@ -115,7 +102,7 @@ function npcOffers(selfId, town) {
 }
 
 function npcOffersAll(selfId) {
-    return Object.keys(TOWN_NPC_SELLERS).flatMap((town) => npcOffers(selfId, town));
+    return Object.keys(TownNpcCatalog.sellersByTown()).flatMap((town) => npcOffers(selfId, town));
 }
 
 function configuredStoreSession(storeName) {
@@ -312,6 +299,15 @@ function findOffers(selfId, options = {}) {
         .sort((a, b) => a.price - b.price || (a.sourceType === 'npc' ? 1 : -1));
 }
 
+function hotOffers(selfId, options = {}) {
+    const town = options.town || null;
+    return [
+        ...privateOffers(selfId, town),
+        ...(town ? npcOffers(selfId, town) : [])
+    ].filter((offer) => offer.available)
+        .sort((left, right) => left.price - right.price || (left.sourceType === 'npc' ? 1 : -1));
+}
+
 function bestOffer(selfId, options = {}) {
     const budget = Number.isFinite(Number(options.budget)) ? Number(options.budget) : Infinity;
     return findOffers(selfId, options).find((offer) => offer.price <= budget) || null;
@@ -489,7 +485,6 @@ function release(offer, qty = 1) {
 }
 
 module.exports = {
-    TOWN_NPC_SELLERS,
     bestOffer,
     bestBuyOffer,
     activeBuyDemandSelfIds,
@@ -498,6 +493,7 @@ module.exports = {
     coldOffers,
     coldBuyOffers,
     findOffers,
+    hotOffers,
     findBuyOffers,
     indexColdStore,
     npcOffers,
@@ -514,3 +510,8 @@ module.exports = {
     reserve,
     reserveBuy
 };
+
+Object.defineProperty(module.exports, 'TOWN_NPC_SELLERS', {
+    enumerable: true,
+    get: () => TownNpcCatalog.sellersByTown()
+});
