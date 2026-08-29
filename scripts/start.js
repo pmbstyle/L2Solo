@@ -22,6 +22,9 @@ const debugFlagNames = [
     'L2NODE_PACKET_TRACE'
 ];
 const progressionPresets = new Set(['x1', 'x10', 'x50']);
+const reasoningEfforts = new Set(['off', 'low', 'medium', 'high']);
+const openRouterUrl = 'https://openrouter.ai/api/v1/chat/completions';
+const llmTestTimeoutMs = 30000;
 
 const state = {
     phase: 'stopped',
@@ -31,8 +34,12 @@ const state = {
     logFilePath: latestLogPath,
     progressionRate: initialProgressionRate(),
     lastWipe: null,
+    llm: null,
+    llmConfigFingerprint: null,
     logs: []
 };
+
+let llmTestPromise = null;
 
 const wipeConfirmations = {
     bots: 'WIPE BOTS',
@@ -123,6 +130,242 @@ function readConfig() {
     });
 
     return config;
+}
+
+function bool(value, fallback = false) {
+    if (value === undefined || value === null || value === '') return fallback;
+    if (typeof value === 'boolean') return value;
+    return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
+}
+
+function number(value, fallback) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function llmConfig() {
+    const config = readConfig();
+    const customOptions = config.AI && typeof config.AI === 'object' ? config.AI : null;
+    const optn = customOptions || config.OpenRouter || {};
+    const legacyConfig = !customOptions;
+    const apiUrl = String(
+        process.env.L2NODE_AI_API_URL ||
+        (legacyConfig ? process.env.OPENROUTER_API_URL : '') ||
+        optn.apiUrl ||
+        (legacyConfig ? openRouterUrl : '') ||
+        ''
+    ).trim();
+    const apiKey = String(
+        (legacyConfig ? process.env.OPENROUTER_API_KEY : process.env.L2NODE_AI_API_KEY) ||
+        optn.apiKey ||
+        ''
+    );
+    const model = String(
+        (legacyConfig ? process.env.OPENROUTER_MODEL : process.env.L2NODE_AI_MODEL) ||
+        optn.model ||
+        ''
+    ).trim();
+    const reasoningFallback = legacyConfig ? 'low' : 'off';
+    const configuredReasoningEffort = String(optn.reasoningEffort || reasoningFallback)
+        .trim()
+        .toLowerCase();
+    const reasoningEffort = reasoningEfforts.has(configuredReasoningEffort)
+        ? configuredReasoningEffort
+        : reasoningFallback;
+    const provider = apiUrl.replace(/\/+$/, '') === openRouterUrl.replace(/\/+$/, '')
+        ? 'openrouter'
+        : 'openai-compatible';
+
+    return {
+        enabled: bool(optn.enabled, false),
+        apiUrl,
+        apiKey,
+        model,
+        provider,
+        temperature: number(optn.temperature, 0.35),
+        reasoningEffort
+    };
+}
+
+function safeEndpoint(value) {
+    try {
+        const url = new URL(value);
+        url.username = '';
+        url.password = '';
+        url.search = '';
+        url.hash = '';
+        return url.toString();
+    } catch (_) {
+        return String(value || '');
+    }
+}
+
+function llmConfigurationError(config) {
+    if (!config.apiUrl) return 'AI is enabled, but apiUrl is empty.';
+    try {
+        const url = new URL(config.apiUrl);
+        if (!['http:', 'https:'].includes(url.protocol)) {
+            return 'AI apiUrl must use http:// or https://.';
+        }
+    } catch (_) {
+        return 'AI apiUrl is not a valid URL.';
+    }
+    if (!config.model) return 'AI is enabled, but model is empty.';
+    if (config.provider === 'openrouter' && !config.apiKey) {
+        return 'OpenRouter is enabled, but apiKey is empty.';
+    }
+    return null;
+}
+
+function llmFingerprint(config) {
+    return JSON.stringify([
+        config.enabled,
+        config.apiUrl,
+        config.apiKey,
+        config.model,
+        config.provider,
+        config.temperature,
+        config.reasoningEffort
+    ]);
+}
+
+function syncLlmState(config = llmConfig()) {
+    const fingerprint = llmFingerprint(config);
+    if (state.llmConfigFingerprint === fingerprint && state.llm) return state.llm;
+
+    state.llmConfigFingerprint = fingerprint;
+    const configurationError = config.enabled ? llmConfigurationError(config) : null;
+    state.llm = {
+        enabled: config.enabled,
+        phase: config.enabled ? (configurationError ? 'error' : 'untested') : 'disabled',
+        provider: config.provider,
+        model: config.model,
+        endpoint: safeEndpoint(config.apiUrl),
+        message: configurationError || (config.enabled ? 'Ready to test.' : 'AI is disabled.'),
+        latencyMs: null,
+        checkedAt: null
+    };
+    return state.llm;
+}
+
+function llmErrorMessage(payload, fallback) {
+    const message = payload?.error?.message || payload?.error || payload?.message || fallback;
+    return String(message || 'Unknown provider error.').replace(/\s+/g, ' ').trim().slice(0, 600);
+}
+
+function llmCompletionLimitParam(config) {
+    if (config.provider !== 'openrouter') return 'max_tokens';
+    if (config.model === 'openai/gpt-5.6-luna' || config.model === 'openai/gpt-oss-120b') {
+        return 'max_tokens';
+    }
+    return 'max_completion_tokens';
+}
+
+function llmTestBody(config) {
+    const body = {
+        model: config.model,
+        messages: [{ role: 'user', content: 'Reply with exactly L2SOLO_LLM_OK and nothing else.' }]
+    };
+    body[llmCompletionLimitParam(config)] = 128;
+
+    if (!(config.provider === 'openrouter' && config.model === 'openai/gpt-5.6-luna')) {
+        body.temperature = config.temperature;
+    }
+    if (config.provider === 'openrouter') {
+        if (config.reasoningEffort !== 'off') {
+            body.reasoning = { effort: config.reasoningEffort, exclude: true };
+        }
+    } else {
+        body.reasoning_effort = config.reasoningEffort === 'off' ? 'none' : config.reasoningEffort;
+    }
+
+    return body;
+}
+
+async function runLlmInferenceTest() {
+    if (llmTestPromise) return llmTestPromise;
+
+    llmTestPromise = (async () => {
+        const config = llmConfig();
+        const llm = syncLlmState(config);
+        if (!config.enabled) return llm;
+
+        const configurationError = llmConfigurationError(config);
+        if (configurationError) return llm;
+
+        const startedAt = Date.now();
+        state.llm = {
+            ...llm,
+            phase: 'testing',
+            message: 'Testing inference…',
+            latencyMs: null,
+            checkedAt: null
+        };
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), llmTestTimeoutMs);
+        try {
+            const headers = { 'Content-Type': 'application/json' };
+            if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
+            if (config.provider === 'openrouter') {
+                headers['HTTP-Referer'] = launcherUrl();
+                headers['X-OpenRouter-Title'] = 'L2Solo Launcher';
+            }
+
+            const response = await fetch(config.apiUrl, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(llmTestBody(config)),
+                signal: controller.signal
+            });
+            const raw = await response.text();
+            let payload = null;
+            try {
+                payload = raw ? JSON.parse(raw) : null;
+            } catch (_) {
+                payload = null;
+            }
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${llmErrorMessage(payload, raw || response.statusText)}`);
+            }
+
+            const content = payload?.choices?.[0]?.message?.content;
+            if (typeof content !== 'string' || !content.trim()) {
+                throw new Error('The endpoint responded, but returned no assistant message.');
+            }
+
+            const latencyMs = Date.now() - startedAt;
+            state.llm = {
+                ...state.llm,
+                phase: 'online',
+                message: `Inference responded successfully in ${latencyMs} ms.`,
+                latencyMs,
+                checkedAt: Date.now()
+            };
+        } catch (error) {
+            const timedOut = error?.name === 'AbortError';
+            state.llm = {
+                ...state.llm,
+                phase: 'error',
+                message: timedOut
+                    ? `Inference timed out after ${llmTestTimeoutMs / 1000} seconds.`
+                    : String(error?.message || error).slice(0, 700),
+                latencyMs: Date.now() - startedAt,
+                checkedAt: Date.now()
+            };
+        } finally {
+            clearTimeout(timeout);
+        }
+
+        return state.llm;
+    })();
+
+    try {
+        return await llmTestPromise;
+    } finally {
+        llmTestPromise = null;
+    }
 }
 
 function observerUrl() {
@@ -254,6 +497,7 @@ function publicState() {
         logFilePath: state.logFilePath,
         progressionRate: state.progressionRate,
         progressionRates: Array.from(progressionPresets),
+        llm: syncLlmState(),
         lastWipe: state.lastWipe,
         logs: state.logs.slice(-40)
     };
@@ -549,6 +793,91 @@ function sendHtml(response) {
             font-size: 14px;
         }
 
+        .llm-panel {
+            display: grid;
+            gap: 12px;
+            margin-top: 16px;
+            padding: 14px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--panel-2);
+        }
+
+        .llm-panel[hidden] {
+            display: none;
+        }
+
+        .llm-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .llm-header h2 {
+            margin: 0;
+            font-size: 15px;
+            text-transform: uppercase;
+        }
+
+        .llm-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .llm-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: var(--muted);
+        }
+
+        .llm-status.testing .llm-dot {
+            background: var(--accent);
+        }
+
+        .llm-status.online .llm-dot {
+            background: var(--green);
+        }
+
+        .llm-status.error .llm-dot {
+            background: var(--red);
+        }
+
+        .llm-details {
+            display: grid;
+            gap: 7px;
+            font-size: 13px;
+        }
+
+        .llm-message {
+            margin: 0;
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.4;
+            overflow-wrap: anywhere;
+        }
+
+        .llm-message.online {
+            border-color: #356842;
+            color: #a8dfb4;
+            background: #152219;
+        }
+
+        .llm-message.error {
+            border-color: #71413b;
+            color: #efb1a8;
+            background: #241a19;
+        }
+
         .row {
             display: flex;
             align-items: center;
@@ -630,6 +959,19 @@ function sendHtml(response) {
             <div class="row"><span class="label">Log</span><span id="logPath" class="value">-</span></div>
         </section>
 
+        <section id="llmPanel" class="llm-panel" hidden>
+            <div class="llm-header">
+                <h2>LLM inference</h2>
+                <span id="llmStatus" class="llm-status untested"><span class="llm-dot"></span><span>Not tested</span></span>
+            </div>
+            <div class="llm-details">
+                <div class="row"><span class="label">Model</span><span id="llmModel" class="value">-</span></div>
+                <div class="row"><span class="label">Endpoint</span><span id="llmEndpoint" class="value">-</span></div>
+            </div>
+            <p id="llmMessage" class="llm-message">Ready to test.</p>
+            <button id="llmTest" type="button">Test inference</button>
+        </section>
+
         <details class="wipe-panel">
             <summary>World reset</summary>
             <div class="wipe-content">
@@ -656,6 +998,13 @@ function sendHtml(response) {
         const pidEl = document.getElementById('pid');
         const uptimeEl = document.getElementById('uptime');
         const logPathEl = document.getElementById('logPath');
+        const llmPanel = document.getElementById('llmPanel');
+        const llmStatusEl = document.getElementById('llmStatus');
+        const llmStatusText = llmStatusEl.querySelector('span:last-child');
+        const llmModelEl = document.getElementById('llmModel');
+        const llmEndpointEl = document.getElementById('llmEndpoint');
+        const llmMessageEl = document.getElementById('llmMessage');
+        const llmTestButton = document.getElementById('llmTest');
         const logEl = document.getElementById('log');
         const startButton = document.getElementById('start');
         const stopButton = document.getElementById('stop');
@@ -699,6 +1048,28 @@ function sendHtml(response) {
             return logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 6;
         }
 
+        function renderLlm(llm) {
+            const enabled = llm && llm.enabled;
+            llmPanel.hidden = !enabled;
+            if (!enabled) return;
+
+            const phase = llm.phase || 'untested';
+            const labels = {
+                untested: 'Not tested',
+                testing: 'Testing',
+                online: 'Online',
+                error: 'Error'
+            };
+            llmStatusEl.className = 'llm-status ' + phase;
+            llmStatusText.textContent = labels[phase] || titleCase(phase);
+            llmModelEl.textContent = llm.model || '-';
+            llmEndpointEl.textContent = llm.endpoint || '-';
+            llmMessageEl.className = 'llm-message ' + phase;
+            llmMessageEl.textContent = llm.message || 'Ready to test.';
+            llmTestButton.disabled = phase === 'testing';
+            llmTestButton.textContent = phase === 'testing' ? 'Testing…' : 'Test inference';
+        }
+
         async function request(path, options) {
             const response = await fetch(path, options);
             if (!response.ok) throw new Error(await response.text());
@@ -725,6 +1096,7 @@ function sendHtml(response) {
             uptimeEl.textContent = formatUptime(data.uptimeMs);
             logPathEl.textContent = data.logFilePath || '-';
             logUrl = data.logUrl || '';
+            renderLlm(data.llm);
             startButton.disabled = locked;
             stopButton.disabled = phase === 'stopped' || phase === 'stopping';
             progressionRateSelect.disabled = locked;
@@ -801,6 +1173,21 @@ function sendHtml(response) {
         stopButton.addEventListener('click', async () => {
             logAutoScroll = false;
             render(await request('/api/stop', { method: 'POST' }));
+        });
+
+        llmTestButton.addEventListener('click', async () => {
+            llmTestButton.disabled = true;
+            llmTestButton.textContent = 'Testing…';
+            try {
+                render(await request('/api/llm/test', { method: 'POST' }));
+            } catch (err) {
+                llmStatusEl.className = 'llm-status error';
+                llmStatusText.textContent = 'Error';
+                llmMessageEl.className = 'llm-message error';
+                llmMessageEl.textContent = err.message;
+                llmTestButton.disabled = false;
+                llmTestButton.textContent = 'Test inference';
+            }
         });
 
         logEl.addEventListener('scroll', () => {
@@ -880,6 +1267,13 @@ async function route(request, response) {
     if (request.method === 'POST' && url.pathname === '/api/stop') {
         await readBody(request);
         sendJson(response, stopServer());
+        return;
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/llm/test') {
+        await readBody(request);
+        await runLlmInferenceTest();
+        sendJson(response, publicState());
         return;
     }
 
