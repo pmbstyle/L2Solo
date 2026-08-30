@@ -51,6 +51,56 @@ function normalizeRows(rows) {
     return (rows || []).map(normalizeRow);
 }
 
+const CLAN_ACTION_RESULT_MAX_BYTES = 16 * 1024;
+const CLAN_ACTION_RESULT_MAX_DEPTH = 3;
+const CLAN_ACTION_RESULT_MAX_KEYS = 32;
+const CLAN_ACTION_RESULT_MAX_STRING = 512;
+const CLAN_ACTION_RESULT_MAX_PRIMITIVES = 32;
+
+function compactClanActionValue(value, depth = 0) {
+    if (value === null || typeof value === 'boolean') return value;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value === 'string') return value.slice(0, CLAN_ACTION_RESULT_MAX_STRING);
+    if (typeof value === 'bigint') return Number(value);
+    if (depth >= CLAN_ACTION_RESULT_MAX_DEPTH || !value || typeof value !== 'object') return undefined;
+    if (Array.isArray(value)) {
+        const primitive = value.every((entry) => (
+            entry === null || ['boolean', 'number', 'string', 'bigint'].includes(typeof entry)
+        ));
+        if (!primitive) return { count: value.length };
+        return value.slice(0, CLAN_ACTION_RESULT_MAX_PRIMITIVES)
+            .map((entry) => compactClanActionValue(entry, depth + 1));
+    }
+    const summary = {};
+    for (const [key, entry] of Object.entries(value).slice(0, CLAN_ACTION_RESULT_MAX_KEYS)) {
+        const compacted = compactClanActionValue(entry, depth + 1);
+        if (compacted !== undefined) summary[key] = compacted;
+    }
+    return summary;
+}
+
+function compactClanActionResult(result) {
+    const source = result && typeof result === 'object' ? result : {};
+    const compacted = compactClanActionValue(source) || {};
+    const serialized = JSON.stringify(compacted);
+    if (Buffer.byteLength(serialized, 'utf8') <= CLAN_ACTION_RESULT_MAX_BYTES) return compacted;
+    let fallback = { truncated: true };
+    for (const [key, value] of Object.entries(source).slice(0, CLAN_ACTION_RESULT_MAX_KEYS)) {
+        let compactedValue;
+        if (value === null || ['boolean', 'number', 'string', 'bigint'].includes(typeof value)) {
+            compactedValue = compactClanActionValue(value);
+        } else if (Array.isArray(value)) {
+            compactedValue = { count: value.length };
+        }
+        if (compactedValue === undefined) continue;
+        const candidate = { ...fallback, [key]: compactedValue };
+        if (Buffer.byteLength(JSON.stringify(candidate), 'utf8') <= CLAN_ACTION_RESULT_MAX_BYTES) {
+            fallback = candidate;
+        }
+    }
+    return fallback;
+}
+
 function escapeIdentifier(value) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
         throw new Error(`invalid SQL identifier: ${value}`);
@@ -808,6 +858,14 @@ function applySchemaMigrations() {
             SET petData = NULL
             WHERE petData IS NOT NULL
               AND (length(petData) > 1048576 OR instr(petData, ':') = 0);
+        `)],
+        [29, () => connection.exec(`
+            CREATE INDEX IF NOT EXISTS clan_actions_terminal_retention
+                ON clan_actions(resolvedAt, id)
+                WHERE status IN ('succeeded', 'failed', 'cancelled');
+            CREATE INDEX IF NOT EXISTS clan_goal_events_action_retention
+                ON clan_goal_events(occurredAt, id)
+                WHERE eventType IN ('action_succeeded', 'action_failed', 'action_cancelled');
         `)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
@@ -3227,7 +3285,7 @@ const Database = {
                 };
             }
             const timestamp = now();
-            const safeResult = result && typeof result === 'object' ? result : {};
+            const safeResult = compactClanActionResult(result);
             const updated = write(`UPDATE clan_actions
                 SET status = ?, leaseUntil = NULL, resultJson = ?, reasonCode = ?, updatedAt = ?, resolvedAt = ?
                 WHERE id = ? AND status IN ('pending', 'running')`, [

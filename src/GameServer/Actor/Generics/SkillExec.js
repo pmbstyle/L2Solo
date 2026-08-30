@@ -1,4 +1,5 @@
 const World = invoke('GameServer/World/World');
+const ArenaCombatRules = invoke('GameServer/World/ArenaCombatRules');
 
 function canTargetEnemyNpc(npc, data = {}) {
     return npc?.fetchAttackable?.() === true || npc?.fetchIsSummon?.() === true || data.ctrl === true;
@@ -83,6 +84,7 @@ function skillExec(session, actor, data) {
                     actor.attack.remoteHit(session, user, skill);
                 }
                 else if (data.ctrl) {
+                    if (!ArenaCombatRules.canInteract(actor, user)) return;
                     if (utils.isInPeaceZone(actor.fetchLocX(), actor.fetchLocY()) || utils.isInPeaceZone(user.fetchLocX(), user.fetchLocY())) {
                         const ServerResponse = invoke('GameServer/Network/Response');
                         session.dataSendToMe(ServerResponse.speak(actor, { kind: 0, text: "You cannot attack players in a peace zone." }));

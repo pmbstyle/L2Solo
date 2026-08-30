@@ -104,6 +104,8 @@ function receivedHit(session, actor, hit, options = {}) {
     const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
     const victimSession = actor?.session;
     const source = damageSource(session, options);
+    const ArenaCombatRules = invoke('GameServer/World/ArenaCombatRules');
+    if (source && source !== actor && !ArenaCombatRules.canInteract(source, actor)) return;
     const hpDamage = applyCombatPointShield(session, actor, applyTransferPain(session, actor, hit), source);
 
     if (options.wakeSleep !== false) {
@@ -119,7 +121,7 @@ function receivedHit(session, actor, hit, options = {}) {
 
     // Bummer
     if (actor.fetchHp() <= 0) {
-        if (source && source !== actor && !source.fetchKind) {
+        if (source && source !== actor && !source.fetchKind && !ArenaCombatRules.suppressConsequences(source, actor)) {
             const attacker = source;
             const victim = actor;
             const attackerSession = attacker.session || session;

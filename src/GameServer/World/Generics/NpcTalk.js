@@ -12,6 +12,14 @@ function npcTalk(session, npc) {
         title
     };
 
+    // The C4 Arena Manager is a normal warehouse-shaped NPC in the source
+    // datapack, but this server exposes the duel menu through a runtime
+    // service. Keep it ahead of generic warehouse/quest routing.
+    if (Number(npc.fetchSelfId?.()) === 8225) {
+        invoke('GameServer/World/ArenaDuelService').render(session);
+        return;
+    }
+
     const CrumaTowerTeleports = invoke('GameServer/World/C4CrumaTowerTeleports');
     const crumaTowerTeleportHtml = CrumaTowerTeleports.html(npc.fetchSelfId());
     if (crumaTowerTeleportHtml) {

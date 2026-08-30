@@ -268,7 +268,7 @@ function attack(session, actor, summon) {
             return;
         }
 
-        if (target.fetchAttackable?.() !== true) {
+        if (!isValidEnemyTarget(actor, target)) {
             session.dataSendToMe(ServerResponse.actionFailed());
             return;
         }
@@ -392,8 +392,14 @@ function findSummonSkill(summon, skillId) {
     return NpcSkills.forNpc(summon).find((skill) => Number(skill.fetchSelfId()) === Number(skillId)) || null;
 }
 
-function isValidEnemyTarget(target) {
-    return target?.fetchAttackable?.() === true && target?.state?.fetchDead?.() !== true && target?.isDead?.() !== true;
+function isValidEnemyTarget(actor, target) {
+    const ArenaDuelService = invoke('GameServer/World/ArenaDuelService');
+    const duel = ArenaDuelService.duelForActor?.(actor) || ArenaDuelService.duelForActor?.(target);
+    const arenaOpponent = duel?.state === 'FIGHTING'
+        && invoke('GameServer/World/ArenaCombatRules').canInteract(actor, target);
+    return (target?.fetchAttackable?.() === true || arenaOpponent)
+        && target?.state?.fetchDead?.() !== true
+        && target?.isDead?.() !== true;
 }
 
 function resolveSkillTarget(actor, summon, config) {
@@ -405,7 +411,7 @@ function resolveSkillTarget(actor, summon, config) {
                 ? target
                 : null;
         }
-        return isValidEnemyTarget(target) ? target : null;
+        return isValidEnemyTarget(actor, target) ? target : null;
     });
 }
 

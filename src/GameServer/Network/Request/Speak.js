@@ -106,6 +106,11 @@ function consume(session, data) {
     }
 
     if (data.kind === 0) { // TODO: Remove, temp solution
+        const ArenaDuelService = invoke('GameServer/World/ArenaDuelService');
+        if (String(data.text || '').trim().toLowerCase() === '.go') {
+            ArenaDuelService.handleGo(session, data.text);
+            return;
+        }
         const botCommandText = expandBotCommandAlias(data.text);
 
         if (data.text === '.admin') {

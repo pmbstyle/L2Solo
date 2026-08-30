@@ -153,6 +153,9 @@ CREATE TABLE IF NOT EXISTS clan_goal_events (
 );
 CREATE INDEX IF NOT EXISTS clan_goal_events_clan_recent
     ON clan_goal_events(clanId, occurredAt DESC, id DESC);
+CREATE INDEX IF NOT EXISTS clan_goal_events_action_retention
+    ON clan_goal_events(occurredAt, id)
+    WHERE eventType IN ('action_succeeded', 'action_failed', 'action_cancelled');
 
 CREATE TABLE IF NOT EXISTS clan_market_demands (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -252,6 +255,9 @@ CREATE INDEX IF NOT EXISTS clan_actions_due
     ON clan_actions(status, availableAt, priority DESC, id ASC);
 CREATE INDEX IF NOT EXISTS clan_actions_clan_status
     ON clan_actions(clanId, status, updatedAt DESC, id DESC);
+CREATE INDEX IF NOT EXISTS clan_actions_terminal_retention
+    ON clan_actions(resolvedAt, id)
+    WHERE status IN ('succeeded', 'failed', 'cancelled');
 
 CREATE TABLE IF NOT EXISTS clan_crests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

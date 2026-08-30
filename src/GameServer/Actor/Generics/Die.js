@@ -32,7 +32,13 @@ function die(session, actor) {
     actor.state.destructor();
     actor.state.setDead(true);
     session.dataSendToMeAndOthers(ServerResponse.die(actor.fetchId()), actor);
-    if (session?.accountId?.startsWith?.('bot_')) {
+    const ArenaDuelService = invoke('GameServer/World/ArenaDuelService');
+    // ReceivedHit is invoked with the attacker's session, while the actor
+    // being killed owns the authoritative victim session. Arena death must
+    // therefore be routed through actor.session or the player death branch
+    // is missed whenever the ephemeral clone lands the final hit.
+    if (ArenaDuelService.onPlayerDeath?.(actor?.session || session)) return;
+    if (session?.accountId?.startsWith?.('bot_') && session.arenaEphemeral !== true) {
         Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
             botId: actor.fetchId(),
             eventType: 'death',

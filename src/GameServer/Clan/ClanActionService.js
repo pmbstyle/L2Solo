@@ -234,7 +234,7 @@ async function scheduleTitleReview(clan) {
     return queued;
 }
 
-async function scheduleNext(clan, goal, parentAction, result, delayMs = 0) {
+async function scheduleNext(clan, goal, parentAction, delayMs = 0) {
     const type = actionTypeFor(clan, goal);
     if (!type) return { ok: true, scheduled: false, reason: 'goal_completed_or_missing' };
     const delay = Math.max(0, Number(delayMs) || 0);
@@ -249,15 +249,14 @@ async function scheduleNext(clan, goal, parentAction, result, delayMs = 0) {
             parentActionId: Number(parentAction.id),
             goalUpdatedAt: Number(goal.updatedAt) || 0,
             goalType: String(goal.type || ''),
-            plan: String(goal.plan?.kind || ''),
-            result: result && typeof result === 'object' ? result : {}
+            plan: String(goal.plan?.kind || '')
         }
     });
     if (queued.created) metrics.planned += 1;
     return queued;
 }
 
-async function schedulePlanAfterLevelUp(clan, parentAction, result) {
+async function schedulePlanAfterLevelUp(clan, parentAction) {
     const actionKey = `clan:${Number(clan.id)}:after:${Number(parentAction.id)}:goal_plan:level_up`;
     const queued = await Database.enqueueClanAction({
         clanId: clan.id,
@@ -266,15 +265,14 @@ async function schedulePlanAfterLevelUp(clan, parentAction, result) {
         priority: 100,
         payload: {
             parentActionId: Number(parentAction.id),
-            reason: 'level_up',
-            result: result && typeof result === 'object' ? result : {}
+            reason: 'level_up'
         }
     });
     if (queued.created) metrics.planned += 1;
     return queued;
 }
 
-async function schedulePlanAfterMarketMiss(clan, parentAction, result) {
+async function schedulePlanAfterMarketMiss(clan, parentAction) {
     const actionKey = `clan:${Number(clan.id)}:after:${Number(parentAction.id)}:goal_plan:market_replan`;
     const queued = await Database.enqueueClanAction({
         clanId: clan.id,
@@ -283,8 +281,7 @@ async function schedulePlanAfterMarketMiss(clan, parentAction, result) {
         priority: 100,
         payload: {
             parentActionId: Number(parentAction.id),
-            reason: Contracts.REASON_CODES.MARKET_NO_OFFER,
-            result: result && typeof result === 'object' ? result : {}
+            reason: Contracts.REASON_CODES.MARKET_NO_OFFER
         }
     });
     if (queued.created) metrics.planned += 1;
@@ -429,16 +426,16 @@ async function resolveAction(action, options = {}) {
                 // Titles are an auxiliary durable clan action and do not alter
                 // the goal execution chain.
             } else if (clan && advanced) {
-                await schedulePlanAfterLevelUp(clan, action, result);
+                await schedulePlanAfterLevelUp(clan, action);
             } else if (clan && playerMarketWait) {
-                await scheduleNext(clan, goal, action, result, Config.actionRetryMs);
+                await scheduleNext(clan, goal, action, Config.actionRetryMs);
                 metrics.retried += 1;
             } else if (clan && marketMiss) {
-                await schedulePlanAfterMarketMiss(clan, action, result);
+                await schedulePlanAfterMarketMiss(clan, action);
             } else if (clan && goal && !(String(action.actionType) === ACTION_TYPES.PLAN && goal.status === 'completed')) {
                 const productive = ok && workDone(String(action.actionType), result);
                 const delay = reviewDelayFor(String(action.actionType), goal, result, ok, productive);
-                await scheduleNext(clan, goal, action, result, delay);
+                await scheduleNext(clan, goal, action, delay);
                 if (delay > 0) metrics.retried += 1;
             }
         } finally {
