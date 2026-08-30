@@ -277,6 +277,62 @@ const partyBlockedFallback = GearAcquisitionPlanner.planFor(partyBlockedState, {
 });
 assert.strictEqual(partyBlockedFallback.strategy, 'market',
     'an unavailable party route must use the exact market recovery when it is available');
+const capacityMarketFallback = GearAcquisitionPlanner.replacementPlanFor(
+    partyBlockedState,
+    partyBlockedPlan,
+    [],
+    {
+        occupancy: {},
+        findMarketOffer: (item) => Number(item.selfId) === Number(failedTarget.selfId)
+            ? { selfId: item.selfId, price: 999999, town: 'Gludio', sourceType: 'npc' }
+            : null
+    }
+);
+assert.strictEqual(capacityMarketFallback.strategy, 'market',
+    'a full farming route must preserve the same equipment target when it is available on the market');
+assert.strictEqual(capacityMarketFallback.target.selfId, failedTarget.selfId,
+    'capacity fallback must try the same target on the market before selecting a different item');
+
+const excludedSourcePlan = {
+    status: 'active',
+    strategy: 'direct_drop',
+    target: { selfId: 1869, name: 'Iron Ore', slot: 1 },
+    next: { spotId: stoneGolemSpot.id, npcId: 16, itemId: 1869 }
+};
+const excludedSourceReplacement = GearAcquisitionPlanner.replacementPlanFor(
+    { ...failedDropState, level: 19 },
+    excludedSourcePlan,
+    [stoneGolemSpot],
+    {
+        occupancy: {},
+        excludedTargetIds: [1869],
+        findMarketOffer: () => null
+    }
+);
+assert.notStrictEqual(excludedSourceReplacement?.target?.selfId, 1869,
+    'a failure-excluded target must not reuse its still-available farming source');
+
+const finalizedReplacement = GearAcquisitionPlanner.finalizePlan(
+    failedDropState,
+    failedDropPlan,
+    {
+        status: 'active',
+        strategy: 'direct_drop',
+        target: { selfId: 1869, name: 'Iron Ore', slot: 1 },
+        next: { spotId: stoneGolemSpot.id, npcId: 16, itemId: 1869 }
+    },
+    failedContext,
+    20 * 60 * 1000
+);
+assert.strictEqual(finalizedReplacement.startedAt, 20 * 60 * 1000,
+    'a replacement target must receive a fresh lifecycle timestamp');
+assert.strictEqual(finalizedReplacement.plannedForLevel, failedDropState.level,
+    'a replacement target must record the level for future stale-plan checks');
+assert.deepStrictEqual(finalizedReplacement.targetProgress, {
+    npcId: 16,
+    resolves: 0,
+    targetKills: 0
+}, 'a replacement direct-drop route must receive a failure-detection baseline');
 
 const craftBlockedPlan = {
     ...partyBlockedPlan,
@@ -893,6 +949,137 @@ assert.strictEqual(
     null,
     'an equipment objective must not keep selecting a drop source after its capacity is exhausted'
 );
+assert.strictEqual(
+    GearAcquisitionPlanner.bestSourceForState(
+        [availableGearSource],
+        { ...gearedLevel30, characterId: 7005 },
+        { occupancy: { '16_-1': { reservedCount: 9, count: 1, capacity: 10 } }, capacityUnits: 2 }
+    ),
+    null,
+    'a party-sized equipment decision must require enough free slots for the entire party'
+);
+
+const originalItemsForAvailabilityFallback = DataCache.items;
+const originalNpcsForAvailabilityFallback = DataCache.npcs;
+const originalRewardsForAvailabilityFallback = DataCache.npcRewards;
+try {
+    const ownedAWeapon = {
+        selfId: 990000,
+        template: { name: 'Availability Test Weapon', kind: 'Weapon.Sword', price: 1 },
+        etc: { rank: 'a', slot: 7 },
+        stats: { pAtk: 100, mAtk: 100 }
+    };
+    const fallbackJewels = Array.from({ length: 6 }, (_, index) => ({
+        selfId: 990001 + index,
+        template: { name: `Availability Jewel ${index + 1}`, kind: 'Armor.Jewel', price: index + 1 },
+        etc: { rank: 'a', slot: 3 },
+        stats: { mDef: 20 + index }
+    }));
+    const fallbackNpcId = 990100;
+    const fallbackSpot = {
+        id: 'availability-fallback-spot',
+        avgLevel: 60,
+        capacity: 10,
+        npcEntries: [{ selfId: fallbackNpcId, name: 'Availability Dropper', count: 4 }]
+    };
+    DataCache.items = [...originalItemsForAvailabilityFallback, ownedAWeapon, ...fallbackJewels];
+    DataCache.npcs = [...originalNpcsForAvailabilityFallback, {
+        selfId: fallbackNpcId,
+        template: { name: 'Availability Dropper', level: 60, kind: 'Monster' }
+    }];
+    DataCache.npcRewards = [...originalRewardsForAvailabilityFallback, {
+        selfId: fallbackNpcId,
+        template: { name: 'Availability Dropper' },
+        rewards: [{
+            overall: 100,
+            items: [{ selfId: fallbackJewels[3].selfId, min: 1, max: 1, chance: 100 }]
+        }],
+        spoils: []
+    }];
+    const fallbackTarget = GearAcquisitionPlanner.preferredTarget({
+        characterId: 990200,
+        level: 61,
+        stats: { classId: 17, role: 'buffer' },
+        inventory: {
+            [ownedAWeapon.selfId]: { selfId: ownedAWeapon.selfId, amount: 1, equipped: true, slot: 7 }
+        }
+    }, {
+        spots: [fallbackSpot],
+        occupancy: { [fallbackSpot.id]: { reservedCount: 0, capacity: 10 } },
+        excludedTargetIds: originalItemsForAvailabilityFallback.map((item) => Number(item.selfId))
+    });
+    assert.strictEqual(fallbackTarget?.item?.selfId, fallbackJewels[3].selfId,
+        'live planning must inspect the next cheap batch when the first three equipment targets have no route');
+
+    const unavailableWeapon = {
+        selfId: 990020,
+        template: { name: 'Unavailable Test Weapon', kind: 'Weapon.Sword', price: 1 },
+        etc: { rank: 'a', slot: 7 },
+        stats: { pAtk: 120, mAtk: 80 }
+    };
+    DataCache.items = [...originalItemsForAvailabilityFallback, unavailableWeapon];
+    DataCache.npcRewards = originalRewardsForAvailabilityFallback;
+    const unavailableState = {
+        characterId: 990201,
+        level: 61,
+        stats: { classId: 0, role: 'dps' },
+        inventory: {}
+    };
+    const unavailableOptions = {
+        spots: [fallbackSpot],
+        occupancy: { [fallbackSpot.id]: { reservedCount: 0, capacity: 10 } },
+        excludedTargetIds: originalItemsForAvailabilityFallback.map((item) => Number(item.selfId))
+    };
+    assert.strictEqual(
+        GearAcquisitionPlanner.preferredTarget(unavailableState, unavailableOptions),
+        null,
+        'live planning must not return an equipment target with no farm, craft, or market route'
+    );
+    assert.strictEqual(
+        GearAcquisitionPlanner.planFor(unavailableState, unavailableOptions).status,
+        'complete',
+        'an exhausted live target set must let the bot continue leveling instead of persisting a blocked plan'
+    );
+    assert.strictEqual(
+        GearAcquisitionPlanner.replacementPlanFor(unavailableState, {
+            status: 'blocked',
+            strategy: 'craft',
+            target: { selfId: unavailableWeapon.selfId, name: unavailableWeapon.template.name, slot: 7 },
+            next: null
+        }, [fallbackSpot], unavailableOptions).status,
+        'complete',
+        'replacement planning must never persist another unreachable blocked target'
+    );
+} finally {
+    DataCache.items = originalItemsForAvailabilityFallback;
+    DataCache.npcs = originalNpcsForAvailabilityFallback;
+    DataCache.npcRewards = originalRewardsForAvailabilityFallback;
+}
+
+assert.strictEqual(
+    GearAcquisitionPlanner.isRealCatalogItem({ selfId: 990021, template: { name: '_' } }),
+    false,
+    'underscore-only datapack placeholders must never become equipment goals'
+);
+
+const clanOwnedRoute = {
+    status: 'active',
+    strategy: 'direct_drop',
+    target: { selfId: 9101, name: 'Clan Blade', slot: 7 },
+    next: { spotId: crowdedGearSource.spotId, npcId: 450, itemId: 9101 },
+    clanGoal: { clanId: 77, goalKey: 'equipment:77:9101', beneficiaryId: 7001 }
+};
+const reroutedClanPlan = GearAcquisitionPlanner.retargetPlanSource(
+    { ...gearedLevel30, characterId: 7001 },
+    clanOwnedRoute,
+    { ...availableGearSource, npcId: 451, npcName: 'Alternate Dropper', kind: 'drop' }
+);
+assert.strictEqual(reroutedClanPlan.target.selfId, clanOwnedRoute.target.selfId,
+    'same-item capacity fallback must preserve the equipment target');
+assert.strictEqual(reroutedClanPlan.clanGoal.goalKey, clanOwnedRoute.clanGoal.goalKey,
+    'same-item capacity fallback must preserve clan ownership');
+assert.strictEqual(reroutedClanPlan.next.spotId, availableGearSource.spotId,
+    'same-item capacity fallback must replace only the farming route');
 assert.strictEqual(
     GearAcquisitionPlanner.bestSourceForState(
         [crowdedGearSource, availableGearSource],

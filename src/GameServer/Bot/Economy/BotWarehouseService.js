@@ -6,6 +6,7 @@ const ColdSafeEnchantService = invoke('GameServer/Bot/Economy/ColdSafeEnchantSer
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const craftScanAt = new Map();
+const depositQueues = new Map();
 let enchantReleaseCursor = 0;
 const MAX_GEAR_COPIES_PER_TYPE = 2;
 let templateSource = null;
@@ -13,6 +14,16 @@ let templateIndex = new Map();
 
 function isLegacyMainState(state) {
     return String(state?.simulation?.ownerId || 'legacy_main') === 'legacy_main';
+}
+
+function serializeDeposit(characterId, work) {
+    const key = Number(characterId);
+    const previous = depositQueues.get(key) || Promise.resolve();
+    const next = previous.catch(() => {}).then(work);
+    depositQueues.set(key, next);
+    return next.finally(() => {
+        if (depositQueues.get(key) === next) depositQueues.delete(key);
+    });
 }
 
 function itemData(item) {
@@ -97,7 +108,7 @@ async function learnActorRecipes(actor, state = null, session = null) {
     return learned;
 }
 
-async function depositActor(actor, state = null, session = null) {
+async function depositActorUnlocked(actor, state = null, session = null) {
     const backpack = actor?.backpack;
     if (!backpack || !actor?.fetchId) return { count: 0, items: [] };
 
@@ -118,10 +129,12 @@ async function depositActor(actor, state = null, session = null) {
     return { count: stored.reduce((sum, item) => sum + item.amount, 0), items: stored, learned };
 }
 
-async function depositCold(state) {
-    const candidates = ItemDisposition.warehouseCandidates(state);
-    if (!state || !isLegacyMainState(state) || !candidates.length) return { state, count: 0, items: [] };
+function depositActor(actor, state = null, session = null) {
+    if (!actor?.backpack || !actor?.fetchId) return Promise.resolve({ count: 0, items: [] });
+    return serializeDeposit(actor.fetchId(), () => depositActorUnlocked(actor, state, session));
+}
 
+async function depositColdUnlocked(state, candidates) {
     const [rows, warehouseRows] = await Promise.all([
         Database.fetchItems(state.characterId),
         Database.fetchWarehouseItems(state.characterId)
@@ -178,6 +191,14 @@ async function depositCold(state) {
         items: stored,
         overflow
     }));
+}
+
+function depositCold(state) {
+    const candidates = ItemDisposition.warehouseCandidates(state);
+    if (!state || !isLegacyMainState(state) || !candidates.length) {
+        return Promise.resolve({ state, count: 0, items: [] });
+    }
+    return serializeDeposit(state.characterId, () => depositColdUnlocked(state, candidates));
 }
 
 function templateFor(selfId) {

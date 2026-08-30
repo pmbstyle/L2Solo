@@ -62,7 +62,8 @@ function isRealCatalogItem(item = {}) {
     // otherwise present.
     return Number.isInteger(selfId) && selfId > 0
         && name.length > 0
-        && name !== '0';
+        && name !== '0'
+        && !/^_+$/.test(name);
 }
 
 function gradeForLevel(level) {
@@ -285,17 +286,23 @@ function candidateEffort(candidate, state, options = {}) {
     if (!candidate.recipe) return Math.min(directEffort, marketEffortValue);
 
     const allowedRecipeIds = options.allowedRecipeIds || stationRecipeIds();
+    let missingRoute = false;
     const materialEffort = missingMaterials(candidate.recipe, state.inventory)
         .filter((material) => material.missing > 0 && !CraftSupplementMaterials.isSupplementalMaterial(material.selfId))
         .reduce((sum, material) => {
             const source = farmSourceForMaterial(material.selfId, state, spots, allowedRecipeIds, material.missing, new Set(), options);
-            return sum + (source ? material.missing / Math.max(Number(source.expectedYield || 0), 0.000001) : 1000000);
+            if (!source) {
+                missingRoute = true;
+                return sum;
+            }
+            return sum + material.missing / Math.max(Number(source.expectedYield || 0), 0.000001);
         }, 8);
-    return Math.min(directEffort, marketEffortValue, materialEffort);
+    return Math.min(directEffort, marketEffortValue, missingRoute ? Infinity : materialEffort);
 }
 
 function shortlistCandidates(candidates = [], options = {}) {
     if (options.recipeId) return candidates;
+    const offset = Math.max(0, Math.floor(Number(options.shortlistOffset || 0)));
     const bySlot = candidates.reduce((groups, candidate) => {
         const slot = WEAPON_SLOTS.has(Number(candidate.item.etc?.slot || 0))
             ? 'weapon'
@@ -311,7 +318,7 @@ function shortlistCandidates(candidates = [], options = {}) {
     return Object.values(bySlot).flatMap((entries) => entries
         .sort((left, right) => Number(left.item.template?.price || 0) - Number(right.item.template?.price || 0)
             || Number(left.item.selfId) - Number(right.item.selfId))
-        .slice(0, 3));
+        .slice(offset, offset + 3));
 }
 
 function progressionPriceCap(rank, level) {
@@ -325,12 +332,14 @@ function progressionPriceCap(rank, level) {
     return caps[String(rank || '').toLowerCase()] ?? Infinity;
 }
 
-function opportunityScore(candidate, state, options = {}) {
+function opportunityScore(candidate, state, options = {}, precomputedEffort = undefined) {
     const role = roleFor(state);
     const classId = classIdFor(state);
     const ownedItems = inventoryItems(state.inventory);
     const improvement = Math.max(1, itemScore(candidate.item, role, classId) - currentSlotScore(candidate.item, ownedItems, role, classId) + 2);
-    const effort = candidateEffort(candidate, state, options);
+    const effort = precomputedEffort === undefined
+        ? candidateEffort(candidate, state, options)
+        : precomputedEffort;
     // The fallback makes an unobservable route deterministic, while real
     // market/drop/craft effort always wins over template price.
     if (!Number.isFinite(effort) && !candidate.recipe) return 0;
@@ -518,16 +527,35 @@ function preferredTarget(state = {}, options = {}) {
     const effortOptions = options.allowedRecipeIds
         ? options
         : { ...options, allowedRecipeIds: stationRecipeIds() };
-    const candidates = shortlistCandidates(affordable.length ? affordable : progressionCandidates, options)
-        .map((candidate) => ({ candidate, score: opportunityScore(candidate, state, effortOptions) }))
-        .sort((a, b) => {
+    const candidatePool = affordable.length ? affordable : progressionCandidates;
+    const liveAvailability = !!options.occupancy && (options.spots || []).length > 0;
+    const candidates = [];
+    // Three candidates per slot remain the normal cold-path budget. Only when
+    // that entire batch has no live route do we inspect the next nearby batch.
+    for (let offset = 0; ; offset += 3) {
+        const batch = shortlistCandidates(candidatePool, { ...options, shortlistOffset: offset });
+        if (!batch.length) break;
+        candidates.push(...batch.map((candidate) => {
+            const effort = candidateEffort(candidate, state, effortOptions);
+            return { candidate, effort, score: opportunityScore(candidate, state, effortOptions, effort) };
+        }));
+        if (options.recipeId || !liveAvailability || candidates.some((entry) => Number.isFinite(entry.effort))) break;
+    }
+    candidates.sort((a, b) => {
             const scoreDelta = b.score - a.score;
             if (Math.abs(scoreDelta) > 0.000001) return scoreDelta;
             return slotPriority(b.candidate.item) - slotPriority(a.candidate.item)
                 || Number(a.candidate.item.template?.price || 0) - Number(b.candidate.item.template?.price || 0)
                 || Number(a.candidate.item.selfId) - Number(b.candidate.item.selfId);
         });
-    return candidates[0]?.candidate || null;
+    const available = liveAvailability
+        ? candidates.filter((entry) => Number.isFinite(entry.effort))
+        : candidates;
+    // Live planning must never turn an exhausted shortlist into a durable
+    // blocked goal. Returning null preserves the recovery metadata while the
+    // bot continues its normal leveling route and retries after the failed
+    // target's cooldown expires.
+    return available[0]?.candidate || null;
 }
 
 function preferredDropTarget(state = {}, options = {}) {
@@ -535,11 +563,13 @@ function preferredDropTarget(state = {}, options = {}) {
     const classId = classIdFor(state);
     const owned = inventoryMap(state.inventory);
     const excluded = excludedTargetIds(options);
-    return (DataCache.items || [])
+    const candidates = (DataCache.items || [])
         .filter((item) => suitable(item, state, role, 'none'))
         .filter((item) => !excluded.has(Number(item.selfId)))
         .filter((item) => Number(owned.get(Number(item.selfId)) || 0) < 1)
-        .sort((a, b) => itemScore(b, role, classId) - itemScore(a, role, classId) || Number(b.template?.price || 0) - Number(a.template?.price || 0))[0] || null;
+        .sort((a, b) => itemScore(b, role, classId) - itemScore(a, role, classId) || Number(b.template?.price || 0) - Number(a.template?.price || 0));
+    if (!options.occupancy || !(options.spots || []).length) return candidates[0] || null;
+    return candidates.find((item) => targetHasAvailableRoute(item, state, options)) || null;
 }
 
 function preferredNoGradeTarget(state = {}, options = {}) {
@@ -550,7 +580,7 @@ function preferredNoGradeTarget(state = {}, options = {}) {
     const uniqueItems = new Set();
     const excluded = excludedTargetIds(options);
 
-    return planned.items
+    const candidates = planned.items
         .map((desired) => (DataCache.items || []).find((item) => Number(item.selfId) === Number(desired.selfId)))
         .filter(isRealCatalogItem)
         .filter((item) => !excluded.has(Number(item.selfId)))
@@ -560,7 +590,9 @@ function preferredNoGradeTarget(state = {}, options = {}) {
             return isSlotUpgrade(item, ownedItems, role, classId);
         })
         .sort((a, b) => GearLifecycle.slotPriority(b.etc?.slot) - GearLifecycle.slotPriority(a.etc?.slot)
-            || Number(a.template?.price || 0) - Number(b.template?.price || 0))[0] || null;
+            || Number(a.template?.price || 0) - Number(b.template?.price || 0));
+    if (!options.occupancy || !(options.spots || []).length) return candidates[0] || null;
+    return candidates.find((item) => targetHasAvailableRoute(item, state, options)) || null;
 }
 
 function marketOfferForTarget(target, state = {}, options = {}) {
@@ -1110,13 +1142,42 @@ function sourceStateKey(state = {}) {
 
 function sourceHasCapacity(source, state, options = {}) {
     const entry = sourceOccupancyEntry(source, options.occupancy);
-    if (!entry) return true;
-    const count = typeof entry === 'object' ? Number(entry.count || 0) : Number(entry || 0);
+    const units = Math.max(1, Math.floor(Number(options.capacityUnits || 1)));
+    if (!entry) {
+        const capacity = Number(source.capacity || LevelingRoutes.capacityForSpot(source));
+        return units <= Math.max(1, capacity);
+    }
+    const reservationKey = String(options.reservationKey || '');
+    const maxReservationGroups = Math.max(0, Math.floor(Number(options.maxReservationGroups || 0)));
+    if (reservationKey && maxReservationGroups > 0) {
+        const reservationKeys = entry.reservationKeys instanceof Set ? entry.reservationKeys : new Set();
+        const retainedReservationKeys = entry.retainedReservationKeys instanceof Set
+            ? entry.retainedReservationKeys
+            : reservationKeys;
+        if (reservationKeys.has(reservationKey)) {
+            if (!retainedReservationKeys.has(reservationKey)) return false;
+        } else if (retainedReservationKeys.size >= maxReservationGroups) {
+            return false;
+        }
+    }
+    const count = typeof entry === 'object'
+        ? Number(entry.reservedCount ?? entry.count ?? 0)
+        : Number(entry || 0);
     const capacity = typeof entry === 'object' && Number(entry.capacity || 0) > 0
         ? Number(entry.capacity)
         : Number(source.capacity || LevelingRoutes.capacityForSpot(source));
     if (entry.retained instanceof Set && entry.retained.has(sourceStateKey(state))) return true;
-    return count < Math.max(1, capacity);
+    return count + units <= Math.max(1, capacity);
+}
+
+function targetHasAvailableRoute(target, state = {}, options = {}) {
+    if (!target) return false;
+    if (marketOfferForTarget(target, state, options)) return true;
+    return !!bestSourceForState(
+        sourceForItem(target.selfId, options.spots || [], state, options),
+        state,
+        options
+    );
 }
 
 function sourceIsExcluded(source, options = {}) {
@@ -1157,6 +1218,72 @@ function safeFallbackForPlan(state = {}, plan = {}, spots = [], options = {}) {
         : Number(plan.next?.itemId || 0);
     if (!itemId) return null;
     return bestSourceForState(sourceForItem(itemId, spots, state, options), state, options);
+}
+
+function retargetPlanSource(state = {}, plan = {}, source = null) {
+    if (!source || !plan || !['direct_drop', 'craft'].includes(plan.strategy)) return plan;
+    const itemId = itemIdForPlan(plan);
+    if (!itemId) return plan;
+    if (String(plan.next?.spotId || '') === String(source.spotId || '')
+        && Number(plan.next?.npcId || 0) === Number(source.npcId || 0)) return plan;
+    const assessment = partyNeedAssessmentForSource(state, source);
+    const next = {
+        spotId: source.spotId,
+        npcId: Number(source.npcId || 0) || null,
+        npcName: source.npcName || null,
+        kind: source.kind || 'drop',
+        itemId
+    };
+    const materials = plan.strategy === 'craft'
+        ? (plan.materials || []).map((material) => Number(material.selfId) === itemId
+            ? { ...material, sourceSpotId: source.spotId }
+            : material)
+        : plan.materials;
+    const current = targetCombatCounter(state, source.npcId);
+    return {
+        ...plan,
+        next,
+        materials,
+        soloSafe: assessment.need === 'solo_ok',
+        partyNeed: assessment.need,
+        partyNeedReason: assessment.reason,
+        requiresParty: assessment.need === 'required',
+        ...(plan.strategy === 'direct_drop' ? {
+            expectedKills: Math.ceil(1 / Math.max(Number(source.expectedYield || 0), 0.000001)),
+            targetProgress: {
+                npcId: Number(source.npcId || 0),
+                resolves: current.resolves,
+                targetKills: current.targetKills
+            }
+        } : {})
+    };
+}
+
+function replacementPlanFor(state = {}, previousPlan = {}, spots = [], options = {}) {
+    const targetId = Number(previousPlan?.target?.selfId || 0);
+    const excluded = new Set((options.excludedTargetIds || []).map(Number).filter(Boolean));
+    if (!excluded.has(targetId)) {
+        const source = bestSourceForPlan(state, previousPlan, spots, options);
+        if (source) return retargetPlanSource(state, previousPlan, source);
+    }
+    const market = targetId ? marketPlanForTarget(state, targetId, options) : null;
+    if (market) return market;
+    if (targetId) excluded.add(targetId);
+    const planner = module.exports.planFor || planFor;
+    const replacement = planner(state, {
+        ...options,
+        spots,
+        excludedTargetIds: [...excluded]
+    });
+    if (replacement?.status !== 'blocked') return replacement;
+    return {
+        status: 'complete',
+        reason: 'no_available_equipment_alternative',
+        strategy: 'none',
+        recipeId: null,
+        materials: [],
+        next: null
+    };
 }
 
 function sourceIndexFor(spots = []) {
@@ -1429,7 +1556,7 @@ function planFor(state = {}, options = {}) {
     const directAssessment = direct ? partyNeedAssessmentForSource(state, direct) : null;
     const soloSafe = direct && directAssessment.need === 'solo_ok';
     const strategy = buy ? 'market'
-        : direct && (!target.recipe || soloSafe && directKills <= craftKills * 0.8) ? 'direct_drop'
+        : direct && (!target.recipe || !Number.isFinite(craftKills) || soloSafe && directKills <= craftKills * 0.8) ? 'direct_drop'
             : target.recipe ? 'craft' : 'blocked';
     const next = strategy === 'direct_drop'
         ? direct && { ...direct, itemId: Number(target.item.selfId) }
@@ -1495,4 +1622,4 @@ function sameObjective(left, right) {
     );
 }
 
-module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, replanContextFor, isBotEligibleSourceNpcId, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
+module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, replanContextFor, isBotEligibleSourceNpcId, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };

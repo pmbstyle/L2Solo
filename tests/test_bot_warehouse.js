@@ -120,6 +120,47 @@ async function run() {
     assert.strictEqual(ownedDeposit.count, 0, 'cold warehouse deposit must defer while the logical owner holds the row');
     assert.strictEqual(calls.length, depositCalls, 'deferred warehouse deposit must not mutate inventory rows');
 
+    const beforeConcurrentFetchItems = Database.fetchItems;
+    const beforeConcurrentFetchWarehouseItems = Database.fetchWarehouseItems;
+    const beforeConcurrentTransfer = Database.transferInventoryToWarehouse;
+    let physicalMaterial = 20;
+    let activeDeposits = 0;
+    let maxActiveDeposits = 0;
+    let transferAttempts = 0;
+    Database.fetchItems = () => Promise.resolve(physicalMaterial > 0
+        ? [{ id: 38, selfId: 1870, amount: physicalMaterial, equipped: false }]
+        : []);
+    Database.fetchWarehouseItems = () => Promise.resolve([]);
+    Database.transferInventoryToWarehouse = async (_characterId, item) => {
+        transferAttempts += 1;
+        activeDeposits += 1;
+        maxActiveDeposits = Math.max(maxActiveDeposits, activeDeposits);
+        await new Promise((resolve) => setImmediate(resolve));
+        try {
+            if (physicalMaterial < item.amount) throw new Error('inventory item changed');
+            physicalMaterial -= item.amount;
+            return { inventoryAmount: physicalMaterial, warehouseAmount: item.amount };
+        } finally {
+            activeDeposits -= 1;
+        }
+    };
+    const concurrentState = {
+        characterId: 57,
+        inventory: { 1870: { ...material } },
+        stats: {}
+    };
+    const concurrentDeposits = await Promise.all([
+        BotWarehouse.depositCold(concurrentState),
+        BotWarehouse.depositCold(concurrentState)
+    ]);
+    assert.deepStrictEqual(concurrentDeposits.map((entry) => entry.count).sort((a, b) => a - b), [0, 20]);
+    assert.strictEqual(transferAttempts, 1,
+        'the queued retry must refresh physical inventory instead of transferring the stale row again');
+    assert.strictEqual(maxActiveDeposits, 1, 'warehouse deposits for one character must be serialized');
+    Database.fetchItems = beforeConcurrentFetchItems;
+    Database.fetchWarehouseItems = beforeConcurrentFetchWarehouseItems;
+    Database.transferInventoryToWarehouse = beforeConcurrentTransfer;
+
     const liveItem = (id, item, equipped = false) => ({
         id,
         ...item,

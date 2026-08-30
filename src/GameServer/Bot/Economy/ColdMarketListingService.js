@@ -922,9 +922,12 @@ function resolve(state, timestamp = Date.now()) {
     const isActive = hasStock && Number(store.expiresAt || 0) > timestamp;
     if (isActive) {
         if (Number(store.nextReviewAt || 0) <= timestamp) {
-            return revalidateListing(state, timestamp).then((result) => (
-                result.closed ? result : resolve(result.state, timestamp)
-            ));
+            // Revalidation is the maintenance action for this pass. Do not
+            // recursively resolve the returned snapshot: an ownership race or
+            // stale persisted deadline can otherwise keep the promise chain
+            // growing until V8 reports "Invalid string length". A still-due
+            // snapshot is safe to retry in the next bounded maintenance pass.
+            return revalidateListing(state, timestamp);
         }
         const targetTownName = targetMarketTownName(state, store.items || []);
         if (store.town !== targetTownName) {

@@ -113,19 +113,24 @@ Database.init();
         amount: 1,
         enchant: 4,
         equipped: false,
-        slot: 0
+        slot: 0,
+        petData: { hunger: 42 }
     });
+    const swordSource = (await Database.fetchItems(character.id)).find((item) => Number(item.id) === Number(sword.insertId));
     const deposited = await Database.transferInventoryToWarehouse(character.id, {
         id: sword.insertId,
         selfId: 1,
         name: 'Short Sword',
         amount: 1,
         enchant: 99,
-        stackable: false
+        stackable: false,
+        petData: swordSource.petData
     });
     assert.strictEqual(deposited.enchant, 4, 'warehouse deposit must return the persisted source enchant');
     const depositedRow = (await Database.fetchWarehouseItems(character.id)).find((item) => Number(item.id) === Number(deposited.warehouseId));
     assert.strictEqual(Number(depositedRow.enchant), 4, 'warehouse deposit must persist the source enchant instead of a stale caller value');
+    assert.strictEqual(depositedRow.petData, JSON.stringify({ hunger: 42 }),
+        'warehouse deposit must preserve an already-serialized pet payload without adding an escaping layer');
 
     const withdrawn = await Database.transferWarehouseToInventory(character.id, {
         id: deposited.warehouseId,
@@ -138,6 +143,19 @@ Database.init();
     assert.strictEqual(withdrawn.enchant, 4, 'warehouse withdraw must return the persisted source enchant');
     const restoredSword = (await Database.fetchItems(character.id)).find((item) => Number(item.id) === Number(withdrawn.inventoryId));
     assert.strictEqual(Number(restoredSword.enchant), 4, 'warehouse withdraw must persist the source enchant instead of a stale caller value');
+    assert.strictEqual(restoredSword.petData, JSON.stringify({ hunger: 42 }));
+
+    const redeposited = await Database.transferInventoryToWarehouse(character.id, {
+        id: restoredSword.id,
+        selfId: restoredSword.selfId,
+        name: restoredSword.name,
+        amount: 1,
+        stackable: false,
+        petData: restoredSword.petData
+    });
+    const redepositedRow = (await Database.fetchWarehouseItems(character.id)).find((item) => Number(item.id) === Number(redeposited.warehouseId));
+    assert.strictEqual(redepositedRow.petData, JSON.stringify({ hunger: 42 }),
+        'repeated inventory and warehouse round trips must keep pet metadata size stable');
 
     console.log('Cold inventory paired-jewellery checks passed');
 })().catch((error) => {

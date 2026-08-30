@@ -2103,7 +2103,13 @@ const PopulationService = {
                 }
                 let nextPlan;
                 try {
-                    nextPlan = GearAcquisitionPlanner.planFor(member, { spots, occupancy });
+                    const replacePreviousPlan = previousPlan?.status === 'blocked'
+                        || (previousPlan?.status === 'active'
+                            && ['direct_drop', 'craft'].includes(previousPlan.strategy)
+                            && previousPlan.next?.spotId);
+                    nextPlan = replacePreviousPlan
+                        ? GearAcquisitionPlanner.replacementPlanFor(member, previousPlan, spots, { occupancy })
+                        : GearAcquisitionPlanner.planFor(member, { spots, occupancy });
                 } catch (err) {
                     utils.infoWarn('BotPopulation', 'party requirement refresh failed for %s: %s', member.name, err.message);
                     continue;
@@ -3073,24 +3079,45 @@ const PopulationService = {
                 spots,
                 { occupancy }
             );
-            if (!availableSource || String(availableSource.spotId) !== String(acquisitionPlan.next.spotId)) {
-                acquisitionPlan = GearAcquisitionPlanner.planFor(state, {
+            if (availableSource) {
+                acquisitionPlan = GearAcquisitionPlanner.retargetPlanSource(state, acquisitionPlan, availableSource);
+            } else if (!GearAcquisitionPlanner.clanGoalPlanLocked(state, acquisitionPlan)) {
+                const replacement = GearAcquisitionPlanner.replacementPlanFor(
+                    state,
+                    acquisitionPlan,
                     spots,
-                    occupancy,
-                    ...replanContext
-                });
+                    { occupancy, ...replanContext }
+                );
+                acquisitionPlan = GearAcquisitionPlanner.finalizePlan(
+                    state,
+                    previousPlan,
+                    replacement,
+                    replanContext,
+                    startedAt
+                );
             }
         }
         if (!acquisitionPlan) {
+            const previousFarmPlan = previousPlan?.status === 'active'
+                && ['direct_drop', 'craft'].includes(previousPlan.strategy)
+                && previousPlan.next?.spotId;
+            const previousAvailabilitySource = previousFarmPlan
+                ? GearAcquisitionPlanner.bestSourceForPlan(state, previousPlan, spots, { occupancy })
+                : null;
             const reusablePartyRequest = !state.party?.partyId
                 && previousPlan?.next
+                && (!previousFarmPlan || !!previousAvailabilitySource)
                 && replanContext.routeCurrent
                 && !replanContext.failure
                 && state.stats?.partyRequest?.status === 'open'
                 && Number(state.stats.partyRequest.reviewAt || 0) > startedAt;
-            const upgradedPlan = reusablePartyRequest
-                ? previousPlan
-                : GearAcquisitionPlanner.planFor(state, { spots, occupancy, ...replanContext });
+            const upgradedPlan = previousAvailabilitySource
+                ? GearAcquisitionPlanner.retargetPlanSource(state, previousPlan, previousAvailabilitySource)
+                : previousFarmPlan && !GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan)
+                    ? GearAcquisitionPlanner.replacementPlanFor(state, previousPlan, spots, { occupancy, ...replanContext })
+                    : reusablePartyRequest
+                        ? previousPlan
+                        : GearAcquisitionPlanner.planFor(state, { spots, occupancy, ...replanContext });
             const previousRefresh = previousPlan?.recipeId && !reusablePartyRequest
                 ? GearAcquisitionPlanner.planFor(state, { spots, occupancy, recipeId: previousPlan.recipeId, ...replanContext })
                 : null;

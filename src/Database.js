@@ -794,6 +794,20 @@ function applySchemaMigrations() {
                 ON clan_orders(clanId) WHERE status IN ('active', 'paused', 'blocked');
             CREATE INDEX IF NOT EXISTS clan_orders_clan_recent
                 ON clan_orders(clanId, updatedAt DESC, id DESC);
+        `)],
+        [28, () => connection.exec(`
+            -- Older warehouse transfers serialized the already-serialized
+            -- empty pet payload again on every round trip. Ordinary items can
+            -- therefore carry exponentially escaped variants of {}. Real pet
+            -- payloads are non-empty JSON objects and contain a key separator.
+            UPDATE items
+            SET petData = NULL
+            WHERE petData IS NOT NULL
+              AND (length(petData) > 1048576 OR instr(petData, ':') = 0);
+            UPDATE warehouse_items
+            SET petData = NULL
+            WHERE petData IS NOT NULL
+              AND (length(petData) > 1048576 OR instr(petData, ':') = 0);
         `)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
@@ -2547,7 +2561,10 @@ const Database = {
             const sourceEnchant = Math.max(0, Number(source.enchant) || 0);
             const target = item.stackable ? one('SELECT id, amount FROM warehouse_items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, item.selfId]) : null;
             const warehouseAmount = Number(target?.amount || 0) + Number(item.amount);
-            const warehouseId = target ? target.id : write('INSERT INTO warehouse_items (selfId, name, amount, enchant, petData, characterId) VALUES (?, ?, ?, ?, ?, ?)', [item.selfId, item.name || '', item.amount, sourceEnchant, item.petData ? JSON.stringify(item.petData) : null, characterId]).insertId;
+            const petData = item.petData
+                ? (typeof item.petData === 'string' ? item.petData : JSON.stringify(item.petData))
+                : null;
+            const warehouseId = target ? target.id : write('INSERT INTO warehouse_items (selfId, name, amount, enchant, petData, characterId) VALUES (?, ?, ?, ?, ?, ?)', [item.selfId, item.name || '', item.amount, sourceEnchant, petData, characterId]).insertId;
             if (target) write('UPDATE warehouse_items SET amount = ? WHERE id = ? AND characterId = ?', [warehouseAmount, warehouseId, characterId]);
             const inventoryAmount = Number(source.amount) - Number(item.amount);
             if (inventoryAmount <= 0) write('DELETE FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);

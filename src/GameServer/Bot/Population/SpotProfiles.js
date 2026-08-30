@@ -7,6 +7,8 @@ const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 
 let occupancyCache = null;
 let occupancyCachedAt = 0;
+const capacityFingerprintCache = new WeakMap();
+const MAX_CLAN_EQUIPMENT_RESERVATIONS_PER_SPOT = 2;
 
 function rewardForLevel(level) {
     const value = Math.max(1, Number(level || 1));
@@ -77,7 +79,19 @@ function stateKey(state = {}) {
 }
 
 function partyIdForState(state = {}) {
-    return state.party?.partyId || state.partyId || null;
+    const physicalPartyId = state.party?.partyId || state.partyId || null;
+    if (physicalPartyId) return physicalPartyId;
+    const clanGoalKey = state.stats?.clanPartyObjective?.clanGoalKey;
+    return clanGoalKey ? `clan-goal:${clanGoalKey}` : null;
+}
+
+function clanEquipmentReservationKey(state = {}, spotId = null) {
+    const objective = state.stats?.clanPartyObjective;
+    if (!objective || String(objective.spotId || '') !== String(spotId || '')) return null;
+    if (objective.clanOperation !== 'equipment' && objective.reason !== 'clan_equipment') return null;
+    if (['completed', 'cancelled', 'failed'].includes(String(objective.status || ''))) return null;
+    const identity = objective.clanId || objective.clanGoalKey;
+    return identity ? `clan-equipment:${identity}` : null;
 }
 
 function occupiedSpotId(state = {}) {
@@ -86,39 +100,200 @@ function occupiedSpotId(state = {}) {
     return state.spotId || null;
 }
 
+function farmIntentSpotId(state = {}) {
+    if (['merchant', 'shopping', 'crafting', 'dead'].includes(state.activity)) return null;
+    const clanObjective = state.stats?.clanPartyObjective;
+    if (clanObjective?.spotId && ['open', 'deferred'].includes(String(clanObjective.status || ''))) {
+        return clanObjective.spotId;
+    }
+    const request = state.stats?.partyRequest;
+    if (request?.spotId && ['open', 'deferred'].includes(String(request.status || ''))) return request.spotId;
+    const plan = state.stats?.equipmentPlan;
+    if (plan?.status === 'active' && ['direct_drop', 'craft'].includes(plan.strategy) && plan.next?.spotId) {
+        return plan.next.spotId;
+    }
+    return null;
+}
+
+function allocationGroups(states = [], physicalKeys = new Set()) {
+    const parties = new Map();
+    const solo = [];
+    states.forEach((state) => {
+        const partyId = partyIdForState(state);
+        if (!partyId) {
+            solo.push(state);
+            return;
+        }
+        const key = String(partyId);
+        if (!parties.has(key)) parties.set(key, []);
+        parties.get(key).push(state);
+    });
+    const physicalRank = (members) => members.some((state) => physicalKeys.has(stateKey(state))) ? 0 : 1;
+    return {
+        parties: [...parties.entries()].sort((left, right) => (
+            physicalRank(left[1]) - physicalRank(right[1]) || left[0].localeCompare(right[0])
+        )),
+        solo: solo.sort((left, right) => (
+            Number(!physicalKeys.has(stateKey(left))) - Number(!physicalKeys.has(stateKey(right)))
+            || stateKey(left).localeCompare(stateKey(right))
+        ))
+    };
+}
+
 function occupancySnapshot(profiles, states = BotLifeState.allStates(PopulationConfig.maxPlayingPopulation)) {
     const byId = new Map((profiles || []).map((profile) => [profile.id, profile]));
-    const members = (states || []).reduce((entries, state) => {
+    const physicalMembers = {};
+    const reservedMembers = {};
+    const append = (entries, spotId, state) => {
+        if (!spotId || !byId.has(spotId)) return;
+        entries[spotId] = entries[spotId] || new Map();
+        entries[spotId].set(stateKey(state), state);
+    };
+    (states || []).forEach((state) => {
         const spotId = occupiedSpotId(state);
-        if (!spotId || !byId.has(spotId)) return entries;
-        if (!entries[spotId]) entries[spotId] = [];
-        entries[spotId].push(state);
-        return entries;
-    }, {});
+        const intentSpotId = farmIntentSpotId(state);
+        append(physicalMembers, spotId, state);
+        append(reservedMembers, spotId, state);
+        append(reservedMembers, intentSpotId, state);
+    });
 
-    return Object.fromEntries(Object.entries(members).map(([spotId, spotMembers]) => {
+    const spotIds = new Set([...Object.keys(physicalMembers), ...Object.keys(reservedMembers)]);
+    return Object.fromEntries([...spotIds].map((spotId) => {
+        const spotMembers = [...(physicalMembers[spotId]?.values() || [])];
+        const claimers = [...(reservedMembers[spotId]?.values() || [])];
         const capacity = LevelingRoutes.capacityForSpot(byId.get(spotId));
-        const grouped = spotMembers.filter((state) => partyIdForState(state));
-        const solo = spotMembers
-            .filter((state) => !partyIdForState(state))
-            .sort((left, right) => stateKey(left).localeCompare(stateKey(right)));
-        const parties = [...grouped.reduce((byParty, state) => {
-            const partyId = String(partyIdForState(state));
-            if (!byParty.has(partyId)) byParty.set(partyId, []);
-            byParty.get(partyId).push(state);
-            return byParty;
-        }, new Map()).entries()]
-            .sort(([leftId], [rightId]) => leftId.localeCompare(rightId));
+        const physicalKeys = new Set(spotMembers.map(stateKey));
+        const clanReservationGroups = claimers.reduce((groupsByClan, state) => {
+            const key = clanEquipmentReservationKey(state, spotId);
+            if (!key) return groupsByClan;
+            if (!groupsByClan.has(key)) groupsByClan.set(key, []);
+            groupsByClan.get(key).push(state);
+            return groupsByClan;
+        }, new Map());
+        const rankedClanReservationKeys = [...clanReservationGroups.entries()]
+            .sort((left, right) => (
+                Number(!left[1].some((state) => physicalKeys.has(stateKey(state))))
+                - Number(!right[1].some((state) => physicalKeys.has(stateKey(state))))
+                || left[0].localeCompare(right[0])
+            ))
+            .map(([key]) => key);
+        const retainedReservationKeys = new Set(
+            rankedClanReservationKeys.slice(0, MAX_CLAN_EQUIPMENT_RESERVATIONS_PER_SPOT)
+        );
+        const admittedClaimers = claimers.filter((state) => {
+            const key = clanEquipmentReservationKey(state, spotId);
+            return !key || retainedReservationKeys.has(key);
+        });
+        const groups = allocationGroups(admittedClaimers, physicalKeys);
         const retained = new Set();
         let remaining = capacity;
-        parties.forEach(([, partyMembers]) => {
+        groups.parties.forEach(([, partyMembers]) => {
             if (partyMembers.length > remaining) return;
             partyMembers.forEach((state) => retained.add(stateKey(state)));
             remaining -= partyMembers.length;
         });
-        solo.slice(0, Math.max(0, remaining)).forEach((state) => retained.add(stateKey(state)));
-        return [spotId, { count: spotMembers.length, capacity, retained }];
+        groups.solo.slice(0, Math.max(0, remaining)).forEach((state) => retained.add(stateKey(state)));
+        return [spotId, {
+            count: spotMembers.length,
+            reservedCount: claimers.length,
+            capacity,
+            retained,
+            reservedKeys: new Set(claimers.map(stateKey)),
+            reservationKeys: new Set(rankedClanReservationKeys),
+            retainedReservationKeys
+        }];
     }));
+}
+
+function capacityCount(entry) {
+    return Math.max(0, Number(entry?.reservedCount ?? entry?.count ?? 0));
+}
+
+function capacityUnitsFor(states = [], entry = null) {
+    const reservedKeys = entry?.reservedKeys instanceof Set ? entry.reservedKeys : new Set();
+    return [...new Set((states || []).map(stateKey).filter(Boolean))]
+        .filter((key) => !reservedKeys.has(key)).length;
+}
+
+function reservationGroupHasCapacity(entry, options = {}) {
+    const reservationKey = String(options.reservationKey || '');
+    const maxReservationGroups = Math.max(0, Math.floor(Number(options.maxReservationGroups || 0)));
+    if (!reservationKey || maxReservationGroups <= 0) return true;
+    const reservationKeys = entry?.reservationKeys instanceof Set ? entry.reservationKeys : new Set();
+    const retainedReservationKeys = entry?.retainedReservationKeys instanceof Set
+        ? entry.retainedReservationKeys
+        : reservationKeys;
+    if (reservationKeys.has(reservationKey)) return retainedReservationKeys.has(reservationKey);
+    return retainedReservationKeys.size < maxReservationGroups;
+}
+
+function hasCapacityForStates(spot, states = [], occupancy = {}, options = {}) {
+    if (!spot?.id) return false;
+    const entry = occupancy?.[spot.id];
+    if (!entry) {
+        return capacityUnitsFor(states) <= Math.max(1, LevelingRoutes.capacityForSpot(spot));
+    }
+    if (!reservationGroupHasCapacity(entry, options)) return false;
+    const capacity = Number(entry.capacity || LevelingRoutes.capacityForSpot(spot));
+    return capacityCount(entry) + capacityUnitsFor(states, entry) <= Math.max(1, capacity);
+}
+
+function reserveCapacity(occupancy, spot, states = [], options = {}) {
+    if (!occupancy || !spot?.id) return false;
+    const entry = occupancy[spot.id] || {
+        count: 0,
+        reservedCount: 0,
+        capacity: LevelingRoutes.capacityForSpot(spot),
+        retained: new Set(),
+        reservedKeys: new Set(),
+        reservationKeys: new Set(),
+        retainedReservationKeys: new Set()
+    };
+    if (!(entry.retained instanceof Set)) entry.retained = new Set();
+    if (!(entry.reservedKeys instanceof Set)) entry.reservedKeys = new Set();
+    if (!(entry.reservationKeys instanceof Set)) entry.reservationKeys = new Set();
+    if (!(entry.retainedReservationKeys instanceof Set)) entry.retainedReservationKeys = new Set(entry.reservationKeys);
+    if (!reservationGroupHasCapacity(entry, options)) return false;
+    const keys = [...new Set((states || []).map(stateKey).filter(Boolean))]
+        .filter((key) => !entry.reservedKeys.has(key));
+    if (capacityCount(entry) + keys.length > Math.max(1, Number(entry.capacity || 0))) return false;
+    keys.forEach((key) => {
+        entry.reservedKeys.add(key);
+        entry.retained.add(key);
+    });
+    const reservationKey = String(options.reservationKey || '');
+    if (reservationKey) {
+        entry.reservationKeys.add(reservationKey);
+        entry.retainedReservationKeys.add(reservationKey);
+    }
+    entry.reservedCount = capacityCount(entry) + keys.length;
+    occupancy[spot.id] = entry;
+    capacityFingerprintCache.delete(occupancy);
+    return true;
+}
+
+function capacityFingerprint(occupancy = {}, maxUnits = 9, options = {}) {
+    const threshold = Math.max(1, Number(maxUnits || 1));
+    const maxReservationGroups = Math.max(0, Math.floor(Number(options.maxReservationGroups || 0)));
+    const cacheKey = `${threshold}:${maxReservationGroups}`;
+    const cachedByThreshold = capacityFingerprintCache.get(occupancy);
+    if (cachedByThreshold?.has(cacheKey)) return cachedByThreshold.get(cacheKey);
+    const fingerprint = Object.entries(occupancy)
+        .map(([spotId, entry]) => ({
+            spotId,
+            free: Math.max(0, Number(entry?.capacity || 0) - capacityCount(entry)),
+            groupFree: maxReservationGroups > 0
+                ? Math.max(0, maxReservationGroups - Number(entry?.retainedReservationKeys?.size || 0))
+                : null
+        }))
+        .filter((entry) => entry.free < threshold || entry.groupFree === 0)
+        .sort((left, right) => left.spotId.localeCompare(right.spotId))
+        .map((entry) => `${entry.spotId}:${entry.free}${entry.groupFree === null ? '' : `:g${entry.groupFree}`}`)
+        .join(',');
+    const nextCache = cachedByThreshold || new Map();
+    nextCache.set(cacheKey, fingerprint);
+    if (!cachedByThreshold) capacityFingerprintCache.set(occupancy, nextCache);
+    return fingerprint;
 }
 
 function currentOccupancy(profiles, maxAgeMs = 1000) {
@@ -131,6 +306,9 @@ function currentOccupancy(profiles, maxAgeMs = 1000) {
 
 function shouldLeaveOverCapacity(state, spot, occupancy) {
     const entry = occupancy?.[spot?.id];
+    const reservationKey = clanEquipmentReservationKey(state, spot?.id);
+    if (reservationKey && entry?.retainedReservationKeys instanceof Set
+        && !entry.retainedReservationKeys.has(reservationKey)) return true;
     const count = LevelingRoutes.occupancyForSpot(occupancy, spot?.id);
     const capacity = Number(entry?.capacity || LevelingRoutes.capacityForSpot(spot));
     if (!spot || count <= capacity) return false;
@@ -175,7 +353,16 @@ const SpotProfiles = {
                 : [])
         ]);
         const occupancy = options.occupancy || currentOccupancy(profiles);
-        const routeOptions = { ...options, occupancy, excludedSpotIds };
+        const capacityStates = Array.isArray(options.capacityStates) && options.capacityStates.length
+            ? options.capacityStates
+            : [state];
+        const capacityUnits = new Set(capacityStates.map(stateKey).filter(Boolean)).size || 1;
+        const reservationKey = clanEquipmentReservationKey(state, acquisitionPlan?.next?.spotId);
+        const reservationOptions = reservationKey ? {
+            reservationKey,
+            maxReservationGroups: MAX_CLAN_EQUIPMENT_RESERVATIONS_PER_SPOT
+        } : {};
+        const routeOptions = { ...options, occupancy, excludedSpotIds, capacityUnits, ...reservationOptions };
         const currentMatch = currentSpot ? LevelingRoutes.scoreSpot(currentSpot, state, routeOptions) : null;
         const mustRelocate = currentSpot && (currentMatch.localityPenalty > 0
             || shouldLeaveOverCapacity(state, currentSpot, occupancy)
@@ -199,7 +386,7 @@ const SpotProfiles = {
                 state,
                 acquisitionPlan,
                 profiles,
-                { occupancy, excludedSpotIds }
+                { occupancy, excludedSpotIds, capacityUnits, ...reservationOptions }
             );
             const planned = plannedSource
                 ? this.findById(plannedSource.spotId)
@@ -231,7 +418,8 @@ const SpotProfiles = {
         const relocationCandidates = mustRelocate
             ? candidates.filter((profile) => profile.id !== currentSpot.id)
             : candidates;
-        const routeCandidates = relocationCandidates.length ? relocationCandidates : candidates;
+        const routeCandidates = (relocationCandidates.length ? relocationCandidates : candidates)
+            .filter((profile) => hasCapacityForStates(profile, capacityStates, occupancy, reservationOptions));
         const suitable = routeCandidates.filter((profile) => SpotService.isSuitable(profile, targetLevel, options));
         const guided = LevelingRoutes.bestSpot(suitable.length ? suitable : routeCandidates, state, routeOptions);
 
@@ -249,5 +437,11 @@ const SpotProfiles = {
 SpotProfiles.occupancySnapshot = occupancySnapshot;
 SpotProfiles.currentOccupancy = currentOccupancy;
 SpotProfiles.shouldLeaveOverCapacity = shouldLeaveOverCapacity;
+SpotProfiles.farmIntentSpotId = farmIntentSpotId;
+SpotProfiles.hasCapacityForStates = hasCapacityForStates;
+SpotProfiles.reserveCapacity = reserveCapacity;
+SpotProfiles.capacityFingerprint = capacityFingerprint;
+SpotProfiles.clanEquipmentReservationKey = clanEquipmentReservationKey;
+SpotProfiles.MAX_CLAN_EQUIPMENT_RESERVATIONS_PER_SPOT = MAX_CLAN_EQUIPMENT_RESERVATIONS_PER_SPOT;
 
 module.exports = SpotProfiles;

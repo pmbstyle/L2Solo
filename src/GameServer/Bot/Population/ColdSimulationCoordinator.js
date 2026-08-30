@@ -46,6 +46,40 @@ function directDropTargetNpcId(plan = {}) {
     return Number(plan.next?.npcId || plan.targetNpcId || 0);
 }
 
+function admitSoloRouteTravelState(nextState, baseState, profiles, occupancy, timestamp = Date.now()) {
+    const travel = nextState?.stats?.travel;
+    if (nextState?.activity !== 'traveling'
+        || baseState?.activity === 'traveling'
+        || travel?.reason === 'party_spot_replan'
+        || !travel?.spotId) {
+        return { state: nextState, admitted: true, checked: false };
+    }
+    const spot = (profiles || []).find((profile) => String(profile.id) === String(travel.spotId));
+    if (!spot) return { state: nextState, admitted: true, checked: false };
+    if (SpotProfiles.hasCapacityForStates(spot, [nextState], occupancy)
+        && SpotProfiles.reserveCapacity(occupancy, spot, [nextState])) {
+        return { state: nextState, admitted: true, checked: true };
+    }
+
+    const { travel: _travel, ...stats } = nextState.stats || {};
+    return {
+        state: {
+            ...nextState,
+            activity: baseState?.activity || 'hunting',
+            spotId: baseState?.spotId || nextState.spotId,
+            loc: baseState?.loc ? { ...baseState.loc } : nextState.loc,
+            timing: {
+                ...(nextState.timing || {}),
+                activityStartedAt: baseState?.timing?.activityStartedAt || timestamp,
+                nextResolveAt: timestamp + 1000
+            },
+            stats
+        },
+        admitted: false,
+        checked: true
+    };
+}
+
 function npcPlanningCatalogRows() {
     return ColdNpcPlanningCatalog.buildRows({
         items: DataCache.items || [],
@@ -145,7 +179,8 @@ class ColdSimulationCoordinator {
             snapshotDirtyRuns: 0,
             snapshotCriticalRuns: 0,
             snapshotYields: 0,
-            snapshotDeferrals: 0
+            snapshotDeferrals: 0,
+            routeCapacityRejects: 0
         };
         this.queue = new ColdCommitQueue({
             targetMs: Config.coldWorkerOrdinaryFlushMs || 2000,
@@ -492,6 +527,7 @@ class ColdSimulationCoordinator {
                 : state;
         const options = {
             occupancy: index.occupancy,
+            capacityStates: routedMembers,
             excludedSpotIds,
             timestamp,
             ...(partyRoute ? { mode: 'party', role } : {})
@@ -503,6 +539,8 @@ class ColdSimulationCoordinator {
         if (!selected) return null;
 
         if (String(selected.id) === String(currentId || '')) return null;
+
+        if (!SpotProfiles.reserveCapacity(index.occupancy, selected, routedMembers)) return null;
 
         const members = partyRoute ? partyMembers : [state];
         const destinations = {};
@@ -971,7 +1009,23 @@ class ColdSimulationCoordinator {
             delete cleanupState.cleanup;
             return cleanupState;
         }
-        if (proposal?.nextState) return proposal.nextState;
+        if (proposal?.nextState) {
+            let profiles = [];
+            let occupancy = {};
+            try {
+                profiles = SpotProfiles.ensure() || [];
+                occupancy = SpotProfiles.currentOccupancy(profiles) || {};
+            } catch (_) { profiles = []; occupancy = {}; }
+            const admission = admitSoloRouteTravelState(
+                proposal.nextState,
+                state,
+                profiles,
+                occupancy,
+                Date.now()
+            );
+            if (admission.checked && !admission.admitted) this.counters.routeCapacityRejects += 1;
+            return admission.state;
+        }
         if (!proposal.result) return null;
         return LifeState.prepareResolve(claimedState, proposal.result, {
             persist: false,
@@ -1270,3 +1324,4 @@ module.exports = new ColdSimulationCoordinator();
 module.exports.ColdSimulationCoordinator = ColdSimulationCoordinator;
 module.exports.compactPartyMemberContext = compactPartyMemberContext;
 module.exports.npcPlanningCatalogRows = npcPlanningCatalogRows;
+module.exports.admitSoloRouteTravelState = admitSoloRouteTravelState;

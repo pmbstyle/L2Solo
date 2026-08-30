@@ -2,6 +2,7 @@ const EquipmentService = invoke('GameServer/Clan/ClanEquipmentService');
 const EquipmentPolicy = invoke('GameServer/Clan/ClanEquipmentPolicy');
 const ClanPolicy = invoke('GameServer/Clan/ClanSimulationPolicy');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
+const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 
 const CACHE_TTL_MS = 30 * 1000;
 const MAX_CACHE_ENTRIES = 128;
@@ -215,14 +216,26 @@ function rankedCandidates(clan, previousGoal, planning, limit = DEFAULT_LIMIT) {
 
 async function snapshotFor(clan, previousGoal = null, options = {}) {
     const startedAt = Date.now();
-    const key = fingerprint(clan, previousGoal);
+    let occupancy = options.occupancy || null;
+    if (!occupancy) {
+        try {
+            const spots = options.spots || SpotProfiles.ensure();
+            occupancy = SpotProfiles.currentOccupancy(spots) || {};
+        } catch (_) {
+            occupancy = {};
+        }
+    }
+    const availabilityKey = SpotProfiles.capacityFingerprint(occupancy, Config.operationMaxMembers, {
+        maxReservationGroups: SpotProfiles.MAX_CLAN_EQUIPMENT_RESERVATIONS_PER_SPOT
+    });
+    const key = `${fingerprint(clan, previousGoal)}:${availabilityKey}`;
     prune(startedAt);
     const cached = cache.get(key);
     if (cached && startedAt - cached.createdAt <= CACHE_TTL_MS) {
         metrics.cacheHits += 1;
         return { ...cached.value, cacheHit: true };
     }
-    const planning = await EquipmentService.planningForClan(clan, previousGoal, options);
+    const planning = await EquipmentService.planningForClan(clan, previousGoal, { ...options, occupancy });
     let candidates = rankedCandidates(clan, previousGoal, planning, options.limit);
     const selectedMember = planning.selection?.member;
     const selectedPlan = planning.selection?.plan;
