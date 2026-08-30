@@ -14,6 +14,7 @@ const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 const NPC_SELF_ID = 8225;
 const PREPARE_TIMEOUT_MS = 10 * 60 * 1000;
 const NPC_INTERACTION_DISTANCE = 250;
+const MAX_NAME_SEARCH_LENGTH = 16;
 const CLONE_START = Object.freeze({ locX: 72984, locY: 142760, locZ: -3778, head: 32768 });
 let nextActorId = 2100000000;
 let nextItemId = 900000000;
@@ -101,6 +102,9 @@ function actorModelFrom(source, character, classInfo, items) {
         karma: 0,
         pvp: 0,
         pk: 0,
+        privateStoreType: 0,
+        privateStore: null,
+        manufactureShop: null,
         hp: 1,
         mp: 1,
         cp: 1,
@@ -179,16 +183,47 @@ function candidateCatalog(playerSession, minLevel = 1, maxLevel = 80, classId = 
     });
 }
 
-function menu(session, minLevel = 1, maxLevel = 80, classId = null) {
-    const candidates = candidateCatalog(session, minLevel, maxLevel, classId).slice(0, 32);
+function searchText(value) {
+    return String(value || '')
+        .trim()
+        .replace(/[^a-zA-Z0-9_-]/g, '')
+        .slice(0, MAX_NAME_SEARCH_LENGTH);
+}
+
+function candidateName(candidate) {
+    return String(candidate?.name || candidate?.subject?.fetchName?.() || candidate?.state?.name || '');
+}
+
+function rankedNameMatches(candidates, query) {
+    const needle = searchText(query).toLowerCase();
+    if (!needle) return [];
+    const rank = (name) => {
+        const normalized = name.toLowerCase();
+        if (normalized === needle) return 0;
+        if (normalized.startsWith(needle)) return 1;
+        return 2;
+    };
+    return candidates
+        .filter((candidate) => candidateName(candidate).toLowerCase().includes(needle))
+        .sort((a, b) => rank(candidateName(a)) - rank(candidateName(b))
+            || candidateName(a).localeCompare(candidateName(b), 'en', { sensitivity: 'base' }));
+}
+
+function menu(session, minLevel = 1, maxLevel = 80, classId = null, nameQuery = '') {
+    const query = searchText(nameQuery);
+    const catalog = candidateCatalog(session, minLevel, maxLevel, classId);
+    const candidates = (query ? rankedNameMatches(catalog, query) : catalog).slice(0, 32);
     const links = candidates.map((candidate) => {
         const id = Number(candidate.subject?.fetchId?.() || candidate.state?.characterId || 0);
         const level = Number(candidate.level || 1);
         const cls = Number(candidate.subject?.fetchClassId?.() || candidate.state?.stats?.classId || candidate.state?.classId || 0);
-        return `<a action="bypass -h arena select ${id}">${candidate.name} — Lv ${level} ${className(cls)}</a><br>`;
+        return `<a action="bypass -h arena select ${id}">${candidateName(candidate)} — Lv ${level} ${className(cls)}</a><br>`;
     });
     const body = [
         '<html><body><center><font color="LEVEL">Giran Arena</font></center><br>',
+        `<edit var="arena_name" width=120 height=15 length=${MAX_NAME_SEARCH_LENGTH}> `,
+        '<button value="Search" action="bypass -h arena search $arena_name" width=60 height=15 back="sek.cbui94" fore="sek.cbui92"><br>',
+        query ? `<font color="LEVEL">Name matches: ${query}</font> <a action="bypass -h arena menu">clear</a><br><br>` : '<br>',
         '<a action="bypass -h arena levels">Choose level range</a><br>',
         '<a action="bypass -h arena classes">Choose class</a><br><br>',
         active?.playerSession === session
@@ -425,15 +460,25 @@ function begin(session) {
     return true;
 }
 
+function stopPlayerCombatAction(session, actor, { abortCombat = true } = {}) {
+    if (!actor) return;
+    // Attack.destructor cancels the timers that normally clear inHit/inCast.
+    // Reset those flags explicitly or a finishing blow can leave every later
+    // movement request queued behind an action that can no longer complete.
+    actor.attack?.destructor?.();
+    actor.state?.setHits?.(false);
+    actor.state?.setCasts?.(false);
+    if (session) invoke(path.actor).clearStoredActions?.(session, actor);
+    if (abortCombat && session) invoke(path.actor).abortCombatState?.(session, actor);
+}
+
 function finishBotDeath() {
     if (!active || active.state !== 'FIGHTING') return;
     invoke('GameServer/World/ArenaBotAI').stop(active);
     // The player's client may still have an auto-attack/skill queued against
     // the clone that just died. End that action before reviving the opponent,
     // so the next round starts only after a fresh .go command.
-    active.player?.attack?.destructor?.();
-    invoke(path.actor).clearStoredActions?.(active.playerSession, active.player);
-    invoke(path.actor).abortCombatState?.(active.playerSession, active.player);
+    stopPlayerCombatAction(active.playerSession, active.player);
     active.state = 'READY';
     active.bot.state.setDead(false);
     active.bot.setLocXYZH(CLONE_START);
@@ -479,13 +524,7 @@ function release(session, reason = 'released') {
     // clone when the arena ends. Clear it before removing the target, otherwise
     // the client's combat loop can keep scheduling actions against a deleted
     // object outside the arena.
-    duel.player?.attack?.destructor?.();
-    if (duel.playerSession) {
-        invoke(path.actor).clearStoredActions?.(duel.playerSession, duel.player);
-    }
-    if (duel.playerSession && !playerDied) {
-        invoke(path.actor).abortCombatState?.(duel.playerSession, duel.player);
-    }
+    stopPlayerCombatAction(duel.playerSession, duel.player, { abortCombat: !playerDied });
     if (duel.player && duel.enteredArena === true) {
         EffectTicker.clearAll(duel.player);
         EffectStore.list(duel.player).forEach((effect) => EffectStore.remove(duel.player, effect.key));
@@ -537,6 +576,7 @@ function handleBypass(session, parts = []) {
     const command = String(parts[1] || 'menu').toLowerCase();
     if (command === 'levels') return levels(session);
     if (command === 'classes') return classes(session);
+    if (command === 'search') return menu(session, 1, 80, null, parts.slice(2).join(''));
     if (command === 'list') {
         const minLevel = Number(parts[2]);
         const maxLevel = Number(parts[3]);

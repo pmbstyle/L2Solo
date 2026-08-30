@@ -11,6 +11,13 @@ function stop(duel) {
 function tick(duel) {
     if (!duel || duel.state !== 'FIGHTING' || !duel.player || !duel.bot) return;
     if (duel.player.state?.fetchDead?.() || duel.bot.state?.fetchDead?.()) return;
+    // The native attack/cast implementation owns its complete action window:
+    // meleeHit repeats on the actor's attack speed and remoteHit keeps casts
+    // busy until their calculated hit time. Starting another combat decision
+    // from the 250 ms arena poll would create parallel attack/cast chains.
+    if (duel.bot.state?.fetchTowards?.()
+        || duel.bot.state?.fetchHits?.()
+        || duel.bot.state?.fetchCasts?.()) return;
     try {
         BotAI.executePvPCombat(duel.botSession, duel.bot, duel.player, Generics, {
             arena: true,

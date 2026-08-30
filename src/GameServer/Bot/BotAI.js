@@ -596,6 +596,22 @@ const BotAI = {
             }
             return false;
         }
+        const canCast = EffectRestrictions.canCast(bot);
+        const canAttack = EffectRestrictions.canAttack(bot);
+        // Stun, sleep, fear, and paralyze disable every action. Stop before
+        // ranged positioning as well: internal hot-bot movement and combat
+        // calls do not pass through the player's packet-level effect gates.
+        if (!EffectRestrictions.canUseBasicAction(bot)) {
+            if (session) {
+                session.lastCombatDecision = {
+                    action: 'blocked',
+                    reason: 'control_effect',
+                    targetId: Number(npc?.fetchId?.() || 0) || null,
+                    at: Date.now()
+                };
+            }
+            return false;
+        }
         const role = BotRoles.inferRole(bot);
         if (BotRangedCombatPositioning.reposition(session, bot, npc, { role })) {
             return true;
@@ -613,7 +629,6 @@ const BotAI = {
         };
         // Bot casts use the internal SkillExec path and therefore do not pass
         // through the packet-level SkillRequest control-effect gate.
-        const canCast = EffectRestrictions.canCast(bot);
         const summonAction = options.basicAttackOnly || !canCast
             ? null
             : SummonerTactics.combatAction(session, bot, npc, Generics);
@@ -663,6 +678,19 @@ const BotAI = {
                 ctrl: true
             });
             return true;
+        }
+
+        // Physical mute may still allow a spell, but must never fall through
+        // to the direct attackExec path when no spell was selected.
+        if (!canAttack) {
+            session.lastCombatDecision = {
+                action: 'blocked',
+                role,
+                reason: 'physical_attack_disabled',
+                targetId: Number(npc?.fetchId?.() || 0) || null,
+                at: Date.now()
+            };
+            return false;
         }
 
         session.lastCombatDecision = {

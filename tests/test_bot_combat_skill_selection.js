@@ -473,6 +473,47 @@ try {
     assert.strictEqual(supportingGenerics.skills.length, 0, 'a hot-party healer ordered to conserve MP must not use an offensive spell');
     assert.strictEqual(supportingGenerics.attacks.length, 1, 'a hot-party healer may still contribute a normal weapon attack');
 
+    const stunnedFighter = bot(0, [skill(3, { name: 'Power Strike', mp: 5, range: 40, power: 30 })], 100, 'Weapon.Sword');
+    EffectStore.apply(stunnedFighter, { key: 'stun', id: 100, type: 'debuff', durationMs: 10000 });
+    const stunnedSession = {};
+    const stunnedGenerics = generics();
+    assert.strictEqual(BotAI.executeCombat(stunnedSession, stunnedFighter, npc(1114), stunnedGenerics), false,
+        'a stunned hot bot must not dispatch another combat action');
+    assert.strictEqual(stunnedGenerics.skills.length, 0, 'a stunned hot bot must not cast through the internal SkillExec path');
+    assert.strictEqual(stunnedGenerics.attacks.length, 0, 'a stunned hot bot must not attack through the internal AttackExec path');
+    assert.strictEqual(stunnedSession.lastCombatDecision.reason, 'control_effect');
+
+    const physicallyMutedFighter = bot(0, [], 100, 'Weapon.Sword');
+    EffectStore.apply(physicallyMutedFighter, {
+        key: 'physical_mute_test',
+        id: 4215,
+        type: 'debuff',
+        stats: { physicalMute: true },
+        durationMs: 10000
+    });
+    const physicallyMutedGenerics = generics();
+    assert.strictEqual(BotAI.executeCombat({}, physicallyMutedFighter, npc(1115), physicallyMutedGenerics), false,
+        'physical mute must block the basic-attack fallback');
+    assert.strictEqual(physicallyMutedGenerics.attacks.length, 0,
+        'a physically muted hot bot must not bypass canAttack through AttackExec');
+
+    const physicallyMutedMage = bot(10, [
+        skill(1177, { name: 'Wind Strike', mp: 8, power: 12, spell: true })
+    ], 100);
+    EffectStore.apply(physicallyMutedMage, {
+        key: 'physical_mute_cast_test',
+        id: 4215,
+        type: 'debuff',
+        stats: { physicalMute: true },
+        durationMs: 10000
+    });
+    const physicallyMutedMageGenerics = generics();
+    assert.strictEqual(BotAI.executeCombat({}, physicallyMutedMage, npc(1116), physicallyMutedMageGenerics), true,
+        'physical mute alone must still allow an available spell');
+    assert.strictEqual(physicallyMutedMageGenerics.skills.length, 1,
+        'physical mute must not be treated as a full control effect');
+    assert.strictEqual(physicallyMutedMageGenerics.attacks.length, 0);
+
     const dagger = bot(7, [
         skill(1400, { mp: 5, power: 30, range: 40 }),
         skill(1401, { mp: 5, power: 25, range: 40, type: C4SkillRules.BLOW })
