@@ -1,4 +1,6 @@
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 
 require('../src/Global');
 
@@ -31,6 +33,12 @@ assert.deepStrictEqual(sword.stats, {
     bonusMp: 0,
     consumedMp: 0
 }, 'observer equipment should expose item-level combat stats for the tooltip');
+
+const observerApp = fs.readFileSync(path.join(__dirname, '..', 'src', 'WorldObserver', 'public', 'app.js'), 'utf8');
+assert.match(observerApp, /Router\.href\(\{ name: 'knowledge-items', id: itemId \}\)/,
+    'paperdoll items should link to their knowledge-base detail route');
+assert.match(observerApp, /const tag = href \? 'a' : 'div'/,
+    'paperdoll rows without a valid item id should retain a non-link fallback');
 
 const catalog = Observer.itemIconCatalogStatus();
 if (catalog.available) {

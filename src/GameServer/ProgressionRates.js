@@ -91,10 +91,28 @@ function dropAmountBounds(item) {
     return { min, max: Math.max(min, Math.floor(Number(item?.max) || min)) };
 }
 
+function dropAmountPlan(group, item, rate) {
+    const scaledChance = Math.max(100, dropItemBaseChance(group, item) * numberOr(rate, 1));
+    const guaranteed = Math.floor(scaledChance / 100);
+    return {
+        ...dropAmountBounds(item),
+        guaranteed,
+        remainder: scaledChance - guaranteed * 100,
+        expectedRepeats: scaledChance / 100
+    };
+}
+
+function dropAmountRange(group, item, rate) {
+    const { min, max, guaranteed, remainder } = dropAmountPlan(group, item, rate);
+    return {
+        min: Math.max(1, guaranteed * min),
+        max: Math.max(1, (guaranteed + (remainder > 0 ? 1 : 0)) * max)
+    };
+}
+
 function expectedDropAmount(group, item, rate) {
-    const repeats = Math.max(1, dropItemBaseChance(group, item) * numberOr(rate, 1) / 100);
-    const { min, max } = dropAmountBounds(item);
-    return repeats * (min + max) / 2;
+    const { min, max, expectedRepeats } = dropAmountPlan(group, item, rate);
+    return expectedRepeats * (min + max) / 2;
 }
 
 function selectDropItem(group, rate, rng = Math.random) {
@@ -115,11 +133,8 @@ function selectDropItem(group, rate, rng = Math.random) {
 }
 
 function rollDropAmount(group, item, rate, rng = Math.random) {
-    const scaledChance = Math.max(100, dropItemBaseChance(group, item) * numberOr(rate, 1));
-    const guaranteed = Math.floor(scaledChance / 100);
-    const remainder = scaledChance - guaranteed * 100;
+    const { min, max, guaranteed, remainder } = dropAmountPlan(group, item, rate);
     const repeats = guaranteed + (rng() * 100 < remainder ? 1 : 0);
-    const { min, max } = dropAmountBounds(item);
     let amount = 0;
 
     for (let index = 0; index < repeats; index++) {
@@ -192,6 +207,7 @@ module.exports = {
     dropItemBaseChance,
     dropItemSelectionWeight,
     dropItemSelectionChance,
+    dropAmountRange,
     expectedDropAmount,
     selectDropItem,
     rollDropAmount,

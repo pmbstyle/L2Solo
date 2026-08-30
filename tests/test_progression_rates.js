@@ -34,6 +34,7 @@ assert.strictEqual(ProgressionRates.normalizePreset('bad-rate'), 'x1');
 
 const adenaGroup = { overall: 70, items: [{ selfId: 57, min: 100, max: 100, chance: 100 }] };
 assert.strictEqual(ProgressionRates.groupRate(adenaGroup, 'drop'), profile.adena);
+assert.deepStrictEqual(ProgressionRates.dropAmountRange(adenaGroup, adenaGroup.items[0], profile.adena), { min: 700, max: 700 });
 
 const saturated = ProgressionRates.rollGroup(70, profile.adena, () => 0.99);
 assert.strictEqual(saturated.hit, true);
@@ -56,6 +57,7 @@ assert.strictEqual(ProgressionRates.selectDropItem(madnessGroup, 10, () => 0), e
 assert.strictEqual(ProgressionRates.selectDropItem(madnessGroup, 10, () => 0.4).selfId, 956, 'high-rate balancing must not retain the x1 EWD category share after its weight saturates');
 assert.strictEqual(ProgressionRates.rollDropAmount(madnessGroup, enchantWeaponD, 10, () => 0.83036), 3, 'x10 EWD must produce three items when the 83.035% overflow roll misses');
 assert.strictEqual(ProgressionRates.rollDropAmount(madnessGroup, enchantWeaponD, 10, () => 0.83034), 4, 'x10 EWD must produce a fourth item when the 83.035% overflow roll hits');
+assert.deepStrictEqual(ProgressionRates.dropAmountRange(madnessGroup, enchantWeaponD, 10), { min: 3, max: 4 }, 'displayed high-rate range must match the runtime overflow roll');
 
 const noDeepBlue = ProgressionRates.deepBlueRule({ npcLevel: 20, killerLevel: 28, attackerLevels: [27] });
 assert.strictEqual(noDeepBlue.active, false);

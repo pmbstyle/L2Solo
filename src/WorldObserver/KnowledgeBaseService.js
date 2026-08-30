@@ -3,6 +3,17 @@ const path = require('path');
 
 const DEFAULT_PAGE_SIZE = 60;
 const MAX_PAGE_SIZE = 100;
+const ITEM_GRADE_ORDER = Object.freeze(['no-grade', 'd', 'c', 'b', 'a', 's']);
+const ITEM_DIRECTORY = Object.freeze([
+    { key: 'weapons', label: 'Weapons', description: 'Swords, bows, magic weapons and specialist arms' },
+    { key: 'armor', label: 'Armor', description: 'Head, chest, legs, gloves, boots and shields' },
+    { key: 'jewelry', label: 'Jewelry', description: 'Rings, earrings and necklaces' },
+    { key: 'consumables', label: 'Consumables', description: 'Shots, potions, scrolls and arrows' },
+    { key: 'recipes', label: 'Recipes', description: 'Crafting recipes for equipment and supplies' },
+    { key: 'materials', label: 'Materials', description: 'Crafting ingredients and upgrade materials' },
+    { key: 'quest', label: 'Quest items', description: 'Quest, event and progression items' },
+    { key: 'other', label: 'Other items', description: 'Miscellaneous items from the server datapack' }
+]);
 
 function positiveInteger(value, fallback) {
     const parsed = Math.floor(Number(value));
@@ -40,6 +51,32 @@ function playerFacingItem(item) {
     const name = String(item?.name || '').trim();
     if (!/[a-z]/i.test(name)) return false;
     return !/^\(not used\)/i.test(name) && !/^unused\b/i.test(name);
+}
+
+function itemDirectorySummary(items) {
+    const counts = new Map(ITEM_DIRECTORY.map((entry) => [entry.key, {
+        ...entry,
+        total: 0,
+        grades: new Map()
+    }]));
+
+    (items || []).filter(playerFacingItem).forEach((item) => {
+        const entry = counts.get(itemCategory(item.kind));
+        if (!entry) return;
+        const grade = itemGrade(item);
+        entry.total += 1;
+        entry.grades.set(grade, (entry.grades.get(grade) || 0) + 1);
+    });
+
+    return ITEM_DIRECTORY.map(({ key }) => counts.get(key)).map((entry) => ({
+        key: entry.key,
+        label: entry.label,
+        description: entry.description,
+        total: entry.total,
+        grades: ITEM_GRADE_ORDER
+            .filter((grade) => entry.grades.has(grade))
+            .map((grade) => ({ key: grade, count: entry.grades.get(grade) }))
+    }));
 }
 
 function itemSummary(item, iconFor) {
@@ -118,12 +155,18 @@ function scaledRewardGroups(groups, kind, npcLevel, progressionRates, iconFor) {
                     ? progressionRates.expectedDropAmount(group, rawItem, roll.itemRate)
                     : ((Number(rawItem.min || 1) + Number(rawItem.max || rawItem.min || 1)) / 2)
                         * Number(roll.amountMultiplier || 1);
+                const amountRange = kind === 'drop'
+                    ? progressionRates.dropAmountRange(group, rawItem, roll.itemRate)
+                    : {
+                        min: Number(item.minAmount || 0),
+                        max: Number(item.maxAmount ?? item.minAmount ?? 0)
+                    };
                 const icon = iconFor?.(null, item.itemId, item.sourceName, null) || null;
                 return {
                     itemId: Number(item.itemId),
                     name: String(item.sourceName || `Item ${item.itemId}`),
-                    minAmount: Number(item.minAmount || 0),
-                    maxAmount: Number(item.maxAmount ?? item.minAmount ?? 0),
+                    minAmount: amountRange.min,
+                    maxAmount: amountRange.max,
                     chancePercent: round(groupChance * selectionChance * 100),
                     expectedAmountPerKill: round(groupChance * selectionChance * expectedConditionalAmount),
                     iconUrl: icon?.url || null
@@ -224,7 +267,8 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null 
                 { key: 'quest', label: 'Quest' },
                 { key: 'other', label: 'Other' }
             ],
-            grades: ['all', 'no-grade', 'd', 'c', 'b', 'a', 's']
+            grades: ['all', ...ITEM_GRADE_ORDER],
+            itemDirectory: itemDirectorySummary(data.items)
         };
     }
 
@@ -360,6 +404,7 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null 
 module.exports = {
     createKnowledgeBaseService,
     itemCategory,
+    itemDirectorySummary,
     itemGrade,
     playerFacingItem,
     spawnMapPoints

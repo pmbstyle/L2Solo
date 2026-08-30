@@ -89,8 +89,27 @@ a { color: inherit; text-decoration: none; }
 .kb-filters input { width: 88px; min-width: 0; }
 .kb-filters select:focus, .kb-filters input:focus { border-color: var(--gold); }
 
+.kb-directory { animation: kb-enter 240ms ease both; }
+.kb-directory-list { border-top: 0; }
+.kb-directory-row { display: grid; grid-template-columns: 52px minmax(240px, 1fr) 80px minmax(420px, auto); gap: 22px; min-height: 106px; align-items: center; border-bottom: 1px solid var(--line); }
+.kb-directory-index { color: #565c59; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; }
+.kb-directory-name h3 { margin: 0 0 6px; color: #e6dfd0; font-family: Georgia, "Times New Roman", serif; font-size: 21px; font-weight: 400; }
+.kb-directory-name p { max-width: 410px; margin: 0; color: var(--quiet); font-size: 11px; line-height: 1.5; }
+.kb-directory-total { display: grid; gap: 3px; color: var(--quiet); text-align: right; }
+.kb-directory-total b { color: #c9c4b8; font-family: Georgia, "Times New Roman", serif; font-size: 18px; font-weight: 400; }
+.kb-directory-total small { font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase; }
+.kb-grade-nav { display: flex; justify-content: flex-end; gap: 6px; }
+.kb-grade-nav a { display: grid; min-width: 49px; height: 49px; place-content: center; gap: 3px; border: 1px solid var(--line); color: var(--muted); text-align: center; transition: border-color 150ms ease, color 150ms ease, background 150ms ease, transform 150ms ease; }
+.kb-grade-nav a:first-child { min-width: 58px; }
+.kb-grade-nav a:hover, .kb-grade-nav a:focus-visible { border-color: var(--gold); outline: none; color: var(--ink); background: rgba(200, 169, 107, 0.08); transform: translateY(-2px); }
+.kb-grade-nav span { font-family: Georgia, "Times New Roman", serif; font-size: 13px; }
+.kb-grade-nav small { color: var(--quiet); font-size: 8px; }
+
 .kb-list-head { display: flex; justify-content: space-between; padding: 22px 1px 12px; color: var(--quiet); font-size: 11px; }
 .kb-list-head strong { color: #bbb8ae; font-weight: 600; }
+.kb-list-context { display: flex; gap: 16px; align-items: center; }
+.kb-list-context a { color: var(--gold); }
+.kb-list-context a:hover { color: var(--gold-bright); }
 .kb-results { border-top: 1px solid var(--line); }
 .kb-level-divider { display: flex; align-items: center; min-height: 38px; border-bottom: 1px solid var(--line); color: var(--gold); font-size: 9px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
 .kb-item-row, .kb-npc-row {
@@ -167,9 +186,12 @@ a:hover .kb-icon { transform: translateY(-2px) scale(1.04); }
     .kb-shell { width: min(100% - 36px, 760px); padding-top: 38px; }
     .kb-heading { align-items: start; flex-direction: column; gap: 25px; }
     .kb-toolbar { align-items: stretch; flex-direction: column; }
+    .kb-search { flex: 0 0 46px; width: 100%; min-width: 0; }
     .kb-filters { width: 100%; }
     .kb-filters label { flex: 1; }
     .kb-filters select, .kb-filters input { width: 100%; min-width: 0; }
+    .kb-directory-row { grid-template-columns: 38px minmax(180px, 1fr) 70px; gap: 16px; padding: 20px 0; }
+    .kb-grade-nav { grid-column: 2 / -1; justify-content: flex-start; flex-wrap: wrap; }
     .kb-item-row { grid-template-columns: 44px minmax(160px, 1fr) 85px 20px; }
     .kb-item-row .kb-kind, .kb-item-row .kb-price { display: none; }
     .kb-npc-row { grid-template-columns: 48px minmax(160px, 1fr) 100px 20px; }
@@ -188,6 +210,12 @@ a:hover .kb-icon { transform: translateY(-2px) scale(1.04); }
     .kb-filters { overflow-x: auto; }
     .kb-filters label { min-width: 120px; }
     .kb-list-head span { display: none; }
+    .kb-directory-row { grid-template-columns: 28px minmax(0, 1fr); min-height: 0; }
+    .kb-directory-total { display: none; }
+    .kb-grade-nav { grid-column: 2; gap: 5px; }
+    .kb-grade-nav a { min-width: 44px; height: 44px; }
+    .kb-list-context { display: flex !important; }
+    .kb-list-context > span { display: none; }
     .kb-item-row, .kb-npc-row { gap: 12px; }
     .kb-item-row { grid-template-columns: 42px minmax(0, 1fr) 20px; }
     .kb-item-row .kb-sources { display: none; }

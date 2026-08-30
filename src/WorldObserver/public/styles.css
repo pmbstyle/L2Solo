@@ -558,7 +558,7 @@ svg.empty-glyph { width: 38px; height: 38px; }
 .paperdoll-center span { font-size: 28px; font-weight: 900; line-height: 1; }
 .paperdoll-center small { margin-top: 4px; color: var(--faint); font-size: 8px; letter-spacing: 0.16em; }
 .paperdoll-slot { position: relative; z-index: 1; display: grid; min-width: 0; min-height: 0; place-items: center; border: 1px solid rgba(237, 240, 232, 0.09); border-radius: 6px; background: rgba(7, 16, 18, 0.72); transition: border-color 140ms ease, background 140ms ease, transform 140ms ease; }
-.paperdoll-slot.has-item { cursor: help; outline: none; }
+.paperdoll-slot.has-item { color: inherit; cursor: pointer; outline: none; text-decoration: none; }
 .paperdoll-slot.has-item:hover, .paperdoll-slot.has-item:focus { z-index: 8; border-color: rgba(216, 185, 109, 0.7); background: rgba(216, 185, 109, 0.12); transform: translateY(-1px); }
 .paperdoll-slot.is-empty { opacity: 0.56; }
 .paperdoll-slot-key { position: absolute; top: 3px; left: 4px; color: var(--faint); font-size: 7px; font-weight: 850; letter-spacing: 0.04em; }

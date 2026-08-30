@@ -2563,12 +2563,18 @@ function renderPaperdollSlot(slot, item) {
             <span class="paperdoll-empty-mark">·</span>
         </div>`;
     }
-    return `<div class="paperdoll-slot paperdoll-slot-${text(slot.key)} has-item${edge}" tabindex="0" aria-label="${text(`${slot.label}: ${item.name}`)}">
+    const itemId = Number(item.selfId);
+    const href = Number.isSafeInteger(itemId) && itemId > 0
+        ? Router.href({ name: 'knowledge-items', id: itemId })
+        : null;
+    const tag = href ? 'a' : 'div';
+    const navigation = href ? ` href="${text(href)}"` : ' tabindex="0"';
+    return `<${tag} class="paperdoll-slot paperdoll-slot-${text(slot.key)} has-item${edge}"${navigation} aria-label="${text(`${slot.label}: ${item.name}${href ? '. Open item details' : ''}`)}">
         <span class="paperdoll-slot-key">${text(slot.short)}</span>
         ${item.iconUrl ? `<img src="${text(item.iconUrl)}" alt="${text(item.name)}" loading="lazy" decoding="async">` : '<span class="paperdoll-missing-icon">?</span>'}
         ${Number(item.enchant || 0) ? `<b class="paperdoll-enchant">+${number(item.enchant)}</b>` : ''}
         ${renderItemTooltip(item)}
-    </div>`;
+    </${tag}>`;
 }
 
 function renderEquipment(equipment, combat) {
@@ -2577,7 +2583,7 @@ function renderEquipment(equipment, combat) {
     const totals = equipment.totals || combat || {};
     const used = new Set();
     return `<section class="inspector-block">
-        <div class="inspector-block-title"><h3>Paperdoll</h3><span>${items.length} items · hover for stats</span></div>
+        <div class="inspector-block-title"><h3>Paperdoll</h3><span>${items.length} items · hover for stats · click for details</span></div>
         <div class="paperdoll" aria-label="Equipped items">
             <div class="paperdoll-center" aria-hidden="true"><span>W</span><small>C4</small></div>
             ${PAPERDOLL_SLOTS.map((slot) => renderPaperdollSlot(slot, paperdollItem(items, slot.slotIds, used))).join('')}

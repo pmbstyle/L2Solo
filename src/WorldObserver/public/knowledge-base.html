@@ -44,10 +44,6 @@
                     <input id="catalogSearch" type="search" placeholder="Search by name or ID…" autocomplete="off">
                     <kbd>/</kbd>
                 </label>
-                <div class="kb-filters" id="itemFilters">
-                    <label><span>Type</span><select id="itemCategory"></select></label>
-                    <label><span>Grade</span><select id="itemGrade"></select></label>
-                </div>
                 <div class="kb-filters" id="npcFilters" hidden>
                     <label><span>Level from</span><input id="npcMinLevel" type="number" min="1" max="99" value="1"></label>
                     <label><span>to</span><input id="npcMaxLevel" type="number" min="1" max="99" value="99"></label>
@@ -55,12 +51,18 @@
                 </div>
             </div>
 
-            <div class="kb-list-head">
-                <strong id="resultCount">Loading database…</strong>
-                <span id="resultContext">Current server datapack</span>
+            <section class="kb-directory" id="itemDirectory" hidden>
+                <div class="kb-directory-list" id="itemDirectoryList"></div>
+            </section>
+
+            <div id="catalogList">
+                <div class="kb-list-head">
+                    <strong id="resultCount">Loading database…</strong>
+                    <span class="kb-list-context"><a id="itemDirectoryReturn" href="/observer/database/items" data-item-directory hidden>← Item categories</a><span id="resultContext">Current server datapack</span></span>
+                </div>
+                <div class="kb-results" id="catalogResults"></div>
+                <nav class="kb-pagination" id="pagination" aria-label="Catalog pages"></nav>
             </div>
-            <div class="kb-results" id="catalogResults"></div>
-            <nav class="kb-pagination" id="pagination" aria-label="Catalog pages"></nav>
         </section>
 
         <article class="kb-detail" id="detailView" aria-live="polite" hidden></article>

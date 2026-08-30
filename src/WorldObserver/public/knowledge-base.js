@@ -23,10 +23,11 @@ const els = {
     catalogView: document.querySelector('#catalogView'),
     detailView: document.querySelector('#detailView'),
     catalogSearch: document.querySelector('#catalogSearch'),
-    itemFilters: document.querySelector('#itemFilters'),
     npcFilters: document.querySelector('#npcFilters'),
-    itemCategory: document.querySelector('#itemCategory'),
-    itemGrade: document.querySelector('#itemGrade'),
+    itemDirectory: document.querySelector('#itemDirectory'),
+    itemDirectoryList: document.querySelector('#itemDirectoryList'),
+    itemDirectoryReturn: document.querySelector('#itemDirectoryReturn'),
+    catalogList: document.querySelector('#catalogList'),
     npcMinLevel: document.querySelector('#npcMinLevel'),
     npcMaxLevel: document.querySelector('#npcMaxLevel'),
     npcRaid: document.querySelector('#npcRaid'),
@@ -121,17 +122,42 @@ function renderMeta() {
         <span><b>${compactNumber(counts.items)}</b><small>Items</small></span>
         <span><b>${compactNumber(counts.mobs)}</b><small>NPCs</small></span>
         <span><b>${compactNumber(counts.spawnDefinitions)}</b><small>Spawns</small></span>`;
-    els.itemCategory.innerHTML = (state.meta.itemCategories || [])
-        .map((entry) => `<option value="${text(entry.key)}">${text(entry.label)}</option>`).join('');
-    els.itemGrade.innerHTML = (state.meta.grades || [])
-        .map((grade) => `<option value="${text(grade)}">${grade === 'all' ? 'All grades' : text(String(grade).toUpperCase())}</option>`).join('');
+    els.itemDirectoryList.innerHTML = (state.meta.itemDirectory || []).map(itemDirectoryRow).join('');
+}
+
+function gradeLabel(grade, { short = false } = {}) {
+    if (grade === 'no-grade') return short ? 'NG' : 'No grade';
+    return String(grade || '').toUpperCase();
+}
+
+function itemCatalogHref(category = 'all', grade = 'all', query = '') {
+    const params = new URLSearchParams();
+    if (category !== 'all') params.set('category', category);
+    if (grade !== 'all') params.set('grade', grade);
+    if (query) params.set('q', query);
+    const suffix = params.toString();
+    return `${Router.href(routeFor('items'))}${suffix ? `?${suffix}` : ''}`;
+}
+
+function itemDirectoryRow(entry, index) {
+    const isEquipment = ['weapons', 'armor', 'jewelry'].includes(entry.key);
+    const grades = isEquipment ? (entry.grades || []) : [];
+    const allHref = itemCatalogHref(entry.key);
+    return `<section class="kb-directory-row">
+        <span class="kb-directory-index">${String(index + 1).padStart(2, '0')}</span>
+        <div class="kb-directory-name"><h3>${text(entry.label)}</h3><p>${text(entry.description)}</p></div>
+        <span class="kb-directory-total"><b>${number(entry.total)}</b><small>items</small></span>
+        <nav class="kb-grade-nav" aria-label="${text(entry.label)} grades">
+            <a href="${text(allHref)}" data-item-category="${text(entry.key)}" data-item-grade="all"><span>All</span><small>${number(entry.total)}</small></a>
+            ${grades.map((grade) => `<a href="${itemCatalogHref(entry.key, grade.key)}" data-item-category="${text(entry.key)}" data-item-grade="${text(grade.key)}" title="${text(`${entry.label} · ${gradeLabel(grade.key)}`)}"><span>${text(gradeLabel(grade.key, { short: true }))}</span><small>${number(grade.count)}</small></a>`).join('')}
+        </nav>
+    </section>`;
 }
 
 function setActiveKind(kind) {
     state.kind = kind === 'npcs' ? 'npcs' : 'items';
     els.itemsTab.classList.toggle('is-active', state.kind === 'items');
     els.npcsTab.classList.toggle('is-active', state.kind === 'npcs');
-    els.itemFilters.hidden = state.kind !== 'items';
     els.npcFilters.hidden = state.kind !== 'npcs';
     els.resultContext.textContent = state.kind === 'items' ? 'Sorted alphabetically' : 'Grouped by level';
 }
@@ -192,17 +218,54 @@ function catalogUrl() {
     return `/observer/api/knowledge/${state.kind}?${params}`;
 }
 
+function itemDirectoryEntry(category = state.category) {
+    return (state.meta?.itemDirectory || []).find((entry) => entry.key === category) || null;
+}
+
+function itemResultContext() {
+    if (state.query) return `Search across every item · “${state.query}”`;
+    const category = itemDirectoryEntry();
+    if (!category) return 'Sorted alphabetically';
+    return `${category.label}${state.grade === 'all' ? '' : ` · ${gradeLabel(state.grade)}`}`;
+}
+
+function showItemDirectory() {
+    state.request += 1;
+    els.catalogView.hidden = false;
+    els.detailView.hidden = true;
+    els.itemDirectory.hidden = false;
+    els.catalogList.hidden = true;
+    els.itemDirectoryReturn.hidden = true;
+    document.title = 'Items · Server Database';
+}
+
+function shouldShowItemDirectory() {
+    return state.kind === 'items' && !state.query && state.category === 'all' && state.grade === 'all';
+}
+
+function refreshCatalogView() {
+    if (shouldShowItemDirectory()) showItemDirectory();
+    else loadCatalog();
+}
+
 async function loadCatalog() {
     const request = ++state.request;
     els.catalogView.hidden = false;
     els.detailView.hidden = true;
+    els.itemDirectory.hidden = true;
+    els.catalogList.hidden = false;
+    els.itemDirectoryReturn.hidden = state.kind !== 'items';
     showLoading(els.catalogResults);
     els.pagination.innerHTML = '';
     try {
         const data = await requestJson(catalogUrl());
         if (request !== state.request) return;
         els.rateBadge.textContent = rateLabel(data.rateProfile);
-        els.resultCount.textContent = `${number(data.total)} ${state.kind === 'items' ? 'items' : 'NPCs'}`;
+        const resultLabel = state.kind === 'items'
+            ? (data.total === 1 ? 'item' : 'items')
+            : (data.total === 1 ? 'NPC' : 'NPCs');
+        els.resultCount.textContent = `${number(data.total)} ${resultLabel}`;
+        els.resultContext.textContent = state.kind === 'items' ? itemResultContext() : 'Grouped by level';
         if (!data.items.length) {
             els.catalogResults.innerHTML = '<div class="kb-empty">Nothing matches these filters.</div>';
         } else if (state.kind === 'items') {
@@ -248,7 +311,7 @@ function sourceRows(items) {
             <span class="kb-level">${number(npc.level)}</span>
             <span class="kb-primary"><strong>${text(npc.name)}</strong><small>ID ${number(npc.id)} · ${npc.spawnCount ? `${number(npc.spawnCount)} spawn groups` : 'no direct spawn'}</small></span>
             <span class="chance">${chance(npc.chancePercent)}</span>
-            <span class="kb-cell"><b>${Number(npc.expectedAmountPerKill || 0).toFixed(4)}</b><small>Expected / kill</small></span>
+            <span class="kb-cell"><b>${number(Math.round(Number(npc.expectedAmountPerKill || 0)))}</b><small>Expected / kill</small></span>
             <span class="kb-chevron">›</span>
         </a>`).join('')}</div>`;
 }
@@ -346,24 +409,48 @@ function applyRoute(route = Router.parse(`${window.location.pathname}${window.lo
         return;
     }
     state.selectedId = null;
+    if (kind === 'items') {
+        const params = new URLSearchParams(window.location.search);
+        const requestedCategory = params.get('category') || 'all';
+        const directoryEntry = itemDirectoryEntry(requestedCategory);
+        const requestedGrade = params.get('grade') || 'all';
+        const validGrade = requestedGrade === 'all' || directoryEntry?.grades?.some((grade) => grade.key === requestedGrade);
+        state.query = String(params.get('q') || '').trim();
+        state.category = state.query ? 'all' : (directoryEntry ? requestedCategory : 'all');
+        state.grade = state.query ? 'all' : (validGrade ? requestedGrade : 'all');
+        state.page = 1;
+        els.catalogSearch.value = state.query;
+    }
     document.title = `${kind === 'items' ? 'Items' : 'NPCs'} · Server Database`;
-    loadCatalog();
+    refreshCatalogView();
 }
 
 function openCatalog(kind, { updateRoute = true } = {}) {
     setActiveKind(kind);
     state.selectedId = null;
     state.page = 1;
+    if (kind === 'items') {
+        state.query = '';
+        state.category = 'all';
+        state.grade = 'all';
+        els.catalogSearch.value = '';
+    }
     if (updateRoute) commitRoute(routeFor(kind));
     document.title = `${kind === 'items' ? 'Items' : 'NPCs'} · Server Database`;
-    loadCatalog();
+    refreshCatalogView();
 }
 
-function scheduleCatalogReload() {
+function scheduleCatalogReload({ syncRoute = false } = {}) {
     clearTimeout(state.searchTimer);
     state.searchTimer = setTimeout(() => {
         state.page = 1;
-        loadCatalog();
+        if (syncRoute && state.kind === 'items') {
+            const href = itemCatalogHref(state.category, state.grade, state.query);
+            if (`${window.location.pathname}${window.location.search}` !== href) {
+                window.history.replaceState({}, '', href);
+            }
+        }
+        refreshCatalogView();
     }, 180);
 }
 
@@ -372,6 +459,28 @@ document.addEventListener('click', (event) => {
     if (tab) {
         event.preventDefault();
         openCatalog(tab.dataset.kind);
+        return;
+    }
+    const itemBranch = event.target.closest('[data-item-category]');
+    if (itemBranch) {
+        event.preventDefault();
+        state.kind = 'items';
+        state.query = '';
+        state.category = itemBranch.dataset.itemCategory || 'all';
+        state.grade = itemBranch.dataset.itemGrade || 'all';
+        state.page = 1;
+        els.catalogSearch.value = '';
+        const href = itemCatalogHref(state.category, state.grade);
+        if (`${window.location.pathname}${window.location.search}` !== href) {
+            window.history.pushState({}, '', href);
+        }
+        loadCatalog();
+        return;
+    }
+    const itemDirectory = event.target.closest('[data-item-directory]');
+    if (itemDirectory) {
+        event.preventDefault();
+        openCatalog('items');
         return;
     }
     const detail = event.target.closest('[data-detail-kind]');
@@ -393,10 +502,12 @@ document.addEventListener('click', (event) => {
 
 els.catalogSearch.addEventListener('input', (event) => {
     state.query = String(event.target.value || '').trim();
-    scheduleCatalogReload();
+    if (state.kind === 'items' && state.query) {
+        state.category = 'all';
+        state.grade = 'all';
+    }
+    scheduleCatalogReload({ syncRoute: true });
 });
-els.itemCategory.addEventListener('change', (event) => { state.category = event.target.value; scheduleCatalogReload(); });
-els.itemGrade.addEventListener('change', (event) => { state.grade = event.target.value; scheduleCatalogReload(); });
 els.npcMinLevel.addEventListener('input', (event) => { state.minLevel = Number(event.target.value || 1); scheduleCatalogReload(); });
 els.npcMaxLevel.addEventListener('input', (event) => { state.maxLevel = Number(event.target.value || 99); scheduleCatalogReload(); });
 els.npcRaid.addEventListener('change', (event) => { state.raid = event.target.value; scheduleCatalogReload(); });

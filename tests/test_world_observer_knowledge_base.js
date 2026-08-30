@@ -21,6 +21,12 @@ try {
     assert.strictEqual(meta.counts.items, 5062);
     assert.strictEqual(meta.counts.mobs, 2068);
     assert.strictEqual(meta.rateProfile.drop, 1);
+    const weaponDirectory = meta.itemDirectory.find((entry) => entry.key === 'weapons');
+    assert.strictEqual(weaponDirectory.total, 511);
+    assert.strictEqual(weaponDirectory.grades.find((grade) => grade.key === 'd').count, 121);
+    assert.deepStrictEqual(meta.itemDirectory.find((entry) => entry.key === 'materials').grades, [
+        { key: 'no-grade', count: 606 }
+    ]);
 
     const itemSearch = service.listItems({ q: 'short sword', limit: 10 });
     assert.deepStrictEqual(itemSearch.items.map((item) => item.id), [1]);
@@ -50,6 +56,14 @@ try {
     assert.strictEqual(gremlinX50.drops[1].items[0].chancePercent, 33.49182068);
     assert.strictEqual(gremlinX50.spoils[0].items[0].chancePercent, 12.0603);
     assert.strictEqual(gremlinX50.spoils[0].items[0].expectedAmountPerKill, 6.03015);
+    const keltirAdena = service.npcDetail(481).drops.flatMap((group) => group.items)
+        .find((item) => item.itemId === 57);
+    assert.deepStrictEqual({
+        min: keltirAdena.minAmount,
+        max: keltirAdena.maxAmount,
+        chance: keltirAdena.chancePercent,
+        expected: keltirAdena.expectedAmountPerKill
+    }, { min: 245, max: 350, chance: 100, expected: 297.5 });
 
     assert.deepStrictEqual(spawnMapPoints({ possibleLocations: [{ locX: 10, locY: 20, locZ: -30 }] }), [
         { locX: 10, locY: 20, locZ: -30, source: 'location' }
@@ -65,7 +79,14 @@ try {
     assert.match(html, /Aden Archives/);
     assert.match(html, /data-kind="items"/);
     assert.match(html, /data-kind="npcs"/);
+    assert.match(html, /id="itemDirectory"/);
+    assert.doesNotMatch(html, /id="itemCategory"/);
+    assert.doesNotMatch(html, /Browse by type and grade/);
     assert.match(app, /\/observer\/api\/knowledge\/\$\{state\.kind\}/);
+    assert.match(app, /function showItemDirectory\(\)/);
+    assert.match(app, /data-item-category=/);
+    assert.match(app, /number\(Math\.round\(Number\(npc\.expectedAmountPerKill/);
+    assert.doesNotMatch(app, /expectedAmountPerKill \|\| 0\)\.toFixed\(4\)/);
     assert.match(app, /Show .* locations on map/);
     assert.match(mapHtml, /href="\/observer\/database\/items"/);
     assert.match(mapHtml, /id="npcSpawnLayer"/);
