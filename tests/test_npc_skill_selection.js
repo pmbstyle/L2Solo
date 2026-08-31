@@ -102,6 +102,38 @@ assert.strictEqual(
     'the Mithril Mines skeleton must not recast Shock into an already stunned target'
 );
 
+const lesserSuccubusTilfo = npc(57);
+const tilfoTarget = target();
+const tilfoHold = lesserSuccubusTilfo.fetchCombatSkills().find((skill) => skill.fetchSelfId() === 4047);
+assert(tilfoHold, 'Lesser Succubus Tilfo should retain Hold level 2');
+assert.deepStrictEqual(
+    {
+        level: tilfoHold.fetchLevel(),
+        target: tilfoHold.fetchTargetKind(),
+        effect: tilfoHold.fetchSemantic().effect,
+        effectType: tilfoHold.fetchSemantic().effectType
+    },
+    { level: 2, target: 'enemy', effect: 'root', effectType: 'debuff' },
+    'Lesser Succubus Tilfo Hold should load as the sourced enemy root instead of a self buff'
+);
+assert.strictEqual(
+    lesserSuccubusTilfo.selectCombatSkill(tilfoTarget, () => 0)?.fetchSelfId(),
+    4047,
+    'Lesser Succubus Tilfo should select Hold when the root roll succeeds'
+);
+EffectStore.apply(tilfoTarget, {
+    key: 'root',
+    id: 4047,
+    category: 'root',
+    type: 'debuff',
+    durationMs: 30000
+});
+assert.strictEqual(
+    lesserSuccubusTilfo.selectCombatSkill(tilfoTarget, () => 0),
+    null,
+    'Lesser Succubus Tilfo must not recast Hold into an already rooted target'
+);
+
 const marshZombie = npc(15);
 assert.strictEqual(
     marshZombie.fetchAiType(),
