@@ -8,7 +8,7 @@ function finishRevive(session, actor) {
     session.deathTimerStart = undefined;
     session.partyReviveCombatPauseStartedAt = undefined;
     session.partyReviveCombatPausedMs = undefined;
-    if (session?.accountId?.startsWith?.('bot_')) {
+    if (session?.accountId?.startsWith?.('bot_') && session.arenaEphemeral !== true) {
         Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
             botId: actor.fetchId(),
             eventType: 'revive',

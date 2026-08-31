@@ -1,5 +1,6 @@
 const World = invoke('GameServer/World/World');
 const AttackRange = invoke('GameServer/Actor/AttackRange');
+const ArenaCombatRules = invoke('GameServer/World/ArenaCombatRules');
 
 function canAttackNpc(npc, data = {}) {
     return npc?.fetchAttackable?.() === true || npc?.fetchIsSummon?.() === true || data.ctrl === true;
@@ -21,6 +22,7 @@ function attackExec(session, actor, data) {
         World.fetchUser(data.id).then((user) => {
             actor.automation.scheduleAction(session, actor, user, attackRange, () => {
                 if (data.ctrl) {
+                    if (!ArenaCombatRules.canInteract(actor, user)) return;
                     if (utils.isInPeaceZone(actor.fetchLocX(), actor.fetchLocY()) || utils.isInPeaceZone(user.fetchLocX(), user.fetchLocY())) {
                         const ServerResponse = invoke('GameServer/Network/Response');
                         session.dataSendToMe(ServerResponse.speak(actor, { kind: 0, text: "You cannot attack players in a peace zone." }));

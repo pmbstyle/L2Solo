@@ -10,6 +10,9 @@ const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool')
 const CLIENT_VISIBILITY_RADIUS = 6000;
 const COMPANION_DIRECT_DISTANCE = 256;
 const COMPANION_PATH_TIMEOUT_MS = 2000;
+const COMPANION_PATH_MAX_NODES = 4000;
+const COMPANION_ERRAND_PATH_MAX_NODES = 120000;
+const COMPANION_MAX_ARRIVAL_RADIUS = 512;
 const ACTIVE_GOAL_XY_TOLERANCE = 32;
 const ACTIVE_GOAL_Z_TOLERANCE = 64;
 const INITIAL_WAYPOINT_SKIP_DISTANCE = 24;
@@ -17,6 +20,8 @@ const MOVE_PROGRESS_SAMPLE_MS = 750;
 const MOVE_PROGRESS_DISTANCE = 8;
 const MOVE_STALL_SAMPLES = 3;
 const MOVEMENT_TRACE_LIMIT = 24;
+const TOWN_NPC_EGRESS_MAX_AGE_MS = 120000;
+const TOWN_NPC_EGRESS_START_TOLERANCE = 96;
 
 function recordMovementTrace(session, entry) {
     if (!session) return;
@@ -45,6 +50,37 @@ function sameMoveGoal(first, second) {
     return Math.abs(Number(first?.locX) - Number(second?.locX)) <= ACTIVE_GOAL_XY_TOLERANCE &&
         Math.abs(Number(first?.locY) - Number(second?.locY)) <= ACTIVE_GOAL_XY_TOLERANCE &&
         Math.abs(Number(first?.locZ) - Number(second?.locZ)) <= ACTIVE_GOAL_Z_TOLERANCE;
+}
+
+function rememberTownNpcEgress(session, requestedTo, routedTo, movementPath) {
+    const approach = session?.townNpcApproach;
+    if (approach?.phase !== 'interaction' || !String(approach.key || '').startsWith('shopping:')) return;
+    if (!sameLoc(requestedTo, routedTo) || !Array.isArray(movementPath) || movementPath.length < 2) return;
+
+    session.townNpcEgress = {
+        key: approach.key,
+        createdAt: Date.now(),
+        path: movementPath.map((point) => ({ ...point })).reverse()
+    };
+}
+
+function takeTownNpcEgress(session, start) {
+    const egress = session?.townNpcEgress;
+    if (!egress) return null;
+    // A completed ingress path is also useful for leaving the shop, but only
+    // after the interaction has finished. Replaying it while the same approach
+    // is active makes a bot bounce between the counter and the street whenever
+    // the last path node happens to lack line of sight to the NPC.
+    const approach = session?.townNpcApproach;
+    if (approach?.phase === 'interaction' && approach.key === egress.key) return null;
+    delete session.townNpcEgress;
+    if (Date.now() - Number(egress.createdAt || 0) > TOWN_NPC_EGRESS_MAX_AGE_MS) return null;
+    if (!Array.isArray(egress.path) || egress.path.length < 2) return null;
+
+    const pathStart = egress.path[0];
+    if (distance2d(start, pathStart) > TOWN_NPC_EGRESS_START_TOLERANCE) return null;
+    if (Math.abs(Number(start.locZ) - Number(pathStart.locZ)) > ACTIVE_GOAL_Z_TOLERANCE) return null;
+    return egress;
 }
 
 function activeMoveGoal(session, actor, now = Date.now()) {
@@ -251,6 +287,11 @@ function moveTo(session, actor, coords) {
 
     const isBot = session && (session.constructor.name === 'BotSession' || (session.accountId && session.accountId.startsWith('bot_')));
     const requestedTo = { ...coords.to };
+    const arrivalRadius = Math.min(COMPANION_MAX_ARRIVAL_RADIUS, Math.max(0, Number(coords.arrivalRadius || 0)));
+    const pathMaxNodes = Math.min(
+        COMPANION_ERRAND_PATH_MAX_NODES,
+        Math.max(COMPANION_PATH_MAX_NODES, Number(coords.pathMaxNodes || COMPANION_PATH_MAX_NODES))
+    );
     let townRouteDiagnostics = null;
 
     // Hot AI states may evaluate the same fixed destination every second. A
@@ -310,6 +351,12 @@ function moveTo(session, actor, coords) {
             .map((playerSession) => ({ session: playerSession, announced: false }));
 
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
+        // Town errands explicitly request a larger search budget. Running that
+        // A* synchronously stalls the game loop when several hot bots navigate
+        // a city at once, so share the bounded companion worker pool for those
+        // expensive autonomous routes as well.
+        const useWorkerPathfinding = isCompanion || pathMaxNodes > COMPANION_PATH_MAX_NODES;
+        const useSegmentedTownRoute = pathMaxNodes > COMPANION_PATH_MAX_NODES;
 
         if (shouldUseLowLodWarp({
             startDistance: distanceToPlayer,
@@ -345,7 +392,49 @@ function moveTo(session, actor, coords) {
         const pathStartedAt = Date.now();
         const moveGoal = previewOnly ? null : beginMoveGoal(session, actor, requestedTo, coords.targetActor);
 
-        if (isCompanion && !previewOnly) {
+        if (useSegmentedTownRoute && !previewOnly) {
+            const egress = takeTownNpcEgress(session, { locX: startX, locY: startY, locZ: startZ });
+            if (egress) {
+                const routedTo = { ...egress.path[egress.path.length - 1] };
+                session.townRoutePlan = null;
+                session.lastPathfinding = {
+                    requestedTo,
+                    routedTo,
+                    townRoute: {
+                        from: { locX: startX, locY: startY, locZ: startZ },
+                        to: { ...requestedTo },
+                        routedTo: { ...routedTo },
+                        fromTown: null,
+                        toTown: null,
+                        changedTarget: true,
+                        plan: null,
+                        reason: 'reverse_shop_ingress',
+                        shopKey: egress.key
+                    },
+                    pathLength: egress.path.length,
+                    routeUsable: true,
+                    lowLodWarp: false,
+                    distanceToPlayer,
+                    destinationDistanceToPlayer,
+                    strategy: 'town_shop_egress',
+                    worker: false,
+                    arrivalRadius,
+                    maxNodes: 0,
+                    at: Date.now()
+                };
+                startPathMovement({
+                    session,
+                    actor,
+                    path: egress.path,
+                    isClose,
+                    approachingObservers,
+                    moveGoal
+                });
+                return session.lastPathfinding;
+            }
+        }
+
+        if (useWorkerPathfinding && !previewOnly) {
             const pool = session.pathfindingWorkerPool || PathfindingWorkerPool;
             const routeGeneration = Number(session.moveRouteGeneration || 0);
             const actorId = Number(actor.fetchId());
@@ -354,7 +443,16 @@ function moveTo(session, actor, coords) {
             const targetId = Number(targetActor?.fetchId?.()) || null;
             const targetStart = targetActor ? locOf(targetActor) : null;
             const start = { locX: startX, locY: startY, locZ: startZ };
-            const requestKey = `companion:${actorId}`;
+            if (useSegmentedTownRoute) {
+                const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
+                const routeResult = TownPathfinder.routeWithSession(session, actor, start, requestedTo);
+                pathTarget = { ...routeResult.to };
+                townRouteDiagnostics = routeResult.diagnostics;
+                coords.to.locX = pathTarget.locX;
+                coords.to.locY = pathTarget.locY;
+                coords.to.locZ = pathTarget.locZ;
+            }
+            const requestKey = `${isCompanion ? 'companion' : 'bot'}:${actorId}`;
             const clearPending = ({ clearGoal = false } = {}) => {
                 const pending = session.pendingPathRequest;
                 if (pending?.key === requestKey && pending.generation === routeGeneration) {
@@ -365,8 +463,10 @@ function moveTo(session, actor, coords) {
             };
             const isCurrent = () => (
                 Number(session.moveRouteGeneration || 0) === routeGeneration &&
-                session.partyCompanion === true &&
-                session.followPlayerSession === leaderSession &&
+                (!isCompanion || (
+                    session.partyCompanion === true &&
+                    session.followPlayerSession === leaderSession
+                )) &&
                 session.actor === actor &&
                 Number(actor.fetchId()) === actorId &&
                 (!targetActor || (
@@ -394,7 +494,7 @@ function moveTo(session, actor, coords) {
                 const movementPath = routeFound
                     ? candidatePath
                     : (fallbackLineOfSight ? [{ ...pathTarget }] : []);
-                PopulationMetrics.recordPathfindingDuration('companion', Date.now() - pathStartedAt);
+                PopulationMetrics.recordPathfindingDuration(isCompanion ? 'companion' : 'actor', Date.now() - pathStartedAt);
                 session.lastPathfinding = {
                     requestedTo,
                     routedTo: { ...pathTarget },
@@ -406,10 +506,13 @@ function moveTo(session, actor, coords) {
                     destinationDistanceToPlayer,
                     strategy,
                     worker: true,
+                    arrivalRadius,
+                    maxNodes: pathMaxNodes,
                     ...(error ? { error: error.code || error.message || String(error) } : {}),
                     at: Date.now()
                 };
                 if (movementPath.length) {
+                    rememberTownNpcEgress(session, requestedTo, pathTarget, movementPath);
                     startPathMovement({ session, actor, path: movementPath, isClose, approachingObservers, moveGoal });
                 } else {
                     clearMoveGoal(session, moveGoal);
@@ -420,10 +523,13 @@ function moveTo(session, actor, coords) {
                 startX, startY, startZ,
                 endX: target.locX,
                 endY: target.locY,
-                endZ: target.locZ
+                endZ: target.locZ,
+                maxNodes: pathMaxNodes,
+                goalRadius: arrivalRadius,
+                goalZTolerance: ACTIVE_GOAL_Z_TOLERANCE
             }, {
                 key: requestKey,
-                priority: 100,
+                priority: isCompanion ? 100 : 50,
                 timeoutMs: COMPANION_PATH_TIMEOUT_MS
             }).then((candidatePath) => {
                 if (!isCurrent()) {
@@ -431,14 +537,24 @@ function moveTo(session, actor, coords) {
                     return null;
                 }
                 if (Array.isArray(candidatePath) && candidatePath.length > 1) {
-                    session.townRoutePlan = null;
+                    if (sameLoc(target, requestedTo)) session.townRoutePlan = null;
                     return finish(candidatePath, strategy);
+                }
+
+                // A segmented request already targets one bounded waypoint.
+                // Retrying that same point inside this dispatch only doubles
+                // the work; let recovery rotate the waypoint-area sample.
+                if (!sameLoc(target, requestedTo)) {
+                    return finish(candidatePath, `${strategy}_unreachable`);
                 }
 
                 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
                 const routeResult = TownPathfinder.routeWithSession(session, actor, start, requestedTo);
                 pathTarget = { ...routeResult.to };
                 townRouteDiagnostics = routeResult.diagnostics;
+                const waypointArrivalRadius = Number.isFinite(routeResult.arrivalRadius)
+                    ? Math.max(0, Number(routeResult.arrivalRadius))
+                    : arrivalRadius;
                 coords.to.locX = pathTarget.locX;
                 coords.to.locY = pathTarget.locY;
                 coords.to.locZ = pathTarget.locZ;
@@ -450,10 +566,13 @@ function moveTo(session, actor, coords) {
                     startX, startY, startZ,
                     endX: pathTarget.locX,
                     endY: pathTarget.locY,
-                    endZ: pathTarget.locZ
+                    endZ: pathTarget.locZ,
+                    maxNodes: pathMaxNodes,
+                    goalRadius: waypointArrivalRadius,
+                    goalZTolerance: ACTIVE_GOAL_Z_TOLERANCE
                 }, {
                     key: requestKey,
-                    priority: 100,
+                    priority: isCompanion ? 100 : 50,
                     timeoutMs: COMPANION_PATH_TIMEOUT_MS
                 }).then((fallbackPath) => finish(fallbackPath, fallbackStrategy));
             }).catch((error) => {
@@ -481,12 +600,15 @@ function moveTo(session, actor, coords) {
                 return finish([{ ...start }, { ...requestedTo }], 'short_direct');
             }
 
-            session.pendingPathRequest.promise = requestPath(requestedTo, 'worker_geodata');
+            session.pendingPathRequest.promise = requestPath(
+                pathTarget,
+                townRouteDiagnostics?.changedTarget ? 'worker_town_segment' : 'worker_geodata'
+            );
             actor.state.setTowards('path');
             session.lastPathfinding = {
                 requestedTo,
-                routedTo: { ...requestedTo },
-                townRoute: null,
+                routedTo: { ...pathTarget },
+                townRoute: townRouteDiagnostics,
                 pathLength: 0,
                 routeUsable: null,
                 lowLodWarp: false,
@@ -494,6 +616,8 @@ function moveTo(session, actor, coords) {
                 destinationDistanceToPlayer,
                 strategy: 'worker_pending',
                 worker: true,
+                arrivalRadius,
+                maxNodes: pathMaxNodes,
                 at: Date.now()
             };
             return session.lastPathfinding;
@@ -566,6 +690,7 @@ function moveTo(session, actor, coords) {
             return session.lastPathfinding;
         }
         if (path.length > 0) {
+            rememberTownNpcEgress(session, requestedTo, pathTarget, path);
             startPathMovement({ session, actor, path, isClose, approachingObservers, moveGoal });
         } else {
             clearMoveGoal(session, moveGoal);
@@ -580,6 +705,8 @@ module.exports.shouldUseLowLodWarp = shouldUseLowLodWarp;
 module.exports.shouldPreannounceVisibleMove = shouldPreannounceVisibleMove;
 module.exports.CLIENT_VISIBILITY_RADIUS = CLIENT_VISIBILITY_RADIUS;
 module.exports.COMPANION_DIRECT_DISTANCE = COMPANION_DIRECT_DISTANCE;
+module.exports.COMPANION_PATH_MAX_NODES = COMPANION_PATH_MAX_NODES;
+module.exports.COMPANION_ERRAND_PATH_MAX_NODES = COMPANION_ERRAND_PATH_MAX_NODES;
 module.exports.ACTIVE_GOAL_XY_TOLERANCE = ACTIVE_GOAL_XY_TOLERANCE;
 module.exports.INITIAL_WAYPOINT_SKIP_DISTANCE = INITIAL_WAYPOINT_SKIP_DISTANCE;
 module.exports.MOVE_STALL_SAMPLES = MOVE_STALL_SAMPLES;

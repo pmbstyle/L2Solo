@@ -56,6 +56,7 @@ Database.transferWarehouseToInventory = (_characterId, row) => {
 };
 
 const source = item(10, 7);
+assert.strictEqual(source.fetchPetData(), null, 'ordinary items must not synthesize an empty pet payload');
 const session = {
     activeNpcTalk: { title: 'Warehouse Keeper', objectId: 7005001, selfId: 7005 },
     actor: {
@@ -82,6 +83,7 @@ Warehouse.deposit(session, [{ objectId: 10, amount: 7 }]).then(async () => {
     assert.deepStrictEqual(calls, ['warehouse-insert', 'inventory-delete'], 'deposit must persist warehouse before removing the inventory item');
     assert.strictEqual(session.actor.backpack.items.length, 0, 'deposit should remove transferred inventory items only after persistence');
     assert.strictEqual(persistedWarehouse[0].amount, 7, 'deposit must persist the warehouse amount immediately');
+    assert.strictEqual(persistedWarehouse[0].petData, null, 'ordinary warehouse deposits must not persist empty pet metadata');
 
     calls.length = 0;
     await Warehouse.withdraw(session, [{ objectId: 500, amount: 7 }]);

@@ -42,7 +42,8 @@ const originals = {
     updateCharacterVitals: Database.updateCharacterVitals,
     syncInventorySummary: Database.syncInventorySummary,
     transferInventoryToWarehouse: Database.transferInventoryToWarehouse,
-    allStates: LifeState.allStates
+    allStates: LifeState.allStates,
+    upsertState: LifeState.upsertState
 };
 const calls = [];
 
@@ -351,6 +352,35 @@ async function run() {
     assert.deepStrictEqual(mixedReview.state.stats.marketStore.items.map((item) => Number(item.selfId)), [Number(marketItem.selfId)], 'expired speculative stock must be pruned independently');
     LifeState.allStates = originals.allStates;
 
+    const staleReviewAt = 61001;
+    let revalidationWrites = 0;
+    LifeState.allStates = () => [marketBuyer, latentBuyer];
+    LifeState.upsertState = (nextState, reason) => {
+        if (reason !== 'cold_market_demand_revalidated') return originals.upsertState.call(LifeState, nextState, reason);
+        revalidationWrites += 1;
+        if (revalidationWrites > 1) throw new Error('revalidation recursively repeated');
+        return Promise.resolve({
+            ...nextState,
+            stats: {
+                ...nextState.stats,
+                marketStore: { ...nextState.stats.marketStore, nextReviewAt: staleReviewAt }
+            }
+        });
+    };
+    const staleReview = await ListingService.resolve({
+        ...mixedOpened.state,
+        stats: {
+            ...mixedOpened.state.stats,
+            marketStore: { ...mixedOpened.state.stats.marketStore, nextReviewAt: staleReviewAt }
+        }
+    }, staleReviewAt);
+    assert.strictEqual(staleReview.closed, false);
+    assert.strictEqual(staleReview.revalidated, true);
+    assert.strictEqual(revalidationWrites, 1,
+        'a still-due persisted snapshot must wait for the next maintenance pass instead of recursively revalidating');
+    LifeState.upsertState = originals.upsertState;
+    LifeState.allStates = originals.allStates;
+
     const hotOpened = await ListingService.open(
         { ...state, characterId: 93, name: 'HotDemandSeller' },
         { ...listingOptions, durationMs: 300000 }
@@ -416,6 +446,7 @@ run().catch((err) => {
     Database.syncInventorySummary = originals.syncInventorySummary;
     Database.transferInventoryToWarehouse = originals.transferInventoryToWarehouse;
     LifeState.allStates = originals.allStates;
+    LifeState.upsertState = originals.upsertState;
     LifeState.reset?.();
     MarketOpportunity.resetColdStores();
 });

@@ -16,6 +16,8 @@ const clanPlan = {
     partyNeed: 'required',
     partyNeedReason: 'underleveled',
     requiresParty: true,
+    rateModelVersion: GearAcquisitionPlanner.RATE_MODEL_VERSION,
+    rateProfileSignature: GearAcquisitionPlanner.rateProfileSignature(),
     target: { selfId: 9101, name: 'Clan Blade', slot: 7 },
     next: { spotId: 'clan-spot', npcId: 0, itemId: 9101 },
     clanGoal: {
@@ -29,12 +31,15 @@ const clanPlan = {
 
 async function main() {
     const originalPlanFor = GearAcquisitionPlanner.planFor;
+    const originalBestSourceForPlan = GearAcquisitionPlanner.bestSourceForPlan;
+    const originalRetargetPlanSource = GearAcquisitionPlanner.retargetPlanSource;
     const originalStatesForParties = LifeState.statesForParties;
     const originalReleaseDissolvedPartyMembers = LifeState.releaseDissolvedPartyMembers;
     const originalActiveParties = PartyState.active;
     const originalSetPartyStatus = PartyState.setStatus;
     const originalCreateOrUpdate = PartyState.createOrUpdate;
     const originalSpotEnsure = SpotProfiles.ensure;
+    const originalCurrentOccupancy = SpotProfiles.currentOccupancy;
 
     let plannerCalls = 0;
     let savedParty = null;
@@ -71,6 +76,57 @@ async function main() {
             true,
             'an unequipped clan-owned target must be locked'
         );
+
+        GearAcquisitionPlanner.bestSourceForPlan = () => ({
+            spotId: 'alternate-clan-spot', npcId: 0, itemId: clanPlan.target.selfId, expectedYield: 1
+        });
+        const reroutedClanGoal = ClanEquipmentService.planForMember({
+            characterId: 1001,
+            name: 'ClanMember',
+            level: 35,
+            phase: 'cold',
+            inventory: {},
+            stats: { equipmentPlan: clanPlan }
+        }, [], [], { occupancy: { 'clan-spot': { reservedCount: 20, capacity: 2 } }, capacityUnits: 9 });
+        assert.strictEqual(reroutedClanGoal.target.selfId, clanPlan.target.selfId,
+            'clan planning must keep the goal item while another source for it is available');
+        assert.strictEqual(reroutedClanGoal.next.spotId, 'alternate-clan-spot',
+            'clan planning must move the whole goal to the available equivalent source');
+        assert.strictEqual(plannerCalls, 0,
+            'same-item source fallback must not run a full replacement-target plan');
+
+        GearAcquisitionPlanner.bestSourceForPlan = originalBestSourceForPlan;
+        const replacementForUnavailableGoal = ClanEquipmentService.planForMember({
+            characterId: 1001,
+            name: 'ClanMember',
+            level: 35,
+            phase: 'cold',
+            inventory: {},
+            stats: { equipmentPlan: clanPlan }
+        }, [], [], { occupancy: { 'clan-spot': { reservedCount: 20, capacity: 2 } }, capacityUnits: 9 });
+        assert.strictEqual(replacementForUnavailableGoal.target.selfId, 9202,
+            'a clan equipment goal with no available source must select the next attainable equipment target');
+        assert.strictEqual(plannerCalls, 1,
+            'unavailable clan equipment sources must trigger target planning instead of a wait state');
+        plannerCalls = 0;
+
+        const marketClanPlan = {
+            ...clanPlan,
+            strategy: 'market',
+            next: { kind: 'market', town: 'Giran', itemId: clanPlan.target.selfId }
+        };
+        const preservedMarketGoal = ClanEquipmentService.planForMember({
+            characterId: 1001,
+            name: 'ClanMember',
+            level: 35,
+            phase: 'cold',
+            inventory: {},
+            stats: { equipmentPlan: marketClanPlan }
+        }, [], [], { occupancy: { 'clan-spot': { reservedCount: 20, capacity: 2 } }, capacityUnits: 9 });
+        assert.strictEqual(preservedMarketGoal, marketClanPlan,
+            'market clan goals must not be rotated because farming spots are full');
+        assert.strictEqual(plannerCalls, 0,
+            'market clan goals must remain outside farm capacity planning');
 
         const refreshed = await PopulationService.refreshBackgroundPartyRequirements([{
             partyId: 'bgp-clan-lock',
@@ -173,6 +229,8 @@ async function main() {
             strategy: 'blocked',
             next: null
         };
+        assert.strictEqual(ClanEquipmentPolicy.isAcquisitionPlan(blockedPlan), false,
+            'a blocked equipment route must not become a durable clan objective');
         assert.strictEqual(
             GearAcquisitionPlanner.clanGoalPlanLocked({ inventory: {} }, blockedPlan),
             false,
@@ -290,15 +348,60 @@ async function main() {
         assert.deepStrictEqual(reformed, { parties: 3, releasedMembers: 6 },
             'a clan equipment review must dissolve wrong-route, mixed, or foreign parties before rebuilding its roster');
 
+        const sharedOccupancy = {
+            'shared-clan-spot': {
+                count: 0,
+                reservedCount: 0,
+                capacity: 10,
+                retained: new Set(),
+                reservedKeys: new Set(),
+                reservationKeys: new Set(),
+                retainedReservationKeys: new Set()
+            }
+        };
+        SpotProfiles.currentOccupancy = () => sharedOccupancy;
+        const stalePlanning = {
+            spots: [{ id: 'shared-clan-spot', capacity: 10 }],
+            occupancy: {}
+        };
+        const selectedSpot = stalePlanning.spots[0];
+        const firstReservation = ClanEquipmentService.reserveGoalCapacity(
+            stalePlanning,
+            { id: 77 },
+            [1001, 1002, 1003, 1004, 1005],
+            selectedSpot
+        );
+        const secondReservation = ClanEquipmentService.reserveGoalCapacity(
+            stalePlanning,
+            { id: 78 },
+            [2001, 2002, 2003, 2004, 2005],
+            selectedSpot
+        );
+        const overbookedReservation = ClanEquipmentService.reserveGoalCapacity(
+            stalePlanning,
+            { id: 79 },
+            [3001, 3002, 3003, 3004, 3005],
+            selectedSpot
+        );
+        assert.strictEqual(firstReservation.reserved, true);
+        assert.strictEqual(secondReservation.reserved, true);
+        assert.strictEqual(overbookedReservation.reserved, false,
+            'sequential clan reviews must share live reservations instead of overbooking stale planning snapshots');
+        assert.strictEqual(sharedOccupancy['shared-clan-spot'].reservedCount, 10,
+            'rejected clan reservations must not grow shared spot occupancy beyond capacity');
+
         console.log('Clan equipment plan lock checks passed');
     } finally {
         GearAcquisitionPlanner.planFor = originalPlanFor;
+        GearAcquisitionPlanner.bestSourceForPlan = originalBestSourceForPlan;
+        GearAcquisitionPlanner.retargetPlanSource = originalRetargetPlanSource;
         LifeState.statesForParties = originalStatesForParties;
         LifeState.releaseDissolvedPartyMembers = originalReleaseDissolvedPartyMembers;
         PartyState.active = originalActiveParties;
         PartyState.setStatus = originalSetPartyStatus;
         PartyState.createOrUpdate = originalCreateOrUpdate;
         SpotProfiles.ensure = originalSpotEnsure;
+        SpotProfiles.currentOccupancy = originalCurrentOccupancy;
     }
 }
 

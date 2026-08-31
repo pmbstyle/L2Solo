@@ -519,6 +519,18 @@ class Attack {
 
     fetchSkillTargetsInRadius(actor, locX, locY, radius) {
         const World = invoke('GameServer/World/World');
+        // Arena duels are the one player-vs-player combat path that needs the
+        // normal area-skill fanout to include user actors. Keep the existing
+        // NPC-only player AoE behavior everywhere else, but expose only the
+        // paired arena opponent here so outside players can never be hit.
+        if (actor?.session?.arenaDuelId || actor?.session?.arenaEphemeral === true) {
+            const ArenaCombatRules = invoke('GameServer/World/ArenaCombatRules');
+            return (World.user?.sessions || [])
+                .map((session) => session?.actor)
+                .filter((target) => target && target !== actor
+                    && ArenaCombatRules.canInteract(actor, target)
+                    && this.distance2d(actor, target) <= radius);
+        }
         if (this.isNpcCombatant(actor)) {
             return (World.user?.sessions || []).map((session) => session?.actor).filter(Boolean);
         }
@@ -591,6 +603,10 @@ class Attack {
         }
 
         if (targetKind === 'enemy') {
+            if (actor?.session?.arenaDuelId || actor?.session?.arenaEphemeral === true) {
+                const ArenaCombatRules = invoke('GameServer/World/ArenaCombatRules');
+                if (ArenaCombatRules.canInteract(actor, target)) return true;
+            }
             if (this.isNpcCombatant(actor)) {
                 return target !== actor && !target.fetchKind && target.state?.fetchDead?.() !== true && target.isDead?.() !== true;
             }
@@ -1137,6 +1153,14 @@ class Attack {
                     creature.session.incomingThreatId = actor.fetchId();
                     creature.session.incomingThreatAt = Date.now();
                 }
+                invoke(path.actor).receivedHit(session, creature, hit, { source: actor });
+                return;
+            }
+
+            const ArenaCombatRules = invoke('GameServer/World/ArenaCombatRules');
+            if (!ArenaCombatRules.canInteract(actor, creature)) return;
+
+            if (ArenaCombatRules.suppressConsequences(actor, creature)) {
                 invoke(path.actor).receivedHit(session, creature, hit, { source: actor });
                 return;
             }

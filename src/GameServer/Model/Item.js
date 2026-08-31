@@ -84,10 +84,10 @@ class ItemModel {
             try {
                 return JSON.parse(this.model.petData);
             } catch (err) {
-                return {};
+                return null;
             }
         }
-        return this.model.petData || {};
+        return this.model.petData || null;
     }
 
     // Abstract

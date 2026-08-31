@@ -12,7 +12,9 @@ function updatePosition(session, actor, coords, environmentOptions) {
 
     // TODO: Write less in DB about movement
     actor.setLocXYZH(coords);
-    CharacterWriteQueue.location(actor.fetchId(), coords);
+    if (session?.persistenceMode !== 'ephemeral') {
+        CharacterWriteQueue.location(actor.fetchId(), coords);
+    }
 
     // Update Online users, NPCs, underwater locations
     Generics.updateEnvironment(session, actor, environmentOptions);

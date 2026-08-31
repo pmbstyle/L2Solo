@@ -72,6 +72,81 @@ async function main() {
         assert.strictEqual(initialActions[0].actionType, 'goal_plan');
         assert.strictEqual(initialActions[0].status, 'pending');
 
+        const durableFixture = await Database.enqueueClanAction({
+            clanId: created.clanId,
+            actionKey: `test:${created.clanId}:durable-result-boundary`,
+            actionType: 'goal_plan',
+            priority: -100,
+            payload: { reason: 'durable_result_boundary' }
+        });
+        const oversizedResult = {
+            ok: true,
+            changed: true,
+            goal: {
+                type: 'equipment',
+                target: { itemId: 1419, itemName: 'Blood Mark' },
+                plan: { kind: 'farm', reasonCode: 'spot_available' }
+            },
+            context: {
+                members: Array.from({ length: 20 }, (_, index) => ({
+                    characterId: 9000000 + index,
+                    stats: { history: 'x'.repeat(20000) },
+                    inventory: { items: 'y'.repeat(5000) }
+                })),
+                plans: Array.from({ length: 20 }, () => ({ details: 'z'.repeat(10000) })),
+                candidateCount: 12
+            }
+        };
+        const durableResolution = await Database.resolveClanAction({
+            actionId: durableFixture.actionId,
+            status: 'succeeded',
+            result: oversizedResult
+        });
+        assert.strictEqual(durableResolution.ok, true);
+        const [durableAction] = await Database.execute([
+            'SELECT resultJson FROM clan_actions WHERE id = ?',
+            [durableFixture.actionId]
+        ]);
+        const durableResult = JSON.parse(durableAction.resultJson);
+        assert(Buffer.byteLength(durableAction.resultJson, 'utf8') <= 16 * 1024,
+            'durable action results must have a hard size boundary');
+        assert.strictEqual(durableResult.context.members.count, 20,
+            'large runtime arrays retain useful cardinality without member snapshots');
+        assert.strictEqual(durableResult.goal.target.itemId, 1419,
+            'the compact result must retain the selected progression target');
+        const [durableEvent] = await Database.execute([
+            `SELECT payloadJson FROM clan_goal_events
+             WHERE clanId = ? AND eventType = 'action_succeeded'
+             ORDER BY id DESC LIMIT 1`,
+            [created.clanId]
+        ]);
+        assert(Buffer.byteLength(durableEvent.payloadJson, 'utf8') <= 20 * 1024,
+            'the action event must reuse the compact durable result');
+
+        const flatBoundaryFixture = await Database.enqueueClanAction({
+            clanId: created.clanId,
+            actionKey: `test:${created.clanId}:flat-result-boundary`,
+            actionType: 'goal_plan',
+            priority: -101,
+            payload: { reason: 'flat_result_boundary' }
+        });
+        const flatOversizedResult = Object.fromEntries(Array.from({ length: 32 }, (_, index) => [
+            `field_${index}_${'k'.repeat(96)}`,
+            'v'.repeat(512)
+        ]));
+        await Database.resolveClanAction({
+            actionId: flatBoundaryFixture.actionId,
+            status: 'succeeded',
+            result: flatOversizedResult
+        });
+        const [flatBoundaryAction] = await Database.execute([
+            'SELECT resultJson FROM clan_actions WHERE id = ?',
+            [flatBoundaryFixture.actionId]
+        ]);
+        assert(Buffer.byteLength(flatBoundaryAction.resultJson, 'utf8') <= 16 * 1024,
+            'the primitive fallback must also obey the hard result boundary');
+        assert.strictEqual(JSON.parse(flatBoundaryAction.resultJson).truncated, true);
+
         const compatibilityClaims = await Database.claimClanActions({ limit: 8 });
         assert.strictEqual(compatibilityClaims.length, 1, 'the legacy batch API must not pre-claim unadmitted work');
         const compatibilityClaim = compatibilityClaims[0];
@@ -145,6 +220,10 @@ async function main() {
         const actionsAfterFirst = await Database.fetchClanActions({ clanId: created.clanId, limit: 20 });
         assert(actionsAfterFirst.some((action) => action.actionType === 'contribution' && action.status === 'succeeded'));
         assert(actionsAfterFirst.some((action) => action.status === 'pending' || action.status === 'running'));
+        assert(actionsAfterFirst
+            .filter((action) => action.status === 'pending' || action.status === 'running')
+            .every((action) => !Object.hasOwn(JSON.parse(action.payloadJson), 'result')),
+        'follow-up actions must not persist the full parent result');
         const pendingForRecovery = actionsAfterFirst.find((action) => action.status === 'pending');
         assert(pendingForRecovery, 'the action chain must leave a pending recovery fixture');
         const expiredAt = Date.now() - 1000;
@@ -251,6 +330,8 @@ async function main() {
         const pendingPlan = afterMiss.find((action) => action.actionType === 'goal_plan' && action.status === 'pending');
         assert(pendingPlan, 'market miss must enqueue a fresh goal planner action');
         assert.strictEqual(Number(pendingPlan.priority), 100);
+        assert.strictEqual(Object.hasOwn(JSON.parse(pendingPlan.payloadJson), 'result'), false,
+            'market replanning must pass only durable identifiers and reason codes');
 
         const [claimedPlan] = await Database.claimClanActions({ limit: 1 });
         assert.strictEqual(claimedPlan.id, pendingPlan.id);

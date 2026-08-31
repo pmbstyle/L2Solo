@@ -241,7 +241,11 @@ function occupancyForSpot(occupancy, spotId) {
 function capacityForSpot(spot = {}) {
     const explicit = Number(spot.capacity || 0);
     if (explicit > 0) return explicit;
-    return Math.max(24, Math.round(Number(spot.density || 1) * 2));
+    // A spawn is not continuously available: hunters consume it, then wait
+    // for the respawn. The old two-bots-per-spawn estimate made dense grid
+    // cells effectively bottomless and hid them from alternative planning.
+    const densityCapacity = Math.round(Number(spot.density || 1) * 0.75);
+    return Math.max(9, Math.min(36, densityCapacity));
 }
 
 function crowdPenaltyForSpot(spot, occupancy) {

@@ -6,11 +6,14 @@ const ShotStock = invoke('GameServer/Inventory/ShotStock');
 module.exports = function(session) {
     const backpack = session.actor.backpack;
     const items = backpack.items;
+    const protectPendingWarehouseItems = session.plan === 'shopping'
+        && session.shoppingWarehouseDone !== true;
 
     const sellableItems = ItemDisposition.unreservedActorItems(session.coldLifeState, items)
         .filter(item => !item.fetchEquipped()
             && item.fetchSelfId() !== 57
-            && !ShotStock.SHOT_IDS.includes(Number(item.fetchSelfId())));
+            && !ShotStock.SHOT_IDS.includes(Number(item.fetchSelfId()))
+            && (!protectPendingWarehouseItems || !ItemDisposition.isWarehouseCandidate(item)));
 
     if (sellableItems.length === 0) {
         session.dataSendToMe(ServerResponse.speak(session.actor, { kind: 0, text: "You have no unequipped items to sell." }));

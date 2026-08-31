@@ -5,6 +5,8 @@ const path = require('path');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const ITEM_ICON_CATALOG_DIR = path.join(PUBLIC_DIR, 'item-icons');
 const ITEM_ICON_MANIFEST_PATH = path.join(ITEM_ICON_CATALOG_DIR, 'index.json');
+const KNOWLEDGE_BASE_DIR = path.join(__dirname, '..', '..', 'data', 'KnowledgeBase');
+const { createKnowledgeBaseService } = require('./KnowledgeBaseService');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
@@ -17,6 +19,7 @@ const ClanSimulationConfig = invoke('GameServer/Clan/ClanSimulationConfig');
 const Database = invoke('Database');
 const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
 const PlayerActivitySignal = invoke('GameServer/Bot/Population/PlayerActivitySignal');
+const ProgressionRates = invoke('GameServer/ProgressionRates');
 const DataCache = invoke('GameServer/DataCache');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const WorldProjection = invoke('WorldObserver/WorldObserverProjection');
@@ -472,6 +475,7 @@ function equipmentSlot(slot) {
 let itemTemplateIndex = null;
 let itemTemplateSource = null;
 let itemIconCatalogCache = null;
+let knowledgeBaseServiceCache = null;
 let clanOrderItemCatalogSource = null;
 let clanOrderItemCatalogCache = null;
 
@@ -1219,6 +1223,17 @@ function itemIconFor(item, selfId, name, kind) {
         detailUrl: entry.detailUrl || null,
         match
     };
+}
+
+function knowledgeBaseService() {
+    if (!knowledgeBaseServiceCache) {
+        knowledgeBaseServiceCache = createKnowledgeBaseService({
+            dataDir: KNOWLEDGE_BASE_DIR,
+            progressionRates: ProgressionRates,
+            iconFor: itemIconFor
+        });
+    }
+    return knowledgeBaseServiceCache;
 }
 
 function itemIconFilePath(fileName) {
@@ -2226,6 +2241,55 @@ function route(request, response) {
         return;
     }
 
+    if (url.pathname === '/observer/api/knowledge/meta') {
+        try {
+            sendJson(response, knowledgeBaseService().meta());
+        } catch (err) {
+            sendJson(response, { error: err.message }, 500);
+        }
+        return;
+    }
+
+    if (url.pathname === '/observer/api/knowledge/items') {
+        try {
+            sendJson(response, knowledgeBaseService().listItems(Object.fromEntries(url.searchParams)));
+        } catch (err) {
+            sendJson(response, { error: err.message }, 500);
+        }
+        return;
+    }
+
+    const knowledgeItemMatch = url.pathname.match(/^\/observer\/api\/knowledge\/items\/(\d+)$/);
+    if (knowledgeItemMatch) {
+        try {
+            const item = knowledgeBaseService().itemDetail(knowledgeItemMatch[1]);
+            sendJson(response, item || { error: 'Item not found' }, item ? 200 : 404);
+        } catch (err) {
+            sendJson(response, { error: err.message }, 500);
+        }
+        return;
+    }
+
+    if (url.pathname === '/observer/api/knowledge/npcs') {
+        try {
+            sendJson(response, knowledgeBaseService().listNpcs(Object.fromEntries(url.searchParams)));
+        } catch (err) {
+            sendJson(response, { error: err.message }, 500);
+        }
+        return;
+    }
+
+    const knowledgeNpcMatch = url.pathname.match(/^\/observer\/api\/knowledge\/npcs\/(\d+)$/);
+    if (knowledgeNpcMatch) {
+        try {
+            const npc = knowledgeBaseService().npcDetail(knowledgeNpcMatch[1]);
+            sendJson(response, npc || { error: 'NPC not found' }, npc ? 200 : 404);
+        } catch (err) {
+            sendJson(response, { error: err.message }, 500);
+        }
+        return;
+    }
+
     if (url.pathname === '/observer/api/world/changes') {
         worldChanges(url.searchParams.get('since'))
             .then((data) => {
@@ -2377,6 +2441,11 @@ function route(request, response) {
         return;
     }
 
+    if (/^\/observer\/database(?:\/(?:items|npcs)(?:\/\d+)?)?\/?$/.test(url.pathname)) {
+        sendFile(request, response, path.join(PUBLIC_DIR, 'knowledge-base.html'));
+        return;
+    }
+
     if (/^\/observer\/(?:world|rankings|raid-bosses(?:\/\d+)?|clans(?:\/\d+)?(?:\/map)?|actors\/(?:bot|player)\/\d+)\/?$/.test(url.pathname)) {
         sendFile(request, response, path.join(PUBLIC_DIR, 'index.html'));
         return;
@@ -2424,6 +2493,7 @@ const WorldObserverServer = {
     transitionPlayerManagedClanOrder,
     compactItem,
     itemIconFilePath,
+    knowledgeBaseService,
     classCatalog,
     actorDetail,
     raidBossCatalog,

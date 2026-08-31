@@ -15738,4 +15738,8 @@
     "selfId": "party_20_21_dg_02f_017",
     "bounds": [{ "locX": 19883, "locY": 108294, "minZ": -9080, "maxZ": -8880 }, { "locX": 20739, "locY": 108294, "minZ": -9080, "maxZ": -8880 }, { "locX": 20739, "locY": 110069, "minZ": -9080, "maxZ": -8880 }, { "locX": 19883, "locY": 110069, "minZ": -9080, "maxZ": -8880 }],
     "spawns": [{ "selfId": 753, "name": "Dark Lord", "coords": [{ "locX": 20309, "locY": 108637, "locZ": -9048, "head": 0 }, { "locX": 20315, "locY": 109391, "locZ": -9048, "head": 0 }], "total": 1, "respawn": 900, "bias": 240 }]
+},{
+    "selfId": "giran_arena_manager",
+    "bounds": [{ "locX": 73579, "locY": 142709, "minZ": -3768, "maxZ": -3768 }],
+    "spawns": [{ "selfId": 8225, "name": "Arena Manager", "coords": [{ "locX": 73579, "locY": 142709, "locZ": -3768, "head": 32768 }], "total": 1, "respawn": 60, "bias": 0 }]
 }]

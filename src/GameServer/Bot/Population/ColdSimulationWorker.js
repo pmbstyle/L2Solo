@@ -51,8 +51,10 @@ const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner'
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const LifeStateProjector = invoke('GameServer/Bot/Population/BotLifeState');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const Protocol = require('./ColdSimulationProtocol');
 const { ColdSimulationKernel, beginRouteTravelState } = require('./ColdSimulationKernel');
+const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const forbiddenLoaded = Object.keys(require.cache).filter((filename) => (
     /[\\/]src[\\/]Database\.js$/i.test(filename)
     || /[\\/]GameServer[\\/]World[\\/]World\.js$/i.test(filename)
@@ -69,8 +71,24 @@ let heartbeatTimer = null;
 let shuttingDown = false;
 let previousElu = performance.eventLoopUtilization();
 let planningSpots = [];
+let planningNpcOfferRows = [];
+let planningNpcCatalog = ColdNpcPlanningCatalog.createLookup();
+let planningOccupancyCache = null;
+let planningOccupancyCachedAt = 0;
 const eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
 eventLoopDelay.enable();
+
+function currentPlanningOccupancy(timestamp = Date.now()) {
+    if (planningOccupancyCache && timestamp - planningOccupancyCachedAt < 1000) {
+        return planningOccupancyCache;
+    }
+    const states = kernel
+        ? [...kernel.states.values()].map((entry) => entry?.state).filter(Boolean)
+        : [];
+    planningOccupancyCache = SpotProfiles.occupancySnapshot(planningSpots, states);
+    planningOccupancyCachedAt = timestamp;
+    return planningOccupancyCache;
+}
 
 function send(type, payload = {}, msgId = null) {
     const message = Protocol.envelope(type, epoch, payload, msgId);
@@ -133,40 +151,83 @@ function startKernel(config = {}) {
         planLifecycle: ({ state, context, timestamp }) => {
             const previousPlan = state.stats?.equipmentPlan || null;
             const spots = planningSpots;
+            const occupancy = currentPlanningOccupancy(timestamp);
+            const npcPlanningOptions = planningNpcCatalog.plannerOptions;
             const replanContext = GearAcquisitionPlanner.replanContextFor(state, previousPlan, timestamp);
             const clanGoalLocked = GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan);
+            const availabilitySource = previousPlan?.status === 'active'
+                && ['direct_drop', 'craft'].includes(previousPlan.strategy)
+                ? GearAcquisitionPlanner.bestSourceForPlan(state, previousPlan, spots, { occupancy })
+                : null;
+            const availabilityRouteChanged = availabilitySource && (
+                String(availabilitySource.spotId || '') !== String(previousPlan?.next?.spotId || '')
+                || Number(availabilitySource.npcId || 0) !== Number(previousPlan?.next?.npcId || 0)
+            );
+            const availabilityPlan = previousPlan?.status === 'blocked' && !clanGoalLocked
+                ? GearAcquisitionPlanner.replacementPlanFor(state, previousPlan, spots, {
+                    occupancy,
+                    ...replanContext,
+                    ...npcPlanningOptions
+                })
+                : availabilityRouteChanged
+                    ? GearAcquisitionPlanner.retargetPlanSource(state, previousPlan, availabilitySource)
+                    : previousPlan?.status === 'active'
+                    && ['direct_drop', 'craft'].includes(previousPlan.strategy)
+                    && !clanGoalLocked
+                        ? GearAcquisitionPlanner.replacementPlanFor(state, previousPlan, spots, {
+                            occupancy,
+                            ...replanContext,
+                            ...npcPlanningOptions
+                        })
+                        : null;
             const reusablePartyRequest = !state.party?.partyId
                 && previousPlan?.next
+                && !!availabilitySource
                 && replanContext.routeCurrent
                 && !replanContext.failure
                 && state.stats?.partyRequest?.status === 'open'
                 && Number(state.stats.partyRequest.reviewAt || 0) > timestamp;
-            const upgradedPlan = reusablePartyRequest
-                || clanGoalLocked
-                ? previousPlan
-                : GearAcquisitionPlanner.planFor(state, { spots, ...replanContext });
+            const upgradedPlan = availabilityPlan || (
+                reusablePartyRequest || clanGoalLocked
+                    ? previousPlan
+                    : GearAcquisitionPlanner.planFor(state, { spots, occupancy, ...replanContext, ...npcPlanningOptions })
+            );
             const previousRefresh = previousPlan?.recipeId && !reusablePartyRequest && !clanGoalLocked
-                ? GearAcquisitionPlanner.planFor(state, { spots, recipeId: previousPlan.recipeId, ...replanContext })
+                ? GearAcquisitionPlanner.planFor(state, {
+                    spots,
+                    occupancy,
+                    recipeId: previousPlan.recipeId,
+                    ...replanContext,
+                    ...npcPlanningOptions
+                })
                 : null;
             const rawPlan = GearAcquisitionPlanner.shouldFinishPreviousPlan(previousPlan, previousRefresh)
                 ? { ...previousRefresh, finishBeforeUpgrade: true }
                 : upgradedPlan;
-            const finalizedPlan = reusablePartyRequest
-                || clanGoalLocked
+            const canFinalizeLockedRoute = clanGoalLocked && availabilityRouteChanged;
+            const finalizationContext = canFinalizeLockedRoute
+                ? { ...replanContext, allowClanGoalReplan: true }
+                : replanContext;
+            const preservePreviousPlan = reusablePartyRequest || (clanGoalLocked && !canFinalizeLockedRoute);
+            const finalizedPlan = preservePreviousPlan
                 ? previousPlan
-                : GearAcquisitionPlanner.finalizePlan(state, previousPlan, rawPlan, replanContext, timestamp);
+                : GearAcquisitionPlanner.finalizePlan(state, previousPlan, rawPlan, finalizationContext, timestamp);
             const acquisitionPlan = {
                 ...finalizedPlan,
                 marketFallback: finalizedPlan.status === 'active' && finalizedPlan.strategy === 'craft'
                     && Number(finalizedPlan.startedAt || timestamp) + 20 * 60 * 1000 <= timestamp
             };
+            const reservedSpot = acquisitionPlan?.next?.spotId
+                ? spots.find((spot) => String(spot.id) === String(acquisitionPlan.next.spotId))
+                : null;
+            if (reservedSpot) SpotProfiles.reserveCapacity(occupancy, reservedSpot, [state]);
             const partyRequest = PartyRequestPlanner.partyRequestForPlan(state, acquisitionPlan, timestamp);
             const partyRouteWaiting = !state.party?.partyId
                 && (partyRequest?.priority === 'required'
                     || (partyRequest?.status === 'deferred'
                         && (acquisitionPlan.partyNeed === 'required' || acquisitionPlan.requiresParty === true)));
             const partyFallback = partyRouteWaiting
-                ? GearAcquisitionPlanner.safeFallbackForPlan(state, acquisitionPlan, spots)
+                ? GearAcquisitionPlanner.safeFallbackForPlan(state, acquisitionPlan, spots, { occupancy })
                 : null;
             const fallbackSpot = partyFallback
                 ? spots.find((spot) => String(spot.id) === String(partyFallback.spotId)) || null
@@ -230,7 +291,15 @@ async function handle(message) {
     const payload = message.payload || {};
     switch (message.type) {
     case 'catalog_page':
-        planningSpots.push(...(payload.rows || []));
+        if (payload.catalog === 'npc_offers') {
+            planningNpcOfferRows.push(...(payload.rows || []));
+            if (payload.done) {
+                planningNpcCatalog = ColdNpcPlanningCatalog.createLookup(planningNpcOfferRows);
+                planningNpcOfferRows = [];
+            }
+        } else {
+            planningSpots.push(...(payload.rows || []));
+        }
         break;
     case 'init':
         startKernel(payload.config || {});
@@ -240,7 +309,9 @@ async function handle(message) {
             data: {
                 items: DataCache.items?.length || 0,
                 npcs: DataCache.npcs?.length || 0,
-                rewards: DataCache.npcRewards?.length || 0
+                rewards: DataCache.npcRewards?.length || 0,
+                npcEquipmentItems: planningNpcCatalog.itemCount,
+                npcEquipmentOffers: planningNpcCatalog.offerCount
             }
         }, message.msgId);
         break;

@@ -62,12 +62,19 @@ function companionFixture(pool, start = { locX: 53027, locY: 102938, locZ: -1064
     return { session, actor, leaderSession, packets, position, leaderPosition };
 }
 
-function issueMove(fixture, to, targetActor = null) {
+function issueMove(fixture, to, targetActor = null, options = {}) {
     return moveTo(fixture.session, fixture.actor, {
         from: { ...fixture.position },
         to: { ...to },
+        ...options,
         ...(targetActor ? { targetActor } : {})
     });
+}
+
+function makeAutonomous(fixture) {
+    fixture.session.partyCompanion = false;
+    delete fixture.session.followPlayerSession;
+    return fixture;
 }
 
 function stopMove(fixture) {
@@ -100,6 +107,129 @@ async function run() {
         assert.strictEqual(realFixture.session.lastPathfinding.worker, true);
         assert.strictEqual(realFixture.actor.state.towards, 'move', 'the main thread must apply a current real-worker path');
         stopMove(realFixture);
+
+        const autonomousFixture = makeAutonomous(companionFixture(
+            realPool,
+            { locX: 83384, locY: 149256, locZ: -3400 }
+        ));
+        const autonomousPending = issueMove(
+            autonomousFixture,
+            { locX: 83265, locY: 150461, locZ: -3514 },
+            null,
+            { pathMaxNodes: 30000, arrivalRadius: 16 }
+        );
+        assert.strictEqual(autonomousPending.strategy, 'worker_pending',
+            'an expensive autonomous town route must leave the game thread immediately');
+        await autonomousFixture.session.pendingPathRequest.promise;
+        assert.strictEqual(synchronousFindPathCalls, 0,
+            'autonomous town errands must not execute A* on the game thread');
+        assert.strictEqual(autonomousFixture.session.lastPathfinding.strategy, 'worker_geodata');
+        assert.strictEqual(autonomousFixture.session.lastPathfinding.routeUsable, true,
+            'the real Giran route to Groot must use the requested errand budget');
+        assert.strictEqual(autonomousFixture.session.lastPathfinding.maxNodes, 30000);
+        assert.strictEqual(autonomousFixture.session.lastPathfinding.arrivalRadius, 16);
+        stopMove(autonomousFixture);
+
+        const helvetiaFixture = makeAutonomous(companionFixture(
+            realPool,
+            { locX: 80456, locY: 147864, locZ: -3504 }
+        ));
+        issueMove(
+            helvetiaFixture,
+            { locX: 83396, locY: 148144, locZ: -3404 },
+            null,
+            { pathMaxNodes: 30000, arrivalRadius: 64 }
+        );
+        const helvetiaSegment = { ...helvetiaFixture.session.townRoutePlan.waypoint };
+        assert.notDeepStrictEqual(helvetiaSegment, { locX: 83396, locY: 148144, locZ: -3404 },
+            'a long Helvetia-to-gatekeeper trip must begin with one bounded town segment');
+        await helvetiaFixture.session.pendingPathRequest.promise;
+        assert.strictEqual(helvetiaFixture.session.lastPathfinding.strategy, 'worker_town_segment');
+        assert.strictEqual(helvetiaFixture.session.lastPathfinding.routeUsable, true,
+            'the first varied Giran segment must remain geodata-reachable');
+        assert.strictEqual(synchronousFindPathCalls, 0,
+            'segmented town movement must keep A* off the game thread');
+        stopMove(helvetiaFixture);
+
+        const shopEgressFixture = makeAutonomous(companionFixture(
+            realPool,
+            { locX: 80348, locY: 147752, locZ: -3506 }
+        ));
+        shopEgressFixture.session.townNpcApproach = {
+            key: 'shopping:0:7081:80518:147922:-3506:32768',
+            phase: 'interaction'
+        };
+        issueMove(
+            shopEgressFixture,
+            { locX: 80467, locY: 147871, locZ: -3506 },
+            null,
+            { pathMaxNodes: 30000, arrivalRadius: 16 }
+        );
+        await shopEgressFixture.session.pendingPathRequest.promise;
+        assert(shopEgressFixture.session.townNpcEgress?.path?.length >= 2,
+            'the final geodata ingress segment to a shop must be retained for a safe exit');
+        stopMove(shopEgressFixture);
+        Object.assign(shopEgressFixture.position, shopEgressFixture.session.townNpcEgress.path[0]);
+
+        const retryResult = issueMove(
+            shopEgressFixture,
+            { locX: 80467, locY: 147871, locZ: -3506 },
+            null,
+            { pathMaxNodes: 30000, arrivalRadius: 16 }
+        );
+        assert.notStrictEqual(retryResult.strategy, 'town_shop_egress',
+            'retrying the same active NPC approach must not send the bot back out of the shop');
+        assert(shopEgressFixture.session.townNpcEgress,
+            'the valid ingress path should remain available until the interaction finishes');
+        await shopEgressFixture.session.pendingPathRequest.promise;
+        stopMove(shopEgressFixture);
+
+        delete shopEgressFixture.session.townNpcApproach;
+        const egressResult = issueMove(
+            shopEgressFixture,
+            { locX: 83396, locY: 148144, locZ: -3404 },
+            null,
+            { pathMaxNodes: 30000, arrivalRadius: 64 }
+        );
+        assert.strictEqual(egressResult.strategy, 'town_shop_egress',
+            'a bot leaving a shop must first reverse its known-valid ingress segment');
+        assert.strictEqual(shopEgressFixture.session.pendingPathRequest, null,
+            'replaying a known ingress segment must not enqueue another A* search');
+        assert.strictEqual(shopEgressFixture.session.townNpcEgress, undefined,
+            'the saved shop exit must be consumed once instead of becoming a rail');
+        stopMove(shopEgressFixture);
+
+        const gludioShopFixture = makeAutonomous(companionFixture(
+            realPool,
+            { locX: -12736, locY: 122816, locZ: -3112 }
+        ));
+        issueMove(
+            gludioShopFixture,
+            { locX: -13908, locY: 123394, locZ: -3116 },
+            null,
+            { pathMaxNodes: 30000, arrivalRadius: 16 }
+        );
+        await gludioShopFixture.session.pendingPathRequest.promise;
+        assert.strictEqual(gludioShopFixture.session.lastPathfinding.routeUsable, true,
+            'the real Gludio route from town center to Lundy must stay off-thread and usable');
+        stopMove(gludioShopFixture);
+
+        const gludioGatekeeperFixture = makeAutonomous(companionFixture(
+            realPool,
+            { locX: -13908, locY: 123394, locZ: -3116 }
+        ));
+        issueMove(
+            gludioGatekeeperFixture,
+            { locX: -12736, locY: 122744, locZ: -3114 },
+            null,
+            { pathMaxNodes: 30000, arrivalRadius: 16 }
+        );
+        await gludioGatekeeperFixture.session.pendingPathRequest.promise;
+        assert.strictEqual(gludioGatekeeperFixture.session.lastPathfinding.routeUsable, true,
+            'the real Gludio route from Lundy to Bella must stay off-thread and usable');
+        assert.strictEqual(synchronousFindPathCalls, 0,
+            'Giran and Gludio town errands must keep all expensive A* work out of the game thread');
+        stopMove(gludioGatekeeperFixture);
         await realPool.shutdown();
 
         const delayedPool = new BoundedPathfindingWorkerPool({
@@ -135,6 +265,27 @@ async function run() {
         assert.strictEqual(targetFixture.actor.state.towards, false,
             'material target movement must invalidate a companion-follow snapshot');
         assert.strictEqual(targetFixture.session.pendingPathRequest, null);
+
+        const budgetRequests = [];
+        const budgetPool = {
+            request(request) {
+                budgetRequests.push(request);
+                return Promise.resolve([
+                    { locX: request.startX, locY: request.startY, locZ: request.startZ },
+                    { locX: request.endX, locY: request.endY, locZ: request.endZ }
+                ]);
+            },
+            cancel() { return false; }
+        };
+        const budgetFixture = companionFixture(budgetPool, { locX: 0, locY: 0, locZ: 0 });
+        issueMove(budgetFixture, { locX: 1000, locY: 0, locZ: 0 });
+        await budgetFixture.session.pendingPathRequest.promise;
+        assert.strictEqual(
+            budgetRequests[0].maxNodes,
+            moveTo.COMPANION_PATH_MAX_NODES,
+            'hot companions should receive enough worker budget for real town detours'
+        );
+        stopMove(budgetFixture);
 
         const abortedFixture = companionFixture(delayedPool, { locX: 0, locY: 0, locZ: 0 });
         issueMove(abortedFixture, { locX: 1000, locY: 0, locZ: 0 });

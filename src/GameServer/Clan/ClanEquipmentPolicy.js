@@ -3,7 +3,10 @@ function number(value, fallback = 0) {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-const PLAN_STATUSES = new Set(['active', 'blocked', 'component_ready', 'ready_to_craft']);
+// A blocked equipment route is never a clan objective. The equipment service
+// must keep walking nearby members/targets until it finds an actionable plan;
+// mandatory clan-progression items use the separate clan goal policy.
+const PLAN_STATUSES = new Set(['active', 'component_ready', 'ready_to_craft']);
 const GRADE_RANK = Object.freeze({ none: 0, d: 1, c: 2, b: 3, a: 4, s: 5 });
 const ROLE_PRIORITY = Object.freeze({
     tank: 45,

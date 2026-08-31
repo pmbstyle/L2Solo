@@ -97,7 +97,9 @@ class Backpack extends BackpackModel {
                 session.dataSendToMe(ServerResponse.itemsList(this.fetchItems()));
                 callback(item.fetchSelfId());
 
-                CharacterWriteQueue.itemAmount(session.actor.fetchId(), item.fetchId(), total);
+                if (session?.persistenceMode !== 'ephemeral') {
+                    CharacterWriteQueue.itemAmount(session.actor.fetchId(), item.fetchId(), total);
+                }
             }
             else {
                 // Update memory state instantly
@@ -105,7 +107,9 @@ class Backpack extends BackpackModel {
                 session.dataSendToMe(ServerResponse.itemsList(this.fetchItems()));
                 callback(item.fetchSelfId());
 
-                CharacterWriteQueue.itemAmount(session.actor.fetchId(), item.fetchId(), 0);
+                if (session?.persistenceMode !== 'ephemeral') {
+                    CharacterWriteQueue.itemAmount(session.actor.fetchId(), item.fetchId(), 0);
+                }
             }
         });
     }

@@ -5,12 +5,19 @@ require('../src/Global');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const DataCache = invoke('GameServer/DataCache');
+const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
+const ColdNpcPlanningCatalog = require('../src/GameServer/Bot/Population/ColdNpcPlanningCatalog');
 const {
     ColdSimulationCoordinator,
-    compactPartyMemberContext
+    compactPartyMemberContext,
+    npcPlanningCatalogRows,
+    admitSoloRouteTravelState
 } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
+
+DataCache.init();
 
 const originalFindForState = SpotProfiles.findForState;
 const originalFindCurrentSpot = SpotService.findCurrentSpot;
@@ -19,6 +26,47 @@ const originalSafeFallbackForPlan = GearAcquisitionPlanner.safeFallbackForPlan;
 const originalCachedState = LifeState.cachedState;
 
 try {
+    const npcCatalogRows = npcPlanningCatalogRows();
+    const npcCatalog = ColdNpcPlanningCatalog.createLookup(npcCatalogRows);
+    assert(Object.isFrozen(npcCatalogRows), 'the coordinator NPC catalog snapshot must be immutable');
+    assert(npcCatalogRows.length > 0 && npcCatalog.itemCount > 0,
+        'the cold worker must receive concrete low-tier NPC equipment offers');
+    assert(Buffer.byteLength(JSON.stringify(npcCatalogRows)) < 256 * 1024,
+        'the compact NPC equipment catalog must fit within the bounded worker transport');
+
+    const npcPlanFor = (level) => GearAcquisitionPlanner.planFor({
+        characterId: 7000000 + level,
+        level,
+        adena: 500,
+        currentRegion: 'Talking Island',
+        stats: { classId: 0, role: 'dps' },
+        inventory: { 57: { selfId: 57, amount: 500 } }
+    }, {
+        spots: [],
+        ...npcCatalog.plannerOptions
+    });
+    const noGradeNpcPlan = npcPlanFor(10);
+    assert.strictEqual(noGradeNpcPlan.strategy, 'market',
+        'a cold no-grade bot must plan an NPC purchase instead of direct-drop farming');
+    assert.strictEqual(noGradeNpcPlan.market.sourceType, 'npc');
+    assert.strictEqual(
+        String(DataCache.items.find((item) => Number(item.selfId) === Number(noGradeNpcPlan.target.selfId))?.etc?.rank),
+        'none'
+    );
+
+    const dGradeNpcPlan = npcPlanFor(20);
+    assert.strictEqual(dGradeNpcPlan.strategy, 'market',
+        'a cold D-grade bot must receive the ordinary NPC bridge plan');
+    assert.strictEqual(dGradeNpcPlan.market.sourceType, 'npc');
+    assert.strictEqual(
+        String(DataCache.items.find((item) => Number(item.selfId) === Number(dGradeNpcPlan.target.selfId))?.etc?.rank),
+        'd'
+    );
+    assert.notStrictEqual(dGradeNpcPlan.market.town, 'Talking Island',
+        'a D-grade bot in Talking Island must route to a city that actually sells its target');
+    assert(MarketOpportunity.npcOffers(dGradeNpcPlan.target.selfId, dGradeNpcPlan.market.town)
+        .some((offer) => offer.available), 'the selected D-grade destination must expose the persisted NPC offer');
+
     const compact = compactPartyMemberContext({
         characterId: 11,
         phase: 'cold',
@@ -88,7 +136,7 @@ try {
         'a member omitted from the bootstrap set must retain a full fallback state');
 
     const currentSpot = { id: 'starter-field', name: 'Starter fields' };
-    const targetSpot = { id: 'mid-level-field', name: 'Mid-level fields' };
+    const targetSpot = { id: 'mid-level-field', name: 'Mid-level fields', capacity: 2 };
     const destinationFor = (state) => ({
         locX: 125000 + Number(state.characterId || 0),
         locY: -176000,
@@ -117,6 +165,82 @@ try {
     assert.strictEqual(solo.mode, 'solo');
     assert.strictEqual(solo.spotId, targetSpot.id);
     assert.deepStrictEqual(solo.destinations['1'], destinationFor({ characterId: 1 }));
+
+    const sharedIndex = { occupancy: {} };
+    const batchRouteFor = (characterId) => coordinator.routeFor({
+        characterId,
+        phase: 'cold',
+        activity: 'hunting',
+        level: 16,
+        spotId: currentSpot.id,
+        loc: { locX: 1, locY: 2, locZ: 3 },
+        stats: {}
+    }, currentSpot, null, [], sharedIndex);
+    assert(batchRouteFor(20), 'the first cold decision must reserve an available destination');
+    assert(batchRouteFor(21), 'the second cold decision may consume the final destination slot');
+    assert.strictEqual(batchRouteFor(22), null,
+        'later decisions in the same cold snapshot must not overbook the reserved destination');
+
+    const baseRouteState = {
+        characterId: 23,
+        phase: 'cold',
+        activity: 'hunting',
+        spotId: currentSpot.id,
+        loc: { locX: 1, locY: 2, locZ: 3 },
+        timing: { activityStartedAt: 500 },
+        stats: { equipmentPlan: { status: 'active', strategy: 'direct_drop' } }
+    };
+    const proposedRouteState = {
+        ...baseRouteState,
+        activity: 'traveling',
+        timing: { activityStartedAt: 1000, nextResolveAt: 26000 },
+        stats: {
+            ...baseRouteState.stats,
+            travel: {
+                spotId: targetSpot.id,
+                reason: 'equipment_source_replan',
+                arrivalAt: 26000
+            }
+        }
+    };
+    const fullDestination = {
+        [targetSpot.id]: {
+            count: 2,
+            reservedCount: 2,
+            capacity: 2,
+            retained: new Set(['20', '21']),
+            reservedKeys: new Set(['20', '21']),
+            reservationKeys: new Set(),
+            retainedReservationKeys: new Set()
+        }
+    };
+    const rejectedRoute = admitSoloRouteTravelState(
+        proposedRouteState,
+        baseRouteState,
+        [targetSpot],
+        fullDestination,
+        2000
+    );
+    assert.strictEqual(rejectedRoute.admitted, false,
+        'a route must be checked again against capacity immediately before commit');
+    assert.strictEqual(rejectedRoute.state.activity, 'hunting');
+    assert.strictEqual(rejectedRoute.state.stats.travel, undefined);
+    assert.strictEqual(rejectedRoute.state.stats.equipmentPlan, baseRouteState.stats.equipmentPlan,
+        'rejecting stale travel must preserve the newly selected equipment alternative');
+    assert.strictEqual(rejectedRoute.state.timing.nextResolveAt, 3000,
+        'a rejected route should retry promptly instead of entering an unbounded wait');
+
+    const admittedOccupancy = {};
+    const admittedRoute = admitSoloRouteTravelState(
+        proposedRouteState,
+        baseRouteState,
+        [targetSpot],
+        admittedOccupancy,
+        2000
+    );
+    assert.strictEqual(admittedRoute.admitted, true);
+    assert.strictEqual(admittedOccupancy[targetSpot.id].reservedCount, 1,
+        'the pre-commit admission must reserve its destination for later proposals in the batch');
 
     const party = {
         partyId: 'route-party',

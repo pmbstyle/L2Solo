@@ -2,6 +2,7 @@ const EquipmentService = invoke('GameServer/Clan/ClanEquipmentService');
 const EquipmentPolicy = invoke('GameServer/Clan/ClanEquipmentPolicy');
 const ClanPolicy = invoke('GameServer/Clan/ClanSimulationPolicy');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
+const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 
 const CACHE_TTL_MS = 30 * 1000;
 const MAX_CACHE_ENTRIES = 128;
@@ -186,8 +187,8 @@ function decisionReason(previousGoal, planning, candidates, stall = null) {
     if (!previousGoal || previousGoal.type !== 'equipment') return 'no_equipment_goal';
     if (planning.previousFulfilled) return 'goal_fulfilled';
     if (previousGoal.status === 'blocked') return 'goal_blocked';
-    if (!candidates.some((candidate) => candidate.assessment.current)) return 'current_candidate_missing';
     if (stall?.stalled) return stall.reason || 'goal_stalled';
+    if (!candidates.some((candidate) => candidate.assessment.current)) return 'current_candidate_missing';
     return 'goal_progressing';
 }
 
@@ -215,14 +216,26 @@ function rankedCandidates(clan, previousGoal, planning, limit = DEFAULT_LIMIT) {
 
 async function snapshotFor(clan, previousGoal = null, options = {}) {
     const startedAt = Date.now();
-    const key = fingerprint(clan, previousGoal);
+    let occupancy = options.occupancy || null;
+    if (!occupancy) {
+        try {
+            const spots = options.spots || SpotProfiles.ensure();
+            occupancy = SpotProfiles.currentOccupancy(spots) || {};
+        } catch (_) {
+            occupancy = {};
+        }
+    }
+    const availabilityKey = SpotProfiles.capacityFingerprint(occupancy, Config.operationMaxMembers, {
+        maxReservationGroups: SpotProfiles.MAX_CLAN_EQUIPMENT_RESERVATIONS_PER_SPOT
+    });
+    const key = `${fingerprint(clan, previousGoal)}:${availabilityKey}`;
     prune(startedAt);
     const cached = cache.get(key);
     if (cached && startedAt - cached.createdAt <= CACHE_TTL_MS) {
         metrics.cacheHits += 1;
         return { ...cached.value, cacheHit: true };
     }
-    const planning = await EquipmentService.planningForClan(clan, previousGoal, options);
+    const planning = await EquipmentService.planningForClan(clan, previousGoal, { ...options, occupancy });
     let candidates = rankedCandidates(clan, previousGoal, planning, options.limit);
     const selectedMember = planning.selection?.member;
     const selectedPlan = planning.selection?.plan;
@@ -250,6 +263,10 @@ async function snapshotFor(clan, previousGoal = null, options = {}) {
         }
     }
     const stall = goalStallAssessment(clan, previousGoal, candidates, options);
+    if (stall.stalled) {
+        const alternatives = candidates.filter((candidate) => !candidate.assessment.current);
+        if (alternatives.length) candidates = alternatives;
+    }
     const reason = decisionReason(previousGoal, planning, candidates, stall);
     const deterministic = planning.selection
         ? candidates.find((candidate) => candidate.memberId === memberId(planning.selection.member)
@@ -263,7 +280,9 @@ async function snapshotFor(clan, previousGoal = null, options = {}) {
         deterministicCandidateId: deterministic?.id || null,
         stall,
         decisionReason: reason,
-        decisionNeeded: candidates.length > 1 && reason !== 'goal_progressing'
+        decisionNeeded: stall.stalled
+            ? candidates.length > 0
+            : candidates.length > 1 && reason !== 'goal_progressing'
     };
     cache.set(key, { createdAt: Date.now(), value });
     const durationMs = Date.now() - startedAt;

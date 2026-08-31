@@ -1,5 +1,3 @@
-const ServerResponse = invoke('GameServer/Network/Response');
-const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const BotStatus      = invoke('GameServer/Bot/AI/BotStatus');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
@@ -293,11 +291,11 @@ const BotAI = {
 
     getClosestNewbieGuide(locX, locY) {
         const guides = [
-            { name: "Talking Island", locX: -84081, locY: 243227, locZ: -3723 },
-            { name: "Elven Village", locX: 45475, locY: 48359, locZ: -3060 },
-            { name: "Dark Elven Village", locX: 12111, locY: 16686, locZ: -4582 },
-            { name: "Dwarven Village", locX: 115632, locY: -177996, locZ: -905 },
-            { name: "Orc Village", locX: -45032, locY: -113598, locZ: -192 }
+            { name: "Talking Island", npcSelfId: 7598, locX: -84081, locY: 243227, locZ: -3723, head: 9000 },
+            { name: "Elven Village", npcSelfId: 7599, locX: 45475, locY: 48359, locZ: -3060, head: 49152 },
+            { name: "Dark Elven Village", npcSelfId: 7600, locX: 12111, locY: 16686, locZ: -4582, head: 63240 },
+            { name: "Dwarven Village", npcSelfId: 7601, locX: 115632, locY: -177996, locZ: -905, head: 32768 },
+            { name: "Orc Village", npcSelfId: 7602, locX: -45032, locY: -113598, locZ: -192, head: 32768 }
         ];
         let closest = guides[0];
         let minDist = Infinity;
@@ -598,6 +596,22 @@ const BotAI = {
             }
             return false;
         }
+        const canCast = EffectRestrictions.canCast(bot);
+        const canAttack = EffectRestrictions.canAttack(bot);
+        // Stun, sleep, fear, and paralyze disable every action. Stop before
+        // ranged positioning as well: internal hot-bot movement and combat
+        // calls do not pass through the player's packet-level effect gates.
+        if (!EffectRestrictions.canUseBasicAction(bot)) {
+            if (session) {
+                session.lastCombatDecision = {
+                    action: 'blocked',
+                    reason: 'control_effect',
+                    targetId: Number(npc?.fetchId?.() || 0) || null,
+                    at: Date.now()
+                };
+            }
+            return false;
+        }
         const role = BotRoles.inferRole(bot);
         if (BotRangedCombatPositioning.reposition(session, bot, npc, { role })) {
             return true;
@@ -615,7 +629,6 @@ const BotAI = {
         };
         // Bot casts use the internal SkillExec path and therefore do not pass
         // through the packet-level SkillRequest control-effect gate.
-        const canCast = EffectRestrictions.canCast(bot);
         const summonAction = options.basicAttackOnly || !canCast
             ? null
             : SummonerTactics.combatAction(session, bot, npc, Generics);
@@ -665,6 +678,19 @@ const BotAI = {
                 ctrl: true
             });
             return true;
+        }
+
+        // Physical mute may still allow a spell, but must never fall through
+        // to the direct attackExec path when no spell was selected.
+        if (!canAttack) {
+            session.lastCombatDecision = {
+                action: 'blocked',
+                role,
+                reason: 'physical_attack_disabled',
+                targetId: Number(npc?.fetchId?.() || 0) || null,
+                at: Date.now()
+            };
+            return false;
         }
 
         session.lastCombatDecision = {

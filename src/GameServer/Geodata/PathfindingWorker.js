@@ -17,7 +17,12 @@ parentPort.on('message', (message) => {
             request.endY,
             request.endZ,
             request.maxNodes,
-            { debug: false }
+            {
+                debug: false,
+                goalRadius: request.goalRadius,
+                goalZTolerance: request.goalZTolerance,
+                heuristicWeight: request.heuristicWeight
+            }
         );
         parentPort.postMessage({ id, ok: true, path });
     } catch (error) {

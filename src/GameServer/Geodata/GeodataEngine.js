@@ -6,6 +6,50 @@ const REGION_OFFSET_X = 20;
 const REGION_OFFSET_Y = 18;
 const MAX_LAYER_STEP = 64;
 
+class BinaryMinHeap {
+    constructor(compare) {
+        this.items = [];
+        this.compare = compare;
+    }
+
+    get length() {
+        return this.items.length;
+    }
+
+    push(value) {
+        const items = this.items;
+        let index = items.length;
+        items.push(value);
+        while (index > 0) {
+            const parent = (index - 1) >> 1;
+            if (this.compare(items[parent], value) <= 0) break;
+            items[index] = items[parent];
+            index = parent;
+        }
+        items[index] = value;
+    }
+
+    shift() {
+        const items = this.items;
+        if (!items.length) return null;
+        const first = items[0];
+        const last = items.pop();
+        if (!items.length) return first;
+
+        let index = 0;
+        while (index * 2 + 1 < items.length) {
+            const left = index * 2 + 1;
+            const right = left + 1;
+            const child = right < items.length && this.compare(items[right], items[left]) < 0 ? right : left;
+            if (this.compare(items[child], last) >= 0) break;
+            items[index] = items[child];
+            index = child;
+        }
+        items[index] = last;
+        return first;
+    }
+}
+
 function getRegionX(x) {
     return (x >> 15) + REGION_OFFSET_X;
 }
@@ -408,17 +452,37 @@ const GeodataEngine = {
         const startCell = this.getCellData((startCx << 4) + 8, (startCy << 4) + 8, startZ);
         const endCell = this.getCellData((endCx << 4) + 8, (endCy << 4) + 8, endZ);
         const hasLayerData = this.hasGeo(startX, startY) && this.hasGeo(endX, endY);
+        const goalRadius = Math.max(0, Number(options.goalRadius || 0));
+        const goalZTolerance = goalRadius > 0
+            ? Math.max(MAX_LAYER_STEP, Number(options.goalZTolerance || MAX_LAYER_STEP))
+            : 0;
+        const heuristicWeight = Math.max(1, Number(options.heuristicWeight || 1));
         const heuristic = (cx, cy, cz) => {
             const horizontalSteps = Math.abs(endCx - cx) + Math.abs(endCy - cy);
+            const horizontalDistance = goalRadius > 0
+                ? Math.max(0, horizontalSteps * 16 - goalRadius * Math.SQRT2)
+                : horizontalSteps * 16;
             const verticalSteps = hasLayerData
                 ? Math.ceil(Math.abs(endCell.z - cz) / MAX_LAYER_STEP)
                 : 0;
-            return Math.max(horizontalSteps, verticalSteps) * 16;
+            return Math.max(horizontalDistance, verticalSteps * 16);
+        };
+        const reachedGoal = (node) => {
+            if (goalRadius <= 0) {
+                return node.cx === endCx
+                    && node.cy === endCy
+                    && (!hasLayerData || node.cz === endCell.z);
+            }
+            const dx = ((node.cx << 4) + 8) - endX;
+            const dy = ((node.cy << 4) + 8) - endY;
+            return Math.hypot(dx, dy) <= goalRadius
+                && (!hasLayerData || Math.abs(node.cz - endCell.z) <= goalZTolerance);
         };
 
-        if (startCx === endCx && startCy === endCy) {
-            if (hasLayerData && startCell.z !== endCell.z) {
-                return null;
+        const immediate = { cx: startCx, cy: startCy, cz: startCell.z };
+        if (reachedGoal(immediate)) {
+            if (goalRadius > 0) {
+                return [{ locX: startX, locY: startY, locZ: startZ }];
             }
             return [{ locX: endX, locY: endY, locZ: endZ }];
         }
@@ -432,9 +496,14 @@ const GeodataEngine = {
             f: 0,
             parent: null
         };
-        startNode.f = startNode.g + startNode.h;
+        startNode.f = startNode.g + heuristicWeight * startNode.h;
 
-        const openList = [startNode];
+        let insertOrder = 0;
+        startNode.order = insertOrder++;
+        const openList = new BinaryMinHeap((left, right) => (
+            left.f - right.f || left.h - right.h || left.order - right.order
+        ));
+        openList.push(startNode);
         const bestCosts = new Map();
         bestCosts.set(`${startCx},${startCy},${startCell.z}`, 0);
 
@@ -453,11 +522,7 @@ const GeodataEngine = {
                 break;
             }
 
-            if (
-                current.cx === endCx
-                && current.cy === endCy
-                && (!hasLayerData || current.cz === endCell.z)
-            ) {
+            if (reachedGoal(current)) {
                 targetNode = current;
                 break;
             }
@@ -496,7 +561,7 @@ const GeodataEngine = {
                 }
 
                 const h = heuristic(nCx, nCy, nCell.z);
-                const f = g + h;
+                const f = g + heuristicWeight * h;
 
                 const neighbor = {
                     cx: nCx,
@@ -505,22 +570,12 @@ const GeodataEngine = {
                     g: g,
                     h: h,
                     f: f,
-                    parent: current
+                    parent: current,
+                    order: insertOrder++
                 };
 
                 bestCosts.set(key, g);
-
-                let inserted = false;
-                for (let i = 0; i < openList.length; i++) {
-                    if (neighbor.f < openList[i].f) {
-                        openList.splice(i, 0, neighbor);
-                        inserted = true;
-                        break;
-                    }
-                }
-                if (!inserted) {
-                    openList.push(neighbor);
-                }
+                openList.push(neighbor);
             }
         }
         
@@ -564,7 +619,7 @@ const GeodataEngine = {
             }
         }
 
-        if (smoothedPath.length > 0) {
+        if (smoothedPath.length > 0 && goalRadius <= 0) {
             smoothedPath[smoothedPath.length - 1] = {
                 locX: endX,
                 locY: endY,

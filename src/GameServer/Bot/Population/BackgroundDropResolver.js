@@ -8,7 +8,7 @@ function rewardDataForSpot(spot, rng, npcSelfId = 0) {
     const byId = entries.map((entry) => ({
         reward: (DataCache.npcRewards || []).find((reward) => Number(reward.selfId) === Number(entry.selfId)),
         count: Math.max(1, Number(entry.count || 1))
-    })).filter((entry) => Array.isArray(entry.reward?.rewards) && entry.reward.rewards.length > 0);
+    })).filter((entry) => (entry.reward?.rewards || []).length > 0 || (entry.reward?.spoils || []).length > 0);
     const knownIds = new Set(byId.map((entry) => Number(entry.reward.selfId)));
     const names = new Set((spot?.npcNames || []).map((name) => String(name || '').trim().toLowerCase()).filter(Boolean));
     // World-spawn ids may not be the datapack reward ids. The spot index also
@@ -17,7 +17,7 @@ function rewardDataForSpot(spot, rng, npcSelfId = 0) {
     const byName = names.size === 0 ? [] : (DataCache.npcRewards || []).filter((reward) => (
         !knownIds.has(Number(reward.selfId))
         && names.has(String(reward.template?.name || '').trim().toLowerCase())
-        && Array.isArray(reward.rewards) && reward.rewards.length > 0
+        && ((reward.rewards || []).length > 0 || (reward.spoils || []).length > 0)
     )).map((reward) => ({ reward, count: 1 }));
     const candidates = [...byId, ...byName];
     if (!candidates.length) return null;
@@ -47,6 +47,7 @@ function itemSnapshot(item, amount, sourceMobLevel = 0) {
         name: item.name || template.template?.name || `Item ${item.selfId}`,
         amount,
         kind: template.template?.kind || '',
+        stackable: template.etc?.stackable !== false,
         rank: template.etc?.rank || 'none',
         sourceMobLevel: Math.max(0, Number(sourceMobLevel) || 0)
     };
@@ -82,4 +83,33 @@ function rollForFight({ spot, killerLevel, npcSelfId = 0, rng = Math.random, max
     return drops;
 }
 
-module.exports = { rollForFight };
+function rollSpoilForFight({ spot, killerLevel, npcSelfId = 0, rng = Math.random, maxItems = 4 } = {}) {
+    const rewardData = rewardDataForSpot(spot, rng, npcSelfId);
+    if (!rewardData) return [];
+    const defeatedNpcLevel = sourceMobLevel(rewardData, spot, npcSelfId);
+    const spoils = [];
+    for (const group of rewardData.spoils || []) {
+        if (spoils.length >= maxItems) break;
+        const groupRoll = ProgressionRates.rewardGroupRoll(group, 'spoil', {
+            npcLevel: defeatedNpcLevel,
+            killerLevel: Number(killerLevel || 0)
+        }, rng);
+        if (!groupRoll.hit) continue;
+        const roll = rng() * 100;
+        let partition = 0;
+        const item = (group.items || []).find((candidate) => {
+            partition += Math.max(0, Number(candidate.chance) || 0);
+            return roll <= partition;
+        });
+        if (!item) continue;
+        const min = Math.max(1, Math.floor(Number(item.min) || 1));
+        const max = Math.max(min, Math.floor(Number(item.max) || min));
+        const baseAmount = min === max ? min : Math.floor(rng() * (max - min + 1)) + min;
+        const amount = ProgressionRates.scaleAmount(baseAmount, groupRoll.amountMultiplier, rng);
+        const snapshot = itemSnapshot(item, amount, defeatedNpcLevel);
+        if (snapshot) spoils.push(snapshot);
+    }
+    return spoils;
+}
+
+module.exports = { rollForFight, rollSpoilForFight };

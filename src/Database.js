@@ -51,6 +51,56 @@ function normalizeRows(rows) {
     return (rows || []).map(normalizeRow);
 }
 
+const CLAN_ACTION_RESULT_MAX_BYTES = 16 * 1024;
+const CLAN_ACTION_RESULT_MAX_DEPTH = 3;
+const CLAN_ACTION_RESULT_MAX_KEYS = 32;
+const CLAN_ACTION_RESULT_MAX_STRING = 512;
+const CLAN_ACTION_RESULT_MAX_PRIMITIVES = 32;
+
+function compactClanActionValue(value, depth = 0) {
+    if (value === null || typeof value === 'boolean') return value;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value === 'string') return value.slice(0, CLAN_ACTION_RESULT_MAX_STRING);
+    if (typeof value === 'bigint') return Number(value);
+    if (depth >= CLAN_ACTION_RESULT_MAX_DEPTH || !value || typeof value !== 'object') return undefined;
+    if (Array.isArray(value)) {
+        const primitive = value.every((entry) => (
+            entry === null || ['boolean', 'number', 'string', 'bigint'].includes(typeof entry)
+        ));
+        if (!primitive) return { count: value.length };
+        return value.slice(0, CLAN_ACTION_RESULT_MAX_PRIMITIVES)
+            .map((entry) => compactClanActionValue(entry, depth + 1));
+    }
+    const summary = {};
+    for (const [key, entry] of Object.entries(value).slice(0, CLAN_ACTION_RESULT_MAX_KEYS)) {
+        const compacted = compactClanActionValue(entry, depth + 1);
+        if (compacted !== undefined) summary[key] = compacted;
+    }
+    return summary;
+}
+
+function compactClanActionResult(result) {
+    const source = result && typeof result === 'object' ? result : {};
+    const compacted = compactClanActionValue(source) || {};
+    const serialized = JSON.stringify(compacted);
+    if (Buffer.byteLength(serialized, 'utf8') <= CLAN_ACTION_RESULT_MAX_BYTES) return compacted;
+    let fallback = { truncated: true };
+    for (const [key, value] of Object.entries(source).slice(0, CLAN_ACTION_RESULT_MAX_KEYS)) {
+        let compactedValue;
+        if (value === null || ['boolean', 'number', 'string', 'bigint'].includes(typeof value)) {
+            compactedValue = compactClanActionValue(value);
+        } else if (Array.isArray(value)) {
+            compactedValue = { count: value.length };
+        }
+        if (compactedValue === undefined) continue;
+        const candidate = { ...fallback, [key]: compactedValue };
+        if (Buffer.byteLength(JSON.stringify(candidate), 'utf8') <= CLAN_ACTION_RESULT_MAX_BYTES) {
+            fallback = candidate;
+        }
+    }
+    return fallback;
+}
+
 function escapeIdentifier(value) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
         throw new Error(`invalid SQL identifier: ${value}`);
@@ -794,7 +844,90 @@ function applySchemaMigrations() {
                 ON clan_orders(clanId) WHERE status IN ('active', 'paused', 'blocked');
             CREATE INDEX IF NOT EXISTS clan_orders_clan_recent
                 ON clan_orders(clanId, updatedAt DESC, id DESC);
-        `)]
+        `)],
+        [28, () => connection.exec(`
+            -- Older warehouse transfers serialized the already-serialized
+            -- empty pet payload again on every round trip. Ordinary items can
+            -- therefore carry exponentially escaped variants of {}. Real pet
+            -- payloads are non-empty JSON objects and contain a key separator.
+            UPDATE items
+            SET petData = NULL
+            WHERE petData IS NOT NULL
+              AND (length(petData) > 1048576 OR instr(petData, ':') = 0);
+            UPDATE warehouse_items
+            SET petData = NULL
+            WHERE petData IS NOT NULL
+              AND (length(petData) > 1048576 OR instr(petData, ':') = 0);
+        `)],
+        [29, () => connection.exec(`
+            CREATE INDEX IF NOT EXISTS clan_actions_terminal_retention
+                ON clan_actions(resolvedAt, id)
+                WHERE status IN ('succeeded', 'failed', 'cancelled');
+            CREATE INDEX IF NOT EXISTS clan_goal_events_action_retention
+                ON clan_goal_events(occurredAt, id)
+                WHERE eventType IN ('action_succeeded', 'action_failed', 'action_cancelled');
+        `)],
+        [30, () => {
+            const table = connection.prepare(`SELECT sql FROM sqlite_master
+                WHERE type = 'table' AND name = 'clan_warehouse_items'`).get();
+            const legacyUniqueKey = /UNIQUE\s*\(\s*clanId\s*,\s*selfId\s*,\s*enchant\s*\)/i.test(String(table?.sql || ''));
+            if (!legacyUniqueKey) {
+                connection.exec(`CREATE INDEX IF NOT EXISTS clan_warehouse_items_clan_self
+                    ON clan_warehouse_items(clanId, selfId, amount)`);
+                return;
+            }
+
+            const rows = connection.prepare('SELECT * FROM clan_warehouse_items ORDER BY id').all();
+            connection.exec(`
+                ALTER TABLE clan_warehouse_items RENAME TO clan_warehouse_items_legacy_unique;
+                CREATE TABLE clan_warehouse_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    clanId INTEGER NOT NULL REFERENCES clans(id) ON DELETE CASCADE,
+                    selfId INTEGER NOT NULL,
+                    name TEXT NOT NULL DEFAULT '',
+                    kind TEXT NOT NULL DEFAULT '',
+                    amount INTEGER NOT NULL DEFAULT 1 CHECK(amount > 0),
+                    enchant INTEGER NOT NULL DEFAULT 0 CHECK(enchant >= 0),
+                    petData TEXT,
+                    reservedAmount INTEGER NOT NULL DEFAULT 0 CHECK(reservedAmount >= 0),
+                    createdAt INTEGER NOT NULL DEFAULT 0,
+                    updatedAt INTEGER NOT NULL DEFAULT 0
+                );
+            `);
+            const insertOriginal = connection.prepare(`INSERT INTO clan_warehouse_items
+                (id, clanId, selfId, name, kind, amount, enchant, petData, reservedAmount, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            const insertCopy = connection.prepare(`INSERT INTO clan_warehouse_items
+                (clanId, selfId, name, kind, amount, enchant, petData, reservedAmount, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`);
+
+            rows.forEach((row) => {
+                const amount = Math.max(1, Math.floor(Number(row.amount) || 1));
+                const reserved = Math.max(0, Math.floor(Number(row.reservedAmount) || 0));
+                if (reserved > amount) throw new Error(`invalid clan warehouse reservation for row ${row.id}`);
+                const wearable = /^(Armor|Weapon)\./.test(String(row.kind || ''));
+                insertOriginal.run(
+                    row.id, row.clanId, row.selfId, row.name, row.kind, wearable ? 1 : amount,
+                    row.enchant, row.petData, wearable && reserved > 0 ? 1 : reserved, row.createdAt, row.updatedAt
+                );
+            });
+            rows.forEach((row) => {
+                const amount = Math.max(1, Math.floor(Number(row.amount) || 1));
+                const reserved = Math.max(0, Math.floor(Number(row.reservedAmount) || 0));
+                if (!/^(Armor|Weapon)\./.test(String(row.kind || ''))) return;
+                for (let index = 1; index < amount; index += 1) {
+                    insertCopy.run(
+                        row.clanId, row.selfId, row.name, row.kind, row.enchant, row.petData,
+                        index < reserved ? 1 : 0, row.createdAt, row.updatedAt
+                    );
+                }
+            });
+            connection.exec(`
+                DROP TABLE clan_warehouse_items_legacy_unique;
+                CREATE INDEX clan_warehouse_items_clan_self
+                    ON clan_warehouse_items(clanId, selfId, amount);
+            `);
+        }]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
@@ -2547,7 +2680,10 @@ const Database = {
             const sourceEnchant = Math.max(0, Number(source.enchant) || 0);
             const target = item.stackable ? one('SELECT id, amount FROM warehouse_items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, item.selfId]) : null;
             const warehouseAmount = Number(target?.amount || 0) + Number(item.amount);
-            const warehouseId = target ? target.id : write('INSERT INTO warehouse_items (selfId, name, amount, enchant, petData, characterId) VALUES (?, ?, ?, ?, ?, ?)', [item.selfId, item.name || '', item.amount, sourceEnchant, item.petData ? JSON.stringify(item.petData) : null, characterId]).insertId;
+            const petData = item.petData
+                ? (typeof item.petData === 'string' ? item.petData : JSON.stringify(item.petData))
+                : null;
+            const warehouseId = target ? target.id : write('INSERT INTO warehouse_items (selfId, name, amount, enchant, petData, characterId) VALUES (?, ?, ?, ?, ?, ?)', [item.selfId, item.name || '', item.amount, sourceEnchant, petData, characterId]).insertId;
             if (target) write('UPDATE warehouse_items SET amount = ? WHERE id = ? AND characterId = ?', [warehouseAmount, warehouseId, characterId]);
             const inventoryAmount = Number(source.amount) - Number(item.amount);
             if (inventoryAmount <= 0) write('DELETE FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
@@ -2570,6 +2706,157 @@ const Database = {
             else write('UPDATE warehouse_items SET amount = ? WHERE id = ? AND characterId = ?', [warehouseAmount, item.id, characterId]);
             return { inventoryId: Number(inventoryId), inventoryAmount, warehouseAmount, petData: source.petData, enchant: sourceEnchant };
         }, 'warehouse:withdraw'));
+    },
+
+    transferPlayerInventoryBatchToClanWarehouse({ clanId, characterId, transfers = [] } = {}) {
+        const clan = Number(clanId);
+        const character = Number(characterId);
+        const normalized = (transfers || []).map((transfer) => ({
+            item: transfer?.item || {},
+            sourceItemId: Number(transfer?.item?.id || 0),
+            selfId: Number(transfer?.item?.selfId || 0),
+            requested: Math.floor(Number(transfer?.amount) || 0),
+            key: String(transfer?.resolveKey || '').trim()
+        }));
+        const sourceIds = new Set(normalized.map((transfer) => transfer.sourceItemId));
+        const resolveKeys = new Set(normalized.map((transfer) => transfer.key));
+        if (!clan || !character || !normalized.length
+            || normalized.some((transfer) => (
+                !transfer.sourceItemId || !transfer.selfId || transfer.requested <= 0 || !transfer.key
+            ))
+            || sourceIds.size !== normalized.length || resolveKeys.size !== normalized.length) {
+            return Promise.reject(new Error('invalid clan warehouse deposit'));
+        }
+        return withCharacterFlush(character, () => inTransaction(() => {
+            const clanRow = one('SELECT id, leaderId FROM clans WHERE id = ?', [clan]);
+            const member = one('SELECT id, clanId FROM characters WHERE id = ?', [character]);
+            if (!clanRow || !member || Number(member.clanId) !== clan) throw new Error('character is no longer in this clan');
+            const prepared = normalized.map((transfer) => {
+                const source = one(`SELECT id, selfId, name, amount, enchant, petData
+                    FROM items WHERE id = ? AND characterId = ?`, [transfer.sourceItemId, character]);
+                if (!source || Number(source.selfId) !== transfer.selfId || Number(source.amount) < transfer.requested) {
+                    throw new Error('inventory item changed');
+                }
+                return { ...transfer, source };
+            });
+            const simulation = one('SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan]);
+            const previousState = jsonObject(simulation?.stateJson);
+            let warehouseRevision = simulation
+                ? Math.max(0, Number(previousState.warehouseRevision) || 0)
+                : Number(one('SELECT COALESCE(MAX(warehouseRevision), 0) AS revision FROM clan_warehouse_ledger WHERE clanId = ?', [clan]).revision || 0);
+            const timestamp = now();
+            const results = prepared.map(({ item, sourceItemId, selfId, requested, key, source }) => {
+                const sourceEnchant = Math.max(0, Number(source.enchant) || 0);
+                const stackable = item.stackable === true;
+                const target = stackable ? one(`SELECT id, amount FROM clan_warehouse_items
+                    WHERE clanId = ? AND selfId = ? AND enchant = ? ORDER BY id LIMIT 1`, [clan, selfId, sourceEnchant]) : null;
+                const warehouseIds = [];
+                let warehouseAmount = 1;
+                if (target) {
+                    warehouseIds.push(Number(target.id));
+                    warehouseAmount = Number(target.amount || 0) + requested;
+                    write('UPDATE clan_warehouse_items SET amount = ?, updatedAt = ? WHERE id = ? AND clanId = ?', [
+                        warehouseAmount, timestamp, target.id, clan
+                    ]);
+                } else {
+                    const rows = stackable ? 1 : requested;
+                    const rowAmount = stackable ? requested : 1;
+                    for (let index = 0; index < rows; index += 1) {
+                        warehouseIds.push(Number(write(`INSERT INTO clan_warehouse_items
+                            (clanId, selfId, name, kind, amount, enchant, petData, createdAt, updatedAt)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+                            clan, selfId, String(item.name || source.name || `Item ${selfId}`), String(item.kind || ''), rowAmount,
+                            sourceEnchant, source.petData || null, timestamp, timestamp
+                        ]).insertId));
+                    }
+                    warehouseAmount = rowAmount;
+                }
+                const inventoryAmount = Number(source.amount) - requested;
+                if (inventoryAmount <= 0) write('DELETE FROM items WHERE id = ? AND characterId = ?', [sourceItemId, character]);
+                else write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [inventoryAmount, sourceItemId, character]);
+                warehouseRevision += 1;
+                const ledger = write(`INSERT INTO clan_warehouse_ledger
+                    (clanId, characterId, selfId, amount, operation, resolveKey, warehouseRevision, createdAt)
+                    VALUES (?, ?, ?, ?, 'deposit', ?, ?, ?)`, [clan, character, selfId, requested, key, warehouseRevision, timestamp]);
+                return {
+                    sourceItemId, warehouseId: warehouseIds[0], warehouseIds, warehouseAmount, inventoryAmount, enchant: sourceEnchant,
+                    petData: source.petData, warehouseRevision, ledgerId: Number(ledger.insertId)
+                };
+            });
+            if (simulation) {
+                const state = simulationState(previousState, clan, clanRow.leaderId, previousState.memberIds || [], timestamp);
+                state.warehouseRevision = warehouseRevision;
+                write('UPDATE clan_simulation_clans SET updatedAt = ?, stateJson = ? WHERE clanId = ?', [timestamp, JSON.stringify(state), clan]);
+            }
+            return results;
+        }, 'clan-warehouse:player-deposit'));
+    },
+
+    transferPlayerInventoryToClanWarehouse({ clanId, characterId, item = {}, amount, resolveKey } = {}) {
+        return Database.transferPlayerInventoryBatchToClanWarehouse({
+            clanId,
+            characterId,
+            transfers: [{ item, amount, resolveKey }]
+        }).then((results) => results[0]);
+    },
+
+    transferClanWarehouseToPlayerInventory({ clanId, characterId, item = {}, amount, resolveKey } = {}) {
+        const clan = Number(clanId);
+        const character = Number(characterId);
+        const warehouseItemId = Number(item.id || 0);
+        const selfId = Number(item.selfId || 0);
+        const requested = Math.floor(Number(amount) || 0);
+        const key = String(resolveKey || '').trim();
+        if (!clan || !character || !warehouseItemId || !selfId || requested <= 0 || !key) {
+            return Promise.reject(new Error('invalid clan warehouse withdrawal'));
+        }
+        return withCharacterFlush(character, () => inTransaction(() => {
+            const clanRow = one('SELECT id, leaderId FROM clans WHERE id = ?', [clan]);
+            const member = one('SELECT id, clanId FROM characters WHERE id = ?', [character]);
+            if (!clanRow || !member || Number(member.clanId) !== clan) throw new Error('character is no longer in this clan');
+            if (Number(clanRow.leaderId) !== character) throw new Error('only the clan leader may withdraw');
+            const source = one(`SELECT id, selfId, name, kind, amount, enchant, petData, reservedAmount
+                FROM clan_warehouse_items WHERE id = ? AND clanId = ?`, [warehouseItemId, clan]);
+            const available = source ? Math.max(0, Number(source.amount) - Number(source.reservedAmount || 0)) : 0;
+            if (!source || Number(source.selfId) !== selfId || available < requested) {
+                throw new Error('clan warehouse item changed or is reserved');
+            }
+            const simulation = one('SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan]);
+            const previousState = jsonObject(simulation?.stateJson);
+            const currentRevision = simulation
+                ? Math.max(0, Number(previousState.warehouseRevision) || 0)
+                : Number(one('SELECT COALESCE(MAX(warehouseRevision), 0) AS revision FROM clan_warehouse_ledger WHERE clanId = ?', [clan]).revision || 0);
+            const sourceEnchant = Math.max(0, Number(source.enchant) || 0);
+            const target = item.stackable !== false ? one(`SELECT id, amount FROM items
+                WHERE characterId = ? AND selfId = ? AND enchant = ? ORDER BY id LIMIT 1`, [character, selfId, sourceEnchant]) : null;
+            const inventoryAmount = Number(target?.amount || 0) + requested;
+            const inventoryId = target ? Number(target.id) : Number(write(`INSERT INTO items
+                (selfId, name, amount, enchant, equipped, slot, petData, characterId)
+                VALUES (?, ?, ?, ?, 0, 0, ?, ?)`, [
+                selfId, String(source.name || item.name || `Item ${selfId}`), requested, sourceEnchant, source.petData || null, character
+            ]).insertId);
+            if (target) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [inventoryAmount, inventoryId, character]);
+            const timestamp = now();
+            const warehouseAmount = Number(source.amount) - requested;
+            if (warehouseAmount <= 0 && Number(source.reservedAmount || 0) <= 0) {
+                write('DELETE FROM clan_warehouse_items WHERE id = ? AND clanId = ?', [warehouseItemId, clan]);
+            } else {
+                write('UPDATE clan_warehouse_items SET amount = ?, updatedAt = ? WHERE id = ? AND clanId = ?', [warehouseAmount, timestamp, warehouseItemId, clan]);
+            }
+            const nextRevision = currentRevision + 1;
+            if (simulation) {
+                const state = simulationState(previousState, clan, clanRow.leaderId, previousState.memberIds || [], timestamp);
+                state.warehouseRevision = nextRevision;
+                write('UPDATE clan_simulation_clans SET updatedAt = ?, stateJson = ? WHERE clanId = ?', [timestamp, JSON.stringify(state), clan]);
+            }
+            const ledger = write(`INSERT INTO clan_warehouse_ledger
+                (clanId, characterId, selfId, amount, operation, resolveKey, warehouseRevision, createdAt)
+                VALUES (?, ?, ?, ?, 'withdraw', ?, ?, ?)`, [clan, character, selfId, requested, key, nextRevision, timestamp]);
+            return {
+                inventoryId, inventoryAmount, warehouseAmount, enchant: sourceEnchant,
+                petData: source.petData, warehouseRevision: nextRevision, ledgerId: Number(ledger.insertId)
+            };
+        }, 'clan-warehouse:player-withdraw'));
     },
 
     fetchCharacterQuests(characterId) { return select('character_quests', ['*'], 'characterId = ?', [characterId], 'quest:list'); },
@@ -3210,7 +3497,7 @@ const Database = {
                 };
             }
             const timestamp = now();
-            const safeResult = result && typeof result === 'object' ? result : {};
+            const safeResult = compactClanActionResult(result);
             const updated = write(`UPDATE clan_actions
                 SET status = ?, leaseUntil = NULL, resultJson = ?, reasonCode = ?, updatedAt = ?, resolvedAt = ?
                 WHERE id = ? AND status IN ('pending', 'running')`, [
@@ -3879,6 +4166,7 @@ const Database = {
                     enchant,
                     name: String(drop?.name || `Item ${selfId}`),
                     kind: String(drop?.kind || ''),
+                    stackable: drop?.stackable !== false,
                     petData: drop?.petData || null
                 };
                 existing.amount += amount;
@@ -3889,18 +4177,24 @@ const Database = {
             let warehouseRevision = Math.max(0, Number(jsonObject(simulation.stateJson).warehouseRevision) || 0);
             if (success) {
                 reward.forEach((drop) => {
-                    const warehouse = one(`SELECT id, amount FROM clan_warehouse_items
-                        WHERE clanId = ? AND selfId = ? AND enchant = ? LIMIT 1`, [clan, drop.selfId, drop.enchant]);
+                    const wearable = /^(Armor|Weapon)\./.test(String(drop.kind || ''));
+                    const stackable = drop.stackable !== false && !wearable;
+                    const warehouse = stackable ? one(`SELECT id, amount FROM clan_warehouse_items
+                        WHERE clanId = ? AND selfId = ? AND enchant = ? LIMIT 1`, [clan, drop.selfId, drop.enchant]) : null;
                     if (warehouse) {
                         write(`UPDATE clan_warehouse_items SET amount = amount + ?, updatedAt = ?
                             WHERE id = ? AND clanId = ?`, [drop.amount, timestamp, warehouse.id, clan]);
                     } else {
-                        write(`INSERT INTO clan_warehouse_items
-                            (clanId, selfId, name, kind, amount, enchant, petData, createdAt, updatedAt)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
-                            clan, drop.selfId, drop.name, drop.kind, drop.amount, drop.enchant,
-                            drop.petData ? JSON.stringify(drop.petData) : null, timestamp, timestamp
-                        ]);
+                        const rows = stackable ? 1 : drop.amount;
+                        const rowAmount = stackable ? drop.amount : 1;
+                        for (let index = 0; index < rows; index += 1) {
+                            write(`INSERT INTO clan_warehouse_items
+                                (clanId, selfId, name, kind, amount, enchant, petData, createdAt, updatedAt)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+                                clan, drop.selfId, drop.name, drop.kind, rowAmount, drop.enchant,
+                                drop.petData ? JSON.stringify(drop.petData) : null, timestamp, timestamp
+                            ]);
+                        }
                     }
                     write(`INSERT INTO clan_warehouse_ledger
                         (clanId, characterId, selfId, amount, operation, resolveKey, warehouseRevision, createdAt)

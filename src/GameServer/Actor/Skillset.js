@@ -27,6 +27,32 @@ class Skillset {
         return this.skills.find((ob) => ob.fetchSelfId() === selfId);
     }
 
+    // Arena opponents are runtime-only actors. Populate their skillbook from
+    // a caller-provided snapshot instead of querying/reconciling a synthetic
+    // character id in SQLite.
+    populateSnapshot(ownedSkills = []) {
+        this.resetSkills();
+        const skillLevel = (skill, requestedLevel) => skill?.levels?.find((entry) => (
+            Number(entry.level) === Number(requestedLevel)
+        )) || skill?.levels?.filter((entry) => Number(entry.level) <= Number(requestedLevel)).at(-1);
+
+        (ownedSkills || []).forEach((ownedSkill) => {
+            const row = ownedSkill?.model || ownedSkill;
+            const definition = DataCache.skills?.find((skill) => Number(skill.selfId) === Number(row?.selfId));
+            if (!definition) return;
+            const level = skillLevel(definition, row.level);
+            if (!level) return;
+            this.skills.push(new SkillModel({
+                ...utils.crushOb(definition),
+                ...level,
+                selfId: definition.selfId,
+                name: row.name || definition.template?.name,
+                passive: row.passive ?? definition.template?.passive ?? false
+            }));
+        });
+        return this.skills;
+    }
+
     populate(characterId, callback = () => {}) {
         // Start anew
         this.resetSkills();

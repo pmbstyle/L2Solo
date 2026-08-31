@@ -10,6 +10,8 @@
         "start": "node scripts/start.js",
         "NodeL2": "node scripts/run-server.js",
         "geodata": "node scripts/ensure-geodata.js",
+        "generate:knowledge-base": "node scripts/generate-knowledge-base.js",
+        "check:knowledge-base": "node scripts/generate-knowledge-base.js --check",
         "check": "node scripts/check-syntax.js",
         "test": "node scripts/run-tests.js",
         "load:mixed": "node scripts/mixed-runtime-load-test.js",

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Server Database · World Observer</title>
+    <link rel="icon" type="image/png" href="/observer/world-observer-logo.png">
+    <link rel="stylesheet" href="/observer/knowledge-base.css">
+</head>
+<body>
+    <header class="kb-topbar">
+        <a class="kb-brand" href="/observer/" aria-label="Open world map">
+            <img src="/observer/world-observer-logo.png" alt="" width="38" height="38">
+            <span><b>World Observer</b><small>Server Database</small></span>
+        </a>
+        <nav class="kb-global-nav" aria-label="World Observer navigation">
+            <a href="/observer/">
+                <svg aria-hidden="true"><use href="/observer/ui-icons.svg#map"></use></svg>
+                World map
+            </a>
+            <span class="kb-rate" id="rateBadge">Rates loading…</span>
+        </nav>
+    </header>
+
+    <main class="kb-shell">
+        <header class="kb-heading">
+            <div>
+                <span class="kb-eyebrow">C4 · this server</span>
+                <h1>Aden Archives</h1>
+                <p>Items, creatures, drops and spawn locations from the exact datapack running here.</p>
+            </div>
+            <div class="kb-counts" id="databaseCounts" aria-label="Database size"></div>
+        </header>
+
+        <nav class="kb-tabs" aria-label="Database sections">
+            <a id="itemsTab" href="/observer/database/items" data-kind="items">Items</a>
+            <a id="npcsTab" href="/observer/database/npcs" data-kind="npcs">NPCs</a>
+        </nav>
+
+        <section class="kb-catalog" id="catalogView" aria-live="polite">
+            <div class="kb-toolbar">
+                <label class="kb-search">
+                    <svg aria-hidden="true"><use href="/observer/ui-icons.svg#search"></use></svg>
+                    <input id="catalogSearch" type="search" placeholder="Search by name or ID…" autocomplete="off">
+                    <kbd>/</kbd>
+                </label>
+                <div class="kb-filters" id="npcFilters" hidden>
+                    <label><span>Level from</span><input id="npcMinLevel" type="number" min="1" max="99" value="1"></label>
+                    <label><span>to</span><input id="npcMaxLevel" type="number" min="1" max="99" value="99"></label>
+                    <label><span>Kind</span><select id="npcRaid"><option value="all">All NPCs</option><option value="raid">Raid bosses</option><option value="normal">Monsters</option></select></label>
+                </div>
+            </div>
+
+            <section class="kb-directory" id="itemDirectory" hidden>
+                <div class="kb-directory-list" id="itemDirectoryList"></div>
+            </section>
+
+            <div id="catalogList">
+                <div class="kb-list-head">
+                    <strong id="resultCount">Loading database…</strong>
+                    <span class="kb-list-context"><a id="itemDirectoryReturn" href="/observer/database/items" data-item-directory hidden>← Item categories</a><span id="resultContext">Current server datapack</span></span>
+                </div>
+                <div class="kb-results" id="catalogResults"></div>
+                <nav class="kb-pagination" id="pagination" aria-label="Catalog pages"></nav>
+            </div>
+        </section>
+
+        <article class="kb-detail" id="detailView" aria-live="polite" hidden></article>
+    </main>
+
+    <template id="loadingTemplate">
+        <div class="kb-loading"><i></i><strong>Reading the server archive</strong><span>Resolving templates and drop formulas…</span></div>
+    </template>
+
+    <script src="/observer/spaRouter.js"></script>
+    <script src="/observer/knowledge-base.js"></script>
+</body>
+</html>

@@ -35,6 +35,8 @@ const SkillModel = invoke('GameServer/Model/Skill');
 const SkillExec = invoke('GameServer/Actor/Generics/SkillExec');
 const ActorGenerics = invoke(path.actor);
 
+DataCache.init();
+
 function corpseSummonControlProbe() {
     return {
         effects: {},
@@ -251,7 +253,7 @@ const originalRandom = Math.random;
 const originalBotSessions = BotManager.sessions;
 const originalBotPartySay = BotManager.botPartySay;
 const originalApplySupportBuff = BotBuffs.applySupportBuff;
-const originalFindOffers = MarketOpportunity.findOffers;
+const originalHotOffers = MarketOpportunity.hotOffers;
 const originalSkillExec = ActorGenerics.skillExec;
 
 function lastPartyAllPacket(session) {
@@ -1888,7 +1890,7 @@ try {
     marketSession.partyCompanion = true;
     marketSession.plan = 'following';
     marketSession.coldLifeState = { stats: { equipmentPlan: { strategy: 'market', target: { selfId: 1 } } } };
-    MarketOpportunity.findOffers = () => ([{
+    MarketOpportunity.hotOffers = () => ([{
         sourceType: 'private_store', sourceId: marketSeller.fetchId(), itemName: 'Sword of Reflection', price: 0,
         town: 'Giran', session: { accountId: 'bot_market_seller', actor: marketSeller }
     }]);
@@ -1900,7 +1902,7 @@ try {
     });
     assert.strictEqual(marketSession.companionShopping?.kind, 'market_purchase', 'companion should prefer an available planned market upgrade in town');
     assert.strictEqual(marketSession.shoppingTarget?.actorId, marketSeller.fetchId(), 'companion market errand should walk to the live seller');
-    MarketOpportunity.findOffers = originalFindOffers;
+    MarketOpportunity.hotOffers = originalHotOffers;
 
     const starterTownLeader = fakeActor(2000046, { locX: 45475, locY: 48359, locZ: -3060 });
     const starterTownLeaderSession = fakeSession('player_elven_town_errand_party', starterTownLeader);
@@ -1911,7 +1913,7 @@ try {
     starterTownSession.partyCompanion = true;
     starterTownSession.plan = 'following';
     starterTownSession.coldLifeState = { stats: { equipmentPlan: { strategy: 'market', target: { selfId: 1 } } } };
-    MarketOpportunity.findOffers = () => ([{
+    MarketOpportunity.hotOffers = () => ([{
         sourceType: 'private_store', sourceId: starterTownSeller.fetchId(), itemName: 'Sword of Reflection', price: 0,
         town: 'Elven Village', session: { accountId: 'bot_elven_market_seller', actor: starterTownSeller }
     }]);
@@ -1923,7 +1925,7 @@ try {
         say() {}, executeCombat() {}, executePvPCombat() {}
     });
     assert.strictEqual(starterTownSession.companionShopping?.kind, 'market_purchase', 'a starter village outside the movement atlas must still allow normal in-town errands');
-    MarketOpportunity.findOffers = originalFindOffers;
+    MarketOpportunity.hotOffers = originalHotOffers;
 
     const fieldNearStarterLeader = fakeActor(2000051, { locX: 49475, locY: 48359, locZ: -3060 });
     const fieldNearStarterLeaderSession = fakeSession('player_near_elven_field_party', fieldNearStarterLeader);
@@ -1933,7 +1935,7 @@ try {
     fieldNearStarterSession.partyCompanion = true;
     fieldNearStarterSession.plan = 'following';
     fieldNearStarterSession.coldLifeState = { stats: { equipmentPlan: { strategy: 'market', target: { selfId: 1 } } } };
-    MarketOpportunity.findOffers = () => ([{
+    MarketOpportunity.hotOffers = () => ([{
         sourceType: 'private_store', sourceId: starterTownSeller.fetchId(), itemName: 'Sword of Reflection', price: 0,
         town: 'Elven Village', session: { accountId: 'bot_elven_market_seller', actor: starterTownSeller }
     }]);
@@ -1944,7 +1946,7 @@ try {
         say() {}, executeCombat() {}, executePvPCombat() {}
     });
     assert.notStrictEqual(fieldNearStarterSession.companionShopping?.kind, 'market_purchase', 'a nearby farming field must not be treated as a starter village market');
-    MarketOpportunity.findOffers = originalFindOffers;
+    MarketOpportunity.hotOffers = originalHotOffers;
 
     World.user = { sessions: [bufferLeaderSession, bufferSession, unbuffedCompanionSession] };
 
@@ -2778,7 +2780,7 @@ try {
     BotManager.sessions = originalBotSessions;
     BotManager.botPartySay = originalBotPartySay;
     BotBuffs.applySupportBuff = originalApplySupportBuff;
-    MarketOpportunity.findOffers = originalFindOffers;
+    MarketOpportunity.hotOffers = originalHotOffers;
     ActorGenerics.skillExec = originalSkillExec;
 }
 

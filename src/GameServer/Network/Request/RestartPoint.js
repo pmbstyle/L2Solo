@@ -18,8 +18,12 @@ function consume(session, data) {
         return;
     }
 
+    const ArenaDuelService = invoke('GameServer/World/ArenaDuelService');
+    const arenaDeath = session.arenaDeath === true && ArenaDuelService.duelForActor?.(actor);
     const TownRespawn = invoke('GameServer/World/TownRespawn');
-    const townRespawn = actor.fetchKarma?.() > 0
+    const townRespawn = arenaDeath
+        ? invoke('GameServer/World/GiranArena').RESTART
+        : actor.fetchKarma?.() > 0
         ? TownRespawn.getChaoticRespawnCoords(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ())
         : TownRespawn.getRespawnCoords(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ());
     const Generics = invoke(path.actor);
@@ -30,6 +34,7 @@ function consume(session, data) {
     session.dataSendToMe(ServerResponse.userInfo(actor));
 
     Generics.teleportTo(session, actor, townRespawn);
+    if (arenaDeath) ArenaDuelService.release(session, 'player_death');
 }
 
 module.exports = restartPoint;

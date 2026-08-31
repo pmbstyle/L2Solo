@@ -197,6 +197,12 @@ assert.strictEqual(
     'dwarven starters may use their native mine route'
 );
 assert.strictEqual(LevelingRoutes.capacityForSpot(mithrilMines), 48, 'the explicit mine capacity must override density-derived defaults');
+assert.strictEqual(LevelingRoutes.capacityForSpot({ density: 4 }), 9,
+    'a sparse ordinary field must still fit one complete party');
+assert.strictEqual(LevelingRoutes.capacityForSpot({ density: 40 }), 30,
+    'ordinary field capacity must stay below its continuously unavailable spawn count');
+assert.strictEqual(LevelingRoutes.capacityForSpot({ density: 200 }), 36,
+    'a dense grid cell must not become a bottomless cold-planning destination');
 
 const originalEnsureIndexed = SpotService.ensureIndexed;
 SpotService.ensureIndexed = () => [

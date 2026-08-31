@@ -755,6 +755,15 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         npcSelfId: mob.selfId,
         rng
     });
+    if (String(state.stats?.role || '') === 'spoiler'
+        || [54, 55].includes(Number(state.stats?.classId ?? state.classId))) {
+        loot.push(...BackgroundDropResolver.rollSpoilForFight({
+            spot,
+            killerLevel: Number(state.level || bot.level),
+            npcSelfId: mob.selfId,
+            rng
+        }));
+    }
 
     return {
         won: true,
