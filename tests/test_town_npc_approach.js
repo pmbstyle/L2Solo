@@ -2,7 +2,9 @@ const assert = require('assert');
 
 require('../src/Global');
 
+const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
+const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 function botAt(locX, locY, locZ = -100) {
     return {
@@ -74,27 +76,29 @@ assert.deepStrictEqual(northFacing.staging, { locX: 1000, locY: 1240, locZ: -100
 assert.strictEqual(TownNpcApproach.pointsFor({ ...target, head: null }), null,
     'targets without heading data must retain the legacy radius behavior');
 
-const helvetia = {
-    actorId: 1001,
-    npcSelfId: 7081,
-    name: 'Helvetia',
-    town: 'Giran',
-    locX: 80518,
-    locY: 147922,
-    locZ: -3506,
-    head: 32768
-};
-const helvetiaPoints = TownNpcApproach.pointsFor(helvetia);
-assert.deepStrictEqual(helvetiaPoints.interaction, { locX: 80467, locY: 147871, locZ: -3506 });
-const reachableCounterEdge = botAt(80456, 147864, -3504);
-assert.strictEqual(TownNpcApproach.hasLineOfSight(reachableCounterEdge, helvetia), false,
-    'the last reachable Helvetia geodata cell should reproduce the live counter-edge LOS clip');
-assert.strictEqual(TownNpcApproach.plan({}, reachableCounterEdge, helvetia, 'shopping').ready, true,
-    'reaching the tight edge of a validated counter point must permit interaction');
-const outsideCounterEdge = botAt(80448, 147864, -3504);
-assert.strictEqual(TownNpcApproach.hasLineOfSight(outsideCounterEdge, helvetia), false);
-assert.strictEqual(TownNpcApproach.plan({}, outsideCounterEdge, helvetia, 'shopping').ready, false,
-    'a bot beyond the tight counter-edge allowance must still need direct line of sight');
+verifyGeodataWhenAvailable(GeodataEngine, [[22, 22]], 'Giran Helvetia counter approach', () => {
+    const helvetia = {
+        actorId: 1001,
+        npcSelfId: 7081,
+        name: 'Helvetia',
+        town: 'Giran',
+        locX: 80518,
+        locY: 147922,
+        locZ: -3506,
+        head: 32768
+    };
+    const helvetiaPoints = TownNpcApproach.pointsFor(helvetia);
+    assert.deepStrictEqual(helvetiaPoints.interaction, { locX: 80467, locY: 147871, locZ: -3506 });
+    const reachableCounterEdge = botAt(80456, 147864, -3504);
+    assert.strictEqual(TownNpcApproach.hasLineOfSight(reachableCounterEdge, helvetia), false,
+        'the last reachable Helvetia geodata cell should reproduce the live counter-edge LOS clip');
+    assert.strictEqual(TownNpcApproach.plan({}, reachableCounterEdge, helvetia, 'shopping').ready, true,
+        'reaching the tight edge of a validated counter point must permit interaction');
+    const outsideCounterEdge = botAt(80448, 147864, -3504);
+    assert.strictEqual(TownNpcApproach.hasLineOfSight(outsideCounterEdge, helvetia), false);
+    assert.strictEqual(TownNpcApproach.plan({}, outsideCounterEdge, helvetia, 'shopping').ready, false,
+        'a bot beyond the tight counter-edge allowance must still need direct line of sight');
+});
 
 const firstOpenSession = {};
 const secondOpenSession = {};
