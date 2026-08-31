@@ -131,6 +131,9 @@ Clean C4 client protocol 656
 - Better bot AI brain
 - Complete Lineage 2 C4 experience
 
+<p align="center">
+<img src="https://github.com/user-attachments/assets/d70a064e-909d-4069-9586-6db3aab0a517" />
+</p>
 
 ## 🎮 Wanna play now?
 
