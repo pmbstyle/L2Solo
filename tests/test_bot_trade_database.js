@@ -26,10 +26,10 @@ async function main() {
     const playerId = Number((await Database.fetchCharacterName('TradeDbPlayer'))[0].id);
     const botId = Number((await Database.fetchCharacterName('TradeDbBot'))[0].id);
     const playerItemId = Number((await Database.setItem(playerId, {
-        selfId: 7001, name: 'Player Token', amount: 2, equipped: false, slot: 0
+        selfId: 7001, name: 'Player Token', amount: 2, enchant: 7, equipped: false, slot: 0
     })).insertId);
     const botItemId = Number((await Database.setItem(botId, {
-        selfId: 7002, name: 'Bot Token', amount: 3, equipped: false, slot: 0
+        selfId: 7002, name: 'Bot Token', amount: 3, enchant: 5, equipped: false, slot: 0
     })).insertId);
 
     const moved = await Database.transferInventoryBetweenCharacters([
@@ -41,6 +41,8 @@ async function main() {
     assert.strictEqual((await Database.fetchItems(playerId)).find((item) => Number(item.selfId) === 7002).amount, 2);
     assert.strictEqual((await Database.fetchItems(botId)).find((item) => Number(item.selfId) === 7001).amount, 1);
     assert.strictEqual((await Database.fetchItems(botId)).find((item) => Number(item.selfId) === 7002).amount, 1);
+    assert.strictEqual((await Database.fetchItems(playerId)).find((item) => Number(item.selfId) === 7002).enchant, 5);
+    assert.strictEqual((await Database.fetchItems(botId)).find((item) => Number(item.selfId) === 7001).enchant, 7);
 
     await assert.rejects(
         Database.transferInventoryBetweenCharacters([

@@ -7,7 +7,7 @@ function writeTradeItem(packet, item, amount = item.fetchAmount()) {
         .writeH(item.fetchClass2())
         .writeH(0x00)
         .writeD(item.isWearable() ? item.fetchSlot() : 0)
-        .writeH(0x00)
+        .writeH(item.fetchEnchantLevel?.() || 0)
         .writeH(0x00)
         .writeH(0x00);
 
