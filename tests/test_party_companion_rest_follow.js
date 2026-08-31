@@ -35,6 +35,8 @@ const SkillModel = invoke('GameServer/Model/Skill');
 const SkillExec = invoke('GameServer/Actor/Generics/SkillExec');
 const ActorGenerics = invoke(path.actor);
 
+DataCache.init();
+
 function corpseSummonControlProbe() {
     return {
         effects: {},

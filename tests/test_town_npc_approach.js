@@ -58,11 +58,43 @@ behind.locX = points.interaction.locX;
 approach = TownNpcApproach.plan(session, behind, target, 'shopping');
 assert.strictEqual(approach.ready, true, 'the front-side interaction point must permit the town errand');
 
+behind.locX = points.interaction.locX + TownNpcApproach.INTERACTION_READY_RADIUS;
+approach = TownNpcApproach.plan(session, behind, target, 'shopping');
+assert.strictEqual(approach.ready, true,
+    'a bot should interact from the modestly expanded front-side tolerance');
+
+behind.locX += 1;
+approach = TownNpcApproach.plan(session, behind, target, 'shopping');
+assert.strictEqual(approach.ready, false,
+    'the expanded tolerance must remain bounded near the interaction point');
+
 const northFacing = TownNpcApproach.pointsFor({ ...target, head: 16384 });
 assert.deepStrictEqual(northFacing.staging, { locX: 1000, locY: 1240, locZ: -100 },
     'Lineage heading units must project consistently onto world coordinates');
 assert.strictEqual(TownNpcApproach.pointsFor({ ...target, head: null }), null,
     'targets without heading data must retain the legacy radius behavior');
+
+const helvetia = {
+    actorId: 1001,
+    npcSelfId: 7081,
+    name: 'Helvetia',
+    town: 'Giran',
+    locX: 80518,
+    locY: 147922,
+    locZ: -3506,
+    head: 32768
+};
+const helvetiaPoints = TownNpcApproach.pointsFor(helvetia);
+assert.deepStrictEqual(helvetiaPoints.interaction, { locX: 80467, locY: 147871, locZ: -3506 });
+const reachableCounterEdge = botAt(80456, 147864, -3504);
+assert.strictEqual(TownNpcApproach.hasLineOfSight(reachableCounterEdge, helvetia), false,
+    'the last reachable Helvetia geodata cell should reproduce the live counter-edge LOS clip');
+assert.strictEqual(TownNpcApproach.plan({}, reachableCounterEdge, helvetia, 'shopping').ready, true,
+    'reaching the tight edge of a validated counter point must permit interaction');
+const outsideCounterEdge = botAt(80448, 147864, -3504);
+assert.strictEqual(TownNpcApproach.hasLineOfSight(outsideCounterEdge, helvetia), false);
+assert.strictEqual(TownNpcApproach.plan({}, outsideCounterEdge, helvetia, 'shopping').ready, false,
+    'a bot beyond the tight counter-edge allowance must still need direct line of sight');
 
 const firstOpenSession = {};
 const secondOpenSession = {};
@@ -93,5 +125,19 @@ const alreadyClose = TownNpcApproach.planOpen(
 );
 assert.strictEqual(alreadyClose.ready, true,
     'a bot already close with line of sight must interact without walking out to a staging point');
+
+const openBoundaryBot = identifiedBotAt(
+    104,
+    target.locX + TownNpcApproach.OPEN_INTERACTION_READY_RADIUS,
+    target.locY
+);
+const openBoundary = TownNpcApproach.planOpen({}, openBoundaryBot, target, 'newbie_guide');
+assert.strictEqual(openBoundary.ready, true,
+    'open-air NPC interaction should accept the expanded nearby radius');
+
+openBoundaryBot.locX += 1;
+const outsideOpenBoundary = TownNpcApproach.planOpen({}, openBoundaryBot, target, 'newbie_guide');
+assert.strictEqual(outsideOpenBoundary.ready, false,
+    'open-air interaction must still reject bots just outside the nearby radius');
 
 console.log('Town NPC front-side approach checks passed');

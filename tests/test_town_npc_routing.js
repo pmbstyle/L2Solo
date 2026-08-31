@@ -7,6 +7,7 @@ const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const TownNpcCatalog = invoke('GameServer/Bot/Economy/TownNpcCatalog');
+const TownServiceCatalog = invoke('GameServer/Bot/Economy/TownServiceCatalog');
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 
@@ -24,6 +25,67 @@ rows.forEach((row) => {
         `NPC ${row.npcSelfId} must own a real buy list`);
     assert(Number.isFinite(row.head), `NPC ${row.npcSelfId} must retain its spawn heading for door-side routing`);
 });
+
+const warehouseRows = TownServiceCatalog.rows(TownServiceCatalog.ROLES.WAREHOUSE);
+const gatekeeperRows = TownServiceCatalog.rows(TownServiceCatalog.ROLES.GATEKEEPER);
+const genericMerchantRows = TownServiceCatalog.rows(TownServiceCatalog.ROLES.GENERIC_MERCHANT);
+assert(warehouseRows.length >= 40, 'the shared service catalog must include the datapack warehouse network');
+assert(gatekeeperRows.length >= 14, 'the shared service catalog must include the datapack gatekeeper network');
+assert(genericMerchantRows.length >= 60,
+    'ordinary town errands must retain broad generic merchant coverage');
+genericMerchantRows.forEach((row) => {
+    assert(TownServiceCatalog.GENERIC_MERCHANT_TITLES.has(row.title),
+        `${row.name} must have an explicitly generic merchant title`);
+    assert(row.roles.includes(TownServiceCatalog.ROLES.SELLER),
+        `${row.name} must remain part of the complete item-specific seller catalog`);
+});
+warehouseRows.forEach((row) => {
+    assert(/^Warehouse (Keeper|Chief|Freightman)$/i.test(row.title),
+        `${row.name} must be classified as warehouse service from the real NPC title`);
+    assert(row.roles.includes(TownServiceCatalog.ROLES.WAREHOUSE));
+});
+gatekeeperRows.forEach((row) => assert(row.roles.includes(TownServiceCatalog.ROLES.GATEKEEPER)));
+
+const pano = TownServiceCatalog.rowsForTown('Floran Village', TownServiceCatalog.ROLES.SELLER)
+    .find((row) => Number(row.npcSelfId) === 7078);
+assert(pano, 'the Floran restart region must classify Pano as a local seller');
+assert.strictEqual(pano.name, 'Pano');
+assert(TownServiceCatalog.rowsForTown('Floran Village', TownServiceCatalog.ROLES.WAREHOUSE).length > 0,
+    'the corrected Floran region must also expose its real warehouse keeper');
+
+const cooper = TownServiceCatalog.rowsForTown('Giran', TownServiceCatalog.ROLES.SELLER)
+    .find((row) => Number(row.npcSelfId) === 7829);
+assert(cooper?.roles.includes(TownServiceCatalog.ROLES.SELLER),
+    'Cooper must remain available for item-specific pet shop purchases');
+assert(!cooper.roles.includes(TownServiceCatalog.ROLES.GENERIC_MERCHANT),
+    'a Pet Manager must not be a generic sell-junk or restock destination');
+assert(MarketOpportunity.npcOffers(2505, 'Giran').some((offer) => Number(offer.sourceId) === 7829),
+    'excluding Pet Managers from generic errands must not remove their real item offers');
+const nearestGenericToCooper = TownServiceCatalog.targetFor(
+    TownServiceCatalog.ROLES.GENERIC_MERCHANT,
+    'Giran',
+    { from: cooper, worldSpawns: [] }
+);
+assert(nearestGenericToCooper && Number(nearestGenericToCooper.npcSelfId) !== 7829,
+    'a generic errand beside Cooper must select an ordinary merchant instead');
+
+const specializedPetManagers = rows.filter((row) => row.title === 'Pet Manager');
+assert.strictEqual(specializedPetManagers.length, 7, 'the datapack pet shop network must remain visible');
+specializedPetManagers.forEach((row) => assert(
+    !row.roles.includes(TownServiceCatalog.ROLES.GENERIC_MERCHANT),
+    `${row.name} must stay specialized`
+));
+
+const townsWithoutSellers = Object.values(TownRespawn.towns)
+    .map((town) => town.name)
+    .filter((town) => TownServiceCatalog.rowsForTown(town, TownServiceCatalog.ROLES.SELLER).length === 0);
+assert.deepStrictEqual(townsWithoutSellers, ['Heine'],
+    'missing local services must remain explicit datapack gaps instead of fabricated town-center NPCs');
+const townsWithoutGenericMerchants = Object.values(TownRespawn.towns)
+    .map((town) => town.name)
+    .filter((town) => TownServiceCatalog.rowsForTown(town, TownServiceCatalog.ROLES.GENERIC_MERCHANT).length === 0);
+assert.deepStrictEqual(townsWithoutGenericMerchants, ['Heine'],
+    'specialization filtering must not create new town coverage gaps');
 
 const expectedTown = new Map([
     [7315, 'Gludin'],

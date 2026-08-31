@@ -2,6 +2,7 @@ const assert = require('assert');
 
 require('../src/Global');
 
+const DataCache = invoke('GameServer/DataCache');
 const ShoppingState = invoke('GameServer/Bot/AI/States/ShoppingState');
 const GettingBuffedState = invoke('GameServer/Bot/AI/States/GettingBuffedState');
 const CompanionNavigationRecovery = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
@@ -9,6 +10,8 @@ const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
+
+DataCache.init();
 
 function bot(loc = {}) {
     return {
@@ -378,10 +381,11 @@ try {
         say(_session, text) { unreachableShopMessages.push(text); },
         getClosestTown: () => ({ name: 'Dion', x: 1000, y: 1000, z: -100 })
     });
-    assert.strictEqual(unreachableShopSession.plan, 'following', 'an exhausted shop route should return the companion to follow');
-    assert.strictEqual(unreachableShopSession.companionShopping, undefined, 'an exhausted shop route should not leave a stale shopping plan');
-    assert.strictEqual(unreachableShopSession.roleDecision.reason, 'shopping_route_unreachable');
-    assert(unreachableShopMessages.some((text) => text.includes('retry later')), 'an exhausted shop route should be visible to the party');
+    assert.strictEqual(unreachableShopSession.plan, 'shopping',
+        'an exhausted synthetic shop route should switch to a real current-town merchant');
+    assert(unreachableShopSession.shoppingTarget.npcSelfId,
+        'the replacement restock target must be a catalogued NPC');
+    assert.strictEqual(unreachableShopSession.shoppingTarget.town, 'Dion');
 
     const buyerTarget = {
         actorId: 9001,
@@ -417,7 +421,11 @@ try {
     });
     assert.strictEqual(buyerFallbackSession.plan, 'shopping', 'an unreachable player buyer should fall back to the town shop');
     assert.strictEqual(buyerFallbackSession.shoppingTarget.actorId, null, 'buyer fallback should clear the unreachable player-store target');
-    assert.strictEqual(buyerFallbackSession.shoppingTarget.name, 'Giran general shop');
+    assert(buyerFallbackSession.shoppingTarget.npcSelfId,
+        'buyer fallback should select a real catalogued Giran merchant instead of a synthetic town-center shop');
+    assert.strictEqual(buyerFallbackSession.shoppingTarget.town, 'Giran');
+    assert.strictEqual(buyerFallbackSession.shoppingTarget.serviceRole, 'generic_merchant');
+    assert.notStrictEqual(buyerFallbackSession.shoppingTarget.title, 'Pet Manager');
 
     console.log('Bot travel realism checks passed');
 } finally {

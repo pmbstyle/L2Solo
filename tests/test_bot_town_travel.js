@@ -4,6 +4,7 @@ require('../src/Global');
 
 const BotTownTravel = invoke('GameServer/Bot/AI/BotTownTravel');
 const BotSpotTravel = invoke('GameServer/Bot/AI/BotSpotTravel');
+const CompanionNavigationRecovery = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
 const TownGatekeeperCatalog = invoke('GameServer/Bot/AI/TownGatekeeperCatalog');
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
@@ -51,6 +52,7 @@ const originalRelationChanged = Response.relationChanged;
 const originalFindById = SpotService.findById;
 const originalAssignSpot = SpotService.assignSpot;
 const originalRecord = BotEventJournal.record;
+const originalNavigationMove = CompanionNavigationRecovery.move;
 const originalNpcs = DataCache.npcs;
 const originalNpcSpawns = DataCache.npcSpawns;
 
@@ -196,6 +198,29 @@ try {
     assert.strictEqual(townSession.currentSpot?.id, remoteSpot.id,
         'gatekeeper transfer should commit the chosen farming destination');
 
+    const fallbackLoc = { locX: -83000, locY: 244000, locZ: -3729 };
+    const fallbackBot = botAt(fallbackLoc);
+    const fallbackSession = session(fallbackBot);
+    fallbackSession.dataSendToMeAndOthers = () => {};
+    CompanionNavigationRecovery.move = () => ({ status: 'exhausted', failures: 3 });
+    const fallbackTimerBase = timers.length;
+    assert.strictEqual(
+        BotSpotTravel.startViaTownGatekeeper(fallbackSession, fallbackBot, remoteSpot),
+        true,
+        'an unreachable gatekeeper must still begin with the physical town route'
+    );
+    assert.strictEqual(fallbackSession.spotRelocation?.method, 'town_gatekeeper',
+        'the first exhausted staging route should retry the gatekeeper interaction point');
+    fallbackSession.spotRelocation.lastCommandAt = 0;
+    BotSpotTravel.tick(fallbackSession, fallbackBot);
+    assert.strictEqual(fallbackSession.lastSpotRelocation?.reason, 'gatekeeper_route_unreachable');
+    assert.strictEqual(fallbackSession.spotRelocation?.method, 'soe_gatekeeper',
+        'an exhausted gatekeeper route must preserve the teleport fallback');
+    assert.strictEqual(fallbackBot.state.fetchCasts(), true,
+        'the fallback must visibly cast before teleporting out of town');
+    assert.strictEqual(timers.length - fallbackTimerBase, 1,
+        'the preserved fallback must schedule exactly one teleport cast');
+
     console.log('Bot town travel checks passed');
 } finally {
     global.setTimeout = originalSetTimeout;
@@ -204,6 +229,7 @@ try {
     SpotService.findById = originalFindById;
     SpotService.assignSpot = originalAssignSpot;
     BotEventJournal.record = originalRecord;
+    CompanionNavigationRecovery.move = originalNavigationMove;
     DataCache.npcs = originalNpcs;
     DataCache.npcSpawns = originalNpcSpawns;
 }

@@ -3,10 +3,15 @@ const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const STAGING_DISTANCE = 240;
 const INTERACTION_DISTANCE = 72;
 const STAGING_ARRIVAL_RADIUS = 64;
+// The pathfinder must reach the visible side of a counter before it considers
+// the route complete. Keep this tighter than the conversational tolerance: a
+// larger goal radius can stop just around a shop wall with no line of sight.
 const INTERACTION_ARRIVAL_RADIUS = 16;
 const STAGING_READY_RADIUS = 80;
-const INTERACTION_READY_RADIUS = 24;
-const OPEN_INTERACTION_READY_RADIUS = 112;
+// Give bots a little room to interact without micro-adjusting at the counter.
+// Line of sight and the 300-unit hard cap still guard interaction.
+const INTERACTION_READY_RADIUS = 48;
+const OPEN_INTERACTION_READY_RADIUS = 144;
 const OPEN_APPROACH_SPREAD_STEPS = 9;
 const OPEN_APPROACH_SPREAD_ANGLE = Math.PI / 12;
 const MAX_INTERACTION_DISTANCE = 300;
@@ -203,10 +208,18 @@ function plan(session, bot, target, kind = 'town_npc') {
         }
     }
 
+    const interactionDistance = distance2d(botPoint, points.interaction);
+    const targetVisible = hasLineOfSight(botPoint, target);
+    // Shop counters often end on the next geodata cell: A* can reach the cell
+    // beside a validated front-side interaction point, while LOS from that
+    // cell still clips the counter edge. Accept only that tight final gap;
+    // the wider conversational tolerance continues to require direct LOS.
+    const reachedValidatedCounterEdge = interactionDistance <= INTERACTION_ARRIVAL_RADIUS
+        && hasLineOfSight(points.interaction, target);
     const ready = state.phase === 'interaction'
-        && distance2d(botPoint, points.interaction) <= INTERACTION_READY_RADIUS
+        && interactionDistance <= INTERACTION_READY_RADIUS
         && distance2d(botPoint, target) <= MAX_INTERACTION_DISTANCE
-        && hasLineOfSight(botPoint, target);
+        && (targetVisible || reachedValidatedCounterEdge);
     const destination = state.phase === 'staging' ? points.staging : points.interaction;
 
     return {

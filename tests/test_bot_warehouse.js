@@ -4,6 +4,7 @@ require('../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
+const World = invoke('GameServer/World/World');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -15,6 +16,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 DataCache.init();
 
 const originals = {
+    npc: World.npc,
     fetchItems: Database.fetchItems,
     fetchWarehouseItems: Database.fetchWarehouseItems,
     transferInventoryToWarehouse: Database.transferInventoryToWarehouse,
@@ -194,8 +196,47 @@ async function run() {
     };
     const liveActor = {
         fetchId: () => 56,
+        fetchLocX: () => 100,
+        fetchLocY: () => 100,
         backpack: liveBackpack
     };
+
+    const warehouseNpc = {
+        fetchId: () => 9001,
+        fetchSelfId: () => 7083,
+        fetchTitle: () => 'Warehouse Keeper',
+        fetchLocX: () => 120,
+        fetchLocY: () => 120
+    };
+    const sellerNpc = {
+        fetchId: () => 9002,
+        fetchSelfId: () => 7084,
+        fetchTitle: () => 'Weapons Trader',
+        fetchLocX: () => 120,
+        fetchLocY: () => 120
+    };
+    World.npc = { spawns: [warehouseNpc, sellerNpc] };
+    const warehouseTarget = {
+        actorId: 9001,
+        npcSelfId: 7083,
+        serviceRole: 'warehouse'
+    };
+    assert.strictEqual(BotWarehouse.isAtWarehouseService(liveActor, warehouseTarget), true,
+        'a hot actor beside the exact live warehouse keeper may deposit');
+    assert.strictEqual(BotWarehouse.isAtWarehouseService(liveActor, {
+        actorId: 9002,
+        npcSelfId: 7084,
+        serviceRole: 'seller'
+    }), false, 'an ordinary seller must never authorize a warehouse deposit');
+    await assert.rejects(
+        BotWarehouse.depositActorAtWarehouse(liveActor, liveState, null, {
+            actorId: 9002,
+            npcSelfId: 7084,
+            serviceRole: 'warehouse'
+        }),
+        /warehouse NPC is no longer active/,
+        'changing only the target role must not turn a seller into a warehouse keeper'
+    );
     Database.fetchWarehouseItems = () => Promise.resolve([
         { id: 68, selfId: 123, amount: 1 },
         { id: 69, selfId: 123, amount: 1 }
@@ -415,6 +456,7 @@ async function run() {
             liveItem(52, saber, true),
             liveItem(53, saber),
             liveItem(54, { selfId: 2509, name: 'Spiritshot: No Grade', amount: 1000, stackable: true, fetchPrice: () => 15 }),
+            liveItem(55, { ...material, stackable: true, fetchPrice: () => 20 }),
             adena
         ],
         fetchItems() { return this.items; },
@@ -426,11 +468,13 @@ async function run() {
     SellJunk({
         actor: { fetchId: () => 57, backpack: junkBackpack },
         coldLifeState: liveState,
+        plan: 'shopping',
+        shoppingWarehouseDone: 'unreachable',
         dataSendToMe() {}
     });
     await new Promise((resolve) => setImmediate(resolve));
-    assert.deepStrictEqual(junkBackpack.items.map((item) => item.id), [52, 53, 54, 50],
-        'sell-junk must retain the reserved source sword and all combat shots');
+    assert.deepStrictEqual(junkBackpack.items.map((item) => item.id), [52, 53, 54, 55, 50],
+        'sell-junk must retain reserved gear, combat shots, and protected items after a failed warehouse stop');
     console.log('Bot warehouse checks passed');
 }
 
@@ -438,6 +482,7 @@ run().catch((err) => {
     console.error(err);
     process.exitCode = 1;
 }).finally(() => {
+    World.npc = originals.npc;
     Database.fetchItems = originals.fetchItems;
     Database.fetchWarehouseItems = originals.fetchWarehouseItems;
     Database.transferInventoryToWarehouse = originals.transferInventoryToWarehouse;

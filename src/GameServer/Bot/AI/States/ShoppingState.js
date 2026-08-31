@@ -13,7 +13,7 @@ const WorkflowTelemetry = invoke('GameServer/Bot/AI/BotWorkflowTelemetry');
 const CompanionNavigationRecovery = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
 const CompanionEquipmentShopping = invoke('GameServer/Bot/AI/CompanionEquipmentShopping');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
-const TownNpcCatalog = invoke('GameServer/Bot/Economy/TownNpcCatalog');
+const TownServiceCatalog = invoke('GameServer/Bot/Economy/TownServiceCatalog');
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
@@ -85,18 +85,18 @@ function continueEquipmentShopping(session, bot, BotAI, errand) {
     return true;
 }
 
-function townMerchantTarget(town, bot, selfId = 0) {
-    return TownNpcCatalog.targetFor(town.name, {
+function townMerchantTarget(town, bot, selfId = 0, options = {}) {
+    const from = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
+    const role = TownServiceCatalog.ROLES.GENERIC_MERCHANT;
+    return TownServiceCatalog.targetFor(role, town.name, {
         selfId,
-        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() }
-    }) || {
-        actorId: null,
-        name: `${town.name} general shop`,
-        locX: town.x,
-        locY: town.y,
-        locZ: town.z,
-        town: town.name
-    };
+        from,
+        excludedNpcSelfIds: options.excludedNpcSelfIds || []
+    }) || TownServiceCatalog.targetNear(role, from, {
+        selfId,
+        maxDistance: Infinity,
+        excludedNpcSelfIds: options.excludedNpcSelfIds || []
+    });
 }
 
 function alternateTownNpcErrand(session, bot, town) {
@@ -108,13 +108,9 @@ function alternateTownNpcErrand(session, bot, town) {
     const selfId = errand.kind === 'restock_shots'
         ? Number(ShotStock.planForActor(bot)?.selfId || 0)
         : 0;
-    const target = TownNpcCatalog.targetFor(town.name, {
-        selfId,
-        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
+    const target = townMerchantTarget(town, bot, selfId, {
         excludedNpcSelfIds: [...failedSourceIds]
-    }) || (errand.kind === 'sell_resources' && !failedNpcSelfId
-        ? townMerchantTarget(town, bot)
-        : null);
+    });
     if (!target) return null;
     return {
         ...errand,
@@ -128,6 +124,72 @@ function deferEquipmentRetry(session) {
     session.companionEquipmentRetryAt = Date.now() + COMPANION_EQUIPMENT_FAILURE_RETRY_MS;
 }
 
+function usesWarehouseStop(session) {
+    const kind = session.companionShopping?.kind;
+    return !kind || kind === 'sell_resources' || kind === 'sell_junk';
+}
+
+function warehouseTarget(town, bot, options = {}) {
+    const from = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
+    return TownServiceCatalog.targetFor(TownServiceCatalog.ROLES.WAREHOUSE, town?.name, {
+        from,
+        excludedNpcSelfIds: options.excludedNpcSelfIds || []
+    }) || TownServiceCatalog.targetNear(TownServiceCatalog.ROLES.WAREHOUSE, from, {
+        maxDistance: Infinity,
+        excludedNpcSelfIds: options.excludedNpcSelfIds || []
+    });
+}
+
+function restoreAfterWarehouse(session) {
+    session.shoppingServicePhase = 'merchant';
+    session.shoppingTarget = session.shoppingAfterWarehouseTarget;
+    session.shoppingAfterWarehouseTarget = undefined;
+    session.shoppingDoneAnnounced = false;
+    session.failedWarehouseNpcSelfIds = undefined;
+}
+
+function clearShoppingServiceState(session) {
+    session.shoppingServicePhase = undefined;
+    session.shoppingWarehouseDone = undefined;
+    session.shoppingAfterWarehouseTarget = undefined;
+    session.failedWarehouseNpcSelfIds = undefined;
+}
+
+function prepareWarehouseStop(session, bot, town, BotAI) {
+    if (session.shoppingServicePhase === 'warehouse') return true;
+    if (session.shoppingWarehouseDone || !usesWarehouseStop(session)) return false;
+    if (!BotWarehouse.hasActorDepositCandidates(bot, session.coldLifeState)) {
+        session.shoppingWarehouseDone = true;
+        return false;
+    }
+
+    const target = warehouseTarget(town, bot);
+    if (!target) {
+        session.shoppingWarehouseDone = 'unavailable';
+        TownChatter.say(session, BotAI, 'warehouse-not-in-town', [
+            'There is no warehouse service available; I will keep the protected items with me.',
+            'No warehouse clerk is available. I will carry the valuables instead of selling them.',
+            'There is no usable warehouse, so the protected items stay in my bag.',
+            'Skipping storage; I will keep anything worth preserving.'
+        ], { priority: 'coordination' });
+        return false;
+    }
+
+    session.shoppingAfterWarehouseTarget = session.shoppingTarget;
+    session.shoppingTarget = target;
+    session.shoppingServicePhase = 'warehouse';
+    session.shoppingDoneAnnounced = false;
+    CompanionNavigationRecovery.clear(session);
+    TownNpcApproach.reset(session);
+    TownChatter.say(session, BotAI, 'warehouse-selected', [
+        `Stopping at ${target.name}'s warehouse before I visit the shops.`,
+        `I will leave the protected items with ${target.name}, then handle the market.`,
+        `Warehouse first: ${target.name} can store the valuables from this run.`,
+        `Taking the keepers to ${target.name} before I sell the leftovers.`
+    ]);
+    return true;
+}
+
 module.exports = {
     tick(session, bot, Generics, BotAI) {
         if (session.partyCompanion === true && session.followPlayerSession && !session.companionShopping) {
@@ -135,6 +197,7 @@ module.exports = {
             session.shoppingTarget = undefined;
             session.shoppingDoneAnnounced = false;
             session.preShopLocation = undefined;
+            clearShoppingServiceState(session);
             TownChatter.say(session, BotAI, 'shopping-cancelled', [
                 'Shopping can wait. Staying with the party.',
                 "I'll leave the shopping for later and stick with you.",
@@ -152,6 +215,8 @@ module.exports = {
         }
 
         const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
+
+        prepareWarehouseStop(session, bot, closestTown, BotAI);
 
         if (!session.shoppingTarget) {
             const BotManager = invoke('GameServer/Bot/BotManager');
@@ -177,11 +242,24 @@ module.exports = {
                 ]);
             } else {
                 session.shoppingTarget = townMerchantTarget(closestTown, bot);
+                if (!session.shoppingTarget) {
+                    session.plan = 'hunting';
+                    session.shoppingDoneAnnounced = false;
+                    session.preShopLocation = undefined;
+                    clearShoppingServiceState(session);
+                    TownChatter.say(session, BotAI, 'npc-seller-unavailable', [
+                        'No merchant service is available, so I will keep the bag and try again later.',
+                        'I could not find a real shopkeeper. Nothing will be discarded.',
+                        'There is no usable NPC shop right now; I will retry on another visit.',
+                        'No merchant can handle this errand, so I am keeping the inventory.'
+                    ], { priority: 'coordination' });
+                    return;
+                }
                 TownChatter.say(session, BotAI, 'npc-seller-selected', [
-                    `No player buyer for this haul; I'll use a shop in ${closestTown.name}.`,
-                    `No good market offer. Taking the leftovers to a ${closestTown.name} merchant.`,
-                    `The market passed on this bag, so the local shop gets it.`,
-                    `I'll clear this inventory at an NPC shop in ${closestTown.name}.`
+                    `No player buyer for this haul; I'll use ${session.shoppingTarget.name}'s shop in ${session.shoppingTarget.town}.`,
+                    `No good market offer. Taking the leftovers to ${session.shoppingTarget.name} in ${session.shoppingTarget.town}.`,
+                    `The market passed on this bag, so ${session.shoppingTarget.name} in ${session.shoppingTarget.town} gets it.`,
+                    `I'll clear this inventory at ${session.shoppingTarget.name}'s NPC shop in ${session.shoppingTarget.town}.`
                 ]);
             }
         }
@@ -207,6 +285,37 @@ module.exports = {
             }
             if (navigation.status === 'exhausted') {
                 const town = BotAI.getClosestTown?.(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
+                if (session.shoppingServicePhase === 'warehouse') {
+                    const failedIds = new Set((session.failedWarehouseNpcSelfIds || []).map(Number));
+                    if (target.npcSelfId) failedIds.add(Number(target.npcSelfId));
+                    const alternate = warehouseTarget(town, bot, { excludedNpcSelfIds: [...failedIds] });
+                    if (alternate) {
+                        session.failedWarehouseNpcSelfIds = [...failedIds];
+                        session.shoppingTarget = alternate;
+                        TownNpcApproach.reset(session);
+                        CompanionNavigationRecovery.clear(session);
+                        TownChatter.say(session, BotAI, 'alternate-warehouse', [
+                            `I couldn't reach ${target.name}; trying warehouse keeper ${alternate.name}.`,
+                            `${target.name}'s counter is blocked. I will store the items with ${alternate.name}.`,
+                            `Switching warehouse clerks — ${alternate.name} should be reachable.`,
+                            `No route to ${target.name}; heading to ${alternate.name} instead.`
+                        ], { priority: 'coordination' });
+                        return;
+                    }
+
+                    session.shoppingWarehouseDone = 'unreachable';
+                    restoreAfterWarehouse(session);
+                    TownNpcApproach.reset(session);
+                    CompanionNavigationRecovery.clear(session);
+                    TownChatter.say(session, BotAI, 'warehouse-unreachable', [
+                        'I could not reach a warehouse clerk, so I will keep the protected items with me.',
+                        'No usable route to the warehouse. I will carry the valuables and continue.',
+                        'Storage is inaccessible; nothing protected will be sold.',
+                        'The warehouse route failed. Keeping the important items in my bag.'
+                    ], { priority: 'coordination' });
+                    return;
+                }
+
                 if (session.partyCompanion === true && session.companionShopping?.kind === 'npc_equipment_purchase') {
                     const alternate = CompanionEquipmentShopping.alternateNpcErrand(
                         session,
@@ -253,6 +362,7 @@ module.exports = {
                 session.companionShopping = undefined;
                 session.resumeAfterShopping = undefined;
                 session.preShopLocation = undefined;
+                clearShoppingServiceState(session);
                 session.lastCompanionTownErrandAt = Date.now();
                 session.roleDecision = {
                     ...(session.roleDecision || {}),
@@ -277,6 +387,13 @@ module.exports = {
         // In town! Wait and pretend to shop
         TownNpcApproach.reset(session);
         CompanionNavigationRecovery.clear(session);
+        if (session.shoppingServicePhase === 'warehouse') {
+            if (!session.shoppingDoneAnnounced) {
+                session.shoppingDoneAnnounced = true;
+                this.depositAtWarehouse(session, bot, Generics, BotAI, target);
+            }
+            return;
+        }
         if (!session.shoppingDoneAnnounced) {
             session.shoppingDoneAnnounced = true;
             Promise.resolve(BotEventJournal.record({
@@ -289,6 +406,44 @@ module.exports = {
                 meta: { town: target.town || null }
             })).catch(() => {});
             this.sellAndRestock(session, bot, Generics, BotAI);
+        }
+    },
+
+    async depositAtWarehouse(session, bot, Generics, BotAI, target) {
+        try {
+            const warehouse = await BotWarehouse.depositActorAtWarehouse(
+                bot,
+                session.coldLifeState,
+                session,
+                target
+            );
+            session.shoppingWarehouseDone = true;
+            session.lastTradeSummary = warehouse.count > 0
+                ? `stored ${warehouse.count} items with ${target.name}`
+                : `checked storage with ${target.name}; nothing to deposit`;
+            if (warehouse.count > 0) {
+                const sample = warehouse.items.slice(0, 2).map((item) => `${item.amount}x ${item.name}`).join(', ');
+                const stored = `${sample}${warehouse.items.length > 2 ? ' and more' : ''}`;
+                TownChatter.say(session, BotAI, 'warehouse-deposit', [
+                    `Stored ${stored} with warehouse keeper ${target.name}.`,
+                    `${target.name} put ${stored} away for safekeeping.`,
+                    `Warehouse stop complete with ${target.name}: ${stored}.`,
+                    `Left ${stored} in ${target.name}'s care before visiting the shops.`
+                ]);
+            }
+            restoreAfterWarehouse(session);
+            TownNpcApproach.reset(session);
+            CompanionNavigationRecovery.clear(session);
+        } catch (err) {
+            utils.infoWarn('Shopping', 'warehouse deposit failed for %s at %s: %s', bot.fetchName(), target?.name || 'unknown', err.message);
+            session.lastTradeSummary = 'kept inventory after warehouse deposit failure';
+            TownChatter.say(session, BotAI, 'warehouse-unavailable', [
+                `${target?.name || 'The warehouse clerk'} could not accept this load. I will keep the bag and try again later.`,
+                'Warehouse service failed, so I am keeping these items for now.',
+                'Could not deposit this load. Nothing will be discarded.',
+                'The warehouse is unavailable; I will carry the protected items until next time.'
+            ], { priority: 'coordination' });
+            this.scheduleRestock(session, bot, Generics, BotAI);
         }
     },
 
@@ -525,39 +680,9 @@ module.exports = {
             }
         }
 
-        // Do this before the generic junk-sell bypass: materials and useful
-        // gear that no buyer accepted belong in the bot's own warehouse.
-        let warehouse;
-        try {
-            warehouse = await BotWarehouse.depositActor(bot, session.coldLifeState, session);
-        } catch (err) {
-            // The generic sell-junk bypass would destroy the very items we
-            // meant to protect, so keep the bag intact and retry next visit.
-            utils.infoWarn('Shopping', 'warehouse deposit failed for %s: %s', bot.fetchName(), err.message);
-            session.lastTradeSummary = 'kept inventory after warehouse deposit failure';
-            TownChatter.say(session, BotAI, 'warehouse-unavailable', [
-                'My warehouse clerk is unavailable. I will keep this bag and try again later.',
-                'Warehouse service failed, so I am keeping these items for now.',
-                'Could not deposit this load. Nothing will be discarded.',
-                'The warehouse is unavailable; I will carry the protected items until next time.'
-            ], { priority: 'coordination' });
-            this.scheduleRestock(session, bot, Generics, BotAI);
-            return;
-        }
-        if (warehouse.count > 0) {
-            const sample = warehouse.items.slice(0, 2).map((item) => `${item.amount}x ${item.name}`).join(', ');
-            const stored = `${sample}${warehouse.items.length > 2 ? ' and more' : ''}`;
-            TownChatter.say(session, BotAI, 'warehouse-deposit', [
-                `Stored ${stored} in my warehouse.`,
-                `Put ${stored} away for safekeeping.`,
-                `Warehouse sorted: ${stored}.`,
-                `Kept ${stored} instead of selling it as junk.`
-            ]);
-        }
-
         if (!soldToBuyer) {
             NpcTalkResponse(session, { link: 'sell-junk' });
-            session.lastTradeSummary = `${warehouse.count ? `stored ${warehouse.count}, then ` : ''}used general sell-junk at ${session.shoppingTarget?.town || 'town'}`;
+            session.lastTradeSummary = `used general sell-junk at ${session.shoppingTarget?.town || 'town'}`;
         } else {
             // Clear only the leftovers that neither a buyer nor the warehouse wanted.
             NpcTalkResponse(session, { link: 'sell-junk' });
@@ -629,6 +754,7 @@ module.exports = {
             session.shoppingDoneAnnounced = false;
             session.shoppingTarget = undefined;
             session.companionShopping = undefined;
+            clearShoppingServiceState(session);
 
             if (rebuffBeforeLeaving) {
                 session.preBuffLocation = {
@@ -710,6 +836,7 @@ module.exports = {
             session.companionShopping = undefined;
             session.resumeAfterShopping = undefined;
             session.preShopLocation = undefined;
+            clearShoppingServiceState(session);
             if (session.coldLifeState) {
                 session.coldLifeState = { ...session.coldLifeState, activity: session.plan };
             }

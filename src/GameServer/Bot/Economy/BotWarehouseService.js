@@ -134,6 +134,32 @@ function depositActor(actor, state = null, session = null) {
     return serializeDeposit(actor.fetchId(), () => depositActorUnlocked(actor, state, session));
 }
 
+function hasActorDepositCandidates(actor, state = null) {
+    const items = actor?.backpack?.fetchItems?.() || [];
+    return ItemDisposition.unreservedActorItems(state, items)
+        .some((source) => ItemDisposition.isWarehouseCandidate(itemData(source)));
+}
+
+function isAtWarehouseService(actor, target) {
+    if (!actor || target?.serviceRole !== 'warehouse') return false;
+    const npc = (invoke('GameServer/World/World').npc?.spawns || []).find((candidate) => (
+        Number(candidate.fetchId?.() || 0) === Number(target.actorId || 0)
+        && Number(candidate.fetchSelfId?.() || 0) === Number(target.npcSelfId || 0)
+    ));
+    if (!npc || !/^Warehouse (Keeper|Chief|Freightman)$/i.test(npc.fetchTitle?.() || '')) return false;
+    return Math.hypot(
+        Number(actor.fetchLocX?.()) - Number(npc.fetchLocX?.()),
+        Number(actor.fetchLocY?.()) - Number(npc.fetchLocY?.())
+    ) <= 300;
+}
+
+function depositActorAtWarehouse(actor, state, session, target) {
+    if (!isAtWarehouseService(actor, target)) {
+        return Promise.reject(new Error('warehouse NPC is no longer active'));
+    }
+    return depositActor(actor, state, session);
+}
+
 async function depositColdUnlocked(state, candidates) {
     const [rows, warehouseRows] = await Promise.all([
         Database.fetchItems(state.characterId),
@@ -639,6 +665,9 @@ async function releaseColdBatch(limit = 8, deadlineAt = Infinity, options = {}) 
 module.exports = {
     MAX_GEAR_COPIES_PER_TYPE,
     depositActor,
+    depositActorAtWarehouse,
+    hasActorDepositCandidates,
+    isAtWarehouseService,
     depositCold,
     learnActorRecipes,
     itemData,

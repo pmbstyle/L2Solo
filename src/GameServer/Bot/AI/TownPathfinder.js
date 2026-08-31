@@ -6,6 +6,27 @@ const TownGateCatalog = invoke('GameServer/Bot/AI/TownGateCatalog');
 const GATE_APPROACH_REACHED = 140;
 const GATE_PASSAGE_REACHED = 80;
 const GATE_WAYPOINT_ARRIVAL_RADIUS = 48;
+const WAYPOINT_AREA_ARRIVAL_RADIUS = 96;
+const PROGRESSIVE_SEGMENT_DISTANCE = 1200;
+const PROGRESSIVE_SEGMENT_MIN_REMAINDER = 700;
+
+// These are area samples around a known town node, not a second navigation
+// grid. One stable sample is selected per bot and route attempt; geodata A*
+// still decides whether that sample is actually reachable.
+const WAYPOINT_AREA_OFFSETS = Object.freeze([
+    Object.freeze({ locX: 0, locY: -160 }),
+    Object.freeze({ locX: 112, locY: -112 }),
+    Object.freeze({ locX: 160, locY: 0 }),
+    Object.freeze({ locX: 112, locY: 112 }),
+    Object.freeze({ locX: 0, locY: 160 }),
+    Object.freeze({ locX: -112, locY: 112 }),
+    Object.freeze({ locX: -160, locY: 0 }),
+    Object.freeze({ locX: -112, locY: -112 }),
+    Object.freeze({ locX: 64, locY: -144 }),
+    Object.freeze({ locX: 144, locY: 64 }),
+    Object.freeze({ locX: -64, locY: 144 }),
+    Object.freeze({ locX: -144, locY: -64 })
+]);
 
 const TOWNS = [
     {
@@ -169,6 +190,53 @@ function sameLoc(a, b) {
     return !!a && !!b && a.locX === b.locX && a.locY === b.locY && a.locZ === b.locZ;
 }
 
+function actorIdOf(actor) {
+    const actorId = Number(actor?.fetchId?.() ?? actor?.actorId ?? 0);
+    return Number.isFinite(actorId) ? Math.abs(Math.trunc(actorId)) : 0;
+}
+
+function routeHash(actorId, base, finalTarget, attempt) {
+    let hash = (actorId ^ Math.trunc(base.locX) ^ Math.trunc(base.locY)) >>> 0;
+    hash = Math.imul(hash ^ Math.trunc(finalTarget.locX), 0x45d9f3b) >>> 0;
+    hash = Math.imul(hash ^ Math.trunc(finalTarget.locY), 0x45d9f3b) >>> 0;
+    return (hash + Math.max(0, Math.trunc(attempt || 0)) * 5) >>> 0;
+}
+
+function isTownNode(town, point) {
+    return !!town?.nodes?.some((node) => sameLoc(node, point));
+}
+
+function progressiveWaypoint(from, finalTarget) {
+    const totalDistance = distance(from, finalTarget);
+    if (totalDistance <= PROGRESSIVE_SEGMENT_DISTANCE + PROGRESSIVE_SEGMENT_MIN_REMAINDER) {
+        return cloneLoc(finalTarget);
+    }
+    const ratio = PROGRESSIVE_SEGMENT_DISTANCE / totalDistance;
+    return {
+        locX: Math.round(from.locX + (finalTarget.locX - from.locX) * ratio),
+        locY: Math.round(from.locY + (finalTarget.locY - from.locY) * ratio),
+        locZ: Math.round(from.locZ + (finalTarget.locZ - from.locZ) * ratio)
+    };
+}
+
+function variedWaypoint(town, base, finalTarget, actor, session) {
+    const actorId = actorIdOf(actor);
+    if (!actorId) return cloneLoc(base);
+
+    const attempt = Number(session?.companionNavigationRecovery?.failures || 0);
+    const startIndex = routeHash(actorId, base, finalTarget, attempt) % WAYPOINT_AREA_OFFSETS.length;
+    for (let index = 0; index < WAYPOINT_AREA_OFFSETS.length; index++) {
+        const offset = WAYPOINT_AREA_OFFSETS[(startIndex + index) % WAYPOINT_AREA_OFFSETS.length];
+        const candidate = {
+            locX: base.locX + offset.locX,
+            locY: base.locY + offset.locY,
+            locZ: base.locZ
+        };
+        if (!town || pointInPolygon(candidate, town.polygon)) return candidate;
+    }
+    return cloneLoc(base);
+}
+
 function locLabel(loc) {
     if (!loc) return 'none';
     return `${loc.locX},${loc.locY},${loc.locZ}`;
@@ -307,6 +375,9 @@ function createDiagnostics(from, to, routedTo, fromTown, toTown, routePlan, reas
             townName: routePlan.townName,
             finalTarget: cloneLoc(routePlan.finalTarget),
             waypoint: cloneLoc(routePlan.waypoint),
+            ...(routePlan.baseWaypoint ? { baseWaypoint: cloneLoc(routePlan.baseWaypoint) } : {}),
+            ...(routePlan.waypointAreaRadius ? { waypointAreaRadius: routePlan.waypointAreaRadius } : {}),
+            ...(routePlan.progressive ? { progressive: true } : {}),
             createdAt: routePlan.createdAt,
             updatedAt: routePlan.updatedAt,
             reason: routePlan.reason
@@ -356,11 +427,25 @@ const TownPathfinder = {
 
         const fromTown = findTown(from);
         const toTown = findTown(to);
-        const routedTo = this.route(actor, from, to);
-        const usesTownRoute = !sameLoc(routedTo, to);
-        const arrivalRadius = TownGateCatalog.isGatePoint(routedTo)
+        let baseRoutedTo = this.route(actor, from, to);
+        const exactGateWaypoint = TownGateCatalog.isGatePoint(baseRoutedTo);
+        let usesProgressiveSegment = false;
+        if (!exactGateWaypoint) {
+            const progressive = progressiveWaypoint(from, baseRoutedTo);
+            usesProgressiveSegment = !sameLoc(progressive, baseRoutedTo);
+            if (usesProgressiveSegment) baseRoutedTo = progressive;
+        }
+        const usesTownRoute = !sameLoc(baseRoutedTo, to);
+        const routeTown = fromTown?.name === toTown?.name ? fromTown : (fromTown || toTown);
+        const usesWaypointArea = usesTownRoute && !exactGateWaypoint && (
+            usesProgressiveSegment || isTownNode(routeTown, baseRoutedTo)
+        );
+        const routedTo = usesWaypointArea
+            ? variedWaypoint(usesProgressiveSegment ? null : routeTown, baseRoutedTo, to, actor, session)
+            : baseRoutedTo;
+        const arrivalRadius = exactGateWaypoint
             ? GATE_WAYPOINT_ARRIVAL_RADIUS
-            : null;
+            : (usesWaypointArea ? WAYPOINT_AREA_ARRIVAL_RADIUS : null);
         let routePlan = null;
 
         if (session && usesTownRoute) {
@@ -368,10 +453,15 @@ const TownPathfinder = {
                 townName: (fromTown || toTown)?.name || null,
                 finalTarget: cloneLoc(to),
                 waypoint: cloneLoc(routedTo),
+                ...(usesWaypointArea ? {
+                    baseWaypoint: cloneLoc(baseRoutedTo),
+                    waypointAreaRadius: WAYPOINT_AREA_ARRIVAL_RADIUS,
+                    ...(usesProgressiveSegment ? { progressive: true } : {})
+                } : {}),
                 arrivalRadius,
                 createdAt: now,
                 updatedAt: now,
-                reason: 'new_waypoint'
+                reason: usesWaypointArea ? 'new_waypoint_area' : 'new_waypoint'
             };
             session.townRoutePlan = routePlan;
         }
@@ -379,7 +469,15 @@ const TownPathfinder = {
         return {
             to: routedTo,
             arrivalRadius,
-            diagnostics: createDiagnostics(from, to, routedTo, fromTown, toTown, routePlan, usesTownRoute ? 'new_waypoint' : 'direct')
+            diagnostics: createDiagnostics(
+                from,
+                to,
+                routedTo,
+                fromTown,
+                toTown,
+                routePlan,
+                usesTownRoute ? (usesWaypointArea ? 'new_waypoint_area' : 'new_waypoint') : 'direct'
+            )
         };
     },
 
@@ -450,5 +548,6 @@ const TownPathfinder = {
 };
 
 TownPathfinder.GATE_WAYPOINT_ARRIVAL_RADIUS = GATE_WAYPOINT_ARRIVAL_RADIUS;
+TownPathfinder.WAYPOINT_AREA_ARRIVAL_RADIUS = WAYPOINT_AREA_ARRIVAL_RADIUS;
 
 module.exports = TownPathfinder;

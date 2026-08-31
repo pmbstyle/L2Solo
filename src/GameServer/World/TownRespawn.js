@@ -6,7 +6,7 @@ const TOWNS = {
     dion_town: { name: 'Dion', locX: 15631, locY: 142885, locZ: -2704 },
     dwarven_village: { name: 'Dwarven Village', locX: 115072, locY: -178176, locZ: -880 },
     elven_village: { name: 'Elven Village', locX: 46926, locY: 51511, locZ: -2976 },
-    floran_village: { name: 'Floran Village', locX: 19025, locY: 145245, locZ: -3107 },
+    floran_village: { name: 'Floran Village', locX: 17144, locY: 170156, locZ: -3504 },
     giran_town: { name: 'Giran', locX: 83396, locY: 147904, locZ: -3400 },
     gludin_village: { name: 'Gludin', locX: -80752, locY: 149776, locZ: -3040 },
     gludio_town: { name: 'Gludio', locX: -12736, locY: 122816, locZ: -3112 },

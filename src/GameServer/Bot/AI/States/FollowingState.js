@@ -21,7 +21,7 @@ const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
 const PartyClassTactics = invoke('GameServer/Bot/AI/PartyClassTactics');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
-const TownNpcCatalog = invoke('GameServer/Bot/Economy/TownNpcCatalog');
+const TownServiceCatalog = invoke('GameServer/Bot/Economy/TownServiceCatalog');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const CompanionTownTransit = invoke('GameServer/Bot/AI/CompanionTownTransit');
@@ -189,9 +189,11 @@ function companionTownErrand(session, bot, player, BotAI) {
         if (errandOnCooldown) return null;
         if (!ShotStock.needsActorRestock(bot, 0)) return null;
         const shotPlan = ShotStock.planForActor(bot);
+        const target = townNpcTarget(town, bot, shotPlan.selfId);
+        if (!target) return null;
         return {
             kind: 'restock_shots',
-            target: townNpcTarget(town, bot, shotPlan.selfId)
+            target
         };
     }
 
@@ -232,27 +234,28 @@ function companionTownErrand(session, bot, player, BotAI) {
         && !ShotStock.SHOT_IDS.includes(Number(item.fetchSelfId?.() || 0)));
     if (!needsShots && !hasLoot) return null;
     const shotPlan = needsShots ? ShotStock.planForActor(bot) : null;
+    const target = townNpcTarget(town, bot, shotPlan?.selfId);
+    if (!target) return null;
     return {
         kind: hasLoot ? 'sell_junk' : 'restock_shots',
-        target: townNpcTarget(town, bot, shotPlan?.selfId)
+        target
     };
 }
 
 function townNpcTarget(town, bot, selfId = 0) {
-    return TownNpcCatalog.targetFor(town.name, {
+    const from = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
+    const role = TownServiceCatalog.ROLES.GENERIC_MERCHANT;
+    return TownServiceCatalog.targetFor(role, town.name, {
         selfId,
-        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() }
-    }) || {
-        actorId: null,
-        name: `${town.name} general shop`,
-        locX: town.x,
-        locY: town.y,
-        locZ: town.z,
-        town: town.name
-    };
+        from
+    }) || TownServiceCatalog.targetNear(role, from, {
+        selfId,
+        maxDistance: Infinity
+    });
 }
 
 function beginCompanionTownErrand(session, bot, playerSession, errand) {
+    if (!errand?.target) return false;
     session.lastCompanionTownErrandAt = Date.now();
     session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
     session.resumeAfterShopping = {
@@ -289,6 +292,7 @@ function beginCompanionTownErrand(session, bot, playerSession, errand) {
             `Handling a quick errand — ${detail}.`
         ]
     });
+    return true;
 }
 
 function shouldKeepCurrentFollowMove(session, bot, player, leaderDistance) {
