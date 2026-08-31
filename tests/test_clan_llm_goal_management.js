@@ -153,8 +153,9 @@ async function main() {
         assert.strictEqual(stalledSnapshot.decisionNeeded, true,
             'a clan party stuck on unrelated routes must be returned to the LLM');
         assert.strictEqual(stalledSnapshot.stall.conflictingPartyCount, 2);
-        assert.strictEqual(stalledSnapshot.candidates.length, 2,
-            'background-party membership must not hide valid clan goal candidates');
+        assert.strictEqual(stalledSnapshot.candidates.length, 1,
+            'a stalled current route must leave only executable replacement candidates');
+        assert.strictEqual(stalledSnapshot.candidates[0].assessment.current, false);
 
         CandidateService.reset();
         clan.members[0].spotId = 'test-spot';

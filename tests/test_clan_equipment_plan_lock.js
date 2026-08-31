@@ -16,6 +16,8 @@ const clanPlan = {
     partyNeed: 'required',
     partyNeedReason: 'underleveled',
     requiresParty: true,
+    rateModelVersion: GearAcquisitionPlanner.RATE_MODEL_VERSION,
+    rateProfileSignature: GearAcquisitionPlanner.rateProfileSignature(),
     target: { selfId: 9101, name: 'Clan Blade', slot: 7 },
     next: { spotId: 'clan-spot', npcId: 0, itemId: 9101 },
     clanGoal: {

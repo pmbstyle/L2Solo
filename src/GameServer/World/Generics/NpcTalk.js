@@ -5,6 +5,7 @@ function npcTalk(session, npc) {
 
     session.activeNpcShop = null;
     session.activeNpcSellShop = null;
+    session.activeWarehouse = null;
     session.activeNpcTalk = {
         selfId: npc.fetchSelfId(),
         objectId: npc.fetchId(),
@@ -84,10 +85,17 @@ function showDefaultTalk(session, npc, options = {}) {
     const filename = path + npc.fetchSelfId() + '.html';
     const title = npc.fetchTitle?.() || '';
     if (/^Warehouse (Keeper|Chief|Freightman)$/i.test(title)) {
+        const clan = session.actor.fetchClan?.();
+        const clanLinks = clan && Number(clan.level) >= 1 ? [
+            '<br>Clan Warehouse<br><br>',
+            '<a action="bypass -h warehouse clan-deposit">Deposit item</a><br>',
+            '<a action="bypass -h warehouse clan-withdraw">Withdraw item</a>'
+        ] : [];
         session.dataSendToMe(ServerResponse.npcHtml(npc.fetchId(), [
             '<html><body><center><br>Personal Warehouse<br><br>',
             '<a action="bypass -h warehouse deposit">Deposit item</a><br>',
             '<a action="bypass -h warehouse withdraw">Withdraw item</a>',
+            ...clanLinks,
             '</center></body></html>'
         ].join('')));
         session.dataSendToMe(ServerResponse.actionFailed());

@@ -4,10 +4,10 @@ function bodyPart(item) {
     return item.isWearable?.() ? 2 ** item.fetchSlot() : 0;
 }
 
-// C4 0x41: native personal-warehouse deposit window.
-module.exports = function wareHouseDepositList(items, adena) {
+// C4 0x41: warehouse type 1 is private, type 2 is clan.
+module.exports = function wareHouseDepositList(items, adena, type = 1) {
     const packet = new SendPacket(0x41);
-    packet.writeH(1).writeD(adena).writeH(items.length);
+    packet.writeH(type).writeD(adena).writeH(items.length);
     items.forEach((item) => {
         packet
             .writeH(item.fetchClass1())

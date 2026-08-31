@@ -105,8 +105,7 @@ CREATE TABLE IF NOT EXISTS clan_warehouse_items (
     petData TEXT,
     reservedAmount INTEGER NOT NULL DEFAULT 0 CHECK(reservedAmount >= 0),
     createdAt INTEGER NOT NULL DEFAULT 0,
-    updatedAt INTEGER NOT NULL DEFAULT 0,
-    UNIQUE(clanId, selfId, enchant)
+    updatedAt INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS clan_warehouse_items_clan_self
     ON clan_warehouse_items(clanId, selfId, amount);

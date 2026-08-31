@@ -1272,10 +1272,13 @@ function discardInvalidEquipmentPlans() {
             COALESCE(CAST(json_extract(statsJson, '$.equipmentPlan.target.selfId') AS INTEGER), 0) <= 0
             OR TRIM(COALESCE(json_extract(statsJson, '$.equipmentPlan.target.name'), '')) IN ('', '0')
             OR (
-                activity = 'hunting'
-                AND json_extract(statsJson, '$.equipmentPlan.status') = 'active'
+                json_extract(statsJson, '$.equipmentPlan.status') = 'active'
                 AND json_extract(statsJson, '$.equipmentPlan.expectedKills') IS NOT NULL
                 AND COALESCE(CAST(json_extract(statsJson, '$.equipmentPlan.rateModelVersion') AS INTEGER), 0) < ?
+                AND (
+                    activity = 'hunting'
+                    OR COALESCE(CAST(json_extract(statsJson, '$.equipmentPlan.clanGoal.clanId') AS INTEGER), 0) > 0
+                )
             )
         )`,
         [timestamp, GearAcquisitionPlanner.RATE_MODEL_VERSION]

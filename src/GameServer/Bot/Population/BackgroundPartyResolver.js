@@ -51,6 +51,10 @@ function distributeRewards({ members, spot, wins, defeatedNpcIds = [], pressure,
         sum + Math.round(randInt(rng, rewards.adenaMin, rewards.adenaMax) * rates.adena)
     ), 0);
     const loot = members.map(() => []);
+    const spoilerIndex = members.findIndex((state) => (
+        String(state.stats?.role || '') === 'spoiler'
+        || [54, 55].includes(Number(state.stats?.classId ?? state.classId))
+    ));
     for (let win = 0; win < Math.min(wins, MAX_DROPS_PER_RESOLVE); win++) {
         const drops = BackgroundDropResolver.rollForFight({
             spot,
@@ -58,8 +62,17 @@ function distributeRewards({ members, spot, wins, defeatedNpcIds = [], pressure,
             npcSelfId: defeatedNpcIds[win],
             rng
         });
-        if (!drops.length) continue;
-        loot[Math.min(members.length - 1, Math.floor(rng() * members.length))].push(...drops);
+        if (drops.length) {
+            loot[Math.min(members.length - 1, Math.floor(rng() * members.length))].push(...drops);
+        }
+        if (spoilerIndex >= 0) {
+            loot[spoilerIndex].push(...BackgroundDropResolver.rollSpoilForFight({
+                spot,
+                killerLevel: Math.round(avgLevel(members)),
+                npcSelfId: defeatedNpcIds[win],
+                rng
+            }));
+        }
     }
 
     return members.map((state, index) => ({

@@ -187,8 +187,8 @@ function decisionReason(previousGoal, planning, candidates, stall = null) {
     if (!previousGoal || previousGoal.type !== 'equipment') return 'no_equipment_goal';
     if (planning.previousFulfilled) return 'goal_fulfilled';
     if (previousGoal.status === 'blocked') return 'goal_blocked';
-    if (!candidates.some((candidate) => candidate.assessment.current)) return 'current_candidate_missing';
     if (stall?.stalled) return stall.reason || 'goal_stalled';
+    if (!candidates.some((candidate) => candidate.assessment.current)) return 'current_candidate_missing';
     return 'goal_progressing';
 }
 
@@ -263,6 +263,10 @@ async function snapshotFor(clan, previousGoal = null, options = {}) {
         }
     }
     const stall = goalStallAssessment(clan, previousGoal, candidates, options);
+    if (stall.stalled) {
+        const alternatives = candidates.filter((candidate) => !candidate.assessment.current);
+        if (alternatives.length) candidates = alternatives;
+    }
     const reason = decisionReason(previousGoal, planning, candidates, stall);
     const deterministic = planning.selection
         ? candidates.find((candidate) => candidate.memberId === memberId(planning.selection.member)
@@ -276,7 +280,9 @@ async function snapshotFor(clan, previousGoal = null, options = {}) {
         deterministicCandidateId: deterministic?.id || null,
         stall,
         decisionReason: reason,
-        decisionNeeded: candidates.length > 1 && reason !== 'goal_progressing'
+        decisionNeeded: stall.stalled
+            ? candidates.length > 0
+            : candidates.length > 1 && reason !== 'goal_progressing'
     };
     cache.set(key, { createdAt: Date.now(), value });
     const durationMs = Date.now() - startedAt;

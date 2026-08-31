@@ -1,5 +1,6 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const Warehouse = invoke('GameServer/Warehouse/PersonalWarehouse');
+const ClanWarehouse = invoke('GameServer/Warehouse/ClanWarehouse');
 
 function lines(buffer) {
     if (buffer.length < 5) return null;
@@ -15,7 +16,9 @@ module.exports = async function warehouseDeposit(session, buffer) {
     try {
         const requested = lines(buffer);
         if (!requested) throw new Error('malformed warehouse deposit packet');
-        await Warehouse.deposit(session, requested);
+        const active = session.activeWarehouse;
+        if (!active || active.mode !== 'deposit') throw new Error('warehouse deposit window is not active');
+        await (active.type === 'clan' ? ClanWarehouse : Warehouse).deposit(session, requested);
         session.dataSendToMe(ServerResponse.itemsList(session.actor.backpack.fetchItems()));
     } catch (error) {
         utils.infoWarn('Warehouse', 'deposit rejected: %s', error.message);

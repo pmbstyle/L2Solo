@@ -101,6 +101,8 @@ try {
             'startup must immediately discard routes from a superseded source model');
         assert(invalidPlanMigration.sql.includes("activity = 'hunting'"),
             'startup model invalidation must not reset passive market, craft, or blocked workflows');
+        assert(invalidPlanMigration.sql.includes("'$.equipmentPlan.clanGoal.clanId'"),
+            'startup model invalidation must also reset stale clan routes whose assignee is temporarily passive');
         assert(invalidPlanMigration.sql.includes("'$.equipmentPlan.status') = 'active'"),
             'startup model invalidation must preserve inactive acquisition plans');
         assert(invalidPlanMigration.sql.includes("'$.equipmentPlan.expectedKills') IS NOT NULL"),
@@ -125,7 +127,9 @@ try {
                 [3, 'shopping', { status: 'active', strategy: 'market', rateModelVersion: staleVersion, target: validTarget }],
                 [4, 'crafting', { status: 'ready_to_craft', strategy: 'craft', rateModelVersion: staleVersion, target: validTarget }],
                 [5, 'crafting', { status: 'component_ready', strategy: 'craft', rateModelVersion: staleVersion, target: validTarget }],
-                [6, 'merchant', { status: 'blocked', strategy: 'blocked', rateModelVersion: GearPlanner.RATE_MODEL_VERSION, target: { selfId: 0, name: '' } }]
+                [6, 'merchant', { status: 'blocked', strategy: 'blocked', rateModelVersion: GearPlanner.RATE_MODEL_VERSION, target: { selfId: 0, name: '' } }],
+                [7, 'resting', { status: 'active', strategy: 'direct_drop', expectedKills: 5000, rateModelVersion: staleVersion, target: validTarget, clanGoal: { clanId: 10 } }],
+                [8, 'grouped', { status: 'active', strategy: 'direct_drop', expectedKills: 5000, rateModelVersion: GearPlanner.RATE_MODEL_VERSION, target: validTarget, clanGoal: { clanId: 10 } }]
             ].forEach(([characterId, activity, equipmentPlan]) => insertProbe.run(
                 characterId,
                 activity,
@@ -135,8 +139,8 @@ try {
             const retainedPlanIds = migrationProbe.prepare(`SELECT characterId FROM bot_life_state
                 WHERE json_extract(statsJson, '$.equipmentPlan.target') IS NOT NULL ORDER BY characterId`).all()
                 .map((row) => Number(row.characterId));
-            assert.deepStrictEqual(retainedPlanIds, [2, 3, 4, 5],
-                'startup model invalidation must remove only stale combat routes and malformed plans');
+            assert.deepStrictEqual(retainedPlanIds, [2, 3, 4, 5, 8],
+                'startup model invalidation must remove stale hunting and clan combat routes without resetting unrelated passive workflows');
         } finally {
             migrationProbe.close();
         }

@@ -32,6 +32,7 @@ const DEFAULTS = {
     equipmentReviewMs: 15 * 60 * 1000,
     equipmentPartyStallMs: 15 * 60 * 1000,
     equipmentHardStallMs: 6 * 60 * 60 * 1000,
+    equipmentMaxExpectedKills: 1500,
     resolveIntervalMs: 60000,
     resolveBatchSize: 16,
     resolveBudgetMs: 80,
@@ -77,6 +78,7 @@ const ENV_KEYS = {
     equipmentReviewMs: 'CLAN_SIMULATION_EQUIPMENT_REVIEW_MS',
     equipmentPartyStallMs: 'CLAN_SIMULATION_EQUIPMENT_PARTY_STALL_MS',
     equipmentHardStallMs: 'CLAN_SIMULATION_EQUIPMENT_HARD_STALL_MS',
+    equipmentMaxExpectedKills: 'CLAN_SIMULATION_EQUIPMENT_MAX_EXPECTED_KILLS',
     resolveIntervalMs: 'CLAN_SIMULATION_RESOLVE_INTERVAL_MS',
     resolveBatchSize: 'CLAN_SIMULATION_RESOLVE_BATCH_SIZE',
     resolveBudgetMs: 'CLAN_SIMULATION_RESOLVE_BUDGET_MS',
@@ -148,6 +150,7 @@ config.goalReviewMs = Math.max(1000, Math.floor(config.goalReviewMs));
 config.equipmentReviewMs = Math.max(config.goalReviewMs, Math.floor(config.equipmentReviewMs));
 config.equipmentPartyStallMs = Math.max(config.goalReviewMs, Math.floor(config.equipmentPartyStallMs));
 config.equipmentHardStallMs = Math.max(config.equipmentPartyStallMs, Math.floor(config.equipmentHardStallMs));
+config.equipmentMaxExpectedKills = Math.max(1, Math.floor(config.equipmentMaxExpectedKills));
 config.resolveIntervalMs = Math.max(1000, Math.floor(config.resolveIntervalMs));
 config.resolveBatchSize = Math.max(1, Math.floor(config.resolveBatchSize));
 config.resolveBudgetMs = Math.max(1, Math.floor(config.resolveBudgetMs));
