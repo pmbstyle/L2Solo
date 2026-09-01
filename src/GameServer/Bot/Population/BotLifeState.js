@@ -3026,6 +3026,33 @@ const BotLifeState = {
             });
     },
 
+    applyConsumablePurchase(state, purchasePatch, reason = 'consumable_restock') {
+        if (!state || !purchasePatch?.purchase || !purchasePatch.inventory) return Promise.resolve(state || null);
+        const nextState = {
+            ...state,
+            adena: Number(purchasePatch.adena || 0),
+            inventory: purchasePatch.inventory,
+            stats: {
+                ...(state.stats || {}),
+                lastConsumablePurchase: purchasePatch.purchase,
+                lastReason: reason
+            },
+            updatedAt: now()
+        };
+        const row = rowFromState(nextState);
+        return save(row)
+            .then(() => syncInventorySummary(row.characterId, nextState.inventory))
+            .then(() => {
+                const snapshot = normalize(row);
+                cache.set(snapshot.characterId, snapshot);
+                notifyColdSnapshot(snapshot, reason, { critical: true });
+                return snapshot;
+            }).catch((err) => {
+                utils.infoWarn('BotLife', 'failed consumable restock for %s: %s', state.name, err.message);
+                return null;
+            });
+    },
+
     applyWarehouseGearCleanup(characterId, selections = [], options = {}) {
         const id = Number(characterId);
         if (!Number.isSafeInteger(id) || id <= 0 || !Array.isArray(selections) || !selections.length) {

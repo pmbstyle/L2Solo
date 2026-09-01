@@ -15,6 +15,7 @@ const HotAiDispatcher = invoke('GameServer/Bot/AI/HotAiDispatcher');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const BotRangedCombatPositioning = invoke('GameServer/Bot/AI/BotRangedCombatPositioning');
+const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const { performance } = require('perf_hooks');
 
 const CHAT_PHRASES = {
@@ -118,6 +119,7 @@ function clearTacticalState(session) {
     session.lastTargetEvaluation = undefined;
     session.lastCombatDecision = undefined;
     session.lastPvpDecision = undefined;
+    session.healingPotionEncounter = undefined;
 }
 
 function recordHotStage(name, startedAt) {
@@ -613,6 +615,12 @@ const BotAI = {
             return false;
         }
         const role = BotRoles.inferRole(bot);
+        // A potion is a survival action for a fight already in progress, not
+        // routine topping-off. The policy also blocks repeats for the same
+        // target and while a previous potion HoT remains active.
+        if (HealingPotionStock.tryUseInCombat(session, bot, npc, { role })) {
+            return true;
+        }
         if (BotRangedCombatPositioning.reposition(session, bot, npc, { role })) {
             return true;
         }

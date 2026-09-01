@@ -46,6 +46,7 @@ const ClanEconomyService = invoke('GameServer/Clan/ClanEconomyService');
 const ClanGoalService = invoke('GameServer/Clan/ClanGoalService');
 const ClanPartyService = invoke('GameServer/Clan/ClanPartyService');
 const ClanMarketService = invoke('GameServer/Clan/ClanMarketService');
+const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 
 const {
     partyObjectiveForPlan,
@@ -54,6 +55,19 @@ const {
 } = PartyRequestPlanner;
 
 const HUNTING_TRAVEL_MS = 25000;
+
+function restockColdHealingPotions(state) {
+    if (!state || state.activity !== 'shopping' || !state.currentRegion) return Promise.resolve(state);
+    const potion = HealingPotionStock.purchasePotionFor(state);
+    const offer = MarketOpportunity.npcOffers(potion.selfId, state.currentRegion)
+        .filter((candidate) => candidate.available !== false && Number(candidate.price || 0) > 0)
+        .sort((left, right) => Number(left.price) - Number(right.price))[0];
+    if (!offer) return Promise.resolve(state);
+    const patch = HealingPotionStock.coldPurchasePatch(state, { potion, unitPrice: offer.price });
+    if (!patch) return Promise.resolve(state);
+    return LifeState.applyConsumablePurchase(state, patch, 'healing_potion_restock')
+        .then((saved) => saved || state);
+}
 
 function deterministicRandom(state = {}) {
     const seedText = `${state.characterId || 0}:${state.timing?.lastResolvedAt || 0}:${state.timing?.nextResolveAt || 0}`;
@@ -3335,10 +3349,12 @@ const PopulationService = {
                         const listingState = listingResult.state || purchasedState;
                         if (listingState.activity === 'merchant') return listingState;
                         if (listingResult.listed) return listingState;
-                        const returnState = GoalExecutor.finishMarketVisit(listingState);
-                        return returnState
-                            ? LifeState.upsertState(returnState, 'market_visit_complete').then((saved) => saved || returnState)
-                            : listingState;
+                        return restockColdHealingPotions(listingState).then((restockedState) => {
+                            const returnState = GoalExecutor.finishMarketVisit(restockedState);
+                            return returnState
+                                ? LifeState.upsertState(returnState, 'market_visit_complete').then((saved) => saved || returnState)
+                                : restockedState;
+                        });
                     });
                     return marketStatePromise.then((persistedState) => persistedState || purchasedState)
                         .then((marketState) => ColdMarketTradeChat.maybeAnnounce(marketState).then((result) => result.state || marketState))

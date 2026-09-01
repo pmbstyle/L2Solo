@@ -6,6 +6,7 @@ const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
+const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -432,6 +433,37 @@ function mutableCombatState(state = {}) {
     };
 }
 
+function applyColdPotionTicks(fighter, time) {
+    const hot = fighter?.potionHot;
+    if (!hot) return 0;
+    let healed = 0;
+    while (hot.remaining > 0 && hot.nextAt <= time) {
+        const before = fighter.vitals.hp;
+        fighter.vitals.hp = Math.min(fighter.vitals.maxHp, fighter.vitals.hp + hot.heal);
+        healed += fighter.vitals.hp - before;
+        hot.remaining -= 1;
+        hot.nextAt += hot.intervalMs;
+    }
+    if (hot.remaining <= 0) fighter.potionHot = null;
+    return healed;
+}
+
+function startColdPotion(fighter, time) {
+    if (!fighter || fighter.potionsUsed > 0 || fighter.potionHot) return null;
+    const potion = HealingPotionStock.consumeColdPotion(
+        fighter.state.inventory,
+        fighter.vitals.hp,
+        fighter.vitals.maxHp,
+        fighter.state
+    );
+    if (!potion) return null;
+    const effect = HealingPotionStock.coldEffectFor(potion, time);
+    fighter.vitals.hp = Math.min(fighter.vitals.maxHp, fighter.vitals.hp + Number(effect.immediateHeal || 0));
+    fighter.potionHot = effect.hot;
+    fighter.potionsUsed = Number(fighter.potionsUsed || 0) + 1;
+    return potion;
+}
+
 function summonNpcStats(fighter, details) {
     const direct = (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(details.npcId));
     const skill = (DataCache.skills || []).find((entry) => Number(entry.selfId) === Number(details.skillId));
@@ -596,7 +628,9 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         summonReadyAt: Number.POSITIVE_INFINITY,
         summonUses: 0,
         summonActions: 0,
-        now: timestamp
+        now: timestamp,
+        potionsUsed: 0,
+        potionHot: null
     };
     let botReadyAt = 0;
     let mobReadyAt = 0;
@@ -624,6 +658,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         const botActs = !summonActs && botReadyAt <= mobReadyAt;
         time = summonActs ? summonReadyAt : botActs ? botReadyAt : mobReadyAt;
         if (time >= fightLimitMs) break;
+        applyColdPotionTicks(soloFighter, time);
         actions += 1;
 
         if (summonActs) {
@@ -653,6 +688,10 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             expireCharges(heldCharges, timestamp + time);
             charges = heldCharges.charges;
             chargeExpiresAt = heldCharges.chargeExpiresAt;
+            if (startColdPotion(soloFighter, time)) {
+                botReadyAt += 250;
+                continue;
+            }
             const music = chooseMusicAction(soloFighter, [soloFighter], timestamp + time);
             if (music) {
                 applyMusicAction(soloFighter, music, timestamp + time);
@@ -721,6 +760,10 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         }
     }
 
+    // Background time jumps past the quiet tail of a completed potion HoT.
+    // Apply that tail only after the damage sequence and only to survivors.
+    if (vitals.hp > 0) applyColdPotionTicks(soloFighter, Number.MAX_SAFE_INTEGER);
+
     const died = vitals.hp <= 0;
     const won = mobHp <= 0;
     if (!won) {
@@ -741,7 +784,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             effects: soloFighter.profile.effects,
             inventory: fightState.inventory,
             summon: soloFighter.summon || null,
-            debug: { actions, skillUses, musicUses, summonUses, summonActions, mobSelfId: mob.selfId || null, timedOut: !died }
+            debug: { actions, skillUses, musicUses, summonUses, summonActions, potionsUsed: soloFighter.potionsUsed, mobSelfId: mob.selfId || null, timedOut: !died }
         };
     }
 
@@ -782,7 +825,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         effects: soloFighter.profile.effects,
         inventory: fightState.inventory,
         summon: soloFighter.summon || null,
-        debug: { actions, skillUses, musicUses, summonUses, summonActions, mobSelfId: mob.selfId || null, timedOut: false }
+        debug: { actions, skillUses, musicUses, summonUses, summonActions, potionsUsed: soloFighter.potionsUsed, mobSelfId: mob.selfId || null, timedOut: false }
     };
 }
 
@@ -830,6 +873,8 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             summonUses: 0,
             summonActions: 0,
             summonReadyAt: Number.POSITIVE_INFINITY,
+            potionsUsed: 0,
+            potionHot: null,
             now: timestamp
         };
     });
@@ -851,6 +896,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
         const botActs = !summonActs && next && ownerReadyAt <= mobReadyAt;
         time = summonActs ? summonReadyAt : botActs ? ownerReadyAt : mobReadyAt;
         if (time >= fightLimitMs) break;
+        fighters.forEach((fighter) => applyColdPotionTicks(fighter, time));
         actions += 1;
 
         if (summonActs) {
@@ -872,6 +918,10 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             next.now = timestamp + time;
             const summonedNow = ensureColdSummon(next, timestamp + time, next.cooldowns);
             if (summonedNow) continue;
+            if (startColdPotion(next, time)) {
+                next.readyAt += 250;
+                continue;
+            }
             const heal = chooseHeal(next.profile, fighters, next.vitals.mp, next.cooldowns, timestamp + time);
             if (heal) {
                 const amount = Formulas.calcHealAmount(heal.skill.power);
@@ -955,6 +1005,9 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
         }
     }
 
+    fighters.filter((fighter) => fighter.vitals.hp > 0)
+        .forEach((fighter) => applyColdPotionTicks(fighter, Number.MAX_SAFE_INTEGER));
+
     return {
         won: mobHp <= 0,
         timedOut: mobHp > 0 && fighters.some((fighter) => fighter.vitals.hp > 0),
@@ -965,6 +1018,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             musicUses: fighters.reduce((sum, fighter) => sum + fighter.musicUses, 0),
             summonUses: fighters.reduce((sum, fighter) => sum + Number(fighter.summonUses || 0), 0),
             summonActions: fighters.reduce((sum, fighter) => sum + Number(fighter.summonActions || 0), 0),
+            potionsUsed: fighters.reduce((sum, fighter) => sum + Number(fighter.potionsUsed || 0), 0),
             mobSelfId: mob.selfId || null
         }
     };
@@ -1110,6 +1164,7 @@ const BackgroundResolver = {
         let musicUses = 0;
         let summonUses = 0;
         let summonActions = 0;
+        let potionsUsed = 0;
         const foughtNpcIds = [];
 
         for (let i = 0; i < fights; i++) {
@@ -1146,6 +1201,7 @@ const BackgroundResolver = {
             musicUses += Number(result.debug?.musicUses || 0);
             summonUses += Number(result.debug?.summonUses || 0);
             summonActions += Number(result.debug?.summonActions || 0);
+            potionsUsed += Number(result.debug?.potionsUsed || 0);
 
             if (result.won) {
                 wins += 1;
@@ -1210,6 +1266,7 @@ const BackgroundResolver = {
                 musicUses,
                 summonUses,
                 summonActions,
+                potionsUsed,
                 targetNpcId: Number(targetNpcId) || null,
                 foughtNpcIds
             }

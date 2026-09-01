@@ -17,6 +17,7 @@ const TownServiceCatalog = invoke('GameServer/Bot/Economy/TownServiceCatalog');
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
+const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 
 const COMPANION_EQUIPMENT_FAILURE_RETRY_MS = 5 * 60 * 1000;
 
@@ -701,7 +702,7 @@ module.exports = {
             ShotStock.purchaseActorRestock(bot, {
                 plan,
                 targetAmount: ShotStock.PURCHASE_TARGET_AMOUNT
-            }).then((result) => {
+            }).then(async (result) => {
                 if (!result.ok) {
                     TownChatter.say(session, BotAI, 'shots-too-expensive', [
                         `Not enough Adena for ${ShotStock.describe(plan)} (${result.adena || 0}/${result.cost || expectedCost}). Skipping restock.`,
@@ -728,6 +729,41 @@ module.exports = {
                     ]);
                 }
                 session.dataSendToOthers(ServerResponse.skillStarted(bot, bot.fetchId(), { fetchSelfId: () => 2001, fetchCalculatedHitTime: () => 500, fetchReuseTime: () => 500 }), bot);
+
+                const potionPlan = HealingPotionStock.purchasePotionFor(bot);
+                const potionTown = session.shoppingTarget?.town
+                    || session.coldLifeState?.currentRegion
+                    || BotAI.getClosestTown?.(
+                        bot.fetchLocX(),
+                        bot.fetchLocY(),
+                        bot.fetchLocZ()
+                    )?.name;
+                const potionOffer = potionTown
+                    ? MarketOpportunity.npcOffers(potionPlan.selfId, potionTown)
+                        .filter((offer) => offer.available !== false && Number(offer.price || 0) > 0)
+                        .sort((left, right) => Number(left.price) - Number(right.price))[0]
+                    : null;
+                const potionResult = potionOffer
+                    ? await HealingPotionStock.purchaseActorRestock(bot, {
+                        potion: potionPlan,
+                        unitPrice: potionOffer.price
+                    })
+                    : { ok: false, reason: 'no_local_offer' };
+                if (potionResult.ok && potionResult.changed) {
+                    TownChatter.say(session, BotAI, 'healing-potions-restocked', [
+                        `Added ${potionResult.amount}x ${potionResult.potion.name} for emergencies; I kept ${formatAdena(potionResult.reserve)} Adena in reserve.`,
+                        `Emergency stock ready: ${potionResult.amount}x ${potionResult.potion.name}.`,
+                        `Picked up ${potionResult.amount}x ${potionResult.potion.name} without touching my reserve.`,
+                        `${potionResult.amount}x ${potionResult.potion.name} packed for low-HP fights.`
+                    ]);
+                }
+                if (session.coldLifeState) {
+                    session.coldLifeState = {
+                        ...session.coldLifeState,
+                        adena: Number(bot.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() || 0),
+                        inventory: LifeState.inventorySummaryFromItems(bot.backpack?.fetchItems?.() || [])
+                    };
+                }
             }).catch((err) => {
                 utils.infoWarn('Shopping', 'shot restock failed for %s: %s', bot.fetchName(), err.message);
             });

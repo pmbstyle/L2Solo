@@ -67,6 +67,7 @@ const tests = [
     'tests/test_bot_party_chat.js',
     'tests/test_bot_agent_support_confirmation.js',
     'tests/test_bot_combat_skill_selection.js',
+    'tests/test_bot_healing_potions.js',
     'tests/test_bot_raid_safety.js',
     'tests/test_raid_boss_balance.js',
     'tests/test_raid_entity_index.js',

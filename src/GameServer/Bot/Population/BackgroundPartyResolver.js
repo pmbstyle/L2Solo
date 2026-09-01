@@ -183,6 +183,7 @@ const BackgroundPartyResolver = {
         let musicUses = 0;
         let summonUses = 0;
         let summonActions = 0;
+        let potionsUsed = 0;
         const defeatedNpcIds = [];
         let combatMembers = members.map((state) => ({
             ...state,
@@ -196,6 +197,7 @@ const BackgroundPartyResolver = {
             musicUses += encounter.members.reduce((sum, member) => sum + Number(member.musicUses || 0), 0);
             summonUses += Number(encounter.debug?.summonUses || 0);
             summonActions += Number(encounter.debug?.summonActions || 0);
+            potionsUsed += Number(encounter.debug?.potionsUsed || 0);
             combatMembers = encounter.members.map((member) => ({
                 ...member.state,
                 vitals: { ...member.vitals },
@@ -416,6 +418,7 @@ const BackgroundPartyResolver = {
                 musicUses,
                 summonUses,
                 summonActions,
+                potionsUsed,
                 targetNpcId: Number(targetNpcId) || null,
                 defeatedNpcIds
             }
