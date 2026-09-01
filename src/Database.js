@@ -1196,19 +1196,18 @@ function syncPlayerManagedClanUnsafe(clanId) {
     const membershipChanged = JSON.stringify(previousIds) !== JSON.stringify(botMemberIds);
     const currentOrder = one(`SELECT id, revision, status FROM clan_orders
         WHERE clanId = ? AND status IN ('active', 'paused', 'blocked') ORDER BY id DESC LIMIT 1`, [Number(clanId)]);
-    const legacyGoal = previousState.goal && (
-        String(previousState.goal.controlledBy || '') !== 'player'
-        || !Number(previousState.goal.orderId)
-    );
-    if (simulation && !membershipChanged && !legacyGoal) {
+    const stalePlayerGoal = previousState.goal
+        && String(previousState.goal.controlledBy || '') === 'player'
+        && (!currentOrder || Number(previousState.goal.orderId) !== Number(currentOrder.id));
+    if (simulation && !membershipChanged && !stalePlayerGoal) {
         return { ok: true, created: false, changed: false, clanId: Number(clanId), mode: 'player_managed', memberIds: botMemberIds };
     }
 
     const state = simulationState({ ...previousState, mode: 'player_managed' }, clanId, clan.leaderId, botMemberIds, timestamp);
     state.mode = 'player_managed';
     state.level = Math.max(0, Math.min(3, Number(clan.level) || 0));
-    if (legacyGoal && !currentOrder) {
-        cancelPlayerManagedClanWorkUnsafe(clanId, 'player_managed_legacy_goal_cleared', timestamp);
+    if (stalePlayerGoal) {
+        cancelPlayerManagedClanWorkUnsafe(clanId, 'player_managed_stale_order_cleared', timestamp);
         state.goal = null;
     }
     if (simulation) {
@@ -1220,7 +1219,7 @@ function syncPlayerManagedClanUnsafe(clanId) {
             VALUES (?, 1, 'player_managed', ?, ?, ?)`, [Number(clanId), timestamp, timestamp, JSON.stringify(state)]);
     }
     const activeOrder = currentOrder && String(currentOrder.status) !== 'paused' ? currentOrder : null;
-    if (activeOrder) {
+    if (activeOrder || !currentOrder) {
         write(`INSERT OR IGNORE INTO clan_actions
             (clanId, actionKey, actionType, priority, status, attempt, availableAt,
              payloadJson, resultJson, reasonCode, createdAt, updatedAt)
@@ -1231,8 +1230,9 @@ function syncPlayerManagedClanUnsafe(clanId) {
             JSON.stringify({
                 reason: simulation ? 'player_managed_membership_changed' : 'player_managed_enabled',
                 clanId: Number(clanId),
-                orderId: Number(activeOrder.id),
-                orderRevision: Number(activeOrder.revision)
+                orderId: Number(activeOrder?.id) || null,
+                orderRevision: Number(activeOrder?.revision) || null,
+                control: activeOrder ? 'player' : 'automatic'
             }),
             timestamp,
             timestamp
@@ -3644,6 +3644,15 @@ const Database = {
                     clan, `clan:${clan}:order:${orderId}:r${revision}:${String(actionType)}`, String(actionType), timestamp,
                     JSON.stringify({ orderId, orderRevision: revision, reason: 'player_order_created' }), timestamp, timestamp
                 ]);
+            } else if (orderStatus === 'completed') {
+                write(`INSERT INTO clan_actions
+                    (clanId, actionKey, actionType, priority, status, attempt, availableAt,
+                     payloadJson, resultJson, reasonCode, createdAt, updatedAt)
+                    VALUES (?, ?, 'goal_plan', 100, 'pending', 0, ?, ?, '{}', 'player_order_completed', ?, ?)`, [
+                    clan, `clan:${clan}:order:${orderId}:r${revision}:automatic`, timestamp,
+                    JSON.stringify({ orderId, orderRevision: revision, reason: 'player_order_completed', control: 'automatic' }),
+                    timestamp, timestamp
+                ]);
             }
             write(`INSERT INTO clan_goal_events
                 (clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt)
@@ -3721,6 +3730,15 @@ const Database = {
                     JSON.stringify({ orderId: id, orderRevision: revision, reason: `player_order_${action}` }),
                     `player_order_${action}`, timestamp, timestamp
                 ]);
+            } else if (action === 'cancel') {
+                write(`INSERT INTO clan_actions
+                    (clanId, actionKey, actionType, priority, status, attempt, availableAt,
+                     payloadJson, resultJson, reasonCode, createdAt, updatedAt)
+                    VALUES (?, ?, 'goal_plan', 100, 'pending', 0, ?, ?, '{}', 'player_order_cancelled', ?, ?)`, [
+                    clan, `clan:${clan}:order:${id}:r${revision}:automatic`, timestamp,
+                    JSON.stringify({ orderId: id, orderRevision: revision, reason: 'player_order_cancelled', control: 'automatic' }),
+                    timestamp, timestamp
+                ]);
             }
             write(`INSERT INTO clan_goal_events
                 (clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt)
@@ -3764,6 +3782,14 @@ const Database = {
                     WHERE clanId = ? AND status = 'pending'`, [timestamp, timestamp, clan]);
                 write(`UPDATE clan_market_demands SET status = 'fulfilled', updatedAt = ?
                     WHERE clanId = ? AND status = 'open'`, [timestamp, clan]);
+                write(`INSERT INTO clan_actions
+                    (clanId, actionKey, actionType, priority, status, attempt, availableAt,
+                     payloadJson, resultJson, reasonCode, createdAt, updatedAt)
+                    VALUES (?, ?, 'goal_plan', 100, 'pending', 0, ?, ?, '{}', 'player_order_completed', ?, ?)`, [
+                    clan, `clan:${clan}:order:${id}:r${revision}:automatic`, timestamp,
+                    JSON.stringify({ orderId: id, orderRevision: revision, reason: 'player_order_completed', control: 'automatic' }),
+                    timestamp, timestamp
+                ]);
             }
             if (completed || reasonCode) {
                 write(`INSERT INTO clan_goal_events
@@ -3994,7 +4020,10 @@ const Database = {
             WHERE (simulated.mode = 'autonomous' OR EXISTS (
                 SELECT 1 FROM clan_orders orders
                 WHERE orders.clanId = simulated.clanId AND orders.status IN ('active', 'blocked')
-            )) AND NOT EXISTS (
+            ) OR (simulated.mode = 'player_managed' AND NOT EXISTS (
+                SELECT 1 FROM clan_orders orders
+                WHERE orders.clanId = simulated.clanId AND orders.status IN ('active', 'paused', 'blocked')
+            ))) AND NOT EXISTS (
                 SELECT 1 FROM clan_actions actions
                 WHERE actions.clanId = simulated.clanId
                   AND actions.status IN ('pending', 'running')

@@ -9,6 +9,7 @@ const rootDir = path.resolve(__dirname, '..');
 const databasePath = path.join(rootDir, 'tmp', 'test-player-managed-clan.sqlite');
 const Database = invoke('Database');
 const GoalService = invoke('GameServer/Clan/ClanGoalService');
+const ActionService = invoke('GameServer/Clan/ClanActionService');
 
 function removeDatabaseFiles() {
     [databasePath, `${databasePath}-wal`, `${databasePath}-shm`]
@@ -29,7 +30,7 @@ function seedDatabase() {
     ) VALUES (?, ?, ?, ?, 0, ?, 500, 250, 0, 0, 0, 0, 83400, 148600, -3400, 6200001, ?)`);
     insertCharacter.run(5200001, 'managed_player', 'ManagedLeader', 4, 55, 2047);
     insertCharacter.run(5200002, 'bot_pop_managed', 'ManagedTank', 4, 52, 0);
-    seed.prepare('INSERT INTO clans(id, name, level, leaderId) VALUES (6200001, ?, 3, 5200001)').run('ManagedClan');
+    seed.prepare('INSERT INTO clans(id, name, level, leaderId) VALUES (6200001, ?, 1, 5200001)').run('ManagedClan');
     seed.prepare(`INSERT INTO bot_life_state(
         characterId, accountName, characterName, level, activity, phase,
         inventorySummary, statsJson, updatedAt
@@ -66,14 +67,25 @@ async function main() {
         const state = JSON.parse(simulation.stateJson);
         assert.strictEqual(state.mode, 'player_managed');
         assert.strictEqual(state.leaderId, 5200001);
-        assert.strictEqual(state.level, 3);
+        assert.strictEqual(state.level, 1);
         assert.deepStrictEqual(state.memberIds, [5200002]);
 
         const actions = await Database.execute([
-            'SELECT id FROM clan_actions WHERE clanId = ?',
+            'SELECT actionType, status, reasonCode, payloadJson FROM clan_actions WHERE clanId = ?',
             [6200001]
         ]);
-        assert.strictEqual(actions.length, 0, 'a player-managed clan without an order must stay idle');
+        assert.strictEqual(actions.length, 1, 'a player-managed clan without an order must bootstrap its automatic goal');
+        assert.deepStrictEqual({
+            actionType: actions[0].actionType,
+            status: actions[0].status,
+            reasonCode: actions[0].reasonCode,
+            control: JSON.parse(actions[0].payloadJson).control
+        }, {
+            actionType: 'goal_plan',
+            status: 'pending',
+            reasonCode: 'player_managed_sync',
+            control: 'automatic'
+        });
         assert.strictEqual(await Database.isAutonomousClan(6200001), false,
             'player-managed clans must not consume autonomous founder capacity');
         assert.strictEqual(await Database.isAutonomousBotMember(5200002, 6200001), false,
@@ -84,15 +96,31 @@ async function main() {
         assert.strictEqual(projection.leaderId, 5200001);
         assert(projection.members.some((member) => member.characterId === 5200002 && member.phase === 'cold'));
 
-        const legacyState = { ...state, goal: {
+        const automaticBatch = await ActionService.resolveBatch({ limit: 1, budgetMs: 1000 });
+        assert.strictEqual(automaticBatch.succeeded, 1,
+            'the durable scheduler must route an orderless player clan through the automatic goal planner');
+        const refreshedProjection = await GoalService.clanProjectionById(6200001);
+        assert.strictEqual(refreshedProjection.state.goal.type, 'level');
+        assert.notStrictEqual(refreshedProjection.state.goal.controlledBy, 'player');
+        const preserved = await Database.syncPlayerManagedClan(6200001);
+        assert.strictEqual(preserved.changed, false, 'player clan sync must preserve an automatic clan goal');
+        const [automaticSimulation] = await Database.execute([
+            'SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?',
+            [6200001]
+        ]);
+        assert.strictEqual(JSON.parse(automaticSimulation.stateJson).goal.type, 'level');
+
+        const stalePlayerState = { ...state, goal: {
             type: 'equipment',
+            controlledBy: 'player',
+            orderId: 999,
             status: 'executing',
             target: { itemId: 2406, itemName: 'Avadon Robe' },
             plan: { kind: 'farm' }
         } };
         await Database.execute([
             'UPDATE clan_simulation_clans SET stateJson = ? WHERE clanId = ?',
-            [JSON.stringify(legacyState), 6200001]
+            [JSON.stringify(stalePlayerState), 6200001]
         ]);
         await Database.enqueueClanAction({
             clanId: 6200001,
@@ -106,12 +134,17 @@ async function main() {
             [6200001]
         ]);
         assert.strictEqual(JSON.parse(cleanedSimulation.stateJson).goal, null,
-            'legacy autonomous goals must not survive in a player-managed clan without an order');
+            'a stale player override must not survive after its order disappears');
         const [cleanedAction] = await Database.execute([
             'SELECT status, reasonCode FROM clan_actions WHERE clanId = ? ORDER BY id DESC LIMIT 1',
             [6200001]
         ]);
-        assert.deepStrictEqual(cleanedAction, { status: 'cancelled', reasonCode: 'player_managed_legacy_goal_cleared' });
+        assert.deepStrictEqual(cleanedAction, { status: 'pending', reasonCode: 'player_managed_sync' });
+        const [cancelledStaleAction] = await Database.execute([
+            "SELECT status, reasonCode FROM clan_actions WHERE clanId = ? AND actionKey = 'test:legacy-player-goal'",
+            [6200001]
+        ]);
+        assert.deepStrictEqual(cancelledStaleAction, { status: 'cancelled', reasonCode: 'player_managed_stale_order_cleared' });
 
         await Database.removeCharacterFromClan(5200002);
         const disabled = await Database.syncPlayerManagedClan(6200001);

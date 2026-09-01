@@ -228,8 +228,26 @@ async function cancelLegacyBloodMarkDemand(clan, context) {
 
 async function resolveClan(clan, options = {}) {
     if (!clan) return { ok: true, skipped: true, reason: 'target_not_autonomous' };
+    const stateGoal = clan.state?.goal || null;
+    if (String(clan.state?.mode || '') === 'player_managed'
+        && String(stateGoal?.controlledBy || '') === 'player'
+        && stateGoal?.status !== 'completed') {
+        return {
+            ok: true,
+            clanId: clan.id,
+            level: number(clan.level),
+            changed: false,
+            skipped: true,
+            reason: 'player_order_active',
+            goal: stateGoal
+        };
+    }
+    // A completed player order is only a temporary override. The autonomous
+    // planner starts with a clean slate instead of treating that order as its
+    // own previous goal.
+    const automaticPrevious = String(stateGoal?.controlledBy || '') === 'player' ? null : stateGoal;
     if (number(clan.level) >= 3) {
-        const previous = clan.state?.goal || null;
+        const previous = automaticPrevious;
         const candidateSnapshot = await ClanGoalCandidateService.snapshotFor(clan, previous, options);
         const brain = candidateSnapshot.decisionNeeded
             ? ClanBrain.choose(clan, candidateSnapshot, options)
@@ -330,7 +348,7 @@ async function resolveClan(clan, options = {}) {
     }
     const context = await contextFor(clan);
     const cancelledDemand = await cancelLegacyBloodMarkDemand(clan, context);
-    const previous = clan.state?.goal || null;
+    const previous = automaticPrevious;
     if (number(clan.level) === 2 && number(context.progress) >= number(context.required)) {
         const advanced = await Database.advanceAutonomousClanLevel({
             clanId: clan.id,
@@ -426,6 +444,9 @@ async function recordCatastrophicFailure(clanId, reasonCode = Contracts.REASON_C
     const clans = await clanProjection();
     const clan = clans.find((entry) => number(entry.id) === number(clanId));
     if (!clan?.state?.goal) return { ok: false, code: 'goal_missing' };
+    if (String(clan.state.goal.controlledBy || '') === 'player') {
+        return { ok: true, skipped: true, code: 'player_order_controls_replan', goal: clan.state.goal };
+    }
     const context = await contextFor(clan);
     const next = GoalPolicy.replanGoal(clan.state.goal, {
         ...context,
