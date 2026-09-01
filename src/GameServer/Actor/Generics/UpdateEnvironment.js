@@ -17,6 +17,7 @@ function updateEnvironment(session, actor, { immediateNpcInfo = false, forceRefr
     const npcs = World.fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), 6000).filter((ob) => ob.state.fetchDead() === false) ?? [];
 
     if (forceRefresh || new SpeckMath.Point(actor.previousXY?.locX ?? 0, actor.previousXY?.locY ?? 0).distance(new SpeckMath.Point(actor.fetchLocX(), actor.fetchLocY())) >= 1000) {
+        invoke('GameServer/AfkTrade/AfkTradeService').refreshVisibility(session, actor);
         npcs.forEach((npc) => {
             const sendNpcInfo = () => session.dataSendToMe(ServerResponse.npcInfo(npc));
             if (immediateNpcInfo) {

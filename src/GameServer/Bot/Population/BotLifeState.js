@@ -2788,6 +2788,25 @@ const BotLifeState = {
         });
     },
 
+    syncExternalInventory(characterId, reason = 'external_inventory_sync', previousState = null) {
+        const id = Number(characterId);
+        const state = previousState || cache.get(id);
+        if (!id || !state) return Promise.resolve(null);
+        return Database.fetchItems(id).then((items) => {
+            const inventory = inventorySummaryFromItems(items || []);
+            return this.upsertState({
+                ...state,
+                adena: inventoryAdena(inventory),
+                inventory,
+                stats: {
+                    ...(state.stats || {}),
+                    equipment: equipmentSummaryFromInventory(inventory)
+                },
+                updatedAt: now()
+            }, reason);
+        });
+    },
+
     applyMarketPurchase(state, offer, qty = 1) {
         const selfId = Number(offer?.selfId || 0);
         const price = Number(offer?.price || 0);

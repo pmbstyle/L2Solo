@@ -168,6 +168,35 @@ async function settleLine(sellerState, line, town) {
     });
     if (!offer) return { state: sellerState, sold: false };
     const qty = Math.min(Number(line.count || 0), Number(offer.count || 0));
+    if (offer.sourceType === 'afk_player_buy_store') {
+        if (qty <= 0) return { state: sellerState, sold: false };
+        try {
+            const trade = await invoke('GameServer/AfkTrade/AfkTradeService').sellToShop(
+                sellerState.characterId,
+                offer.store,
+                line.selfId,
+                qty,
+                { expectedPrice: offer.price, coldState: sellerState }
+            );
+            if (!trade.coldState) return { state: sellerState, sold: false, reason: 'cold_state_sync_failed' };
+            MarketTelemetry.dynamicBuyerSale?.(offer, qty, {
+                sellerCharacterId: trade.coldState.characterId,
+                sellerName: trade.coldState.name,
+                town
+            });
+            return {
+                state: trade.coldState,
+                sold: true,
+                buyer: null,
+                offer,
+                qty,
+                adena: Number(offer.price) * qty
+            };
+        } catch (error) {
+            utils.infoWarn('BotMarket', 'AFK buy-store sale failed for %s: %s', sellerState.name, error.message);
+            return { state: sellerState, sold: false, reason: 'offer_changed' };
+        }
+    }
     const buyerState = LifeState.snapshot(offer.sourceId) || offer.buyerState;
     if (!buyerState || qty <= 0) return { state: sellerState, sold: false };
     const buyerBefore = cloneState(buyerState);

@@ -11,9 +11,16 @@ module.exports = (session, buffer) => {
         return;
     }
     const rows = []; for (let i = 0; i < count; i += 1) { packet.readD().readH().readH().readD().readD(); rows.push({ selfId: packet.data[1 + i * 5], enchant: packet.data[2 + i * 5], count: packet.data[4 + i * 5], price: packet.data[5 + i * 5] }); }
-    if (!PrivateStore.publishBuy(session, rows)) {
+    const published = PrivateStore.publishBuy(session, rows);
+    const reject = () => {
         utils.infoWarn('PrivateStore', 'reject buy publish for %s: state=%d rows=%j', session?.actor?.fetchName?.() || 'unknown', session?.actor?.fetchPrivateStoreType?.() || 0, rows);
         session?.dataSendToMe?.(invoke('GameServer/Network/Response').actionFailed());
-        return;
+    };
+    if (published && typeof published.then === 'function') {
+        return published.then((ok) => { if (!ok) reject(); }).catch((error) => {
+            utils.infoWarn('PrivateStore', 'async buy publish failed: %s', error.message);
+            reject();
+        });
     }
+    if (!published) reject();
 };

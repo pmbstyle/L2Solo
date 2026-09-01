@@ -25,6 +25,7 @@ const TownServiceCatalog = invoke('GameServer/Bot/Economy/TownServiceCatalog');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const CompanionTownTransit = invoke('GameServer/Bot/AI/CompanionTownTransit');
+const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 
 const FOLLOW_RUN_DISTANCE = 250;
 const FOLLOW_RETARGET_DISTANCE = 900;
@@ -211,6 +212,32 @@ function companionTownErrand(session, bot, player, BotAI) {
         town,
         state: session.coldLifeState
     });
+    const afkBuyer = (bot.backpack?.fetchItems?.() || []).flatMap((item) => {
+        if (item.fetchEquipped?.() || Number(item.fetchSelfId?.()) === 57) return [];
+        const offer = MarketOpportunity.findBuyOffers(item.fetchSelfId(), {
+            town: town.name,
+            sellerCharacterId: bot.fetchId()
+        }).find((candidate) => candidate.sourceType === 'afk_player_buy_store');
+        if (!offer) return [];
+        return [{
+            offer,
+            score: Math.min(Number(item.fetchAmount?.() || 0), Number(offer.count || 0)) * Number(offer.price || 0)
+        }];
+    }).sort((left, right) => right.score - left.score)[0] || null;
+    if (afkBuyer && (!buyer || Number(afkBuyer.score) >= Number(buyer.preview?.totalAdena || 0))) {
+        const offer = afkBuyer.offer;
+        return {
+            kind: 'sell_resources',
+            target: {
+                actorId: offer.projection.actor.fetchId(),
+                name: offer.sourceName,
+                locX: offer.locX,
+                locY: offer.locY,
+                locZ: offer.locZ,
+                town: offer.town || town.name
+            }
+        };
+    }
     if (buyer) {
         return {
             kind: 'sell_resources',

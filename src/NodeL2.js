@@ -84,6 +84,7 @@ Database.init(() => {
     }).then(() => ClanService.init()).then(async () => {
         GeodataEngine.init();
         await World.init();
+        await invoke('GameServer/AfkTrade/AfkTradeService').init();
 
         new Server('AuthServer', options.default.AuthServer, (socket) => {
             return new AuthSession(socket);

@@ -14,9 +14,16 @@ module.exports = (session, buffer) => {
         return;
     }
     const rows = []; for (let i = 0; i < count; i += 1) { packet.readD().readD().readD(); rows.push({ objectId: packet.data[2 + i * 3], count: packet.data[3 + i * 3], price: packet.data[4 + i * 3] }); }
-    if (!PrivateStore.publishSell(session, packageSale, rows)) {
+    const published = PrivateStore.publishSell(session, packageSale, rows);
+    const reject = () => {
         utils.infoWarn('PrivateStore', 'reject sell publish for %s: state=%d rows=%j', session?.actor?.fetchName?.() || 'unknown', session?.actor?.fetchPrivateStoreType?.() || 0, rows);
         session?.dataSendToMe?.(invoke('GameServer/Network/Response').actionFailed());
-        return;
+    };
+    if (published && typeof published.then === 'function') {
+        return published.then((ok) => { if (!ok) reject(); }).catch((error) => {
+            utils.infoWarn('PrivateStore', 'async sell publish failed: %s', error.message);
+            reject();
+        });
     }
+    if (!published) reject();
 };

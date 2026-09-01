@@ -927,7 +927,68 @@ function applySchemaMigrations() {
                 CREATE INDEX clan_warehouse_items_clan_self
                     ON clan_warehouse_items(clanId, selfId, amount);
             `);
-        }]
+        }],
+        [31, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS afk_trade_shops (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ownerId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+                storeType INTEGER NOT NULL CHECK(storeType IN (1, 3)),
+                status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'closed', 'filled')),
+                title TEXT NOT NULL DEFAULT '',
+                town TEXT,
+                locX INTEGER NOT NULL,
+                locY INTEGER NOT NULL,
+                locZ INTEGER NOT NULL,
+                head INTEGER NOT NULL DEFAULT 0,
+                appearanceJson TEXT NOT NULL DEFAULT '{}',
+                packageSale INTEGER NOT NULL DEFAULT 0,
+                escrowAdena INTEGER NOT NULL DEFAULT 0 CHECK(escrowAdena >= 0),
+                revision INTEGER NOT NULL DEFAULT 1,
+                createdAt INTEGER NOT NULL,
+                updatedAt INTEGER NOT NULL,
+                closedAt INTEGER
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS afk_trade_shops_active_owner
+                ON afk_trade_shops(ownerId) WHERE status = 'active';
+            CREATE INDEX IF NOT EXISTS afk_trade_shops_active_market
+                ON afk_trade_shops(status, town, storeType, updatedAt);
+
+            CREATE TABLE IF NOT EXISTS afk_trade_lines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                shopId INTEGER NOT NULL REFERENCES afk_trade_shops(id) ON DELETE CASCADE,
+                sourceObjectId INTEGER,
+                selfId INTEGER NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                count INTEGER NOT NULL CHECK(count >= 0),
+                initialCount INTEGER NOT NULL CHECK(initialCount > 0),
+                price INTEGER NOT NULL CHECK(price >= 0),
+                enchant INTEGER NOT NULL DEFAULT 0 CHECK(enchant >= 0),
+                slot INTEGER NOT NULL DEFAULT 0,
+                stackable INTEGER NOT NULL DEFAULT 0,
+                petData TEXT,
+                createdAt INTEGER NOT NULL,
+                updatedAt INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS afk_trade_lines_shop_item
+                ON afk_trade_lines(shopId, selfId, count);
+
+            CREATE TABLE IF NOT EXISTS afk_trade_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                shopId INTEGER REFERENCES afk_trade_shops(id) ON DELETE SET NULL,
+                ownerId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+                counterpartyId INTEGER REFERENCES characters(id) ON DELETE SET NULL,
+                kind TEXT NOT NULL CHECK(kind IN ('sale', 'purchase')),
+                selfId INTEGER NOT NULL,
+                itemName TEXT NOT NULL DEFAULT '',
+                amount INTEGER NOT NULL CHECK(amount > 0),
+                unitPrice INTEGER NOT NULL CHECK(unitPrice >= 0),
+                totalPrice INTEGER NOT NULL CHECK(totalPrice >= 0),
+                createdAt INTEGER NOT NULL,
+                deliveredAt INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS afk_trade_events_owner_delivery
+                ON afk_trade_events(ownerId, deliveredAt, id);
+        `)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
@@ -1593,6 +1654,130 @@ function commitSocialGraphEventUnsafe(input) {
     };
 }
 
+function afkTradeShopUnsafe(shopId) {
+    const shop = one(`SELECT shops.*, characters.name AS ownerName, characters.username AS ownerAccount
+        FROM afk_trade_shops shops
+        JOIN characters ON characters.id = shops.ownerId
+        WHERE shops.id = ?`, [shopId]);
+    if (!shop) return null;
+    return {
+        ...shop,
+        appearance: jsonObject(shop.appearanceJson),
+        lines: all('SELECT * FROM afk_trade_lines WHERE shopId = ? ORDER BY id', [shopId])
+    };
+}
+
+function afkTradeInventoryUnsafe(characterId) {
+    return all('SELECT * FROM items WHERE characterId = ? AND amount > 0 ORDER BY id', [characterId]);
+}
+
+function afkTradeAdenaRowsUnsafe(characterId) {
+    return all('SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 AND amount > 0 ORDER BY id', [characterId]);
+}
+
+function afkTradeDebitAdenaUnsafe(characterId, amount) {
+    let remaining = Math.max(0, Math.floor(Number(amount) || 0));
+    if (remaining === 0) return;
+    const rows = afkTradeAdenaRowsUnsafe(characterId);
+    const total = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    if (total < remaining) throw new Error('not_enough_adena');
+    for (const row of rows) {
+        const used = Math.min(remaining, Number(row.amount));
+        const next = Number(row.amount) - used;
+        if (next > 0) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [next, row.id, characterId]);
+        else write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]);
+        remaining -= used;
+        if (remaining === 0) break;
+    }
+}
+
+function afkTradeCreditAdenaUnsafe(characterId, amount) {
+    const value = Math.max(0, Math.floor(Number(amount) || 0));
+    if (value === 0) return 0;
+    const row = one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 ORDER BY id LIMIT 1', [characterId]);
+    if (row) {
+        const total = Number(row.amount) + value;
+        write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [total, row.id, characterId]);
+        return Number(row.id);
+    }
+    return Number(write(`INSERT INTO items
+        (selfId, name, amount, enchant, equipped, slot, characterId)
+        VALUES (57, 'Adena', ?, 0, 0, 0, ?)`, [value, characterId]).insertId);
+}
+
+function afkTradeCreditItemUnsafe(characterId, item, amount) {
+    const count = Math.max(1, Math.floor(Number(amount) || 1));
+    const selfId = Number(item.selfId);
+    const enchant = Math.max(0, Number(item.enchant || 0));
+    const stackable = Number(item.stackable || 0) === 1;
+    if (stackable) {
+        const target = one(`SELECT id, amount FROM items
+            WHERE characterId = ? AND selfId = ? AND enchant = ? AND equipped = 0
+            ORDER BY id LIMIT 1`, [characterId, selfId, enchant]);
+        if (target) {
+            const total = Number(target.amount) + count;
+            write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [total, target.id, characterId]);
+            return [Number(target.id)];
+        }
+    }
+    const inserted = [];
+    const rows = stackable ? 1 : count;
+    for (let index = 0; index < rows; index += 1) {
+        inserted.push(Number(write(`INSERT INTO items
+            (selfId, name, amount, enchant, equipped, slot, petData, characterId)
+            VALUES (?, ?, ?, ?, 0, ?, ?, ?)`, [
+            selfId,
+            item.name || `Item ${selfId}`,
+            stackable ? count : 1,
+            enchant,
+            Number(item.slot || 0),
+            item.petData || null,
+            characterId
+        ]).insertId));
+    }
+    return inserted;
+}
+
+function afkTradeTakeItemUnsafe(characterId, itemId, selfId, enchant, amount) {
+    const count = Math.max(1, Math.floor(Number(amount) || 1));
+    const source = itemId
+        ? one('SELECT * FROM items WHERE id = ? AND characterId = ?', [itemId, characterId])
+        : one(`SELECT * FROM items
+            WHERE characterId = ? AND selfId = ? AND enchant = ? AND equipped = 0 AND amount >= ?
+            ORDER BY id LIMIT 1`, [characterId, selfId, enchant, count]);
+    if (!source || Number(source.selfId) !== Number(selfId) || Number(source.enchant || 0) !== Number(enchant || 0)
+        || Number(source.equipped) !== 0 || Number(source.amount) < count) {
+        throw new Error('inventory_item_changed');
+    }
+    const remaining = Number(source.amount) - count;
+    if (remaining > 0) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [remaining, source.id, characterId]);
+    else write('DELETE FROM items WHERE id = ? AND characterId = ?', [source.id, characterId]);
+    return source;
+}
+
+function returnAfkTradeEscrowUnsafe(shop, closedAt = now()) {
+    const lines = all('SELECT * FROM afk_trade_lines WHERE shopId = ? AND count > 0 ORDER BY id', [shop.id]);
+    if (Number(shop.storeType) === 1) {
+        lines.forEach((line) => afkTradeCreditItemUnsafe(shop.ownerId, line, line.count));
+    } else if (Number(shop.escrowAdena || 0) > 0) {
+        afkTradeCreditAdenaUnsafe(shop.ownerId, shop.escrowAdena);
+    }
+    write('UPDATE afk_trade_lines SET count = 0, updatedAt = ? WHERE shopId = ? AND count > 0', [closedAt, shop.id]);
+    write(`UPDATE afk_trade_shops
+        SET status = 'closed', escrowAdena = 0, revision = revision + 1, updatedAt = ?, closedAt = ?
+        WHERE id = ? AND status = 'active'`, [closedAt, closedAt, shop.id]);
+}
+
+function completeAfkTradeIfFilledUnsafe(shopId, timestamp) {
+    const remaining = Number(one(`SELECT COUNT(*) AS count FROM afk_trade_lines
+        WHERE shopId = ? AND count > 0`, [shopId])?.count || 0);
+    if (remaining > 0) return false;
+    write(`UPDATE afk_trade_shops
+        SET status = 'filled', escrowAdena = 0, revision = revision + 1, updatedAt = ?, closedAt = ?
+        WHERE id = ? AND status = 'active'`, [timestamp, timestamp, shopId]);
+    return true;
+}
+
 const Database = {
     init(callback = () => {}) {
         try {
@@ -1630,6 +1815,238 @@ const Database = {
 
     execute(statement, operation = 'raw') {
         return run(statement[0], statement[1] || [], operation, statement[2]?.read ?? null);
+    },
+
+    createAfkTradeShop(ownerId, config = {}) {
+        const characterId = Number(ownerId);
+        const storeType = Number(config.storeType);
+        const rows = Array.isArray(config.lines) ? config.lines.slice(0, 4) : [];
+        if (!characterId || ![1, 3].includes(storeType) || rows.length < 1) {
+            return Promise.reject(new Error('invalid_afk_trade_shop'));
+        }
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const owner = one('SELECT id FROM characters WHERE id = ?', [characterId]);
+            if (!owner) throw new Error('afk_trade_owner_missing');
+            const active = one("SELECT id FROM afk_trade_shops WHERE ownerId = ? AND status = 'active'", [characterId]);
+            if (active) throw new Error('afk_trade_already_active');
+
+            const timestamp = now();
+            let escrowAdena = 0;
+            if (storeType === 3) {
+                escrowAdena = rows.reduce((sum, line) => {
+                    const count = Math.floor(Number(line.count));
+                    const price = Math.floor(Number(line.price));
+                    if (!Number.isSafeInteger(count) || count < 1 || !Number.isSafeInteger(price) || price < 1
+                        || !Number.isSafeInteger(sum + count * price)) throw new Error('invalid_afk_trade_line');
+                    return sum + count * price;
+                }, 0);
+                afkTradeDebitAdenaUnsafe(characterId, escrowAdena);
+            }
+
+            const shopId = Number(write(`INSERT INTO afk_trade_shops(
+                ownerId, storeType, status, title, town, locX, locY, locZ, head,
+                appearanceJson, packageSale, escrowAdena, revision, createdAt, updatedAt
+            ) VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`, [
+                characterId,
+                storeType,
+                String(config.title || '').slice(0, 52),
+                config.town || null,
+                Number(config.locX || 0),
+                Number(config.locY || 0),
+                Number(config.locZ || 0),
+                Number(config.head || 0),
+                JSON.stringify(config.appearance || {}),
+                config.packageSale ? 1 : 0,
+                escrowAdena,
+                timestamp,
+                timestamp
+            ]).insertId);
+
+            const sourceIds = new Set();
+            rows.forEach((line) => {
+                const selfId = Number(line.selfId);
+                const count = Math.floor(Number(line.count));
+                const price = Math.floor(Number(line.price));
+                const enchant = Math.max(0, Math.floor(Number(line.enchant || 0)));
+                if (!Number.isSafeInteger(selfId) || selfId <= 0 || selfId === 57
+                    || !Number.isSafeInteger(count) || count < 1
+                    || !Number.isSafeInteger(price) || price < (storeType === 3 ? 1 : 0)) {
+                    throw new Error('invalid_afk_trade_line');
+                }
+
+                let source = null;
+                if (storeType === 1) {
+                    const sourceId = Number(line.objectId || line.sourceObjectId || 0);
+                    if (!sourceId || sourceIds.has(sourceId)) throw new Error('invalid_afk_trade_source');
+                    sourceIds.add(sourceId);
+                    source = afkTradeTakeItemUnsafe(characterId, sourceId, selfId, enchant, count);
+                }
+                write(`INSERT INTO afk_trade_lines(
+                    shopId, sourceObjectId, selfId, name, count, initialCount, price,
+                    enchant, slot, stackable, petData, createdAt, updatedAt
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+                    shopId,
+                    source ? Number(source.id) : null,
+                    selfId,
+                    source?.name || line.name || `Item ${selfId}`,
+                    count,
+                    count,
+                    price,
+                    source ? Number(source.enchant || 0) : enchant,
+                    source ? Number(source.slot || 0) : Number(line.slot || 0),
+                    line.stackable ? 1 : 0,
+                    source?.petData || line.petData || null,
+                    timestamp,
+                    timestamp
+                ]);
+            });
+
+            return {
+                shop: afkTradeShopUnsafe(shopId),
+                ownerInventory: afkTradeInventoryUnsafe(characterId)
+            };
+        }, 'afk-trade:create'));
+    },
+
+    closeAfkTradeShop(ownerId) {
+        const characterId = Number(ownerId);
+        if (!characterId) return Promise.resolve({ closed: false, ownerInventory: [] });
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const shop = one("SELECT * FROM afk_trade_shops WHERE ownerId = ? AND status = 'active'", [characterId]);
+            if (!shop) return { closed: false, ownerInventory: afkTradeInventoryUnsafe(characterId) };
+            returnAfkTradeEscrowUnsafe(shop);
+            return {
+                closed: true,
+                shopId: Number(shop.id),
+                ownerId: characterId,
+                ownerInventory: afkTradeInventoryUnsafe(characterId)
+            };
+        }, 'afk-trade:close'));
+    },
+
+    buyFromAfkTradeShop(counterpartyId, details = {}) {
+        const buyerId = Number(counterpartyId);
+        const shopId = Number(details.shopId);
+        const lineId = Number(details.lineId);
+        const quantity = Math.floor(Number(details.amount));
+        if (!buyerId || !shopId || !lineId || !Number.isSafeInteger(quantity) || quantity < 1) {
+            return Promise.reject(new Error('invalid_afk_trade_purchase'));
+        }
+        return withCharacterFlushes([buyerId, Number(details.ownerId)], () => inTransaction(() => {
+            const shop = one("SELECT * FROM afk_trade_shops WHERE id = ? AND status = 'active' AND storeType = 1", [shopId]);
+            if (!shop || Number(shop.ownerId) === buyerId) throw new Error('afk_trade_shop_unavailable');
+            const line = one('SELECT * FROM afk_trade_lines WHERE id = ? AND shopId = ?', [lineId, shopId]);
+            if (!line || Number(line.count) < quantity) throw new Error('afk_trade_stock_changed');
+            if (details.expectedPrice !== undefined && Number(details.expectedPrice) !== Number(line.price)) throw new Error('afk_trade_price_changed');
+            if (details.expectedRevision !== undefined && Number(details.expectedRevision) !== Number(shop.revision)) throw new Error('afk_trade_shop_changed');
+            const total = Number(line.price) * quantity;
+            if (!Number.isSafeInteger(total) || total < 0) throw new Error('invalid_afk_trade_total');
+            afkTradeDebitAdenaUnsafe(buyerId, total);
+            afkTradeCreditItemUnsafe(buyerId, line, quantity);
+            afkTradeCreditAdenaUnsafe(shop.ownerId, total);
+            const timestamp = now();
+            write('UPDATE afk_trade_lines SET count = count - ?, updatedAt = ? WHERE id = ?', [quantity, timestamp, lineId]);
+            write('UPDATE afk_trade_shops SET revision = revision + 1, updatedAt = ? WHERE id = ?', [timestamp, shopId]);
+            const eventId = Number(write(`INSERT INTO afk_trade_events(
+                shopId, ownerId, counterpartyId, kind, selfId, itemName, amount,
+                unitPrice, totalPrice, createdAt
+            ) VALUES (?, ?, ?, 'sale', ?, ?, ?, ?, ?, ?)`, [
+                shopId, shop.ownerId, buyerId, line.selfId, line.name, quantity, line.price, total, timestamp
+            ]).insertId);
+            const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp);
+            return {
+                eventId,
+                filled,
+                amount: quantity,
+                totalPrice: total,
+                line: { ...line, count: Number(line.count) - quantity },
+                shop: afkTradeShopUnsafe(shopId),
+                ownerInventory: afkTradeInventoryUnsafe(shop.ownerId),
+                counterpartyInventory: afkTradeInventoryUnsafe(buyerId)
+            };
+        }, 'afk-trade:buy-from-shop'));
+    },
+
+    sellToAfkTradeShop(counterpartyId, details = {}) {
+        const sellerId = Number(counterpartyId);
+        const shopId = Number(details.shopId);
+        const lineId = Number(details.lineId);
+        const quantity = Math.floor(Number(details.amount));
+        if (!sellerId || !shopId || !lineId || !Number.isSafeInteger(quantity) || quantity < 1) {
+            return Promise.reject(new Error('invalid_afk_trade_sale'));
+        }
+        return withCharacterFlushes([sellerId, Number(details.ownerId)], () => inTransaction(() => {
+            const shop = one("SELECT * FROM afk_trade_shops WHERE id = ? AND status = 'active' AND storeType = 3", [shopId]);
+            if (!shop || Number(shop.ownerId) === sellerId) throw new Error('afk_trade_shop_unavailable');
+            const line = one('SELECT * FROM afk_trade_lines WHERE id = ? AND shopId = ?', [lineId, shopId]);
+            if (!line || Number(line.count) < quantity) throw new Error('afk_trade_demand_changed');
+            if (details.expectedPrice !== undefined && Number(details.expectedPrice) !== Number(line.price)) throw new Error('afk_trade_price_changed');
+            if (details.expectedRevision !== undefined && Number(details.expectedRevision) !== Number(shop.revision)) throw new Error('afk_trade_shop_changed');
+            const total = Number(line.price) * quantity;
+            if (!Number.isSafeInteger(total) || total < 1 || Number(shop.escrowAdena) < total) throw new Error('afk_trade_budget_changed');
+            const source = afkTradeTakeItemUnsafe(
+                sellerId,
+                Number(details.objectId || 0),
+                Number(line.selfId),
+                Number(line.enchant || 0),
+                quantity
+            );
+            afkTradeCreditItemUnsafe(shop.ownerId, {
+                ...source,
+                stackable: Number(line.stackable || 0)
+            }, quantity);
+            afkTradeCreditAdenaUnsafe(sellerId, total);
+            const timestamp = now();
+            write('UPDATE afk_trade_lines SET count = count - ?, updatedAt = ? WHERE id = ?', [quantity, timestamp, lineId]);
+            write(`UPDATE afk_trade_shops
+                SET escrowAdena = escrowAdena - ?, revision = revision + 1, updatedAt = ?
+                WHERE id = ?`, [total, timestamp, shopId]);
+            const eventId = Number(write(`INSERT INTO afk_trade_events(
+                shopId, ownerId, counterpartyId, kind, selfId, itemName, amount,
+                unitPrice, totalPrice, createdAt
+            ) VALUES (?, ?, ?, 'purchase', ?, ?, ?, ?, ?, ?)`, [
+                shopId, shop.ownerId, sellerId, line.selfId, line.name, quantity, line.price, total, timestamp
+            ]).insertId);
+            const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp);
+            return {
+                eventId,
+                filled,
+                amount: quantity,
+                totalPrice: total,
+                line: { ...line, count: Number(line.count) - quantity },
+                shop: afkTradeShopUnsafe(shopId),
+                ownerInventory: afkTradeInventoryUnsafe(shop.ownerId),
+                counterpartyInventory: afkTradeInventoryUnsafe(sellerId)
+            };
+        }, 'afk-trade:sell-to-shop'));
+    },
+
+    fetchAfkTradeShops(ownerId = null, { activeOnly = true } = {}) {
+        const where = [activeOnly ? "shops.status = 'active'" : '1 = 1'];
+        const params = [];
+        if (Number(ownerId)) {
+            where.push('shops.ownerId = ?');
+            params.push(Number(ownerId));
+        }
+        return run(`SELECT shops.id FROM afk_trade_shops shops
+            WHERE ${where.join(' AND ')} ORDER BY shops.id`, params, 'afk-trade:list').then((rows) => (
+            rows.map((row) => afkTradeShopUnsafe(row.id)).filter(Boolean)
+        ));
+    },
+
+    fetchAfkTradeNotifications(ownerId, limit = 50) {
+        const safeLimit = Math.max(1, Math.min(200, Math.floor(Number(limit) || 50)));
+        return run(`SELECT * FROM afk_trade_events
+            WHERE ownerId = ? AND deliveredAt IS NULL
+            ORDER BY id ASC LIMIT ${safeLimit}`, [Number(ownerId)], 'afk-trade:notifications');
+    },
+
+    markAfkTradeNotificationsDelivered(ownerId, eventIds = []) {
+        const ids = [...new Set((eventIds || []).map(Number).filter(Boolean))];
+        if (!ids.length) return Promise.resolve({ affectedRows: 0 });
+        return run(`UPDATE afk_trade_events SET deliveredAt = ?
+            WHERE ownerId = ? AND deliveredAt IS NULL AND id IN (${ids.map(() => '?').join(', ')})`,
+        [now(), Number(ownerId), ...ids], 'afk-trade:notifications-delivered');
     },
 
     upsertBotGoalStates(entries = []) {

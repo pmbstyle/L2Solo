@@ -35,9 +35,10 @@ function currentState(session, bot, town) {
 }
 
 function liveMerchantOffer(offer) {
-    return offer?.sourceType === 'private_store'
-        && offer.session?.actor
-        && String(offer.session.accountId || '').startsWith('bot_');
+    return offer?.session?.actor && (
+        (offer.sourceType === 'private_store' && String(offer.session.accountId || '').startsWith('bot_'))
+        || offer.sourceType === 'afk_player_store'
+    );
 }
 
 function affordableOffers(target, state, town) {

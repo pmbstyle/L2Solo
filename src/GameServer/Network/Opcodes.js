@@ -67,6 +67,7 @@ const Opcodes = {
         table[0x74] = ClientRequest.privateStoreListSell;
         table[0x76] = ClientRequest.privateStoreQuit(1);
         table[0x77] = ClientRequest.privateStoreTitle(1);
+        table[0x79] = ClientRequest.privateStoreBuy;
         table[0x90] = ClientRequest.privateStoreManageBuy;
         table[0x91] = ClientRequest.privateStoreListBuy;
         table[0x93] = ClientRequest.privateStoreQuit(3);

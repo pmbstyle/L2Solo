@@ -281,6 +281,66 @@ CREATE TABLE IF NOT EXISTS items (
 CREATE INDEX IF NOT EXISTS items_characterId ON items(characterId);
 CREATE INDEX IF NOT EXISTS items_characterId_selfId ON items(characterId, selfId);
 
+CREATE TABLE IF NOT EXISTS afk_trade_shops (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ownerId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    storeType INTEGER NOT NULL CHECK(storeType IN (1, 3)),
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'closed', 'filled')),
+    title TEXT NOT NULL DEFAULT '',
+    town TEXT,
+    locX INTEGER NOT NULL,
+    locY INTEGER NOT NULL,
+    locZ INTEGER NOT NULL,
+    head INTEGER NOT NULL DEFAULT 0,
+    appearanceJson TEXT NOT NULL DEFAULT '{}',
+    packageSale INTEGER NOT NULL DEFAULT 0,
+    escrowAdena INTEGER NOT NULL DEFAULT 0 CHECK(escrowAdena >= 0),
+    revision INTEGER NOT NULL DEFAULT 1,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    closedAt INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS afk_trade_shops_active_owner
+    ON afk_trade_shops(ownerId) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS afk_trade_shops_active_market
+    ON afk_trade_shops(status, town, storeType, updatedAt);
+
+CREATE TABLE IF NOT EXISTS afk_trade_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    shopId INTEGER NOT NULL REFERENCES afk_trade_shops(id) ON DELETE CASCADE,
+    sourceObjectId INTEGER,
+    selfId INTEGER NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    count INTEGER NOT NULL CHECK(count >= 0),
+    initialCount INTEGER NOT NULL CHECK(initialCount > 0),
+    price INTEGER NOT NULL CHECK(price >= 0),
+    enchant INTEGER NOT NULL DEFAULT 0 CHECK(enchant >= 0),
+    slot INTEGER NOT NULL DEFAULT 0,
+    stackable INTEGER NOT NULL DEFAULT 0,
+    petData TEXT,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS afk_trade_lines_shop_item
+    ON afk_trade_lines(shopId, selfId, count);
+
+CREATE TABLE IF NOT EXISTS afk_trade_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    shopId INTEGER REFERENCES afk_trade_shops(id) ON DELETE SET NULL,
+    ownerId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    counterpartyId INTEGER REFERENCES characters(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL CHECK(kind IN ('sale', 'purchase')),
+    selfId INTEGER NOT NULL,
+    itemName TEXT NOT NULL DEFAULT '',
+    amount INTEGER NOT NULL CHECK(amount > 0),
+    unitPrice INTEGER NOT NULL CHECK(unitPrice >= 0),
+    totalPrice INTEGER NOT NULL CHECK(totalPrice >= 0),
+    createdAt INTEGER NOT NULL,
+    deliveredAt INTEGER
+);
+CREATE INDEX IF NOT EXISTS afk_trade_events_owner_delivery
+    ON afk_trade_events(ownerId, deliveredAt, id);
+
 CREATE TABLE IF NOT EXISTS character_recipes (
     characterId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
     recipeId INTEGER NOT NULL,

@@ -31,7 +31,7 @@ function canManage(actor) {
     return actor && !actor.isDead?.() && !actor.fetchMounted?.() && !actor.state?.fetchCasts?.() && !actor.state?.fetchHits?.();
 }
 
-function open(session, type) {
+function openManageWindow(session, type) {
     const actor = session?.actor;
     if (!canManage(actor)) return false;
     const manageType = type === SELL ? SELL_MANAGE : BUY_MANAGE;
@@ -44,6 +44,14 @@ function open(session, type) {
         ? ServerResponse.privateStoreManageListSell(actor, current)
         : ServerResponse.privateStoreManageListBuy(actor, current));
     return true;
+}
+
+function open(session, type) {
+    const actor = session?.actor;
+    if (!canManage(actor)) return false;
+    const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+    if (!AfkTrade.findOwnerProjection(actor.fetchId())) return openManageWindow(session, type);
+    return AfkTrade.stop(actor.fetchId()).then(() => openManageWindow(session, type));
 }
 
 function setTitle(session, type, value) {
@@ -66,6 +74,9 @@ function publishSell(session, packageSale, rows) {
     });
     if (items.some((row) => !row)) return false;
     const current = store(actor, SELL); current.items = items; current.packageSale = !!packageSale;
+    if (Number(session.afkTradeDraft) === SELL) {
+        return invoke('GameServer/AfkTrade/AfkTradeService').activate(session, current);
+    }
     actor.setPrivateStoreType(SELL); actor.state?.setSeated?.(true);
     sendSitState(session, actor);
     broadcast(session, actor, ServerResponse.privateStoreMsg(actor, current.title));
@@ -83,6 +94,9 @@ function publishBuy(session, rows) {
     });
     if (items.some((row) => !row) || !Number.isSafeInteger(total) || total > actor.backpack.fetchTotalAdena()) return false;
     const current = store(actor, BUY); current.items = items;
+    if (Number(session.afkTradeDraft) === BUY) {
+        return invoke('GameServer/AfkTrade/AfkTradeService').activate(session, current);
+    }
     actor.setPrivateStoreType(BUY); actor.state?.setSeated?.(true);
     sendSitState(session, actor);
     broadcast(session, actor, ServerResponse.privateStoreBuyMsg(actor, current.title));
@@ -92,7 +106,7 @@ function publishBuy(session, rows) {
 function quit(session, type) {
     const actor = session?.actor;
     if (!actor || ![type, type === SELL ? SELL_MANAGE : BUY_MANAGE].includes(Number(actor.fetchPrivateStoreType()))) return false;
-    actor.setPrivateStoreType(0); actor.state?.setSeated?.(false); sendSitState(session, actor); broadcast(session, actor); return true;
+    actor.setPrivateStoreType(0); actor.state?.setSeated?.(false); session.afkTradeDraft = null; sendSitState(session, actor); broadcast(session, actor); return true;
 }
 
 module.exports = { SELL, BUY, open, setTitle, publishSell, publishBuy, quit };
