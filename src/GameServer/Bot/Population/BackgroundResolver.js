@@ -27,6 +27,53 @@ function botCombatStats(state, timestamp = Date.now()) {
     return ColdCombatProfile.profileFor(state, timestamp);
 }
 
+const ELEMENTAL_DAMAGE_TRAITS = new Set(['fire', 'water', 'wind', 'earth', 'holy', 'dark']);
+const PHYSICAL_RACE_STATS = Object.freeze({
+    animal: 'pAtk-animals',
+    beast: 'pAtk-monsters',
+    construct: 'pAtk-mcreatures',
+    dragon: 'pAtk-dragons',
+    giant: 'pAtk-giants',
+    insect: 'pAtk-insects',
+    plant: 'pAtk-plants'
+});
+
+function mobVulnerability(mob, stat) {
+    const value = Number(mob?.vulnerabilities?.[stat]);
+    return Number.isFinite(value) ? Math.max(0, value) : 1;
+}
+
+function coldWeaponVulnerability(bot, mob, semantic = {}) {
+    const kind = String(bot?.equipment?.weaponKind || '');
+    if (semantic.trait === 'bow' || kind === 'Weapon.Bow') return mobVulnerability(mob, 'bowWpnVuln');
+    if (kind === 'Weapon.Blunt' || kind === 'Weapon.BigBlunt') return mobVulnerability(mob, 'bluntWpnVuln');
+    if (semantic.trait === 'dagger' || kind === 'Weapon.Knife') return mobVulnerability(mob, 'daggerWpnVuln');
+    return 1;
+}
+
+function coldPhysicalTargetModifier(bot, mob, semantic = {}, timestamp = Date.now()) {
+    let modifier = coldWeaponVulnerability(bot, mob, semantic);
+    if (mob?.undead === true) modifier *= ColdCombatProfile.statMultiplier(bot, 'pAtkUndeadMul', timestamp);
+    const raceStat = PHYSICAL_RACE_STATS[String(mob?.race || '').toLowerCase()];
+    if (raceStat) modifier *= ColdCombatProfile.statMultiplier(bot, raceStat, timestamp);
+    return modifier;
+}
+
+function coldMagicTargetModifier(mob, semantic = {}) {
+    return ELEMENTAL_DAMAGE_TRAITS.has(semantic.trait)
+        ? mobVulnerability(mob, `${semantic.trait}Vuln`)
+        : 1;
+}
+
+function coldNpcWeaponModifier(mob, target, timestamp = Date.now()) {
+    const kind = String(mob?.weaponKind || '');
+    if (kind === 'Weapon.Bow') return ColdCombatProfile.statMultiplier(target, 'bowWpnVuln', timestamp);
+    if (kind === 'Weapon.Blunt' || kind === 'Weapon.BigBlunt') {
+        return ColdCombatProfile.statMultiplier(target, 'bluntWpnVuln', timestamp);
+    }
+    return 1;
+}
+
 function coldChargeState(state, timestamp) {
     const coldCombat = state.stats?.coldCombat || {};
     const expiresAt = Number(coldCombat.chargeExpiresAt) || 0;
@@ -623,6 +670,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
     const soloFighter = {
         state: fightState,
         profile: bot,
+        role: BotRoles.inferRole(fightState),
         vitals,
         readyAt: 0,
         summonReadyAt: Number.POSITIVE_INFINITY,
@@ -722,10 +770,14 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             let damage = 0;
             if (magic) {
                 const magicCritical = rng() < clamp(bot.critical / 1000, 0, 0.25);
-                damage = Formulas.calcMagicDamage(bot.mAtk, Math.max(1, selected.power), mob.mDef, { magicCritical });
+                const semantic = C4SkillRules.resolve(selected.skill);
+                damage = Formulas.calcMagicDamage(bot.mAtk, Math.max(1, selected.power), mob.mDef, { magicCritical })
+                    * coldMagicTargetModifier(mob, semantic);
             } else if (hitSucceeds(bot.accur, mob.evasion, rng)) {
                 const critical = Formulas.rollCritical(bot.critical, rng);
-                damage = Formulas.calcPhysicalDamage(bot.pAtk, bot.equipment.pAtkRnd, mob.pDef, selected?.power || 0, { critical });
+                const semantic = selected?.skill ? C4SkillRules.resolve(selected.skill) : {};
+                damage = Formulas.calcPhysicalDamage(bot.pAtk, bot.equipment.pAtkRnd, mob.pDef, selected?.power || 0, { critical })
+                    * coldPhysicalTargetModifier(bot, mob, semantic, timestamp + time);
             }
             if (skill) {
                 const semantic = C4SkillRules.resolve(skill);
@@ -752,7 +804,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             }
         } else if (hitSucceeds(mob.accur, bot.evasion, rng)) {
             const critical = Formulas.rollCritical(mob.critical, rng);
-            const damage = Formulas.calcMeleeDamage(mob.pAtk, mob.pAtkRnd, bot.pDef, { critical });
+            const damage = Formulas.calcMeleeDamage(mob.pAtk, mob.pAtkRnd, bot.pDef, { critical })
+                * coldNpcWeaponModifier(mob, bot, timestamp + time);
             vitals.hp -= Math.max(0, damage);
             mobReadyAt += Math.max(250, Formulas.calcMeleeAtkTime(mob.atkSpd));
         } else {
@@ -788,16 +841,19 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         };
     }
 
-    const rewards = spot.rewards;
+    const rewards = BackgroundDropResolver.progressionForFight({ spot, npcSelfId: mob.selfId, rng });
     const expMultiplier = pressure?.expMultiplier || 1;
     const rates = ProgressionRates.profile();
-    const adena = Math.round(randInt(rng, rewards.adenaMin, rewards.adenaMax) * rates.adena);
-    const loot = BackgroundDropResolver.rollForFight({
+    const rolledRewards = BackgroundDropResolver.rollRewardsForFight({
         spot,
         killerLevel: Number(state.level || bot.level),
         npcSelfId: mob.selfId,
         rng
     });
+    const adena = rolledRewards === null
+        ? Math.round(randInt(rng, spot.rewards.adenaMin, spot.rewards.adenaMax) * rates.adena)
+        : rolledRewards.adena;
+    const loot = rolledRewards?.items || [];
     if (String(state.stats?.role || '') === 'spoiler'
         || [54, 55].includes(Number(state.stats?.classId ?? state.classId))) {
         loot.push(...BackgroundDropResolver.rollSpoilForFight({
@@ -815,7 +871,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         maxHp: Math.max(1, Math.round(vitals.maxHp)),
         mp: Math.max(0, Math.round(vitals.mp)),
         maxMp: Math.max(1, Math.round(vitals.maxMp)),
-        exp: Math.round(rewards.exp * expMultiplier * rates.exp),
+        exp: Math.round(rewards.exp * expMultiplier * rates.exp
+            * ColdCombatProfile.statMultiplier(bot, 'expMul', timestamp)),
         sp: Math.round(rewards.sp * expMultiplier * rates.sp),
         adena,
         loot,
@@ -960,11 +1017,14 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             let damage = 0;
             if (selected?.magic) {
                 const magicCritical = rng() < clamp(next.profile.critical / 1000, 0, 0.25);
-                damage = Formulas.calcMagicDamage(next.profile.mAtk, Math.max(1, selected.power), mob.mDef, { magicCritical });
+                const semantic = C4SkillRules.resolve(selected.skill);
+                damage = Formulas.calcMagicDamage(next.profile.mAtk, Math.max(1, selected.power), mob.mDef, { magicCritical })
+                    * coldMagicTargetModifier(mob, semantic);
             } else if (hitSucceeds(next.profile.accur, mob.evasion, rng)) {
+                const semantic = selected?.skill ? C4SkillRules.resolve(selected.skill) : {};
                 damage = Formulas.calcPhysicalDamage(next.profile.pAtk, next.profile.equipment.pAtkRnd, mob.pDef, selected?.power || 0, {
                     critical: Formulas.rollCritical(next.profile.critical, rng)
-                });
+                }) * coldPhysicalTargetModifier(next.profile, mob, semantic, timestamp + time);
             }
             if (skill) {
                 const semantic = C4SkillRules.resolve(skill);
@@ -998,7 +1058,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             if (target && hitSucceeds(mob.accur, target.profile.evasion, rng)) {
                 const damage = Formulas.calcMeleeDamage(mob.pAtk, mob.pAtkRnd, target.profile.pDef, {
                     critical: Formulas.rollCritical(mob.critical, rng)
-                });
+                }) * coldNpcWeaponModifier(mob, target.profile, timestamp + time);
                 target.vitals.hp = Math.max(0, target.vitals.hp - damage);
             }
             mobReadyAt += Math.max(250, Formulas.calcMeleeAtkTime(mob.atkSpd));

@@ -1,11 +1,9 @@
 const World = invoke('GameServer/World/World');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const RaidBossMinionManager = invoke('GameServer/World/RaidBossMinionManager');
+const PartyRewardMath = invoke('GameServer/Actor/PartyRewardMath');
 
 const PARTY_REWARD_RADIUS = 2500;
-// C4/L2J party reward curve. The total reward grows with the eligible party,
-// then is split by squared level rather than being divided equally.
-const PARTY_EXP_SP_BONUS = [1, 1.30, 1.39, 1.50, 1.54, 1.58, 1.63, 1.67, 1.71];
 
 function distance2d(a, b) {
     const dx = a.fetchLocX() - b.fetchLocX();
@@ -70,51 +68,14 @@ function levelOf(session) {
     return Math.max(1, Number(session?.actor?.fetchLevel?.() || 1));
 }
 
-function partyBonus(memberCount) {
-    const index = Math.max(0, Math.min(PARTY_EXP_SP_BONUS.length - 1, Number(memberCount || 1) - 1));
-    return PARTY_EXP_SP_BONUS[index];
-}
-
 function validPartyMembers(participants) {
-    if (participants.length < 2) return participants;
-
-    // L2J's automatic cutoff excludes members whose level is so far below
-    // the group that they would otherwise be power-levelled for free.
-    const squaredLevelSum = participants.reduce((sum, memberSession) => {
-        const level = levelOf(memberSession);
-        return sum + (level * level);
-    }, 0);
-    const previousBonus = partyBonus(participants.length - 1);
-    const currentBonus = partyBonus(participants.length);
-    const cutoff = squaredLevelSum * (1 - (1 / (1 + currentBonus - previousBonus)));
-
-    return participants.filter((memberSession) => {
-        const level = levelOf(memberSession);
-        return (level * level) >= cutoff;
-    });
+    const indexes = PartyRewardMath.validMemberIndexes(participants.map(levelOf));
+    return indexes.map((index) => participants[index]);
 }
 
 function partyRewardShares(participants, exp, sp) {
-    const validMembers = validPartyMembers(participants);
-    if (validMembers.length === 0) return [];
-
-    const totalWeight = validMembers.reduce((sum, memberSession) => {
-        const level = levelOf(memberSession);
-        return sum + (level * level);
-    }, 0);
-    const bonus = partyBonus(validMembers.length);
-    const totalExp = Math.max(0, Number(exp || 0)) * bonus;
-    const totalSp = Math.max(0, Number(sp || 0)) * bonus;
-
-    return validMembers.map((memberSession) => {
-        const level = levelOf(memberSession);
-        const weight = (level * level) / totalWeight;
-        return {
-            session: memberSession,
-            exp: Math.max(0, Math.round(totalExp * weight)),
-            sp: Math.max(0, Math.round(totalSp * weight))
-        };
-    });
+    return PartyRewardMath.sharesForLevels(participants.map(levelOf), exp, sp)
+        .map((share) => ({ session: participants[share.index], exp: share.exp, sp: share.sp }));
 }
 
 function npcDied(session, actor, npc) {
@@ -168,6 +129,6 @@ function npcDied(session, actor, npc) {
 }
 
 module.exports = npcDied;
-module.exports.PARTY_EXP_SP_BONUS = PARTY_EXP_SP_BONUS;
+module.exports.PARTY_EXP_SP_BONUS = PartyRewardMath.PARTY_EXP_SP_BONUS;
 module.exports.partyRewardShares = partyRewardShares;
 module.exports.validPartyMembers = validPartyMembers;

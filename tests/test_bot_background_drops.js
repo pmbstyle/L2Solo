@@ -21,10 +21,26 @@ const spot = {
 };
 
 const direct = BackgroundDropResolver.rollForFight({ spot, killerLevel: 1, rng: () => 0 });
-assert.strictEqual(direct.length, 1);
+assert.strictEqual(direct.length, 2, 'cold loot must roll every normal drop group, like the hot NPC path');
 assert.strictEqual(direct[0].selfId, 1121, 'the selected item must come from the real Gremlin rewards');
 assert.strictEqual(direct[0].kind, 'Armor.Wear');
 assert.strictEqual(direct[0].sourceMobLevel, 1, 'background loot must retain the source-mob level for sale policy');
+assert.strictEqual(direct[1].selfId, 1864, 'a later guaranteed material group must not be discarded');
+
+const mixedRewardRoll = BackgroundDropResolver.rollRewardsForFight({
+    spot: {
+        avgLevel: 67,
+        npcEntries: [{ selfId: 1509, count: 1 }],
+        npcSelfIds: [1509],
+        npcNames: ['Splinter Stakato Walker']
+    },
+    killerLevel: 67,
+    npcSelfId: 1509,
+    rng: () => 0
+});
+assert(mixedRewardRoll.adena > 0, 'a mixed reward group may select its Adena entry');
+assert(!mixedRewardRoll.items.some((item) => [2391, 4082].includes(item.selfId)),
+    'a mixed group must not also award one of the item alternatives after selecting Adena');
 
 const originalRewardGroupRoll = ProgressionRates.rewardGroupRoll;
 let rolledNpcLevel = null;
@@ -54,11 +70,11 @@ const state = {
     party: { role: 'dps' }
 };
 const result = BackgroundResolver.resolveSolo({ state, spot, elapsedMs: 12000, rng: () => 0 });
-assert.strictEqual(result.materialize.items.length, 1);
+assert.strictEqual(result.materialize.items.length, 2);
 assert.strictEqual(result.materialize.items[0].selfId, 1121);
 assert.strictEqual(result.materialize.items[0].name, "Apprentice's Shoes");
 assert.strictEqual(result.materialize.items[0].kind, 'Armor.Wear');
-assert(result.materialize.adena > 0, 'real item drops complement, rather than replace, normal adena rewards');
+assert.strictEqual(result.materialize.adena, 7, 'cold combat must roll the exact NPC Adena group');
 
 const partyResult = BackgroundPartyResolver.resolve({
     party: { partyId: 'drop_party', cohesion: 1, risk: 0, roleCoverage: {} },
