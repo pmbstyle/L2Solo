@@ -31,6 +31,7 @@ function bot(classId, ownedSkills = [], mp = 100, weaponKind = '', hp = 100, max
         fetchMaxHp: () => maxHp,
         fetchMp: () => mp,
         fetchMaxMp: () => 100,
+        fetchCollectivePAtk: () => 100,
         fetchLocX: () => 0,
         fetchLocY: () => 0,
         skillset: {
@@ -41,14 +42,17 @@ function bot(classId, ownedSkills = [], mp = 100, weaponKind = '', hp = 100, max
         },
         backpack: {
             fetchTotalWeaponKind: () => weaponKind,
+            fetchTotalWeaponPAtkRnd: () => 0,
             fetchEquippedArmors: () => []
         }
     };
 }
 
-function npc(id = 1001) {
+function npc(id = 1001, options = {}) {
     return {
         fetchId: () => id,
+        fetchHp: () => options.hp ?? 1000,
+        fetchCollectivePDef: () => options.pDef ?? 100,
         fetchLocX: () => 400,
         fetchLocY: () => 0
     };
@@ -79,7 +83,7 @@ try {
     BotAI.executeCombat({}, mage, npc(1101), mageGenerics);
     assert.strictEqual(mage.skillset.skills.length, 0, 'mage should not invent Wind Strike when it is not learned');
     assert.strictEqual(mageGenerics.skills.length, 0, 'mage without learned nuke should not cast an invented skill');
-    assert.strictEqual(mageGenerics.attacks.length, 1, 'mage without learned nuke should fall back to a normal attack');
+    assert.strictEqual(mageGenerics.attacks.length, 0, 'mage without a learned nuke must not melee a healthy target');
 
     const archer = bot(9, [skill(56, { mp: 5, range: 700, power: 24, semantic: { requires: { weaponsAllowed: 32 } } })], 20, 'Weapon.Bow');
     const archerGenerics = generics();
@@ -296,8 +300,8 @@ try {
     BotAI.executeCombat({}, controlledNecromancer, npc(11049), controlledNecromancerGenerics);
     assert.strictEqual(controlledNecromancerGenerics.skills.length, 0,
         'a party Necromancer under silence must not cast through the internal combat executor');
-    assert.strictEqual(controlledNecromancerGenerics.attacks.length, 1,
-        'a silenced party Necromancer may fall back to a basic attack');
+    assert.strictEqual(controlledNecromancerGenerics.attacks.length, 0,
+        'a silenced party Necromancer must not melee a healthy target');
     EffectStore.remove(controlledNecromancer, 'silence');
 
     const activeSummon = {
@@ -407,8 +411,8 @@ try {
     BotAI.executeCombat({}, bot(14, [lowMpSummon], 50), npc(11042), lowMpSummonerGenerics);
     assert.strictEqual(lowMpSummonerGenerics.skills.length, 0,
         'a hot summoner without enough MP must not attempt to cast a servitor');
-    assert.strictEqual(lowMpSummonerGenerics.attacks.length, 1,
-        'a hot summoner without enough MP must fall back to a normal attack');
+    assert.strictEqual(lowMpSummonerGenerics.attacks.length, 0,
+        'a hot summoner without enough MP must not melee a healthy target');
 
     const raidSafeMage = bot(10, [
         skill(1235, { name: 'Area Nuke', mp: 5, power: 200, spell: true, semantic: { sourceTarget: 'area', radius: 200 } }),
@@ -437,7 +441,42 @@ try {
     const emptyManaMageGenerics = generics();
     BotAI.executeCombat({}, emptyManaMage, npc(1110), emptyManaMageGenerics);
     assert.strictEqual(emptyManaMageGenerics.skills.length, 0, 'a mage without enough MP should not attempt an unaffordable spell');
-    assert.strictEqual(emptyManaMageGenerics.attacks.length, 1, 'melee is the mage fallback only after it cannot pay for its spell');
+    assert.strictEqual(emptyManaMageGenerics.attacks.length, 0, 'an empty-mana mage must not melee a healthy target');
+
+    const soloFinisherMage = bot(10, [
+        skill(1177, { name: 'Wind Strike', mp: 8, power: 12, spell: true })
+    ], 100);
+    const soloFinisherGenerics = generics();
+    const soloFinisherSession = {};
+    BotAI.executeCombat(soloFinisherSession, soloFinisherMage, npc(11101, { hp: 140 }), soloFinisherGenerics);
+    assert.strictEqual(soloFinisherGenerics.skills.length, 0,
+        'a solo mage should save MP instead of nuking a target within two staff hits');
+    assert.strictEqual(soloFinisherGenerics.attacks.length, 1,
+        'a solo mage may use melee to finish a target within two ordinary hits');
+    assert.strictEqual(soloFinisherSession.lastCombatDecision.reason, 'mage_melee_finisher');
+    assert.strictEqual(soloFinisherSession.lastCombatDecision.estimatedHits, 2);
+
+    const partyFinisherMage = bot(10, [
+        skill(1177, { name: 'Wind Strike', mp: 8, power: 12, spell: true })
+    ], 7);
+    const partyFinisherGenerics = generics();
+    BotAI.executeCombat(
+        { partyCompanion: true },
+        partyFinisherMage,
+        npc(11102, { hp: 70 }),
+        partyFinisherGenerics,
+        { basicAttackOnly: true }
+    );
+    assert.strictEqual(partyFinisherGenerics.skills.length, 0,
+        'a party mage ordered not to cast must keep its spell unused');
+    assert.strictEqual(partyFinisherGenerics.attacks.length, 1,
+        'the same two-hit melee finisher rule must apply to a party mage');
+
+    const justOutsideFinisherGenerics = generics();
+    BotAI.executeCombat({}, soloFinisherMage, npc(11103, { hp: 141 }), justOutsideFinisherGenerics);
+    assert.strictEqual(justOutsideFinisherGenerics.skills.length, 1,
+        'a mage must cast when the target is just outside the two-hit melee threshold');
+    assert.strictEqual(justOutsideFinisherGenerics.attacks.length, 0);
 
     const sleep = skill(1097, {
         name: 'Dreaming Spirit',
@@ -459,7 +498,8 @@ try {
     const controlOnlyGenerics = generics();
     BotAI.executeCombat({}, controlOnlyMage, npc(1108), controlOnlyGenerics);
     assert.strictEqual(controlOnlyGenerics.skills.length, 0, 'pure control should wait for a tactical control policy');
-    assert.strictEqual(controlOnlyGenerics.attacks.length, 1, 'mage with only control skills should use the basic attack fallback');
+    assert.strictEqual(controlOnlyGenerics.attacks.length, 1,
+        'an Orc Mystic classified as a buffer should retain its normal weapon fallback');
 
     const reserveHealer = bot(15, [skill(1300, { mp: 20, power: 100, spell: true })], 50);
     const reserveGenerics = generics();

@@ -6,6 +6,11 @@ const Attack = invoke('GameServer/Actor/Attack');
 const State = invoke('GameServer/Model/State');
 const destCancel = invoke('GameServer/Network/Request/DestCancel');
 const skillRequest = invoke('GameServer/Actor/Generics/SkillRequest');
+const HotPartyCastTracker = invoke('GameServer/Bot/AI/HotPartyCastTracker');
+const npcDie = invoke('GameServer/Npc/Generics/Die');
+const ActorGenerics = invoke('GameServer/Actor/Generics');
+const SpoilSweep = invoke('GameServer/Npc/SpoilSweep');
+const DataCache = invoke('GameServer/DataCache');
 
 function actor(overrides = {}) {
     const state = new State();
@@ -69,10 +74,10 @@ function skill(overrides = {}) {
         fetchReuseTime: () => 1000,
         fetchCalculatedHitTime() { return this.calculatedHitTime; },
         setCalculatedHitTime(value) { this.calculatedHitTime = value; },
-        fetchSelfId: () => 1011,
+        fetchSelfId: () => overrides.selfId ?? 1011,
         fetchLevel: () => 1,
         fetchPower: () => overrides.power ?? 10,
-        fetchTargetKind: () => 'enemy',
+        fetchTargetKind: () => overrides.targetKind ?? 'enemy',
         fetchSemantic: () => ({ skillType: 'damage', trait: 'wind' }),
         fetchSsBoost: () => 1
     };
@@ -80,6 +85,8 @@ function skill(overrides = {}) {
 
 const savedSetTimeout = global.setTimeout;
 const savedClearTimeout = global.clearTimeout;
+const savedNpcDied = ActorGenerics.npcDied;
+const savedFetchNpcRewardsFromSelfId = DataCache.fetchNpcRewardsFromSelfId;
 const timers = [];
 global.setTimeout = (callback, delay) => {
     const timer = { callback, delay, canceled: false };
@@ -91,6 +98,10 @@ global.clearTimeout = (timer) => {
 };
 
 try {
+    ActorGenerics.npcDied = () => {};
+    DataCache.fetchNpcRewardsFromSelfId = (_selfId, callback) => callback({
+        spoils: [{ items: [{ selfId: 57, chance: 100, min: 1, max: 1 }] }]
+    });
     const attack = new Attack();
     const caster = actor();
     caster.attack = attack;
@@ -150,7 +161,95 @@ try {
     landingAttack.remoteHit(landingSession, victim, skill());
     assert.strictEqual(timers.length, 0, 'a direct cast path must not schedule a skill that is still on reuse');
     assert(packets.some((packet) => packet[0] === 0x25), 'a direct cast path should reject a skill that is still on reuse');
+
+    timers.length = 0;
+    packets.length = 0;
+    const partyAttack = new Attack();
+    const partyCaster = actor({ id: 2000003 });
+    partyCaster.attack = partyAttack;
+    const partySession = {
+        accountId: 'bot_party_caster',
+        actor: partyCaster,
+        partyCompanion: true,
+        followPlayerSession: { accountId: 'party_leader' },
+        dataSendToMe(packet) { packets.push(packet); },
+        dataSendToMeAndOthers(packet) { packets.push(packet); }
+    };
+    const dyingVictim = {
+        ...target(),
+        model: {},
+        fetchId: () => 3000002,
+        fetchAttackable: () => true,
+        fetchIsRaidBoss: () => false,
+        destructor() {}
+    };
+
+    partyAttack.remoteHit(partySession, dyingVictim, skill());
+    assert.strictEqual(HotPartyCastTracker.trackedCount(dyingVictim), 1,
+        'a hot party cast should register once against its concrete NPC target');
+    assert.strictEqual(timers.filter((timer) => !timer.canceled).length, 1,
+        'event-driven death cancellation must not add an HP polling timer');
+
+    npcDie({ dataSendToMeAndOthers() {} }, {}, dyingVictim);
+    assert.strictEqual(dyingVictim.state.fetchDead(), true, 'the NPC death boundary must become authoritative first');
+    assert.strictEqual(partyCaster.state.fetchCasts(), false,
+        'an in-flight hot party cast must be cancelled when its NPC target dies');
+    assert.strictEqual(HotPartyCastTracker.trackedCount(dyingVictim), 0,
+        'death cancellation must release the target watcher immediately');
+    assert(timers.every((timer) => timer.canceled),
+        'NPC death must cancel the pending cast landing timer');
+    assert.strictEqual(partyCaster.mp, undefined,
+        'a cast cancelled by NPC death must not consume MP');
+    assert.strictEqual(partySession.lastCombatDecision.reason, 'target_died',
+        'the cheap cancellation should remain visible in hot-party combat telemetry');
+    assert(packets.some((packet) => packet[0] === 0x49),
+        'party cast cancellation must broadcast the native cancelled-cast packet');
+
+    timers.length = 0;
+    packets.length = 0;
+    const spoilerAttack = new Attack();
+    const spoiler = actor({ id: 2000004, mp: 50 });
+    spoiler.attack = spoilerAttack;
+    spoiler.fetchName = () => 'Party Spoiler';
+    const spoilerSession = {
+        accountId: 'bot_party_spoiler',
+        actor: spoiler,
+        partyCompanion: true,
+        followPlayerSession: { accountId: 'party_leader' },
+        dataSendToMe(packet) { packets.push(packet); },
+        dataSendToMeAndOthers(packet) { packets.push(packet); }
+    };
+    const spoilVictim = {
+        ...target(),
+        model: {},
+        fetchId: () => 3000003,
+        fetchSelfId: () => 90001,
+        fetchLevel: () => 10,
+        fetchAttackable: () => true,
+        fetchIsRaidBoss: () => false,
+        enterCombatState() {},
+        destructor() {}
+    };
+    const spoilSkill = skill({ selfId: 254, power: 0 });
+
+    SpoilSweep.castSpoil(spoilerSession, spoiler, spoilVictim, spoilSkill);
+    assert.strictEqual(HotPartyCastTracker.trackedCount(spoilVictim), 1,
+        'a hot party Spoil cast should use the same event-driven target tracker');
+    assert.strictEqual(timers.filter((timer) => !timer.canceled).length, 1,
+        'Spoil tracking must reuse its cast landing timer instead of polling HP');
+
+    npcDie({ dataSendToMeAndOthers() {} }, {}, spoilVictim);
+    assert.strictEqual(spoiler.state.fetchCasts(), false,
+        'NPC death must cancel an in-flight hot party Spoil cast');
+    assert.strictEqual(HotPartyCastTracker.trackedCount(spoilVictim), 0,
+        'cancelled Spoil must release its target watcher');
+    assert(timers.every((timer) => timer.canceled),
+        'NPC death must cancel the pending Spoil landing timer');
+    assert.strictEqual(spoiler.mp, undefined,
+        'a Spoil cast cancelled by NPC death must not consume MP');
 } finally {
+    DataCache.fetchNpcRewardsFromSelfId = savedFetchNpcRewardsFromSelfId;
+    ActorGenerics.npcDied = savedNpcDied;
     global.setTimeout = savedSetTimeout;
     global.clearTimeout = savedClearTimeout;
 }

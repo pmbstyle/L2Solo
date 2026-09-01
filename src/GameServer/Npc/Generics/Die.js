@@ -18,6 +18,7 @@ function die(session, actor, npc) {
         RaidBossMinionManager.onBossDeath(invoke('GameServer/World/World'), npc, session);
     }
     npc.state.setDead(true);
+    invoke('GameServer/Bot/AI/HotPartyCastTracker').cancelForDeadNpc(npc);
     clearEffectsOnDeath(npc);
     session.dataSendToMeAndOthers(ServerResponse.die(npc.fetchId(), SpoilSweep.isSweepable(npc)), npc);
     invoke(path.actor).npcDied(session, actor, npc);
