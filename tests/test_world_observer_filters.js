@@ -36,6 +36,10 @@ assert.strictEqual(Filters.isSurfaceActor({}), true, 'legacy actors without area
 assert.strictEqual(Filters.actorKind(2, null, { players: [{ id: 2 }] }), 'player', 'party links must resolve real-player leaders from the snapshot');
 assert.strictEqual(Filters.actorKind(2, 'bot', { players: [{ id: 2 }] }), 'bot', 'an explicit leader kind must remain authoritative');
 assert.strictEqual(Filters.actorKind(3, null, { players: [{ id: 2 }] }), 'bot', 'unknown party leaders default to bots');
+assert.strictEqual(Filters.matchesSelection({ id: 2, kind: 'player' }, { id: 2, kind: 'player' }), true,
+    'a selected player must remain selectable in the shared actor UI');
+assert.strictEqual(Filters.matchesSelection({ id: 2, kind: 'bot' }, { id: 2, kind: 'player' }), false,
+    'a bot with the same numeric id must not steal the selected-player highlight');
 
 assert.strictEqual(Filters.classKey(actors[0]), 'id:0', 'base profession id zero must remain filterable');
 assert.strictEqual(Filters.className(actors[4], classCatalog), 'Swordsinger',

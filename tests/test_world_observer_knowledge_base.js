@@ -115,6 +115,12 @@ try {
     assert.match(app, /Show .* locations on map/);
     assert.match(app, /params\.set\('weakness', state\.weaknesses\.join\(','\)\)/);
     assert.match(app, /params\.set\('hpMultiplier', state\.hpMultipliers\.join\(','\)\)/);
+    assert.match(app, /npcCombatTraitMarkup\(npc\)/,
+        'NPC detail cards must show their HP multiplier and weakness badges');
+    assert.match(app, /Weak to \$\{text\(npcWeaknessLabel\(key\)\)\}/,
+        'NPC detail weakness labels must reuse the searchable filter vocabulary');
+    assert.match(app, /\], \{ whole: true \}\)\}/,
+        'NPC detail stat grids must render whole values');
     assert.match(mapHtml, /href="\/observer\/database\/items"/);
     assert.match(mapHtml, /id="npcSpawnLayer"/);
 } finally {

@@ -1287,7 +1287,16 @@ function liveEquipmentValue(actor) {
 
 function coldEquippedItems(state) {
     const items = Array.isArray(state?.stats?.equipment) ? state.stats.equipment : [];
-    if (items.length > 0) return items;
+    if (items.length > 0) return items.map((item) => {
+        const inventoryItem = state?.inventory?.[String(item.selfId)];
+        const instance = (inventoryItem?.instances || []).find((entry) => (
+            entry?.equipped && Number(entry.slot) === Number(item.slot)
+        ));
+        return {
+            ...item,
+            enchant: Number(item.enchant ?? instance?.enchant ?? inventoryItem?.enchant ?? 0) || 0
+        };
+    });
     return Object.values(state?.inventory || {}).filter((item) => item?.equipped);
 }
 
@@ -1525,7 +1534,7 @@ function coldPartyLeader(state, leaderState = null) {
 }
 
 function compactColdEquipment(state) {
-    const items = Array.isArray(state.stats?.equipment) ? state.stats.equipment : [];
+    const items = coldEquippedItems(state);
     const combat = effectiveColdCombat(state);
     return compactEquipment({
         weapon: items.find((item) => String(item.kind || '').startsWith('Weapon.')) || null,
@@ -1654,6 +1663,76 @@ function compactPlayerDetail(session) {
             ? session.movementPacketTrace.slice(-160)
             : [],
         updatedAt: Date.now()
+    };
+}
+
+async function persistedPlayerDetail(characterId) {
+    const id = Number(characterId);
+    if (!Number.isSafeInteger(id) || id <= 0) return null;
+    const [rows, items] = await Promise.all([
+        Database.execute([`
+            SELECT c.*, clans.name AS clanName,
+                   CASE WHEN ${CLAN_BOT_MEMBER_SQL} THEN 1 ELSE 0 END AS isBot
+            FROM characters c
+            LEFT JOIN clans ON clans.id = c.clanId
+            LEFT JOIN bot_life_state life ON life.characterId = c.id
+            WHERE c.id = ?
+            LIMIT 1
+        `, [id], { read: true }], 'observer:player-detail'),
+        Database.fetchItems(id)
+    ]);
+    const row = rows[0];
+    if (!row || Number(row.isBot) === 1) return null;
+    const classId = normalizedClassId(row.classId);
+    const race = raceMetadata(row.race, classId);
+    const loc = { locX: Number(row.locX || 0), locY: Number(row.locY || 0), locZ: Number(row.locZ || 0) };
+    const area = WorldAreaCatalog.publicArea(WorldAreaCatalog.resolve(loc));
+    const equippedRows = (items || []).filter((item) => Number(item.equipped) === 1);
+    const equipment = compactEquipment({
+        weapon: equippedRows.find((item) => String(itemTemplate(item.selfId)?.template?.kind || '').startsWith('Weapon.')) || null,
+        equipped: equippedRows
+    });
+    const adena = (items || []).filter((item) => Number(item.selfId) === 57)
+        .reduce((total, item) => total + Number(item.amount || 0), 0);
+    return {
+        id,
+        kind: 'player',
+        name: String(row.name || `Player ${id}`),
+        title: String(row.title || ''),
+        level: Number(row.level || 1),
+        classId,
+        className: className(classId),
+        ...race,
+        exp: Number(row.exp || 0),
+        sp: Number(row.sp || 0),
+        pvp: Number(row.pvp || 0),
+        pk: Number(row.pk || 0),
+        karma: Number(row.karma || 0),
+        adena,
+        equipmentValue: equipmentValue(equippedRows),
+        loc,
+        area,
+        region: area?.name || null,
+        online: false,
+        isPk: Number(row.karma || 0) > 0,
+        clan: Number(row.clanId || 0) > 0 ? { id: Number(row.clanId), name: row.clanName || null } : null,
+        phase: 'player',
+        mode: 'offline',
+        intent: 'offline',
+        role: 'player',
+        blockers: ['offline'],
+        vitals: {
+            hp: Number(row.hp || 0),
+            maxHp: Number(row.maxHp || 0),
+            hpPct: safePercent(Number(row.hp || 0) / Math.max(1, Number(row.maxHp || 1))),
+            mp: Number(row.mp || 0),
+            maxMp: Number(row.maxMp || 0),
+            mpPct: safePercent(Number(row.mp || 0) / Math.max(1, Number(row.maxMp || 1))),
+            cp: Number(row.cp || 0),
+            maxCp: 0
+        },
+        equipment,
+        updatedAt: 0
     };
 }
 
@@ -2049,7 +2128,7 @@ async function actorDetail(kind, characterId) {
     if (kind === 'player') {
         const playerSession = realPlayerSessions()
             .find((session) => Number(session.actor?.fetchId?.()) === id);
-        return compactPlayerDetail(playerSession);
+        return playerSession ? compactPlayerDetail(playerSession) : persistedPlayerDetail(id);
     }
     if (kind !== 'bot') return null;
     return botDetail(id);

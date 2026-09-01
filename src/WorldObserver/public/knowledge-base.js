@@ -62,6 +62,11 @@ function number(value, fallback = '—') {
     return Number.isFinite(parsed) ? parsed.toLocaleString() : fallback;
 }
 
+function wholeNumber(value, fallback = '—') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.round(parsed).toLocaleString() : fallback;
+}
+
 function compactNumber(value) {
     const parsed = Number(value || 0);
     if (parsed < 1000) return number(parsed);
@@ -73,6 +78,27 @@ function readable(value) {
         .replaceAll(/([a-z])([A-Z])/g, '$1 $2')
         .replaceAll(/[._-]+/g, ' ')
         .replaceAll(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function npcHpMultiplierLabel(value) {
+    const multiplier = Number(value || 1);
+    return (state.meta?.npcFilters?.hpMultipliers || [])
+        .find((entry) => Number(entry.value) === multiplier)?.label
+        || (multiplier === 0.5 ? 'x½' : `x${number(multiplier)}`);
+}
+
+function npcWeaknessLabel(key) {
+    return (state.meta?.npcFilters?.weaknesses || [])
+        .find((entry) => entry.key === key)?.label
+        || readable(key);
+}
+
+function npcCombatTraitMarkup(npc) {
+    const multiplier = Number(npc.hpMultiplier || 1);
+    const traits = [];
+    if (multiplier !== 1) traits.push(`<span class="kb-trait hp">${text(npcHpMultiplierLabel(multiplier))} HP</span>`);
+    (npc.weaknesses || []).forEach((key) => traits.push(`<span class="kb-trait weakness">Weak to ${text(npcWeaknessLabel(key))}</span>`));
+    return traits.length ? `<div class="kb-traits" aria-label="Combat traits">${traits.join('')}</div>` : '';
 }
 
 function chance(value) {
@@ -340,10 +366,10 @@ async function loadCatalog() {
     }
 }
 
-function statGrid(entries) {
+function statGrid(entries, { whole = false } = {}) {
     const normalized = entries.filter(([, value]) => value !== null && value !== undefined && value !== '' && Number(value) !== 0);
     return normalized.length ? `<div class="kb-stat-grid">${normalized.map(([label, value]) => `
-        <div class="kb-stat"><span>${text(label)}</span><strong>${typeof value === 'number' ? number(value) : text(value)}</strong></div>`).join('')}</div>` : '<div class="kb-empty">No additional values.</div>';
+        <div class="kb-stat"><span>${text(label)}</span><strong>${typeof value === 'number' ? (whole ? wholeNumber(value) : number(value)) : text(value)}</strong></div>`).join('')}</div>` : '<div class="kb-empty">No additional values.</div>';
 }
 
 function rewardRows(groups) {
@@ -408,7 +434,7 @@ function renderNpcDetail(npc) {
         <a class="kb-detail-return" href="${Router.href(routeFor('npcs'))}" data-catalog-kind="npcs">← All NPCs</a>
         <header class="kb-detail-hero">
             <span class="kb-detail-icon kb-icon-placeholder kb-level">${number(npc.level)}</span>
-            <div><span class="kb-detail-id">NPC · ${number(npc.id)}</span><h2>${text(npc.name)}</h2><p>${npc.raidBoss ? 'Raid boss' : text(readable(npc.kind))} · Level ${number(npc.level)}${npc.title ? ` · ${text(npc.title)}` : ''}</p></div>
+            <div><span class="kb-detail-id">NPC · ${number(npc.id)}</span><h2>${text(npc.name)}</h2><p>${npc.raidBoss ? 'Raid boss' : text(readable(npc.kind))} · Level ${wholeNumber(npc.level)}${npc.title ? ` · ${text(npc.title)}` : ''}</p>${npcCombatTraitMarkup(npc)}</div>
             ${mapPoints ? `<a class="kb-map-link" href="${Router.href({ name: 'world', npcId: npc.id })}"><svg aria-hidden="true"><use href="/observer/ui-icons.svg#map"></use></svg>Show ${number(mapPoints)} locations on map</a>` : '<span class="kb-tag">No mapped spawn</span>'}
         </header>
         <div class="kb-detail-layout">
@@ -416,11 +442,11 @@ function renderNpcDetail(npc) {
                 <section class="kb-section"><h3>Creature</h3>${statGrid([
                     ['Level', npc.level], ['Race', readable(npc.race)], ['AI', readable(npc.aiType)], ['Hostile', npc.hostile ? 'Yes' : 'No'],
                     ['Undead', npc.undead ? 'Yes' : 'No'], ['EXP', progression.baseExp], ['SP', progression.baseSp], ['Spawn groups', npc.spawnCount]
-                ])}</section>
+                ], { whole: true })}</section>
                 <section class="kb-section"><h3>Effective stats</h3>${statGrid([
                     ['HP', stats.maxHp], ['MP', stats.maxMp], ['P. Atk', stats.pAtk], ['M. Atk', stats.mAtk], ['P. Def', stats.pDef], ['M. Def', stats.mDef],
                     ['Accuracy', stats.accuracy], ['Evasion', stats.evasion], ['Atk. Speed', stats.attackSpeed], ['Cast Speed', stats.castSpeed], ['Run Speed', stats.runSpeed]
-                ])}</section>
+                ], { whole: true })}</section>
                 ${npc.skills?.length ? `<section class="kb-section"><h3>Skills</h3><div class="kb-level-links">${npc.skills.map((skill) => `<span class="kb-tag">${text(skill.name)} · Lv ${number(skill.level)}</span>`).join('')}</div></section>` : ''}
                 ${npcRelations('Raid minions', npc.minions)}
                 ${npcRelations('Minion of', npc.minionOf)}

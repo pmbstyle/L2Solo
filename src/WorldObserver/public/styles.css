@@ -1000,6 +1000,12 @@ svg.empty-glyph { width: 38px; height: 38px; }
 .clan-crest-remove:disabled, .clan-management-save button:disabled { opacity: 0.38; cursor: default; }
 .clan-crest-dropzone { margin-top: 9px; padding: 7px 9px; border: 1px dashed var(--line); border-radius: 6px; color: var(--faint); font-size: 9px; text-align: center; transition: border-color 140ms ease, color 140ms ease, background 140ms ease; }
 .clan-crest-dropzone.is-dragging { border-color: var(--gold); color: var(--text); background: rgba(216, 185, 109, 0.07); }
+.clan-crest-locked { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 74px; padding: 14px 16px; border: 1px solid var(--line-soft); border-radius: 8px; background: rgba(237, 240, 232, 0.018); }
+.clan-crest-locked .ui-icon { width: 25px; height: 25px; color: var(--faint); }
+.clan-crest-locked strong, .clan-crest-locked span { display: block; }
+.clan-crest-locked strong { font-size: 12px; }
+.clan-crest-locked span { margin-top: 4px; color: var(--faint); font-size: 9px; }
+.clan-crest-locked b { color: var(--gold); font-size: 10px; }
 .clan-management-save { display: flex; grid-column: 1 / -1; align-items: center; justify-content: flex-end; gap: 12px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
 .clan-management-save button { min-width: 94px; border: 1px solid var(--gold); color: #111; background: var(--gold); }
 .clan-management-save span { color: var(--faint); font-size: 9px; }

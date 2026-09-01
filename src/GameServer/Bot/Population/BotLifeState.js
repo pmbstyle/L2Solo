@@ -212,7 +212,10 @@ function equipmentSummaryFromInventory(inventory = {}) {
             name: item.name || itemName(item.selfId),
             slot,
             rank: item.rank || 'none',
-            kind: item.kind || ''
+            kind: item.kind || '',
+            enchant: Number((item.instances || []).find((instance) => (
+                instance?.equipped && Number(instance.slot) === Number(slot)
+            ))?.enchant ?? item.enchant ?? 0) || 0
         })))
         .sort((a, b) => a.slot - b.slot || a.selfId - b.selfId);
 }
