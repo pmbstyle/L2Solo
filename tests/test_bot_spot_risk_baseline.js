@@ -64,6 +64,57 @@ async function run() {
     assert.strictEqual(saved.stats.spotRisk.spotId, 'new_spot');
     assert.strictEqual(saved.stats.spotRisk.deathsAtEntry, 4);
     assert.strictEqual(saved.stats.spotRisk.fightsAtEntry, 20);
+    assert.strictEqual(saved.stats.spotRisk.version, SpotRiskPolicy.RISK_WINDOW_VERSION);
+    assert.strictEqual(saved.stats.spotRisk.windowFights, 2);
+    assert.strictEqual(saved.stats.spotRisk.windowWins, 1);
+    assert.strictEqual(saved.stats.spotRisk.windowDeaths, 0);
+
+    const weakWindow = SpotRiskPolicy.recordResolve(saved.stats.spotRisk, {
+        spotId: 'new_spot', timestamp: 3000, totalDeaths: 4, totalFights: 22, totalWins: 1,
+        fights: SpotRiskPolicy.RISK_WINDOW_FIGHTS - 2, wins: 2, deaths: 0
+    });
+    const lowWinState = {
+        ...saved,
+        spotId: 'new_spot',
+        stats: { ...saved.stats, spotRisk: weakWindow }
+    };
+    const lowWinPressure = SpotRiskPolicy.deathPressure(lowWinState);
+    assert.strictEqual(lowWinPressure.reason, 'low_win_rate',
+        'a short low-win window must replan without waiting for cumulative deaths');
+    assert.strictEqual(lowWinPressure.fights, SpotRiskPolicy.RISK_WINDOW_FIGHTS);
+    const lowWinBackoff = SpotRiskPolicy.backoffForStates([lowWinState], 'new_spot', 3000);
+    assert.strictEqual(lowWinBackoff.reason, 'low_win_rate',
+        'the backoff must preserve whether combat performance, rather than deaths, caused it');
+    const frozenWeakWindow = SpotRiskPolicy.recordResolve(weakWindow, {
+        spotId: 'new_spot', timestamp: 3500, totalDeaths: 4, totalFights: 34, totalWins: 3,
+        fights: 4, wins: 4, deaths: 0
+    });
+    assert.deepStrictEqual(frozenWeakWindow, weakWindow,
+        'a failed sample must stay bounded and stable until routing consumes it');
+
+    const healthyWindow = SpotRiskPolicy.recordResolve({}, {
+        spotId: 'healthy_spot', timestamp: 4000, totalDeaths: 0, totalFights: 0, totalWins: 0,
+        fights: SpotRiskPolicy.RISK_WINDOW_FIGHTS, wins: SpotRiskPolicy.RISK_WINDOW_FIGHTS - 1, deaths: 0
+    });
+    const rolledWindow = SpotRiskPolicy.recordResolve(healthyWindow, {
+        spotId: 'healthy_spot', timestamp: 5000, totalDeaths: 0,
+        totalFights: SpotRiskPolicy.RISK_WINDOW_FIGHTS, totalWins: SpotRiskPolicy.RISK_WINDOW_FIGHTS - 1,
+        fights: 3, wins: 0, deaths: 0
+    });
+    assert.strictEqual(rolledWindow.windowFights, 3,
+        'a healthy completed sample must roll into a fresh bounded window');
+
+    const migratedWindow = SpotRiskPolicy.recordResolve({
+        spotId: 'legacy_spot', deathsAtEntry: 0, fightsAtEntry: 0
+    }, {
+        spotId: 'legacy_spot', timestamp: 6000, totalDeaths: 40, totalFights: 10000, totalWins: 7000,
+        fights: 4, wins: 0, deaths: 0
+    });
+    assert.deepStrictEqual(
+        [migratedWindow.windowFights, migratedWindow.windowWins, migratedWindow.windowDeaths],
+        [4, 0, 0],
+        'a legacy lifetime baseline must migrate into a fresh bounded combat window'
+    );
     const firstBackoff = SpotRiskPolicy.withBackoff(state, {
         spotId: 'old_spot',
         reason: 'death_pressure',

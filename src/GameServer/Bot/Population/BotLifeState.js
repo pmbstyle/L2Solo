@@ -14,6 +14,7 @@ const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatib
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
+const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const cache = new Map();
 const pendingWrites = new Map();
@@ -2194,14 +2195,18 @@ const BotLifeState = {
         const targetCombat = targetCombatTelemetry(state.stats?.targetCombat, result.debug, timestamp);
         const nextSpotId = result.patch?.spotId || state.spotId;
         const previousRisk = state.stats?.spotRisk;
-        const spotRisk = String(previousRisk?.spotId || '') === String(nextSpotId || '')
-            ? previousRisk
-            : {
-                spotId: nextSpotId || null,
-                enteredAt: timestamp,
-                deathsAtEntry: Number(state.stats?.deaths || 0),
-                fightsAtEntry: Number(state.stats?.fightsResolved || 0)
-            };
+        const previousDeaths = Number(state.stats?.deaths || 0);
+        const nextDeaths = Number(result.patch?.deathCount ?? previousDeaths);
+        const spotRisk = SpotRiskPolicy.recordResolve(previousRisk, {
+            spotId: nextSpotId || null,
+            timestamp,
+            totalDeaths: previousDeaths,
+            totalFights: Number(state.stats?.fightsResolved || 0),
+            totalWins: Number(state.stats?.fightsWon || 0),
+            deaths: Math.max(0, nextDeaths - previousDeaths),
+            fights: Number(result.debug?.fights || 0),
+            wins: Number(result.debug?.wins || 0)
+        });
         // Resolver patches often carry a projected copy of the previous
         // stats so they can add lifecycle-specific fields such as cooldowns,
         // rest deadlines, travel state, or party affinity.  Merge that copy
