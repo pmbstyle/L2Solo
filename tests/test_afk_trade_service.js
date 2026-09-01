@@ -119,6 +119,8 @@ function sessionFor(accountId, row, items) {
     assert.strictEqual(projection.actor.fetchPrivateStoreType(), 1);
     assert.strictEqual(projection.actor.fetchPrivateStore().items[0].count, 3);
     assert.strictEqual(AfkTrade.offers(1865, 1, { town: shops[0].town })[0].playerPriority, true);
+    assert.deepStrictEqual(AfkTrade.offers(1864, 1, { town: shops[0].town }), [],
+        'item-indexed lookup must not return unrelated AFK shops');
     World.user.sessions.push({
         accountId: 'bot_equal_market_offer',
         actor: {
@@ -162,6 +164,7 @@ function sessionFor(accountId, row, items) {
     const buyProjectionId = 900000000 + buyShop.id;
     const buyProjection = AfkTrade.findProjection(buyProjectionId);
     assert.strictEqual(buyProjection.actor.fetchPrivateStoreType(), 3);
+    assert(AfkTrade.activeDemandSelfIds().includes(1865), 'active AFK WTB stock must enter the demand index');
     assert.strictEqual(owner.actor.backpack.fetchTotalAdena(), 97, 'buy shop must reserve its complete budget');
     const customerVarnish = customer.actor.backpack.fetchItemFromSelfId(1865);
     const saleToBuyer = await AfkTrade.sellToShop(
@@ -176,6 +179,7 @@ function sessionFor(accountId, row, items) {
     assert.strictEqual(owner.actor.backpack.fetchItemFromSelfId(1865).fetchAmount(), 5);
     assert.strictEqual(AfkTrade.findProjection(buyProjectionId).actor.fetchPrivateStore().items[0].count, 1);
     await AfkTrade.stop(owner);
+    assert(!AfkTrade.activeDemandSelfIds().includes(1865), 'closing an AFK WTB must remove its indexed demand');
     assert.strictEqual(owner.actor.backpack.fetchTotalAdena(), 104, 'unused buy reserve must return after stop');
 
     assert.strictEqual(await AfkTrade.begin(owner, AfkTrade.SELL), true);

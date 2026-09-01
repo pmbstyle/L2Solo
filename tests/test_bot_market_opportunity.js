@@ -7,7 +7,9 @@ const World = invoke('GameServer/World/World');
 DataCache.init();
 
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const originalUser = World.user;
+const originalAllStates = LifeState.allStates;
 
 try {
     const playerStore = {
@@ -81,8 +83,30 @@ try {
         stats: { marketStore: { storeType: 1, town: 'Giran', expiresAt: Date.now() - 1, items: [{ selfId: 2, price: 900, count: 1 }] } }
     });
     assert(!MarketOpportunity.findOffers(2, { town: 'Giran' }).some((offer) => offer.sourceName === 'ExpiredSeller'), 'expired cold WTS listings must not remain buyable');
+
+    const persistedStore = {
+        characterId: 9300,
+        name: 'PersistedSeller',
+        activity: 'merchant',
+        stats: { marketStore: { storeType: 1, town: 'Giran', expiresAt: Date.now() + 60000, items: [{ selfId: 2, price: 950, count: 1 }] } }
+    };
+    const updatedStore = {
+        ...persistedStore,
+        name: 'UpdatedSeller',
+        stats: { marketStore: { ...persistedStore.stats.marketStore, items: [{ selfId: 2, price: 850, count: 1 }] } }
+    };
+    LifeState.allStates = () => [persistedStore];
+    MarketOpportunity.resetColdStores();
+    MarketOpportunity.indexColdStore(updatedStore);
+    assert.strictEqual(MarketOpportunity.coldOffers(2, 'Giran')[0].sourceName, 'UpdatedSeller',
+        'a live index update must win over the one-time persisted snapshot');
+    MarketOpportunity.resetColdStores();
+    MarketOpportunity.removeColdStore(persistedStore.characterId);
+    assert.deepStrictEqual(MarketOpportunity.coldOffers(2, 'Giran'), [],
+        'removing a store before the first lookup must not let hydration resurrect it');
     console.log('Bot market opportunity checks passed');
 } finally {
     World.user = originalUser;
+    LifeState.allStates = originalAllStates;
     MarketOpportunity.resetColdStores();
 }

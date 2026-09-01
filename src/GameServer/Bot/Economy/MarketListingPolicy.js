@@ -2,6 +2,7 @@ const DataCache = invoke('GameServer/DataCache');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketDemandIndex = invoke('GameServer/Bot/Economy/MarketDemandIndex');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
+const ProgressionRates = invoke('GameServer/ProgressionRates');
 
 const MARKET_GEAR_MIN_BASE_PRICE = ItemDisposition.NPC_LIQUIDATION_MAX_UNIT_PRICE;
 const SPECULATIVE_GEAR_MIN_BASE_PRICE = 10000;
@@ -24,6 +25,10 @@ function isGear(item = {}) {
     return String(item.kind || '').startsWith('Weapon.') || String(item.kind || '').startsWith('Armor.');
 }
 
+function allowsLowGradeMarket() {
+    return ['x1', 'x10'].includes(ProgressionRates.profile().preset);
+}
+
 function listOrWarehouse(item, decision) {
     if (listingPrice(item, decision) !== null) return decision;
     return { action: 'warehouse', reason: 'non_competitive_floor', market: decision.market };
@@ -39,10 +44,12 @@ function classify(state, item, options = {}) {
     if (starterItemIds().has(Number(item.selfId))) {
         return { action: 'npc', reason: 'starter_kit' };
     }
-    if (isGear(item) && ItemDisposition.gradeIndex(item.rank) < ItemDisposition.gradeIndex('c')) {
-        return { action: 'npc', reason: 'low_grade_gear' };
+    const lowGradeGear = isGear(item)
+        && ItemDisposition.gradeIndex(item.rank) < ItemDisposition.gradeIndex('c');
+    if (lowGradeGear && !allowsLowGradeMarket()) {
+        return { action: 'npc', reason: 'low_grade_high_rate' };
     }
-    if (isGear(item) && Number(item.basePrice || 0) <= MARKET_GEAR_MIN_BASE_PRICE) {
+    if (isGear(item) && !lowGradeGear && Number(item.basePrice || 0) <= MARKET_GEAR_MIN_BASE_PRICE) {
         return { action: 'npc', reason: 'low_value_gear' };
     }
 
@@ -52,6 +59,7 @@ function classify(state, item, options = {}) {
         excludeCharacterId: state.characterId
     });
     if (market.demand.bots <= 0) {
+        if (lowGradeGear) return { action: 'npc', reason: 'low_grade_no_funded_demand', market };
         return { action: 'warehouse', reason: 'no_demand', market };
     }
     const actionableUnits = Math.max(0, Number(market.demand.fundedUnits || 0));
@@ -67,7 +75,11 @@ function classify(state, item, options = {}) {
     }
 
     if (market.demand.readyBots > 0) {
+        if (lowGradeGear) return { action: 'npc', reason: 'low_grade_no_funded_demand', market };
         return { action: 'warehouse', reason: 'unfunded_demand', market };
+    }
+    if (lowGradeGear) {
+        return { action: 'npc', reason: 'low_grade_no_funded_demand', market };
     }
     const speculative = isGear(item)
         && Number(item.basePrice || 0) >= SPECULATIVE_GEAR_MIN_BASE_PRICE
@@ -143,6 +155,7 @@ module.exports = {
     MIN_LISTING_BASE_PERCENT,
     SPECULATIVE_GEAR_MIN_BASE_PRICE,
     SPECULATIVE_SUPPLY_LIMIT,
+    allowsLowGradeMarket,
     classify,
     evaluate,
     isGear,

@@ -10,6 +10,39 @@ const PROJECTION_ID_BASE = 900000000;
 const VISIBILITY_RADIUS = 6000;
 const projectionsById = new Map();
 const projectionsByOwner = new Map();
+const projectionOffersByType = new Map([
+    [SELL, new Map()],
+    [BUY, new Map()]
+]);
+
+function unindexProjection(projection) {
+    const indexed = projection?.indexedOffers;
+    if (!indexed) return;
+    const byItem = projectionOffersByType.get(indexed.storeType);
+    indexed.selfIds.forEach((selfId) => {
+        const projections = byItem?.get(selfId);
+        if (!projections) return;
+        projections.delete(projection);
+        if (!projections.size) byItem.delete(selfId);
+    });
+    projection.indexedOffers = null;
+}
+
+function indexProjection(projection) {
+    const store = projection?.actor?.fetchPrivateStore?.();
+    const byItem = projectionOffersByType.get(Number(store?.storeType));
+    if (!byItem) return;
+    const selfIds = new Set((store.items || [])
+        .filter((line) => Number(line.count) > 0)
+        .map((line) => Number(line.selfId))
+    );
+    selfIds.forEach((selfId) => {
+        const projections = byItem.get(selfId) || new Set();
+        projections.add(projection);
+        byItem.set(selfId, projections);
+    });
+    projection.indexedOffers = { storeType: Number(store.storeType), selfIds };
+}
 
 function isBotSession(session) {
     return !!session && (
@@ -182,6 +215,7 @@ function invalidateTradeWindows(actor) {
 function removeProjection(ownerId) {
     const projection = projectionsByOwner.get(Number(ownerId));
     if (!projection) return false;
+    unindexProjection(projection);
     invalidateTradeWindows(projection.actor);
     const objectId = projection.actor.fetchId();
     (World.user?.sessions || []).forEach((viewer) => {
@@ -201,6 +235,7 @@ function spawnProjection(shop) {
     const projection = buildProjection(shop);
     projectionsByOwner.set(Number(shop.ownerId), projection);
     projectionsById.set(projection.actor.fetchId(), projection);
+    indexProjection(projection);
     (World.user?.sessions || []).forEach((viewer) => {
         if (visibleTo(viewer, projection.actor)) sendProjection(viewer, projection);
     });
@@ -217,6 +252,7 @@ function refreshProjection(shop) {
     const actor = projection.actor;
     const store = projectionStore(shop);
     invalidateTradeWindows(actor);
+    unindexProjection(projection);
     projection.shop = shop;
     actor.setPrivateStore(store);
     actor.setPrivateStoreType(Number(shop.storeType));
@@ -234,6 +270,7 @@ function refreshProjection(shop) {
             slot: line.slot
         }));
     }
+    indexProjection(projection);
     return projection;
 }
 
@@ -494,7 +531,8 @@ function findOwnerProjection(ownerId) {
 function offers(selfId, storeType, options = {}) {
     const town = options.town || null;
     const excluded = Number(options.characterId || 0);
-    return [...projectionsByOwner.values()].flatMap((projection) => {
+    const candidates = projectionOffersByType.get(Number(storeType))?.get(Number(selfId)) || [];
+    return [...candidates].flatMap((projection) => {
         const store = projection.actor.fetchPrivateStore();
         if (Number(store.storeType) !== Number(storeType) || Number(store.ownerId) === excluded) return [];
         if (town && store.town && String(store.town) !== String(town)) return [];
@@ -524,16 +562,13 @@ function offers(selfId, storeType, options = {}) {
 }
 
 function activeDemandSelfIds() {
-    return [...new Set([...projectionsByOwner.values()].flatMap((projection) => {
-        const store = projection.actor.fetchPrivateStore?.();
-        if (Number(store?.storeType) !== BUY) return [];
-        return (store.items || []).filter((line) => Number(line.count) > 0).map((line) => Number(line.selfId));
-    }))];
+    return [...(projectionOffersByType.get(BUY)?.keys() || [])];
 }
 
 async function init() {
     projectionsById.clear();
     projectionsByOwner.clear();
+    projectionOffersByType.forEach((byItem) => byItem.clear());
     const shops = await Database.fetchAfkTradeShops(null, { activeOnly: true });
     shops.forEach((shop) => spawnProjection(shop));
     if (shops.length) utils.infoSuccess('AfkTrade', 'restored %d persistent AFK shops', shops.length);
@@ -559,5 +594,6 @@ module.exports = {
         [...projectionsByOwner.keys()].forEach(removeProjection);
         projectionsById.clear();
         projectionsByOwner.clear();
+        projectionOffersByType.forEach((byItem) => byItem.clear());
     }
 };

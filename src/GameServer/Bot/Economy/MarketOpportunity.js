@@ -7,6 +7,7 @@ const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const TownNpcCatalog = require('./TownNpcCatalog');
 const buyStoreReservations = new WeakMap();
 const coldStoreIndex = new Map();
+let coldStoreIndexHydrated = false;
 const SHOT_IDS = new Set([
     1835, 1463, 1464, 1465, 1466, 1467,
     2509, 2510, 2511, 2512, 2513, 2514,
@@ -14,20 +15,21 @@ const SHOT_IDS = new Set([
 ]);
 
 function coldMarketStates() {
-    // The in-memory index is the fast path. Include lifecycle snapshots so
-    // persisted shops are discoverable immediately after a server restart,
-    // before their owner has been materialized hot/cold once.
-    let persisted = [];
-    try {
-        persisted = invoke('GameServer/Bot/Population/BotLifeState').allStates(5000) || [];
-    } catch (_) {
-        // Lifecycle storage is optional in lightweight catalog/test contexts.
+    // Hydrate persisted shops once after startup. Every later store mutation
+    // updates the index directly, so market lookups never rescan all bots.
+    if (!coldStoreIndexHydrated) {
+        coldStoreIndexHydrated = true;
+        try {
+            (invoke('GameServer/Bot/Population/BotLifeState').allStates(5000) || []).forEach((state) => {
+                if (state?.activity === 'merchant' && state.stats?.marketStore) {
+                    coldStoreIndex.set(Number(state.characterId), state);
+                }
+            });
+        } catch (_) {
+            // Lifecycle storage is optional in lightweight catalog/test contexts.
+        }
     }
-    const states = new Map(Array.from(coldStoreIndex.entries()));
-    persisted.forEach((state) => {
-        if (state?.activity === 'merchant' && state.stats?.marketStore) states.set(Number(state.characterId), state);
-    });
-    return Array.from(states.values());
+    return Array.from(coldStoreIndex.values());
 }
 
 function itemName(selfId) {
@@ -272,6 +274,7 @@ function coldBuyOffers(selfId, town, sellerCharacterId = null) {
 }
 
 function indexColdStore(state) {
+    if (!coldStoreIndexHydrated) coldMarketStates();
     const characterId = Number(state?.characterId || 0);
     const store = state?.stats?.marketStore;
     if (!characterId || state.activity !== 'merchant' || !store) {
@@ -283,11 +286,13 @@ function indexColdStore(state) {
 }
 
 function removeColdStore(characterId) {
+    if (!coldStoreIndexHydrated) coldMarketStates();
     coldStoreIndex.delete(Number(characterId));
 }
 
 function resetColdStores() {
     coldStoreIndex.clear();
+    coldStoreIndexHydrated = false;
 }
 
 function findOffers(selfId, options = {}) {

@@ -70,23 +70,31 @@ function pendingTargetAmount(plan) {
 function checkedPlan(session, state, town, options = {}) {
     const previous = state.stats?.equipmentPlan;
     const excludedSlots = new Set((options.excludedSlots || []).map(Number));
+    const offerCache = new Map();
+    const offersFor = (target) => {
+        const selfId = Number(target?.selfId || 0);
+        if (!offerCache.has(selfId)) offerCache.set(selfId, affordableOffers(target, state, town));
+        return offerCache.get(selfId);
+    };
+    const previousOffers = previous?.target?.selfId ? offersFor(previous.target) : [];
     if (previous?.strategy === 'market'
         && Number(previous.target?.selfId || 0) > 0
         && !excludedSlots.has(Number(previous.target?.slot || 0))
         && ownedTargetAmount(state, previous) < pendingTargetAmount(previous)
-        && affordableOffers(previous.target, state, town).length > 0) {
-        return { ...previous, status: previous.status || 'active' };
+        && previousOffers.length > 0) {
+        return { plan: { ...previous, status: previous.status || 'active' }, offers: previousOffers };
     }
 
-    const findNpcOffer = (target) => affordableOffers(target, state, town)
+    const findNpcOffer = (target) => offersFor(target)
         .find((offer) => offer.sourceType === 'npc') || null;
-    const findMarketOffer = (target) => affordableOffers(target, state, town)[0] || null;
-    return GearAcquisitionPlanner.planFor(state, {
+    const findMarketOffer = (target) => offersFor(target)[0] || null;
+    const plan = GearAcquisitionPlanner.planFor(state, {
         spots: [],
         findNpcOffer,
         findMarketOffer,
         excludedSlots: [...excludedSlots]
     });
+    return { plan, offers: plan?.target?.selfId ? offersFor(plan.target) : [] };
 }
 
 function npcTarget(offer, bot, town) {
@@ -119,14 +127,15 @@ function merchantTarget(offer, town) {
 function planErrand(session, bot, town, purchaseCount = 0, excludedSlots = []) {
     if (!town?.name || purchaseCount >= MAX_PURCHASES_PER_VISIT) return null;
     const state = currentState(session, bot, town);
-    const plan = checkedPlan(session, state, town, { excludedSlots });
+    const checked = checkedPlan(session, state, town, { excludedSlots });
+    const plan = checked.plan;
     session.coldLifeState = {
         ...state,
         stats: { ...(state.stats || {}), equipmentPlan: plan }
     };
 
     if (plan?.status !== 'active' || plan.strategy !== 'market' || !plan.target?.selfId) return null;
-    const offers = affordableOffers(plan.target, state, town);
+    const offers = checked.offers;
     const offer = offers.find((candidate) => candidate.sourceType === plan.market?.sourceType) || offers[0];
     if (!offer) return null;
 

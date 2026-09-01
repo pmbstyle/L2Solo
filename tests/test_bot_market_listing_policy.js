@@ -43,6 +43,17 @@ function saleItem(item, count = 1, price = 1000) {
 
 const seller = { characterId: 10, name: 'Seller' };
 const now = 100000;
+const originalProgressionRate = process.env.L2NODE_PROGRESSION_RATE;
+
+function classifyAtRate(rate, state, item, options) {
+    process.env.L2NODE_PROGRESSION_RATE = rate;
+    try {
+        return MarketListingPolicy.classify(state, item, options);
+    } finally {
+        if (originalProgressionRate === undefined) delete process.env.L2NODE_PROGRESSION_RATE;
+        else process.env.L2NODE_PROGRESSION_RATE = originalProgressionRate;
+    }
+}
 
 const pricedItem = { price: BotEconomyPricing.scalePrice(800), basePrice: 1000 };
 const priceFloor = BotEconomyPricing.scalePrice(600);
@@ -73,9 +84,31 @@ const lowGradeGear = DataCache.items.find((item) => (
     !MarketListingPolicy.starterItemIds().has(Number(item.selfId))
 ));
 assert(lowGradeGear, 'the datapack must contain non-starter low-grade gear');
-const lowGradeDecision = MarketListingPolicy.classify(seller, saleItem(lowGradeGear), { states: [], now });
-assert.strictEqual(lowGradeDecision.action, 'npc', 'all gear below C-grade must go to the NPC shop');
-assert.strictEqual(lowGradeDecision.reason, 'low_grade_gear');
+const lowGradeItem = saleItem(lowGradeGear, 1, 1000);
+const lowGradeBuyer = {
+    characterId: 19,
+    name: 'LowGradeBuyer',
+    adena: 1000000,
+    currentRegion: 'Gludio',
+    stats: {
+        equipmentPlan: {
+            status: 'active',
+            strategy: 'market',
+            target: { selfId: Number(lowGradeGear.selfId), name: lowGradeGear.template.name }
+        }
+    }
+};
+const lowGradeWithoutDemand = classifyAtRate('x1', seller, lowGradeItem, { states: [], now });
+assert.strictEqual(lowGradeWithoutDemand.action, 'npc', 'low-grade stock must not create an idle WTS without demand');
+assert.strictEqual(lowGradeWithoutDemand.reason, 'low_grade_no_funded_demand');
+['x1', 'x10'].forEach((rate) => {
+    const decision = classifyAtRate(rate, seller, lowGradeItem, { states: [lowGradeBuyer], now });
+    assert.strictEqual(decision.action, 'list', `${rate} must allow NG/D gear against funded exact demand`);
+    assert.strictEqual(decision.reason, 'active_demand');
+});
+const highRateLowGrade = classifyAtRate('x50', seller, lowGradeItem, { states: [lowGradeBuyer], now });
+assert.strictEqual(highRateLowGrade.action, 'npc', 'x50 must liquidate NG/D gear instead of opening bot stores');
+assert.strictEqual(highRateLowGrade.reason, 'low_grade_high_rate');
 
 const targetId = Number(usefulWeapon.selfId);
 const buyer = {

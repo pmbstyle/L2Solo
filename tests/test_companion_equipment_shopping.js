@@ -148,6 +148,77 @@ async function run() {
     assert.deepStrictEqual(alternateErrand.failedSourceIds, [7001],
         'the failed NPC must stay excluded from later route replans');
 
+    const genericMoves = [];
+    const genericBot = {
+        ...bot,
+        fetchId: () => 920002,
+        fetchName: () => 'GenericHotShopProbe',
+        moveTo: (data) => { genericMoves.push(data); }
+    };
+    const afkSellerActor = {
+        fetchId: () => 990001,
+        fetchName: () => 'PlayerAfkSeller',
+        fetchLocX: () => -85000,
+        fetchLocY: () => 243250,
+        fetchLocZ: () => -3723
+    };
+    const afkSellerSession = { accountId: 'afk_trade_player', actor: afkSellerActor };
+    const genericSession = {
+        accountId: 'bot_generic_hot_shop_probe',
+        actor: genericBot,
+        plan: 'shopping',
+        partyCompanion: false,
+        coldLifeState: {
+            characterId: genericBot.fetchId(),
+            level: 14,
+            stats: {
+                classId: 0,
+                role: 'dps',
+                equipmentPlan: {
+                    status: 'active',
+                    strategy: 'market',
+                    target: { selfId: 1, name: 'Short Sword', slot: 7 }
+                }
+            },
+            inventory: {}
+        }
+    };
+    let genericMarketLookups = 0;
+    MarketOpportunity.hotOffers = (selfId) => {
+        genericMarketLookups += 1;
+        return Number(selfId) === 1 ? [{
+            sourceType: 'afk_player_store',
+            sourceId: afkSellerActor.fetchId(),
+            sourceName: afkSellerActor.fetchName(),
+            town: town.name,
+            selfId: 1,
+            itemName: 'Short Sword',
+            price: 500,
+            count: 1,
+            available: true,
+            session: afkSellerSession
+        }] : [];
+    };
+    World.user = { sessions: [afkSellerSession] };
+    ShoppingState.tick(genericSession, genericBot, null, {
+        getClosestTown: () => town,
+        say() {}
+    });
+    assert.strictEqual(genericSession.companionShopping?.kind, 'market_purchase',
+        'a generic hot bot must turn its active equipment plan into an AFK market errand');
+    assert.strictEqual(genericSession.shoppingTarget?.actorId, afkSellerActor.fetchId());
+    assert.strictEqual(genericMarketLookups, 1,
+        'the hot visit should reuse one indexed lookup for plan validation and offer selection');
+    ShoppingState.tick(genericSession, genericBot, null, {
+        getClosestTown: () => town,
+        say() {}
+    });
+    assert.strictEqual(genericMarketLookups, 1, 'later movement ticks must not rescan the market');
+    assert(genericMoves.length >= 1, 'the generic hot bot must route to the AFK seller');
+
+    World.user = { sessions: [] };
+    MarketOpportunity.hotOffers = (selfId) => Number(selfId) === 1 && !purchased ? [offer] : [];
+
     let sameTownShoppingStarted = 0;
     ShoppingState.sellAndRestock = () => { sameTownShoppingStarted++; };
     session.companionShopping = errand;

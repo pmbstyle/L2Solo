@@ -208,6 +208,30 @@ function clearShoppingServiceState(session) {
     session.shoppingWarehouseDone = undefined;
     session.shoppingAfterWarehouseTarget = undefined;
     session.failedWarehouseNpcSelfIds = undefined;
+    session.shoppingEquipmentPlanChecked = undefined;
+}
+
+function prepareEquipmentMarketStop(session, bot, town, BotAI) {
+    const plan = session.coldLifeState?.stats?.equipmentPlan;
+    if (session.companionShopping || session.shoppingTarget || session.shoppingEquipmentPlanChecked) return false;
+    if (!town?.name || Number(session.companionEquipmentRetryAt || 0) > Date.now()) return false;
+    if (plan?.strategy !== 'market' || Number(plan.target?.selfId || 0) <= 0) return false;
+
+    // One indexed lookup per town visit is enough. If the offer disappears,
+    // the normal purchase failure cooldown handles the next attempt.
+    session.shoppingEquipmentPlanChecked = true;
+    const errand = CompanionEquipmentShopping.planErrand(session, bot, town);
+    if (!errand) return false;
+    session.companionShopping = errand;
+    session.shoppingTarget = errand.target;
+    session.shoppingDoneAnnounced = false;
+    CompanionNavigationRecovery.clear(session);
+    TownChatter.say(session, BotAI, 'equipment-market-selected', [
+        `Found a better ${errand.itemName} offer at ${errand.target.name}.`,
+        `${errand.target.name} has the best price for ${errand.itemName}.`,
+        `Checking ${errand.target.name}'s offer for ${errand.itemName}.`
+    ]);
+    return true;
 }
 
 function prepareWarehouseStop(session, bot, town, BotAI) {
@@ -271,6 +295,7 @@ module.exports = {
 
         const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
 
+        prepareEquipmentMarketStop(session, bot, closestTown, BotAI);
         prepareWarehouseStop(session, bot, closestTown, BotAI);
 
         if (!session.shoppingTarget) {
