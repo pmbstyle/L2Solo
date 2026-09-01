@@ -5,7 +5,7 @@ const path = require('path');
 require('../src/Global');
 
 const ProgressionRates = invoke('GameServer/ProgressionRates');
-const { createKnowledgeBaseService, itemCategory, playerFacingItem, spawnMapPoints } = require('../src/WorldObserver/KnowledgeBaseService');
+const { createKnowledgeBaseService, itemCategory, npcCombatTraits, playerFacingItem, spawnMapPoints } = require('../src/WorldObserver/KnowledgeBaseService');
 
 const previousPreset = process.env.L2NODE_PROGRESSION_RATE;
 const dataDir = path.join(__dirname, '..', 'data', 'KnowledgeBase');
@@ -21,6 +21,10 @@ try {
     assert.strictEqual(meta.counts.items, 5062);
     assert.strictEqual(meta.counts.mobs, 2068);
     assert.strictEqual(meta.rateProfile.drop, 1);
+    assert.deepStrictEqual(meta.npcFilters.weaknesses.map(({ key }) => key), [
+        'blunt', 'holy', 'bow', 'fire', 'water', 'wind', 'earth', 'dark'
+    ]);
+    assert.deepStrictEqual(meta.npcFilters.hpMultipliers.map(({ value }) => value), [0.5, 2, 3, 4, 5, 6, 9]);
     const weaponDirectory = meta.itemDirectory.find((entry) => entry.key === 'weapons');
     assert.strictEqual(weaponDirectory.total, 511);
     assert.strictEqual(weaponDirectory.grades.find((grade) => grade.key === 'd').count, 121);
@@ -41,6 +45,25 @@ try {
     assert.ok(npcPage.items.length > 0);
     assert.ok(npcPage.items.every((npc) => npc.level >= 1 && npc.level <= 2));
     assert.deepStrictEqual([...npcPage.items].sort((left, right) => left.level - right.level), npcPage.items);
+
+    const fireAndX2 = service.listNpcs({ weakness: 'fire', hpMultiplier: '2', limit: 100 });
+    assert.ok(fireAndX2.items.length > 0);
+    assert.ok(fireAndX2.items.every((npc) => npc.weaknesses.includes('fire') && npc.hpMultiplier === 2));
+    assert.ok(fireAndX2.items.some((npc) => npc.id === 81), 'Ant Overseer must match its passive fire weakness and x2 HP');
+    const halfHp = service.listNpcs({ hpMultiplier: '0.5', limit: 100 });
+    assert.strictEqual(halfHp.total, 40);
+    assert.ok(halfHp.items.every((npc) => npc.hpMultiplier === 0.5));
+    assert.strictEqual(service.listNpcs({ q: 'Marsh Stalker', weakness: 'fire' }).total, 0,
+        'an active fire-weakness debuff must not be treated as the caster weakness');
+    const elementalWeaknesses = service.listNpcs({ weakness: 'earth,water', limit: 100 });
+    assert.ok(elementalWeaknesses.items.length > 0);
+    assert.ok(elementalWeaknesses.items.every((npc) => npc.weaknesses.some((key) => ['earth', 'water'].includes(key))),
+        'multiple weaknesses must use OR semantics');
+
+    assert.deepStrictEqual(npcCombatTraits({ skillIds: ['active', 'passive'] }, new Map([
+        ['active', { passive: false, semantic: { target: 'enemy', stats: { fireVuln: 1.5, maxHpMul: 9 } } }],
+        ['passive', { passive: true, semantic: { target: 'self', stats: { bowWpnVuln: 1.2, maxHpMul: 3 } } }]
+    ])), { weaknesses: ['bow'], hpMultiplier: 3 });
 
     const shortSword = service.itemDetail(1);
     const blackWolf = shortSword.sources.drops.find((npc) => npc.id === 317);
@@ -79,6 +102,8 @@ try {
     assert.match(html, /Aden Archives/);
     assert.match(html, /data-kind="items"/);
     assert.match(html, /data-kind="npcs"/);
+    assert.match(html, /id="npcWeaknessFilter"/);
+    assert.match(html, /id="npcHpMultiplierFilter"/);
     assert.match(html, /id="itemDirectory"/);
     assert.doesNotMatch(html, /id="itemCategory"/);
     assert.doesNotMatch(html, /Browse by type and grade/);
@@ -88,6 +113,8 @@ try {
     assert.match(app, /number\(Math\.round\(Number\(npc\.expectedAmountPerKill/);
     assert.doesNotMatch(app, /expectedAmountPerKill \|\| 0\)\.toFixed\(4\)/);
     assert.match(app, /Show .* locations on map/);
+    assert.match(app, /params\.set\('weakness', state\.weaknesses\.join\(','\)\)/);
+    assert.match(app, /params\.set\('hpMultiplier', state\.hpMultipliers\.join\(','\)\)/);
     assert.match(mapHtml, /href="\/observer\/database\/items"/);
     assert.match(mapHtml, /id="npcSpawnLayer"/);
 } finally {

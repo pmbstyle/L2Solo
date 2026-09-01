@@ -45,9 +45,23 @@
                     <kbd>/</kbd>
                 </label>
                 <div class="kb-filters" id="npcFilters" hidden>
-                    <label><span>Level from</span><input id="npcMinLevel" type="number" min="1" max="99" value="1"></label>
-                    <label><span>to</span><input id="npcMaxLevel" type="number" min="1" max="99" value="99"></label>
-                    <label><span>Kind</span><select id="npcRaid"><option value="all">All NPCs</option><option value="raid">Raid bosses</option><option value="normal">Monsters</option></select></label>
+                    <label class="kb-filter-field"><span>Level from</span><input id="npcMinLevel" type="number" min="1" max="99" value="1"></label>
+                    <label class="kb-filter-field"><span>to</span><input id="npcMaxLevel" type="number" min="1" max="99" value="99"></label>
+                    <label class="kb-filter-field"><span>Kind</span><select id="npcRaid"><option value="all">All NPCs</option><option value="raid">Raid bosses</option><option value="normal">Monsters</option></select></label>
+                    <details class="kb-multi-filter" id="npcWeaknessFilter">
+                        <summary><span>Weakness</span><b id="npcWeaknessSummary">Any</b></summary>
+                        <div class="kb-filter-popover">
+                            <div class="kb-filter-options" id="npcWeaknessOptions"></div>
+                            <button type="button" data-reset-npc-filter="weakness">Reset weakness</button>
+                        </div>
+                    </details>
+                    <details class="kb-multi-filter" id="npcHpMultiplierFilter">
+                        <summary><span>HP multiplier</span><b id="npcHpMultiplierSummary">Any</b></summary>
+                        <div class="kb-filter-popover">
+                            <div class="kb-filter-options" id="npcHpMultiplierOptions"></div>
+                            <button type="button" data-reset-npc-filter="hpMultiplier">Reset multiplier</button>
+                        </div>
+                    </details>
                 </div>
             </div>
 
