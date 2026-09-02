@@ -46,6 +46,7 @@ const tests = [
     'tests/test_afk_trade_database.js',
     'tests/test_market_trade_history.js',
     'tests/test_afk_trade_service.js',
+    'tests/test_afk_trade_bot_matching.js',
     'tests/test_trade_store_atomicity.js',
     'tests/test_supply_trade_lifecycle.js',
     'tests/test_llm_skill_priority_tools.js',

@@ -478,7 +478,23 @@ async function activate(session, store) {
         session.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(actor), actor);
         session.dataSendToOthers?.(ServerResponse.charInfo(actor), actor);
         spawnProjection(created.shop);
-        commandMessage(session, 'AFK trade is active. Use .afkstop to close it remotely.');
+        let matched = null;
+        try {
+            matched = await invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService')
+                .matchAfkPlayerShop(actor.fetchId());
+        } catch (error) {
+            utils.infoWarn('AfkTrade', 'initial bot matching failed for %s: %s', actor.fetchName(), error.message);
+        }
+        if (matched?.matched) {
+            utils.infoSuccess(
+                'AfkTrade',
+                'matched player shop %s trades=%d items=%d adena=%d',
+                actor.fetchName(), matched.trades.length, matched.itemCount, matched.adena
+            );
+        }
+        commandMessage(session, findOwnerProjection(actor.fetchId())
+            ? 'AFK trade is active. Use .afkstop to close it remotely.'
+            : 'AFK trade was filled immediately by bot demand.');
         return true;
     } catch (error) {
         utils.infoWarn('AfkTrade', 'failed to activate shop for %s: %s', actor.fetchName(), error.message);
@@ -575,6 +591,33 @@ async function init() {
     return shops.length;
 }
 
+async function matchBotDemand() {
+    const ready = await invoke('GameServer/Bot/Population/BotLifeState').init();
+    if (!ready) return { matched: false, shops: 0, trades: 0, itemCount: 0, adena: 0 };
+
+    const summaries = [];
+    for (const ownerId of [...projectionsByOwner.keys()]) {
+        const summary = await invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService')
+            .matchAfkPlayerShop(ownerId);
+        if (summary?.matched) summaries.push(summary);
+    }
+    const result = {
+        matched: summaries.length > 0,
+        shops: summaries.length,
+        trades: summaries.reduce((sum, summary) => sum + Number(summary.trades?.length || 0), 0),
+        itemCount: summaries.reduce((sum, summary) => sum + Number(summary.itemCount || 0), 0),
+        adena: summaries.reduce((sum, summary) => sum + Number(summary.adena || 0), 0)
+    };
+    if (result.matched) {
+        utils.infoSuccess(
+            'AfkTrade',
+            'matched restored shops=%d trades=%d items=%d adena=%d',
+            result.shops, result.trades, result.itemCount, result.adena
+        );
+    }
+    return result;
+}
+
 module.exports = {
     BUY,
     SELL,
@@ -586,6 +629,7 @@ module.exports = {
     findOwnerProjection,
     findProjection,
     init,
+    matchBotDemand,
     offers,
     refreshVisibility,
     sellToShop,
