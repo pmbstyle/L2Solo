@@ -1,10 +1,36 @@
 const MAX_LEVEL_ADVANTAGE = 8;
 const MIN_LEVEL_GAP = -7;
 const MAX_VERTICAL_GAP = 1200;
+const MIN_SOLO_POWER_RATIO = 0.72;
 
 function number(value, fallback = 0) {
     const result = Number(value);
     return Number.isFinite(result) ? result : fallback;
+}
+
+function positive(value) {
+    const result = number(value);
+    return result > 0 ? result : null;
+}
+
+function powerRatio(context = {}) {
+    const botPAtk = positive(context.botPAtk);
+    const botMAtk = positive(context.botMAtk);
+    const botPDef = positive(context.botPDef);
+    const botMaxHp = positive(context.botMaxHp);
+    const npcPAtk = positive(context.npcPAtk);
+    const npcPDef = positive(context.npcPDef);
+    const npcMDef = positive(context.npcMDef);
+    const npcMaxHp = positive(context.npcMaxHp);
+    const offenseRatios = [];
+    if (botPAtk && npcPDef) offenseRatios.push(botPAtk / npcPDef);
+    if (botMAtk && npcMDef) offenseRatios.push(botMAtk / npcMDef);
+    if (!offenseRatios.length || !botPDef || !npcPAtk || !botMaxHp || !npcMaxHp) return null;
+
+    const offense = Math.max(...offenseRatios);
+    const resilience = botPDef / npcPAtk;
+    const health = botMaxHp / npcMaxHp;
+    return Math.cbrt(Math.max(0.001, offense * resilience * health));
 }
 
 function score(context = {}) {
@@ -34,6 +60,20 @@ function score(context = {}) {
         return { eligible: false, score: -Infinity, reason: 'vertical_gap', reasons: ['vertical_gap'] };
     }
 
+    const matchup = context.solo === true ? powerRatio(context) : null;
+    if (!context.incomingThreat && matchup !== null && matchup < MIN_SOLO_POWER_RATIO) {
+        return {
+            eligible: false,
+            score: -Infinity,
+            reason: 'overmatched_stats',
+            reasons: ['overmatched_stats', `power_ratio:${matchup.toFixed(2)}`],
+            powerRatio: matchup,
+            levelGap,
+            distance: Math.round(distance),
+            verticalGap: Math.round(verticalGap)
+        };
+    }
+
     let value = 1000;
     value -= distance / 10;
     reasons.push(`distance:${Math.round(distance)}`);
@@ -51,6 +91,11 @@ function score(context = {}) {
 
     value -= verticalGap / 4;
     if (verticalGap > 250) reasons.push(`vertical:${Math.round(verticalGap)}`);
+
+    if (matchup !== null) {
+        value -= Math.max(0, 1 - matchup) * 500;
+        reasons.push(`power_ratio:${matchup.toFixed(2)}`);
+    }
 
     if (context.currentSpotId && context.npcSpotId) {
         if (context.currentSpotId === context.npcSpotId) {
@@ -93,7 +138,8 @@ function score(context = {}) {
         reasons,
         levelGap,
         distance: Math.round(distance),
-        verticalGap: Math.round(verticalGap)
+        verticalGap: Math.round(verticalGap),
+        powerRatio: matchup
     };
 }
 
@@ -107,6 +153,8 @@ module.exports = {
     MAX_LEVEL_ADVANTAGE,
     MIN_LEVEL_GAP,
     MAX_VERTICAL_GAP,
+    MIN_SOLO_POWER_RATIO,
+    powerRatio,
     rank,
     score
 };

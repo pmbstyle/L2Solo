@@ -12,6 +12,7 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
+const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const Director = invoke('GameServer/Bot/Population/PopulationDirector');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
@@ -504,6 +505,9 @@ class ColdSimulationCoordinator {
                 );
             } catch (_) { fallback = null; }
             fallbackSpot = (fallback && index.spots.get(String(fallback.spotId))) || null;
+            if (fallbackSpot && !LevelingRoutes.isSpotAllowedForState(fallbackSpot, state)) {
+                fallbackSpot = null;
+            }
             if (!fallbackSpot) {
                 try {
                     fallbackSpot = SpotProfiles.findForState({

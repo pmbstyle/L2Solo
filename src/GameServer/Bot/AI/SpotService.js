@@ -60,13 +60,29 @@ function identitySeedForState(state) {
 }
 
 function constrainToSpotGrid(spot, locX, locY) {
-    const match = /^(-?\d+)_(-?\d+)$/.exec(String(spot?.id || ''));
+    const match = /^(-?\d+)_(-?\d+)(?::.+)?$/.exec(String(spot?.id || ''));
     if (!match) return { locX, locY };
     const gridX = Number(match[1]);
     const gridY = Number(match[2]);
     return {
         locX: Math.max(gridX * GRID_SIZE, Math.min((gridX + 1) * GRID_SIZE - 1, locX)),
         locY: Math.max(gridY * GRID_SIZE, Math.min((gridY + 1) * GRID_SIZE - 1, locY))
+    };
+}
+
+function partitionedAreaAt(loc) {
+    const area = WorldAreaCatalog.resolve(loc);
+    if (!area?.tags?.some((tag) => tag === 'catacomb' || tag === 'party_required')) return null;
+    return area;
+}
+
+function spotIdAt(loc) {
+    const gx = Math.floor(Number(loc.locX) / GRID_SIZE);
+    const gy = Math.floor(Number(loc.locY) / GRID_SIZE);
+    const area = partitionedAreaAt(loc);
+    return {
+        id: `${gx}_${gy}${area ? `:${area.id}` : ''}`,
+        area
     };
 }
 
@@ -138,9 +154,13 @@ const SpotService = {
             if (BotRaidSafety.isProtectedRaidEntity(npc)) return;
             if (!BotHuntingTargetPolicy.canHunt(npc)) return;
 
-            const gx = Math.floor(npc.fetchLocX() / GRID_SIZE);
-            const gy = Math.floor(npc.fetchLocY() / GRID_SIZE);
-            const key = `${gx}_${gy}`;
+            const loc = {
+                locX: npc.fetchLocX(),
+                locY: npc.fetchLocY(),
+                locZ: npc.fetchLocZ()
+            };
+            const partition = spotIdAt(loc);
+            const key = partition.id;
 
             if (!sectors[key]) {
                 sectors[key] = {
@@ -155,7 +175,8 @@ const SpotService = {
                     names: {},
                     selfIds: {},
                     npcs: {},
-                    arrivalPoints: []
+                    arrivalPoints: [],
+                    partitionedAreaId: partition.area?.id || null
                 };
             }
 
@@ -214,7 +235,8 @@ const SpotService = {
                     .map((entry) => ({ ...entry })),
                 arrivalPoints: sector.arrivalPoints.map((point) => ({ ...point })),
                 levelCounts: { ...sector.levels },
-                dominantLevels: levelEntries.slice(0, 3)
+                dominantLevels: levelEntries.slice(0, 3),
+                partitionedAreaId: sector.partitionedAreaId
             };
 
             spot.name = spotName(spot);
@@ -230,9 +252,7 @@ const SpotService = {
 
     findCurrentSpot(loc) {
         if (!loc || !Number.isFinite(Number(loc.locX)) || !Number.isFinite(Number(loc.locY))) return null;
-        const gx = Math.floor(loc.locX / GRID_SIZE);
-        const gy = Math.floor(loc.locY / GRID_SIZE);
-        return this.findById(`${gx}_${gy}`);
+        return this.findById(spotIdAt(loc).id);
     },
 
     findBestSpot(status, options = {}) {
@@ -242,11 +262,29 @@ const SpotService = {
         const currentSpotId = status.spot?.id;
         const minDistance = options.minDistance || 1200;
         const maxDistance = options.maxDistance || 90000;
+        const routeState = {
+            characterId: status.characterId,
+            name: status.name,
+            level: targetLevel,
+            stats: {
+                ...(status.stats || {}),
+                role: status.role ?? status.stats?.role,
+                classId: status.classId ?? status.stats?.classId,
+                starterRegion: status.starterRegion || status.stats?.starterRegion
+            }
+        };
+        const routeOptions = {
+            ...options,
+            mode: options.mode || 'solo',
+            role: options.role || status.role,
+            equipment: options.equipment
+        };
 
         const candidates = this.ensureIndexed()
             .filter((spot) => spot.density >= (options.minDensity || 4))
             .filter((spot) => spot.minLevel <= targetLevel + levelRange && spot.maxLevel >= targetLevel - levelRange)
             .filter((spot) => isSuitable(spot, targetLevel, options))
+            .filter((spot) => LevelingRoutes.isSpotAllowedForState(spot, routeState, routeOptions))
             .filter((spot) => {
                 const dist = distance2d(loc, spot.center);
                 return dist >= minDistance && dist <= maxDistance;
@@ -273,21 +311,7 @@ const SpotService = {
                 };
             })
             .map((candidate) => {
-                const routeMatch = LevelingRoutes.scoreSpot(candidate.spot, {
-                    characterId: status.characterId,
-                    name: status.name,
-                    level: targetLevel,
-                    stats: {
-                        ...(status.stats || {}),
-                        role: status.role ?? status.stats?.role,
-                        classId: status.classId ?? status.stats?.classId,
-                        starterRegion: status.starterRegion || status.stats?.starterRegion
-                    }
-                }, {
-                    mode: options.mode || 'solo',
-                    role: options.role || status.role,
-                    occupancy: options.occupancy
-                });
+                const routeMatch = LevelingRoutes.scoreSpot(candidate.spot, routeState, routeOptions);
                 const decoratedSpot = LevelingRoutes.decorateSpot(candidate.spot, routeMatch);
                 return {
                     ...candidate,
@@ -298,6 +322,7 @@ const SpotService = {
                     routeScore: routeMatch.routeScore,
                     crowdPenalty: routeMatch.crowdPenalty,
                     localityPenalty: routeMatch.localityPenalty,
+                    huntingGroundPenalty: routeMatch.huntingGroundPenalty,
                     variation: routeMatch.variation
                 };
             })
@@ -317,6 +342,9 @@ const SpotService = {
             avgLevel: spot.avgLevel,
             density: spot.density,
             npcNames: [...spot.npcNames],
+            tags: [...(spot.tags || [])],
+            tagsAuthoritative: spot.tagsAuthoritative === true,
+            area: spot.area ? { ...spot.area } : null,
             route: spot.route || null
         };
         return session.currentSpot;

@@ -86,7 +86,29 @@ best = LevelingRoutes.bestSpot(spots, {
     level: 42,
     stats: { classId: 54 }
 }, { mode: 'solo' });
-assert.strictEqual(best.spot.id, 'cruma_construct', 'Scavengers should prefer construct spoil routes around Cruma levels');
+assert.notStrictEqual(best.spot.id, 'cruma_construct', 'a solo Scavenger must not enter Cruma for its construct spoil route');
+
+const fullKit = (rank) => [
+    { equipped: true, kind: 'Weapon.Sword', rank, slot: 7 },
+    { equipped: true, kind: 'Armor.Wear', rank, slot: 6 },
+    { equipped: true, kind: 'Armor.Wear', rank, slot: 9 },
+    { equipped: true, kind: 'Armor.Chain', rank, slot: 10 },
+    { equipped: true, kind: 'Armor.Chain', rank, slot: 11 }
+];
+best = LevelingRoutes.bestSpot(spots, {
+    level: 42,
+    stats: { classId: 54 }
+}, { mode: 'solo', equipment: fullKit('c') });
+assert.strictEqual(best.spot.id, 'cruma_construct',
+    'a solo Scavenger in a complete C-grade kit may use the Cruma construct route');
+
+best = LevelingRoutes.bestSpot(spots, {
+    level: 42,
+    activity: 'grouped',
+    party: { partyId: 'cruma_spoil_party' },
+    stats: { classId: 54, routeMode: 'party' }
+}, { mode: 'party' });
+assert.strictEqual(best.spot.id, 'cruma_construct', 'a Scavenger party should prefer construct spoil routes around Cruma levels');
 assert.strictEqual(best.route.reason, 'spoiler_construct_materials');
 
 best = LevelingRoutes.bestSpot(spots, {
@@ -102,9 +124,61 @@ best = LevelingRoutes.bestSpot(spots, {
 }, { mode: 'party' });
 assert.strictEqual(best.spot.id, 'toi_party', 'mage parties should be allowed to prefer party routes');
 assert.strictEqual(best.route.reason, 'mage_party_damage');
+assert.strictEqual(
+    LevelingRoutes.scoreSpot(spots[5], { level: 70, stats: { role: 'mage', classId: 12 } }, {
+        mode: 'solo',
+        equipment: fullKit('b')
+    }).huntingGround.allowed,
+    true,
+    'a solo Tower of Insolence hunter in a complete B-grade kit must pass the ground gate'
+);
 
 assert.ok(LevelingRoutes.tagsForSpot(spots[0]).includes('undead'), 'undead tag should be inferred from mob names');
 assert.ok(LevelingRoutes.tagsForSpot(spots[2]).includes('catacomb'), 'catacomb tag should be inferred from zone and mob names');
+assert.strictEqual(
+    LevelingRoutes.scoreSpot(spots[2], { level: 61, stats: { role: 'dps' } }, { mode: 'solo' }).huntingGround.allowed,
+    false,
+    'ordinary solo bots must treat catacombs as party-required hunting grounds'
+);
+assert.strictEqual(
+    LevelingRoutes.scoreSpot(spots[2], { level: 61, stats: { role: 'dps' } }, { mode: 'party' }).huntingGround.allowed,
+    true,
+    'party routes must remain eligible for catacomb hunting'
+);
+const exceptionalSolo = LevelingRoutes.scoreSpot(spots[2], { level: 76, stats: { role: 'dps' } }, {
+    mode: 'solo',
+    equipment: [
+        { equipped: true, kind: 'Weapon.Sword', rank: 's', slot: 7 },
+        { equipped: true, kind: 'Armor.Heavy', rank: 's', slot: 6 },
+        { equipped: true, kind: 'Armor.Heavy', rank: 's', slot: 9 },
+        { equipped: true, kind: 'Armor.Heavy', rank: 's', slot: 10 },
+        { equipped: true, kind: 'Armor.Heavy', rank: 's', slot: 12 }
+    ]
+});
+assert.strictEqual(exceptionalSolo.huntingGround.allowed, true,
+    'a substantially over-levelled solo bot with a complete current-grade kit may enter');
+assert.strictEqual(exceptionalSolo.huntingGround.exceptionalSoloReady, true);
+const sameGradeSolo = LevelingRoutes.scoreSpot({
+    ...spots[2],
+    minLevel: 20,
+    maxLevel: 24,
+    avgLevel: 22
+}, { level: 30, stats: { role: 'dps' } }, {
+    mode: 'solo',
+    equipment: [
+        { equipped: true, kind: 'Armor.Jewel', rank: 'd', slot: 1 },
+        { equipped: true, kind: 'Armor.Jewel', rank: 'd', slot: 2 },
+        { equipped: true, kind: 'Armor.Jewel', rank: 'd', slot: 3 },
+        { equipped: true, kind: 'Armor.Jewel', rank: 'd', slot: 4 },
+        { equipped: true, kind: 'Weapon.Sword', rank: 'd', slot: 7 },
+        { equipped: true, kind: 'Armor.Wear', rank: 'd', slot: 6 },
+        { equipped: true, kind: 'Armor.Wear', rank: 'd', slot: 9 },
+        { equipped: true, kind: 'Armor.Leather', rank: 'd', slot: 10 },
+        { equipped: true, kind: 'Armor.Wear', rank: 'd', slot: 12 }
+    ]
+});
+assert.strictEqual(sameGradeSolo.huntingGround.allowed, false,
+    'same-grade equipment and jewellery must not masquerade as exceptional catacomb readiness');
 
 const sharedElvenStarter = {
     id: 'elf-dark-elf-overlap',

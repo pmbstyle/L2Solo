@@ -365,6 +365,7 @@ const SpotProfiles = {
         const routeOptions = { ...options, occupancy, excludedSpotIds, capacityUnits, ...reservationOptions };
         const currentMatch = currentSpot ? LevelingRoutes.scoreSpot(currentSpot, state, routeOptions) : null;
         const mustRelocate = currentSpot && (currentMatch.localityPenalty > 0
+            || currentMatch.huntingGround?.allowed === false
             || shouldLeaveOverCapacity(state, currentSpot, occupancy)
             || excludedSpotIds.has(String(currentSpot.id)));
         const keepCurrentSpot = currentSpot && (!acquisitionPlan || protectedStarterCohort)
@@ -396,7 +397,8 @@ const SpotProfiles = {
                 : Object.keys(occupancy || {}).length === 0
                     ? this.findById(acquisitionPlan.next?.spotId)
                     : null;
-            if (planned && !excludedSpotIds.has(String(planned.id))) {
+            if (planned && !excludedSpotIds.has(String(planned.id))
+                && LevelingRoutes.isSpotAllowedForState(planned, state, routeOptions)) {
                 // A drop source may be valid for the item but still be a
                 // starter-level camp for the bot. Never let an active gear
                 // plan pin an outleveled bot to that source indefinitely.
@@ -414,6 +416,7 @@ const SpotProfiles = {
 
         const candidates = profiles
             .filter((profile) => !excludedSpotIds.has(String(profile.id)))
+            .filter((profile) => LevelingRoutes.isSpotAllowedForState(profile, state, routeOptions))
             .filter((profile) => profile.minLevel <= targetLevel + 4 && profile.maxLevel >= targetLevel - 4);
         const relocationCandidates = mustRelocate
             ? candidates.filter((profile) => profile.id !== currentSpot.id)

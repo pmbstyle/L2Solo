@@ -21,6 +21,7 @@ const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy'
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
+const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
 
 const TARGET_STALL_TICKS = 5;
 const TARGET_RETRY_COOLDOWN_MS = 15000;
@@ -114,7 +115,15 @@ function findPreferredMonster(session, bot, radius, options = {}) {
         return counts;
     }, new Map());
     const spotIdAt = (actor) => `${Math.floor(actor.fetchLocX() / TARGET_SPOT_GRID_SIZE)}_${Math.floor(actor.fetchLocY() / TARGET_SPOT_GRID_SIZE)}`;
-    const currentSpotId = session.currentSpot?.id || spotIdAt(bot);
+    const currentSpotId = String(session.currentSpot?.id || spotIdAt(bot)).split(':')[0];
+    // Actor totals are invariant for this target scan. Compute them once;
+    // candidate NPCs use their cheap base stats to keep dense cells bounded.
+    const botCombatStats = {
+        pAtk: bot.fetchCollectivePAtk?.(),
+        mAtk: bot.fetchCollectiveMAtk?.(),
+        pDef: bot.fetchCollectivePDef?.(),
+        maxHp: bot.fetchMaxHp?.()
+    };
 
     const candidates = nearbyNpcs
         .map((npc) => {
@@ -133,7 +142,16 @@ function findPreferredMonster(session, bot, radius, options = {}) {
                 currentSpotId,
                 npcSpotId,
                 claimed,
-                socialAllies: clan ? Math.max(0, (clanCounts.get(clan) || 1) - 1) : 0
+                socialAllies: clan ? Math.max(0, (clanCounts.get(clan) || 1) - 1) : 0,
+                solo: isSoloHunter(session),
+                botPAtk: botCombatStats.pAtk,
+                botMAtk: botCombatStats.mAtk,
+                botPDef: botCombatStats.pDef,
+                botMaxHp: botCombatStats.maxHp,
+                npcPAtk: npc.fetchPAtk?.() ?? npc.fetchCollectivePAtk?.(),
+                npcPDef: npc.fetchPDef?.() ?? npc.fetchCollectivePDef?.(),
+                npcMDef: npc.fetchMDef?.() ?? npc.fetchCollectiveMDef?.(),
+                npcMaxHp: npc.fetchMaxHp?.()
             };
             return {
                 npc,
@@ -184,6 +202,17 @@ function findPreferredMonster(session, bot, radius, options = {}) {
 function targetDistance(bot, target) {
     return new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ())
         .distance(new SpeckMath.Point3D(target.fetchLocX(), target.fetchLocY(), target.fetchLocZ()));
+}
+
+function liveCurrentNpcTarget(session, bot, radius = 2500) {
+    const targetId = Number(session.currentTargetId || 0);
+    if (!targetId) return null;
+
+    const target = (World.npc?.spawns || []).find((npc) => Number(npc.fetchId?.() || 0) === targetId);
+    if (!target || target.fetchAttackable?.() !== true || target.isDead?.() === true || target.state?.fetchDead?.() === true) {
+        return null;
+    }
+    return targetDistance(bot, target) <= radius ? target : null;
 }
 
 function clamp(value, min, max) {
@@ -243,6 +272,7 @@ function beginVoluntaryRecovery(session, bot, BotAI, readiness = null) {
     session.lastCombatDecision = undefined;
     session.lastPvpDecision = undefined;
     session.plan = 'resting';
+    session.recoveryLocked = true;
     if (!bot.state.fetchSeated()) {
         bot.state.setSeated(true);
         session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
@@ -269,6 +299,21 @@ function targetOnCooldown(session, targetId) {
 
 function botLocation(bot) {
     return { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
+}
+
+function currentHuntingGround(session, bot) {
+    try {
+        const physical = SpotService.findCurrentSpot(botLocation(bot));
+        if (physical) return physical;
+        if (session.currentSpot?.id) return SpotService.findById(session.currentSpot.id) || session.currentSpot;
+        return session.currentSpot || null;
+    } catch (_) {
+        return session.currentSpot || null;
+    }
+}
+
+function equippedItems(bot) {
+    return bot.backpack?.fetchItems?.() || [];
 }
 
 function finishWalkRelocation(session, bot, spot) {
@@ -426,6 +471,7 @@ function retreatFromThreat(session, bot, threat) {
     }
     clearTarget(session, bot, session.currentTargetId);
     session.plan = 'fleeing';
+    session.recoveryLocked = true;
     session.fleeStart = Date.now();
     session.incomingThreatId = undefined;
     session.incomingThreatAt = undefined;
@@ -596,7 +642,14 @@ module.exports = {
             if (BotRaidSafety.retreat(session, bot, incomingMonster, { distance: EMERGENCY_RETREAT_DISTANCE })) {
                 return;
             }
-            if (needsEmergencyRetreat(bot)) {
+            const currentGround = currentHuntingGround(session, bot);
+            const groundSafety = currentGround
+                ? BotHuntingGroundPolicy.evaluate(currentGround, { level: bot.fetchLevel() }, {
+                    mode: 'solo',
+                    equipment: equippedItems(bot)
+                })
+                : { allowed: true };
+            if (!groundSafety.allowed || needsEmergencyRetreat(bot)) {
                 retreatFromThreat(session, bot, incomingMonster);
                 return;
             }
@@ -619,9 +672,23 @@ module.exports = {
         // 4. HP/MP resting check
         const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
         const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
-        const encounterActionInFlight = !!session.currentTargetId && (
+        const liveEncounterTarget = liveCurrentNpcTarget(session, bot);
+        const nativeCombatActionInFlight = !!session.currentTargetId && (
             bot.state.fetchTowards() || bot.state.fetchHits() || bot.state.fetchCasts()
         );
+        const encounterActionInFlight = !!liveEncounterTarget || nativeCombatActionInFlight;
+        // Native attack/cast flags briefly drop between individual swings.
+        // A live selected NPC still owns the encounter during that gap, so a
+        // critically wounded bot must retreat instead of clearing the target
+        // and sitting down in front of it.
+        if (liveEncounterTarget && !nativeCombatActionInFlight && needsEmergencyRetreat(bot)) {
+            if (session.spotRelocation) BotSpotTravel.cancel(session, bot, 'low_resources_in_combat');
+            if (BotRaidSafety.retreat(session, bot, liveEncounterTarget, { distance: EMERGENCY_RETREAT_DISTANCE })) {
+                return;
+            }
+            retreatFromThreat(session, bot, liveEncounterTarget);
+            return;
+        }
         // Match RestingState's role-aware wake policy.  Melee/dps bots are
         // allowed to keep hunting with low MP; otherwise they immediately
         // wake again at full HP and oscillate between hunting and resting.
@@ -636,6 +703,33 @@ module.exports = {
         // attack starter mobs while walking or casting SoE to a better field.
         // Recovery above intentionally wins so a bot cannot walk while dying.
         if (tickSpotRelocation(session, bot)) return;
+
+        if (isSoloHunter(session)) {
+            const currentGround = currentHuntingGround(session, bot);
+            const groundSafety = currentGround
+                ? BotHuntingGroundPolicy.evaluate(currentGround, { level: bot.fetchLevel() }, {
+                    mode: 'solo',
+                    equipment: equippedItems(bot)
+                })
+                : { allowed: true };
+            if (!groundSafety.allowed) {
+                if (session.currentTargetId) clearTarget(session, bot, session.currentTargetId);
+                const status = session.botStatus || BotAI.getStatus(session);
+                const destination = SpotService.findBestSpot(status, {
+                    minDistance: 1,
+                    mode: 'solo',
+                    equipment: equippedItems(bot)
+                });
+                session.lastDecision = {
+                    action: destination?.spot ? 'move_to_spot' : 'avoid_hunting_ground',
+                    reason: groundSafety.reason,
+                    spotId: destination?.spot?.id || currentGround.id,
+                    spotName: destination?.spot?.name || currentGround.name
+                };
+                if (destination?.spot) beginSpotRelocation(session, bot, destination.spot, BotAI);
+                return;
+            }
+        }
 
         if (isSoloHunter(session) && Math.random() < 0.005) { // ~0.5% chance per tick (~10 minutes)
             const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());

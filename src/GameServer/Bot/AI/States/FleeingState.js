@@ -1,5 +1,6 @@
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
 const MIN_RETREAT_MS = 1000;
 const RETREAT_REPATH_COOLDOWN_MS = 750;
@@ -11,9 +12,12 @@ function stillMoving(session, bot) {
     return !!session.moveTimer || !!bot.state?.fetchTowards?.();
 }
 
-function needsRecovery(bot) {
-    return bot.fetchHp() / Math.max(1, bot.fetchMaxHp()) < 0.35 ||
-        bot.fetchMp() / Math.max(1, bot.fetchMaxMp()) < 0.20;
+function needsRecovery(session, bot) {
+    const hpThreshold = session.recoveryLocked ? 0.95 : 0.35;
+    const mpThreshold = session.recoveryLocked ? 0.95 : 0.20;
+    return bot.fetchHp() / Math.max(1, bot.fetchMaxHp()) < hpThreshold ||
+        (BotRoles.shouldRestForMana(bot)
+            && bot.fetchMp() / Math.max(1, bot.fetchMaxMp()) < mpThreshold);
 }
 
 function distance2d(first, second) {
@@ -88,9 +92,11 @@ module.exports = {
         }
 
         const raidSafetyResumePlan = session.raidSafetyResumePlan;
+        const recoveryNeeded = needsRecovery(session, bot);
+        if (!recoveryNeeded && session.recoveryLocked) session.recoveryLocked = false;
         session.plan = raidSafetyResumePlan === 'following' && session.partyCompanion === true && session.followPlayerSession
             ? 'following'
-            : (needsRecovery(bot) || raidSafetyResumePlan === 'resting' ? 'resting' : 'hunting');
+            : (recoveryNeeded || raidSafetyResumePlan === 'resting' ? 'resting' : 'hunting');
         session.raidSafetyResumePlan = undefined;
         session.fleeStart = undefined;
         session.lastRetreatRepathAt = undefined;
