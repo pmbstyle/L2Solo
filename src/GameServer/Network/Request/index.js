@@ -37,6 +37,7 @@ module.exports = {
       protocolVersion: require('./ProtocolVersion'),
               purchase: require('./Purchase'),
       privateStoreSell: require('./PrivateStoreSell'),
+       privateStoreBuy: require('./PrivateStoreBuy'),
  privateStoreManageSell: require('./PrivateStoreManageSell'),
   privateStoreManageBuy: require('./PrivateStoreManageBuy'),
    privateStoreListSell: require('./PrivateStoreListSell'),

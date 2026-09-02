@@ -9,6 +9,7 @@ assert.deepStrictEqual(Router.parse('/observer/clans'), { name: 'clans', id: nul
 assert.deepStrictEqual(Router.parse('/observer/clans/6000032'), { name: 'clans', id: 6000032 });
 assert.deepStrictEqual(Router.parse('/observer/clans/6000032/map'), { name: 'world', clanId: 6000032 });
 assert.deepStrictEqual(Router.parse('/observer/actors/bot/42'), { name: 'actor', kind: 'bot', id: 42 });
+assert.deepStrictEqual(Router.parse('/observer/actors/player/7'), { name: 'actor', kind: 'player', id: 7 });
 assert.deepStrictEqual(Router.parse('/observer/raid-bosses/29001'), { name: 'raid-bosses', id: 29001 });
 assert.deepStrictEqual(Router.parse('/observer/database'), { name: 'knowledge-items', id: null });
 assert.deepStrictEqual(Router.parse('/observer/database/items/1'), { name: 'knowledge-items', id: 1 });

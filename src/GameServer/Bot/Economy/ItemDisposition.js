@@ -242,10 +242,9 @@ function isTradeEligible(state = {}) {
 
 function protectedStarterLootAmount(item, kind) {
     const kindName = String(kind || '');
-    // Low-level resources remain sellable once the character reaches the
-    // trading phase: they are a legitimate early Adena source. No-grade and
-    // D-grade gear is junk by policy and must be liquidated in the NPC shop,
-    // including copies that came from protected starter-mob loot.
+    // Low-level resources and surplus NG/D gear remain sellable once the
+    // character reaches the trading phase. Market policy later admits the
+    // gear only for exact funded demand on the supported rate presets.
     if (kindName.startsWith('Other.Material')
         || ((kindName.startsWith('Weapon.') || kindName.startsWith('Armor.'))
             && gradeIndex(item?.rank || templateFor(item?.selfId)?.etc?.rank || 'none') < gradeIndex('c'))) return 0;

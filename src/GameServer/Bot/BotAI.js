@@ -15,6 +15,7 @@ const HotAiDispatcher = invoke('GameServer/Bot/AI/HotAiDispatcher');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const BotRangedCombatPositioning = invoke('GameServer/Bot/AI/BotRangedCombatPositioning');
+const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const { performance } = require('perf_hooks');
 
 const CHAT_PHRASES = {
@@ -118,6 +119,7 @@ function clearTacticalState(session) {
     session.lastTargetEvaluation = undefined;
     session.lastCombatDecision = undefined;
     session.lastPvpDecision = undefined;
+    session.healingPotionEncounter = undefined;
 }
 
 function recordHotStage(name, startedAt) {
@@ -613,11 +615,37 @@ const BotAI = {
             return false;
         }
         const role = BotRoles.inferRole(bot);
+        // A potion is a survival action for a fight already in progress, not
+        // routine topping-off. The policy also blocks repeats for the same
+        // target and while a previous potion HoT remains active.
+        if (HealingPotionStock.tryUseInCombat(session, bot, npc, { role })) {
+            return true;
+        }
         if (BotRangedCombatPositioning.reposition(session, bot, npc, { role })) {
             return true;
         }
         const BOW_ATTACK_RANGE = 700;
         const hasBow = bot?.backpack?.fetchTotalWeaponKind?.() === 'Weapon.Bow';
+        const mageMeleeFinish = role === 'mage' && canAttack
+            ? BotCombatUtility.mageMeleeFinishOpportunity(bot, npc)
+            : null;
+        if (mageMeleeFinish) {
+            session.lastCombatDecision = {
+                action: 'basic_attack',
+                role,
+                reason: 'mage_melee_finisher',
+                targetId: Number(npc?.fetchId?.() || 0) || null,
+                targetHp: mageMeleeFinish.targetHp,
+                estimatedDamage: mageMeleeFinish.damagePerHit,
+                estimatedHits: mageMeleeFinish.estimatedHits,
+                at: Date.now()
+            };
+            Generics.attackExec(session, bot, {
+                id: npc.fetchId(),
+                ctrl: true
+            });
+            return true;
+        }
         // Healers and buffers may assist the party with their weapon, but
         // their role controller must be able to keep their MP for support.
         // Do not make that policy depend on the generic combat selector.
@@ -687,6 +715,21 @@ const BotAI = {
                 action: 'blocked',
                 role,
                 reason: 'physical_attack_disabled',
+                targetId: Number(npc?.fetchId?.() || 0) || null,
+                at: Date.now()
+            };
+            return false;
+        }
+
+        // A hot mage may use its weapon only as a cheap finisher. If the
+        // target cannot be killed in roughly two ordinary hits, waiting for
+        // mana or letting the rest of the party continue is preferable to
+        // turning the caster into a melee fighter.
+        if (role === 'mage') {
+            session.lastCombatDecision = {
+                action: 'blocked',
+                role,
+                reason: 'mage_melee_reserved_for_finisher',
                 targetId: Number(npc?.fetchId?.() || 0) || null,
                 at: Date.now()
             };

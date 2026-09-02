@@ -73,10 +73,12 @@ function openMerchantTradeWindow(session, merchant) {
     session.viewedPrivateStoreSeller = merchant;
 
     if (store.storeType === 1) {
-        session.dataSendToMe(ServerResponse.purchaseList(
-            merchantPurchaseItems(store),
-            session.actor.backpack.fetchTotalAdena()
-        ));
+        session.dataSendToMe(store.nativePlayerStore === true
+            ? ServerResponse.privateStoreListSell(merchant, session.actor)
+            : ServerResponse.purchaseList(
+                merchantPurchaseItems(store),
+                session.actor.backpack.fetchTotalAdena()
+            ));
         session.dataSendToMe(ServerResponse.actionFailed());
         return;
     }
@@ -122,6 +124,20 @@ function select(session, actor, data) {
         actor.setDestId(actor.fetchId());
         session.dataSendToMe(ServerResponse.destSelected(actor.fetchDestId()));
         session.dataSendToMe(ServerResponse.relationChanged(actor));
+        return;
+    }
+
+    const afkProjection = invoke('GameServer/AfkTrade/AfkTradeService').findProjection(data.id);
+    if (afkProjection) {
+        const merchant = afkProjection.actor;
+        if (merchant.fetchId() !== actor.fetchDestId()) {
+            actor.setDestId(merchant.fetchId());
+            session.dataSendToMe(ServerResponse.destSelected(actor.fetchDestId()));
+            session.dataSendToMe(ServerResponse.relationChanged(merchant));
+            return;
+        }
+        sendPrivateStoreMessage(session, merchant);
+        openMerchantTradeWindow(session, merchant);
         return;
     }
 

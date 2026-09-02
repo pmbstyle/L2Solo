@@ -121,6 +121,17 @@ function consume(session, data) {
             invoke(path.world + 'NpcTalkResponse')(session, { link: 'sell-junk' });
             return;
         }
+        if (data.text === '.afksell' || data.text === '.afkbuy') {
+            const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+            AfkTrade.begin(session, data.text === '.afksell' ? AfkTrade.SELL : AfkTrade.BUY)
+                .catch((error) => utils.infoWarn('AfkTrade', 'command failed: %s', error.message));
+            return;
+        }
+        if (data.text === '.afkstop') {
+            invoke('GameServer/AfkTrade/AfkTradeService').stop(session)
+                .catch((error) => utils.infoWarn('AfkTrade', 'stop command failed: %s', error.message));
+            return;
+        }
         if (data.text === '.leave') {
             const World = invoke('GameServer/World/World');
             World.dismissParty(session, session.actor);

@@ -33,6 +33,8 @@ function enterWorld(session, buffer) {
         session.dataSendToMe(ServerResponse.shortBuffStatusUpdate.fromActor(session.actor));
         session.dataSendToOthers(ServerResponse.charInfo(session.actor), session.actor);
         session.dataSendToOthers(ServerResponse.relationChanged(session.actor), session.actor);
+        invoke('GameServer/AfkTrade/AfkTradeService').deliverNotifications(session)
+            .catch((error) => utils.infoWarn('AfkTrade', 'notification delivery failed: %s', error.message));
     };
 
     ShotStock.ensureActorStock(session.actor, { targetAmount: ShotStock.DEFAULT_TARGET_AMOUNT })

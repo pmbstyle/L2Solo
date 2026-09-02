@@ -9,6 +9,7 @@ const LifeState      = invoke('GameServer/Bot/Population/BotLifeState');
 const BotManager     = invoke('GameServer/Bot/BotManager');
 const Cooldown       = invoke('GameServer/Bot/Population/Cooldown');
 const GoalExecutor   = invoke('GameServer/Bot/Goals/GoalExecutor');
+const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 
 function merchantPurchaseItems(store) {
     const items = [];
@@ -79,6 +80,19 @@ async function consume(session, data) {
                         : null
                 });
                 bought.push(result);
+                MarketTelemetry.recordTrade({
+                    channel: 'wts',
+                    sourceType: 'private_store_player_purchase',
+                    selfId: item.selfId,
+                    itemName: result.name,
+                    quantity: result.qty,
+                    unitPrice: result.qty ? result.totalAdena / result.qty : 0,
+                    town: store.town || sellerSession?.coldMarketState?.currentRegion,
+                    sellerCharacterId: trade.merchant?.fetchId?.(),
+                    sellerName: trade.merchant?.fetchName?.(),
+                    buyerCharacterId: session.actor.fetchId(),
+                    buyerName: session.actor.fetchName()
+                });
             }
 
             if (bought.length > 0) {

@@ -58,6 +58,7 @@ function lineFor(item, count) {
         name: item.fetchName(),
         stackable: !!item.fetchStackable?.(),
         slot: Number(item.fetchSlot?.() || 0),
+        enchant: Math.max(0, Number(item.fetchEnchantLevel?.() || 0)),
         petData: item.fetchPetData?.() || null
     };
 }
@@ -353,6 +354,7 @@ function validateLine(trade, session, line, { botSide = false } = {}) {
     const liveItem = session.actor.backpack.fetchItemRaw(line.objectId);
     if (!isSafeOfferItem(liveItem) || Number(liveItem.fetchSelfId()) !== Number(line.selfId)) return { ok: false, reason: 'item_changed' };
     if (Number(liveItem.fetchAmount()) < Number(line.count)) return { ok: false, reason: 'item_changed' };
+    if (Math.max(0, Number(liveItem.fetchEnchantLevel?.() || 0)) !== Number(line.enchant || 0)) return { ok: false, reason: 'item_changed' };
     if (Number(liveItem.fetchAmount()) - Number(line.count) < minimumRetain(liveItem)) return { ok: false, reason: 'retain_minimum' };
     if (botSide) {
         const reservation = botReservations(session).get(line.objectId);
@@ -456,6 +458,7 @@ function applyLocalTransfers(moved, entries) {
                 amount: entry.line.count,
                 equipped: false,
                 slot: entry.line.slot,
+                enchant: entry.line.enchant,
                 petData: entry.line.petData
             });
         }
@@ -467,6 +470,7 @@ function publicMoved(entries) {
         selfId: entry.line.selfId,
         name: entry.line.name,
         count: entry.line.count,
+        enchant: entry.line.enchant,
         direction: entry.direction
     }));
 }
@@ -589,7 +593,7 @@ function cleanup(session, reason = 'lifecycle') {
 function activeTradeSummary(session) {
     const trade = activeTradeFor(session);
     if (!trade) return null;
-    const lineSummary = (line) => ({ objectId: line.objectId, selfId: line.selfId, name: line.name, count: line.count });
+    const lineSummary = (line) => ({ objectId: line.objectId, selfId: line.selfId, name: line.name, count: line.count, enchant: line.enchant });
     return {
         id: trade.id,
         direction: trade.direction,

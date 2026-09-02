@@ -99,7 +99,13 @@ async function main() {
             [6000003, 'PlayerCrest', 3, 3]], 'test:player-crest-clan');
         await Database.execute([`INSERT INTO clan_simulation_clans(clanId, version, mode, createdAt, updatedAt, stateJson)
             VALUES (?, 1, 'player_managed', 1, 1, '{}')`, [6000003]], 'test:player-crest-mode');
+        await Database.execute(['INSERT INTO clans(id, name, leaderId, level) VALUES (?, ?, ?, ?)',
+            [6000004, 'PlayerCrestLocked', 4, 2]], 'test:player-crest-locked-clan');
+        await Database.execute([`INSERT INTO clan_simulation_clans(clanId, version, mode, createdAt, updatedAt, stateJson)
+            VALUES (?, 1, 'player_managed', 1, 1, '{}')`, [6000004]], 'test:player-crest-locked-mode');
         await ClanService.reload();
+        const lockedManaged = await ClanService.setPlayerManagedCrest(6000004, observerCrest);
+        assert.strictEqual(lockedManaged.code, 'level_too_low', 'player-managed crest uploads must require clan level 3');
         const firstManaged = await ClanService.setPlayerManagedCrest(6000003, observerCrest);
         assert.strictEqual(firstManaged.ok, true);
         assert(Number(firstManaged.crestId) > 0);

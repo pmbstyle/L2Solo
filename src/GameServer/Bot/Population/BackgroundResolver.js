@@ -6,6 +6,8 @@ const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
+const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
+const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -24,6 +26,53 @@ function midpointBand(levelBand) {
 
 function botCombatStats(state, timestamp = Date.now()) {
     return ColdCombatProfile.profileFor(state, timestamp);
+}
+
+const ELEMENTAL_DAMAGE_TRAITS = new Set(['fire', 'water', 'wind', 'earth', 'holy', 'dark']);
+const PHYSICAL_RACE_STATS = Object.freeze({
+    animal: 'pAtk-animals',
+    beast: 'pAtk-monsters',
+    construct: 'pAtk-mcreatures',
+    dragon: 'pAtk-dragons',
+    giant: 'pAtk-giants',
+    insect: 'pAtk-insects',
+    plant: 'pAtk-plants'
+});
+
+function mobVulnerability(mob, stat) {
+    const value = Number(mob?.vulnerabilities?.[stat]);
+    return Number.isFinite(value) ? Math.max(0, value) : 1;
+}
+
+function coldWeaponVulnerability(bot, mob, semantic = {}) {
+    const kind = String(bot?.equipment?.weaponKind || '');
+    if (semantic.trait === 'bow' || kind === 'Weapon.Bow') return mobVulnerability(mob, 'bowWpnVuln');
+    if (kind === 'Weapon.Blunt' || kind === 'Weapon.BigBlunt') return mobVulnerability(mob, 'bluntWpnVuln');
+    if (semantic.trait === 'dagger' || kind === 'Weapon.Knife') return mobVulnerability(mob, 'daggerWpnVuln');
+    return 1;
+}
+
+function coldPhysicalTargetModifier(bot, mob, semantic = {}, timestamp = Date.now()) {
+    let modifier = coldWeaponVulnerability(bot, mob, semantic);
+    if (mob?.undead === true) modifier *= ColdCombatProfile.statMultiplier(bot, 'pAtkUndeadMul', timestamp);
+    const raceStat = PHYSICAL_RACE_STATS[String(mob?.race || '').toLowerCase()];
+    if (raceStat) modifier *= ColdCombatProfile.statMultiplier(bot, raceStat, timestamp);
+    return modifier;
+}
+
+function coldMagicTargetModifier(mob, semantic = {}) {
+    return ELEMENTAL_DAMAGE_TRAITS.has(semantic.trait)
+        ? mobVulnerability(mob, `${semantic.trait}Vuln`)
+        : 1;
+}
+
+function coldNpcWeaponModifier(mob, target, timestamp = Date.now()) {
+    const kind = String(mob?.weaponKind || '');
+    if (kind === 'Weapon.Bow') return ColdCombatProfile.statMultiplier(target, 'bowWpnVuln', timestamp);
+    if (kind === 'Weapon.Blunt' || kind === 'Weapon.BigBlunt') {
+        return ColdCombatProfile.statMultiplier(target, 'bluntWpnVuln', timestamp);
+    }
+    return 1;
 }
 
 function coldChargeState(state, timestamp) {
@@ -432,6 +481,37 @@ function mutableCombatState(state = {}) {
     };
 }
 
+function applyColdPotionTicks(fighter, time) {
+    const hot = fighter?.potionHot;
+    if (!hot) return 0;
+    let healed = 0;
+    while (hot.remaining > 0 && hot.nextAt <= time) {
+        const before = fighter.vitals.hp;
+        fighter.vitals.hp = Math.min(fighter.vitals.maxHp, fighter.vitals.hp + hot.heal);
+        healed += fighter.vitals.hp - before;
+        hot.remaining -= 1;
+        hot.nextAt += hot.intervalMs;
+    }
+    if (hot.remaining <= 0) fighter.potionHot = null;
+    return healed;
+}
+
+function startColdPotion(fighter, time) {
+    if (!fighter || fighter.potionsUsed > 0 || fighter.potionHot) return null;
+    const potion = HealingPotionStock.consumeColdPotion(
+        fighter.state.inventory,
+        fighter.vitals.hp,
+        fighter.vitals.maxHp,
+        fighter.state
+    );
+    if (!potion) return null;
+    const effect = HealingPotionStock.coldEffectFor(potion, time);
+    fighter.vitals.hp = Math.min(fighter.vitals.maxHp, fighter.vitals.hp + Number(effect.immediateHeal || 0));
+    fighter.potionHot = effect.hot;
+    fighter.potionsUsed = Number(fighter.potionsUsed || 0) + 1;
+    return potion;
+}
+
 function summonNpcStats(fighter, details) {
     const direct = (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(details.npcId));
     const skill = (DataCache.skills || []).find((entry) => Number(entry.selfId) === Number(details.skillId));
@@ -591,12 +671,15 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
     const soloFighter = {
         state: fightState,
         profile: bot,
+        role: BotRoles.inferRole(fightState),
         vitals,
         readyAt: 0,
         summonReadyAt: Number.POSITIVE_INFINITY,
         summonUses: 0,
         summonActions: 0,
-        now: timestamp
+        now: timestamp,
+        potionsUsed: 0,
+        potionHot: null
     };
     let botReadyAt = 0;
     let mobReadyAt = 0;
@@ -624,6 +707,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         const botActs = !summonActs && botReadyAt <= mobReadyAt;
         time = summonActs ? summonReadyAt : botActs ? botReadyAt : mobReadyAt;
         if (time >= fightLimitMs) break;
+        applyColdPotionTicks(soloFighter, time);
         actions += 1;
 
         if (summonActs) {
@@ -653,6 +737,10 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             expireCharges(heldCharges, timestamp + time);
             charges = heldCharges.charges;
             chargeExpiresAt = heldCharges.chargeExpiresAt;
+            if (startColdPotion(soloFighter, time)) {
+                botReadyAt += 250;
+                continue;
+            }
             const music = chooseMusicAction(soloFighter, [soloFighter], timestamp + time);
             if (music) {
                 applyMusicAction(soloFighter, music, timestamp + time);
@@ -683,10 +771,14 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             let damage = 0;
             if (magic) {
                 const magicCritical = rng() < clamp(bot.critical / 1000, 0, 0.25);
-                damage = Formulas.calcMagicDamage(bot.mAtk, Math.max(1, selected.power), mob.mDef, { magicCritical });
+                const semantic = C4SkillRules.resolve(selected.skill);
+                damage = Formulas.calcMagicDamage(bot.mAtk, Math.max(1, selected.power), mob.mDef, { magicCritical })
+                    * coldMagicTargetModifier(mob, semantic);
             } else if (hitSucceeds(bot.accur, mob.evasion, rng)) {
                 const critical = Formulas.rollCritical(bot.critical, rng);
-                damage = Formulas.calcPhysicalDamage(bot.pAtk, bot.equipment.pAtkRnd, mob.pDef, selected?.power || 0, { critical });
+                const semantic = selected?.skill ? C4SkillRules.resolve(selected.skill) : {};
+                damage = Formulas.calcPhysicalDamage(bot.pAtk, bot.equipment.pAtkRnd, mob.pDef, selected?.power || 0, { critical })
+                    * coldPhysicalTargetModifier(bot, mob, semantic, timestamp + time);
             }
             if (skill) {
                 const semantic = C4SkillRules.resolve(skill);
@@ -713,13 +805,18 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             }
         } else if (hitSucceeds(mob.accur, bot.evasion, rng)) {
             const critical = Formulas.rollCritical(mob.critical, rng);
-            const damage = Formulas.calcMeleeDamage(mob.pAtk, mob.pAtkRnd, bot.pDef, { critical });
+            const damage = Formulas.calcMeleeDamage(mob.pAtk, mob.pAtkRnd, bot.pDef, { critical })
+                * coldNpcWeaponModifier(mob, bot, timestamp + time);
             vitals.hp -= Math.max(0, damage);
             mobReadyAt += Math.max(250, Formulas.calcMeleeAtkTime(mob.atkSpd));
         } else {
             mobReadyAt += Math.max(250, Formulas.calcMeleeAtkTime(mob.atkSpd));
         }
     }
+
+    // Background time jumps past the quiet tail of a completed potion HoT.
+    // Apply that tail only after the damage sequence and only to survivors.
+    if (vitals.hp > 0) applyColdPotionTicks(soloFighter, Number.MAX_SAFE_INTEGER);
 
     const died = vitals.hp <= 0;
     const won = mobHp <= 0;
@@ -741,20 +838,23 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             effects: soloFighter.profile.effects,
             inventory: fightState.inventory,
             summon: soloFighter.summon || null,
-            debug: { actions, skillUses, musicUses, summonUses, summonActions, mobSelfId: mob.selfId || null, timedOut: !died }
+            debug: { actions, skillUses, musicUses, summonUses, summonActions, potionsUsed: soloFighter.potionsUsed, mobSelfId: mob.selfId || null, timedOut: !died }
         };
     }
 
-    const rewards = spot.rewards;
+    const rewards = BackgroundDropResolver.progressionForFight({ spot, npcSelfId: mob.selfId, rng });
     const expMultiplier = pressure?.expMultiplier || 1;
     const rates = ProgressionRates.profile();
-    const adena = Math.round(randInt(rng, rewards.adenaMin, rewards.adenaMax) * rates.adena);
-    const loot = BackgroundDropResolver.rollForFight({
+    const rolledRewards = BackgroundDropResolver.rollRewardsForFight({
         spot,
         killerLevel: Number(state.level || bot.level),
         npcSelfId: mob.selfId,
         rng
     });
+    const adena = rolledRewards === null
+        ? Math.round(randInt(rng, spot.rewards.adenaMin, spot.rewards.adenaMax) * rates.adena)
+        : rolledRewards.adena;
+    const loot = rolledRewards?.items || [];
     if (String(state.stats?.role || '') === 'spoiler'
         || [54, 55].includes(Number(state.stats?.classId ?? state.classId))) {
         loot.push(...BackgroundDropResolver.rollSpoilForFight({
@@ -772,7 +872,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         maxHp: Math.max(1, Math.round(vitals.maxHp)),
         mp: Math.max(0, Math.round(vitals.mp)),
         maxMp: Math.max(1, Math.round(vitals.maxMp)),
-        exp: Math.round(rewards.exp * expMultiplier * rates.exp),
+        exp: Math.round(rewards.exp * expMultiplier * rates.exp
+            * ColdCombatProfile.statMultiplier(bot, 'expMul', timestamp)),
         sp: Math.round(rewards.sp * expMultiplier * rates.sp),
         adena,
         loot,
@@ -782,7 +883,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         effects: soloFighter.profile.effects,
         inventory: fightState.inventory,
         summon: soloFighter.summon || null,
-        debug: { actions, skillUses, musicUses, summonUses, summonActions, mobSelfId: mob.selfId || null, timedOut: false }
+        debug: { actions, skillUses, musicUses, summonUses, summonActions, potionsUsed: soloFighter.potionsUsed, mobSelfId: mob.selfId || null, timedOut: false }
     };
 }
 
@@ -830,6 +931,8 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             summonUses: 0,
             summonActions: 0,
             summonReadyAt: Number.POSITIVE_INFINITY,
+            potionsUsed: 0,
+            potionHot: null,
             now: timestamp
         };
     });
@@ -851,6 +954,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
         const botActs = !summonActs && next && ownerReadyAt <= mobReadyAt;
         time = summonActs ? summonReadyAt : botActs ? ownerReadyAt : mobReadyAt;
         if (time >= fightLimitMs) break;
+        fighters.forEach((fighter) => applyColdPotionTicks(fighter, time));
         actions += 1;
 
         if (summonActs) {
@@ -872,6 +976,10 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             next.now = timestamp + time;
             const summonedNow = ensureColdSummon(next, timestamp + time, next.cooldowns);
             if (summonedNow) continue;
+            if (startColdPotion(next, time)) {
+                next.readyAt += 250;
+                continue;
+            }
             const heal = chooseHeal(next.profile, fighters, next.vitals.mp, next.cooldowns, timestamp + time);
             if (heal) {
                 const amount = Formulas.calcHealAmount(heal.skill.power);
@@ -910,11 +1018,14 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             let damage = 0;
             if (selected?.magic) {
                 const magicCritical = rng() < clamp(next.profile.critical / 1000, 0, 0.25);
-                damage = Formulas.calcMagicDamage(next.profile.mAtk, Math.max(1, selected.power), mob.mDef, { magicCritical });
+                const semantic = C4SkillRules.resolve(selected.skill);
+                damage = Formulas.calcMagicDamage(next.profile.mAtk, Math.max(1, selected.power), mob.mDef, { magicCritical })
+                    * coldMagicTargetModifier(mob, semantic);
             } else if (hitSucceeds(next.profile.accur, mob.evasion, rng)) {
+                const semantic = selected?.skill ? C4SkillRules.resolve(selected.skill) : {};
                 damage = Formulas.calcPhysicalDamage(next.profile.pAtk, next.profile.equipment.pAtkRnd, mob.pDef, selected?.power || 0, {
                     critical: Formulas.rollCritical(next.profile.critical, rng)
-                });
+                }) * coldPhysicalTargetModifier(next.profile, mob, semantic, timestamp + time);
             }
             if (skill) {
                 const semantic = C4SkillRules.resolve(skill);
@@ -948,12 +1059,15 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             if (target && hitSucceeds(mob.accur, target.profile.evasion, rng)) {
                 const damage = Formulas.calcMeleeDamage(mob.pAtk, mob.pAtkRnd, target.profile.pDef, {
                     critical: Formulas.rollCritical(mob.critical, rng)
-                });
+                }) * coldNpcWeaponModifier(mob, target.profile, timestamp + time);
                 target.vitals.hp = Math.max(0, target.vitals.hp - damage);
             }
             mobReadyAt += Math.max(250, Formulas.calcMeleeAtkTime(mob.atkSpd));
         }
     }
+
+    fighters.filter((fighter) => fighter.vitals.hp > 0)
+        .forEach((fighter) => applyColdPotionTicks(fighter, Number.MAX_SAFE_INTEGER));
 
     return {
         won: mobHp <= 0,
@@ -965,6 +1079,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             musicUses: fighters.reduce((sum, fighter) => sum + fighter.musicUses, 0),
             summonUses: fighters.reduce((sum, fighter) => sum + Number(fighter.summonUses || 0), 0),
             summonActions: fighters.reduce((sum, fighter) => sum + Number(fighter.summonActions || 0), 0),
+            potionsUsed: fighters.reduce((sum, fighter) => sum + Number(fighter.potionsUsed || 0), 0),
             mobSelfId: mob.selfId || null
         }
     };
@@ -1093,6 +1208,36 @@ const BackgroundResolver = {
             };
         }
 
+        // The worker may already have selected a safe destination while the
+        // persisted bot is still physically inside its previous room. Never
+        // resolve destination fights at the old coordinates: travel must be
+        // committed first. When both ids match, prefer the full spot profile
+        // so the exceptional-solo equipment check keeps its level bounds.
+        const currentGround = state.spotId && String(state.spotId) === String(spot.id)
+            ? spot
+            : {
+                id: state.spotId || null,
+                name: state.currentRegion || null,
+                area: state.area || state.stats?.area || null
+            };
+        const currentHuntingGround = BotHuntingGroundPolicy.evaluate(currentGround, state);
+        const destinationHuntingGround = BotHuntingGroundPolicy.evaluate(spot, state);
+        const huntingGround = !currentHuntingGround.allowed
+            ? currentHuntingGround
+            : destinationHuntingGround;
+        if (!huntingGround.allowed) {
+            return {
+                patch: {
+                    activity: 'hunting',
+                    stats: { ...(state.stats || {}), lastReason: huntingGround.reason }
+                },
+                events: [],
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                nextResolveAt: timestamp + 30000,
+                debug: { reason: huntingGround.reason, spotId: spot.id, fights: 0, wins: 0 }
+            };
+        }
+
         const maxFights = Math.max(1, Math.floor(elapsedMs / 12000));
         const fights = Math.min(maxFights, Math.max(1, Math.ceil((spot.density || 1) / 3)));
         const events = [];
@@ -1110,6 +1255,7 @@ const BackgroundResolver = {
         let musicUses = 0;
         let summonUses = 0;
         let summonActions = 0;
+        let potionsUsed = 0;
         const foughtNpcIds = [];
 
         for (let i = 0; i < fights; i++) {
@@ -1146,6 +1292,7 @@ const BackgroundResolver = {
             musicUses += Number(result.debug?.musicUses || 0);
             summonUses += Number(result.debug?.summonUses || 0);
             summonActions += Number(result.debug?.summonActions || 0);
+            potionsUsed += Number(result.debug?.potionsUsed || 0);
 
             if (result.won) {
                 wins += 1;
@@ -1210,6 +1357,7 @@ const BackgroundResolver = {
                 musicUses,
                 summonUses,
                 summonActions,
+                potionsUsed,
                 targetNpcId: Number(targetNpcId) || null,
                 foughtNpcIds
             }

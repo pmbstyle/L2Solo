@@ -174,6 +174,7 @@ assert.strictEqual(authGG.readInt32LE(1), 0x12345678);
 
 assert.strictEqual(GameOpcodes.table[0xcd], GameRequest.showMap, 'C4 map request opcode should be wired');
 assert.strictEqual(GameOpcodes.table[0x96], GameRequest.privateStoreSell, 'C4 RequestPrivateStoreSell opcode should be wired');
+assert.strictEqual(GameOpcodes.table[0x79], GameRequest.privateStoreBuy, 'C4 RequestPrivateStoreBuy opcode should be wired');
 assert.strictEqual(GameOpcodes.table[0x73], GameRequest.privateStoreManageSell, 'C4 private sell action should open the native manage window');
 assert.strictEqual(GameOpcodes.table[0x74], GameRequest.privateStoreListSell, 'C4 private sell list should publish the configured rows');
 assert.strictEqual(GameOpcodes.table[0x90], GameRequest.privateStoreManageBuy, 'C4 private buy action should open the native manage window');

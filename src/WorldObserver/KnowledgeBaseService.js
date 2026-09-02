@@ -14,6 +14,16 @@ const ITEM_DIRECTORY = Object.freeze([
     { key: 'quest', label: 'Quest items', description: 'Quest, event and progression items' },
     { key: 'other', label: 'Other items', description: 'Miscellaneous items from the server datapack' }
 ]);
+const NPC_WEAKNESSES = Object.freeze([
+    { key: 'blunt', label: 'Blunt Weapon', stat: 'bluntWpnVuln' },
+    { key: 'holy', label: 'Holy', stat: 'holyVuln' },
+    { key: 'bow', label: 'Bow Weapon', stat: 'bowWpnVuln' },
+    { key: 'fire', label: 'Fire', stat: 'fireVuln' },
+    { key: 'water', label: 'Water', stat: 'waterVuln' },
+    { key: 'wind', label: 'Wind', stat: 'windVuln' },
+    { key: 'earth', label: 'Earth', stat: 'earthVuln' },
+    { key: 'dark', label: 'Dark', stat: 'darkVuln' }
+]);
 
 function positiveInteger(value, fallback) {
     const parsed = Math.floor(Number(value));
@@ -28,6 +38,10 @@ function round(value, digits = 8) {
 
 function normalize(value) {
     return String(value || '').trim().toLowerCase();
+}
+
+function commaSeparatedValues(value) {
+    return String(value || '').split(',').map(normalize).filter(Boolean);
 }
 
 function itemCategory(kind) {
@@ -96,7 +110,47 @@ function itemSummary(item, iconFor) {
     };
 }
 
-function npcSummary(npc) {
+function npcCombatTraits(npc, skillById) {
+    const weaknesses = new Set();
+    let hpMultiplier = 1;
+    (npc?.skillIds || []).forEach((skillId) => {
+        const skill = skillById?.get(String(skillId));
+        const semantic = skill?.semantic || {};
+        if (skill?.passive !== true || semantic.target !== 'self') return;
+        const stats = semantic.stats || {};
+        NPC_WEAKNESSES.forEach(({ key, stat }) => {
+            if (Number(stats[stat]) > 1) weaknesses.add(key);
+        });
+        const multiplier = Number(stats.maxHpMul);
+        if (Number.isFinite(multiplier) && multiplier > 0) hpMultiplier *= multiplier;
+    });
+    return {
+        weaknesses: NPC_WEAKNESSES.map(({ key }) => key).filter((key) => weaknesses.has(key)),
+        hpMultiplier: round(hpMultiplier)
+    };
+}
+
+function npcFilterSummary(mobs, skillById) {
+    const weaknessCounts = new Map(NPC_WEAKNESSES.map(({ key }) => [key, 0]));
+    const hpMultiplierCounts = new Map();
+    (mobs || []).forEach((npc) => {
+        const traits = npcCombatTraits(npc, skillById);
+        traits.weaknesses.forEach((key) => weaknessCounts.set(key, (weaknessCounts.get(key) || 0) + 1));
+        if (traits.hpMultiplier !== 1) {
+            hpMultiplierCounts.set(traits.hpMultiplier, (hpMultiplierCounts.get(traits.hpMultiplier) || 0) + 1);
+        }
+    });
+    return {
+        weaknesses: NPC_WEAKNESSES.map(({ key, label }) => ({ key, label, count: weaknessCounts.get(key) || 0 }))
+            .filter((entry) => entry.count > 0),
+        hpMultipliers: [...hpMultiplierCounts.entries()]
+            .sort(([left], [right]) => left - right)
+            .map(([value, count]) => ({ value, label: value === 0.5 ? 'x½' : `x${value}`, count }))
+    };
+}
+
+function npcSummary(npc, skillById) {
+    const traits = npcCombatTraits(npc, skillById);
     return {
         id: Number(npc.id),
         name: String(npc.name || `NPC ${npc.id}`),
@@ -106,6 +160,8 @@ function npcSummary(npc) {
         raidBoss: Boolean(npc.raidBoss),
         directSpawn: Boolean(npc?.availability?.directSpawn),
         knownReachable: Boolean(npc?.availability?.knownReachable),
+        weaknesses: traits.weaknesses,
+        hpMultiplier: traits.hpMultiplier,
         spawnCount: Number(npc?.spawnIds?.length || 0),
         dropCount: (npc?.drops || []).reduce((sum, group) => sum + Number(group?.items?.length || 0), 0),
         spoilCount: (npc?.spoils || []).reduce((sum, group) => sum + Number(group?.items?.length || 0), 0)
@@ -268,7 +324,8 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null 
                 { key: 'other', label: 'Other' }
             ],
             grades: ['all', ...ITEM_GRADE_ORDER],
-            itemDirectory: itemDirectorySummary(data.items)
+            itemDirectory: itemDirectorySummary(data.items),
+            npcFilters: npcFilterSummary(data.mobs, data.skillById)
         };
     }
 
@@ -302,18 +359,25 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null 
         return { ...pageResult(results, page, limit), rateProfile: rateProfile() };
     }
 
-    function listNpcs({ q = '', minLevel = 1, maxLevel = 99, raid = 'all', page = 1, limit = DEFAULT_PAGE_SIZE } = {}) {
+    function listNpcs({ q = '', minLevel = 1, maxLevel = 99, raid = 'all', weakness = '', hpMultiplier = '', page = 1, limit = DEFAULT_PAGE_SIZE } = {}) {
         const data = load();
         const needle = normalize(q);
         const minimum = Math.max(1, Number(minLevel) || 1);
         const maximum = Math.max(minimum, Number(maxLevel) || 99);
         const raidFilter = normalize(raid) || 'all';
+        const knownWeaknesses = new Set(NPC_WEAKNESSES.map(({ key }) => key));
+        const selectedWeaknesses = new Set(commaSeparatedValues(weakness).filter((key) => knownWeaknesses.has(key)));
+        const selectedHpMultipliers = new Set(commaSeparatedValues(hpMultiplier)
+            .map(Number).filter((value) => Number.isFinite(value) && value > 0).map((value) => round(value)));
         const results = data.mobs
-            .filter((npc) => !needle || normalize(`${npc.name} ${npc.id} ${npc.kind}`).includes(needle))
-            .filter((npc) => Number(npc.level) >= minimum && Number(npc.level) <= maximum)
-            .filter((npc) => raidFilter === 'all' || Boolean(npc.raidBoss) === (raidFilter === 'raid'))
-            .sort((left, right) => Number(left.level) - Number(right.level) || left.name.localeCompare(right.name) || Number(left.id) - Number(right.id))
-            .map(npcSummary);
+            .map((npc) => ({ npc, traits: npcCombatTraits(npc, data.skillById) }))
+            .filter(({ npc }) => !needle || normalize(`${npc.name} ${npc.id} ${npc.kind}`).includes(needle))
+            .filter(({ npc }) => Number(npc.level) >= minimum && Number(npc.level) <= maximum)
+            .filter(({ npc }) => raidFilter === 'all' || Boolean(npc.raidBoss) === (raidFilter === 'raid'))
+            .filter(({ traits }) => !selectedWeaknesses.size || traits.weaknesses.some((key) => selectedWeaknesses.has(key)))
+            .filter(({ traits }) => !selectedHpMultipliers.size || selectedHpMultipliers.has(traits.hpMultiplier))
+            .sort(({ npc: left }, { npc: right }) => Number(left.level) - Number(right.level) || left.name.localeCompare(right.name) || Number(left.id) - Number(right.id))
+            .map(({ npc }) => npcSummary(npc, data.skillById));
         return { ...pageResult(results, page, limit), rateProfile: rateProfile() };
     }
 
@@ -337,7 +401,7 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null 
         const drops = scaledRewardGroups(npc.drops, 'drop', npc.level, progressionRates, iconFor);
         const spoils = scaledRewardGroups(npc.spoils, 'spoil', npc.level, progressionRates, iconFor);
         return {
-            ...npcSummary(npc),
+            ...npcSummary(npc, data.skillById),
             title: String(npc?.template?.template?.title || ''),
             race: String(npc?.template?.traits?.race || ''),
             undead: Boolean(npc?.template?.traits?.undead),
@@ -347,8 +411,8 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null 
             collision: npc?.template?.collision || null,
             drops,
             spoils,
-            minions: (npc.minions || []).map((minionId) => npcSummary(data.mobById.get(Number(minionId)) || { id: minionId })),
-            minionOf: (npc.minionOf || []).map((bossId) => npcSummary(data.mobById.get(Number(bossId)) || { id: bossId })),
+            minions: (npc.minions || []).map((minionId) => npcSummary(data.mobById.get(Number(minionId)) || { id: minionId }, data.skillById)),
+            minionOf: (npc.minionOf || []).map((bossId) => npcSummary(data.mobById.get(Number(bossId)) || { id: bossId }, data.skillById)),
             skills: (npc.skillIds || []).map((skillId) => {
                 const skill = data.skillById.get(String(skillId));
                 return skill ? {
@@ -374,7 +438,7 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null 
             if (!npc) return null;
             const groups = scaledRewardGroups(kind === 'drops' ? npc.drops : npc.spoils, kind === 'drops' ? 'drop' : 'spoil', npc.level, progressionRates, iconFor);
             return {
-                ...npcSummary(npc),
+                ...npcSummary(npc, data.skillById),
                 ...aggregateItemResults(groups, item.id)
             };
         }).filter(Boolean).sort((left, right) => Number(left.level) - Number(right.level) || left.name.localeCompare(right.name));
@@ -406,6 +470,7 @@ module.exports = {
     itemCategory,
     itemDirectorySummary,
     itemGrade,
+    npcCombatTraits,
     playerFacingItem,
     spawnMapPoints
 };

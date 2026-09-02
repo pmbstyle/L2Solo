@@ -10,6 +10,7 @@ const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
 const RaidCurse = invoke('GameServer/RaidBoss/RaidCurse');
 const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 const AttackRange = invoke('GameServer/Actor/AttackRange');
+const HotPartyCastTracker = invoke('GameServer/Bot/AI/HotPartyCastTracker');
 
 // L2WeaponType.mask() values used by the C4 datapack's weaponsAllowed field.
 const WEAPON_MASK_BY_KIND = Object.freeze({
@@ -39,6 +40,7 @@ class Attack {
     }
 
     destructor() {
+        HotPartyCastTracker.clear(this.activePartyCast?.actor);
         this.clearTimers();
         this.resetQueuedEvent();
     }
@@ -95,6 +97,7 @@ class Attack {
     }
 
     abortCast(session, actor) {
+        HotPartyCastTracker.clear(actor);
         if (!actor?.state?.fetchCasts?.()) {
             return false;
         }
@@ -263,8 +266,13 @@ class Attack {
         session.dataSendToMeAndOthers(ServerResponse.skillStarted(actor, creature.fetchId(), skill), actor);
         session.dataSendToMe(ServerResponse.skillDurationBar(skill.fetchCalculatedHitTime()));
         actor.state.setCasts(true);
+        HotPartyCastTracker.begin(session, actor, creature, skill);
 
         this.queueTimer(() => {
+            // Once the landing callback owns the turn, no other damage event
+            // can interleave before MP and effects resolve. Stop watching the
+            // target before the authoritative cast work begins.
+            HotPartyCastTracker.clear(actor);
             if (this.checkParticipants(actor, creature, { allowDeadTarget: corpseTarget })) {
                 invoke('GameServer/Bot/AI/BotSupportPlanner').cancelSupportCast(session, actor);
                 invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);

@@ -161,13 +161,118 @@ function finishBuyer(buyer) {
     });
 }
 
-async function settleLine(sellerState, line, town) {
-    const offer = MarketOpportunity.bestBuyOffer(line.selfId, {
+function currentAfkStore(ownerId, storeType) {
+    const projection = invoke('GameServer/AfkTrade/AfkTradeService').findOwnerProjection(ownerId);
+    const store = projection?.actor?.fetchPrivateStore?.();
+    return Number(store?.storeType) === Number(storeType) ? store : null;
+}
+
+function syncLiveBuyerSession(offer, buyer) {
+    if (!offer?.session) return;
+    offer.session.coldMarketState = buyer;
+    const liveStore = offer.session.actor?.fetchPrivateStore?.();
+    if (liveStore) liveStore.items = (buyer.stats?.marketStore?.items || []).map((item) => ({ ...item }));
+    if (!buyer.stats?.marketStore) offer.session.actor?.setPrivateStoreType?.(0);
+}
+
+async function syncSellerStoreAfterSale(sellerState, selfId, qty, session = null) {
+    const store = sellerState?.stats?.marketStore;
+    if (Number(store?.storeType || 1) !== 1) return sellerState;
+    const items = (store.items || []).map((item) => (
+        Number(item.selfId) === Number(selfId)
+            ? { ...item, count: Math.max(0, Number(item.count || 0) - Number(qty || 0)) }
+            : { ...item }
+    )).filter((item) => Number(item.count || 0) > 0);
+    let nextState = {
+        ...sellerState,
+        stats: {
+            ...(sellerState.stats || {}),
+            marketStore: items.length ? { ...store, items } : null
+        }
+    };
+    if (!items.length) {
+        const shoppingState = {
+            ...nextState,
+            activity: 'shopping',
+            timing: { ...(nextState.timing || {}), nextResolveAt: Date.now() }
+        };
+        const returning = invoke('GameServer/Bot/Goals/GoalExecutor').finishMarketVisit(shoppingState);
+        nextState = returning || shoppingState;
+        nextState = { ...nextState, stats: { ...(nextState.stats || {}), marketStore: null } };
+        MarketOpportunity.removeColdStore(nextState.characterId);
+        MarketTelemetry.closed?.('sold_out', 0);
+    }
+    const saved = await LifeState.upsertState(nextState, items.length
+        ? 'afk_trade_sell_store_partial'
+        : 'afk_trade_sell_store_filled');
+    const resolved = saved || nextState;
+    if (items.length) MarketOpportunity.indexColdStore(resolved);
+    if (session) {
+        session.coldMarketState = resolved;
+        const liveStore = session.actor?.fetchPrivateStore?.();
+        if (liveStore) liveStore.items = items.map((item) => ({ ...item }));
+        if (!items.length) {
+            session.plan = 'shopping';
+            session.actor?.setPrivateStore?.(null);
+            session.actor?.setPrivateStoreType?.(0);
+            session.actor?.state?.setSeated?.(false);
+        }
+    }
+    return resolved;
+}
+
+async function settleLine(sellerState, line, town, options = {}) {
+    const offer = options.offer || MarketOpportunity.bestBuyOffer(line.selfId, {
         town,
         sellerCharacterId: sellerState.characterId
     });
     if (!offer) return { state: sellerState, sold: false };
-    const qty = Math.min(Number(line.count || 0), Number(offer.count || 0));
+    const qty = Math.min(
+        Number(line.count || 0),
+        Number(offer.count || 0),
+        Math.max(1, Number(options.maxQty || Infinity))
+    );
+    if (offer.sourceType === 'afk_player_buy_store') {
+        if (qty <= 0) return { state: sellerState, sold: false };
+        let trade;
+        try {
+            trade = await invoke('GameServer/AfkTrade/AfkTradeService').sellToShop(
+                sellerState.characterId,
+                offer.store,
+                line.selfId,
+                qty,
+                { objectId: line.objectId || line.id, expectedPrice: offer.price, coldState: sellerState }
+            );
+            if (!trade.coldState) return { state: sellerState, sold: false, reason: 'cold_state_sync_failed' };
+        } catch (error) {
+            utils.infoWarn('BotMarket', 'AFK buy-store sale failed for %s: %s', sellerState.name, error.message);
+            return { state: sellerState, sold: false, reason: 'offer_changed' };
+        }
+        let syncedSeller = trade.coldState;
+        try {
+            syncedSeller = await syncSellerStoreAfterSale(
+                trade.coldState,
+                line.selfId,
+                qty,
+                options.sellerSession || null
+            );
+        } catch (error) {
+            utils.infoWarn('BotMarket', 'AFK buy-store seller finalization failed after commit for %s: %s', sellerState.name, error.message);
+        }
+        MarketTelemetry.dynamicBuyerSale?.(offer, qty, {
+            sellerCharacterId: syncedSeller.characterId,
+            sellerName: syncedSeller.name,
+            town
+        });
+        return {
+            state: syncedSeller,
+            sold: true,
+            buyer: null,
+            offer,
+            qty,
+            adena: Number(offer.price) * qty
+        };
+    }
     const buyerState = LifeState.snapshot(offer.sourceId) || offer.buyerState;
     if (!buyerState || qty <= 0) return { state: sellerState, sold: false };
     const buyerBefore = cloneState(buyerState);
@@ -214,6 +319,149 @@ async function settleLine(sellerState, line, town) {
     return { state: seller, sold: true, buyer, offer, qty, adena: Number(offer.price) * qty };
 }
 
+async function buyFromAfkPlayerStore(offer, store, line) {
+    if (!offer || !store || !line || Number(offer.price) < Number(line.price)) {
+        return { state: offer?.buyerState || null, purchased: false, reason: 'price_not_crossed' };
+    }
+    const buyerState = LifeState.snapshot(offer.sourceId) || offer.buyerState;
+    if (!buyerState) return { state: null, purchased: false, reason: 'buyer_missing' };
+    offer.buyerState = buyerState;
+    const affordable = Math.floor(Number(buyerState.adena || 0) / Math.max(1, Number(line.price)));
+    const qty = Math.min(Number(line.count || 0), Number(offer.count || 0), affordable);
+    if (qty <= 0 || !MarketOpportunity.reserveBuy(offer, qty)) {
+        return { state: buyerState, purchased: false, reason: 'buyer_changed' };
+    }
+    let trade;
+    try {
+        trade = await invoke('GameServer/AfkTrade/AfkTradeService').buyFromShop(
+            buyerState.characterId,
+            store,
+            line.selfId,
+            qty,
+            { lineId: line.afkTradeLineId, expectedPrice: line.price, coldState: buyerState }
+        );
+        if (!trade.coldState) throw new Error('cold_state_sync_failed');
+    } catch (error) {
+        MarketOpportunity.releaseBuy(offer, qty);
+        utils.infoWarn('BotMarket', 'AFK sell-store match failed for %s: %s', buyerState.name, error.message);
+        return { state: buyerState, purchased: false, reason: 'offer_changed' };
+    }
+    MarketOpportunity.commitBuy(offer, qty, trade.coldState);
+    let buyer = trade.coldState;
+    try {
+        buyer = await finishBuyer(trade.coldState);
+    } catch (error) {
+        utils.infoWarn('BotMarket', 'AFK sell-store buyer finalization failed after commit for %s: %s', buyerState.name, error.message);
+    }
+    syncLiveBuyerSession(offer, buyer);
+    MarketTelemetry.purchase({
+        sourceType: 'afk_player_store',
+        sourceId: Number(store.ownerId),
+        sourceName: offer.playerStoreName || 'AFK player',
+        sellerKind: 'player',
+        playerPriority: true,
+        town: store.town,
+        selfId: Number(line.selfId),
+        itemName: line.name,
+        price: Number(line.price)
+    }, qty, {
+        buyerCharacterId: buyer.characterId,
+        buyerName: buyer.name,
+        town: store.town
+    });
+    return { state: buyer, purchased: true, qty, adena: Number(line.price) * qty };
+}
+
+function sellerInventoryLine(state, selfId, maximum) {
+    const item = state?.inventory?.[String(Number(selfId))] || state?.inventory?.[Number(selfId)];
+    const count = Math.min(Number(item?.amount || item?.count || 0), Number(maximum || Infinity));
+    return item && count > 0 ? { ...item, selfId: Number(selfId), count } : null;
+}
+
+async function matchAfkSellStore(ownerId, maxTrades) {
+    const trades = [];
+    while (trades.length < maxTrades) {
+        const store = currentAfkStore(ownerId, 1);
+        if (!store) break;
+        let matched = false;
+        for (const line of store.items || []) {
+            const offer = MarketOpportunity.findBuyOffers(line.selfId, {
+                town: store.town,
+                sellerCharacterId: ownerId
+            }).find((candidate) => (
+                ['cold_buy_store', 'private_buy_store'].includes(candidate.sourceType)
+                && Number(candidate.price) >= Number(line.price)
+            ));
+            if (!offer) continue;
+            offer.playerStoreName = invoke('GameServer/AfkTrade/AfkTradeService')
+                .findOwnerProjection(ownerId)?.actor?.fetchName?.();
+            const result = await buyFromAfkPlayerStore(offer, store, line);
+            if (!result.purchased) continue;
+            trades.push(result);
+            matched = true;
+            break;
+        }
+        if (!matched) break;
+    }
+    return trades;
+}
+
+async function matchAfkBuyStore(ownerId, maxTrades) {
+    const trades = [];
+    while (trades.length < maxTrades) {
+        const store = currentAfkStore(ownerId, 3);
+        if (!store) break;
+        let matched = false;
+        for (const demand of store.items || []) {
+            const sellerOffer = MarketOpportunity.findOffers(demand.selfId, {
+                town: store.town,
+                buyerCharacterId: ownerId
+            }).find((candidate) => (
+                (candidate.sourceType === 'cold_store'
+                    || (candidate.sourceType === 'private_store' && candidate.sellerKind === 'bot'))
+                && Number(candidate.price) <= Number(demand.price)
+            ));
+            if (!sellerOffer) continue;
+            const sellerState = LifeState.snapshot(sellerOffer.sourceId)
+                || sellerOffer.sellerState
+                || sellerOffer.session?.coldMarketState;
+            const line = sellerInventoryLine(sellerState, demand.selfId, sellerOffer.count);
+            if (!sellerState || !line) continue;
+            const playerOffer = invoke('GameServer/AfkTrade/AfkTradeService').offers(demand.selfId, 3, {
+                town: store.town,
+                characterId: sellerState.characterId
+            }).find((candidate) => Number(candidate.sourceId) === Number(ownerId));
+            if (!playerOffer || Number(playerOffer.price) < Number(sellerOffer.price)) continue;
+            const result = await settleLine(sellerState, line, store.town, {
+                offer: playerOffer,
+                maxQty: sellerOffer.count,
+                sellerSession: sellerOffer.session || null
+            });
+            if (!result.sold) continue;
+            trades.push(result);
+            matched = true;
+            break;
+        }
+        if (!matched) break;
+    }
+    return trades;
+}
+
+async function matchAfkPlayerShop(ownerId, options = {}) {
+    const store = currentAfkStore(ownerId, 1) || currentAfkStore(ownerId, 3);
+    if (!store) return { matched: false, trades: [] };
+    const maxTrades = Math.max(1, Math.min(64, Number(options.maxTrades) || 64));
+    const trades = Number(store.storeType) === 1
+        ? await matchAfkSellStore(ownerId, maxTrades)
+        : await matchAfkBuyStore(ownerId, maxTrades);
+    return {
+        matched: trades.length > 0,
+        trades,
+        itemCount: trades.reduce((sum, trade) => sum + Number(trade.qty || 0), 0),
+        adena: trades.reduce((sum, trade) => sum + Number(trade.adena || 0), 0)
+    };
+}
+
 async function sellToBestBuyer(state, town = state?.currentRegion) {
     let seller = state;
     const sales = [];
@@ -254,6 +502,7 @@ module.exports = {
     WALLET_RESERVE_PERCENT,
     bestTownFor,
     bidFor,
+    matchAfkPlayerShop,
     open,
     sellToBestBuyer
 };

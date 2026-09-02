@@ -7,8 +7,10 @@ const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
+const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 
 const PROFILE_VERSION = 4;
+const npcCombatCache = new WeakMap();
 
 const WEAPON_MASK_BY_KIND = Object.freeze({
     'Weapon.Sword': 4,
@@ -127,6 +129,85 @@ function add(profile, stat, timestamp) {
 
 function multiplier(profile, stat, timestamp) {
     return statValues(profile, stat, timestamp).reduce((total, value) => total * value, 1);
+}
+
+function npcPassiveStatValues(actor, stat) {
+    return (actor?.fetchPassiveSkills?.() || [])
+        .filter((skill) => skill?.fetchPassive?.() === true)
+        .map((skill) => skill.fetchSemantic?.() || C4SkillRules.resolve({
+            selfId: skill.fetchSelfId?.(),
+            name: skill.fetchName?.(),
+            level: skill.fetchLevel?.()
+        }))
+        .map((semantic) => number(semantic?.stats?.[stat], NaN))
+        .filter(Number.isFinite);
+}
+
+function npcPassiveMultiplier(actor, stat) {
+    return npcPassiveStatValues(actor, stat).reduce((total, value) => total * value, 1);
+}
+
+function npcPassiveAdd(actor, stat) {
+    return npcPassiveStatValues(actor, stat).reduce((total, value) => total + value, 0);
+}
+
+function adjustedNpcStat(base, actor, stat) {
+    return Math.max(1, Math.round(
+        (number(base) * npcPassiveMultiplier(actor, `${stat}Mul`))
+        + npcPassiveAdd(actor, `${stat}Add`)
+    ));
+}
+
+function npcCombatStats(npc) {
+    if (!npc || typeof npc !== 'object') return null;
+    const cached = npcCombatCache.get(npc);
+    if (cached) return cached;
+
+    let passiveSkills = null;
+    const actor = {
+        fetchSelfId: () => number(npc.selfId),
+        fetchMaxHp: () => number(npc.vitals?.maxHp, 1),
+        fetchHp: () => number(npc.vitals?.maxHp, 1),
+        fetchPassiveSkills() {
+            if (!passiveSkills) passiveSkills = NpcSkills.passiveSkillsFor(actor);
+            return passiveSkills;
+        }
+    };
+    const level = Math.max(1, number(npc.template?.level, 1));
+    const dex = number(npc.base?.dex, 1);
+    const weapon = itemTemplate(npc.equipment?.weapon);
+    const vulnerabilities = {};
+    [
+        'bowWpnVuln', 'bluntWpnVuln', 'daggerWpnVuln',
+        'fireVuln', 'waterVuln', 'windVuln', 'earthVuln', 'holyVuln', 'darkVuln'
+    ].forEach((stat) => {
+        vulnerabilities[stat] = npcPassiveMultiplier(actor, stat);
+    });
+
+    const result = {
+        level,
+        maxHp: adjustedNpcStat(npc.vitals?.maxHp, actor, 'maxHp'),
+        pAtk: adjustedNpcStat(npc.stats?.pAtk, actor, 'pAtk'),
+        mAtk: adjustedNpcStat(npc.stats?.mAtk, actor, 'mAtk'),
+        pDef: adjustedNpcStat(npc.stats?.pDef, actor, 'pDef'),
+        mDef: adjustedNpcStat(npc.stats?.mDef, actor, 'mDef'),
+        atkSpd: adjustedNpcStat(npc.stats?.atkSpd, actor, 'pAtkSpd'),
+        castSpd: adjustedNpcStat(npc.stats?.castSpd, actor, 'castSpd'),
+        accur: Math.max(1, Formulas.calcAccur(level, dex, number(npc.stats?.accur))
+            + npcPassiveAdd(actor, 'pAccuracyCombatAdd')),
+        evasion: Math.max(0, Formulas.calcEvasion(level, dex, number(npc.stats?.evasion))
+            + npcPassiveAdd(actor, 'pEvasionRateAdd')),
+        pAtkRnd: number(npc.stats?.pAtkRnd),
+        critical: Math.max(0, number(npc.stats?.crit)),
+        weaponKind: String(weapon?.template?.kind || ''),
+        race: String(npc.traits?.race || '').toLowerCase(),
+        undead: npc.traits?.undead === true,
+        vulnerabilities,
+        rewardExp: Math.max(0, Formulas.calcAcquiredExp(level, number(npc.rewards?.exp))),
+        rewardSp: Math.max(0, number(npc.rewards?.sp))
+    };
+    npcCombatCache.set(npc, result);
+    return result;
 }
 
 function effectiveBase(profile, stat, timestamp) {
@@ -551,18 +632,16 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
         : pickEntry(aggressive.length ? aggressive : entries);
     const npc = (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(selected?.selfId));
     if (!npc) return null;
+    const combat = npcCombatStats(npc);
     return {
-        selfId: number(npc.selfId), level: number(npc.template?.level, number(spot.avgLevel, 1)),
-        maxHp: Math.max(1, number(npc.vitals?.maxHp, spot.mob?.hp)), pAtk: Math.max(1, number(npc.stats?.pAtk, spot.mob?.damage)),
-        pAtkRnd: number(npc.stats?.pAtkRnd), pDef: Math.max(1, number(npc.stats?.pDef, 1)), mDef: Math.max(1, number(npc.stats?.mDef, 1)),
-        accur: Math.max(1, number(npc.stats?.accur, 1)), evasion: Math.max(0, number(npc.stats?.evasion)),
-        critical: Math.max(0, number(npc.stats?.crit)), atkSpd: Math.max(1, number(npc.stats?.atkSpd, 253)),
-        mAtk: Math.max(1, number(npc.stats?.mAtk)), castSpd: Math.max(1, number(npc.stats?.castSpd, 333))
+        selfId: number(npc.selfId),
+        ...combat
     };
 }
 
 module.exports = {
     PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor,
     offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect,
-    npcForSpot, skillSnapshotsFromRecords, skillRecordsFromTree
+    npcForSpot, npcCombatStats, skillSnapshotsFromRecords, skillRecordsFromTree,
+    statMultiplier: multiplier, statAdd: add
 };

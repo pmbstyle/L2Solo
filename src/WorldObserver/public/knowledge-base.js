@@ -11,6 +11,8 @@ const state = {
     minLevel: 1,
     maxLevel: 99,
     raid: 'all',
+    weaknesses: [],
+    hpMultipliers: [],
     request: 0,
     searchTimer: null
 };
@@ -31,6 +33,10 @@ const els = {
     npcMinLevel: document.querySelector('#npcMinLevel'),
     npcMaxLevel: document.querySelector('#npcMaxLevel'),
     npcRaid: document.querySelector('#npcRaid'),
+    npcWeaknessOptions: document.querySelector('#npcWeaknessOptions'),
+    npcWeaknessSummary: document.querySelector('#npcWeaknessSummary'),
+    npcHpMultiplierOptions: document.querySelector('#npcHpMultiplierOptions'),
+    npcHpMultiplierSummary: document.querySelector('#npcHpMultiplierSummary'),
     resultCount: document.querySelector('#resultCount'),
     resultContext: document.querySelector('#resultContext'),
     catalogResults: document.querySelector('#catalogResults'),
@@ -56,6 +62,11 @@ function number(value, fallback = '—') {
     return Number.isFinite(parsed) ? parsed.toLocaleString() : fallback;
 }
 
+function wholeNumber(value, fallback = '—') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.round(parsed).toLocaleString() : fallback;
+}
+
 function compactNumber(value) {
     const parsed = Number(value || 0);
     if (parsed < 1000) return number(parsed);
@@ -67,6 +78,27 @@ function readable(value) {
         .replaceAll(/([a-z])([A-Z])/g, '$1 $2')
         .replaceAll(/[._-]+/g, ' ')
         .replaceAll(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function npcHpMultiplierLabel(value) {
+    const multiplier = Number(value || 1);
+    return (state.meta?.npcFilters?.hpMultipliers || [])
+        .find((entry) => Number(entry.value) === multiplier)?.label
+        || (multiplier === 0.5 ? 'x½' : `x${number(multiplier)}`);
+}
+
+function npcWeaknessLabel(key) {
+    return (state.meta?.npcFilters?.weaknesses || [])
+        .find((entry) => entry.key === key)?.label
+        || readable(key);
+}
+
+function npcCombatTraitMarkup(npc) {
+    const multiplier = Number(npc.hpMultiplier || 1);
+    const traits = [];
+    if (multiplier !== 1) traits.push(`<span class="kb-trait hp">${text(npcHpMultiplierLabel(multiplier))} HP</span>`);
+    (npc.weaknesses || []).forEach((key) => traits.push(`<span class="kb-trait weakness">Weak to ${text(npcWeaknessLabel(key))}</span>`));
+    return traits.length ? `<div class="kb-traits" aria-label="Combat traits">${traits.join('')}</div>` : '';
 }
 
 function chance(value) {
@@ -123,6 +155,40 @@ function renderMeta() {
         <span><b>${compactNumber(counts.mobs)}</b><small>NPCs</small></span>
         <span><b>${compactNumber(counts.spawnDefinitions)}</b><small>Spawns</small></span>`;
     els.itemDirectoryList.innerHTML = (state.meta.itemDirectory || []).map(itemDirectoryRow).join('');
+    renderNpcFilterOptions();
+}
+
+function npcFilterOption(entry, attribute, value) {
+    return `<label><input type="checkbox" ${attribute}="${text(value)}"><span>${text(entry.label)}</span><small>${number(entry.count)}</small></label>`;
+}
+
+function renderNpcFilterOptions() {
+    const filters = state.meta?.npcFilters || {};
+    els.npcWeaknessOptions.innerHTML = (filters.weaknesses || [])
+        .map((entry) => npcFilterOption(entry, 'data-npc-weakness', entry.key)).join('');
+    els.npcHpMultiplierOptions.innerHTML = (filters.hpMultipliers || [])
+        .map((entry) => npcFilterOption(entry, 'data-npc-hp-multiplier', entry.value)).join('');
+    syncNpcFilterControls();
+}
+
+function selectedFilterSummary(selected, entries, key) {
+    if (!selected.length) return 'Any';
+    if (selected.length === 1) return entries.find((entry) => String(entry[key]) === String(selected[0]))?.label || selected[0];
+    return `${selected.length} selected`;
+}
+
+function syncNpcFilterControls() {
+    const filters = state.meta?.npcFilters || {};
+    const weaknesses = new Set(state.weaknesses.map(String));
+    const hpMultipliers = new Set(state.hpMultipliers.map(String));
+    els.npcWeaknessOptions.querySelectorAll('[data-npc-weakness]').forEach((input) => {
+        input.checked = weaknesses.has(input.dataset.npcWeakness);
+    });
+    els.npcHpMultiplierOptions.querySelectorAll('[data-npc-hp-multiplier]').forEach((input) => {
+        input.checked = hpMultipliers.has(input.dataset.npcHpMultiplier);
+    });
+    els.npcWeaknessSummary.textContent = selectedFilterSummary(state.weaknesses, filters.weaknesses || [], 'key');
+    els.npcHpMultiplierSummary.textContent = selectedFilterSummary(state.hpMultipliers, filters.hpMultipliers || [], 'value');
 }
 
 function gradeLabel(grade, { short = false } = {}) {
@@ -137,6 +203,18 @@ function itemCatalogHref(category = 'all', grade = 'all', query = '') {
     if (query) params.set('q', query);
     const suffix = params.toString();
     return `${Router.href(routeFor('items'))}${suffix ? `?${suffix}` : ''}`;
+}
+
+function npcCatalogHref() {
+    const params = new URLSearchParams();
+    if (state.query) params.set('q', state.query);
+    if (Number(state.minLevel) !== 1) params.set('minLevel', state.minLevel);
+    if (Number(state.maxLevel) !== 99) params.set('maxLevel', state.maxLevel);
+    if (state.raid !== 'all') params.set('raid', state.raid);
+    if (state.weaknesses.length) params.set('weakness', state.weaknesses.join(','));
+    if (state.hpMultipliers.length) params.set('hpMultiplier', state.hpMultipliers.join(','));
+    const suffix = params.toString();
+    return `${Router.href(routeFor('npcs'))}${suffix ? `?${suffix}` : ''}`;
 }
 
 function itemDirectoryRow(entry, index) {
@@ -214,6 +292,8 @@ function catalogUrl() {
         params.set('minLevel', state.minLevel);
         params.set('maxLevel', state.maxLevel);
         params.set('raid', state.raid);
+        if (state.weaknesses.length) params.set('weakness', state.weaknesses.join(','));
+        if (state.hpMultipliers.length) params.set('hpMultiplier', state.hpMultipliers.join(','));
     }
     return `/observer/api/knowledge/${state.kind}?${params}`;
 }
@@ -286,10 +366,10 @@ async function loadCatalog() {
     }
 }
 
-function statGrid(entries) {
+function statGrid(entries, { whole = false } = {}) {
     const normalized = entries.filter(([, value]) => value !== null && value !== undefined && value !== '' && Number(value) !== 0);
     return normalized.length ? `<div class="kb-stat-grid">${normalized.map(([label, value]) => `
-        <div class="kb-stat"><span>${text(label)}</span><strong>${typeof value === 'number' ? number(value) : text(value)}</strong></div>`).join('')}</div>` : '<div class="kb-empty">No additional values.</div>';
+        <div class="kb-stat"><span>${text(label)}</span><strong>${typeof value === 'number' ? (whole ? wholeNumber(value) : number(value)) : text(value)}</strong></div>`).join('')}</div>` : '<div class="kb-empty">No additional values.</div>';
 }
 
 function rewardRows(groups) {
@@ -354,7 +434,7 @@ function renderNpcDetail(npc) {
         <a class="kb-detail-return" href="${Router.href(routeFor('npcs'))}" data-catalog-kind="npcs">← All NPCs</a>
         <header class="kb-detail-hero">
             <span class="kb-detail-icon kb-icon-placeholder kb-level">${number(npc.level)}</span>
-            <div><span class="kb-detail-id">NPC · ${number(npc.id)}</span><h2>${text(npc.name)}</h2><p>${npc.raidBoss ? 'Raid boss' : text(readable(npc.kind))} · Level ${number(npc.level)}${npc.title ? ` · ${text(npc.title)}` : ''}</p></div>
+            <div><span class="kb-detail-id">NPC · ${number(npc.id)}</span><h2>${text(npc.name)}</h2><p>${npc.raidBoss ? 'Raid boss' : text(readable(npc.kind))} · Level ${wholeNumber(npc.level)}${npc.title ? ` · ${text(npc.title)}` : ''}</p>${npcCombatTraitMarkup(npc)}</div>
             ${mapPoints ? `<a class="kb-map-link" href="${Router.href({ name: 'world', npcId: npc.id })}"><svg aria-hidden="true"><use href="/observer/ui-icons.svg#map"></use></svg>Show ${number(mapPoints)} locations on map</a>` : '<span class="kb-tag">No mapped spawn</span>'}
         </header>
         <div class="kb-detail-layout">
@@ -362,11 +442,11 @@ function renderNpcDetail(npc) {
                 <section class="kb-section"><h3>Creature</h3>${statGrid([
                     ['Level', npc.level], ['Race', readable(npc.race)], ['AI', readable(npc.aiType)], ['Hostile', npc.hostile ? 'Yes' : 'No'],
                     ['Undead', npc.undead ? 'Yes' : 'No'], ['EXP', progression.baseExp], ['SP', progression.baseSp], ['Spawn groups', npc.spawnCount]
-                ])}</section>
+                ], { whole: true })}</section>
                 <section class="kb-section"><h3>Effective stats</h3>${statGrid([
                     ['HP', stats.maxHp], ['MP', stats.maxMp], ['P. Atk', stats.pAtk], ['M. Atk', stats.mAtk], ['P. Def', stats.pDef], ['M. Def', stats.mDef],
                     ['Accuracy', stats.accuracy], ['Evasion', stats.evasion], ['Atk. Speed', stats.attackSpeed], ['Cast Speed', stats.castSpeed], ['Run Speed', stats.runSpeed]
-                ])}</section>
+                ], { whole: true })}</section>
                 ${npc.skills?.length ? `<section class="kb-section"><h3>Skills</h3><div class="kb-level-links">${npc.skills.map((skill) => `<span class="kb-tag">${text(skill.name)} · Lv ${number(skill.level)}</span>`).join('')}</div></section>` : ''}
                 ${npcRelations('Raid minions', npc.minions)}
                 ${npcRelations('Minion of', npc.minionOf)}
@@ -420,6 +500,22 @@ function applyRoute(route = Router.parse(`${window.location.pathname}${window.lo
         state.grade = state.query ? 'all' : (validGrade ? requestedGrade : 'all');
         state.page = 1;
         els.catalogSearch.value = state.query;
+    } else {
+        const params = new URLSearchParams(window.location.search);
+        const availableWeaknesses = new Set((state.meta?.npcFilters?.weaknesses || []).map((entry) => String(entry.key)));
+        const availableHpMultipliers = new Set((state.meta?.npcFilters?.hpMultipliers || []).map((entry) => String(entry.value)));
+        state.query = String(params.get('q') || '').trim();
+        state.minLevel = Math.max(1, Number(params.get('minLevel')) || 1);
+        state.maxLevel = Math.max(state.minLevel, Number(params.get('maxLevel')) || 99);
+        state.raid = ['raid', 'normal'].includes(params.get('raid')) ? params.get('raid') : 'all';
+        state.weaknesses = String(params.get('weakness') || '').split(',').filter((key) => availableWeaknesses.has(key));
+        state.hpMultipliers = String(params.get('hpMultiplier') || '').split(',').filter((value) => availableHpMultipliers.has(value));
+        state.page = 1;
+        els.catalogSearch.value = state.query;
+        els.npcMinLevel.value = state.minLevel;
+        els.npcMaxLevel.value = state.maxLevel;
+        els.npcRaid.value = state.raid;
+        syncNpcFilterControls();
     }
     document.title = `${kind === 'items' ? 'Items' : 'NPCs'} · Server Database`;
     refreshCatalogView();
@@ -434,6 +530,18 @@ function openCatalog(kind, { updateRoute = true } = {}) {
         state.category = 'all';
         state.grade = 'all';
         els.catalogSearch.value = '';
+    } else {
+        state.query = '';
+        state.minLevel = 1;
+        state.maxLevel = 99;
+        state.raid = 'all';
+        state.weaknesses = [];
+        state.hpMultipliers = [];
+        els.catalogSearch.value = '';
+        els.npcMinLevel.value = 1;
+        els.npcMaxLevel.value = 99;
+        els.npcRaid.value = 'all';
+        syncNpcFilterControls();
     }
     if (updateRoute) commitRoute(routeFor(kind));
     document.title = `${kind === 'items' ? 'Items' : 'NPCs'} · Server Database`;
@@ -444,8 +552,10 @@ function scheduleCatalogReload({ syncRoute = false } = {}) {
     clearTimeout(state.searchTimer);
     state.searchTimer = setTimeout(() => {
         state.page = 1;
-        if (syncRoute && state.kind === 'items') {
-            const href = itemCatalogHref(state.category, state.grade, state.query);
+        if (syncRoute) {
+            const href = state.kind === 'items'
+                ? itemCatalogHref(state.category, state.grade, state.query)
+                : npcCatalogHref();
             if (`${window.location.pathname}${window.location.search}` !== href) {
                 window.history.replaceState({}, '', href);
             }
@@ -459,6 +569,15 @@ document.addEventListener('click', (event) => {
     if (tab) {
         event.preventDefault();
         openCatalog(tab.dataset.kind);
+        return;
+    }
+    const resetNpcFilter = event.target.closest('[data-reset-npc-filter]');
+    if (resetNpcFilter) {
+        event.preventDefault();
+        if (resetNpcFilter.dataset.resetNpcFilter === 'weakness') state.weaknesses = [];
+        else state.hpMultipliers = [];
+        syncNpcFilterControls();
+        scheduleCatalogReload({ syncRoute: true });
         return;
     }
     const itemBranch = event.target.closest('[data-item-category]');
@@ -508,9 +627,21 @@ els.catalogSearch.addEventListener('input', (event) => {
     }
     scheduleCatalogReload({ syncRoute: true });
 });
-els.npcMinLevel.addEventListener('input', (event) => { state.minLevel = Number(event.target.value || 1); scheduleCatalogReload(); });
-els.npcMaxLevel.addEventListener('input', (event) => { state.maxLevel = Number(event.target.value || 99); scheduleCatalogReload(); });
-els.npcRaid.addEventListener('change', (event) => { state.raid = event.target.value; scheduleCatalogReload(); });
+els.npcMinLevel.addEventListener('input', (event) => { state.minLevel = Number(event.target.value || 1); scheduleCatalogReload({ syncRoute: true }); });
+els.npcMaxLevel.addEventListener('input', (event) => { state.maxLevel = Number(event.target.value || 99); scheduleCatalogReload({ syncRoute: true }); });
+els.npcRaid.addEventListener('change', (event) => { state.raid = event.target.value; scheduleCatalogReload({ syncRoute: true }); });
+els.npcWeaknessOptions.addEventListener('change', () => {
+    state.weaknesses = [...els.npcWeaknessOptions.querySelectorAll('[data-npc-weakness]:checked')]
+        .map((input) => input.dataset.npcWeakness);
+    syncNpcFilterControls();
+    scheduleCatalogReload({ syncRoute: true });
+});
+els.npcHpMultiplierOptions.addEventListener('change', () => {
+    state.hpMultipliers = [...els.npcHpMultiplierOptions.querySelectorAll('[data-npc-hp-multiplier]:checked')]
+        .map((input) => input.dataset.npcHpMultiplier);
+    syncNpcFilterControls();
+    scheduleCatalogReload({ syncRoute: true });
+});
 els.pagination.addEventListener('click', (event) => {
     const button = event.target.closest('[data-page]');
     if (!button || button.disabled) return;

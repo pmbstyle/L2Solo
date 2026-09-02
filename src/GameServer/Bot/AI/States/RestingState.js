@@ -11,6 +11,7 @@ const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const REST_FOLLOW_WAKE_DISTANCE = 600;
 const RECOVERY_HP_RATIO = 0.35;
 const RECOVERY_MP_RATIO = 0.20;
+const FULL_RECOVERY_RATIO = 0.95;
 const EMERGENCY_RETREAT_DISTANCE = 850;
 const MANA_REGEN_CAST_RETRY_MS = 8000;
 const NEWBIE_GUIDE_TOWN_RADIUS = 7500;
@@ -73,9 +74,12 @@ function maybeCastManaRegeneration(session, bot, Generics) {
     return true;
 }
 
-function needsRecovery(bot) {
-    return bot.fetchHp() / Math.max(1, bot.fetchMaxHp()) < RECOVERY_HP_RATIO
-        || bot.fetchMp() / Math.max(1, bot.fetchMaxMp()) < RECOVERY_MP_RATIO;
+function needsRecovery(session, bot) {
+    const hpThreshold = session.recoveryLocked ? FULL_RECOVERY_RATIO : RECOVERY_HP_RATIO;
+    const mpThreshold = session.recoveryLocked ? FULL_RECOVERY_RATIO : RECOVERY_MP_RATIO;
+    return bot.fetchHp() / Math.max(1, bot.fetchMaxHp()) < hpThreshold
+        || (BotRoles.shouldRestForMana(bot)
+            && bot.fetchMp() / Math.max(1, bot.fetchMaxMp()) < mpThreshold);
 }
 
 function canRecoverAtNewbieGuide(bot, BotAI) {
@@ -109,6 +113,7 @@ function beginNewbieGuideRecovery(session, bot, playerSession) {
 function retreatFromThreat(session, bot, threat) {
     standUp(session, bot);
     session.plan = 'fleeing';
+    session.recoveryLocked = true;
     session.fleeStart = Date.now();
     session.currentTargetId = undefined;
     session.incomingThreatId = undefined;
@@ -228,7 +233,7 @@ module.exports = {
                     });
                     return;
                 }
-                if (needsRecovery(bot)) {
+                if (needsRecovery(session, bot)) {
                     retreatFromThreat(session, bot, threat);
                     return;
                 }
@@ -265,6 +270,7 @@ module.exports = {
         if (hpRatio >= 0.95 && (
             !BotRoles.shouldRestForMana(bot) || mpRatio >= 0.95
         ) && !restingWithLeader) {
+            session.recoveryLocked = false;
             delete session.explicitRestOrder;
             bot.state.setSeated(false);
             session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);

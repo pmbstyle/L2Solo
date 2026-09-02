@@ -1151,15 +1151,16 @@ function clanManagementMarkup(clan) {
     if (!state.clanManagerOpen || !clan.playerManaged) return '';
     const hasDraft = !!state.clanCrestDraft;
     const message = state.clanCrestMessage;
+    const crestAvailable = Number(clan.level || 0) >= 3;
     return `
         <div class="clan-management" aria-label="Clan management">
             ${clanOrderMarkup(clan)}
             <section class="clan-identity-control">
             <div class="clan-management-heading">
                 <div><span class="section-kicker">Appearance</span><strong>Identity</strong></div>
-                <p>Upload a normal image. Observer prepares the 16 × 12 crest required by the C4 client.</p>
+                <p>${crestAvailable ? 'Upload a normal image. Observer prepares the 16 × 12 crest required by the C4 client.' : 'Clan crests unlock at clan level 3.'}</p>
             </div>
-            <div class="clan-crest-editor">
+            ${crestAvailable ? `<div class="clan-crest-editor">
                 <div class="clan-crest-preview">${clanCrestPreview(clan)}</div>
                 <div class="clan-crest-editor-main">
                     <div class="clan-crest-editor-copy">
@@ -1183,7 +1184,11 @@ function clanManagementMarkup(clan) {
                     <button type="button" data-save-clan-crest ${hasDraft && !state.clanCrestSaving ? '' : 'disabled'}>${state.clanCrestSaving ? 'Saving…' : 'Save crest'}</button>
                     <span class="${message?.kind === 'error' ? 'is-error' : ''}">${text(message?.text || (hasDraft ? `${state.clanCrestDraft.fileName || 'Image'} ready to save` : 'Only the selected clan will change'))}</span>
                 </div>
-            </div>
+            </div>` : `<div class="clan-crest-locked" aria-label="Clan crest locked">
+                ${uiIcon('shield')}
+                <div><strong>Clan crest locked</strong><span>Reach clan level 3 to choose and upload a crest.</span></div>
+                <b>L${number(clan.level, 0)} / L3</b>
+            </div>`}
             </section>
         </div>
     `;
@@ -1779,7 +1784,7 @@ function clusterActors(items) {
         point: group.point,
         size: group.size,
         color: clusterColor(group.members),
-        selected: group.members.some(({ actor }) => String(actor.id) === String(state.selectedId?.id))
+        selected: group.members.some(({ actor }) => ActorFilters.matchesSelection(actor, state.selectedId))
     }));
 }
 
@@ -1818,7 +1823,7 @@ function renderSinglePoint(cluster) {
     const point = cluster.point;
     const color = phaseColor(actor);
     const radius = screenUnits(actor.kind === 'player' ? 7.5 : actor.phase === 'hot' ? 7 : 5.5);
-    const selected = String(actor.id) === String(state.selectedId?.id);
+    const selected = ActorFilters.matchesSelection(actor, state.selectedId);
     const group = svgEl('g', {
         class: `point${selected ? ' is-selected' : ''}`,
         transform: `translate(${point.x}, ${point.y})`,
@@ -2296,7 +2301,7 @@ function renderRoster() {
         ? `${list.length.toLocaleString()} of ${roster.length.toLocaleString()} listed`
         : `${roster.length.toLocaleString()} listed`;
     els.actorList.innerHTML = list.length ? list.map((actor) => `
-        <button class="actor-row${String(actor.id) === String(state.selectedId?.id) ? ' is-selected' : ''}" type="button" data-roster-id="${escapeHtml(actor.id)}" data-roster-kind="${actor.kind}">
+        <button class="actor-row${ActorFilters.matchesSelection(actor, state.selectedId) ? ' is-selected' : ''}" type="button" data-roster-id="${escapeHtml(actor.id)}" data-roster-kind="${actor.kind}">
             <span class="phase-dot" style="background:${phaseColor(actor)}"></span>
             <span class="actor-main">
                 <strong>${text(actor.isPk ? `PK ${actor.name}` : actor.name)}</strong>
@@ -2323,9 +2328,16 @@ function reconcileSelectedActor() {
     if (!state.selectedId || !state.snapshot) return;
 
     const id = String(state.selectedId.id);
-    const player = state.snapshot.players.find((actor) => String(actor.id) === id);
-    const bot = state.snapshot.bots.find((actor) => String(actor.id) === id);
-    const actor = player || bot;
+    const currentKind = state.selectedId.kind === 'player' ? 'player' : 'bot';
+    const current = actorById(id, currentKind);
+    if (current) return;
+    if (
+        currentKind === 'player'
+        && (state.detailLoading || (state.detail?.kind === 'player' && String(state.detail.id) === id))
+    ) return;
+
+    const otherKind = currentKind === 'player' ? 'bot' : 'player';
+    const actor = actorById(id, otherKind);
     if (!actor) {
         state.selectedId = null;
         state.detail = null;
@@ -2335,12 +2347,9 @@ function reconcileSelectedActor() {
         return;
     }
 
-    const kind = player ? 'player' : 'bot';
-    if (state.selectedId.kind === kind) return;
-
     // A live character can move between the bot and player collections.
-    // Never let an old bot detail shadow the authoritative player snapshot.
-    state.selectedId = { id: actor.id, kind };
+    // Preserve its selection while switching to the collection that still owns it.
+    state.selectedId = { id: actor.id, kind: otherKind };
     state.detail = null;
     state.detailError = null;
     state.detailLoading = false;
@@ -2721,7 +2730,7 @@ function renderSelectedCard() {
             `;
             return;
         }
-        els.selectedCard.innerHTML = '<span class="eyeline">Selection</span><strong>No actor selected</strong><p>Choose a point or cluster to inspect the bot.</p>';
+        els.selectedCard.innerHTML = '<span class="eyeline">Selection</span><strong>No actor selected</strong><p>Choose a point or cluster to inspect an actor.</p>';
         return;
     }
     const activity = readablePlace(actor.target?.name || actor.spot?.name, null) || displayActivity(actor);
@@ -2884,13 +2893,14 @@ async function loadActorDetail(id, kind = state.selectedId?.kind || 'bot', showL
 }
 
 function selectActor(id, kind = 'bot', focus = false, updateRoute = true) {
+    const actorKind = ActorFilters.actorKind(id, kind, state.snapshot);
     state.selectedRaidBossId = null;
-    state.selectedId = { id, kind };
+    state.selectedId = { id, kind: actorKind };
     state.detail = null;
     state.detailError = null;
     state.detailLoading = false;
     if (focus) {
-        const actor = actorById(id, kind);
+        const actor = actorById(id, actorKind);
         const loc = actor ? mapLocation(actor) : null;
         if (loc && isSurfaceActor(actor)) {
             const viewport = state.viewport || { x: 0, y: 0, width: mapMeta().width, height: mapMeta().height };
@@ -2906,8 +2916,8 @@ function selectActor(id, kind = 'bot', focus = false, updateRoute = true) {
     renderPoints();
     renderRoster();
     renderSelected();
-    loadActorDetail(id, kind);
-    if (updateRoute) commitRoute({ name: 'actor', kind, id });
+    loadActorDetail(id, actorKind);
+    if (updateRoute) commitRoute({ name: 'actor', kind: actorKind, id });
 }
 
 function focusCluster(cluster) {

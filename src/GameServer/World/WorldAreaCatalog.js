@@ -49,6 +49,63 @@ function sevenSignsArea(dungeon) {
 
 const AREAS = Object.freeze([
     Object.freeze({
+        id: 'cruma_tower',
+        name: 'Cruma Tower',
+        kind: 'dungeon',
+        parentRegion: 'Dion',
+        mapLayer: 'dungeon',
+        mapAnchor: Object.freeze({ locX: 17192, locY: 114178, locZ: -3441 }),
+        zones: Object.freeze([Object.freeze({
+            minX: 10800,
+            maxX: 24650,
+            minY: 107200,
+            maxY: 121050,
+            minZ: -12352,
+            maxZ: -6320
+        })]),
+        tags: Object.freeze(['dungeon', 'tower', 'construct', 'party_required']),
+        tagsAuthoritative: true,
+        spotCapacity: 48
+    }),
+    Object.freeze({
+        id: 'tower_of_insolence',
+        name: 'Tower of Insolence',
+        kind: 'dungeon',
+        parentRegion: 'Aden',
+        mapLayer: 'dungeon',
+        mapAnchor: Object.freeze({ locX: 121685, locY: 15749, locZ: -4982 }),
+        zones: Object.freeze([Object.freeze({
+            minX: 111700,
+            maxX: 117500,
+            minY: 12900,
+            maxY: 18950,
+            minZ: -4000,
+            maxZ: 8250
+        })]),
+        tags: Object.freeze(['dungeon', 'tower', 'party_required', 'deep_party']),
+        tagsAuthoritative: true,
+        spotCapacity: 72
+    }),
+    Object.freeze({
+        id: 'antharas_lair',
+        name: "Antharas' Lair",
+        kind: 'dungeon',
+        parentRegion: 'Giran',
+        mapLayer: 'dungeon',
+        mapAnchor: Object.freeze({ locX: 131355, locY: 114451, locZ: -3719 }),
+        zones: Object.freeze([Object.freeze({
+            minX: 125700,
+            maxX: 155250,
+            minY: 106500,
+            maxY: 122400,
+            minZ: -5800,
+            maxZ: -3300
+        })]),
+        tags: Object.freeze(['dungeon', 'lair', 'dvc', 'party_required', 'deep_party']),
+        tagsAuthoritative: true,
+        spotCapacity: 72
+    }),
+    Object.freeze({
         id: 'elven_ruins',
         name: 'Elven Ruins',
         kind: 'dungeon',
@@ -147,8 +204,25 @@ function publicArea(area) {
     };
 }
 
+function areaForSpot(spot = {}) {
+    let fallback = resolve(spot.center);
+    if (spot.partitionedAreaId && fallback?.id === spot.partitionedAreaId) return fallback;
+    // A 6 km hunting sector can span both the surface and an underground
+    // Seven Signs room. The averaged sector center is therefore not always a
+    // valid dungeon coordinate. Classification happens once while the spot
+    // index is built, so inspect its existing spawn points and conservatively
+    // prefer party-only content when any of them belongs to it.
+    for (const point of spot.arrivalPoints || []) {
+        const area = resolve(point);
+        if (!area) continue;
+        if (area.tags?.includes('catacomb') || area.tags?.includes('party_required')) return area;
+        if (!fallback) fallback = area;
+    }
+    return fallback;
+}
+
 function decorateSpot(spot = {}) {
-    const area = resolve(spot.center);
+    const area = areaForSpot(spot);
     if (!area) return spot;
     return {
         ...spot,

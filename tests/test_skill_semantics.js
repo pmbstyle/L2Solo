@@ -6653,6 +6653,66 @@ assert.strictEqual(dryadRoot.fetchTargetKind(), 'enemy', 'Dryad Root should reso
 assert.strictEqual(dryadRootOutcome.effect.key, 'root', 'Dryad Root should apply the structured root effect at sourced base land rate 80');
 assert.strictEqual(EffectStore.hasDebuff(dryadRootTarget, 'root'), true, 'Dryad Root should leave a root debuff when the sourced land rate passes');
 
+const npcHoldVariants = [
+    { selfId: 4047, level: 2, power: 80, spell: true, distance: 600, sourceTarget: null, radius: 0, castRange: 600 },
+    { selfId: 4186, level: 2, power: 70, spell: false, distance: 40, sourceTarget: 'aura', radius: 200, castRange: null },
+    { selfId: 4197, level: 2, power: 70, spell: false, distance: 700, sourceTarget: null, radius: 0, castRange: 700 },
+    { selfId: 4202, level: 3, power: 70, spell: false, distance: 750, sourceTarget: null, radius: 0, castRange: 750 }
+];
+npcHoldVariants.forEach((variant) => {
+    const hold = skill({ ...variant, name: 'Hold', buff: 30000 });
+    const semantic = hold.fetchSemantic();
+    assert.strictEqual(semantic.skillType, C4SkillRules.EFFECT, `NPC Hold ${variant.selfId} should resolve as an effect`);
+    assert.strictEqual(semantic.effect, 'root', `NPC Hold ${variant.selfId} should resolve to the root effect`);
+    assert.strictEqual(semantic.effectType, 'debuff', `NPC Hold ${variant.selfId} should be an offensive debuff`);
+    assert.strictEqual(semantic.target, 'enemy', `NPC Hold ${variant.selfId} should not be inferred as a self buff`);
+    assert.strictEqual(semantic.sourceTarget, variant.sourceTarget, `NPC Hold ${variant.selfId} should preserve its sourced target shape`);
+    assert.strictEqual(semantic.radius, variant.radius, `NPC Hold ${variant.selfId} should preserve its sourced radius`);
+    assert.strictEqual(semantic.castRange, variant.castRange, `NPC Hold ${variant.selfId} should preserve its sourced cast range`);
+    assert.strictEqual(semantic.durationMs, 30000, `NPC Hold ${variant.selfId} should preserve its sourced 30 second duration`);
+    assert.strictEqual(semantic.stackFamily, 'Root', `NPC Hold ${variant.selfId} should use the shared Root stack`);
+    assert.strictEqual(semantic.stackOrder, 1, `NPC Hold ${variant.selfId} should use sourced root stack order one`);
+});
+
+const npcHoldTarget = statActor();
+const npcHoldTargetSession = session(npcHoldTarget);
+npcHoldTarget.session = npcHoldTargetSession;
+const npcHold = skill({ selfId: 4047, name: 'Hold', spell: true, power: 80, level: 2, distance: 600, buff: 30000 });
+const realNowForNpcHold = Date.now;
+let npcHoldNow = realNowForNpcHold();
+Date.now = () => npcHoldNow;
+const npcHoldOutcome = SkillEffects.execute(session(caster), caster, npcHoldTarget, npcHold, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(npcHoldOutcome.effect.key, 'root', 'NPC Hold should apply a structured root effect');
+assert.strictEqual(npcHoldOutcome.effect.type, 'debuff', 'NPC Hold should be stored in the debuff list');
+assert.strictEqual(EffectRestrictions.canMove(npcHoldTarget), false, 'NPC Hold should prevent movement while active');
+const firstNpcHoldExpiry = npcHoldOutcome.effect.expiresAt;
+const npcHoldPacket = npcHoldTargetSession.packets.find((packet) => packet?.[0] === 0x7f);
+assert(npcHoldPacket, 'NPC Hold should refresh the target client abnormal-status list');
+assert.strictEqual(npcHoldPacket.readUInt16LE(1), 1, 'NPC Hold packet should contain one active effect');
+assert.strictEqual(npcHoldPacket.readUInt32LE(3), 4047, 'NPC Hold packet should expose the client skill id');
+assert.strictEqual(npcHoldPacket.readUInt16LE(7), 2, 'NPC Hold packet should expose the landed skill level');
+assert.strictEqual(npcHoldPacket.readUInt32LE(9), 30, 'NPC Hold packet should expose 30 remaining seconds');
+
+npcHoldNow += 8000;
+const repeatedNpcHoldOutcome = SkillEffects.execute(session(caster), caster, npcHoldTarget, npcHold, {
+    magicSkill: true,
+    rng: () => 0,
+    attack: { clearLoadedShot() {} }
+});
+assert.strictEqual(repeatedNpcHoldOutcome.effect, null, 'an equal repeated NPC Hold should not restart the root');
+assert.strictEqual(EffectStore.list(npcHoldTarget)[0].expiresAt, firstNpcHoldExpiry, 'repeated NPC Hold should retain the original expiry');
+
+npcHoldNow += 22001;
+EffectStore.prune(npcHoldTarget);
+const expiredNpcHoldPacket = ServerResponse.abnormalStatusUpdate.fromActor(npcHoldTarget);
+assert.strictEqual(expiredNpcHoldPacket.readUInt16LE(1), 0, 'expired NPC Hold should disappear from the client abnormal-status list');
+clearTimeout(npcHoldTarget.effectExpiryTimers?.root);
+Date.now = realNowForNpcHold;
+
 const sealBindingTarget = statActor();
 const sealBindingData = activeSkills.find((entry) => entry.selfId === 1208);
 assert(sealBindingData, 'Seal of Binding should be present in active skills data');

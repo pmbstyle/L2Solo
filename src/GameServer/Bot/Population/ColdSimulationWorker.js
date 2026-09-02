@@ -52,6 +52,7 @@ const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanne
 const LifeStateProjector = invoke('GameServer/Bot/Population/BotLifeState');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
+const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const Protocol = require('./ColdSimulationProtocol');
 const { ColdSimulationKernel, beginRouteTravelState } = require('./ColdSimulationKernel');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
@@ -226,12 +227,31 @@ function startKernel(config = {}) {
                 && (partyRequest?.priority === 'required'
                     || (partyRequest?.status === 'deferred'
                         && (acquisitionPlan.partyNeed === 'required' || acquisitionPlan.requiresParty === true)));
-            const partyFallback = partyRouteWaiting
+            const plannedPartyFallback = partyRouteWaiting
                 ? GearAcquisitionPlanner.safeFallbackForPlan(state, acquisitionPlan, spots, { occupancy })
                 : null;
-            const fallbackSpot = partyFallback
-                ? spots.find((spot) => String(spot.id) === String(partyFallback.spotId)) || null
+            const plannedFallbackSpot = plannedPartyFallback
+                ? spots.find((spot) => String(spot.id) === String(plannedPartyFallback.spotId)) || null
                 : null;
+            const safePlannedFallback = plannedFallbackSpot
+                && LevelingRoutes.isSpotAllowedForState(plannedFallbackSpot, state)
+                ? plannedFallbackSpot
+                : null;
+            const fallbackState = {
+                ...state,
+                spotId: null,
+                stats: Object.fromEntries(Object.entries(state.stats || {})
+                    .filter(([key]) => key !== 'equipmentPlan'))
+            };
+            const fallbackLevel = LevelingRoutes.targetLevelForState(fallbackState);
+            const genericFallback = partyRouteWaiting && !safePlannedFallback
+                ? LevelingRoutes.bestSpot(spots.filter((spot) => (
+                    Number(spot.minLevel || 1) <= fallbackLevel + 4
+                    && Number(spot.maxLevel || spot.minLevel || 1) >= fallbackLevel - 4
+                )), fallbackState, { occupancy })?.spot || null
+                : null;
+            const fallbackSpot = safePlannedFallback || genericFallback;
+            const partyFallback = safePlannedFallback ? plannedPartyFallback : null;
             const plannedStats = { ...(state.stats || {}), equipmentPlan: acquisitionPlan };
             if (partyRequest) plannedStats.partyRequest = partyRequest;
             else delete plannedStats.partyRequest;

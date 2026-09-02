@@ -52,6 +52,12 @@
         return 'bot';
     }
 
+    function matchesSelection(actor, selection) {
+        if (!actor || !selection) return false;
+        const kind = actor?.kind === 'player' ? 'player' : 'bot';
+        return kind === selection.kind && String(actor.id) === String(selection.id);
+    }
+
     function matches(actor, filters = {}) {
         const minLevel = normalizeLevel(filters.minLevel);
         const maxLevel = normalizeLevel(filters.maxLevel);
@@ -84,5 +90,5 @@
             .sort((left, right) => left.label.localeCompare(right.label, 'en', { sensitivity: 'base' }));
     }
 
-    return { actorKind, classKey, className, classOptions, isEligible, isSurfaceActor, mapLocation, matches, normalizeLevel };
+    return { actorKind, classKey, className, classOptions, isEligible, isSurfaceActor, mapLocation, matches, matchesSelection, normalizeLevel };
 }));

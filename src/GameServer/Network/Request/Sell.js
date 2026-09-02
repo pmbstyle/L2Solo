@@ -3,6 +3,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const TradeService   = invoke('GameServer/Bot/TradeService');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const Database       = invoke('Database');
+const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 
 function merchantSellRows(actor, store) {
     return actor.backpack.fetchItems()
@@ -84,12 +85,26 @@ async function consumeMerchant(session, list, { native = false } = {}) {
         }
 
         for (const line of requested) {
-            sold.push(await TradeService.sellToStore(session.actor, store, line.item.fetchSelfId(), line.amount, {
+            const result = await TradeService.sellToStore(session.actor, store, line.item.fetchSelfId(), line.amount, {
                 buyerActor: trade.merchant,
                 afterTrade: store.budgetBacked === true && trade.merchant?.session?.coldMarketState
                     ? () => invoke('GameServer/Bot/Population/BotLifeState').syncMarketSession(trade.merchant.session, 'hot_market_buy_fill')
                     : null
-            }));
+            });
+            sold.push(result);
+            MarketTelemetry.recordTrade({
+                channel: 'wtb',
+                sourceType: 'private_buy_store_player_sale',
+                selfId: line.item.fetchSelfId(),
+                itemName: result.name,
+                quantity: result.qty,
+                unitPrice: result.qty ? result.totalAdena / result.qty : 0,
+                town: store.town || trade.merchant?.session?.coldMarketState?.currentRegion,
+                sellerCharacterId: session.actor.fetchId(),
+                sellerName: session.actor.fetchName(),
+                buyerCharacterId: trade.merchant?.fetchId?.(),
+                buyerName: trade.merchant?.fetchName?.()
+            });
         }
 
         if (sold.length > 0) {

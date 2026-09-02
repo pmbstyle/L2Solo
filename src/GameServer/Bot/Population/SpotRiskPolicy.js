@@ -1,5 +1,8 @@
 const MIN_DEATHS_AT_SPOT = 2;
 const MIN_DEATH_RATE = 0.2;
+const RISK_WINDOW_VERSION = 2;
+const RISK_WINDOW_FIGHTS = 12;
+const MAX_LOW_WIN_RATE = 0.25;
 const BACKOFF_MS = 60 * 60 * 1000;
 const MAX_BACKOFF_MS = 6 * 60 * 60 * 1000;
 const MAX_BACKOFFS = 8;
@@ -9,10 +12,76 @@ function normalizedSpotId(value) {
     return spotId || null;
 }
 
+function pressureForWindow({ spotId, fights = 0, wins = 0, deaths = 0 } = {}) {
+    const resolved = Math.max(0, Number(fights || 0));
+    const won = Math.max(0, Math.min(resolved, Number(wins || 0)));
+    const dead = Math.max(0, Number(deaths || 0));
+    const deathRate = dead / Math.max(1, resolved);
+    if (dead >= MIN_DEATHS_AT_SPOT && deathRate >= MIN_DEATH_RATE) {
+        return { spotId, deaths: dead, fights: resolved, wins: won, deathRate, winRate: won / Math.max(1, resolved), reason: 'death_pressure' };
+    }
+    const winRate = won / Math.max(1, resolved);
+    if (resolved >= RISK_WINDOW_FIGHTS && winRate <= MAX_LOW_WIN_RATE) {
+        return { spotId, deaths: dead, fights: resolved, wins: won, deathRate, winRate, reason: 'low_win_rate' };
+    }
+    return null;
+}
+
+function recordResolve(previous = {}, sample = {}) {
+    const spotId = normalizedSpotId(sample.spotId);
+    const timestamp = Number(sample.timestamp || Date.now());
+    const sameSpot = spotId && normalizedSpotId(previous.spotId) === spotId;
+    const currentWindow = sameSpot && Number(previous.version || 0) === RISK_WINDOW_VERSION
+        ? pressureForWindow({
+            spotId,
+            fights: previous.windowFights,
+            wins: previous.windowWins,
+            deaths: previous.windowDeaths
+        })
+        : null;
+    // Keep a failed sample stable until the existing routing pass consumes it.
+    // This prevents a delayed travel/rest cycle from diluting the signal and
+    // also keeps the persisted counters bounded without a separate timer.
+    if (currentWindow) return { ...previous };
+    const continueWindow = sameSpot
+        && Number(previous.version || 0) === RISK_WINDOW_VERSION
+        && Number(previous.windowFights || 0) < RISK_WINDOW_FIGHTS;
+    const base = continueWindow ? previous : {};
+
+    return {
+        version: RISK_WINDOW_VERSION,
+        spotId,
+        enteredAt: sameSpot && Number(previous.version || 0) === RISK_WINDOW_VERSION
+            ? Number(previous.enteredAt || timestamp)
+            : timestamp,
+        deathsAtEntry: sameSpot && Number(previous.version || 0) === RISK_WINDOW_VERSION
+            ? Number(previous.deathsAtEntry || 0)
+            : Math.max(0, Number(sample.totalDeaths || 0)),
+        fightsAtEntry: sameSpot && Number(previous.version || 0) === RISK_WINDOW_VERSION
+            ? Number(previous.fightsAtEntry || 0)
+            : Math.max(0, Number(sample.totalFights || 0)),
+        winsAtEntry: sameSpot && Number(previous.version || 0) === RISK_WINDOW_VERSION
+            ? Number(previous.winsAtEntry || 0)
+            : Math.max(0, Number(sample.totalWins || 0)),
+        windowFights: Math.max(0, Number(base.windowFights || 0)) + Math.max(0, Number(sample.fights || 0)),
+        windowWins: Math.max(0, Number(base.windowWins || 0)) + Math.max(0, Number(sample.wins || 0)),
+        windowDeaths: Math.max(0, Number(base.windowDeaths || 0)) + Math.max(0, Number(sample.deaths || 0))
+    };
+}
+
 function deathPressure(state = {}, spotId = state.spotId) {
     const expectedSpotId = normalizedSpotId(spotId);
     const risk = state.stats?.spotRisk;
     if (!expectedSpotId || normalizedSpotId(risk?.spotId) !== expectedSpotId) return null;
+
+    if (Number(risk.version || 0) === RISK_WINDOW_VERSION) {
+        return pressureForWindow({
+            spotId: expectedSpotId,
+            fights: risk.windowFights,
+            wins: risk.windowWins,
+            deaths: risk.windowDeaths
+        });
+    }
 
     const deaths = Math.max(0, Number(state.stats?.deaths || 0) - Number(risk.deathsAtEntry || 0));
     const fights = Math.max(0, Number(state.stats?.fightsResolved || 0) - Number(risk.fightsAtEntry || 0));
@@ -48,7 +117,7 @@ function backoffForStates(states = [], spotId, timestamp = Date.now()) {
     if (!pressure) return null;
     return {
         ...pressure,
-        reason: 'death_pressure',
+        reason: pressure.reason || 'death_pressure',
         startedAt: timestamp,
         until: timestamp + BACKOFF_MS
     };
@@ -107,9 +176,13 @@ function withBackoff(state = {}, backoff = null, timestamp = Date.now()) {
 module.exports = {
     MIN_DEATHS_AT_SPOT,
     MIN_DEATH_RATE,
+    RISK_WINDOW_VERSION,
+    RISK_WINDOW_FIGHTS,
+    MAX_LOW_WIN_RATE,
     BACKOFF_MS,
     MAX_BACKOFF_MS,
     MAX_BACKOFFS,
+    recordResolve,
     deathPressure,
     activeBackoffs,
     backoffForStates,

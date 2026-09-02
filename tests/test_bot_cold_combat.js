@@ -7,6 +7,9 @@ const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const BackgroundPartyResolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
 const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
+const Npc = invoke('GameServer/Npc/Npc');
+const ProgressionRates = invoke('GameServer/ProgressionRates');
+const PartyRewardMath = invoke('GameServer/Actor/PartyRewardMath');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const PopulationMetrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
@@ -166,6 +169,30 @@ const mixedSpot = {
     npcEntries: [{ selfId: 1, count: 1 }, { selfId: 12, count: 1 }],
     npcSelfIds: [1, 12]
 };
+
+const strongTypeSamples = new Map([
+    [646, 2], [653, 3], [623, 4], [629, 5], [5165, 9], [377, 0.5]
+]);
+for (const [npcId, expectedMultiplier] of strongTypeSamples) {
+    const template = DataCache.npcs.find((candidate) => Number(candidate.selfId) === npcId);
+    const hotNpc = new Npc(8800000 + npcId, {
+        ...utils.crushOb(template), locX: 0, locY: 0, locZ: 0, head: 0
+    });
+    const coldNpc = ColdCombatProfile.npcCombatStats(template);
+    assert.strictEqual(coldNpc.maxHp, hotNpc.fetchMaxHp(),
+        `cold NPC ${npcId} must retain its x${expectedMultiplier} hot-runtime HP`);
+    assert.strictEqual(coldNpc.maxHp, Math.round(template.vitals.maxHp * expectedMultiplier));
+}
+
+const gigantTemplate = DataCache.npcs.find((candidate) => Number(candidate.selfId) === 1187);
+const hotGigant = new Npc(8811187, {
+    ...utils.crushOb(gigantTemplate), locX: -47000, locY: 215000, locZ: -5080, head: 0
+});
+const coldGigant = ColdCombatProfile.npcCombatStats(gigantTemplate);
+assert.strictEqual(coldGigant.maxHp, 2300, 'Gigant Slave must enter cold combat with its full x4 HP');
+assert.strictEqual(coldGigant.accur, hotGigant.fetchCollectiveAccur(), 'cold NPC accuracy must use the hot DEX/level formula');
+assert.strictEqual(coldGigant.evasion, hotGigant.fetchCollectiveEvasion(), 'cold NPC evasion must use the hot DEX/level formula');
+assert.strictEqual(coldGigant.vulnerabilities.darkVuln, 1.2, 'cold combat must retain NPC passive vulnerabilities');
 
 assert(ColdCombatProfile.summonSkills(ColdCombatProfile.profileFor({
     ...fighter,
@@ -351,6 +378,87 @@ const interruptedLoot = BackgroundDropResolver.rollForFight({
     rng: () => 0
 });
 assert(interruptedLoot.length > 0 && interruptedLoot.every((item) => item.sourceMobLevel === 16), 'an aggressive interruption must roll the interrupting NPC loot table');
+
+const gigantSpot = {
+    ...spot,
+    id: 'necropolis_gigant_slave',
+    name: 'Gigant Slave chamber',
+    avgLevel: 21,
+    density: 1,
+    npcEntries: [{ selfId: 1187, count: 1 }],
+    npcSelfIds: [1187],
+    npcNames: ['Gigant Slave'],
+    rewards: { exp: 1, sp: 1, adenaMin: 9999, adenaMax: 9999 }
+};
+const gigantProgression = BackgroundDropResolver.progressionForFight({ spot: gigantSpot, npcSelfId: 1187, rng: () => 0 });
+assert.deepStrictEqual(
+    { exact: gigantProgression.exact, exp: Math.round(gigantProgression.exp), sp: gigantProgression.sp },
+    { exact: true, exp: 594, sp: 27 },
+    'cold rewards must use the defeated NPC progression instead of the synthetic spot average'
+);
+assert.strictEqual(
+    BackgroundDropResolver.rollAdenaForFight({ spot: gigantSpot, killerLevel: 21, npcSelfId: 1187, rng: () => 0 }),
+    0,
+    'a monster without an Adena group must not create synthetic cold Adena'
+);
+const gigantLoot = BackgroundDropResolver.rollForFight({
+    spot: gigantSpot, killerLevel: 21, npcSelfId: 1187, rng: () => 0
+});
+assert(gigantLoot.some((item) => item.selfId === 6360), 'cold loot must retain the later Blue Seal Stone group');
+assert(gigantLoot.some((item) => item.selfId === 6362), 'cold loot must retain the later Red Seal Stone group');
+
+const strongColdHunter = {
+    ...fighter,
+    characterId: 919,
+    name: 'StrongColdHunter',
+    level: 30,
+    vitals: { hp: 10000, maxHp: 10000, mp: 1000, maxMp: 1000 },
+    stats: {
+        ...fighter.stats,
+        coldCombat: {
+            ...fighter.stats.coldCombat,
+            effects: [],
+            skills: [],
+            equipment: {
+                ...fighter.stats.coldCombat.equipment,
+                pAtk: 5000,
+                pDef: 2000,
+                mDef: 2000,
+                critical: 0
+            }
+        }
+    }
+};
+const strongSoloResult = BackgroundResolver.resolveSolo({
+    state: strongColdHunter,
+    spot: gigantSpot,
+    targetNpcId: 1187,
+    elapsedMs: 12000,
+    timestamp,
+    rng: () => 0.1
+});
+assert.deepStrictEqual(strongSoloResult.debug.foughtNpcIds, [1187]);
+assert.strictEqual(strongSoloResult.materialize.exp, Math.round(594 * ProgressionRates.profile().exp));
+assert.strictEqual(strongSoloResult.materialize.sp, 27 * ProgressionRates.profile().sp);
+assert.strictEqual(strongSoloResult.materialize.adena, 0);
+
+const strongPartyResult = BackgroundPartyResolver.resolve({
+    party: { partyId: 'strong_type_party', cohesion: 1, risk: 0, roleCoverage: {}, stats: {} },
+    members: [strongColdHunter, { ...strongColdHunter, characterId: 920, name: 'StrongColdHunterTwo' }],
+    spot: gigantSpot,
+    targetNpcId: 1187,
+    elapsedMs: 12000,
+    timestamp,
+    rng: () => 0.1
+});
+const expectedPartyShares = PartyRewardMath.sharesForLevels([30, 30], 594, 27);
+assert.deepStrictEqual(
+    strongPartyResult.memberResults.map((entry) => entry.result.materialize.exp),
+    expectedPartyShares.map((share) => Math.round(share.exp * ProgressionRates.profile().exp)),
+    'cold parties must use the same C4 bonus and squared-level reward split as hot parties'
+);
+assert(strongPartyResult.memberResults.every((entry) => entry.result.materialize.adena === 0));
+
 const result = BackgroundResolver.resolveSolo({ state: fighter, spot, elapsedMs: 12000, timestamp, rng: () => 0.1 });
 assert(result.debug.combatActions > 0, 'cold combat must execute bounded combat actions');
 assert(result.debug.skillUses > 0, 'a usable learned skill must be cast during cold combat');

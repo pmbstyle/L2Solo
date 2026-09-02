@@ -1,2 +1,7 @@
 const PrivateStore = invoke('GameServer/PrivateStore');
-module.exports = (session) => { if (!PrivateStore.open(session, PrivateStore.BUY)) session?.dataSendToMe?.(invoke('GameServer/Network/Response').actionFailed()); };
+module.exports = (session) => {
+    const opened = PrivateStore.open(session, PrivateStore.BUY);
+    const reject = () => session?.dataSendToMe?.(invoke('GameServer/Network/Response').actionFailed());
+    if (opened && typeof opened.then === 'function') return opened.then((ok) => { if (!ok) reject(); }).catch(reject);
+    if (!opened) reject();
+};

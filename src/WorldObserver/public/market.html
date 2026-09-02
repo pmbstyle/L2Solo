@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Market · World Observer</title>
+    <link rel="icon" type="image/png" href="/observer/world-observer-logo.png">
+    <link rel="stylesheet" href="/observer/styles.css">
+</head>
+<body class="market-page-body">
+    <main class="market-page">
+        <header class="market-page-header">
+            <div class="market-page-identity">
+                <a class="brand-lockup" href="/observer/" aria-label="Open world map">
+                    <img class="brand-logo" src="/observer/world-observer-logo.png" alt="" width="35" height="35" aria-hidden="true">
+                    <div><h1>World Observer</h1><p>Live economy</p></div>
+                </a>
+                <span class="market-page-divider" aria-hidden="true"></span>
+                <div>
+                    <span class="section-kicker">Trading ledger</span>
+                    <h2>Market</h2>
+                </div>
+            </div>
+            <nav class="market-page-nav" aria-label="Observer pages">
+                <a class="rankings-button" href="/observer/database/items">
+                    <svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#search"></use></svg>Database
+                </a>
+                <a class="rankings-button" href="/observer/">
+                    <svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#map"></use></svg>World map
+                </a>
+                <button class="live-toggle is-live" id="marketLiveToggle" type="button" title="Pause live refresh" aria-label="Pause live refresh">
+                    <span class="pulse"></span><span class="live-label">Live</span>
+                </button>
+            </nav>
+        </header>
+
+        <section class="market-ledger-head" aria-labelledby="marketHeading">
+            <div>
+                <h1 id="marketHeading">What the world wants — and what it will pay.</h1>
+                <p id="marketFreshness">Loading active stores and trade activity.</p>
+            </div>
+            <div class="market-kpis" aria-label="Market summary">
+                <div><span>Sell stores</span><strong id="marketPageWts">—</strong><small id="marketPageSellUnits">— units listed</small></div>
+                <div><span>Buy stores</span><strong id="marketPageWtb">—</strong><small id="marketPageBuyUnits">— units wanted</small></div>
+                <div><span>7d trades</span><strong id="marketPageTrades">—</strong><small id="marketPageTradeUnits">— units exchanged</small></div>
+                <div><span>7d volume</span><strong id="marketPageVolume">—</strong><small id="marketPageVolumeScope">persistent Adena turnover</small></div>
+            </div>
+        </section>
+
+        <section class="market-controls" aria-label="Market filters">
+            <label class="market-search">
+                <svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#search"></use></svg>
+                <input id="marketSearch" type="search" placeholder="Find an item or ID…" autocomplete="off">
+                <kbd>/</kbd>
+            </label>
+            <div class="market-side-tabs" id="marketSideTabs" role="group" aria-label="Market side">
+                <button class="is-active" type="button" data-market-side="all">All</button>
+                <button type="button" data-market-side="wts">For sale</button>
+                <button type="button" data-market-side="wtb">Wanted</button>
+                <button type="button" data-market-side="demand">Planned demand</button>
+            </div>
+            <label><span>Town</span><select id="marketTown"><option value="all">All towns</option></select></label>
+            <label><span>Source</span><select id="marketSource"><option value="all">All sources</option><option value="player">Online players</option><option value="afk_player">AFK players</option><option value="bot">Dynamic bots</option><option value="fixed">Fixed traders</option></select></label>
+            <label><span>Sort</span><select id="marketSort"><option value="activity">Market activity</option><option value="demand">Funded demand</option><option value="traded">Traded volume</option><option value="ask">Lowest ask</option><option value="bid">Highest bid</option><option value="name">Item name</option></select></label>
+        </section>
+
+        <section class="market-history" aria-labelledby="marketHistoryTitle">
+            <div class="market-history-head">
+                <div><span class="section-kicker">Price discovery</span><h2 id="marketHistoryTitle">Select an item to inspect price history</h2><p id="marketHistoryMeta">Persistent trades are retained for 90 days.</p></div>
+                <div class="market-range-tabs" id="marketRangeTabs" role="group" aria-label="Price history range">
+                    <button class="is-active" type="button" data-market-range="24h">24h</button>
+                    <button type="button" data-market-range="7d">7d</button>
+                </div>
+            </div>
+            <div class="market-history-stats" aria-label="Selected item trade statistics">
+                <div><span>VWAP</span><strong id="marketHistoryVwap">—</strong></div>
+                <div><span>Median</span><strong id="marketHistoryMedian">—</strong></div>
+                <div><span>Range</span><strong id="marketHistoryRange">—</strong></div>
+                <div><span>Volume</span><strong id="marketHistoryVolume">—</strong></div>
+            </div>
+            <div class="market-chart-shell" id="marketChartShell" aria-live="polite">
+                <div class="market-chart-empty">Select a traded item to load its persistent price history.</div>
+            </div>
+            <div class="market-chart-legend"><span><i class="vwap"></i>VWAP</span><span><i class="median"></i>Weighted median</span><span><i class="volume"></i>Units traded</span></div>
+        </section>
+
+        <div class="market-workspace">
+            <section class="market-depth" aria-label="Market depth by item">
+                <div class="market-table-summary"><span id="marketResultCount">0 items</span><span>Click an item to inspect every active offer</span></div>
+                <div class="market-table-wrap">
+                    <table class="market-table">
+                        <thead><tr><th>Item</th><th>Supply</th><th>Best ask</th><th>Demand</th><th>Best bid</th><th>Trades</th><th>Volume</th></tr></thead>
+                        <tbody id="marketTableBody"><tr><td colspan="7" class="list-empty">Loading market depth.</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <aside class="market-inspector" aria-label="Selected item market">
+                <div id="marketItemDetail" class="market-item-detail">
+                    <div class="inspector-empty"><span class="empty-glyph">◎</span><strong>Select an item</strong><p>See the exact sellers, buyers, quantities, and prices behind the market depth.</p></div>
+                </div>
+            </aside>
+        </div>
+
+        <section class="market-lower-grid">
+            <div class="market-town-section">
+                <div class="market-section-heading"><div><span class="section-kicker">Geography</span><h2>Trading towns</h2></div><span>active stores</span></div>
+                <div id="marketTownRows" class="market-town-ledger"><div class="list-empty">Loading towns.</div></div>
+            </div>
+            <div class="market-trades-section">
+                <div class="market-section-heading"><div><span class="section-kicker">Tape</span><h2>Recent trades</h2></div><span>persistent · 90 days</span></div>
+                <div id="marketTradeRows" class="market-trade-ledger"><div class="list-empty">Loading trades.</div></div>
+            </div>
+        </section>
+    </main>
+    <script src="/observer/market.js"></script>
+</body>
+</html>

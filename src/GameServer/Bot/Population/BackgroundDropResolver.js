@@ -58,32 +58,60 @@ function sourceMobLevel(rewardData, spot, npcSelfId = 0) {
     return Math.max(0, Number(npc?.template?.level || spot?.avgLevel || 0));
 }
 
-function rollForFight({ spot, killerLevel, npcSelfId = 0, rng = Math.random, maxItems = 1 } = {}) {
+function progressionForFight({ spot, npcSelfId = 0, rng = Math.random } = {}) {
     const rewardData = rewardDataForSpot(spot, rng, npcSelfId);
-    if (!rewardData) return [];
+    const npc = (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(npcSelfId || rewardData?.selfId));
+    const level = Math.max(1, Number(npc?.template?.level || spot?.avgLevel || 1));
+    const expModifier = Number(npc?.rewards?.exp);
+    const sp = Number(npc?.rewards?.sp);
+    if (npc && Number.isFinite(expModifier) && Number.isFinite(sp)) {
+        return {
+            exact: true,
+            exp: Math.max(0, level * level * expModifier),
+            sp: Math.max(0, sp)
+        };
+    }
+    return {
+        exact: false,
+        exp: Math.max(0, Number(spot?.rewards?.exp || 0)),
+        sp: Math.max(0, Number(spot?.rewards?.sp || 0))
+    };
+}
+
+function rollRewardsForFight({ spot, killerLevel, npcSelfId = 0, rng = Math.random, maxItems = Number.POSITIVE_INFINITY } = {}) {
+    const rewardData = rewardDataForSpot(spot, rng, npcSelfId);
+    if (!rewardData) return null;
     const defeatedNpcLevel = sourceMobLevel(rewardData, spot, npcSelfId);
-
-    const drops = [];
+    const result = { adena: 0, items: [] };
     for (const group of rewardData.rewards || []) {
-        if (drops.length >= maxItems) break;
-        if ((group.items || []).every((item) => Number(item.selfId) === 57)) continue;
-
         const groupRoll = ProgressionRates.rewardGroupRoll(group, 'drop', {
             npcLevel: defeatedNpcLevel,
             killerLevel: Number(killerLevel || 0)
         }, rng);
         if (!groupRoll.hit) continue;
-
         const item = ProgressionRates.selectDropItem(group, groupRoll.itemRate, rng);
-        if (!item || Number(item.selfId) === 57) continue;
+        if (!item) continue;
         const amount = ProgressionRates.rollDropAmount(group, item, groupRoll.itemRate, rng);
-        const snapshot = itemSnapshot(item, amount, defeatedNpcLevel);
-        if (snapshot) drops.push(snapshot);
+        if (Number(item.selfId) === 57) {
+            result.adena += amount;
+        } else if (result.items.length < maxItems) {
+            const snapshot = itemSnapshot(item, amount, defeatedNpcLevel);
+            if (snapshot) result.items.push(snapshot);
+        }
     }
-    return drops;
+    return result;
 }
 
-function rollSpoilForFight({ spot, killerLevel, npcSelfId = 0, rng = Math.random, maxItems = 4 } = {}) {
+function rollAdenaForFight(options = {}) {
+    const result = rollRewardsForFight(options);
+    return result === null ? null : result.adena;
+}
+
+function rollForFight({ spot, killerLevel, npcSelfId = 0, rng = Math.random, maxItems = Number.POSITIVE_INFINITY } = {}) {
+    return rollRewardsForFight({ spot, killerLevel, npcSelfId, rng, maxItems })?.items || [];
+}
+
+function rollSpoilForFight({ spot, killerLevel, npcSelfId = 0, rng = Math.random, maxItems = Number.POSITIVE_INFINITY } = {}) {
     const rewardData = rewardDataForSpot(spot, rng, npcSelfId);
     if (!rewardData) return [];
     const defeatedNpcLevel = sourceMobLevel(rewardData, spot, npcSelfId);
@@ -112,4 +140,4 @@ function rollSpoilForFight({ spot, killerLevel, npcSelfId = 0, rng = Math.random
     return spoils;
 }
 
-module.exports = { rollForFight, rollSpoilForFight };
+module.exports = { progressionForFight, rollRewardsForFight, rollAdenaForFight, rollForFight, rollSpoilForFight };

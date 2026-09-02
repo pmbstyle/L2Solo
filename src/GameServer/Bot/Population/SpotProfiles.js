@@ -230,12 +230,13 @@ function reservationGroupHasCapacity(entry, options = {}) {
 function hasCapacityForStates(spot, states = [], occupancy = {}, options = {}) {
     if (!spot?.id) return false;
     const entry = occupancy?.[spot.id];
+    const maxOverflowUnits = Math.max(0, Math.floor(Number(options.maxOverflowUnits || 0)));
     if (!entry) {
-        return capacityUnitsFor(states) <= Math.max(1, LevelingRoutes.capacityForSpot(spot));
+        return capacityUnitsFor(states) <= Math.max(1, LevelingRoutes.capacityForSpot(spot)) + maxOverflowUnits;
     }
     if (!reservationGroupHasCapacity(entry, options)) return false;
     const capacity = Number(entry.capacity || LevelingRoutes.capacityForSpot(spot));
-    return capacityCount(entry) + capacityUnitsFor(states, entry) <= Math.max(1, capacity);
+    return capacityCount(entry) + capacityUnitsFor(states, entry) <= Math.max(1, capacity) + maxOverflowUnits;
 }
 
 function reserveCapacity(occupancy, spot, states = [], options = {}) {
@@ -256,7 +257,8 @@ function reserveCapacity(occupancy, spot, states = [], options = {}) {
     if (!reservationGroupHasCapacity(entry, options)) return false;
     const keys = [...new Set((states || []).map(stateKey).filter(Boolean))]
         .filter((key) => !entry.reservedKeys.has(key));
-    if (capacityCount(entry) + keys.length > Math.max(1, Number(entry.capacity || 0))) return false;
+    const maxOverflowUnits = Math.max(0, Math.floor(Number(options.maxOverflowUnits || 0)));
+    if (capacityCount(entry) + keys.length > Math.max(1, Number(entry.capacity || 0)) + maxOverflowUnits) return false;
     keys.forEach((key) => {
         entry.reservedKeys.add(key);
         entry.retained.add(key);
@@ -365,6 +367,7 @@ const SpotProfiles = {
         const routeOptions = { ...options, occupancy, excludedSpotIds, capacityUnits, ...reservationOptions };
         const currentMatch = currentSpot ? LevelingRoutes.scoreSpot(currentSpot, state, routeOptions) : null;
         const mustRelocate = currentSpot && (currentMatch.localityPenalty > 0
+            || currentMatch.huntingGround?.allowed === false
             || shouldLeaveOverCapacity(state, currentSpot, occupancy)
             || excludedSpotIds.has(String(currentSpot.id)));
         const keepCurrentSpot = currentSpot && (!acquisitionPlan || protectedStarterCohort)
@@ -396,7 +399,8 @@ const SpotProfiles = {
                 : Object.keys(occupancy || {}).length === 0
                     ? this.findById(acquisitionPlan.next?.spotId)
                     : null;
-            if (planned && !excludedSpotIds.has(String(planned.id))) {
+            if (planned && !excludedSpotIds.has(String(planned.id))
+                && LevelingRoutes.isSpotAllowedForState(planned, state, routeOptions)) {
                 // A drop source may be valid for the item but still be a
                 // starter-level camp for the bot. Never let an active gear
                 // plan pin an outleveled bot to that source indefinitely.
@@ -414,6 +418,7 @@ const SpotProfiles = {
 
         const candidates = profiles
             .filter((profile) => !excludedSpotIds.has(String(profile.id)))
+            .filter((profile) => LevelingRoutes.isSpotAllowedForState(profile, state, routeOptions))
             .filter((profile) => profile.minLevel <= targetLevel + 4 && profile.maxLevel >= targetLevel - 4);
         const relocationCandidates = mustRelocate
             ? candidates.filter((profile) => profile.id !== currentSpot.id)

@@ -34,6 +34,30 @@ function privateStoreSell(session, buffer) {
         });
     }
 
+    if (store.afkTrade === true) {
+        return list.reduce((pending, row) => pending.then(async () => {
+            const projection = invoke('GameServer/AfkTrade/AfkTradeService').findProjection(merchantId);
+            const activeStore = projection?.actor?.fetchPrivateStore?.() || store;
+            const line = (activeStore.items || []).find((entry) => Number(entry.selfId) === row.selfId && Number(entry.count) > 0);
+            const inventoryItem = session.actor.backpack.fetchItemRaw(row.objectId);
+            if (!line || !inventoryItem || inventoryItem.fetchEquipped() || inventoryItem.fetchSelfId() !== row.selfId
+                || !Number.isSafeInteger(row.amount) || row.amount < 1 || row.amount > inventoryItem.fetchAmount()
+                || row.amount > Number(line.count) || Number(row.price) !== Number(line.price)) {
+                throw new Error('afk_trade_demand_changed');
+            }
+            await invoke('GameServer/AfkTrade/AfkTradeService').sellToShop(
+                session.actor.fetchId(),
+                activeStore,
+                row.selfId,
+                row.amount,
+                { objectId: row.objectId, expectedPrice: row.price }
+            );
+        }), Promise.resolve()).catch((error) => {
+            utils.infoWarn('AfkTrade', 'private-store sale failed: %s', error.message);
+            session.dataSendToMe(ServerResponse.actionFailed());
+        });
+    }
+
     return Sell.consumeMerchant(session, list, { native: true });
 }
 

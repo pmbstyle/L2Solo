@@ -192,6 +192,15 @@ assert.strictEqual(woundedSession.plan, 'fleeing', 'resting solo hunter with cri
 assert.strictEqual(seated, false, 'resting solo hunter should stand before retreating');
 assert.strictEqual(woundedAttackId, null, 'resting solo hunter with critical HP should not counterattack immediately');
 
+woundedBot.fetchHp = () => 50;
+woundedSession.plan = 'resting';
+woundedSession.recoveryLocked = true;
+woundedSession.incomingThreatId = threatNpc.fetchId();
+woundedSession.incomingThreatAt = Date.now();
+RestingState.tick(woundedSession, woundedBot, {}, { say() {}, executeCombat() {} });
+assert.strictEqual(woundedSession.plan, 'fleeing',
+    'a recovery-locked bot at half HP must keep escaping instead of re-entering combat');
+
 const exhaustedBot = actor(2000013);
 exhaustedBot.fetchClassId = () => 10;
 exhaustedBot.fetchMp = () => 10;
@@ -262,6 +271,30 @@ tickHunting(openingAttackSession, openingAttackBot, {}, { say() {}, executeComba
 assert.strictEqual(openingAttackSession.plan, 'hunting',
     'a hunter must not enter resting while its opening attack is still in flight');
 assert.strictEqual(openingAttackSeated, false, 'an in-flight combat action must keep the hunter standing');
+
+let betweenSwingsSeated = false;
+const betweenSwingsBot = actor(2000023);
+betweenSwingsBot.fetchHp = () => 30;
+betweenSwingsBot.state.fetchSeated = () => betweenSwingsSeated;
+betweenSwingsBot.state.setSeated = (value) => { betweenSwingsSeated = value; };
+betweenSwingsBot.selected = threatNpc.fetchId();
+const betweenSwingsSession = {
+    accountId: 'bot_low_hp_between_swings',
+    actor: betweenSwingsBot,
+    plan: 'hunting',
+    currentTargetId: threatNpc.fetchId(),
+    dataSendToOthers() {}
+};
+World.user = { sessions: [betweenSwingsSession] };
+World.npc = { spawns: [threatNpc] };
+World.fetchNpcsInRadius = () => [];
+tickHunting(betweenSwingsSession, betweenSwingsBot, {}, { say() {}, executeCombat() {} });
+assert.strictEqual(betweenSwingsSession.plan, 'fleeing',
+    'a critically wounded hunter must retreat from its live target between attack animations');
+assert.strictEqual(betweenSwingsSeated, false,
+    'a critically wounded hunter must not sit while its selected target is still alive');
+assert.strictEqual(betweenSwingsSession.currentTargetId, undefined,
+    'retreating between attacks should release the old combat target');
 
 let oldAggroSeated = false;
 const oldAggroBot = actor(2000016);

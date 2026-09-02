@@ -39,6 +39,39 @@ assert.match(observerApp, /Router\.href\(\{ name: 'knowledge-items', id: itemId 
     'paperdoll items should link to their knowledge-base detail route');
 assert.match(observerApp, /const tag = href \? 'a' : 'div'/,
     'paperdoll rows without a valid item id should retain a non-link fallback');
+assert.match(observerApp, /class="paperdoll-enchant">\+\$\{number\(item\.enchant\)\}/,
+    'paperdoll slots should draw the enchant level over equipped item icons');
+
+const coldDetail = Observer.compactColdDetail({
+    characterId: 77,
+    name: 'Enchanted Cold Bot',
+    level: 20,
+    phase: 'cold',
+    activity: 'hunting',
+    loc: { locX: 0, locY: 0, locZ: 0 },
+    vitals: {},
+    party: {},
+    stats: {
+        classId: 0,
+        equipment: [{ selfId: 1, name: 'Short Sword', slot: 7, rank: 'd', kind: 'Weapon.Sword' }]
+    },
+    inventory: {
+        1: {
+            selfId: 1,
+            name: 'Short Sword',
+            amount: 1,
+            equipped: true,
+            equippedSlots: [7],
+            slot: 7,
+            rank: 'd',
+            kind: 'Weapon.Sword',
+            enchant: 5,
+            instances: [{ id: 7001, amount: 1, enchant: 5, equipped: true, slot: 7 }]
+        }
+    }
+});
+assert.strictEqual(coldDetail.equipment.equipped[0].enchant, 5,
+    'persisted cold equipment must carry enchant levels into the Observer paperdoll');
 
 const catalog = Observer.itemIconCatalogStatus();
 if (catalog.available) {

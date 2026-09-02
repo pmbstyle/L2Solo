@@ -212,6 +212,9 @@ benefits from explicit reasoning.
 
 - `.admin` - open the admin menu.
 - `.sell` - sell all unequipped non-Adena items for 50% item value.
+- `.afksell` - open the native private-sale window and leave a persistent AFK shop at the current peace-zone location.
+- `.afkbuy` - open the native private-purchase window and reserve its Adena budget in a persistent AFK shop.
+- `.afkstop` - close the active AFK shop remotely and return all remaining reserved items or Adena.
 - `.bot` / `.b` - open companion controls.
 - `.botparty` / `.bp` - search active bots to join the player party; distant companions catch up after joining.
 - `.botfriends` / `.bf` - friend list and const party management.
@@ -235,4 +238,3 @@ L2Solo is licensed under the Apache 2.0 license.
 Crafting with ❤️ by a player for players 🤘
 
 <img width="600"  alt="L2solo hit the star" src="https://github.com/user-attachments/assets/5e22564f-fe8e-4956-af21-1158f1849a31" />
-

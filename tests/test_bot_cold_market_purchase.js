@@ -127,20 +127,23 @@ async function run() {
     assert.strictEqual(playerTransactions.recentPeerTrades.length, 0, 'a real player WTS must not inflate bot-to-bot telemetry');
     assert.strictEqual(MarketTelemetry.current().peerPurchases, 0);
 
-    let lowTierPeerLookups = 0;
+    let lowTierMarketLookups = 0;
     MarketOpportunity.bestOffer = () => {
-        lowTierPeerLookups += 1;
-        return { selfId: 2, price: 1, sourceType: 'private_store' };
+        lowTierMarketLookups += 1;
+        return {
+            selfId: 2,
+            itemName: 'Long Sword',
+            price: 900,
+            sourceType: 'private_store',
+            sourceId: 9002,
+            sourceName: 'PlayerLowGradeSeller',
+            sellerKind: 'player',
+            available: true,
+            storeItem: { selfId: 2, price: 900, count: 1 }
+        };
     };
-    MarketOpportunity.npcOffers = () => [{
-        selfId: 2,
-        itemName: 'Long Sword',
-        price: 900,
-        sourceType: 'npc',
-        available: true,
-        town: 'Giran'
-    }];
-    const lowTierNpcPurchase = await ColdMarketService.tryPurchase({
+    MarketOpportunity.reserve = () => true;
+    const lowTierPlayerPurchase = await ColdMarketService.tryPurchase({
         ...state,
         characterId: 88,
         level: 14
@@ -150,13 +153,13 @@ async function run() {
         target: { itemId: 2, itemName: 'Long Sword', itemSlot: 7, requiredRank: 'none' },
         plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' }
     });
-    assert.strictEqual(lowTierNpcPurchase.purchased, true);
-    assert.strictEqual(lowTierNpcPurchase.offer.sourceType, 'npc',
-        'NG/D equipment must use the concrete NPC offer even when a private listing is cheaper');
-    assert.strictEqual(lowTierPeerLookups, 0, 'NG/D equipment must not search peer-market offers');
+    assert.strictEqual(lowTierPlayerPurchase.purchased, true);
+    assert.strictEqual(lowTierPlayerPurchase.offer.sourceType, 'private_store',
+        'NG/D equipment must use a cheaper concrete player offer');
+    assert.strictEqual(lowTierMarketLookups, 1, 'NG/D equipment should perform one indexed market lookup');
 
     let lowTierBuyStoreCalls = 0;
-    MarketOpportunity.npcOffers = () => [];
+    MarketOpportunity.bestOffer = () => null;
     BuyStoreService.open = () => {
         lowTierBuyStoreCalls += 1;
         return Promise.resolve({ opened: true });
@@ -178,11 +181,12 @@ async function run() {
         target: { itemId: 945, itemName: 'Skeleton Buckler', itemSlot: 8, requiredRank: 'none' },
         plan: { expectedBenefit: 'market_search_for_gear', marketTown: 'Giran' }
     });
-    assert.strictEqual(missingLowTierNpcGear.reason, 'low_tier_npc_offer_missing');
-    assert.strictEqual(lowTierBuyStoreCalls, 0, 'missing NG/D NPC gear must replan instead of opening a WTB store');
+    assert.strictEqual(missingLowTierNpcGear.reason, 'low_tier_offer_missing');
+    assert.strictEqual(lowTierBuyStoreCalls, 0, 'missing NG/D gear must replan instead of opening a WTB store');
     assert.strictEqual(missingLowTierNpcGear.state.activity, 'traveling');
     MarketOpportunity.npcOffers = originals.npcOffers;
     MarketOpportunity.bestOffer = originals.bestOffer;
+    MarketOpportunity.reserve = originals.reserve;
     BuyStoreService.open = originals.openBuyStore;
 
     const completedGoal = await ColdMarketService.tryPurchase(state, {

@@ -3,9 +3,11 @@ const World = invoke('GameServer/World/World');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const TradeService = invoke('GameServer/Bot/TradeService');
+const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const TownNpcCatalog = require('./TownNpcCatalog');
 const buyStoreReservations = new WeakMap();
 const coldStoreIndex = new Map();
+let coldStoreIndexHydrated = false;
 const SHOT_IDS = new Set([
     1835, 1463, 1464, 1465, 1466, 1467,
     2509, 2510, 2511, 2512, 2513, 2514,
@@ -13,20 +15,21 @@ const SHOT_IDS = new Set([
 ]);
 
 function coldMarketStates() {
-    // The in-memory index is the fast path. Include lifecycle snapshots so
-    // persisted shops are discoverable immediately after a server restart,
-    // before their owner has been materialized hot/cold once.
-    let persisted = [];
-    try {
-        persisted = invoke('GameServer/Bot/Population/BotLifeState').allStates(5000) || [];
-    } catch (_) {
-        // Lifecycle storage is optional in lightweight catalog/test contexts.
+    // Hydrate persisted shops once after startup. Every later store mutation
+    // updates the index directly, so market lookups never rescan all bots.
+    if (!coldStoreIndexHydrated) {
+        coldStoreIndexHydrated = true;
+        try {
+            (invoke('GameServer/Bot/Population/BotLifeState').allStates(5000) || []).forEach((state) => {
+                if (state?.activity === 'merchant' && state.stats?.marketStore) {
+                    coldStoreIndex.set(Number(state.characterId), state);
+                }
+            });
+        } catch (_) {
+            // Lifecycle storage is optional in lightweight catalog/test contexts.
+        }
     }
-    const states = new Map(Array.from(coldStoreIndex.entries()));
-    persisted.forEach((state) => {
-        if (state?.activity === 'merchant' && state.stats?.marketStore) states.set(Number(state.characterId), state);
-    });
-    return Array.from(states.values());
+    return Array.from(coldStoreIndex.values());
 }
 
 function itemName(selfId) {
@@ -271,6 +274,7 @@ function coldBuyOffers(selfId, town, sellerCharacterId = null) {
 }
 
 function indexColdStore(state) {
+    if (!coldStoreIndexHydrated) coldMarketStates();
     const characterId = Number(state?.characterId || 0);
     const store = state?.stats?.marketStore;
     if (!characterId || state.activity !== 'merchant' || !store) {
@@ -282,30 +286,38 @@ function indexColdStore(state) {
 }
 
 function removeColdStore(characterId) {
+    if (!coldStoreIndexHydrated) coldMarketStates();
     coldStoreIndex.delete(Number(characterId));
 }
 
 function resetColdStores() {
     coldStoreIndex.clear();
+    coldStoreIndexHydrated = false;
 }
 
 function findOffers(selfId, options = {}) {
     const town = options.town || null;
     return [
+        ...AfkTrade.offers(selfId, 1, { town, characterId: options.buyerCharacterId }),
         ...privateOffers(selfId, town),
         ...coldOffers(selfId, town, options.buyerCharacterId, options.now ?? Date.now()),
         ...(town ? npcOffers(selfId, town) : [])
     ].filter((offer) => offer.available)
-        .sort((a, b) => a.price - b.price || (a.sourceType === 'npc' ? 1 : -1));
+        .sort((a, b) => a.price - b.price
+            || Number(b.playerPriority === true || b.sellerKind === 'player') - Number(a.playerPriority === true || a.sellerKind === 'player')
+            || (a.sourceType === 'npc' ? 1 : -1));
 }
 
 function hotOffers(selfId, options = {}) {
     const town = options.town || null;
     return [
+        ...AfkTrade.offers(selfId, 1, { town, characterId: options.buyerCharacterId }),
         ...privateOffers(selfId, town),
         ...(town ? npcOffers(selfId, town) : [])
     ].filter((offer) => offer.available)
-        .sort((left, right) => left.price - right.price || (left.sourceType === 'npc' ? 1 : -1));
+        .sort((left, right) => left.price - right.price
+            || Number(right.playerPriority === true || right.sellerKind === 'player') - Number(left.playerPriority === true || left.sellerKind === 'player')
+            || (left.sourceType === 'npc' ? 1 : -1));
 }
 
 function bestOffer(selfId, options = {}) {
@@ -316,10 +328,13 @@ function bestOffer(selfId, options = {}) {
 function findBuyOffers(selfId, options = {}) {
     const town = options.town || null;
     return [
+        ...AfkTrade.offers(selfId, 3, { town, characterId: options.sellerCharacterId }),
         ...privateBuyOffers(selfId, town, options.sellerCharacterId),
         ...coldBuyOffers(selfId, town, options.sellerCharacterId)
     ].filter((offer) => offer.available)
-        .sort((left, right) => right.price - left.price || left.sourceId - right.sourceId);
+        .sort((left, right) => right.price - left.price
+            || Number(right.playerPriority === true) - Number(left.playerPriority === true)
+            || left.sourceId - right.sourceId);
 }
 
 function bestBuyOffer(selfId, options = {}) {
@@ -327,6 +342,7 @@ function bestBuyOffer(selfId, options = {}) {
 }
 
 function activeBuyDemandSelfIds(timestamp = Date.now()) {
+    const afkDemand = AfkTrade.activeDemandSelfIds();
     const privateDemand = (World.user?.sessions || []).flatMap((session) => {
         const actor = session?.actor;
         const store = actor?.fetchPrivateStore?.();
@@ -348,11 +364,12 @@ function activeBuyDemandSelfIds(timestamp = Date.now()) {
                 : []
         ));
     });
-    return [...new Set([...privateDemand, ...coldDemand])];
+    return [...new Set([...afkDemand, ...privateDemand, ...coldDemand])];
 }
 
 function reserveBuy(offer, qty = 1) {
     const count = Math.max(1, Math.floor(Number(qty) || 1));
+    if (offer?.sourceType === 'afk_player_buy_store') return Number(offer.count) >= count;
     if (!['private_buy_store', 'cold_buy_store'].includes(offer?.sourceType) || !offer.storeItem) return false;
     if (Number(offer.storeItem.count) < count || Number(offer.storeItem.price) !== Number(offer.price)) return false;
     const buyerStoreItem = (offer.buyerState?.stats?.marketStore?.items || [])
@@ -373,6 +390,7 @@ function reserveBuy(offer, qty = 1) {
 }
 
 function releaseBuy(offer, qty = 1) {
+    if (offer?.sourceType === 'afk_player_buy_store') return;
     if (!['private_buy_store', 'cold_buy_store'].includes(offer?.sourceType) || !offer.storeItem) return;
     const count = Math.min(
         Math.max(1, Math.floor(Number(qty) || 1)),
@@ -391,6 +409,7 @@ function releaseBuy(offer, qty = 1) {
 }
 
 function commitBuy(offer, qty = 1, buyerState = offer?.buyerState) {
+    if (offer?.sourceType === 'afk_player_buy_store') return;
     const count = Math.min(
         Math.max(1, Math.floor(Number(qty) || 1)),
         Math.max(0, Number(offer?.reservedBuyCount || 0))
@@ -471,6 +490,7 @@ function reserve(offer, qty = 1) {
     const count = Math.max(1, Number(qty) || 1);
     if (!offer?.available || Number(offer.price) <= 0) return false;
     if (offer.sourceType === 'npc') return true;
+    if (offer.sourceType === 'afk_player_store') return Number(offer.count) >= count;
     if (!['private_store', 'cold_store'].includes(offer.sourceType) || !offer.storeItem) return false;
     if (Number(offer.storeItem.count) < count || Number(offer.storeItem.price) !== Number(offer.price)) return false;
     offer.storeItem.count -= count;
@@ -479,6 +499,7 @@ function reserve(offer, qty = 1) {
 }
 
 function release(offer, qty = 1) {
+    if (offer?.sourceType === 'afk_player_store') return;
     if (!['private_store', 'cold_store'].includes(offer?.sourceType) || !offer.storeItem) return;
     offer.storeItem.count += Math.max(1, Number(qty) || 1);
     offer.count = offer.storeItem.count;

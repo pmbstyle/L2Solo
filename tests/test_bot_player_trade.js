@@ -14,7 +14,7 @@ const tradeRequest = invoke('GameServer/Network/Request/TradeRequest');
 const addTradeItem = invoke('GameServer/Network/Request/AddTradeItem');
 const tradeDone = invoke('GameServer/Network/Request/TradeDone');
 
-function item(id, selfId, amount, name) {
+function item(id, selfId, amount, name, enchant = 0) {
     return new Item(id, {
         selfId,
         name,
@@ -22,7 +22,8 @@ function item(id, selfId, amount, name) {
         amount,
         stackable: true,
         equipped: false,
-        slot: 0
+        slot: 0,
+        enchant
     });
 }
 
@@ -33,7 +34,7 @@ function backpack(items) {
         fetchItemRaw(id) { return this.items.find((entry) => Number(entry.fetchId()) === Number(id)); },
         fetchItemFromSelfId(selfId) { return this.items.find((entry) => Number(entry.fetchSelfId()) === Number(selfId)); },
         insertItem(id, selfId, data) {
-            this.items.push(item(id, selfId, data.amount, data.name));
+            this.items.push(item(id, selfId, data.amount, data.name, data.enchant));
         }
     };
 }
@@ -52,7 +53,7 @@ function actor(id, name, bag) {
 }
 
 const playerPackets = [];
-const playerItem = item(101, 1001, 2, 'Player Token');
+const playerItem = item(101, 1001, 2, 'Player Token', 7);
 const player = {
     accountId: 'player_native_trade',
     dataSendToMe: (packet) => playerPackets.push(packet),
@@ -98,7 +99,9 @@ const botTellCalls = [];
         assert(playerPackets.some((packet) => packet[0] === 0x1e), 'TradeRequest must open the native trade window');
 
         addTradeItem(player, Buffer.from([0x16, 0, 0, 0, 0, 101, 0, 0, 0, 1, 0, 0, 0]));
-        assert(playerPackets.some((packet) => packet[0] === 0x20), 'AddTradeItem must echo the own trade line');
+        const ownTradePacket = playerPackets.find((packet) => packet[0] === 0x20);
+        assert(ownTradePacket, 'AddTradeItem must echo the own trade line');
+        assert.strictEqual(ownTradePacket.readUInt16LE(25), 7, 'own trade line must expose the offered item enchant level');
 
         tradeRequest(player, requestPacket);
         assert.strictEqual(player.activeTrade, openedTrade, 'repeated native trade requests must not discard the open trade');
@@ -108,6 +111,7 @@ const botTellCalls = [];
 
         assert.strictEqual(playerItem.fetchAmount(), 1, 'confirmed trade must deduct the player item');
         assert.strictEqual(player.actor.backpack.fetchItemFromSelfId(1001).fetchAmount(), 1);
+        assert.strictEqual(bot.actor.backpack.fetchItemFromSelfId(1001).fetchEnchantLevel(), 7, 'confirmed trade must preserve enchant in the bot live inventory');
         assert(playerPackets.some((packet) => packet[0] === 0x22 && packet[1] === 1), 'client must receive successful TradeDone');
 
         bot.actor.backpack.items = Array.from({ length: 81 }, (_, index) => item(1000 + index, 2000 + index, 1, `Full Slot ${index + 1}`));

@@ -96,6 +96,43 @@ const raidEntity = BotTargetScorer.score({
 assert.strictEqual(raidEntity.eligible, false, 'raid entities must never enter ordinary bot target ranking');
 assert.strictEqual(raidEntity.reason, 'raid_entity_protected');
 
+const overmatchedSolo = BotTargetScorer.score({
+    attackable: true,
+    dead: false,
+    solo: true,
+    botLevel: 55,
+    npcLevel: 55,
+    botPAtk: 79,
+    botMAtk: 41,
+    botPDef: 247,
+    botMaxHp: 853,
+    npcPAtk: 250,
+    npcPDef: 145,
+    npcMDef: 120,
+    npcMaxHp: 1279
+});
+assert.strictEqual(overmatchedSolo.eligible, false,
+    'a solo bot must reject a same-level target that decisively outmatches its combat stats');
+assert.strictEqual(overmatchedSolo.reason, 'overmatched_stats');
+
+const sameMatchupInParty = BotTargetScorer.score({
+    attackable: true,
+    dead: false,
+    solo: false,
+    botLevel: 55,
+    npcLevel: 55,
+    botPAtk: 79,
+    botMAtk: 41,
+    botPDef: 247,
+    botMaxHp: 853,
+    npcPAtk: 250,
+    npcPDef: 145,
+    npcMDef: 120,
+    npcMaxHp: 1279
+});
+assert.strictEqual(sameMatchupInParty.eligible, true,
+    'the solo matchup gate must not reject a coordinated party target');
+
 const badCandidate = {
     evaluation: BotTargetScorer.score({
         attackable: true,

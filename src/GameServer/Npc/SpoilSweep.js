@@ -6,6 +6,7 @@ const ProgressionRates = invoke('GameServer/ProgressionRates');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 const Formulas = invoke('GameServer/Formulas');
+const HotPartyCastTracker = invoke('GameServer/Bot/AI/HotPartyCastTracker');
 
 const SPOIL_SKILL_ID = 254;
 const SPOIL_FESTIVAL_SKILL_ID = 302;
@@ -87,8 +88,10 @@ function castUtilitySkill(session, actor, target, skill, effect) {
     session.dataSendToMeAndOthers(ServerResponse.skillStarted(actor, target.fetchId(), skill), actor);
     session.dataSendToMe(ServerResponse.skillDurationBar(skill.fetchCalculatedHitTime()));
     actor.state.setCasts(true);
+    HotPartyCastTracker.begin(session, actor, target, skill);
 
-    setTimeout(() => {
+    actor.attack.queueTimer(() => {
+        HotPartyCastTracker.clear(actor);
         actor.state.setCasts(false);
         if (actor.isDead()) {
             return;

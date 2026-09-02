@@ -14,6 +14,7 @@ const OFFENSIVE_TYPES = new Set([
 const BOW_WEAPON_MASK = 32;
 const MIN_BOW_SKILL_RANGE = 400;
 const AREA_SOURCE_TARGETS = new Set(['area', 'front_area', 'aura']);
+const MAGE_MELEE_FINISH_MAX_HITS = 2;
 
 function distance2d(a, b) {
     if (!a?.fetchLocX || !b?.fetchLocX) return 0;
@@ -30,6 +31,32 @@ function reserveRatio(role) {
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
+}
+
+function basicAttackDamageEstimate(bot, target) {
+    const pAtk = Number(bot?.fetchCollectivePAtk?.() ?? bot?.fetchPAtk?.());
+    const pDef = Number(target?.fetchCollectivePDef?.() ?? target?.fetchPDef?.());
+    if (!Number.isFinite(pAtk) || pAtk <= 0 || !Number.isFinite(pDef) || pDef <= 0) return 0;
+
+    // Use an ordinary, non-critical, non-soulshot hit. Random weapon spread,
+    // crits, and shots may finish sooner, but they must not make a mage run
+    // into melee while the target still has meaningful HP.
+    return Math.max(0, Math.round(Formulas.calcMeleeDamage(pAtk, 0, pDef)));
+}
+
+function mageMeleeFinishOpportunity(bot, target, maxHits = MAGE_MELEE_FINISH_MAX_HITS) {
+    if (!target || target.isDead?.() === true || target.state?.fetchDead?.() === true) return null;
+    const targetHp = Number(target.fetchHp?.());
+    const damagePerHit = basicAttackDamageEstimate(bot, target);
+    const hitLimit = Math.max(1, Math.floor(Number(maxHits) || MAGE_MELEE_FINISH_MAX_HITS));
+    if (!Number.isFinite(targetHp) || targetHp <= 0 || damagePerHit <= 0) return null;
+    if (targetHp > damagePerHit * hitLimit) return null;
+    return {
+        targetHp,
+        damagePerHit,
+        estimatedHits: Math.max(1, Math.ceil(targetHp / damagePerHit)),
+        maxHits: hitLimit
+    };
 }
 
 function policyAdjustment(skill, role, range, cost, maxMp, policy = {}) {
@@ -176,4 +203,13 @@ function selectChargeSkill(bot, role) {
         .sort((a, b) => Number(b.fetchLevel?.()) - Number(a.fetchLevel?.()))[0] || null;
 }
 
-module.exports = { OFFENSIVE_TYPES, evaluate, select, selectChargeSkill, policyAdjustment };
+module.exports = {
+    OFFENSIVE_TYPES,
+    MAGE_MELEE_FINISH_MAX_HITS,
+    evaluate,
+    select,
+    selectChargeSkill,
+    policyAdjustment,
+    basicAttackDamageEstimate,
+    mageMeleeFinishOpportunity
+};

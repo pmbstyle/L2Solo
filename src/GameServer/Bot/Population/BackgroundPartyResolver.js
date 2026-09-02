@@ -1,8 +1,10 @@
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
+const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const PartyAffinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity');
 const PartyLootAllocator = invoke('GameServer/Bot/Population/PartyLootAllocator');
+const PartyRewardMath = invoke('GameServer/Actor/PartyRewardMath');
 
 const MAX_DROPS_PER_RESOLVE = 4;
 
@@ -28,11 +30,6 @@ function memberVitals(state) {
     };
 }
 
-function avgLevel(members) {
-    const total = members.reduce((sum, state) => sum + Number(state.level || 1), 0);
-    return total / Math.max(1, members.length);
-}
-
 function estimateFightCount({ party, members, spot, elapsedMs }) {
     const baseWindows = Math.max(1, Math.floor(elapsedMs / 12000));
     const densityFactor = clamp(Number(spot.density || 1) / 3, 0.7, 2.2);
@@ -43,32 +40,58 @@ function estimateFightCount({ party, members, spot, elapsedMs }) {
     return Math.max(1, Math.min(4, Math.round(baseWindows * densityFactor * cohesionFactor)));
 }
 
-function distributeRewards({ members, spot, wins, defeatedNpcIds = [], pressure, rng }) {
-    const rewards = spot.rewards;
+function distributeRewards({ members, spot, wins, defeatedNpcIds = [], pressure, rng, timestamp }) {
     const expMultiplier = Number(pressure?.expMultiplier || 1);
     const rates = ProgressionRates.profile();
-    const totalAdena = Array.from({ length: wins }).reduce((sum) => (
-        sum + Math.round(randInt(rng, rewards.adenaMin, rewards.adenaMax) * rates.adena)
+    const memberProgression = members.map((state) => ({
+        exp: 0,
+        sp: 0,
+        profile: ColdCombatProfile.profileFor(state, timestamp)
+    }));
+    Array.from({ length: wins }).forEach((_, winIndex) => {
+        const progression = BackgroundDropResolver.progressionForFight({
+            spot, npcSelfId: defeatedNpcIds[winIndex], rng
+        });
+        PartyRewardMath.sharesForLevels(
+            members.map((state) => Number(state.level || 1)),
+            progression.exp,
+            progression.sp
+        ).forEach((share) => {
+            memberProgression[share.index].exp += Math.round(share.exp * expMultiplier * rates.exp
+                * ColdCombatProfile.statMultiplier(memberProgression[share.index].profile, 'expMul', timestamp));
+            memberProgression[share.index].sp += Math.round(share.sp * expMultiplier * rates.sp);
+        });
+    });
+    const partyKillerLevel = Math.max(...members.map((state) => Number(state.level || 1)));
+    const rewardRolls = Array.from({ length: wins }).map((_, index) => (
+        BackgroundDropResolver.rollRewardsForFight({
+            spot,
+            killerLevel: partyKillerLevel,
+            npcSelfId: defeatedNpcIds[index],
+            rng
+        })
+    ));
+    const totalAdena = rewardRolls.reduce((sum, rolled) => (
+        sum + (rolled === null
+            ? Math.round(randInt(rng, spot.rewards.adenaMin, spot.rewards.adenaMax) * rates.adena)
+            : rolled.adena)
     ), 0);
+    const adenaPerMember = Math.floor(totalAdena / members.length);
+    const adenaRemainder = totalAdena - (adenaPerMember * members.length);
     const loot = members.map(() => []);
     const spoilerIndex = members.findIndex((state) => (
         String(state.stats?.role || '') === 'spoiler'
         || [54, 55].includes(Number(state.stats?.classId ?? state.classId))
     ));
     for (let win = 0; win < Math.min(wins, MAX_DROPS_PER_RESOLVE); win++) {
-        const drops = BackgroundDropResolver.rollForFight({
-            spot,
-            killerLevel: Math.round(avgLevel(members)),
-            npcSelfId: defeatedNpcIds[win],
-            rng
-        });
+        const drops = rewardRolls[win]?.items || [];
         if (drops.length) {
             loot[Math.min(members.length - 1, Math.floor(rng() * members.length))].push(...drops);
         }
         if (spoilerIndex >= 0) {
             loot[spoilerIndex].push(...BackgroundDropResolver.rollSpoilForFight({
                 spot,
-                killerLevel: Math.round(avgLevel(members)),
+                killerLevel: partyKillerLevel,
                 npcSelfId: defeatedNpcIds[win],
                 rng
             }));
@@ -77,9 +100,9 @@ function distributeRewards({ members, spot, wins, defeatedNpcIds = [], pressure,
 
     return members.map((state, index) => ({
         state,
-        exp: Math.round((rewards.exp * wins * expMultiplier * rates.exp) / members.length),
-        sp: Math.round((rewards.sp * wins * expMultiplier * rates.sp) / members.length),
-        adena: Math.round(totalAdena / members.length),
+        exp: memberProgression[index].exp,
+        sp: memberProgression[index].sp,
+        adena: adenaPerMember + (index < adenaRemainder ? 1 : 0),
         items: loot[index]
     }));
 }
@@ -183,6 +206,7 @@ const BackgroundPartyResolver = {
         let musicUses = 0;
         let summonUses = 0;
         let summonActions = 0;
+        let potionsUsed = 0;
         const defeatedNpcIds = [];
         let combatMembers = members.map((state) => ({
             ...state,
@@ -196,6 +220,7 @@ const BackgroundPartyResolver = {
             musicUses += encounter.members.reduce((sum, member) => sum + Number(member.musicUses || 0), 0);
             summonUses += Number(encounter.debug?.summonUses || 0);
             summonActions += Number(encounter.debug?.summonActions || 0);
+            potionsUsed += Number(encounter.debug?.potionsUsed || 0);
             combatMembers = encounter.members.map((member) => ({
                 ...member.state,
                 vitals: { ...member.vitals },
@@ -218,7 +243,7 @@ const BackgroundPartyResolver = {
             if (!encounter.won || combatMembers.some((member) => Number(member.vitals?.hp || 0) <= 0)) break;
         }
 
-        const rewards = distributeRewards({ members, spot, wins, defeatedNpcIds, pressure, rng });
+        const rewards = distributeRewards({ members, spot, wins, defeatedNpcIds, pressure, rng, timestamp });
         const memberResults = [];
         const events = [];
         let deaths = 0;
@@ -416,6 +441,7 @@ const BackgroundPartyResolver = {
                 musicUses,
                 summonUses,
                 summonActions,
+                potionsUsed,
                 targetNpcId: Number(targetNpcId) || null,
                 defeatedNpcIds
             }

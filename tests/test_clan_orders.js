@@ -78,6 +78,11 @@ async function main() {
         assert.strictEqual(created.goal.plan.kind, 'market');
         assert.deepStrictEqual(created.goal.assignedMemberIds, [5300002, 5300003]);
 
+        const protectedOverride = await GoalService.resolveClan(await projection());
+        assert.strictEqual(protectedOverride.skipped, true);
+        assert.strictEqual(protectedOverride.reason, 'player_order_active',
+            'the automatic planner must not overwrite an active Observer order');
+
         let [action] = await Database.execute([
             `SELECT actionType, status, reasonCode FROM clan_actions
              WHERE clanId = ? ORDER BY id DESC LIMIT 1`,
@@ -137,6 +142,14 @@ async function main() {
         assert.strictEqual(completed.order.spent, 250000);
         assert.strictEqual(completed.goal.progress, 3);
         assert.strictEqual(completed.goal.status, 'completed');
+        const [automaticAfterCompletion] = await Database.execute([
+            `SELECT actionType, status, reasonCode FROM clan_actions
+             WHERE clanId = ? AND status = 'pending' ORDER BY id DESC LIMIT 1`,
+            [6300001]
+        ]);
+        assert.deepStrictEqual(automaticAfterCompletion, {
+            actionType: 'goal_plan', status: 'pending', reasonCode: 'player_order_completed'
+        }, 'the automatic clan goal must resume after a player order completes');
         [demand] = await Database.execute([
             'SELECT status FROM clan_market_demands WHERE clanId = ? ORDER BY id DESC LIMIT 1',
             [6300001]
@@ -157,6 +170,14 @@ async function main() {
         assert.strictEqual(cancelled.order.status, 'cancelled');
         assert.strictEqual(cancelled.goal, null);
         assert.strictEqual(await OrderService.current(6300001), null);
+        const [automaticAfterCancel] = await Database.execute([
+            `SELECT actionType, status, reasonCode FROM clan_actions
+             WHERE clanId = ? AND status = 'pending' ORDER BY id DESC LIMIT 1`,
+            [6300001]
+        ]);
+        assert.deepStrictEqual(automaticAfterCancel, {
+            actionType: 'goal_plan', status: 'pending', reasonCode: 'player_order_cancelled'
+        }, 'cancelling an Observer order must return control to the automatic planner');
 
         const farmMembers = [5300002, 5300003, 5300004, 5300005, 5300006];
         const legacyParty = await BackgroundPartyState.createOrUpdate({

@@ -311,6 +311,8 @@ async function execute(action, options = {}) {
         switch (actionType) {
             case ACTION_TYPES.PLAN:
                 result = String(clan.state?.mode || '') === 'player_managed'
+                    && String(clan.state?.goal?.controlledBy || '') === 'player'
+                    && clan.state?.goal?.status !== 'completed'
                     ? await OrderService.resolveClan(clan, {
                         actionId: Number(action.id),
                         reasonCode: String(payload.reason || '') === Contracts.REASON_CODES.MARKET_NO_OFFER

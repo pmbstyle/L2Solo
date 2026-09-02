@@ -9,6 +9,11 @@ const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
 DataCache.init();
 const Observer = invoke('WorldObserver/WorldObserverServer');
+const observerApp = fs.readFileSync(path.join(__dirname, '..', 'src', 'WorldObserver', 'public', 'app.js'), 'utf8');
+assert.match(observerApp, /const crestAvailable = Number\(clan\.level \|\| 0\) >= 3/,
+    'the clan manager must only expose crest selection from clan level 3');
+assert.match(observerApp, /Clan crest locked/,
+    'lower-level player clans should explain why crest selection is unavailable');
 
 const goal = Observer.compactClanGoal({
     updatedAt: 1234,
@@ -303,6 +308,11 @@ async function databaseBackedChecks() {
         assert.strictEqual(detail.order.itemName, 'Blood Mark');
         assert.deepStrictEqual(detail.order.memberIds, [9101, 9102]);
         assert.strictEqual(detail.orderHistory.length, 1);
+        const offlinePlayer = await Observer.actorDetail('player', 9103);
+        assert.strictEqual(offlinePlayer.kind, 'player', 'offline clan players must remain selectable in Selected actor');
+        assert.strictEqual(offlinePlayer.name, 'ObserverPlayer');
+        assert.strictEqual(offlinePlayer.online, false);
+        assert.strictEqual(offlinePlayer.clan.id, 91);
     } finally {
         await Database.close();
         [databasePath, `${databasePath}-wal`, `${databasePath}-shm`].forEach((file) => fs.rmSync(file, { force: true }));

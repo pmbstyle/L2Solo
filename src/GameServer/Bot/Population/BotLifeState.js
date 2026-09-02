@@ -14,6 +14,7 @@ const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatib
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
+const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const cache = new Map();
 const pendingWrites = new Map();
@@ -212,7 +213,10 @@ function equipmentSummaryFromInventory(inventory = {}) {
             name: item.name || itemName(item.selfId),
             slot,
             rank: item.rank || 'none',
-            kind: item.kind || ''
+            kind: item.kind || '',
+            enchant: Number((item.instances || []).find((instance) => (
+                instance?.equipped && Number(instance.slot) === Number(slot)
+            ))?.enchant ?? item.enchant ?? 0) || 0
         })))
         .sort((a, b) => a.slot - b.slot || a.selfId - b.selfId);
 }
@@ -2191,14 +2195,18 @@ const BotLifeState = {
         const targetCombat = targetCombatTelemetry(state.stats?.targetCombat, result.debug, timestamp);
         const nextSpotId = result.patch?.spotId || state.spotId;
         const previousRisk = state.stats?.spotRisk;
-        const spotRisk = String(previousRisk?.spotId || '') === String(nextSpotId || '')
-            ? previousRisk
-            : {
-                spotId: nextSpotId || null,
-                enteredAt: timestamp,
-                deathsAtEntry: Number(state.stats?.deaths || 0),
-                fightsAtEntry: Number(state.stats?.fightsResolved || 0)
-            };
+        const previousDeaths = Number(state.stats?.deaths || 0);
+        const nextDeaths = Number(result.patch?.deathCount ?? previousDeaths);
+        const spotRisk = SpotRiskPolicy.recordResolve(previousRisk, {
+            spotId: nextSpotId || null,
+            timestamp,
+            totalDeaths: previousDeaths,
+            totalFights: Number(state.stats?.fightsResolved || 0),
+            totalWins: Number(state.stats?.fightsWon || 0),
+            deaths: Math.max(0, nextDeaths - previousDeaths),
+            fights: Number(result.debug?.fights || 0),
+            wins: Number(result.debug?.wins || 0)
+        });
         // Resolver patches often carry a projected copy of the previous
         // stats so they can add lifecycle-specific fields such as cooldowns,
         // rest deadlines, travel state, or party affinity.  Merge that copy
@@ -2785,6 +2793,25 @@ const BotLifeState = {
         });
     },
 
+    syncExternalInventory(characterId, reason = 'external_inventory_sync', previousState = null) {
+        const id = Number(characterId);
+        const state = previousState || cache.get(id);
+        if (!id || !state) return Promise.resolve(null);
+        return Database.fetchItems(id).then((items) => {
+            const inventory = inventorySummaryFromItems(items || []);
+            return this.upsertState({
+                ...state,
+                adena: inventoryAdena(inventory),
+                inventory,
+                stats: {
+                    ...(state.stats || {}),
+                    equipment: equipmentSummaryFromInventory(inventory)
+                },
+                updatedAt: now()
+            }, reason);
+        });
+    },
+
     applyMarketPurchase(state, offer, qty = 1) {
         const selfId = Number(offer?.selfId || 0);
         const price = Number(offer?.price || 0);
@@ -3019,6 +3046,33 @@ const BotLifeState = {
                 return snapshot;
             }).catch((err) => {
                 utils.infoWarn('BotLife', 'failed NPC liquidation for %s: %s', state.name, err.message);
+                return null;
+            });
+    },
+
+    applyConsumablePurchase(state, purchasePatch, reason = 'consumable_restock') {
+        if (!state || !purchasePatch?.purchase || !purchasePatch.inventory) return Promise.resolve(state || null);
+        const nextState = {
+            ...state,
+            adena: Number(purchasePatch.adena || 0),
+            inventory: purchasePatch.inventory,
+            stats: {
+                ...(state.stats || {}),
+                lastConsumablePurchase: purchasePatch.purchase,
+                lastReason: reason
+            },
+            updatedAt: now()
+        };
+        const row = rowFromState(nextState);
+        return save(row)
+            .then(() => syncInventorySummary(row.characterId, nextState.inventory))
+            .then(() => {
+                const snapshot = normalize(row);
+                cache.set(snapshot.characterId, snapshot);
+                notifyColdSnapshot(snapshot, reason, { critical: true });
+                return snapshot;
+            }).catch((err) => {
+                utils.infoWarn('BotLife', 'failed consumable restock for %s: %s', state.name, err.message);
                 return null;
             });
     },
