@@ -1,4 +1,6 @@
 const RECENT_TRADE_LIMIT = 100;
+const Database = invoke('Database');
+const RUNTIME_STARTED_AT = Date.now();
 
 const counters = {
     listingsOpened: 0,
@@ -26,10 +28,13 @@ const counters = {
     buyStoresOpened: 0,
     dynamicBuyerSales: 0,
     dynamicBuyerItems: 0,
-    dynamicBuyerAdena: 0
+    dynamicBuyerAdena: 0,
+    journalWriteFailures: 0
 };
 let previous = { ...counters };
 let tradeSequence = 0;
+let resetEpoch = 0;
+let lastJournalWarningAt = 0;
 const recentPeerTrades = [];
 const recentPlayerTrades = [];
 const recentStaticTrades = [];
@@ -74,6 +79,7 @@ function recordTrade(details = {}) {
     const channel = details.channel || 'wts';
     const trade = {
         id: ++tradeSequence,
+        eventKey: `market:${process.pid}:${RUNTIME_STARTED_AT}:${resetEpoch}:${tradeSequence}`,
         at: Math.max(1, Number(details.at) || Date.now()),
         channel,
         sourceType: details.sourceType || channel,
@@ -107,6 +113,14 @@ function recordTrade(details = {}) {
     const town = townTotals.get(townName) || { town: townName, trades: 0, items: 0, adena: 0, channels: {} };
     incrementTotals(town, trade);
     townTotals.set(townName, town);
+    if (Database.isReady?.() && !String(trade.sourceType || '').startsWith('afk_player_')) {
+        Database.recordMarketTrade(trade).catch((error) => {
+            add('journalWriteFailures');
+            if (Date.now() - lastJournalWarningAt < 60_000) return;
+            lastJournalWarningAt = Date.now();
+            utils.infoWarn('BotMarket', 'failed to persist market trade: %s', error?.message || String(error));
+        });
+    }
     return trade;
 }
 
@@ -151,6 +165,7 @@ function reset() {
     Object.keys(counters).forEach((key) => { counters[key] = 0; });
     previous = { ...counters };
     tradeSequence = 0;
+    resetEpoch += 1;
     recentPeerTrades.length = 0;
     recentPlayerTrades.length = 0;
     recentStaticTrades.length = 0;

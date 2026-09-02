@@ -9,6 +9,8 @@ let shuttingDown = false;
 let closePromise = null;
 let databasePath;
 let flushPendingCharacterWrites = null;
+let lastMarketTradePruneAt = 0;
+const MARKET_TRADE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 const cooperative = {
     depth: 0,
     sliceStartedAt: 0,
@@ -988,6 +990,49 @@ function applySchemaMigrations() {
             );
             CREATE INDEX IF NOT EXISTS afk_trade_events_owner_delivery
                 ON afk_trade_events(ownerId, deliveredAt, id);
+        `)],
+        [32, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS market_trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                eventKey TEXT NOT NULL UNIQUE,
+                occurredAt INTEGER NOT NULL,
+                channel TEXT NOT NULL,
+                sourceType TEXT NOT NULL DEFAULT '',
+                selfId INTEGER NOT NULL,
+                itemName TEXT NOT NULL DEFAULT '',
+                quantity INTEGER NOT NULL CHECK(quantity > 0),
+                unitPrice INTEGER NOT NULL CHECK(unitPrice >= 0),
+                totalPrice INTEGER NOT NULL CHECK(totalPrice >= 0),
+                town TEXT,
+                sellerCharacterId INTEGER,
+                sellerName TEXT,
+                buyerCharacterId INTEGER,
+                buyerName TEXT
+            );
+            CREATE INDEX IF NOT EXISTS market_trades_item_recent
+                ON market_trades(selfId, occurredAt DESC, id DESC);
+            CREATE INDEX IF NOT EXISTS market_trades_recent
+                ON market_trades(occurredAt DESC, id DESC);
+            CREATE INDEX IF NOT EXISTS market_trades_town_recent
+                ON market_trades(town, occurredAt DESC, id DESC);
+            INSERT OR IGNORE INTO market_trades (
+                eventKey, occurredAt, channel, sourceType, selfId, itemName,
+                quantity, unitPrice, totalPrice, town,
+                sellerCharacterId, sellerName, buyerCharacterId, buyerName
+            )
+            SELECT 'afk:' || events.id, events.createdAt,
+                CASE events.kind WHEN 'purchase' THEN 'wtb' ELSE 'player_wts' END,
+                CASE events.kind WHEN 'purchase' THEN 'afk_player_buy_store' ELSE 'afk_player_store' END,
+                events.selfId, events.itemName, events.amount, events.unitPrice, events.totalPrice,
+                shops.town,
+                CASE events.kind WHEN 'purchase' THEN events.counterpartyId ELSE events.ownerId END,
+                CASE events.kind WHEN 'purchase' THEN counterparty.name ELSE owner.name END,
+                CASE events.kind WHEN 'purchase' THEN events.ownerId ELSE events.counterpartyId END,
+                CASE events.kind WHEN 'purchase' THEN owner.name ELSE counterparty.name END
+            FROM afk_trade_events events
+            LEFT JOIN afk_trade_shops shops ON shops.id = events.shopId
+            LEFT JOIN characters owner ON owner.id = events.ownerId
+            LEFT JOIN characters counterparty ON counterparty.id = events.counterpartyId;
         `)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
@@ -1054,6 +1099,74 @@ function jsonArray(raw) {
     } catch (_) {
         return [];
     }
+}
+
+function marketTradeRow(row = {}) {
+    return {
+        id: Number(row.id || 0),
+        eventKey: String(row.eventKey || ''),
+        at: Number(row.occurredAt || 0),
+        channel: String(row.channel || ''),
+        sourceType: String(row.sourceType || ''),
+        selfId: Number(row.selfId || 0),
+        itemName: String(row.itemName || ''),
+        quantity: Number(row.quantity || 0),
+        unitPrice: Number(row.unitPrice || 0),
+        adena: Number(row.totalPrice || 0),
+        town: row.town || null,
+        seller: {
+            characterId: Number(row.sellerCharacterId || 0) || null,
+            name: row.sellerName || null
+        },
+        buyer: {
+            characterId: Number(row.buyerCharacterId || 0) || null,
+            name: row.buyerName || null
+        }
+    };
+}
+
+function marketTradeAggregate(since, { selfId = null, to = null } = {}) {
+    const where = ['occurredAt >= ?'];
+    const params = [Number(since)];
+    if (Number(selfId) > 0) {
+        where.push('selfId = ?');
+        params.push(Number(selfId));
+    }
+    if (Number(to) > 0) {
+        where.push('occurredAt <= ?');
+        params.push(Number(to));
+    }
+    const row = one(`SELECT COUNT(*) AS trades,
+        COALESCE(SUM(quantity), 0) AS units,
+        COALESCE(SUM(totalPrice), 0) AS adena,
+        COUNT(DISTINCT selfId) AS items,
+        MIN(occurredAt) AS firstAt,
+        MAX(occurredAt) AS lastAt
+        FROM market_trades WHERE ${where.join(' AND ')}`, params) || {};
+    return {
+        trades: Number(row.trades || 0),
+        units: Number(row.units || 0),
+        adena: Number(row.adena || 0),
+        items: Number(row.items || 0),
+        firstAt: Number(row.firstAt || 0) || null,
+        lastAt: Number(row.lastAt || 0) || null
+    };
+}
+
+function weightedMedianPrice(levels = []) {
+    const rows = levels
+        .map((level) => ({ price: Number(level.unitPrice || 0), units: Math.max(0, Number(level.units || 0)) }))
+        .filter((level) => level.units > 0)
+        .sort((left, right) => left.price - right.price);
+    const total = rows.reduce((sum, level) => sum + level.units, 0);
+    if (!total) return null;
+    const middle = (total + 1) / 2;
+    let cumulative = 0;
+    for (const level of rows) {
+        cumulative += level.units;
+        if (cumulative >= middle) return level.price;
+    }
+    return rows.at(-1)?.price ?? null;
 }
 
 function generatedBotRow(row = {}) {
@@ -1783,6 +1896,7 @@ const Database = {
         try {
             shuttingDown = false;
             closePromise = null;
+            lastMarketTradePruneAt = 0;
             databasePath = databaseFile();
             fs.mkdirSync(path.dirname(databasePath), { recursive: true });
             connection = new DatabaseSync(databasePath, { timeout: 5000 });
@@ -1815,6 +1929,167 @@ const Database = {
 
     execute(statement, operation = 'raw') {
         return run(statement[0], statement[1] || [], operation, statement[2]?.read ?? null);
+    },
+
+    recordMarketTrade(trade = {}) {
+        const eventKey = String(trade.eventKey || '').slice(0, 180);
+        const occurredAt = Math.max(1, Math.floor(Number(trade.at || trade.occurredAt || now())));
+        const selfId = Math.floor(Number(trade.selfId || 0));
+        const quantity = Math.floor(Number(trade.quantity || 0));
+        const unitPrice = Math.floor(Number(trade.unitPrice ?? trade.price));
+        const totalPrice = quantity * unitPrice;
+        const sellerName = trade.seller?.name || trade.sellerName || null;
+        const buyerName = trade.buyer?.name || trade.buyerName || null;
+        if (!eventKey || !Number.isSafeInteger(selfId) || selfId <= 0
+            || !Number.isSafeInteger(quantity) || quantity <= 0
+            || !Number.isSafeInteger(unitPrice) || unitPrice < 0
+            || !Number.isSafeInteger(totalPrice) || totalPrice < 0) {
+            return Promise.reject(new Error('invalid_market_trade'));
+        }
+        return enqueue(() => {
+            const result = write(`INSERT OR IGNORE INTO market_trades (
+                eventKey, occurredAt, channel, sourceType, selfId, itemName,
+                quantity, unitPrice, totalPrice, town,
+                sellerCharacterId, sellerName, buyerCharacterId, buyerName
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+                eventKey,
+                occurredAt,
+                String(trade.channel || 'wts').slice(0, 32),
+                String(trade.sourceType || '').slice(0, 64),
+                selfId,
+                String(trade.itemName || '').slice(0, 160),
+                quantity,
+                unitPrice,
+                totalPrice,
+                trade.town ? String(trade.town).slice(0, 80) : null,
+                Number(trade.seller?.characterId || trade.sellerCharacterId || 0) || null,
+                sellerName ? String(sellerName).slice(0, 80) : null,
+                Number(trade.buyer?.characterId || trade.buyerCharacterId || 0) || null,
+                buyerName ? String(buyerName).slice(0, 80) : null
+            ]);
+            if (occurredAt - lastMarketTradePruneAt >= 6 * 60 * 60 * 1000) {
+                write('DELETE FROM market_trades WHERE occurredAt < ?', [occurredAt - MARKET_TRADE_RETENTION_MS]);
+                lastMarketTradePruneAt = occurredAt;
+            }
+            return { inserted: result.affectedRows > 0, id: result.affectedRows > 0 ? result.insertId || null : null };
+        }, { operation: 'market:trade-record', read: false });
+    },
+
+    fetchMarketTradeOverview({ timestamp = now(), recentLimit = 200 } = {}) {
+        const current = Math.max(1, Number(timestamp) || now());
+        const limit = Math.max(1, Math.min(500, Math.floor(Number(recentLimit) || 200)));
+        const dayAgo = current - 24 * 60 * 60 * 1000;
+        const weekAgo = current - 7 * 24 * 60 * 60 * 1000;
+        return enqueue(() => {
+            const recent = all(`SELECT * FROM market_trades
+                ORDER BY occurredAt DESC, id DESC LIMIT ${limit}`).map(marketTradeRow);
+            const byItem = all(`SELECT selfId, MAX(itemName) AS name, COUNT(*) AS trades,
+                COALESCE(SUM(quantity), 0) AS items, COALESCE(SUM(totalPrice), 0) AS adena,
+                MAX(occurredAt) AS lastTradeAt
+                FROM market_trades WHERE occurredAt >= ?
+                GROUP BY selfId ORDER BY adena DESC, items DESC, selfId ASC`, [weekAgo])
+                .map((row) => ({
+                    selfId: Number(row.selfId),
+                    name: row.name || `Item ${row.selfId}`,
+                    trades: Number(row.trades || 0),
+                    items: Number(row.items || 0),
+                    adena: Number(row.adena || 0),
+                    lastTradeAt: Number(row.lastTradeAt || 0) || null
+                }));
+            const byTown = Object.fromEntries(all(`SELECT COALESCE(town, 'Unknown') AS town,
+                COUNT(*) AS trades, COALESCE(SUM(quantity), 0) AS items,
+                COALESCE(SUM(totalPrice), 0) AS adena
+                FROM market_trades WHERE occurredAt >= ?
+                GROUP BY COALESCE(town, 'Unknown') ORDER BY adena DESC`, [weekAgo]).map((row) => [row.town, {
+                trades: Number(row.trades || 0),
+                items: Number(row.items || 0),
+                adena: Number(row.adena || 0)
+            }]));
+            return {
+                scope: 'persistent_90d',
+                retentionDays: 90,
+                windows: {
+                    day: marketTradeAggregate(dayAgo),
+                    week: marketTradeAggregate(weekAgo)
+                },
+                recent,
+                byItem,
+                byTown
+            };
+        }, { operation: 'market:trade-overview', read: true });
+    },
+
+    fetchMarketTradeHistory(selfId, { timestamp = now(), rangeMs = 24 * 60 * 60 * 1000, bucketMs = 60 * 60 * 1000 } = {}) {
+        const itemId = Math.floor(Number(selfId || 0));
+        if (!Number.isSafeInteger(itemId) || itemId <= 0) return Promise.reject(new Error('invalid_market_item'));
+        const current = Math.max(1, Number(timestamp) || now());
+        const range = Math.max(60 * 60 * 1000, Math.min(MARKET_TRADE_RETENTION_MS, Math.floor(Number(rangeMs) || 0)));
+        const bucket = Math.max(5 * 60 * 1000, Math.min(24 * 60 * 60 * 1000, Math.floor(Number(bucketMs) || 0)));
+        const since = current - range;
+        return enqueue(() => {
+            const levels = all(`SELECT CAST(occurredAt / ? AS INTEGER) * ? AS bucketAt,
+                unitPrice, COUNT(*) AS trades, SUM(quantity) AS units, SUM(totalPrice) AS adena
+                FROM market_trades
+                WHERE selfId = ? AND occurredAt >= ? AND occurredAt <= ?
+                GROUP BY bucketAt, unitPrice ORDER BY bucketAt ASC, unitPrice ASC`,
+            [bucket, bucket, itemId, since, current]);
+            const grouped = new Map();
+            levels.forEach((level) => {
+                const bucketAt = Number(level.bucketAt);
+                const entry = grouped.get(bucketAt) || { at: bucketAt, trades: 0, units: 0, adena: 0, low: null, high: null, levels: [] };
+                const price = Number(level.unitPrice || 0);
+                const units = Number(level.units || 0);
+                entry.trades += Number(level.trades || 0);
+                entry.units += units;
+                entry.adena += Number(level.adena || 0);
+                entry.low = entry.low === null ? price : Math.min(entry.low, price);
+                entry.high = entry.high === null ? price : Math.max(entry.high, price);
+                entry.levels.push({ unitPrice: price, units });
+                grouped.set(bucketAt, entry);
+            });
+            const buckets = Array.from(grouped.values()).map((entry) => ({
+                at: entry.at,
+                trades: entry.trades,
+                units: entry.units,
+                adena: entry.adena,
+                low: entry.low,
+                high: entry.high,
+                vwap: entry.units ? Math.round(entry.adena / entry.units) : null,
+                median: weightedMedianPrice(entry.levels)
+            }));
+            const allLevels = Array.from(levels.reduce((summary, level) => {
+                const price = Number(level.unitPrice || 0);
+                summary.set(price, Number(summary.get(price) || 0) + Number(level.units || 0));
+                return summary;
+            }, new Map()).entries()).map(([unitPrice, units]) => ({ unitPrice, units }));
+            const summary = marketTradeAggregate(since, { selfId: itemId, to: current });
+            const priceSummary = one(`SELECT MIN(unitPrice) AS low, MAX(unitPrice) AS high,
+                CASE WHEN SUM(quantity) > 0 THEN CAST(SUM(totalPrice) AS REAL) / SUM(quantity) END AS vwap
+                FROM market_trades WHERE selfId = ? AND occurredAt >= ? AND occurredAt <= ?`,
+            [itemId, since, current]) || {};
+            const channels = Object.fromEntries(all(`SELECT channel, COUNT(*) AS trades,
+                SUM(quantity) AS units, SUM(totalPrice) AS adena
+                FROM market_trades WHERE selfId = ? AND occurredAt >= ? AND occurredAt <= ?
+                GROUP BY channel ORDER BY adena DESC`, [itemId, since, current]).map((row) => [row.channel, {
+                trades: Number(row.trades || 0), units: Number(row.units || 0), adena: Number(row.adena || 0)
+            }]));
+            return {
+                selfId: itemId,
+                from: since,
+                to: current,
+                rangeMs: range,
+                bucketMs: bucket,
+                summary: {
+                    ...summary,
+                    low: Number(priceSummary.low || 0) || null,
+                    high: Number(priceSummary.high || 0) || null,
+                    vwap: Number.isFinite(Number(priceSummary.vwap)) ? Math.round(Number(priceSummary.vwap)) : null,
+                    median: weightedMedianPrice(allLevels)
+                },
+                channels,
+                buckets
+            };
+        }, { operation: 'market:trade-history', read: true });
     },
 
     createAfkTradeShop(ownerId, config = {}) {
@@ -1953,6 +2228,16 @@ const Database = {
             ) VALUES (?, ?, ?, 'sale', ?, ?, ?, ?, ?, ?)`, [
                 shopId, shop.ownerId, buyerId, line.selfId, line.name, quantity, line.price, total, timestamp
             ]).insertId);
+            const owner = one('SELECT name FROM characters WHERE id = ?', [shop.ownerId]);
+            const buyer = one('SELECT name FROM characters WHERE id = ?', [buyerId]);
+            write(`INSERT OR IGNORE INTO market_trades (
+                eventKey, occurredAt, channel, sourceType, selfId, itemName,
+                quantity, unitPrice, totalPrice, town,
+                sellerCharacterId, sellerName, buyerCharacterId, buyerName
+            ) VALUES (?, ?, 'player_wts', 'afk_player_store', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+                `afk:${eventId}`, timestamp, line.selfId, line.name, quantity, line.price, total,
+                shop.town, shop.ownerId, owner?.name || null, buyerId, buyer?.name || null
+            ]);
             const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp);
             return {
                 eventId,
@@ -2007,6 +2292,16 @@ const Database = {
             ) VALUES (?, ?, ?, 'purchase', ?, ?, ?, ?, ?, ?)`, [
                 shopId, shop.ownerId, sellerId, line.selfId, line.name, quantity, line.price, total, timestamp
             ]).insertId);
+            const seller = one('SELECT name FROM characters WHERE id = ?', [sellerId]);
+            const owner = one('SELECT name FROM characters WHERE id = ?', [shop.ownerId]);
+            write(`INSERT OR IGNORE INTO market_trades (
+                eventKey, occurredAt, channel, sourceType, selfId, itemName,
+                quantity, unitPrice, totalPrice, town,
+                sellerCharacterId, sellerName, buyerCharacterId, buyerName
+            ) VALUES (?, ?, 'wtb', 'afk_player_buy_store', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+                `afk:${eventId}`, timestamp, line.selfId, line.name, quantity, line.price, total,
+                shop.town, sellerId, seller?.name || null, shop.ownerId, owner?.name || null
+            ]);
             const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp);
             return {
                 eventId,

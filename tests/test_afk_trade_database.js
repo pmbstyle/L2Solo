@@ -120,6 +120,27 @@ function amountOf(rows, selfId) {
     const events = await Database.fetchAfkTradeNotifications(ownerId);
     assert.strictEqual(events.length, 2);
     assert.deepStrictEqual(events.map((event) => event.kind), ['sale', 'purchase']);
+    const marketTrades = await Database.execute([
+        `SELECT eventKey, channel, sourceType, selfId, quantity, unitPrice, totalPrice
+         FROM market_trades ORDER BY id ASC`
+    ], 'test:afk-market-journal');
+    assert.deepStrictEqual(marketTrades, [{
+        eventKey: `afk:${events[0].id}`,
+        channel: 'player_wts',
+        sourceType: 'afk_player_store',
+        selfId: 1001,
+        quantity: 2,
+        unitPrice: 10,
+        totalPrice: 20
+    }, {
+        eventKey: `afk:${events[1].id}`,
+        channel: 'wtb',
+        sourceType: 'afk_player_buy_store',
+        selfId: 2002,
+        quantity: 2,
+        unitPrice: 5,
+        totalPrice: 10
+    }], 'AFK settlement and market journal must commit together');
     await Database.markAfkTradeNotificationsDelivered(ownerId, events.map((event) => event.id));
     assert.strictEqual((await Database.fetchAfkTradeNotifications(ownerId)).length, 0);
 

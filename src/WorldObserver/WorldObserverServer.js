@@ -2018,6 +2018,67 @@ function worldStatus() {
     };
 }
 
+async function marketSnapshot() {
+    const MarketSnapshot = invoke('GameServer/Bot/Economy/MarketSnapshot');
+    const market = await MarketSnapshot.detail();
+    const knowledge = knowledgeBaseService();
+    const itemById = new Map(market.items.map((row) => {
+        const detail = knowledge.itemDetail(row.selfId);
+        const enriched = {
+            ...row,
+            name: detail?.name || row.name,
+            kind: detail?.kind || row.kind,
+            category: detail?.category || null,
+            grade: detail?.grade || null,
+            iconUrl: detail?.iconUrl || null,
+            referencePrice: Number(detail?.template?.price || 0) || null
+        };
+        return [Number(row.selfId), enriched];
+    }));
+    return {
+        ...market,
+        items: Array.from(itemById.values()),
+        stores: market.stores.map((store) => ({
+            ...store,
+            items: store.items.map((line) => {
+                const item = itemById.get(Number(line.selfId));
+                return { ...line, name: item?.name || line.name, kind: item?.kind || line.kind };
+            })
+        })),
+        transactions: {
+            ...market.transactions,
+            recent: market.transactions.recent.map((trade) => ({
+                ...trade,
+                itemName: itemById.get(Number(trade.selfId))?.name || trade.itemName
+            }))
+        }
+    };
+}
+
+async function marketHistorySnapshot(selfId, range = '24h') {
+    const itemId = Number(selfId);
+    if (!Number.isSafeInteger(itemId) || itemId <= 0) throw new Error('invalid_market_item');
+    const sevenDays = range === '7d';
+    const MarketSnapshot = invoke('GameServer/Bot/Economy/MarketSnapshot');
+    const history = await MarketSnapshot.history(itemId, {
+        rangeMs: (sevenDays ? 7 : 1) * 24 * 60 * 60 * 1000,
+        bucketMs: (sevenDays ? 24 : 1) * 60 * 60 * 1000
+    });
+    const detail = knowledgeBaseService().itemDetail(itemId);
+    return {
+        ...history,
+        range: sevenDays ? '7d' : '24h',
+        item: {
+            selfId: itemId,
+            name: detail?.name || `Item ${itemId}`,
+            kind: detail?.kind || null,
+            category: detail?.category || null,
+            grade: detail?.grade || null,
+            iconUrl: detail?.iconUrl || null
+        }
+    };
+}
+
 async function worldChanges(revision) {
     await ensureWorldProjection();
     await refreshDynamicProjection();
@@ -2320,6 +2381,30 @@ function route(request, response) {
         return;
     }
 
+    if (url.pathname === '/observer/api/market') {
+        if (request.method !== 'GET') {
+            response.writeHead(405, { Allow: 'GET' });
+            response.end();
+            return;
+        }
+        marketSnapshot()
+            .then((data) => sendJson(response, data))
+            .catch((err) => sendJson(response, { error: err.message }, 500));
+        return;
+    }
+
+    if (url.pathname === '/observer/api/market/history') {
+        if (request.method !== 'GET') {
+            response.writeHead(405, { Allow: 'GET' });
+            response.end();
+            return;
+        }
+        marketHistorySnapshot(url.searchParams.get('itemId'), url.searchParams.get('range'))
+            .then((data) => sendJson(response, data))
+            .catch((err) => sendJson(response, { error: err.message }, /invalid_market_item/.test(err.message) ? 400 : 500));
+        return;
+    }
+
     if (url.pathname === '/observer/api/knowledge/meta') {
         try {
             sendJson(response, knowledgeBaseService().meta());
@@ -2525,6 +2610,11 @@ function route(request, response) {
         return;
     }
 
+    if (/^\/observer\/market\/?$/.test(url.pathname)) {
+        sendFile(request, response, path.join(PUBLIC_DIR, 'market.html'));
+        return;
+    }
+
     if (/^\/observer\/(?:world|rankings|raid-bosses(?:\/\d+)?|clans(?:\/\d+)?(?:\/map)?|actors\/(?:bot|player)\/\d+)\/?$/.test(url.pathname)) {
         sendFile(request, response, path.join(PUBLIC_DIR, 'index.html'));
         return;
@@ -2592,6 +2682,8 @@ const WorldObserverServer = {
     worldBootstrap,
     worldChanges,
     worldStatus,
+    marketSnapshot,
+    marketHistorySnapshot,
     observerCacheTtl,
     snapshotCacheStats() {
         return {

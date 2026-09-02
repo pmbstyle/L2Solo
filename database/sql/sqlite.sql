@@ -341,6 +341,48 @@ CREATE TABLE IF NOT EXISTS afk_trade_events (
 CREATE INDEX IF NOT EXISTS afk_trade_events_owner_delivery
     ON afk_trade_events(ownerId, deliveredAt, id);
 
+CREATE TABLE IF NOT EXISTS market_trades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    eventKey TEXT NOT NULL UNIQUE,
+    occurredAt INTEGER NOT NULL,
+    channel TEXT NOT NULL,
+    sourceType TEXT NOT NULL DEFAULT '',
+    selfId INTEGER NOT NULL,
+    itemName TEXT NOT NULL DEFAULT '',
+    quantity INTEGER NOT NULL CHECK(quantity > 0),
+    unitPrice INTEGER NOT NULL CHECK(unitPrice >= 0),
+    totalPrice INTEGER NOT NULL CHECK(totalPrice >= 0),
+    town TEXT,
+    sellerCharacterId INTEGER,
+    sellerName TEXT,
+    buyerCharacterId INTEGER,
+    buyerName TEXT
+);
+CREATE INDEX IF NOT EXISTS market_trades_item_recent
+    ON market_trades(selfId, occurredAt DESC, id DESC);
+CREATE INDEX IF NOT EXISTS market_trades_recent
+    ON market_trades(occurredAt DESC, id DESC);
+CREATE INDEX IF NOT EXISTS market_trades_town_recent
+    ON market_trades(town, occurredAt DESC, id DESC);
+INSERT OR IGNORE INTO market_trades (
+    eventKey, occurredAt, channel, sourceType, selfId, itemName,
+    quantity, unitPrice, totalPrice, town,
+    sellerCharacterId, sellerName, buyerCharacterId, buyerName
+)
+SELECT 'afk:' || events.id, events.createdAt,
+    CASE events.kind WHEN 'purchase' THEN 'wtb' ELSE 'player_wts' END,
+    CASE events.kind WHEN 'purchase' THEN 'afk_player_buy_store' ELSE 'afk_player_store' END,
+    events.selfId, events.itemName, events.amount, events.unitPrice, events.totalPrice,
+    shops.town,
+    CASE events.kind WHEN 'purchase' THEN events.counterpartyId ELSE events.ownerId END,
+    CASE events.kind WHEN 'purchase' THEN counterparty.name ELSE owner.name END,
+    CASE events.kind WHEN 'purchase' THEN events.ownerId ELSE events.counterpartyId END,
+    CASE events.kind WHEN 'purchase' THEN owner.name ELSE counterparty.name END
+FROM afk_trade_events events
+LEFT JOIN afk_trade_shops shops ON shops.id = events.shopId
+LEFT JOIN characters owner ON owner.id = events.ownerId
+LEFT JOIN characters counterparty ON counterparty.id = events.counterpartyId;
+
 CREATE TABLE IF NOT EXISTS character_recipes (
     characterId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
     recipeId INTEGER NOT NULL,

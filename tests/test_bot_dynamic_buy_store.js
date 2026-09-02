@@ -70,6 +70,8 @@ async function run() {
         }
     };
     LifeState.allStates = () => [buyer];
+    MarketOpportunity.resetColdStores();
+    MarketOpportunity.indexColdStore(buyer);
     assert.deepStrictEqual(MarketOpportunity.activeBuyDemandSelfIds(), [1864],
         'funded live WTB material demand must be discoverable by warehouse circulation');
     const marketSnapshot = MarketSnapshot.snapshot();
@@ -95,9 +97,6 @@ async function run() {
         timing: {},
         vitals: {}
     };
-
-    MarketOpportunity.resetColdStores();
-    MarketOpportunity.indexColdStore(buyer);
     LifeState.snapshot = (id) => Number(id) === buyer.characterId ? buyer : null;
     LifeState.applyMarketPurchase = (state, offer, qty) => Promise.resolve({
         ...state,
