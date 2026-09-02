@@ -190,6 +190,16 @@ const recoveringSession = {
 FleeingState.tick(recoveringSession, recoveringSession.actor, {}, {});
 assert.strictEqual(recoveringSession.plan, 'resting', 'a wounded bot should recover after completing its escape leg');
 
+const lockedRecoverySession = {
+    actor: actor(2000004, 0, 0, { hp: 50 }),
+    plan: 'fleeing',
+    recoveryLocked: true,
+    fleeStart: Date.now() - 2000
+};
+FleeingState.tick(lockedRecoverySession, lockedRecoverySession.actor, {}, {});
+assert.strictEqual(lockedRecoverySession.plan, 'resting',
+    'an emergency retreat must keep recovering beyond the old 35 percent wake threshold');
+
 const healthySession = {
     actor: actor(2000003, 0, 0),
     plan: 'fleeing',

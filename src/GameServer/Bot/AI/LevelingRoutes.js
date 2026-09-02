@@ -1,4 +1,5 @@
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
 
 const ECONOMIC_ROLES = {
     54: 'spoiler',
@@ -351,9 +352,11 @@ function scoreSpot(spot, state = {}, options = {}) {
     const capacity = capacityForSpot(spot);
     const crowdPenalty = crowdPenaltyForSpot(spot, options.occupancy);
     const localityPenalty = localityPenaltyForSpot(spot, state, context, tags);
+    const huntingGround = BotHuntingGroundPolicy.evaluate(spot, state, { ...options, ...context, tags });
+    const huntingGroundPenalty = huntingGround.allowed ? 0 : 10000;
     const variation = stableVariation(spot, state);
     const score = baseScore(spot, context) + (routeMatch ? routeMatch.score : 0)
-        + variation - crowdPenalty - localityPenalty;
+        + variation - crowdPenalty - localityPenalty - huntingGroundPenalty;
 
     return {
         score,
@@ -368,6 +371,8 @@ function scoreSpot(spot, state = {}, options = {}) {
         occupancy,
         crowdPenalty,
         localityPenalty,
+        huntingGroundPenalty,
+        huntingGround,
         variation
     };
 }
@@ -407,14 +412,22 @@ function rankedSpots(spots, state = {}, options = {}) {
                 capacity: match.capacity,
                 occupancy: match.occupancy,
                 crowdPenalty: match.crowdPenalty,
-                localityPenalty: match.localityPenalty
+                localityPenalty: match.localityPenalty,
+                huntingGroundPenalty: match.huntingGroundPenalty,
+                huntingGround: match.huntingGround
             };
         })
         .sort((a, b) => b.score - a.score);
 }
 
 function bestSpot(spots, state = {}, options = {}) {
-    return rankedSpots(spots, state, options)[0] || null;
+    return rankedSpots(spots, state, options)
+        .find((candidate) => candidate.huntingGround?.allowed !== false) || null;
+}
+
+function isSpotAllowedForState(spot, state = {}, options = {}) {
+    const tags = tagsForSpot(spot);
+    return BotHuntingGroundPolicy.evaluate(spot, state, { ...options, tags }).allowed;
 }
 
 module.exports = {
@@ -428,6 +441,7 @@ module.exports = {
     occupancyForSpot,
     crowdPenaltyForSpot,
     localityPenaltyForSpot,
+    isSpotAllowedForState,
     scoreSpot,
     rankedSpots,
     bestSpot,

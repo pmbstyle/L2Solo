@@ -86,6 +86,24 @@ const regular = actor(6003, {
     attackable: true,
     locX: 140
 });
+const crumaInterior = actor(6006, {
+    selfId: 7001,
+    name: 'Cruma construct',
+    attackable: true,
+    locX: 18000,
+    locY: 111000,
+    locZ: -12096,
+    level: 45
+});
+const crumaSurface = actor(6007, {
+    selfId: 7002,
+    name: 'Surface monster',
+    attackable: true,
+    locX: 18000,
+    locY: 111000,
+    locZ: -3000,
+    level: 35
+});
 const siegeGuard = actor(6005, {
     selfId: 12114,
     name: 'Dion Bow Guard s E',
@@ -113,7 +131,7 @@ assert.strictEqual(BotHuntingTargetPolicy.canHunt({ clan: { clanName: 'ant_clan'
     'ordinary monster clans must remain eligible even when the NPC name contains Guard');
 
 World.user = { sessions: [leaderSession, companionSession] };
-World.npc = { spawns: [boss, minion, regular, siegeGuard], grid: {} };
+World.npc = { spawns: [boss, minion, regular, siegeGuard, crumaInterior, crumaSurface], grid: {} };
 World.fetchNpcsInRadius = () => [boss, minion, regular, siegeGuard];
 
 const threat = PartyAwareness.findThreatTargetingParty(leaderSession);
@@ -155,6 +173,16 @@ assert(indexedIds.includes(regular.fetchSelfId()), 'ordinary monsters must remai
 assert(!indexedIds.includes(boss.fetchSelfId()), 'raid bosses must not create bot hunting grounds');
 assert(!indexedIds.includes(minion.fetchSelfId()), 'raid minions must not create bot hunting grounds');
 assert(!indexedIds.includes(siegeGuard.fetchSelfId()), 'castle guards must not create bot hunting grounds');
+const indexedCrumaInterior = SpotService.findCurrentSpot({ locX: 18000, locY: 111000, locZ: -12096 });
+const indexedCrumaSurface = SpotService.findCurrentSpot({ locX: 18000, locY: 111000, locZ: -3000 });
+assert.strictEqual(indexedCrumaInterior?.id, '3_18:cruma_tower',
+    'Cruma interior mobs must receive a dedicated party-only spot partition');
+assert.strictEqual(indexedCrumaInterior?.tags?.includes('party_required'), true,
+    'the Cruma interior partition must retain its party-only policy');
+assert.strictEqual(indexedCrumaSurface?.id, '3_18',
+    'surface mobs sharing Cruma X/Y coordinates must remain in the ordinary surface spot');
+assert.strictEqual(indexedCrumaSurface?.tags?.includes('party_required') === true, false,
+    'the nearby surface spot must not inherit Cruma party-only restrictions');
 
 const tank = actor(5100, { classId: 5, hp: 500, maxHp: 1000, pDef: 500, heavyArmor: true });
 const heavyFighter = actor(5101, { classId: 1, hp: 1000, maxHp: 1000, pDef: 600, heavyArmor: true });

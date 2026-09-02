@@ -7,6 +7,7 @@ const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
+const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -1204,6 +1205,36 @@ const BackgroundResolver = {
                 materialize: { exp: 0, sp: 0, adena: 0, items: [] },
                 nextResolveAt: timestamp + 60000,
                 debug: { reason: 'missing_spot' }
+            };
+        }
+
+        // The worker may already have selected a safe destination while the
+        // persisted bot is still physically inside its previous room. Never
+        // resolve destination fights at the old coordinates: travel must be
+        // committed first. When both ids match, prefer the full spot profile
+        // so the exceptional-solo equipment check keeps its level bounds.
+        const currentGround = state.spotId && String(state.spotId) === String(spot.id)
+            ? spot
+            : {
+                id: state.spotId || null,
+                name: state.currentRegion || null,
+                area: state.area || state.stats?.area || null
+            };
+        const currentHuntingGround = BotHuntingGroundPolicy.evaluate(currentGround, state);
+        const destinationHuntingGround = BotHuntingGroundPolicy.evaluate(spot, state);
+        const huntingGround = !currentHuntingGround.allowed
+            ? currentHuntingGround
+            : destinationHuntingGround;
+        if (!huntingGround.allowed) {
+            return {
+                patch: {
+                    activity: 'hunting',
+                    stats: { ...(state.stats || {}), lastReason: huntingGround.reason }
+                },
+                events: [],
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                nextResolveAt: timestamp + 30000,
+                debug: { reason: huntingGround.reason, spotId: spot.id, fights: 0, wins: 0 }
             };
         }
 

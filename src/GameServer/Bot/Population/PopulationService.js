@@ -27,6 +27,7 @@ const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const PartyRecruitmentChat = invoke('GameServer/Bot/Population/ColdPartyRecruitmentChat');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const CraftTelemetry = invoke('GameServer/Bot/Economy/CraftTelemetry');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
@@ -3243,8 +3244,13 @@ const PopulationService = {
                 excludedSpotIds
             })
             : null;
+        const equipmentFallbackSpot = partyFallback && SpotProfiles.findById(partyFallback.spotId);
+        const safeEquipmentFallbackSpot = equipmentFallbackSpot
+            && LevelingRoutes.isSpotAllowedForState(equipmentFallbackSpot, state)
+            ? equipmentFallbackSpot
+            : null;
         const fallbackSpot = partyRouteWaiting && !passiveActivity
-            ? (partyFallback && SpotProfiles.findById(partyFallback.spotId)) || SpotProfiles.findForState({
+            ? safeEquipmentFallbackSpot || SpotProfiles.findForState({
                 ...plannedState,
                 spotId: null,
                 stats: Object.fromEntries(Object.entries(plannedState.stats || {})
@@ -3282,7 +3288,7 @@ const PopulationService = {
             spot,
             pressure: Director.pressureForState(state),
             targetNpcId: partyRouteWaiting
-                ? Number(partyFallback?.npcId || 0)
+                ? Number(safeEquipmentFallbackSpot ? partyFallback?.npcId : 0)
                 : directDropTargetNpcId(acquisitionPlan),
             elapsedMs
         });
