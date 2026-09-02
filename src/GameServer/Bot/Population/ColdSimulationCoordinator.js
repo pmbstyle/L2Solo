@@ -57,9 +57,20 @@ function admitSoloRouteTravelState(nextState, baseState, profiles, occupancy, ti
     }
     const spot = (profiles || []).find((profile) => String(profile.id) === String(travel.spotId));
     if (!spot) return { state: nextState, admitted: true, checked: false };
-    if (SpotProfiles.hasCapacityForStates(spot, [nextState], occupancy)
-        && SpotProfiles.reserveCapacity(occupancy, spot, [nextState])) {
-        return { state: nextState, admitted: true, checked: true };
+    // Leaving party-only content is a safety transition, not an optional
+    // farming reservation. A full destination may be exceeded by one bot so
+    // an under-equipped solo character never remains trapped in combat.
+    const safetyEvacuation = travel.reason === 'unsafe_ground_evacuation';
+    const normalCapacity = SpotProfiles.hasCapacityForStates(spot, [nextState], occupancy);
+    if (SpotProfiles.reserveCapacity(occupancy, spot, [nextState], {
+        maxOverflowUnits: safetyEvacuation ? 1 : 0
+    })) {
+        return {
+            state: nextState,
+            admitted: true,
+            checked: true,
+            ...(safetyEvacuation && !normalCapacity ? { capacityBypassed: true } : {})
+        };
     }
 
     const { travel: _travel, ...stats } = nextState.stats || {};
@@ -536,15 +547,74 @@ class ColdSimulationCoordinator {
             timestamp,
             ...(partyRoute ? { mode: 'party', role } : {})
         };
+        // Match the combat resolver: an indexed coordinate sector only
+        // describes the current ground when it agrees with the persisted
+        // spot. Legacy dungeon sectors can keep their qualified id/name after
+        // the rebuilt spawn index exposes the same grid as an ordinary field.
+        const currentGround = currentSpot
+            && (!state.spotId || String(state.spotId) === String(currentSpot.id))
+            ? currentSpot
+            : (state.spotId || state.currentRegion) ? {
+                id: state.spotId || null,
+                name: state.currentRegion || null,
+                area: state.area || state.stats?.area || null
+            } : currentSpot;
+        const unsafeSoloGround = !partyRoute && currentGround
+            && !LevelingRoutes.isSpotAllowedForState(currentGround, state, { ...options, mode: 'solo' });
         let selected = fallbackSpot;
         try {
             if (!selected) selected = SpotProfiles.findForState(routeState, options);
         } catch (_) { selected = null; }
+        if (unsafeSoloGround && selected) {
+            const repeatsCurrentGround = String(selected.id || '') === String(currentId || '');
+            const destinationSafeForSolo = LevelingRoutes.isSpotAllowedForState(
+                selected,
+                state,
+                { ...options, mode: 'solo' }
+            );
+            if (repeatsCurrentGround || !destinationSafeForSolo) selected = null;
+        }
+        if (!selected && unsafeSoloGround) {
+            // Normal routing respects destination capacity. If every suitable
+            // field is full, that can leave a detached party member polling a
+            // blocked dungeon forever. Only for this rare safety evacuation,
+            // choose the least-bad allowed field and let admission exceed its
+            // soft capacity by one.
+            const emergencyCandidates = (index.profiles || [...index.spots.values()])
+                .filter((profile) => String(profile.id) !== String(currentId || ''))
+                .filter((profile) => !excludedSpotIds.has(String(profile.id)))
+                .filter((profile) => LevelingRoutes.isSpotAllowedForState(
+                    profile,
+                    state,
+                    { ...options, mode: 'solo' }
+                ))
+                .filter((profile) => SpotProfiles.hasCapacityForStates(
+                    profile,
+                    routedMembers,
+                    index.occupancy,
+                    { maxOverflowUnits: 1 }
+                ))
+                .filter((profile) => (
+                    Number(profile.minLevel || 1) <= Number(state.level || 1) + 4
+                    && Number(profile.maxLevel || profile.minLevel || 1) >= Number(state.level || 1) - 4
+                ));
+            const suitable = emergencyCandidates.filter((profile) => (
+                SpotService.isSuitable(profile, Number(state.level || 1), options)
+            ));
+            selected = LevelingRoutes.bestSpot(
+                suitable.length ? suitable : emergencyCandidates,
+                state,
+                { ...options, mode: 'solo' }
+            )?.spot || null;
+        }
         if (!selected) return null;
 
         if (String(selected.id) === String(currentId || '')) return null;
 
-        if (!SpotProfiles.reserveCapacity(index.occupancy, selected, routedMembers)) return null;
+        const reserved = SpotProfiles.reserveCapacity(index.occupancy, selected, routedMembers, {
+            maxOverflowUnits: unsafeSoloGround ? 1 : 0
+        });
+        if (!reserved) return null;
 
         const members = partyRoute ? partyMembers : [state];
         const destinations = {};
@@ -564,6 +634,7 @@ class ColdSimulationCoordinator {
             travelMs: HUNTING_TRAVEL_MS,
             reason: partyRoute
                 ? 'party_spot_replan'
+                : unsafeSoloGround ? 'unsafe_ground_evacuation'
                 : spotBackoff ? 'death_pressure_replan'
                     : activeEquipmentPlan ? 'equipment_source_replan' : 'level_replan',
             ...(spotBackoff ? { cause: 'death_pressure', spotBackoff } : {}),

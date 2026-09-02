@@ -230,12 +230,13 @@ function reservationGroupHasCapacity(entry, options = {}) {
 function hasCapacityForStates(spot, states = [], occupancy = {}, options = {}) {
     if (!spot?.id) return false;
     const entry = occupancy?.[spot.id];
+    const maxOverflowUnits = Math.max(0, Math.floor(Number(options.maxOverflowUnits || 0)));
     if (!entry) {
-        return capacityUnitsFor(states) <= Math.max(1, LevelingRoutes.capacityForSpot(spot));
+        return capacityUnitsFor(states) <= Math.max(1, LevelingRoutes.capacityForSpot(spot)) + maxOverflowUnits;
     }
     if (!reservationGroupHasCapacity(entry, options)) return false;
     const capacity = Number(entry.capacity || LevelingRoutes.capacityForSpot(spot));
-    return capacityCount(entry) + capacityUnitsFor(states, entry) <= Math.max(1, capacity);
+    return capacityCount(entry) + capacityUnitsFor(states, entry) <= Math.max(1, capacity) + maxOverflowUnits;
 }
 
 function reserveCapacity(occupancy, spot, states = [], options = {}) {
@@ -256,7 +257,8 @@ function reserveCapacity(occupancy, spot, states = [], options = {}) {
     if (!reservationGroupHasCapacity(entry, options)) return false;
     const keys = [...new Set((states || []).map(stateKey).filter(Boolean))]
         .filter((key) => !entry.reservedKeys.has(key));
-    if (capacityCount(entry) + keys.length > Math.max(1, Number(entry.capacity || 0))) return false;
+    const maxOverflowUnits = Math.max(0, Math.floor(Number(options.maxOverflowUnits || 0)));
+    if (capacityCount(entry) + keys.length > Math.max(1, Number(entry.capacity || 0)) + maxOverflowUnits) return false;
     keys.forEach((key) => {
         entry.reservedKeys.add(key);
         entry.retained.add(key);

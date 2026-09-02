@@ -136,7 +136,16 @@ try {
         'a member omitted from the bootstrap set must retain a full fallback state');
 
     const currentSpot = { id: 'starter-field', name: 'Starter fields' };
-    const targetSpot = { id: 'mid-level-field', name: 'Mid-level fields', capacity: 2 };
+    const targetSpot = {
+        id: 'mid-level-field',
+        name: 'Mid-level fields',
+        minLevel: 16,
+        maxLevel: 22,
+        avgLevel: 19,
+        density: 8,
+        levelCounts: { 16: 2, 18: 3, 20: 2, 22: 1 },
+        capacity: 2
+    };
     const destinationFor = (state) => ({
         locX: 125000 + Number(state.characterId || 0),
         locY: -176000,
@@ -144,13 +153,14 @@ try {
     });
     SpotService.findCurrentSpot = () => currentSpot;
     SpotService.arrivalPointForState = destinationFor;
-    SpotProfiles.findForState = (state, options) => {
+    const routeTargetForState = (state, options) => {
         if (options?.mode === 'party') {
             assert.strictEqual(state.stats.routeMode, 'party');
             assert(state.party?.partyId);
         }
         return targetSpot;
     };
+    SpotProfiles.findForState = routeTargetForState;
 
     const coordinator = new ColdSimulationCoordinator();
     const solo = coordinator.routeFor({
@@ -230,6 +240,42 @@ try {
     assert.strictEqual(rejectedRoute.state.timing.nextResolveAt, 3000,
         'a rejected route should retry promptly instead of entering an unbounded wait');
 
+    const safetyRouteState = {
+        ...proposedRouteState,
+        stats: {
+            ...proposedRouteState.stats,
+            travel: {
+                ...proposedRouteState.stats.travel,
+                reason: 'unsafe_ground_evacuation'
+            }
+        }
+    };
+    const admittedSafetyRoute = admitSoloRouteTravelState(
+        safetyRouteState,
+        baseRouteState,
+        [targetSpot],
+        fullDestination,
+        2000
+    );
+    assert.strictEqual(admittedSafetyRoute.admitted, true,
+        'evacuating party-only content must not be rejected by a full safe destination');
+    assert.strictEqual(admittedSafetyRoute.capacityBypassed, true,
+        'the exceptional capacity bypass must remain visible to diagnostics');
+    assert.strictEqual(fullDestination[targetSpot.id].reservedCount, 3,
+        'the safety overflow must be reserved so the same snapshot cannot overbook it again');
+    const rejectedSecondSafetyRoute = admitSoloRouteTravelState(
+        {
+            ...safetyRouteState,
+            characterId: 25
+        },
+        { ...baseRouteState, characterId: 25 },
+        [targetSpot],
+        fullDestination,
+        2000
+    );
+    assert.strictEqual(rejectedSecondSafetyRoute.admitted, false,
+        'a safety destination may exceed its soft capacity by only one bot');
+
     const admittedOccupancy = {};
     const admittedRoute = admitSoloRouteTravelState(
         proposedRouteState,
@@ -241,6 +287,53 @@ try {
     assert.strictEqual(admittedRoute.admitted, true);
     assert.strictEqual(admittedOccupancy[targetSpot.id].reservedCount, 1,
         'the pre-commit admission must reserve its destination for later proposals in the batch');
+
+    const dangerousSpot = {
+        id: 'dangerous-party-room',
+        name: 'Necropolis of Sacrifice',
+        minLevel: 20,
+        maxLevel: 24,
+        avgLevel: 22,
+        density: 20,
+        tags: ['dungeon', 'catacomb'],
+        tagsAuthoritative: true
+    };
+    const emergencyIndex = {
+        occupancy: {
+            [targetSpot.id]: {
+                count: 2,
+                reservedCount: 2,
+                capacity: 2,
+                retained: new Set(['20', '21']),
+                reservedKeys: new Set(['20', '21']),
+                reservationKeys: new Set(),
+                retainedReservationKeys: new Set()
+            }
+        },
+        profiles: [targetSpot],
+        spots: new Map([[targetSpot.id, targetSpot]])
+    };
+    const unqualifiedCurrentSpot = {
+        id: 'dangerous-room-grid-without-area',
+        name: 'Nearby ordinary fields'
+    };
+    SpotService.findCurrentSpot = () => unqualifiedCurrentSpot;
+    SpotProfiles.findForState = () => unqualifiedCurrentSpot;
+    const emergencyRoute = coordinator.routeFor({
+        characterId: 24,
+        phase: 'cold',
+        activity: 'hunting',
+        level: 22,
+        spotId: dangerousSpot.id,
+        currentRegion: dangerousSpot.name,
+        loc: { locX: 1, locY: 2, locZ: 3 },
+        stats: { routeMode: 'party' }
+    }, unqualifiedCurrentSpot, null, [], emergencyIndex);
+    assert(emergencyRoute, 'a detached solo bot must receive a route out of party-only content');
+    assert.strictEqual(emergencyRoute.spotId, targetSpot.id);
+    assert.strictEqual(emergencyRoute.reason, 'unsafe_ground_evacuation');
+    SpotService.findCurrentSpot = () => currentSpot;
+    SpotProfiles.findForState = routeTargetForState;
 
     const party = {
         partyId: 'route-party',
