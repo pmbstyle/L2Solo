@@ -1,6 +1,7 @@
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const Item = invoke('GameServer/Item/Item');
+const ItemSlot = invoke('GameServer/Item/ItemSlot');
 const PersonalWarehouse = invoke('GameServer/Warehouse/PersonalWarehouse');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const ClanRules = invoke('GameServer/Clan/ClanRules');
@@ -16,13 +17,14 @@ function templateFor(selfId) {
 function warehouseItem(row) {
     const template = templateFor(row.selfId);
     if (!template) return null;
+    const details = utils.crushOb(template);
     return new Item(Number(row.id), {
-        ...utils.crushOb(template),
+        ...details,
         amount: Number(row.amount),
         enchant: Number(row.enchant || 0),
         petData: row.petData,
         equipped: false,
-        slot: 0
+        slot: ItemSlot.canonicalSlot(row.selfId, details.slot)
     });
 }
 

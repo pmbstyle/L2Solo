@@ -1,5 +1,6 @@
 const SendPacket = invoke('Packet/Send');
 const WireD = invoke('Packet/WireD');
+const ItemSlot = invoke('GameServer/Item/ItemSlot');
 
 function itemsList(items, popup = false) {
     const packet = new SendPacket(0x1b);
@@ -25,7 +26,7 @@ function itemsList(items, popup = false) {
             .writeH(item.fetchClass2())
             .writeH(0x00)  // ?
             .writeH(item.fetchEquipped())
-            .writeD(WireD.bounded(item.fetchEquipped() ? 2 ** item.fetchSlot() : 0))
+            .writeD(WireD.bounded(ItemSlot.bodyPart(item)))
             .writeH(item.fetchEnchantLevel?.() || 0)  // Enchant level
             .writeH(0x00); // ?
     });

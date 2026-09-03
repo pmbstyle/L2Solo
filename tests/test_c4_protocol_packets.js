@@ -427,6 +427,24 @@ const inventoryList = ServerResponse.itemsList([oversizedInventoryItem]);
 assert.strictEqual(inventoryList.readUInt32LE(15), 0xffffffff,
     'C4 ItemsList should saturate an oversized inventory stack instead of crashing the server');
 
+const unequippedAspis = {
+    fetchClass1: () => 1,
+    fetchId: () => 7627001,
+    fetchSelfId: () => 627,
+    fetchAmount: () => 1,
+    fetchClass2: () => 1,
+    fetchEquipped: () => false,
+    fetchSlot: () => 0,
+    fetchEnchantLevel: () => 0,
+    isWearable: () => true
+};
+const aspisInventoryList = ServerResponse.itemsList([unequippedAspis]);
+assert.strictEqual(aspisInventoryList.readUInt32LE(25), 2 ** 8,
+    'C4 ItemsList should advertise an unequipped shield body part from its item template');
+const aspisWarehouseList = ServerResponse.wareHouseDepositList([unequippedAspis], 0);
+assert.strictEqual(aspisWarehouseList.readUInt32LE(27), 2 ** 8,
+    'C4 warehouse lists should advertise an unequipped shield body part from its item template');
+
 const sellListWithOversizedWallet = ServerResponse.sellList(
     [{ item: oversizedInventoryItem, amount: 1, price: 20 }],
     111614128261

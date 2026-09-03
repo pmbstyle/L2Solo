@@ -14,6 +14,11 @@ const GameRequest = invoke('GameServer/Network/Request');
 DataCache.items = [{
     selfId: 1000, name: 'Warehouse Test Item', kind: 'Other', stackable: true,
     class1: 4, class2: 5, mass: 1, price: 100
+}, {
+    selfId: 627,
+    template: { kind: 'Armor.Shield', name: 'Aspis', class1: 1, class2: 1, mass: 1350, price: 35000 },
+    stats: { pDef: 114 },
+    etc: { slot: 8, rank: 'd' }
 }];
 
 function item(id, amount) {
@@ -90,6 +95,13 @@ Warehouse.deposit(session, [{ objectId: 10, amount: 7 }]).then(async () => {
     assert.deepStrictEqual(calls, ['inventory-insert', 'warehouse-delete'], 'withdraw must persist destination inventory before deleting warehouse state');
     assert.strictEqual(persistedWarehouse.length, 0, 'withdraw must persist warehouse removal immediately');
     assert.strictEqual(session.actor.backpack.items[0].fetchAmount(), 7, 'withdraw should materialize the stored item in inventory');
+
+    persistedWarehouse.push({ id: 501, selfId: 627, name: 'Aspis', amount: 1, enchant: 0, petData: null });
+    const listedAspis = (await Warehouse.list(123)).find((entry) => entry.fetchSelfId() === 627);
+    assert.strictEqual(listedAspis.fetchSlot(), 8, 'warehouse gear should use its canonical equipment slot in memory');
+    await Warehouse.withdraw(session, [{ objectId: 501, amount: 1 }]);
+    const restoredAspis = session.actor.backpack.items.find((entry) => entry.fetchSelfId() === 627);
+    assert.strictEqual(restoredAspis.fetchSlot(), 8, 'warehouse withdrawal should materialize a shield in the shield slot');
 
     session.activeNpcTalk.objectId = 999999;
     await assert.rejects(

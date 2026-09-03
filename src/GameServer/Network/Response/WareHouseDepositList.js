@@ -1,7 +1,8 @@
 const SendPacket = invoke('Packet/Send');
+const ItemSlot = invoke('GameServer/Item/ItemSlot');
 
 function bodyPart(item) {
-    return item.isWearable?.() ? 2 ** item.fetchSlot() : 0;
+    return ItemSlot.bodyPart(item);
 }
 
 // C4 0x41: warehouse type 1 is private, type 2 is clan.
