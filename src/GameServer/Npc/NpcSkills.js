@@ -168,8 +168,16 @@ function passiveSkillsFor(npc) {
     return forNpc(npc).filter((skill) => skill.fetchPassive?.() === true);
 }
 
+function maxHpMultiplierFor(npc) {
+    return passiveSkillsFor(npc).reduce((total, skill) => {
+        const value = Number(skill.fetchSemantic?.().stats?.maxHpMul);
+        return Number.isFinite(value) && value > 0 ? total * value : total;
+    }, 1);
+}
+
 module.exports = {
     forNpc,
     combatSkillsFor,
-    passiveSkillsFor
+    passiveSkillsFor,
+    maxHpMultiplierFor
 };

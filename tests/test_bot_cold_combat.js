@@ -393,7 +393,7 @@ const gigantSpot = {
 const gigantProgression = BackgroundDropResolver.progressionForFight({ spot: gigantSpot, npcSelfId: 1187, rng: () => 0 });
 assert.deepStrictEqual(
     { exact: gigantProgression.exact, exp: Math.round(gigantProgression.exp), sp: gigantProgression.sp },
-    { exact: true, exp: 594, sp: 27 },
+    { exact: true, exp: 2376, sp: 108 },
     'cold rewards must use the defeated NPC progression instead of the synthetic spot average'
 );
 assert.strictEqual(
@@ -438,8 +438,8 @@ const strongSoloResult = BackgroundResolver.resolveSolo({
     rng: () => 0.1
 });
 assert.deepStrictEqual(strongSoloResult.debug.foughtNpcIds, [1187]);
-assert.strictEqual(strongSoloResult.materialize.exp, Math.round(594 * ProgressionRates.profile().exp));
-assert.strictEqual(strongSoloResult.materialize.sp, 27 * ProgressionRates.profile().sp);
+assert.strictEqual(strongSoloResult.materialize.exp, Math.round(2376 * ProgressionRates.profile().exp));
+assert.strictEqual(strongSoloResult.materialize.sp, 108 * ProgressionRates.profile().sp);
 assert.strictEqual(strongSoloResult.materialize.adena, 0);
 
 const strongPartyResult = BackgroundPartyResolver.resolve({
@@ -451,7 +451,7 @@ const strongPartyResult = BackgroundPartyResolver.resolve({
     timestamp,
     rng: () => 0.1
 });
-const expectedPartyShares = PartyRewardMath.sharesForLevels([30, 30], 594, 27);
+const expectedPartyShares = PartyRewardMath.sharesForLevels([30, 30], 2376, 108);
 assert.deepStrictEqual(
     strongPartyResult.memberResults.map((entry) => entry.result.materialize.exp),
     expectedPartyShares.map((share) => Math.round(share.exp * ProgressionRates.profile().exp)),
