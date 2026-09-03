@@ -394,6 +394,14 @@ class ColdSimulationCoordinator {
         case 'proposal_batch':
             this.handleProposalBatch(message);
             break;
+        case 'party_formation_proposal': {
+            const waiter = this.waiters.get(message.msgId);
+            if (waiter) {
+                this.waiters.delete(message.msgId);
+                waiter.resolve(payload);
+            }
+            break;
+        }
         case 'release_request':
             await this.handleReleaseRequest(message);
             break;
@@ -435,6 +443,38 @@ class ColdSimulationCoordinator {
             heartbeatMs: Math.max(250, Number(Config.coldWorkerHeartbeatMs) || 1000),
             loopIntervalMs: Math.max(5, Number(Config.coldWorkerLoopIntervalMs) || 20)
         };
+    }
+
+    async requestRequiredPartyFormation(options = {}) {
+        if (!this.worker || !this.ready || !this.snapshotsLoaded || this.stopping) {
+            return { ok: false, reason: 'worker_not_ready', candidates: [] };
+        }
+        const queue = this.queue.snapshot();
+        if (queue.depth > 0 || queue.flushing) {
+            return { ok: false, reason: 'commit_queue_busy', candidates: [] };
+        }
+        const timeoutMs = Math.max(50, Number(options.timeoutMs) || 500);
+        const msgId = this.post('party_formation_request', {
+            timestamp: Number(options.timestamp || Date.now()),
+            candidateLimit: Math.max(2, Math.min(64, Number(options.candidateLimit) || 12)),
+            minSize: Math.max(2, Number(options.minSize) || 2),
+            maxSize: Math.max(2, Number(options.maxSize) || 5),
+            levelRange: Math.max(0, Number(options.levelRange ?? PartyComposition.DEFAULT_LEVEL_RANGE))
+        });
+        if (!msgId) return { ok: false, reason: 'request_send_failed', candidates: [] };
+        let timer = null;
+        try {
+            const proposal = await new Promise((resolve, reject) => {
+                timer = setTimeout(() => reject(new Error('party_formation_worker_timeout')), timeoutMs);
+                this.waiters.set(msgId, { resolve, reject });
+            });
+            return { ok: true, ...proposal };
+        } catch (error) {
+            this.waiters.delete(msgId);
+            return { ok: false, reason: error.message, candidates: [] };
+        } finally {
+            clearTimeout(timer);
+        }
     }
 
     sendPlanningCatalog() {

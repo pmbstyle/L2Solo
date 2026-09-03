@@ -155,6 +155,7 @@ const tests = [
     'tests/test_bot_population_policy.js',
     'tests/test_floor_aware_activation_policy.js',
     'tests/test_bot_population_scheduler_slices.js',
+    'tests/test_bot_protected_party_formation.js',
     'tests/test_bot_population_scheduler_telemetry.js',
     'tests/test_background_work_governor.js',
     'tests/test_background_work_governor_integration.js',
