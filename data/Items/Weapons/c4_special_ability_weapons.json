@@ -70,5 +70,29 @@
         "template": { "kind": "Weapon.Pole", "name": "Halberd - Wide Blow", "class1": 0, "class2": 0, "mass": 1900, "price": 18300000 },
         "stats": { "pAtk": 213, "pAtkRnd": 10, "mAtk": 107, "atkSpd": 325, "crit": 8, "accur": -3, "attackRange": 66 },
         "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 1464 }
+    },
+    {
+        "selfId": 5233,
+        "template": { "kind": "Weapon.Dual", "name": "Keshanberk*Keshanberk", "class1": 0, "class2": 0, "mass": 2080, "price": 18300000 },
+        "stats": { "pAtk": 259, "pAtkRnd": 10, "mAtk": 107, "atkSpd": 325, "crit": 80, "accur": 0 },
+        "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 1464 }
+    },
+    {
+        "selfId": 5704,
+        "template": { "kind": "Weapon.Dual", "name": "Keshanberk*Keshanberk", "class1": 0, "class2": 0, "mass": 2080, "price": 18300000 },
+        "stats": { "pAtk": 259, "pAtkRnd": 10, "mAtk": 107, "atkSpd": 325, "crit": 80, "accur": 0 },
+        "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 1464 }
+    },
+    {
+        "selfId": 5705,
+        "template": { "kind": "Weapon.Dual", "name": "Keshanberk*Damascus", "class1": 0, "class2": 0, "mass": 2080, "price": 24100000 },
+        "stats": { "pAtk": 275, "pAtkRnd": 10, "mAtk": 112, "atkSpd": 325, "crit": 80, "accur": 0 },
+        "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 1928 }
+    },
+    {
+        "selfId": 5706,
+        "template": { "kind": "Weapon.Dual", "name": "Damascus*Damascus", "class1": 0, "class2": 0, "mass": 2080, "price": 27000000 },
+        "stats": { "pAtk": 282, "pAtkRnd": 10, "mAtk": 114, "atkSpd": 325, "crit": 80, "accur": 0 },
+        "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 2160 }
     }
 ]

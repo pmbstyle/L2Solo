@@ -489434,6 +489434,43 @@
     }
   },
   {
+    "grade": "a",
+    "id": 5233,
+    "kind": "Weapon.Dual",
+    "name": "Keshanberk*Keshanberk",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "cristals": 1464,
+        "mp": 0,
+        "rank": "a",
+        "slot": 14,
+        "soulshot": 1,
+        "spiritshot": 1
+      },
+      "selfId": 5233,
+      "stats": {
+        "accur": 0,
+        "atkSpd": 325,
+        "crit": 80,
+        "mAtk": 107,
+        "pAtk": 259,
+        "pAtkRnd": 10
+      },
+      "template": {
+        "class1": 0,
+        "class2": 0,
+        "kind": "Weapon.Dual",
+        "mass": 2080,
+        "name": "Keshanberk*Keshanberk",
+        "price": 18300000
+      }
+    }
+  },
+  {
     "grade": "none",
     "id": 5250,
     "kind": "Other.Shot",
@@ -531802,6 +531839,117 @@
     }
   },
   {
+    "grade": "a",
+    "id": 5704,
+    "kind": "Weapon.Dual",
+    "name": "Keshanberk*Keshanberk",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "cristals": 1464,
+        "mp": 0,
+        "rank": "a",
+        "slot": 14,
+        "soulshot": 1,
+        "spiritshot": 1
+      },
+      "selfId": 5704,
+      "stats": {
+        "accur": 0,
+        "atkSpd": 325,
+        "crit": 80,
+        "mAtk": 107,
+        "pAtk": 259,
+        "pAtkRnd": 10
+      },
+      "template": {
+        "class1": 0,
+        "class2": 0,
+        "kind": "Weapon.Dual",
+        "mass": 2080,
+        "name": "Keshanberk*Keshanberk",
+        "price": 18300000
+      }
+    }
+  },
+  {
+    "grade": "a",
+    "id": 5705,
+    "kind": "Weapon.Dual",
+    "name": "Keshanberk*Damascus",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "cristals": 1928,
+        "mp": 0,
+        "rank": "a",
+        "slot": 14,
+        "soulshot": 1,
+        "spiritshot": 1
+      },
+      "selfId": 5705,
+      "stats": {
+        "accur": 0,
+        "atkSpd": 325,
+        "crit": 80,
+        "mAtk": 112,
+        "pAtk": 275,
+        "pAtkRnd": 10
+      },
+      "template": {
+        "class1": 0,
+        "class2": 0,
+        "kind": "Weapon.Dual",
+        "mass": 2080,
+        "name": "Keshanberk*Damascus",
+        "price": 24100000
+      }
+    }
+  },
+  {
+    "grade": "a",
+    "id": 5706,
+    "kind": "Weapon.Dual",
+    "name": "Damascus*Damascus",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "cristals": 2160,
+        "mp": 0,
+        "rank": "a",
+        "slot": 14,
+        "soulshot": 1,
+        "spiritshot": 1
+      },
+      "selfId": 5706,
+      "stats": {
+        "accur": 0,
+        "atkSpd": 325,
+        "crit": 80,
+        "mAtk": 114,
+        "pAtk": 282,
+        "pAtkRnd": 10
+      },
+      "template": {
+        "class1": 0,
+        "class2": 0,
+        "kind": "Weapon.Dual",
+        "mass": 2080,
+        "name": "Damascus*Damascus",
+        "price": 27000000
+      }
+    }
+  },
+  {
     "grade": "none",
     "id": 5789,
     "kind": "Other.Shot",
@@ -547742,6 +547890,43 @@
         "kind": "Weapon.Blunt",
         "mass": 1300,
         "name": "Arcana Mace",
+        "price": 48800000
+      }
+    }
+  },
+  {
+    "grade": "s",
+    "id": 6580,
+    "kind": "Weapon.Dual",
+    "name": "Tallum Blade*Dark Legion's Edge",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "cristals": 2440,
+        "mp": 0,
+        "rank": "s",
+        "slot": 14,
+        "soulshot": 1,
+        "spiritshot": 1
+      },
+      "selfId": 6580,
+      "stats": {
+        "accur": 0,
+        "atkSpd": 325,
+        "crit": 80,
+        "mAtk": 132,
+        "pAtk": 342,
+        "pAtkRnd": 10
+      },
+      "template": {
+        "class1": 0,
+        "class2": 0,
+        "kind": "Weapon.Dual",
+        "mass": 2080,
+        "name": "Tallum Blade*Dark Legion's Edge",
         "price": 48800000
       }
     }

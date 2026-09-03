@@ -32,7 +32,9 @@ const STATIONS = Object.freeze({
 // C4 multisell 1001 plus the Wilbert and Helton dual-sword lists.  Only the
 // two weapon inputs are retained here: cold bots use the native blacksmith
 // journey, but their population progression intentionally waives crystals,
-// stones, stamps, taxes, and service Adena.
+// stones, stamps, taxes, and service Adena.  The A/S entries below are the
+// C4 Blacksmith of Mammon exchanges; source item 5704 is catalogued separately
+// because its C4 source page has no exchange listing.
 const COMBINATIONS = Object.freeze([
     [2516, 123, 123, 'pushkin'],
     [2517, 123, 69, 'pushkin'],
@@ -143,7 +145,11 @@ const COMBINATIONS = Object.freeze([
     [2618, 76, 134, 'helton'],
     [2619, 76, 77, 'helton'],
     [2616, 132, 135, 'helton'],
-    [2620, 76, 135, 'helton']
+    [2620, 76, 135, 'helton'],
+    [5233, 142, 142, 'pushkin'],
+    [5705, 142, 79, 'pushkin'],
+    [5706, 79, 79, 'pushkin'],
+    [6580, 80, 2500, 'pushkin']
 ]);
 
 let itemSource = null;

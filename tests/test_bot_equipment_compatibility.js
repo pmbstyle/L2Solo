@@ -56,8 +56,18 @@ assert.deepStrictEqual(BotEquipmentCompatibility.weaponKindsFor('buffer', 34), [
 assert.deepStrictEqual(BotEquipmentCompatibility.weaponKindsFor('dps', 46), ['Weapon.GreatSword', 'Weapon.Blunt', 'Weapon.Pole']);
 assert.deepStrictEqual(BotEquipmentCompatibility.weaponKindsFor('dps', 55), ['Weapon.Blunt', 'Weapon.Pole']);
 
+for (const [level, rank, selfId] of [[61, 'a', 5233], [76, 's', 6580]]) {
+    const gladiatorPlan = BotGear.planFor({ classId: 2, level });
+    const gladiatorWeapon = plannedItem(gladiatorPlan, [7, 14]);
+    assert.strictEqual(gladiatorPlan.rank, rank, `Gladiator level ${level} must enter ${rank.toUpperCase()} grade`);
+    assert.strictEqual(gladiatorWeapon?.selfId, selfId, `Gladiator level ${level} must use the source ${rank.toUpperCase()} dual`);
+    assert.strictEqual(gladiatorWeapon?.template?.kind, 'Weapon.Dual', 'Gladiator must never fall back to a one-handed weapon');
+    assert.strictEqual(gladiatorPlan.items.some((item) => Number(item.slot) === 8), false,
+        'Gladiator dual-sword plans must never add a shield');
+}
+
 const secondClassGroups = [
-    { ids: [2], weapons: ['Weapon.Dual', 'Weapon.Sword', 'Weapon.Blunt'], armor: 'heavy', shield: true },
+    { ids: [2], weapons: ['Weapon.Dual'], armor: 'heavy', shield: false },
     { ids: [3], weapons: ['Weapon.Pole'], armor: 'heavy', shield: false },
     { ids: [5, 6, 20, 33], weapons: ['Weapon.Sword', 'Weapon.Blunt'], armor: 'heavy', shield: true },
     { ids: [8, 23, 36], weapons: ['Weapon.Knife'], armor: 'light', shield: false },

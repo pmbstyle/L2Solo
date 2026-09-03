@@ -189,6 +189,33 @@
         }
     },
     {
+        "selfId": 6580,
+        "template": {
+            "name": "Tallum Blade*Dark Legion's Edge",
+            "class1": 0,
+            "class2": 0,
+            "mass": 2080,
+            "price": 48800000,
+            "kind": "Weapon.Dual"
+        },
+        "stats": {
+            "pAtk": 342,
+            "pAtkRnd": 10,
+            "mAtk": 132,
+            "atkSpd": 325,
+            "crit": 80,
+            "accur": 0
+        },
+        "etc": {
+            "slot": 14,
+            "mp": 0,
+            "soulshot": 1,
+            "spiritshot": 1,
+            "rank": "s",
+            "cristals": 2440
+        }
+    },
+    {
         "selfId": 7575,
         "template": {
             "name": "Draconic Bow",
