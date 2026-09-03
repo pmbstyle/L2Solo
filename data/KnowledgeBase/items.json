@@ -171370,7 +171370,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1666,
       "template": {
@@ -174534,7 +174534,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1786,
       "template": {
@@ -174750,7 +174750,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1787,
       "template": {
@@ -175020,7 +175020,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1788,
       "template": {
@@ -175182,7 +175182,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1789,
       "template": {
@@ -175317,7 +175317,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1790,
       "template": {
@@ -175452,7 +175452,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1791,
       "template": {
@@ -175776,7 +175776,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1792,
       "template": {
@@ -176046,7 +176046,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1793,
       "template": {
@@ -176370,7 +176370,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1794,
       "template": {
@@ -176532,7 +176532,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1795,
       "template": {
@@ -176721,7 +176721,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1796,
       "template": {
@@ -176856,7 +176856,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1797,
       "template": {
@@ -177180,7 +177180,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1798,
       "template": {
@@ -177423,7 +177423,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1799,
       "template": {
@@ -177693,7 +177693,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1800,
       "template": {
@@ -177963,7 +177963,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1801,
       "template": {
@@ -178071,7 +178071,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1802,
       "template": {
@@ -178368,7 +178368,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1803,
       "template": {
@@ -178665,7 +178665,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1804,
       "template": {
@@ -178935,7 +178935,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1805,
       "template": {
@@ -179286,7 +179286,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1806,
       "template": {
@@ -179637,7 +179637,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1807,
       "template": {
@@ -180177,7 +180177,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1808,
       "template": {
@@ -180202,7 +180202,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1809,
       "template": {
@@ -180227,7 +180227,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1810,
       "template": {
@@ -180252,7 +180252,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1811,
       "template": {
@@ -180277,7 +180277,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1812,
       "template": {
@@ -180302,7 +180302,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1813,
       "template": {
@@ -180464,7 +180464,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1814,
       "template": {
@@ -180489,7 +180489,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1815,
       "template": {
@@ -180514,7 +180514,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1816,
       "template": {
@@ -180649,7 +180649,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1817,
       "template": {
@@ -180674,7 +180674,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1818,
       "template": {
@@ -180699,7 +180699,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1819,
       "template": {
@@ -180724,7 +180724,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1820,
       "template": {
@@ -180749,7 +180749,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1821,
       "template": {
@@ -180774,7 +180774,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1822,
       "template": {
@@ -180799,7 +180799,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1823,
       "template": {
@@ -180824,7 +180824,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1824,
       "template": {
@@ -181148,7 +181148,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1825,
       "template": {
@@ -181173,7 +181173,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1826,
       "template": {
@@ -181198,7 +181198,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1827,
       "template": {
@@ -181223,7 +181223,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 1828,
       "template": {
@@ -327408,7 +327408,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2135,
       "template": {
@@ -327570,7 +327570,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2136,
       "template": {
@@ -327732,7 +327732,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2137,
       "template": {
@@ -327867,7 +327867,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2138,
       "template": {
@@ -328056,7 +328056,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2139,
       "template": {
@@ -328218,7 +328218,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2140,
       "template": {
@@ -328380,7 +328380,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2141,
       "template": {
@@ -328542,7 +328542,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2142,
       "template": {
@@ -328758,7 +328758,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2143,
       "template": {
@@ -328920,7 +328920,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2144,
       "template": {
@@ -329217,7 +329217,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2145,
       "template": {
@@ -329406,7 +329406,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2146,
       "template": {
@@ -329568,7 +329568,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2147,
       "template": {
@@ -329648,7 +329648,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2148,
       "template": {
@@ -329729,7 +329729,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2149,
       "template": {
@@ -329945,7 +329945,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2150,
       "template": {
@@ -330242,7 +330242,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2151,
       "template": {
@@ -330485,7 +330485,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2152,
       "template": {
@@ -330944,7 +330944,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2153,
       "template": {
@@ -331187,7 +331187,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2154,
       "template": {
@@ -331349,7 +331349,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2155,
       "template": {
@@ -331402,7 +331402,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2156,
       "template": {
@@ -331483,7 +331483,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2157,
       "template": {
@@ -331564,7 +331564,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2158,
       "template": {
@@ -331645,7 +331645,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2159,
       "template": {
@@ -331726,7 +331726,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2160,
       "template": {
@@ -331807,7 +331807,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2161,
       "template": {
@@ -331942,7 +331942,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2162,
       "template": {
@@ -332185,7 +332185,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2163,
       "template": {
@@ -332320,7 +332320,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2164,
       "template": {
@@ -332373,7 +332373,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2165,
       "template": {
@@ -332670,7 +332670,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2166,
       "template": {
@@ -332859,7 +332859,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2167,
       "template": {
@@ -332967,7 +332967,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2168,
       "template": {
@@ -333102,7 +333102,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2169,
       "template": {
@@ -333210,7 +333210,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2170,
       "template": {
@@ -333235,7 +333235,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2171,
       "template": {
@@ -333260,7 +333260,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2172,
       "template": {
@@ -333449,7 +333449,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2173,
       "template": {
@@ -333584,7 +333584,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2174,
       "template": {
@@ -333773,7 +333773,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2175,
       "template": {
@@ -334070,7 +334070,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2176,
       "template": {
@@ -334232,7 +334232,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2177,
       "template": {
@@ -334448,7 +334448,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2178,
       "template": {
@@ -334583,7 +334583,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2179,
       "template": {
@@ -334745,7 +334745,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2180,
       "template": {
@@ -334907,7 +334907,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2181,
       "template": {
@@ -335096,7 +335096,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2182,
       "template": {
@@ -335285,7 +335285,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2183,
       "template": {
@@ -335447,7 +335447,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2184,
       "template": {
@@ -335555,7 +335555,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2185,
       "template": {
@@ -335636,7 +335636,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2186,
       "template": {
@@ -335716,7 +335716,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2187,
       "template": {
@@ -335851,7 +335851,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2188,
       "template": {
@@ -335958,7 +335958,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2189,
       "template": {
@@ -336119,7 +336119,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2190,
       "template": {
@@ -336227,7 +336227,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2191,
       "template": {
@@ -336280,7 +336280,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2192,
       "template": {
@@ -336333,7 +336333,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2193,
       "template": {
@@ -336414,7 +336414,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2194,
       "template": {
@@ -336495,7 +336495,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2195,
       "template": {
@@ -336576,7 +336576,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2196,
       "template": {
@@ -336629,7 +336629,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2197,
       "template": {
@@ -336710,7 +336710,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2198,
       "template": {
@@ -336790,7 +336790,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2199,
       "template": {
@@ -336815,7 +336815,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2200,
       "template": {
@@ -336895,7 +336895,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2201,
       "template": {
@@ -336975,7 +336975,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2202,
       "template": {
@@ -337164,7 +337164,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2203,
       "template": {
@@ -337244,7 +337244,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2204,
       "template": {
@@ -337378,7 +337378,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2205,
       "template": {
@@ -337459,7 +337459,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2206,
       "template": {
@@ -337540,7 +337540,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2207,
       "template": {
@@ -337621,7 +337621,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2208,
       "template": {
@@ -337701,7 +337701,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2209,
       "template": {
@@ -337726,7 +337726,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2210,
       "template": {
@@ -337779,7 +337779,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2211,
       "template": {
@@ -337832,7 +337832,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2212,
       "template": {
@@ -337913,7 +337913,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2213,
       "template": {
@@ -337994,7 +337994,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2214,
       "template": {
@@ -338129,7 +338129,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2215,
       "template": {
@@ -338182,7 +338182,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2216,
       "template": {
@@ -338235,7 +338235,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2217,
       "template": {
@@ -338260,7 +338260,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2218,
       "template": {
@@ -338341,7 +338341,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2219,
       "template": {
@@ -338449,7 +338449,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2220,
       "template": {
@@ -338556,7 +338556,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2221,
       "template": {
@@ -338636,7 +338636,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2222,
       "template": {
@@ -338689,7 +338689,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2223,
       "template": {
@@ -338714,7 +338714,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2224,
       "template": {
@@ -338767,7 +338767,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2225,
       "template": {
@@ -338847,7 +338847,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2226,
       "template": {
@@ -338872,7 +338872,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2227,
       "template": {
@@ -338952,7 +338952,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2228,
       "template": {
@@ -339032,7 +339032,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2229,
       "template": {
@@ -339113,7 +339113,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2230,
       "template": {
@@ -339194,7 +339194,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2231,
       "template": {
@@ -339301,7 +339301,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2232,
       "template": {
@@ -339354,7 +339354,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2233,
       "template": {
@@ -339462,7 +339462,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2234,
       "template": {
@@ -339487,7 +339487,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2235,
       "template": {
@@ -339512,7 +339512,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2236,
       "template": {
@@ -339537,7 +339537,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2237,
       "template": {
@@ -339562,7 +339562,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2238,
       "template": {
@@ -339587,7 +339587,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2239,
       "template": {
@@ -339612,7 +339612,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2240,
       "template": {
@@ -339637,7 +339637,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2241,
       "template": {
@@ -339662,7 +339662,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2242,
       "template": {
@@ -339687,7 +339687,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2243,
       "template": {
@@ -339712,7 +339712,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2244,
       "template": {
@@ -339737,7 +339737,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2245,
       "template": {
@@ -339762,7 +339762,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2246,
       "template": {
@@ -339787,7 +339787,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2247,
       "template": {
@@ -339812,7 +339812,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2248,
       "template": {
@@ -339837,7 +339837,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2249,
       "template": {
@@ -340107,7 +340107,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2250,
       "template": {
@@ -340241,7 +340241,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2251,
       "template": {
@@ -340403,7 +340403,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2252,
       "template": {
@@ -340619,7 +340619,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2253,
       "template": {
@@ -340808,7 +340808,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2254,
       "template": {
@@ -340970,7 +340970,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2255,
       "template": {
@@ -341186,7 +341186,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2256,
       "template": {
@@ -341348,7 +341348,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2257,
       "template": {
@@ -341483,7 +341483,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2258,
       "template": {
@@ -341672,7 +341672,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2259,
       "template": {
@@ -341834,7 +341834,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2260,
       "template": {
@@ -341969,7 +341969,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2261,
       "template": {
@@ -342185,7 +342185,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2262,
       "template": {
@@ -342320,7 +342320,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2263,
       "template": {
@@ -342428,7 +342428,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2264,
       "template": {
@@ -342590,7 +342590,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2265,
       "template": {
@@ -342671,7 +342671,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2266,
       "template": {
@@ -342806,7 +342806,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2267,
       "template": {
@@ -342914,7 +342914,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2268,
       "template": {
@@ -342967,7 +342967,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2269,
       "template": {
@@ -343020,7 +343020,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2270,
       "template": {
@@ -343073,7 +343073,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2271,
       "template": {
@@ -343126,7 +343126,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2272,
       "template": {
@@ -343179,7 +343179,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2273,
       "template": {
@@ -343232,7 +343232,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2274,
       "template": {
@@ -343340,7 +343340,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2275,
       "template": {
@@ -343393,7 +343393,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2276,
       "template": {
@@ -343446,7 +343446,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2277,
       "template": {
@@ -343554,7 +343554,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2278,
       "template": {
@@ -343662,7 +343662,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2279,
       "template": {
@@ -343715,7 +343715,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2280,
       "template": {
@@ -343740,7 +343740,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2281,
       "template": {
@@ -343793,7 +343793,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2282,
       "template": {
@@ -343818,7 +343818,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2283,
       "template": {
@@ -343843,7 +343843,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2284,
       "template": {
@@ -343951,7 +343951,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2285,
       "template": {
@@ -344085,7 +344085,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2286,
       "template": {
@@ -344138,7 +344138,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2287,
       "template": {
@@ -344191,7 +344191,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2288,
       "template": {
@@ -344271,7 +344271,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2289,
       "template": {
@@ -344324,7 +344324,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2290,
       "template": {
@@ -344405,7 +344405,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2291,
       "template": {
@@ -344458,7 +344458,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2292,
       "template": {
@@ -344538,7 +344538,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2293,
       "template": {
@@ -344563,7 +344563,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2294,
       "template": {
@@ -344588,7 +344588,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2295,
       "template": {
@@ -344669,7 +344669,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2296,
       "template": {
@@ -344722,7 +344722,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2297,
       "template": {
@@ -344802,7 +344802,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2298,
       "template": {
@@ -344882,7 +344882,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2299,
       "template": {
@@ -344963,7 +344963,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2300,
       "template": {
@@ -345043,7 +345043,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2301,
       "template": {
@@ -345151,7 +345151,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2302,
       "template": {
@@ -345231,7 +345231,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2303,
       "template": {
@@ -345284,7 +345284,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2304,
       "template": {
@@ -345365,7 +345365,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2305,
       "template": {
@@ -345446,7 +345446,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2306,
       "template": {
@@ -345499,7 +345499,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2307,
       "template": {
@@ -345552,7 +345552,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2308,
       "template": {
@@ -345577,7 +345577,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2309,
       "template": {
@@ -345630,7 +345630,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2310,
       "template": {
@@ -345683,7 +345683,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2311,
       "template": {
@@ -345763,7 +345763,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2312,
       "template": {
@@ -345816,7 +345816,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2313,
       "template": {
@@ -345869,7 +345869,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2314,
       "template": {
@@ -345949,7 +345949,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2315,
       "template": {
@@ -346056,7 +346056,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2316,
       "template": {
@@ -346109,7 +346109,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2317,
       "template": {
@@ -346189,7 +346189,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2318,
       "template": {
@@ -346296,7 +346296,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2319,
       "template": {
@@ -346376,7 +346376,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2320,
       "template": {
@@ -346483,7 +346483,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2321,
       "template": {
@@ -346536,7 +346536,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2322,
       "template": {
@@ -346589,7 +346589,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2323,
       "template": {
@@ -346670,7 +346670,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2324,
       "template": {
@@ -346695,7 +346695,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2325,
       "template": {
@@ -346775,7 +346775,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2326,
       "template": {
@@ -346855,7 +346855,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2327,
       "template": {
@@ -346935,7 +346935,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2328,
       "template": {
@@ -346988,7 +346988,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2329,
       "template": {
@@ -347041,7 +347041,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2330,
       "template": {
@@ -347066,7 +347066,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2331,
       "template": {
@@ -347091,7 +347091,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2332,
       "template": {
@@ -347144,7 +347144,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2333,
       "template": {
@@ -347225,7 +347225,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2334,
       "template": {
@@ -347305,7 +347305,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2335,
       "template": {
@@ -347358,7 +347358,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2336,
       "template": {
@@ -347411,7 +347411,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2337,
       "template": {
@@ -347464,7 +347464,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2338,
       "template": {
@@ -347489,7 +347489,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2339,
       "template": {
@@ -347542,7 +347542,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2340,
       "template": {
@@ -347623,7 +347623,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2341,
       "template": {
@@ -347676,7 +347676,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2342,
       "template": {
@@ -347729,7 +347729,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2343,
       "template": {
@@ -347809,7 +347809,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2344,
       "template": {
@@ -347862,7 +347862,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2345,
       "template": {
@@ -347943,7 +347943,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2346,
       "template": {
@@ -348024,7 +348024,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2347,
       "template": {
@@ -348104,7 +348104,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2348,
       "template": {
@@ -348129,7 +348129,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2349,
       "template": {
@@ -348182,7 +348182,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2350,
       "template": {
@@ -348262,7 +348262,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2351,
       "template": {
@@ -348315,7 +348315,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2352,
       "template": {
@@ -348423,7 +348423,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2353,
       "template": {
@@ -348503,7 +348503,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2354,
       "template": {
@@ -348584,7 +348584,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2355,
       "template": {
@@ -348637,7 +348637,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2356,
       "template": {
@@ -348718,7 +348718,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2357,
       "template": {
@@ -348799,7 +348799,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2358,
       "template": {
@@ -348880,7 +348880,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2359,
       "template": {
@@ -348961,7 +348961,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2360,
       "template": {
@@ -348986,7 +348986,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2361,
       "template": {
@@ -349011,7 +349011,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2362,
       "template": {
@@ -349036,7 +349036,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2363,
       "template": {
@@ -349061,7 +349061,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2364,
       "template": {
@@ -349086,7 +349086,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2365,
       "template": {
@@ -349111,7 +349111,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2366,
       "template": {
@@ -349136,7 +349136,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2367,
       "template": {
@@ -389038,7 +389038,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2970,
       "template": {
@@ -389091,7 +389091,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2971,
       "template": {
@@ -389144,7 +389144,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2972,
       "template": {
@@ -389169,7 +389169,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2973,
       "template": {
@@ -389194,7 +389194,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2974,
       "template": {
@@ -389247,7 +389247,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2975,
       "template": {
@@ -389300,7 +389300,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2976,
       "template": {
@@ -389434,7 +389434,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2977,
       "template": {
@@ -389487,7 +389487,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2978,
       "template": {
@@ -389540,7 +389540,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2979,
       "template": {
@@ -389593,7 +389593,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2980,
       "template": {
@@ -389646,7 +389646,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2981,
       "template": {
@@ -389726,7 +389726,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2982,
       "template": {
@@ -389779,7 +389779,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2983,
       "template": {
@@ -389859,7 +389859,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2984,
       "template": {
@@ -389939,7 +389939,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2985,
       "template": {
@@ -389992,7 +389992,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2986,
       "template": {
@@ -390045,7 +390045,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2987,
       "template": {
@@ -390098,7 +390098,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2988,
       "template": {
@@ -390151,7 +390151,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2989,
       "template": {
@@ -390286,7 +390286,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2990,
       "template": {
@@ -390311,7 +390311,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2991,
       "template": {
@@ -390364,7 +390364,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2992,
       "template": {
@@ -390444,7 +390444,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2993,
       "template": {
@@ -390497,7 +390497,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2994,
       "template": {
@@ -390550,7 +390550,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2995,
       "template": {
@@ -390631,7 +390631,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2996,
       "template": {
@@ -390684,7 +390684,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2997,
       "template": {
@@ -390737,7 +390737,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2998,
       "template": {
@@ -390818,7 +390818,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 2999,
       "template": {
@@ -390899,7 +390899,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3000,
       "template": {
@@ -390952,7 +390952,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3001,
       "template": {
@@ -391005,7 +391005,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3002,
       "template": {
@@ -391058,7 +391058,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3003,
       "template": {
@@ -391139,7 +391139,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3004,
       "template": {
@@ -391164,7 +391164,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3005,
       "template": {
@@ -391189,7 +391189,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3006,
       "template": {
@@ -391242,7 +391242,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3007,
       "template": {
@@ -391295,7 +391295,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3008,
       "template": {
@@ -391348,7 +391348,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3009,
       "template": {
@@ -391401,7 +391401,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3010,
       "template": {
@@ -391454,7 +391454,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3011,
       "template": {
@@ -391534,7 +391534,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3012,
       "template": {
@@ -391587,7 +391587,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3013,
       "template": {
@@ -391694,7 +391694,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3014,
       "template": {
@@ -391747,7 +391747,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3015,
       "template": {
@@ -391800,7 +391800,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3016,
       "template": {
@@ -391880,7 +391880,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3017,
       "template": {
@@ -391933,7 +391933,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3018,
       "template": {
@@ -391986,7 +391986,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3019,
       "template": {
@@ -392066,7 +392066,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3020,
       "template": {
@@ -392174,7 +392174,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3021,
       "template": {
@@ -392227,7 +392227,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3022,
       "template": {
@@ -392252,7 +392252,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3023,
       "template": {
@@ -392277,7 +392277,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3024,
       "template": {
@@ -392302,7 +392302,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3025,
       "template": {
@@ -392716,7 +392716,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3032,
       "template": {
@@ -392823,7 +392823,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3033,
       "template": {
@@ -392958,7 +392958,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3034,
       "template": {
@@ -393255,7 +393255,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3035,
       "template": {
@@ -393741,7 +393741,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3036,
       "template": {
@@ -416167,7 +416167,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3838,
       "template": {
@@ -419900,7 +419900,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3953,
       "template": {
@@ -420062,7 +420062,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3954,
       "template": {
@@ -420197,7 +420197,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3955,
       "template": {
@@ -420386,7 +420386,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3956,
       "template": {
@@ -420656,7 +420656,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 3957,
       "template": {
@@ -458550,7 +458550,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4122,
       "template": {
@@ -458603,7 +458603,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4123,
       "template": {
@@ -458684,7 +458684,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4124,
       "template": {
@@ -458737,7 +458737,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4125,
       "template": {
@@ -458845,7 +458845,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4126,
       "template": {
@@ -458925,7 +458925,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4127,
       "template": {
@@ -458978,7 +458978,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4128,
       "template": {
@@ -459302,7 +459302,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4129,
       "template": {
@@ -459518,7 +459518,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4130,
       "template": {
@@ -459626,7 +459626,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4131,
       "template": {
@@ -459679,7 +459679,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4132,
       "template": {
@@ -459760,7 +459760,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4133,
       "template": {
@@ -459813,7 +459813,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4134,
       "template": {
@@ -459894,7 +459894,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4135,
       "template": {
@@ -459947,7 +459947,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4136,
       "template": {
@@ -460000,7 +460000,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4137,
       "template": {
@@ -460053,7 +460053,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4138,
       "template": {
@@ -460106,7 +460106,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4139,
       "template": {
@@ -460159,7 +460159,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4140,
       "template": {
@@ -460212,7 +460212,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4141,
       "template": {
@@ -460293,7 +460293,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4142,
       "template": {
@@ -460346,7 +460346,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4143,
       "template": {
@@ -460427,7 +460427,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4144,
       "template": {
@@ -460480,7 +460480,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4145,
       "template": {
@@ -460561,7 +460561,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4146,
       "template": {
@@ -460642,7 +460642,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4147,
       "template": {
@@ -460695,7 +460695,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4148,
       "template": {
@@ -460748,7 +460748,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4149,
       "template": {
@@ -460829,7 +460829,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4150,
       "template": {
@@ -460882,7 +460882,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4151,
       "template": {
@@ -460935,7 +460935,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4152,
       "template": {
@@ -460988,7 +460988,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4153,
       "template": {
@@ -461096,7 +461096,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4154,
       "template": {
@@ -461203,7 +461203,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4155,
       "template": {
@@ -461256,7 +461256,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4156,
       "template": {
@@ -461309,7 +461309,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4157,
       "template": {
@@ -461389,7 +461389,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4158,
       "template": {
@@ -461551,7 +461551,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4159,
       "template": {
@@ -461686,7 +461686,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4160,
       "template": {
@@ -461766,7 +461766,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4161,
       "template": {
@@ -461846,7 +461846,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4162,
       "template": {
@@ -461926,7 +461926,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4163,
       "template": {
@@ -462033,7 +462033,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4164,
       "template": {
@@ -462086,7 +462086,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4165,
       "template": {
@@ -462139,7 +462139,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4166,
       "template": {
@@ -462219,7 +462219,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4167,
       "template": {
@@ -462272,7 +462272,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4168,
       "template": {
@@ -462325,7 +462325,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4169,
       "template": {
@@ -462378,7 +462378,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4170,
       "template": {
@@ -462431,7 +462431,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4171,
       "template": {
@@ -462484,7 +462484,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4172,
       "template": {
@@ -462591,7 +462591,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4173,
       "template": {
@@ -462671,7 +462671,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4174,
       "template": {
@@ -462751,7 +462751,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4175,
       "template": {
@@ -462804,7 +462804,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4176,
       "template": {
@@ -462884,7 +462884,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4177,
       "template": {
@@ -462964,7 +462964,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4178,
       "template": {
@@ -463017,7 +463017,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4179,
       "template": {
@@ -463152,7 +463152,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4180,
       "template": {
@@ -463177,7 +463177,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4181,
       "template": {
@@ -463257,7 +463257,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4182,
       "template": {
@@ -463364,7 +463364,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4183,
       "template": {
@@ -463471,7 +463471,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4184,
       "template": {
@@ -463524,7 +463524,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4185,
       "template": {
@@ -463577,7 +463577,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4186,
       "template": {
@@ -463630,7 +463630,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4187,
       "template": {
@@ -463710,7 +463710,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4188,
       "template": {
@@ -463763,7 +463763,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4189,
       "template": {
@@ -463816,7 +463816,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4190,
       "template": {
@@ -463869,7 +463869,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4191,
       "template": {
@@ -463922,7 +463922,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4192,
       "template": {
@@ -464002,7 +464002,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4193,
       "template": {
@@ -464055,7 +464055,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4194,
       "template": {
@@ -464136,7 +464136,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4195,
       "template": {
@@ -464217,7 +464217,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4196,
       "template": {
@@ -464297,7 +464297,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4197,
       "template": {
@@ -464350,7 +464350,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4198,
       "template": {
@@ -464431,7 +464431,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4199,
       "template": {
@@ -471112,7 +471112,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4440,
       "template": {
@@ -471137,7 +471137,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4441,
       "template": {
@@ -489420,7 +489420,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 5231,
       "template": {
@@ -505212,7 +505212,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 5472,
       "template": {
@@ -505373,7 +505373,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 5473,
       "template": {
@@ -505398,7 +505398,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 5474,
       "template": {
@@ -505423,7 +505423,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 5475,
       "template": {
@@ -505448,7 +505448,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 5476,
       "template": {
@@ -505473,7 +505473,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 5477,
       "template": {

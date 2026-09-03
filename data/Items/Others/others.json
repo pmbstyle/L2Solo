@@ -3177,7 +3177,7 @@
 },{
     "selfId": 1666,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Wooden Arrow", "class1": 4, "class2": 5, "mass": 30, "price": 600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1667,
     "template": { "kind": "Other.Spellbook", "name": "Spellbook: Summon Shadow", "class1": 4, "class2": 5, "mass": 120, "price": 800 },
@@ -3657,175 +3657,175 @@
 },{
     "selfId": 1786,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Broad Sword", "class1": 4, "class2": 5, "mass": 30, "price": 250 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1787,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Willow Staff", "class1": 4, "class2": 5, "mass": 30, "price": 250 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1788,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Bow", "class1": 4, "class2": 5, "mass": 30, "price": 250 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1789,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Cedar Staff", "class1": 4, "class2": 5, "mass": 30, "price": 1082 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1790,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Dirk", "class1": 4, "class2": 5, "mass": 30, "price": 1082 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1791,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Brandish", "class1": 4, "class2": 5, "mass": 30, "price": 1082 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1792,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Short Spear", "class1": 4, "class2": 5, "mass": 30, "price": 2720 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1793,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Sword of Reflection", "class1": 4, "class2": 5, "mass": 30, "price": 2720 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1794,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Forest Bow", "class1": 4, "class2": 5, "mass": 30, "price": 2720 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1795,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Leather Shoes", "class1": 4, "class2": 5, "mass": 30, "price": 53 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1796,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Leather Tunic", "class1": 4, "class2": 5, "mass": 30, "price": 159 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1797,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Leather Stockings", "class1": 4, "class2": 5, "mass": 30, "price": 99 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1798,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Leather Helmet", "class1": 4, "class2": 5, "mass": 30, "price": 204 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1799,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Leather Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 135 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1800,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Piece Bone Breastplate", "class1": 4, "class2": 5, "mass": 30, "price": 636 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1801,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Piece Bone Gaiters", "class1": 4, "class2": 5, "mass": 30, "price": 397 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1802,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Necklace of Anguish", "class1": 4, "class2": 5, "mass": 30, "price": 93 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1803,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Necklace of Wisdom", "class1": 4, "class2": 5, "mass": 30, "price": 238 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1804,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Soulshot: D-Grade", "class1": 4, "class2": 5, "mass": 30, "price": 5000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1805,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Soulshot: C-Grade", "class1": 4, "class2": 5, "mass": 30, "price": 60000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1806,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Soulshot: B-Grade", "class1": 4, "class2": 5, "mass": 30, "price": 100000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1807,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Soulshot: A-Grade", "class1": 4, "class2": 5, "mass": 30, "price": 150000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1808,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Soulshot: S Grade", "class1": 4, "class2": 5, "mass": 30, "price": 450000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1809,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Durable Stem", "class1": 4, "class2": 5, "mass": 30, "price": 100 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1810,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Wooden Frame", "class1": 4, "class2": 5, "mass": 30, "price": 100 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1811,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Bark of Treant", "class1": 4, "class2": 5, "mass": 30, "price": 100 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1812,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Coarse Bone Powder", "class1": 4, "class2": 5, "mass": 30, "price": 100 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1813,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Refined Steel", "class1": 4, "class2": 5, "mass": 30, "price": 100 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1814,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Leather", "class1": 4, "class2": 5, "mass": 30, "price": 380 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1815,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Bowstring", "class1": 4, "class2": 5, "mass": 30, "price": 100 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1816,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Steel Frame", "class1": 4, "class2": 5, "mass": 30, "price": 500 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1817,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Cord", "class1": 4, "class2": 5, "mass": 30, "price": 1000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1818,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Refined Bronze", "class1": 4, "class2": 5, "mass": 30, "price": 500 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1819,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Treant Potion", "class1": 4, "class2": 5, "mass": 30, "price": 500 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1820,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Spell Paper", "class1": 4, "class2": 5, "mass": 30, "price": 500 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1821,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Flaming Oil", "class1": 4, "class2": 5, "mass": 30, "price": 500 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1822,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Magic Powder", "class1": 4, "class2": 5, "mass": 30, "price": 1000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1823,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Refined Mythril", "class1": 4, "class2": 5, "mass": 30, "price": 1000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1824,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Fortified Steel", "class1": 4, "class2": 5, "mass": 30, "price": 1000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1825,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Oriharukon", "class1": 4, "class2": 5, "mass": 30, "price": 2800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1826,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Spell Solution", "class1": 4, "class2": 5, "mass": 30, "price": 1000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1827,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Metal Frame", "class1": 4, "class2": 5, "mass": 30, "price": 1000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1828,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Steel of Highest Grade", "class1": 4, "class2": 5, "mass": 30, "price": 1000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 1829,
     "template": { "kind": "Other.Scroll", "name": "Scroll of Escape: Clan Hall", "class1": 4, "class2": 5, "mass": 120, "price": 500 },
@@ -5053,935 +5053,935 @@
 },{
     "selfId": 2135,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Braided Hemp", "class1": 4, "class2": 5, "mass": 30, "price": 680 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2136,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Cokes", "class1": 4, "class2": 5, "mass": 30, "price": 680 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2137,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Steel", "class1": 4, "class2": 5, "mass": 30, "price": 680 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2138,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Coarse Bone Powder (100%)", "class1": 4, "class2": 5, "mass": 30, "price": 680 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2139,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Steel Mold", "class1": 4, "class2": 5, "mass": 30, "price": 1000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2140,
     "template": { "kind": "Other.Recipe", "name": "Recipe: High Grade Suede", "class1": 4, "class2": 5, "mass": 30, "price": 1000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2141,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Silver Mold", "class1": 4, "class2": 5, "mass": 30, "price": 1000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2142,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Varnish of Purity", "class1": 4, "class2": 5, "mass": 30, "price": 1000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2143,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Synthetic Cokes", "class1": 4, "class2": 5, "mass": 30, "price": 1000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2144,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Compound Braid", "class1": 4, "class2": 5, "mass": 30, "price": 1000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2145,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Mithril Alloy", "class1": 4, "class2": 5, "mass": 30, "price": 2800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2146,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Artisan's frame", "class1": 4, "class2": 5, "mass": 30, "price": 2800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2147,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Blacksmith's frame", "class1": 4, "class2": 5, "mass": 30, "price": 2800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2148,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Crafted Leather", "class1": 4, "class2": 5, "mass": 30, "price": 2800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2149,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Metallic Fiber", "class1": 4, "class2": 5, "mass": 30, "price": 2800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2150,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Blue Diamond Necklace", "class1": 4, "class2": 5, "mass": 30, "price": 426 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2151,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Necklace of Devotion", "class1": 4, "class2": 5, "mass": 30, "price": 718 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2152,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Enchanted Necklace", "class1": 4, "class2": 5, "mass": 30, "price": 1136 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2153,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Tiger's Eye Earring", "class1": 4, "class2": 5, "mass": 30, "price": 1286 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2154,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Elven Earring", "class1": 4, "class2": 5, "mass": 30, "price": 1868 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2155,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Elven Ring", "class1": 4, "class2": 5, "mass": 30, "price": 1246 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2156,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Elven Necklace", "class1": 4, "class2": 5, "mass": 30, "price": 2500 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2157,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Omen Beast's Eye Earring", "class1": 4, "class2": 5, "mass": 30, "price": 2420 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2158,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Mithril Ring", "class1": 4, "class2": 5, "mass": 30, "price": 1616 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2159,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Necklace of Darkness", "class1": 4, "class2": 5, "mass": 30, "price": 3240 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2160,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Moonstone Earring", "class1": 4, "class2": 5, "mass": 30, "price": 3100 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2161,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Aquastone Ring", "class1": 4, "class2": 5, "mass": 30, "price": 2060 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2162,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Aquastone Necklace", "class1": 4, "class2": 5, "mass": 30, "price": 4140 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2163,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Earring of Protection", "class1": 4, "class2": 5, "mass": 30, "price": 3920 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2164,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Ring of Protection", "class1": 4, "class2": 5, "mass": 30, "price": 2600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2165,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Necklace of Protection", "class1": 4, "class2": 5, "mass": 30, "price": 5220 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2166,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Earrings of Binding (100%)", "class1": 4, "class2": 5, "mass": 30, "price": 5900 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2167,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Ring of Ages", "class1": 4, "class2": 5, "mass": 30, "price": 3920 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2168,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Necklace of Mermaid", "class1": 4, "class2": 5, "mass": 30, "price": 7860 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2169,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Necklace of Binding", "class1": 4, "class2": 5, "mass": 30, "price": 11300 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2170,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Nassen's Earring", "class1": 4, "class2": 5, "mass": 30, "price": 8480 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2171,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Sage's Ring", "class1": 4, "class2": 5, "mass": 30, "price": 5640 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2172,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Sage's Necklace", "class1": 4, "class2": 5, "mass": 30, "price": 11300 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2173,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Hard Leather Shirt", "class1": 4, "class2": 5, "mass": 30, "price": 738 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2174,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Hard Leather Gaiters", "class1": 4, "class2": 5, "mass": 30, "price": 460 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2175,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Boots", "class1": 4, "class2": 5, "mass": 30, "price": 246 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2176,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Leather Boots", "class1": 4, "class2": 5, "mass": 30, "price": 418 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2177,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Bone Helmet", "class1": 4, "class2": 5, "mass": 30, "price": 626 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2178,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Dark Stockings", "class1": 4, "class2": 5, "mass": 30, "price": 1250 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2179,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Crafted Leather Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 418 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2180,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Scale Mail", "class1": 4, "class2": 5, "mass": 30, "price": 2660 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2181,
     "template": { "kind": "Other.Recipe", "name": "Recipe: White Tunic", "class1": 4, "class2": 5, "mass": 30, "price": 1998 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2182,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Scale Gaiters", "class1": 4, "class2": 5, "mass": 30, "price": 1666 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2183,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Mithril Banded Mail", "class1": 4, "class2": 5, "mass": 30, "price": 3040 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2184,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Mithril Banded Gaiters", "class1": 4, "class2": 5, "mass": 30, "price": 1904 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2185,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Iron Boots", "class1": 4, "class2": 5, "mass": 30, "price": 1016 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2186,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Brigandine Tunic", "class1": 4, "class2": 5, "mass": 30, "price": 5980 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2187,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Manticore Skin Shirt", "class1": 4, "class2": 5, "mass": 30, "price": 4480 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2188,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Manticore Skin Gaiters", "class1": 4, "class2": 5, "mass": 30, "price": 2800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2189,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Mithril Tunic", "class1": 4, "class2": 5, "mass": 30, "price": 4480 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2190,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Mithril Stockings", "class1": 4, "class2": 5, "mass": 30, "price": 2800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2191,
     "template": { "kind": "Other.Recipe", "name": "Recipe: RIP Gauntlets", "class1": 4, "class2": 5, "mass": 30, "price": 1494 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2192,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Kite Shield", "class1": 4, "class2": 5, "mass": 30, "price": 1568 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2193,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Boots of Power", "class1": 4, "class2": 5, "mass": 30, "price": 1494 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2194,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Mithril Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 1956 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2195,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Half Plate Armor", "class1": 4, "class2": 5, "mass": 30, "price": 7820 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2196,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Plate Gaiters", "class1": 4, "class2": 5, "mass": 30, "price": 4880 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2197,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Salamander Skin Mail", "class1": 4, "class2": 5, "mass": 30, "price": 9540 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2198,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Sage's Rag", "class1": 4, "class2": 5, "mass": 30, "price": 9540 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2199,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Karmian Stockings", "class1": 4, "class2": 5, "mass": 30, "price": 4740 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2200,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Chain Helmet", "class1": 4, "class2": 5, "mass": 30, "price": 2940 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2201,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Square Shield", "class1": 4, "class2": 5, "mass": 30, "price": 2060 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2202,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Assault Boots", "class1": 4, "class2": 5, "mass": 30, "price": 1956 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2203,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Mithril Boots", "class1": 4, "class2": 5, "mass": 30, "price": 918 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2204,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Chain Mail Shirt", "class1": 4, "class2": 5, "mass": 30, "price": 10100 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2205,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Chain Gaiters", "class1": 4, "class2": 5, "mass": 30, "price": 6320 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2206,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Mithril Shirt", "class1": 4, "class2": 5, "mass": 30, "price": 7580 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2207,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Karmian Tunic", "class1": 4, "class2": 5, "mass": 30, "price": 7580 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2208,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Ogre Power Gauntlets", "class1": 4, "class2": 5, "mass": 30, "price": 1956 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2209,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Eldarake", "class1": 4, "class2": 5, "mass": 30, "price": 2660 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2210,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Steel Plate Helmet", "class1": 4, "class2": 5, "mass": 30, "price": 4120 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2211,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Plated Leather Armor", "class1": 4, "class2": 5, "mass": 30, "price": 8920 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2212,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Plated Leather Gaiters", "class1": 4, "class2": 5, "mass": 30, "price": 5580 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2213,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Dwarven Chain Mail Shirt", "class1": 4, "class2": 5, "mass": 30, "price": 12880 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2214,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Dwarven Chain Gaiters", "class1": 4, "class2": 5, "mass": 30, "price": 8060 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2215,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Robe of Seal", "class1": 4, "class2": 5, "mass": 30, "price": 15700 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2216,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Great Helmet", "class1": 4, "class2": 5, "mass": 30, "price": 4840 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2217,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Knight's Shield", "class1": 4, "class2": 5, "mass": 30, "price": 3380 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2218,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Pa'agrian Hand", "class1": 4, "class2": 5, "mass": 30, "price": 3220 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2219,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Crimson Boots", "class1": 4, "class2": 5, "mass": 30, "price": 3220 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2220,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Rind Leather Armor", "class1": 4, "class2": 5, "mass": 30, "price": 9660 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2221,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Rind Leather Gaiters", "class1": 4, "class2": 5, "mass": 30, "price": 6040 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2222,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Composite Armor", "class1": 4, "class2": 5, "mass": 30, "price": 32000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2223,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Tower Shield", "class1": 4, "class2": 5, "mass": 30, "price": 5160 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2224,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Demon's Tunic", "class1": 4, "class2": 5, "mass": 30, "price": 14720 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2225,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Demon's Stockings", "class1": 4, "class2": 5, "mass": 30, "price": 9200 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2226,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Mithril Gauntlets", "class1": 4, "class2": 5, "mass": 30, "price": 4900 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2227,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Forgotten Boots", "class1": 4, "class2": 5, "mass": 30, "price": 4900 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2228,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Shining Circlet", "class1": 4, "class2": 5, "mass": 30, "price": 7360 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2229,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Theca Leather Armor", "class1": 4, "class2": 5, "mass": 30, "price": 16500 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2230,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Theca Leather Gaiters", "class1": 4, "class2": 5, "mass": 30, "price": 10320 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2231,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Full Plate Armor", "class1": 4, "class2": 5, "mass": 30, "price": 46400 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2232,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Drake Leather Armor", "class1": 4, "class2": 5, "mass": 30, "price": 34800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2233,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Divine Tunic", "class1": 4, "class2": 5, "mass": 30, "price": 21400 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2234,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Divine Stockings", "class1": 4, "class2": 5, "mass": 30, "price": 13420 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2235,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Mithril Helmet", "class1": 4, "class2": 5, "mass": 30, "price": 10720 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2236,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Cap of Mana", "class1": 4, "class2": 5, "mass": 30, "price": 10720 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2237,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Paradia Hood", "class1": 4, "class2": 5, "mass": 30, "price": 10720 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2238,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Hood of Solar Eclipse", "class1": 4, "class2": 5, "mass": 30, "price": 10720 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2239,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Hood of Summoning", "class1": 4, "class2": 5, "mass": 30, "price": 10720 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2240,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Elemental Hood", "class1": 4, "class2": 5, "mass": 30, "price": 10720 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2241,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Hood of Grace", "class1": 4, "class2": 5, "mass": 30, "price": 10720 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2242,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Phoenix Hood", "class1": 4, "class2": 5, "mass": 30, "price": 10720 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2243,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Hood of Aid", "class1": 4, "class2": 5, "mass": 30, "price": 10720 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2244,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Flame Helm", "class1": 4, "class2": 5, "mass": 30, "price": 10720 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2245,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Tallum Helm", "class1": 4, "class2": 5, "mass": 30, "price": 10720 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2246,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Helm of Avadon", "class1": 4, "class2": 5, "mass": 30, "price": 10720 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2247,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Helmet of Pledge", "class1": 4, "class2": 5, "mass": 30, "price": 10720 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2248,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Gauntlets of Ghost", "class1": 4, "class2": 5, "mass": 30, "price": 7160 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2249,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Adamantite Boots", "class1": 4, "class2": 5, "mass": 30, "price": 7160 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2250,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Bone Arrow", "class1": 4, "class2": 5, "mass": 30, "price": 800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2251,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Steel Arrow", "class1": 4, "class2": 5, "mass": 30, "price": 1200 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2252,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Iron Hammer", "class1": 4, "class2": 5, "mass": 30, "price": 4880 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2253,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Sword Breaker", "class1": 4, "class2": 5, "mass": 30, "price": 4880 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2254,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Composition Bow", "class1": 4, "class2": 5, "mass": 30, "price": 4880 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2255,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Saber", "class1": 4, "class2": 5, "mass": 30, "price": 8180 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2256,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Assassin Knife", "class1": 4, "class2": 5, "mass": 30, "price": 8180 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2257,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Trident", "class1": 4, "class2": 5, "mass": 30, "price": 8180 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2258,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Temptation of Abyss", "class1": 4, "class2": 5, "mass": 30, "price": 8180 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2259,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Spinebone Sword", "class1": 4, "class2": 5, "mass": 30, "price": 12880 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2260,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Mace of Judgment", "class1": 4, "class2": 5, "mass": 30, "price": 12880 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2261,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Conjuror's Staff", "class1": 4, "class2": 5, "mass": 30, "price": 12880 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2262,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Elven Bow", "class1": 4, "class2": 5, "mass": 30, "price": 12880 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2263,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Dwarven Trident", "class1": 4, "class2": 5, "mass": 30, "price": 12880 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2264,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Two-handed Sword", "class1": 4, "class2": 5, "mass": 30, "price": 19340 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2265,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Spiked Club", "class1": 4, "class2": 5, "mass": 30, "price": 19340 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2266,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Shilen Knife", "class1": 4, "class2": 5, "mass": 30, "price": 19340 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2267,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Gastraphetes", "class1": 4, "class2": 5, "mass": 30, "price": 19340 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2268,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Tome of Blood", "class1": 4, "class2": 5, "mass": 30, "price": 19340 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2269,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Morning Star", "class1": 4, "class2": 5, "mass": 30, "price": 28000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2270,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Goat Head Staff", "class1": 4, "class2": 5, "mass": 30, "price": 28000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2271,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Winged Spear", "class1": 4, "class2": 5, "mass": 30, "price": 28000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2272,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Sword of Revolution", "class1": 4, "class2": 5, "mass": 30, "price": 28000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2273,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Tarbar", "class1": 4, "class2": 5, "mass": 30, "price": 28000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2274,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Skull Breaker", "class1": 4, "class2": 5, "mass": 30, "price": 28000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2275,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Heavy Bone Club", "class1": 4, "class2": 5, "mass": 30, "price": 28000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2276,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Maingauche", "class1": 4, "class2": 5, "mass": 30, "price": 28000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2277,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Bich'hwa", "class1": 4, "class2": 5, "mass": 30, "price": 28000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2278,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Strengthened Long Bow", "class1": 4, "class2": 5, "mass": 30, "price": 28000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2279,
     "template": { "kind": "Other.Recipe", "name": "Recipe: War Pick", "class1": 4, "class2": 5, "mass": 30, "price": 28000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2280,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Crucifix of Blood", "class1": 4, "class2": 5, "mass": 30, "price": 28000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2281,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Eye of Infinity", "class1": 4, "class2": 5, "mass": 30, "price": 28000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2282,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Cursed Maingauche", "class1": 4, "class2": 5, "mass": 30, "price": 28000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2283,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Blue Crystal Skull", "class1": 4, "class2": 5, "mass": 30, "price": 30400 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2284,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Demon Fangs", "class1": 4, "class2": 5, "mass": 30, "price": 30400 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2285,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Claymore", "class1": 4, "class2": 5, "mass": 30, "price": 36000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2286,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Bonebreaker", "class1": 4, "class2": 5, "mass": 30, "price": 36000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2287,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Atuba Hammer", "class1": 4, "class2": 5, "mass": 30, "price": 36000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2288,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Ghost Staff", "class1": 4, "class2": 5, "mass": 30, "price": 36000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2289,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Staff of Life", "class1": 4, "class2": 5, "mass": 30, "price": 36000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2290,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Mithril Dagger", "class1": 4, "class2": 5, "mass": 30, "price": 36000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2291,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Scallop Jamadhr", "class1": 4, "class2": 5, "mass": 30, "price": 36000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2292,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Light Crossbow", "class1": 4, "class2": 5, "mass": 30, "price": 36000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2293,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Glaive", "class1": 4, "class2": 5, "mass": 30, "price": 36000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2294,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Vajra Wands", "class1": 4, "class2": 5, "mass": 30, "price": 36000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2295,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Ancient Reagent", "class1": 4, "class2": 5, "mass": 30, "price": 36000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2296,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Atuba Mace", "class1": 4, "class2": 5, "mass": 30, "price": 36000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2297,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Flamberge", "class1": 4, "class2": 5, "mass": 30, "price": 45800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2298,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Stormbringer", "class1": 4, "class2": 5, "mass": 30, "price": 45800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2299,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Big Hammer", "class1": 4, "class2": 5, "mass": 30, "price": 45800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2300,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Scythe", "class1": 4, "class2": 5, "mass": 30, "price": 45800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2301,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Battle Axe", "class1": 4, "class2": 5, "mass": 30, "price": 45800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2302,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Silver Axe", "class1": 4, "class2": 5, "mass": 30, "price": 45800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2303,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Skull Graver", "class1": 4, "class2": 5, "mass": 30, "price": 45800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2304,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Heavy Doom Hammer", "class1": 4, "class2": 5, "mass": 30, "price": 45800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2305,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Crystal Staff", "class1": 4, "class2": 5, "mass": 30, "price": 45800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2306,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Stick of Faith", "class1": 4, "class2": 5, "mass": 30, "price": 45800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2307,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Heavy Doom Axe", "class1": 4, "class2": 5, "mass": 30, "price": 45800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2308,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Cursed Dagger", "class1": 4, "class2": 5, "mass": 30, "price": 45800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2309,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Wolverine Needle", "class1": 4, "class2": 5, "mass": 30, "price": 45800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2310,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Dark Elven Dagger", "class1": 4, "class2": 5, "mass": 30, "price": 45800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2311,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Chakram", "class1": 4, "class2": 5, "mass": 30, "price": 45800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2312,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Crystallized Ice Bow", "class1": 4, "class2": 5, "mass": 30, "price": 45800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2313,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Orcish Glaive", "class1": 4, "class2": 5, "mass": 30, "price": 45800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2314,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Body Slasher", "class1": 4, "class2": 5, "mass": 30, "price": 45800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2315,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Shamshir", "class1": 4, "class2": 5, "mass": 30, "price": 57400 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2316,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Katana", "class1": 4, "class2": 5, "mass": 30, "price": 57400 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2317,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Bec de Corbin", "class1": 4, "class2": 5, "mass": 30, "price": 57400 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2318,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Spirit Sword", "class1": 4, "class2": 5, "mass": 30, "price": 57400 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2319,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Raid Sword", "class1": 4, "class2": 5, "mass": 30, "price": 57400 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2320,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Cursed Staff", "class1": 4, "class2": 5, "mass": 30, "price": 57400 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2321,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Stiletto", "class1": 4, "class2": 5, "mass": 30, "price": 57400 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2322,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Soulfire Dirk", "class1": 4, "class2": 5, "mass": 30, "price": 57400 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2323,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Elemental Bow", "class1": 4, "class2": 5, "mass": 30, "price": 57400 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2324,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Elven Bow of Nobility", "class1": 4, "class2": 5, "mass": 30, "price": 57400 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2325,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Tears of Fairy", "class1": 4, "class2": 5, "mass": 30, "price": 57400 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2326,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Horn of Glory", "class1": 4, "class2": 5, "mass": 30, "price": 57400 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2327,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Caliburs", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2328,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Sword of Delusion", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2329,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Tsurugi", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2330,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Homunkulus's Sword", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2331,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Poleaxe", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2332,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Sword of Limit", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2333,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Sword of Nightmare", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2334,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Sword of Whispering Death", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2335,
     "template": { "kind": "Other.Recipe", "name": "Recipe: War Axe", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2336,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Nirvana Axe", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2337,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Stick of Eternity", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2338,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Paradia Staff", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2339,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Inferno Staff", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2340,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Pa'agrian Hammer", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2341,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Sage's Staff", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2342,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Club of Nature", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2343,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Mace of the Underworld", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2344,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Grace Dagger", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2345,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Dark Screamer", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2346,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Fisted Blade", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2347,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Akat Long Bow", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2348,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Heathen's Book", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2349,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Hex Doll", "class1": 4, "class2": 5, "mass": 30, "price": 86000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2350,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Pa'agrian Axe", "class1": 4, "class2": 5, "mass": 30, "price": 95600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2351,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Scorpion", "class1": 4, "class2": 5, "mass": 30, "price": 95600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2352,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Widow Maker", "class1": 4, "class2": 5, "mass": 30, "price": 95600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2353,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Samurai Longsword", "class1": 4, "class2": 5, "mass": 30, "price": 122600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2354,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Deadman's Staff", "class1": 4, "class2": 5, "mass": 30, "price": 122600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2355,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Ghoul's Staff", "class1": 4, "class2": 5, "mass": 30, "price": 122600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2356,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Demon's Staff", "class1": 4, "class2": 5, "mass": 30, "price": 122600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2357,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Crystal Dagger", "class1": 4, "class2": 5, "mass": 30, "price": 122600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2358,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Great Pata", "class1": 4, "class2": 5, "mass": 30, "price": 122600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2359,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Eminence Bow", "class1": 4, "class2": 5, "mass": 30, "price": 122600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2360,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Orcish Poleaxe", "class1": 4, "class2": 5, "mass": 30, "price": 122600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2361,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Candle of Wisdom", "class1": 4, "class2": 5, "mass": 30, "price": 122600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2362,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Blessed Branch", "class1": 4, "class2": 5, "mass": 30, "price": 122600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2363,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Phoenix Feather", "class1": 4, "class2": 5, "mass": 30, "price": 122600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2364,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Cerberus Eye", "class1": 4, "class2": 5, "mass": 30, "price": 122600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2365,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Scroll of Destruction", "class1": 4, "class2": 5, "mass": 30, "price": 122600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2366,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Claws of Black Dragon", "class1": 4, "class2": 5, "mass": 30, "price": 122600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2367,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Three Eyed Crow's Feather", "class1": 4, "class2": 5, "mass": 30, "price": 122600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2375,
     "template": { "kind": "Other.PetCollar", "name": "Wolf Collar", "class1": 4, "class2": 5, "mass": 10, "price": 0 },
@@ -7389,227 +7389,227 @@
 },{
     "selfId": 2970,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Ring of Binding", "class1": 4, "class2": 5, "mass": 30, "price": 5640 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2971,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Mithril Scale Gaiters", "class1": 4, "class2": 5, "mass": 30, "price": 3740 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2972,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Brigandine Gaiters", "class1": 4, "class2": 5, "mass": 30, "price": 3740 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2973,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Elven Mithril Tunic", "class1": 4, "class2": 5, "mass": 30, "price": 4480 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2974,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Elven Mithril Stockings", "class1": 4, "class2": 5, "mass": 30, "price": 2800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2975,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Brigandine Helmet", "class1": 4, "class2": 5, "mass": 30, "price": 2240 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2976,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Manticore Skin Boots", "class1": 4, "class2": 5, "mass": 30, "price": 1494 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2977,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Brigandine Boots", "class1": 4, "class2": 5, "mass": 30, "price": 1494 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2978,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Elven Mithril Boots", "class1": 4, "class2": 5, "mass": 30, "price": 1494 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2979,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Manticore Skin Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 1494 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2980,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Brigandine Gauntlets", "class1": 4, "class2": 5, "mass": 30, "price": 1494 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2981,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Elven Mithril Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 1494 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2982,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Brigandine Shield", "class1": 4, "class2": 5, "mass": 30, "price": 1568 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2983,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Plate Helmet", "class1": 4, "class2": 5, "mass": 30, "price": 2940 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2984,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Salamander Skin Boots", "class1": 4, "class2": 5, "mass": 30, "price": 1956 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2985,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Plate Boots", "class1": 4, "class2": 5, "mass": 30, "price": 1956 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2986,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Sage's Worn Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 1956 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2987,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Plate Shield", "class1": 4, "class2": 5, "mass": 30, "price": 2060 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2988,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Tempered Mithril Gaiters", "class1": 4, "class2": 5, "mass": 30, "price": 4740 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2989,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Chain Hood", "class1": 4, "class2": 5, "mass": 30, "price": 3780 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2990,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Chain Boots", "class1": 4, "class2": 5, "mass": 30, "price": 2520 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2991,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Karmian Boots", "class1": 4, "class2": 5, "mass": 30, "price": 2520 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2992,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Plated Leather Boots", "class1": 4, "class2": 5, "mass": 30, "price": 2520 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2993,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Dwarven Chain Boots", "class1": 4, "class2": 5, "mass": 30, "price": 2520 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2994,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Boots of Seal", "class1": 4, "class2": 5, "mass": 30, "price": 2520 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2995,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Reinforced Mithril Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 2520 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2996,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Chain Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 2520 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2997,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Karmian Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 2520 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2998,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Chain Shield", "class1": 4, "class2": 5, "mass": 30, "price": 2660 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 2999,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Plated Leather Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 2980 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3000,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Dwarven Chain Shield", "class1": 4, "class2": 5, "mass": 30, "price": 3120 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3001,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Rind Leather Boots", "class1": 4, "class2": 5, "mass": 30, "price": 3220 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3002,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Dwarven Chain Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 3220 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3003,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Gloves of Seal", "class1": 4, "class2": 5, "mass": 30, "price": 3220 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3004,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Rind Leather Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 3220 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3005,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Demon's Boots", "class1": 4, "class2": 5, "mass": 30, "price": 4900 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3006,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Demon's Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 4900 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3007,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Theca Leather Boots", "class1": 4, "class2": 5, "mass": 30, "price": 5500 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3008,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Theca Leather Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 5500 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3009,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Composite Boots", "class1": 4, "class2": 5, "mass": 30, "price": 4900 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3010,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Composite Helmet", "class1": 4, "class2": 5, "mass": 30, "price": 7360 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3011,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Divine Boots", "class1": 4, "class2": 5, "mass": 30, "price": 7160 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3012,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Full Plate Helmet", "class1": 4, "class2": 5, "mass": 30, "price": 10720 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3013,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Drake Leather Boots", "class1": 4, "class2": 5, "mass": 30, "price": 7160 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3014,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Full Plate Boots", "class1": 4, "class2": 5, "mass": 30, "price": 7160 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3015,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Drake Leather Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 7160 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3016,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Full Plate Gauntlets", "class1": 4, "class2": 5, "mass": 30, "price": 7160 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3017,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Divine Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 7160 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3018,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Blessed Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 7160 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3019,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Full Plate Shield", "class1": 4, "class2": 5, "mass": 30, "price": 7500 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3020,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Elven Long Sword", "class1": 4, "class2": 5, "mass": 30, "price": 36000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3021,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Dwarven War Hammer", "class1": 4, "class2": 5, "mass": 30, "price": 57400 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3022,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Yaksa Mace", "class1": 4, "class2": 5, "mass": 30, "price": 122600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3023,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Titan Key", "class1": 4, "class2": 5, "mass": 30, "price": 0 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3024,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Journeyman Ring", "class1": 4, "class2": 5, "mass": 30, "price": 0 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3025,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Amber Bead", "class1": 4, "class2": 5, "mass": 30, "price": 0 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3030,
     "template": { "kind": "Other.None", "name": "Key of Titan", "class1": 4, "class2": 5, "mass": 10, "price": 0 },
@@ -7621,23 +7621,23 @@
 },{
     "selfId": 3032,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Spiritshot D", "class1": 4, "class2": 5, "mass": 30, "price": 5000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3033,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Spiritshot C", "class1": 4, "class2": 5, "mass": 30, "price": 60000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3034,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Spiritshot B", "class1": 4, "class2": 5, "mass": 30, "price": 100000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3035,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Spiritshot A", "class1": 4, "class2": 5, "mass": 30, "price": 150000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3036,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Spiritshot S", "class1": 4, "class2": 5, "mass": 30, "price": 450000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3037,
     "template": { "kind": "Other.Quest", "name": "Kakan's Letter", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
@@ -10837,7 +10837,7 @@
 },{
     "selfId": 3838,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Titan's Powerstone", "class1": 4, "class2": 5, "mass": 30, "price": 0 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3839,
     "template": { "kind": "Other.None", "name": "Mist Drake Egg", "class1": 4, "class2": 5, "mass": 0, "price": 0 },
@@ -11145,23 +11145,23 @@
 },{
     "selfId": 3953,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Blessed Spiritshot D", "class1": 4, "class2": 5, "mass": 30, "price": 5000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3954,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Blessed Spiritshot C", "class1": 4, "class2": 5, "mass": 30, "price": 60000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3955,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Blessed Spiritshot B", "class1": 4, "class2": 5, "mass": 30, "price": 100000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3956,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Blessed Spiritshot A", "class1": 4, "class2": 5, "mass": 30, "price": 150000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3957,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Blessed Spiritshot S", "class1": 4, "class2": 5, "mass": 30, "price": 450000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 3958,
     "template": { "kind": "Other.Scroll", "name": "L2Day - Blessed Escape Effect", "class1": 4, "class2": 5, "mass": 120, "price": 0 },
@@ -11813,315 +11813,315 @@
 },{
     "selfId": 4122,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Maestro Holder", "class1": 4, "class2": 5, "mass": 30, "price": 4500 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4123,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Maestro Anvil Lock", "class1": 4, "class2": 5, "mass": 30, "price": 4500 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4124,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Craftsman Mold", "class1": 4, "class2": 5, "mass": 30, "price": 4500 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4125,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Maestro Mold", "class1": 4, "class2": 5, "mass": 30, "price": 4500 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4126,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Adamantite Earrings", "class1": 4, "class2": 5, "mass": 30, "price": 12120 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4127,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Adamantite Ring", "class1": 4, "class2": 5, "mass": 30, "price": 8080 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4128,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Adamantite Necklace", "class1": 4, "class2": 5, "mass": 30, "price": 16160 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4129,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Earrings of Black Ore", "class1": 4, "class2": 5, "mass": 30, "price": 18480 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4130,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Ring of Black Ore", "class1": 4, "class2": 5, "mass": 30, "price": 12320 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4131,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Necklace of Black Ore", "class1": 4, "class2": 5, "mass": 30, "price": 24600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4132,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Composite Shield", "class1": 4, "class2": 5, "mass": 30, "price": 5160 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4133,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Zubei's Breastplate", "class1": 4, "class2": 5, "mass": 30, "price": 41600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4134,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Zubei's Gaiters", "class1": 4, "class2": 5, "mass": 30, "price": 26000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4135,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Implosion Boots", "class1": 4, "class2": 5, "mass": 30, "price": 16080 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4136,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Boots of Silence", "class1": 4, "class2": 5, "mass": 30, "price": 10380 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4137,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Guardian's Boots", "class1": 4, "class2": 5, "mass": 30, "price": 10380 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4138,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Paradia Boots", "class1": 4, "class2": 5, "mass": 30, "price": 16080 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4139,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Elemental Boots", "class1": 4, "class2": 5, "mass": 30, "price": 16080 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4140,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Boots of Grace", "class1": 4, "class2": 5, "mass": 30, "price": 16080 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4141,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Avadon Breastplate", "class1": 4, "class2": 5, "mass": 30, "price": 41600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4142,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Avadon Gaiters", "class1": 4, "class2": 5, "mass": 30, "price": 26000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4143,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Zubei's Leather Shirt", "class1": 4, "class2": 5, "mass": 30, "price": 31200 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4144,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Zubei's Leather Gaiters", "class1": 4, "class2": 5, "mass": 30, "price": 19460 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4145,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Avadon Leather Armor", "class1": 4, "class2": 5, "mass": 30, "price": 45600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4146,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Tunic of Zubei", "class1": 4, "class2": 5, "mass": 30, "price": 31200 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4147,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Stockings of Zubei", "class1": 4, "class2": 5, "mass": 30, "price": 19460 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4148,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Avadon Robe", "class1": 4, "class2": 5, "mass": 30, "price": 45600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4149,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Avadon Circlet", "class1": 4, "class2": 5, "mass": 30, "price": 15560 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4150,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Avadon Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 10380 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4151,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Chain Gloves of Silence", "class1": 4, "class2": 5, "mass": 30, "price": 10380 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4152,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Guardian's Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 10380 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4153,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Gloves of Blessing", "class1": 4, "class2": 5, "mass": 30, "price": 10380 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4154,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Doom Shield", "class1": 4, "class2": 5, "mass": 30, "price": 16900 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4155,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Blue Wolf Breastplate", "class1": 4, "class2": 5, "mass": 30, "price": 64400 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4156,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Boots of Blessing", "class1": 4, "class2": 5, "mass": 30, "price": 10380 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4157,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Blue Wolf Gaiters", "class1": 4, "class2": 5, "mass": 30, "price": 40200 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4158,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Doom Plate Armor", "class1": 4, "class2": 5, "mass": 30, "price": 94200 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4159,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Blue Wolf Leather Armor", "class1": 4, "class2": 5, "mass": 30, "price": 70600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4160,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Leather Armor of Doom", "class1": 4, "class2": 5, "mass": 30, "price": 70600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4161,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Blue Wolf Tunic", "class1": 4, "class2": 5, "mass": 30, "price": 48200 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4162,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Tunic of Doom", "class1": 4, "class2": 5, "mass": 30, "price": 48200 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4163,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Blue Wolf Stockings", "class1": 4, "class2": 5, "mass": 30, "price": 30200 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4164,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Stockings of Doom", "class1": 4, "class2": 5, "mass": 30, "price": 30200 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4165,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Blue Wolf Helmet", "class1": 4, "class2": 5, "mass": 30, "price": 24200 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4166,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Doom Helmet", "class1": 4, "class2": 5, "mass": 30, "price": 24200 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4167,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Blue Wolf Boots", "class1": 4, "class2": 5, "mass": 30, "price": 16080 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4168,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Doom Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 16080 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4169,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Elemental Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 16080 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4170,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Gloves of Grace", "class1": 4, "class2": 5, "mass": 30, "price": 16080 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4171,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Implosion Gauntlets", "class1": 4, "class2": 5, "mass": 30, "price": 16080 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4172,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Paradia Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 16080 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4173,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Blue Wolf Gloves", "class1": 4, "class2": 5, "mass": 30, "price": 16080 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4174,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Zubei's Boots", "class1": 4, "class2": 5, "mass": 30, "price": 10380 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4175,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Avadon Boots", "class1": 4, "class2": 5, "mass": 30, "price": 10380 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4176,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Doom Boots", "class1": 4, "class2": 5, "mass": 30, "price": 16080 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4177,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Zubei's Gauntlets", "class1": 4, "class2": 5, "mass": 30, "price": 10380 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4178,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Zubei's Shield (100%)", "class1": 4, "class2": 5, "mass": 30, "price": 10900 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4179,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Zubei's Helmet", "class1": 4, "class2": 5, "mass": 30, "price": 15560 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4180,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Silver Arrow", "class1": 4, "class2": 5, "mass": 30, "price": 1800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4181,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Pata", "class1": 4, "class2": 5, "mass": 30, "price": 156600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4182,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Great Sword", "class1": 4, "class2": 5, "mass": 30, "price": 173600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4183,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Heavy War Axe", "class1": 4, "class2": 5, "mass": 30, "price": 173600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4184,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Sprite's Staff", "class1": 4, "class2": 5, "mass": 30, "price": 173600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4185,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Keshanberk", "class1": 4, "class2": 5, "mass": 30, "price": 173600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4186,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Sword of Valhalla", "class1": 4, "class2": 5, "mass": 30, "price": 173600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4187,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Kris", "class1": 4, "class2": 5, "mass": 30, "price": 173600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4188,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Hell Knife", "class1": 4, "class2": 5, "mass": 30, "price": 173600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4189,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Arthro Nail", "class1": 4, "class2": 5, "mass": 30, "price": 173600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4190,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Dark Elven Long Bow", "class1": 4, "class2": 5, "mass": 30, "price": 173600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4191,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Great Axe", "class1": 4, "class2": 5, "mass": 30, "price": 173600 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4192,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Sword of Damascus", "class1": 4, "class2": 5, "mass": 30, "price": 262000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4193,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Lance", "class1": 4, "class2": 5, "mass": 30, "price": 262000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4194,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Deadman's Glory", "class1": 4, "class2": 5, "mass": 30, "price": 262000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4195,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Art of Battle Axe", "class1": 4, "class2": 5, "mass": 30, "price": 262000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4196,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Staff of Evil Spirits", "class1": 4, "class2": 5, "mass": 30, "price": 262000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4197,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Demon Dagger", "class1": 4, "class2": 5, "mass": 30, "price": 262000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4198,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Bellion Cestus", "class1": 4, "class2": 5, "mass": 30, "price": 262000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4199,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Bow of Peril", "class1": 4, "class2": 5, "mass": 30, "price": 262000 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4200,
     "template": { "kind": "Other.Spellbook", "name": "Spellbook: Restore Life", "class1": 4, "class2": 5, "mass": 120, "price": 3850 },
@@ -13005,11 +13005,11 @@
 },{
     "selfId": 4440,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Knuckle Duster", "class1": 4, "class2": 5, "mass": 30, "price": 57400 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4441,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Avadon Shield", "class1": 4, "class2": 5, "mass": 30, "price": 10900 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4442,
     "template": { "kind": "Other.Lotto", "name": "Lottery Ticket", "class1": 4, "class2": 5, "mass": 20, "price": 0 },
@@ -14009,31 +14009,31 @@
 },{
     "selfId": 5231,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Metal Hardener (100%)", "class1": 4, "class2": 5, "mass": 30, "price": 2800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 5472,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Metallic Thread (100%)", "class1": 4, "class2": 5, "mass": 30, "price": 2800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 5473,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Durable Metal Plate (100%)", "class1": 4, "class2": 5, "mass": 30, "price": 2800 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 5474,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Leolin's Mold (100%)", "class1": 4, "class2": 5, "mass": 30, "price": 0 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 5475,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Warsmith's Mold (100%)", "class1": 4, "class2": 5, "mass": 30, "price": 0 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 5476,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Arcsmith's Anvil (100%)", "class1": 4, "class2": 5, "mass": 30, "price": 0 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 5477,
     "template": { "kind": "Other.Recipe", "name": "Recipe: Warsmith's Holder (100%)", "class1": 4, "class2": 5, "mass": 30, "price": 0 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 5549,
     "template": { "kind": "Other.Material", "name": "Metallic Thread", "class1": 4, "class2": 5, "mass": 2, "price": 2000 },
