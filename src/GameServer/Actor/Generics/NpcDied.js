@@ -2,8 +2,11 @@ const World = invoke('GameServer/World/World');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const RaidBossMinionManager = invoke('GameServer/World/RaidBossMinionManager');
 const PartyRewardMath = invoke('GameServer/Actor/PartyRewardMath');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
 const PARTY_REWARD_RADIUS = 2500;
+const SWEEP_RETRY_DELAY_MS = 250;
+const SWEEP_RETRY_WINDOW_MS = 25000;
 
 function distance2d(a, b) {
     const dx = a.fetchLocX() - b.fetchLocX();
@@ -78,6 +81,38 @@ function partyRewardShares(participants, exp, sp) {
         .map((share) => ({ session: participants[share.index], exp: share.exp, sp: share.sp }));
 }
 
+function autoSweepSpoiledCorpse(npc, Generics) {
+    const spoil = npc?.model?.spoil;
+    const spoilerId = Number(spoil?.spoilerId || 0);
+    if (!spoil?.spoiled || spoil.swept || !spoilerId) return false;
+
+    const spoilerSession = (World.user?.sessions || []).find((candidate) => (
+        String(candidate?.accountId || '').startsWith('bot_')
+        && Number(candidate.actor?.fetchId?.() || 0) === spoilerId
+    ));
+    const spoiler = spoilerSession?.actor;
+    if (!spoiler || !BotRoles.isSpoiler(spoiler)) return false;
+
+    if (spoiler.state?.fetchCasts?.()) {
+        if (!spoilerSession.sweepRetryTimer) {
+            const deadline = Number(spoilerSession.sweepRetryDeadlineAt || 0) || Date.now() + SWEEP_RETRY_WINDOW_MS;
+            if (Date.now() < deadline) {
+                spoilerSession.sweepRetryDeadlineAt = deadline;
+                const retryTimer = setTimeout(() => {
+                    spoilerSession.sweepRetryTimer = null;
+                    autoSweepSpoiledCorpse(npc, Generics);
+                }, SWEEP_RETRY_DELAY_MS);
+                retryTimer.unref?.();
+                spoilerSession.sweepRetryTimer = retryTimer;
+            }
+        }
+        return false;
+    }
+
+    delete spoilerSession.sweepRetryDeadlineAt;
+    return invoke('GameServer/Bot/BotAI').trySweep(spoilerSession, spoiler, npc, Generics);
+}
+
 function npcDied(session, actor, npc) {
     const Generics = invoke(path.actor);
 
@@ -101,6 +136,11 @@ function npcDied(session, actor, npc) {
     Generics.abortCombatState(session, actor);
 
     if (actor.isDead()) return;
+
+    // Death is the authoritative end of the encounter. Let the bot that
+    // successfully marked this corpse queue exactly one Sweeper cast, whether
+    // it was a solo hunter or a party companion.
+    autoSweepSpoiledCorpse(npc, Generics);
 
     const rewardActor = ownerSession?.actor || actor;
     const participants = rewardParticipants(session, rewardActor, npc);
@@ -132,3 +172,4 @@ module.exports = npcDied;
 module.exports.PARTY_EXP_SP_BONUS = PartyRewardMath.PARTY_EXP_SP_BONUS;
 module.exports.partyRewardShares = partyRewardShares;
 module.exports.validPartyMembers = validPartyMembers;
+module.exports.autoSweepSpoiledCorpse = autoSweepSpoiledCorpse;
