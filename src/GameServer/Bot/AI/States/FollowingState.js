@@ -1567,7 +1567,12 @@ module.exports = {
                     targetId: pullAction.target?.fetchId?.() || pulling.target?.fetchId?.() || null,
                     phase: pulling.phase || null
                 });
-                return;
+                // An active party fight pauses selection/delivery of the next
+                // pull, but it must not consume the puller's combat tick. Let
+                // the ordinary party-assist branch below attack the current
+                // threat; once the last mob dies, tickBotPuller resumes from
+                // the preserved pull configuration on the following tick.
+                if (pullAction.paused !== 'party_under_attack' || !partyThreat?.actor) return;
             }
         }
 

@@ -2514,9 +2514,10 @@ try {
     assert(!companionHtml.includes('bgcolor=333333'), 'companion cards should avoid the flat grey card background');
 
     const activeAdd = {
+        dead: false,
         fetchId: () => 3012,
         fetchAttackable: () => true,
-        isDead: () => false,
+        isDead() { return this.dead; },
         fetchLevel: () => 26,
         fetchDestId: () => partyHudLeader.fetchId(),
         fetchLocX: () => 300,
@@ -2537,12 +2538,23 @@ try {
     partyHudBotA.moves = [];
     partyHudLeaderSession.partyPullState = {};
     CompanionControl(partyHudLeaderSession, ['companion-control', 'member-pull', 'on', partyHudBotA.fetchName()]);
+    let pullingBotAssistId = null;
     FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
-        say() {}, executeCombat() { throw new Error('puller must not start a new pull while the party is fighting an add'); }, executePvPCombat() {}
+        say() {},
+        executeCombat(_session, _bot, npc) { pullingBotAssistId = npc.fetchId(); },
+        executePvPCombat() {}
     });
     assert.strictEqual(partyHudBotASession.roleDecision.reason, 'party_under_attack', 'an unrelated incoming threat must pause bot pulling');
     assert.strictEqual(partyHudLeaderSession.partyPullState.targetId, undefined, 'a live party threat must not be replaced with a new pull target');
     assert.strictEqual(partyHudBotA.moves.length, 0, 'a paused puller must stay with the party during an active fight');
+    assert.strictEqual(pullingBotAssistId, activeAdd.fetchId(), 'a paused puller must join ordinary party combat against the active add');
+
+    activeAdd.dead = true;
+    partyHudLeader.destId = undefined;
+    FollowingState.tick(partyHudBotASession, partyHudBotA, {}, {
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.strictEqual(partyHudLeaderSession.partyPullState.targetId, freePullTarget.fetchId(), 'pulling must resume with a new target after the party clears every active mob');
     World.npc = { spawns: [pulledMob] };
     World.fetchNpcsInRadius = () => [pulledMob];
 
