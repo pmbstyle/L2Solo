@@ -1649,7 +1649,8 @@ const PopulationService = {
             run: ({ job, deadlineAt }) => {
                 const limit = Math.max(1, Number(Config.maxWarehouseReleasesPerTick) || 8);
                 const releaseStartedAt = Date.now();
-                return this.releaseWarehouseMaterials(deadlineAt).then((results) => ({
+                return invoke('GameServer/Clan/ClanWarehouseEquipmentService').resolveBatch(deadlineAt)
+                    .then(() => this.releaseWarehouseMaterials(deadlineAt)).then((results) => ({
                     results,
                     continuation: results.length >= limit || Date.now() >= deadlineAt
                 })).finally(() => {

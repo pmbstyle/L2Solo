@@ -5155,6 +5155,85 @@ const Database = {
             };
         }, 'clan-warehouse:deposit'));
     },
+    exchangeClanWarehouseEquipment({ clanId, characterId, warehouseId, expectedPhase, validateLive, validateCold } = {}) {
+        const clan = Number(clanId);
+        const id = Number(characterId);
+        return withCharacterFlush(id, () => inTransaction(() => {
+            const Policy = invoke('GameServer/Clan/ClanWarehouseEquipmentPolicy');
+            const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+            const member = one('SELECT id, clanId, classId, level FROM characters WHERE id = ?', [id]);
+            const life = one('SELECT * FROM bot_life_state WHERE characterId = ?', [id]);
+            const stock = one('SELECT * FROM clan_warehouse_items WHERE id = ? AND clanId = ?', [Number(warehouseId), clan]);
+            if (!member || Number(member.clanId) !== clan || !life || !stock) return { ok: false, code: 'stock_or_member_changed' };
+            if (life.phase !== expectedPhase || !['cold', 'hot'].includes(life.phase)
+                || String(life.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER
+                || life.phase === 'cold' && (!['hunting', 'resting', 'grouped'].includes(life.activity)
+                    || validateCold && !validateCold())) {
+                return { ok: false, code: 'member_busy' };
+            }
+            if (one(`SELECT id FROM clan_orders WHERE clanId = ? AND itemId = ?
+                AND status IN ('active', 'paused', 'blocked') LIMIT 1`, [clan, stock.selfId])) {
+                return { ok: false, code: 'item_ordered' };
+            }
+            const rows = all('SELECT * FROM items WHERE characterId = ? AND amount > 0', [id]);
+            if (life.phase === 'hot' && (typeof validateLive !== 'function' || !validateLive(member, rows))) {
+                return { ok: false, code: 'live_state_changed' };
+            }
+            const plan = Policy.plan(member, rows, stock);
+            if (!plan) return { ok: false, code: 'not_an_upgrade' };
+            const timestamp = now();
+            const simulation = one('SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan]);
+            const clanState = jsonObject(simulation?.stateJson);
+            const revision = Math.max(Number(clanState.warehouseRevision || 0), Number(one(
+                'SELECT COALESCE(MAX(warehouseRevision), 0) AS revision FROM clan_warehouse_ledger WHERE clanId = ?', [clan]
+            ).revision || 0)) + 1;
+            const key = `gear-exchange:${stock.id}:${id}:${revision}`;
+            const ledger = (selfId, operation) => write(`INSERT INTO clan_warehouse_ledger
+                (clanId, characterId, selfId, amount, operation, resolveKey, warehouseRevision, createdAt)
+                VALUES (?, ?, ?, 1, ?, ?, ?, ?)`, [clan, id, selfId, operation, key, revision, timestamp]);
+            for (const old of plan.returned) {
+                const item = Policy.materialize(old);
+                write(`INSERT INTO clan_warehouse_items
+                    (clanId, selfId, name, kind, amount, enchant, petData, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)`, [
+                    clan, old.selfId, item.fetchName(), item.fetchKind(), old.enchant, old.petData, timestamp, timestamp
+                ]);
+                write('DELETE FROM items WHERE id = ? AND characterId = ?', [old.id, id]);
+                ledger(old.selfId, 'deposit');
+            }
+            if (Number(stock.amount) === 1) write('DELETE FROM clan_warehouse_items WHERE id = ?', [stock.id]);
+            else write('UPDATE clan_warehouse_items SET amount = amount - 1, updatedAt = ? WHERE id = ?', [timestamp, stock.id]);
+            const inventoryId = Number(write(`INSERT INTO items
+                (characterId, selfId, name, amount, enchant, petData, equipped, slot)
+                VALUES (?, ?, ?, 1, ?, ?, 1, ?)`, [id, stock.selfId, stock.name, stock.enchant, stock.petData, plan.slot]).insertId);
+            ledger(stock.selfId, 'withdraw');
+            const updatedRows = all('SELECT * FROM items WHERE characterId = ? AND amount > 0', [id]);
+            const physical = LifeState.inventorySummaryFromItems(updatedRows);
+            const inventory = jsonObject(life.inventorySummary);
+            for (const selfId of new Set([stock.selfId, ...plan.returned.map((row) => row.selfId)])) {
+                delete inventory[String(selfId)];
+                if (physical[String(selfId)]) inventory[String(selfId)] = physical[String(selfId)];
+            }
+            const stats = jsonObject(life.statsJson);
+            stats.equipment = LifeState.equipmentSummaryFromInventory(inventory);
+            stats.clanGearExchangeRevision = Number(life.simulationRevision || 0) + 1;
+            stats.lastClanWarehouseTransfer = { operation: 'gear_exchange', clanId: clan, selfId: stock.selfId,
+                returned: plan.returned.map((row) => ({ selfId: row.selfId, enchant: row.enchant })), at: timestamp };
+            write(`UPDATE bot_life_state SET inventorySummary = ?, statsJson = ?,
+                simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?`, [
+                JSON.stringify(inventory), JSON.stringify(stats), timestamp, id
+            ]);
+            if (simulation) {
+                clanState.warehouseRevision = revision;
+                clanState.updatedAt = timestamp;
+                write('UPDATE clan_simulation_clans SET stateJson = ?, updatedAt = ? WHERE clanId = ?', [JSON.stringify(clanState), timestamp, clan]);
+            }
+            return { ok: true, code: 'gear_exchanged', inventoryId, slot: plan.slot,
+                received: { ...stock, id: inventoryId, amount: 1, slot: plan.slot, equipped: true },
+                returned: plan.returned, state: normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [id])) };
+        }, 'clan-warehouse:gear-exchange'));
+    },
+
     transferClanWarehouseToMember({
         clanId,
         characterId,

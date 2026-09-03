@@ -513,6 +513,7 @@ function recordFromSession(session, phase, reason = '') {
     const inventory = inventorySummaryFromItems(actor.backpack?.fetchItems ? actor.backpack.fetchItems() : []);
     const stats = {
         role: session.botStatus?.role || null,
+        clanGearExchangeRevision: Number(cache.get(characterId)?.stats?.clanGearExchangeRevision || 0),
         classId: actor.fetchClassId ? Number(actor.fetchClassId()) : null,
         // A freshly spawned bot may cool before it has gone through a cold
         // resolve. Persist the completed profile here so it is never picked
@@ -644,6 +645,14 @@ function preserveVersionedAppearanceForSave(row) {
 }
 
 function save(row) {
+    // An async lifecycle step may still hold the inventory from before an
+    // exchange. Reject it before its subsequent inventory sync restores gear.
+    const exchangeRevision = Number(cache.get(Number(row.characterId))?.stats?.clanGearExchangeRevision || 0);
+    if (exchangeRevision > Number(parseJson(row.statsJson, {}).clanGearExchangeRevision || 0)) {
+        const error = new Error(`stale inventory before clan equipment exchange for ${row.characterId}`);
+        error.code = 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT';
+        return Promise.reject(error);
+    }
     preserveVersionedAppearanceForSave(row);
     return Database.execute([
         `INSERT INTO ${TABLE} (
@@ -3077,6 +3086,25 @@ const BotLifeState = {
             });
     },
 
+    applyClanWarehouseExchange(request, publish = null) {
+        const id = Number(request.characterId);
+        const previous = pendingWrites.get(id) || Promise.resolve();
+        const next = previous.then(() => Database.exchangeClanWarehouseEquipment(request)).then((result) => {
+            if (!result?.ok) return result;
+            const snapshot = normalize(result.state);
+            cache.set(id, snapshot);
+            // Publish the committed paperdoll before yielding back to hot AI.
+            if (publish) publish({ ...result, state: snapshot });
+            notifyColdSnapshot(snapshot, 'clan_warehouse_equipment', { critical: true });
+            return { ...result, state: snapshot };
+        });
+        const tracked = next.finally(() => {
+            if (pendingWrites.get(id) === tracked) pendingWrites.delete(id);
+        });
+        pendingWrites.set(id, tracked);
+        return tracked;
+    },
+
     applyWarehouseGearCleanup(characterId, selections = [], options = {}) {
         const id = Number(characterId);
         if (!Number.isSafeInteger(id) || id <= 0 || !Array.isArray(selections) || !selections.length) {
@@ -3423,6 +3451,7 @@ const BotLifeState = {
 
 BotLifeState.canonicalizeAreaState = canonicalizeAreaState;
 BotLifeState.inventorySummaryFromItems = inventorySummaryFromItems;
+BotLifeState.equipmentSummaryFromInventory = equipmentSummaryFromInventory;
 BotLifeState.marketPurchaseBlocker = marketPurchaseBlocker;
 BotLifeState.normalizeInventoryStackability = normalizeInventoryStackability;
 BotLifeState.preserveClanOwnedEquipmentState = preserveClanOwnedEquipmentState;

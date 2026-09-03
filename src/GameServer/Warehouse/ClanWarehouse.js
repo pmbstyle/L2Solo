@@ -115,6 +115,9 @@ async function deposit(session, lines) {
             source.setAmount(transferred.inventoryAmount);
         }
     });
+    await invoke('GameServer/Clan/ClanWarehouseEquipmentService').resolveClan(clan.id, {
+        preferredIds: results.flatMap((result) => result.warehouseIds || [result.warehouseId])
+    }).catch((error) => utils.infoWarn('ClanGear', 'exchange deferred: %s', error.message));
     return list(clan.id);
 }
 
