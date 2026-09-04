@@ -1,6 +1,7 @@
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const NpcObjectIndex = require('../../../World/NpcObjectIndex');
 
 const MIN_RETREAT_MS = 1000;
 const RETREAT_REPATH_COOLDOWN_MS = 750;
@@ -31,7 +32,7 @@ function activePursuer(session, bot) {
     if (threatId === null || threatId === undefined) return null;
 
     const World = invoke('GameServer/World/World');
-    const npc = (World.npc?.spawns || []).find((spawn) => Number(spawn.fetchId?.()) === Number(threatId));
+    const npc = NpcObjectIndex.find(World, Number(threatId));
     if (!npc || npc.fetchAttackable?.() !== true || npc.isDead?.() || npc.state?.fetchDead?.()) return null;
     if (Number(npc.fetchDestId?.()) !== Number(bot.fetchId())) return null;
     return distance2d(npc, bot) < NPC_CHASE_BREAK_DISTANCE ? npc : null;

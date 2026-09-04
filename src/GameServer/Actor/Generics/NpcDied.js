@@ -3,6 +3,7 @@ const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const RaidBossMinionManager = invoke('GameServer/World/RaidBossMinionManager');
 const PartyRewardMath = invoke('GameServer/Actor/PartyRewardMath');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const NpcObjectIndex = require('../../World/NpcObjectIndex');
 
 const PARTY_REWARD_RADIUS = 2500;
 const SWEEP_RETRY_DELAY_MS = 250;
@@ -121,6 +122,7 @@ function npcDied(session, actor, npc) {
     }
 
     if (npc.fetchIsSummon?.() === true) {
+        NpcObjectIndex.remove(World, npc);
         World.npc.spawns = World.npc.spawns.filter((spawn) => spawn.fetchId() !== npc.fetchId());
         session.dataSendToMeAndOthers?.(invoke('GameServer/Network/Response').deleteOb(npc.fetchId()), npc);
         if (actor?.fetchIsSummon?.() === true) actor.attack?.clearTimers?.();

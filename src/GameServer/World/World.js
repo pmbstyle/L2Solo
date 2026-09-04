@@ -6,6 +6,7 @@ const DayNightSpawnManager = invoke('GameServer/World/DayNightSpawnManager');
 const RaidBossState = invoke('GameServer/World/RaidBossState');
 const RaidBossMinionManager = invoke('GameServer/World/RaidBossMinionManager');
 const RaidEntityIndex = invoke('GameServer/World/RaidEntityIndex');
+const NpcObjectIndex = require('./NpcObjectIndex');
 
 function actorLoc(actor) {
     return {
@@ -562,6 +563,7 @@ const World = {
 
     addNpcToGrid(npc) {
         if (!npc) return false;
+        NpcObjectIndex.add(this, npc);
         const raidIndexed = RaidEntityIndex.add(this, npc);
         if (!npc.fetchLocX || !npc.fetchLocY) return raidIndexed;
         if (!(this.npc.gridKeys instanceof WeakMap)) this.npc.gridKeys = new WeakMap();
@@ -581,6 +583,7 @@ const World = {
 
     removeNpcFromGrid(npc) {
         if (!npc) return false;
+        NpcObjectIndex.remove(this, npc);
         const raidRemoved = RaidEntityIndex.remove(this, npc);
         if (!npc.fetchLocX || !npc.fetchLocY) return raidRemoved;
         if (!(this.npc.gridKeys instanceof WeakMap)) this.npc.gridKeys = new WeakMap();
@@ -606,6 +609,7 @@ const World = {
     indexSpawnsInGrid() {
         this.npc.grid = {};
         this.npc.gridKeys = new WeakMap();
+        NpcObjectIndex.reset(this);
         RaidEntityIndex.reset(this);
         this.npc.spawns.forEach((npc) => {
             this.addNpcToGrid(npc);
