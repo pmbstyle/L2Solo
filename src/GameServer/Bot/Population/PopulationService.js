@@ -1938,7 +1938,6 @@ const PopulationService = {
             return [];
         }).finally(() => {
             const durationMs = Date.now() - startedAt;
-            if (durationMs > mainBudgetMs) failed = true;
             this.nextProtectedPartyFormationAt = Date.now() + (retrySoon
                 ? Math.max(1000, Number(Config.protectedPartyFormationPollMs) || 5000)
                 : this.protectedPartyFormationDelay(failed));

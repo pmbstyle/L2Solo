@@ -82,6 +82,13 @@ function partyRewardShares(participants, exp, sp) {
         .map((share) => ({ session: participants[share.index], exp: share.exp, sp: share.sp }));
 }
 
+function clearSweepRetry(spoilerSession, retries, npcId) {
+    retries.delete(npcId);
+    if (!retries.size && spoilerSession.sweepRetriesByNpcId === retries) {
+        delete spoilerSession.sweepRetriesByNpcId;
+    }
+}
+
 function autoSweepSpoiledCorpse(npc, Generics) {
     const spoil = npc?.model?.spoil;
     const spoilerId = Number(spoil?.spoilerId || 0);
@@ -94,23 +101,41 @@ function autoSweepSpoiledCorpse(npc, Generics) {
     const spoiler = spoilerSession?.actor;
     if (!spoiler || !BotRoles.isSpoiler(spoiler)) return false;
 
+    const npcId = Number(npc.fetchId?.() || 0);
+    if (!npcId) return false;
+    if (!(spoilerSession.sweepRetriesByNpcId instanceof Map)) {
+        spoilerSession.sweepRetriesByNpcId = new Map();
+    }
+    const retries = spoilerSession.sweepRetriesByNpcId;
+
     if (spoiler.state?.fetchCasts?.()) {
-        if (!spoilerSession.sweepRetryTimer) {
-            const deadline = Number(spoilerSession.sweepRetryDeadlineAt || 0) || Date.now() + SWEEP_RETRY_WINDOW_MS;
-            if (Date.now() < deadline) {
-                spoilerSession.sweepRetryDeadlineAt = deadline;
-                const retryTimer = setTimeout(() => {
-                    spoilerSession.sweepRetryTimer = null;
-                    autoSweepSpoiledCorpse(npc, Generics);
-                }, SWEEP_RETRY_DELAY_MS);
-                retryTimer.unref?.();
-                spoilerSession.sweepRetryTimer = retryTimer;
-            }
+        const timestamp = Date.now();
+        let retry = retries.get(npcId);
+        if (!retry) {
+            retry = { deadlineAt: timestamp + SWEEP_RETRY_WINDOW_MS, timer: null };
+            retries.set(npcId, retry);
+        }
+        if (timestamp >= retry.deadlineAt) {
+            clearSweepRetry(spoilerSession, retries, npcId);
+        } else if (!retry.timer) {
+            const retryTimer = setTimeout(() => {
+                const current = retries.get(npcId);
+                if (!current || current.timer !== retryTimer) return;
+                current.timer = null;
+                autoSweepSpoiledCorpse(npc, Generics);
+                if (retries.get(npcId) === current && !current.timer) {
+                    clearSweepRetry(spoilerSession, retries, npcId);
+                }
+            }, SWEEP_RETRY_DELAY_MS);
+            retryTimer.unref?.();
+            retry.timer = retryTimer;
         }
         return false;
     }
 
-    delete spoilerSession.sweepRetryDeadlineAt;
+    const retry = retries.get(npcId);
+    if (retry?.timer) clearTimeout(retry.timer);
+    clearSweepRetry(spoilerSession, retries, npcId);
     return invoke('GameServer/Bot/BotAI').trySweep(spoilerSession, spoiler, npc, Generics);
 }
 

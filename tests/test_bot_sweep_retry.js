@@ -35,6 +35,11 @@ const corpse = {
     state: { fetchDead: () => true },
     model: { spoil: { spoiled: true, swept: false, spoilerId: 22002 } }
 };
+const secondCorpse = {
+    ...corpse,
+    fetchId: () => 22004,
+    model: { spoil: { spoiled: true, swept: false, spoilerId: 22002 } }
+};
 const generics = {
     skills: [],
     skillExec(_session, _actor, data) {
@@ -53,13 +58,20 @@ try {
 
     assert.strictEqual(NpcDied.autoSweepSpoiledCorpse(corpse, generics), false,
         'a busy spoiler must defer Sweep instead of consuming the attempt');
-    assert.strictEqual(pendingTimers.length, 1, 'a busy spoiler must receive a delayed retry');
+    assert.strictEqual(NpcDied.autoSweepSpoiledCorpse(secondCorpse, generics), false,
+        'each corpse must retain its own deferred Sweep');
+    assert.strictEqual(pendingTimers.length, 2, 'busy Sweep retries must be tracked per corpse');
     assert.strictEqual(pendingTimers[0].delay, 250);
 
     busy = false;
     pendingTimers.shift().callback();
+    pendingTimers.shift().callback();
     assert.deepStrictEqual(generics.skills[0], { id: 22003, selfId: 42, ctrl: true },
         'the deferred retry must queue Sweep after the cast finishes');
+    assert.deepStrictEqual(generics.skills[1], { id: 22004, selfId: 42, ctrl: true },
+        'a second corpse must not be dropped behind the first retry timer');
+    assert.strictEqual(session.sweepRetriesByNpcId, undefined,
+        'completed corpse retries must release their per-session tracking map');
 } finally {
     global.setTimeout = originalSetTimeout;
     World.user = originalWorldUser;

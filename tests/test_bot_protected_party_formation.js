@@ -50,6 +50,18 @@ assert.deepStrictEqual(
     'a level-incompatible pair must not reach the main-thread hydration path'
 );
 
+const laterCompatibleCluster = [
+    candidate(111, { level: 10, requestedAt: 1000 }),
+    candidate(112, { level: 20, requestedAt: 1001 }),
+    candidate(113, { level: 20, requestedAt: 1002 })
+];
+assert.deepStrictEqual(
+    RequiredPartyFormation.proposalFromStates(laterCompatibleCluster, { candidateLimit: 12, levelRange: 4 })
+        .candidates.map((entry) => entry.characterId),
+    [112, 113],
+    'an isolated oldest request must not hide a later compatible level cluster'
+);
+
 const originals = {
     activity: PopulationService.playerActivityProfile,
     lag: Metrics.currentEventLoopLag,
@@ -111,6 +123,19 @@ const originals = {
     assert.strictEqual(requests, 0, 'a busy DB queue must stop before worker selection');
     assert.strictEqual(PopulationService.protectedPartyFormationFailures, 0,
         'transient pressure must poll again without escalating failure backoff');
+
+    Database.stats = () => ({ pending: 0, checkpoint: { inFlight: false } });
+    Config.protectedPartyFormationMainBudgetMs = 1;
+    ColdCoordinator.requestRequiredPartyFormation = () => new Promise((resolve) => setTimeout(() => resolve({
+        ok: true,
+        requiredCount: 0,
+        candidates: []
+    }), 10));
+    PopulationService.nextProtectedPartyFormationAt = 0;
+    PopulationService.protectedPartyFormationFailures = 0;
+    await PopulationService.formProtectedRequiredParty(Date.now());
+    assert.strictEqual(PopulationService.protectedPartyFormationFailures, 0,
+        'worker IPC latency must not consume the protected main-thread budget');
 
     console.log('Protected required-party worker selection, stale validation, limits and backoff checks passed');
 })().catch((error) => {

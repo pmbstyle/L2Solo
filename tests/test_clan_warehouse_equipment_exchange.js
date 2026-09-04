@@ -128,7 +128,28 @@ async function main() {
         await execute('DROP TRIGGER fail_exchange');
         const request = { clanId:71, characterId:22, warehouseId:reserved.id, expectedPhase:'cold' };
         const staleState = await LifeState.findByCharacterId(22);
-        const race = await Promise.all([LifeState.applyClanWarehouseExchange(request), LifeState.applyClanWarehouseExchange(request)]);
+        const originalExchange = Database.exchangeClanWarehouseEquipment;
+        let releaseRejectedExchange;
+        const rejectedExchangeGate = new Promise((resolve) => { releaseRejectedExchange = resolve; });
+        let exchangeCalls = 0;
+        Database.exchangeClanWarehouseEquipment = async (...args) => {
+            exchangeCalls += 1;
+            if (exchangeCalls === 1) {
+                await rejectedExchangeGate;
+                throw new Error('queued exchange rejection probe');
+            }
+            return originalExchange.apply(Database, args);
+        };
+        const rejectedExchange = LifeState.applyClanWarehouseExchange(request);
+        const queuedExchange = LifeState.applyClanWarehouseExchange(request);
+        releaseRejectedExchange();
+        let race;
+        try {
+            race = await Promise.all([rejectedExchange, queuedExchange]);
+        } finally {
+            Database.exchangeClanWarehouseEquipment = originalExchange;
+        }
+        assert.strictEqual(race[0].reason, 'exchange_error', 'database rejection must become a normal exchange result');
         assert.strictEqual(race.filter((result) => result.ok).length, 1, 'one warehouse object may be consumed only once');
         assert.strictEqual((await execute('SELECT enchant FROM items WHERE characterId = 22 AND equipped = 1'))[0].enchant, 9);
         assert.strictEqual((await LifeState.findByCharacterId(22)).inventory[swordId].amount, 1, 'same-ID swaps must not duplicate summary counts');

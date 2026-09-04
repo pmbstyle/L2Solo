@@ -3097,6 +3097,9 @@ const BotLifeState = {
             if (publish) publish({ ...result, state: snapshot });
             notifyColdSnapshot(snapshot, 'clan_warehouse_equipment', { critical: true });
             return { ...result, state: snapshot };
+        }).catch((error) => {
+            utils.infoWarn('BotLife', 'failed clan warehouse exchange for %d: %s', id, error.message || error);
+            return { ok: false, reason: 'exchange_error', characterId: id, error };
         });
         const tracked = next.finally(() => {
             if (pendingWrites.get(id) === tracked) pendingWrites.delete(id);
