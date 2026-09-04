@@ -16,6 +16,7 @@ const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
+const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 
 const RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
 const WEAPON_SLOTS = new Set([7, 14]);
@@ -490,12 +491,7 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
     }
     Object.values(next).forEach((owned) => {
         if (!Array.isArray(owned?.instances)) return;
-        const slots = equippedSlotsFor(owned, owned.slot);
-        owned.instances = owned.instances.map((instance, index) => ({
-            ...instance,
-            equipped: Number(slots[index] || 0) > 0,
-            slot: Number(slots[index] || 0)
-        }));
+        Object.assign(owned, InventorySummary.completeInstances(owned));
     });
     return next;
 }

@@ -1542,12 +1542,19 @@ function syncInventorySummaryUnsafe(characterId, inventory = {}) {
         }
 
         if (Array.isArray(item.instances)) {
+            const complete = invoke('GameServer/Bot/Population/InventorySummary').completeInstances(item);
+            const identifiedIds = new Set(complete.instances.map((instance) => Number(instance.id))
+                .filter((id) => byId.get(id)?.selfId === selfId));
             const desiredIds = new Set();
-            item.instances.slice(0, amount).forEach((instance, index) => {
+            complete.instances.forEach((instance) => {
                 const instanceId = Number(instance?.id || 0);
                 const identified = instanceId > 0 ? byId.get(instanceId) : null;
-                const current = identified && Number(identified.selfId) === selfId ? identified : (!instanceId ? rows[index] : null);
                 const instanceEnchant = Math.max(0, Number(instance?.enchant ?? (hasEnchant ? enchant : 0)) || 0);
+                // Summaries can still hold a null/old id after materialization.
+                // Reuse its matching row instead of replacing it on every sync.
+                const current = identified && Number(identified.selfId) === selfId && !desiredIds.has(instanceId)
+                    ? identified : rows.find((row) => !identifiedIds.has(Number(row.id))
+                        && !desiredIds.has(Number(row.id)) && Number(row.enchant || 0) === instanceEnchant);
                 const equipped = instance?.equipped ? 1 : 0;
                 const slot = Number(instance?.slot || 0);
                 if (current) {
@@ -1557,7 +1564,8 @@ function syncInventorySummaryUnsafe(characterId, inventory = {}) {
                         write('UPDATE items SET amount = 1, enchant = ?, equipped = ?, slot = ? WHERE id = ? AND characterId = ?', [instanceEnchant, equipped, slot, current.id, characterId]);
                     }
                 } else {
-                    write('INSERT INTO items (selfId, name, amount, enchant, equipped, slot, characterId) VALUES (?, ?, 1, ?, ?, ?, ?)', [selfId, item.name || `Item ${selfId}`, instanceEnchant, equipped, slot, characterId]);
+                    const inserted = write('INSERT INTO items (selfId, name, amount, enchant, equipped, slot, characterId) VALUES (?, ?, 1, ?, ?, ?, ?)', [selfId, item.name || `Item ${selfId}`, instanceEnchant, equipped, slot, characterId]);
+                    desiredIds.add(Number(inserted.insertId));
                 }
             });
             rows.filter((row) => !desiredIds.has(Number(row.id)))
@@ -5176,6 +5184,9 @@ const Database = {
                 return { ok: false, code: 'item_ordered' };
             }
             const rows = all('SELECT * FROM items WHERE characterId = ? AND amount > 0', [id]);
+            if (life.phase === 'cold' && !Policy.inventoryMatches(rows, jsonObject(life.inventorySummary))) {
+                return { ok: false, code: 'inventory_not_materialized' };
+            }
             if (life.phase === 'hot' && (typeof validateLive !== 'function' || !validateLive(member, rows))) {
                 return { ok: false, code: 'live_state_changed' };
             }

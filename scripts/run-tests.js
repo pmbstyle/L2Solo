@@ -115,6 +115,7 @@ const tests = [
     'tests/test_bot_craft_telemetry.js',
     'tests/test_bot_cold_market_purchase.js',
     'tests/test_cold_inventory_jewelry.js',
+    'tests/test_cold_inventory_instance_sync.js',
     'tests/test_bot_cold_market_listing.js',
     'tests/test_bot_recipe_disposition.js',
     'tests/test_bot_inventory_cleanup_goal.js',

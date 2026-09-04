@@ -33,6 +33,20 @@ function equipmentSignature(rows) {
     ].join(':')).sort().join('|');
 }
 
+function inventoryMatches(rows, inventory) {
+    // An unmaterialized cold copy must not look like an empty paperdoll slot.
+    // Wait for normal inventory synchronization rather than consume clan gear
+    // which the cold optimizer would immediately discard as surplus.
+    return Object.values(inventory).every((entry) => {
+        if (!materialize(entry)?.isWearable()) return true;
+        const physical = rows.filter((row) => Number(row.selfId) === Number(entry.selfId));
+        if (physical.reduce((sum, row) => sum + Number(row.amount), 0) !== Number(entry.amount)) return false;
+        const slots = invoke('GameServer/Bot/AI/GearAcquisitionPlanner').equippedSlotsFor(entry, entry.slot);
+        const actual = physical.filter((row) => row.equipped).map((row) => Number(row.slot)).sort((a, b) => a - b);
+        return JSON.stringify(slots) === JSON.stringify(actual);
+    });
+}
+
 function plan(member, rows, stock) {
     if (Number(stock.amount) - Number(stock.reservedAmount || 0) < 1) return null;
     // Warehouse and inventory object IDs belong to different tables.
@@ -62,4 +76,4 @@ function plan(member, rows, stock) {
     return { slot, returned, score: upgrade.score };
 }
 
-module.exports = { plan, materialize, equipmentSignature };
+module.exports = { plan, materialize, equipmentSignature, inventoryMatches };
