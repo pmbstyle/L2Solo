@@ -30,6 +30,7 @@ Support, updates, and communication. Join the Discord to be up to date with deve
 Clean C4 client protocol 656
 
 ## Latest updates
+- **2026-09-04** Player clan warehouse use for equipment exchange, bug fixes
 - **2026-09-02** AFK trade, market observer, xN mob fix
 - **2026-08-31** Expand bot world simulation, arena duels, and server knowledge tools
 - **2026-08-28** Skills, bot behavior, gear planning, and seeder fixes and improvements
@@ -42,11 +43,11 @@ Clean C4 client protocol 656
 - **2026-08-18** Fixes, cold bots progression, better AI compatibility
 - **2026-08-17** Fix cold bots progression, melee and polearm attack range, raid minion party fear
 - **2026-08-16** Summoners, BD, SWS, agro skills and Observer update
-- **2026-08-15** Blade Dancers and Sword Singers bot progression update
 
 <details>
 <summary>Earlier</summary>
-  
+
+- **2026-08-15** Blade Dancers and Sword Singers bot progression update
 - **2026-08-15** Raid Encounter and Gameplay Stability Update
 - **2026-08-15** Server stability and performance update
 - **2026-08-13** Fix hot party performance issues, fix raid boss atk freeze
