@@ -28,7 +28,7 @@ const profiles = [
     { classId: 45, role: 'dps', armor: 'heavy', weapon: 'Weapon.Blunt', shield: true },
     { classId: 46, role: 'dps', armor: 'heavy', weapon: 'Weapon.GreatSword', shield: false },
     { classId: 47, role: 'dps', armor: 'light', weapon: 'Weapon.DualFist', shield: false },
-    { classId: 55, role: 'dps', armor: 'heavy', weapon: 'Weapon.Blunt', shield: true },
+    { classId: 55, role: 'spoiler', armor: 'heavy', weapon: 'Weapon.Blunt', shield: true },
     { classId: 57, role: 'crafter', armor: 'heavy', weapon: 'Weapon.Blunt', shield: true }
 ];
 

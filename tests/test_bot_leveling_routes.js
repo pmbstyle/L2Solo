@@ -83,6 +83,13 @@ assert.strictEqual(best.spot.id, 'lizard_spoil', 'Bounty Hunters should prefer s
 assert.strictEqual(best.route.reason, 'spoiler_materials');
 
 best = LevelingRoutes.bestSpot(spots, {
+    level: 39,
+    stats: { classId: 56, role: 'crafter' }
+}, { mode: 'solo' });
+assert.strictEqual(best.spot.id, 'lizard_spoil', 'all sub-40 dwarves should prefer spoil material routes');
+assert.strictEqual(best.route.reason, 'spoiler_materials');
+
+best = LevelingRoutes.bestSpot(spots, {
     level: 42,
     stats: { classId: 54 }
 }, { mode: 'solo' });

@@ -2,13 +2,16 @@ const SUPPORT_ROLES = ['tank', 'healer', 'buffer'];
 const DEFAULT_LEVEL_RANGE = 4;
 const PartyAffinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity');
 const PersonaPartyPolicy = invoke('GameServer/Bot/Population/PersonaPartyPolicy');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
 function levelOf(state) {
     return Math.max(1, Number(state?.level || 1));
 }
 
 function roleForState(state) {
-    return state?.party?.role || state?.stats?.role || 'dps';
+    if (BotRoles.isSpoiler(state)) return 'spoiler';
+    const role = state?.party?.role || state?.stats?.role;
+    return role === 'crafter' ? 'dps' : role || 'dps';
 }
 
 function clanIdForState(state) {

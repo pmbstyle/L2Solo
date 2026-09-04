@@ -5,6 +5,7 @@ const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const PartyAffinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity');
 const PartyLootAllocator = invoke('GameServer/Bot/Population/PartyLootAllocator');
 const PartyRewardMath = invoke('GameServer/Actor/PartyRewardMath');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
 const MAX_DROPS_PER_RESOLVE = 4;
 
@@ -79,10 +80,7 @@ function distributeRewards({ members, spot, wins, defeatedNpcIds = [], pressure,
     const adenaPerMember = Math.floor(totalAdena / members.length);
     const adenaRemainder = totalAdena - (adenaPerMember * members.length);
     const loot = members.map(() => []);
-    const spoilerIndex = members.findIndex((state) => (
-        String(state.stats?.role || '') === 'spoiler'
-        || [54, 55].includes(Number(state.stats?.classId ?? state.classId))
-    ));
+    const spoilerIndex = members.findIndex((state) => BotRoles.isSpoiler(state));
     for (let win = 0; win < Math.min(wins, MAX_DROPS_PER_RESOLVE); win++) {
         const drops = rewardRolls[win]?.items || [];
         if (drops.length) {

@@ -435,6 +435,8 @@ function reconcilePhysicalSpot(session, bot) {
 function assignTarget(session, bot, target) {
     const targetId = target.fetchId();
     if (session.currentTargetId !== targetId) {
+        session.spoilAttemptedTargetId = undefined;
+        session.sweepAttemptedTargetId = undefined;
         session.targetTrackId = targetId;
         session.targetAcquiredAt = Date.now();
         session.targetLastDistance = targetDistance(bot, target);
@@ -455,6 +457,8 @@ function clearTarget(session, bot, targetId, retryCooldown = false) {
     session.targetAcquiredAt = undefined;
     session.targetLastDistance = undefined;
     session.targetStallTicks = 0;
+    session.spoilAttemptedTargetId = undefined;
+    session.sweepAttemptedTargetId = undefined;
     bot.unselect();
     return true;
 }

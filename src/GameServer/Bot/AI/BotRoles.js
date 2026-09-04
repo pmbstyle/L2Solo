@@ -9,8 +9,11 @@ const ROLE_CLASSES = {
     dagger: [7, 8, 23, 35, 36],
     archer: [9, 22, 24, 37],
     mage: [10, 11, 12, 13, 14, 25, 26, 27, 28, 38, 39, 40, 41],
+    spoiler: [53, 54, 55],
     crafter: [56, 57]
 };
+const DWARF_CLASS_IDS = new Set([53, 54, 55, 56, 57, 117, 118]);
+const SPOILER_CLASS_IDS = new Set([53, 54, 55, 117]);
 const MANA_REST_ROLES = new Set(['mage', 'archer', 'healer']);
 // Prophet and the Orc mystic line cast as their primary party job. Sword
 // Singer and Bladedancer share the buffer role, but they are melee fighters
@@ -60,10 +63,30 @@ function roleClassId(value) {
     return Number(ClassProgression.getThirdClass(classId)?.parentClassId || classId);
 }
 
+function levelOf(value) {
+    const raw = value && typeof value.fetchLevel === 'function'
+        ? value.fetchLevel()
+        : value?.level ?? value?.stats?.level;
+    const level = Number(raw);
+    return Number.isFinite(level) && level > 0 ? level : null;
+}
+
+function isSpoiler(value) {
+    const classId = normalizedClassId(value);
+    if (classId === null) return false;
+
+    const baseClassId = roleClassId(value);
+    if (SPOILER_CLASS_IDS.has(classId) || SPOILER_CLASS_IDS.has(baseClassId)) return true;
+
+    const level = levelOf(value);
+    return DWARF_CLASS_IDS.has(classId) && level !== null && level < 40;
+}
+
 function inferRole(value) {
     const classId = roleClassId(value);
     if (classId === null || classId === undefined) return 'dps';
 
+    if (isSpoiler(value)) return 'spoiler';
     if (ROLE_CLASSES.healer.includes(classId)) return 'healer';
     if (ROLE_CLASSES.buffer.includes(classId)) return 'buffer';
     if (ROLE_CLASSES.tank.includes(classId)) return 'tank';
@@ -75,9 +98,19 @@ function inferRole(value) {
 }
 
 function isRole(value, role) {
+    if (role === 'spoiler') return isSpoiler(value);
+    if (role === 'crafter' && isSpoiler(value)) return false;
     const classId = roleClassId(value);
     const classes = ROLE_CLASSES[role];
     return !!classes && classes.includes(classId);
+}
+
+// Crafting remains a separate economic identity, but until its dedicated
+// combat policy exists a non-spoiler dwarf should fight as a normal DPS.
+function combatRoleFor(value) {
+    if (isSpoiler(value)) return 'spoiler';
+    const role = inferRole(value);
+    return role === 'crafter' && DWARF_CLASS_IDS.has(normalizedClassId(value)) ? 'dps' : role;
 }
 
 function isHealer(value) {
@@ -149,8 +182,10 @@ module.exports = {
     NECROMANCER_CLASSES,
     className,
     roleClassId,
+    isSpoiler,
     presentation,
     inferRole,
+    combatRoleFor,
     isRole,
     isHealer,
     isTank,

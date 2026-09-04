@@ -1,5 +1,4 @@
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
-const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 
 const GRADE_BANDS = [
@@ -328,7 +327,7 @@ function actorValue(value, key, fallback = null) {
 function characterState(character = {}) {
     const classId = Number(actorValue(character, 'classId', character.stats?.classId || 0)) || null;
     const level = Number(actorValue(character, 'level', character.level || 1)) || 1;
-    const role = LevelingRoutes.ECONOMIC_ROLES[classId] || BotRoles.inferRole(classId);
+    const role = BotRoles.inferRole({ classId, level });
     return { classId, level, role };
 }
 

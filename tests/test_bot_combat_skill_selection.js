@@ -7,6 +7,7 @@ const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const World = invoke('GameServer/World/World');
+const NpcDied = invoke('GameServer/Actor/Generics/NpcDied');
 
 function skill(selfId, options = {}) {
     return {
@@ -73,10 +74,85 @@ function generics() {
 
 const originalRandom = Math.random;
 const originalFetchNpcsInRadius = World.fetchNpcsInRadius;
+const originalWorldUser = World.user;
 
 try {
     Math.random = () => 0;
     World.fetchNpcsInRadius = () => [];
+
+    const spoilSkill = skill(254, {
+        name: 'Spoil',
+        type: C4SkillRules.SPOIL,
+        mp: 5,
+        target: 'enemy'
+    });
+    const spoiler = bot(55, [spoilSkill], 100);
+    spoiler.fetchId = () => 11000;
+    const spoilTarget = {
+        ...npc(11001),
+        fetchAttackable: () => true,
+        isDead: () => false
+    };
+    const spoilSession = {};
+    const spoilGenerics = generics();
+    BotAI.executeCombat(spoilSession, spoiler, spoilTarget, spoilGenerics);
+    assert.deepStrictEqual(spoilGenerics.skills[0], { id: 11001, selfId: 254, ctrl: true },
+        'a spoiler must make one Spoil attempt before starting its damage rotation');
+    assert.strictEqual(spoilSession.lastCombatDecision.action, 'cast_spoil',
+        'the Spoil attempt must be visible in hot combat telemetry');
+    BotAI.executeCombat(spoilSession, spoiler, spoilTarget, spoilGenerics);
+    assert.strictEqual(spoilGenerics.skills.filter((entry) => entry.selfId === 254).length, 1,
+        'a spoiler must not retry Spoil on the same encounter');
+
+    const drySpoiler = bot(55, [spoilSkill], 0);
+    const drySession = {};
+    const dryGenerics = generics();
+    BotAI.executeCombat(drySession, drySpoiler, {
+        ...npc(11004), fetchAttackable: () => true, isDead: () => false
+    }, dryGenerics);
+    assert.strictEqual(dryGenerics.skills.length, 0, 'a spoiler without enough MP must skip Spoil');
+    assert.strictEqual(dryGenerics.attacks.length, 1, 'skipping Spoil must not block the normal damage rotation');
+
+    const pvpGenerics = generics();
+    BotAI.executePvPCombat({}, spoiler, { ...npc(11005), isDead: () => false }, pvpGenerics);
+    assert.strictEqual(pvpGenerics.skills.some((entry) => entry.selfId === 254), false,
+        'a spoiler must never try Spoil against a player target');
+
+    const sweeper = bot(55, [skill(42, {
+        name: 'Sweeper',
+        type: C4SkillRules.SWEEP,
+        target: 'corpse_mob',
+        mp: 0
+    })], 100);
+    sweeper.fetchId = () => 11002;
+    const spoiledCorpse = {
+        ...npc(11003),
+        fetchAttackable: () => true,
+        isDead: () => true,
+        state: { fetchDead: () => true },
+        model: { spoil: { spoiled: true, swept: false, spoilerId: 11002 } }
+    };
+    const sweepSession = {};
+    const sweepGenerics = generics();
+    assert.strictEqual(BotAI.trySweep(sweepSession, sweeper, spoiledCorpse, sweepGenerics), true,
+        'a spoiler must queue Sweeper after its marked mob dies');
+    assert.deepStrictEqual(sweepGenerics.skills[0], { id: 11003, selfId: 42, ctrl: true });
+    assert.strictEqual(BotAI.trySweep(sweepSession, sweeper, spoiledCorpse, sweepGenerics), false,
+        'a spoiler must not queue duplicate Sweeper casts for one corpse');
+
+    const automaticCorpse = {
+        ...npc(11006),
+        fetchAttackable: () => true,
+        isDead: () => true,
+        state: { fetchDead: () => true },
+        model: { spoil: { spoiled: true, swept: false, spoilerId: 11002 } }
+    };
+    const automaticSession = { accountId: 'bot_automatic_sweeper', actor: sweeper };
+    World.user = { sessions: [automaticSession] };
+    const automaticGenerics = generics();
+    assert.strictEqual(NpcDied.autoSweepSpoiledCorpse(automaticCorpse, automaticGenerics), true,
+        'the authoritative NPC death path must queue Sweeper for the bot that owns the spoil mark');
+    assert.deepStrictEqual(automaticGenerics.skills[0], { id: 11006, selfId: 42, ctrl: true });
 
     const mage = bot(10, []);
     const mageGenerics = generics();
@@ -581,4 +657,5 @@ try {
 } finally {
     Math.random = originalRandom;
     World.fetchNpcsInRadius = originalFetchNpcsInRadius;
+    World.user = originalWorldUser;
 }

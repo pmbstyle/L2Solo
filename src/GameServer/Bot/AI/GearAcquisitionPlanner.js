@@ -103,6 +103,7 @@ function gradeForLevel(level) {
 }
 
 function roleFor(state = {}) {
+    if (BotRoles.isSpoiler(state)) return 'spoiler';
     return state.party?.role || state.stats?.role || BotRoles.inferRole({
         fetchClassId: () => Number(state.stats?.classId || state.classId || 0)
     }) || 'dps';

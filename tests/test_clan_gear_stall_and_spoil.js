@@ -53,6 +53,14 @@ async function main() {
         const spoilSources = GearPlanner.sourceForItem(99101, spots, state, { spoilCapable: true });
         assert.strictEqual(spoilSources.length, 1);
         assert.strictEqual(spoilSources[0].kind, 'spoil');
+        const classResolvedSpoilerSources = GearPlanner.sourceForItem(99101, spots, {
+            level: 40,
+            stats: { classId: 54, role: 'dps' },
+            inventory: {},
+            adena: 0
+        });
+        assert.strictEqual(classResolvedSpoilerSources.length, 1,
+            'a Scavenger must unlock spoil sources from its class even when persisted role is stale');
         const spoilLoot = BackgroundDropResolver.rollSpoilForFight({
             spot: spots[0], killerLevel: 40, npcSelfId: 99001, rng: () => 0
         });

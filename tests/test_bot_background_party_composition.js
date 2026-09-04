@@ -44,5 +44,9 @@ const recruits = PartyComposition.selectRecruits([
     bot(25, 23, 'buffer')
 ], { maxSize: 5 });
 assert.deepStrictEqual(recruits.map((state) => state.characterId), [24, 23]);
+assert.strictEqual(PartyComposition.roleForState({ characterId: 30, level: 39, stats: { classId: 56, role: 'crafter' } }), 'spoiler',
+    'a sub-40 dwarf must fill the spoiler role even on the future crafting branch');
+assert.strictEqual(PartyComposition.roleForState({ characterId: 31, level: 40, stats: { classId: 57, role: 'crafter' } }), 'dps',
+    'a post-40 non-spoiler dwarf must fill a DPS combat slot');
 
 console.log('Bot background party composition checks passed');
