@@ -1,6 +1,7 @@
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
+const NpcObjectIndex = require('../../World/NpcObjectIndex');
 
 const RECENT_INCOMING_THREAT_MS = 5000;
 // Hot companions are dispatched serially, but several services inside one
@@ -90,7 +91,7 @@ function recentIncomingNpc(session, npcRadius = 2500) {
     const threatAt = Number(session?.incomingThreatAt || 0);
     if (!threatId || Date.now() - threatAt > RECENT_INCOMING_THREAT_MS || !session?.actor) return null;
 
-    const npc = (world().npc?.spawns || []).find((spawn) => actorId(spawn) === threatId);
+    const npc = NpcObjectIndex.find(world(), threatId);
     if (!npc || !npc.fetchAttackable?.() || npc.isDead?.()) return null;
     if (distance2d(actorLoc(npc), actorLoc(session.actor)) > npcRadius) return null;
 
@@ -329,7 +330,7 @@ function leaderCombatTargetId(leaderSession, options = {}) {
     if (!targetId) return null;
     if (partyActorIds(leaderSession).has(targetId)) return null;
 
-    const npc = (world().npc?.spawns || []).find((spawn) => actorId(spawn) === targetId);
+    const npc = NpcObjectIndex.find(world(), targetId);
     if (npc) {
         const protectedRaidTarget = BotRaidSafety.isProtectedRaidEntity(npc);
         const allowedRaidTarget = options.allowPlayerRaid === true &&

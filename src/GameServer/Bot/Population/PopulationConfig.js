@@ -85,6 +85,14 @@ const DEFAULTS = {
     marketExpiryCleanupIntervalMs: 10000,
     marketExpiryCleanupBatchSize: 10,
     partyFormationIntervalMs: 45000,
+    // A protected player session may replenish only required parties. The
+    // worker finds candidates; the main loop performs one guarded atomic write.
+    protectedPartyFormationPollMs: 5000,
+    protectedPartyFormationIntervalMs: 30000,
+    protectedPartyFormationCandidateLimit: 12,
+    protectedPartyFormationLagAbortMs: 40,
+    protectedPartyFormationMainBudgetMs: 25,
+    protectedPartyFormationMaxBackoffMs: 120000,
     // Party requests are orthogonal to activity.  This is the slow safety
     // replan/review cadence, not a period during which the bot is blocked.
     partyWaitReplanMs: 5 * 60 * 1000,
@@ -276,6 +284,12 @@ const ENV_KEYS = {
     backgroundGovernorLagAbortMs: 'BOT_BACKGROUND_GOVERNOR_LAG_ABORT_MS',
     partyFormationIdleBudgetMs: 'BOT_POPULATION_PARTY_FORMATION_IDLE_BUDGET_MS',
     partyFormationPlayerBudgetMs: 'BOT_POPULATION_PARTY_FORMATION_PLAYER_BUDGET_MS',
+    protectedPartyFormationPollMs: 'BOT_POPULATION_PROTECTED_PARTY_POLL_MS',
+    protectedPartyFormationIntervalMs: 'BOT_POPULATION_PROTECTED_PARTY_INTERVAL_MS',
+    protectedPartyFormationCandidateLimit: 'BOT_POPULATION_PROTECTED_PARTY_CANDIDATE_LIMIT',
+    protectedPartyFormationLagAbortMs: 'BOT_POPULATION_PROTECTED_PARTY_LAG_ABORT_MS',
+    protectedPartyFormationMainBudgetMs: 'BOT_POPULATION_PROTECTED_PARTY_MAIN_BUDGET_MS',
+    protectedPartyFormationMaxBackoffMs: 'BOT_POPULATION_PROTECTED_PARTY_MAX_BACKOFF_MS',
     marketTradeChatEnabled: 'BOT_MARKET_TRADE_CHAT_ENABLED',
     marketTradeChatIntervalMs: 'BOT_MARKET_TRADE_CHAT_INTERVAL_MS',
     partyRecruitmentChatEnabled: 'BOT_PARTY_RECRUITMENT_CHAT_ENABLED',

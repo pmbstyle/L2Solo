@@ -28,6 +28,14 @@ function botCombatStats(state, timestamp = Date.now()) {
     return ColdCombatProfile.profileFor(state, timestamp);
 }
 
+function combatRoleForState(state) {
+    if (BotRoles.isSpoiler(state)) return 'spoiler';
+    const persistedRole = state?.party?.role || state?.stats?.role;
+    return persistedRole === 'crafter'
+        ? BotRoles.combatRoleFor(state)
+        : persistedRole || BotRoles.combatRoleFor(state);
+}
+
 const ELEMENTAL_DAMAGE_TRAITS = new Set(['fire', 'water', 'wind', 'earth', 'holy', 'dark']);
 const PHYSICAL_RACE_STATS = Object.freeze({
     animal: 'pAtk-animals',
@@ -671,7 +679,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
     const soloFighter = {
         state: fightState,
         profile: bot,
-        role: BotRoles.inferRole(fightState),
+        role: BotRoles.combatRoleFor(fightState),
         vitals,
         readyAt: 0,
         summonReadyAt: Number.POSITIVE_INFINITY,
@@ -855,8 +863,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         ? Math.round(randInt(rng, spot.rewards.adenaMin, spot.rewards.adenaMax) * rates.adena)
         : rolledRewards.adena;
     const loot = rolledRewards?.items || [];
-    if (String(state.stats?.role || '') === 'spoiler'
-        || [54, 55].includes(Number(state.stats?.classId ?? state.classId))) {
+    if (BotRoles.isSpoiler(state)) {
         loot.push(...BackgroundDropResolver.rollSpoilForFight({
             spot,
             killerLevel: Number(state.level || bot.level),
@@ -913,7 +920,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
         return {
             state: fighterState,
             profile,
-            role: fighterState.party?.role || fighterState.stats?.role || 'dps',
+            role: combatRoleForState(fighterState),
             vitals: {
                 hp: Math.min(profile.maxHp, Math.max(0, Number(state.vitals?.hp ?? profile.maxHp))),
                 maxHp: profile.maxHp,

@@ -52,6 +52,42 @@ async function createMember(index, spot, dueAt) {
     return Number(character.id);
 }
 
+async function createRequiredMember(index, spot, timestamp) {
+    const accountName = `worker_required_${index}`;
+    const name = `WorkerRequired${index}`;
+    await Database.createAccount(accountName, 'secret');
+    await Database.createCharacter(accountName, {
+        name, race: 0, classId: 0, maxHp: 300, maxMp: 120,
+        sex: 0, face: 0, hair: 0, hairColor: 0,
+        locX: spot.center.locX, locY: spot.center.locY, locZ: spot.center.locZ
+    });
+    const character = (await Database.fetchCharacters(accountName))[0];
+    const stats = {
+        classId: 0,
+        role: index === 1 ? 'tank' : 'dps',
+        partyRequest: {
+            status: 'open', priority: 'required', requestedAt: timestamp - 60000,
+            spotId: spot.id, npcId: 1
+        }
+    };
+    await Database.execute([
+        `INSERT INTO bot_life_state (
+            characterId, accountName, characterName, level, exp, sp, adena,
+            homeRegion, currentRegion, spotId, activity, phase,
+            activityStartedAt, nextResolveAt, lastResolvedAt,
+            locX, locY, locZ, hp, maxHp, mp, maxMp, partyId,
+            statsJson, inventorySummary, updatedAt
+        ) VALUES (?, ?, ?, ?, 1000, 100, 500, ?, ?, ?, 'party_wait', 'cold',
+            ?, ?, ?, ?, ?, ?, 300, 300, 120, 120, NULL, ?, '{}', ?)`,
+        [Number(character.id), accountName, name, Math.max(8, Number(spot.minLevel || 8)),
+            spot.region || spot.name, spot.region || spot.name, spot.id,
+            timestamp - 60000, timestamp + 600000, timestamp - 60000,
+            spot.center.locX, spot.center.locY, spot.center.locZ,
+            JSON.stringify(stats), timestamp]
+    ]);
+    return Number(character.id);
+}
+
 let coordinator = null;
 (async () => {
     const spot = {
@@ -64,6 +100,10 @@ let coordinator = null;
     SpotProfiles.ensure = () => [spot];
     const dueAt = Date.now() - 60000;
     const memberIds = [await createMember(1, spot, dueAt), await createMember(2, spot, dueAt)];
+    const requiredIds = [
+        await createRequiredMember(1, spot, Date.now()),
+        await createRequiredMember(2, spot, Date.now())
+    ];
     await Database.execute([
         `INSERT INTO bot_background_parties (
             partyId, leaderId, memberIdsJson, spotId, startedAt, nextResolveAt,
@@ -109,6 +149,13 @@ let coordinator = null;
         await wait(50);
         snapshot = coordinator.snapshot();
     }
+    const formationProposal = await coordinator.requestRequiredPartyFormation({ candidateLimit: 12 });
+    assert.strictEqual(formationProposal.ok, true, 'main must receive a required-party proposal from the worker');
+    assert.deepStrictEqual(
+        formationProposal.candidates.map((candidate) => Number(candidate.characterId)).sort((a, b) => a - b),
+        [...requiredIds].sort((a, b) => a - b),
+        'worker proposal must contain the compatible unassigned required requests'
+    );
     assert.strictEqual(mainCommands, 0, 'party combat must never execute on the main lifecycle command bridge');
     assert(Number(snapshot.worker.resolved || 0) >= 2, 'worker must resolve every claimed party member');
     assert(Number(snapshot.queue.committed || 0) >= 2, 'main DB gateway must commit every party member');

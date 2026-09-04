@@ -11772,8 +11772,8 @@
     "minions": [],
     "name": "Mana Seeker",
     "progression": {
-      "baseExp": 496.000000000044,
-      "baseSp": 21,
+      "baseExp": 992.000000000088,
+      "baseSp": 42,
       "expModifier": 1.530864197531
     },
     "raidBoss": false,
@@ -28446,8 +28446,8 @@
     "minions": [],
     "name": "Ant Overseer",
     "progression": {
-      "baseExp": 1200,
-      "baseSp": 67,
+      "baseExp": 2400,
+      "baseSp": 134,
       "expModifier": 1.171875
     },
     "raidBoss": false,
@@ -31182,8 +31182,8 @@
     "minions": [],
     "name": "Ant Soldier",
     "progression": {
-      "baseExp": 1780.00000000025,
-      "baseSp": 105,
+      "baseExp": 3560.0000000005,
+      "baseSp": 210,
       "expModifier": 1.45306122449
     },
     "raidBoss": false,
@@ -31625,8 +31625,8 @@
     "minions": [],
     "name": "Ant Warrior Captain",
     "progression": {
-      "baseExp": 1984.000000000176,
-      "baseSp": 120,
+      "baseExp": 3968.000000000352,
+      "baseSp": 240,
       "expModifier": 1.530864197531
     },
     "raidBoss": false,
@@ -32840,8 +32840,8 @@
     "minions": [],
     "name": "Noble Ant Leader",
     "progression": {
-      "baseExp": 1829.00000000006,
-      "baseSp": 114,
+      "baseExp": 3658.00000000012,
+      "baseSp": 228,
       "expModifier": 1.266620498615
     },
     "raidBoss": false,
@@ -38809,8 +38809,8 @@
     "minions": [],
     "name": "Salamander",
     "progression": {
-      "baseExp": 494.000000000106,
-      "baseSp": 21,
+      "baseExp": 988.000000000212,
+      "baseSp": 42,
       "expModifier": 1.709342560554
     },
     "raidBoss": false,
@@ -39168,8 +39168,8 @@
     "minions": [],
     "name": "Undine",
     "progression": {
-      "baseExp": 479.000000000063,
-      "baseSp": 20,
+      "baseExp": 958.000000000126,
+      "baseSp": 40,
       "expModifier": 1.657439446367
     },
     "raidBoss": false,
@@ -39330,8 +39330,8 @@
     "minions": [],
     "name": "Wererat Leader",
     "progression": {
-      "baseExp": 479.000000000063,
-      "baseSp": 20,
+      "baseExp": 958.000000000126,
+      "baseSp": 40,
       "expModifier": 1.657439446367
     },
     "raidBoss": false,
@@ -39434,8 +39434,8 @@
     "minions": [],
     "name": "Salamander Elder",
     "progression": {
-      "baseExp": 496.000000000044,
-      "baseSp": 21,
+      "baseExp": 992.000000000088,
+      "baseSp": 42,
       "expModifier": 1.530864197531
     },
     "raidBoss": false,
@@ -39540,8 +39540,8 @@
     "minions": [],
     "name": "Undine Elder",
     "progression": {
-      "baseExp": 505.000000000116,
-      "baseSp": 22,
+      "baseExp": 1010.000000000232,
+      "baseSp": 44,
       "expModifier": 1.558641975309
     },
     "raidBoss": false,
@@ -39647,8 +39647,8 @@
     "minions": [],
     "name": "Salamander Noble",
     "progression": {
-      "baseExp": 525.000000000049,
-      "baseSp": 23,
+      "baseExp": 1050.000000000098,
+      "baseSp": 46,
       "expModifier": 1.454293628809
     },
     "raidBoss": false,
@@ -39753,8 +39753,8 @@
     "minions": [],
     "name": "Undine Noble",
     "progression": {
-      "baseExp": 535.999999999896,
-      "baseSp": 24,
+      "baseExp": 1071.999999999792,
+      "baseSp": 48,
       "expModifier": 1.484764542936
     },
     "raidBoss": false,
@@ -43916,8 +43916,8 @@
     "minions": [],
     "name": "Death Knight",
     "progression": {
-      "baseExp": 4651,
-      "baseSp": 350,
+      "baseExp": 9302,
+      "baseSp": 700,
       "expModifier": 1.8604
     },
     "raidBoss": false,
@@ -60608,8 +60608,8 @@
     "minions": [],
     "name": "Ol Mahum Guerilla",
     "progression": {
-      "baseExp": 981.999999999668,
-      "baseSp": 49,
+      "baseExp": 1963.999999999336,
+      "baseSp": 98,
       "expModifier": 1.452662721893
     },
     "raidBoss": false,
@@ -60996,8 +60996,8 @@
     "minions": [],
     "name": "Ol Mahum Raider",
     "progression": {
-      "baseExp": 1035.00000000018,
-      "baseSp": 53,
+      "baseExp": 2070.00000000036,
+      "baseSp": 106,
       "expModifier": 1.41975308642
     },
     "raidBoss": false,
@@ -61391,8 +61391,8 @@
     "minions": [],
     "name": "Ol Mahum Marksman",
     "progression": {
-      "baseExp": 1127.999999999936,
-      "baseSp": 59,
+      "baseExp": 2255.999999999872,
+      "baseSp": 118,
       "expModifier": 1.438775510204
     },
     "raidBoss": false,
@@ -61786,8 +61786,8 @@
     "minions": [],
     "name": "Ol Mahum Sergeant",
     "progression": {
-      "baseExp": 1155.999999999819,
-      "baseSp": 62,
+      "baseExp": 2311.999999999638,
+      "baseSp": 124,
       "expModifier": 1.374554102259
     },
     "raidBoss": false,
@@ -62331,8 +62331,8 @@
     "minions": [],
     "name": "Ol Mahum Captain",
     "progression": {
-      "baseExp": 1241.0000000001,
-      "baseSp": 68,
+      "baseExp": 2482.0000000002,
+      "baseSp": 136,
       "expModifier": 1.378888888889
     },
     "raidBoss": false,
@@ -62499,8 +62499,8 @@
     "minions": [],
     "name": "Bloody Axe Turmak",
     "progression": {
-      "baseExp": 1469.0000000003,
-      "baseSp": 86,
+      "baseExp": 2938.0000000006,
+      "baseSp": 172,
       "expModifier": 1.270761245675
     },
     "raidBoss": false,
@@ -62843,8 +62843,8 @@
     "minions": [],
     "name": "Porta",
     "progression": {
-      "baseExp": 2364,
-      "baseSp": 152,
+      "baseExp": 4728,
+      "baseSp": 304,
       "expModifier": 1.4775
     },
     "raidBoss": false,
@@ -63349,8 +63349,8 @@
     "minions": [],
     "name": "Excuro",
     "progression": {
-      "baseExp": 2027.999999999494,
-      "baseSp": 132,
+      "baseExp": 4055.999999998988,
+      "baseSp": 264,
       "expModifier": 1.206424747174
     },
     "raidBoss": false,
@@ -63727,8 +63727,8 @@
     "minions": [],
     "name": "Mordeo",
     "progression": {
-      "baseExp": 2624.99999999958,
-      "baseSp": 175,
+      "baseExp": 5249.999999999161,
+      "baseSp": 350,
       "expModifier": 1.488095238095
     },
     "raidBoss": false,
@@ -64352,8 +64352,8 @@
     "minions": [],
     "name": "Ricenseo",
     "progression": {
-      "baseExp": 2103.999999999977,
-      "baseSp": 142,
+      "baseExp": 4207.999999999954,
+      "baseSp": 284,
       "expModifier": 1.137912385073
     },
     "raidBoss": false,
@@ -65045,8 +65045,8 @@
     "minions": [],
     "name": "Krator",
     "progression": {
-      "baseExp": 2687.999999999776,
-      "baseSp": 184,
+      "baseExp": 5375.999999999553,
+      "baseSp": 368,
       "expModifier": 1.388429752066
     },
     "raidBoss": false,
@@ -65619,8 +65619,8 @@
     "minions": [],
     "name": "Premo",
     "progression": {
-      "baseExp": 2812.000000000725,
-      "baseSp": 195,
+      "baseExp": 5624.00000000145,
+      "baseSp": 390,
       "expModifier": 1.388641975309
     },
     "raidBoss": false,
@@ -66032,8 +66032,8 @@
     "minions": [],
     "name": "Validus",
     "progression": {
-      "baseExp": 2408.000000000712,
-      "baseSp": 170,
+      "baseExp": 4816.000000001423,
+      "baseSp": 340,
       "expModifier": 1.137996219282
     },
     "raidBoss": false,
@@ -66651,8 +66651,8 @@
     "minions": [],
     "name": "Dicor",
     "progression": {
-      "baseExp": 2867.000000001034,
-      "baseSp": 205,
+      "baseExp": 5734.000000002068,
+      "baseSp": 410,
       "expModifier": 1.297872340426
     },
     "raidBoss": false,
@@ -67271,8 +67271,8 @@
     "minions": [],
     "name": "Perum",
     "progression": {
-      "baseExp": 3438,
-      "baseSp": 251,
+      "baseExp": 6876,
+      "baseSp": 502,
       "expModifier": 1.4921875
     },
     "raidBoss": false,
@@ -67721,8 +67721,8 @@
     "minions": [],
     "name": "Torfe",
     "progression": {
-      "baseExp": 3025.000000000587,
-      "baseSp": 223,
+      "baseExp": 6050.000000001174,
+      "baseSp": 446,
       "expModifier": 1.259891711787
     },
     "raidBoss": false,
@@ -79131,8 +79131,8 @@
     "minions": [],
     "name": "Turak Bugbear Warrior",
     "progression": {
-      "baseExp": 1502.000000000379,
-      "baseSp": 86,
+      "baseExp": 3004.000000000758,
+      "baseSp": 172,
       "expModifier": 1.379247015611
     },
     "raidBoss": false,
@@ -82771,8 +82771,8 @@
     "minions": [],
     "name": "Monster Eye Searcher",
     "progression": {
-      "baseExp": 763.000000000128,
-      "baseSp": 36,
+      "baseExp": 1526.000000000256,
+      "baseSp": 72,
       "expModifier": 1.576446280992
     },
     "raidBoss": false,
@@ -118009,8 +118009,8 @@
     "minions": [],
     "name": "Varikan Brigand Leader",
     "progression": {
-      "baseExp": 503,
-      "baseSp": 17,
+      "baseExp": 1006,
+      "baseSp": 34,
       "expModifier": 5.03
     },
     "raidBoss": false,
@@ -118144,8 +118144,8 @@
     "minions": [],
     "name": "Varika's Bandit",
     "progression": {
-      "baseExp": 333.999999999988,
-      "baseSp": 12,
+      "baseExp": 166.999999999994,
+      "baseSp": 6,
       "expModifier": 6.816326530612
     },
     "raidBoss": false,
@@ -124001,8 +124001,8 @@
     "minions": [],
     "name": "Vrykolakas",
     "progression": {
-      "baseExp": 692.0000000001,
-      "baseSp": 28,
+      "baseExp": 1384.0000000002,
+      "baseSp": 56,
       "expModifier": 3.075555555556
     },
     "raidBoss": false,
@@ -124137,8 +124137,8 @@
     "minions": [],
     "name": "Vrykolakas Wolfkin",
     "progression": {
-      "baseExp": 353.99999999997,
-      "baseSp": 12,
+      "baseExp": 176.999999999985,
+      "baseSp": 6,
       "expModifier": 4.37037037037
     },
     "raidBoss": false,
@@ -137034,8 +137034,8 @@
     "minions": [],
     "name": "Uthanka Pirate",
     "progression": {
-      "baseExp": 307.000000000001,
-      "baseSp": 10,
+      "baseExp": 153.500000000001,
+      "baseSp": 5,
       "expModifier": 6.265306122449
     },
     "raidBoss": false,
@@ -139173,8 +139173,8 @@
     "minions": [],
     "name": "Relic Spartoi",
     "progression": {
-      "baseExp": 592.000000000038,
-      "baseSp": 27,
+      "baseExp": 1184.000000000076,
+      "baseSp": 54,
       "expModifier": 1.342403628118
     },
     "raidBoss": false,
@@ -139694,8 +139694,8 @@
     "minions": [],
     "name": "Oblivion Watcher",
     "progression": {
-      "baseExp": 453.999999999895,
-      "baseSp": 20,
+      "baseExp": 226.999999999947,
+      "baseSp": 10,
       "expModifier": 1.570934256055
     },
     "raidBoss": false,
@@ -151905,8 +151905,8 @@
     "minions": [],
     "name": "Turek War Hound",
     "progression": {
-      "baseExp": 869.000000000256,
-      "baseSp": 43,
+      "baseExp": 1738.000000000512,
+      "baseSp": 86,
       "expModifier": 1.508680555556
     },
     "raidBoss": false,
@@ -152326,8 +152326,8 @@
     "minions": [],
     "name": "Turek Orc Warlord",
     "progression": {
-      "baseExp": 1389.9999999996,
-      "baseSp": 76,
+      "baseExp": 2779.9999999992,
+      "baseSp": 152,
       "expModifier": 1.544444444444
     },
     "raidBoss": false,
@@ -152706,8 +152706,8 @@
     "minions": [],
     "name": "Turek Orc Archer",
     "progression": {
-      "baseExp": 1076.000000000328,
-      "baseSp": 55,
+      "baseExp": 2152.000000000656,
+      "baseSp": 110,
       "expModifier": 1.475994513032
     },
     "raidBoss": false,
@@ -153066,8 +153066,8 @@
     "minions": [],
     "name": "Turek Orc Skirmisher",
     "progression": {
-      "baseExp": 1116.999999999856,
-      "baseSp": 58,
+      "baseExp": 2233.999999999712,
+      "baseSp": 116,
       "expModifier": 1.424744897959
     },
     "raidBoss": false,
@@ -153449,8 +153449,8 @@
     "minions": [],
     "name": "Turek Orc Supplier",
     "progression": {
-      "baseExp": 1035.00000000018,
-      "baseSp": 53,
+      "baseExp": 2070.00000000036,
+      "baseSp": 106,
       "expModifier": 1.41975308642
     },
     "raidBoss": false,
@@ -153852,8 +153852,8 @@
     "minions": [],
     "name": "Turek Orc Footman",
     "progression": {
-      "baseExp": 981.999999999668,
-      "baseSp": 49,
+      "baseExp": 1963.999999999336,
+      "baseSp": 98,
       "expModifier": 1.452662721893
     },
     "raidBoss": false,
@@ -154265,8 +154265,8 @@
     "minions": [],
     "name": "Turek Orc Sentinel",
     "progression": {
-      "baseExp": 922,
-      "baseSp": 46,
+      "baseExp": 1844,
+      "baseSp": 92,
       "expModifier": 1.4752
     },
     "raidBoss": false,
@@ -154754,8 +154754,8 @@
     "minions": [],
     "name": "Turek Orc Shaman",
     "progression": {
-      "baseExp": 1155.999999999819,
-      "baseSp": 62,
+      "baseExp": 2311.999999999638,
+      "baseSp": 124,
       "expModifier": 1.374554102259
     },
     "raidBoss": false,
@@ -160067,8 +160067,8 @@
     "minions": [],
     "name": "Pirate Captain Uthanka",
     "progression": {
-      "baseExp": 463,
-      "baseSp": 16,
+      "baseExp": 926,
+      "baseSp": 32,
       "expModifier": 4.63
     },
     "raidBoss": false,
@@ -160683,8 +160683,8 @@
     "minions": [],
     "name": "White Fang",
     "progression": {
-      "baseExp": 458,
-      "baseSp": 15,
+      "baseExp": 916,
+      "baseSp": 30,
       "expModifier": 4.58
     },
     "raidBoss": false,
@@ -160940,8 +160940,8 @@
     "minions": [],
     "name": "Grey Wolf Elder",
     "progression": {
-      "baseExp": 303.999999999997,
-      "baseSp": 10,
+      "baseExp": 151.999999999998,
+      "baseSp": 5,
       "expModifier": 6.204081632653
     },
     "raidBoss": false,
@@ -169009,8 +169009,8 @@
     "minions": [],
     "name": "Ol Mahum Lord",
     "progression": {
-      "baseExp": 1762.99999999964,
-      "baseSp": 103,
+      "baseExp": 3525.99999999928,
+      "baseSp": 206,
       "expModifier": 1.52508650519
     },
     "raidBoss": false,
@@ -170250,8 +170250,8 @@
     "minions": [],
     "name": "Fettered Soul",
     "progression": {
-      "baseExp": 2146.000000000672,
-      "baseSp": 134,
+      "baseExp": 4292.000000001344,
+      "baseSp": 268,
       "expModifier": 1.486149584488
     },
     "raidBoss": false,
@@ -180971,8 +180971,8 @@
     "minions": [],
     "name": "Oel Mahum Witch Doctor",
     "progression": {
-      "baseExp": 4401.00000000045,
-      "baseSp": 355,
+      "baseExp": 8802.0000000009,
+      "baseSp": 710,
       "expModifier": 1.454876033058
     },
     "raidBoss": false,
@@ -182886,8 +182886,8 @@
     "minions": [],
     "name": "Leto Lizardman Warrior",
     "progression": {
-      "baseExp": 1952.999999999648,
-      "baseSp": 121,
+      "baseExp": 3905.999999999296,
+      "baseSp": 242,
       "expModifier": 1.352493074792
     },
     "raidBoss": false,
@@ -183787,8 +183787,8 @@
     "minions": [],
     "name": "Leto Lizardman Overlord",
     "progression": {
-      "baseExp": 2207,
-      "baseSp": 142,
+      "baseExp": 4414,
+      "baseSp": 284,
       "expModifier": 1.379375
     },
     "raidBoss": false,
@@ -186723,8 +186723,8 @@
     "minions": [],
     "name": "Fline",
     "progression": {
-      "baseExp": 2766.00000000015,
-      "baseSp": 192,
+      "baseExp": 5532.0000000003,
+      "baseSp": 384,
       "expModifier": 1.365925925926
     },
     "raidBoss": false,
@@ -187136,8 +187136,8 @@
     "minions": [],
     "name": "Liele",
     "progression": {
-      "baseExp": 2861.999999999732,
-      "baseSp": 203,
+      "baseExp": 5723.999999999464,
+      "baseSp": 406,
       "expModifier": 1.352551984877
     },
     "raidBoss": false,
@@ -187490,8 +187490,8 @@
     "minions": [],
     "name": "Valley Treant",
     "progression": {
-      "baseExp": 4223.999999999158,
-      "baseSp": 303,
+      "baseExp": 8447.999999998316,
+      "baseSp": 606,
       "expModifier": 1.912177455862
     },
     "raidBoss": false,
@@ -187903,8 +187903,8 @@
     "minions": [],
     "name": "Satyr",
     "progression": {
-      "baseExp": 3075.999999998976,
-      "baseSp": 224,
+      "baseExp": 9227.99999999693,
+      "baseSp": 672,
       "expModifier": 1.335069444444
     },
     "raidBoss": false,
@@ -188401,8 +188401,8 @@
     "minions": [],
     "name": "Unicorn",
     "progression": {
-      "baseExp": 3298.999999999221,
-      "baseSp": 244,
+      "baseExp": 9896.999999997663,
+      "baseSp": 732,
       "expModifier": 1.374010828821
     },
     "raidBoss": false,
@@ -188816,8 +188816,8 @@
     "minions": [],
     "name": "Forest Runner",
     "progression": {
-      "baseExp": 3381,
-      "baseSp": 254,
+      "baseExp": 6762,
+      "baseSp": 508,
       "expModifier": 1.3524
     },
     "raidBoss": false,
@@ -189208,8 +189208,8 @@
     "minions": [],
     "name": "Fline Elder",
     "progression": {
-      "baseExp": 3517.999999999758,
-      "baseSp": 268,
+      "baseExp": 7035.999999999516,
+      "baseSp": 536,
       "expModifier": 1.352556708958
     },
     "raidBoss": false,
@@ -189888,8 +189888,8 @@
     "minions": [],
     "name": "Liele Elder",
     "progression": {
-      "baseExp": 3729.999999998688,
-      "baseSp": 288,
+      "baseExp": 7459.999999997376,
+      "baseSp": 576,
       "expModifier": 1.379437869822
     },
     "raidBoss": false,
@@ -190285,8 +190285,8 @@
     "minions": [],
     "name": "Valley treant Elder",
     "progression": {
-      "baseExp": 5199.000000001086,
-      "baseSp": 408,
+      "baseExp": 15597.000000003258,
+      "baseSp": 1224,
       "expModifier": 1.850836596654
     },
     "raidBoss": false,
@@ -190680,8 +190680,8 @@
     "minions": [],
     "name": "Satyr Elder",
     "progression": {
-      "baseExp": 3816.000000001044,
-      "baseSp": 304,
+      "baseExp": 11448.00000000313,
+      "baseSp": 912,
       "expModifier": 1.308641975309
     },
     "raidBoss": false,
@@ -191411,8 +191411,8 @@
     "minions": [],
     "name": "Unicorn Elder",
     "progression": {
-      "baseExp": 3959.000000001475,
-      "baseSp": 319,
+      "baseExp": 11877.000000004426,
+      "baseSp": 957,
       "expModifier": 1.308760330579
     },
     "raidBoss": false,
@@ -194480,8 +194480,8 @@
     "minions": [],
     "name": "Kuran Kobold",
     "progression": {
-      "baseExp": 950.000000000211,
-      "baseSp": 48,
+      "baseExp": 1900.000000000422,
+      "baseSp": 96,
       "expModifier": 1.303155006859
     },
     "raidBoss": false,
@@ -194906,8 +194906,8 @@
     "minions": [],
     "name": "Kuran Kobold Warrior",
     "progression": {
-      "baseExp": 1005.999999999904,
-      "baseSp": 53,
+      "baseExp": 2011.999999999808,
+      "baseSp": 106,
       "expModifier": 1.283163265306
     },
     "raidBoss": false,
@@ -195229,8 +195229,8 @@
     "minions": [],
     "name": "Patin Archer",
     "progression": {
-      "baseExp": 1022.000000000179,
-      "baseSp": 55,
+      "baseExp": 2044.000000000358,
+      "baseSp": 110,
       "expModifier": 1.215219976219
     },
     "raidBoss": false,
@@ -195557,8 +195557,8 @@
     "minions": [],
     "name": "Lakin Salamander",
     "progression": {
-      "baseExp": 1068.0000000003,
-      "baseSp": 58,
+      "baseExp": 2136.0000000006,
+      "baseSp": 116,
       "expModifier": 1.186666666667
     },
     "raidBoss": false,
@@ -195897,8 +195897,8 @@
     "minions": [],
     "name": "Sentinel Of Water",
     "progression": {
-      "baseExp": 1083.000000000132,
-      "baseSp": 60,
+      "baseExp": 2166.000000000264,
+      "baseSp": 120,
       "expModifier": 1.126951092612
     },
     "raidBoss": false,
@@ -196488,8 +196488,8 @@
     "minions": [],
     "name": "Dre Vanul Warrior",
     "progression": {
-      "baseExp": 1154,
-      "baseSp": 65,
+      "baseExp": 2308,
+      "baseSp": 130,
       "expModifier": 1.126953125
     },
     "raidBoss": false,
@@ -196859,8 +196859,8 @@
     "minions": [],
     "name": "Salamander Rowin",
     "progression": {
-      "baseExp": 1319.000000000364,
-      "baseSp": 75,
+      "baseExp": 2638.000000000728,
+      "baseSp": 150,
       "expModifier": 1.211202938476
     },
     "raidBoss": false,
@@ -197248,8 +197248,8 @@
     "minions": [],
     "name": "Lafi Lizardman",
     "progression": {
-      "baseExp": 950.000000000211,
-      "baseSp": 48,
+      "baseExp": 1900.000000000422,
+      "baseSp": 96,
       "expModifier": 1.303155006859
     },
     "raidBoss": false,
@@ -197589,8 +197589,8 @@
     "minions": [],
     "name": "Lafi Lizardman Scout",
     "progression": {
-      "baseExp": 940.000000000208,
-      "baseSp": 49,
+      "baseExp": 1880.000000000416,
+      "baseSp": 98,
       "expModifier": 1.198979591837
     },
     "raidBoss": false,
@@ -197956,8 +197956,8 @@
     "minions": [],
     "name": "Ritmal Swordsman",
     "progression": {
-      "baseExp": 1093.999999999609,
-      "baseSp": 58,
+      "baseExp": 2187.999999999218,
+      "baseSp": 116,
       "expModifier": 1.300832342449
     },
     "raidBoss": false,
@@ -198404,8 +198404,8 @@
     "minions": [],
     "name": "Lakin Undine",
     "progression": {
-      "baseExp": 1433.9999999997,
-      "baseSp": 78,
+      "baseExp": 2867.9999999994,
+      "baseSp": 156,
       "expModifier": 1.593333333333
     },
     "raidBoss": false,
@@ -198762,8 +198762,8 @@
     "minions": [],
     "name": "Sentinel Of Water",
     "progression": {
-      "baseExp": 1092.999999999875,
-      "baseSp": 60,
+      "baseExp": 2185.99999999975,
+      "baseSp": 120,
       "expModifier": 1.137356919875
     },
     "raidBoss": false,
@@ -199121,8 +199121,8 @@
     "minions": [],
     "name": "Kanil Succubus",
     "progression": {
-      "baseExp": 1216,
-      "baseSp": 68,
+      "baseExp": 2432,
+      "baseSp": 136,
       "expModifier": 1.1875
     },
     "raidBoss": false,
@@ -199456,8 +199456,8 @@
     "minions": [],
     "name": "Rowin Undine",
     "progression": {
-      "baseExp": 1251.999999999936,
-      "baseSp": 72,
+      "baseExp": 2503.999999999872,
+      "baseSp": 144,
       "expModifier": 1.149678604224
     },
     "raidBoss": false,
@@ -199894,8 +199894,8 @@
     "minions": [],
     "name": "Cave Beast",
     "progression": {
-      "baseExp": 4304.000000001321,
-      "baseSp": 378,
+      "baseExp": 12912.000000003965,
+      "baseSp": 1134,
       "expModifier": 1.156678312282
     },
     "raidBoss": false,
@@ -200266,8 +200266,8 @@
     "minions": [],
     "name": "Death Wave",
     "progression": {
-      "baseExp": 4638.999999998308,
-      "baseSp": 413,
+      "baseExp": 13916.999999994925,
+      "baseSp": 1239,
       "expModifier": 1.206815816857
     },
     "raidBoss": false,
@@ -200792,8 +200792,8 @@
     "minions": [],
     "name": "Malruk Soldier",
     "progression": {
-      "baseExp": 4953.000000001852,
-      "baseSp": 447,
+      "baseExp": 14859.000000005555,
+      "baseSp": 1341,
       "expModifier": 1.247921390779
     },
     "raidBoss": false,
@@ -201322,8 +201322,8 @@
     "minions": [],
     "name": "Plando",
     "progression": {
-      "baseExp": 4953,
-      "baseSp": 453,
+      "baseExp": 19812,
+      "baseSp": 1812,
       "expModifier": 1.209228515625
     },
     "raidBoss": false,
@@ -201783,8 +201783,8 @@
     "minions": [],
     "name": "Cave Howler",
     "progression": {
-      "baseExp": 5036.9999999982,
-      "baseSp": 468,
+      "baseExp": 20147.9999999928,
+      "baseSp": 1872,
       "expModifier": 1.192189349112
     },
     "raidBoss": false,
@@ -202238,8 +202238,8 @@
     "minions": [],
     "name": "Malruk Knight",
     "progression": {
-      "baseExp": 5030.0000000019,
-      "baseSp": 473,
+      "baseExp": 20120.0000000076,
+      "baseSp": 1892,
       "expModifier": 1.154729109275
     },
     "raidBoss": false,
@@ -202587,8 +202587,8 @@
     "minions": [],
     "name": "Malruk Berserker",
     "progression": {
-      "baseExp": 7219.999999998744,
-      "baseSp": 687,
+      "baseExp": 28879.999999994976,
+      "baseSp": 2748,
       "expModifier": 1.608376030296
     },
     "raidBoss": false,
@@ -203011,8 +203011,8 @@
     "minions": [],
     "name": "Malruk Lord",
     "progression": {
-      "baseExp": 4964.000000001361,
-      "baseSp": 479,
+      "baseExp": 24820.000000006803,
+      "baseSp": 2395,
       "expModifier": 1.073529411765
     },
     "raidBoss": false,
@@ -203599,8 +203599,8 @@
     "minions": [],
     "name": "Limal Karinness",
     "progression": {
-      "baseExp": 5348.999999997738,
-      "baseSp": 523,
+      "baseExp": 26744.99999998869,
+      "baseSp": 2615,
       "expModifier": 1.123503465658
     },
     "raidBoss": false,
@@ -204093,8 +204093,8 @@
     "minions": [],
     "name": "Karik",
     "progression": {
-      "baseExp": 6584.0000000012,
-      "baseSp": 652,
+      "baseExp": 32920.000000005995,
+      "baseSp": 3260,
       "expModifier": 1.343673469388
     },
     "raidBoss": false,
@@ -206431,8 +206431,8 @@
     "minions": [],
     "name": "Taik Orc Captain",
     "progression": {
-      "baseExp": 2942.999999999664,
-      "baseSp": 201,
+      "baseExp": 5885.999999999328,
+      "baseSp": 402,
       "expModifier": 1.520144628099
     },
     "raidBoss": false,
@@ -208866,8 +208866,8 @@
     "minions": [],
     "name": "Mirror",
     "progression": {
-      "baseExp": 4254.000000000331,
-      "baseSp": 314,
+      "baseExp": 8508.000000000662,
+      "baseSp": 628,
       "expModifier": 1.771761765931
     },
     "raidBoss": false,
@@ -211281,8 +211281,8 @@
     "minions": [],
     "name": "Harit Lizardman Matriarch",
     "progression": {
-      "baseExp": 4767.999999998675,
-      "baseSp": 385,
+      "baseExp": 9535.99999999735,
+      "baseSp": 770,
       "expModifier": 1.576198347107
     },
     "raidBoss": false,
@@ -211735,8 +211735,8 @@
     "minions": [],
     "name": "Halingka",
     "progression": {
-      "baseExp": 3592.000000000225,
-      "baseSp": 290,
+      "baseExp": 7184.000000000449,
+      "baseSp": 580,
       "expModifier": 1.187438016529
     },
     "raidBoss": false,
@@ -212441,8 +212441,8 @@
     "minions": [],
     "name": "Yintzu",
     "progression": {
-      "baseExp": 3605.000000001344,
-      "baseSp": 296,
+      "baseExp": 7210.000000002688,
+      "baseSp": 592,
       "expModifier": 1.149553571429
     },
     "raidBoss": false,
@@ -213150,8 +213150,8 @@
     "minions": [],
     "name": "Paliote",
     "progression": {
-      "baseExp": 4094.000000000127,
-      "baseSp": 340,
+      "baseExp": 8188.000000000254,
+      "baseSp": 680,
       "expModifier": 1.260080024623
     },
     "raidBoss": false,
@@ -213551,8 +213551,8 @@
     "minions": [],
     "name": "Hamrut",
     "progression": {
-      "baseExp": 4075.000000000048,
-      "baseSp": 344,
+      "baseExp": 8150.000000000095,
+      "baseSp": 688,
       "expModifier": 1.211355529132
     },
     "raidBoss": false,
@@ -213997,8 +213997,8 @@
     "minions": [],
     "name": "Kranrot",
     "progression": {
-      "baseExp": 4409.999999998619,
-      "baseSp": 377,
+      "baseExp": 8819.999999997239,
+      "baseSp": 754,
       "expModifier": 1.266877334099
     },
     "raidBoss": false,
@@ -214482,8 +214482,8 @@
     "minions": [],
     "name": "Gamlin",
     "progression": {
-      "baseExp": 4097.0000000016,
-      "baseSp": 355,
+      "baseExp": 8194.0000000032,
+      "baseSp": 710,
       "expModifier": 1.138055555556
     },
     "raidBoss": false,
@@ -214965,8 +214965,8 @@
     "minions": [],
     "name": "Leogul",
     "progression": {
-      "baseExp": 4319.999999999418,
-      "baseSp": 380,
+      "baseExp": 8639.999999998836,
+      "baseSp": 760,
       "expModifier": 1.160978231658
     },
     "raidBoss": false,
@@ -215156,8 +215156,8 @@
     "minions": [],
     "name": "Lesser Giant",
     "progression": {
-      "baseExp": 4058.000000000828,
-      "baseSp": 357,
+      "baseExp": 12174.000000002483,
+      "baseSp": 1071,
       "expModifier": 1.090567051868
     },
     "raidBoss": false,
@@ -215521,8 +215521,8 @@
     "minions": [],
     "name": "Lesser Giant Soldier",
     "progression": {
-      "baseExp": 6223.999999998416,
-      "baseSp": 554,
+      "baseExp": 18671.99999999525,
+      "baseSp": 1662,
       "expModifier": 1.619146722164
     },
     "raidBoss": false,
@@ -215926,8 +215926,8 @@
     "minions": [],
     "name": "Lesser Giant Shooter",
     "progression": {
-      "baseExp": 5085.000000000017,
-      "baseSp": 459,
+      "baseExp": 15255.000000000051,
+      "baseSp": 1377,
       "expModifier": 1.281179138322
     },
     "raidBoss": false,
@@ -216344,8 +216344,8 @@
     "minions": [],
     "name": "Lesser Giant Scout",
     "progression": {
-      "baseExp": 4638.999999998574,
-      "baseSp": 419,
+      "baseExp": 13916.999999995722,
+      "baseSp": 1257,
       "expModifier": 1.168808264046
     },
     "raidBoss": false,
@@ -216826,8 +216826,8 @@
     "minions": [],
     "name": "Lesser Giant Mage",
     "progression": {
-      "baseExp": 5511,
-      "baseSp": 504,
+      "baseExp": 11022,
+      "baseSp": 1008,
       "expModifier": 1.345458984375
     },
     "raidBoss": false,
@@ -217268,8 +217268,8 @@
     "minions": [],
     "name": "Lesser Giant Elder",
     "progression": {
-      "baseExp": 5323.999999998875,
-      "baseSp": 494,
+      "baseExp": 10647.99999999775,
+      "baseSp": 988,
       "expModifier": 1.260118343195
     },
     "raidBoss": false,
@@ -230091,8 +230091,8 @@
     "minions": [],
     "name": "Vanor Silenos Chieftain",
     "progression": {
-      "baseExp": 3637,
-      "baseSp": 274,
+      "baseExp": 7274.000000000001,
+      "baseSp": 548,
       "expModifier": 1.4548
     },
     "raidBoss": false,
@@ -240376,8 +240376,8 @@
     "minions": [],
     "name": "Kobold Looter Bepook",
     "progression": {
-      "baseExp": 663.000000000013,
-      "baseSp": 26,
+      "baseExp": 1326.000000000026,
+      "baseSp": 52,
       "expModifier": 3.923076923077
     },
     "raidBoss": false,
@@ -240534,8 +240534,8 @@
     "minions": [],
     "name": "Bepook's Pet",
     "progression": {
-      "baseExp": 439,
-      "baseSp": 14,
+      "baseExp": 219.5,
+      "baseSp": 7,
       "expModifier": 4.39
     },
     "raidBoss": false,
@@ -242549,8 +242549,8 @@
     "minions": [],
     "name": "Roxide",
     "progression": {
-      "baseExp": 1459,
-      "baseSp": 82,
+      "baseExp": 2918,
+      "baseSp": 164,
       "expModifier": 1.4248046875
     },
     "raidBoss": false,
@@ -242963,8 +242963,8 @@
     "minions": [],
     "name": "Roxide Cohort",
     "progression": {
-      "baseExp": 1348.999999999903,
-      "baseSp": 72,
+      "baseExp": 2697.999999999806,
+      "baseSp": 144,
       "expModifier": 1.604042806183
     },
     "raidBoss": false,
@@ -243273,8 +243273,8 @@
     "minions": [],
     "name": "Death Fire",
     "progression": {
-      "baseExp": 1459,
-      "baseSp": 82,
+      "baseExp": 2918,
+      "baseSp": 164,
       "expModifier": 1.4248046875
     },
     "raidBoss": false,
@@ -243639,8 +243639,8 @@
     "minions": [],
     "name": "Fire Archer",
     "progression": {
-      "baseExp": 1397.000000000364,
-      "baseSp": 75,
+      "baseExp": 2794.000000000728,
+      "baseSp": 150,
       "expModifier": 1.661117717004
     },
     "raidBoss": false,
@@ -244300,8 +244300,8 @@
     "minions": [],
     "name": "Snipe",
     "progression": {
-      "baseExp": 3386.999999999264,
-      "baseSp": 232,
+      "baseExp": 6773.999999998528,
+      "baseSp": 464,
       "expModifier": 1.749483471074
     },
     "raidBoss": false,
@@ -244732,8 +244732,8 @@
     "minions": [],
     "name": "Snipe Cohort",
     "progression": {
-      "baseExp": 3289.999999999356,
-      "baseSp": 219,
+      "baseExp": 6579.999999998712,
+      "baseSp": 438,
       "expModifier": 1.865079365079
     },
     "raidBoss": false,
@@ -245304,8 +245304,8 @@
     "minions": [],
     "name": "Dark Lord",
     "progression": {
-      "baseExp": 4282,
-      "baseSp": 322,
+      "baseExp": 8564,
+      "baseSp": 644,
       "expModifier": 1.7128
     },
     "raidBoss": false,
@@ -245653,8 +245653,8 @@
     "minions": [],
     "name": "Dark Knight",
     "progression": {
-      "baseExp": 4960.000000000512,
-      "baseSp": 362,
+      "baseExp": 9920.000000001024,
+      "baseSp": 724,
       "expModifier": 2.152777777778
     },
     "raidBoss": false,
@@ -248280,8 +248280,8 @@
     "minions": [],
     "name": "Pytan",
     "progression": {
-      "baseExp": 6632.999999998434,
-      "baseSp": 649,
+      "baseExp": 19898.9999999953,
+      "baseSp": 1947,
       "expModifier": 1.393194706994
     },
     "raidBoss": false,
@@ -248689,8 +248689,8 @@
     "minions": [],
     "name": "Pytan Knight",
     "progression": {
-      "baseExp": 7020.999999999184,
-      "baseSp": 678,
+      "baseExp": 14041.999999998368,
+      "baseSp": 1356,
       "expModifier": 1.518382352941
     },
     "raidBoss": false,
@@ -252507,8 +252507,8 @@
     "minions": [],
     "name": "Barif",
     "progression": {
-      "baseExp": 6515,
-      "baseSp": 596,
+      "baseExp": 13030,
+      "baseSp": 1192,
       "expModifier": 1.590576171875
     },
     "raidBoss": false,
@@ -252876,8 +252876,8 @@
     "minions": [],
     "name": "Barif's Pet",
     "progression": {
-      "baseExp": 6332.000000001855,
-      "baseSp": 557,
+      "baseExp": 12664.00000000371,
+      "baseSp": 1114,
       "expModifier": 1.701693093255
     },
     "raidBoss": false,
@@ -256693,8 +256693,8 @@
     "minions": [],
     "name": "Dread Wolf",
     "progression": {
-      "baseExp": 1634.999999999975,
-      "baseSp": 96,
+      "baseExp": 817.499999999987,
+      "baseSp": 48,
       "expModifier": 1.334693877551
     },
     "raidBoss": false,
@@ -257189,8 +257189,8 @@
     "minions": [],
     "name": "Tasaba Lizardman",
     "progression": {
-      "baseExp": 1851.999999999984,
-      "baseSp": 112,
+      "baseExp": 925.999999999992,
+      "baseSp": 56,
       "expModifier": 1.429012345679
     },
     "raidBoss": false,
@@ -257972,8 +257972,8 @@
     "minions": [],
     "name": "Tasaba Lizardman Shaman",
     "progression": {
-      "baseExp": 1790.999999999874,
-      "baseSp": 110,
+      "baseExp": 895.499999999937,
+      "baseSp": 55,
       "expModifier": 1.308254200146
     },
     "raidBoss": false,
@@ -258469,8 +258469,8 @@
     "minions": [],
     "name": "Lienrik",
     "progression": {
-      "baseExp": 1989.999999999648,
-      "baseSp": 126,
+      "baseExp": 994.999999999824,
+      "baseSp": 63,
       "expModifier": 1.308349769888
     },
     "raidBoss": false,
@@ -259032,8 +259032,8 @@
     "minions": [],
     "name": "Lienrik Lad",
     "progression": {
-      "baseExp": 2421,
-      "baseSp": 156,
+      "baseExp": 1210.5,
+      "baseSp": 78,
       "expModifier": 1.513125
     },
     "raidBoss": false,
@@ -261030,8 +261030,8 @@
     "minions": [],
     "name": "Crokian Warrior",
     "progression": {
-      "baseExp": 2210.999999999932,
-      "baseSp": 138,
+      "baseExp": 4421.999999999864,
+      "baseSp": 276,
       "expModifier": 1.531163434903
     },
     "raidBoss": false,
@@ -261527,8 +261527,8 @@
     "minions": [],
     "name": "Farhite",
     "progression": {
-      "baseExp": 2056.999999999815,
-      "baseSp": 131,
+      "baseExp": 4113.99999999963,
+      "baseSp": 262,
       "expModifier": 1.352399737015
     },
     "raidBoss": false,
@@ -262026,8 +262026,8 @@
     "minions": [],
     "name": "Nos",
     "progression": {
-      "baseExp": 2251,
-      "baseSp": 145,
+      "baseExp": 4502,
+      "baseSp": 290,
       "expModifier": 1.406875
     },
     "raidBoss": false,
@@ -262568,8 +262568,8 @@
     "minions": [],
     "name": "Crokian Lad",
     "progression": {
-      "baseExp": 2573.999999999875,
-      "baseSp": 168,
+      "baseExp": 5147.99999999975,
+      "baseSp": 336,
       "expModifier": 1.531231409875
     },
     "raidBoss": false,
@@ -263131,8 +263131,8 @@
     "minions": [],
     "name": "Dailaon Lad",
     "progression": {
-      "baseExp": 2789.999999999604,
-      "baseSp": 186,
+      "baseExp": 5579.999999999209,
+      "baseSp": 372,
       "expModifier": 1.581632653061
     },
     "raidBoss": false,
@@ -263606,8 +263606,8 @@
     "minions": [],
     "name": "Crokian Lad Warrior",
     "progression": {
-      "baseExp": 2678.000000000092,
-      "baseSp": 181,
+      "baseExp": 5356.000000000184,
+      "baseSp": 362,
       "expModifier": 1.448350459708
     },
     "raidBoss": false,
@@ -264125,8 +264125,8 @@
     "minions": [],
     "name": "Farhite Lad",
     "progression": {
-      "baseExp": 2816.999999999856,
-      "baseSp": 193,
+      "baseExp": 5633.999999999712,
+      "baseSp": 386,
       "expModifier": 1.455061983471
     },
     "raidBoss": false,
@@ -264580,8 +264580,8 @@
     "minions": [],
     "name": "Nos Lad",
     "progression": {
-      "baseExp": 3487.00000000005,
-      "baseSp": 242,
+      "baseExp": 6974.0000000001,
+      "baseSp": 484,
       "expModifier": 1.721975308642
     },
     "raidBoss": false,
@@ -264991,8 +264991,8 @@
     "minions": [],
     "name": "Archer of Despair",
     "progression": {
-      "baseExp": 4708.000000001619,
-      "baseSp": 414,
+      "baseExp": 14124.000000004857,
+      "baseSp": 1242,
       "expModifier": 1.265251276539
     },
     "raidBoss": false,
@@ -265425,8 +265425,8 @@
     "minions": [],
     "name": "Crendion",
     "progression": {
-      "baseExp": 4275.999999998892,
-      "baseSp": 381,
+      "baseExp": 12827.999999996677,
+      "baseSp": 1143,
       "expModifier": 1.112382934443
     },
     "raidBoss": false,
@@ -265902,8 +265902,8 @@
     "minions": [],
     "name": "Hound Dog of Hallate",
     "progression": {
-      "baseExp": 4583.000000001276,
-      "baseSp": 413,
+      "baseExp": 18332.000000005104,
+      "baseSp": 1652,
       "expModifier": 1.154698916604
     },
     "raidBoss": false,
@@ -266399,8 +266399,8 @@
     "minions": [],
     "name": "Hallate's Royal Guard",
     "progression": {
-      "baseExp": 5098.00000000095,
-      "baseSp": 460,
+      "baseExp": 15294.000000002849,
+      "baseSp": 1380,
       "expModifier": 1.28445452255
     },
     "raidBoss": false,
@@ -266835,8 +266835,8 @@
     "minions": [],
     "name": "Corrupt Sage",
     "progression": {
-      "baseExp": 5315,
-      "baseSp": 486,
+      "baseExp": 15945,
+      "baseSp": 1458,
       "expModifier": 1.297607421875
     },
     "raidBoss": false,
@@ -267293,8 +267293,8 @@
     "minions": [],
     "name": "Hallate's Warrior",
     "progression": {
-      "baseExp": 4926,
-      "baseSp": 451,
+      "baseExp": 14778,
+      "baseSp": 1353,
       "expModifier": 1.20263671875
     },
     "raidBoss": false,
@@ -267837,8 +267837,8 @@
     "minions": [],
     "name": "Archer of Abyss",
     "progression": {
-      "baseExp": 4889.00000000165,
-      "baseSp": 454,
+      "baseExp": 14667.00000000495,
+      "baseSp": 1362,
       "expModifier": 1.157159763314
     },
     "raidBoss": false,
@@ -268360,8 +268360,8 @@
     "minions": [],
     "name": "Hallate's Knight",
     "progression": {
-      "baseExp": 7310.000000000426,
-      "baseSp": 679,
+      "baseExp": 29240.000000001703,
+      "baseSp": 2716,
       "expModifier": 1.730177514793
     },
     "raidBoss": false,
@@ -268799,8 +268799,8 @@
     "minions": [],
     "name": "Erin Ediunce",
     "progression": {
-      "baseExp": 5334.999999997932,
-      "baseSp": 502,
+      "baseExp": 21339.999999991727,
+      "baseSp": 2008,
       "expModifier": 1.224747474747
     },
     "raidBoss": false,
@@ -269257,8 +269257,8 @@
     "minions": [],
     "name": "Hallate's Maid",
     "progression": {
-      "baseExp": 4963.999999999788,
-      "baseSp": 467,
+      "baseExp": 19855.999999999152,
+      "baseSp": 1868,
       "expModifier": 1.139577594123
     },
     "raidBoss": false,
@@ -269827,8 +269827,8 @@
     "minions": [],
     "name": "Platinum Tribe Soldier",
     "progression": {
-      "baseExp": 5764.000000001631,
-      "baseSp": 549,
+      "baseExp": 23056.000000006523,
+      "baseSp": 2196,
       "expModifier": 1.284027623079
     },
     "raidBoss": false,
@@ -270369,8 +270369,8 @@
     "minions": [],
     "name": "Hallate's Commander",
     "progression": {
-      "baseExp": 5183.999999998847,
-      "baseSp": 493,
+      "baseExp": 20735.999999995387,
+      "baseSp": 1972,
       "expModifier": 1.154822900423
     },
     "raidBoss": false,
@@ -270891,8 +270891,8 @@
     "minions": [],
     "name": "Hallate's Inspector",
     "progression": {
-      "baseExp": 5413.99999999976,
-      "baseSp": 523,
+      "baseExp": 21655.99999999904,
+      "baseSp": 2092,
       "expModifier": 1.170847750865
     },
     "raidBoss": false,
@@ -271411,8 +271411,8 @@
     "minions": [],
     "name": "Platinum Tribe Archer",
     "progression": {
-      "baseExp": 7650.000000000544,
-      "baseSp": 739,
+      "baseExp": 22950.00000000163,
+      "baseSp": 2217,
       "expModifier": 1.654411764706
     },
     "raidBoss": false,
@@ -271904,8 +271904,8 @@
     "minions": [],
     "name": "Platinum Tribe Warrior",
     "progression": {
-      "baseExp": 5990.999999998086,
-      "baseSp": 586,
+      "baseExp": 23963.999999992346,
+      "baseSp": 2344,
       "expModifier": 1.258349086326
     },
     "raidBoss": false,
@@ -272407,8 +272407,8 @@
     "minions": [],
     "name": "Platinum Tribe Shaman",
     "progression": {
-      "baseExp": 5881.0000000017,
-      "baseSp": 583,
+      "baseExp": 29405.0000000085,
+      "baseSp": 2915,
       "expModifier": 1.200204081633
     },
     "raidBoss": false,
@@ -272931,8 +272931,8 @@
     "minions": [],
     "name": "Platinum Tribe Overlord",
     "progression": {
-      "baseExp": 8448.999999999149,
-      "baseSp": 847,
+      "baseExp": 42244.99999999574,
+      "baseSp": 4235,
       "expModifier": 1.676056338028
     },
     "raidBoss": false,
@@ -274742,8 +274742,8 @@
     "minions": [],
     "name": "Mardian",
     "progression": {
-      "baseExp": 2251.000000000584,
-      "baseSp": 150,
+      "baseExp": 4502.000000001168,
+      "baseSp": 300,
       "expModifier": 1.276077097506
     },
     "raidBoss": false,
@@ -275783,8 +275783,8 @@
     "minions": [],
     "name": "Pirate Zombie",
     "progression": {
-      "baseExp": 2831.99999999928,
-      "baseSp": 194,
+      "baseExp": 5663.99999999856,
+      "baseSp": 388,
       "expModifier": 1.462809917355
     },
     "raidBoss": false,
@@ -281266,8 +281266,8 @@
     "minions": [],
     "name": "Elmo-Aden's Lady",
     "progression": {
-      "baseExp": 7512.999999999975,
-      "baseSp": 698,
+      "baseExp": 15025.99999999995,
+      "baseSp": 1396,
       "expModifier": 1.778224852071
     },
     "raidBoss": false,
@@ -281768,8 +281768,8 @@
     "minions": [],
     "name": "Hallate's Follower Mul",
     "progression": {
-      "baseExp": 7606.000000001728,
-      "baseSp": 735,
+      "baseExp": 15212.000000003456,
+      "baseSp": 1470,
       "expModifier": 1.644896193772
     },
     "raidBoss": false,
@@ -282291,8 +282291,8 @@
     "minions": [],
     "name": "Binder",
     "progression": {
-      "baseExp": 10342.000000000342,
-      "baseSp": 1064,
+      "baseExp": 20684.000000000684,
+      "baseSp": 2128,
       "expModifier": 1.940701820229
     },
     "raidBoss": false,
@@ -282767,8 +282767,8 @@
     "minions": [],
     "name": "Sairon",
     "progression": {
-      "baseExp": 5524.000000000524,
-      "baseSp": 440,
+      "baseExp": 11048.000000001048,
+      "baseSp": 880,
       "expModifier": 1.894375857339
     },
     "raidBoss": false,
@@ -283743,8 +283743,8 @@
     "minions": [],
     "name": "Swamp Tribe",
     "progression": {
-      "baseExp": 5139.00000000045,
-      "baseSp": 357,
+      "baseExp": 10278.0000000009,
+      "baseSp": 714,
       "expModifier": 2.537777777778
     },
     "raidBoss": false,
@@ -285939,8 +285939,8 @@
     "minions": [],
     "name": "Ogre",
     "progression": {
-      "baseExp": 3593.99999999996,
-      "baseSp": 224,
+      "baseExp": 1796.99999999998,
+      "baseSp": 112,
       "expModifier": 2.48891966759
     },
     "raidBoss": false,
@@ -286462,8 +286462,8 @@
     "minions": [],
     "name": "Hallate's Guardian",
     "progression": {
-      "baseExp": 6395.999999998617,
-      "baseSp": 625,
+      "baseExp": 25583.999999994467,
+      "baseSp": 2500,
       "expModifier": 1.343415248897
     },
     "raidBoss": false,
@@ -287093,8 +287093,8 @@
     "minions": [],
     "name": "Platinum Guardian Archer",
     "progression": {
-      "baseExp": 8009.000000000394,
-      "baseSp": 803,
+      "baseExp": 32036.000000001575,
+      "baseSp": 3212,
       "expModifier": 1.588772069034
     },
     "raidBoss": false,
@@ -287658,8 +287658,8 @@
     "minions": [],
     "name": "Platinum Guardian Warrior",
     "progression": {
-      "baseExp": 6036.000000000768,
-      "baseSp": 613,
+      "baseExp": 30180.000000003838,
+      "baseSp": 3065,
       "expModifier": 1.164351851852
     },
     "raidBoss": false,
@@ -288174,8 +288174,8 @@
     "minions": [],
     "name": "Platinum Guardian Shaman",
     "progression": {
-      "baseExp": 6529.000000000324,
-      "baseSp": 672,
+      "baseExp": 32645.00000000162,
+      "baseSp": 3360,
       "expModifier": 1.225182961156
     },
     "raidBoss": false,
@@ -288875,8 +288875,8 @@
     "minions": [],
     "name": "Platinum Guardian Prefect",
     "progression": {
-      "baseExp": 8909.000000002525,
-      "baseSp": 928,
+      "baseExp": 44545.000000012624,
+      "baseSp": 4640,
       "expModifier": 1.626917457999
     },
     "raidBoss": false,
@@ -289510,8 +289510,8 @@
     "minions": [],
     "name": "Platinum Guardian Chief",
     "progression": {
-      "baseExp": 6752.000000002499,
-      "baseSp": 712,
+      "baseExp": 33760.0000000125,
+      "baseSp": 3560,
       "expModifier": 1.200355555556
     },
     "raidBoss": false,
@@ -290076,8 +290076,8 @@
     "minions": [],
     "name": "Slaughter Bathin",
     "progression": {
-      "baseExp": 6995.000000001699,
-      "baseSp": 631,
+      "baseExp": 13990.000000003398,
+      "baseSp": 1262,
       "expModifier": 1.762408667171
     },
     "raidBoss": false,
@@ -290578,8 +290578,8 @@
     "minions": [],
     "name": "Magus Valac",
     "progression": {
-      "baseExp": 8481.000000001899,
-      "baseSp": 841,
+      "baseExp": 16962.000000003798,
+      "baseSp": 1682,
       "expModifier": 1.730816326531
     },
     "raidBoss": false,
@@ -291080,8 +291080,8 @@
     "minions": [],
     "name": "Power Angel Amon",
     "progression": {
-      "baseExp": 8886.999999999374,
-      "baseSp": 937,
+      "baseExp": 17773.99999999875,
+      "baseSp": 1874,
       "expModifier": 1.579911111111
     },
     "raidBoss": false,
@@ -294301,8 +294301,8 @@
     "minions": [],
     "name": "Catacomb Barbed Bat",
     "progression": {
-      "baseExp": 654.999999999742,
-      "baseSp": 31,
+      "baseExp": 2619.999999998968,
+      "baseSp": 124,
       "expModifier": 1.238185255198
     },
     "raidBoss": false,
@@ -294667,8 +294667,8 @@
     "minions": [],
     "name": "Catacomb Wisp",
     "progression": {
-      "baseExp": 788.000000000148,
-      "baseSp": 39,
+      "baseExp": 3152.000000000592,
+      "baseSp": 156,
       "expModifier": 1.165680473373
     },
     "raidBoss": false,
@@ -295057,8 +295057,8 @@
     "minions": [],
     "name": "Catacomb Serpent",
     "progression": {
-      "baseExp": 926.00000000032,
-      "baseSp": 48,
+      "baseExp": 3704.00000000128,
+      "baseSp": 192,
       "expModifier": 1.18112244898
     },
     "raidBoss": false,
@@ -295466,8 +295466,8 @@
     "minions": [],
     "name": "Grave Keeper Spartoi",
     "progression": {
-      "baseExp": 927.00000000002,
-      "baseSp": 49,
+      "baseExp": 3708.00000000008,
+      "baseSp": 196,
       "expModifier": 1.10225921522
     },
     "raidBoss": false,
@@ -295878,8 +295878,8 @@
     "minions": [],
     "name": "Catacomb Scavenger Bat",
     "progression": {
-      "baseExp": 1041.999999999552,
-      "baseSp": 57,
+      "baseExp": 4167.999999998207,
+      "baseSp": 228,
       "expModifier": 1.084287200832
     },
     "raidBoss": false,
@@ -296289,8 +296289,8 @@
     "minions": [],
     "name": "Catacomb Shadow",
     "progression": {
-      "baseExp": 1253.99999999978,
-      "baseSp": 73,
+      "baseExp": 5015.999999999121,
+      "baseSp": 292,
       "expModifier": 1.084775086505
     },
     "raidBoss": false,
@@ -296725,8 +296725,8 @@
     "minions": [],
     "name": "Catacomb Stakato Soldier",
     "progression": {
-      "baseExp": 1610.999999999876,
-      "baseSp": 100,
+      "baseExp": 6443.999999999504,
+      "baseSp": 400,
       "expModifier": 1.115650969529
     },
     "raidBoss": false,
@@ -297223,8 +297223,8 @@
     "minions": [],
     "name": "Grave Keeper Dark Horror",
     "progression": {
-      "baseExp": 1735,
-      "baseSp": 112,
+      "baseExp": 6940.000000000001,
+      "baseSp": 448,
       "expModifier": 1.084375
     },
     "raidBoss": false,
@@ -297635,8 +297635,8 @@
     "minions": [],
     "name": "Catacomb Gargoyle",
     "progression": {
-      "baseExp": 2113.999999999251,
-      "baseSp": 143,
+      "baseExp": 8455.999999997004,
+      "baseSp": 572,
       "expModifier": 1.143320713899
     },
     "raidBoss": false,
@@ -298070,8 +298070,8 @@
     "minions": [],
     "name": "Catacomb Liviona",
     "progression": {
-      "baseExp": 2100.000000000672,
-      "baseSp": 143,
+      "baseExp": 8400.000000002688,
+      "baseSp": 572,
       "expModifier": 1.084710743802
     },
     "raidBoss": false,
@@ -298549,8 +298549,8 @@
     "minions": [],
     "name": "Decayed Ancient Pikeman",
     "progression": {
-      "baseExp": 2418.999999999304,
-      "baseSp": 171,
+      "baseExp": 9675.999999997217,
+      "baseSp": 684,
       "expModifier": 1.143194706994
     },
     "raidBoss": false,
@@ -299030,8 +299030,8 @@
     "minions": [],
     "name": "Decayed Ancient Soldier",
     "progression": {
-      "baseExp": 2744.999999999985,
-      "baseSp": 203,
+      "baseExp": 10979.99999999994,
+      "baseSp": 812,
       "expModifier": 1.143273635985
     },
     "raidBoss": false,
@@ -299485,8 +299485,8 @@
     "minions": [],
     "name": "Decayed Ancient Knight",
     "progression": {
-      "baseExp": 2858,
-      "baseSp": 215,
+      "baseExp": 11432,
+      "baseSp": 860,
       "expModifier": 1.1432
     },
     "raidBoss": false,
@@ -300031,8 +300031,8 @@
     "minions": [],
     "name": "Purgatory Wisp",
     "progression": {
-      "baseExp": 3046.999999999001,
-      "baseSp": 239,
+      "baseExp": 12187.999999996004,
+      "baseSp": 956,
       "expModifier": 1.084727661089
     },
     "raidBoss": false,
@@ -300597,8 +300597,8 @@
     "minions": [],
     "name": "Purgatory Serpent",
     "progression": {
-      "baseExp": 3585.999999999424,
-      "baseSp": 294,
+      "baseExp": 14343.999999997697,
+      "baseSp": 1176,
       "expModifier": 1.143494897959
     },
     "raidBoss": false,
@@ -301073,8 +301073,8 @@
     "minions": [],
     "name": "Hell Keeper Medusa",
     "progression": {
-      "baseExp": 3753.000000001616,
-      "baseSp": 317,
+      "baseExp": 15012.000000006463,
+      "baseSp": 1268,
       "expModifier": 1.115636147444
     },
     "raidBoss": false,
@@ -301571,8 +301571,8 @@
     "minions": [],
     "name": "Purgatory Conjurer",
     "progression": {
-      "baseExp": 3776.000000000472,
-      "baseSp": 322,
+      "baseExp": 15104.000000001888,
+      "baseSp": 1288,
       "expModifier": 1.084745762712
     },
     "raidBoss": false,
@@ -302137,8 +302137,8 @@
     "minions": [],
     "name": "Purgatory Shadow",
     "progression": {
-      "baseExp": 4035.999999999725,
-      "baseSp": 355,
+      "baseExp": 16143.9999999989,
+      "baseSp": 1420,
       "expModifier": 1.084654662725
     },
     "raidBoss": false,
@@ -302661,8 +302661,8 @@
     "minions": [],
     "name": "Purgatory Tarantula",
     "progression": {
-      "baseExp": 4569,
-      "baseSp": 418,
+      "baseExp": 18276,
+      "baseSp": 1672,
       "expModifier": 1.115478515625
     },
     "raidBoss": false,
@@ -303137,8 +303137,8 @@
     "minions": [],
     "name": "Hell Keeper Crimson Doll",
     "progression": {
-      "baseExp": 5132.9999999995,
-      "baseSp": 488,
+      "baseExp": 20531.999999998,
+      "baseSp": 1952,
       "expModifier": 1.1434617955
     },
     "raidBoss": false,
@@ -303655,8 +303655,8 @@
     "minions": [],
     "name": "Purgatory Gargoyle",
     "progression": {
-      "baseExp": 5286.999999999184,
-      "baseSp": 510,
+      "baseExp": 21147.999999996737,
+      "baseSp": 2040,
       "expModifier": 1.143382352941
     },
     "raidBoss": false,
@@ -304178,8 +304178,8 @@
     "minions": [],
     "name": "Purgatory Liviona",
     "progression": {
-      "baseExp": 5467.999999999271,
-      "baseSp": 548,
+      "baseExp": 21871.999999997086,
+      "baseSp": 2192,
       "expModifier": 1.084705415592
     },
     "raidBoss": false,
@@ -304674,8 +304674,8 @@
     "minions": [],
     "name": "Lesser Ancient Soldier",
     "progression": {
-      "baseExp": 5944.99999999974,
-      "baseSp": 611,
+      "baseExp": 23779.99999999896,
+      "baseSp": 2444,
       "expModifier": 1.11559392006
     },
     "raidBoss": false,
@@ -305194,8 +305194,8 @@
     "minions": [],
     "name": "Lesser Ancient Scout",
     "progression": {
-      "baseExp": 5940.000000001755,
-      "baseSp": 619,
+      "baseExp": 23760.00000000702,
+      "baseSp": 2476,
       "expModifier": 1.084733382031
     },
     "raidBoss": false,
@@ -305695,8 +305695,8 @@
     "minions": [],
     "name": "Lesser Ancient Shaman",
     "progression": {
-      "baseExp": 6265.000000000319,
-      "baseSp": 669,
+      "baseExp": 25060.000000001277,
+      "baseSp": 2676,
       "expModifier": 1.08466066482
     },
     "raidBoss": false,
@@ -306196,8 +306196,8 @@
     "minions": [],
     "name": "Guardian Spirit of Ancient Holy Ground",
     "progression": {
-      "baseExp": 7136.000000001688,
-      "baseSp": 791,
+      "baseExp": 28544.000000006752,
+      "baseSp": 3164,
       "expModifier": 1.143406505368
     },
     "raidBoss": false,
@@ -306676,8 +306676,8 @@
     "minions": [],
     "name": "Lesser Ancient Warrior",
     "progression": {
-      "baseExp": 7761,
-      "baseSp": 871,
+      "baseExp": 31044,
+      "baseSp": 3484,
       "expModifier": 1.21265625
     },
     "raidBoss": false,
@@ -307163,8 +307163,8 @@
     "minions": [],
     "name": "Lith Scout",
     "progression": {
-      "baseExp": 593.99999999991,
-      "baseSp": 27,
+      "baseExp": 2375.99999999964,
+      "baseSp": 108,
       "expModifier": 1.34693877551
     },
     "raidBoss": false,
@@ -307559,8 +307559,8 @@
     "minions": [],
     "name": "Lith Witch",
     "progression": {
-      "baseExp": 690.000000000192,
-      "baseSp": 34,
+      "baseExp": 2760.000000000768,
+      "baseSp": 136,
       "expModifier": 1.197916666667
     },
     "raidBoss": false,
@@ -308043,8 +308043,8 @@
     "minions": [],
     "name": "Lith Warrior",
     "progression": {
-      "baseExp": 855.000000000117,
-      "baseSp": 43,
+      "baseExp": 3420.000000000468,
+      "baseSp": 172,
       "expModifier": 1.172839506173
     },
     "raidBoss": false,
@@ -308464,8 +308464,8 @@
     "minions": [],
     "name": "Lith Guard",
     "progression": {
-      "baseExp": 1133.0000000001,
-      "baseSp": 62,
+      "baseExp": 4532.0000000004,
+      "baseSp": 248,
       "expModifier": 1.258888888889
     },
     "raidBoss": false,
@@ -308934,8 +308934,8 @@
     "minions": [],
     "name": "Lith Medium",
     "progression": {
-      "baseExp": 1306.999999999881,
-      "baseSp": 75,
+      "baseExp": 5227.999999999523,
+      "baseSp": 300,
       "expModifier": 1.200183654729
     },
     "raidBoss": false,
@@ -309448,8 +309448,8 @@
     "minions": [],
     "name": "Lith Overlord",
     "progression": {
-      "baseExp": 1668.9999999996,
-      "baseSp": 101,
+      "baseExp": 6675.999999998399,
+      "baseSp": 404,
       "expModifier": 1.287808641975
     },
     "raidBoss": false,
@@ -310073,8 +310073,8 @@
     "minions": [],
     "name": "Lith Patrolman",
     "progression": {
-      "baseExp": 1972.000000000602,
-      "baseSp": 125,
+      "baseExp": 7888.000000002408,
+      "baseSp": 500,
       "expModifier": 1.296515450362
     },
     "raidBoss": false,
@@ -310587,8 +310587,8 @@
     "minions": [],
     "name": "Lith Shaman",
     "progression": {
-      "baseExp": 2118.000000000276,
-      "baseSp": 141,
+      "baseExp": 8472.000000001104,
+      "baseSp": 564,
       "expModifier": 1.200680272109
     },
     "raidBoss": false,
@@ -311078,8 +311078,8 @@
     "minions": [],
     "name": "Lith Commander",
     "progression": {
-      "baseExp": 2731.000000000725,
-      "baseSp": 190,
+      "baseExp": 10924.0000000029,
+      "baseSp": 760,
       "expModifier": 1.348641975309
     },
     "raidBoss": false,
@@ -311587,8 +311587,8 @@
     "minions": [],
     "name": "Lilim Butcher",
     "progression": {
-      "baseExp": 3093.000000000768,
-      "baseSp": 226,
+      "baseExp": 12372.000000003072,
+      "baseSp": 904,
       "expModifier": 1.342447916667
     },
     "raidBoss": false,
@@ -312073,8 +312073,8 @@
     "minions": [],
     "name": "Lilim Magus",
     "progression": {
-      "baseExp": 3122.999999998722,
-      "baseSp": 238,
+      "baseExp": 12491.999999994887,
+      "baseSp": 952,
       "expModifier": 1.200692041522
     },
     "raidBoss": false,
@@ -312679,8 +312679,8 @@
     "minions": [],
     "name": "Lilim Knight Errant",
     "progression": {
-      "baseExp": 4384.999999999044,
-      "baseSp": 349,
+      "baseExp": 17539.999999996176,
+      "baseSp": 1396,
       "expModifier": 1.503772290809
     },
     "raidBoss": false,
@@ -313284,8 +313284,8 @@
     "minions": [],
     "name": "Lilim Marauder",
     "progression": {
-      "baseExp": 4697.00000000001,
-      "baseSp": 390,
+      "baseExp": 18788.00000000004,
+      "baseSp": 1560,
       "expModifier": 1.44567559249
     },
     "raidBoss": false,
@@ -313908,8 +313908,8 @@
     "minions": [],
     "name": "Lilim Priest",
     "progression": {
-      "baseExp": 4322.0000000016,
-      "baseSp": 375,
+      "baseExp": 17288.0000000064,
+      "baseSp": 1500,
       "expModifier": 1.200555555556
     },
     "raidBoss": false,
@@ -314487,8 +314487,8 @@
     "minions": [],
     "name": "Lilim Knight",
     "progression": {
-      "baseExp": 6489.000000001449,
-      "baseSp": 586,
+      "baseExp": 25956.000000005795,
+      "baseSp": 2344,
       "expModifier": 1.634920634921
     },
     "raidBoss": false,
@@ -315042,8 +315042,8 @@
     "minions": [],
     "name": "Lilim Assassin",
     "progression": {
-      "baseExp": 6867.999999999468,
-      "baseSp": 646,
+      "baseExp": 27471.99999999787,
+      "baseSp": 2584,
       "expModifier": 1.576675849403
     },
     "raidBoss": false,
@@ -315639,8 +315639,8 @@
     "minions": [],
     "name": "Lilim Soldier",
     "progression": {
-      "baseExp": 5717.000000000889,
-      "baseSp": 559,
+      "baseExp": 22868.000000003558,
+      "baseSp": 2236,
       "expModifier": 1.200798151649
     },
     "raidBoss": false,
@@ -316122,8 +316122,8 @@
     "minions": [],
     "name": "Lilim Knight Captain",
     "progression": {
-      "baseExp": 8475.000000000193,
-      "baseSp": 861,
+      "baseExp": 33900.00000000077,
+      "baseSp": 3444,
       "expModifier": 1.634837962963
     },
     "raidBoss": false,
@@ -316591,8 +316591,8 @@
     "minions": [],
     "name": "Lilim Slayer",
     "progression": {
-      "baseExp": 8868.999999999374,
-      "baseSp": 935,
+      "baseExp": 35475.9999999975,
+      "baseSp": 3740,
       "expModifier": 1.576711111111
     },
     "raidBoss": false,
@@ -317056,8 +317056,8 @@
     "minions": [],
     "name": "Lilim Great Mystic",
     "progression": {
-      "baseExp": 7305.000000001703,
-      "baseSp": 799,
+      "baseExp": 29220.000000006814,
+      "baseSp": 3196,
       "expModifier": 1.200690335306
     },
     "raidBoss": false,
@@ -317591,8 +317591,8 @@
     "minions": [],
     "name": "Lilim Court Knight",
     "progression": {
-      "baseExp": 10464,
-      "baseSp": 1174,
+      "baseExp": 41856,
+      "baseSp": 4696,
       "expModifier": 1.635
     },
     "raidBoss": false,
@@ -318081,8 +318081,8 @@
     "minions": [],
     "name": "Gigant Slave",
     "progression": {
-      "baseExp": 593.99999999991,
-      "baseSp": 27,
+      "baseExp": 2375.99999999964,
+      "baseSp": 108,
       "expModifier": 1.34693877551
     },
     "raidBoss": false,
@@ -318476,8 +318476,8 @@
     "minions": [],
     "name": "Gigant Acolyte",
     "progression": {
-      "baseExp": 690.000000000192,
-      "baseSp": 34,
+      "baseExp": 2760.000000000768,
+      "baseSp": 136,
       "expModifier": 1.197916666667
     },
     "raidBoss": false,
@@ -318937,8 +318937,8 @@
     "minions": [],
     "name": "Gigant Overseer",
     "progression": {
-      "baseExp": 855.000000000117,
-      "baseSp": 43,
+      "baseExp": 3420.000000000468,
+      "baseSp": 172,
       "expModifier": 1.172839506173
     },
     "raidBoss": false,
@@ -319379,8 +319379,8 @@
     "minions": [],
     "name": "Gigant Footman",
     "progression": {
-      "baseExp": 1133.0000000001,
-      "baseSp": 62,
+      "baseExp": 4532.0000000004,
+      "baseSp": 248,
       "expModifier": 1.258888888889
     },
     "raidBoss": false,
@@ -319826,8 +319826,8 @@
     "minions": [],
     "name": "Gigant Cleric",
     "progression": {
-      "baseExp": 1306.999999999881,
-      "baseSp": 75,
+      "baseExp": 5227.999999999523,
+      "baseSp": 300,
       "expModifier": 1.200183654729
     },
     "raidBoss": false,
@@ -320339,8 +320339,8 @@
     "minions": [],
     "name": "Gigant Officer",
     "progression": {
-      "baseExp": 1668.9999999996,
-      "baseSp": 101,
+      "baseExp": 6675.999999998399,
+      "baseSp": 404,
       "expModifier": 1.287808641975
     },
     "raidBoss": false,
@@ -320919,8 +320919,8 @@
     "minions": [],
     "name": "Gigant Raider",
     "progression": {
-      "baseExp": 1972.000000000602,
-      "baseSp": 125,
+      "baseExp": 7888.000000002408,
+      "baseSp": 500,
       "expModifier": 1.296515450362
     },
     "raidBoss": false,
@@ -321410,8 +321410,8 @@
     "minions": [],
     "name": "Gigant Confessor",
     "progression": {
-      "baseExp": 2118.000000000276,
-      "baseSp": 141,
+      "baseExp": 8472.000000001104,
+      "baseSp": 564,
       "expModifier": 1.200680272109
     },
     "raidBoss": false,
@@ -321922,8 +321922,8 @@
     "minions": [],
     "name": "Gigant Commander",
     "progression": {
-      "baseExp": 2731.000000000725,
-      "baseSp": 190,
+      "baseExp": 10924.0000000029,
+      "baseSp": 760,
       "expModifier": 1.348641975309
     },
     "raidBoss": false,
@@ -322380,8 +322380,8 @@
     "minions": [],
     "name": "Nephilim Sentinel",
     "progression": {
-      "baseExp": 3093.000000000768,
-      "baseSp": 226,
+      "baseExp": 12372.000000003072,
+      "baseSp": 904,
       "expModifier": 1.342447916667
     },
     "raidBoss": false,
@@ -322843,8 +322843,8 @@
     "minions": [],
     "name": "Nephilim Priest",
     "progression": {
-      "baseExp": 3390.999999999471,
-      "baseSp": 258,
+      "baseExp": 13563.999999997883,
+      "baseSp": 1032,
       "expModifier": 1.303729334871
     },
     "raidBoss": false,
@@ -323449,8 +323449,8 @@
     "minions": [],
     "name": "Nephilim Swordsman",
     "progression": {
-      "baseExp": 4384.999999999044,
-      "baseSp": 349,
+      "baseExp": 17539.999999996176,
+      "baseSp": 1396,
       "expModifier": 1.503772290809
     },
     "raidBoss": false,
@@ -324031,8 +324031,8 @@
     "minions": [],
     "name": "Nephilim Guard",
     "progression": {
-      "baseExp": 4697.00000000001,
-      "baseSp": 390,
+      "baseExp": 18788.00000000004,
+      "baseSp": 1560,
       "expModifier": 1.44567559249
     },
     "raidBoss": false,
@@ -324654,8 +324654,8 @@
     "minions": [],
     "name": "Nephilim Bishop",
     "progression": {
-      "baseExp": 4694.000000000399,
-      "baseSp": 407,
+      "baseExp": 18776.000000001597,
+      "baseSp": 1628,
       "expModifier": 1.303888888889
     },
     "raidBoss": false,
@@ -325255,8 +325255,8 @@
     "minions": [],
     "name": "Nephilim Centurion",
     "progression": {
-      "baseExp": 6489.000000001449,
-      "baseSp": 586,
+      "baseExp": 25956.000000005795,
+      "baseSp": 2344,
       "expModifier": 1.634920634921
     },
     "raidBoss": false,
@@ -325787,8 +325787,8 @@
     "minions": [],
     "name": "Nephilim Scout",
     "progression": {
-      "baseExp": 6867.999999999468,
-      "baseSp": 646,
+      "baseExp": 27471.99999999787,
+      "baseSp": 2584,
       "expModifier": 1.576675849403
     },
     "raidBoss": false,
@@ -326383,8 +326383,8 @@
     "minions": [],
     "name": "Nephilim Archbishop",
     "progression": {
-      "baseExp": 6208.000000000992,
-      "baseSp": 607,
+      "baseExp": 24832.00000000397,
+      "baseSp": 2428,
       "expModifier": 1.303927746272
     },
     "raidBoss": false,
@@ -326894,8 +326894,8 @@
     "minions": [],
     "name": "Nephilim Praetorian",
     "progression": {
-      "baseExp": 8475.000000000193,
-      "baseSp": 861,
+      "baseExp": 33900.00000000077,
+      "baseSp": 3444,
       "expModifier": 1.634837962963
     },
     "raidBoss": false,
@@ -327406,8 +327406,8 @@
     "minions": [],
     "name": "Nephilim Royal Guard",
     "progression": {
-      "baseExp": 8868.999999999374,
-      "baseSp": 935,
+      "baseExp": 35475.9999999975,
+      "baseSp": 3740,
       "expModifier": 1.576711111111
     },
     "raidBoss": false,
@@ -327892,8 +327892,8 @@
     "minions": [],
     "name": "Nephilim Cardinal",
     "progression": {
-      "baseExp": 7933.000000001544,
-      "baseSp": 868,
+      "baseExp": 31732.000000006177,
+      "baseSp": 3472,
       "expModifier": 1.303911900066
     },
     "raidBoss": false,
@@ -328427,8 +328427,8 @@
     "minions": [],
     "name": "Nephilim Commander",
     "progression": {
-      "baseExp": 10464,
-      "baseSp": 1174,
+      "baseExp": 41856,
+      "baseSp": 4696,
       "expModifier": 1.635
     },
     "raidBoss": false,
@@ -328800,8 +328800,8 @@
     "minions": [],
     "name": "Holy Land Watchman",
     "progression": {
-      "baseExp": 521,
-      "baseSp": 23,
+      "baseExp": 2084,
+      "baseSp": 92,
       "expModifier": 1.3025
     },
     "raidBoss": false,
@@ -329146,8 +329146,8 @@
     "minions": [],
     "name": "Holy Land Seer",
     "progression": {
-      "baseExp": 611.999999999828,
-      "baseSp": 29,
+      "baseExp": 2447.999999999312,
+      "baseSp": 116,
       "expModifier": 1.264462809917
     },
     "raidBoss": false,
@@ -329557,8 +329557,8 @@
     "minions": [],
     "name": "Vault Guardian",
     "progression": {
-      "baseExp": 780,
-      "baseSp": 39,
+      "baseExp": 3120,
+      "baseSp": 156,
       "expModifier": 1.248
     },
     "raidBoss": false,
@@ -329968,8 +329968,8 @@
     "minions": [],
     "name": "Vault Seer",
     "progression": {
-      "baseExp": 830.000000000169,
-      "baseSp": 42,
+      "baseExp": 3320.000000000676,
+      "baseSp": 168,
       "expModifier": 1.138545953361
     },
     "raidBoss": false,
@@ -330379,8 +330379,8 @@
     "minions": [],
     "name": "Holy Land Monk",
     "progression": {
-      "baseExp": 1110,
-      "baseSp": 62,
+      "baseExp": 4440,
+      "baseSp": 248,
       "expModifier": 1.083984375
     },
     "raidBoss": false,
@@ -330806,8 +330806,8 @@
     "minions": [],
     "name": "Vault Sentinel",
     "progression": {
-      "baseExp": 1399.999999999825,
-      "baseSp": 83,
+      "baseExp": 5599.9999999993,
+      "baseSp": 332,
       "expModifier": 1.142857142857
     },
     "raidBoss": false,
@@ -331217,8 +331217,8 @@
     "minions": [],
     "name": "Vault Monk",
     "progression": {
-      "baseExp": 1485.000000000439,
-      "baseSp": 91,
+      "baseExp": 5940.000000001755,
+      "baseSp": 364,
       "expModifier": 1.084733382031
     },
     "raidBoss": false,
@@ -331628,8 +331628,8 @@
     "minions": [],
     "name": "Holy Land Priest",
     "progression": {
-      "baseExp": 1912.999999999284,
-      "baseSp": 127,
+      "baseExp": 7651.999999997137,
+      "baseSp": 508,
       "expModifier": 1.084467120181
     },
     "raidBoss": false,
@@ -332083,8 +332083,8 @@
     "minions": [],
     "name": "Vault Overlord",
     "progression": {
-      "baseExp": 2314.999999999575,
-      "baseSp": 161,
+      "baseExp": 9259.999999998301,
+      "baseSp": 644,
       "expModifier": 1.143209876543
     },
     "raidBoss": false,
@@ -332406,8 +332406,8 @@
     "minions": [],
     "name": "Vault Priest",
     "progression": {
-      "baseExp": 2395.999999999468,
-      "baseSp": 171,
+      "baseExp": 9583.999999997872,
+      "baseSp": 684,
       "expModifier": 1.084653689452
     },
     "raidBoss": false,
@@ -332949,8 +332949,8 @@
     "minions": [],
     "name": "Sepulcher Inquisitor",
     "progression": {
-      "baseExp": 2932.999999998848,
-      "baseSp": 227,
+      "baseExp": 11731.999999995392,
+      "baseSp": 908,
       "expModifier": 1.084689349112
     },
     "raidBoss": false,
@@ -333448,8 +333448,8 @@
     "minions": [],
     "name": "Sepulcher Archon",
     "progression": {
-      "baseExp": 3458.9999999995,
-      "baseSp": 279,
+      "baseExp": 13835.999999998001,
+      "baseSp": 1116,
       "expModifier": 1.14347107438
     },
     "raidBoss": false,
@@ -333969,8 +333969,8 @@
     "minions": [],
     "name": "Sepulcher Inquisitor",
     "progression": {
-      "baseExp": 3524.000000000868,
-      "baseSp": 293,
+      "baseExp": 14096.000000003472,
+      "baseSp": 1172,
       "expModifier": 1.084641428132
     },
     "raidBoss": false,
@@ -334424,8 +334424,8 @@
     "minions": [],
     "name": "Sepulcher Guardian",
     "progression": {
-      "baseExp": 3827.9999999988,
-      "baseSp": 332,
+      "baseExp": 15311.9999999952,
+      "baseSp": 1328,
       "expModifier": 1.063333333333
     },
     "raidBoss": false,
@@ -334794,8 +334794,8 @@
     "minions": [],
     "name": "Sepulcher Sage",
     "progression": {
-      "baseExp": 4168.999999999816,
-      "baseSp": 371,
+      "baseExp": 16675.999999999265,
+      "baseSp": 1484,
       "expModifier": 1.084547346514
     },
     "raidBoss": false,
@@ -335205,8 +335205,8 @@
     "minions": [],
     "name": "Sepulcher Guardian",
     "progression": {
-      "baseExp": 4831.000000001174,
-      "baseSp": 448,
+      "baseExp": 19324.000000004697,
+      "baseSp": 1792,
       "expModifier": 1.143431952663
     },
     "raidBoss": false,
@@ -335617,8 +335617,8 @@
     "minions": [],
     "name": "Sepulcher Sage",
     "progression": {
-      "baseExp": 5444.000000000095,
-      "baseSp": 518,
+      "baseExp": 21776.000000000382,
+      "baseSp": 2072,
       "expModifier": 1.212742258855
     },
     "raidBoss": false,
@@ -336118,8 +336118,8 @@
     "minions": [],
     "name": "Sepulcher Guard",
     "progression": {
-      "baseExp": 5210.999999999501,
-      "baseSp": 516,
+      "baseExp": 20843.999999998003,
+      "baseSp": 2064,
       "expModifier": 1.063469387755
     },
     "raidBoss": false,
@@ -336594,8 +336594,8 @@
     "minions": [],
     "name": "Sepulcher Preacher",
     "progression": {
-      "baseExp": 5622.999999998399,
-      "baseSp": 571,
+      "baseExp": 22491.999999993597,
+      "baseSp": 2284,
       "expModifier": 1.084683641975
     },
     "raidBoss": false,
@@ -337071,8 +337071,8 @@
     "minions": [],
     "name": "Sepulcher Guard",
     "progression": {
-      "baseExp": 6432.000000001874,
-      "baseSp": 678,
+      "baseExp": 25728.000000007498,
+      "baseSp": 2712,
       "expModifier": 1.143466666667
     },
     "raidBoss": false,
@@ -337571,8 +337571,8 @@
     "minions": [],
     "name": "Sepulcher Preacher",
     "progression": {
-      "baseExp": 6430.999999999575,
-      "baseSp": 696,
+      "baseExp": 25723.9999999983,
+      "baseSp": 2784,
       "expModifier": 1.084668578175
     },
     "raidBoss": false,
@@ -338006,8 +338006,8 @@
     "minions": [],
     "name": "Barrow Sentinel",
     "progression": {
-      "baseExp": 956.9999999997,
-      "baseSp": 52,
+      "baseExp": 3827.9999999988,
+      "baseSp": 208,
       "expModifier": 1.063333333333
     },
     "raidBoss": false,
@@ -338594,8 +338594,8 @@
     "minions": [],
     "name": "Barrow Monk",
     "progression": {
-      "baseExp": 1110,
-      "baseSp": 62,
+      "baseExp": 4440,
+      "baseSp": 248,
       "expModifier": 1.083984375
     },
     "raidBoss": false,
@@ -338999,8 +338999,8 @@
     "minions": [],
     "name": "Grave Sentinel",
     "progression": {
-      "baseExp": 1399.999999999825,
-      "baseSp": 83,
+      "baseExp": 5599.9999999993,
+      "baseSp": 332,
       "expModifier": 1.142857142857
     },
     "raidBoss": false,
@@ -339410,8 +339410,8 @@
     "minions": [],
     "name": "Grave Monk",
     "progression": {
-      "baseExp": 1485.000000000439,
-      "baseSp": 91,
+      "baseExp": 5940.000000001755,
+      "baseSp": 364,
       "expModifier": 1.084733382031
     },
     "raidBoss": false,
@@ -339821,8 +339821,8 @@
     "minions": [],
     "name": "Barrow Overlord",
     "progression": {
-      "baseExp": 1701,
-      "baseSp": 110,
+      "baseExp": 6804.000000000001,
+      "baseSp": 440,
       "expModifier": 1.063125
     },
     "raidBoss": false,
@@ -340255,8 +340255,8 @@
     "minions": [],
     "name": "Barrow Priest",
     "progression": {
-      "baseExp": 1912.999999999284,
-      "baseSp": 127,
+      "baseExp": 7651.999999997137,
+      "baseSp": 508,
       "expModifier": 1.084467120181
     },
     "raidBoss": false,
@@ -340754,8 +340754,8 @@
     "minions": [],
     "name": "Grave Overlord",
     "progression": {
-      "baseExp": 2314.999999999575,
-      "baseSp": 161,
+      "baseExp": 9259.999999998301,
+      "baseSp": 644,
       "expModifier": 1.143209876543
     },
     "raidBoss": false,
@@ -341297,8 +341297,8 @@
     "minions": [],
     "name": "Grave Priest",
     "progression": {
-      "baseExp": 2395.999999999468,
-      "baseSp": 171,
+      "baseExp": 9583.999999997872,
+      "baseSp": 684,
       "expModifier": 1.084653689452
     },
     "raidBoss": false,
@@ -341730,8 +341730,8 @@
     "minions": [],
     "name": "Crypt Archon",
     "progression": {
-      "baseExp": 2658,
-      "baseSp": 200,
+      "baseExp": 10632,
+      "baseSp": 800,
       "expModifier": 1.0632
     },
     "raidBoss": false,
@@ -342164,8 +342164,8 @@
     "minions": [],
     "name": "Crypt Inquisitor",
     "progression": {
-      "baseExp": 2932.999999998848,
-      "baseSp": 227,
+      "baseExp": 11731.999999995392,
+      "baseSp": 908,
       "expModifier": 1.084689349112
     },
     "raidBoss": false,
@@ -342707,8 +342707,8 @@
     "minions": [],
     "name": "Tomb Archon",
     "progression": {
-      "baseExp": 3458.9999999995,
-      "baseSp": 279,
+      "baseExp": 13835.999999998001,
+      "baseSp": 1116,
       "expModifier": 1.14347107438
     },
     "raidBoss": false,
@@ -343272,8 +343272,8 @@
     "minions": [],
     "name": "Tomb Inquisitor",
     "progression": {
-      "baseExp": 3524.000000000868,
-      "baseSp": 293,
+      "baseExp": 14096.000000003472,
+      "baseSp": 1172,
       "expModifier": 1.084641428132
     },
     "raidBoss": false,
@@ -343837,8 +343837,8 @@
     "minions": [],
     "name": "Crypt Guardian",
     "progression": {
-      "baseExp": 3827.9999999988,
-      "baseSp": 332,
+      "baseExp": 15311.9999999952,
+      "baseSp": 1328,
       "expModifier": 1.063333333333
     },
     "raidBoss": false,
@@ -344273,8 +344273,8 @@
     "minions": [],
     "name": "Crypt Sage",
     "progression": {
-      "baseExp": 4168.999999999816,
-      "baseSp": 371,
+      "baseExp": 16675.999999999265,
+      "baseSp": 1484,
       "expModifier": 1.084547346514
     },
     "raidBoss": false,
@@ -344794,8 +344794,8 @@
     "minions": [],
     "name": "Tomb Guardian",
     "progression": {
-      "baseExp": 4831.000000001174,
-      "baseSp": 448,
+      "baseExp": 19324.000000004697,
+      "baseSp": 1792,
       "expModifier": 1.143431952663
     },
     "raidBoss": false,
@@ -345359,8 +345359,8 @@
     "minions": [],
     "name": "Tomb Sage",
     "progression": {
-      "baseExp": 5444.000000000095,
-      "baseSp": 518,
+      "baseExp": 21776.000000000382,
+      "baseSp": 2072,
       "expModifier": 1.212742258855
     },
     "raidBoss": false,
@@ -345882,8 +345882,8 @@
     "minions": [],
     "name": "Crypt Guard",
     "progression": {
-      "baseExp": 5210.999999999501,
-      "baseSp": 516,
+      "baseExp": 20843.999999998003,
+      "baseSp": 2064,
       "expModifier": 1.063469387755
     },
     "raidBoss": false,
@@ -346406,8 +346406,8 @@
     "minions": [],
     "name": "Crypt Preacher",
     "progression": {
-      "baseExp": 5622.999999998399,
-      "baseSp": 571,
+      "baseExp": 22491.999999993597,
+      "baseSp": 2284,
       "expModifier": 1.084683641975
     },
     "raidBoss": false,
@@ -346833,8 +346833,8 @@
     "minions": [],
     "name": "Tomb Guard",
     "progression": {
-      "baseExp": 6432.000000001874,
-      "baseSp": 678,
+      "baseExp": 25728.000000007498,
+      "baseSp": 2712,
       "expModifier": 1.143466666667
     },
     "raidBoss": false,
@@ -347267,8 +347267,8 @@
     "minions": [],
     "name": "Tomb Preacher",
     "progression": {
-      "baseExp": 7190.000000002204,
-      "baseSp": 778,
+      "baseExp": 28760.000000008815,
+      "baseSp": 3112,
       "expModifier": 1.212683420476
     },
     "raidBoss": false,
@@ -347791,8 +347791,8 @@
     "minions": [],
     "name": "Kookaburra",
     "progression": {
-      "baseExp": 8355.99999999881,
-      "baseSp": 796,
+      "baseExp": 4177.999999999405,
+      "baseSp": 398,
       "expModifier": 1.86143907329
     },
     "raidBoss": false,
@@ -348310,8 +348310,8 @@
     "minions": [],
     "name": "Kookaburra",
     "progression": {
-      "baseExp": 8355.99999999881,
-      "baseSp": 796,
+      "baseExp": 4177.999999999405,
+      "baseSp": 398,
       "expModifier": 1.86143907329
     },
     "raidBoss": false,
@@ -348829,8 +348829,8 @@
     "minions": [],
     "name": "Kookaburra",
     "progression": {
-      "baseExp": 8355.99999999881,
-      "baseSp": 796,
+      "baseExp": 4177.999999999405,
+      "baseSp": 398,
       "expModifier": 1.86143907329
     },
     "raidBoss": false,
@@ -349348,8 +349348,8 @@
     "minions": [],
     "name": "Kookaburra",
     "progression": {
-      "baseExp": 5875.000000001266,
-      "baseSp": 560,
+      "baseExp": 2937.500000000633,
+      "baseSp": 280,
       "expModifier": 1.308754733794
     },
     "raidBoss": false,
@@ -349802,8 +349802,8 @@
     "minions": [],
     "name": "Antelope",
     "progression": {
-      "baseExp": 8608.000000001248,
-      "baseSp": 832,
+      "baseExp": 4304.000000000624,
+      "baseSp": 416,
       "expModifier": 1.861591695502
     },
     "raidBoss": false,
@@ -350255,8 +350255,8 @@
     "minions": [],
     "name": "Antelope",
     "progression": {
-      "baseExp": 8608.000000001248,
-      "baseSp": 832,
+      "baseExp": 4304.000000000624,
+      "baseSp": 416,
       "expModifier": 1.861591695502
     },
     "raidBoss": false,
@@ -350708,8 +350708,8 @@
     "minions": [],
     "name": "Antelope",
     "progression": {
-      "baseExp": 8608.000000001248,
-      "baseSp": 832,
+      "baseExp": 4304.000000000624,
+      "baseSp": 416,
       "expModifier": 1.861591695502
     },
     "raidBoss": false,
@@ -351161,8 +351161,8 @@
     "minions": [],
     "name": "Antelope",
     "progression": {
-      "baseExp": 6052.000000001089,
-      "baseSp": 584,
+      "baseExp": 3026.000000000544,
+      "baseSp": 292,
       "expModifier": 1.308823529412
     },
     "raidBoss": false,
@@ -351615,8 +351615,8 @@
     "minions": [],
     "name": "Bandersnatch",
     "progression": {
-      "baseExp": 9039.999999998745,
-      "baseSp": 884,
+      "baseExp": 4519.999999999372,
+      "baseSp": 442,
       "expModifier": 1.898760764545
     },
     "raidBoss": false,
@@ -352068,8 +352068,8 @@
     "minions": [],
     "name": "Bandersnatch",
     "progression": {
-      "baseExp": 9039.999999998745,
-      "baseSp": 884,
+      "baseExp": 4519.999999999372,
+      "baseSp": 442,
       "expModifier": 1.898760764545
     },
     "raidBoss": false,
@@ -352521,8 +352521,8 @@
     "minions": [],
     "name": "Bandersnatch",
     "progression": {
-      "baseExp": 9039.999999998745,
-      "baseSp": 884,
+      "baseExp": 4519.999999999372,
+      "baseSp": 442,
       "expModifier": 1.898760764545
     },
     "raidBoss": false,
@@ -352974,8 +352974,8 @@
     "minions": [],
     "name": "Bandersnatch",
     "progression": {
-      "baseExp": 6356.000000000034,
-      "baseSp": 622,
+      "baseExp": 3178.000000000017,
+      "baseSp": 311,
       "expModifier": 1.335013652594
     },
     "raidBoss": false,
@@ -353516,8 +353516,8 @@
     "minions": [],
     "name": "Buffalo",
     "progression": {
-      "baseExp": 9121.0000000021,
-      "baseSp": 904,
+      "baseExp": 4560.50000000105,
+      "baseSp": 452,
       "expModifier": 1.861428571429
     },
     "raidBoss": false,
@@ -354057,8 +354057,8 @@
     "minions": [],
     "name": "Buffalo",
     "progression": {
-      "baseExp": 9121.0000000021,
-      "baseSp": 904,
+      "baseExp": 4560.50000000105,
+      "baseSp": 452,
       "expModifier": 1.861428571429
     },
     "raidBoss": false,
@@ -354598,8 +354598,8 @@
     "minions": [],
     "name": "Buffalo",
     "progression": {
-      "baseExp": 9121.0000000021,
-      "baseSp": 904,
+      "baseExp": 4560.50000000105,
+      "baseSp": 452,
       "expModifier": 1.861428571429
     },
     "raidBoss": false,
@@ -355139,8 +355139,8 @@
     "minions": [],
     "name": "Buffalo",
     "progression": {
-      "baseExp": 6412.9999999996,
-      "baseSp": 636,
+      "baseExp": 3206.4999999998,
+      "baseSp": 318,
       "expModifier": 1.308775510204
     },
     "raidBoss": false,
@@ -355593,8 +355593,8 @@
     "minions": [],
     "name": "Grendel",
     "progression": {
-      "baseExp": 9571.999999999382,
-      "baseSp": 960,
+      "baseExp": 4785.999999999691,
+      "baseSp": 480,
       "expModifier": 1.898829597302
     },
     "raidBoss": false,
@@ -356047,8 +356047,8 @@
     "minions": [],
     "name": "Grendel",
     "progression": {
-      "baseExp": 9571.999999999382,
-      "baseSp": 960,
+      "baseExp": 4785.999999999691,
+      "baseSp": 480,
       "expModifier": 1.898829597302
     },
     "raidBoss": false,
@@ -356501,8 +356501,8 @@
     "minions": [],
     "name": "Grendel",
     "progression": {
-      "baseExp": 9571.999999999382,
-      "baseSp": 960,
+      "baseExp": 4785.999999999691,
+      "baseSp": 480,
       "expModifier": 1.898829597302
     },
     "raidBoss": false,
@@ -356955,8 +356955,8 @@
     "minions": [],
     "name": "Grendel",
     "progression": {
-      "baseExp": 6730.000000001334,
-      "baseSp": 676,
+      "baseExp": 3365.000000000667,
+      "baseSp": 338,
       "expModifier": 1.335052568935
     },
     "raidBoss": false,
@@ -357410,8 +357410,8 @@
     "minions": [],
     "name": "Canyon Antelope",
     "progression": {
-      "baseExp": 6893.000000002208,
-      "baseSp": 666,
+      "baseExp": 13786.000000004417,
+      "baseSp": 1332,
       "expModifier": 1.490700692042
     },
     "raidBoss": false,
@@ -357863,8 +357863,8 @@
     "minions": [],
     "name": "Canyon Antelope Slave",
     "progression": {
-      "baseExp": 7310.999999998935,
-      "baseSp": 715,
+      "baseExp": 14621.99999999787,
+      "baseSp": 1430,
       "expModifier": 1.535601764335
     },
     "raidBoss": false,
@@ -358273,8 +358273,8 @@
     "minions": [],
     "name": "Canyon Bandersnatch",
     "progression": {
-      "baseExp": 7244.0000000011,
-      "baseSp": 718,
+      "baseExp": 21732.0000000033,
+      "baseSp": 2154,
       "expModifier": 1.478367346939
     },
     "raidBoss": false,
@@ -358682,8 +358682,8 @@
     "minions": [],
     "name": "Canyon Bandersnatch Slave",
     "progression": {
-      "baseExp": 7274.999999997844,
-      "baseSp": 730,
+      "baseExp": 21824.99999999353,
+      "baseSp": 2190,
       "expModifier": 1.443166038484
     },
     "raidBoss": false,
@@ -359247,8 +359247,8 @@
     "minions": [],
     "name": "Eye of Restrainer",
     "progression": {
-      "baseExp": 7022.999999998191,
-      "baseSp": 705,
+      "baseExp": 14045.999999996382,
+      "baseSp": 1410,
       "expModifier": 1.393175957151
     },
     "raidBoss": false,
@@ -359725,8 +359725,8 @@
     "minions": [],
     "name": "Buffalo Slave",
     "progression": {
-      "baseExp": 7480.999999997568,
-      "baseSp": 760,
+      "baseExp": 22442.999999992702,
+      "baseSp": 2280,
       "expModifier": 1.443094135802
     },
     "raidBoss": false,
@@ -360158,8 +360158,8 @@
     "minions": [],
     "name": "Eye of Guide",
     "progression": {
-      "baseExp": 7360.000000001281,
-      "baseSp": 747,
+      "baseExp": 22080.00000000384,
+      "baseSp": 2241,
       "expModifier": 1.41975308642
     },
     "raidBoss": false,
@@ -360594,8 +360594,8 @@
     "minions": [],
     "name": "Gaze of Nightmare",
     "progression": {
-      "baseExp": 6624.000000001151,
-      "baseSp": 673,
+      "baseExp": 26496.000000004606,
+      "baseSp": 2692,
       "expModifier": 1.277777777778
     },
     "raidBoss": false,
@@ -361053,8 +361053,8 @@
     "minions": [],
     "name": "Eye of Watchman",
     "progression": {
-      "baseExp": 7105.000000001119,
-      "baseSp": 731,
+      "baseExp": 21315.000000003354,
+      "baseSp": 2193,
       "expModifier": 1.333270782511
     },
     "raidBoss": false,
@@ -361536,8 +361536,8 @@
     "minions": [],
     "name": "Homunculus",
     "progression": {
-      "baseExp": 7184.99999999901,
-      "baseSp": 739,
+      "baseExp": 21554.999999997028,
+      "baseSp": 2217,
       "expModifier": 1.348282979921
     },
     "raidBoss": false,
@@ -361993,8 +361993,8 @@
     "minions": [],
     "name": "Grendel Slave",
     "progression": {
-      "baseExp": 7918.000000000296,
-      "baseSp": 825,
+      "baseExp": 31672.000000001186,
+      "baseSp": 3300,
       "expModifier": 1.445945945946
     },
     "raidBoss": false,
@@ -362450,8 +362450,8 @@
     "minions": [],
     "name": "Eye of Pilgrim",
     "progression": {
-      "baseExp": 7774.999999998256,
-      "baseSp": 810,
+      "baseExp": 23324.99999999477,
+      "baseSp": 2430,
       "expModifier": 1.419831994156
     },
     "raidBoss": false,
@@ -362886,8 +362886,8 @@
     "minions": [],
     "name": "Disciples of Protection",
     "progression": {
-      "baseExp": 8441.00000000033,
-      "baseSp": 880,
+      "baseExp": 42205.000000001644,
+      "baseSp": 4400,
       "expModifier": 1.541453615778
     },
     "raidBoss": false,
@@ -363345,8 +363345,8 @@
     "minions": [],
     "name": "Elder Homunculus",
     "progression": {
-      "baseExp": 7394.000000000626,
-      "baseSp": 780,
+      "baseExp": 29576.000000002503,
+      "baseSp": 3120,
       "expModifier": 1.314488888889
     },
     "raidBoss": false,
@@ -363825,8 +363825,8 @@
     "minions": [],
     "name": "Disciples of Punishment",
     "progression": {
-      "baseExp": 7859.999999998126,
-      "baseSp": 829,
+      "baseExp": 39299.99999999063,
+      "baseSp": 4145,
       "expModifier": 1.397333333333
     },
     "raidBoss": false,
@@ -364307,8 +364307,8 @@
     "minions": [],
     "name": "Disciples of Punishment",
     "progression": {
-      "baseExp": 8192.0000000025,
-      "baseSp": 864,
+      "baseExp": 40960.0000000125,
+      "baseSp": 4320,
       "expModifier": 1.456355555556
     },
     "raidBoss": false,
@@ -364768,8 +364768,8 @@
     "minions": [],
     "name": "Disciples of Authority",
     "progression": {
-      "baseExp": 8071.000000000863,
-      "baseSp": 863,
+      "baseExp": 40355.000000004315,
+      "baseSp": 4315,
       "expModifier": 1.397333795014
     },
     "raidBoss": false,
@@ -365228,8 +365228,8 @@
     "minions": [],
     "name": "Disciples of Authority",
     "progression": {
-      "baseExp": 7440.999999998928,
-      "baseSp": 795,
+      "baseExp": 37204.99999999464,
+      "baseSp": 3975,
       "expModifier": 1.288261772853
     },
     "raidBoss": false,
@@ -365642,8 +365642,8 @@
     "minions": [],
     "name": "Eye of Ruler",
     "progression": {
-      "baseExp": 10751.999999999904,
-      "baseSp": 1121,
+      "baseExp": 32255.99999999971,
+      "baseSp": 3363,
       "expModifier": 1.963476990504
     },
     "raidBoss": false,
@@ -366037,8 +366037,8 @@
     "minions": [],
     "name": "Hot Springs Bandersnatchling",
     "progression": {
-      "baseExp": 8608.999999998754,
-      "baseSp": 886,
+      "baseExp": 17217.999999997508,
+      "baseSp": 1772,
       "expModifier": 1.615500093826
     },
     "raidBoss": false,
@@ -366477,8 +366477,8 @@
     "minions": [],
     "name": "Hot Springs Buffalo",
     "progression": {
-      "baseExp": 8970.999999998532,
-      "baseSp": 923,
+      "baseExp": 17941.999999997064,
+      "baseSp": 1846,
       "expModifier": 1.683430287108
     },
     "raidBoss": false,
@@ -366915,8 +366915,8 @@
     "minions": [],
     "name": "Hot Springs Flava",
     "progression": {
-      "baseExp": 10556.00000000025,
-      "baseSp": 1100,
+      "baseExp": 21112.0000000005,
+      "baseSp": 2200,
       "expModifier": 1.927684441198
     },
     "raidBoss": false,
@@ -367335,8 +367335,8 @@
     "minions": [],
     "name": "Hot Springs Atroxspawn",
     "progression": {
-      "baseExp": 8845.999999998332,
-      "baseSp": 922,
+      "baseExp": 17691.999999996664,
+      "baseSp": 1844,
       "expModifier": 1.615412710007
     },
     "raidBoss": false,
@@ -367907,8 +367907,8 @@
     "minions": [],
     "name": "Hot Springs Antelope",
     "progression": {
-      "baseExp": 9247.000000001372,
-      "baseSp": 964,
+      "baseExp": 18494.000000002743,
+      "baseSp": 1928,
       "expModifier": 1.688641344047
     },
     "raidBoss": false,
@@ -368323,8 +368323,8 @@
     "minions": [],
     "name": "Hot Springs Nepenthes",
     "progression": {
-      "baseExp": 11635.999999998749,
-      "baseSp": 1227,
+      "baseExp": 23271.999999997497,
+      "baseSp": 2454,
       "expModifier": 2.068622222222
     },
     "raidBoss": false,
@@ -368744,8 +368744,8 @@
     "minions": [],
     "name": "Hot Springs Yeti",
     "progression": {
-      "baseExp": 9470.0000000025,
-      "baseSp": 999,
+      "baseExp": 18940.000000005,
+      "baseSp": 1998,
       "expModifier": 1.683555555556
     },
     "raidBoss": false,
@@ -369160,8 +369160,8 @@
     "minions": [],
     "name": "Hot Springs Atrox",
     "progression": {
-      "baseExp": 11134.999999998416,
-      "baseSp": 1190,
+      "baseExp": 22269.99999999683,
+      "baseSp": 2380,
       "expModifier": 1.927804709141
     },
     "raidBoss": false,
@@ -369601,8 +369601,8 @@
     "minions": [],
     "name": "Hot Springs Bandersnatch",
     "progression": {
-      "baseExp": 11134.999999998416,
-      "baseSp": 1190,
+      "baseExp": 22269.99999999683,
+      "baseSp": 2380,
       "expModifier": 1.927804709141
     },
     "raidBoss": false,
@@ -370020,8 +370020,8 @@
     "minions": [],
     "name": "Hot Springs Grendel",
     "progression": {
-      "baseExp": 9752.999999997488,
-      "baseSp": 1042,
+      "baseExp": 19505.999999994976,
+      "baseSp": 2084,
       "expModifier": 1.688538781163
     },
     "raidBoss": false,
@@ -370502,8 +370502,8 @@
     "minions": [],
     "name": "Ketra Orc Footman",
     "progression": {
-      "baseExp": 9323.000000002843,
-      "baseSp": 1009,
+      "baseExp": 18646.000000005686,
+      "baseSp": 2018,
       "expModifier": 1.572440546467
     },
     "raidBoss": false,
@@ -370937,8 +370937,8 @@
     "minions": [],
     "name": "Ketra's War Hound",
     "progression": {
-      "baseExp": 9014.999999997222,
-      "baseSp": 975,
+      "baseExp": 18029.999999994445,
+      "baseSp": 1950,
       "expModifier": 1.520492494518
     },
     "raidBoss": false,
@@ -371370,8 +371370,8 @@
     "minions": [],
     "name": "Grazing Kookaburra",
     "progression": {
-      "baseExp": 9014.999999997222,
-      "baseSp": 975,
+      "baseExp": 18029.999999994445,
+      "baseSp": 1950,
       "expModifier": 1.520492494518
     },
     "raidBoss": false,
@@ -371802,8 +371802,8 @@
     "minions": [],
     "name": "Ketra Orc Raider",
     "progression": {
-      "baseExp": 10240.000000001459,
-      "baseSp": 1120,
+      "baseExp": 20480.000000002918,
+      "baseSp": 2240,
       "expModifier": 1.683103221565
     },
     "raidBoss": false,
@@ -372306,8 +372306,8 @@
     "minions": [],
     "name": "Ketra Orc Scout",
     "progression": {
-      "baseExp": 9816.000000000948,
-      "baseSp": 1074,
+      "baseExp": 19632.000000001895,
+      "baseSp": 2148,
       "expModifier": 1.613412228797
     },
     "raidBoss": false,
@@ -372761,8 +372761,8 @@
     "minions": [],
     "name": "Ketra Orc Shaman",
     "progression": {
-      "baseExp": 9954.999999999913,
-      "baseSp": 1103,
+      "baseExp": 19909.999999999825,
+      "baseSp": 2206,
       "expModifier": 1.595096939593
     },
     "raidBoss": false,
@@ -373242,8 +373242,8 @@
     "minions": [],
     "name": "Grazing Kookaburra",
     "progression": {
-      "baseExp": 9488.999999997242,
-      "baseSp": 1051,
+      "baseExp": 18977.999999994485,
+      "baseSp": 2102,
       "expModifier": 1.520429418362
     },
     "raidBoss": false,
@@ -373762,8 +373762,8 @@
     "minions": [],
     "name": "Ketra Orc Warrior",
     "progression": {
-      "baseExp": 9304,
-      "baseSp": 1044,
+      "baseExp": 18608,
+      "baseSp": 2088,
       "expModifier": 1.45375
     },
     "raidBoss": false,
@@ -374197,8 +374197,8 @@
     "minions": [],
     "name": "Ketra Orc Lieutenant",
     "progression": {
-      "baseExp": 10420,
-      "baseSp": 1169,
+      "baseExp": 20840,
+      "baseSp": 2338,
       "expModifier": 1.628125
     },
     "raidBoss": false,
@@ -374657,8 +374657,8 @@
     "minions": [],
     "name": "Grazing Windsus",
     "progression": {
-      "baseExp": 9975.999999999312,
-      "baseSp": 1133,
+      "baseExp": 19951.999999998625,
+      "baseSp": 2266,
       "expModifier": 1.520499923792
     },
     "raidBoss": false,
@@ -375111,8 +375111,8 @@
     "minions": [],
     "name": "Ketra Orc Medium",
     "progression": {
-      "baseExp": 14933.000000002588,
-      "baseSp": 1695,
+      "baseExp": 29866.000000005177,
+      "baseSp": 3390,
       "expModifier": 2.27602499619
     },
     "raidBoss": false,
@@ -375499,8 +375499,8 @@
     "minions": [],
     "name": "Ketra Orc Elite Soldier",
     "progression": {
-      "baseExp": 9624.999999998376,
-      "baseSp": 1106,
+      "baseExp": 19249.99999999675,
+      "baseSp": 2212,
       "expModifier": 1.431439619274
     },
     "raidBoss": false,
@@ -375978,8 +375978,8 @@
     "minions": [],
     "name": "Ketra Orc White Captain",
     "progression": {
-      "baseExp": 11317.000000002032,
-      "baseSp": 1300,
+      "baseExp": 22634.000000004064,
+      "baseSp": 2600,
       "expModifier": 1.683075550268
     },
     "raidBoss": false,
@@ -376438,8 +376438,8 @@
     "minions": [],
     "name": "Grazing Elder Buffalo",
     "progression": {
-      "baseExp": 10474.99999999681,
-      "baseSp": 1217,
+      "baseExp": 20949.99999999362,
+      "baseSp": 2434,
       "expModifier": 1.52053999129
     },
     "raidBoss": false,
@@ -376958,8 +376958,8 @@
     "minions": [],
     "name": "Ketra Orc Seer",
     "progression": {
-      "baseExp": 13782.999999998307,
-      "baseSp": 1602,
+      "baseExp": 27565.999999996613,
+      "baseSp": 3204,
       "expModifier": 2.000725794745
     },
     "raidBoss": false,
@@ -377395,8 +377395,8 @@
     "minions": [],
     "name": "Ketra Orc General",
     "progression": {
-      "baseExp": 10493.999999998705,
-      "baseSp": 1234,
+      "baseExp": 20987.99999999741,
+      "baseSp": 2468,
       "expModifier": 1.487244897959
     },
     "raidBoss": false,
@@ -377921,8 +377921,8 @@
     "minions": [],
     "name": "Ketra Orc Battalion Commander",
     "progression": {
-      "baseExp": 10493.999999998705,
-      "baseSp": 1234,
+      "baseExp": 20987.99999999741,
+      "baseSp": 2468,
       "expModifier": 1.487244897959
     },
     "raidBoss": false,
@@ -378425,8 +378425,8 @@
     "minions": [],
     "name": "Grazing Elder Kookaburra",
     "progression": {
-      "baseExp": 10986.000000000051,
-      "baseSp": 1307,
+      "baseExp": 21972.000000000102,
+      "baseSp": 2614,
       "expModifier": 1.520553633218
     },
     "raidBoss": false,
@@ -378901,8 +378901,8 @@
     "minions": [],
     "name": "Ketra Orc Grand Seer",
     "progression": {
-      "baseExp": 14456.000000000076,
-      "baseSp": 1720,
+      "baseExp": 28912.000000000153,
+      "baseSp": 3440,
       "expModifier": 2.000830449827
     },
     "raidBoss": false,
@@ -379295,8 +379295,8 @@
     "minions": [],
     "name": "Ketra Commander",
     "progression": {
-      "baseExp": 16399.999999997963,
-      "baseSp": 1862,
+      "baseExp": 32799.999999995925,
+      "baseSp": 3724,
       "expModifier": 2.499618960524
     },
     "raidBoss": false,
@@ -379710,8 +379710,8 @@
     "minions": [],
     "name": "Ketra's Head Shaman",
     "progression": {
-      "baseExp": 12360.000000002776,
-      "baseSp": 1471,
+      "baseExp": 24720.00000000555,
+      "baseSp": 2942,
       "expModifier": 1.710726643599
     },
     "raidBoss": false,
@@ -380165,8 +380165,8 @@
     "minions": [],
     "name": "Ketra Prophet",
     "progression": {
-      "baseExp": 18778.99999999942,
-      "baseSp": 2289,
+      "baseExp": 37557.99999999884,
+      "baseSp": 4578,
       "expModifier": 2.481041088651
     },
     "raidBoss": false,
@@ -380580,8 +380580,8 @@
     "minions": [],
     "name": "Varka Silenos Recruit",
     "progression": {
-      "baseExp": 9850.999999999774,
-      "baseSp": 1066,
+      "baseExp": 19701.99999999955,
+      "baseSp": 2132,
       "expModifier": 1.661494349806
     },
     "raidBoss": false,
@@ -381015,8 +381015,8 @@
     "minions": [],
     "name": "Varka Silenos Footman",
     "progression": {
-      "baseExp": 8487.000000000291,
-      "baseSp": 918,
+      "baseExp": 16974.000000000582,
+      "baseSp": 1836,
       "expModifier": 1.431438691179
     },
     "raidBoss": false,
@@ -381514,8 +381514,8 @@
     "minions": [],
     "name": "Grazing Antelope",
     "progression": {
-      "baseExp": 9014.999999997222,
-      "baseSp": 975,
+      "baseExp": 18029.999999994445,
+      "baseSp": 1950,
       "expModifier": 1.520492494518
     },
     "raidBoss": false,
@@ -381924,8 +381924,8 @@
     "minions": [],
     "name": "Varka Silenos Scout",
     "progression": {
-      "baseExp": 9905.99999999922,
-      "baseSp": 1084,
+      "baseExp": 19811.99999999844,
+      "baseSp": 2168,
       "expModifier": 1.628205128205
     },
     "raidBoss": false,
@@ -382384,8 +382384,8 @@
     "minions": [],
     "name": "Varka Silenos Hunter",
     "progression": {
-      "baseExp": 9816.000000000948,
-      "baseSp": 1074,
+      "baseExp": 19632.000000001895,
+      "baseSp": 2148,
       "expModifier": 1.613412228797
     },
     "raidBoss": false,
@@ -382795,8 +382795,8 @@
     "minions": [],
     "name": "Varka Silenos Shaman",
     "progression": {
-      "baseExp": 9491.99999999872,
-      "baseSp": 1052,
+      "baseExp": 18983.99999999744,
+      "baseSp": 2104,
       "expModifier": 1.520910110559
     },
     "raidBoss": false,
@@ -383232,8 +383232,8 @@
     "minions": [],
     "name": "Grazing Nepenthes",
     "progression": {
-      "baseExp": 9488.999999997242,
-      "baseSp": 1051,
+      "baseExp": 18977.999999994485,
+      "baseSp": 2102,
       "expModifier": 1.520429418362
     },
     "raidBoss": false,
@@ -383644,8 +383644,8 @@
     "minions": [],
     "name": "Varka Silenos Priest",
     "progression": {
-      "baseExp": 10277,
-      "baseSp": 1153,
+      "baseExp": 20554,
+      "baseSp": 2306,
       "expModifier": 1.60578125
     },
     "raidBoss": false,
@@ -384079,8 +384079,8 @@
     "minions": [],
     "name": "Varka Silenos Warrior",
     "progression": {
-      "baseExp": 10771,
-      "baseSp": 1209,
+      "baseExp": 21542,
+      "baseSp": 2418,
       "expModifier": 1.68296875
     },
     "raidBoss": false,
@@ -384517,8 +384517,8 @@
     "minions": [],
     "name": "Grazing Bandersnatch",
     "progression": {
-      "baseExp": 9975.999999999312,
-      "baseSp": 1133,
+      "baseExp": 19951.999999998625,
+      "baseSp": 2266,
       "expModifier": 1.520499923792
     },
     "raidBoss": false,
@@ -384927,8 +384927,8 @@
     "minions": [],
     "name": "Varka Silenos Medium",
     "progression": {
-      "baseExp": 15891.999999998903,
-      "baseSp": 1804,
+      "baseExp": 31783.999999997806,
+      "baseSp": 3608,
       "expModifier": 2.422191739064
     },
     "raidBoss": false,
@@ -385409,8 +385409,8 @@
     "minions": [],
     "name": "Varka Silenos Magus",
     "progression": {
-      "baseExp": 9624.999999998376,
-      "baseSp": 1106,
+      "baseExp": 19249.99999999675,
+      "baseSp": 2212,
       "expModifier": 1.431439619274
     },
     "raidBoss": false,
@@ -385866,8 +385866,8 @@
     "minions": [],
     "name": "Varka Silenos Officer",
     "progression": {
-      "baseExp": 11317.000000002032,
-      "baseSp": 1300,
+      "baseExp": 22634.000000004064,
+      "baseSp": 2600,
       "expModifier": 1.683075550268
     },
     "raidBoss": false,
@@ -386414,8 +386414,8 @@
     "minions": [],
     "name": "Grazing Flava",
     "progression": {
-      "baseExp": 10474.99999999681,
-      "baseSp": 1217,
+      "baseExp": 20949.99999999362,
+      "baseSp": 2434,
       "expModifier": 1.52053999129
     },
     "raidBoss": false,
@@ -386936,8 +386936,8 @@
     "minions": [],
     "name": "Varka Silenos Seer",
     "progression": {
-      "baseExp": 13271.999999999309,
-      "baseSp": 1543,
+      "baseExp": 26543.999999998618,
+      "baseSp": 3086,
       "expModifier": 1.926549571781
     },
     "raidBoss": false,
@@ -387395,8 +387395,8 @@
     "minions": [],
     "name": "Varka Silenos Great Magus",
     "progression": {
-      "baseExp": 11525.00000000328,
-      "baseSp": 1355,
+      "baseExp": 23050.00000000656,
+      "baseSp": 2710,
       "expModifier": 1.633361678005
     },
     "raidBoss": false,
@@ -387855,8 +387855,8 @@
     "minions": [],
     "name": "Varka Silenos General",
     "progression": {
-      "baseExp": 12717.999999997488,
-      "baseSp": 1496,
+      "baseExp": 25435.999999994976,
+      "baseSp": 2992,
       "expModifier": 1.802437641723
     },
     "raidBoss": false,
@@ -388271,8 +388271,8 @@
     "minions": [],
     "name": "Grazing Elder Antelope",
     "progression": {
-      "baseExp": 10986.000000000051,
-      "baseSp": 1307,
+      "baseExp": 21972.000000000102,
+      "baseSp": 2614,
       "expModifier": 1.520553633218
     },
     "raidBoss": false,
@@ -388703,8 +388703,8 @@
     "minions": [],
     "name": "Varka Silenos Great Seer",
     "progression": {
-      "baseExp": 16964.000000002525,
-      "baseSp": 2019,
+      "baseExp": 33928.00000000505,
+      "baseSp": 4038,
       "expModifier": 2.347958477509
     },
     "raidBoss": false,
@@ -389141,8 +389141,8 @@
     "minions": [],
     "name": "Varka's Commander",
     "progression": {
-      "baseExp": 15953.000000000031,
-      "baseSp": 1811,
+      "baseExp": 31906.000000000062,
+      "baseSp": 3622,
       "expModifier": 2.431489102271
     },
     "raidBoss": false,
@@ -389556,8 +389556,8 @@
     "minions": [],
     "name": "Varka's Head Magus",
     "progression": {
-      "baseExp": 12360.000000002776,
-      "baseSp": 1471,
+      "baseExp": 24720.00000000555,
+      "baseSp": 2942,
       "expModifier": 1.710726643599
     },
     "raidBoss": false,
@@ -389989,8 +389989,8 @@
     "minions": [],
     "name": "Varka's Prophet",
     "progression": {
-      "baseExp": 18081.9999999966,
-      "baseSp": 2204,
+      "baseExp": 36163.9999999932,
+      "baseSp": 4408,
       "expModifier": 2.388954947813
     },
     "raidBoss": false,
@@ -390404,8 +390404,8 @@
     "minions": [],
     "name": "Scarlet Stakato Walker",
     "progression": {
-      "baseExp": 7054.000000003009,
-      "baseSp": 772,
+      "baseExp": 35270.00000001505,
+      "baseSp": 3860,
       "expModifier": 1.159434582512
     },
     "raidBoss": false,
@@ -390926,8 +390926,8 @@
     "minions": [],
     "name": "Scarlet Stakato Soldier",
     "progression": {
-      "baseExp": 6903.999999997776,
-      "baseSp": 755,
+      "baseExp": 34519.99999998888,
+      "baseSp": 3775,
       "expModifier": 1.134779750164
     },
     "raidBoss": false,
@@ -391338,8 +391338,8 @@
     "minions": [],
     "name": "Scarlet Stakato Noble",
     "progression": {
-      "baseExp": 9829.00000000029,
-      "baseSp": 1089,
+      "baseExp": 49145.00000000145,
+      "baseSp": 5445,
       "expModifier": 1.574907867329
     },
     "raidBoss": false,
@@ -391815,8 +391815,8 @@
     "minions": [],
     "name": "Tepra Scorpion",
     "progression": {
-      "baseExp": 7097.999999999623,
-      "baseSp": 786,
+      "baseExp": 35489.999999998116,
+      "baseSp": 3930,
       "expModifier": 1.137317737542
     },
     "raidBoss": false,
@@ -392273,8 +392273,8 @@
     "minions": [],
     "name": "Tepra Scarab",
     "progression": {
-      "baseExp": 7236.999999997326,
-      "baseSp": 802,
+      "baseExp": 36184.99999998663,
+      "baseSp": 4010,
       "expModifier": 1.159589809325
     },
     "raidBoss": false,
@@ -392709,8 +392709,8 @@
     "minions": [],
     "name": "Assassin Beetle",
     "progression": {
-      "baseExp": 8414,
-      "baseSp": 944,
+      "baseExp": 42070,
+      "baseSp": 4720,
       "expModifier": 1.3146875
     },
     "raidBoss": false,
@@ -393167,8 +393167,8 @@
     "minions": [],
     "name": "Mercenary of Destruction",
     "progression": {
-      "baseExp": 10380,
-      "baseSp": 1165,
+      "baseExp": 51900,
+      "baseSp": 5825,
       "expModifier": 1.621875
     },
     "raidBoss": false,
@@ -393651,8 +393651,8 @@
     "minions": [],
     "name": "Knight of Destruction",
     "progression": {
-      "baseExp": 10396,
-      "baseSp": 1167,
+      "baseExp": 51980,
+      "baseSp": 5835,
       "expModifier": 1.624375
     },
     "raidBoss": false,
@@ -394110,8 +394110,8 @@
     "minions": [],
     "name": "Necromancer of Destruction",
     "progression": {
-      "baseExp": 8914.999999997348,
-      "baseSp": 1012,
+      "baseExp": 44574.99999998674,
+      "baseSp": 5060,
       "expModifier": 1.358786770309
     },
     "raidBoss": false,
@@ -394592,8 +394592,8 @@
     "minions": [],
     "name": "Lavastone Golem",
     "progression": {
-      "baseExp": 8584.999999997597,
-      "baseSp": 975,
+      "baseExp": 42924.99999998799,
+      "baseSp": 4875,
       "expModifier": 1.308489559518
     },
     "raidBoss": false,
@@ -395050,8 +395050,8 @@
     "minions": [],
     "name": "Magma Golem",
     "progression": {
-      "baseExp": 9174.000000000951,
-      "baseSp": 1041,
+      "baseExp": 45870.00000000476,
+      "baseSp": 5205,
       "expModifier": 1.398262459991
     },
     "raidBoss": false,
@@ -395552,8 +395552,8 @@
     "minions": [],
     "name": "Arimanes of Destruction",
     "progression": {
-      "baseExp": 7313.999999999875,
-      "baseSp": 840,
+      "baseExp": 36569.999999999374,
+      "baseSp": 4200,
       "expModifier": 1.087745389649
     },
     "raidBoss": false,
@@ -396122,8 +396122,8 @@
     "minions": [],
     "name": "Iblis of Destruction",
     "progression": {
-      "baseExp": 9221.00000000286,
-      "baseSp": 1059,
+      "baseExp": 55326.00000001716,
+      "baseSp": 6354,
       "expModifier": 1.371356335515
     },
     "raidBoss": false,
@@ -396626,8 +396626,8 @@
     "minions": [],
     "name": "Balrog of Destruction",
     "progression": {
-      "baseExp": 9888.00000000291,
-      "baseSp": 1149,
+      "baseExp": 59328.00000001746,
+      "baseSp": 6894,
       "expModifier": 1.435331688199
     },
     "raidBoss": false,
@@ -397150,8 +397150,8 @@
     "minions": [],
     "name": "Ashuras of Destruction",
     "progression": {
-      "baseExp": 11407.999999996655,
-      "baseSp": 1342,
+      "baseExp": 68447.99999997993,
+      "baseSp": 8052,
       "expModifier": 1.616780045351
     },
     "raidBoss": false,
@@ -397631,8 +397631,8 @@
     "minions": [],
     "name": "Lavasillisk",
     "progression": {
-      "baseExp": 7885.999999999579,
-      "baseSp": 916,
+      "baseExp": 47315.999999997475,
+      "baseSp": 5496,
       "expModifier": 1.144723472202
     },
     "raidBoss": false,
@@ -398174,8 +398174,8 @@
     "minions": [],
     "name": "Blazing Ifrit",
     "progression": {
-      "baseExp": 11250.999999999647,
-      "baseSp": 1323,
+      "baseExp": 67505.99999999788,
+      "baseSp": 7938,
       "expModifier": 1.594529478458
     },
     "raidBoss": false,
@@ -398588,8 +398588,8 @@
     "minions": [],
     "name": "Magma Drake",
     "progression": {
-      "baseExp": 9494.000000003076,
-      "baseSp": 1130,
+      "baseExp": 56964.00000001845,
+      "baseSp": 6780,
       "expModifier": 1.314048442907
     },
     "raidBoss": false,
@@ -399002,8 +399002,8 @@
     "minions": [],
     "name": "Lavasaurus",
     "progression": {
-      "baseExp": 8988.000000000224,
-      "baseSp": 996,
+      "baseExp": 44940.00000000112,
+      "baseSp": 4980,
       "expModifier": 1.440153821503
     },
     "raidBoss": false,
@@ -399395,8 +399395,8 @@
     "minions": [],
     "name": "Elder Lavasaurus",
     "progression": {
-      "baseExp": 9759.999999998081,
-      "baseSp": 1134,
+      "baseExp": 58559.99999998849,
+      "baseSp": 6804,
       "expModifier": 1.41675134272
     },
     "raidBoss": false,
@@ -399854,8 +399854,8 @@
     "minions": [],
     "name": "Carrion Scarab",
     "progression": {
-      "baseExp": 8182.000000000008,
-      "baseSp": 895,
+      "baseExp": 24546.000000000025,
+      "baseSp": 2685,
       "expModifier": 1.344838921762
     },
     "raidBoss": false,
@@ -400315,8 +400315,8 @@
     "minions": [],
     "name": "Carrion Scarab",
     "progression": {
-      "baseExp": 7103.000000002608,
-      "baseSp": 777,
+      "baseExp": 21309.000000007825,
+      "baseSp": 2331,
       "expModifier": 1.167488494412
     },
     "raidBoss": false,
@@ -400707,8 +400707,8 @@
     "minions": [],
     "name": "Soldier Scarab",
     "progression": {
-      "baseExp": 6743.999999997468,
-      "baseSp": 738,
+      "baseExp": 40463.99999998481,
+      "baseSp": 4428,
       "expModifier": 1.108481262327
     },
     "raidBoss": false,
@@ -401098,8 +401098,8 @@
     "minions": [],
     "name": "Soldier Scarab",
     "progression": {
-      "baseExp": 7736.000000003029,
-      "baseSp": 846,
+      "baseExp": 38680.00000001514,
+      "baseSp": 4230,
       "expModifier": 1.271531886917
     },
     "raidBoss": false,
@@ -401514,8 +401514,8 @@
     "minions": [],
     "name": "Hexa Beetle",
     "progression": {
-      "baseExp": 6610.999999999094,
-      "baseSp": 732,
+      "baseExp": 33054.999999995474,
+      "baseSp": 3660,
       "expModifier": 1.059285370934
     },
     "raidBoss": false,
@@ -401927,8 +401927,8 @@
     "minions": [],
     "name": "Hexa Beetle",
     "progression": {
-      "baseExp": 7270.999999999502,
-      "baseSp": 806,
+      "baseExp": 29083.999999998006,
+      "baseSp": 3224,
       "expModifier": 1.165037654222
     },
     "raidBoss": false,
@@ -402341,8 +402341,8 @@
     "minions": [],
     "name": "Katraxis",
     "progression": {
-      "baseExp": 7502.999999999305,
-      "baseSp": 831,
+      "baseExp": 30011.99999999722,
+      "baseSp": 3324,
       "expModifier": 1.202211184105
     },
     "raidBoss": false,
@@ -402756,8 +402756,8 @@
     "minions": [],
     "name": "Katraxis",
     "progression": {
-      "baseExp": 6928.00000000122,
-      "baseSp": 767,
+      "baseExp": 34640.0000000061,
+      "baseSp": 3835,
       "expModifier": 1.110078513059
     },
     "raidBoss": false,
@@ -403213,8 +403213,8 @@
     "minions": [],
     "name": "Tera Beetle",
     "progression": {
-      "baseExp": 14906,
-      "baseSp": 1673,
+      "baseExp": 59624,
+      "baseSp": 6692,
       "expModifier": 2.3290625
     },
     "raidBoss": false,
@@ -403673,8 +403673,8 @@
     "minions": [],
     "name": "Tera Beetle",
     "progression": {
-      "baseExp": 7145.999999999999,
-      "baseSp": 802,
+      "baseExp": 28583.999999999996,
+      "baseSp": 3208,
       "expModifier": 1.1165625
     },
     "raidBoss": false,
@@ -404219,8 +404219,8 @@
     "minions": [],
     "name": "Knight of Empire",
     "progression": {
-      "baseExp": 8454,
-      "baseSp": 949,
+      "baseExp": 42270,
+      "baseSp": 4745,
       "expModifier": 1.3209375
     },
     "raidBoss": false,
@@ -404768,8 +404768,8 @@
     "minions": [],
     "name": "Knight of Empire",
     "progression": {
-      "baseExp": 9017,
-      "baseSp": 1012,
+      "baseExp": 27051,
+      "baseSp": 3036,
       "expModifier": 1.40890625
     },
     "raidBoss": false,
@@ -405272,8 +405272,8 @@
     "minions": [],
     "name": "Royal Guard of Empire",
     "progression": {
-      "baseExp": 7358,
-      "baseSp": 825,
+      "baseExp": 36790,
+      "baseSp": 4125,
       "expModifier": 1.1496875
     },
     "raidBoss": false,
@@ -405798,8 +405798,8 @@
     "minions": [],
     "name": "Guardian Scarab",
     "progression": {
-      "baseExp": 7601.999999998797,
-      "baseSp": 863,
+      "baseExp": 38009.99999999398,
+      "baseSp": 4315,
       "expModifier": 1.158664837677
     },
     "raidBoss": false,
@@ -406324,8 +406324,8 @@
     "minions": [],
     "name": "Guardian Scarab",
     "progression": {
-      "baseExp": 7583.999999998573,
-      "baseSp": 861,
+      "baseExp": 30335.999999994292,
+      "baseSp": 3444,
       "expModifier": 1.155921353452
     },
     "raidBoss": false,
@@ -406847,8 +406847,8 @@
     "minions": [],
     "name": "Ustralith",
     "progression": {
-      "baseExp": 9682.000000000011,
-      "baseSp": 1099,
+      "baseExp": 48410.00000000006,
+      "baseSp": 5495,
       "expModifier": 1.475689681451
     },
     "raidBoss": false,
@@ -407372,8 +407372,8 @@
     "minions": [],
     "name": "Ustralith",
     "progression": {
-      "baseExp": 7445.000000000844,
-      "baseSp": 845,
+      "baseExp": 37225.00000000422,
+      "baseSp": 4225,
       "expModifier": 1.134735558604
     },
     "raidBoss": false,
@@ -407852,8 +407852,8 @@
     "minions": [],
     "name": "Assassin of Empire",
     "progression": {
-      "baseExp": 7235.999999998596,
-      "baseSp": 821,
+      "baseExp": 36179.99999999298,
+      "baseSp": 4105,
       "expModifier": 1.102880658436
     },
     "raidBoss": false,
@@ -408334,8 +408334,8 @@
     "minions": [],
     "name": "Assassin of Empire",
     "progression": {
-      "baseExp": 7299.000000002665,
-      "baseSp": 828,
+      "baseExp": 36495.00000001332,
+      "baseSp": 4140,
       "expModifier": 1.112482853224
     },
     "raidBoss": false,
@@ -408770,8 +408770,8 @@
     "minions": [],
     "name": "Imperial Commander",
     "progression": {
-      "baseExp": 8637.000000001894,
-      "baseSp": 980,
+      "baseExp": 43185.000000009466,
+      "baseSp": 4900,
       "expModifier": 1.316415180613
     },
     "raidBoss": false,
@@ -409208,8 +409208,8 @@
     "minions": [],
     "name": "Imperial Commander",
     "progression": {
-      "baseExp": 12556.999999999134,
-      "baseSp": 1425,
+      "baseExp": 75341.9999999948,
+      "baseSp": 8550,
       "expModifier": 1.913885078494
     },
     "raidBoss": false,
@@ -409711,8 +409711,8 @@
     "minions": [],
     "name": "Imperial Royal Guard",
     "progression": {
-      "baseExp": 8029.999999999452,
-      "baseSp": 922,
+      "baseExp": 32119.99999999781,
+      "baseSp": 3688,
       "expModifier": 1.194229625223
     },
     "raidBoss": false,
@@ -410169,8 +410169,8 @@
     "minions": [],
     "name": "Ashuras",
     "progression": {
-      "baseExp": 7703.999999999908,
-      "baseSp": 885,
+      "baseExp": 38519.99999999954,
+      "baseSp": 4425,
       "expModifier": 1.145746579417
     },
     "raidBoss": false,
@@ -410630,8 +410630,8 @@
     "minions": [],
     "name": "Ashuras",
     "progression": {
-      "baseExp": 7230.999999997352,
-      "baseSp": 830,
+      "baseExp": 36154.999999986765,
+      "baseSp": 4150,
       "expModifier": 1.075401546698
     },
     "raidBoss": false,
@@ -411066,8 +411066,8 @@
     "minions": [],
     "name": "Ashkenas",
     "progression": {
-      "baseExp": 9288.000000001899,
-      "baseSp": 1067,
+      "baseExp": 55728.000000011394,
+      "baseSp": 6402,
       "expModifier": 1.381320642475
     },
     "raidBoss": false,
@@ -411483,8 +411483,8 @@
     "minions": [],
     "name": "Ashkenas",
     "progression": {
-      "baseExp": 9444.000000000568,
-      "baseSp": 1085,
+      "baseExp": 56664.000000003405,
+      "baseSp": 6510,
       "expModifier": 1.404521118382
     },
     "raidBoss": false,
@@ -411922,8 +411922,8 @@
     "minions": [],
     "name": "Abraxion",
     "progression": {
-      "baseExp": 16312.0000000021,
-      "baseSp": 1896,
+      "baseExp": 65248.0000000084,
+      "baseSp": 7584,
       "expModifier": 2.367832776891
     },
     "raidBoss": false,
@@ -412362,8 +412362,8 @@
     "minions": [],
     "name": "Abraxion",
     "progression": {
-      "baseExp": 9587.000000001615,
-      "baseSp": 1114,
+      "baseExp": 38348.00000000646,
+      "baseSp": 4456,
       "expModifier": 1.391638844535
     },
     "raidBoss": false,
@@ -412799,8 +412799,8 @@
     "minions": [],
     "name": "Hasturan",
     "progression": {
-      "baseExp": 7323.999999997204,
-      "baseSp": 851,
+      "baseExp": 36619.99999998602,
+      "baseSp": 4255,
       "expModifier": 1.063144142836
     },
     "raidBoss": false,
@@ -413236,8 +413236,8 @@
     "minions": [],
     "name": "Hasturan",
     "progression": {
-      "baseExp": 7646.999999997931,
-      "baseSp": 889,
+      "baseExp": 38234.99999998965,
+      "baseSp": 4445,
       "expModifier": 1.110030483379
     },
     "raidBoss": false,
@@ -413718,8 +413718,8 @@
     "minions": [],
     "name": "Arimanes",
     "progression": {
-      "baseExp": 8800.999999999398,
-      "baseSp": 1023,
+      "baseExp": 52805.99999999639,
+      "baseSp": 6138,
       "expModifier": 1.277543910582
     },
     "raidBoss": false,
@@ -414202,8 +414202,8 @@
     "minions": [],
     "name": "Arimanes",
     "progression": {
-      "baseExp": 7506.999999997169,
-      "baseSp": 872,
+      "baseExp": 45041.99999998301,
+      "baseSp": 5232,
       "expModifier": 1.089708230512
     },
     "raidBoss": false,
@@ -414616,8 +414616,8 @@
     "minions": [],
     "name": "Chakram Beetle",
     "progression": {
-      "baseExp": 12155,
-      "baseSp": 1364,
+      "baseExp": 72930,
+      "baseSp": 8184,
       "expModifier": 1.89921875
     },
     "raidBoss": false,
@@ -415077,8 +415077,8 @@
     "minions": [],
     "name": "Seer of Blood",
     "progression": {
-      "baseExp": 23561.000000000415,
-      "baseSp": 2707,
+      "baseExp": 141366.0000000025,
+      "baseSp": 16242,
       "expModifier": 3.504015466984
     },
     "raidBoss": false,
@@ -449669,8 +449669,8 @@
     "minions": [],
     "name": "Dread Wolf",
     "progression": {
-      "baseExp": 2303,
-      "baseSp": 136,
+      "baseExp": 1151.5,
+      "baseSp": 68,
       "expModifier": 1.88
     },
     "raidBoss": false,
@@ -450166,8 +450166,8 @@
     "minions": [],
     "name": "Tasaba Lizardman",
     "progression": {
-      "baseExp": 2724.99999999984,
-      "baseSp": 164,
+      "baseExp": 1362.49999999992,
+      "baseSp": 82,
       "expModifier": 2.10262345679
     },
     "raidBoss": false,
@@ -450440,8 +450440,8 @@
     "minions": [],
     "name": "Tasaba Lizardman Shaman",
     "progression": {
-      "baseExp": 2002.999999999921,
-      "baseSp": 124,
+      "baseExp": 1001.499999999961,
+      "baseSp": 62,
       "expModifier": 1.463111760409
     },
     "raidBoss": false,
@@ -451015,8 +451015,8 @@
     "minions": [],
     "name": "Ogre",
     "progression": {
-      "baseExp": 3555.000000000404,
-      "baseSp": 222,
+      "baseExp": 1777.500000000202,
+      "baseSp": 111,
       "expModifier": 2.461911357341
     },
     "raidBoss": false,
@@ -451429,8 +451429,8 @@
     "minions": [],
     "name": "Tasaba Lizardman Sniper",
     "progression": {
-      "baseExp": 3262.999999999779,
-      "baseSp": 208,
+      "baseExp": 1631.499999999889,
+      "baseSp": 104,
       "expModifier": 2.145299145299
     },
     "raidBoss": false,
@@ -451839,8 +451839,8 @@
     "minions": [],
     "name": "Tasaba Lizardman Sniper",
     "progression": {
-      "baseExp": 4146.0000000003,
-      "baseSp": 264,
+      "baseExp": 2073.00000000015,
+      "baseSp": 132,
       "expModifier": 2.7258382643
     },
     "raidBoss": false,
@@ -452339,8 +452339,8 @@
     "minions": [],
     "name": "Lienlik",
     "progression": {
-      "baseExp": 1989.999999999648,
-      "baseSp": 126,
+      "baseExp": 994.999999999824,
+      "baseSp": 63,
       "expModifier": 1.308349769888
     },
     "raidBoss": false,
@@ -452902,8 +452902,8 @@
     "minions": [],
     "name": "Lienlik Ladd",
     "progression": {
-      "baseExp": 3836,
-      "baseSp": 248,
+      "baseExp": 1918,
+      "baseSp": 124,
       "expModifier": 2.3975
     },
     "raidBoss": false,
@@ -456198,8 +456198,8 @@
     "minions": [],
     "name": "Scarlet Stakato Noble",
     "progression": {
-      "baseExp": 9381.99999999865,
-      "baseSp": 1039,
+      "baseExp": 46909.99999999325,
+      "baseSp": 5195,
       "expModifier": 1.503284730011
     },
     "raidBoss": false,
@@ -456608,8 +456608,8 @@
     "minions": [],
     "name": "Assassin Beetle",
     "progression": {
-      "baseExp": 6804.000000000001,
-      "baseSp": 763,
+      "baseExp": 34020.00000000001,
+      "baseSp": 3815,
       "expModifier": 1.063125
     },
     "raidBoss": false,
@@ -457130,8 +457130,8 @@
     "minions": [],
     "name": "Necromancer of Destruction",
     "progression": {
-      "baseExp": 8042.000000002839,
-      "baseSp": 913,
+      "baseExp": 40210.000000014195,
+      "baseSp": 4565,
       "expModifier": 1.225727785399
     },
     "raidBoss": false,
@@ -457609,8 +457609,8 @@
     "minions": [],
     "name": "Arimanes of Destruction",
     "progression": {
-      "baseExp": 7148.000000001553,
-      "baseSp": 821,
+      "baseExp": 35740.00000000776,
+      "baseSp": 4105,
       "expModifier": 1.063057703748
     },
     "raidBoss": false,
@@ -458133,8 +458133,8 @@
     "minions": [],
     "name": "Ashuras of Destruction",
     "progression": {
-      "baseExp": 10463.00000000069,
-      "baseSp": 1230,
+      "baseExp": 62778.00000000413,
+      "baseSp": 7380,
       "expModifier": 1.482851473923
     },
     "raidBoss": false,
@@ -458612,8 +458612,8 @@
     "minions": [],
     "name": "Magma Drake",
     "progression": {
-      "baseExp": 9061.999999997675,
-      "baseSp": 1078,
+      "baseExp": 54371.99999998605,
+      "baseSp": 6468,
       "expModifier": 1.254256055363
     },
     "raidBoss": false,
@@ -459134,8 +459134,8 @@
     "minions": [],
     "name": "Ghost of Gatekeeper",
     "progression": {
-      "baseExp": 7104.000000000432,
-      "baseSp": 759,
+      "baseExp": 14208.000000000864,
+      "baseSp": 1518,
       "expModifier": 1.229916897507
     },
     "raidBoss": false,
@@ -459481,8 +459481,8 @@
     "minions": [],
     "name": "Ghost of Gatekeeper",
     "progression": {
-      "baseExp": 8710.00000000192,
-      "baseSp": 931,
+      "baseExp": 26130.000000005763,
+      "baseSp": 2793,
       "expModifier": 1.50796398892
     },
     "raidBoss": false,
@@ -459962,8 +459962,8 @@
     "minions": [],
     "name": "Ghost of Vassal",
     "progression": {
-      "baseExp": 6615.999999999005,
-      "baseSp": 716,
+      "baseExp": 13231.99999999801,
+      "baseSp": 1432,
       "expModifier": 1.115871141845
     },
     "raidBoss": false,

@@ -5,11 +5,11 @@ const CASTER_BUFFER_CLASSES = new Set([17, 49, 50, 51, 52]);
 
 const CLASS_PROFILES = {
     2: {
-        weaponKinds: ['Weapon.Dual', 'Weapon.Sword', 'Weapon.Blunt'],
+        weaponKinds: ['Weapon.Dual'],
         preferredWeaponKinds: ['Weapon.Dual'],
         armorStyle: 'heavy',
         twoHandedWeaponKinds: ['Weapon.Dual'],
-        shield: true,
+        shield: false,
         weaponHint: 'dual_swords'
     },
     3: {

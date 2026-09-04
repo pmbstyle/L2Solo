@@ -2,8 +2,12 @@ const World = invoke('GameServer/World/World');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const RaidBossMinionManager = invoke('GameServer/World/RaidBossMinionManager');
 const PartyRewardMath = invoke('GameServer/Actor/PartyRewardMath');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const NpcObjectIndex = require('../../World/NpcObjectIndex');
 
 const PARTY_REWARD_RADIUS = 2500;
+const SWEEP_RETRY_DELAY_MS = 250;
+const SWEEP_RETRY_WINDOW_MS = 25000;
 
 function distance2d(a, b) {
     const dx = a.fetchLocX() - b.fetchLocX();
@@ -78,6 +82,63 @@ function partyRewardShares(participants, exp, sp) {
         .map((share) => ({ session: participants[share.index], exp: share.exp, sp: share.sp }));
 }
 
+function clearSweepRetry(spoilerSession, retries, npcId) {
+    retries.delete(npcId);
+    if (!retries.size && spoilerSession.sweepRetriesByNpcId === retries) {
+        delete spoilerSession.sweepRetriesByNpcId;
+    }
+}
+
+function autoSweepSpoiledCorpse(npc, Generics) {
+    const spoil = npc?.model?.spoil;
+    const spoilerId = Number(spoil?.spoilerId || 0);
+    if (!spoil?.spoiled || spoil.swept || !spoilerId) return false;
+
+    const spoilerSession = (World.user?.sessions || []).find((candidate) => (
+        String(candidate?.accountId || '').startsWith('bot_')
+        && Number(candidate.actor?.fetchId?.() || 0) === spoilerId
+    ));
+    const spoiler = spoilerSession?.actor;
+    if (!spoiler || !BotRoles.isSpoiler(spoiler)) return false;
+
+    const npcId = Number(npc.fetchId?.() || 0);
+    if (!npcId) return false;
+    if (!(spoilerSession.sweepRetriesByNpcId instanceof Map)) {
+        spoilerSession.sweepRetriesByNpcId = new Map();
+    }
+    const retries = spoilerSession.sweepRetriesByNpcId;
+
+    if (spoiler.state?.fetchCasts?.()) {
+        const timestamp = Date.now();
+        let retry = retries.get(npcId);
+        if (!retry) {
+            retry = { deadlineAt: timestamp + SWEEP_RETRY_WINDOW_MS, timer: null };
+            retries.set(npcId, retry);
+        }
+        if (timestamp >= retry.deadlineAt) {
+            clearSweepRetry(spoilerSession, retries, npcId);
+        } else if (!retry.timer) {
+            const retryTimer = setTimeout(() => {
+                const current = retries.get(npcId);
+                if (!current || current.timer !== retryTimer) return;
+                current.timer = null;
+                autoSweepSpoiledCorpse(npc, Generics);
+                if (retries.get(npcId) === current && !current.timer) {
+                    clearSweepRetry(spoilerSession, retries, npcId);
+                }
+            }, SWEEP_RETRY_DELAY_MS);
+            retryTimer.unref?.();
+            retry.timer = retryTimer;
+        }
+        return false;
+    }
+
+    const retry = retries.get(npcId);
+    if (retry?.timer) clearTimeout(retry.timer);
+    clearSweepRetry(spoilerSession, retries, npcId);
+    return invoke('GameServer/Bot/BotAI').trySweep(spoilerSession, spoiler, npc, Generics);
+}
+
 function npcDied(session, actor, npc) {
     const Generics = invoke(path.actor);
 
@@ -86,6 +147,7 @@ function npcDied(session, actor, npc) {
     }
 
     if (npc.fetchIsSummon?.() === true) {
+        NpcObjectIndex.remove(World, npc);
         World.npc.spawns = World.npc.spawns.filter((spawn) => spawn.fetchId() !== npc.fetchId());
         session.dataSendToMeAndOthers?.(invoke('GameServer/Network/Response').deleteOb(npc.fetchId()), npc);
         if (actor?.fetchIsSummon?.() === true) actor.attack?.clearTimers?.();
@@ -101,6 +163,11 @@ function npcDied(session, actor, npc) {
     Generics.abortCombatState(session, actor);
 
     if (actor.isDead()) return;
+
+    // Death is the authoritative end of the encounter. Let the bot that
+    // successfully marked this corpse queue exactly one Sweeper cast, whether
+    // it was a solo hunter or a party companion.
+    autoSweepSpoiledCorpse(npc, Generics);
 
     const rewardActor = ownerSession?.actor || actor;
     const participants = rewardParticipants(session, rewardActor, npc);
@@ -132,3 +199,4 @@ module.exports = npcDied;
 module.exports.PARTY_EXP_SP_BONUS = PartyRewardMath.PARTY_EXP_SP_BONUS;
 module.exports.partyRewardShares = partyRewardShares;
 module.exports.validPartyMembers = validPartyMembers;
+module.exports.autoSweepSpoiledCorpse = autoSweepSpoiledCorpse;

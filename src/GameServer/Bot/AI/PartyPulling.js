@@ -6,6 +6,7 @@ const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
 const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
+const NpcObjectIndex = require('../../World/NpcObjectIndex');
 
 const PULL_SEARCH_RADIUS = 2200;
 const PULL_CONTACT_DISTANCE = 260;
@@ -105,7 +106,7 @@ function traceEncounter(leaderSession, event, details = {}) {
 
 function npcById(id) {
     if (!id) return null;
-    return (World.npc?.spawns || []).find((npc) => Number(npc.fetchId?.()) === Number(id)) || null;
+    return NpcObjectIndex.find(World, Number(id));
 }
 
 function clearFinishedTarget(leaderSession) {

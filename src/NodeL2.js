@@ -68,7 +68,7 @@ Database.init(() => {
     const stackableItemIds = (DataCache.items || [])
         .filter((item) => item.etc?.stackable === true)
         .map((item) => Number(item.selfId));
-    Database.compactStackableInventory(stackableItemIds).then((result) => {
+    Database.compactStackableInventory(stackableItemIds, 'compact-stackable-inventory-v2').then((result) => {
         if (!result.skipped && result.rowsRemoved > 0) {
             utils.infoSuccess('DB', 'compacted stackable inventory groups=%d rows=%d', result.groups, result.rowsRemoved);
             return Database.reclaimUnusedSpace();

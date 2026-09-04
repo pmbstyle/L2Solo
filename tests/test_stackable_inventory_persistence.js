@@ -26,14 +26,22 @@ DataCache.init();
     await Database.setItem(characterId, { selfId: 1835, name: 'Soulshot: No Grade', amount: 2 });
     await Database.setItem(characterId, { selfId: 1835, name: 'Soulshot: No Grade', amount: 3 });
     await Database.setItem(characterId, { selfId: 1835, name: 'Soulshot: No Grade', amount: 5 });
+    await Database.setItem(characterId, { selfId: 2155, name: 'Recipe: Elven Ring', amount: 1 });
+    await Database.setItem(characterId, { selfId: 2155, name: 'Recipe: Elven Ring', amount: 1 });
     await Database.setItem(characterId, { selfId: 1, name: 'Short Sword', amount: 1 });
     await Database.setItem(characterId, { selfId: 1, name: 'Short Sword', amount: 1 });
 
+    const recipeTemplate = DataCache.items.find((item) => Number(item.selfId) === 2155);
+    assert.strictEqual(recipeTemplate?.etc?.stackable, true, 'recipe items must be marked stackable in the datapack');
+
     const rawSummary = BotLifeState.inventorySummaryFromItems([
         { selfId: 1835, name: 'Soulshot: No Grade', amount: 10, equipped: 0, slot: 0 },
+        { selfId: 2155, name: 'Recipe: Elven Ring', amount: 2, equipped: 0, slot: 0 },
         { selfId: 1, name: 'Short Sword', amount: 1, equipped: 0, slot: 0 }
     ]);
     assert.strictEqual(rawSummary['1835'].stackable, true, 'raw SQLite rows must inherit stackability from the datapack');
+    assert.strictEqual(rawSummary['2155'].stackable, true, 'recipe rows must inherit stackability from the datapack');
+    assert.strictEqual(rawSummary['2155'].amount, 2, 'identical recipe rows must aggregate into one inventory summary stack');
     assert.strictEqual(rawSummary['1'].stackable, false, 'equipment rows must remain non-stackable');
 
     const legacySummary = BotLifeState.normalizeInventoryStackability({
@@ -47,13 +55,16 @@ DataCache.init();
     assert.strictEqual(legacySummary['2'], undefined, 'zero-amount inventory entries must not survive normalization');
     assert.strictEqual(legacySummary['3'], undefined, 'negative inventory entries must not survive normalization');
 
-    const result = await Database.compactStackableInventory([1835], 'test-stackable-compaction-v1');
-    assert.strictEqual(result.rowsRemoved, 2, 'one-time maintenance must remove duplicate stackable rows');
+    const result = await Database.compactStackableInventory([1835, 2155], 'test-stackable-compaction-v1');
+    assert.strictEqual(result.rowsRemoved, 3, 'one-time maintenance must remove duplicate stackable rows');
     const rows = await Database.fetchItems(characterId);
     const shots = rows.filter((item) => Number(item.selfId) === 1835);
+    const recipes = rows.filter((item) => Number(item.selfId) === 2155);
     const swords = rows.filter((item) => Number(item.selfId) === 1);
     assert.strictEqual(shots.length, 1, 'stackable inventory must use one physical row');
     assert.strictEqual(Number(shots[0].amount), 10, 'stackable compaction must preserve the total amount');
+    assert.strictEqual(recipes.length, 1, 'stackable recipes must use one physical row');
+    assert.strictEqual(Number(recipes[0].amount), 2, 'recipe compaction must preserve the total amount');
     assert.strictEqual(swords.length, 2, 'non-stackable inventory must preserve separate object rows');
 
     const repeated = await Database.compactStackableInventory([1835], 'test-stackable-compaction-v1');

@@ -20,6 +20,7 @@ const C4RecipeItems  = invoke('GameServer/Items/C4RecipeItems');
 const C4MercTickets  = invoke('GameServer/Items/C4MercTickets');
 const C4BeastItems   = invoke('GameServer/Items/C4BeastItems');
 const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
+const ItemSlot        = invoke('GameServer/Item/ItemSlot');
 const ManorData      = invoke('GameServer/Manor/ManorData');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
@@ -201,6 +202,8 @@ class Backpack extends BackpackModel {
     useItem(session, id) {
         this.fetchItem(id, (item) => {
             if (item.isWearable()) {
+                const slot = ItemSlot.slotFor(item);
+                if (slot !== item.fetchSlot()) item.setSlot(slot);
                 this.equipGear(session, item);
             }
             else {

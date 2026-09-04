@@ -4,6 +4,8 @@ const NpcAggro      = invoke('GameServer/Npc/NpcAggro');
 
 const DEFAULT_RETREAT_DISTANCE = 850;
 const AGGRO_BUFFER = 120;
+const SAME_FLOOR_Z_DELTA = 512;
+const RETREAT_PATH_TOLERANCE = 64;
 const CANDIDATE_ANGLES = [0, -30, 30, -60, 60, -90, 90, -120, 120];
 
 function point(actor) {
@@ -105,7 +107,7 @@ function groundHeight(geodata, to, fallbackZ) {
     }
 }
 
-function routeCandidate(options, geodata, from, requestedTo) {
+function routeCandidateOnce(options, geodata, from, requestedTo) {
     if (typeof options.previewRoute === 'function') {
         try {
             const diagnostics = options.previewRoute(from, requestedTo);
@@ -138,6 +140,30 @@ function routeCandidate(options, geodata, from, requestedTo) {
     };
 }
 
+function routeCandidate(options, geodata, from, requestedTo) {
+    const candidate = routeCandidateOnce(options, geodata, from, requestedTo);
+    const zDelta = Math.abs(Number(requestedTo.locZ) - Number(from.locZ));
+
+    // getHeight() can snap a retreat endpoint onto a neighbouring floor in a
+    // multilevel cell. If that endpoint is unreachable, retry the same XY on
+    // the floor the bot is actually standing on before declaring the escape
+    // direction unusable. The selected requestedTo is also the command sent
+    // to MoveTo, so this prevents a second pathfinding pass from restoring
+    // the bad cross-floor target.
+    if (candidate.routeUsable || zDelta <= SAME_FLOOR_Z_DELTA) return candidate;
+
+    const sameFloorTo = { ...requestedTo, locZ: from.locZ };
+    const sameFloorCandidate = routeCandidateOnce(options, geodata, from, sameFloorTo);
+    if (!sameFloorCandidate.routeUsable) return candidate;
+
+    return {
+        ...sameFloorCandidate,
+        routeStrategy: [sameFloorCandidate.routeStrategy, 'same_floor_fallback']
+            .filter(Boolean)
+            .join('_')
+    };
+}
+
 function evaluateCandidate(candidate, from, threat, hazards, aggroRadius) {
     let newAggroCount = 0;
     let endpointAggroCount = 0;
@@ -164,7 +190,7 @@ function evaluateCandidate(candidate, from, threat, hazards, aggroRadius) {
     const threatDistance = distance2d(candidate.to, threat);
     const minimumThreatDistance = distanceToRoute(threat, from, candidate);
     const movesAway = threatDistance > initialThreatDistance &&
-        minimumThreatDistance >= initialThreatDistance - 1;
+        minimumThreatDistance >= initialThreatDistance - RETREAT_PATH_TOLERANCE;
     return {
         ...candidate,
         newAggroCount,
@@ -286,7 +312,9 @@ function retreat(session, bot, threat, options = {}) {
         candidates: result.candidates.map((candidate) => ({ ...candidate })),
         at: Date.now()
     };
-    bot.moveTo({ from: result.from, to: { ...result.requestedTo } });
+    if (planOptions.requireSafe !== true || result.safe === true) {
+        bot.moveTo({ from: result.from, to: { ...result.requestedTo } });
+    }
     return result;
 }
 
@@ -294,6 +322,8 @@ module.exports = {
     AGGRO_BUFFER,
     CANDIDATE_ANGLES,
     DEFAULT_RETREAT_DISTANCE,
+    RETREAT_PATH_TOLERANCE,
+    SAME_FLOOR_Z_DELTA,
     distanceToSegment,
     plan,
     retreat

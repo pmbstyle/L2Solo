@@ -1,4 +1,5 @@
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+const NpcObjectIndex = require('../../World/NpcObjectIndex');
 
 function world() {
     return invoke('GameServer/World/World');
@@ -36,7 +37,7 @@ function partySessions(leaderSession, { includeDead = false } = {}) {
 function npcById(id) {
     const numericId = Number(id || 0);
     if (!numericId) return null;
-    return (world().npc?.spawns || []).find((npc) => Number(npc?.fetchId?.()) === numericId) || null;
+    return NpcObjectIndex.find(world(), numericId);
 }
 
 function isHostileNpc(npc) {

@@ -50,6 +50,8 @@ const CHAT_PHRASES = {
 // into a tight synchronous AI loop.
 const WAKEUP_THROTTLE_MS = 250;
 const REAL_PLAYER_CACHE_MS = 250;
+const SPOIL_SKILL_ID = 254;
+const SWEEP_SKILL_ID = 42;
 let realPlayerCache = { world: null, revision: -1, checkedAt: 0, sessions: [] };
 
 function getRandomPhrase(category, ...args) {
@@ -120,10 +122,80 @@ function clearTacticalState(session) {
     session.lastCombatDecision = undefined;
     session.lastPvpDecision = undefined;
     session.healingPotionEncounter = undefined;
+    session.spoilAttemptedTargetId = undefined;
+    session.sweepAttemptedTargetId = undefined;
 }
 
 function recordHotStage(name, startedAt) {
     HotActorLodPolicy.recordSubsystem(name, performance.now() - startedAt, 1);
+}
+
+function targetIdOf(target) {
+    return Number(target?.fetchId?.() || 0) || null;
+}
+
+function canPaySkill(actor, skill) {
+    const cost = Math.max(0, Number(skill?.fetchConsumedMp?.() || 0));
+    return Number(actor?.fetchMp?.() || 0) >= cost;
+}
+
+function targetIsDead(target) {
+    return target?.isDead?.() === true || target?.state?.fetchDead?.() === true;
+}
+
+function trySpoil(session, bot, npc, Generics) {
+    if (!session || !bot || !npc || !BotRoles.isSpoiler(bot) || targetIsDead(npc)) return false;
+    if (npc.fetchAttackable?.() !== true) return false;
+
+    const targetId = targetIdOf(npc);
+    if (!targetId || session.spoilAttemptedTargetId === targetId) return false;
+
+    const skill = bot.skillset?.fetchSkill?.(SPOIL_SKILL_ID);
+    if (!skill || !canPaySkill(bot, skill) || bot.canUseSkill?.(skill) === false
+        || typeof Generics?.skillExec !== 'function') return false;
+
+    // The attempt is encounter-scoped. Record it only after the transient
+    // preflight gates pass, so a bot that recovers MP or leaves reuse can try
+    // Spoil again before the same mob dies.
+    session.spoilAttemptedTargetId = targetId;
+    session.lastCombatDecision = {
+        action: 'cast_spoil',
+        role: 'spoiler',
+        skillId: Number(skill.fetchSelfId?.() || SPOIL_SKILL_ID),
+        skillName: skill.fetchName?.() || 'Spoil',
+        targetId,
+        at: Date.now()
+    };
+    Generics.skillExec(session, bot, { id: targetId, selfId: SPOIL_SKILL_ID, ctrl: true });
+    return true;
+}
+
+function trySweep(session, bot, npc, Generics) {
+    if (!session || !bot || !npc || !BotRoles.isSpoiler(bot) || !targetIsDead(npc)) return false;
+    if (npc.fetchAttackable?.() !== true) return false;
+
+    const spoil = npc.model?.spoil;
+    if (!spoil?.spoiled || spoil.swept) return false;
+    if (spoil.spoilerId && Number(spoil.spoilerId) !== targetIdOf(bot)) return false;
+
+    const targetId = targetIdOf(npc);
+    if (!targetId || session.sweepAttemptedTargetId === targetId) return false;
+    if (bot.state?.fetchCasts?.()) return false;
+    const skill = bot.skillset?.fetchSkill?.(SWEEP_SKILL_ID);
+    if (!skill || !canPaySkill(bot, skill) || bot.canUseSkill?.(skill) === false
+        || typeof Generics?.skillExec !== 'function') return false;
+
+    session.sweepAttemptedTargetId = targetId;
+    session.lastCombatDecision = {
+        action: 'cast_sweep',
+        role: 'spoiler',
+        skillId: Number(skill.fetchSelfId?.() || SWEEP_SKILL_ID),
+        skillName: skill.fetchName?.() || 'Sweeper',
+        targetId,
+        at: Date.now()
+    };
+    Generics.skillExec(session, bot, { id: targetId, selfId: SWEEP_SKILL_ID, ctrl: true });
+    return true;
 }
 
 const BotAI = {
@@ -614,11 +686,14 @@ const BotAI = {
             }
             return false;
         }
-        const role = BotRoles.inferRole(bot);
+        const role = BotRoles.combatRoleFor(bot);
         // A potion is a survival action for a fight already in progress, not
         // routine topping-off. The policy also blocks repeats for the same
         // target and while a previous potion HoT remains active.
         if (HealingPotionStock.tryUseInCombat(session, bot, npc, { role })) {
+            return true;
+        }
+        if (!options.basicAttackOnly && trySpoil(session, bot, npc, Generics)) {
             return true;
         }
         if (BotRangedCombatPositioning.reposition(session, bot, npc, { role })) {
@@ -799,6 +874,10 @@ const BotAI = {
 
     summarizeStatus(session) {
         return BotStatus.summarize(this.getStatus(session));
+    },
+
+    trySweep(session, bot, npc, Generics) {
+        return trySweep(session, bot, npc, Generics);
     }
 };
 

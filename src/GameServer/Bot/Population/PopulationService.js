@@ -639,6 +639,9 @@ function hydratePartyCandidates(candidates = []) {
             if (!hydrated) return null;
             const projectedAt = Number(projection.updatedAt || 0);
             if (projectedAt > 0 && Number(hydrated.updatedAt || 0) !== projectedAt) return null;
+            const projectedRevision = Number(projection.simulation?.revision);
+            if (Number.isFinite(projectedRevision)
+                && Number(hydrated.simulation?.revision || 0) !== projectedRevision) return null;
             return hydrated;
         }).filter(Boolean);
     });
@@ -692,6 +695,85 @@ function commitPartyMembership(party, members = [], event = null) {
     });
 }
 
+function createAndCommitBackgroundParty(members = [], objectiveOverride = null) {
+    const leader = PartyComposition.chooseLeader(members);
+    if (!leader) return Promise.resolve(null);
+    const objectiveMember = members.find((member) => (
+        member.stats?.partyRequest?.status === 'open'
+        && member.stats?.partyRequest?.priority === 'required'
+    )) || members.find((member) => partyObjectiveForState(member)) || leader;
+    const objective = objectiveOverride || partyObjectiveForState(objectiveMember);
+    const partySpot = partySpotForLeader(leader, objective?.spotId || null);
+    const timestamp = Date.now();
+    const partyId = `bgp_${timestamp.toString(36)}_${leader.characterId}`;
+    const coverage = PartyComposition.roleCoverage(members);
+    const party = {
+        partyId,
+        leaderId: leader.characterId,
+        memberIds: members.map((state) => state.characterId),
+        spotId: partySpot?.id || leader.spotId,
+        startedAt: timestamp,
+        nextResolveAt: timestamp + 45000 + Math.round(Math.random() * 90000),
+        cohesion: 0.55 + Math.random() * 0.25,
+        risk: 0.18 + Math.random() * 0.22,
+        roleCoverage: coverage,
+        stats: {
+            formedAt: timestamp,
+            memberNames: members.map((state) => state.name),
+            personaFormation: Object.fromEntries(members.map((member) => [
+                member.characterId,
+                PersonaPartyPolicy.explain(member, members.filter((peer) => peer !== member), coverage)
+            ])),
+            route: partySpot?.route || null,
+            objective: objective || null,
+            acquisitionGoal: objectiveMember.stats?.equipmentPlan?.status === 'active'
+                ? objectiveMember.stats.equipmentPlan
+                : null
+        }
+    };
+    const partyEvent = {
+        characterId: leader.characterId,
+        eventType: 'party',
+        summary: `${leader.name} formed a party near ${party.spotId}`,
+        meta: {
+            partyId,
+            spotId: party.spotId,
+            memberIds: party.memberIds,
+            route: party.stats.route
+        },
+        weight: 2,
+        createdAt: timestamp
+    };
+
+    return commitPartyMembership(party, members, partyEvent).then(({ party: savedParty, assigned, failed, eventCommitted }) => {
+        if (!savedParty || failed.length || assigned.length !== members.length) {
+            return savedParty
+                ? dissolveBackgroundParty(savedParty, 'party_assignment_failed', assigned.length).then(() => null)
+                : null;
+        }
+        const eventWrite = eventCommitted
+            ? Promise.resolve()
+            : LifeEvents.record(
+                partyEvent.characterId,
+                partyEvent.eventType,
+                partyEvent.summary,
+                partyEvent.meta,
+                partyEvent.weight
+            );
+        return eventWrite.then(() => {
+            Metrics.recordPartyFormation();
+            console.info(
+                'BotPopulation :: formed background party %s spot=%s members=%d leader=%s',
+                savedParty.partyId,
+                savedParty.spotId || 'none',
+                savedParty.memberIds.length,
+                leader.name
+            );
+            return savedParty;
+        });
+    });
+}
+
 function syncPartyLeader(members = [], party, leaderId) {
     const nextLeaderId = Number(leaderId || 0);
     const staleMembers = (members || []).filter((member) => (
@@ -732,6 +814,7 @@ const PopulationService = {
     warehouseCleanupTimer: null,
     stateRetentionTimer: null,
     partyFormationTimer: null,
+    protectedPartyFormationTimer: null,
     partyRequestCleanupTimer: null,
     phasePolicyTimer: null,
     seedTimer: null,
@@ -770,6 +853,8 @@ const PopulationService = {
     stateRetentionRunning: false,
     partyFormationRunning: false,
     partyFormationPending: false,
+    nextProtectedPartyFormationAt: 0,
+    protectedPartyFormationFailures: 0,
     partyRequestCleanupRunning: false,
     phasePolicyRunning: false,
     clanActionRunning: false,
@@ -898,6 +983,14 @@ const PopulationService = {
             if (typeof this.partyFormationTimer.unref === 'function') {
                 this.partyFormationTimer.unref();
             }
+
+            this.protectedPartyFormationTimer = setInterval(() => {
+                this.formProtectedRequiredParty();
+            }, Math.max(1000, Number(Config.protectedPartyFormationPollMs) || 5000));
+
+            if (typeof this.protectedPartyFormationTimer.unref === 'function') {
+                this.protectedPartyFormationTimer.unref();
+            }
         }
 
         if (Config.phasePolicyEnabled !== false) {
@@ -964,6 +1057,12 @@ const PopulationService = {
             clearInterval(this.partyFormationTimer);
             this.partyFormationTimer = null;
         }
+        if (this.protectedPartyFormationTimer) {
+            clearInterval(this.protectedPartyFormationTimer);
+            this.protectedPartyFormationTimer = null;
+        }
+        this.nextProtectedPartyFormationAt = 0;
+        this.protectedPartyFormationFailures = 0;
         if (this.partyRequestCleanupTimer) {
             clearInterval(this.partyRequestCleanupTimer);
             this.partyRequestCleanupTimer = null;
@@ -1550,7 +1649,8 @@ const PopulationService = {
             run: ({ job, deadlineAt }) => {
                 const limit = Math.max(1, Number(Config.maxWarehouseReleasesPerTick) || 8);
                 const releaseStartedAt = Date.now();
-                return this.releaseWarehouseMaterials(deadlineAt).then((results) => ({
+                return invoke('GameServer/Clan/ClanWarehouseEquipmentService').resolveBatch(deadlineAt)
+                    .then(() => this.releaseWarehouseMaterials(deadlineAt)).then((results) => ({
                     results,
                     continuation: results.length >= limit || Date.now() >= deadlineAt
                 })).finally(() => {
@@ -1734,6 +1834,118 @@ const PopulationService = {
             });
     },
 
+    protectedPartyFormationDelay(failed = false) {
+        const base = Math.max(1000, Number(Config.protectedPartyFormationIntervalMs) || 30000);
+        if (failed) this.protectedPartyFormationFailures = Math.min(8, Number(this.protectedPartyFormationFailures || 0) + 1);
+        else this.protectedPartyFormationFailures = 0;
+        const delay = failed ? base * (2 ** this.protectedPartyFormationFailures) : base;
+        return Math.min(Math.max(base, delay), Math.max(base, Number(Config.protectedPartyFormationMaxBackoffMs) || 120000));
+    },
+
+    formProtectedRequiredParty(timestamp = Date.now()) {
+        if (Config.enabled === false || Config.backgroundPartyEnabled === false
+            || this.partyFormationRunning || this.resolving
+            || timestamp < Number(this.nextProtectedPartyFormationAt || 0)) {
+            return Promise.resolve([]);
+        }
+        const activity = this.playerActivityProfile(timestamp);
+        if (!activity.protected) return Promise.resolve([]);
+
+        const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
+        const lagLimit = Math.max(1, Number(Config.protectedPartyFormationLagAbortMs) || 40);
+        const database = Database.stats();
+        const cold = ColdSimulationCoordinator.snapshot();
+        if (lagMs >= lagLimit
+            || Number(database.pending || 0) > 0
+            || database.checkpoint?.inFlight
+            || !cold.ready
+            || !cold.snapshotsLoaded
+            || Number(cold.queue?.depth || 0) > 0
+            || cold.queue?.flushing) {
+            this.partyFormationPending = true;
+            Metrics.recordPartyFormationDeferral();
+            this.nextProtectedPartyFormationAt = timestamp + Math.max(1000, Number(Config.protectedPartyFormationPollMs) || 5000);
+            return Promise.resolve([]);
+        }
+
+        this.partyFormationRunning = true;
+        this.partyFormationPending = false;
+        const startedAt = Date.now();
+        const mainBudgetMs = Math.max(1, Number(Config.protectedPartyFormationMainBudgetMs) || 25);
+        let failed = false;
+        let retrySoon = false;
+        return ColdSimulationCoordinator.requestRequiredPartyFormation({
+            timestamp,
+            candidateLimit: Config.protectedPartyFormationCandidateLimit,
+            minSize: Config.partyMinSize,
+            maxSize: Config.partyMaxSize,
+            levelRange: PartyComposition.DEFAULT_LEVEL_RANGE
+        }).then((proposal) => {
+            if (!proposal?.ok) {
+                failed = true;
+                return [];
+            }
+            const projections = proposal.candidates || [];
+            if (!projections.length) return [];
+            const activeParties = Number(BackgroundPartyState.counts().active || 0);
+            if (activeParties >= maxBackgroundPartiesForBacklog(proposal.requiredCount)) return [];
+
+            return hydratePartyCandidates(projections).then((states) => {
+                const required = states.filter((state) => {
+                    const objective = partyObjectiveForState(state);
+                    const objectiveSpot = String(
+                        objective?.spotId
+                        || (state.stats?.equipmentPlan?.status === 'active' ? state.stats.equipmentPlan.next?.spotId : null)
+                        || state.spotId
+                        || ''
+                    );
+                    return objective?.status === 'open'
+                        && objective?.priority === 'required'
+                        && objectiveSpot === String(proposal.spotId || '');
+                });
+                const selected = PartyComposition.selectMembers(required, {
+                    minSize: proposal.minSize,
+                    maxSize: proposal.maxSize,
+                    levelRange: proposal.levelRange
+                });
+                if (selected.length < Number(proposal.minSize || Config.partyMinSize)) {
+                    failed = true;
+                    return [];
+                }
+                const currentLagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
+                const currentDatabase = Database.stats();
+                const currentCold = ColdSimulationCoordinator.snapshot();
+                if (currentLagMs >= lagLimit
+                    || Number(currentDatabase.pending || 0) > 0
+                    || currentDatabase.checkpoint?.inFlight
+                    || Number(currentCold.queue?.depth || 0) > 0
+                    || currentCold.queue?.flushing) {
+                    retrySoon = true;
+                    Metrics.recordPartyFormationDeferral();
+                    return [];
+                }
+                const objectiveMember = selected.find((state) => partyObjectiveForState(state)?.priority === 'required');
+                const commitStartedAt = Date.now();
+                return createAndCommitBackgroundParty(selected, partyObjectiveForState(objectiveMember)).then((party) => {
+                    if (!party) failed = true;
+                    if (Date.now() - commitStartedAt > mainBudgetMs) failed = true;
+                    return party ? [party] : [];
+                });
+            });
+        }).catch((error) => {
+            failed = true;
+            utils.infoWarn('BotPopulation', 'protected party formation failed: %s', error?.message || error);
+            return [];
+        }).finally(() => {
+            const durationMs = Date.now() - startedAt;
+            this.nextProtectedPartyFormationAt = Date.now() + (retrySoon
+                ? Math.max(1000, Number(Config.protectedPartyFormationPollMs) || 5000)
+                : this.protectedPartyFormationDelay(failed));
+            Metrics.recordPartyFormationDuration(durationMs);
+            this.partyFormationRunning = false;
+        });
+    },
+
     formBackgroundParties() {
         // Formation rewrites party membership.  It must not overlap with the
         // scheduler after that scheduler has already selected solo candidates.
@@ -1886,81 +2098,9 @@ const PopulationService = {
                     }
                     return timedStage('candidate_hydration', () => hydratePartyCandidates(selectedMembers)).then((members) => {
                         if (members.length !== selectedMembers.length) return null;
-                        const leader = PartyComposition.chooseLeader(members);
-                        const objectiveMember = members.find((member) => (
-                            member.stats?.partyRequest?.status === 'open'
-                            && member.stats?.partyRequest?.priority === 'required'
-                        )) || members.find((member) => partyObjectiveForState(member)) || leader;
-                        const objective = partyObjectiveForState(objectiveMember);
-                        const partySpot = partySpotForLeader(leader, objective?.spotId || null);
-                        const partyId = `bgp_${Date.now().toString(36)}_${leader.characterId}`;
-                        const nextResolveAt = Date.now() + 45000 + Math.round(Math.random() * 90000);
-                        const coverage = PartyComposition.roleCoverage(members);
-                        const party = {
-                            partyId,
-                            leaderId: leader.characterId,
-                            memberIds: members.map((state) => state.characterId),
-                            spotId: partySpot?.id || leader.spotId,
-                            startedAt: Date.now(),
-                            nextResolveAt,
-                            cohesion: 0.55 + Math.random() * 0.25,
-                            risk: 0.18 + Math.random() * 0.22,
-                            roleCoverage: coverage,
-                            stats: {
-                                formedAt: Date.now(),
-                                memberNames: members.map((state) => state.name),
-                                personaFormation: Object.fromEntries(members.map((member) => [
-                                    member.characterId,
-                                    PersonaPartyPolicy.explain(member, members.filter((peer) => peer !== member), coverage)
-                                ])),
-                                route: partySpot?.route || null,
-                                objective: objective || null,
-                                acquisitionGoal: objectiveMember.stats?.equipmentPlan?.status === 'active'
-                                    ? objectiveMember.stats.equipmentPlan
-                                    : null
-                            }
-                        };
-                        const partyEvent = {
-                            characterId: leader.characterId,
-                            eventType: 'party',
-                            summary: `${leader.name} formed a party near ${party.spotId}`,
-                            meta: {
-                                partyId,
-                                spotId: party.spotId,
-                                memberIds: party.memberIds,
-                                route: party.stats.route
-                            },
-                            weight: 2,
-                            createdAt: Date.now()
-                        };
-
-                        return timedStage('party_commit', () => commitPartyMembership(party, members, partyEvent)).then(({ party: savedParty, assigned, failed, eventCommitted }) => {
-                            if (!savedParty || failed.length || assigned.length !== members.length) {
-                                return savedParty
-                                    ? dissolveBackgroundParty(savedParty, 'party_assignment_failed', assigned.length).then(() => null)
-                                    : null;
-                            }
-                            const eventWrite = eventCommitted
-                                ? Promise.resolve()
-                                : LifeEvents.record(
-                                    partyEvent.characterId,
-                                    partyEvent.eventType,
-                                    partyEvent.summary,
-                                    partyEvent.meta,
-                                    partyEvent.weight
-                                );
-                            return eventWrite.then(() => {
-                                Metrics.recordPartyFormation();
-                                created.push(savedParty);
-                                console.info(
-                                    'BotPopulation :: formed background party %s spot=%s members=%d leader=%s',
-                                    savedParty.partyId,
-                                    savedParty.spotId || 'none',
-                                    savedParty.memberIds.length,
-                                    leader.name
-                                );
-                                return savedParty;
-                            });
+                        return timedStage('party_commit', () => createAndCommitBackgroundParty(members)).then((savedParty) => {
+                            if (savedParty) created.push(savedParty);
+                            return savedParty;
                         });
                     });
                 }), Promise.resolve()).then(() => created);

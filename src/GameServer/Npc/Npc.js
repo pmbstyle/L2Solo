@@ -538,6 +538,22 @@ class Npc extends NpcModel {
         return effectAdjusted(super.fetchMaxHp(), this, 'maxHp');
     }
 
+    // C4/Lisvus calculates an attackable NPC's reward from MAX_HP. Permanent
+    // Strong Type skills therefore scale both the effective HP and the full
+    // XP/SP reward. Damage and party sharing apply their proportional split
+    // after this total reward has been calculated.
+    fetchRewardMaxHpMultiplier() {
+        return EffectStats.multiplier(this, 'maxHpMul');
+    }
+
+    fetchAcquiredExp() {
+        return super.fetchAcquiredExp() * this.fetchRewardMaxHpMultiplier();
+    }
+
+    fetchRewardSp() {
+        return super.fetchRewardSp() * this.fetchRewardMaxHpMultiplier();
+    }
+
     fetchCollectiveMAtk() {
         return effectAdjusted(super.fetchCollectiveMAtk(), this, 'mAtk');
     }

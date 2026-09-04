@@ -135,6 +135,10 @@ expectedCombatSkills.forEach((skillIds, npcId) => {
 const gigant = npcInstance(npcs.find((npc) => npc.selfId === 1187), 9981187);
 assert.strictEqual(EffectStats.multiplier(gigant, 'maxHpMul'), 4,
     'Strong Type must retain its exact four-times HP multiplier');
+assert.strictEqual(Math.round(gigant.fetchAcquiredExp()), 2376,
+    'Strong Type must apply its four-times multiplier to the full XP reward');
+assert.strictEqual(Math.round(gigant.fetchRewardSp()), 108,
+    'Strong Type must apply its four-times multiplier to the full SP reward');
 assert.strictEqual(EffectStats.multiplier(gigant, 'darkVuln'), 1.2,
     'Dark Attack Weak Point level three must retain its exact source multiplier');
 

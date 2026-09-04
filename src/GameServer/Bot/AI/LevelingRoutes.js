@@ -184,6 +184,7 @@ function classIdOf(state = {}) {
 
 function roleForState(state = {}) {
     const classId = classIdOf(state);
+    if (BotRoles.isSpoiler(state)) return 'spoiler';
     if (classId && ECONOMIC_ROLES[classId]) return ECONOMIC_ROLES[classId];
     if (state.party?.role) return state.party.role;
     if (state.stats?.routeRole) return state.stats.routeRole;

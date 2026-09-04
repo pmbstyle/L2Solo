@@ -99,6 +99,11 @@ try {
         assert.strictEqual(BotRoles.className(100), 'Sword Muse', 'list presentation must use a human-readable profession');
         assert.strictEqual(BotRoles.inferRole({ classId: 30 }), 'healer', 'persisted character rows must resolve roles from classId');
         assert.strictEqual(BotRoles.presentation(null).classId, null, 'a missing profession must not be mistaken for Human Fighter');
+        assert.strictEqual(BotRoles.inferRole({ classId: 53, level: 1 }), 'spoiler', 'a pre-profession dwarf should follow the spoiler track');
+        assert.strictEqual(BotRoles.inferRole({ classId: 56, level: 39 }), 'spoiler', 'a sub-40 dwarf should use the spoiler track while leveling');
+        assert.strictEqual(BotRoles.inferRole(55), 'spoiler', 'Bounty Hunter must be recognized as a spoiler');
+        assert.strictEqual(BotRoles.inferRole(117), 'spoiler', 'Fortune Seeker must be recognized as a spoiler');
+        assert.strictEqual(BotRoles.combatRoleFor({ classId: 57, level: 40 }), 'dps', 'a non-spoiler dwarf branch should remain DPS in combat for now');
         assert.strictEqual(BotRoles.inferRole(118), 'crafter', 'Maestro must retain its crafter role');
         console.log('Bot class progression checks passed');
     }).catch((error) => {

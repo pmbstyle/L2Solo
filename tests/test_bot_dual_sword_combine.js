@@ -20,7 +20,11 @@ const saberRevolution = DualSwords.resolveByProductId(2523);
 const saberSaber = DualSwords.resolveByProductId(2516);
 const shamshirCaliburs = DualSwords.resolveByProductId(2576);
 const stormbringerCaliburs = DualSwords.resolveByProductId(2566);
-assert.strictEqual(DualSwords.loadRecipes().length, 110, 'every C4 blacksmith dual-sword result must be represented');
+const keshanberkKeshanberk = DualSwords.resolveByProductId(5233);
+const keshanberkDamascus = DualSwords.resolveByProductId(5705);
+const damascusDamascus = DualSwords.resolveByProductId(5706);
+const tallumDarkLegion = DualSwords.resolveByProductId(6580);
+assert.strictEqual(DualSwords.loadRecipes().length, 114, 'every C4 blacksmith dual-sword result must be represented');
 assert(DualSwords.loadRecipes().every((recipe) => (
     recipe.materials.reduce((sum, material) => sum + Number(material.amount || 0), 0) === 2
 )), 'bot dual-sword exchanges must contain exactly two swords and no crystals, stones, stamps, or Adena');
@@ -34,6 +38,18 @@ assert.deepStrictEqual(saberSaber.materials, [
 assert.strictEqual(saberSaber.station.id, 'blacksmith_pushkin', 'generic multisell 1001 combinations must use a standard blacksmith');
 assert.strictEqual(shamshirCaliburs.station.id, 'blacksmith_wilbert', 'Wilbert-specific combinations must retain their native smith');
 assert.strictEqual(stormbringerCaliburs.station.id, 'blacksmith_helton', 'Helton-specific combinations must retain their native smith');
+assert.deepStrictEqual(keshanberkKeshanberk.materials, [{ selfId: 142, amount: 2 }],
+    'Keshanberk*Keshanberk must consume two Keshanberks');
+assert.deepStrictEqual(keshanberkDamascus.materials, [
+    { selfId: 142, amount: 1 },
+    { selfId: 79, amount: 1 }
+], 'Keshanberk*Damascus must consume its two source swords');
+assert.deepStrictEqual(damascusDamascus.materials, [{ selfId: 79, amount: 2 }],
+    'Damascus*Damascus must consume two Swords of Damascus');
+assert.deepStrictEqual(tallumDarkLegion.materials, [
+    { selfId: 80, amount: 1 },
+    { selfId: 2500, amount: 1 }
+], 'Tallum Blade*Dark Legion\'s Edge must consume its two source swords');
 
 function stateFor(recipe, inventory) {
     return {

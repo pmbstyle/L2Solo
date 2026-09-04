@@ -1,5 +1,8 @@
 const DataCache = invoke('GameServer/DataCache');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
+const NpcSkills = invoke('GameServer/Npc/NpcSkills');
+
+const npcRewardMaxHpMultiplierCache = new Map();
 
 function rewardDataForSpot(spot, rng, npcSelfId = 0) {
     const entries = spot?.npcEntries?.length
@@ -58,6 +61,25 @@ function sourceMobLevel(rewardData, spot, npcSelfId = 0) {
     return Math.max(0, Number(npc?.template?.level || spot?.avgLevel || 0));
 }
 
+function rewardMaxHpMultiplier(npc) {
+    const npcId = Number(npc?.selfId || 0);
+    if (!npcId) return 1;
+    if (npcRewardMaxHpMultiplierCache.has(npcId)) {
+        return npcRewardMaxHpMultiplierCache.get(npcId);
+    }
+
+    // Background combat has templates rather than live Npc instances. Build
+    // the narrow source-compatible view needed to resolve permanent NPC
+    // passive skills, including Strong Type's MAX_HP multiplier.
+    const npcReference = {
+        fetchSelfId: () => npcId,
+        fetchSummonSkillId: () => Number(npc?.summonSkillId || 0)
+    };
+    const multiplier = NpcSkills.maxHpMultiplierFor(npcReference);
+    npcRewardMaxHpMultiplierCache.set(npcId, multiplier);
+    return multiplier;
+}
+
 function progressionForFight({ spot, npcSelfId = 0, rng = Math.random } = {}) {
     const rewardData = rewardDataForSpot(spot, rng, npcSelfId);
     const npc = (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(npcSelfId || rewardData?.selfId));
@@ -65,10 +87,11 @@ function progressionForFight({ spot, npcSelfId = 0, rng = Math.random } = {}) {
     const expModifier = Number(npc?.rewards?.exp);
     const sp = Number(npc?.rewards?.sp);
     if (npc && Number.isFinite(expModifier) && Number.isFinite(sp)) {
+        const maxHpMultiplier = rewardMaxHpMultiplier(npc);
         return {
             exact: true,
-            exp: Math.max(0, level * level * expModifier),
-            sp: Math.max(0, sp)
+            exp: Math.max(0, level * level * expModifier * maxHpMultiplier),
+            sp: Math.max(0, sp * maxHpMultiplier)
         };
     }
     return {

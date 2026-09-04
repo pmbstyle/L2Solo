@@ -151,9 +151,9 @@ function chooseWeapon(rank, level, role, classId) {
     const exact = chooseKinds(preferredKinds) || chooseKinds(allowedKinds);
     if (exact || !allowedKinds.includes('Weapon.Dual')) return exact;
 
-    // The current C4 item catalog ends its dual-sword combinations at B grade.
-    // Bladedancers must keep that compatible weapon until higher-grade duals
-    // are added instead of generating an empty weapon slot at level 61+.
+    // Dual-only classes must keep a compatible lower-grade dual when the
+    // current grade has no catalog entry instead of generating an empty
+    // weapon slot during a temporary progression gap.
     for (let index = RANK_ORDER.indexOf(rank) - 1; index >= 0; index--) {
         const fallback = chooseKinds(preferredKinds, RANK_ORDER[index]) || chooseKinds(allowedKinds, RANK_ORDER[index]);
         if (fallback) return fallback;

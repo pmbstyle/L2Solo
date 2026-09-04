@@ -115,6 +115,7 @@ const tests = [
     'tests/test_bot_craft_telemetry.js',
     'tests/test_bot_cold_market_purchase.js',
     'tests/test_cold_inventory_jewelry.js',
+    'tests/test_cold_inventory_instance_sync.js',
     'tests/test_bot_cold_market_listing.js',
     'tests/test_bot_recipe_disposition.js',
     'tests/test_bot_inventory_cleanup_goal.js',
@@ -155,6 +156,7 @@ const tests = [
     'tests/test_bot_population_policy.js',
     'tests/test_floor_aware_activation_policy.js',
     'tests/test_bot_population_scheduler_slices.js',
+    'tests/test_bot_protected_party_formation.js',
     'tests/test_bot_population_scheduler_telemetry.js',
     'tests/test_background_work_governor.js',
     'tests/test_background_work_governor_integration.js',
@@ -305,6 +307,7 @@ const tests = [
     'tests/test_sell_junk_packet_bounds.js',
     'tests/test_personal_warehouse.js',
     'tests/test_clan_player_warehouse.js',
+    'tests/test_clan_warehouse_equipment_exchange.js',
     'tests/test_clan_gear_stall_and_spoil.js',
     'tests/test_npc_social_aggro.js',
     'tests/test_npc_hot_bot_aggro.js',
@@ -374,6 +377,7 @@ const tests = [
     'tests/test_world_observer_equipment.js',
     'tests/test_world_observer_clans.js',
     'tests/test_world_npc_grid.js',
+    'tests/test_npc_object_index.js',
     'tests/test_toggle_skills.js',
     'tests/test_ui_test_window.js'
 ];

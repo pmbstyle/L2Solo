@@ -54,6 +54,7 @@ const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const Protocol = require('./ColdSimulationProtocol');
+const RequiredPartyFormation = require('./RequiredPartyFormation');
 const { ColdSimulationKernel, beginRouteTravelState } = require('./ColdSimulationKernel');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const forbiddenLoaded = Object.keys(require.cache).filter((filename) => (
@@ -361,6 +362,13 @@ async function handle(message) {
     case 'command_ack':
         (payload.results || []).forEach((result) => kernel?.completeCommand(result));
         break;
+    case 'party_formation_request': {
+        const states = kernel
+            ? [...kernel.states.values()].map((entry) => entry?.state).filter(Boolean)
+            : [];
+        send('party_formation_proposal', RequiredPartyFormation.proposalFromStates(states, payload), message.msgId);
+        break;
+    }
     case 'fence': {
         const result = kernel?.fence(payload.characterId) || { characterId: Number(payload.characterId), proposal: null, token: null };
         send('fence_ack', result, message.msgId);

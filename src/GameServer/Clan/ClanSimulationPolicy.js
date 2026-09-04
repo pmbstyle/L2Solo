@@ -65,8 +65,8 @@ function isStaticService(candidate = {}) {
 
 function rosterRole(candidate = {}) {
     const classId = number(candidate.classId ?? candidate.stats?.classId, -1);
+    if (BotRoles.isSpoiler(candidate)) return 'spoiler';
     if ([56, 57].includes(classId)) return 'crafter';
-    if ([54, 55].includes(classId)) return 'spoiler';
     return BotRoles.inferRole(candidate);
 }
 

@@ -13,6 +13,7 @@ const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 const BotTargetScorer = invoke('GameServer/Bot/AI/BotTargetScorer');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
+const NpcObjectIndex = require('../../World/NpcObjectIndex');
 
 function ratio(value, max) {
     if (!max) return 0;
@@ -109,7 +110,7 @@ function findTarget(session, bot) {
         return { type: 'user', ...actorSummary(userSession.actor, bot) };
     }
 
-    const npc = World.npc.spawns.find((ob) => ob.fetchId() === session.currentTargetId);
+    const npc = NpcObjectIndex.find(World, session.currentTargetId);
     if (npc) {
         if (BotRaidSafety.isProtectedRaidEntity(npc)) return null;
         return {
