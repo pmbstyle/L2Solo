@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const Database  = invoke('Database');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
@@ -45,7 +46,7 @@ async function runPostCommitCallback(label, callback, result, storeItem) {
 }
 
 function itemTemplate(selfId) {
-    return DataCache.items.find((ob) => ob.selfId === selfId);
+    return ItemTemplateIndex.findStrict(DataCache.items, selfId);
 }
 
 function itemName(selfId) {

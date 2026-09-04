@@ -409,8 +409,8 @@ async function run() {
     assert.deepStrictEqual(hydratedIds.options, { ownerId: 'legacy_main', unassigned: true });
     assert.deepStrictEqual(
         releaseStages.filter((stage) => !stage.startsWith('item_')),
-        ['resume', 'candidates', 'hydrate', 'release_items'],
-        'warehouse release telemetry must preserve every bounded batch phase');
+        ['resume', 'hydrate', 'candidates', 'release_items', 'release_items'],
+        'warehouse telemetry must track bounded hydration and each completed candidate');
 
     const historicalRows = [
         { id: 81, selfId: 94, name: 'Bec de Corbin', amount: 1, enchant: 0 },

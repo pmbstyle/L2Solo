@@ -1,3 +1,5 @@
+const BackgroundCandidateQueue = require('../Population/BackgroundCandidateQueue');
+const releaseQueue = new BackgroundCandidateQueue();
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
@@ -601,64 +603,45 @@ async function releaseColdBatch(limit = 8, deadlineAt = Infinity, options = {}) 
     if (Date.now() >= deadlineAt) return released;
     const remainingLimit = Math.max(0, safeLimit - released.length);
     if (remainingLimit <= 0) return released;
-    const craftLimit = Math.max(1, Math.floor(remainingLimit / 2));
-    let craftStates;
-    let marketIds;
-    let enchantIds;
-    let marketDemandSelfIds;
-    const candidatesStartedAt = Date.now();
-    try {
-        marketDemandSelfIds = MarketOpportunity.activeBuyDemandSelfIds();
-        craftStates = craftReleaseCandidates(craftLimit);
-        [marketIds, enchantIds] = await Promise.all([
-            releaseCandidates(remainingLimit, marketDemandSelfIds),
-            enchantReleaseCandidates(remainingLimit)
-        ]);
-    } finally {
-        recordStage('candidates', candidatesStartedAt);
-    }
-    if (Date.now() >= deadlineAt) return released;
-    const states = [...craftStates];
-    const claimed = new Set(states.map((state) => Number(state.characterId)));
-    const backgroundIds = [];
-    for (let index = 0; index < Math.max(marketIds.length, enchantIds.length); index += 1) {
-        if (enchantIds[index]) backgroundIds.push(enchantIds[index]);
-        if (marketIds[index]) backgroundIds.push(marketIds[index]);
-    }
-    const hydrationIds = [];
-    const hydrationClaims = new Set(claimed);
-    for (const characterId of backgroundIds) {
-        const id = Number(characterId);
-        if (!id || hydrationClaims.has(id)) continue;
-        hydrationIds.push(id);
-        hydrationClaims.add(id);
-        if (hydrationIds.length >= remainingLimit - states.length) break;
-    }
-    const hydrationStartedAt = Date.now();
-    const hydrated = await LifeState.statesByIds(hydrationIds, { ownerId: 'legacy_main', unassigned: true })
-        .finally(() => recordStage('hydrate', hydrationStartedAt));
-    if (Date.now() >= deadlineAt) return released;
-    const hydratedById = new Map(hydrated.map((state) => [Number(state.characterId), state]));
-    for (const characterId of hydrationIds) {
-        const state = hydratedById.get(Number(characterId));
-        if (!state) continue;
-        states.push(state);
-        claimed.add(Number(characterId));
-    }
-    const releaseStartedAt = Date.now();
-    try {
-        for (const state of states) {
-            if (Date.now() >= deadlineAt) break;
+    const result = await releaseQueue.run({
+        limit: remainingLimit, deadlineAt,
+        select: async () => {
+            const craftStates = craftReleaseCandidates(Math.max(1, Math.floor(remainingLimit / 2)));
+            const [marketIds, enchantIds] = await Promise.all([
+                releaseCandidates(remainingLimit, MarketOpportunity.activeBuyDemandSelfIds()),
+                enchantReleaseCandidates(remainingLimit)
+            ]);
+            const ids = craftStates.map((state) => Number(state.characterId));
+            for (let index = 0; index < Math.max(marketIds.length, enchantIds.length); index++) {
+                if (enchantIds[index]) ids.push(enchantIds[index]);
+                if (marketIds[index]) ids.push(marketIds[index]);
+            }
+            const startedAt = Date.now();
+            const states = await LifeState.statesByIds([...new Set(ids)].slice(0, remainingLimit), {
+                ownerId: 'legacy_main', unassigned: true
+            });
+            recordStage('hydrate', startedAt);
+            return states;
+        },
+        refresh: (selected) => {
+            const state = LifeState.cachedState(selected.characterId) || selected;
+            return state && state.phase !== 'hot' && isLegacyMainState(state) && !state.party?.partyId
+                && ['hunting', 'resting'].includes(state.activity) ? state : null;
+        },
+        work: async (state) => {
             try {
-                const result = await releaseCold(state, { ...options, marketDemandSelfIds });
-                if (result.released) released.push(result);
+                const result = await releaseCold(state, options);
+                return result.released ? result : null;
             } catch (error) {
                 utils.infoWarn('BotWarehouse', 'cold warehouse release failed for %s: %s', state.name, error?.message || String(error));
+                return null;
             }
-        }
-    } finally {
-        recordStage('release_items', releaseStartedAt);
-    }
+        },
+        onStage: (stage, duration) => options.onStage?.(stage === 'projection' ? 'candidates' : 'release_items', duration),
+        onProgress: (progress) => options.onProgress?.(progress)
+    });
+    released.push(...result.results);
+    Object.defineProperty(released, 'continuation', { value: result.continuation });
     return released;
 }
 

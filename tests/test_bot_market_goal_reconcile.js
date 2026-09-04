@@ -10,6 +10,7 @@ const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 
 const originals = {
     candidates: LifeState.marketGoalCandidates,
+    cachedState: LifeState.cachedState,
     upsert: LifeState.upsertState,
     reviewBatch: GoalService.reviewBatch,
     travel: GoalExecutor.beginMarketTravel,
@@ -36,6 +37,27 @@ async function run() {
     const result = await PopulationService.reconcileMarketGoals();
     assert.strictEqual(result.length, 1);
     assert.strictEqual(saved[0].activity, 'traveling', 'reconcile should immediately begin a valid market trip');
+    let current = seller;
+    LifeState.cachedState = () => current;
+    GoalService.reviewBatch = async () => {
+        current = { ...seller, phase: 'hot' };
+        return [{ current: { type: 'sell_inventory' } }];
+    };
+    assert.deepStrictEqual(await PopulationService.reconcileMarketGoals(), [],
+        'a player activation during goal persistence must cancel the cold journey');
+    assert.strictEqual(saved.length, 1);
+    current = seller;
+    GoalService.reviewBatch = async () => {
+        current = { ...seller, inventory: { 57: { amount: 1000 } } };
+        return [{ current: { type: 'sell_inventory' } }];
+    };
+    assert.deepStrictEqual(await PopulationService.reconcileMarketGoals(), [],
+        'a goal computed from older inventory must not overwrite a newer cold state');
+    current = { ...seller, simulation: { ownerId: 'cold_simulation_owner' } };
+    assert.strictEqual(PopulationService.refreshGoalCandidate(seller), current,
+        'metadata reviews must still progress for worker-owned bots');
+    assert.strictEqual(PopulationService.refreshGoalCandidate(seller, true), null,
+        'main-thread market travel must not take over worker ownership');
     console.log('Bot market goal reconcile checks passed');
 }
 
@@ -44,6 +66,7 @@ run().catch((err) => {
     process.exitCode = 1;
 }).finally(() => {
     LifeState.marketGoalCandidates = originals.candidates;
+    LifeState.cachedState = originals.cachedState;
     LifeState.upsertState = originals.upsert;
     GoalService.reviewBatch = originals.reviewBatch;
     GoalExecutor.beginMarketTravel = originals.travel;

@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const SendPacket = invoke('Packet/Send');
 const DataCache = invoke('GameServer/DataCache');
 
@@ -13,7 +14,7 @@ module.exports = function privateStoreManageListBuy(actor, store) {
         packet.writeD(item.fetchSelfId()).writeH(0).writeD(item.fetchAmount()).writeD(item.fetchPrice())
             .writeH(0).writeD(bodyPart(item)).writeH(item.fetchClass2());
     });
-    const rows = (store?.items || []).map((row) => ({ row, template: DataCache.items.find((entry) => Number(entry.selfId) === Number(row.selfId)) })).filter((entry) => entry.template);
+    const rows = (store?.items || []).map((row) => ({ row, template: ItemTemplateIndex.find(DataCache.items, row.selfId) })).filter((entry) => entry.template);
     packet.writeD(rows.length);
     rows.forEach(({ row, template }) => {
         const item = { isWearable: () => !!template.etc?.slot, fetchSlot: () => template.etc?.slot || 0 };

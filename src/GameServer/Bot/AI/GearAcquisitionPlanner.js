@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const C4DualSwordCombinations = invoke('GameServer/Items/C4DualSwordCombinations');
@@ -382,7 +383,7 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
     const allowedRank = rankIndex(gradeForLevel(state.level));
     const candidates = Object.values(inventory || {}).flatMap((entry) => {
         if (Number(entry?.amount || 0) < 1) return [];
-        const item = (DataCache.items || []).find((candidate) => Number(candidate.selfId) === Number(entry.selfId));
+        const item = ItemTemplateIndex.find(DataCache.items, entry.selfId);
         const rank = rankIndex(item?.etc?.rank);
         return item && rank <= allowedRank && suitable(item, state, role, item.etc?.rank) ? [{ entry, item }] : [];
     });
@@ -429,7 +430,7 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
     };
     if (!BotEquipmentCompatibility.usesShield(role, classId)) {
         Object.values(next).forEach((owned) => {
-            const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(owned?.selfId));
+            const template = ItemTemplateIndex.find(DataCache.items, owned?.selfId);
             if (Number(template?.etc?.slot || 0) === 8
                 && equippedSlotsFor(owned, owned.slot).includes(8)) {
                 setUnequipped(owned);
@@ -439,7 +440,7 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
     best.forEach(({ entry, item }, key) => {
         const slot = Number(item.etc?.slot || 0);
         Object.values(next).forEach((owned) => {
-            const ownedItem = (DataCache.items || []).find((candidate) => Number(candidate.selfId) === Number(owned.selfId));
+            const ownedItem = ItemTemplateIndex.find(DataCache.items, owned.selfId);
             const ownedKey = ownedItem ? equipmentSlotKey(ownedItem.etc?.slot) : String(owned.slot || 0);
             if (ownedKey === key && Number(owned.selfId) !== Number(entry.selfId)) setUnequipped(owned);
         });
@@ -486,7 +487,7 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
     const hasTwoHandedWeapon = hasEquippedTwoHandedWeapon({ ...state, inventory: next });
     if (hasTwoHandedWeapon) {
         Object.values(next).forEach((owned) => {
-            const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(owned?.selfId));
+            const template = ItemTemplateIndex.find(DataCache.items, owned?.selfId);
             if (Number(template?.etc?.slot || 0) === 8) setUnequipped(owned);
         });
     }
@@ -603,7 +604,7 @@ function preferredNoGradeTarget(state = {}, options = {}) {
     const excluded = excludedTargetIds(options);
 
     const candidates = planned.items
-        .map((desired) => (DataCache.items || []).find((item) => Number(item.selfId) === Number(desired.selfId)))
+        .map((desired) => ItemTemplateIndex.find(DataCache.items, desired.selfId))
         .filter(isRealCatalogItem)
         .filter((item) => !excluded.has(Number(item.selfId)))
         .filter((item) => {
@@ -853,7 +854,7 @@ function staticNpcKitAdequate(state = {}, options = {}) {
 }
 
 function marketPlanForTarget(state = {}, targetId, options = {}) {
-    const target = (DataCache.items || []).find((item) => Number(item.selfId) === Number(targetId));
+    const target = ItemTemplateIndex.find(DataCache.items, targetId);
     const role = roleFor(state);
     const ownedItems = inventoryItems(state.inventory);
     if (!target || !suitable(target, state, role, gradeForLevel(state.level))) return null;
@@ -865,7 +866,7 @@ function marketPlanForTarget(state = {}, targetId, options = {}) {
 function marketRecoveryPlanForTarget(state = {}, targetId, options = {}) {
     const exact = marketPlanForTarget(state, targetId, options);
     if (exact) return exact;
-    const failedTarget = (DataCache.items || []).find((item) => Number(item.selfId) === Number(targetId));
+    const failedTarget = ItemTemplateIndex.find(DataCache.items, targetId);
     if (!failedTarget) return null;
     const role = roleFor(state);
     const classId = classIdFor(state);
@@ -943,7 +944,7 @@ function directPlanFailure(state = {}, plan = {}, timestamp = Date.now()) {
     const targetId = Number(plan.target?.selfId || 0);
     const npcId = Number(plan.next?.npcId || 0);
     if (!targetId || !npcId) return null;
-    const target = (DataCache.items || []).find((item) => Number(item.selfId) === targetId);
+    const target = ItemTemplateIndex.find(DataCache.items, targetId);
     if (!target || !isSlotUpgrade(target, inventoryItems(state.inventory), roleFor(state), classIdFor(state))) return null;
     const current = targetCombatCounter(state, npcId);
     const hasBaseline = Number(plan.targetProgress?.npcId || 0) === npcId;

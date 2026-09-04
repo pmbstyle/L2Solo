@@ -43,7 +43,8 @@ function jobMetrics(job) {
             grantedMs: 0,
             actualMs: 0,
             reasons: new Map(),
-            stages: new Map()
+            stages: new Map(),
+            progress: { selected: 0, processed: 0, skipped: 0, resumed: 0, deadlineStops: 0, pending: 0 }
         });
     }
     return metrics.jobs.get(key);
@@ -56,6 +57,14 @@ function recordStage(job, stage, durationMs) {
     const samples = values.get(name);
     samples.push(Math.max(0, number(durationMs)));
     if (samples.length > 128) samples.splice(0, samples.length - 128);
+}
+
+function recordProgress(job, progress) {
+    const target = jobMetrics(job).progress;
+    for (const key of ['selected', 'processed', 'skipped', 'resumed', 'deadlineStops']) {
+        target[key] += Math.max(0, number(progress[key]));
+    }
+    target.pending = Math.max(0, number(progress.pending));
 }
 
 function stageStats(values = []) {
@@ -219,6 +228,7 @@ function serializeJobMetrics() {
         overruns: value.overruns,
         grantedMs: value.grantedMs,
         actualMs: value.actualMs,
+        progress: { ...value.progress },
         reasons: Object.fromEntries(value.reasons.entries()),
         stages: Object.fromEntries([...value.stages.entries()].map(([stage, samples]) => [stage, stageStats(samples)]))
     }]));
@@ -264,4 +274,4 @@ function reset() {
     metrics.jobs.clear();
 }
 
-module.exports = { admit, complete, recordStage, pressureSnapshot, snapshot, reset };
+module.exports = { admit, complete, recordStage, recordProgress, pressureSnapshot, snapshot, reset };

@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
@@ -211,7 +212,7 @@ function migratePopulationAppearances(states = []) {
 
 function awardBaseGear(characterId, classId) {
     const items = DataCache.newbieItems.find((row) => row.classId === classId)?.items || [];
-    const starterTemplates = items.map((item) => DataCache.items.find((row) => row.selfId === item.selfId));
+    const starterTemplates = items.map((item) => ItemTemplateIndex.findStrict(DataCache.items, item.selfId));
     const hasTwoHandedWeapon = starterTemplates.some((template) => (
         Number(template?.etc?.slot || 0) === 14 &&
         String(template?.template?.kind || '').startsWith('Weapon.')
@@ -221,7 +222,7 @@ function awardBaseGear(characterId, classId) {
         return Promise.all(items
             .filter((item) => !existingIds.has(Number(item.selfId)))
             .map((item) => {
-                const template = DataCache.items.find((row) => row.selfId === item.selfId);
+                const template = ItemTemplateIndex.findStrict(DataCache.items, item.selfId);
                 return Database.setItem(characterId, {
                     ...item,
                     slot: template?.etc?.slot || 0,

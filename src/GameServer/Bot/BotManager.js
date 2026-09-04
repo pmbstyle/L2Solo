@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const Database    = invoke('Database');
 const Shared      = invoke('GameServer/Network/Shared');
 const DataCache   = invoke('GameServer/DataCache');
@@ -701,6 +702,7 @@ const BotManager = {
                         session.backgroundActivity = botData.backgroundActivity || session.plan;
                         session.currentSpot = botData.currentSpot || null;
                         session.coldLifeState = botData.coldLifeState || null;
+                        session.populationLocationPolicy = botData.populationLocationPolicy || 'return';
                         if (botData.spawnReady !== false) {
                             this.prepareBotForSpawn(session, botData);
                         }
@@ -763,12 +765,12 @@ const BotManager = {
     awardBaseGear(id, classId) {
         const items = DataCache.newbieItems.find(ob => ob.classId === classId)?.items ?? [];
         const hasTwoHandedWeapon = items.some((item) => {
-            const template = DataCache.items.find((entry) => entry.selfId === item.selfId);
+            const template = ItemTemplateIndex.findStrict(DataCache.items, item.selfId);
             return Number(template?.etc?.slot || 0) === 14 &&
                 String(template?.template?.kind || '').startsWith('Weapon.');
         });
         items.forEach((item) => {
-            item.slot = DataCache.items.find(ob => ob.selfId === item.selfId)?.etc?.slot ?? 0;
+            item.slot = ItemTemplateIndex.findStrict(DataCache.items, item.selfId)?.etc?.slot ?? 0;
             // Equip weapons/armors automatically for bots
             item.equipped = !(hasTwoHandedWeapon && Number(item.slot) === 8);
             Database.setItem(id, item);

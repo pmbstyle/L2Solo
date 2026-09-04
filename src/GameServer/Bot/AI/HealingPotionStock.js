@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
@@ -24,7 +25,7 @@ const DESIRED_HP_RATIO = 0.65;
 const MAX_USES_PER_ENCOUNTER = 1;
 
 function templateFor(selfId) {
-    return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId)) || null;
+    return ItemTemplateIndex.find(DataCache.items, selfId) || null;
 }
 
 function detailsFor(selfId) {

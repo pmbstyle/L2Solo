@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
@@ -43,7 +44,7 @@ function rewardDataForSpot(spot, rng, npcSelfId = 0) {
 }
 
 function itemSnapshot(item, amount, sourceMobLevel = 0) {
-    const template = (DataCache.items || []).find((entry) => Number(entry.selfId) === Number(item.selfId));
+    const template = ItemTemplateIndex.find(DataCache.items, item.selfId);
     if (!template || template.template?.kind === 'Other.Quest') return null;
     return {
         selfId: Number(item.selfId),

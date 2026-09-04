@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 
@@ -6,7 +7,7 @@ const ARMOR_SLOTS = new Set([6, 8, 9, 10, 11, 12, 15]);
 const JEWEL_SLOTS = new Set([1, 2, 3, 4, 5]);
 
 function templateFor(item = {}) {
-    return (DataCache.items || []).find((entry) => Number(entry.selfId) === Number(item.selfId)) || null;
+    return ItemTemplateIndex.find(DataCache.items, item.selfId) || null;
 }
 
 function equipmentDrop(item = {}) {

@@ -20,6 +20,10 @@ class ColdCommitQueue {
         this.onResults = options.onResults || (() => {});
         this.onPause = options.onPause || (() => {});
         this.onResume = options.onResume || (() => {});
+        this.admitEarlyFlush = options.admitEarlyFlush || (() => null);
+        this.completeEarlyFlush = options.completeEarlyFlush || (() => {});
+        this.capacityBlocked = false;
+        this.nextEarlyAttemptAt = 0;
         this.now = options.now || Date.now;
         this.targetMs = Math.max(100, Number(options.targetMs) || 2000);
         this.hardMs = Math.max(this.targetMs, Number(options.hardMs) || 5000);
@@ -154,28 +158,28 @@ class ColdCommitQueue {
         return selected;
     }
 
-    takeBatch(force = false) {
+    takeBatch(force = false, rowLimit = this.maxRows) {
         const timestamp = this.now();
-        if (this.p0.length) return this.takeLaneBatch(this.p0, Math.min(16, this.maxRows));
+        if (this.p0.length) return this.takeLaneBatch(this.p0, Math.min(16, rowLimit));
         const p2Overdue = this.p2.size > 0 && timestamp - this.oldest(this.p2) >= this.overdueMs;
         const p1Ready = this.p1.length > 0 && (force || timestamp - this.oldest(this.p1) >= this.p1TargetMs);
         const p2Ready = this.p2.size > 0 && (force || timestamp - this.oldest(this.p2) >= this.targetMs);
         if (p2Overdue || (p2Ready && (this.p1Credit >= 4 || !p1Ready))) {
             const batch = [...this.p2.values()]
                 .sort((a, b) => a.queuedAt - b.queuedAt)
-                .slice(0, this.maxRows);
+                .slice(0, rowLimit);
             batch.forEach((entry) => this.p2.delete(Number(entry.characterId)));
             this.p1Credit = 0;
             return batch;
         }
         if (p1Ready) {
             this.p1Credit += 1;
-            return this.takeLaneBatch(this.p1, Math.min(16, this.maxRows));
+            return this.takeLaneBatch(this.p1, Math.min(16, rowLimit));
         }
         if (p2Ready) {
             const batch = [...this.p2.values()]
                 .sort((a, b) => a.queuedAt - b.queuedAt)
-                .slice(0, this.maxRows);
+                .slice(0, rowLimit);
             batch.forEach((entry) => this.p2.delete(Number(entry.characterId)));
             this.p1Credit = 0;
             return batch;
@@ -201,8 +205,22 @@ class ColdCommitQueue {
 
     async flushDue(force = false) {
         if (this.flushing) return false;
-        const batch = this.takeBatch(force);
-        if (!batch.length) return false;
+        let batch = this.takeBatch(force);
+        let earlyLease = null;
+        if (!batch.length && this.capacityBlocked && this.size() && this.now() >= this.nextEarlyAttemptAt) {
+            this.nextEarlyAttemptAt = this.now() + 100;
+            earlyLease = this.admitEarlyFlush();
+            if (earlyLease) {
+                // Free a few ownership slots without introducing a full idle
+                // batch into a player window. Atomic groups are never split.
+                const rowLimit = Math.min(this.maxRows, 4, Math.max(1, Math.floor(Number(earlyLease.budgetMs || 8) / 4)));
+                batch = this.takeBatch(true, rowLimit);
+            }
+        }
+        if (!batch.length) {
+            if (earlyLease) this.completeEarlyFlush(earlyLease, 0);
+            return false;
+        }
         this.flushing = true;
         batch.forEach((entry) => { this.bytes = Math.max(0, this.bytes - entry.bytes); });
         const startedAt = this.now();
@@ -247,6 +265,8 @@ class ColdCommitQueue {
                 proposal
             })));
         } finally {
+            if (earlyLease) this.completeEarlyFlush(earlyLease, this.now() - startedAt);
+            if (!this.size()) this.capacityBlocked = false;
             this.samples.commit.push(this.now() - startedAt);
             if (this.samples.commit.length > 256) this.samples.commit.shift();
             this.samples.queue.push(...batch.map((entry) => startedAt - entry.queuedAt));

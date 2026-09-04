@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('./Item/ItemTemplateIndex');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const ServerResponse = invoke('GameServer/Network/Response');
@@ -36,7 +37,7 @@ function sendBreakMessage(session, item, oldLevel) {
 }
 
 function crystalTemplate(selfId) {
-    return DataCache.items?.find((entry) => Number(entry.selfId) === Number(selfId));
+    return ItemTemplateIndex.find(DataCache.items, selfId);
 }
 
 function removeFromMemory(backpack, item) {

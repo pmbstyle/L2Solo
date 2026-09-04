@@ -959,6 +959,8 @@ function state(characterId = 1, overrides = {}) {
         'a full ownership window must flush immediately instead of waiting two seconds');
     const capacityFlushBatch = capacityFlushMessages.find((entry) => entry.type === 'proposal_batch');
     assert.strictEqual(capacityFlushBatch.payload.proposals.length, 8);
+    assert.strictEqual(capacityFlushBatch.payload.capacityBlocked, true,
+        'the main thread must know that commits are holding all worker slots');
     assert.strictEqual(capacityFlushKernel.snapshot().dirty, 0);
     assert.strictEqual(capacityFlushKernel.snapshot().flushReasons.capacity, 1);
     assert.strictEqual(capacityFlushKernel.snapshot().lastFlushRows, 8);

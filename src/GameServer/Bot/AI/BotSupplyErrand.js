@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const TradeService = invoke('GameServer/Bot/TradeService');
@@ -14,7 +15,7 @@ function actorAdena(actor) {
 }
 
 function itemTemplate(selfId) {
-    return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId)) || null;
+    return ItemTemplateIndex.find(DataCache.items, selfId) || null;
 }
 
 function townDestination(offer, bot, BotAI) {

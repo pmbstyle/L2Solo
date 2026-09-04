@@ -103,7 +103,50 @@ function proposal(characterId, priority = 'P2', revision = 1) {
     assert.deepStrictEqual(groupedBatches[1].sort((a, b) => a - b), [31, 32, 33],
         'all members of an atomic party commit must be flushed together');
 
-    console.log('Cold commit queue coalescing, durability boundary, backpressure, and retry checks passed');
+    let allowed = false;
+    let admissions = 0;
+    const completedLeases = [];
+    const earlyQueue = new ColdCommitQueue({
+        now: () => now,
+        prepare: async (entry) => entry.baseState,
+        commit: async (entries) => {
+            now += 7;
+            return entries.map((entry) => ({ ok: true, characterId: entry.nextState.characterId }));
+        },
+        admitEarlyFlush: () => { admissions++; return allowed ? { id: 1 } : null; },
+        completeEarlyFlush: (lease, duration) => completedLeases.push({ lease, duration })
+    });
+    earlyQueue.enqueue(proposal(40));
+    assert.strictEqual(await earlyQueue.flushDue(), false);
+    assert.strictEqual(admissions, 0, 'ordinary work must retain its batching delay');
+    earlyQueue.capacityBlocked = true;
+    assert.strictEqual(await earlyQueue.flushDue(), false, 'a denied budget cannot flush early');
+    allowed = true;
+    assert.strictEqual(await earlyQueue.flushDue(), false, 'admission retries must be rate limited');
+    now += 100;
+    assert.strictEqual(await earlyQueue.flushDue(), true, 'a blocked worker can progress with an admitted budget');
+    assert.deepStrictEqual(completedLeases, [{ lease: { id: 1 }, duration: 7 }]);
+    assert.strictEqual(earlyQueue.capacityBlocked, false);
+    earlyQueue.enqueue(proposal(41, 'P0'));
+    allowed = false;
+    assert.strictEqual(await earlyQueue.flushDue(), true, 'durability priority must not depend on opportunistic admission');
+    assert.strictEqual(admissions, 2);
+    allowed = true;
+    now += 100;
+    for (let id = 50; id < 58; id++) earlyQueue.enqueue(proposal(id));
+    earlyQueue.capacityBlocked = true;
+    assert.strictEqual(await earlyQueue.flushDue(), true);
+    assert.strictEqual(earlyQueue.size(), 6, 'early commits must free a small number of slots per budget');
+    await earlyQueue.flushDue(true);
+    now += 100;
+    [61, 62, 63].forEach(id => earlyQueue.enqueue({ ...proposal(id, 'P1'),
+        atomicGroup: { id: 'early-party', memberIds: [61, 62, 63] } }));
+    earlyQueue.capacityBlocked = true;
+    assert.strictEqual(await earlyQueue.flushDue(), false, 'a party larger than the early budget must wait intact');
+    assert.strictEqual(earlyQueue.size(), 3);
+    assert.strictEqual(await earlyQueue.flushDue(true), true);
+
+    console.log('Cold commit queue coalescing, durability, backpressure, early budget, and retry checks passed');
 })().catch((error) => {
     console.error(error);
     process.exitCode = 1;

@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const ServerResponse = invoke('GameServer/Network/Response');
 const Database = invoke('Database');
@@ -35,7 +36,7 @@ function craftLevel(actor, type) {
 }
 
 function productTemplate(recipe) {
-    return DataCache.items?.find((item) => Number(item.selfId) === Number(recipe.productId)) || null;
+    return ItemTemplateIndex.find(DataCache.items, recipe.productId) || null;
 }
 
 function applyMaterials(actor, consumed, sources) {
@@ -60,7 +61,7 @@ function applyAdena(actor, result) {
         item.setAmount(result.amount);
         return;
     }
-    const template = DataCache.items?.find((entry) => Number(entry.selfId) === 57);
+    const template = ItemTemplateIndex.find(DataCache.items, 57);
     if (template) actor.backpack.items.push(new Item(result.id, {
         ...utils.crushOb(template), amount: result.amount, equipped: false, slot: 0
     }));

@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
 const ServerResponse = invoke('GameServer/Network/Response');
@@ -19,7 +20,7 @@ function now() {
 }
 
 function itemTemplate(selfId) {
-    return DataCache.items.find((ob) => Number(ob.selfId) === Number(selfId));
+    return ItemTemplateIndex.find(DataCache.items, selfId);
 }
 
 function isBotSession(session) {

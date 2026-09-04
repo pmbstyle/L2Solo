@@ -1,0 +1,24 @@
+const assert = require('assert');
+const Index = require('../src/GameServer/Item/ItemTemplateIndex');
+
+const first = { selfId: 7, etc: { slot: 8 } };
+const numericString = { selfId: '7' };
+const duplicate = { selfId: 7, etc: { slot: 0 } };
+const items = [first, numericString, duplicate];
+assert.strictEqual(Index.find(items, '7'), first, 'numeric lookup preserves first-match precedence');
+assert.strictEqual(Index.findStrict(items, '7'), numericString, 'strict lookup preserves string/number distinction');
+assert.strictEqual(Index.findStrict(items, 7), first);
+assert.strictEqual(Index.find(items, 'missing'), undefined);
+assert.strictEqual(Index.findStrict([{ selfId: NaN }], NaN), undefined);
+assert.strictEqual(Index.find(null, 7), undefined);
+items.push({ selfId: 8 });
+assert.strictEqual(Index.find(items, 8), items[3], 'appended templates rebuild the index');
+const replacement = [{ selfId: 7, etc: { slot: 14 } }];
+assert.strictEqual(Index.find(replacement, 7), replacement[0], 'a replaced catalog has its own index');
+first.etc.slot = 9;
+assert.strictEqual(Index.find(items, 7).etc.slot, 9, 'template objects are shared without stale copies');
+items[0] = { selfId: 9 };
+Index.invalidate(items);
+assert.strictEqual(Index.find(items, 7), numericString, 'explicit invalidation supports same-length catalog edits');
+assert.strictEqual(Index.find(items, 9), items[0]);
+console.log('Item template index precedence, replacement and invalidation checks passed');

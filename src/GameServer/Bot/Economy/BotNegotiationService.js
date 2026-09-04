@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const crypto = require('crypto');
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
@@ -39,7 +40,7 @@ function distance(a, b) {
 }
 
 function templateFor(selfId) {
-    return (DataCache.items || []).find((entry) => Number(entry.selfId) === Number(selfId)) || null;
+    return ItemTemplateIndex.find(DataCache.items, selfId) || null;
 }
 
 function safeItem(item) {

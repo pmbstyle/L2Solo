@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const Item = invoke('GameServer/Item/Item');
@@ -20,7 +21,7 @@ function isWarehouseNpc(session) {
 }
 
 function templateFor(selfId) {
-    return DataCache.items?.find((item) => Number(item.selfId) === Number(selfId));
+    return ItemTemplateIndex.find(DataCache.items, selfId);
 }
 
 function warehouseItem(row) {

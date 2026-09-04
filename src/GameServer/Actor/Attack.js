@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const ServerResponse = invoke('GameServer/Network/Response');
 const ConsoleText    = invoke('GameServer/ConsoleText');
 const Formulas       = invoke('GameServer/Formulas');
@@ -1072,7 +1073,7 @@ class Attack {
 
     fetchNpcWeaponKind(creature) {
         if (!creature?.fetchWeapon || !DataCache.items) return '';
-        const item = DataCache.items.find((entry) => Number(entry.selfId) === Number(creature.fetchWeapon()));
+        const item = ItemTemplateIndex.find(DataCache.items, creature.fetchWeapon());
         return item?.template?.kind || '';
     }
 
@@ -1080,7 +1081,7 @@ class Attack {
         if (!creature?.fetchShield || !DataCache.items) return null;
         const shieldId = Number(creature.fetchShield());
         if (!shieldId) return null;
-        return DataCache.items.find((entry) => Number(entry.selfId) === shieldId) || null;
+        return ItemTemplateIndex.find(DataCache.items, shieldId) || null;
     }
 
     applyDamageAbsorb(session, actor, damage) {

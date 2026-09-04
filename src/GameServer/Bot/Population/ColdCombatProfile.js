@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const Formulas = invoke('GameServer/Formulas');
 const ClassProgression = invoke('GameServer/ClassProgression');
@@ -35,7 +36,7 @@ function classTemplate(classId) {
 }
 
 function itemTemplate(selfId) {
-    return (DataCache.items || []).find((entry) => Number(entry.selfId) === Number(selfId)) || null;
+    return ItemTemplateIndex.find(DataCache.items, selfId) || null;
 }
 
 function equippedTemplates(state = {}) {

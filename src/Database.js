@@ -139,7 +139,7 @@ function record(operation, wait, run, read, failed = false) {
     metrics.byOperation.set(operation, entry);
 }
 
-function enqueue(work, { operation = 'raw', read = false } = {}) {
+function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}) {
     if (shuttingDown) {
         return Promise.reject(new Error(`SQLite shutdown is in progress (${operation})`));
     }
@@ -158,6 +158,10 @@ function enqueue(work, { operation = 'raw', read = false } = {}) {
             throw error;
         } finally {
             metrics.pending -= 1;
+            if (typeof onTiming === 'function') {
+                // Observability must never turn a committed operation into a failure.
+                try { onTiming({ waitMs: wait, runMs: now() - startedAt }); } catch (_) {}
+            }
         }
     };
     const queued = queryTail.then(execute, execute);
@@ -175,7 +179,7 @@ function enqueue(work, { operation = 'raw', read = false } = {}) {
     return result;
 }
 
-function run(sql, params = [], operation, readOverride = null) {
+function run(sql, params = [], operation, readOverride = null, onTiming = null) {
     const read = readOverride === null ? isReadStatement(sql) : !!readOverride;
     return enqueue(() => {
         if (!connection) throw new Error(`SQLite is not initialized (${operation || operationName(sql)})`);
@@ -186,7 +190,7 @@ function run(sql, params = [], operation, readOverride = null) {
             affectedRows: Number(result.changes || 0),
             insertId: Number(result.lastInsertRowid || 0)
         };
-    }, { operation: operation || operationName(sql), read });
+    }, { operation: operation || operationName(sql), read, onTiming });
 }
 
 function insert(table, values, operation) {
@@ -1936,7 +1940,7 @@ const Database = {
     },
 
     execute(statement, operation = 'raw') {
-        return run(statement[0], statement[1] || [], operation, statement[2]?.read ?? null);
+        return run(statement[0], statement[1] || [], operation, statement[2]?.read ?? null, statement[2]?.onTiming);
     },
 
     recordMarketTrade(trade = {}) {

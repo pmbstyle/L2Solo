@@ -1178,7 +1178,7 @@ class ColdSimulationKernel {
         this.stats.maxFlushRows = Math.max(this.stats.maxFlushRows, proposals.length);
         const reason = String(options.reason || (force ? 'forced' : 'direct'));
         this.stats.flushReasons[reason] = Number(this.stats.flushReasons[reason] || 0) + 1;
-        this.emit('proposal_batch', { proposals });
+        this.emit('proposal_batch', { proposals, capacityBlocked: reason === 'capacity' });
         return proposals.length;
     }
 

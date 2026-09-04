@@ -1,3 +1,4 @@
+const { collectionPages } = require('./ColdMessagePages');
 const path = require('path');
 const { randomUUID } = require('crypto');
 const { Worker } = require('worker_threads');
@@ -208,7 +209,21 @@ class ColdSimulationCoordinator {
                 this.handleCommitResults(results).catch((error) => this.recordError(error));
             },
             onPause: () => this.setPauseReason('commit_queue_high_water', true),
-            onResume: () => this.setPauseReason('commit_queue_high_water', false)
+            onResume: () => this.setPauseReason('commit_queue_high_water', false),
+            admitEarlyFlush: () => {
+                const pressure = this.desiredWorkerPressure();
+                if (pressure.lagMs >= Math.max(1, Number(Config.schedulerLagThrottleMs) || 40)) return null;
+                const governor = invoke('GameServer/Bot/Population/BackgroundWorkGovernor');
+                const admission = governor.admit({
+                    job: 'cold_commit_early', resource: 'sqlite-heavy',
+                    requestedBudgetMs: Math.max(8, Number(Config.schedulerSliceMs) || 12), minimumBudgetMs: 8,
+                    playerProtected: pressure.player, lagMs: pressure.lagMs
+                });
+                return admission.ok ? admission.lease : null;
+            },
+            completeEarlyFlush: (lease, durationMs) => {
+                invoke('GameServer/Bot/Population/BackgroundWorkGovernor').complete(lease, { durationMs });
+            }
         });
     }
 
@@ -315,41 +330,19 @@ class ColdSimulationCoordinator {
     }
 
     postCollections(type, collections = {}, msgId = null) {
-        const entries = Object.entries(collections).flatMap(([field, values]) => (
-            (values || []).map((value) => ({ field, value }))
-        ));
-        if (!entries.length) return this.post(type, Object.fromEntries(Object.keys(collections).map((field) => [field, []])), msgId) ? 1 : 0;
-        let page = Object.fromEntries(Object.keys(collections).map((field) => [field, []]));
-        let sent = 0;
-        const flush = () => {
-            if (!Object.values(page).some((values) => values.length)) return;
-            if (this.post(type, page, msgId)) sent += 1;
-            page = Object.fromEntries(Object.keys(collections).map((field) => [field, []]));
-        };
-        for (const entry of entries) {
-            const candidate = { ...page, [entry.field]: [...page[entry.field], entry.value] };
-            const count = Object.values(candidate).reduce((sum, values) => sum + values.length, 0);
-            const envelope = Protocol.envelope(type, this.workerEpoch, candidate, msgId);
-            if ((count > Protocol.MAX_BATCH || Protocol.byteLength(envelope) > 240 * 1024)
-                && Object.values(page).some((values) => values.length)) {
-                flush();
-            }
-            page[entry.field].push(entry.value);
-            if (Protocol.byteLength(Protocol.envelope(type, this.workerEpoch, page, msgId)) > 240 * 1024) {
-                const value = page[entry.field].pop();
-                this.recordInvalid(`out_${type}_single_item_too_large`);
-                if (value?.state) {
-                    page[entry.field].push({
-                        ...value,
-                        state: null,
-                        context: {},
-                        retryAfterMs: Math.max(1000, Number(value.retryAfterMs) || 10000),
-                        reason: value.reason || 'state_snapshot_too_large'
-                    });
-                }
-            }
+        const pages = collectionPages(type, this.workerEpoch, collections, msgId, (value) => {
+            this.recordInvalid(`out_${type}_single_item_too_large`);
+            return value?.state ? {
+                ...value, state: null, context: {},
+                retryAfterMs: Math.max(1000, Number(value.retryAfterMs) || 10000),
+                reason: value.reason || 'state_snapshot_too_large'
+            } : null;
+        });
+        if (!Object.values(collections).some((values) => values?.length)) {
+            return this.post(type, Object.fromEntries(Object.keys(collections).map((field) => [field, []])), msgId) ? 1 : 0;
         }
-        flush();
+        let sent = 0;
+        for (const page of pages) if (this.post(type, page, msgId)) sent++;
         return sent;
     }
 
@@ -1083,6 +1076,7 @@ class ColdSimulationCoordinator {
     }
 
     handleProposalBatch(message) {
+        if (message.payload.capacityBlocked === true) this.queue.capacityBlocked = true;
         const rejected = [];
         (message.payload.proposals || []).forEach((proposal) => {
             const tokenValid = Protocol.validateToken(proposal.token);
