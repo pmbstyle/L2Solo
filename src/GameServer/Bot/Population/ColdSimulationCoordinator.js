@@ -548,7 +548,8 @@ class ColdSimulationCoordinator {
                 fallback = GearAcquisitionPlanner.safeFallbackForPlan(
                     state,
                     state.stats?.equipmentPlan,
-                    [...index.spots.values()],
+                    // Preserve catalog identity for the planner's source-index cache.
+                    index.profiles || [...index.spots.values()],
                     { occupancy: index.occupancy, excludedSpotIds }
                 );
             } catch (_) { fallback = null; }
