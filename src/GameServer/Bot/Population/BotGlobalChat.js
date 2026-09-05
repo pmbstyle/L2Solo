@@ -9,6 +9,7 @@ const SPEAKER_INTERVAL_MS = 10 * 60 * 1000;
 let lastGlobalAt = null;
 let nextGlobalAt = 0;
 const recent = [];
+const lastTextByTopic = new Map();
 
 function realPlayerSessions() {
     const World = invoke('GameServer/World/World');
@@ -23,7 +24,8 @@ function available(id, topic, now) {
     if (lastGlobalAt !== null && now < nextGlobalAt) return false;
     if (Reactions.snapshot(now).global) return false;
     if (!Budget.canReply(id, now)) return false;
-    return !recent.some((entry) => entry.topic === topic ||
+    const topicInterval = topic === 'death' ? TOPIC_INTERVAL_MS : Config.globalChatTopicIntervalMs;
+    return !recent.some((entry) => (entry.topic === topic && now - entry.at < topicInterval) ||
         (entry.id === id && now - entry.at < SPEAKER_INTERVAL_MS));
 }
 
@@ -59,10 +61,13 @@ function send(actor, topic, templates, now, source) {
     if (!available(id, topic, now)) return false;
     const players = realPlayerSessions();
     if (!players.length) return false;
-    const text = templates[Math.floor(Math.random() * templates.length)].slice(0, 120);
+    const fresh = templates.filter(text => text !== lastTextByTopic.get(topic));
+    const pool = fresh.length ? fresh : templates;
+    const text = pool[Math.floor(Math.random() * pool.length)].slice(0, 120);
     const packet = ServerResponse.speak(actor, { kind: 1, text });
     players.forEach((session) => session.dataSendToMe(packet));
     Budget.recordSpeaker(id, now);
+    lastTextByTopic.set(topic, text);
     lastGlobalAt = now;
     nextGlobalAt = now + Config.globalChatMinIntervalMs * (1 + Math.random() * 0.75);
     recent.push({ id, topic, at: now });
@@ -80,7 +85,8 @@ function maybeAnnounce(state, events = [], now = Date.now()) {
     // event journal and factual recruitment ads. A death is an occasional
     // reaction, not a population-wide status ticker.
     const event = events.find((candidate) => candidate.type === 'death');
-    if (!event || !available(Number(state.characterId || 0), 'death', now)) return false;
+    if (!event) return ambient(state, now);
+    if (!available(Number(state.characterId || 0), 'death', now)) return false;
     if (Math.random() >= Config.globalChatImportantChance) return false;
     return send({
         fetchId: () => Number(state.characterId || 0),
@@ -90,22 +96,33 @@ function maybeAnnounce(state, events = [], now = Date.now()) {
 
 function maybeAmbient(session, now = Date.now()) {
     if (offerReply(session, now)) return true;
-    if (Config.globalChatEnabled === false || !session?.actor || session.partyCompanion ||
+    return ambient(session, now);
+}
+
+function ambient(session, now) {
+    if (Config.globalChatEnabled === false || !session) return false;
+    const id = Number(session.actor?.fetchId() || session.characterId || 0);
+    if (!available(id, '', now)) return false;
+    if (!session.actor) {
+        // Fresh cold simulation commits are also opportunities to begin a
+        // conversation. Most of the population never receives a hot AI tick.
+        if (!Reactions.canParticipate(session) || Reactions.isBusy(session, now) ||
+            Math.random() >= Config.globalChatChance) return false;
+    } else if (session.partyCompanion ||
         session.inConversation || session.actor.isDead?.() || session.actor.state?.fetchDead?.() ||
         !['resting', 'hunting'].includes(session.plan) || Reactions.isBusy(session, now)) return false;
-    if (!available(session.actor.fetchId(), '', now)) return false;
     const topics = [
         ['break', Speech.lines('global.break')],
         ['roads', Speech.lines('global.roads')],
         ['patience', Speech.lines('global.patience')],
         ['company', Speech.lines('global.company')]
-    ].filter(([topic]) => available(session.actor.fetchId(), topic, now));
+    ].filter(([topic]) => available(id, topic, now));
     if (!topics.length) return false;
     const [topic, lines] = topics[Math.floor(Math.random() * topics.length)];
-    return send(session.actor, topic, lines, now, session);
+    return send(session.actor || { fetchId: () => id, fetchName: () => session.name }, topic, lines, now, session);
 }
 
 module.exports = {
     maybeAnnounce, maybeAmbient, offerReply, TOPIC_INTERVAL_MS, SPEAKER_INTERVAL_MS,
-    reset() { lastGlobalAt = null; nextGlobalAt = 0; recent.length = 0; Reactions.reset(); }
+    reset() { lastGlobalAt = null; nextGlobalAt = 0; recent.length = 0; lastTextByTopic.clear(); Reactions.reset(); }
 };

@@ -199,6 +199,7 @@ function cancel(source) {
 }
 
 module.exports = {
+    canParticipate: eligible,
     openGlobal, offerGlobal, openLocal, offerLocal, isBusy, cancel,
     RESPONSE_WINDOW_MS, MAX_LOCAL_SCENES, LOCAL_RANGE,
     snapshot(now = Date.now()) { prune(now); return { global: !!globalScene, local: localScenes.length }; },

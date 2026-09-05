@@ -14,7 +14,7 @@ function bot(id, x = 0) {
 }
 const original = { user: World.user, sessions: World.user?.sessions, speak: Response.speak,
     random: Math.random, info: console.info, say: BotManager.botSay,
-    timeout: global.setTimeout, config: { enabled: Config.globalChatEnabled, interval: Config.globalChatMinIntervalMs, chance: Config.globalChatImportantChance } };
+    timeout: global.setTimeout, config: { ...Config } };
 try {
     World.user = { sessions: [] };
     Config.globalChatEnabled = true;
@@ -90,6 +90,34 @@ try {
     assert.strictEqual(sample.filter(packet => packet.id < 2000).length, 2,
         'at most two death reactions in a thirty-minute window');
     process.stdout.write(`Ambient chat stress check: ${sample.length} global lines in 30 simulated minutes, 2 death reactions.\n`);
+
+    GlobalChat.reset(); Budget.reset(); sample.length = 0;
+    Object.assign(Config, original.config);
+    const alive = { characterId: 3000, name: 'Walker', phase: 'cold', activity: 'resting', vitals: { hp: 100 } };
+    for (const change of [
+        { phase: 'hot' }, { phase: 'offline' }, { activity: 'dead' },
+        { vitals: { hp: 0 } }, { stats: { travel: { destination: 'town' } } }
+    ]) assert(!GlobalChat.maybeAnnounce({ ...alive, ...change }, [], 0), 'only available cold bots may start a conversation');
+    Config.globalChatChance = 0;
+    assert(!GlobalChat.maybeAnnounce(alive, [], 0), 'ambient chance can disable cold openers');
+    Config.globalChatChance = original.config.globalChatChance;
+    World.user.sessions = [];
+    assert(!GlobalChat.maybeAnnounce(alive, [], 0), 'cold openers need a real audience');
+    World.user.sessions = [{ accountId: 'player', socket: { write() {} }, dataSendToMe(packet) { sample.push(packet); } }];
+    Config.globalChatEnabled = false;
+    assert(!GlobalChat.maybeAnnounce(alive, [], 0));
+    Config.globalChatEnabled = true;
+    // No deaths and no hot AI ticks: the ordinary cold commit path alone
+    // must keep a large world's chat alive, while retaining a shared cap.
+    for (let time = 0; time < 30 * 60000; time += 5000) {
+        for (let n = 0; n < 1700; n++) {
+            GlobalChat.maybeAnnounce({ ...alive, characterId: 3000 + n, name: `Walker${n}` }, [], time);
+        }
+    }
+    assert(sample.length >= 30, 'ambient chat must work without hot bots or death events');
+    assert(sample.length <= Math.ceil(30 * 60000 / Config.globalChatMinIntervalMs) + 2, 'cold openers and replies share one traffic cap');
+    assert(new Set(sample.map(packet => packet.id)).size >= 10, 'the same pair must not monopolize the channel');
+    process.stdout.write(`Cold-only ambient check: ${sample.length} global lines in 30 simulated minutes, 1,700 bots, no death events.\n`);
 } finally {
     World.user = original.user;
     Response.speak = original.speak;
@@ -97,9 +125,7 @@ try {
     console.info = original.info;
     BotManager.botSay = original.say;
     global.setTimeout = original.timeout;
-    Config.globalChatEnabled = original.config.enabled;
-    Config.globalChatMinIntervalMs = original.config.interval;
-    Config.globalChatImportantChance = original.config.chance;
+    Object.assign(Config, original.config);
     Budget.reset();
     GlobalChat.reset();
 }

@@ -202,7 +202,9 @@ const DEFAULTS = {
     chatReactionChance: 0.45,
     globalChatChance: 0.015,
     globalChatImportantChance: 0.25,
-    globalChatMinIntervalMs: 180000,
+    // Shared traffic budget, including replies, regardless of population size.
+    globalChatMinIntervalMs: 25000,
+    globalChatTopicIntervalMs: 120000,
     marketTradeChatEnabled: true,
     marketTradeChatIntervalMs: 8 * 60 * 1000,
     marketTradeChatGlobalMinIntervalMs: 60000,

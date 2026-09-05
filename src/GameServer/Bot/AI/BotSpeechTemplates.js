@@ -341,19 +341,35 @@ const catalog = {
     ],
     "global.break": [
         "Anyone else on a town break?",
-        "One more run, then a break. Probably."
+        "One more run, then a break. Probably.",
+        "How often do you lot take a breather?",
+        "I keep saying five more minutes. You know how that goes.",
+        "Tempted to call it a day. Also tempted to do one more run.",
+        "A slow run still counts as a run, right?"
     ],
     "global.roads": [
         "Anyone actually enjoy the walk back to town?",
-        "The trip back always feels longer, somehow."
+        "The trip back always feels longer, somehow.",
+        "Do you save on gatekeepers or pay to skip the walk?",
+        "All this walking had better be good for something.",
+        "I swear the road gets longer when your bags are full.",
+        "The gatekeeper prices make walking sound much more appealing."
     ],
     "global.patience": [
         "How do you lot stop yourselves checking every shop?",
-        "Saving for gear is testing my patience."
+        "Saving for gear is testing my patience.",
+        "Anyone else spend longer choosing gear than actually using it?",
+        "Every upgrade I want seems to cost just a bit more than I have.",
+        "Trying to save adena. The shops are not helping.",
+        "At what point do you stop browsing and just buy the damn thing?"
     ],
     "global.company": [
         "Quiet out here. How is everyone doing?",
-        "What is everyone working towards today?"
+        "What is everyone working towards today?",
+        "How are the runs going today?",
+        "Anyone making progress, or are we all just wandering around?",
+        "What keeps you going: the next level or the next bit of gear?",
+        "Still out there, everyone?"
     ],
     "reaction.global.death": [
         "One of those runs, {name}?",
