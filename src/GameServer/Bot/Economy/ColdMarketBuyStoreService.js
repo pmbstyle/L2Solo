@@ -112,6 +112,7 @@ function open(state, goal, options = {}) {
         if (saved) {
             MarketOpportunity.indexColdStore(saved);
             MarketTelemetry.buyStoreOpened?.();
+            invoke('GameServer/Bot/Economy/BotTradeChat').offer(saved, timestamp);
         }
         return { state: saved || state, opened: !!saved, item, store: saved?.stats?.marketStore || store };
     });

@@ -3110,6 +3110,7 @@ const BotLifeState = {
             // Publish the committed paperdoll before yielding back to hot AI.
             if (publish) publish({ ...result, state: snapshot });
             notifyColdSnapshot(snapshot, 'clan_warehouse_equipment', { critical: true });
+            invoke('GameServer/Bot/AI/BotClanChat').onWarehouse(snapshot, result, request.clanId);
             return { ...result, state: snapshot };
         }).catch((error) => {
             utils.infoWarn('BotLife', 'failed clan warehouse exchange for %d: %s', id, error.message || error);

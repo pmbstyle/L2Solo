@@ -205,7 +205,9 @@ async function joinExisting(candidate, clan, suitability) {
         return result;
     }
     metrics.existingClanJoins += 1;
-    ClanService.reload().catch((error) => utils.infoWarn('Clan', 'failed to reload after autonomous join: %s', error.message));
+    ClanService.reload().then(() => {
+        invoke('GameServer/Bot/AI/BotClanChat').onJoined(candidate, clan.id);
+    }).catch((error) => utils.infoWarn('Clan', 'failed to reload after autonomous join: %s', error.message));
     return { ...result, suitability };
 }
 

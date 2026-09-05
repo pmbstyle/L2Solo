@@ -80,6 +80,8 @@ function send(actor, topic, templates, now, source) {
 }
 
 function maybeAnnounce(state, events = [], now = Date.now()) {
+    invoke('GameServer/Bot/AI/BotClanChat').onResolved(state, events, now);
+    invoke('GameServer/Bot/Economy/BotTradeChat').flush(now);
     if (Config.globalChatEnabled === false || !state) return false;
     if (offerReply(state, now)) return true;
     if (Reactions.isBusy(state, now)) return false;

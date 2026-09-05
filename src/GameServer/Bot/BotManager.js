@@ -747,6 +747,7 @@ const BotManager = {
                         BotAI.init(session);
 
                         this.sessions.push(session);
+                        if (privateStore) invoke('GameServer/Bot/Economy/BotTradeChat').offer(session);
                         let modeText = "[Hunting Mode]";
                         if (session.townGossip) modeText = "[Gossip Mode]";
                         if (session.plan === 'pk_hunting') modeText = "[PK Mode]";

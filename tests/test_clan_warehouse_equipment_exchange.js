@@ -64,11 +64,19 @@ async function main() {
         object[name] = replacement;
     }
     try {
+        const clanPackets = [];
+        stub(World, 'user', { sessions: [{ accountId: 'player', socket: { write() {} }, actor: player,
+            dataSendToMe: packet => clanPackets.push(packet) }] });
         await insert(101, 22, 0, 1);
         await deposit(102, 3);
         let equipped = await execute('SELECT * FROM items WHERE characterId = 22 AND equipped = 1');
         assert.strictEqual(equipped.length, 1);
         assert.strictEqual(equipped[0].enchant, 3, 'native player deposit must immediately exchange a cold clan member');
+        assert.strictEqual(clanPackets.length, 1, 'a physically committed clan exchange announces its recipient');
+        assert.strictEqual(clanPackets[0][0], 0x4a);
+        assert.strictEqual(clanPackets[0].readInt32LE(1), 22, 'the recipient speaks under its own name');
+        assert.strictEqual(clanPackets[0].readInt32LE(5), 4, 'receipt uses the clan chat protocol channel');
+        assert(clanPackets[0].subarray(9).toString('utf16le').includes('+3'), 'receipt preserves the acquired enchant level');
         let stock = await Database.fetchClanWarehouseItems(71);
         assert.strictEqual(stock.length, 1);
         assert.strictEqual(stock[0].enchant, 0, 'the replaced item must return to the clan warehouse');

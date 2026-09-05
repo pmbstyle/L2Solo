@@ -364,6 +364,8 @@ const BotAI = {
     },
 
     tick(session) {
+        invoke('GameServer/Bot/AI/BotClanChat').flush();
+        invoke('GameServer/Bot/Economy/BotTradeChat').flush();
         const bot = session.actor;
         if (!bot) return;
         const tickStartedAt = Date.now();
@@ -451,6 +453,7 @@ const BotAI = {
             const wasCompanion = session.partyCompanion === true && !!session.followPlayerSession;
             if (!session.deathTimerStart) {
                 session.deathTimerStart = Date.now();
+                invoke('GameServer/Bot/AI/BotClanChat').onDeath(session, `hot:${session.deathTimerStart}`, session.deathTimerStart);
                 if (wasCompanion) {
                     const deathReaction = PartyRevivalService.noteCompanionDeath(
                         session.followPlayerSession,

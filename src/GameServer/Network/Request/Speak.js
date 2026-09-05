@@ -100,6 +100,19 @@ function handlePrivateTell(session, data) {
 function consume(session, data) {
     logPlayerChat(session, data);
 
+    if (data.kind === 4) {
+        const clanId = Number(session.actor?.fetchClanId?.() || 0);
+        if (!clanId) return;
+        const packet = ServerResponse.speak(session.actor, data);
+        const ClanService = invoke('GameServer/Clan/ClanService');
+        ClanService.onlineSessions({ id: clanId }).forEach(member => {
+            if (member.actor?.fetchIsOnline?.() !== false) member.dataSendToMe(packet);
+        });
+        // Clan speech must not leak into local delivery or the nearby-bot
+        // dialogue router, which has no clan membership constraint.
+        return;
+    }
+
     if (data.kind === 2) {
         handlePrivateTell(session, data);
         return;

@@ -481,6 +481,96 @@ const catalog = {
 // Each entry is [preferred voice, complete utterance]. Reply and close pools
 // share a topic, but each turn is chosen using its own speaker's personality.
 const voices = {
+    'trade.sell': [
+        ['social', 'WTS {goods}. Come find me in {town}!'],
+        ['thrifty', 'WTS {goods}. Have a look in {town}.'],
+        ['driven', 'WTS {goods}. Selling in {town}.'],
+        ['warm', 'WTS {goods}. If you need some, I am in {town}.'],
+        ['calm', 'WTS {goods}. My shop is in {town}.'],
+        ['reserved', 'WTS {goods}. {town}.']
+    ],
+    'trade.buy': [
+        ['social', 'WTB {goods}. Bring them over to {town}!'],
+        ['thrifty', 'WTB {goods}. Buying in {town}.'],
+        ['driven', 'WTB {goods}. Find my buy shop in {town}.'],
+        ['warm', 'WTB {goods}. Got any spare? I am in {town}.'],
+        ['calm', 'WTB {goods}. My buy shop is in {town}.'],
+        ['reserved', 'WTB {goods}. {town}.']
+    ],
+    'clan.joined': [
+        ['social', 'Hey everyone! Thanks for having me. How is the clan doing?'],
+        ['warm', 'Hi clan! Good to be here. Looking forward to playing with you all.'],
+        ['driven', 'Hey clan, thanks for the invite. Ready to get some levels with you.'],
+        ['thrifty', 'Hi everyone! Thanks for the invite. Hope we find some good loot together.'],
+        ['calm', 'Hello everyone. Glad to have found a clan to call home.'],
+        ['reserved', 'Hi clan. Thanks for letting me join.']
+    ],
+    'clan.welcome': [
+        ['social', 'Hey {name}, welcome! Make yourself at home.'],
+        ['social', 'Welcome aboard, {name}! What are you working on?'],
+        ['warm', 'Hi {name}! Glad to have you with us.'],
+        ['warm', 'Welcome, {name}. Give us a shout if you need a hand.'],
+        ['driven', 'Welcome, {name}! Hope we get a good run together soon.'],
+        ['thrifty', 'Hey {name}, welcome. May your bags always be full.'],
+        ['calm', 'Good to see you here, {name}. Settle in.'],
+        ['reserved', 'Welcome, {name}.']
+    ],
+    'clan.goal_gear': [
+        ['social', 'Hey clan, I am looking for {item}. Let me know if you spot one.'],
+        ['thrifty', 'Looking for a decent deal on {item}. Any leads?'],
+        ['driven', '{item} is my next upgrade. Going to work towards it.'],
+        ['careful', 'Planning to get {item}. Keeping an eye out for a sensible price.'],
+        ['warm', 'If anyone comes across {item}, I would appreciate a heads-up.'],
+        ['reserved', 'Looking for {item}, if anyone sees one.']
+    ],
+    'clan.goal_material': [
+        ['social', 'Hey, I am after {item} for crafting. Anyone know a good seller?'],
+        ['thrifty', 'Shopping around for {item}. Trying to keep the crafting bill down.'],
+        ['driven', 'Need {item} to move my crafting along. Going to look for some.'],
+        ['careful', 'Looking for {item}. Comparing prices before I buy.'],
+        ['warm', 'Could use a lead on {item} for crafting, if anyone has one.'],
+        ['reserved', 'Looking for {item} for a craft.']
+    ],
+    'clan.goal_level': [
+        ['social', 'Working towards level {level}. Anyone else heading out to level?'],
+        ['driven', 'Level {level} is the next target. Back to work.'],
+        ['careful', 'Going to work towards level {level}, one safe run at a time.'],
+        ['calm', 'Taking my time getting to level {level}.'],
+        ['warm', 'Aiming for level {level}. Good luck with your runs too.'],
+        ['reserved', 'Working on level {level}.']
+    ],
+    'clan.goal_adena': [
+        ['social', 'Time to earn some adena. Anyone else saving up?'],
+        ['thrifty', 'Building the purse back up. Need to keep more of what I earn.'],
+        ['driven', 'Going to focus on earning adena for a while.'],
+        ['careful', 'Working on an adena reserve before spending more.'],
+        ['calm', 'A few steady runs for the purse. No hurry.'],
+        ['reserved', 'Saving up some adena.']
+    ],
+    'clan.struggling_solo': [
+        ['warm', 'Died a few times lately. Could someone take me along for some leveling?'],
+        ['social', 'Anyone got room in a leveling party? My solo runs keep ending badly.'],
+        ['careful', 'Too many deaths lately. I could use a safer run with a party.'],
+        ['driven', 'Not making much progress with all these deaths. Anyone need another for leveling?'],
+        ['weary', 'Getting tired of dying. Could really use a leveling party.'],
+        ['reserved', 'Rough time leveling. Died a few times. Any room in a party?']
+    ],
+    'clan.struggling_group': [
+        ['warm', 'I keep dying on these runs. Could someone help us out?'],
+        ['social', 'Having a rough time even in a group. Anyone able to lend a hand?'],
+        ['careful', 'Too many deaths on these runs. Could use some help making them safer.'],
+        ['driven', 'Losing too much time to deaths. Anyone able to help our group level?'],
+        ['weary', 'Down again. These runs are wearing me out. Could someone give us a hand?'],
+        ['reserved', 'Dying too often in these runs. Our group could use a hand.']
+    ],
+    'clan.warehouse': [
+        ['warm', 'Took {item} from the clan warehouse. Thanks for putting it there.'],
+        ['social', 'Found {item} in the clan warehouse and took it. Thanks, clan!'],
+        ['thrifty', 'Picked up {item} from the clan warehouse. Saved me a shopping trip.'],
+        ['driven', 'Took {item} from the clan warehouse. Looking forward to using it.'],
+        ['calm', 'Collected {item} from the clan warehouse. That will come in handy.'],
+        ['reserved', 'Took {item} from the clan warehouse.']
+    ],
     'town.gear': [
         ['thrifty', 'Bought {item} from {seller}. Now it needs to earn its price.'],
         ['driven', 'Finally bought {item} from {seller}. Looking forward to trying it.'],

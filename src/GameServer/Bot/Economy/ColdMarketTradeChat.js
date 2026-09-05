@@ -1,36 +1,9 @@
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
-const ServerResponse = invoke('GameServer/Network/Response');
+const TradeChat = invoke('GameServer/Bot/Economy/BotTradeChat');
 
-let lastGlobalAdAt = 0;
-
-function coldActor(state) {
-    return {
-        fetchId: () => Number(state?.characterId || 0),
-        fetchName: () => state?.name || 'Bot'
-    };
-}
-
-function realPlayerSessions() {
-    const World = invoke('GameServer/World/World');
-    return (World.user?.sessions || []).filter((session) => (
-        session.socket &&
-        typeof session.socket.write === 'function' &&
-        session.accountId &&
-        !String(session.accountId).startsWith('bot_')
-    ));
-}
-
-function offerText(store) {
-    const names = (store.items || [])
-        .filter((item) => Number(item.count) > 0)
-        .slice(0, 3)
-        .map((item) => item.name || `Item ${item.selfId}`);
-    if (!names.length) return '';
-    const side = Number(store.storeType || 1) === 3 ? 'WTB' : 'WTS';
-    return `${side} ${names.join(', ')}. Sitting in ${store.town || 'town'}.`;
-}
+function offerText(store) { return TradeChat.offerText(store); }
 
 function wantedText(state, goal) {
     const item = goal?.target?.itemName || `Item ${goal?.target?.itemId || ''}`.trim();
@@ -42,47 +15,25 @@ function maybeAnnounceWanted(state, goal, timestamp = Date.now()) {
     const wanted = state?.stats?.marketWanted || {};
     if (Config.marketTradeChatEnabled === false || state?.activity !== 'shopping' || !goal?.target?.itemId) return { state, announced: false, reason: 'not_waiting_for_gear' };
     if (Number(wanted.lastTradeAdAt || 0) + Config.marketTradeChatIntervalMs > timestamp) return { state, announced: false, reason: 'cooldown' };
-    if (lastGlobalAdAt > 0 && timestamp - lastGlobalAdAt < Config.marketTradeChatGlobalMinIntervalMs) return { state, announced: false, reason: 'global_cooldown' };
+    if (!TradeChat.ready(state, timestamp)) return { state, announced: false, reason: 'global_cooldown' };
     const text = wantedText(state, goal);
-    const players = realPlayerSessions();
-    if (!text || !players.length) return { state, announced: false, reason: 'no_audience' };
-    const packet = ServerResponse.speak(coldActor(state), { kind: 8, text });
-    players.forEach((session) => session.dataSendToMe(packet));
-    lastGlobalAdAt = timestamp;
+    if (!TradeChat.deliver(state, text, timestamp)) return { state, announced: false, reason: 'no_audience' };
     return { state: { ...state, stats: { ...(state.stats || {}), marketWanted: { itemId: goal.target.itemId, itemName: goal.target.itemName, lastTradeAdAt: timestamp } } }, announced: true, text };
 }
 
 function announceRemoteOffer(offer) {
     if (offer?.sourceType !== 'cold_store' || !offer.sellerState) return false;
-    const players = realPlayerSessions();
-    if (!players.length) return false;
-    const text = `WTS ${offer.itemName} in ${offer.town || 'town'} for ${offer.price}.`.slice(0, 120);
-    const packet = ServerResponse.speak(coldActor(offer.sellerState), { kind: 8, text });
-    players.forEach((session) => session.dataSendToMe(packet));
-    console.info('BotMarket :: %s answered WTB: %s', offer.sourceName, text);
-    return true;
+    const text = TradeChat.offerText({ storeType: 1, town: offer.town, items: [
+        { selfId: offer.selfId, name: offer.itemName, price: offer.price, count: 1 }
+    ] }, offer.sellerState);
+    return TradeChat.deliver(offer.sellerState, text);
 }
 
 function maybeAnnounce(state, timestamp = Date.now()) {
-    const store = state?.stats?.marketStore;
-    if (Config.marketTradeChatEnabled === false || state?.activity !== 'merchant' || !store) {
-        return Promise.resolve({ state, announced: false, reason: 'not_merchant' });
-    }
-    const lastTradeAdAt = Number(store.lastTradeAdAt || 0);
-    if (Number(store.expiresAt || 0) <= timestamp || (lastTradeAdAt > 0 && lastTradeAdAt + Config.marketTradeChatIntervalMs > timestamp)) {
-        return Promise.resolve({ state, announced: false, reason: 'cooldown' });
-    }
-    if (lastGlobalAdAt > 0 && timestamp - lastGlobalAdAt < Config.marketTradeChatGlobalMinIntervalMs) {
-        return Promise.resolve({ state, announced: false, reason: 'global_cooldown' });
-    }
-
-    const text = offerText(store).slice(0, 120);
-    const players = realPlayerSessions();
-    if (!text || !players.length) return Promise.resolve({ state, announced: false, reason: 'no_audience' });
-
-    const packet = ServerResponse.speak(coldActor(state), { kind: 8, text });
-    players.forEach((session) => session.dataSendToMe(packet));
-    lastGlobalAdAt = timestamp;
+    const result = TradeChat.offer(state, timestamp);
+    if (!result.announced) return Promise.resolve({ state, ...result });
+    const store = state.stats.marketStore;
+    const text = result.text;
 
     const nextState = {
         ...state,
@@ -100,7 +51,7 @@ function maybeAnnounce(state, timestamp = Date.now()) {
 }
 
 function reset() {
-    lastGlobalAdAt = 0;
+    TradeChat.reset();
 }
 
 module.exports = { maybeAnnounce, maybeAnnounceWanted, announceRemoteOffer, offerText, wantedText, reset };

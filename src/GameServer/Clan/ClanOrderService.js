@@ -210,6 +210,7 @@ async function deliverAvailable(order, clan) {
         });
         lastCode = String(transfer?.code || 'warehouse_transfer_failed');
         if (!transfer?.ok) return { delivered, code: lastCode };
+        invoke('GameServer/Bot/AI/BotClanChat').onWithdrawal(state, transfer);
         if (lastCode !== 'warehouse_withdraw_already_applied') {
             const refreshed = await LifeState.refreshInventory({
                 ...state,

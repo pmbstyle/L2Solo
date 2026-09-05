@@ -198,6 +198,8 @@ const DEFAULTS = {
     newbieAnchorExpMultiplier: 0.2,
     newbieAnchorFloorRatio: 0.12,
     globalChatEnabled: true,
+    clanChatEnabled: true,
+    clanChatMinIntervalMs: 15000,
     chatReactionsEnabled: true,
     chatReactionChance: 0.45,
     globalChatChance: 0.015,

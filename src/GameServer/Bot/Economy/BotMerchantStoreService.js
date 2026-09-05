@@ -181,6 +181,7 @@ async function applyLifecycle(session, nextState, reason = 'merchant_market_main
     applyOpened(actor, nextStore);
     session.merchantStoreMutation = false;
     const openBroadcastWarning = safelyNotify('open', () => notifyOpened(session, actor, nextStore));
+    invoke('GameServer/Bot/Economy/BotTradeChat').offer(session);
     return {
         ok: true,
         reason: 'store_reopened',
@@ -266,6 +267,7 @@ async function republish(session, agreement) {
     applyOpened(actor, nextStore);
     session.merchantStoreMutation = false;
     const openBroadcastWarning = safelyNotify('open', () => notifyOpened(session, actor, nextStore));
+    invoke('GameServer/Bot/Economy/BotTradeChat').offer(session);
     return {
         ok: true,
         reason: 'store_reopened',

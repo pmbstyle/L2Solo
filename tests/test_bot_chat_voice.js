@@ -68,9 +68,9 @@ try {
         for (const [style, template] of entries) {
             assert(styles.has(style), `unknown voice style in ${key}`);
             assert(template.length <= 120, `${key} should not depend on clipping`);
-            assert(!/\{(?!name\}|responder\}|item\}|seller\})/.test(template), `${key} has an unsupported placeholder`);
+            assert(!/\{(?!name\}|responder\}|item\}|seller\}|level\}|goods\}|town\})/.test(template), `${key} has an unsupported placeholder`);
         }
-        const line = Voice.line(key, warm, { name: 'Aria', responder: 'Belen', item: 'Sword of Revolution', seller: 'Graham' });
+        const line = Voice.line(key, warm, { name: 'Aria', responder: 'Belen', item: 'Sword of Revolution', seller: 'Graham', level: 30, goods: 'Iron Ore - 500 adena each', town: 'Giran' });
         assert(line && line.length <= 120 && !/\{\w+\}/.test(line), key);
     }
     assert.strictEqual(Voice.line('reaction.global.death.reply', warm), '', 'missing names must not leak placeholders');
