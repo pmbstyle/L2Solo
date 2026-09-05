@@ -1065,6 +1065,14 @@ function applySchemaMigrations() {
                 AND accountName NOT LIKE 'bot_craft_%'
                 AND (partyId IS NULL OR partyId = '')
                 AND activity IN ('hunting', 'resting');
+        `)],
+        [35, () => connection.exec(`
+            CREATE INDEX IF NOT EXISTS bot_life_state_market_review
+                ON bot_life_state(updatedAt, characterId,
+                    COALESCE(CAST(json_extract(statsJson, '$.marketSellRetryAfter') AS INTEGER), 0))
+                WHERE phase = 'cold'
+                AND (partyId IS NULL OR partyId = '')
+                AND activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting');
         `)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));

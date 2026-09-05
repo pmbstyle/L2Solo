@@ -14,7 +14,8 @@ if (process.argv[2] === '--bootstrap') {
     const directory = fs.mkdtempSync(path.join(process.cwd(), 'tmp', 'test-selection-indexes-'));
     const databasePath = path.join(directory, 'states.sqlite');
     const indexNames = ['bot_goal_state_review_queue', 'bot_life_state_goal_review',
-        'warehouse_items_positive_self_owner', 'bot_life_state_warehouse_release', 'bot_life_state_warehouse_demand'];
+        'warehouse_items_positive_self_owner', 'bot_life_state_warehouse_release', 'bot_life_state_warehouse_demand',
+        'bot_life_state_market_review'];
     const bootstrap = () => {
         const result = spawnSync(process.execPath, [__filename, '--bootstrap', databasePath], { encoding: 'utf8' });
         assert.strictEqual(result.status, 0, result.stdout + result.stderr);
@@ -23,6 +24,7 @@ if (process.argv[2] === '--bootstrap') {
     const warehouseSource = fs.readFileSync('src/GameServer/Bot/Economy/BotWarehouseService.js', 'utf8');
     const extract = (source, marker) => source.slice(source.indexOf(marker)).match(/`([\s\S]*?)`/)[1];
     const goalSql = extract(lifeSource, '    staleGoalCandidates(').replaceAll('${TABLE}', 'bot_life_state');
+    const marketSql = extract(lifeSource, '    marketGoalCandidates(').replaceAll('${TABLE}', 'bot_life_state');
     const warehouseSql = extract(warehouseSource, 'function releaseCandidates(');
     const enchantSql = extract(warehouseSource, 'function enchantReleaseCandidates(');
     const scrollIds = Object.entries(require('../src/GameServer/Items/C4EnchantScrolls').ENCHANT_SCROLLS)
@@ -36,7 +38,7 @@ if (process.argv[2] === '--bootstrap') {
                 'fresh databases must have ' + name);
             db.exec('DROP INDEX ' + name);
         }
-        db.exec('DELETE FROM schema_migrations WHERE version IN (33, 34)');
+        db.exec('DELETE FROM schema_migrations WHERE version IN (33, 34, 35)');
         // Query fixtures do not require a running world or player accounts.
         db.exec('PRAGMA foreign_keys = OFF; BEGIN');
         const stateInsert = db.prepare(`INSERT INTO bot_life_state
@@ -50,7 +52,10 @@ if (process.argv[2] === '--bootstrap') {
                 ['hunting', 'resting', 'traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting'][id % 8],
                 id % 9 === 0 ? 'party1' : id % 2 ? null : '',
                 id % 6 === 0 ? 'cold_simulation_owner' : 'legacy_main',
-                1000 + id, JSON.stringify({ equipmentPlan: { target: { selfId: 94 } }, payload: 'x'.repeat(2048) }));
+                1000 + id, JSON.stringify({
+                    equipmentPlan: { target: { selfId: 94 } }, payload: 'x'.repeat(2048),
+                    marketSellRetryAfter: [undefined, null, 0, 100, '200', 10000, true, 'invalid', 250.9, -1][id % 10]
+                }));
             const deadline = [undefined, null, 0, 100, '200', 10000][id % 6];
             goalInsert.run(id, JSON.stringify({ type: 'hunt', nextReviewAt: deadline }), Math.floor(id / 4));
             itemInsert.run(id, scrollIds[0], 'Scroll', id % 5 === 0 ? 0 : 1, 0);
@@ -68,6 +73,7 @@ if (process.argv[2] === '--bootstrap') {
         assert.deepStrictEqual(snapshot(), before, 'index migration must preserve all state, JSON, item counts and enchant values');
         assert.strictEqual(db.prepare('SELECT count(*) n FROM schema_migrations WHERE version = 33').get().n, 1);
         assert.strictEqual(db.prepare('SELECT count(*) n FROM schema_migrations WHERE version = 34').get().n, 1);
+        assert.strictEqual(db.prepare('SELECT count(*) n FROM schema_migrations WHERE version = 35').get().n, 1);
 
         function verify() {
             const states = db.prepare('SELECT * FROM bot_life_state').all();
@@ -85,6 +91,23 @@ if (process.argv[2] === '--bootstrap') {
                 for (const row of actual) assert.strictEqual(row.currentGoalJson, goals.get(row.characterId).goalJson);
             }
             const items = db.prepare('SELECT * FROM warehouse_items').all();
+            for (const timestamp of [-1, 0, 250, 20000]) for (const cursor of [[0, 0], [1000, 32], [1040, 40], [99999, 999]]) {
+                for (const limit of [1, 8, 50]) {
+                    const expected = states.filter(state => state.phase === 'cold' && !state.partyId
+                        && !['traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting'].includes(state.activity)
+                        && Math.trunc(Number(JSON.parse(state.statsJson)?.marketSellRetryAfter) || 0) <= timestamp
+                        && (state.updatedAt > cursor[0] || (state.updatedAt === cursor[0] && state.characterId > cursor[1])))
+                        .sort((a, b) => a.updatedAt - b.updatedAt || a.characterId - b.characterId)
+                        .slice(0, limit).map(state => ({ ...state,
+                            currentGoalJson: goals.get(state.characterId)?.goalJson ?? null,
+                            currentGoalUpdatedAt: goals.get(state.characterId)?.updatedAt ?? null
+                        }));
+                    const actual = db.prepare(marketSql.replaceAll('${safeLimit}', String(limit)))
+                        .all(timestamp, cursor[0], cursor[0], cursor[1]);
+                    assert.deepStrictEqual(actual.map(row => ({ ...row })), expected,
+                        'market cooldown, cursor ties, order, eligibility and complete state/goal payload parity');
+                }
+            }
             const eligible = states.filter(state => state.phase === 'cold' && state.simulationOwner === 'legacy_main'
                 && !/^bot.craft..*$/i.test(state.accountName) && !state.partyId && ['hunting', 'resting'].includes(state.activity));
             for (const demand of [[1864], [scrollIds[0]], [1864, scrollIds[0]], [999999]]) for (const limit of [1, 8, 50]) {
@@ -117,6 +140,10 @@ if (process.argv[2] === '--bootstrap') {
             UPDATE warehouse_items SET amount = 0 WHERE characterId = 24;
             UPDATE warehouse_items SET amount = 4 WHERE characterId = 25;
             UPDATE bot_life_state SET updatedAt = 1000 WHERE characterId IN (25, 32, 40, 41, 49);
+            UPDATE bot_life_state SET statsJson = json_set(statsJson, '$.marketSellRetryAfter', 99999) WHERE characterId = 25;
+            UPDATE bot_life_state SET statsJson = json_remove(statsJson, '$.marketSellRetryAfter') WHERE characterId = 32;
+            UPDATE bot_life_state SET statsJson = json_set(statsJson, '$.marketSellRetryAfter', 0) WHERE characterId = 40;
+            DELETE FROM bot_goal_state WHERE characterId = 49;
             UPDATE bot_goal_state SET goalJson = '{"nextReviewAt":99999}', updatedAt = 100 WHERE characterId = 9;
             UPDATE bot_goal_state SET goalJson = '{"type":"hunt"}', updatedAt = 1 WHERE characterId = 8;`);
         verify();
@@ -128,6 +155,12 @@ if (process.argv[2] === '--bootstrap') {
         const goalPlan = db.prepare('EXPLAIN QUERY PLAN ' + goalSql.replaceAll('${safeLimit}', '8')).all(250);
         assert(goalPlan.some(row => row.detail.includes('bot_goal_state_review_queue')));
         assert(goalPlan.some(row => row.detail.includes('bot_life_state_goal_review')));
+        const reviewPlan = db.prepare('EXPLAIN QUERY PLAN ' + marketSql.replaceAll('${safeLimit}', '8'))
+            .all(250, 0, 0, 0);
+        assert(reviewPlan.some(row => row.detail.includes('bot_life_state_market_review')),
+            'market cooldown filtering must use the compact eligible-state index');
+        assert(reviewPlan.some(row => row.detail.includes('MATERIALIZE candidates')),
+            'market selection must bound the candidate page before loading full state payloads');
         const marketPlan = db.prepare('EXPLAIN QUERY PLAN ' + warehouseSql
             .replaceAll("${demandIds.map(() => '?').join(', ')}", '?').replaceAll('${safeLimit}', '8')).all(1864);
         assert(marketPlan.some(row => row.detail.includes('bot_life_state_warehouse_demand')),
@@ -146,6 +179,7 @@ if (process.argv[2] === '--bootstrap') {
         assert.deepStrictEqual(snapshot(), changed, 'repeated startup must preserve state');
         assert.strictEqual(db.prepare('SELECT count(*) n FROM schema_migrations WHERE version = 33').get().n, 1);
         assert.strictEqual(db.prepare('SELECT count(*) n FROM schema_migrations WHERE version = 34').get().n, 1);
+        assert.strictEqual(db.prepare('SELECT count(*) n FROM schema_migrations WHERE version = 35').get().n, 1);
         verify();
         console.log('Selection index migration, query parity, lifecycle transitions, and rollback checks passed');
     } finally {

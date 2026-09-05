@@ -2400,26 +2400,33 @@ const BotLifeState = {
     marketGoalCandidates(limit = 8, timestamp = now(), options = {}) {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
+        // Filter cooldowns from compact indexed metadata before loading full
+        // lifecycle and goal payloads for the bounded candidate page.
         const fetchAfter = (cursor) => Database.execute([
-            `SELECT states.*, goals.goalJson AS currentGoalJson,
-                goals.updatedAt AS currentGoalUpdatedAt FROM ${TABLE} states
-            INDEXED BY bot_life_state_market_reconcile
+            `WITH candidates AS MATERIALIZED (
+                SELECT states.characterId, states.updatedAt FROM ${TABLE} states
+                INDEXED BY bot_life_state_market_review
+                WHERE states.phase = 'cold'
+                AND (states.partyId IS NULL OR states.partyId = '')
+                AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting')
+                AND COALESCE(CAST(json_extract(states.statsJson, '$.marketSellRetryAfter') AS INTEGER), 0) <= ?
+                AND (states.updatedAt > ?
+                    OR (states.updatedAt = ? AND states.characterId > ?))
+                ORDER BY states.updatedAt ASC, states.characterId ASC
+                LIMIT ${safeLimit}
+            )
+            SELECT states.*, goals.goalJson AS currentGoalJson,
+                goals.updatedAt AS currentGoalUpdatedAt FROM candidates
+            INNER JOIN ${TABLE} states ON states.characterId = candidates.characterId
             LEFT JOIN bot_goal_state goals ON goals.characterId = states.characterId
-            WHERE states.phase = 'cold'
-            AND (states.partyId IS NULL OR states.partyId = '')
-            AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting')
-            AND COALESCE(CAST(json_extract(states.statsJson, '$.marketSellRetryAfter') AS INTEGER), 0) <= ?
-            AND (states.updatedAt > ?
-                OR (states.updatedAt = ? AND states.characterId > ?))
-            ORDER BY states.updatedAt ASC, states.characterId ASC
-            LIMIT ${safeLimit}`,
+            ORDER BY candidates.updatedAt ASC, candidates.characterId ASC`,
             [
                 Number(timestamp) || now(),
                 Number(cursor?.updatedAt || 0),
                 Number(cursor?.updatedAt || 0),
                 Number(cursor?.characterId || 0)
             ],
-            { onTiming: options.onTiming }
+            { read: true, onTiming: options.onTiming }
         ], 'bot-life:market-goal-candidates');
         return fetchAfter(marketGoalCursor).then(async (rows) => {
             if (!rows.length && (marketGoalCursor.updatedAt > 0 || marketGoalCursor.characterId > 0)) {
