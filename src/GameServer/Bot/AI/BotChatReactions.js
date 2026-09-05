@@ -1,5 +1,5 @@
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
-const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
+const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
 const Budget = invoke('GameServer/Bot/AI/BotChatterBudget');
 
 const RESPONSE_WINDOW_MS = 20000;
@@ -16,7 +16,6 @@ const TOPICS = {
 };
 let globalScene = null;
 const localScenes = [];
-const lastExchange = new Map();
 
 function id(source) { return Number(source?.actor?.fetchId?.() || source?.characterId || 0); }
 function name(source) { return source?.actor?.fetchName?.() || source?.name || ''; }
@@ -55,7 +54,8 @@ function isBusy(source, now = Date.now(), except = null) {
 function create(channel, source, topic, now) {
     if (Config.chatReactionsEnabled === false || !TOPICS[channel].has(topic) ||
         !id(source) || isBusy(source, now) || Math.random() >= Config.chatReactionChance) return null;
-    return { channel, topic, openerId: id(source), openerName: name(source),
+    return { channel, topic, openerId: id(source), openerName: name(source), startedAt: now,
+        openerVoice: { persona: Voice.profile(source) },
         source: source.actor ? source : null, dueAt: now + delay(),
         expiresAt: now + RESPONSE_WINDOW_MS, responderId: null, close: null };
 }
@@ -68,17 +68,9 @@ function openGlobal(source, topic, now = Date.now()) {
 }
 
 function exchange(scene, candidate) {
-    const traits = candidate.persona?.traits || {};
     const base = `reaction.${scene.channel}.${scene.topic}`;
-    const keys = [base, `${base}.2`, `${base}.3`].filter(key => Speech.catalog[key]);
-    const fresh = keys.filter(key => key !== lastExchange.get(base));
-    const pool = fresh.length ? fresh : keys;
-    const key = pool[Math.floor(Math.random() * pool.length)];
-    const lines = Speech.lines(key, { name: scene.openerName, responder: name(candidate) }, {
-        social: Number(traits.sociability || 0) >= 0.7,
-        cautious: Number(traits.caution || 0) >= 0.7
-    });
-    return { base, key, lines };
+    const values = { name: scene.openerName, responder: name(candidate) };
+    return [Voice.line(`${base}.reply`, candidate, values), Voice.line(`${base}.close`, scene.openerVoice, values)];
 }
 
 // Reply turns enter here only through ordinary simulation work. No timers,
@@ -97,12 +89,10 @@ function offerGlobal(candidate, deliver, speakerAvailable, now = Date.now()) {
         globalScene = null;
         return deliver(candidate, scene.close, scene.topic, now) !== false;
     }
-    if (id(candidate) === scene.openerId || !speakerAvailable(id(candidate), now)) return false;
-    const chosen = exchange(scene, candidate);
-    const [reply, close] = chosen.lines;
+    if (id(candidate) === scene.openerId || !speakerAvailable(id(candidate), now) || !Voice.willingToReply(candidate, scene)) return false;
+    const [reply, close] = exchange(scene, candidate);
     if (!reply || !close || deliver(candidate, reply, scene.topic, now) === false) return false;
-    lastExchange.set(chosen.base, chosen.key);
-    if (Math.random() < 0.5) {
+    if (Math.random() < Voice.closeChance(scene.openerVoice)) {
         scene.responderId = id(candidate);
         scene.responder = candidate.actor ? candidate : null;
         scene.close = close;
@@ -171,14 +161,12 @@ function offerLocal(candidate, now = Date.now()) {
             return true;
         }
         if (id(candidate) === scene.openerId || !scene.listeners.has(candidate) ||
-            !Budget.canReply(candidate, now) || !heardTogether(scene, candidate)) continue;
-        const chosen = exchange(scene, candidate);
-        const [reply, close] = chosen.lines;
+            !Budget.canReply(candidate, now) || !heardTogether(scene, candidate) || !Voice.willingToReply(candidate, scene)) continue;
+        const [reply, close] = exchange(scene, candidate);
         if (!reply || !close) continue;
         invoke('GameServer/Bot/BotManager').botSay(candidate, reply);
-        lastExchange.set(chosen.base, chosen.key);
         Budget.record(candidate, 'conversation', now, true);
-        if (Math.random() < 0.5) {
+        if (Math.random() < Voice.closeChance(scene.openerVoice)) {
             scene.responderId = id(candidate);
             scene.responder = candidate;
             scene.close = close;
@@ -203,5 +191,5 @@ module.exports = {
     openGlobal, offerGlobal, openLocal, offerLocal, isBusy, cancel,
     RESPONSE_WINDOW_MS, MAX_LOCAL_SCENES, LOCAL_RANGE,
     snapshot(now = Date.now()) { prune(now); return { global: !!globalScene, local: localScenes.length }; },
-    reset() { globalScene = null; localScenes.length = 0; lastExchange.clear(); }
+    reset() { globalScene = null; localScenes.length = 0; }
 };

@@ -40,7 +40,8 @@ try {
     BotAI.say(first, 'Need a breather.', { ambient: true, key: 'rest' });
     BotAI.say(first, 'Another status.', { ambient: true, key: 'target' });
     BotAI.say(first, 'Watch out!');
-    assert.deepStrictEqual(local, ['Need a breather.', 'Watch out!'], 'urgent and direct speech bypass ambient limits');
+    assert.strictEqual(local.length, 2, 'ambient chatter remains throttled');
+    assert.strictEqual(local[1], 'Watch out!', 'urgent and direct speech bypass ambient limits unchanged');
 
     // Exercise the real scheduled conversation delivery without waiting on
     // wall time. Moving away after the opener must cancel both later lines.

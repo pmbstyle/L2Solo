@@ -81,7 +81,9 @@ function say(session, BotAI, key, templates, options = {}) {
     if (!PUBLIC_EVENTS.has(key)) return false;
     const now = Number(options.now ?? Date.now());
     if (session.inConversation || Reactions.isBusy(session, now) || !ChatterBudget.canSend(session, key, now)) return false;
-    const line = choose(session, key, lines);
+    const voiceKey = key === 'shots-too-expensive' ? 'town.price' : 'town.gear';
+    const line = (options.values && invoke('GameServer/Bot/AI/BotChatVoice').line(voiceKey, session, options.values)) ||
+        choose(session, key, lines);
     if (!line) return false;
     if (BotAI.say(session, line) === false) return false;
     ChatterBudget.record(session, key, now);

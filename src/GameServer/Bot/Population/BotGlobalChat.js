@@ -1,4 +1,5 @@
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
+const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
 const Reactions = invoke('GameServer/Bot/AI/BotChatReactions');
 const Budget = invoke('GameServer/Bot/AI/BotChatterBudget');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
@@ -63,7 +64,8 @@ function send(actor, topic, templates, now, source) {
     if (!players.length) return false;
     const fresh = templates.filter(text => text !== lastTextByTopic.get(topic));
     const pool = fresh.length ? fresh : templates;
-    const text = pool[Math.floor(Math.random() * pool.length)].slice(0, 120);
+    const text = Voice.line(`global.${topic}`, source, {}, [lastTextByTopic.get(topic)]) ||
+        pool[Math.floor(Math.random() * pool.length)].slice(0, 120);
     const packet = ServerResponse.speak(actor, { kind: 1, text });
     players.forEach((session) => session.dataSendToMe(packet));
     Budget.recordSpeaker(id, now);
@@ -87,7 +89,7 @@ function maybeAnnounce(state, events = [], now = Date.now()) {
     const event = events.find((candidate) => candidate.type === 'death');
     if (!event) return ambient(state, now);
     if (!available(Number(state.characterId || 0), 'death', now)) return false;
-    if (Math.random() >= Config.globalChatImportantChance) return false;
+    if (Math.random() >= Config.globalChatImportantChance * Voice.initiation(state)) return false;
     return send({
         fetchId: () => Number(state.characterId || 0),
         fetchName: () => state.name || 'Bot'
@@ -107,10 +109,11 @@ function ambient(session, now) {
         // Fresh cold simulation commits are also opportunities to begin a
         // conversation. Most of the population never receives a hot AI tick.
         if (!Reactions.canParticipate(session) || Reactions.isBusy(session, now) ||
-            Math.random() >= Config.globalChatChance) return false;
+            Math.random() >= Config.globalChatChance * Voice.initiation(session)) return false;
     } else if (session.partyCompanion ||
         session.inConversation || session.actor.isDead?.() || session.actor.state?.fetchDead?.() ||
         !['resting', 'hunting'].includes(session.plan) || Reactions.isBusy(session, now)) return false;
+    if (session.actor && Math.random() >= Math.min(1, 0.65 * Voice.initiation(session))) return false;
     const topics = [
         ['break', Speech.lines('global.break')],
         ['roads', Speech.lines('global.roads')],
@@ -118,11 +121,11 @@ function ambient(session, now) {
         ['company', Speech.lines('global.company')]
     ].filter(([topic]) => available(id, topic, now));
     if (!topics.length) return false;
-    const [topic, lines] = topics[Math.floor(Math.random() * topics.length)];
+    const [topic, lines] = Voice.pick(topics, ([topic]) => Voice.topicWeight(session, topic));
     return send(session.actor || { fetchId: () => id, fetchName: () => session.name }, topic, lines, now, session);
 }
 
 module.exports = {
     maybeAnnounce, maybeAmbient, offerReply, TOPIC_INTERVAL_MS, SPEAKER_INTERVAL_MS,
-    reset() { lastGlobalAt = null; nextGlobalAt = 0; recent.length = 0; lastTextByTopic.clear(); Reactions.reset(); }
+    reset() { lastGlobalAt = null; nextGlobalAt = 0; recent.length = 0; lastTextByTopic.clear(); Reactions.reset(); Voice.reset(); }
 };

@@ -11,8 +11,9 @@ const Manager = invoke('GameServer/Bot/BotManager');
 const World = invoke('GameServer/World/World');
 const Response = invoke('GameServer/Network/Response');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
 const original = { now: Date.now, random: Math.random, user: World.user, visible: World.fetchVisibleRealPlayers,
-    sessions: Manager.sessions, speak: Response.speak, info: console.info, config: { ...Config } };
+    sessions: Manager.sessions, speak: Response.speak, info: console.info, config: { ...Config }, willing: Voice.willingToReply };
 let now = 1000000;
 const packets = [];
 function bot(id, x = 0, z = 0) {
@@ -37,6 +38,9 @@ function gear(source) {
 try {
     Date.now = () => now;
     Math.random = () => 0;
+    // Delivery/lifecycle fixtures require willing speakers. Personality
+    // admission, including repeated-tick refusal, has its own voice tests.
+    Voice.willingToReply = () => true;
     console.info = () => {};
     Response.speak = (actor, data) => ({ id: actor.fetchId(), name: actor.fetchName(), ...data });
     reset();
@@ -115,5 +119,6 @@ try {
     Date.now = original.now; Math.random = original.random; World.user = original.user;
     World.fetchVisibleRealPlayers = original.visible; Manager.sessions = original.sessions;
     Response.speak = original.speak; console.info = original.info; Object.assign(Config, original.config);
+    Voice.willingToReply = original.willing;
     Reactions.reset(); Budget.reset(); GlobalChat.reset();
 }

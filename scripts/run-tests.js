@@ -87,6 +87,7 @@ const tests = [
     'tests/test_bot_conversation.js',
     'tests/test_bot_ambient_chat_budget.js',
     'tests/test_bot_chat_reactions.js',
+    'tests/test_bot_chat_voice.js',
     'tests/test_bot_ambient_director.js',
     'tests/test_bot_death_respawn.js',
     'tests/test_bot_gear.js',

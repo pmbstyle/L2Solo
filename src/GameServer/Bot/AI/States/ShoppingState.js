@@ -574,7 +574,8 @@ module.exports = {
                     sourceId: store?.ownerId || seller.fetchId()
                 });
                 session.lastTradeSummary = `bought ${boughtSummary.qty}x ${boughtSummary.name} from ${seller.fetchName()} for ${formatAdena(boughtSummary.totalAdena)}a`;
-                TownChatter.say(session, BotAI, 'market-gear-purchased', Speech.lines('town.market-gear-purchased', { item: boughtSummary.name, seller: seller.fetchName() }));
+                TownChatter.say(session, BotAI, 'market-gear-purchased', Speech.lines('town.market-gear-purchased', { item: boughtSummary.name, seller: seller.fetchName() }),
+                    { values: { item: boughtSummary.name, seller: seller.fetchName() } });
                 purchaseSucceeded = true;
 
                 if (!store.items.some((item) => Number(item.count || 0) > 0) && sellerSession?.coldMarketState) {
@@ -621,7 +622,8 @@ module.exports = {
                     sourceId: companionErrand.sourceId
                 });
                 session.lastTradeSummary = `bought ${bought.qty}x ${bought.name} from ${companionErrand.target.name} for ${formatAdena(bought.totalAdena)}a`;
-                TownChatter.say(session, BotAI, 'npc-gear-purchased', Speech.lines('town.npc-gear-purchased', { item: bought.name, seller: companionErrand.target.name }));
+                TownChatter.say(session, BotAI, 'npc-gear-purchased', Speech.lines('town.npc-gear-purchased', { item: bought.name, seller: companionErrand.target.name }),
+                    { values: { item: bought.name, seller: companionErrand.target.name } });
                 purchaseSucceeded = true;
             } catch (err) {
                 deferEquipmentRetry(session);
@@ -694,7 +696,8 @@ module.exports = {
                 targetAmount: ShotStock.PURCHASE_TARGET_AMOUNT
             }).then(async (result) => {
                 if (!result.ok) {
-                    TownChatter.say(session, BotAI, 'shots-too-expensive', Speech.lines('town.shots-too-expensive', { item: ShotStock.describe(plan), adena: result.adena || 0, cost: result.cost || expectedCost }), { priority: 'coordination' });
+                    TownChatter.say(session, BotAI, 'shots-too-expensive', Speech.lines('town.shots-too-expensive', { item: ShotStock.describe(plan), adena: result.adena || 0, cost: result.cost || expectedCost }),
+                        { priority: 'coordination', values: { item: ShotStock.describe(plan) } });
                     return;
                 }
 

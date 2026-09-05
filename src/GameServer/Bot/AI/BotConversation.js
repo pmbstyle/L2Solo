@@ -1,4 +1,5 @@
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
+const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
 const CONVERSATION_COOLDOWN_MS = 90 * 1000;
 const CONVERSATION_RANGE = 800;
 
@@ -11,13 +12,13 @@ function areaFor(session) {
 }
 
 function trait(session, name, fallback = 0.5) {
-    const value = Number(session?.persona?.traits?.[name]);
+    const value = Number(Voice.profile(session)?.traits?.[name]);
     return Number.isFinite(value) ? value : fallback;
 }
 
 function chooseTopic(initiator, responder) {
     const area = areaFor(initiator);
-    const drive = initiator?.persona?.primaryDrive;
+    const drive = Voice.profile(initiator)?.primaryDrive;
     const cautious = trait(responder, 'caution') >= 0.7;
     const social = trait(responder, 'sociability') >= 0.7;
     const candidates = [];
@@ -56,7 +57,15 @@ function chooseTopic(initiator, responder) {
     const fresh = candidates.filter((topic) => !recent.has(topic.id));
     const pool = fresh.length ? fresh : candidates;
     let roll = Math.random() * pool.reduce((sum, topic) => sum + topic.weight, 0);
-    return pool.find((topic) => (roll -= topic.weight) < 0) || pool[pool.length - 1];
+    const topic = pool.find((topic) => (roll -= topic.weight) < 0) || pool[pool.length - 1];
+    const voicedTopic = { rest: 'break', roads: 'roads', gear: 'patience', company: 'company', hunting: 'hunting' }[topic.id];
+    if (!voicedTopic) return topic; // Role and low-mana exchanges retain their factual context.
+    const values = { name: initiator.actor.fetchName(), responder: responder.actor.fetchName() };
+    return { ...topic,
+        opener: Voice.line(`global.${voicedTopic}`, initiator),
+        reply: Voice.line(`reaction.global.${voicedTopic}.reply`, responder, values),
+        closer: Voice.line(`reaction.global.${voicedTopic}.close`, initiator, values)
+    };
 }
 
 function canContinue(conversation) {

@@ -765,7 +765,8 @@ const BotAI = {
             const budget = invoke('GameServer/Bot/AI/BotChatterBudget');
             const reactions = invoke('GameServer/Bot/AI/BotChatReactions');
             if (session.inConversation || reactions.isBusy(session) || !budget.canSend(session, chatter.key)) return false;
-            invoke('GameServer/Bot/BotManager').botSay(session, text);
+            const voice = invoke('GameServer/Bot/AI/BotChatVoice');
+            invoke('GameServer/Bot/BotManager').botSay(session, voice.line(`local.${chatter.key}`, session) || text);
             budget.record(session, chatter.key);
             reactions.openLocal(session, chatter.key);
             return true;

@@ -13,6 +13,8 @@ const Manager = invoke('GameServer/Bot/BotManager');
 const World = invoke('GameServer/World/World');
 const Response = invoke('GameServer/Network/Response');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+const Persona = invoke('GameServer/Bot/AI/BotPersona');
+const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
 
 const saved = { now: Date.now, random: Math.random, info: console.info, user: World.user,
     visible: World.fetchVisibleRealPlayers, speak: Response.speak, sessions: Manager.sessions, config: { ...Config } };
@@ -48,11 +50,12 @@ try {
     const names = ['Aria', 'Belen', 'Caelan', 'Dara', 'Elora', 'Finn', 'Garen', 'Hana'];
     const hot = names.slice(0, hotCount).map((name, index) => ({ botSession: true, accountId: `bot_${index + 1}`,
         actor: actor(index + 1, name, Math.floor(index / 4) * 10000 + index % 4 * 100), plan: 'resting',
-        persona: { traits: { sociability: index % 2 ? 0.9 : 0.3, caution: index % 3 ? 0.8 : 0.2 } },
+        persona: Persona.generate({ characterId: index + 1 }),
         dataSendToOthers(packet) { if (World.fetchVisibleRealPlayers(this, this.actor).length) record(packet); } }));
     Manager.sessions = hot;
     const cold = Array.from({ length: population - hotCount }, (_, index) => ({ characterId: index + 100,
         name: `Wanderer${index + 1}`, phase: 'cold', activity: 'resting', vitals: { hp: 100 } }));
+    const sources = new Map([...hot.map(source => [source.actor.fetchId(), source]), ...cold.map(source => [source.characterId, source])]);
     Budget.reset(); Chat.reset();
     for (elapsed = 0; elapsed < duration; elapsed += 1000) {
         // A deliberately busy upper-bound fixture: all fresh cold states
@@ -76,7 +79,7 @@ try {
                 if (elapsed % 180000 === 0) {
                     TownChatter.say(session, BotAI, 'npc-gear-purchased', Speech.lines('town.npc-gear-purchased', {
                         item: 'Sword of Revolution', seller: 'Graham'
-                    }));
+                    }), { values: { item: 'Sword of Revolution', seller: 'Graham' } });
                 } else BotAI.say(session, Speech.line('combat.rest'), { ambient: true, key: 'rest' });
             }
         }
@@ -84,17 +87,21 @@ try {
     }
     const globalLines = transcript.filter(line => line.kind === 1);
     const localLines = transcript.filter(line => line.kind === 0);
+    const normalized = globalLines.map(line => line.text.replace(/Wanderer\d+|Aria|Belen|Caelan|Dara|Elora|Finn|Garen|Hana/g, '{name}'));
+    const distinct = new Set(normalized).size;
     assert(globalLines.length <= Math.ceil(duration / Config.globalChatMinIntervalMs) + 2);
     if (population >= 100) assert(globalLines.length >= 30, 'a populated world should not have a nearly silent global chat');
     assert(maxScenes <= Reactions.MAX_LOCAL_SCENES);
     assert(transcript.every(line => line.text.length <= 120 && !/\{\w+\}/.test(line.text)));
     process.stdout.write(`Offline chat simulation: 30 minutes, ${cold.length} cold bots, ${hot.length} hot bots, ${hot.length ? 2 : 0} local areas, seed ${initialSeed}.\n`);
     process.stdout.write(`${offers.toLocaleString('en-US')} cold opportunities; ${globalLines.length} global lines; ${localLines.length} local lines; max ${maxScenes} local scenes.\n`);
+    process.stdout.write(`${distinct} distinct global phrases (speaker names ignored); ${new Set(globalLines.map(line => line.id)).size} global speakers.\n`);
     process.stdout.write(`Runtime: ${(performance.now() - started).toFixed(0)} ms. No LLM, database or network requests.\n\n`);
     for (const line of transcript) {
         const minute = String(Math.floor(line.at / 60000)).padStart(2, '0');
         const second = String(Math.floor(line.at / 1000) % 60).padStart(2, '0');
-        process.stdout.write(`${minute}:${second} [${line.kind === 1 ? 'global' : 'local'}] ${line.name}: ${line.text}\n`);
+        const profile = process.argv.includes('--profiles') ? ` (${Voice.profile(sources.get(line.id))?.archetype || 'unknown'})` : '';
+        process.stdout.write(`${minute}:${second} [${line.kind === 1 ? 'global' : 'local'}] ${line.name}${profile}: ${line.text}\n`);
     }
 } finally {
     Date.now = saved.now; Math.random = saved.random; console.info = saved.info;

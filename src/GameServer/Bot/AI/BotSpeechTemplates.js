@@ -477,6 +477,312 @@ const catalog = {
     ]
 };
 
+
+// Each entry is [preferred voice, complete utterance]. Reply and close pools
+// share a topic, but each turn is chosen using its own speaker's personality.
+const voices = {
+    'town.gear': [
+        ['thrifty', 'Bought {item} from {seller}. Now it needs to earn its price.'],
+        ['driven', 'Finally bought {item} from {seller}. Looking forward to trying it.'],
+        ['careful', 'Picked up {item} from {seller}. Hope I chose well.'],
+        ['social', 'Could not resist {item} at {seller}\'s shop.'],
+        ['calm', 'Got {item} from {seller}. That will do for now.'],
+        ['reserved', 'Bought {item}. Found it at {seller}\'s.']
+    ],
+    'town.price': [
+        ['thrifty', 'Not paying that much for {item}.'],
+        ['direct', '{item} at that price? No thanks.'],
+        ['careful', 'Need a better price on {item}. I want something left in reserve.'],
+        ['weary', 'Even {item} is too expensive today.'],
+        ['calm', 'I can wait for a better deal on {item}.'],
+        ['reserved', '{item} costs too much here.']
+    ],
+    'global.hunting': [
+        ['careful', 'I would rather have a boring run than a messy one.'],
+        ['daring', 'Ever get tempted to try a much harder hunting spot?'],
+        ['driven', 'I keep wondering if there is a faster way to the next level.'],
+        ['thrifty', 'A good hunting spot has to pay for the supplies.'],
+        ['social', 'What makes a spot worth staying at for you?'],
+        ['calm', 'A familiar spot suits me. I can settle into the run.']
+    ],
+    'reaction.global.hunting.reply': [
+        ['careful', 'I like knowing I can get out if a pull goes wrong, {name}.'],
+        ['daring', 'A little risk keeps it interesting, {name}.'],
+        ['driven', 'I want to see that level moving, {name}.'],
+        ['thrifty', 'It is the supply bill I watch, {name}.'],
+        ['loyal', 'Depends who is there with you, {name}.'],
+        ['reserved', 'Something I can manage alone, {name}.']
+    ],
+    'reaction.global.hunting.close': [
+        ['careful', 'I would still rather leave a little room for mistakes.'],
+        ['daring', 'I get restless when every pull feels the same.'],
+        ['driven', 'Always feels like I could be making more progress.'],
+        ['thrifty', 'No sense hunting all day just to pay for the shots.'],
+        ['social', 'Good company makes even a familiar spot feel different.'],
+        ['calm', 'As long as the run is going somewhere, I am happy.']
+    ],
+    'local.rest': [
+        ['careful', 'Not risking another pull without a breather.'],
+        ['driven', 'Quick break. Still plenty I want to get done.'],
+        ['calm', 'Good time to sit down for a bit.'],
+        ['weary', 'That took more out of me than I expected.'],
+        ['social', 'Anyone else need a minute?'],
+        ['reserved', 'Need a breather.']
+    ],
+    'local.rested': [
+        ['careful', 'Ready. Keeping the next pulls manageable.'],
+        ['driven', 'Right. Back to making progress.'],
+        ['calm', 'That helped. Ready for another run.'],
+        ['daring', 'All right, let us see what I can take.'],
+        ['social', 'Back at it. See you around!'],
+        ['reserved', 'Ready again.']
+    ],
+    'local.victory': [
+        ['careful', 'Good. Still keeping an eye on the next pull.'],
+        ['driven', 'That is the pace I wanted.'],
+        ['calm', 'Happy with that one.'],
+        ['daring', 'Could probably handle a bit more.'],
+        ['social', 'There we go!'],
+        ['reserved', 'Done.']
+    ],
+    'local.revived': [
+        ['careful', 'Back. Getting properly ready before I head out.'],
+        ['driven', 'Still have a level to chase.'],
+        ['calm', 'Fresh start. No point dwelling on it.'],
+        ['weary', 'Really do not want to do that again.'],
+        ['social', 'Still here, somehow.'],
+        ['reserved', 'Back on my feet.']
+    ],
+    'global.death': [
+        ['calm', 'Bad pull. It happens.'],
+        ['weary', 'Ugh. All that running, and I still ended up dead.'],
+        ['careful', 'Should have left myself a way out of that pull.'],
+        ['daring', 'That was one mob too many. Nearly had it, though.'],
+        ['direct', 'Fine. That pull was my fault.'],
+        ['social', 'Anyone else finding out their limits the painful way? I just did.'],
+        ['reserved', 'Dead. Not my best run.'],
+        ['driven', 'Lost that round. Still want to get it right.']
+    ],
+    'global.break': [
+        ['social', 'Anyone else taking it slow today?'],
+        ['reserved', 'Some days a quiet run is enough.'],
+        ['careful', 'A short break beats making a stupid mistake.'],
+        ['driven', 'I never know when to stop. There is always another level to chase.'],
+        ['calm', 'No hurry today. The mobs will still be there.'],
+        ['weary', 'How do people keep going for hours?'],
+        ['daring', 'Taking it easy sounds good until the next pull.'],
+        ['warm', 'Hope you lot are remembering to take a breather.']
+    ],
+    'global.roads': [
+        ['thrifty', 'Gatekeeper or walking? My purse always votes walking.'],
+        ['driven', 'Wish the walk back counted towards the next level.'],
+        ['calm', 'I do not mind the roads. Gives me time to think.'],
+        ['weary', 'The road back to town never seems to end.'],
+        ['social', 'What do you lot do to make the long walks less boring?'],
+        ['reserved', 'Long walks. At least they are quiet.'],
+        ['careful', 'A familiar road beats an exciting shortcut.'],
+        ['daring', 'Half the fun of a shortcut is finding out if it was a terrible idea.']
+    ],
+    'global.patience': [
+        ['thrifty', 'The trick to saving adena is apparently never looking at shops.'],
+        ['driven', 'Every upgrade just makes me want the next one.'],
+        ['careful', 'I spend more time comparing gear than buying it.'],
+        ['social', 'Anyone else have a shopping list longer than their purse can handle?'],
+        ['reserved', 'Good gear. Bad prices.'],
+        ['weary', 'Everything worth buying seems just out of reach.'],
+        ['calm', 'A little closer to decent gear each run. That will do.'],
+        ['direct', 'Cheap is only a bargain if you actually use it.']
+    ],
+    'global.company': [
+        ['social', 'How is everyone doing out there?'],
+        ['warm', 'Hope the runs are treating you lot well today.'],
+        ['loyal', 'A good regular party is worth more than a perfect hunting spot.'],
+        ['reserved', 'Still people out there?'],
+        ['driven', 'What are you all chasing next: a level or new gear?'],
+        ['thrifty', 'Anyone else measuring progress by the adena left after supplies?'],
+        ['calm', 'Some days just making a little progress is enough.'],
+        ['direct', 'Good company makes even a slow run worthwhile.']
+    ],
+    'reaction.global.death.reply': [
+        ['warm', 'Ouch, {name}. Happens to everyone.'],
+        ['careful', '{name}, leave yourself an escape route next time.'],
+        ['direct', 'Smaller pulls, {name}. You cannot spend adena while dead.'],
+        ['calm', 'One bad run, {name}. You will get it back.'],
+        ['daring', 'At least you found the limit, {name}.'],
+        ['reserved', 'Rough one, {name}.']
+    ],
+    'reaction.global.death.close': [
+        ['calm', 'Yeah. One bad run is not the end of it.'],
+        ['weary', 'I know. Just annoyed with myself.'],
+        ['careful', 'Going to give those pulls a little more room.'],
+        ['driven', 'Still want another go. With a better plan.'],
+        ['warm', 'Thanks, {responder}. Needed to hear another voice.'],
+        ['reserved', 'Yeah. Lesson learned.']
+    ],
+    'reaction.global.break.reply': [
+        ['social', 'Same problem here, {name}. Always one more thing to do.'],
+        ['warm', 'Go at your own pace, {name}.'],
+        ['driven', '{name}, the next level is a pretty good reason to keep going.'],
+        ['calm', 'Nothing wrong with a slow day, {name}.'],
+        ['careful', 'Tired runs get expensive, {name}.'],
+        ['reserved', 'No rush, {name}.']
+    ],
+    'reaction.global.break.close': [
+        ['driven', 'That next level is hard to put out of my head.'],
+        ['calm', 'I will see how I feel. No need to force it.'],
+        ['weary', 'My enthusiasm could use a refill.'],
+        ['social', 'Glad I am not the only one thinking about this.'],
+        ['careful', 'Better to stop before the stupid mistakes start.'],
+        ['reserved', 'We will see.']
+    ],
+    'reaction.global.roads.reply': [
+        ['thrifty', '{name}, I just think about the adena I am saving.'],
+        ['social', 'Talking makes the road shorter, {name}. Well, almost.'],
+        ['calm', 'I like a bit of quiet between runs, {name}.'],
+        ['direct', 'Time is worth something too, {name}.'],
+        ['careful', 'Getting there in one piece is good enough for me, {name}.'],
+        ['reserved', 'Plenty of time to think, {name}.']
+    ],
+    'reaction.global.roads.close': [
+        ['thrifty', 'Still cannot talk myself into paying for every trip.'],
+        ['driven', 'I would rather spend that time hunting.'],
+        ['social', 'At least the chat keeps the road interesting.'],
+        ['calm', 'Could be worse. There is no rush.'],
+        ['weary', 'Still feels like I spend half my life on the road.'],
+        ['careful', 'I will take a dull trip over a nasty surprise.']
+    ],
+    'reaction.global.patience.reply': [
+        ['thrifty', '{name}, I compare the price with how many runs it will cost me.'],
+        ['driven', 'The upgrade is the point, {name}. Something to work for.'],
+        ['warm', 'You will get there, {name}. Bit by bit.'],
+        ['careful', 'Keep enough for supplies, {name}. Shiny gear can wait.'],
+        ['calm', 'No need to buy it all today, {name}.'],
+        ['direct', 'Buy what makes the next run better, {name}. Ignore the rest.']
+    ],
+    'reaction.global.patience.close': [
+        ['thrifty', 'I want to like the price as much as the item.'],
+        ['driven', 'Once I get this upgrade, the next one will start bothering me.'],
+        ['careful', 'I should probably leave myself a supply budget.'],
+        ['calm', 'I can wait. It gives me something to aim for.'],
+        ['weary', 'Would be nice to afford something without doing the sums first.'],
+        ['social', 'Good to know I am not the only one counting every adena.']
+    ],
+    'reaction.global.company.reply': [
+        ['social', 'Still here, {name}. Always glad of a bit of chat.'],
+        ['reserved', 'Still going, {name}.'],
+        ['warm', 'Hope your runs go well too, {name}.'],
+        ['driven', 'Another level is the plan, {name}. Then probably another.'],
+        ['thrifty', 'Trying to finish richer than I started, {name}.'],
+        ['loyal', 'Good people make the runs worth it, {name}.']
+    ],
+    'reaction.global.company.close': [
+        ['social', 'Good to hear from someone out there.'],
+        ['reserved', 'Good luck with it.'],
+        ['warm', 'Hope it goes your way, {responder}.'],
+        ['driven', 'Back to making some progress, then.'],
+        ['calm', 'One run at a time. That works for me.'],
+        ['loyal', 'People you can rely on make a difference.']
+    ],
+    'reaction.local.gear.reply': [
+        ['warm', 'Nice find, {name}. Hope it serves you well.'],
+        ['thrifty', '{name}, did you leave anything in the purse for supplies?'],
+        ['driven', 'Now put it to work, {name}.'],
+        ['careful', 'Try it on something manageable first, {name}.'],
+        ['social', 'All right, {name}! Nothing like a new bit of gear.'],
+        ['reserved', 'Looks useful, {name}.']
+    ],
+    'reaction.local.gear.close': [
+        ['thrifty', 'Going to make it earn its price.'],
+        ['driven', 'Looking forward to putting it through a few runs.'],
+        ['careful', 'I will get a feel for it before trying anything ambitious.'],
+        ['social', 'Probably going to stare at it for another minute first.'],
+        ['warm', 'Thanks, {responder}. Hope it was a good choice.'],
+        ['reserved', 'We will see how it does.']
+    ],
+    'reaction.local.price.reply': [
+        ['thrifty', 'Walk away, {name}. There will be another seller.'],
+        ['careful', 'Keep a little in reserve, {name}.'],
+        ['warm', 'Yeah, {name}. Supplies can really eat into a run.'],
+        ['direct', 'A bad price is a bad price, {name}.'],
+        ['calm', 'No hurry to buy, {name}.'],
+        ['reserved', 'Not worth it, {name}.']
+    ],
+    'reaction.local.price.close': [
+        ['thrifty', 'Going to compare a few more prices.'],
+        ['driven', 'I want to get back to hunting, but not at any price.'],
+        ['careful', 'I would rather keep a reserve than empty my purse.'],
+        ['weary', 'Feels like every seller has the same idea today.'],
+        ['calm', 'I can wait for a better deal.'],
+        ['reserved', 'I will look elsewhere.']
+    ],
+    'reaction.local.rest.reply': [
+        ['warm', 'Take your time, {name}. No need to rush.'],
+        ['careful', 'Better a break than another trip back dead, {name}.'],
+        ['driven', 'Catch your breath, {name}. Plenty left to do.'],
+        ['calm', 'The mobs can wait, {name}.'],
+        ['social', 'Even the quiet part of a run is better with company, {name}.'],
+        ['reserved', 'Rough run, {name}?']
+    ],
+    'reaction.local.rest.close': [
+        ['warm', 'Thanks, {responder}. A minute should help.'],
+        ['careful', 'Not going back half ready.'],
+        ['driven', 'Just catching my breath. I still have work to do.'],
+        ['calm', 'Quite happy to sit here for a bit.'],
+        ['weary', 'Might need more than a minute, honestly.'],
+        ['reserved', 'I will be fine.']
+    ],
+    'reaction.local.rested.reply': [
+        ['warm', 'Good luck out there, {name}.'],
+        ['careful', 'Take it steady, {name}.'],
+        ['driven', 'Make the next run count, {name}.'],
+        ['daring', 'Go give them something to worry about, {name}.'],
+        ['social', 'See you around, {name}!'],
+        ['reserved', 'Safe travels, {name}.']
+    ],
+    'reaction.local.rested.close': [
+        ['warm', 'Thanks. You too, {responder}.'],
+        ['careful', 'Keeping an eye on the way out this time.'],
+        ['driven', 'Time to get something done.'],
+        ['daring', 'No promises about taking it easy.'],
+        ['calm', 'We will see what the next run brings.'],
+        ['reserved', 'Thanks.']
+    ],
+    'reaction.local.victory.reply': [
+        ['warm', 'Nicely done, {name}.'],
+        ['careful', 'Do not let it go to your head, {name}.'],
+        ['driven', 'Keep that up, {name}.'],
+        ['daring', 'Bet you could handle a bit more, {name}.'],
+        ['social', 'There you go, {name}!'],
+        ['reserved', 'Clean work, {name}.']
+    ],
+    'reaction.local.victory.close': [
+        ['warm', 'Thanks, {responder}.'],
+        ['careful', 'One good fight. Still watching the next pull.'],
+        ['driven', 'That is more like it.'],
+        ['daring', 'Starting to wonder what else I can take.'],
+        ['calm', 'Happy with that one.'],
+        ['reserved', 'Worked out.']
+    ],
+    'reaction.local.revived.reply': [
+        ['warm', 'Good to see you upright, {name}.'],
+        ['careful', 'Give yourself a moment before heading out, {name}.'],
+        ['calm', 'Fresh start, {name}.'],
+        ['direct', 'Try a different pull this time, {name}.'],
+        ['social', 'Welcome back, {name}!'],
+        ['reserved', 'Back with us, {name}.']
+    ],
+    'reaction.local.revived.close': [
+        ['warm', 'Thanks, {responder}. Glad to be back.'],
+        ['careful', 'Taking a moment to get ready first.'],
+        ['calm', 'No point dwelling on it.'],
+        ['driven', 'Still have a level to work towards.'],
+        ['weary', 'Would really like to avoid doing that again.'],
+        ['reserved', 'Still here.']
+    ]
+};
+
+voices['local.death'] = voices['global.death'];
+
 function lines(key, values = {}, flags = {}) {
     if (!Object.hasOwn(catalog, key)) return [];
     const variants = catalog[key];
@@ -499,4 +805,4 @@ function line(key, values, flags) {
     return variants[Math.floor(Math.random() * variants.length)] || '';
 }
 
-module.exports = { catalog, lines, line };
+module.exports = { catalog, voices, lines, line };
