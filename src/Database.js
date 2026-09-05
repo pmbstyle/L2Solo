@@ -4327,7 +4327,8 @@ const Database = {
                 MIN(CASE WHEN status = 'pending' AND availableAt <= ? THEN createdAt END) AS oldestReadyAt,
                 MIN(CASE WHEN status = 'running' THEN updatedAt END) AS oldestRunningAt,
                 COALESCE(MAX(CASE WHEN status IN ('pending', 'running') THEN attempt ELSE 0 END), 0) AS maxAttempt
-            FROM clan_actions`, [timestamp, timestamp, timestamp], 'clan-action:queue-stats').then((rows) => {
+            FROM clan_actions
+            WHERE status IN ('pending', 'running')`, [timestamp, timestamp, timestamp], 'clan-action:queue-stats').then((rows) => {
             const row = rows[0] || {};
             const oldestPendingAt = Number(row.oldestPendingAt || 0);
             const oldestReadyAt = Number(row.oldestReadyAt || 0);
