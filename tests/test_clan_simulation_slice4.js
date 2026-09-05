@@ -95,20 +95,20 @@ async function main() {
         const second = await ClanGoalService.resolveBatch(4, { budgetMs: 1000 });
         assert.strictEqual(second.changed, 0, 'unchanged goal must not churn its persisted state');
 
-        await Database.execute(['UPDATE characters SET level = 60 WHERE id BETWEEN 4400001 AND 4400004']);
-        await Database.execute(['UPDATE bot_life_state SET level = 60 WHERE characterId BETWEEN 4400001 AND 4400004']);
-        await Database.execute(['UPDATE characters SET level = 50 WHERE id = 4400005']);
-        await Database.execute(['UPDATE bot_life_state SET level = 50 WHERE characterId = 4400005']);
+        await Database.execute(['UPDATE characters SET level = 60 WHERE id BETWEEN 4400001 AND 4400002']);
+        await Database.execute(['UPDATE bot_life_state SET level = 60 WHERE characterId BETWEEN 4400001 AND 4400002']);
+        await Database.execute(['UPDATE characters SET level = 50 WHERE id BETWEEN 4400003 AND 4400005']);
+        await Database.execute(['UPDATE bot_life_state SET level = 50 WHERE characterId BETWEEN 4400003 AND 4400005']);
         const almostReady = await ClanGoalService.resolveBatch(4, { budgetMs: 1000 });
         assert.strictEqual(almostReady.changed, 1);
         const [afterAlmostReady] = await Database.execute(['SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?', [created.clanId]]);
         const almostReadyGoal = JSON.parse(afterAlmostReady.stateJson).goal;
         assert.strictEqual(almostReadyGoal.status, 'preparing');
         assert.strictEqual(Number(almostReadyGoal.progress), 50,
-            'the lowest member of the required five must keep the leveling goal active');
+            'the third required member must keep the leveling goal active');
 
-        await Database.execute(['UPDATE characters SET level = 60 WHERE clanId = ?', [created.clanId]]);
-        await Database.execute(['UPDATE bot_life_state SET level = 60 WHERE characterId BETWEEN 4400001 AND 4400005']);
+        await Database.execute(['UPDATE characters SET level = 60 WHERE id = 4400003']);
+        await Database.execute(['UPDATE bot_life_state SET level = 60 WHERE characterId = 4400003']);
         const ready = await ClanGoalService.resolveBatch(4, { budgetMs: 1000 });
         assert.strictEqual(ready.changed, 1);
         const [afterReady] = await Database.execute(['SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?', [created.clanId]]);
