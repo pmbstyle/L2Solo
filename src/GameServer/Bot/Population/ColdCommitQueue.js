@@ -1,5 +1,8 @@
 const Protocol = require('./ColdSimulationProtocol');
 
+// Admission and batch sizing must agree on the cost of one ordinary row.
+const EARLY_COMMIT_ROW_BUDGET_MS = 4;
+
 function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -227,7 +230,7 @@ class ColdCommitQueue {
             if (earlyLease) {
                 // Free a few ownership slots without introducing a full idle
                 // batch into a player window. Atomic groups are never split.
-                const rowLimit = Math.min(this.maxRows, 4, Math.max(1, Math.floor(Number(earlyLease.budgetMs || 8) / 4)));
+                const rowLimit = Math.min(this.maxRows, 4, Math.max(1, Math.floor(Number(earlyLease.budgetMs || 8) / EARLY_COMMIT_ROW_BUDGET_MS)));
                 batch = this.takeBatch(true, rowLimit);
                 if (batch.length) this.lastBatchReason = 'capacity';
                 else this.counters.earlyEmpty += 1;
@@ -386,4 +389,4 @@ class ColdCommitQueue {
     }
 }
 
-module.exports = { ColdCommitQueue };
+module.exports = { ColdCommitQueue, EARLY_COMMIT_ROW_BUDGET_MS };

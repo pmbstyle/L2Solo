@@ -20,7 +20,7 @@ const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartySt
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const Protocol = require('./ColdSimulationProtocol');
-const { ColdCommitQueue } = require('./ColdCommitQueue');
+const { ColdCommitQueue, EARLY_COMMIT_ROW_BUDGET_MS } = require('./ColdCommitQueue');
 const { ColdSnapshotQueue } = require('./ColdSnapshotQueue');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const TownNpcCatalog = require('../Economy/TownNpcCatalog');
@@ -219,7 +219,8 @@ class ColdSimulationCoordinator {
                 const governor = invoke('GameServer/Bot/Population/BackgroundWorkGovernor');
                 const admission = governor.admit({
                     job: 'cold_commit_early', resource: 'sqlite-heavy',
-                    requestedBudgetMs: Math.max(8, Number(Config.schedulerSliceMs) || 12), minimumBudgetMs: 8,
+                    requestedBudgetMs: Math.max(8, Number(Config.schedulerSliceMs) || 12),
+                    minimumBudgetMs: EARLY_COMMIT_ROW_BUDGET_MS,
                     playerProtected: pressure.player, lagMs: pressure.lagMs
                 });
                 return admission.ok ? admission.lease : null;
