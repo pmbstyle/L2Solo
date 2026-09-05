@@ -2618,10 +2618,13 @@ const BotLifeState = {
     staleGoalCandidates(limit = 8, timestamp = now(), options = {}) {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
+        // Drive selection from ordered, indexed goal metadata. CROSS JOIN keeps
+        // SQLite from scanning large lifecycle rows before applying the limit.
         return Database.execute([
             `WITH candidates AS MATERIALIZED (
-                SELECT states.characterId FROM ${TABLE} states
-                INNER JOIN bot_goal_state goals ON goals.characterId = states.characterId
+                SELECT states.characterId FROM bot_goal_state goals INDEXED BY bot_goal_state_review_queue
+                CROSS JOIN ${TABLE} states INDEXED BY bot_life_state_goal_review
+                    ON goals.characterId = states.characterId
                 WHERE states.phase = 'cold'
                 AND (states.partyId IS NULL OR states.partyId = '')
                 AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting')

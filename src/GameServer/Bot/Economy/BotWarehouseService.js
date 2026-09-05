@@ -525,8 +525,9 @@ function enchantReleaseCandidates(limit = 8) {
         .map(([selfId]) => Number(selfId));
     const fetchAfter = (cursor) => Database.execute([`
         SELECT DISTINCT states.characterId
-        FROM warehouse_items warehouse
-        INNER JOIN bot_life_state states ON states.characterId = warehouse.characterId
+        FROM warehouse_items warehouse INDEXED BY warehouse_items_positive_self_owner
+        INNER JOIN bot_life_state states INDEXED BY bot_life_state_warehouse_release
+            ON states.characterId = warehouse.characterId
         WHERE warehouse.amount > 0
         AND warehouse.selfId IN (${scrollIds.map(() => '?').join(', ')})
         AND states.phase = 'cold'
@@ -553,10 +554,13 @@ function releaseCandidates(limit = 8, demandSelfIds = null) {
     const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
     const demandIds = demandSelfIds || MarketOpportunity.activeBuyDemandSelfIds();
     if (!demandIds.length) return Promise.resolve([]);
+    // Common materials can match most warehouse rows. Keep the oldest-state
+    // traversal so LIMIT stops early instead of sorting every matching owner.
     return Database.execute([`
         SELECT DISTINCT states.characterId
         FROM warehouse_items warehouse
-        INNER JOIN bot_life_state states ON states.characterId = warehouse.characterId
+        INNER JOIN bot_life_state states INDEXED BY bot_life_state_market_reconcile
+            ON states.characterId = warehouse.characterId
         WHERE warehouse.amount > 0
         AND warehouse.selfId IN (${demandIds.map(() => '?').join(', ')})
         AND states.phase = 'cold'

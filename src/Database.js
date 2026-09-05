@@ -1037,6 +1037,26 @@ function applySchemaMigrations() {
             LEFT JOIN afk_trade_shops shops ON shops.id = events.shopId
             LEFT JOIN characters owner ON owner.id = events.ownerId
             LEFT JOIN characters counterparty ON counterparty.id = events.counterpartyId;
+        `)],
+        [33, () => connection.exec(`
+            CREATE INDEX IF NOT EXISTS bot_goal_state_review_queue ON bot_goal_state(
+                updatedAt,
+                COALESCE(CAST(json_extract(goalJson, '$.nextReviewAt') AS INTEGER), 0),
+                characterId
+            );
+            CREATE INDEX IF NOT EXISTS bot_life_state_goal_review
+                ON bot_life_state(characterId, updatedAt)
+                WHERE phase = 'cold'
+                AND (partyId IS NULL OR partyId = '')
+                AND activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting');
+            CREATE INDEX IF NOT EXISTS warehouse_items_positive_self_owner
+                ON warehouse_items(selfId, characterId) WHERE amount > 0;
+            CREATE INDEX IF NOT EXISTS bot_life_state_warehouse_release
+                ON bot_life_state(characterId, updatedAt)
+                WHERE phase = 'cold' AND simulationOwner = 'legacy_main'
+                AND accountName NOT LIKE 'bot_craft_%'
+                AND (partyId IS NULL OR partyId = '')
+                AND activity IN ('hunting', 'resting');
         `)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
