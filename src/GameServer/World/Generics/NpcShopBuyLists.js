@@ -135,6 +135,7 @@ const A_GROCER_BASE = ADEN_GROCER_BASE;
 const S_GROCER_BASE = ADVANCED_GROCER_BASE;
 
 const CEMA_GROCER_BASE = [
+    [2508, 300],
     [1835, 7],
     [2509, 15],
     [3947, 35],
