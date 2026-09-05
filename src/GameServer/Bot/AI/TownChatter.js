@@ -1,5 +1,6 @@
 const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
 const ChatterBudget = invoke('GameServer/Bot/AI/BotChatterBudget');
+const Reactions = invoke('GameServer/Bot/AI/BotChatReactions');
 
 const DEFAULT_DEDUPE_MS = 30000;
 const MAX_RECENT_LINES = 8;
@@ -79,11 +80,12 @@ function say(session, BotAI, key, templates, options = {}) {
 
     if (!PUBLIC_EVENTS.has(key)) return false;
     const now = Number(options.now ?? Date.now());
-    if (session.inConversation || !ChatterBudget.canSend(session, key, now)) return false;
+    if (session.inConversation || Reactions.isBusy(session, now) || !ChatterBudget.canSend(session, key, now)) return false;
     const line = choose(session, key, lines);
     if (!line) return false;
     if (BotAI.say(session, line) === false) return false;
     ChatterBudget.record(session, key, now);
+    Reactions.openLocal(session, key, now);
     return true;
 }
 

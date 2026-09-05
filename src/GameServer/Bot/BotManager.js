@@ -1376,6 +1376,7 @@ const BotManager = {
 
     botSay(session, text, targetSession = null) {
         if (!session.actor) return;
+        if (targetSession) invoke('GameServer/Bot/AI/BotChatReactions').cancel(session);
         if (targetSession && this.partyChatRecipients(session, targetSession).length === 0) {
             this.botTell(session, targetSession, text);
             return;
@@ -1390,6 +1391,7 @@ const BotManager = {
 
     botTell(session, targetSession, text) {
         if (!session.actor || !targetSession || !targetSession.dataSendToMe) return;
+        invoke('GameServer/Bot/AI/BotChatReactions').cancel(session);
         const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
         const lines = BotChatText.splitForTell(text);
         if (!lines.length) return;

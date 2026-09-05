@@ -74,6 +74,8 @@ function canContinue(conversation) {
 function canStart(initiator, responder, now = Date.now()) {
     if (!initiator?.actor || !responder?.actor || initiator === responder) return false;
     if (initiator.inConversation || responder.inConversation) return false;
+    const Reactions = invoke('GameServer/Bot/AI/BotChatReactions');
+    if (Reactions.isBusy(initiator, now) || Reactions.isBusy(responder, now)) return false;
     if (initiator.partyCompanion || responder.partyCompanion) return false;
     if (!canContinue({ lines: [{ speaker: initiator }, { speaker: responder }] })) return false;
 

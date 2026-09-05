@@ -198,6 +198,8 @@ const DEFAULTS = {
     newbieAnchorExpMultiplier: 0.2,
     newbieAnchorFloorRatio: 0.12,
     globalChatEnabled: true,
+    chatReactionsEnabled: true,
+    chatReactionChance: 0.45,
     globalChatChance: 0.015,
     globalChatImportantChance: 0.25,
     globalChatMinIntervalMs: 180000,

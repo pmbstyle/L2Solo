@@ -215,6 +215,7 @@ const BotAI = {
     },
 
     stop(session) {
+        invoke('GameServer/Bot/AI/BotChatReactions').cancel(session);
         session.aiActive = false;
         session.pendingBrainTurns = [];
         session.pendingBrainTurn = null;
@@ -379,6 +380,7 @@ const BotAI = {
         const onlinePlayers = realPlayerSessions(World) || [];
         lodContext = HotActorLodPolicy.evaluate(session, onlinePlayers, tickStartedAt);
         PopulationService.recordHotTick(session);
+        invoke('GameServer/Bot/Population/BotGlobalChat').offerReply(session, tickStartedAt);
         const botDead = bot.isDead();
         if (botDead) {
             clearTacticalState(session);
@@ -559,6 +561,10 @@ const BotAI = {
                 return;
             }
         }
+
+        // Reactions use the existing visible hot tick and never delay combat
+        // or keep an actor seated just to finish a scripted exchange.
+        if (visibleRealPlayers.length) invoke('GameServer/Bot/AI/BotChatReactions').offerLocal(session, tickStartedAt);
 
         // 3. Dynamic State Machine Routing
         const state = States[session.plan];
@@ -757,9 +763,11 @@ const BotAI = {
     say(session, text, chatter = null) {
         if (chatter?.ambient) {
             const budget = invoke('GameServer/Bot/AI/BotChatterBudget');
-            if (session.inConversation || !budget.canSend(session, chatter.key)) return false;
+            const reactions = invoke('GameServer/Bot/AI/BotChatReactions');
+            if (session.inConversation || reactions.isBusy(session) || !budget.canSend(session, chatter.key)) return false;
             invoke('GameServer/Bot/BotManager').botSay(session, text);
             budget.record(session, chatter.key);
+            reactions.openLocal(session, chatter.key);
             return true;
         }
         return invoke('GameServer/Bot/BotManager').botSay(session, text);

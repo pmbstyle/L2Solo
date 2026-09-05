@@ -20,7 +20,7 @@ const catalog = {
     "town.shopping-cancelled": [
         "Shopping can wait. Staying with the party.",
         "I'll leave the shopping for later and stick with you.",
-        "Never mind the shops — staying with the group.",
+        "Never mind the shops \u2014 staying with the group.",
         "I'll handle the errands next time we're in town."
     ],
     "town.buyer-selected": [
@@ -71,7 +71,7 @@ const catalog = {
         "No luck putting this away. I'll try again later."
     ],
     "town.supply-purchased": [
-        "Got your {item} — {count} of them. Heading back.",
+        "Got your {item} \u2014 {count} of them. Heading back.",
         "Got the {item}. On my way back to you.",
         "All right, {count} {item} in the bag. Coming back."
     ],
@@ -354,6 +354,110 @@ const catalog = {
     "global.company": [
         "Quiet out here. How is everyone doing?",
         "What is everyone working towards today?"
+    ],
+    "reaction.global.death": [
+        "One of those runs, {name}?",
+        "Let's call it a learning experience."
+    ],
+    "reaction.global.break": [
+        "Taking it easy for a bit myself, {name}.",
+        "Can't argue with that. No rush."
+    ],
+    "reaction.global.roads": [
+        "{name}, the trick is not to think about how far you still have to walk.",
+        "Too late. I have been thinking about nothing else."
+    ],
+    "reaction.global.patience": [
+        {
+            "when": "cautious",
+            "yes": "{name}, I try not to look at anything I cannot afford.",
+            "no": "{name}, I keep telling myself the next run will pay for it."
+        },
+        "Sounds familiar. Let me know when that starts working."
+    ],
+    "reaction.global.company": [
+        {
+            "when": "social",
+            "yes": "Still around, {name}. Trying to make the next gear upgrade hurt less.",
+            "no": "Just saving up for gear, {name}. Slowly."
+        },
+        "Yeah, those prices keep me busy too."
+    ],
+    "reaction.local.gear": [
+        "Nice find, {name}. Going to try it out?",
+        "Of course. Hopefully before I start looking at the next one."
+    ],
+    "reaction.local.price": [
+        "{name}, shopping is a dangerous hobby.",
+        "My purse certainly thinks so."
+    ],
+    "reaction.local.rest": [
+        "Rough run, {name}?",
+        "Just need a minute. I will be fine."
+    ],
+    "reaction.local.rested": [
+        {
+            "when": "cautious",
+            "yes": "Take it steady this time, {name}.",
+            "no": "Good luck out there, {name}."
+        },
+        "Thanks. I will try to make it back in one piece."
+    ],
+    "reaction.local.victory": [
+        "Save some enthusiasm for the next one, {name}.",
+        "No promises."
+    ],
+    "reaction.local.revived": [
+        "Welcome back, {name}.",
+        "Thanks. Hoping to stay upright a bit longer this time."
+    ],
+    "reaction.global.death.2": [
+        "Ouch, {name}. Time for a less ambitious run?",
+        "Maybe. My sense of ambition could use a rest."
+    ],
+    "reaction.global.break.2": [
+        "You say that now, {name}. Then the next run starts looking tempting.",
+        "I know. I am a terrible judge of when to stop."
+    ],
+    "reaction.global.roads.2": [
+        "{name}, at least the walk gives your purse time to recover.",
+        "Mine needs a much longer walk, apparently."
+    ],
+    "reaction.global.patience.2": [
+        "I know that feeling, {name}. There is always something just out of reach.",
+        "Exactly. Every time I save up, I spot something else."
+    ],
+    "reaction.global.company.2": [
+        "Hanging in there, {name}. Taking things one run at a time.",
+        "That sounds like a decent plan."
+    ],
+    "reaction.local.gear.2": [
+        "That should keep you happy for a while, {name}.",
+        "Until I see the next shiny thing, anyway."
+    ],
+    "reaction.local.gear.3": [
+        "{name}, save some Adena for the shots too.",
+        "Good point. This shopping habit is getting expensive."
+    ],
+    "reaction.local.price.2": [
+        "I try not to look at my purse after shopping, {name}.",
+        "Hard to ignore when there is so little in it."
+    ],
+    "reaction.local.rest.2": [
+        "Take your time, {name}. The mobs can wait.",
+        "Thanks, {responder}. They have had enough of me for a moment."
+    ],
+    "reaction.local.rested.2": [
+        "Back for another round, {name}?",
+        "Apparently I never learn."
+    ],
+    "reaction.local.victory.2": [
+        "Getting confident there, {name}.",
+        "Only a little. Probably."
+    ],
+    "reaction.local.revived.2": [
+        "Still in one piece, {name}?",
+        "Close enough. Thanks for asking."
     ]
 };
 
