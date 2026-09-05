@@ -40,7 +40,7 @@ function proposal(characterId, priority = 'P2', revision = 1) {
     assert.strictEqual(queue.enqueue({ ...proposal(1), result: { ...proposal(1).result, patch: { activity: 'resting' } } }).ok, true);
     assert.strictEqual(queue.snapshot().coalesced, 1);
     assert.strictEqual(queue.snapshot().depth, 1);
-    assert.strictEqual(await queue.flushDue(), false, 'P2 must not flush before its 2 second target');
+    assert.strictEqual(await queue.flushDue(), false, 'P2 must wait for a batching deadline or early admission');
     now += 2000;
     assert.strictEqual(await queue.flushDue(), true);
     assert.strictEqual(commits, 1);
@@ -145,6 +145,32 @@ function proposal(characterId, priority = 'P2', revision = 1) {
     assert.strictEqual(await earlyQueue.flushDue(), false, 'a party larger than the early budget must wait intact');
     assert.strictEqual(earlyQueue.size(), 3);
     assert.strictEqual(await earlyQueue.flushDue(true), true);
+
+    let clock = 1000;
+    const measured = new ColdCommitQueue({
+        now: () => clock,
+        prepare: async entry => { clock += 3; return entry.baseState; },
+        commit: async entries => {
+            clock += 7;
+            return entries.map(entry => ({ ok: true, characterId: entry.nextState.characterId }));
+        },
+        afterCommit: async () => { clock += 11; }
+    });
+    measured.enqueue(proposal(70));
+    clock = 1499;
+    assert.strictEqual(await measured.flushDue(), false);
+    clock = 1500;
+    assert.strictEqual(await measured.flushDue(), true, 'the P2 fairness deadline must flush at 500 ms, before the 2 second target');
+    const timing = measured.snapshot();
+    assert.strictEqual(timing.queueP95Ms, 500, 'queue wait ends before preparation begins');
+    assert.strictEqual(timing.commitP95Ms, 21, 'legacy commit timing includes preparation, commit callback and after-commit work');
+    assert.deepStrictEqual(timing.stages.prepare, { count: 1, p95Ms: 3 });
+    assert.deepStrictEqual(timing.stages.commitCall, { count: 1, p95Ms: 7 });
+    assert.deepStrictEqual(timing.stages.afterCommit, { count: 1, p95Ms: 11 });
+    assert.deepStrictEqual(timing.flushReasons, { p2_overdue: 1 });
+    assert.strictEqual(earlyQueue.snapshot().earlyDenied, 1);
+    assert.strictEqual(earlyQueue.snapshot().earlyEmpty, 1, 'admission without room for an atomic group must be visible');
+    assert.strictEqual(earlyQueue.snapshot().flushReasons.capacity, 2);
 
     console.log('Cold commit queue coalescing, durability, backpressure, early budget, and retry checks passed');
 })().catch((error) => {

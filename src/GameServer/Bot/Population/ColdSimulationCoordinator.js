@@ -206,7 +206,10 @@ class ColdSimulationCoordinator {
             commit: (entries) => ColdSimulationOwner.commitAndReleaseBatch(entries),
             afterCommit: (entry, result) => this.afterCommit(entry, result),
             onResults: (results) => {
-                this.handleCommitResults(results).catch((error) => this.recordError(error));
+                const startedAt = Date.now();
+                this.handleCommitResults(results)
+                    .catch((error) => this.recordError(error))
+                    .finally(() => this.queue.recordStage('ackBuild', Date.now() - startedAt));
             },
             onPause: () => this.setPauseReason('commit_queue_high_water', true),
             onResume: () => this.setPauseReason('commit_queue_high_water', false),
