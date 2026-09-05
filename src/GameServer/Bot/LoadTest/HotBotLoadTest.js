@@ -241,7 +241,11 @@ const HotBotLoadTest = {
             const playerSourceReady = mode !== 'mixed' || BotManager.sessions.some((session) => (
                 session?.actor && String(session.accountId || '') === PLAYER_ACCOUNT
             ));
+            const coordinator = mode === 'mixed'
+                ? invoke('GameServer/Bot/Population/ColdSimulationCoordinator') : null;
+            const workerReady = mode !== 'mixed' || !!(coordinator.ready && coordinator.snapshotsLoaded);
             const warmupReady = spawned === count
+                && workerReady
                 && (mode !== 'mixed' || (playerSourceReady && cold >= coldMin));
             if (!warmupReady || seeding || lifeCounts.total !== this.stableStateTotal) {
                 this.stableStateTotal = lifeCounts.total;
@@ -261,6 +265,7 @@ const HotBotLoadTest = {
                     spawned,
                     cold,
                     coldMin,
+                    workerReady,
                     playerReady: !!this.playerSession,
                     provisionMs: Date.now() - runStartedAt
                 });
