@@ -418,8 +418,10 @@ const SpotProfiles = {
 
         const candidates = profiles
             .filter((profile) => !excludedSpotIds.has(String(profile.id)))
-            .filter((profile) => LevelingRoutes.isSpotAllowedForState(profile, state, routeOptions))
-            .filter((profile) => profile.minLevel <= targetLevel + 4 && profile.maxLevel >= targetLevel - 4);
+            // Level bounds are cheap and independent of the detailed route
+            // policy. Reject out-of-range spots before deriving their tags.
+            .filter((profile) => profile.minLevel <= targetLevel + 4 && profile.maxLevel >= targetLevel - 4)
+            .filter((profile) => LevelingRoutes.isSpotAllowedForState(profile, state, routeOptions));
         const relocationCandidates = mustRelocate
             ? candidates.filter((profile) => profile.id !== currentSpot.id)
             : candidates;
