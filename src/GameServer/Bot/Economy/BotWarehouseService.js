@@ -518,7 +518,7 @@ async function releaseCold(state, options = {}) {
     return { state: saved || nextState, released: true, items: released };
 }
 
-function enchantReleaseCandidates(limit = 8) {
+function enchantReleaseCandidates(limit = 8, options = {}) {
     const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
     const scrollIds = Object.entries(EnchantScrolls.ENCHANT_SCROLLS)
         .filter(([, scroll]) => scroll.grade === 'D')
@@ -538,7 +538,7 @@ function enchantReleaseCandidates(limit = 8) {
         AND states.characterId > ?
         ORDER BY states.characterId ASC
         LIMIT ${safeLimit}`,
-    [...scrollIds, Number(cursor || 0)]], 'warehouse:enchant-release-candidates');
+    [...scrollIds, Number(cursor || 0)], { onTiming: options.onTiming }], 'warehouse:enchant-release-candidates');
     return fetchAfter(enchantReleaseCursor).then(async (rows) => {
         if (!rows.length && enchantReleaseCursor > 0) {
             enchantReleaseCursor = 0;
@@ -550,16 +550,16 @@ function enchantReleaseCandidates(limit = 8) {
     });
 }
 
-function releaseCandidates(limit = 8, demandSelfIds = null) {
+function releaseCandidates(limit = 8, demandSelfIds = null, options = {}) {
     const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
     const demandIds = demandSelfIds || MarketOpportunity.activeBuyDemandSelfIds();
     if (!demandIds.length) return Promise.resolve([]);
-    // Common materials can match most warehouse rows. Keep the oldest-state
-    // traversal so LIMIT stops early instead of sorting every matching owner.
+    // Traverse eligible owners in oldest-state order. The partial index avoids
+    // reading full lifecycle rows when a rare demanded item has no seller.
     return Database.execute([`
         SELECT DISTINCT states.characterId
         FROM warehouse_items warehouse
-        INNER JOIN bot_life_state states INDEXED BY bot_life_state_market_reconcile
+        INNER JOIN bot_life_state states INDEXED BY bot_life_state_warehouse_demand
             ON states.characterId = warehouse.characterId
         WHERE warehouse.amount > 0
         AND warehouse.selfId IN (${demandIds.map(() => '?').join(', ')})
@@ -570,7 +570,7 @@ function releaseCandidates(limit = 8, demandSelfIds = null) {
         AND states.activity IN ('hunting', 'resting')
         ORDER BY states.updatedAt ASC
         LIMIT ${safeLimit}`,
-    demandIds], 'warehouse:release-candidates').then((rows) => rows.map((row) => Number(row.characterId)).filter(Boolean));
+    demandIds, { onTiming: options.onTiming }], 'warehouse:release-candidates').then((rows) => rows.map((row) => Number(row.characterId)).filter(Boolean));
 }
 
 function craftReleaseCandidates(limit = 4, timestamp = Date.now()) {
@@ -610,10 +610,19 @@ async function releaseColdBatch(limit = 8, deadlineAt = Infinity, options = {}) 
     const result = await releaseQueue.run({
         limit: remainingLimit, deadlineAt,
         select: async () => {
+            const prepareStartedAt = Date.now();
             const craftStates = craftReleaseCandidates(Math.max(1, Math.floor(remainingLimit / 2)));
+            const demandIds = MarketOpportunity.activeBuyDemandSelfIds();
+            recordStage('prepare', prepareStartedAt);
+            const queryOptions = (kind) => ({
+                onTiming: ({ waitMs, runMs }) => {
+                    options.onStage?.(`${kind}_queue_wait`, waitMs);
+                    options.onStage?.(`${kind}_sql`, runMs);
+                }
+            });
             const [marketIds, enchantIds] = await Promise.all([
-                releaseCandidates(remainingLimit, MarketOpportunity.activeBuyDemandSelfIds()),
-                enchantReleaseCandidates(remainingLimit)
+                releaseCandidates(remainingLimit, demandIds, queryOptions('market')),
+                enchantReleaseCandidates(remainingLimit, queryOptions('enchant'))
             ]);
             const ids = craftStates.map((state) => Number(state.characterId));
             for (let index = 0; index < Math.max(marketIds.length, enchantIds.length); index++) {

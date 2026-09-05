@@ -1057,6 +1057,14 @@ function applySchemaMigrations() {
                 AND accountName NOT LIKE 'bot_craft_%'
                 AND (partyId IS NULL OR partyId = '')
                 AND activity IN ('hunting', 'resting');
+        `)],
+        [34, () => connection.exec(`
+            CREATE INDEX IF NOT EXISTS bot_life_state_warehouse_demand
+                ON bot_life_state(updatedAt, characterId)
+                WHERE phase = 'cold' AND simulationOwner = 'legacy_main'
+                AND accountName NOT LIKE 'bot_craft_%'
+                AND (partyId IS NULL OR partyId = '')
+                AND activity IN ('hunting', 'resting');
         `)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));

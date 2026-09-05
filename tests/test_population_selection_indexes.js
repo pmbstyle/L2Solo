@@ -14,7 +14,7 @@ if (process.argv[2] === '--bootstrap') {
     const directory = fs.mkdtempSync(path.join(process.cwd(), 'tmp', 'test-selection-indexes-'));
     const databasePath = path.join(directory, 'states.sqlite');
     const indexNames = ['bot_goal_state_review_queue', 'bot_life_state_goal_review',
-        'warehouse_items_positive_self_owner', 'bot_life_state_warehouse_release'];
+        'warehouse_items_positive_self_owner', 'bot_life_state_warehouse_release', 'bot_life_state_warehouse_demand'];
     const bootstrap = () => {
         const result = spawnSync(process.execPath, [__filename, '--bootstrap', databasePath], { encoding: 'utf8' });
         assert.strictEqual(result.status, 0, result.stdout + result.stderr);
@@ -36,7 +36,7 @@ if (process.argv[2] === '--bootstrap') {
                 'fresh databases must have ' + name);
             db.exec('DROP INDEX ' + name);
         }
-        db.exec('DELETE FROM schema_migrations WHERE version = 33');
+        db.exec('DELETE FROM schema_migrations WHERE version IN (33, 34)');
         // Query fixtures do not require a running world or player accounts.
         db.exec('PRAGMA foreign_keys = OFF; BEGIN');
         const stateInsert = db.prepare(`INSERT INTO bot_life_state
@@ -67,6 +67,7 @@ if (process.argv[2] === '--bootstrap') {
         db = new DatabaseSync(databasePath);
         assert.deepStrictEqual(snapshot(), before, 'index migration must preserve all state, JSON, item counts and enchant values');
         assert.strictEqual(db.prepare('SELECT count(*) n FROM schema_migrations WHERE version = 33').get().n, 1);
+        assert.strictEqual(db.prepare('SELECT count(*) n FROM schema_migrations WHERE version = 34').get().n, 1);
 
         function verify() {
             const states = db.prepare('SELECT * FROM bot_life_state').all();
@@ -86,12 +87,13 @@ if (process.argv[2] === '--bootstrap') {
             const items = db.prepare('SELECT * FROM warehouse_items').all();
             const eligible = states.filter(state => state.phase === 'cold' && state.simulationOwner === 'legacy_main'
                 && !/^bot.craft..*$/i.test(state.accountName) && !state.partyId && ['hunting', 'resting'].includes(state.activity));
-            for (const demand of [[1864], [scrollIds[0]], [1864, scrollIds[0]], [999999]]) {
+            for (const demand of [[1864], [scrollIds[0]], [1864, scrollIds[0]], [999999]]) for (const limit of [1, 8, 50]) {
                 const expected = eligible.filter(state => items.some(item => item.characterId === state.characterId
-                    && item.amount > 0 && demand.includes(item.selfId))).sort((a, b) => a.updatedAt - b.updatedAt)
-                    .slice(0, 8).map(state => state.characterId);
+                    && item.amount > 0 && demand.includes(item.selfId))).sort((a, b) => a.updatedAt - b.updatedAt
+                        || a.characterId - b.characterId)
+                    .slice(0, limit).map(state => state.characterId);
                 const sql = warehouseSql.replaceAll("${demandIds.map(() => '?').join(', ')}", demand.map(() => '?').join(','))
-                    .replaceAll('${safeLimit}', '8');
+                    .replaceAll('${safeLimit}', String(limit));
                 assert.deepStrictEqual(db.prepare(sql).all(...demand).map(row => row.characterId), expected,
                     'warehouse demand, ownership, service, party, duplicate and quantity parity');
             }
@@ -114,6 +116,7 @@ if (process.argv[2] === '--bootstrap') {
             UPDATE bot_life_state SET accountName = 'bot_craft_changed' WHERE characterId = 17;
             UPDATE warehouse_items SET amount = 0 WHERE characterId = 24;
             UPDATE warehouse_items SET amount = 4 WHERE characterId = 25;
+            UPDATE bot_life_state SET updatedAt = 1000 WHERE characterId IN (25, 32, 40, 41, 49);
             UPDATE bot_goal_state SET goalJson = '{"nextReviewAt":99999}', updatedAt = 100 WHERE characterId = 9;
             UPDATE bot_goal_state SET goalJson = '{"type":"hunt"}', updatedAt = 1 WHERE characterId = 8;`);
         verify();
@@ -127,8 +130,8 @@ if (process.argv[2] === '--bootstrap') {
         assert(goalPlan.some(row => row.detail.includes('bot_life_state_goal_review')));
         const marketPlan = db.prepare('EXPLAIN QUERY PLAN ' + warehouseSql
             .replaceAll("${demandIds.map(() => '?').join(', ')}", '?').replaceAll('${safeLimit}', '8')).all(1864);
-        assert(marketPlan.some(row => row.detail.includes('bot_life_state_market_reconcile')),
-            'common materials must keep the bounded oldest-state traversal');
+        assert(marketPlan.some(row => row.detail.includes('bot_life_state_warehouse_demand')),
+            'common and rare demand must traverse only eligible owners in oldest-state order');
         assert(!marketPlan.some(row => /TEMP B-TREE FOR ORDER BY/.test(row.detail)),
             'the market lookup must not sort all matching warehouse owners');
         const enchantPlan = db.prepare('EXPLAIN QUERY PLAN ' + enchantSql
@@ -142,6 +145,7 @@ if (process.argv[2] === '--bootstrap') {
         db = new DatabaseSync(databasePath);
         assert.deepStrictEqual(snapshot(), changed, 'repeated startup must preserve state');
         assert.strictEqual(db.prepare('SELECT count(*) n FROM schema_migrations WHERE version = 33').get().n, 1);
+        assert.strictEqual(db.prepare('SELECT count(*) n FROM schema_migrations WHERE version = 34').get().n, 1);
         verify();
         console.log('Selection index migration, query parity, lifecycle transitions, and rollback checks passed');
     } finally {
