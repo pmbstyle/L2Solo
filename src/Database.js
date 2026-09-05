@@ -1073,6 +1073,19 @@ function applySchemaMigrations() {
                 WHERE phase = 'cold'
                 AND (partyId IS NULL OR partyId = '')
                 AND activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting');
+        `)],
+        [36, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS character_saved_locations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                characterId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                locX INTEGER NOT NULL,
+                locY INTEGER NOT NULL,
+                locZ INTEGER NOT NULL,
+                head INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS character_saved_locations_owner
+                ON character_saved_locations(characterId, id);
         `)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
@@ -3619,6 +3632,20 @@ const Database = {
         }, 'clan-warehouse:player-withdraw'));
     },
 
+    fetchSavedLocations(characterId) {
+        return run('SELECT * FROM character_saved_locations WHERE characterId = ? ORDER BY id DESC', [characterId], 'saved-location:list');
+    },
+    saveLocation(characterId, name, coords) {
+        return insert('character_saved_locations', {
+            characterId, name, locX: coords.locX, locY: coords.locY, locZ: coords.locZ, head: coords.head
+        }, 'saved-location:insert');
+    },
+    fetchSavedLocation(characterId, id) {
+        return selectOne('character_saved_locations', ['*'], 'characterId = ? AND id = ?', [characterId, id], 'saved-location:one');
+    },
+    deleteSavedLocation(characterId, id) {
+        return remove('character_saved_locations', 'characterId = ? AND id = ?', [characterId, id], 'saved-location:delete');
+    },
     fetchCharacterQuests(characterId) { return select('character_quests', ['*'], 'characterId = ?', [characterId], 'quest:list'); },
     setCharacterQuest(characterId, questId, state, variables) { return run(UPSERT_CHARACTER_QUEST, [characterId, questId, state, JSON.stringify(variables || {})], 'quest:upsert'); },
     deleteCharacterQuest(characterId, questId) { return remove('character_quests', 'characterId = ? AND questId = ?', [characterId, questId], 'quest:delete'); },

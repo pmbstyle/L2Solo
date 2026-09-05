@@ -9,6 +9,7 @@ const tests = [
     'tests/test_population_event_loop.js',
     'tests/test_population_selection_indexes.js',
     'tests/test_admin_tools.js',
+    'tests/test_admin_saved_locations.js',
     'tests/test_auto_soulshots.js',
     'tests/test_shot_stock_restock.js',
     'tests/test_shot_stock_restart_persistence.js',
