@@ -1,4 +1,4 @@
-const { collectionPages } = require('./ColdMessagePages');
+const { collectionPages, PAGE_BYTES } = require('./ColdMessagePages');
 const path = require('path');
 const { randomUUID } = require('crypto');
 const { Worker } = require('worker_threads');
@@ -747,6 +747,12 @@ class ColdSimulationCoordinator {
     }
 
     async sendIncrementalEntries(entries, index, pageSize, priority = null) {
+        // Count each row once instead of serializing every growing page prefix.
+        // post() still validates the complete envelope before worker delivery.
+        const baseBytes = Protocol.byteLength(Protocol.envelope('snapshot_page', this.workerEpoch, {
+            rows: [], done: false, initial: false, ...(priority ? { priority } : {})
+        })) + 256;
+        let pageBytes = baseBytes;
         let page = [];
         let rowsSent = 0;
         let pagesSent = 0;
@@ -754,6 +760,7 @@ class ColdSimulationCoordinator {
             if (!page.length) return true;
             const rows = page;
             page = [];
+            pageBytes = baseBytes;
             if (!await this.sendSnapshotPage(rows, { initial: false, priority })) return false;
             rowsSent += rows.length;
             pagesSent += 1;
@@ -764,12 +771,12 @@ class ColdSimulationCoordinator {
 
         for (const entry of entries) {
             const row = this.snapshotEntry(entry.state || entry, index);
-            const candidate = [...page, row];
-            const tooLarge = page.length > 0
-                && Protocol.byteLength(Protocol.envelope('snapshot_page', this.workerEpoch, { rows: candidate, done: false })) > 240 * 1024;
+            const rowBytes = Protocol.byteLength([row]) - 2;
+            const tooLarge = page.length > 0 && pageBytes + rowBytes + 1 > PAGE_BYTES;
             if (tooLarge || page.length >= pageSize) {
                 if (!await flush()) return { ok: false, rowsSent, pagesSent };
             }
+            pageBytes += rowBytes + (page.length ? 1 : 0);
             page.push(row);
         }
         if (!await flush()) return { ok: false, rowsSent, pagesSent };
@@ -785,6 +792,10 @@ class ColdSimulationCoordinator {
         const compactPartyMemberIds = new Set(states.map((state) => Number(state.characterId || 0)).filter(Boolean));
         const index = this.contextIndex({ compactPartyMemberIds });
         const pageSize = this.snapshotQueue.pageSize;
+        const baseBytes = Protocol.byteLength(Protocol.envelope('snapshot_page', this.workerEpoch, {
+            rows: [], done: false, initial: true
+        })) + 256;
+        let pageBytes = baseBytes;
         let page = [];
         let pendingPage = null;
         let rowsSent = 0;
@@ -801,14 +812,15 @@ class ColdSimulationCoordinator {
 
         for (const state of states) {
             const row = this.snapshotEntry(state, index);
-            const candidate = [...page, row];
-            const tooLarge = page.length > 0
-                && Protocol.byteLength(Protocol.envelope('snapshot_page', this.workerEpoch, { rows: candidate, done: false })) > 240 * 1024;
+            const rowBytes = Protocol.byteLength([row]) - 2;
+            const tooLarge = page.length > 0 && pageBytes + rowBytes + 1 > PAGE_BYTES;
             if (tooLarge || page.length >= pageSize) {
                 if (pendingPage && !await emit(pendingPage, false)) return { ok: false, rowsSent, pagesSent };
                 pendingPage = page;
                 page = [];
+                pageBytes = baseBytes;
             }
+            pageBytes += rowBytes + (page.length ? 1 : 0);
             page.push(row);
         }
         if (page.length) {

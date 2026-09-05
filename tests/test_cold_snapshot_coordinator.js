@@ -5,6 +5,8 @@ require('../src/Global');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const { ColdSimulationCoordinator } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
+const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
+const { PAGE_BYTES } = require('../src/GameServer/Bot/Population/ColdMessagePages');
 
 function setup() {
     const coordinator = new ColdSimulationCoordinator();
@@ -65,6 +67,74 @@ function setup() {
     await new Promise((resolve) => setImmediate(resolve));
     assert.strictEqual(critical.messages[0].payload.priority, 'P0', 'critical state must bypass ordinary refresh');
     assert.strictEqual(critical.messages[0].payload.rows[0].state.characterId, 99);
+
+    // Exercise actual envelope validation with Unicode payloads large enough
+    // to hit the byte limit before the row limit, in both delivery paths.
+    for (const mode of ['full', 'incremental']) {
+        const { coordinator, messages } = setup();
+        delete coordinator.post;
+        coordinator.worker.postMessage = message => messages.push(message);
+        coordinator.reconcileOrphanedBackgroundParties = async () => {};
+        let serializations = 0;
+        const states = Array.from({ length: 65 }, (_, index) => ({
+            characterId: index + 1,
+            phase: 'cold',
+            stats: {
+                text: 'Поляна🌲'.repeat(1600 + index),
+                toJSON() {
+                    serializations++;
+                    return { text: this.text };
+                }
+            }
+        }));
+        LifeState.allStates = () => states;
+        const send = () => mode === 'full' ? coordinator.sendFullSnapshot()
+            : coordinator.sendIncrementalEntries(states, {}, 32, 'P0');
+        const result = await send();
+        assert.strictEqual(result.ok, true);
+        assert.strictEqual(result.rowsSent, states.length);
+        assert.strictEqual(result.pagesSent, messages.length);
+        assert.deepStrictEqual(messages.flatMap(message => message.payload.rows.map(row => row.state)), states,
+            'byte pagination must deliver every state in order without truncation');
+        assert(serializations <= states.length * 3,
+            'page sizing and final validation must perform linear serialization work');
+        assert(messages.length > 3, 'the fixture must exercise byte-limited pages');
+        for (const [index, message] of messages.entries()) {
+            assert(Protocol.byteLength(message) <= PAGE_BYTES, 'full envelope must fit the UTF-8 page budget');
+            assert.strictEqual(message.payload.initial, mode === 'full');
+            assert.strictEqual(message.payload.done, mode === 'full' && index === messages.length - 1);
+            assert.strictEqual(message.payload.priority, mode === 'full' ? undefined : 'P0');
+        }
+
+        // A failed send must not claim the unaccepted rows or final marker.
+        let attempts = 0;
+        const sendPage = coordinator.sendSnapshotPage.bind(coordinator);
+        coordinator.sendSnapshotPage = (...args) => ++attempts === 2 ? false : sendPage(...args);
+        messages.length = 0;
+        const failed = await send();
+        assert.strictEqual(failed.ok, false);
+        assert.strictEqual(failed.pagesSent, 1);
+        assert.strictEqual(failed.rowsSent, messages[0].payload.rows.length);
+        assert(!messages.some(message => message.payload.done));
+        coordinator.sendSnapshotPage = sendPage;
+
+        // Oversized individual states still fail explicitly; never drop them
+        // to make the remaining snapshot appear complete.
+        states.splice(0, states.length, { characterId: 1, text: 'x'.repeat(Protocol.MAX_MESSAGE_BYTES) });
+        messages.length = 0;
+        const oversized = await send();
+        assert.strictEqual(oversized.ok, false);
+        assert.strictEqual(oversized.rowsSent, 0);
+        assert.strictEqual(messages.length, 0);
+        assert.strictEqual(coordinator.counters.invalidReasons.out_snapshot_page_message_too_large, 1);
+
+        states.length = 0;
+        const empty = await send();
+        assert.strictEqual(empty.ok, true);
+        assert.strictEqual(empty.rowsSent, 0);
+        assert.strictEqual(messages.length, mode === 'full' ? 1 : 0);
+        if (mode === 'full') assert.strictEqual(messages[0].payload.done, true);
+    }
 
     LifeState.allStates = originalAllStates;
     console.log('Cold coordinator incremental refresh, cooperative full bootstrap, and P0 bypass checks passed');
