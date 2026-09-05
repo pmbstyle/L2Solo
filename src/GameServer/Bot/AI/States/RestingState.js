@@ -1,3 +1,4 @@
+const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const ServerResponse = invoke('GameServer/Network/Response');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
@@ -279,7 +280,7 @@ module.exports = {
                 BotAI.say(session, "Fully rested! Ready to follow you again.");
             } else {
                 session.plan = 'hunting';
-                BotAI.say(session, "Fully rested! Ready to hunt again.");
+                BotAI.say(session, Speech.line('combat.rested'), { ambient: true, key: 'rested' });
             }
         } else {
             // skillExec marks the actor as casting immediately.  Do not sit

@@ -1,7 +1,16 @@
 const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
+const ChatterBudget = invoke('GameServer/Bot/AI/BotChatterBudget');
 
 const DEFAULT_DEDUPE_MS = 30000;
 const MAX_RECENT_LINES = 8;
+// Navigation, stock checks and NPC selection are useful diagnostics, but
+// strangers in town do not need a spoken report for each state transition.
+const PUBLIC_EVENTS = new Set(['market-gear-purchased', 'npc-gear-purchased', 'shots-too-expensive']);
+const ROUTINE_EVENTS = new Set([
+    'equipment-market-selected', 'warehouse-selected', 'buyer-selected', 'npc-seller-selected',
+    'alternate-warehouse', 'alternate-equipment-shop', 'alternate-town-shop',
+    'shots-already-stocked', 'warehouse-deposit', 'loot-sold', 'shopping-to-rebuff'
+]);
 
 function stateOwner(session) {
     return session?.partyCompanion === true && session.followPlayerSession
@@ -51,6 +60,7 @@ function choose(session, key, templates) {
 function say(session, BotAI, key, templates, options = {}) {
     const lines = cleanTemplates(templates);
     if (!session || !lines.length) return false;
+    if (ROUTINE_EVENTS.has(key) && !options.priority) return false;
 
     if (session.actor && session.partyCompanion === true && session.followPlayerSession) {
         const BotManager = invoke('GameServer/Bot/BotManager');
@@ -67,9 +77,13 @@ function say(session, BotAI, key, templates, options = {}) {
         }
     }
 
+    if (!PUBLIC_EVENTS.has(key)) return false;
+    const now = Number(options.now ?? Date.now());
+    if (session.inConversation || !ChatterBudget.canSend(session, key, now)) return false;
     const line = choose(session, key, lines);
     if (!line) return false;
-    BotAI.say(session, line);
+    if (BotAI.say(session, line) === false) return false;
+    ChatterBudget.record(session, key, now);
     return true;
 }
 

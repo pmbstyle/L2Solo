@@ -7,6 +7,7 @@ const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
 const BotConversationService = invoke('GameServer/Bot/AI/BotConversationService');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 const ServerResponse = invoke('GameServer/Network/Response');
+const ChatLocation = invoke('GameServer/Bot/AI/BotChatLocation');
 
 // A player can send several tells while the provider is answering.  Keep the
 // pair ordered so each request sees the previous answer in conversation
@@ -114,18 +115,18 @@ function fallbackReply(state, availability, text) {
     }
     if (lower.includes('party') || lower.includes('пати') || lower.includes('invite')) {
         if (availability?.available && persona?.primaryDrive === 'social') {
-            return `I am open to a steady party. Invite me by name near ${state?.homeRegion || 'my spot'}.`;
+            return `I am open to a steady party. Invite me by name near ${ChatLocation.forState(state)}.`;
         }
         if (availability?.available && persona?.primaryDrive === 'wealth') {
-            return `If it is a practical run, invite me by name near ${state?.homeRegion || 'my spot'}.`;
+            return `If it is a practical run, invite me by name near ${ChatLocation.forState(state)}.`;
         }
-        return `Invite me by name if you want, I'm near ${state?.homeRegion || 'my spot'}.`;
+        return `Invite me by name if you want, I'm near ${ChatLocation.forState(state)}.`;
     }
     if (lower.includes('where') || lower.includes('где')) {
-        return `${name} here. I'm ${activity} near ${state?.homeRegion || state?.spotId || 'my hunting spot'}.`;
+        return `${name} here. I'm ${activity} near ${ChatLocation.forState(state)}.`;
     }
 
-    return `Hey. I'm ${activity} near ${state?.homeRegion || 'my hunting spot'} right now.`;
+    return `Hey. I'm ${activity} near ${ChatLocation.forState(state)} right now.`;
 }
 
 function schema() {

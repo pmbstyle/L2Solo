@@ -1,3 +1,4 @@
+const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const ServerResponse = invoke('GameServer/Network/Response');
 const TradeService   = invoke('GameServer/Bot/TradeService');
@@ -226,11 +227,7 @@ function prepareEquipmentMarketStop(session, bot, town, BotAI) {
     session.shoppingTarget = errand.target;
     session.shoppingDoneAnnounced = false;
     CompanionNavigationRecovery.clear(session);
-    TownChatter.say(session, BotAI, 'equipment-market-selected', [
-        `Found a better ${errand.itemName} offer at ${errand.target.name}.`,
-        `${errand.target.name} has the best price for ${errand.itemName}.`,
-        `Checking ${errand.target.name}'s offer for ${errand.itemName}.`
-    ]);
+    TownChatter.say(session, BotAI, 'equipment-market-selected', Speech.lines('town.equipment-market-selected', { item: errand.itemName, seller: errand.target.name }));
     return true;
 }
 
@@ -245,12 +242,7 @@ function prepareWarehouseStop(session, bot, town, BotAI) {
     const target = warehouseTarget(town, bot);
     if (!target) {
         session.shoppingWarehouseDone = 'unavailable';
-        TownChatter.say(session, BotAI, 'warehouse-not-in-town', [
-            'There is no warehouse service available; I will keep the protected items with me.',
-            'No warehouse clerk is available. I will carry the valuables instead of selling them.',
-            'There is no usable warehouse, so the protected items stay in my bag.',
-            'Skipping storage; I will keep anything worth preserving.'
-        ], { priority: 'coordination' });
+        TownChatter.say(session, BotAI, 'warehouse-not-in-town', Speech.lines('town.warehouse-not-in-town'), { priority: 'coordination' });
         return false;
     }
 
@@ -260,12 +252,7 @@ function prepareWarehouseStop(session, bot, town, BotAI) {
     session.shoppingDoneAnnounced = false;
     CompanionNavigationRecovery.clear(session);
     TownNpcApproach.reset(session);
-    TownChatter.say(session, BotAI, 'warehouse-selected', [
-        `Stopping at ${target.name}'s warehouse before I visit the shops.`,
-        `I will leave the protected items with ${target.name}, then handle the market.`,
-        `Warehouse first: ${target.name} can store the valuables from this run.`,
-        `Taking the keepers to ${target.name} before I sell the leftovers.`
-    ]);
+    TownChatter.say(session, BotAI, 'warehouse-selected', Speech.lines('town.warehouse-selected', { merchant: target.name }));
     return true;
 }
 
@@ -277,12 +264,7 @@ module.exports = {
             session.shoppingDoneAnnounced = false;
             session.preShopLocation = undefined;
             clearShoppingServiceState(session);
-            TownChatter.say(session, BotAI, 'shopping-cancelled', [
-                'Shopping can wait. Staying with the party.',
-                "I'll leave the shopping for later and stick with you.",
-                'Never mind the shops — staying with the group.',
-                "I'll handle the errands next time we're in town."
-            ]);
+            TownChatter.say(session, BotAI, 'shopping-cancelled', Speech.lines('town.shopping-cancelled'));
             return;
         }
 
@@ -316,11 +298,7 @@ module.exports = {
                     locZ: offer.locZ,
                     town: offer.town || closestTown.name
                 };
-                TownChatter.say(session, BotAI, 'buyer-selected', [
-                    `Taking this loot to ${session.shoppingTarget.name} in ${session.shoppingTarget.town}.`,
-                    `${session.shoppingTarget.name} is buying, so I'll sell there.`,
-                    `Found a player buyer in ${session.shoppingTarget.town}: ${session.shoppingTarget.name}.`
-                ]);
+                TownChatter.say(session, BotAI, 'buyer-selected', Speech.lines('town.buyer-selected', { merchant: session.shoppingTarget.name, town: session.shoppingTarget.town }));
             } else if (buyer) {
                 session.shoppingTarget = {
                     actorId: buyer.actor.fetchId(),
@@ -330,12 +308,7 @@ module.exports = {
                     locZ: buyer.actor.fetchLocZ(),
                     town: buyer.store.town || closestTown.name
                 };
-                TownChatter.say(session, BotAI, 'buyer-selected', [
-                    `Taking this loot to ${session.shoppingTarget.name} in ${session.shoppingTarget.town}.`,
-                    `${session.shoppingTarget.name} is buying, so I'll sell there.`,
-                    `Found a buyer in ${session.shoppingTarget.town}: ${session.shoppingTarget.name}.`,
-                    `I'll see what ${session.shoppingTarget.name} offers for this haul.`
-                ]);
+                TownChatter.say(session, BotAI, 'buyer-selected', Speech.lines('town.buyer-selected.player', { merchant: session.shoppingTarget.name, town: session.shoppingTarget.town }));
             } else {
                 session.shoppingTarget = townMerchantTarget(closestTown, bot);
                 if (!session.shoppingTarget) {
@@ -343,20 +316,10 @@ module.exports = {
                     session.shoppingDoneAnnounced = false;
                     session.preShopLocation = undefined;
                     clearShoppingServiceState(session);
-                    TownChatter.say(session, BotAI, 'npc-seller-unavailable', [
-                        'No merchant service is available, so I will keep the bag and try again later.',
-                        'I could not find a real shopkeeper. Nothing will be discarded.',
-                        'There is no usable NPC shop right now; I will retry on another visit.',
-                        'No merchant can handle this errand, so I am keeping the inventory.'
-                    ], { priority: 'coordination' });
+                    TownChatter.say(session, BotAI, 'npc-seller-unavailable', Speech.lines('town.npc-seller-unavailable'), { priority: 'coordination' });
                     return;
                 }
-                TownChatter.say(session, BotAI, 'npc-seller-selected', [
-                    `No player buyer for this haul; I'll use ${session.shoppingTarget.name}'s shop in ${session.shoppingTarget.town}.`,
-                    `No good market offer. Taking the leftovers to ${session.shoppingTarget.name} in ${session.shoppingTarget.town}.`,
-                    `The market passed on this bag, so ${session.shoppingTarget.name} in ${session.shoppingTarget.town} gets it.`,
-                    `I'll clear this inventory at ${session.shoppingTarget.name}'s NPC shop in ${session.shoppingTarget.town}.`
-                ]);
+                TownChatter.say(session, BotAI, 'npc-seller-selected', Speech.lines('town.npc-seller-selected', { merchant: session.shoppingTarget.name, town: session.shoppingTarget.town }));
             }
         }
 
@@ -390,12 +353,7 @@ module.exports = {
                         session.shoppingTarget = alternate;
                         TownNpcApproach.reset(session);
                         CompanionNavigationRecovery.clear(session);
-                        TownChatter.say(session, BotAI, 'alternate-warehouse', [
-                            `I couldn't reach ${target.name}; trying warehouse keeper ${alternate.name}.`,
-                            `${target.name}'s counter is blocked. I will store the items with ${alternate.name}.`,
-                            `Switching warehouse clerks — ${alternate.name} should be reachable.`,
-                            `No route to ${target.name}; heading to ${alternate.name} instead.`
-                        ], { priority: 'coordination' });
+                        TownChatter.say(session, BotAI, 'alternate-warehouse', Speech.lines('town.alternate-warehouse', { merchant: target.name, alternate: alternate.name }), { priority: 'coordination' });
                         return;
                     }
 
@@ -403,12 +361,7 @@ module.exports = {
                     restoreAfterWarehouse(session);
                     TownNpcApproach.reset(session);
                     CompanionNavigationRecovery.clear(session);
-                    TownChatter.say(session, BotAI, 'warehouse-unreachable', [
-                        'I could not reach a warehouse clerk, so I will keep the protected items with me.',
-                        'No usable route to the warehouse. I will carry the valuables and continue.',
-                        'Storage is inaccessible; nothing protected will be sold.',
-                        'The warehouse route failed. Keeping the important items in my bag.'
-                    ], { priority: 'coordination' });
+                    TownChatter.say(session, BotAI, 'warehouse-unreachable', Speech.lines('town.warehouse-unreachable'), { priority: 'coordination' });
                     return;
                 }
 
@@ -423,12 +376,7 @@ module.exports = {
                         session.companionShopping = alternate;
                         session.shoppingTarget = alternate.target;
                         CompanionNavigationRecovery.clear(session);
-                        TownChatter.say(session, BotAI, 'alternate-equipment-shop', [
-                            `I couldn't reach ${target.name}; trying ${alternate.target.name} instead.`,
-                            `${target.name} is blocked off. I'll check ${alternate.target.name}.`,
-                            `Changing shops — ${alternate.target.name} should be reachable.`,
-                            `No route to ${target.name}. Heading for ${alternate.target.name}.`
-                        ], { priority: 'coordination' });
+                        TownChatter.say(session, BotAI, 'alternate-equipment-shop', Speech.lines('town.alternate-equipment-shop', { merchant: target.name, alternate: alternate.target.name }), { priority: 'coordination' });
                         return;
                     }
                 }
@@ -439,12 +387,7 @@ module.exports = {
                         session.companionShopping = alternate;
                         session.shoppingTarget = alternate.target;
                         CompanionNavigationRecovery.clear(session);
-                        TownChatter.say(session, BotAI, 'alternate-town-shop', [
-                            `I couldn't reach ${target.name || 'the shop'}; trying ${alternate.target.name} instead.`,
-                            `That route is blocked. Switching to ${alternate.target.name}.`,
-                            `${alternate.target.name} is my next stop; this shop is inaccessible.`,
-                            `Taking another route through ${alternate.target.name}.`
-                        ], { priority: 'coordination' });
+                        TownChatter.say(session, BotAI, 'alternate-town-shop', Speech.lines('town.alternate-town-shop', { merchant: target.name || 'the shop', alternate: alternate.target.name }), { priority: 'coordination' });
                         return;
                     }
                 }
@@ -470,12 +413,7 @@ module.exports = {
                 CompanionNavigationRecovery.clear(session);
                 bot.unselect?.();
                 bot.automation?.abortAll?.(bot);
-                TownChatter.say(session, BotAI, 'shop-unreachable', [
-                    "I couldn't reach the shop. Staying with you and I'll retry later.",
-                    'That shop is inaccessible, so I will retry later.',
-                    "No usable route to the merchant. I'll retry later.",
-                    "The shop route failed; I'll try again on the next town visit."
-                ], { priority: 'coordination' });
+                TownChatter.say(session, BotAI, 'shop-unreachable', Speech.lines('town.shop-unreachable'), { priority: 'coordination' });
             }
             return;
         }
@@ -520,12 +458,7 @@ module.exports = {
             if (warehouse.count > 0) {
                 const sample = warehouse.items.slice(0, 2).map((item) => `${item.amount}x ${item.name}`).join(', ');
                 const stored = `${sample}${warehouse.items.length > 2 ? ' and more' : ''}`;
-                TownChatter.say(session, BotAI, 'warehouse-deposit', [
-                    `Stored ${stored} with warehouse keeper ${target.name}.`,
-                    `${target.name} put ${stored} away for safekeeping.`,
-                    `Warehouse stop complete with ${target.name}: ${stored}.`,
-                    `Left ${stored} in ${target.name}'s care before visiting the shops.`
-                ]);
+                TownChatter.say(session, BotAI, 'warehouse-deposit', Speech.lines('town.warehouse-deposit', { items: stored, merchant: target.name }));
             }
             restoreAfterWarehouse(session);
             TownNpcApproach.reset(session);
@@ -533,12 +466,7 @@ module.exports = {
         } catch (err) {
             utils.infoWarn('Shopping', 'warehouse deposit failed for %s at %s: %s', bot.fetchName(), target?.name || 'unknown', err.message);
             session.lastTradeSummary = 'kept inventory after warehouse deposit failure';
-            TownChatter.say(session, BotAI, 'warehouse-unavailable', [
-                `${target?.name || 'The warehouse clerk'} could not accept this load. I will keep the bag and try again later.`,
-                'Warehouse service failed, so I am keeping these items for now.',
-                'Could not deposit this load. Nothing will be discarded.',
-                'The warehouse is unavailable; I will carry the protected items until next time.'
-            ], { priority: 'coordination' });
+            TownChatter.say(session, BotAI, 'warehouse-unavailable', Speech.lines('town.warehouse-unavailable', { merchant: target?.name || 'The warehouse clerk' }), { priority: 'coordination' });
             this.scheduleRestock(session, bot, Generics, BotAI);
         }
     },
@@ -575,12 +503,7 @@ module.exports = {
                 }, 'pending', 'purchase_complete_returning');
                 deliveryReady = true;
                 session.lastTradeSummary = `bought ${purchased.delta}x ${companionErrand.itemName} for ${formatAdena(purchased.cost)}a to deliver to ${companionErrand.playerSession?.actor?.fetchName?.() || 'the leader'}`;
-                TownChatter.say(session, BotAI, 'supply-purchased', [
-                    `Bought ${purchased.delta}x ${companionErrand.itemName}. Returning with them now.`,
-                    `${purchased.delta}x ${companionErrand.itemName} secured; heading back.`,
-                    `Got the requested ${companionErrand.itemName}. On my way back.`,
-                    `Supply run complete: ${purchased.delta}x ${companionErrand.itemName}. Returning now.`
-                ], { priority: 'coordination' });
+                TownChatter.say(session, BotAI, 'supply-purchased', Speech.lines('town.supply-purchased', { count: purchased.delta, item: companionErrand.itemName }), { priority: 'coordination' });
                 Promise.resolve(BotEventJournal.record({
                     playerId: companionErrand.playerId,
                     botId: bot.fetchId(),
@@ -599,18 +522,8 @@ module.exports = {
                 session.pendingResourceDelivery = undefined;
                 session.lastTradeSummary = `could not buy ${companionErrand.amount}x ${companionErrand.itemName}`;
                 TownChatter.say(session, BotAI, 'supply-purchase-failed', error?.message === 'not_enough_adena'
-                    ? [
-                        'I am short on Adena for that purchase. Give me some and I will try again.',
-                        'I could not cover the supply bill. I need more Adena before another attempt.',
-                        'The requested supplies cost more Adena than I have.',
-                        'Purchase paused — my Adena is short for the requested amount.'
-                    ]
-                    : [
-                        'I could not complete that supply purchase. I am returning now.',
-                        'The supply run failed at the shop; heading back empty-handed.',
-                        'I could not secure the requested goods. Returning to the party.',
-                        'That purchase did not go through. I am coming back now.'
-                    ], { priority: 'coordination' });
+            ? Speech.lines('town.supply-purchase-failed.short-adena')
+            : Speech.lines('town.supply-purchase-failed.unavailable'), { priority: 'coordination' });
                 utils.infoWarn('Shopping', 'requested supply purchase failed for %s: %s', bot.fetchName(), error.message);
                 WorkflowTelemetry.recordSupply(companionErrand.workflowId, 'return', {
                     botId: bot.fetchId(),
@@ -661,12 +574,7 @@ module.exports = {
                     sourceId: store?.ownerId || seller.fetchId()
                 });
                 session.lastTradeSummary = `bought ${boughtSummary.qty}x ${boughtSummary.name} from ${seller.fetchName()} for ${formatAdena(boughtSummary.totalAdena)}a`;
-                TownChatter.say(session, BotAI, 'market-gear-purchased', [
-                    `Bought ${boughtSummary.name} from ${seller.fetchName()}.`,
-                    `${seller.fetchName()} had the ${boughtSummary.name}; upgrade secured.`,
-                    `Picked up ${boughtSummary.name} from ${seller.fetchName()}.`,
-                    `${boughtSummary.name} is mine now. Good market find.`
-                ]);
+                TownChatter.say(session, BotAI, 'market-gear-purchased', Speech.lines('town.market-gear-purchased', { item: boughtSummary.name, seller: seller.fetchName() }));
                 purchaseSucceeded = true;
 
                 if (!store.items.some((item) => Number(item.count || 0) > 0) && sellerSession?.coldMarketState) {
@@ -681,12 +589,7 @@ module.exports = {
             } catch (err) {
                 deferEquipmentRetry(session);
                 session.lastTradeSummary = `could not buy ${companionErrand.itemName || companionErrand.itemId}`;
-                TownChatter.say(session, BotAI, 'market-offer-gone', [
-                    'That market offer is gone already. I will keep looking later.',
-                    'Too late — that listing sold. I will check again another time.',
-                    'The seller no longer has it. Leaving that upgrade for later.',
-                    'Market stock changed before I arrived; I will retry on a future visit.'
-                ]);
+                TownChatter.say(session, BotAI, 'market-offer-gone', Speech.lines('town.market-offer-gone'));
             }
             if (purchaseSucceeded && continueEquipmentShopping(session, bot, BotAI, companionErrand)) return;
             this.scheduleRestock(session, bot, Generics, BotAI);
@@ -718,29 +621,14 @@ module.exports = {
                     sourceId: companionErrand.sourceId
                 });
                 session.lastTradeSummary = `bought ${bought.qty}x ${bought.name} from ${companionErrand.target.name} for ${formatAdena(bought.totalAdena)}a`;
-                TownChatter.say(session, BotAI, 'npc-gear-purchased', [
-                    `Bought ${bought.name} from ${companionErrand.target.name}.`,
-                    `${companionErrand.target.name} had the ${bought.name}; equipped and ready.`,
-                    `Upgrade found: ${bought.name} from ${companionErrand.target.name}.`,
-                    `Picked up ${bought.name}. That should help.`
-                ]);
+                TownChatter.say(session, BotAI, 'npc-gear-purchased', Speech.lines('town.npc-gear-purchased', { item: bought.name, seller: companionErrand.target.name }));
                 purchaseSucceeded = true;
             } catch (err) {
                 deferEquipmentRetry(session);
                 session.lastTradeSummary = `could not buy ${companionErrand.itemName || companionErrand.itemId}`;
                 TownChatter.say(session, BotAI, 'npc-gear-purchase-failed', err?.message === 'Not enough Adena.'
-                    ? [
-                        'I am short on Adena for that equipment. I will try again later.',
-                        'That upgrade is out of my budget for now.',
-                        'Not enough Adena for this gear yet; leaving it for another visit.',
-                        'I found the upgrade, but cannot afford it this time.'
-                    ]
-                    : [
-                        'That NPC offer is unavailable now. I will try again later.',
-                        'The shop no longer has that upgrade available.',
-                        'Could not complete the NPC purchase; I will revisit the plan later.',
-                        'That item is not available from this shop anymore.'
-                    ], { priority: 'coordination' });
+            ? Speech.lines('town.npc-gear-purchase-failed.short-adena')
+            : Speech.lines('town.npc-gear-purchase-failed.unavailable'), { priority: 'coordination' });
             }
             if (purchaseSucceeded && continueEquipmentShopping(session, bot, BotAI, companionErrand)) return;
             this.scheduleRestock(session, bot, Generics, BotAI);
@@ -775,12 +663,7 @@ module.exports = {
                         soldToBuyer = true;
                         const sample = result.sold.slice(0, 3).map((line) => `${line.qty}x ${line.name}`).join(', ');
                         session.lastTradeSummary = `sold ${result.itemsSold} to ${buyer.fetchName()} for ${formatAdena(result.totalAdena)}a`;
-                        TownChatter.say(session, BotAI, 'loot-sold', [
-                            `Sold ${sample} to ${buyer.fetchName()} for ${formatAdena(result.totalAdena)} Adena.`,
-                            `${buyer.fetchName()} took ${sample}; earned ${formatAdena(result.totalAdena)} Adena.`,
-                            `Trade done with ${buyer.fetchName()}: ${formatAdena(result.totalAdena)} Adena for ${sample}.`,
-                            `Turned ${sample} into ${formatAdena(result.totalAdena)} Adena at ${buyer.fetchName()}'s store.`
-                        ]);
+                        TownChatter.say(session, BotAI, 'loot-sold', Speech.lines('town.loot-sold', { items: sample, buyer: buyer.fetchName(), adena: formatAdena(result.totalAdena) }));
                     }
                 } catch (err) {
                     utils.infoWarn("Shopping", "buyer sale failed for %s: %s", bot.fetchName(), err);
@@ -811,29 +694,14 @@ module.exports = {
                 targetAmount: ShotStock.PURCHASE_TARGET_AMOUNT
             }).then(async (result) => {
                 if (!result.ok) {
-                    TownChatter.say(session, BotAI, 'shots-too-expensive', [
-                        `Not enough Adena for ${ShotStock.describe(plan)} (${result.adena || 0}/${result.cost || expectedCost}). Skipping restock.`,
-                        `${ShotStock.describe(plan)} cost ${result.cost || expectedCost}, but I only have ${result.adena || 0} Adena.`,
-                        `Short on Adena for ${ShotStock.describe(plan)}; I will manage without a refill.`,
-                        `Cannot afford the shot restock this visit (${result.adena || 0}/${result.cost || expectedCost}).`
-                    ], { priority: 'coordination' });
+                    TownChatter.say(session, BotAI, 'shots-too-expensive', Speech.lines('town.shots-too-expensive', { item: ShotStock.describe(plan), adena: result.adena || 0, cost: result.cost || expectedCost }), { priority: 'coordination' });
                     return;
                 }
 
                 if (result.delta > 0) {
-                    TownChatter.say(session, BotAI, 'shots-restocked', [
-                        `Restocked ${result.delta}x ${ShotStock.describe(plan)} for ${formatAdena(result.cost)} Adena.`,
-                        `${result.delta}x ${ShotStock.describe(plan)} packed and ready.`,
-                        `Shot supply topped up: ${result.delta}x ${ShotStock.describe(plan)}.`,
-                        `Spent ${formatAdena(result.cost)} Adena and refilled ${ShotStock.describe(plan)}.`
-                    ]);
+                    TownChatter.say(session, BotAI, 'shots-restocked', Speech.lines('town.shots-restocked', { count: result.delta, item: ShotStock.describe(plan), cost: formatAdena(result.cost) }));
                 } else {
-                    TownChatter.say(session, BotAI, 'shots-already-stocked', [
-                        `Still stocked on ${ShotStock.describe(plan)}.`,
-                        `No shot purchase needed; I have enough ${ShotStock.describe(plan)}.`,
-                        `${ShotStock.describe(plan)} supply is already fine.`,
-                        `Skipping the shot counter — stock is good.`
-                    ]);
+                    TownChatter.say(session, BotAI, 'shots-already-stocked', Speech.lines('town.shots-already-stocked', { item: ShotStock.describe(plan) }));
                 }
                 session.dataSendToOthers(ServerResponse.skillStarted(bot, bot.fetchId(), { fetchSelfId: () => 2001, fetchCalculatedHitTime: () => 500, fetchReuseTime: () => 500 }), bot);
 
@@ -857,12 +725,7 @@ module.exports = {
                     })
                     : { ok: false, reason: 'no_local_offer' };
                 if (potionResult.ok && potionResult.changed) {
-                    TownChatter.say(session, BotAI, 'healing-potions-restocked', [
-                        `Added ${potionResult.amount}x ${potionResult.potion.name} for emergencies; I kept ${formatAdena(potionResult.reserve)} Adena in reserve.`,
-                        `Emergency stock ready: ${potionResult.amount}x ${potionResult.potion.name}.`,
-                        `Picked up ${potionResult.amount}x ${potionResult.potion.name} without touching my reserve.`,
-                        `${potionResult.amount}x ${potionResult.potion.name} packed for low-HP fights.`
-                    ]);
+                    TownChatter.say(session, BotAI, 'healing-potions-restocked', Speech.lines('town.healing-potions-restocked', { count: potionResult.amount, item: potionResult.potion.name, reserve: formatAdena(potionResult.reserve) }));
                 }
                 if (session.coldLifeState) {
                     session.coldLifeState = {
@@ -913,22 +776,12 @@ module.exports = {
                 };
                 session.preShopLocation = undefined;
                 session.resumeAfterShopping = undefined;
-                TownChatter.say(session, BotAI, 'shopping-to-rebuff', [
-                    'Shopping done. Getting a fresh Newbie Guide blessing before I leave town.',
-                    'Errands finished; one quick blessing refresh before we go.',
-                    'Supplies are sorted. I am stopping by the Newbie Guide next.',
-                    'Done with the shops — heading for a fresh blessing now.'
-                ]);
+                TownChatter.say(session, BotAI, 'shopping-to-rebuff', Speech.lines('town.shopping-to-rebuff'));
                 return;
             }
 
             if (returningToCompanion) {
-                TownChatter.say(session, BotAI, 'return-to-party', [
-                    'All set. Returning to you.',
-                    'Errands complete; heading back to the party.',
-                    'Finished in town. On my way back.',
-                    'Bag sorted and gear checked — returning now.'
-                ], { priority: 'coordination' });
+                TownChatter.say(session, BotAI, 'return-to-party', Speech.lines('town.return-to-party'), { priority: 'coordination' });
             } else {
                 // HuntingState chooses the actual hunting ground. Let it name
                 // that destination once, then leave town through a gatekeeper.
@@ -1003,18 +856,8 @@ module.exports = {
                 Promise.resolve().then(() => PopulationService.markHot(session, 'supply_errand_return')).catch(() => null).then(() => {
                     restoreHot();
                     TownChatter.say(session, BotAI, 'supply-return', options.deliveryReady === true
-                        ? [
-                            'I am back with the new supplies. I will open trade when the party is safe.',
-                            'Supplies delivered to camp; I will trade them over when it is safe.',
-                            'Back with the goods. Waiting for a safe moment to open trade.',
-                            'The supply run is complete. I have the requested items ready to trade.'
-                        ]
-                        : [
-                            'I am back, but I could not complete that purchase.',
-                            'Returned to the party without the requested supplies.',
-                            'The shop run failed, but I am back with the group.',
-                            'No goods this time — the purchase could not be completed.'
-                        ], { priority: 'coordination' });
+            ? Speech.lines('town.supply-return.ready')
+            : Speech.lines('town.supply-return.empty'), { priority: 'coordination' });
                     WorkflowTelemetry.recordSupply(workflowId, 'return', {
                         botId: bot.fetchId(),
                         playerId: leaderSession?.actor?.fetchId?.() || null,

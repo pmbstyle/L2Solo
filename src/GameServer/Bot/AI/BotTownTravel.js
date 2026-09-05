@@ -1,3 +1,4 @@
+const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const ServerResponse = invoke('GameServer/Network/Response');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
@@ -145,16 +146,7 @@ function request(session, bot, BotAI, reason, options = {}) {
     if (options.preserveShoppingTarget !== true) session.shoppingTarget = undefined;
     const usesScroll = options.forceScrollOfEscape === true || distance2d(bot, town) > SOE_DISTANCE;
     if (options.announce !== false) {
-        const reason = session.pendingTownTrip.reason;
-        TownChatter.say(session, BotAI, 'town-trip-start', [
-            reason || `Heading to ${town.name} to sell and restock.`,
-            `Making a quick ${town.name} run for supplies and inventory.`,
-            `${town.name} next — I need to sort out my bag and restock.`,
-            `Taking care of a few things in ${town.name}, then I am back.`,
-            usesScroll
-                ? `The shops are far from here, so I am using a Scroll of Escape to reach ${town.name}.`
-                : `I am close enough to walk into ${town.name} for the town run.`
-        ]);
+        TownChatter.say(session, BotAI, 'town-trip-start', Speech.lines('town.town-trip-start', { town: town.name }));
     }
     session.pendingTownTrip = undefined;
 

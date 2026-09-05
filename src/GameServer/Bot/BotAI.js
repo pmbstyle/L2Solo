@@ -1,3 +1,4 @@
+const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const BotStatus      = invoke('GameServer/Bot/AI/BotStatus');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
@@ -18,32 +19,6 @@ const BotRangedCombatPositioning = invoke('GameServer/Bot/AI/BotRangedCombatPosi
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const { performance } = require('perf_hooks');
 
-const CHAT_PHRASES = {
-    foundTarget: [
-        "Let's hunt some %s!",
-        "Aha! %s spotted!",
-        "Going to smash this %s!",
-        "Look at that juicy %s."
-    ],
-    victory: [
-        "Easy fight! Next!",
-        "Take that!",
-        "Leveling up is so fun.",
-        "Another one down."
-    ],
-    hurt: [
-        "Ouch! That %s hits hard!",
-        "Need healing ASAP!",
-        "Whoa! My HP is dropping!",
-        "Heal me please!"
-    ],
-    revived: [
-        "I'm back! Let's try again.",
-        "Death is just a setback.",
-        "Who got the raise?",
-        "Ready to rumble!"
-    ]
-};
 // Visibility refreshes and damage can request an immediate AI pass from
 // several nearby actors at once.  Without a small gate each request cancels
 // and recreates the companion's normal timer, which can turn a group move
@@ -55,9 +30,7 @@ const SWEEP_SKILL_ID = 42;
 let realPlayerCache = { world: null, revision: -1, checkedAt: 0, sessions: [] };
 
 function getRandomPhrase(category, ...args) {
-    const list = CHAT_PHRASES[category];
-    const phrase = list[Math.floor(Math.random() * list.length)];
-    return require('util').format(phrase, ...args);
+    return Speech.line(`combat.${category}`, { target: args[0] });
 }
 
 function newbieSpawnCoords(classId) {
@@ -386,51 +359,7 @@ const BotAI = {
     },
 
     triggerFarAwayChatEvent(session, bot) {
-        try {
-            const BotManager = invoke('GameServer/Bot/BotManager');
-            const townName = this.getClosestTownName(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
-
-            const pkSession = BotManager.sessions.find(s => s.actor && s.actor.fetchKarma() > 0);
-            const pkLoc = pkSession?.actor
-                ? this.getClosestTownName(pkSession.actor.fetchLocX(), pkSession.actor.fetchLocY(), pkSession.actor.fetchLocZ())
-                : "Dion";
-            const pkName = pkSession?.actor ? pkSession.actor.fetchName() : "a red name";
-
-            const pkPhrases = [
-                `Help! PK spotted near ${pkLoc}!`,
-                `Watch out, ${pkName} is PKing near ${pkLoc}!`,
-                `Someone deal with the red name at ${pkLoc}!`,
-                `${pkName} is hunting people near ${pkLoc}! Flee!`
-            ];
-
-            const normalPhrases = [
-                `WTB wood/leather near ${townName}! PM me!`,
-                `Farming is so peaceful near ${townName}.`,
-                `LFP for Goblins near ${townName}!`,
-                `Selling fresh drops near ${townName} center!`,
-                `Wow, the mobs near ${townName} are spawning fast today.`
-            ];
-
-            const pkSelfPhrases = [
-                `No one is safe near ${townName}! I'm coming for you!`,
-                `Dion and ${townName} are my hunting grounds! Prepare to die!`,
-                `Haha, another soul claimed near ${townName}!`,
-                `You can run, but you can't hide from me near ${townName}!`
-            ];
-
-            let text = "";
-            if (bot.fetchKarma() > 0) {
-                text = pkSelfPhrases[Math.floor(Math.random() * pkSelfPhrases.length)];
-            } else if (Math.random() < 0.25 && pkSession && pkSession.actor && !pkSession.actor.state.fetchDead()) {
-                text = pkPhrases[Math.floor(Math.random() * pkPhrases.length)];
-            } else {
-                text = normalPhrases[Math.floor(Math.random() * normalPhrases.length)];
-            }
-
-            BotManager.botShout(session, text);
-        } catch (err) {
-            console.error("Far away chat event error:", err);
-        }
+        return invoke('GameServer/Bot/Population/BotGlobalChat').maybeAmbient(session);
     },
 
     tick(session) {
@@ -539,7 +468,7 @@ const BotAI = {
                             ]
                     });
                 } else {
-                    this.say(session, 'Oops... I died! Resurrecting shortly.');
+                    this.say(session, Speech.line('combat.death'), { ambient: true, key: 'death' });
                 }
                 if (wasCompanion && session.followPlayerSession?.actor?.isDead?.()) {
                     const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
@@ -599,7 +528,7 @@ const BotAI = {
                 
                 Generics.teleportTo(session, bot, spawnTarget);
                 
-                this.say(session, getRandomPhrase('revived'));
+                this.say(session, getRandomPhrase('revived'), { ambient: true, key: 'revived' });
             }
             return;
         }
@@ -825,8 +754,15 @@ const BotAI = {
         return true;
     },
 
-    say(session, text) {
-        invoke('GameServer/Bot/BotManager').botSay(session, text);
+    say(session, text, chatter = null) {
+        if (chatter?.ambient) {
+            const budget = invoke('GameServer/Bot/AI/BotChatterBudget');
+            if (session.inConversation || !budget.canSend(session, chatter.key)) return false;
+            invoke('GameServer/Bot/BotManager').botSay(session, text);
+            budget.record(session, chatter.key);
+            return true;
+        }
+        return invoke('GameServer/Bot/BotManager').botSay(session, text);
     },
 
     tell(session, targetSession, text) {
@@ -881,7 +817,6 @@ const BotAI = {
     }
 };
 
-BotAI.CHAT_PHRASES = CHAT_PHRASES;
 BotAI.getRandomPhrase = getRandomPhrase;
 BotAI.newbieSpawnCoords = newbieSpawnCoords;
 
