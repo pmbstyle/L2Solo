@@ -17,7 +17,7 @@ function attackExec(session, actor, data) {
             else {
                 World.npcTalk(session, npc);
             }
-        }, { collisionAware: true });
+        }, { collisionAware: true, action: 'attack' });
     }).catch(() => {
         World.fetchUser(data.id).then((user) => {
             actor.automation.scheduleAction(session, actor, user, attackRange, () => {
@@ -38,7 +38,7 @@ function attackExec(session, actor, data) {
                         BotMerchant.talk(session, user);
                     }
                 }
-            }, { collisionAware: true });
+            }, { collisionAware: true, action: 'attack' });
         }).catch((err) => {
             utils.infoWarn('GameServer', 'Attack -> ' + err);
         })

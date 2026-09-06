@@ -1597,6 +1597,7 @@ function compactHotDetail(status, session) {
         debuffs: status.debuffs || [],
         timers: status.timers || {},
         decisions: Object.fromEntries(Object.entries(status.decisions || {}).map(([key, value]) => [key, compactDecision(value)])),
+        enemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session),
         build: compactBuild(status.build),
         equipment: compactEquipment(context?.equipment),
         persona: status.persona || null,
@@ -1727,6 +1728,7 @@ function compactColdDetail(state, leaderState = null) {
     return {
         ...compact,
         kind: 'bot',
+        enemies: invoke('GameServer/Bot/AI/BotEnemyMemory').normalize(stats.pvpEnemies),
         clan: compactActorClan(state),
         classId,
         className: className(classId),

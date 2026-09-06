@@ -8,13 +8,14 @@ const MAX_AGGRESSORS = 32;
 const id = actor => Number(actor?.fetchId?.() || 0);
 const alive = actor => !!actor && actor.fetchIsOnline?.() !== false && !actor.isDead?.() && !actor.state?.fetchDead?.();
 const distance = (a, b) => Math.hypot(a.fetchLocX() - b.fetchLocX(), a.fetchLocY() - b.fetchLocY(), (a.fetchLocZ?.() || 0) - (b.fetchLocZ?.() || 0));
-const worldSessions = () => invoke('GameServer/World/World').user?.sessions || [];
+const index = () => invoke('GameServer/Bot/AI/BotPvpIndex');
 
-function members(session) {
+function members(session, { includeDead = false } = {}) {
+    if (!session) return [];
     const leader = session?.partyCompanion === true ? session.followPlayerSession : session;
     if (!leader) return [session];
-    return [...new Set([leader, session, ...worldSessions()])].filter(candidate => (
-        candidate && Risk.sameParty(session, candidate) && alive(candidate.actor)
+    return index().members(session).filter(candidate => (
+        candidate && Risk.sameParty(session, candidate) && (includeDead || alive(candidate.actor))
     ));
 }
 
@@ -25,7 +26,22 @@ function inPeace(actor) {
 function character(source) {
     if (!source?.fetchKind) return source;
     const ownerId = Number(source.fetchOwnerId?.() || 0);
-    return ownerId ? worldSessions().find(session => id(session.actor) === ownerId)?.actor : null;
+    return ownerId ? index().actor(ownerId) : null;
+}
+
+function protectedTarget(session, target, now = Date.now()) {
+    const Effects = invoke('GameServer/Effects/EffectStore');
+    if (Effects.list(target).some(effect => ['sleep', 'fear'].includes(effect.key) || ['sleep', 'fear'].includes(effect.category))) return true;
+    // A companion party keeps its coordinator when the human leader dies.
+    // Its living casters still own pending reservations stored on that session.
+    return members(session, { includeDead: true }).some(member => ['sleep', 'fear'].some(effect =>
+        Number(member.pvpControlClaims?.get(`${id(target)}:${effect}`) || 0) > now));
+}
+
+function focus(session, context, now = Date.now()) {
+    const target = context.threats.find(entry => !protectedTarget(session, entry.actor, now))?.actor || null;
+    context.owner.pvpFocus = target ? { id: id(target), at: now } : null;
+    return target;
 }
 
 // Keep actual aggressors, not everyone flagged nearby or everyone in the
@@ -38,7 +54,15 @@ function record(victim, source, now = Date.now()) {
     if (Arena.isArenaParticipant(victim) || Arena.isArenaParticipant(attacker) ||
         !Arena.canInteract(attacker, victim) || inPeace(victim) || inPeace(attacker)) return false;
     const party = members(session);
-    if (party.some(member => id(member.actor) === id(attacker))) return false;
+    if (Risk.sameParty(session, attacker.session) || party.some(member => id(member.actor) === id(attacker))) return false;
+    // Keep an existing encounter alive while either side acts. This does
+    // not invent an incoming attack or remember a victim as an aggressor.
+    for (const member of members(attacker.session)) {
+        const entry = member.pvpAggressors?.get(id(victim));
+        if (entry && distance(member.actor, attacker) <= PARTY_RADIUS) entry.at = now;
+    }
+    invoke('GameServer/Bot/AI/BotEnemyMemory').record(victim, attacker, false, now);
+    invoke('GameServer/Bot/AI/BotRevenge').onAttack(attacker, victim, now);
     // Wake the whole nearby defending party, including when its human leader
     // is hit. Damage wake coalescing bounds this independently per member.
     for (const member of party) {
@@ -61,11 +85,10 @@ function context(session, now = Date.now()) {
     const party = members(session);
     const nearby = party.filter(member => distance(member.actor, session.actor) <= PARTY_RADIUS);
     const partyIds = new Set(party.map(member => id(member.actor)));
-    const users = new Map(worldSessions().map(member => [id(member.actor), member.actor]));
     const found = new Map();
     for (const member of nearby) {
         for (const [attackerId, entry] of member.pvpAggressors || []) {
-            const attacker = users.get(attackerId);
+            const attacker = index().actor(attackerId);
             if (!alive(attacker) || partyIds.has(attackerId) || inPeace(attacker) ||
                 now - entry.at > MEMORY_MS || !nearby.some(ally => distance(ally.actor, attacker) <= PARTY_RADIUS)) {
                 member.pvpAggressors.delete(attackerId);
@@ -74,11 +97,16 @@ function context(session, now = Date.now()) {
             if (Arena.canInteract(session.actor, attacker) && !inPeace(session.actor)) found.set(attackerId, { actor: attacker, ...entry });
         }
     }
-    const threats = [...found.values()].sort((a, b) => Risk.combatStrength(a.actor).power - Risk.combatStrength(b.actor).power || id(a.actor) - id(b.actor));
+    const revengeTarget = session.pvpRevenge?.target;
+    if (revengeTarget && invoke('GameServer/Bot/AI/BotRevenge').allows(session, revengeTarget, now)) {
+        found.set(id(revengeTarget), { actor: revengeTarget, at: now, proactive: true });
+    }
+    const threats = [...found.values()].map(entry => ({ ...entry, power: Risk.combatStrength(entry.actor).power }))
+        .sort((a, b) => a.power - b.power || id(a.actor) - id(b.actor));
     const leaderId = Number(session.coldLifeState?.party?.leaderId || 0);
     const owner = session.partyCompanion === true ? session.followPlayerSession
         : party.find(member => id(member.actor) === leaderId) || [...party].sort((a, b) => id(a.actor) - id(b.actor))[0] || session;
     return { members: nearby, threats, owner };
 }
 
-module.exports = { record, context, members, character, alive, distance, inPeace, MEMORY_MS, PARTY_RADIUS };
+module.exports = { record, context, members, character, alive, distance, inPeace, focus, protectedTarget, MEMORY_MS, PARTY_RADIUS };

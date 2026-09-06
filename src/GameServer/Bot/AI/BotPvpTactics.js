@@ -19,6 +19,18 @@ function stop(session, actor) {
     actor.automation?.abortAll?.(actor);
 }
 
+function followSummon(session, actor) {
+    for (const pet of [actor?.summon, actor?.pet]) {
+        if (pet && pet.controlMode !== 'follow' && Threats.alive(pet) && pet.automation?.scheduleAction &&
+            Number(pet.fetchOwnerId?.()) === Number(actor?.fetchId?.())) {
+            const Control = invoke('GameServer/Npc/SummonControl');
+            // Follow refuses to move while an old hit/cast/chase is active.
+            Control.stop(session, pet);
+            Control.startFollowOwner(session, actor, pet);
+        }
+    }
+}
+
 function usable(actor, skill) {
     if (!skill || !Restrictions.canCast(actor) || actor.canUseSkill?.(skill) === false) return false;
     if (Number(skill.fetchConsumedMp?.() || 0) > Number(actor.fetchMp?.() || 0)) return false;
@@ -107,4 +119,4 @@ function control(session, bot, context, primary, Generics, now, fleeing = false)
     return false;
 }
 
-module.exports = { usable, support, control, stop };
+module.exports = { usable, support, control, stop, followSummon };

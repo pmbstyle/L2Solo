@@ -5,6 +5,7 @@ function receivedHit(session, actor, npc, hit, options = {}) {
     const MinionManager = invoke('GameServer/World/RaidBossMinionManager');
     const World = invoke('GameServer/World/World');
 
+    invoke('GameServer/Bot/AI/BotMobCompetition').record(actor, npc);
     BotSocialMemory.recordCombatHelp(session, npc, `hit ${npc.fetchName()} for ${hit}`);
 
     const attackerLevel = Number(actor?.fetchLevel?.());

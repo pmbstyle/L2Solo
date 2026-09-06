@@ -515,6 +515,7 @@ function recordFromSession(session, phase, reason = '') {
     const inventory = inventorySummaryFromItems(actor.backpack?.fetchItems ? actor.backpack.fetchItems() : []);
     const stats = {
         role: session.botStatus?.role || null,
+        pvpEnemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session),
         clanGearExchangeRevision: Number(cache.get(characterId)?.stats?.clanGearExchangeRevision || 0),
         classId: actor.fetchClassId ? Number(actor.fetchClassId()) : null,
         // A freshly spawned bot may cool before it has gone through a cold
@@ -1454,12 +1455,12 @@ const BotLifeState = {
             row.spotId = marketState.spotId || row.spotId;
             row.inventorySummary = safeJson(InventorySummary.canonicalize(marketState.inventory));
             row.adena = Number(marketState.adena || row.adena || 0);
-            row.statsJson = safeJson({ ...(marketState.stats || {}), lastReason: reason });
+            row.statsJson = safeJson({ ...(marketState.stats || {}), pvpEnemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session), lastReason: reason });
         } else if (craftState?.stats?.craftShop) {
             row.activity = 'crafting';
             row.currentRegion = craftState.currentRegion || row.currentRegion;
             row.spotId = craftState.spotId || row.spotId;
-            row.statsJson = safeJson({ ...(craftState.stats || {}), lastReason: reason });
+            row.statsJson = safeJson({ ...(craftState.stats || {}), pvpEnemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session), lastReason: reason });
         }
         const characterId = row.characterId;
         const previous = pendingWrites.get(characterId) || Promise.resolve();
@@ -1510,6 +1511,7 @@ const BotLifeState = {
                 },
                 stats: {
                     ...(marketState.stats || {}),
+                    pvpEnemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session),
                     marketStore: {
                         ...(marketState.stats.marketStore || {}),
                         loc: { ...storeLoc },
@@ -1543,7 +1545,7 @@ const BotLifeState = {
                     activityStartedAt: now(),
                     nextResolveAt: null
                 },
-                stats: { ...(craftState.stats || {}), lastReason: reason },
+                stats: { ...(craftState.stats || {}), pvpEnemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session), lastReason: reason },
                 inventory: parseJson(row.inventorySummary, {})
             };
             return this.upsertState(nextState, reason);
@@ -3359,6 +3361,30 @@ const BotLifeState = {
 
     cachedState(characterId) {
         return cache.get(Number(characterId)) || null;
+    },
+
+    rememberEnemies(session) {
+        const id = Number(session?.actor?.fetchId?.());
+        if (!initialized || !cache.has(id)) return Promise.resolve(false);
+        const previous = pendingWrites.get(id) || Promise.resolve();
+        const next = previous.catch(() => {}).then(async () => {
+            const enemies = invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session);
+            const current = cache.get(id);
+            if (!current || current.phase !== 'hot' || JSON.stringify(current.stats?.pvpEnemies || []) === JSON.stringify(enemies)) return false;
+            await Database.execute([
+                `UPDATE ${TABLE} SET statsJson = json_set(COALESCE(statsJson, '{}'), '$.pvpEnemies', json(?)) WHERE characterId = ? AND phase = 'hot'`,
+                [JSON.stringify(enemies), id]
+            ], 'bot:enemy-memory');
+            const latest = cache.get(id);
+            if (latest) cache.set(id, { ...latest, stats: { ...(latest.stats || {}), pvpEnemies: enemies } });
+            return true;
+        }).catch(error => {
+            utils.infoWarn('BotLife', 'failed enemy memory for %s: %s', id, error.message);
+            return false;
+        });
+        const tracked = next.finally(() => { if (pendingWrites.get(id) === tracked) pendingWrites.delete(id); });
+        pendingWrites.set(id, tracked);
+        return tracked;
     },
 
     acceptAppearanceMetadata(characterId, sex, appearanceVersion) {

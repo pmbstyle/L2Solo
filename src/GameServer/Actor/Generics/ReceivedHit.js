@@ -128,8 +128,12 @@ function receivedHit(session, actor, hit, options = {}) {
 
     // Bummer
     if (actor.fetchHp() <= 0) {
-        if (source && source !== actor && !source.fetchKind && !ArenaCombatRules.suppressConsequences(source, actor)) {
-            const attacker = source;
+        const killer = invoke('GameServer/Bot/AI/BotPvpThreats').character(source);
+        if (killer && !ArenaCombatRules.suppressConsequences(killer, actor)) {
+            invoke('GameServer/Bot/AI/BotEnemyMemory').record(actor, killer, true);
+        }
+        if (killer && killer !== actor && !actor.fetchKind && !ArenaCombatRules.suppressConsequences(killer, actor)) {
+            const attacker = killer;
             const victim = actor;
             const attackerSession = attacker.session || session;
             const Database = invoke('Database');

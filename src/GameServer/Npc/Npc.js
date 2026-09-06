@@ -258,6 +258,7 @@ class Npc extends NpcModel {
     clearAggroList() {
         this.aggroList.clear();
         this.combatTarget = undefined;
+        invoke('GameServer/Bot/AI/BotMobCompetition').reset(this);
     }
 
     enterCombatState(session, actor, options = {}) {

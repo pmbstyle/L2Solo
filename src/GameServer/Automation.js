@@ -192,9 +192,20 @@ class Automation extends SelectedModel {
     }
 
     scheduleAction(session, src, dst, radius, callback, options = {}) {
-        const movementRadius = options.collisionAware
+        const actionRange = options.collisionAware
             ? AttackRange.effectiveRange(src, dst, radius)
             : Math.max(0, Number(radius) || 0);
+        const weaponAttack = options.action === 'attack';
+        if (weaponAttack && AttackRange.distance2d(src, dst) <= actionRange) {
+            this.abortAll(src);
+            callback();
+            return true;
+        }
+        // Stop inside the legal hit range. Integer client coordinates must
+        // not strand a stationary target just outside the exact boundary.
+        const movementRadius = weaponAttack
+            ? Math.max(0, actionRange - Math.min(10, actionRange / 4))
+            : actionRange;
         if (!invoke('GameServer/Effects/EffectRestrictions').canMove(src)) {
             const distance = Math.hypot(dst.fetchLocX() - src.fetchLocX(), dst.fetchLocY() - src.fetchLocY());
             if (distance <= movementRadius) {
@@ -213,7 +224,7 @@ class Automation extends SelectedModel {
         const stopCoords = this.actionStopCoords(src, dst, movementRadius);
 
         // Calculate duration
-        src.state.setTowards(radius === 0 ? 'melee' : 'remote');
+        src.state.setTowards(weaponAttack || radius === 0 ? 'melee' : 'remote');
         const ticks = this.ticksToMove(
             src.fetchLocX(), src.fetchLocY(), src.fetchLocZ(), dst.fetchLocX(), dst.fetchLocY(), dst.fetchLocZ(), movementRadius, src.fetchCollectiveRunSpd()
         );
@@ -222,7 +233,8 @@ class Automation extends SelectedModel {
         // moving itself.  A bot session can also drive an NPC's chase action;
         // interpolating that NPC here mutates the server position without a
         // matching movement packet and makes it appear to attack from afar.
-        const movingBot = session?.actor === src && (
+        const movingSelf = session?.actor === src;
+        const movingBot = movingSelf && (
             session.constructor.name === 'BotSession'
             || session.accountId?.startsWith('bot_')
         );
@@ -268,7 +280,11 @@ class Automation extends SelectedModel {
         Timer.start(this.timer.action, () => {
             src.state.setTowards(false);
             this.clearDestId();
-            if (movingBot) {
+            // A player's last ValidatePosition may describe an intermediate
+            // point. C4 need not acknowledge the final MoveToPawn position,
+            // so complete the server-owned approach for players as well.
+            // Movement cancellation already clears this arrival timer.
+            if (movingSelf) {
                 src.setLocXYZ(stopCoords);
                 if (session.moveTimer) {
                     clearInterval(session.moveTimer);

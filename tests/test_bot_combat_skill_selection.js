@@ -393,6 +393,7 @@ try {
 
     const activeSummon = {
         controlMode: 'attack',
+        attackTargetId: 11043,
         fetchHp: () => 100,
         fetchMaxHp: () => 100
     };
@@ -463,6 +464,7 @@ try {
     const combatFirstSummon = {
         effects: {},
         controlMode: 'attack',
+        attackTargetId: 11064,
         fetchId: () => 11062,
         fetchHp: () => 100,
         fetchMaxHp: () => 100,

@@ -131,7 +131,7 @@ class Attack {
             // may have moved since the initial attack request or last swing.
             if (invoke('GameServer/Effects/EffectRestrictions').canMove(actor)) {
                 actor.automation.scheduleAction(session, actor, creature, attackRange,
-                    () => this.meleeHit(session, creature), { collisionAware: true });
+                    () => this.meleeHit(session, creature), { collisionAware: true, action: 'attack' });
             }
             return;
         }
@@ -173,6 +173,7 @@ class Attack {
         });
         const primary = hits[0];
         const usedSoulshot = hits.some((entry) => entry.usedSoulshot);
+        hits.forEach(({ target }) => invoke('GameServer/Bot/AI/BotMobCompetition').record(actor, target));
 
         session.dataSendToMeAndOthers(ServerResponse.attack(actor, creature.fetchId(), {
             ...primary.hit,
@@ -281,6 +282,7 @@ class Attack {
         // hit time is available here, so the reservation covers the full cast.
         invoke('GameServer/Bot/AI/BotSupportPlanner').beginSupportCast(session, actor, creature, skill);
         actor.markSkillReuse?.(skill);
+        if (skill.fetchTargetKind?.() === 'enemy') invoke('GameServer/Bot/AI/BotMobCompetition').record(actor, creature);
         session.dataSendToMeAndOthers(ServerResponse.skillStarted(actor, creature.fetchId(), skill), actor);
         session.dataSendToMe(ServerResponse.skillDurationBar(skill.fetchCalculatedHitTime()));
         actor.state.setCasts(true);
@@ -363,6 +365,7 @@ class Attack {
             }
 
             executionTargets.forEach((target) => {
+                if (skill.fetchTargetKind?.() === 'enemy') invoke('GameServer/Bot/AI/BotMobCompetition').record(actor, target);
                 this.restoreShotState(actor, shotState);
                 const outcome = SkillEffects.execute(session, actor, target, skill, {
                     attack: this,
@@ -1174,10 +1177,25 @@ class Attack {
     }
 
     blockedPvpDefense(session, actor, target, skill = null) {
+        if (actor?.fetchOwnerId?.() && target && !target.fetchKind && actor !== target &&
+            (!skill || skill.fetchTargetKind?.() === 'enemy')) {
+            const owner = invoke('GameServer/Bot/AI/BotPvpThreats').character(actor);
+            if (!invoke('GameServer/Npc/SummonControl').isValidEnemyTarget(owner, target)) {
+                this.clearTimers();
+                actor.state?.setHits?.(false);
+                actor.state?.setCasts?.(false);
+                return true;
+            }
+        }
         if (!target || !session?.pvpDefense || session.actor !== actor || actor === target || target?.fetchKind ||
             (skill && skill.fetchTargetKind?.() !== 'enemy')) return false;
         const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
-        const allowed = (target.fetchPvpFlag?.() > 0 || target.fetchKarma?.() > 0) &&
+        if ((!skill || skill.fetchSkillType?.() !== 'effect') && Threats.protectedTarget(session, target)) {
+            invoke('GameServer/Bot/AI/BotPvpTactics').stop(session, actor);
+            return true;
+        }
+        const allowed = (target.fetchPvpFlag?.() > 0 || target.fetchKarma?.() > 0 ||
+            invoke('GameServer/Bot/AI/BotRevenge').allows(session, target)) &&
             !Threats.inPeace(actor) && !Threats.inPeace(target) &&
             !invoke('GameServer/Bot/AI/BotPvpRisk').sameParty(session, target.session) &&
             invoke('GameServer/World/ArenaCombatRules').canInteract(actor, target);
@@ -1189,9 +1207,12 @@ class Attack {
     }
 
     recordPlayerAggression(session, actor, target) {
-        if (!actor?.fetchKind && !target?.fetchKind && actor !== target &&
-            invoke('GameServer/Bot/AI/BotPvpThreats').record(target, actor)) {
-            invoke('GameServer/Actor/PvpFlag').mark(session, actor);
+        const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
+        const attacker = Threats.character(actor);
+        const attackerSession = attacker === actor ? session : attacker?.session;
+        if (attacker && attackerSession && target && !target.fetchKind && attacker !== target &&
+            Threats.record(target, actor)) {
+            invoke('GameServer/Actor/PvpFlag').mark(attackerSession, attacker);
             return true;
         }
         return false;

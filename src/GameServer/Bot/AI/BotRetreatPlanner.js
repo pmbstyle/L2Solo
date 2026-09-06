@@ -228,8 +228,9 @@ function plan(bot, threatActor, options = {}) {
     const direction = awayVector(from, threat, preferredPoint);
     const aggroRadius = Number(options.aggroRadius || NpcAggro.AGGRO_RADIUS);
     const searchRadius = distance + aggroRadius + AGGRO_BUFFER;
-    const hazards = (world.fetchNpcsInRadius?.(from.locX, from.locY, searchRadius) || [])
-        .filter((npc) => isPotentialAggro(npc, threatId));
+    const hazards = [...(world.fetchNpcsInRadius?.(from.locX, from.locY, searchRadius) || [])
+        .filter((npc) => isPotentialAggro(npc, threatId)),
+        ...(options.threats || []).filter(actor => actorId(actor) !== threatId && !actor.state?.fetchDead?.())];
 
     const evaluatedCandidates = [];
     for (let angleRank = 0; angleRank < CANDIDATE_ANGLES.length; angleRank++) {

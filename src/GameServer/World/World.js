@@ -162,11 +162,13 @@ const World = {
             this.user.sessions.push(session);
         }
         this.user.revision += 1;
+        invoke('GameServer/Bot/AI/BotPvpIndex').invalidate();
     },
 
     removeUser(session) {
         this.user.sessions = this.user.sessions.filter((ob) => ob !== session);
         this.user.revision += 1;
+        invoke('GameServer/Bot/AI/BotPvpIndex').invalidate();
     },
 
     fetchUser(id) {

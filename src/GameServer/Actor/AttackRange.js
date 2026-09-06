@@ -108,6 +108,7 @@ module.exports = {
     POLEARM_ATTACK_RANGE,
     collisionRadius,
     effectiveRange,
+    distance2d,
     fetchNormalAttackRange,
     isWithinRange,
     targetQueryRadius,

@@ -767,6 +767,7 @@ function detachState(companionSession, plan = 'hunting') {
     companionSession.plan = plan;
     companionSession.followPlayerSession = null;
     companionSession.partyCompanion = false;
+    invoke('GameServer/Bot/AI/BotPvpIndex').invalidate();
     companionSession.botStay = false;
     companionSession.stayLocation = null;
     companionSession.currentTargetId = undefined;
@@ -949,6 +950,7 @@ const PartyCompanionService = {
         companionSession.plan = 'following';
         companionSession.followPlayerSession = leaderSession;
         companionSession.partyCompanion = true;
+        invoke('GameServer/Bot/AI/BotPvpIndex').invalidate();
         companionSession.botStay = false;
         companionSession.stayLocation = null;
         companionSession.currentTargetId = undefined;

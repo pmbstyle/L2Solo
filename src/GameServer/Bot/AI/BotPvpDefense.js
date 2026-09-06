@@ -34,31 +34,38 @@ function clear(session, { dead = false } = {}) {
     const encounter = session.pvpDefense;
     if (encounter) {
         Tactics.stop(session, session.actor);
+        if (!dead) Tactics.followSummon(session, session.actor);
         session.currentTargetId = undefined;
         session.actor?.unselect?.();
         if (!dead) session.plan = encounter.resumePlan || 'hunting';
         if (!dead) session.lastPvpDecision = { ...session.lastPvpDecision, action: 'ended', reasons: ['threat_ended'], at: Date.now() };
     }
     delete session.pvpDefense;
+    delete session.pvpRevenge;
+    delete session.pendingPvpProvocation;
     delete session.pvpHealClaims;
     delete session.pvpControlClaims;
+    delete session.pvpFocus;
     if (dead) delete session.pvpAggressors;
 }
 
 function tick(session, bot, Generics, BotAI, { now = Date.now(), rng = Math.random } = {}) {
-    if (!session.pvpAggressors?.size && !session.pvpDefense) return false;
+    const Revenge = invoke('GameServer/Bot/AI/BotRevenge');
+    Revenge.tryStart(session, now, rng);
+    if (!session.pvpAggressors?.size && !session.pvpDefense && !session.pvpRevenge) return false;
     if (!Threats.alive(bot)) { clear(session, { dead: true }); return false; }
     const context = Threats.context(session, now);
     if (!context.threats.length) {
-        if (session.pvpDefense) clear(session);
+        if (session.pvpDefense || session.pvpRevenge) clear(session);
         return false;
     }
-    // Once a purple aggressor goes white, drop the chase instead of turning
-    // self-defense into a PK. Hostile controls also set the native PvP flag.
-    const threats = context.threats.filter(entry => entry.actor.fetchPvpFlag?.() > 0 || entry.actor.fetchKarma?.() > 0);
+    // Ordinary self-defense ends when the aggressor goes white. Revenge has
+    // explicit, temporary permission for exactly one remembered enemy.
+    const threats = context.threats.filter(entry => entry.actor.fetchPvpFlag?.() > 0 || entry.actor.fetchKarma?.() > 0 || Revenge.allows(session, entry.actor, now));
     if (!threats.length) { clear(session); return false; }
     context.threats = threats;
-    const target = threats[0].actor;
+    const focus = Threats.focus(session, context, now);
+    const target = focus || threats[0].actor;
     let encounter = session.pvpDefense;
     if (!encounter) {
         const decision = Risk.defenseDecision(session, threats.map(entry => entry.actor));
@@ -66,8 +73,13 @@ function tick(session, bot, Generics, BotAI, { now = Date.now(), rng = Math.rand
             decision.action = 'fight';
             decision.reasons = ['defend_party', 'weakest_aggressor_first'];
         }
+        if (Revenge.allows(session, target, now)) {
+            decision.action = 'fight';
+            decision.reasons = [session.pvpRevenge.reason, session.pvpRevenge.initiator === session ? 'initiator' : 'party_assist'];
+        }
         encounter = session.pvpDefense = { ...decision, resumePlan: session.plan || 'hunting', startedAt: now, criticalChecked: false };
         Tactics.stop(session, bot);
+        if (encounter.action === 'flee') Tactics.followSummon(session, bot);
         invoke('GameServer/Bot/AI/BotSupportPlanner').cancelSupportCast(session, bot);
         session.pendingSupportCast = undefined;
         if (session.spotRelocation) invoke('GameServer/Bot/AI/BotSpotTravel').cancel(session, bot, 'pvp_defense');
@@ -80,6 +92,7 @@ function tick(session, bot, Generics, BotAI, { now = Date.now(), rng = Math.rand
         encounter.criticalChecked = true;
         if (rng() < encounter.criticalFleeChance) {
             encounter.action = 'flee';
+            Tactics.followSummon(session, bot);
             encounter.reasons = ['critical_hp_escape'];
             Tactics.stop(session, bot);
             chat(session, target, 'flee', BotAI, now, rng);
@@ -87,6 +100,7 @@ function tick(session, bot, Generics, BotAI, { now = Date.now(), rng = Math.rand
     }
     session.lastPvpDecision = { action: encounter.action, score: encounter.score, reasons: encounter.reasons,
         own: encounter.own, enemies: encounter.enemies, requiredRatio: encounter.requiredRatio,
+        allyPower: encounter.allyPower, enemyIds: encounter.enemyIds,
         threatId: target.fetchId(), threatName: target.fetchName?.(),
         targets: threats.map(entry => entry.actor.fetchId()),
         allies: context.members.filter(member => member !== session).map(member => member.actor.fetchId()),
@@ -114,8 +128,14 @@ function tick(session, bot, Generics, BotAI, { now = Date.now(), rng = Math.rand
         if ((!moving || now - Number(encounter.lastRetreatAt || 0) >= 4000) && now - Number(encounter.lastRetreatAt || 0) >= 1000) {
             Tactics.stop(session, bot);
             encounter.lastRetreatAt = now;
-            Retreat.retreat(session, bot, nearest, { distance: 900 });
+            Retreat.retreat(session, bot, nearest, { distance: 900, threats: threats.map(entry => entry.actor) });
         }
+        return true;
+    }
+    if (!focus) {
+        // Let coordinated Sleep/Fear hold while the party recovers.
+        if (bot.state?.fetchHits?.() || bot.state?.fetchTowards?.()) Tactics.stop(session, bot);
+        Tactics.support(session, bot, context, Generics, now);
         return true;
     }
     if (session.currentTargetId !== target.fetchId()) {

@@ -2,6 +2,11 @@ const { spawnSync } = require('child_process');
 
 const tests = [
     'tests/test_bot_pvp_defense.js',
+    'tests/test_bot_pvp_regressions.js',
+    'tests/test_summon_pvp.js',
+    'tests/test_bot_revenge.js',
+    'tests/test_bot_mob_competition.js',
+    'tests/test_bot_enemy_memory_persistence.js',
     'tests/test_saved_games.js',
     'tests/test_item_template_index.js',
     'tests/test_background_candidate_queue.js',
@@ -17,6 +22,8 @@ const tests = [
     'tests/test_shot_stock_restart_persistence.js',
     'tests/test_attack_hit_flags.js',
     'tests/test_player_attack_range.js',
+    'tests/test_player_attack_approach.js',
+    'tests/test_bot_target_selection.js',
     'tests/test_rooted_combat_requests.js',
     'tests/test_giran_arena.js',
     'tests/test_armor_stats.js',

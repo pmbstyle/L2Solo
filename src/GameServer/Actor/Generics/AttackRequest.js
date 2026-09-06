@@ -29,6 +29,8 @@ function attackRequest(session, actor, data) {
         return;
     }
 
+    Generics.clearStoredActions(session, actor);
+
     // A rooted actor cannot acknowledge a StopMove with ValidatePosition.
     // Execute from its authoritative position; range still gates the action.
     if (!EffectRestrictions.canMove(actor)) {
@@ -36,20 +38,17 @@ function attackRequest(session, actor, data) {
         return;
     }
 
-    if (actor.state.inMotion()) {
-        if (actor.state.fetchTowards() === 'remote' || actor.fetchDestId() !== actor.automation.fetchDestId()) {
-            actor.storedAttack = attackData;
-            Generics.stopAutomation(session, actor);
-            return;
-        }
-    }
-
-    if (actor.state.fetchTowards() === 'melee') {
+    if (actor.state.fetchTowards() === 'melee' &&
+        Number(attackData.id) === Number(actor.automation.fetchDestId())) {
         return;
     }
 
-    actor.storedAttack = attackData;
+    // StopMove is a notification, not a guaranteed position handshake.
+    // A stationary client may send no ValidatePosition for a long time.
+    // Start from the authoritative position now; AttackExec and meleeHit
+    // still enforce weapon range and chase a target that is farther away.
     Generics.stopAutomation(session, actor);
+    Generics.attackExec(session, actor, attackData);
 }
 
 module.exports = attackRequest;

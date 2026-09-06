@@ -60,6 +60,33 @@ async function run() {
         Store.remove(actor, 'root');
         actor.automation.scheduleAction = (_s, _a, _t, _r, callback) => callback();
         target.x = 40;
+        const beforeRequest = hits.length;
+        actor.storedSpell = { id: target.fetchId(), selfId: 54 };
+        AttackRequest(session, actor, { id: target.fetchId(), ctrl: true });
+        await drain();
+        assert.strictEqual(hits.length, beforeRequest + 1,
+            'an ordinary attack must start without waiting for ValidatePosition after StopMove');
+        assert.strictEqual(actor.storedAttack, undefined, 'a late position update must not replay the attack');
+        assert.strictEqual(actor.storedSpell, undefined, 'the new attack replaces an older pending spell');
+
+        const mob = { ...target, fetchId: () => 1000001, fetchAttackable: () => true };
+        World.fetchNpc = () => Promise.resolve(mob);
+        AttackRequest(session, actor, { id: mob.fetchId(), ctrl: false });
+        await drain();
+        assert.strictEqual(hits.length, beforeRequest + 2, 'a mob attack also starts without a position acknowledgement');
+
+        // Repeated clicks keep the current chase, but a different target
+        // replaces it immediately instead of waiting for its old arrival.
+        actor.state.setTowards('melee');
+        actor.automation.setDestId(mob.fetchId());
+        AttackRequest(session, actor, { id: mob.fetchId(), ctrl: false });
+        await drain();
+        assert.strictEqual(hits.length, beforeRequest + 2, 'do not restart the same active chase');
+        World.fetchNpc = () => Promise.reject(new Error('npc_not_found'));
+        AttackRequest(session, actor, { id: target.fetchId(), ctrl: true });
+        await drain();
+        assert.strictEqual(hits.length, beforeRequest + 3, 'retargeting an active chase starts the replacement immediately');
+
         for (const [flag, karma, ctrl, allowed] of [[1, 0, false, true], [0, 1, false, true],
             [0, 0, false, false], [0, 0, true, true]]) {
             target.flag = flag; target.karma = karma;
