@@ -654,7 +654,8 @@ const BotAI = {
         }
         const BOW_ATTACK_RANGE = 700;
         const hasBow = bot?.backpack?.fetchTotalWeaponKind?.() === 'Weapon.Bow';
-        const mageMeleeFinish = role === 'mage' && canAttack
+        const casterWeaponCombat = BotRoles.usesCasterWeaponCombat(bot);
+        const mageMeleeFinish = casterWeaponCombat && canAttack
             ? BotCombatUtility.mageMeleeFinishOpportunity(bot, npc)
             : null;
         if (mageMeleeFinish) {
@@ -674,9 +675,9 @@ const BotAI = {
             });
             return true;
         }
-        // Healers and buffers may assist the party with their weapon, but
-        // their role controller must be able to keep their MP for support.
-        // Do not make that policy depend on the generic combat selector.
+        // Support controllers may reserve MP instead of casting offensively.
+        // Staff casters may then assist only with a cheap melee finisher;
+        // melee support classes retain their normal weapon fallback.
         const combatPolicy = {
             ...HotBotPolicyOverlay.combatPolicy(session),
             pvp: options.pvp === true,
@@ -750,11 +751,11 @@ const BotAI = {
             return false;
         }
 
-        // A hot mage may use its weapon only as a cheap finisher. If the
+        // A hot staff caster may use its weapon only as a cheap finisher. If the
         // target cannot be killed in roughly two ordinary hits, waiting for
         // mana or letting the rest of the party continue is preferable to
         // turning the caster into a melee fighter.
-        if (role === 'mage' && options.pvp !== true) {
+        if (casterWeaponCombat && options.pvp !== true) {
             session.lastCombatDecision = {
                 action: 'blocked',
                 role,
