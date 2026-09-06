@@ -12,6 +12,7 @@ function readDatabasePath() {
     const configuredOverride = process.env.L2NODE_CONFIG_FILE;
     const files = [
         path.join(rootDir, 'config', 'default.ini'),
+        ...(process.env.L2NODE_SHARED_CONFIG_FILE ? [path.resolve(rootDir, process.env.L2NODE_SHARED_CONFIG_FILE)] : []),
         configuredOverride
             ? (path.isAbsolute(configuredOverride) ? configuredOverride : path.resolve(rootDir, configuredOverride))
             : path.join(rootDir, 'config', 'local.ini')

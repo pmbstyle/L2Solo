@@ -1,5 +1,11 @@
 require('./Global');
 
+const { acquireDatabaseAccess } = require('../scripts/database-access');
+const releaseDatabaseAccess = acquireDatabaseAccess(require('path').resolve(
+    __dirname, '..', options.default.Database?.path || 'tmp/nodel2.sqlite'
+));
+process.once('exit', releaseDatabaseAccess);
+
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 LangfuseTracing.init();
 
