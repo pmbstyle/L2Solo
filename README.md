@@ -245,6 +245,7 @@ it expires after 30 minutes of inactivity and resets on server restart.
 - `.kick <name>` - dismiss one companion bot.
 - `/invite` while targeting a bot - recruit that bot as a companion.
 - `/dismiss <name>` and `/leave` also work through the party request path.
+- `.go` to start arena PvP
 
 Nearby bots also react to plain chat lines such as `hi`, `follow`, `wait`, `hunt`, `heal`, and `buff`.
 
