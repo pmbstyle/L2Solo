@@ -127,6 +127,7 @@ function findTarget(session, bot) {
 }
 
 function inferIntent(session, bot, vitals, target) {
+    if (session.pvpDefense) return session.pvpDefense.action === 'fight' ? 'defend_self_and_party' : 'escape_player';
     if (bot.state.fetchDead()) return 'revive';
     if (session.plan === 'resting') return 'recover';
     if (session.plan === 'shopping') return 'restock';
@@ -326,7 +327,7 @@ const BotStatus = {
             name: bot.fetchName(),
             level: bot.fetchLevel(),
             classId: bot.fetchClassId(),
-            mode: dead ? 'dead' : session.plan || 'hunting',
+            mode: dead ? 'dead' : session.pvpDefense ? `pvp_${session.pvpDefense.action}` : session.plan || 'hunting',
             intent: undefined,
             role,
             roleDecision: dead ? null : session.roleDecision || null,

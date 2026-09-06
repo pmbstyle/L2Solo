@@ -98,6 +98,28 @@ verifyGeodataWhenAvailable(GeodataEngine, [[22, 22]], 'Giran Helvetia counter ap
     assert.strictEqual(TownNpcApproach.hasLineOfSight(outsideCounterEdge, helvetia), false);
     assert.strictEqual(TownNpcApproach.plan({}, outsideCounterEdge, helvetia, 'shopping').ready, false,
         'a bot beyond the tight counter-edge allowance must still need direct line of sight');
+
+    for (const fixture of [
+        { id: 2002921, locY: 147688, npc: helvetia },
+        { id: 2003604, locY: 148040, npc: { ...helvetia, actorId: 1002, npcSelfId: 7082, name: 'Denkus', locY: 147873 } }
+    ]) {
+        // Reproduce the two live stuck actors, then cover every slot choice.
+        for (let offset = 0; offset < 10; offset++) {
+            const bot = identifiedBotAt(fixture.id + offset, 80328, fixture.locY, -3504);
+            const session = {};
+            TownNpcApproach.plan(session, bot, fixture.npc, 'shopping');
+            TownNpcApproach.skipStaging(session);
+            const approach = TownNpcApproach.plan(session, bot, fixture.npc, 'shopping');
+            const target = approach.destination;
+            const path = GeodataEngine.findPath(bot.locX, bot.locY, bot.locZ, target.locX, target.locY, target.locZ,
+                5000, { debug: false, goalRadius: approach.arrivalRadius, goalZTolerance: 64 });
+            assert(path?.length, `${fixture.npc.name} slot ${offset} must be reachable from the actual street position`);
+            Object.assign(bot, path.at(-1));
+            assert(TownNpcApproach.plan(session, bot, fixture.npc, 'shopping').ready,
+                'the reachable path endpoint must complete interaction without crossing the counter');
+            TownNpcApproach.reset(session);
+        }
+    }
 });
 
 const firstOpenSession = {};

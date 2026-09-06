@@ -131,7 +131,7 @@ function levelingProgress(members = [], count = Config.operationMinMembers) {
         .filter((level) => level > 0)
         .sort((left, right) => right - left)
         .slice(0, requiredMembers);
-    // The fifth fighter is the gating member for a five-bot operation. An
+    // The last required fighter is the gating member for an operation. An
     // average could mark the preparation goal complete while one member is
     // still below the source threshold, which would stop future replans.
     return levels.length >= requiredMembers ? Math.min(...levels) : 0;

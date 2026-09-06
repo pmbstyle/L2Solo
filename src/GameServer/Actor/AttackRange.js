@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 
@@ -15,7 +16,7 @@ function cachedWeapon(actor) {
     }
 
     const selfId = Number(actor.fetchWeapon());
-    return DataCache.items.find((item) => Number(item.selfId) === selfId) || null;
+    return ItemTemplateIndex.find(DataCache.items, selfId) || null;
 }
 
 function weaponKind(actor, weapon = equippedWeapon(actor) || cachedWeapon(actor)) {
@@ -107,6 +108,7 @@ module.exports = {
     POLEARM_ATTACK_RANGE,
     collisionRadius,
     effectiveRange,
+    distance2d,
     fetchNormalAttackRange,
     isWithinRange,
     targetQueryRadius,

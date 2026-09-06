@@ -33,6 +33,17 @@ async function waitFor(predicate, timeoutMs = 3000) {
 }
 
 async function run() {
+    let timing;
+    const projected = await Database.execute([
+        'WITH candidates AS MATERIALIZED (SELECT 42 AS id) SELECT * FROM candidates', [],
+        { read: true, onTiming: (value) => { timing = value; } }
+    ], 'test:read-projection-timing');
+    assert.deepStrictEqual(projected, [{ id: 42 }], 'a read CTE must return rows through the database wrapper');
+    assert(timing.waitMs >= 0 && timing.runMs >= 0, 'queue wait and SQL execution must be measured separately');
+    const observed = await Database.execute(['SELECT 43 AS id', [], {
+        onTiming: () => { throw new Error('telemetry failure'); }
+    }]);
+    assert.strictEqual(observed[0].id, 43, 'telemetry callbacks must not fail database operations');
     const autoCheckpoint = (await Database.execute(['PRAGMA wal_autocheckpoint'], 'test:wal-autocheckpoint'))[0];
     assert.strictEqual(Number(autoCheckpoint.wal_autocheckpoint), 0,
         'gameplay writes must never inherit SQLite synchronous auto-checkpoint stalls');

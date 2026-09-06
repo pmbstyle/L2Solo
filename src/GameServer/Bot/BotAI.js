@@ -1,3 +1,4 @@
+const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const BotStatus      = invoke('GameServer/Bot/AI/BotStatus');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
@@ -18,32 +19,6 @@ const BotRangedCombatPositioning = invoke('GameServer/Bot/AI/BotRangedCombatPosi
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const { performance } = require('perf_hooks');
 
-const CHAT_PHRASES = {
-    foundTarget: [
-        "Let's hunt some %s!",
-        "Aha! %s spotted!",
-        "Going to smash this %s!",
-        "Look at that juicy %s."
-    ],
-    victory: [
-        "Easy fight! Next!",
-        "Take that!",
-        "Leveling up is so fun.",
-        "Another one down."
-    ],
-    hurt: [
-        "Ouch! That %s hits hard!",
-        "Need healing ASAP!",
-        "Whoa! My HP is dropping!",
-        "Heal me please!"
-    ],
-    revived: [
-        "I'm back! Let's try again.",
-        "Death is just a setback.",
-        "Who got the raise?",
-        "Ready to rumble!"
-    ]
-};
 // Visibility refreshes and damage can request an immediate AI pass from
 // several nearby actors at once.  Without a small gate each request cancels
 // and recreates the companion's normal timer, which can turn a group move
@@ -55,9 +30,7 @@ const SWEEP_SKILL_ID = 42;
 let realPlayerCache = { world: null, revision: -1, checkedAt: 0, sessions: [] };
 
 function getRandomPhrase(category, ...args) {
-    const list = CHAT_PHRASES[category];
-    const phrase = list[Math.floor(Math.random() * list.length)];
-    return require('util').format(phrase, ...args);
+    return Speech.line(`combat.${category}`, { target: args[0] });
 }
 
 function newbieSpawnCoords(classId) {
@@ -109,6 +82,7 @@ const States = {
 };
 
 function clearTacticalState(session) {
+    invoke('GameServer/Bot/AI/BotPvpDefense').clear(session, { dead: true });
     session.currentTargetId = undefined;
     session.targetTrackId = undefined;
     session.targetAcquiredAt = undefined;
@@ -242,6 +216,9 @@ const BotAI = {
     },
 
     stop(session) {
+        invoke('GameServer/Bot/AI/TownNpcApproach').reset(session);
+        invoke('GameServer/Bot/AI/TownTraffic').remove(Number(session.actor?.fetchId?.()));
+        invoke('GameServer/Bot/AI/BotChatReactions').cancel(session);
         session.aiActive = false;
         session.pendingBrainTurns = [];
         session.pendingBrainTurn = null;
@@ -386,54 +363,12 @@ const BotAI = {
     },
 
     triggerFarAwayChatEvent(session, bot) {
-        try {
-            const BotManager = invoke('GameServer/Bot/BotManager');
-            const townName = this.getClosestTownName(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
-
-            const pkSession = BotManager.sessions.find(s => s.actor && s.actor.fetchKarma() > 0);
-            const pkLoc = pkSession?.actor
-                ? this.getClosestTownName(pkSession.actor.fetchLocX(), pkSession.actor.fetchLocY(), pkSession.actor.fetchLocZ())
-                : "Dion";
-            const pkName = pkSession?.actor ? pkSession.actor.fetchName() : "a red name";
-
-            const pkPhrases = [
-                `Help! PK spotted near ${pkLoc}!`,
-                `Watch out, ${pkName} is PKing near ${pkLoc}!`,
-                `Someone deal with the red name at ${pkLoc}!`,
-                `${pkName} is hunting people near ${pkLoc}! Flee!`
-            ];
-
-            const normalPhrases = [
-                `WTB wood/leather near ${townName}! PM me!`,
-                `Farming is so peaceful near ${townName}.`,
-                `LFP for Goblins near ${townName}!`,
-                `Selling fresh drops near ${townName} center!`,
-                `Wow, the mobs near ${townName} are spawning fast today.`
-            ];
-
-            const pkSelfPhrases = [
-                `No one is safe near ${townName}! I'm coming for you!`,
-                `Dion and ${townName} are my hunting grounds! Prepare to die!`,
-                `Haha, another soul claimed near ${townName}!`,
-                `You can run, but you can't hide from me near ${townName}!`
-            ];
-
-            let text = "";
-            if (bot.fetchKarma() > 0) {
-                text = pkSelfPhrases[Math.floor(Math.random() * pkSelfPhrases.length)];
-            } else if (Math.random() < 0.25 && pkSession && pkSession.actor && !pkSession.actor.state.fetchDead()) {
-                text = pkPhrases[Math.floor(Math.random() * pkPhrases.length)];
-            } else {
-                text = normalPhrases[Math.floor(Math.random() * normalPhrases.length)];
-            }
-
-            BotManager.botShout(session, text);
-        } catch (err) {
-            console.error("Far away chat event error:", err);
-        }
+        return invoke('GameServer/Bot/Population/BotGlobalChat').maybeAmbient(session);
     },
 
     tick(session) {
+        invoke('GameServer/Bot/AI/BotClanChat').flush();
+        invoke('GameServer/Bot/Economy/BotTradeChat').flush();
         const bot = session.actor;
         if (!bot) return;
         const tickStartedAt = Date.now();
@@ -450,18 +385,25 @@ const BotAI = {
         const onlinePlayers = realPlayerSessions(World) || [];
         lodContext = HotActorLodPolicy.evaluate(session, onlinePlayers, tickStartedAt);
         PopulationService.recordHotTick(session);
+        invoke('GameServer/Bot/Population/BotGlobalChat').offerReply(session, tickStartedAt);
         const botDead = bot.isDead();
         if (botDead) {
             clearTacticalState(session);
             HotBotPolicyOverlay.clearForDeath(session);
             BotTradeService.cleanup(session, 'death');
+            invoke('GameServer/Bot/AI/TownNpcApproach').reset(session);
+            invoke('GameServer/Bot/AI/TownTraffic').remove(Number(bot.fetchId()));
             try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'death'); } catch (_) { /* optional ambient module */ }
         } else {
             // TTL expiry is intentionally lazy and bounded to hot ticks; no
             // background timer is needed for a session-local preference.
             HotBotPolicyOverlay.get(session);
         }
-        if (lodContext.tier === 'preload' && !botDead) {
+        // Actual player aggression owns the action window before travel,
+        // conversation, recovery or ordinary party/PvE state routing.
+        const defendingPvp = !botDead && invoke('GameServer/Bot/AI/BotPvpDefense').tick(session, bot, invoke(path.actor), this);
+
+        if (lodContext.tier === 'preload' && !botDead && !defendingPvp) {
             if (Math.random() < 0.05) this.triggerFarAwayChatEvent(session, bot);
             return;
         }
@@ -470,6 +412,10 @@ const BotAI = {
             const statusStartedAt = Date.now();
             session.botStatus = BotStatus.getStatus(session);
             HotActorLodPolicy.recordStatusRefresh(session, Date.now() - statusStartedAt);
+        }
+        if (defendingPvp) {
+            if (session.partyCompanion === true && session.followPlayerSession) PartyCompanionService.updateMember(session);
+            return;
         }
         if (HotActorLodPolicy.budgetExceeded(lodContext, tickStartedAt)) {
             HotActorLodPolicy.recordDeferral();
@@ -520,6 +466,7 @@ const BotAI = {
             const wasCompanion = session.partyCompanion === true && !!session.followPlayerSession;
             if (!session.deathTimerStart) {
                 session.deathTimerStart = Date.now();
+                invoke('GameServer/Bot/AI/BotClanChat').onDeath(session, `hot:${session.deathTimerStart}`, session.deathTimerStart);
                 if (wasCompanion) {
                     const deathReaction = PartyRevivalService.noteCompanionDeath(
                         session.followPlayerSession,
@@ -539,7 +486,7 @@ const BotAI = {
                             ]
                     });
                 } else {
-                    this.say(session, 'Oops... I died! Resurrecting shortly.');
+                    this.say(session, Speech.line('combat.death'), { ambient: true, key: 'death' });
                 }
                 if (wasCompanion && session.followPlayerSession?.actor?.isDead?.()) {
                     const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
@@ -580,7 +527,9 @@ const BotAI = {
                     session.noTargetTicks = 0;
                     spawnTarget = this.beginPartyTownRecovery(session, bot);
                 } else if (bot.fetchKarma() > 0) {
-                    session.plan = 'pk_hunting';
+                    session.plan = session.pkProfile ? 'pk_hunting' : 'hunting';
+                    session.currentSpot = null;
+                    session.noTargetTicks = 0;
                     spawnTarget = this.getDeathRespawnTarget(session, bot);
                 } else if (session.plan === 'merchant' || (bot.fetchPrivateStore && bot.fetchPrivateStore())) {
                     session.plan = 'merchant';
@@ -599,7 +548,7 @@ const BotAI = {
                 
                 Generics.teleportTo(session, bot, spawnTarget);
                 
-                this.say(session, getRandomPhrase('revived'));
+                this.say(session, getRandomPhrase('revived'), { ambient: true, key: 'revived' });
             }
             return;
         }
@@ -631,6 +580,10 @@ const BotAI = {
             }
         }
 
+        // Reactions use the existing visible hot tick and never delay combat
+        // or keep an actor seated just to finish a scripted exchange.
+        if (visibleRealPlayers.length) invoke('GameServer/Bot/AI/BotChatReactions').offerLocal(session, tickStartedAt);
+
         // 3. Dynamic State Machine Routing
         const state = States[session.plan];
         if (state) {
@@ -652,7 +605,7 @@ const BotAI = {
     },
 
     executePvPCombat(session, bot, victim, Generics, options = {}) {
-        return this.executeCombat(session, bot, victim, Generics, options);
+        return this.executeCombat(session, bot, victim, Generics, { ...options, pvp: true });
     },
 
     executeCombat(session, bot, npc, Generics, options = {}) {
@@ -690,7 +643,7 @@ const BotAI = {
         // A potion is a survival action for a fight already in progress, not
         // routine topping-off. The policy also blocks repeats for the same
         // target and while a previous potion HoT remains active.
-        if (HealingPotionStock.tryUseInCombat(session, bot, npc, { role })) {
+        if (HealingPotionStock.tryUseInCombat(session, bot, npc, { role, pvp: options.pvp === true })) {
             return true;
         }
         if (!options.basicAttackOnly && trySpoil(session, bot, npc, Generics)) {
@@ -701,7 +654,8 @@ const BotAI = {
         }
         const BOW_ATTACK_RANGE = 700;
         const hasBow = bot?.backpack?.fetchTotalWeaponKind?.() === 'Weapon.Bow';
-        const mageMeleeFinish = role === 'mage' && canAttack
+        const casterWeaponCombat = BotRoles.usesCasterWeaponCombat(bot);
+        const mageMeleeFinish = casterWeaponCombat && canAttack
             ? BotCombatUtility.mageMeleeFinishOpportunity(bot, npc)
             : null;
         if (mageMeleeFinish) {
@@ -721,11 +675,12 @@ const BotAI = {
             });
             return true;
         }
-        // Healers and buffers may assist the party with their weapon, but
-        // their role controller must be able to keep their MP for support.
-        // Do not make that policy depend on the generic combat selector.
+        // Support controllers may reserve MP instead of casting offensively.
+        // Staff casters may then assist only with a cheap melee finisher;
+        // melee support classes retain their normal weapon fallback.
         const combatPolicy = {
             ...HotBotPolicyOverlay.combatPolicy(session),
+            pvp: options.pvp === true,
             avoidAreaDamage: options.avoidAreaDamage === true || (
                 allowedPlayerPartyRaid && BotRaidSafety.hasControlledRaidMinion(npc)
             )
@@ -745,7 +700,7 @@ const BotAI = {
             };
             return true;
         }
-        const chargeSkill = options.basicAttackOnly || !canCast ? null : BotCombatUtility.selectChargeSkill(bot, role);
+        const chargeSkill = options.basicAttackOnly || !canCast ? null : BotCombatUtility.selectChargeSkill(bot, role, combatPolicy);
         if (chargeSkill) {
             session.lastCombatDecision = {
                 action: 'charge_skill',
@@ -796,11 +751,11 @@ const BotAI = {
             return false;
         }
 
-        // A hot mage may use its weapon only as a cheap finisher. If the
+        // A hot staff caster may use its weapon only as a cheap finisher. If the
         // target cannot be killed in roughly two ordinary hits, waiting for
         // mana or letting the rest of the party continue is preferable to
         // turning the caster into a melee fighter.
-        if (role === 'mage') {
+        if (casterWeaponCombat && options.pvp !== true) {
             session.lastCombatDecision = {
                 action: 'blocked',
                 role,
@@ -825,8 +780,18 @@ const BotAI = {
         return true;
     },
 
-    say(session, text) {
-        invoke('GameServer/Bot/BotManager').botSay(session, text);
+    say(session, text, chatter = null) {
+        if (chatter?.ambient) {
+            const budget = invoke('GameServer/Bot/AI/BotChatterBudget');
+            const reactions = invoke('GameServer/Bot/AI/BotChatReactions');
+            if (session.inConversation || reactions.isBusy(session) || !budget.canSend(session, chatter.key)) return false;
+            const voice = invoke('GameServer/Bot/AI/BotChatVoice');
+            invoke('GameServer/Bot/BotManager').botSay(session, voice.line(`local.${chatter.key}`, session) || text);
+            budget.record(session, chatter.key);
+            reactions.openLocal(session, chatter.key);
+            return true;
+        }
+        return invoke('GameServer/Bot/BotManager').botSay(session, text);
     },
 
     tell(session, targetSession, text) {
@@ -881,7 +846,6 @@ const BotAI = {
     }
 };
 
-BotAI.CHAT_PHRASES = CHAT_PHRASES;
 BotAI.getRandomPhrase = getRandomPhrase;
 BotAI.newbieSpawnCoords = newbieSpawnCoords;
 

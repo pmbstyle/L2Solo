@@ -71,6 +71,7 @@ const GeodataEngine = {
     missing: {}, // Keys of missing regions, to prevent console spam and repeat disk checks
 
     init() {
+        this.navigationRevision = Number(this.navigationRevision || 0) + 1;
         console.info("GeodataEngine :: Initializing...");
         VirtualObstacles.init();
         // Preload active regions on startup
@@ -445,6 +446,8 @@ const GeodataEngine = {
     },
 
     findPath(startX, startY, startZ, endX, endY, endZ, maxNodes = 2000, options = {}) {
+        const checkBudget = typeof options.checkBudget === 'function' ? options.checkBudget : null;
+        checkBudget?.();
         const startCx = startX >> 4;
         const startCy = startY >> 4;
         const endCx = endX >> 4;
@@ -518,6 +521,7 @@ const GeodataEngine = {
             }
 
             nodesExpanded++;
+            if ((nodesExpanded & 127) === 0) checkBudget?.();
             if (nodesExpanded > maxNodes) {
                 break;
             }
@@ -605,8 +609,10 @@ const GeodataEngine = {
             let currentIdx = 0;
 
             while (currentIdx < pathPoints.length - 1) {
+                checkBudget?.();
                 let checkIdx = pathPoints.length - 1;
                 while (checkIdx > currentIdx + 1) {
+                    if ((checkIdx & 31) === 0) checkBudget?.();
                     const startPt = pathPoints[currentIdx];
                     const endPt = pathPoints[checkIdx];
                     if (this.hasLineOfSight(startPt.locX, startPt.locY, startPt.locZ, endPt.locX, endPt.locY, endPt.locZ)) {

@@ -29,8 +29,8 @@ let marketCandidateRows = [];
 
 try {
     ColdSimulationOwner.recoverStartupLeases = () => Promise.resolve({ affectedRows: 0 });
-    Database.execute = ([sql, params]) => {
-        statements.push({ sql: String(sql), params });
+    Database.execute = ([sql, params, queryOptions]) => {
+        statements.push({ sql: String(sql), params, queryOptions });
         if (String(sql).startsWith('SELECT id, classId, level, exp, sp FROM characters')) {
             return Promise.resolve([{ id: 42, classId: 31, level: 42, exp: 0, sp: 0 }]);
         }
@@ -283,9 +283,11 @@ try {
                 && entry.sql.includes("marketSellRetryAfter"));
             const marketCandidates = marketCandidateQueries[0];
             assert(marketCandidates, 'market reconciliation must query current lifecycle market state');
+            assert.strictEqual(marketCandidates.queryOptions?.read, true,
+                'the candidate CTE must return rows through the database read path');
             assert(!marketCandidates.sql.includes('goalJson LIKE'), 'market reconciliation must not trust stale goal metadata');
             assert(marketCandidates.sql.includes("'$.marketSellRetryAfter'"), 'market reconciliation must exclude sellers whose retry cooldown is still active');
-            assert(marketCandidates.sql.includes('INDEXED BY bot_life_state_market_reconcile'),
+            assert(marketCandidates.sql.includes('INDEXED BY bot_life_state_market_review'),
                 'market reconciliation must use its keyset-compatible lifecycle index');
             assert(!marketCandidates.sql.includes('COALESCE(states.updatedAt'),
                 'a redundant updatedAt expression must not force a temporary sort');

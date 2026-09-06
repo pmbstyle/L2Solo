@@ -49,7 +49,7 @@ assert.strictEqual(BotAmbientDirector.deriveMood(aria).mood, 'sociable', 'social
 
 const started = BotAmbientDirector.start(aria, belen, now);
 assert.strictEqual(started.ok, true, 'two resting hot bots should start one bounded ambient scene');
-assert.ok(['rest', 'party'].includes(started.conversation.topic), 'ambient scene should use a native bounded conversation topic');
+assert.ok(started.conversation.lines.every(line => line.text.length <= 120), 'ambient scene should use bounded native dialogue');
 assert.strictEqual(aria.inConversation, true);
 assert.strictEqual(BotAmbientDirector.snapshot(aria).scene.id, started.scene.id);
 assert.strictEqual(BotAmbientDirector.eligible(aria, belen, now + 1).reason, 'scene_active');

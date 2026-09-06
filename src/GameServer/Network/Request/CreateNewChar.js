@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const ServerResponse = invoke('GameServer/Network/Response');
 const Shared         = invoke('GameServer/Network/Shared');
 const DataCache      = invoke('GameServer/DataCache');
@@ -93,7 +94,7 @@ function awardBaseGear(id, classId) {
     const items = DataCache.newbieItems.find(ob => ob.classId === classId)?.items;
 
     (items ?? []).forEach((item) => {
-        item.slot = DataCache.items.find(ob => ob.selfId === item.selfId)?.etc?.slot ?? 0;
+        item.slot = ItemTemplateIndex.findStrict(DataCache.items, item.selfId)?.etc?.slot ?? 0;
         Database.setItem(id, item);
     });
 }

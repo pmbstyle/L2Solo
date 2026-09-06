@@ -118,7 +118,7 @@ function evaluate(bot, target, skill, role, policy = {}) {
     const cost = Math.max(0, Number(skill.fetchConsumedMp?.() || 0));
     // A mage's staff is the primary weapon. Keeping a generic MP reserve made
     // a mage walk into melee even though it could still afford a nuke.
-    if (cost > mp || (role !== 'mage' && (mp - cost) / maxMp < reserveRatio(role))) return null;
+    if (cost > mp || (!policy.pvp && role !== 'mage' && (mp - cost) / maxMp < reserveRatio(role))) return null;
 
     const type = skill.fetchSkillType();
     const basePower = Math.max(0, Number(skill.fetchPower?.() || 0));
@@ -175,7 +175,7 @@ function select(bot, target, role, policy = {}) {
         .sort((a, b) => b.score - a.score)[0] || null;
 }
 
-function selectChargeSkill(bot, role) {
+function selectChargeSkill(bot, role, policy = {}) {
     const skills = bot?.skillset?.skills || [];
     const current = Math.max(0, Number(bot.fetchCharges?.() ?? bot.charges ?? 0) || 0);
     const weaponMask = Attack.weaponMaskFor(bot);
@@ -198,7 +198,7 @@ function selectChargeSkill(bot, role) {
             return semantic.skillType === C4SkillRules.CHARGE
                 && (!allowed || (allowed & weaponMask) !== 0)
                 && cost <= mp
-                && (role === 'mage' || (mp - cost) / maxMp >= reserveRatio(role));
+                && (policy.pvp || role === 'mage' || (mp - cost) / maxMp >= reserveRatio(role));
         })
         .sort((a, b) => Number(b.fetchLevel?.()) - Number(a.fetchLevel?.()))[0] || null;
 }

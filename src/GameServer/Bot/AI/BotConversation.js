@@ -1,90 +1,92 @@
+const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
+const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
 const CONVERSATION_COOLDOWN_MS = 90 * 1000;
 const CONVERSATION_RANGE = 800;
 
 function areaFor(session) {
-    return session?.botStatus?.home?.region || session?.homeRegion || session?.spotId || 'town';
-}
-
-function personaFor(session) {
-    return session?.persona?.traits ? session.persona : null;
+    const actor = session?.actor;
+    return invoke('GameServer/Bot/AI/BotChatLocation').describe({
+        loc: { locX: actor?.fetchLocX?.(), locY: actor?.fetchLocY?.(), locZ: actor?.fetchLocZ?.() },
+        region: session?.currentRegion
+    });
 }
 
 function trait(session, name, fallback = 0.5) {
-    const value = Number(personaFor(session)?.traits?.[name]);
+    const value = Number(Voice.profile(session)?.traits?.[name]);
     return Number.isFinite(value) ? value : fallback;
-}
-
-function roleLine(session) {
-    const role = String(session?.botStatus?.role || session?.role || '').toLowerCase();
-    let line = 'I could use a steadier run than the last one.';
-    if (role === 'healer' || role === 'buffer') line = 'I will keep an eye on everyone\'s health.';
-    else if (role === 'tank') line = 'I can take the first hits if things get rough.';
-    else if (role === 'archer') line = 'I will keep some distance and watch the edges.';
-    else if (role === 'dagger') line = 'I will look for a clean opening behind them.';
-
-    if (trait(session, 'empathy') >= 0.78) return `${line} No one gets left behind.`;
-    if (trait(session, 'assertiveness') >= 0.78) return `${line} Just give the word.`;
-    return line;
-}
-
-function restOpener(session, area) {
-    const drive = personaFor(session)?.primaryDrive;
-    if (drive === 'wealth') return `Quiet around ${area} for once. A steady run could pay for the next upgrade.`;
-    if (drive === 'social') return `Quiet around ${area} for once. It is better to head out with familiar company.`;
-    if (drive === 'progression') return `Quiet around ${area} for once. Ready to make the next run count?`;
-    return `Quiet around ${area} for once. Heading out when you are recovered?`;
-}
-
-function restCloser(session) {
-    if (trait(session, 'caution') >= 0.70) return 'Sounds good. We can keep it steady and avoid rushing back in.';
-    if (trait(session, 'sociability') >= 0.70) return 'Sounds good. Better than rushing back in alone.';
-    return 'Sounds good. Better than rushing back in alone.';
 }
 
 function chooseTopic(initiator, responder) {
     const area = areaFor(initiator);
-    const recentTopic = initiator?.lastConversation?.topic || responder?.lastConversation?.topic;
+    const drive = Voice.profile(initiator)?.primaryDrive;
+    const cautious = trait(responder, 'caution') >= 0.7;
+    const social = trait(responder, 'sociability') >= 0.7;
     const candidates = [];
-
-    candidates.push({
-        id: 'rest',
-        opener: restOpener(initiator, area),
-        reply: roleLine(responder),
-        closer: restCloser(initiator)
+    const add = (id, lines, weight = 1) => candidates.push({
+        id, opener: lines[0], reply: lines[1], closer: lines[2], weight
     });
 
-    if (responder?.botStatus?.role === 'tank' || initiator?.botStatus?.role === 'tank' ||
-        responder?.botStatus?.role === 'healer' || initiator?.botStatus?.role === 'healer') {
-        candidates.push({
-            id: 'party',
-            opener: personaFor(initiator)?.primaryDrive === 'social'
-                ? `We have the right roles for a small group around ${area}. It would be good to keep the team together.`
-                : `We have the right roles for a small group around ${area}.`,
-            reply: roleLine(responder),
-            closer: 'Then let us watch for someone who wants to join the next run.'
-        });
-    }
+    add('rest', Speech.lines('dialogue.rest.1', {}, { cautious, social }));
+    add('rest', Speech.lines('dialogue.rest.2', {place: area}, { cautious, social }));
+    add('roads', Speech.lines('dialogue.roads.1', {}, { cautious, social }));
+    add('roads', Speech.lines('dialogue.roads.2', {}, { cautious, social }));
+    add('gear', Speech.lines('dialogue.gear.1', {}, { cautious, social }), drive === 'wealth' ? 3 : 1);
+    add('gear', Speech.lines('dialogue.gear.2', {}, { cautious, social }), drive === 'progression' ? 3 : 1);
+    add('company', Speech.lines('dialogue.company.1', {}, { cautious, social }), drive === 'social' ? 3 : 1);
+    add('company', Speech.lines('dialogue.company.2', {}, { cautious, social }));
+    add('hunting', Speech.lines('dialogue.hunting.1', {}, { cautious, social }));
+    add('hunting', Speech.lines('dialogue.hunting.2', {}, { cautious, social }));
 
+    const role = String(responder?.botStatus?.role || responder?.role || '').toLowerCase();
+    if (['healer', 'buffer', 'tank', 'archer', 'dagger'].includes(role)) {
+        add('party', Speech.lines('dialogue.party.1', {reply: Speech.line('dialogue.role.' + role)}, { cautious, social }));
+    }
+    // The memory only proves there was a shop visit, not that a purchase
+    // succeeded. Do not invent a successful deal in the reply.
     if (initiator?.lastTradeSummary || responder?.lastTradeSummary) {
-        candidates.push({
-            id: 'trade',
-            opener: `The market around ${area} has been busy. Did you find what you needed?`,
-            reply: personaFor(responder)?.primaryDrive === 'wealth'
-                ? 'Enough to get by. I would rather spend the next hour earning than browsing.'
-                : 'Enough to get by. I would rather spend the next hour fighting than browsing.',
-            closer: 'Same. A little more adena always makes the next trip easier.'
-        });
+        add('trade', Speech.lines('dialogue.trade.1', {}, { cautious, social }));
+    }
+    const maxMp = Number(responder?.actor?.fetchMaxMp?.() || 0);
+    if (maxMp > 0 && Number(responder.actor.fetchMp?.() ?? maxMp) / maxMp < 0.45) {
+        add('recovery', Speech.lines('dialogue.recovery.1', {}, { cautious, social }), 4);
     }
 
-    const options = candidates.filter((topic) => topic.id !== recentTopic);
-    return options[Math.floor(Math.random() * options.length)] || candidates[0];
+    const recent = new Set([...(initiator.recentConversationTopics || []),
+        ...(responder.recentConversationTopics || []),
+        initiator.lastConversation?.topic, responder.lastConversation?.topic]);
+    const fresh = candidates.filter((topic) => !recent.has(topic.id));
+    const pool = fresh.length ? fresh : candidates;
+    let roll = Math.random() * pool.reduce((sum, topic) => sum + topic.weight, 0);
+    const topic = pool.find((topic) => (roll -= topic.weight) < 0) || pool[pool.length - 1];
+    const voicedTopic = { rest: 'break', roads: 'roads', gear: 'patience', company: 'company', hunting: 'hunting' }[topic.id];
+    if (!voicedTopic) return topic; // Role and low-mana exchanges retain their factual context.
+    const values = { name: initiator.actor.fetchName(), responder: responder.actor.fetchName() };
+    return { ...topic,
+        opener: Voice.line(`global.${voicedTopic}`, initiator),
+        reply: Voice.line(`reaction.global.${voicedTopic}.reply`, responder, values),
+        closer: Voice.line(`reaction.global.${voicedTopic}.close`, initiator, values)
+    };
+}
+
+function canContinue(conversation) {
+    const sessions = [...new Set((conversation?.lines || []).map((line) => line.speaker))];
+    if (sessions.length !== 2 || sessions.some((session) => !session?.actor ||
+        session.plan !== 'resting' || session.partyCompanion || session.activeTrade || session.activeNegotiation ||
+        session.actor.fetchIsOnline?.() === false || session.actor.isDead?.() ||
+        session.actor.state?.fetchDead?.() || session.actor.state?.fetchHits?.() || session.actor.state?.fetchCasts?.())) return false;
+    const [a, b] = sessions.map((session) => session.actor);
+    if (typeof a.fetchLocX !== 'function' || typeof b.fetchLocX !== 'function') return true;
+    return Math.hypot(a.fetchLocX() - b.fetchLocX(), a.fetchLocY() - b.fetchLocY(),
+        (a.fetchLocZ?.() || 0) - (b.fetchLocZ?.() || 0)) < CONVERSATION_RANGE;
 }
 
 function canStart(initiator, responder, now = Date.now()) {
     if (!initiator?.actor || !responder?.actor || initiator === responder) return false;
     if (initiator.inConversation || responder.inConversation) return false;
+    const Reactions = invoke('GameServer/Bot/AI/BotChatReactions');
+    if (Reactions.isBusy(initiator, now) || Reactions.isBusy(responder, now)) return false;
     if (initiator.partyCompanion || responder.partyCompanion) return false;
-    if (initiator.plan !== 'resting' || responder.plan !== 'resting') return false;
+    if (!canContinue({ lines: [{ speaker: initiator }, { speaker: responder }] })) return false;
 
     return ![initiator, responder].some((session) => (
         session.lastConversationAt && now - session.lastConversationAt < CONVERSATION_COOLDOWN_MS
@@ -106,6 +108,9 @@ function start(initiator, responder, now = Date.now()) {
         ]
     };
 
+    for (const session of [initiator, responder]) {
+        session.recentConversationTopics = [topic.id, ...(session.recentConversationTopics || [])].slice(0, 3);
+    }
     initiator.inConversation = true;
     responder.inConversation = true;
     initiator.lastConversationAt = now;
@@ -127,6 +132,7 @@ module.exports = {
     CONVERSATION_RANGE,
     chooseTopic,
     canStart,
+    canContinue,
     start,
     finish
 };

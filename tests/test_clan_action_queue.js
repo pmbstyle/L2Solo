@@ -51,6 +51,67 @@ function seedDatabase() {
     seed.close();
 }
 
+async function verifyQueueStats(clanId) {
+    const snapshot = () => Database.execute(['SELECT * FROM clan_actions ORDER BY id', []]);
+    const before = await snapshot();
+    await Database.execute(['SAVEPOINT queue_stats_fixture', []]);
+    try {
+        await Database.execute(['DELETE FROM clan_actions', []]);
+        const empty = {
+            pending: 0, ready: 0, running: 0, expiredRunning: 0,
+            oldestPendingAt: 0, oldestPendingAgeMs: 0, oldestReadyAt: 0, oldestReadyAgeMs: 0,
+            oldestRunningAt: 0, oldestRunningAgeMs: 0, maxAttempt: 0, observedAt: 1000
+        };
+        assert.deepStrictEqual(await Database.fetchClanActionQueueStats({ at: 1000 }), empty);
+        for (const status of ['succeeded', 'failed', 'cancelled']) {
+            await Database.execute([`INSERT INTO clan_actions
+                (clanId, actionKey, actionType, status, attempt, createdAt, updatedAt)
+                VALUES (?, ?, 'goal_plan', ?, 999, 1, 1)`, [clanId, `stats:${status}`, status]]);
+        }
+        assert.deepStrictEqual(await Database.fetchClanActionQueueStats({ at: 1000 }), empty,
+            'terminal history must not affect any live queue statistic');
+        const fixtures = [
+            ['pending', 1, 1000, null, 100, 200],
+            ['pending', 3, 1001, null, 90, 100],
+            ['running', 4, 0, 1000, 300, 400],
+            ['running', 2, 0, null, 50, 600]
+        ];
+        for (const [index, fixture] of fixtures.entries()) {
+            await Database.execute([`INSERT INTO clan_actions
+                (clanId, actionKey, actionType, status, attempt, availableAt, leaseUntil, createdAt, updatedAt)
+                VALUES (?, ?, 'goal_plan', ?, ?, ?, ?, ?, ?)`, [clanId, `stats:active:${index}`, ...fixture]]);
+        }
+        assert.deepStrictEqual(await Database.fetchClanActionQueueStats({ at: 1000 }), {
+            pending: 2, ready: 1, running: 2, expiredRunning: 1,
+            oldestPendingAt: 90, oldestPendingAgeMs: 910, oldestReadyAt: 100, oldestReadyAgeMs: 900,
+            oldestRunningAt: 400, oldestRunningAgeMs: 600, maxAttempt: 4, observedAt: 1000
+        }, 'availability and lease expiry must include the exact deadline');
+        const earlier = await Database.fetchClanActionQueueStats({ at: 999 });
+        assert.strictEqual(earlier.ready, 0);
+        assert.strictEqual(earlier.expiredRunning, 0);
+        assert.strictEqual(earlier.oldestReadyAt, 0);
+        assert.strictEqual(earlier.oldestReadyAgeMs, 0);
+        await Database.execute([`UPDATE clan_actions SET status = 'succeeded' WHERE status = 'pending'`, []]);
+        await Database.execute([`UPDATE clan_actions SET status = 'pending', availableAt = 1001 WHERE status = 'running'`, []]);
+        const transitioned = await Database.fetchClanActionQueueStats({ at: 1001 });
+        assert.strictEqual(transitioned.pending, 2);
+        assert.strictEqual(transitioned.ready, 2);
+        assert.strictEqual(transitioned.running, 0);
+        assert.strictEqual(transitioned.expiredRunning, 0);
+        assert.strictEqual(transitioned.oldestPendingAt, 50);
+        assert.strictEqual(transitioned.oldestRunningAt, 0);
+        const source = fs.readFileSync(path.join(rootDir, 'src', 'Database.js'), 'utf8');
+        const sql = source.slice(source.indexOf('    fetchClanActionQueueStats(')).match(/`([\s\S]*?)`/)[1];
+        const plan = await Database.execute(['EXPLAIN QUERY PLAN ' + sql, [1000, 1000, 1000]]);
+        assert(plan.some(row => /SEARCH clan_actions .*\(status=\?\)/.test(row.detail)),
+            'queue statistics must seek active statuses instead of scanning terminal history');
+    } finally {
+        await Database.execute(['ROLLBACK TO queue_stats_fixture', []]);
+        await Database.execute(['RELEASE queue_stats_fixture', []]);
+    }
+    assert.deepStrictEqual(await snapshot(), before, 'statistics checks must preserve the durable action history');
+}
+
 async function main() {
     seedDatabase();
     options.default.Database.path = path.relative(rootDir, databasePath);
@@ -66,6 +127,7 @@ async function main() {
             stateJson: { level: 0, goal: null }
         });
         assert.strictEqual(created.ok, true);
+        await verifyQueueStats(created.clanId);
 
         const initialActions = await Database.fetchClanActions({ clanId: created.clanId, limit: 10 });
         assert.strictEqual(initialActions.length, 1);

@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
@@ -162,7 +163,7 @@ function locationFor(characterId) {
 }
 
 function productPrice(recipe) {
-    const product = (DataCache.items || []).find((item) => Number(item.selfId) === Number(recipe.productId));
+    const product = ItemTemplateIndex.find(DataCache.items, recipe.productId);
     const value = Number(product?.template?.price || 0) * Math.max(1, Number(recipe.productCount || 1));
     // A manufacture fee must remain a fee, not silently turn a player-supplied
     // recipe into an NPC shop. The cap also keeps malformed item prices from
@@ -192,7 +193,7 @@ function compareScores(left, right) {
 function topWeaponRecipes(grade, allowedRecipes) {
     const bestByKind = new Map();
     allowedRecipes.forEach((recipe) => {
-        const product = (DataCache.items || []).find((item) => Number(item.selfId) === Number(recipe.productId));
+        const product = ItemTemplateIndex.find(DataCache.items, recipe.productId);
         const kind = product?.template?.kind || '';
         if (String(product?.etc?.rank || '').toLowerCase() !== grade || !kind.startsWith('Weapon.')) return;
         const current = bestByKind.get(kind);

@@ -126,6 +126,24 @@ async function run() {
     assert.strictEqual(saved.spotId, '2_-24');
     assert.strictEqual(saved.stats.equipmentPlan.target.name, 'Atuba Mace', 'cooldown must preserve the acquisition plan');
 
+    const returnState = session.coldLifeState;
+    session.populationLocationPolicy = 'physical';
+    const originalFindCurrentSpot = SpotService.findCurrentSpot;
+    SpotService.findCurrentSpot = () => ({ id: 'physical-field', name: 'Physical field' });
+    try {
+        await LifeState.markCold(session, 'policy');
+        assert.deepStrictEqual(saved.loc, { locX: 83180, locY: 147780, locZ: -3466 },
+            'ordinary nearby activation must cool at its actual position rather than jump back into activation range');
+        assert.strictEqual(saved.spotId, 'physical-field');
+        assert.strictEqual(saved.activity, 'resting', 'physical handoff preserves the current recovery activity');
+        assert.strictEqual(saved.stats.travel, null, 'an old cold route cannot override actual hot movement');
+        assert.strictEqual(saved.stats.equipmentPlan.target.name, 'Atuba Mace', 'physical handoff retains progression');
+    } finally {
+        SpotService.findCurrentSpot = originalFindCurrentSpot;
+        session.populationLocationPolicy = 'return';
+        session.coldLifeState = returnState;
+    }
+
     SpotService.findById = () => ({ center: { locX: -8000, locY: 11000, locZ: -3100 } });
     SpotService.randomPointNear = () => ({ locX: -7900, locY: 11100, locZ: -3100 });
     session.coldLifeState = {

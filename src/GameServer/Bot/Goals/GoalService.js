@@ -65,7 +65,10 @@ const GoalService = {
         const choose = (existing) => {
             const decision = reviewDecision(state, existing, options, timestamp);
             if (decision.unchanged) return decision.result;
-            return GoalState.set(state.characterId, decision.goal);
+            return GoalState.set(state.characterId, decision.goal).then(saved => {
+                if (saved) invoke('GameServer/Bot/AI/BotClanChat').onGoal(state, saved.current, existing?.current, timestamp);
+                return saved;
+            });
         };
 
         return (cached ? Promise.resolve(cached) : GoalState.load(state.characterId)).then(choose);
@@ -85,6 +88,7 @@ const GoalService = {
                     : options;
                 return {
                     state,
+                    previous: existingGoals[index]?.current,
                     decision: reviewDecision(state, existingGoals[index], stateOptions, timestamp)
                 };
             });
@@ -94,6 +98,10 @@ const GoalService = {
             }));
             return GoalState.setBatch(pending).then((saved) => {
                 const savedById = new Map(saved.map((snapshot) => [Number(snapshot.characterId), snapshot]));
+                for (const { state, decision, previous } of decisions) {
+                    const result = savedById.get(Number(state.characterId));
+                    if (!decision.unchanged && result) invoke('GameServer/Bot/AI/BotClanChat').onGoal(state, result.current, previous, timestamp);
+                }
                 return decisions.map(({ state, decision }) => (
                     decision.unchanged ? decision.result : savedById.get(Number(state.characterId)) || null
                 ));

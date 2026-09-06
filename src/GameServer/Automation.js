@@ -191,75 +191,109 @@ class Automation extends SelectedModel {
         };
     }
 
+    updateMovePosition() {
+        const move = this.moveInterpolation;
+        if (!move) return;
+        const ratio = Math.min(1, Math.max(0, (Date.now() - move.startedAt) / move.duration));
+        move.actor.setLocXYZ({
+            locX: Math.round(move.from.locX + (move.to.locX - move.from.locX) * ratio),
+            locY: Math.round(move.from.locY + (move.to.locY - move.from.locY) * ratio),
+            locZ: Math.round(move.from.locZ + (move.to.locZ - move.from.locZ) * ratio)
+        });
+    }
+
+    stopMoveInterpolation() {
+        const move = this.moveInterpolation;
+        if (!move) return;
+        this.updateMovePosition();
+        clearTimeout(move.timer);
+        if (move.session?.moveTimer === move.timer) move.session.moveTimer = null;
+        this.moveInterpolation = null;
+    }
+
+    startMoveInterpolation(session, actor, to, duration) {
+        this.stopMoveInterpolation();
+        // NPCs and summons borrow a recipient's session to broadcast. Keep
+        // their movement on their own automation, never on that recipient.
+        const ownSession = session?.actor === actor ? session : null;
+        if (ownSession?.moveTimer) {
+            clearInterval(ownSession.moveTimer);
+            ownSession.moveTimer = null;
+        }
+        const move = this.moveInterpolation = {
+            actor, session: ownSession, to: { ...to },
+            from: { locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() },
+            startedAt: Date.now(), duration: Math.max(1, duration), timer: null
+        };
+        const advance = () => {
+            if (this.moveInterpolation !== move) return;
+            this.updateMovePosition();
+            const remaining = move.duration - (Date.now() - move.startedAt);
+            if (remaining <= 0) return;
+            move.timer = setTimeout(advance, Math.min(100, remaining));
+            if (ownSession) ownSession.moveTimer = move.timer;
+        };
+        move.timer = setTimeout(advance, Math.min(100, move.duration));
+        if (ownSession) ownSession.moveTimer = move.timer;
+    }
+
     scheduleAction(session, src, dst, radius, callback, options = {}) {
-        if (session) session.activeMoveGoal = null;
-        const movementRadius = options.collisionAware
+        this.stopMoveInterpolation();
+        const actionRange = options.collisionAware
             ? AttackRange.effectiveRange(src, dst, radius)
             : Math.max(0, Number(radius) || 0);
-
+        const weaponAttack = options.action === 'attack';
+        if (weaponAttack && AttackRange.distance2d(src, dst) <= actionRange) {
+            this.abortAll(src);
+            callback();
+            return true;
+        }
+        // Stop inside the legal hit range. Integer client coordinates must
+        // not strand a stationary target just outside the exact boundary.
+        const movementRadius = weaponAttack
+            ? Math.max(0, actionRange - Math.min(10, actionRange / 4))
+            : actionRange;
+        if (!invoke('GameServer/Effects/EffectRestrictions').canMove(src)) {
+            const distance = Math.hypot(dst.fetchLocX() - src.fetchLocX(), dst.fetchLocY() - src.fetchLocY());
+            if (distance <= movementRadius) {
+                callback();
+                return true;
+            }
+            invoke('GameServer/Effects/EffectRestrictions').reject(session);
+            return false;
+        }
+        // NPCs and summons also send movement through another actor's session.
+        // Only the moving actor may replace that session's active route.
+        if (session?.actor === src) session.activeMoveGoal = null;
         // Execute each time, or else creature is stuck
         this.setDestId(dst.fetchId());
         session.dataSendToMeAndOthers(ServerResponse.moveToPawn(src, dst, movementRadius), src);
         const stopCoords = this.actionStopCoords(src, dst, movementRadius);
 
         // Calculate duration
-        src.state.setTowards(radius === 0 ? 'melee' : 'remote');
+        src.state.setTowards(weaponAttack || radius === 0 ? 'melee' : 'remote');
         const ticks = this.ticksToMove(
             src.fetchLocX(), src.fetchLocY(), src.fetchLocZ(), dst.fetchLocX(), dst.fetchLocY(), dst.fetchLocZ(), movementRadius, src.fetchCollectiveRunSpd()
         );
 
-        // Dynamically update coordinates step-by-step only while the bot is
-        // moving itself.  A bot session can also drive an NPC's chase action;
-        // interpolating that NPC here mutates the server position without a
-        // matching movement packet and makes it appear to attack from afar.
-        const movingBot = session?.actor === src && (
+        const movingSelf = session?.actor === src;
+        const movingBot = movingSelf && (
             session.constructor.name === 'BotSession'
             || session.accountId?.startsWith('bot_')
         );
-        if (movingBot) {
-            if (session.moveTimer) {
-                clearInterval(session.moveTimer);
-                session.moveTimer = null;
-            }
-
-            const startX = src.fetchLocX();
-            const startY = src.fetchLocY();
-            const startZ = src.fetchLocZ();
-            const endX = stopCoords.locX;
-            const endY = stopCoords.locY;
-            const endZ = stopCoords.locZ;
-
-            const dx = endX - startX;
-            const dy = endY - startY;
-            const dz = endZ - startZ;
-
-            const tickRate = 250;
-            const steps = Math.ceil(ticks / tickRate);
-            let step = 0;
-
-            session.moveTimer = setInterval(() => {
-                step++;
-                if (step >= steps) {
-                    src.setLocXYZ({ locX: endX, locY: endY, locZ: endZ });
-                    clearInterval(session.moveTimer);
-                    session.moveTimer = null;
-                } else {
-                    const ratio = step / steps;
-                    src.setLocXYZ({
-                        locX: Math.round(startX + dx * ratio),
-                        locY: Math.round(startY + dy * ratio),
-                        locZ: Math.round(startZ + dz * ratio)
-                    });
-                }
-            }, tickRate);
-        }
+        if (!movingSelf || movingBot) this.startMoveInterpolation(session, src, stopCoords, ticks);
 
         // Arrived
         Timer.start(this.timer.action, () => {
+            this.stopMoveInterpolation();
             src.state.setTowards(false);
             this.clearDestId();
-            if (movingBot) {
-                src.setLocXYZ(stopCoords);
+            // A player's last ValidatePosition may describe an intermediate
+            // point. C4 need not acknowledge the final MoveToPawn position,
+            // so complete the server-owned approach for players as well.
+            // Movement cancellation already clears this arrival timer.
+            src.setLocXYZ(stopCoords);
+            if (movingSelf) {
                 if (session.moveTimer) {
                     clearInterval(session.moveTimer);
                     session.moveTimer = null;
@@ -271,7 +305,6 @@ class Automation extends SelectedModel {
     }
 
     scheduleMoveToCoords(session, src, to, callback = () => {}) {
-        if (session) session.activeMoveGoal = null;
         const from = {
             locX: src.fetchLocX(),
             locY: src.fetchLocY(),
@@ -286,6 +319,10 @@ class Automation extends SelectedModel {
         if (!Object.values(destination).every(Number.isFinite)) {
             return false;
         }
+        this.stopMoveInterpolation();
+        Object.assign(from, { locX: src.fetchLocX(), locY: src.fetchLocY(), locZ: src.fetchLocZ() });
+
+        if (session?.actor === src) session.activeMoveGoal = null;
 
         // Coordinate movement is currently used by NPC path waypoints, but
         // keep it safe for a session moving its own actor too. An older
@@ -310,7 +347,10 @@ class Automation extends SelectedModel {
             src.fetchCollectiveRunSpd()
         );
 
+        this.startMoveInterpolation(session, src, destination, ticks);
+
         Timer.start(this.timer.action, () => {
+            this.stopMoveInterpolation();
             src.state.setTowards(false);
             src.setLocXYZ(destination);
             callback(destination);
@@ -396,6 +436,7 @@ class Automation extends SelectedModel {
     }
 
     abortAll(creature, { notifyClient = true } = {}) {
+        this.stopMoveInterpolation();
         const wasMoving = !!creature?.state?.inMotion?.() && !creature?.session?.pendingPathRequest;
         this.clearDestId();
         creature.state?.setTowards?.(false);
@@ -404,6 +445,7 @@ class Automation extends SelectedModel {
 
         const session = creature.session;
         if (session) {
+            if (session.activeMoveGoal?.town) invoke('GameServer/Bot/AI/TownTraffic').remove(Number(creature.fetchId()));
             session.activeMoveGoal = null;
             session.moveRouteGeneration = Number(session.moveRouteGeneration || 0) + 1;
             if (session.pendingPathRequest?.cancel) {

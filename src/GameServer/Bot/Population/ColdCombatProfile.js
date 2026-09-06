@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const Formulas = invoke('GameServer/Formulas');
 const ClassProgression = invoke('GameServer/ClassProgression');
@@ -35,7 +36,7 @@ function classTemplate(classId) {
 }
 
 function itemTemplate(selfId) {
-    return (DataCache.items || []).find((entry) => Number(entry.selfId) === Number(selfId)) || null;
+    return ItemTemplateIndex.find(DataCache.items, selfId) || null;
 }
 
 function equippedTemplates(state = {}) {
@@ -103,14 +104,18 @@ function effectStats(effect = {}) {
     return legacy?.stats || structured;
 }
 
-function statValues(profile, stat, timestamp) {
-    const effectValues = activeEffects(profile.effects, timestamp).map((effect) => number(effectStats(effect)?.[stat], NaN));
-    const passiveValues = (profile.skills || [])
+function statSources(profile, timestamp) {
+    const effects = activeEffects(profile.effects, timestamp).map(effectStats);
+    const passives = (profile.skills || [])
         .filter((skill) => skill.passive)
         .map((skill) => C4SkillRules.resolve({ selfId: skill.selfId, level: skill.level }))
         .filter((semantic) => passiveRequirementsMatch(profile, semantic.requires))
-        .map((semantic) => number(semantic.stats?.[stat], NaN));
-    return [...effectValues, ...passiveValues].filter(Number.isFinite);
+        .map((semantic) => semantic.stats);
+    return [...effects, ...passives];
+}
+
+function statValues(profile, stat, timestamp, sources = statSources(profile, timestamp)) {
+    return sources.map((stats) => number(stats?.[stat], NaN)).filter(Number.isFinite);
 }
 
 function passiveRequirementsMatch(profile, requires = {}) {
@@ -123,12 +128,12 @@ function passiveRequirementsMatch(profile, requires = {}) {
     return true;
 }
 
-function add(profile, stat, timestamp) {
-    return statValues(profile, stat, timestamp).reduce((sum, value) => sum + value, 0);
+function add(profile, stat, timestamp, sources) {
+    return statValues(profile, stat, timestamp, sources).reduce((sum, value) => sum + value, 0);
 }
 
-function multiplier(profile, stat, timestamp) {
-    return statValues(profile, stat, timestamp).reduce((total, value) => total * value, 1);
+function multiplier(profile, stat, timestamp, sources) {
+    return statValues(profile, stat, timestamp, sources).reduce((total, value) => total * value, 1);
 }
 
 function npcPassiveStatValues(actor, stat) {
@@ -210,9 +215,9 @@ function npcCombatStats(npc) {
     return result;
 }
 
-function effectiveBase(profile, stat, timestamp) {
-    return Math.max(1, Math.round((number(profile.base?.[stat.toLowerCase()], 1) + add(profile, stat, timestamp))
-        * multiplier(profile, `${stat}Mul`, timestamp)));
+function effectiveBase(profile, stat, timestamp, sources) {
+    return Math.max(1, Math.round((number(profile.base?.[stat.toLowerCase()], 1) + add(profile, stat, timestamp, sources))
+        * multiplier(profile, `${stat}Mul`, timestamp, sources)));
 }
 
 function skillDefinition(selfId, level) {
@@ -464,33 +469,36 @@ function profileFor(state = {}, timestamp = Date.now()) {
         effects: saved?.effects || [],
         skills: Array.isArray(saved?.skills) && saved.skills.length ? saved.skills : skillsFromTree(classId, level)
     };
+    // Resolve effects and passive requirements once for this calculation.
+    // A later profile rebuild gets fresh sources after gear, skill or buff changes.
+    const sources = statSources(profile, timestamp);
     const equipment = profile.equipment;
-    const str = effectiveBase(profile, 'STR', timestamp);
-    const dex = effectiveBase(profile, 'DEX', timestamp);
-    const con = effectiveBase(profile, 'CON', timestamp);
-    const int = effectiveBase(profile, 'INT', timestamp);
-    const wit = effectiveBase(profile, 'WIT', timestamp);
-    const men = effectiveBase(profile, 'MEN', timestamp);
+    const str = effectiveBase(profile, 'STR', timestamp, sources);
+    const dex = effectiveBase(profile, 'DEX', timestamp, sources);
+    const con = effectiveBase(profile, 'CON', timestamp, sources);
+    const int = effectiveBase(profile, 'INT', timestamp, sources);
+    const wit = effectiveBase(profile, 'WIT', timestamp, sources);
+    const men = effectiveBase(profile, 'MEN', timestamp, sources);
     const classTransfer = level < 20 ? 0 : level < 40 ? 1 : 2;
-    const maxHp = (Formulas.calcHp(level, classId, con) * multiplier(profile, 'maxHpMul', timestamp)) + add(profile, 'maxHpAdd', timestamp);
+    const maxHp = (Formulas.calcHp(level, classId, con) * multiplier(profile, 'maxHpMul', timestamp, sources)) + add(profile, 'maxHpAdd', timestamp, sources);
     const maxMp = ((Formulas.calcMp(level, spellcaster ? 1 : 0, classTransfer, men) + number(equipment.bonusMp))
-        * multiplier(profile, 'maxMpMul', timestamp)) + add(profile, 'maxMpAdd', timestamp);
+        * multiplier(profile, 'maxMpMul', timestamp, sources)) + add(profile, 'maxMpAdd', timestamp, sources);
     const pAtk = Math.round(Formulas.calcPAtk(level, str, number(equipment.pAtk, number(profile.base.pAtk)))
-        * multiplier(profile, 'pAtkMul', timestamp)) + add(profile, 'pAtkAdd', timestamp);
+        * multiplier(profile, 'pAtkMul', timestamp, sources)) + add(profile, 'pAtkAdd', timestamp, sources);
     const mAtk = Math.round(Formulas.calcMAtk(level, int, number(equipment.mAtk, number(profile.base.mAtk)))
-        * multiplier(profile, 'mAtkMul', timestamp)) + add(profile, 'mAtkAdd', timestamp);
+        * multiplier(profile, 'mAtkMul', timestamp, sources)) + add(profile, 'mAtkAdd', timestamp, sources);
     const pDef = Math.round(Formulas.calcPDef(level, number(equipment.pDef, number(profile.base.pDef)))
-        * multiplier(profile, 'pDefMul', timestamp)) + add(profile, 'pDefAdd', timestamp);
+        * multiplier(profile, 'pDefMul', timestamp, sources)) + add(profile, 'pDefAdd', timestamp, sources);
     const mDef = Math.round(Formulas.calcMDef(level, men, number(equipment.mDef, number(profile.base.mDef)))
-        * multiplier(profile, 'mDefMul', timestamp)) + add(profile, 'mDefAdd', timestamp);
-    const accur = Formulas.calcAccur(level, dex, number(equipment.accur, number(profile.base.accur))) + add(profile, 'pAccuracyCombatAdd', timestamp);
+        * multiplier(profile, 'mDefMul', timestamp, sources)) + add(profile, 'mDefAdd', timestamp, sources);
+    const accur = Formulas.calcAccur(level, dex, number(equipment.accur, number(profile.base.accur))) + add(profile, 'pAccuracyCombatAdd', timestamp, sources);
     const evasion = Math.round((Formulas.calcEvasion(level, dex, number(equipment.evasion, number(profile.base.evasion)))
-        + add(profile, 'pEvasionRateAdd', timestamp)) * multiplier(profile, 'pEvasionMul', timestamp));
+        + add(profile, 'pEvasionRateAdd', timestamp, sources)) * multiplier(profile, 'pEvasionMul', timestamp, sources));
     const critical = (Formulas.calcCritical(dex, number(equipment.critical, number(profile.base.critical)))
-        * multiplier(profile, 'pCritRateMul', timestamp)) + add(profile, 'pCritRateAdd', timestamp);
+        * multiplier(profile, 'pCritRateMul', timestamp, sources)) + add(profile, 'pCritRateAdd', timestamp, sources);
     const atkSpd = Math.round(Formulas.calcAtkSpd(dex, number(equipment.atkSpd, number(profile.base.atkSpd)))
-        * multiplier(profile, 'pAtkSpdMul', timestamp));
-    const castSpd = Math.round(Formulas.calcCastSpd(wit) * multiplier(profile, 'castSpdMul', timestamp));
+        * multiplier(profile, 'pAtkSpdMul', timestamp, sources));
+    const castSpd = Math.round(Formulas.calcCastSpd(wit) * multiplier(profile, 'castSpdMul', timestamp, sources));
     return {
         ...profile, level, maxHp: Math.max(1, maxHp), maxMp: Math.max(1, maxMp), pAtk: Math.max(1, pAtk), mAtk: Math.max(1, mAtk),
         pDef: Math.max(1, pDef), mDef: Math.max(1, mDef), accur: Math.max(1, accur), evasion: Math.max(0, evasion),

@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const ServerResponse = invoke('GameServer/Network/Response');
 const Database = invoke('Database');
@@ -38,7 +39,7 @@ function fail(session, recipe = null) {
 }
 
 function productTemplate(recipe) {
-    return DataCache.items?.find((item) => Number(item.selfId) === Number(recipe.productId)) || null;
+    return ItemTemplateIndex.find(DataCache.items, recipe.productId) || null;
 }
 
 function applyCommittedMaterials(actor, consumed, sources) {

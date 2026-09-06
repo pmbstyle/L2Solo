@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../../Item/ItemTemplateIndex');
 const ServerResponse = invoke('GameServer/Network/Response');
 const DataCache      = invoke('GameServer/DataCache');
 const TradeService   = invoke('GameServer/Bot/TradeService');
@@ -35,7 +36,7 @@ function buildShopHtml(session, bot) {
     let rows = '';
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
-        const template = DataCache.items.find(ob => ob.selfId === item.selfId);
+        const template = ItemTemplateIndex.findStrict(DataCache.items, item.selfId);
         const iname = template?.template?.name ?? 'Unknown';
         const icat = template?.template?.kind ?? '';
         const playerItem = session.actor.backpack.fetchItemFromSelfId(item.selfId);

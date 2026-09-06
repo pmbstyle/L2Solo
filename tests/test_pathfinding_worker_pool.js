@@ -43,6 +43,8 @@ async function run() {
     );
     const second = pool.request({ startX: 2 }, { key: 'npc:1', timeoutMs: 5000 });
     assert.strictEqual((await stale).code, 'STALE_PATH', 'a newer NPC path must cancel the stale caller immediately');
+    assert.strictEqual(Atomics.load(new Int32Array(workers[0].messages[0].cancelBuffer), 0), 1,
+        'cancelling a running request must signal the worker, not merely reject its Promise');
 
     workers[0].emit('message', { id: firstId, ok: true, path: [{ locX: 1 }] });
     const secondMessage = workers[0].messages[1];
@@ -100,6 +102,25 @@ async function run() {
     recoveryWorkers[1].emit('message', { id: recoveredMessage.id, ok: true, path: [{ locX: 7 }] });
     assert.deepStrictEqual(await recovered, [{ locX: 7 }], 'a replacement worker must accept subsequent paths');
     await recoveryPool.shutdown();
+
+    const budgetWorkers = [];
+    const budgetPool = new BoundedPathfindingWorkerPool({ size: 1, queueLimit: 4,
+        workerFactory: () => { const worker = new FakeWorker(); budgetWorkers.push(worker); return worker; } });
+    const townFirst = budgetPool.request({ townCorridor: true }, { key: 'town:1', priority: 50 });
+    const townSecond = budgetPool.request({ townCorridor: true }, { key: 'town:2', priority: 50 });
+    budgetWorkers[0].emit('message', { id: budgetWorkers[0].messages[0].id, ok: true, path: [], workerMs: 100 });
+    await townFirst;
+    assert.strictEqual(budgetWorkers[0].messages.length, 1, 'town work must defer when its aggregate worker budget is spent');
+    const interactive = budgetPool.request({}, { key: 'companion:urgent', priority: 100 });
+    assert.strictEqual(budgetWorkers[0].messages.length, 2, 'player companion work must bypass decorative town admission');
+    budgetWorkers[0].emit('message', { id: budgetWorkers[0].messages[1].id, ok: true, path: [] });
+    await interactive;
+    budgetPool.townWindowAt = Date.now() - 1000;
+    budgetPool.dispatch();
+    assert.strictEqual(budgetWorkers[0].messages.length, 3, 'deferred town work must resume in the next budget window');
+    budgetWorkers[0].emit('message', { id: budgetWorkers[0].messages[2].id, ok: true, path: [] });
+    await townSecond;
+    await budgetPool.shutdown();
 
     const realPool = new BoundedPathfindingWorkerPool({ size: 1, queueLimit: 2 });
     const realPath = await realPool.request({

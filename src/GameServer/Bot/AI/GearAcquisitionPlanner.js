@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const C4DualSwordCombinations = invoke('GameServer/Items/C4DualSwordCombinations');
@@ -258,6 +259,12 @@ function suitable(item, state, role, requiredRank = gradeForLevel(state.level)) 
     return JEWEL_SLOTS.has(slot) && kind === 'Armor.Jewel';
 }
 
+// Existing Shamans may still own the previous caster kit. Do not let that
+// kit satisfy or outscore their new melee progression targets.
+function ownedItemFitsBuild(item, role, classId) {
+    return Number(classId) !== 50 || suitable(item, { classId }, role, item.etc?.rank);
+}
+
 function isSlotUpgrade(item, ownedItems, role, classId) {
     const slot = WEAPON_SLOTS.has(Number(item.etc?.slot || 0)) ? 'weapon' : Number(item.etc?.slot || 0);
     const rank = String(item.etc?.rank || 'none').toLowerCase();
@@ -267,7 +274,8 @@ function isSlotUpgrade(item, ownedItems, role, classId) {
     // only when it is genuinely stronger, or equally strong but from a more
     // expensive progression tier.
     return !ownedItems.some((owned) => (
-        (WEAPON_SLOTS.has(Number(owned.etc?.slot || 0)) ? 'weapon' : Number(owned.etc?.slot || 0)) === slot
+        ownedItemFitsBuild(owned, role, classId)
+        && (WEAPON_SLOTS.has(Number(owned.etc?.slot || 0)) ? 'weapon' : Number(owned.etc?.slot || 0)) === slot
         && String(owned.etc?.rank || 'none').toLowerCase() === rank
         && (itemScore(owned, role, classId) > score
             || (itemScore(owned, role, classId) === score && Number(owned.template?.price || 0) >= price))
@@ -284,6 +292,7 @@ function slotPriority(item) {
 function currentSlotScore(item, ownedItems = [], role, classId) {
     const slot = WEAPON_SLOTS.has(Number(item?.etc?.slot || 0)) ? 'weapon' : Number(item?.etc?.slot || 0);
     return ownedItems
+        .filter((owned) => ownedItemFitsBuild(owned, role, classId))
         .filter((owned) => (
             (WEAPON_SLOTS.has(Number(owned.etc?.slot || 0)) ? 'weapon' : Number(owned.etc?.slot || 0)) === slot
         ))
@@ -382,7 +391,7 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
     const allowedRank = rankIndex(gradeForLevel(state.level));
     const candidates = Object.values(inventory || {}).flatMap((entry) => {
         if (Number(entry?.amount || 0) < 1) return [];
-        const item = (DataCache.items || []).find((candidate) => Number(candidate.selfId) === Number(entry.selfId));
+        const item = ItemTemplateIndex.find(DataCache.items, entry.selfId);
         const rank = rankIndex(item?.etc?.rank);
         return item && rank <= allowedRank && suitable(item, state, role, item.etc?.rank) ? [{ entry, item }] : [];
     });
@@ -429,7 +438,7 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
     };
     if (!BotEquipmentCompatibility.usesShield(role, classId)) {
         Object.values(next).forEach((owned) => {
-            const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(owned?.selfId));
+            const template = ItemTemplateIndex.find(DataCache.items, owned?.selfId);
             if (Number(template?.etc?.slot || 0) === 8
                 && equippedSlotsFor(owned, owned.slot).includes(8)) {
                 setUnequipped(owned);
@@ -439,7 +448,7 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
     best.forEach(({ entry, item }, key) => {
         const slot = Number(item.etc?.slot || 0);
         Object.values(next).forEach((owned) => {
-            const ownedItem = (DataCache.items || []).find((candidate) => Number(candidate.selfId) === Number(owned.selfId));
+            const ownedItem = ItemTemplateIndex.find(DataCache.items, owned.selfId);
             const ownedKey = ownedItem ? equipmentSlotKey(ownedItem.etc?.slot) : String(owned.slot || 0);
             if (ownedKey === key && Number(owned.selfId) !== Number(entry.selfId)) setUnequipped(owned);
         });
@@ -486,7 +495,7 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
     const hasTwoHandedWeapon = hasEquippedTwoHandedWeapon({ ...state, inventory: next });
     if (hasTwoHandedWeapon) {
         Object.values(next).forEach((owned) => {
-            const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(owned?.selfId));
+            const template = ItemTemplateIndex.find(DataCache.items, owned?.selfId);
             if (Number(template?.etc?.slot || 0) === 8) setUnequipped(owned);
         });
     }
@@ -528,6 +537,7 @@ function preferredTarget(state = {}, options = {}) {
     const requiredRank = recipeRank || gradeForLevel(state.level);
     const hasCurrentGradeWeapon = ownedItems.some((item) => (
         WEAPON_SLOTS.has(Number(item.etc?.slot || 0))
+        && ownedItemFitsBuild(item, role, classId)
         && rankIndex(item.etc?.rank) >= rankIndex(requiredRank)
     ));
     // A viable weapon is the first milestone of a new grade. Once it is
@@ -603,7 +613,7 @@ function preferredNoGradeTarget(state = {}, options = {}) {
     const excluded = excludedTargetIds(options);
 
     const candidates = planned.items
-        .map((desired) => (DataCache.items || []).find((item) => Number(item.selfId) === Number(desired.selfId)))
+        .map((desired) => ItemTemplateIndex.find(DataCache.items, desired.selfId))
         .filter(isRealCatalogItem)
         .filter((item) => !excluded.has(Number(item.selfId)))
         .filter((item) => {
@@ -734,14 +744,14 @@ function itemMatchesDesiredSlot(item, desiredSlot) {
 function equippedItemAtSlot(state = {}, slot) {
     const wanted = Number(slot || 0);
     return equippedInventoryItems(state.inventory).find((item) => (
-        WEAPON_SLOTS.has(wanted)
+        ownedItemFitsBuild(item, roleFor(state), classIdFor(state)) && (WEAPON_SLOTS.has(wanted)
             ? WEAPON_SLOTS.has(Number(item.etc?.slot || 0))
             : Number(item.etc?.slot || 0) === wanted
                 // Full-body armour occupies both paperdoll body slots. Treat
                 // it as the current chest/legs item while evaluating the NPC
                 // bridge kit, otherwise a stronger full-body set repeatedly
                 // generates weaker chest and legs purchases.
-                || Number(item.etc?.slot || 0) === 15 && [10, 11].includes(wanted)
+                || Number(item.etc?.slot || 0) === 15 && [10, 11].includes(wanted))
     )) || null;
 }
 
@@ -853,7 +863,7 @@ function staticNpcKitAdequate(state = {}, options = {}) {
 }
 
 function marketPlanForTarget(state = {}, targetId, options = {}) {
-    const target = (DataCache.items || []).find((item) => Number(item.selfId) === Number(targetId));
+    const target = ItemTemplateIndex.find(DataCache.items, targetId);
     const role = roleFor(state);
     const ownedItems = inventoryItems(state.inventory);
     if (!target || !suitable(target, state, role, gradeForLevel(state.level))) return null;
@@ -865,7 +875,7 @@ function marketPlanForTarget(state = {}, targetId, options = {}) {
 function marketRecoveryPlanForTarget(state = {}, targetId, options = {}) {
     const exact = marketPlanForTarget(state, targetId, options);
     if (exact) return exact;
-    const failedTarget = (DataCache.items || []).find((item) => Number(item.selfId) === Number(targetId));
+    const failedTarget = ItemTemplateIndex.find(DataCache.items, targetId);
     if (!failedTarget) return null;
     const role = roleFor(state);
     const classId = classIdFor(state);
@@ -943,7 +953,7 @@ function directPlanFailure(state = {}, plan = {}, timestamp = Date.now()) {
     const targetId = Number(plan.target?.selfId || 0);
     const npcId = Number(plan.next?.npcId || 0);
     if (!targetId || !npcId) return null;
-    const target = (DataCache.items || []).find((item) => Number(item.selfId) === targetId);
+    const target = ItemTemplateIndex.find(DataCache.items, targetId);
     if (!target || !isSlotUpgrade(target, inventoryItems(state.inventory), roleFor(state), classIdFor(state))) return null;
     const current = targetCombatCounter(state, npcId);
     const hasBaseline = Number(plan.targetProgress?.npcId || 0) === npcId;

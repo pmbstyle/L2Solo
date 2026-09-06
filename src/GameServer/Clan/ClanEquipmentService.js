@@ -437,6 +437,7 @@ async function handoffWarehouseMaterials(current, plan, clan, goal) {
             recordReason(result.code || 'warehouse_handoff_failed');
             continue;
         }
+        invoke('GameServer/Bot/AI/BotClanChat').onWithdrawal(state, result);
         state = {
             ...state,
             simulationRevision: number(result.simulationRevision, number(state.simulationRevision)),

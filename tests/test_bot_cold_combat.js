@@ -55,6 +55,47 @@ const fighter = {
 const buffed = ColdCombatProfile.profileFor(fighter, timestamp);
 const expired = ColdCombatProfile.profileFor(fighter, timestamp + 60001);
 assert(buffed.pAtk > expired.pAtk, 'an active persisted buff must affect cold combat and expire by its real deadline');
+// Sources can be reused within one profile calculation, but never across
+// changes to skill levels, equipment requirements or effect deadlines.
+const SkillRules = invoke('GameServer/Skills/C4SkillRules');
+const originalResolve = SkillRules.resolve;
+let passiveResolves = 0;
+SkillRules.resolve = skill => {
+    if (skill.selfId === 900001 || skill.selfId === 900002) {
+        passiveResolves++;
+        return {
+            requires: { weaponKinds: [skill.selfId === 900001 ? 'Weapon.Sword' : 'Weapon.Blunt'] },
+            stats: { pAtkAdd: skill.selfId === 900001 ? skill.level * 7 : 500 }
+        };
+    }
+    return originalResolve(skill);
+};
+try {
+    const mutable = structuredClone(fighter);
+    mutable.stats.coldCombat.skills.push(
+        { selfId: 900001, level: 1, passive: true },
+        { selfId: 900002, level: 1, passive: true }
+    );
+    const first = ColdCombatProfile.profileFor(mutable, timestamp);
+    assert.strictEqual(first.pAtk, buffed.pAtk + 7, 'only the sword passive may apply');
+    assert.strictEqual(passiveResolves, 2, 'each passive must be resolved once per full profile, not once per stat');
+    mutable.stats.coldCombat.skills[1].level = 2;
+    const upgraded = ColdCombatProfile.profileFor(mutable, timestamp);
+    assert.strictEqual(upgraded.pAtk, first.pAtk + 7, 'an in-place skill upgrade must affect the next calculation');
+    mutable.stats.coldCombat.equipment.weaponKind = 'Weapon.Blunt';
+    const swapped = ColdCombatProfile.profileFor(mutable, timestamp);
+    assert.strictEqual(swapped.pAtk, buffed.pAtk + 500, 'equipment requirements must be re-evaluated');
+    const elapsed = ColdCombatProfile.profileFor(mutable, timestamp + 60001);
+    assert.strictEqual(elapsed.pAtk, expired.pAtk + 500, 'effect expiration must be re-evaluated');
+    mutable.stats.coldCombat.effects[0].stats.pAtkAdd = 11;
+    const changedEffect = ColdCombatProfile.profileFor(mutable, timestamp);
+    assert.strictEqual(changedEffect.pAtk, swapped.pAtk + 11, 'in-place effect edits must remain observable');
+    changedEffect.effects[0].stats.pAtkAdd = 19;
+    assert.strictEqual(ColdCombatProfile.statAdd(changedEffect, 'pAtkAdd', timestamp), 519,
+        'public stat queries must use current effects rather than retaining profile-build sources');
+} finally {
+    SkillRules.resolve = originalResolve;
+}
 assert.strictEqual(ColdCombatProfile.offensiveSkills(buffed).length, 1, 'the profile must retain compatible learned combat skills');
 const legacyBuffed = ColdCombatProfile.profileFor({
     ...fighter,

@@ -50,7 +50,11 @@ result = CompanionTownTransit.tick(session, bot, leader, options);
 assert.strictEqual(result.handled, true);
 assert.strictEqual(teleports.length, 0, 'the street-side staging point is not the teleport trigger');
 
-bot.loc = { ...approach.interaction };
+bot.loc = { ...session.townNpcApproach.destination };
+result = CompanionTownTransit.tick(session, bot, leader, options);
+assert.strictEqual(result.status, 'interacting');
+assert.strictEqual(teleports.length, 0);
+session.companionTownTransit.interactionReadyAt = Date.now() - 1;
 result = CompanionTownTransit.tick(session, bot, leader, options);
 assert.strictEqual(result.status, 'teleported');
 assert.deepStrictEqual(teleports[0], { locX: 83396, locY: 147904, locZ: -3400 },

@@ -160,6 +160,17 @@ try {
     assert.strictEqual(mage.skillset.skills.length, 0, 'mage should not invent Wind Strike when it is not learned');
     assert.strictEqual(mageGenerics.skills.length, 0, 'mage without learned nuke should not cast an invented skill');
     assert.strictEqual(mageGenerics.attacks.length, 0, 'mage without a learned nuke must not melee a healthy target');
+    const desperateMage = generics();
+    BotAI.executePvPCombat({}, mage, npc(1101), desperateMage);
+    assert.strictEqual(desperateMage.attacks.length, 1, 'a committed PvP mage can fight with its weapon when no spell is available');
+
+    const lastManaFighter = bot(0, [skill(3, { mp: 5, power: 100 })], 10);
+    const pveReserve = generics();
+    BotAI.executeCombat({}, lastManaFighter, npc(1101), pveReserve);
+    assert.strictEqual(pveReserve.skills.length, 0, 'farming still preserves the MP reserve');
+    const pvpReserve = generics();
+    BotAI.executePvPCombat({}, lastManaFighter, npc(1101), pvpReserve);
+    assert.strictEqual(pvpReserve.skills.length, 1, 'PvP may spend the last affordable offensive MP');
 
     const archer = bot(9, [skill(56, { mp: 5, range: 700, power: 24, semantic: { requires: { weaponsAllowed: 32 } } })], 20, 'Weapon.Bow');
     const archerGenerics = generics();
@@ -382,6 +393,7 @@ try {
 
     const activeSummon = {
         controlMode: 'attack',
+        attackTargetId: 11043,
         fetchHp: () => 100,
         fetchMaxHp: () => 100
     };
@@ -452,6 +464,7 @@ try {
     const combatFirstSummon = {
         effects: {},
         controlMode: 'attack',
+        attackTargetId: 11064,
         fetchId: () => 11062,
         fetchHp: () => 100,
         fetchMaxHp: () => 100,
@@ -581,13 +594,51 @@ try {
     const reserveGenerics = generics();
     BotAI.executeCombat({}, reserveHealer, npc(1105), reserveGenerics);
     assert.strictEqual(reserveGenerics.skills.length, 0, 'healer should preserve support MP instead of casting an expensive nuke');
-    assert.strictEqual(reserveGenerics.attacks.length, 1, 'healer with no affordable utility should use a basic attack');
+    assert.strictEqual(reserveGenerics.attacks.length, 0, 'a healer preserving support MP must not melee a healthy target');
 
     const supportingHealer = bot(15, [skill(1301, { mp: 5, power: 20, spell: true })], 100);
     const supportingGenerics = generics();
     BotAI.executeCombat({}, supportingHealer, npc(1112), supportingGenerics, { basicAttackOnly: true });
     assert.strictEqual(supportingGenerics.skills.length, 0, 'a hot-party healer ordered to conserve MP must not use an offensive spell');
-    assert.strictEqual(supportingGenerics.attacks.length, 1, 'a hot-party healer may still contribute a normal weapon attack');
+    assert.strictEqual(supportingGenerics.attacks.length, 0, 'a hot-party healer must not melee a healthy target while conserving MP');
+
+    for (const classId of [15, 16, 17, 29, 30, 42, 43, 97, 98, 105, 112]) {
+        const caster = bot(classId, [skill(1177, { mp: 8, spell: true })], 100, 'Weapon.Sword');
+        caster.canUseSkill = () => false;
+        const cooldownCalls = generics();
+        BotAI.executeCombat({}, caster, npc(11121), cooldownCalls);
+        assert.strictEqual(cooldownCalls.attacks.length, 0,
+            `staff caster class ${classId} must not switch to melee during spell reuse, even with another weapon equipped`);
+        assert.strictEqual(cooldownCalls.skills.length, 0);
+
+        caster.canUseSkill = () => true;
+        const readyCalls = generics();
+        BotAI.executeCombat({}, caster, npc(11121), readyCalls);
+        assert.strictEqual(readyCalls.skills.length, 1, `staff caster class ${classId} must resume casting after reuse`);
+        assert.strictEqual(readyCalls.attacks.length, 0);
+
+        for (const party of [false, true]) {
+            const session = { partyCompanion: party };
+            const options = { basicAttackOnly: party };
+            const finishCalls = generics();
+            BotAI.executeCombat(session, caster, npc(11122, { hp: 140 }), finishCalls, options);
+            assert.strictEqual(finishCalls.attacks.length, 1, `staff caster class ${classId} may finish in two hits, party=${party}`);
+            assert.strictEqual(finishCalls.skills.length, 0);
+            assert.strictEqual(session.lastCombatDecision.estimatedHits, 2);
+
+            const healthyCalls = generics();
+            BotAI.executeCombat(session, caster, npc(11123, { hp: 141 }), healthyCalls, options);
+            assert.strictEqual(healthyCalls.attacks.length, 0, `staff caster class ${classId} must not exceed the two-hit threshold, party=${party}`);
+        }
+    }
+
+    for (const classId of [21, 34, 49, 50, 51, 52, 100, 107, 115, 116]) {
+        const meleeSupport = bot(classId, [skill(1177, { spell: true })], 100, 'Weapon.Blunt');
+        meleeSupport.canUseSkill = () => false;
+        const calls = generics();
+        BotAI.executeCombat({}, meleeSupport, npc(11124), calls);
+        assert.strictEqual(calls.attacks.length, 1, `melee support class ${classId} must retain its normal attack during reuse`);
+    }
 
     const stunnedFighter = bot(0, [skill(3, { name: 'Power Strike', mp: 5, range: 40, power: 30 })], 100, 'Weapon.Sword');
     EffectStore.apply(stunnedFighter, { key: 'stun', id: 100, type: 'debuff', durationMs: 10000 });

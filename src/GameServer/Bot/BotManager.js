@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const Database    = invoke('Database');
 const Shared      = invoke('GameServer/Network/Shared');
 const DataCache   = invoke('GameServer/DataCache');
@@ -701,6 +702,7 @@ const BotManager = {
                         session.backgroundActivity = botData.backgroundActivity || session.plan;
                         session.currentSpot = botData.currentSpot || null;
                         session.coldLifeState = botData.coldLifeState || null;
+                        session.populationLocationPolicy = botData.populationLocationPolicy || 'return';
                         if (botData.spawnReady !== false) {
                             this.prepareBotForSpawn(session, botData);
                         }
@@ -745,6 +747,7 @@ const BotManager = {
                         BotAI.init(session);
 
                         this.sessions.push(session);
+                        if (privateStore) invoke('GameServer/Bot/Economy/BotTradeChat').offer(session);
                         let modeText = "[Hunting Mode]";
                         if (session.townGossip) modeText = "[Gossip Mode]";
                         if (session.plan === 'pk_hunting') modeText = "[PK Mode]";
@@ -763,12 +766,12 @@ const BotManager = {
     awardBaseGear(id, classId) {
         const items = DataCache.newbieItems.find(ob => ob.classId === classId)?.items ?? [];
         const hasTwoHandedWeapon = items.some((item) => {
-            const template = DataCache.items.find((entry) => entry.selfId === item.selfId);
+            const template = ItemTemplateIndex.findStrict(DataCache.items, item.selfId);
             return Number(template?.etc?.slot || 0) === 14 &&
                 String(template?.template?.kind || '').startsWith('Weapon.');
         });
         items.forEach((item) => {
-            item.slot = DataCache.items.find(ob => ob.selfId === item.selfId)?.etc?.slot ?? 0;
+            item.slot = ItemTemplateIndex.findStrict(DataCache.items, item.selfId)?.etc?.slot ?? 0;
             // Equip weapons/armors automatically for bots
             item.equipped = !(hasTwoHandedWeapon && Number(item.slot) === 8);
             Database.setItem(id, item);
@@ -1374,6 +1377,7 @@ const BotManager = {
 
     botSay(session, text, targetSession = null) {
         if (!session.actor) return;
+        if (targetSession) invoke('GameServer/Bot/AI/BotChatReactions').cancel(session);
         if (targetSession && this.partyChatRecipients(session, targetSession).length === 0) {
             this.botTell(session, targetSession, text);
             return;
@@ -1388,6 +1392,7 @@ const BotManager = {
 
     botTell(session, targetSession, text) {
         if (!session.actor || !targetSession || !targetSession.dataSendToMe) return;
+        invoke('GameServer/Bot/AI/BotChatReactions').cancel(session);
         const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
         const lines = BotChatText.splitForTell(text);
         if (!lines.length) return;
@@ -1421,6 +1426,8 @@ const BotManager = {
         if (botSession.inConversation || botSession.partyCompanion) return;
         const bot = botSession.actor;
         if (!bot) return;
+        const chatterBudget = invoke('GameServer/Bot/AI/BotChatterBudget');
+        if (!chatterBudget.canSend(botSession, 'conversation')) return false;
 
         const SpeckMath = invoke('GameServer/SpeckMath');
         const botPt = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
@@ -1433,6 +1440,8 @@ const BotManager = {
 
             // Target must also be resting in town
             if (session.plan !== 'resting') return false;
+            if (!BotConversation.canStart(botSession, session) || !chatterBudget.canSend(session, 'conversation')) return false;
+            if (BotAmbientDirector.enabled() && !BotAmbientDirector.eligible(botSession, session).ok) return false;
 
             const dist = new SpeckMath.Point3D(target.fetchLocX(), target.fetchLocY(), target.fetchLocZ()).distance(botPt);
             return dist < BotConversation.CONVERSATION_RANGE;
@@ -1453,26 +1462,41 @@ const BotManager = {
     triggerConversation(botSession, targetSession, existingConversation = null, ambientScene = null) {
         const conversation = existingConversation || BotConversation.start(botSession, targetSession);
         if (!conversation) return false;
+        const chatterBudget = invoke('GameServer/Bot/AI/BotChatterBudget');
+        const finish = (reason) => ambientScene
+            ? BotAmbientDirector.finish(ambientScene, reason)
+            : BotConversation.finish(conversation);
+        if (!chatterBudget.canSend(botSession, 'conversation') || !chatterBudget.canSend(targetSession, 'conversation')) {
+            finish('area_cooldown');
+            return false;
+        }
+        chatterBudget.record(botSession, 'conversation');
+        chatterBudget.record(targetSession, 'conversation');
+        let cancelled = false;
 
         const deliver = (index) => {
-            if (ambientScene?.cancelled || ambientScene?.finished) return;
+            if (cancelled || ambientScene?.cancelled || ambientScene?.finished) return;
+            if (!BotConversation.canContinue(conversation)) {
+                cancelled = true;
+                finish('interrupted');
+                return;
+            }
             const line = conversation.lines[index];
             if (!line?.speaker?.actor) return;
             this.botSay(line.speaker, line.text);
         };
 
         deliver(0);
-        setTimeout(() => deliver(1), 2200);
-        setTimeout(() => deliver(2), 4300);
-        setTimeout(() => ambientScene
-            ? BotAmbientDirector.finish(ambientScene, 'completed')
-            : BotConversation.finish(conversation), 6500);
+        const replyDelay = 1800 + Math.floor(Math.random() * 1400);
+        const closeDelay = replyDelay + 1800 + Math.floor(Math.random() * 1400);
+        setTimeout(() => deliver(1), replyDelay);
+        setTimeout(() => deliver(2), closeDelay);
+        setTimeout(() => finish(cancelled ? 'interrupted' : 'completed'), closeDelay + 800);
         return true;
     },
 
     handleBotGlobalShout(botSession) {
-        const text = GLOBAL_SHOUTS[Math.floor(Math.random() * GLOBAL_SHOUTS.length)];
-        this.botShout(botSession, text);
+        return invoke('GameServer/Bot/Population/BotGlobalChat').maybeAmbient(botSession);
     },
 
     findHighDensityCoord() {
@@ -1535,18 +1559,5 @@ const BotManager = {
         }, 30000);
     }
 };
-
-const GLOBAL_SHOUTS = [
-    "WTB starter mats near Talking Island. Check Nika or Tarin.",
-    "Mira has cheap mats and soulshots around Talking Island.",
-    "Need D-grade parts? Maren is buying near Gludio.",
-    "Rina has C-grade craft stock in Dion, cheaper than shop.",
-    "The roads near Gludio feel busy today.",
-    "LFP near the ruins. Need a tank or healer.",
-    "Anyone seen a good hunting group near Gludio?",
-    "Pavel and Tessa are buying Giran drops.",
-    "Who is up for Orc Archer hunting? Level 8 Knight WTT help.",
-    "Iris has B/A mats near Oren, prices below regular shops."
-];
 
 module.exports = BotManager;

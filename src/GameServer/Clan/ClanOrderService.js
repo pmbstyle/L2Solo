@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
@@ -21,7 +22,7 @@ function uniqueIds(values = []) {
 }
 
 function itemTemplate(itemId) {
-    return (DataCache.items || []).find((item) => Number(item.selfId) === Number(itemId)) || null;
+    return ItemTemplateIndex.find(DataCache.items, itemId) || null;
 }
 
 function itemSnapshot(item) {
@@ -209,6 +210,7 @@ async function deliverAvailable(order, clan) {
         });
         lastCode = String(transfer?.code || 'warehouse_transfer_failed');
         if (!transfer?.ok) return { delivered, code: lastCode };
+        invoke('GameServer/Bot/AI/BotClanChat').onWithdrawal(state, transfer);
         if (lastCode !== 'warehouse_withdraw_already_applied') {
             const refreshed = await LifeState.refreshInventory({
                 ...state,

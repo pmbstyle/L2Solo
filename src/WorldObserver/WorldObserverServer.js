@@ -21,6 +21,7 @@ const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
 const PlayerActivitySignal = invoke('GameServer/Bot/Population/PlayerActivitySignal');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const DataCache = invoke('GameServer/DataCache');
+const { equipmentValue, liveEquipmentValue } = invoke('GameServer/Item/EquipmentValue');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const WorldProjection = invoke('WorldObserver/WorldObserverProjection');
 const MIME_TYPES = {
@@ -1258,20 +1259,6 @@ function itemTemplate(selfId) {
     return itemTemplateIndex.get(Number(selfId)) || null;
 }
 
-function itemSelfId(item) {
-    return Number(item?.fetchSelfId?.() ?? item?.selfId ?? 0) || null;
-}
-
-function itemBaseValue(item) {
-    const selfId = itemSelfId(item);
-    const template = itemTemplate(selfId);
-    return Math.max(0, Number(template?.template?.price ?? item?.fetchPrice?.() ?? item?.price ?? 0));
-}
-
-function equipmentValue(items = []) {
-    return Math.round(items.reduce((total, item) => total + itemBaseValue(item), 0));
-}
-
 function liveEquippedItems(actor) {
     return (actor?.backpack?.fetchItems?.() || [])
         .filter((item) => item?.fetchEquipped?.());
@@ -1279,10 +1266,6 @@ function liveEquippedItems(actor) {
 
 function liveAdena(actor) {
     return Math.max(0, Number(actor?.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() || 0));
-}
-
-function liveEquipmentValue(actor) {
-    return equipmentValue(liveEquippedItems(actor));
 }
 
 function coldEquippedItems(state) {
@@ -1614,6 +1597,7 @@ function compactHotDetail(status, session) {
         debuffs: status.debuffs || [],
         timers: status.timers || {},
         decisions: Object.fromEntries(Object.entries(status.decisions || {}).map(([key, value]) => [key, compactDecision(value)])),
+        enemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session),
         build: compactBuild(status.build),
         equipment: compactEquipment(context?.equipment),
         persona: status.persona || null,
@@ -1744,6 +1728,7 @@ function compactColdDetail(state, leaderState = null) {
     return {
         ...compact,
         kind: 'bot',
+        enemies: invoke('GameServer/Bot/AI/BotEnemyMemory').normalize(stats.pvpEnemies),
         clan: compactActorClan(state),
         classId,
         className: className(classId),
@@ -2013,7 +1998,12 @@ function worldStatus() {
         population: PopulationStatus.counts(),
         runtime: {
             heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
-            rssMb: Math.round(memory.rss / 1024 / 1024)
+            rssMb: Math.round(memory.rss / 1024 / 1024),
+            townNavigation: {
+                paths: invoke('GameServer/Bot/AI/TownNavigation').forPool(invoke('GameServer/Geodata/PathfindingWorkerPool')).stats(),
+                workers: invoke('GameServer/Geodata/PathfindingWorkerPool').stats(),
+                traffic: invoke('GameServer/Bot/AI/TownTraffic').stats()
+            }
         }
     };
 }
@@ -2102,7 +2092,12 @@ async function snapshot() {
         population: PopulationStatus.counts(),
         runtime: {
             heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
-            rssMb: Math.round(memory.rss / 1024 / 1024)
+            rssMb: Math.round(memory.rss / 1024 / 1024),
+            townNavigation: {
+                paths: invoke('GameServer/Bot/AI/TownNavigation').forPool(invoke('GameServer/Geodata/PathfindingWorkerPool')).stats(),
+                workers: invoke('GameServer/Geodata/PathfindingWorkerPool').stats(),
+                traffic: invoke('GameServer/Bot/AI/TownTraffic').stats()
+            }
         },
         players,
         bots,

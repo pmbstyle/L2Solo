@@ -354,9 +354,28 @@ function uniqueStrings(values) {
 function forCharacter(character = {}, options = {}) {
     const state = characterState(character);
     const role = options.role || state.role || 'dps';
-    const base = HINTS[role] || HINTS.dps;
+    const shaman = state.classId === 50;
+    const base = shaman ? {
+        ...HINTS.buffer,
+        statPriority: ['pAtk', 'pDef', 'mp_conservation', 'buff_uptime'],
+        specialAbilities: {},
+        skills: [
+            { minLevel: 20, name: 'Soul Cry', intent: 'melee_damage_with_mp_budget' },
+            { minLevel: 20, name: 'Stun Attack', intent: 'blunt_control' },
+            { minLevel: 20, name: 'Life Drain', intent: 'damage_and_hp_recovery' },
+            { minLevel: 20, name: 'Chants', intent: 'party_support' }
+        ],
+        consumables: ['soulshots', 'spiritshots_for_drain']
+    } : HINTS[role] || HINTS.dps;
     const grade = gradeForLevel(state.level);
-    const tier = tierForRole(role, state.level);
+    const tier = shaman ? {
+        min: 20,
+        label: 'orc_shaman_melee_support',
+        exampleGear: ['one-handed physical blunt', 'shield', 'heavy armor'],
+        skillPriorities: [],
+        playstyle: 'melee_leveling_and_party_support',
+        warnings: ['reserve MP for support and recovery']
+    } : tierForRole(role, state.level);
     const family = familyHint(state.classId, role);
     const specialAbilities = base.specialAbilities[grade.rank] || [];
     const skillHints = [

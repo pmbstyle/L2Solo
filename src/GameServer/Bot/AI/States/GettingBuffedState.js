@@ -1,3 +1,4 @@
+const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
 const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
 const CompanionNavigationRecovery = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
@@ -121,12 +122,7 @@ function abandonUnreachableVisit(session, bot, BotAI) {
     CompanionNavigationRecovery.clear(session);
     bot.unselect?.();
     bot.automation?.abortAll?.(bot);
-    TownChatter.say(session, BotAI, 'newbie-guide-unreachable', [
-        "I couldn't reach the Newbie Guide. I'll retry later.",
-        'No usable route to the Newbie Guide; I will retry later.',
-        'The guide is inaccessible from here. I will retry later.',
-        "Couldn't get to the guide, so I will retry later."
-    ], { priority: 'coordination' });
+    TownChatter.say(session, BotAI, 'newbie-guide-unreachable', Speech.lines('town.newbie-guide-unreachable'), { priority: 'coordination' });
 }
 
 module.exports = {
@@ -151,6 +147,7 @@ module.exports = {
             head: closestGuide.head
         };
         const guideApproach = TownNpcApproach.planOpen(session, bot, guideTarget, 'newbie_guide');
+        if (guideApproach?.waiting) return;
         const readyToInteract = guideApproach?.ready === true;
 
         if (!readyToInteract) {
@@ -181,18 +178,8 @@ module.exports = {
             );
             const returningToParty = session.resumeAfterBuff?.plan === 'following';
             TownChatter.say(session, BotAI, 'newbie-blessing-complete', returningToParty
-                ? [
-                    'Blessing refreshed. Returning to the party.',
-                    'Fresh buffs are up; heading back to the group.',
-                    'All blessed and ready. On my way back.',
-                    'Rebuff complete — returning to everyone now.'
-                ]
-                : [
-                    'Blessing refreshed. Ready to head out.',
-                    'Fresh buffs are up; time to get moving.',
-                    'All blessed and ready for another run.',
-                    'Rebuff complete. Back to work.'
-                ]);
+            ? Speech.lines('town.newbie-blessing-complete.party')
+            : Speech.lines('town.newbie-blessing-complete.solo'));
             finishVisit(session, bot, Generics);
         }
     }

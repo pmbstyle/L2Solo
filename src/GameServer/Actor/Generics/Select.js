@@ -119,6 +119,11 @@ function openManufactureWindow(session, crafter) {
 
 function select(session, actor, data) {
     const Generics = invoke(path.actor);
+    // AI target refreshes are not client double-clicks. Combat planners
+    // choose whether to cast, finish with a weapon, or hold their attack.
+    const selectionOnly = session?.constructor?.name === 'BotSession'
+        || String(session?.accountId || '').startsWith('bot_');
+    if (selectionOnly && Number(actor.fetchDestId()) === Number(data.id)) return;
 
     if (actor.fetchId() === data.id) { // Click on self
         actor.setDestId(actor.fetchId());
@@ -180,6 +185,8 @@ function select(session, actor, data) {
 
     // Fallback to World lookups for non-bot entities
     World.fetchNpc(data.id).then((npc) => {
+        // Another AI pass can select this target while the lookup is pending.
+        if (selectionOnly && Number(actor.fetchDestId()) === Number(npc.fetchId())) return;
         if (npc.fetchId() !== actor.fetchDestId()) { // First click on a Creature
             actor.setDestId(npc.fetchId());
             npc.setLocZ(actor.fetchLocZ()); // TODO: Remove, uber hack...
@@ -199,6 +206,7 @@ function select(session, actor, data) {
             Generics.pickupRequest(session, actor, data);
         }).catch(() => {
             World.fetchUser(data.id).then((user) => {
+                if (selectionOnly && Number(actor.fetchDestId()) === Number(user.fetchId())) return;
                 if (user.fetchId() !== actor.fetchDestId()) { // First click on a User
                     actor.setDestId(user.fetchId());
                     session.dataSendToMe(ServerResponse.destSelected(actor.fetchDestId()));

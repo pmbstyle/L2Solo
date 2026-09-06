@@ -3,6 +3,9 @@ const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const PopulationMetrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool');
+const TownNavigation = invoke('GameServer/Bot/AI/TownNavigation');
+const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
+const TownTraffic = invoke('GameServer/Bot/AI/TownTraffic');
 
 // World.fetchVisibleUsers broadcasts movement to observers inside this same
 // radius.  Low-detail simulation must never silently relocate a bot that is
@@ -132,7 +135,9 @@ function shouldSkipInitialWaypoint(index, path, distance, dz) {
 
 function startPathMovement({ session, actor, path, isClose, approachingObservers, moveGoal }) {
     const moveAlongPath = (index) => {
+        if (moveGoal && session.activeMoveGoal !== moveGoal) return;
         if (index >= path.length) {
+            if (moveGoal?.town) TownTraffic.remove(Number(actor.fetchId()));
             session.moveTimer = null;
             actor.state.setTowards(false);
             clearMoveGoal(session, moveGoal);
@@ -194,7 +199,7 @@ function startPathMovement({ session, actor, path, isClose, approachingObservers
         });
 
         const advanceSegment = () => {
-            if (!session.moveTimer) return;
+            if (!session.moveTimer || (moveGoal && session.activeMoveGoal !== moveGoal)) return;
             const elapsed = Math.max(0, Date.now() - segmentStartedAt);
             const ratio = Math.min(1, elapsed / duration);
             if (ratio >= 1) {
@@ -217,6 +222,25 @@ function startPathMovement({ session, actor, path, isClose, approachingObservers
                 const snappedZ = GeodataEngine.getHeight(nextX, nextY, nextZ);
                 actor.setLocXYZ({ locX: nextX, locY: nextY, locZ: snappedZ });
                 invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
+                if (moveGoal?.town) {
+                    const point = locOf(actor);
+                    TownTraffic.update(Number(actor.fetchId()), point, nextLoc, speed);
+                    const adjustment = TownTraffic.steer(session, actor, point, nextLoc,
+                        distanceToClosestPlayer(moveGoal.observers || [], point));
+                    if (adjustment?.point) {
+                        path.splice(index, 0, adjustment.point);
+                        moveAlongPath(index);
+                        return;
+                    }
+                    if (adjustment?.waitMs) {
+                        TownTraffic.update(Number(actor.fetchId()), point);
+                        session.dataSendToMeAndOthers(ServerResponse.stopMove(actor.fetchId(), {
+                            ...point, head: actor.fetchHead?.() || 0
+                        }), actor);
+                        session.moveTimer = setTimeout(() => moveAlongPath(index), adjustment.waitMs);
+                        return;
+                    }
+                }
                 const remaining = Math.max(1, duration - elapsed);
                 session.moveTimer = setTimeout(advanceSegment, Math.min(tickRate, remaining));
             }
@@ -357,8 +381,10 @@ function moveTo(session, actor, coords) {
         // expensive autonomous routes as well.
         const useWorkerPathfinding = isCompanion || pathMaxNodes > COMPANION_PATH_MAX_NODES;
         const useSegmentedTownRoute = pathMaxNodes > COMPANION_PATH_MAX_NODES;
+        const townName = useSegmentedTownRoute && TownNavigation.enabled()
+            ? TownTransitPolicy.routeTown({ locX: startX, locY: startY, locZ: startZ }, requestedTo) : null;
 
-        if (shouldUseLowLodWarp({
+        if (!townName && shouldUseLowLodWarp({
             startDistance: distanceToPlayer,
             destinationDistance: destinationDistanceToPlayer,
             isCompanion,
@@ -391,6 +417,10 @@ function moveTo(session, actor, coords) {
         let pathTarget = { ...requestedTo };
         const pathStartedAt = Date.now();
         const moveGoal = previewOnly ? null : beginMoveGoal(session, actor, requestedTo, coords.targetActor);
+        if (moveGoal && townName) {
+            moveGoal.town = townName;
+            moveGoal.observers = onlinePlayers;
+        }
 
         if (useSegmentedTownRoute && !previewOnly) {
             const egress = takeTownNpcEgress(session, { locX: startX, locY: startY, locZ: startZ });
@@ -435,7 +465,9 @@ function moveTo(session, actor, coords) {
         }
 
         if (useWorkerPathfinding && !previewOnly) {
-            const pool = session.pathfindingWorkerPool || PathfindingWorkerPool;
+            const rawPool = session.pathfindingWorkerPool || PathfindingWorkerPool;
+            const pool = townName ? TownNavigation.forPool(rawPool) : rawPool;
+            let pathArrivalRadius = arrivalRadius;
             const routeGeneration = Number(session.moveRouteGeneration || 0);
             const actorId = Number(actor.fetchId());
             const leaderSession = session.followPlayerSession;
@@ -445,8 +477,9 @@ function moveTo(session, actor, coords) {
             const start = { locX: startX, locY: startY, locZ: startZ };
             if (useSegmentedTownRoute) {
                 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
-                const routeResult = TownPathfinder.routeWithSession(session, actor, start, requestedTo);
+                const routeResult = TownPathfinder.routeWithSession(session, townName ? null : actor, start, requestedTo);
                 pathTarget = { ...routeResult.to };
+                pathArrivalRadius = routeResult.arrivalRadius ?? arrivalRadius;
                 townRouteDiagnostics = routeResult.diagnostics;
                 coords.to.locX = pathTarget.locX;
                 coords.to.locY = pathTarget.locY;
@@ -506,8 +539,9 @@ function moveTo(session, actor, coords) {
                     destinationDistanceToPlayer,
                     strategy,
                     worker: true,
-                    arrivalRadius,
+                    arrivalRadius: pathArrivalRadius,
                     maxNodes: pathMaxNodes,
+                    ...(townName ? { townNavigation: pool.stats() } : {}),
                     ...(error ? { error: error.code || error.message || String(error) } : {}),
                     at: Date.now()
                 };
@@ -525,7 +559,8 @@ function moveTo(session, actor, coords) {
                 endY: target.locY,
                 endZ: target.locZ,
                 maxNodes: pathMaxNodes,
-                goalRadius: arrivalRadius,
+                goalRadius: pathArrivalRadius,
+                ...(townName ? { town: townName } : {}),
                 goalZTolerance: ACTIVE_GOAL_Z_TOLERANCE
             }, {
                 key: requestKey,
@@ -549,7 +584,7 @@ function moveTo(session, actor, coords) {
                 }
 
                 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
-                const routeResult = TownPathfinder.routeWithSession(session, actor, start, requestedTo);
+                const routeResult = TownPathfinder.routeWithSession(session, townName ? null : actor, start, requestedTo);
                 pathTarget = { ...routeResult.to };
                 townRouteDiagnostics = routeResult.diagnostics;
                 const waypointArrivalRadius = Number.isFinite(routeResult.arrivalRadius)
@@ -569,6 +604,7 @@ function moveTo(session, actor, coords) {
                     endZ: pathTarget.locZ,
                     maxNodes: pathMaxNodes,
                     goalRadius: waypointArrivalRadius,
+                    ...(townName ? { town: townName } : {}),
                     goalZTolerance: ACTIVE_GOAL_Z_TOLERANCE
                 }, {
                     key: requestKey,
@@ -616,7 +652,7 @@ function moveTo(session, actor, coords) {
                 destinationDistanceToPlayer,
                 strategy: 'worker_pending',
                 worker: true,
-                arrivalRadius,
+                arrivalRadius: pathArrivalRadius,
                 maxNodes: pathMaxNodes,
                 at: Date.now()
             };

@@ -39,6 +39,8 @@ const originalSetTimeout = global.setTimeout;
 const originalPlanForActor = ShotStock.planForActor;
 const originalShotAmount = ShotStock.shotAmount;
 const originalPurchaseActorRestock = ShotStock.purchaseActorRestock;
+const BotManager = invoke('GameServer/Bot/BotManager');
+const originalPartySay = BotManager.botPartySay;
 const originalApplyFullNewbieBlessing = BotBuffs.applyFullNewbieBlessing;
 const originalNeedsNewbieRefresh = BotBuffs.needsNewbieRefresh;
 
@@ -316,12 +318,14 @@ try {
         'newbie_guide'
     ).destination;
     const unreachableGuideSession = {
+        actor: unreachableGuideBot,
         plan: 'getting_buffed',
         partyCompanion: true,
         townNpcApproach: seededGuideApproach.townNpcApproach,
+        townNpcSlot: seededGuideApproach.townNpcSlot,
         resumeAfterBuff: {
             plan: 'following',
-            followPlayerSession: { actor: companionLeader },
+            followPlayerSession: { actor: companionLeader, dataSendToMe() {} },
             partyCompanion: true,
             botStay: false,
             stayLocation: null,
@@ -340,9 +344,14 @@ try {
         retryAt: 0
     };
     const unreachableGuideMessages = [];
+    BotManager.botPartySay = function (session, text) {
+        const sent = originalPartySay.call(this, session, text);
+        if (sent) unreachableGuideMessages.push(text);
+        return sent;
+    };
     GettingBuffedState.tick(unreachableGuideSession, unreachableGuideBot, noTeleportGenerics, {
         getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
-        say(_session, text) { unreachableGuideMessages.push(text); }
+        say() { throw new Error('companion coordination must use party delivery'); }
     });
     assert.strictEqual(unreachableGuideSession.plan, 'following', 'an exhausted guide route should return the companion to follow instead of hanging');
     assert.strictEqual(unreachableGuideSession.roleDecision.reason, 'newbie_guide_route_unreachable');
@@ -429,6 +438,7 @@ try {
 
     console.log('Bot travel realism checks passed');
 } finally {
+    BotManager.botPartySay = originalPartySay;
     global.setTimeout = originalSetTimeout;
     ShotStock.planForActor = originalPlanForActor;
     ShotStock.shotAmount = originalShotAmount;

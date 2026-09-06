@@ -1,81 +1,142 @@
+const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
+const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
+const Reactions = invoke('GameServer/Bot/AI/BotChatReactions');
+const Budget = invoke('GameServer/Bot/AI/BotChatterBudget');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const ServerResponse = invoke('GameServer/Network/Response');
 
-let lastGlobalAt = 0;
-
-function coldActor(state) {
-    return {
-        fetchId: () => Number(state?.characterId || 0),
-        fetchName: () => state?.name || 'Bot'
-    };
-}
+const TOPIC_INTERVAL_MS = 15 * 60 * 1000;
+const SPEAKER_INTERVAL_MS = 10 * 60 * 1000;
+let lastGlobalAt = null;
+let nextGlobalAt = 0;
+const recent = [];
+const lastTextByTopic = new Map();
 
 function realPlayerSessions() {
     const World = invoke('GameServer/World/World');
-    return World.user.sessions.filter((session) => (
-        session.socket &&
-        typeof session.socket.write === 'function' &&
-        session.accountId &&
-        !String(session.accountId).startsWith('bot_')
+    return (World.user?.sessions || []).filter((session) => (
+        session.socket && typeof session.socket.write === 'function' &&
+        session.accountId && !String(session.accountId).startsWith('bot_')
     ));
 }
 
-function eventChance(event) {
-    if (!event) return 0;
-    if (event.type === 'death' || Number(event.weight || 0) >= 4) return Config.globalChatImportantChance;
-    if (event.type === 'party') return Config.globalChatChance * 2;
-    if (event.type === 'hunt' && Number(event.meta?.wins || 0) >= 3) return Config.globalChatChance;
-    return 0;
+function available(id, topic, now) {
+    while (recent.length && now - recent[0].at >= TOPIC_INTERVAL_MS) recent.shift();
+    if (lastGlobalAt !== null && now < nextGlobalAt) return false;
+    if (Reactions.snapshot(now).global) return false;
+    if (!Budget.canReply(id, now)) return false;
+    const topicInterval = topic === 'death' ? TOPIC_INTERVAL_MS : Config.globalChatTopicIntervalMs;
+    return !recent.some((entry) => (entry.topic === topic && now - entry.at < topicInterval) ||
+        (entry.id === id && now - entry.at < SPEAKER_INTERVAL_MS));
 }
 
-function lineForEvent(state, event) {
-    const spot = event?.meta?.spotId || state?.spotId || state?.homeRegion || 'my spot';
-    if (event.type === 'death') {
-        return `Careful near ${spot}. I just died there.`;
-    }
-    if (event.type === 'party') {
-        return `We formed a party near ${spot}. Could use one more later.`;
-    }
-    if (event.type === 'hunt') {
-        return `Good run near ${spot}: ${event.meta?.wins || 'a few'} fights down.`;
-    }
-    return '';
+function speakerAvailable(id, now) {
+    return Budget.canReply(id, now) && !recent.some(entry => entry.id === id && now - entry.at < SPEAKER_INTERVAL_MS);
 }
 
-function pickEvent(events = []) {
-    return events
-        .filter((event) => eventChance(event) > 0)
-        .sort((a, b) => Number(b.weight || 0) - Number(a.weight || 0))[0] || null;
+function deliverReaction(source, text, topic, now) {
+    if (Config.globalChatEnabled === false) return false;
+    const players = realPlayerSessions();
+    if (!players.length) return false;
+    const actor = source.actor || {
+        fetchId: () => Number(source.characterId), fetchName: () => source.name
+    };
+    const packet = ServerResponse.speak(actor, { kind: 1, text: text.slice(0, 120) });
+    players.forEach(session => session.dataSendToMe(packet));
+    Budget.recordSpeaker(actor.fetchId(), now);
+    // A short exchange borrows from the following quiet period. Replies do
+    // not multiply the average global traffic budget by the number of bots.
+    nextGlobalAt = Math.max(now, nextGlobalAt) + Config.globalChatMinIntervalMs;
+    recent.push({ id: actor.fetchId(), topic: `reply:${topic}`, at: now });
+    if (recent.length > 128) recent.shift();
+    console.info('BotGlobalChat :: %s replied to %s: %s', actor.fetchName(), topic, text);
+    return true;
 }
 
-const BotGlobalChat = {
-    maybeAnnounce(state, events = []) {
-        if (Config.globalChatEnabled === false) return false;
-        if (!state || !events.length) return false;
-        if (Date.now() - lastGlobalAt < Config.globalChatMinIntervalMs) return false;
+function offerReply(source, now = Date.now()) {
+    return Config.globalChatEnabled !== false && Reactions.offerGlobal(source, deliverReaction, speakerAvailable, now);
+}
 
-        const event = pickEvent(events);
-        if (!event) return false;
-        if (Math.random() > eventChance(event)) return false;
+function send(actor, topic, templates, now, source) {
+    const id = actor.fetchId();
+    if (!available(id, topic, now)) return false;
+    const players = realPlayerSessions();
+    if (!players.length) return false;
+    const fresh = templates.filter(text => text !== lastTextByTopic.get(topic));
+    const pool = fresh.length ? fresh : templates;
+    const text = Voice.line(`global.${topic}`, source, {}, [lastTextByTopic.get(topic)]) ||
+        pool[Math.floor(Math.random() * pool.length)].slice(0, 120);
+    const packet = ServerResponse.speak(actor, { kind: 1, text });
+    players.forEach((session) => session.dataSendToMe(packet));
+    Budget.recordSpeaker(id, now);
+    lastTextByTopic.set(topic, text);
+    lastGlobalAt = now;
+    nextGlobalAt = now + Config.globalChatMinIntervalMs * (1 + Math.random() * 0.75);
+    recent.push({ id, topic, at: now });
+    if (recent.length > 128) recent.shift();
+    console.info('BotGlobalChat :: %s announced %s: %s', actor.fetchName(), topic, text);
+    Reactions.openGlobal(source, topic, now);
+    return true;
+}
 
-        const players = realPlayerSessions();
-        if (players.length === 0) return false;
+function maybeAnnounce(state, events = [], now = Date.now()) {
+    invoke('GameServer/Bot/AI/BotClanChat').onResolved(state, events, now);
+    invoke('GameServer/Bot/Economy/BotTradeChat').flush(now);
+    if (Config.globalChatEnabled === false || !state) return false;
+    if (offerReply(state, now)) return true;
+    if (Reactions.isBusy(state, now)) return false;
+    // Ordinary kills and party formation already have better homes: the
+    // event journal and factual recruitment ads. A death is an occasional
+    // reaction, not a population-wide status ticker.
+    const event = events.find((candidate) => candidate.type === 'death');
+    if (!event) return ambient(state, now);
+    if (!available(Number(state.characterId || 0), 'death', now)) return false;
+    if (Math.random() >= Config.globalChatImportantChance * Voice.initiation(state)) return false;
+    return send({
+        fetchId: () => Number(state.characterId || 0),
+        fetchName: () => state.name || 'Bot'
+    }, 'death', Speech.lines('global.death'), now, state);
+}
 
-        const text = lineForEvent(state, event).slice(0, 120);
-        if (!text) return false;
+function maybeAmbient(session, now = Date.now()) {
+    if (offerReply(session, now)) return true;
+    return ambient(session, now);
+}
 
-        const packet = ServerResponse.speak(coldActor(state), { kind: 1, text });
-        players.forEach((session) => session.dataSendToMe(packet));
-        lastGlobalAt = Date.now();
+function ambient(session, now) {
+    if (Config.globalChatEnabled === false || !session) return false;
+    const id = Number(session.actor?.fetchId() || session.characterId || 0);
+    if (!available(id, '', now)) return false;
+    if (!session.actor) {
+        // Fresh cold simulation commits are also opportunities to begin a
+        // conversation. Most of the population never receives a hot AI tick.
+        if (!Reactions.canParticipate(session) || Reactions.isBusy(session, now) ||
+            Math.random() >= Config.globalChatChance * Voice.initiation(session)) return false;
+    } else if (session.partyCompanion ||
+        session.inConversation || session.actor.isDead?.() || session.actor.state?.fetchDead?.() ||
+        !['resting', 'hunting'].includes(session.plan) || Reactions.isBusy(session, now)) return false;
+    if (session.actor && Math.random() >= Math.min(1, 0.65 * Voice.initiation(session))) return false;
+    const topics = [
+        ['break', Speech.lines('global.break')],
+        ['roads', Speech.lines('global.roads')],
+        ['patience', Speech.lines('global.patience')],
+        ['company', Speech.lines('global.company')]
+    ].filter(([topic]) => available(id, topic, now));
+    if (!topics.length) return false;
+    const [topic, lines] = Voice.pick(topics, ([topic]) => Voice.topicWeight(session, topic));
+    return send(session.actor || { fetchId: () => id, fetchName: () => session.name }, topic, lines, now, session);
+}
 
-        console.info(
-            'BotGlobalChat :: %s announced %s: %s',
-            state.name || 'Bot',
-            event.type,
-            text
-        );
-        return true;
-    }
+module.exports = {
+    announceAttack(session, attacker, now = Date.now()) {
+        if (Config.globalChatEnabled === false || !session?.actor || !attacker) return false;
+        const name = String(attacker.fetchName?.() || 'Someone').replace(/\s+/g, ' ').slice(0, 24);
+        return send(session.actor, 'pvp_attack', [
+            `${name} just jumped me while I was minding my own business.`,
+            `Watch out for ${name}. Attacking people who are just trying to hunt.`,
+            `${name} attacked us out of nowhere. Can't even hunt in peace.`
+        ], now, session);
+    },
+    maybeAnnounce, maybeAmbient, offerReply, TOPIC_INTERVAL_MS, SPEAKER_INTERVAL_MS,
+    reset() { lastGlobalAt = null; nextGlobalAt = 0; recent.length = 0; lastTextByTopic.clear(); Reactions.reset(); Voice.reset(); }
 };
-
-module.exports = BotGlobalChat;

@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 
 function amount(state = {}, selfId) {
@@ -6,7 +7,7 @@ function amount(state = {}, selfId) {
 
 function itemName(selfId, plan = {}) {
     const material = (plan.materials || []).find((entry) => Number(entry.selfId) === Number(selfId));
-    return material?.name || (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId))?.template?.name || `Item ${selfId}`;
+    return material?.name || ItemTemplateIndex.find(DataCache.items, selfId)?.template?.name || `Item ${selfId}`;
 }
 
 function active(plan) {

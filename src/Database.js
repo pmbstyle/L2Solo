@@ -139,7 +139,7 @@ function record(operation, wait, run, read, failed = false) {
     metrics.byOperation.set(operation, entry);
 }
 
-function enqueue(work, { operation = 'raw', read = false } = {}) {
+function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}) {
     if (shuttingDown) {
         return Promise.reject(new Error(`SQLite shutdown is in progress (${operation})`));
     }
@@ -158,6 +158,10 @@ function enqueue(work, { operation = 'raw', read = false } = {}) {
             throw error;
         } finally {
             metrics.pending -= 1;
+            if (typeof onTiming === 'function') {
+                // Observability must never turn a committed operation into a failure.
+                try { onTiming({ waitMs: wait, runMs: now() - startedAt }); } catch (_) {}
+            }
         }
     };
     const queued = queryTail.then(execute, execute);
@@ -175,7 +179,7 @@ function enqueue(work, { operation = 'raw', read = false } = {}) {
     return result;
 }
 
-function run(sql, params = [], operation, readOverride = null) {
+function run(sql, params = [], operation, readOverride = null, onTiming = null) {
     const read = readOverride === null ? isReadStatement(sql) : !!readOverride;
     return enqueue(() => {
         if (!connection) throw new Error(`SQLite is not initialized (${operation || operationName(sql)})`);
@@ -186,7 +190,7 @@ function run(sql, params = [], operation, readOverride = null) {
             affectedRows: Number(result.changes || 0),
             insertId: Number(result.lastInsertRowid || 0)
         };
-    }, { operation: operation || operationName(sql), read });
+    }, { operation: operation || operationName(sql), read, onTiming });
 }
 
 function insert(table, values, operation) {
@@ -1033,6 +1037,55 @@ function applySchemaMigrations() {
             LEFT JOIN afk_trade_shops shops ON shops.id = events.shopId
             LEFT JOIN characters owner ON owner.id = events.ownerId
             LEFT JOIN characters counterparty ON counterparty.id = events.counterpartyId;
+        `)],
+        [33, () => connection.exec(`
+            CREATE INDEX IF NOT EXISTS bot_goal_state_review_queue ON bot_goal_state(
+                updatedAt,
+                COALESCE(CAST(json_extract(goalJson, '$.nextReviewAt') AS INTEGER), 0),
+                characterId
+            );
+            CREATE INDEX IF NOT EXISTS bot_life_state_goal_review
+                ON bot_life_state(characterId, updatedAt)
+                WHERE phase = 'cold'
+                AND (partyId IS NULL OR partyId = '')
+                AND activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting');
+            CREATE INDEX IF NOT EXISTS warehouse_items_positive_self_owner
+                ON warehouse_items(selfId, characterId) WHERE amount > 0;
+            CREATE INDEX IF NOT EXISTS bot_life_state_warehouse_release
+                ON bot_life_state(characterId, updatedAt)
+                WHERE phase = 'cold' AND simulationOwner = 'legacy_main'
+                AND accountName NOT LIKE 'bot_craft_%'
+                AND (partyId IS NULL OR partyId = '')
+                AND activity IN ('hunting', 'resting');
+        `)],
+        [34, () => connection.exec(`
+            CREATE INDEX IF NOT EXISTS bot_life_state_warehouse_demand
+                ON bot_life_state(updatedAt, characterId)
+                WHERE phase = 'cold' AND simulationOwner = 'legacy_main'
+                AND accountName NOT LIKE 'bot_craft_%'
+                AND (partyId IS NULL OR partyId = '')
+                AND activity IN ('hunting', 'resting');
+        `)],
+        [35, () => connection.exec(`
+            CREATE INDEX IF NOT EXISTS bot_life_state_market_review
+                ON bot_life_state(updatedAt, characterId,
+                    COALESCE(CAST(json_extract(statsJson, '$.marketSellRetryAfter') AS INTEGER), 0))
+                WHERE phase = 'cold'
+                AND (partyId IS NULL OR partyId = '')
+                AND activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting');
+        `)],
+        [36, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS character_saved_locations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                characterId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                locX INTEGER NOT NULL,
+                locY INTEGER NOT NULL,
+                locZ INTEGER NOT NULL,
+                head INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS character_saved_locations_owner
+                ON character_saved_locations(characterId, id);
         `)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
@@ -1936,7 +1989,7 @@ const Database = {
     },
 
     execute(statement, operation = 'raw') {
-        return run(statement[0], statement[1] || [], operation, statement[2]?.read ?? null);
+        return run(statement[0], statement[1] || [], operation, statement[2]?.read ?? null, statement[2]?.onTiming);
     },
 
     recordMarketTrade(trade = {}) {
@@ -3579,6 +3632,20 @@ const Database = {
         }, 'clan-warehouse:player-withdraw'));
     },
 
+    fetchSavedLocations(characterId) {
+        return run('SELECT * FROM character_saved_locations WHERE characterId = ? ORDER BY id DESC', [characterId], 'saved-location:list');
+    },
+    saveLocation(characterId, name, coords) {
+        return insert('character_saved_locations', {
+            characterId, name, locX: coords.locX, locY: coords.locY, locZ: coords.locZ, head: coords.head
+        }, 'saved-location:insert');
+    },
+    fetchSavedLocation(characterId, id) {
+        return selectOne('character_saved_locations', ['*'], 'characterId = ? AND id = ?', [characterId, id], 'saved-location:one');
+    },
+    deleteSavedLocation(characterId, id) {
+        return remove('character_saved_locations', 'characterId = ? AND id = ?', [characterId, id], 'saved-location:delete');
+    },
     fetchCharacterQuests(characterId) { return select('character_quests', ['*'], 'characterId = ?', [characterId], 'quest:list'); },
     setCharacterQuest(characterId, questId, state, variables) { return run(UPSERT_CHARACTER_QUEST, [characterId, questId, state, JSON.stringify(variables || {})], 'quest:upsert'); },
     deleteCharacterQuest(characterId, questId) { return remove('character_quests', 'characterId = ? AND questId = ?', [characterId, questId], 'quest:delete'); },
@@ -4295,7 +4362,8 @@ const Database = {
                 MIN(CASE WHEN status = 'pending' AND availableAt <= ? THEN createdAt END) AS oldestReadyAt,
                 MIN(CASE WHEN status = 'running' THEN updatedAt END) AS oldestRunningAt,
                 COALESCE(MAX(CASE WHEN status IN ('pending', 'running') THEN attempt ELSE 0 END), 0) AS maxAttempt
-            FROM clan_actions`, [timestamp, timestamp, timestamp], 'clan-action:queue-stats').then((rows) => {
+            FROM clan_actions
+            WHERE status IN ('pending', 'running')`, [timestamp, timestamp, timestamp], 'clan-action:queue-stats').then((rows) => {
             const row = rows[0] || {};
             const oldestPendingAt = Number(row.oldestPendingAt || 0);
             const oldestReadyAt = Number(row.oldestReadyAt || 0);

@@ -420,6 +420,40 @@ try {
     assert.strictEqual(fallbackRoute.spotId, fallbackSpot.id,
         'a no-party required plan must route to a safe fallback instead of its party-only source');
 
+    GearAcquisitionPlanner.safeFallbackForPlan = originalSafeFallbackForPlan;
+    const profiles = [currentSpot, targetSpot];
+    let rewardScans = 0;
+    const rewards = DataCache.npcRewards;
+    const originalForEach = rewards.forEach;
+    rewards.forEach = function (...args) {
+        rewardScans += 1;
+        return originalForEach.apply(this, args);
+    };
+    try {
+        for (const characterId of [51, 52]) {
+            coordinator.routeFor({
+                characterId,
+                phase: 'cold',
+                activity: 'hunting',
+                level: 16,
+                spotId: currentSpot.id,
+                loc: { locX: 1, locY: 2, locZ: 3 },
+                stats: { equipmentPlan: {
+                    status: 'active', strategy: 'direct_drop',
+                    partyNeed: 'required', target: { selfId: 1 }
+                } }
+            }, currentSpot, null, [], {
+                profiles,
+                spots: new Map(profiles.map((spot) => [spot.id, spot])),
+                occupancy: {}
+            });
+        }
+        assert.strictEqual(rewardScans, 1,
+            'repeated cold fallback routes must reuse the reward index across context batches');
+    } finally {
+        delete rewards.forEach;
+    }
+
     console.log('Cold worker leveling route planning checks passed');
 } finally {
     SpotProfiles.findForState = originalFindForState;

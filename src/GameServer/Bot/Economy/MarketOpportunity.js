@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const World = invoke('GameServer/World/World');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
@@ -33,7 +34,7 @@ function coldMarketStates() {
 }
 
 function itemName(selfId) {
-    return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId))?.template?.name || `Item ${selfId}`;
+    return ItemTemplateIndex.find(DataCache.items, selfId)?.template?.name || `Item ${selfId}`;
 }
 
 function reservedBuyAdena(store) {

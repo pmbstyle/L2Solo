@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const World = invoke('GameServer/World/World');
 const ServerResponse = invoke('GameServer/Network/Response');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -7,7 +8,7 @@ const PARTY_WITHDRAWAL_WAIT_MS = 10000;
 const PARTY_WITHDRAWAL_POLL_MS = 10;
 
 function itemName(selfId) {
-    return (DataCache.items || []).find((entry) => Number(entry.selfId) === Number(selfId))?.template?.name
+    return ItemTemplateIndex.find(DataCache.items, selfId)?.template?.name
         || `Item ${selfId}`;
 }
 
@@ -180,6 +181,7 @@ async function applyLifecycle(session, nextState, reason = 'merchant_market_main
     applyOpened(actor, nextStore);
     session.merchantStoreMutation = false;
     const openBroadcastWarning = safelyNotify('open', () => notifyOpened(session, actor, nextStore));
+    invoke('GameServer/Bot/Economy/BotTradeChat').offer(session);
     return {
         ok: true,
         reason: 'store_reopened',
@@ -265,6 +267,7 @@ async function republish(session, agreement) {
     applyOpened(actor, nextStore);
     session.merchantStoreMutation = false;
     const openBroadcastWarning = safelyNotify('open', () => notifyOpened(session, actor, nextStore));
+    invoke('GameServer/Bot/Economy/BotTradeChat').offer(session);
     return {
         ok: true,
         reason: 'store_reopened',

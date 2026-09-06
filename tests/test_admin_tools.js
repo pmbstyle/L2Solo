@@ -193,7 +193,7 @@ const expectedSupplyGroups = {
     'supply-soulshots': [1835, 1463, 1464, 1465, 1466, 1467],
     'supply-spiritshots': [2509, 2510, 2511, 2512, 2513, 2514],
     'supply-blessed-spiritshots': [3947, 3948, 3949, 3950, 3951, 3952],
-    'supply-arrows': [17, 1341, 1342, 1343, 1344, 1345]
+    'supply-arrows': [17, 1341, 1342, 1343, 1344, 1345, 2508]
 };
 for (const [category, itemIds] of Object.entries(expectedSupplyGroups)) {
     assert.deepStrictEqual(AdminShop.itemIdsForSource(adminShop[category]), itemIds, `${category} should resolve to its explicit item list`);

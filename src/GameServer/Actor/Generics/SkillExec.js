@@ -83,7 +83,7 @@ function skillExec(session, actor, data) {
                 if (skill.fetchTargetKind() !== 'enemy') {
                     actor.attack.remoteHit(session, user, skill);
                 }
-                else if (data.ctrl) {
+                else if (data.ctrl || user.fetchPvpFlag?.() > 0 || user.fetchKarma?.() > 0) {
                     if (!ArenaCombatRules.canInteract(actor, user)) return;
                     if (utils.isInPeaceZone(actor.fetchLocX(), actor.fetchLocY()) || utils.isInPeaceZone(user.fetchLocX(), user.fetchLocY())) {
                         const ServerResponse = invoke('GameServer/Network/Response');

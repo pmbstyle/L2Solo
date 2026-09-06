@@ -51,6 +51,8 @@ function main() {
         Governor.complete(goal.lease, { timestamp: 1091, durationMs: 50 });
         Governor.recordStage('goal_metadata', 'projection', 12);
         Governor.recordStage('goal_metadata', 'projection', 28);
+        Governor.recordProgress('goal_metadata', { selected: 3, pending: 3, deadlineStops: 1 });
+        Governor.recordProgress('goal_metadata', { processed: 2, skipped: 1, resumed: 1, pending: 0 });
 
         const playerExhausted = Governor.admit({
             job: 'clan_founders', resource: 'sqlite-heavy', requestedBudgetMs: 10,
@@ -89,6 +91,8 @@ function main() {
         assert.strictEqual(snapshot.jobs.clan_actions.overruns, 1);
         assert.strictEqual(snapshot.jobs.goal_metadata.stages.projection.p95Ms, 28);
         assert.strictEqual(snapshot.jobs.goal_metadata.stages.projection.avgMs, 20);
+        assert.deepStrictEqual(snapshot.jobs.goal_metadata.progress,
+            { selected: 3, processed: 2, skipped: 1, resumed: 1, deadlineStops: 1, pending: 0 });
         console.log('Background work governor checks passed');
     } finally {
         Object.assign(Config, original);

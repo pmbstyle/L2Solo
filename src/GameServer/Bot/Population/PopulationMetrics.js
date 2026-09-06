@@ -1,4 +1,5 @@
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+const { monitorEventLoopDelay } = require('perf_hooks');
 
 function now() {
     return Date.now();
@@ -138,6 +139,8 @@ const PopulationMetrics = {
         stateRetentionPolicyRows: new Map()
     },
     timer: null,
+    delayHistogram: null,
+    delayWindowStartedAt: 0,
 
     init() {
         if (!this.startedAt) {
@@ -147,6 +150,10 @@ const PopulationMetrics = {
 
     startEventLoopMonitor() {
         if (this.timer || Config.enabled === false) return;
+
+        this.delayHistogram = monitorEventLoopDelay({ resolution: 20 });
+        this.delayHistogram.enable();
+        this.delayWindowStartedAt = now();
 
         let expectedAt = now() + Config.eventLoopSampleMs;
         this.timer = setInterval(() => {
@@ -169,6 +176,8 @@ const PopulationMetrics = {
     },
 
     stopEventLoopMonitor() {
+        this.delayHistogram?.disable();
+        this.delayHistogram = null;
         if (!this.timer) return;
         clearInterval(this.timer);
         this.timer = null;
@@ -488,6 +497,17 @@ const PopulationMetrics = {
 
     snapshot() {
         const elapsedMs = Math.max(1, now() - (this.startedAt || now()));
+        const histogram = this.delayHistogram;
+        const delay = {
+            resolutionMs: 20,
+            windowMs: histogram ? Math.max(0, now() - this.delayWindowStartedAt) : 0,
+            samples: Number(histogram?.count || 0),
+            p95Ms: histogram?.count ? Math.round(histogram.percentile(95) / 1e6) : 0,
+            p99Ms: histogram?.count ? Math.round(histogram.percentile(99) / 1e6) : 0,
+            maxMs: histogram?.count ? Math.round(histogram.max / 1e6) : 0
+        };
+        histogram?.reset();
+        this.delayWindowStartedAt = now();
         const delta = {};
 
         Object.keys(this.counters).forEach((key) => {
@@ -543,7 +563,7 @@ const PopulationMetrics = {
             uptimeMs: elapsedMs,
             counters: { ...this.counters },
             delta,
-            eventLoop: { ...this.eventLoop },
+            eventLoop: { ...this.eventLoop, delay },
             resolve: resolveStats,
             scheduler: { ...schedulerStats, ...this.schedulerState },
             schedulerSlice: schedulerSliceStats,

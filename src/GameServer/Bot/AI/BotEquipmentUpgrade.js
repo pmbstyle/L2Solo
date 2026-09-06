@@ -73,8 +73,8 @@ function isUnsafeFullBodyRobe(role, classId, item, slot) {
         item.fetchRank?.() === 'none';
 }
 
-function isSuitableItem(actor, item) {
-    if (!item?.isWearable?.() || item.fetchEquipped?.()) return false;
+function isSuitableItem(actor, item, includeEquipped = false) {
+    if (!item?.isWearable?.() || (!includeEquipped && item.fetchEquipped?.())) return false;
     if (!rankAllowed(item, actor)) return false;
     if (item.fetchPrice?.() <= 0) return false;
 
@@ -151,7 +151,7 @@ function currentScoreForSlot(actor, slot) {
     }
 
     const current = currentItemForSlot(backpack, slot);
-    return current ? scoreItem(actor, current) : 0;
+    return current && isSuitableItem(actor, current, true) ? scoreItem(actor, current) : 0;
 }
 
 function isTorsoSlot(slot) {
@@ -163,7 +163,7 @@ function bestItemForSlot(actor, current, candidates, slot) {
         if (Number(item.fetchSlot()) !== Number(slot)) return best;
         if (!best || scoreItem(actor, item) > scoreItem(actor, best)) return item;
         return best;
-    }, current || null);
+    }, current && isSuitableItem(actor, current, true) ? current : null);
 }
 
 function sameItem(left, right) {
@@ -190,6 +190,9 @@ function findTorsoUpgrades(actor, suitableItems) {
     const bestPants = bestItemForSlot(actor, currentPants, candidates, ARMOR_SLOTS.pants);
     const hasFullLayout = !!bestFull;
     const hasSplitLayout = !!bestChest && !!bestPants;
+    // Even an unsuitable full-body item protects both slots until a complete
+    // replacement exists. Do not trade it for a lone chest or pair of pants.
+    if (currentFull && !hasFullLayout && !hasSplitLayout) return [];
 
     // Do not remove a complete full-body armor for a lone chest or pants item.
     // The paperdoll slots conflict, so torso upgrades must be compared as layouts.

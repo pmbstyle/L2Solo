@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const World = invoke('GameServer/World/World');
@@ -58,7 +59,7 @@ function snapshotItems(items = []) {
 
 function hydrateItemRows(items = []) {
     return items.map((item) => {
-        const definition = DataCache.items?.find((entry) => Number(entry.selfId) === Number(item?.selfId));
+        const definition = ItemTemplateIndex.find(DataCache.items, item?.selfId);
         if (!definition) return item;
         const details = cloneJson(definition, {});
         if (Number(item?.slot) > 0 && details.etc) delete details.etc.slot;

@@ -22,7 +22,7 @@ const DEFAULTS = {
     marketDemandTimeoutMs: 300000,
     bloodMarkItemId: 1419,
     bloodMarkSourceNpcId: 12079,
-    operationMinMembers: 5,
+    operationMinMembers: 3,
     operationMaxMembers: 9,
     operationMaxTargetLevelGap: 5,
     catastrophicFailureThreshold: 5,

@@ -1,3 +1,4 @@
+const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const World          = invoke('GameServer/World/World');
 const ServerResponse = invoke('GameServer/Network/Response');
@@ -63,12 +64,7 @@ function startShopping(session, bot, BotAI, reason) {
         session.plan = 'following';
         session.shoppingTarget = undefined;
         session.shoppingDoneAnnounced = false;
-        TownChatter.say(session, BotAI, 'shopping-deferred', [
-            'Staying with the party. I can sell the loot later.',
-            "The bag can wait; I'm not leaving the group for shopping.",
-            'Skipping the town run for now and keeping up with the party.',
-            "I'll handle the loot on our next town stop."
-        ]);
+        TownChatter.say(session, BotAI, 'shopping-deferred', Speech.lines('town.shopping-deferred'));
         return false;
     }
 
@@ -286,7 +282,7 @@ function beginVoluntaryRecovery(session, bot, BotAI, readiness = null) {
         mpNeeded: readiness?.mpNeeded ?? EMERGENCY_RETREAT_MP_RATIO,
         at: Date.now()
     };
-    BotAI.say(session, "Phew! My HP/MP is low. Sitting down to recover.");
+    BotAI.say(session, Speech.line('combat.rest'), { ambient: true, key: 'rest' });
 }
 
 function targetOnCooldown(session, targetId) {
@@ -341,7 +337,9 @@ function expireTimedOutSpotRelocation(session, bot) {
     if (!relocation) return false;
     const startedAt = Number(relocation.startedAt);
     if (!Number.isFinite(startedAt) || Date.now() - startedAt < MAX_SPOT_RELOCATION_MS) return false;
-    expireSpotRelocation(session, bot, relocation);
+    if (relocation.method === 'town_gatekeeper') {
+        BotSpotTravel.recoverOrDefer(session, bot, 'gatekeeper_route_timeout');
+    } else expireSpotRelocation(session, bot, relocation);
     return true;
 }
 
@@ -354,7 +352,7 @@ function issueWalkRelocation(session, bot, relocation) {
 function tickSpotRelocation(session, bot) {
     const relocation = session.spotRelocation;
     if (!relocation) return false;
-    if (expireTimedOutSpotRelocation(session, bot)) return false;
+    if (expireTimedOutSpotRelocation(session, bot)) return !!session.spotRelocation;
     if (relocation.method === 'town_gatekeeper') return BotSpotTravel.tick(session, bot);
     if (relocation.method === 'soe_gatekeeper') return true;
 
@@ -369,6 +367,7 @@ function tickSpotRelocation(session, bot) {
 }
 
 function beginSpotRelocation(session, bot, spot, BotAI) {
+    if (Number(session.townTravelRetryAt || 0) > Date.now()) return;
     const destination = { ...spot.center };
     session.currentTargetId = undefined;
     bot.unselect?.();
@@ -377,39 +376,14 @@ function beginSpotRelocation(session, bot, spot, BotAI) {
 
     const finishedTownErrands = session.pendingFarmDepartureAnnouncement === true;
     delete session.pendingFarmDepartureAnnouncement;
-    const destinationName = SpotService.describe(spot);
+    const destinationName = invoke('GameServer/Bot/AI/BotChatLocation').describe({ spot });
     TownChatter.say(session, BotAI, finishedTownErrands ? 'town-to-farm' : 'farm-relocation', finishedTownErrands
-        ? [
-            `Town business finished. Heading to ${destinationName} to farm.`,
-            `Supplies sorted — next stop is ${destinationName}.`,
-            `Done in town. Moving out toward ${destinationName}.`,
-            `Errands complete; time to hunt around ${destinationName}.`,
-            `Everything is ready. Leaving for ${destinationName}.`,
-            `Town stop complete. Back to farming at ${destinationName}.`
-        ]
-        : [
-            `Heading to ${destinationName} to farm.`,
-            `Moving on to ${destinationName} for the next hunt.`,
-            `The next farming route is around ${destinationName}.`,
-            `Setting out for ${destinationName}.`,
-            `I will look for targets near ${destinationName}.`,
-            `Changing hunting grounds to ${destinationName}.`
-        ]);
+            ? Speech.lines('town.town-to-farm', { place: destinationName })
+            : Speech.lines('town.farm-relocation', { place: destinationName }));
 
     const travelDistance = SpotService.distance2d(botLocation(bot), destination);
     if (travelDistance > MAX_WALK_SPOT_DISTANCE) {
-        const departureTown = finishedTownErrands
-            ? BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ())
-            : null;
-        if (!departureTown || !BotSpotTravel.startViaTownGatekeeper(
-            session,
-            bot,
-            spot,
-            destination,
-            { townName: departureTown.name }
-        )) {
-            BotSpotTravel.start(session, bot, spot, destination);
-        }
+        BotSpotTravel.start(session, bot, spot, destination);
         return;
     }
 
@@ -529,18 +503,8 @@ module.exports = {
                 session.currentTargetId = undefined;
                 bot.automation.abortAll(bot);
                 TownChatter.say(session, BotAI, 'heading-to-newbie-guide', townVisitNeedsRebuff
-                    ? [
-                        'Since I am in town, I will refresh my blessing before farming.',
-                        'One quick Newbie Guide stop before I head back out.',
-                        'I am already in town, so this is a good time to rebuff.',
-                        'Refreshing my blessing now, then I am off to hunt.'
-                    ]
-                    : [
-                        'My newbie blessings have expired. Heading to the guide.',
-                        'Buffs are fading; I need a quick Newbie Guide visit.',
-                        'Time to refresh my blessing before the next fight.',
-                        'I am going to the Newbie Guide for a fresh set of buffs.'
-                    ]);
+            ? Speech.lines('town.heading-to-newbie-guide.in-town')
+            : Speech.lines('town.heading-to-newbie-guide.expired'));
                 return;
             }
         }
@@ -772,7 +736,7 @@ module.exports = {
                             return;
                         }
                         if (Math.random() < 0.20) {
-                            BotAI.say(session, BotAI.getRandomPhrase('victory'));
+                            BotAI.say(session, BotAI.getRandomPhrase('victory'), { ambient: true, key: 'victory' });
                         }
                         clearTarget(session, bot, targetId);
                     } else {
@@ -840,7 +804,7 @@ module.exports = {
                 }
 
                 if (Math.random() < 0.15) {
-                    BotAI.say(session, BotAI.getRandomPhrase('foundTarget', closestMonster.fetchName()));
+                    BotAI.say(session, BotAI.getRandomPhrase('foundTarget', closestMonster.fetchName()), { ambient: true, key: 'target' });
                 }
                 BotAI.executeCombat(session, bot, closestMonster, Generics);
             } else {

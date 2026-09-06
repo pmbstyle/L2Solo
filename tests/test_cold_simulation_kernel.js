@@ -77,6 +77,8 @@ function state(characterId = 1, overrides = {}) {
     kernel.flushDue();
     const proposalMessage = emitted.find((entry) => entry.type === 'proposal_batch');
     assert(proposalMessage, 'ordinary dirty state must flush at the 2 second target');
+    assert.strictEqual(proposalMessage.payload.capacityBlocked, false,
+        'a partial ownership window must not request early commit admission');
     const proposal = proposalMessage.payload.proposals[0];
     assert.strictEqual(proposal.priority, 'P2');
     assert.strictEqual(proposal.token.revision, 4);
@@ -955,10 +957,23 @@ function state(characterId = 1, overrides = {}) {
     });
     await capacityFlushKernel.resolveChain;
     assert.strictEqual(capacityFlushKernel.snapshot().dirty, 8);
+    const readyProposals = [...capacityFlushKernel.dirty.entries()];
+    for (const reason of ['forced', 'priority', 'batch']) {
+        capacityFlushKernel.flush(null, reason === 'forced', { reason });
+        const message = capacityFlushMessages.pop();
+        assert.strictEqual(message.type, 'proposal_batch');
+        assert.strictEqual(message.payload.capacityBlocked, true,
+            `${reason} flush must report a full ownership window before ACK`);
+        assert.strictEqual(capacityFlushKernel.inFlight.size, 8,
+            'sending proposals must retain ownership until the durable commit ACK');
+        readyProposals.forEach(([id, value]) => capacityFlushKernel.dirty.set(id, value));
+    }
     assert.strictEqual(capacityFlushKernel.flushDue(), 8,
         'a full ownership window must flush immediately instead of waiting two seconds');
     const capacityFlushBatch = capacityFlushMessages.find((entry) => entry.type === 'proposal_batch');
     assert.strictEqual(capacityFlushBatch.payload.proposals.length, 8);
+    assert.strictEqual(capacityFlushBatch.payload.capacityBlocked, true,
+        'the main thread must know that commits are holding all worker slots');
     assert.strictEqual(capacityFlushKernel.snapshot().dirty, 0);
     assert.strictEqual(capacityFlushKernel.snapshot().flushReasons.capacity, 1);
     assert.strictEqual(capacityFlushKernel.snapshot().lastFlushRows, 8);

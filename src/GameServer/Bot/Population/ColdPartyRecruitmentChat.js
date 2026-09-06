@@ -54,7 +54,7 @@ function recruitmentText(party, members, spot, maxSize) {
     const leader = members.find((member) => Number(member.characterId) === Number(party.leaderId)) || members[0];
     const level = Number(leader?.level || 1);
     const group = present.length ? joinRoles(present) : 'Party';
-    const place = spot?.name || party.spotId || 'our spot';
+    const place = invoke('GameServer/Bot/AI/BotChatLocation').describe({ spot, spotId: party.spotId });
     return `${group} LFM ${joinRoles(wanted)} — Lv. ${level} party at ${place}.`.slice(0, 120);
 }
 

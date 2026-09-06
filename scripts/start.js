@@ -6,6 +6,8 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const WorldWipe = require('./world-wipe');
+const SavedGames = require('./saved-games');
+const { acquireDatabaseAccess } = require('./database-access');
 
 const rootDir = path.resolve(__dirname, '..');
 const isWindows = process.platform === 'win32';
@@ -14,6 +16,7 @@ const port = Number(process.env.L2NODE_LAUNCHER_PORT || 8090);
 const maxLogLines = 80;
 const launcherName = process.env.L2NODE_LAUNCHER_NAME || 'L2Solo Launcher';
 const runtimeDir = resolveRootPath(process.env.L2NODE_RUNTIME_DIR || 'tmp');
+const savesDir = path.join(runtimeDir, 'saves');
 const logsDir = resolveRootPath(process.env.L2NODE_LOG_DIR || path.relative(rootDir, path.join(runtimeDir, 'logs')));
 const latestLogPath = path.join(logsDir, 'latest-server.log');
 const previousLogPath = path.join(logsDir, 'previous-server.log');
@@ -34,6 +37,7 @@ const state = {
     logFilePath: latestLogPath,
     progressionRate: initialProgressionRate(),
     lastWipe: null,
+    saveOperation: null,
     llm: null,
     llmConfigFingerprint: null,
     logs: []
@@ -499,14 +503,21 @@ function publicState() {
         progressionRates: Array.from(progressionPresets),
         llm: syncLlmState(),
         lastWipe: state.lastWipe,
+        saveOperation: state.saveOperation,
         logs: state.logs.slice(-40)
     };
 }
 
 function startServer({ progressionRate } = {}) {
+    if (state.saveOperation) {
+        throw Object.assign(new Error('Wait for the save operation to finish before starting the server.'), { statusCode: 409 });
+    }
     if (state.child) {
         return publicState();
     }
+
+    const release = acquireDatabaseAccess(databasePath());
+    release();
 
     setProgressionRate(progressionRate || state.progressionRate);
     state.phase = 'starting';
@@ -572,6 +583,11 @@ function sendJson(response, data, statusCode = 200) {
         'Cache-Control': 'no-store'
     });
     response.end(JSON.stringify(data));
+}
+
+function databasePath() {
+    const file = resolveRootPath(readConfig().Database?.path || 'tmp/nodel2.sqlite');
+    return fs.existsSync(file) ? fs.realpathSync(file) : file;
 }
 
 function readBody(request) {
@@ -705,14 +721,41 @@ function sendHtml(response) {
             overflow: hidden;
         }
 
-        .wipe-panel summary {
-            color: #efb1a8;
+        .saves-panel {
+            margin-top: 20px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--panel-2);
+            overflow: hidden;
+        }
+
+        .saves-panel summary { color: var(--accent); }
+        .saves-panel[open] summary { border-bottom: 1px solid var(--border); }
+        .saves-content { padding: 14px; }
+        .saves-content > p:first-child { margin-top: 0; }
+        .saves-panel p { color: var(--muted); font-size: 13px; line-height: 1.5; }
+        .save-form { display: flex; gap: 10px; }
+        .save-form input { min-width: 0; flex: 1; }
+        .save-form button, .save-actions button { padding: 0 14px; }
+        .save-list { max-height: 340px; overflow-y: auto; margin-top: 14px; }
+        .save-item { padding: 12px 0; border-top: 1px solid var(--border); }
+        .save-name { font-size: 14px; overflow-wrap: anywhere; }
+        .save-info { margin: 5px 0 10px; font-size: 12px; color: var(--muted); }
+        .save-actions { display: flex; gap: 8px; }
+        .save-actions button { height: 34px; font-size: 12px; }
+        #saveMessage { min-height: 20px; margin-bottom: 0; overflow-wrap: anywhere; }
+        #saveMessage.error { color: var(--red); }
+
+        .wipe-panel summary,
+        .saves-panel summary {
             cursor: pointer;
             font-size: 14px;
             font-weight: 700;
             padding: 14px;
             text-transform: uppercase;
         }
+
+        .wipe-panel summary { color: #efb1a8; }
 
         .wipe-panel[open] summary {
             border-bottom: 1px solid #71413b;
@@ -972,6 +1015,19 @@ function sendHtml(response) {
             <button id="llmTest" type="button">Test inference</button>
         </section>
 
+        <details class="saves-panel">
+            <summary id="savesHeading">Saved Games</summary>
+            <div class="saves-content">
+                <p>Save or restore your entire world while the server is stopped.</p>
+                <form id="saveForm" class="save-form">
+                    <input id="saveName" type="text" maxlength="120" aria-label="Save name (optional)" placeholder="Save name (optional)" autocomplete="off">
+                    <button id="saveGame" class="primary" type="submit" disabled>Save Game</button>
+                </form>
+                <p id="saveMessage" role="status" aria-live="polite"></p>
+                <div id="saveList" class="save-list"><p>Loading saves…</p></div>
+            </div>
+        </details>
+
         <details class="wipe-panel">
             <summary>World reset</summary>
             <div class="wipe-content">
@@ -1015,6 +1071,14 @@ function sendHtml(response) {
         const wipeConfirmationInput = document.getElementById('wipeConfirmation');
         const wipePromptEl = document.getElementById('wipePrompt');
         const wipeButton = document.getElementById('wipe');
+        const saveForm = document.getElementById('saveForm');
+        const saveNameInput = document.getElementById('saveName');
+        const saveGameButton = document.getElementById('saveGame');
+        const saveList = document.getElementById('saveList');
+        const saveMessage = document.getElementById('saveMessage');
+        let lastState = { phase: 'unknown' };
+        let localSaveOperation = null;
+        let savesSignature = '';
         const wipeConfirmations = { bots: 'WIPE BOTS', players: 'WIPE PLAYERS', all: 'WIPE ALL' };
         let mapUrl = '';
         let logUrl = '';
@@ -1038,7 +1102,7 @@ function sendHtml(response) {
         function updateWipeControls(phase) {
             const expected = wipeConfirmations[wipeScopeSelect.value] || '';
             wipePromptEl.textContent = 'Type ' + expected + ' to confirm.';
-            const stopped = phase === 'stopped';
+            const stopped = phase === 'stopped' && !lastState.saveOperation && !localSaveOperation;
             wipeScopeSelect.disabled = !stopped;
             wipeConfirmationInput.disabled = !stopped;
             wipeButton.disabled = !stopped || wipeConfirmationInput.value.trim() !== expected;
@@ -1072,11 +1136,99 @@ function sendHtml(response) {
 
         async function request(path, options) {
             const response = await fetch(path, options);
-            if (!response.ok) throw new Error(await response.text());
+            if (!response.ok) {
+                const message = await response.text();
+                let data;
+                try { data = JSON.parse(message); } catch (_) {}
+                throw new Error(data?.error || message);
+            }
             return response.json();
         }
 
+        function updateSaveControls() {
+            const operation = localSaveOperation || lastState.saveOperation;
+            const available = lastState.phase === 'stopped' && !operation;
+            saveNameInput.disabled = !available;
+            saveGameButton.disabled = !available;
+            saveGameButton.textContent = operation === 'create' ? 'Saving…' : 'Save Game';
+            saveList.querySelectorAll('button').forEach((button) => { button.disabled = !available; });
+            startButton.disabled = lastState.phase !== 'stopped' || Boolean(operation);
+            updateWipeControls(lastState.phase);
+        }
+
+        async function refreshSaves() {
+            const data = await request('/api/saves');
+            const signature = JSON.stringify(data.saves);
+            if (signature !== savesSignature) {
+                savesSignature = signature;
+                saveList.replaceChildren();
+                if (!data.saves.length) {
+                    const empty = document.createElement('p');
+                    empty.textContent = 'No saved games yet.';
+                    saveList.append(empty);
+                }
+                data.saves.forEach((save) => {
+                    const item = document.createElement('div');
+                    item.className = 'save-item';
+                    const name = document.createElement('div');
+                    name.className = 'save-name';
+                    name.textContent = save.name;
+                    const info = document.createElement('div');
+                    info.className = 'save-info';
+                    const size = save.sizeBytes / 1e9;
+                    info.textContent = new Date(save.createdAt).toLocaleString('en-GB') + ' · ' + (size < 0.001 ? '<0.001' : size.toFixed(3)) + ' GB';
+                    const actions = document.createElement('div');
+                    actions.className = 'save-actions';
+                    ['load', 'delete'].forEach((operation) => {
+                        const button = document.createElement('button');
+                        button.type = 'button';
+                        button.textContent = titleCase(operation);
+                        if (operation === 'delete') button.className = 'danger';
+                        button.addEventListener('click', () => {
+                            const prompt = operation === 'load'
+                                ? 'Load “' + save.name + '”? This will overwrite the current world database. Current progress will be replaced by this save.'
+                                : 'Delete “' + save.name + '”? This save will be permanently deleted.';
+                            if (window.confirm(prompt)) performSave(operation, { id: save.id, confirmed: true });
+                        });
+                        actions.append(button);
+                    });
+                    item.append(name, info, actions);
+                    saveList.append(item);
+                });
+            }
+            updateSaveControls();
+        }
+
+        async function performSave(operation, payload) {
+            if (localSaveOperation) return;
+            localSaveOperation = operation;
+            saveMessage.className = '';
+            saveMessage.textContent = { create: 'Saving your world…', load: 'Loading saved game…', delete: 'Deleting saved game…' }[operation];
+            updateSaveControls();
+            try {
+                await request('/api/saves/' + operation, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (operation === 'create') saveNameInput.value = '';
+                saveMessage.textContent = { create: 'Game saved.', load: 'Saved game loaded. Start the server when you are ready.', delete: 'Saved game deleted.' }[operation];
+            } catch (error) {
+                saveMessage.className = 'error';
+                saveMessage.textContent = error.message;
+            } finally {
+                localSaveOperation = null;
+                await refresh();
+            }
+        }
+
+        saveForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            if (!saveGameButton.disabled) performSave('create', { name: saveNameInput.value });
+        });
+
         function render(data) {
+            lastState = data;
             const phase = data.phase || 'stopped';
             mapUrl = data.mapUrl;
             statusEl.className = 'status ' + phase;
@@ -1101,6 +1253,7 @@ function sendHtml(response) {
             stopButton.disabled = phase === 'stopped' || phase === 'stopping';
             progressionRateSelect.disabled = locked;
             updateWipeControls(phase);
+            updateSaveControls();
             logEl.textContent = data.logs && data.logs.length
                 ? data.logs.map((entry) => entry.line).join('\\n')
                 : 'Launcher ready.';
@@ -1115,6 +1268,7 @@ function sendHtml(response) {
         async function refresh() {
             try {
                 render(await request('/api/status'));
+                await refreshSaves();
             } catch (err) {
                 logEl.textContent = err.message;
             }
@@ -1122,11 +1276,13 @@ function sendHtml(response) {
 
         startButton.addEventListener('click', async () => {
             logAutoScroll = true;
-            render(await request('/api/start', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ progressionRate: progressionRateSelect.value })
-            }));
+            try {
+                render(await request('/api/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ progressionRate: progressionRateSelect.value })
+                }));
+            } catch (error) { logEl.textContent = error.message; }
         });
 
         progressionRateSelect.addEventListener('change', () => {
@@ -1222,6 +1378,39 @@ async function route(request, response) {
         return;
     }
 
+    if (request.method === 'GET' && url.pathname === '/api/saves') {
+        sendJson(response, { saves: await SavedGames.list(savesDir) });
+        return;
+    }
+
+    if (request.method === 'POST' && ['/api/saves/create', '/api/saves/load', '/api/saves/delete'].includes(url.pathname)) {
+        const body = await readBody(request);
+        let payload;
+        try { payload = JSON.parse(body || '{}'); } catch (_) {
+            sendJson(response, { error: 'Invalid request.' }, 400);
+            return;
+        }
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+            sendJson(response, { error: 'Invalid request.' }, 400);
+            return;
+        }
+        if (state.phase !== 'stopped' || state.child || state.saveOperation) {
+            sendJson(response, { error: 'Stop the server and wait for the current operation before managing saved games.' }, 409);
+            return;
+        }
+        const operation = url.pathname.split('/').pop();
+        if (operation !== 'create' && payload.confirmed !== true) {
+            sendJson(response, { error: 'Confirm this action before continuing.' }, 400);
+            return;
+        }
+        state.saveOperation = operation;
+        try {
+            const save = await SavedGames.run({ operation, databasePath: databasePath(), savesDir, name: payload.name, id: payload.id });
+            sendJson(response, { save });
+        } finally { state.saveOperation = null; }
+        return;
+    }
+
     if (request.method === 'GET' && url.pathname === '/api/log') {
         const logPath = fs.existsSync(latestLogPath) ? latestLogPath : previousLogPath;
 
@@ -1286,7 +1475,7 @@ async function route(request, response) {
             payload = {};
         }
 
-        if (state.phase !== 'stopped' || state.child) {
+        if (state.phase !== 'stopped' || state.child || state.saveOperation) {
             sendJson(response, { error: 'Stop the server before wiping world data.' }, 409);
             return;
         }
@@ -1304,7 +1493,9 @@ async function route(request, response) {
             return;
         }
 
-        const result = await WorldWipe.wipe(scope);
+        const release = acquireDatabaseAccess(databasePath());
+        let result;
+        try { result = await WorldWipe.wipe(scope); } finally { release(); }
         state.lastWipe = { ...result, at: Date.now() };
         appendLog('launcher', `world wipe completed: scope=${scope}, characters=${result.characters}, accounts=${result.accounts}`);
         sendJson(response, publicState());
@@ -1329,7 +1520,7 @@ function openBrowser(url) {
 
 const server = http.createServer((request, response) => {
     route(request, response).catch((err) => {
-        sendJson(response, { error: err.message }, 500);
+        sendJson(response, { error: err.message }, err.statusCode || 500);
     });
 });
 

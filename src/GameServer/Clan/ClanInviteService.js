@@ -47,6 +47,7 @@ function accept(session, options = {}) {
     }
 
     return ClanService.addMember(clan, session.actor, 0).then((result) => {
+        if (!result.ok) return result;
         session.dataSendToMe(ServerResponse.joinPledge(clan.id));
         session.dataSendToMe(ServerResponse.pledgeShowMemberListAll(
             ClanService.refreshOnlineMembers(clan),
@@ -65,6 +66,8 @@ function accept(session, options = {}) {
             const BotManager = invoke('GameServer/Bot/BotManager');
             BotManager.botTell(session, invite.requestorSession, `I'll join ${clan.name}.`);
         }
+
+        if (isBotSession(session)) invoke('GameServer/Bot/AI/BotClanChat').onJoined(session, clan.id);
 
         return { ok: true, clan, member: result.member };
     }).catch((err) => {

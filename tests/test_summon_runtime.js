@@ -655,6 +655,73 @@ async function withFastTimers(callback) {
     }));
     Math.random = savedSmokeRandom;
     assert(smokeTarget.effects.toxic_smoke, 'Soulless Toxic Smoke should apply its poison DOT effect to the selected target');
+
+    // Native summon skill landing must attribute zero-damage hostility to the
+    // owner, including resisted debuffs, and wake the victim's defending party.
+    {
+        const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
+        const Memory = invoke('GameServer/Bot/AI/BotEnemyMemory');
+        const Life = invoke('GameServer/Bot/Population/BotLifeState');
+        const BotAI = invoke('GameServer/Bot/BotAI');
+        const Flag = invoke('GameServer/Actor/PvpFlag');
+        const saved = { execute: SkillEffects.execute, remember: Life.rememberEnemies,
+            promote: BotAI.promoteForPlayerInteraction, mark: Flag.mark, peace: utils.isInPeaceZone };
+        const victim = sessionFor(new Backpack({ items: [] }), null);
+        victim.actor.fetchId = () => 2000091;
+        victim.actor.fetchPvpFlag = () => 1;
+        victim.accountId = 'bot_summon_pvp_victim';
+        victim.actor.session = victim;
+        victim.aiActive = true;
+        const ally = sessionFor(new Backpack({ items: [] }), null);
+        ally.actor.fetchId = () => 2000092;
+        ally.actor.session = ally;
+        ally.accountId = 'bot_summon_pvp_ally';
+        ally.aiActive = true;
+        ally.partyCompanion = true;
+        ally.followPlayerSession = victim;
+        boxerSession.actor.session = boxerSession;
+        soulless.fetchOwnerId = () => boxerSession.actor.fetchId();
+        boxerSession.actor.setDestId(victim.actor.fetchId());
+        World.user = { sessions: [boxerSession, victim, ally] };
+        const wakes = [], flags = [], landings = [];
+        try {
+            utils.isInPeaceZone = () => false;
+            Life.rememberEnemies = () => Promise.resolve(true);
+            BotAI.promoteForPlayerInteraction = member => { wakes.push(member); return true; };
+            Flag.mark = (ownerSession, owner) => { flags.push({ ownerSession, owner }); };
+            for (const resisted of [false, true]) {
+                soulless.skillReuseUntil.delete(4259);
+                victim.pvpAggressors = new Map(); ally.pvpAggressors = new Map();
+                victim.pvpEnemyMemory = []; victim.lastPvpWakeAt = ally.lastPvpWakeAt = 0;
+                wakes.length = flags.length = landings.length = 0;
+                SkillEffects.execute = (_s, source, target, skill) => {
+                    landings.push({ source, target, skillId: skill.fetchSelfId() });
+                    return { damage: 0, applied: !resisted, resisted };
+                };
+                await withFastTimers(realSetTimeout => new Promise(resolve => {
+                    assert(SummonControl.useSkillAction(boxerSession, boxerSession.actor, soulless, 0x24));
+                    realSetTimeout(resolve, 20);
+                }));
+                assert.deepStrictEqual(landings, [{ source: soulless, target: victim.actor, skillId: 4259 }]);
+                assert.deepStrictEqual(flags, [{ ownerSession: boxerSession, owner: boxerSession.actor }],
+                    'a summon debuff must flag its owner through the real skill landing path');
+                assert(victim.pvpAggressors.has(boxerSession.actor.fetchId()));
+                assert(ally.pvpAggressors.has(boxerSession.actor.fetchId()));
+                assert(wakes.includes(victim) && wakes.includes(ally));
+                assert.strictEqual(Memory.entries(victim)[0].id, boxerSession.actor.fetchId());
+                assert.strictEqual(Memory.entries(victim)[0].kills, 0);
+            }
+            const neutralNpc = npc(1, 990053);
+            assert.strictEqual(attack.recordPlayerAggression(boxerSession, neutralNpc, victim.actor), false,
+                'an unowned NPC must not flag the player whose session transported its action');
+            neutralNpc.destructor(boxerSession);
+            assert.strictEqual(Threats.character(soulless), boxerSession.actor);
+        } finally {
+            SkillEffects.execute = saved.execute; Life.rememberEnemies = saved.remember;
+            BotAI.promoteForPlayerInteraction = saved.promote; Flag.mark = saved.mark;
+            utils.isInPeaceZone = saved.peace;
+        }
+    }
     soulless.destructor(boxerSession);
     smokeTarget.destructor(boxerSession);
 

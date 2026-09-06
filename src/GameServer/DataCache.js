@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('./Item/ItemTemplateIndex');
 const validateSchema = require('jsonschema').validate;
 const ClassProgression = invoke('GameServer/ClassProgression');
 const RaidBossBalance = invoke('GameServer/RaidBoss/RaidBossBalance');
@@ -214,7 +215,7 @@ const DataCache = {
     },
 
     fetchItemFromSelfId(selfId, callback) {
-        const item = structuredClone(DataCache.items.find((ob) => ob.selfId === selfId));
+        const item = structuredClone(ItemTemplateIndex.findStrict(DataCache.items, selfId));
         item ? callback(item) : utils.infoWarn('Datapack', 'unknown Item SelfId %d', selfId);
     },
 

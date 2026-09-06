@@ -4,6 +4,8 @@ require('../src/Global');
 
 const BotManager = invoke('GameServer/Bot/BotManager');
 const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
+const Budget = invoke('GameServer/Bot/AI/BotChatterBudget');
+Budget.reset();
 
 function actor(id) {
     return { fetchId: () => id };
@@ -32,11 +34,18 @@ try {
         'the next companion allowed to speak must use another town variant');
 
     const solo = { actor: actor(22) };
-    TownChatter.say(solo, BotAI, 'shopping', variants);
-    TownChatter.say(solo, BotAI, 'shopping', variants);
-    assert.notStrictEqual(messages[2], messages[3], 'solo hot bots must not repeat the same town line consecutively');
+    assert.strictEqual(TownChatter.say(solo, BotAI, 'buyer-selected', variants), false,
+        'routine navigation should stay silent in public chat');
+    assert.strictEqual(TownChatter.say(first, BotAI, 'buyer-selected', variants), false,
+        'routine navigation should stay silent in party chat too');
+    assert.strictEqual(TownChatter.say(solo, BotAI, 'npc-gear-purchased', variants, { now: 200000 }), true);
+    assert.strictEqual(TownChatter.say(solo, BotAI, 'npc-gear-purchased', variants, { now: 200001 }), false,
+        'changing wording must not bypass the topic cooldown');
+    assert.strictEqual(TownChatter.say(solo, BotAI, 'npc-gear-purchased', variants, { now: 500001 }), true);
+    assert.notStrictEqual(messages[2], messages[3], 'later public chatter should use another variant');
 
     console.log('Hot town chatter variation checks passed');
 } finally {
     BotManager.botPartySay = originalPartySay;
+    Budget.reset();
 }

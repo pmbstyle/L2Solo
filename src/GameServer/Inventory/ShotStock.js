@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
@@ -49,7 +50,7 @@ function normalizeRank(rank) {
 }
 
 function templateFor(selfId) {
-    return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId)) || null;
+    return ItemTemplateIndex.find(DataCache.items, selfId) || null;
 }
 
 function itemName(selfId) {

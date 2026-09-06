@@ -117,6 +117,14 @@ function isHealer(value) {
     return isRole(value, 'healer');
 }
 
+function usesCasterWeaponCombat(value) {
+    // Class identity owns this policy, even if a bot temporarily equips a
+    // different weapon. Orc mystics, Sword Singers, and Bladedancers retain
+    // their melee support style; Prophet belongs with the staff casters.
+    const role = inferRole(value);
+    return role === 'mage' || role === 'healer' || roleClassId(value) === 17;
+}
+
 function isTank(value) {
     return isRole(value, 'tank');
 }
@@ -188,6 +196,7 @@ module.exports = {
     combatRoleFor,
     isRole,
     isHealer,
+    usesCasterWeaponCombat,
     isTank,
     isSummoner,
     isNecromancer,

@@ -1,4 +1,5 @@
 const MAX_ROUTE_FAILURES = 3;
+const MAX_WORK_BUDGET_FAILURES = 3;
 const BASE_RETRY_DELAY_MS = 1000;
 const MAX_RETRY_DELAY_MS = 5000;
 const TARGET_TOLERANCE = 96;
@@ -6,6 +7,7 @@ const DEFAULT_ARRIVAL_RADIUS = 240;
 const INITIAL_ERRAND_PATH_MAX_NODES = 30000;
 const RECOVERY_ERRAND_PATH_MAX_NODES = 120000;
 const targetActorCache = new WeakMap();
+const TRANSIENT_ERRORS = new Set(['QUEUE_FULL', 'PATH_TIMEOUT', 'PATH_PREEMPTED', 'PATH_BUDGET', 'WORKER_UNAVAILABLE', 'WORKER_EXIT', 'POOL_SHUTDOWN']);
 
 function pointOf(actor) {
     return {
@@ -94,16 +96,36 @@ function move(session, bot, target, kind, options = {}) {
     refreshTarget(target, targetActor);
     const now = Date.now();
     const state = recoveryState(session, kind, target);
+    const point = pointOf(bot);
+    if (!state.budgetAnchor || Math.hypot(point.locX - state.budgetAnchor.locX, point.locY - state.budgetAnchor.locY) >= 96
+        || Math.abs(point.locZ - state.budgetAnchor.locZ) >= 64) {
+        state.budgetAnchor = point;
+        state.budgetFailures = 0;
+    }
     const failure = failedDiagnostic(session, target, state);
 
     if (failure) {
-        state.failures += 1;
         state.lastFailureAt = Number(failure.at);
+        if (TRANSIENT_ERRORS.has(failure.error)) {
+            // A running search repeatedly exhausting its own work allowance
+            // is different from waiting for capacity in the worker queue.
+            if (failure.error === 'PATH_BUDGET') state.budgetFailures++;
+            if (state.budgetFailures >= MAX_WORK_BUDGET_FAILURES) {
+                return { status: 'exhausted', failures: state.failures, reason: 'work_budget_exhausted', diagnostic: failure };
+            }
+            state.retryAt = now + BASE_RETRY_DELAY_MS + Math.abs(Number(bot?.fetchId?.() || 0) % 1000);
+            return { status: 'waiting', failures: state.failures, retryAt: state.retryAt, reason: 'budget_deferred' };
+        }
+        state.failures += 1;
         state.retryAt = now + Math.min(MAX_RETRY_DELAY_MS, BASE_RETRY_DELAY_MS * state.failures);
         // A failed town waypoint can be the sticky plan that caused the empty
         // route. Let the next bounded attempt ask TownPathfinder for a fresh
         // waypoint instead of replaying the same dead end.
         session.townRoutePlan = null;
+    }
+
+    if (state.budgetFailures >= MAX_WORK_BUDGET_FAILURES) {
+        return { status: 'exhausted', failures: state.failures, reason: 'work_budget_exhausted', diagnostic: session.lastPathfinding };
     }
 
     if (state.failures >= MAX_ROUTE_FAILURES) {

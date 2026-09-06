@@ -390,9 +390,11 @@ async function run() {
         'the bounded in-memory rotation must inspect only active craft owners');
 
     LifeState.allStates = () => [];
-    Database.execute = (statement) => statement[0].includes('warehouse.selfId IN')
-        ? Promise.resolve([{ characterId: 59 }, { characterId: 60 }])
-        : Promise.resolve([]);
+    Database.execute = (statement) => {
+        if (!statement[0].includes('warehouse.selfId IN')) return Promise.resolve([]);
+        statement[2]?.onTiming?.({ waitMs: 17, runMs: 3 });
+        return Promise.resolve([{ characterId: 59 }, { characterId: 60 }]);
+    };
     let hydratedIds = null;
     LifeState.statesByIds = (ids, options) => {
         hydratedIds = { ids, options };
@@ -402,15 +404,24 @@ async function run() {
     };
     Database.fetchWarehouseItems = () => Promise.resolve([]);
     const releaseStages = [];
+    const releaseTimings = {};
     await BotWarehouse.releaseColdBatch(2, Infinity, {
-        onStage: (stage) => releaseStages.push(stage)
+        onStage: (stage, duration) => {
+            releaseStages.push(stage);
+            releaseTimings[stage] = duration;
+        }
     });
     assert.deepStrictEqual(hydratedIds.ids, [59, 60], 'warehouse candidates must hydrate in one bounded state query');
     assert.deepStrictEqual(hydratedIds.options, { ownerId: 'legacy_main', unassigned: true });
     assert.deepStrictEqual(
         releaseStages.filter((stage) => !stage.startsWith('item_')),
-        ['resume', 'candidates', 'hydrate', 'release_items'],
-        'warehouse release telemetry must preserve every bounded batch phase');
+        ['resume', 'prepare', 'market_queue_wait', 'market_sql', 'enchant_queue_wait', 'enchant_sql',
+            'hydrate', 'candidates', 'release_items', 'release_items'],
+        'warehouse telemetry must track bounded hydration and each completed candidate');
+    for (const kind of ['market', 'enchant']) {
+        assert.strictEqual(releaseTimings[`${kind}_queue_wait`], 17, 'queue wait must remain separate from SQL time');
+        assert.strictEqual(releaseTimings[`${kind}_sql`], 3, 'SQL timing must come from database execution');
+    }
 
     const historicalRows = [
         { id: 81, selfId: 94, name: 'Bec de Corbin', amount: 1, enchant: 0 },

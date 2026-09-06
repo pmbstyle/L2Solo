@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
@@ -10,7 +11,7 @@ const DEFAULT_BUY_STORE_MS = 20 * 60 * 1000;
 const WALLET_RESERVE_PERCENT = 10;
 
 function templateFor(selfId) {
-    return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId)) || null;
+    return ItemTemplateIndex.find(DataCache.items, selfId) || null;
 }
 
 function cloneState(state) {
@@ -111,6 +112,7 @@ function open(state, goal, options = {}) {
         if (saved) {
             MarketOpportunity.indexColdStore(saved);
             MarketTelemetry.buyStoreOpened?.();
+            invoke('GameServer/Bot/Economy/BotTradeChat').offer(saved, timestamp);
         }
         return { state: saved || state, opened: !!saved, item, store: saved?.stats?.marketStore || store };
     });

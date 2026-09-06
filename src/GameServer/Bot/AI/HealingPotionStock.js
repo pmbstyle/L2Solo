@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
@@ -24,7 +25,7 @@ const DESIRED_HP_RATIO = 0.65;
 const MAX_USES_PER_ENCOUNTER = 1;
 
 function templateFor(selfId) {
-    return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId)) || null;
+    return ItemTemplateIndex.find(DataCache.items, selfId) || null;
 }
 
 function detailsFor(selfId) {
@@ -156,20 +157,21 @@ function targetAlive(target) {
     return Number(target.fetchHp?.() ?? target.hp ?? 1) > 0;
 }
 
-function availablePotions(inventory, hpRatio) {
+function availablePotions(inventory, hpRatio, options = {}) {
     return POTIONS.filter((potion) => amountInInventory(inventory, potion.selfId) > 0)
-        .filter((potion) => potion.selfId !== 1540 || hpRatio <= QUICK_USE_HP_RATIO);
+        .filter((potion) => potion.selfId !== 1540 || hpRatio <= (options.pvp ? 0.25 : QUICK_USE_HP_RATIO))
+        .filter(potion => !options.activeHot || !potion.hot);
 }
 
-function selectPotion(inventory, hp, maxHp, roleOrActor) {
+function selectPotion(inventory, hp, maxHp, roleOrActor, options = {}) {
     const safeMaxHp = Math.max(1, Number(maxHp || hp || 1));
     const safeHp = Math.max(0, Number(hp || 0));
     const hpRatio = safeHp / safeMaxHp;
-    if (hpRatio > useThreshold(roleOrActor)) return null;
-    const available = availablePotions(inventory, hpRatio);
+    if (hpRatio > (options.pvp ? 0.65 : useThreshold(roleOrActor))) return null;
+    const available = availablePotions(inventory, hpRatio, options);
     if (!available.length) return null;
 
-    if (hpRatio <= QUICK_USE_HP_RATIO) {
+    if (hpRatio <= (options.pvp ? 0.25 : QUICK_USE_HP_RATIO)) {
         const quick = available.find((potion) => potion.selfId === 1540);
         if (quick) return quick;
     }
@@ -193,17 +195,18 @@ function actorInventory(actor) {
 
 function tryUseInCombat(session, actor, target, options = {}) {
     if (!session || !actor || !targetAlive(target) || actor.state?.fetchDead?.()) return null;
-    if (actor.state?.fetchCasts?.() || activePotionHot(actor)) return null;
+    const activeHot = activePotionHot(actor);
+    if (actor.state?.fetchCasts?.() || (activeHot && !options.pvp)) return null;
 
     const targetId = Number(target.fetchId?.() ?? target.id ?? 0);
     const encounter = session.healingPotionEncounter?.targetId === targetId
         ? session.healingPotionEncounter
         : { targetId, used: 0 };
     session.healingPotionEncounter = encounter;
-    if (encounter.used >= Number(options.maxUses ?? MAX_USES_PER_ENCOUNTER)) return null;
+    if (encounter.used >= Number(options.pvp ? Infinity : options.maxUses ?? MAX_USES_PER_ENCOUNTER)) return null;
 
     const inventory = actorInventory(actor);
-    const potion = selectPotion(inventory, actor.fetchHp?.(), actor.fetchMaxHp?.(), actor);
+    const potion = selectPotion(inventory, actor.fetchHp?.(), actor.fetchMaxHp?.(), actor, { ...options, activeHot });
     if (!potion) return null;
     const item = inventory.find((entry) => entry.selfId === potion.selfId && entry.amount > 0);
     if (!item?.objectId) return null;

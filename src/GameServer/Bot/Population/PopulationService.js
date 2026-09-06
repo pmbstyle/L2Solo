@@ -1,3 +1,4 @@
+const BackgroundCandidateQueue = require('./BackgroundCandidateQueue');
 const Config  = invoke('GameServer/Bot/Population/PopulationConfig');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const Database = invoke('Database');
@@ -1623,19 +1624,14 @@ const PopulationService = {
             runningKey: 'staleGoalReviewRunning',
             nextAtKey: 'nextStaleGoalReviewAt',
             run: ({ job, batchSize, deadlineAt }) => {
-                if (Date.now() >= deadlineAt) return { results: [], continuation: true };
-                const projectionStartedAt = Date.now();
-                return LifeState.staleGoalCandidates(batchSize, Date.now()).then((states) => {
-                    BackgroundWorkGovernor.recordStage(job, 'projection', Date.now() - projectionStartedAt);
-                    const continuation = states.length >= batchSize || Date.now() >= deadlineAt;
-                    if (Date.now() >= deadlineAt) return { results: [], continuation: true };
-                    const reviewStartedAt = Date.now();
-                    return GoalService.reviewBatch(states, { now: Date.now() }).then((results) => ({
-                        results,
-                        continuation
-                    })).finally(() => {
-                        BackgroundWorkGovernor.recordStage(job, 'review', Date.now() - reviewStartedAt);
-                    });
+                this.staleGoalQueue ||= new BackgroundCandidateQueue();
+                return this.staleGoalQueue.run({
+                    limit: batchSize, deadlineAt,
+                    select: () => LifeState.staleGoalCandidates(batchSize, Date.now(), this.goalProjectionTelemetry(job)),
+                    refresh: (state) => this.refreshGoalCandidate(state),
+                    work: async (state) => (await GoalService.reviewBatch([state], { now: Date.now() }))[0],
+                    onStage: (stage, duration) => BackgroundWorkGovernor.recordStage(job, stage, duration),
+                    onProgress: (progress) => BackgroundWorkGovernor.recordProgress(job, progress)
                 });
             }
         });
@@ -1652,7 +1648,7 @@ const PopulationService = {
                 return invoke('GameServer/Clan/ClanWarehouseEquipmentService').resolveBatch(deadlineAt)
                     .then(() => this.releaseWarehouseMaterials(deadlineAt)).then((results) => ({
                     results,
-                    continuation: results.length >= limit || Date.now() >= deadlineAt
+                    continuation: results.continuation || results.length >= limit || Date.now() >= deadlineAt
                 })).finally(() => {
                     BackgroundWorkGovernor.recordStage(job, 'release', Date.now() - releaseStartedAt);
                 });
@@ -2828,6 +2824,7 @@ const PopulationService = {
     releaseWarehouseMaterials(deadlineAt = Infinity) {
         if (Date.now() >= deadlineAt) return Promise.resolve([]);
         return BotWarehouse.releaseColdBatch(Config.maxWarehouseReleasesPerTick, deadlineAt, {
+            onProgress: (progress) => BackgroundWorkGovernor.recordProgress('goal_warehouse_release', progress),
             onStage: (stage, durationMs) => BackgroundWorkGovernor.recordStage(
                 'goal_warehouse_release',
                 stage,
@@ -2853,46 +2850,55 @@ const PopulationService = {
             });
     },
 
-    reconcileMarketGoals(deadlineAt = Infinity, limit = Config.maxMarketGoalReconcilesPerTick, telemetryJob = 'goal_market_reconcile') {
-        const annotate = (results, candidateCount) => {
-            Object.defineProperty(results, 'candidateCount', { value: candidateCount, configurable: true });
-            return results;
+    goalProjectionTelemetry(job) {
+        return {
+            onTiming: ({ waitMs, runMs }) => {
+                BackgroundWorkGovernor.recordStage(job, 'queue_wait', waitMs);
+                BackgroundWorkGovernor.recordStage(job, 'sql', runMs);
+            },
+            onStage: (stage, duration) => BackgroundWorkGovernor.recordStage(job, stage, duration)
         };
-        if (Date.now() >= deadlineAt) return Promise.resolve(annotate([], 0));
-        const projectionStartedAt = Date.now();
-        return LifeState.marketGoalCandidates(limit)
-            .then((states) => {
-                BackgroundWorkGovernor.recordStage(telemetryJob, 'projection', Date.now() - projectionStartedAt);
-                if (Date.now() >= deadlineAt) return annotate([], states.length);
-                const reviewStartedAt = Date.now();
-                return GoalService.reviewBatch(states, {
-                    now: Date.now(),
-                    optionsForState: (state) => ({ spot: SpotProfiles.findForState(state) })
-                }).then((goalSnapshots) => {
-                    BackgroundWorkGovernor.recordStage(telemetryJob, 'review', Date.now() - reviewStartedAt);
-                    if (Date.now() >= deadlineAt) return annotate([], states.length);
-                    const travelStartedAt = Date.now();
-                    return this.runInSchedulerSlices(states.map((state, index) => ({
-                        state,
-                        goalSnapshot: goalSnapshots[index]
-                    })), ({ state, goalSnapshot }) => {
-                        const travel = GoalExecutor.beginMarketTravel(state, goalSnapshot?.current);
-                        if (!travel) return null;
-                        return LifeState.upsertState(travel, 'reconciled_market_travel').then((saved) => {
-                            if (saved) {
-                                console.info('BotPopulation :: reconciled market travel for %s', state.name);
-                            }
-                            return saved;
-                        });
-                    }, deadlineAt).then((results) => annotate(results.filter(Boolean), states.length)).finally(() => {
-                        BackgroundWorkGovernor.recordStage(telemetryJob, 'travel', Date.now() - travelStartedAt);
-                    });
+    },
+
+    refreshGoalCandidate(selected, market = false) {
+        const state = LifeState.cachedState(selected.characterId) || selected;
+        const excluded = ['traveling', 'shopping', 'merchant', 'crafting'];
+        if (market) excluded.push('dead', 'pk_hunting');
+        if (state.phase !== 'cold' || state.party?.partyId || excluded.includes(state.activity)
+            || (market && state.simulation?.ownerId && state.simulation.ownerId !== 'legacy_main')) return null;
+        if (market && Number(state.stats?.marketSellRetryAfter || 0) > Date.now()) return null;
+        return state;
+    },
+
+    async reconcileMarketGoals(deadlineAt = Infinity, limit = Config.maxMarketGoalReconcilesPerTick, telemetryJob = 'goal_market_reconcile') {
+        this.marketGoalQueue ||= new BackgroundCandidateQueue();
+        const result = await this.marketGoalQueue.run({
+            limit, deadlineAt,
+            select: () => LifeState.marketGoalCandidates(limit, Date.now(), this.goalProjectionTelemetry(telemetryJob)),
+            refresh: (state) => this.refreshGoalCandidate(state, true),
+            work: async (state) => {
+                const [snapshot] = await GoalService.reviewBatch([state], {
+                    now: Date.now(), optionsForState: (value) => ({ spot: SpotProfiles.findForState(value) })
                 });
-            })
-            .catch((err) => {
-                utils.infoWarn('BotPopulation', 'market-goal reconcile failed: %s', err.message);
-                return annotate([], 0);
-            });
+                // Goal persistence yielded. Never write a journey over newer
+                // inventory, ownership or a player activation.
+                const current = this.refreshGoalCandidate(state, true);
+                if (!current || current !== state) return null;
+                const travel = GoalExecutor.beginMarketTravel(current, snapshot?.current);
+                if (!travel) return null;
+                const startedAt = Date.now();
+                const saved = await LifeState.upsertState(travel, 'reconciled_market_travel');
+                BackgroundWorkGovernor.recordStage(telemetryJob, 'travel', Date.now() - startedAt);
+                if (saved) console.info('BotPopulation :: reconciled market travel for %s', state.name);
+                return saved;
+            },
+            onStage: (stage, duration) => BackgroundWorkGovernor.recordStage(telemetryJob, stage, duration),
+            onProgress: (progress) => BackgroundWorkGovernor.recordProgress(telemetryJob, progress)
+        });
+        Object.defineProperty(result.results, 'candidateCount', {
+            value: result.continuation ? limit : result.processed || 0, configurable: true
+        });
+        return result.results;
     },
 
     yieldSchedulerSlice(sliceStartedAt) {

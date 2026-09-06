@@ -265,6 +265,8 @@ const HotActivation = {
                         locZ: placement.loc?.locZ,
                         keepStoreLocation: !!marketStore || !!craftShop,
                         coldLifeState: !marketStore && !craftShop ? state : null,
+                        populationLocationPolicy: reason === 'near_player' && !options.forceNearPlayer
+                            ? 'physical' : 'return',
                         coldMarketState: marketStore ? state : null,
                         coldCraftState: craftShop ? state : null,
                         privateStore: marketStore ? {

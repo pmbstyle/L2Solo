@@ -176,10 +176,13 @@ function select({
     activeResponderId,
     activeResponderAt,
     allowSpokespersonFallback = true,
-    hearingRadius = HEARING_RADIUS
+    hearingRadius = HEARING_RADIUS,
+    candidates: suppliedCandidates = null
 } = {}) {
-    const partyChannel = Number(kind) === PARTY_CHANNEL_KIND;
-    const candidates = buildCandidates({ sessions, playerSession, partyChannel, hearingRadius });
+    const clanChannel = Number(kind) === 4;
+    const partyChannel = Number(kind) === PARTY_CHANNEL_KIND || clanChannel;
+    // Clan callers supply an authoritative roster; never fall back to nearby/party bots.
+    const candidates = suppliedCandidates || (clanChannel ? [] : buildCandidates({ sessions, playerSession, partyChannel, hearingRadius }));
     const explicit = PartyAddressResolver.resolve(text, candidates);
 
     if (explicit.status === 'matched') {
@@ -193,7 +196,7 @@ function select({
     }
     if (explicit.status === 'ambiguous') {
         if (partyChannel && allowSpokespersonFallback !== false) {
-            const fallback = findById(candidates, dialogueState?.spokespersonId) || candidates.find((candidate) => candidate.companion);
+            const fallback = findById(candidates, dialogueState?.spokespersonId) || candidates.find((candidate) => clanChannel || candidate.companion);
             if (fallback) {
                 return {
                     candidate: fallback,
@@ -264,7 +267,7 @@ function select({
         return { candidate: selected, candidates, status: 'matched', reason: 'selected', matchType: null };
     }
 
-    const spokesperson = findById(candidates, state.spokespersonId) || candidates.find((candidate) => candidate.companion);
+    const spokesperson = findById(candidates, state.spokespersonId) || candidates.find((candidate) => clanChannel || candidate.companion);
     if (partyChannel && spokesperson && allowSpokespersonFallback !== false) {
         return { candidate: spokesperson, candidates, status: 'matched', reason: 'party_spokesperson', matchType: null };
     }

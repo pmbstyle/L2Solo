@@ -650,6 +650,7 @@ function open(state, options = {}) {
     return LifeState.upsertState(nextState, 'cold_market_listing').then((saved) => {
         if (saved) MarketOpportunity.indexColdStore(saved);
         if (saved) MarketTelemetry.listingOpened({ speculative });
+        if (saved) invoke('GameServer/Bot/Economy/BotTradeChat').offer(saved, timestamp);
         return {
             state: saved || marketState,
             listed: !!saved,

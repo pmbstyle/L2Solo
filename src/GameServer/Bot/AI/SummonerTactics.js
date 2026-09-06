@@ -172,7 +172,7 @@ function combatAction(session, actor, target, Generics) {
 
     if (target) {
         const targetId = Number(target.fetchId?.() || 0);
-        const selectedId = Number(actor.fetchDestId?.() || 0);
+        const selectedId = Number(summon.attackTargetId || 0);
         if (summon.controlMode !== 'attack' || selectedId !== targetId) {
             actor.select?.({ id: targetId });
             SummonControl.attack(session, actor, summon);

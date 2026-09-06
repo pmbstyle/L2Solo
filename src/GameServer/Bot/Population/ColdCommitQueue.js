@@ -1,5 +1,8 @@
 const Protocol = require('./ColdSimulationProtocol');
 
+// Admission and batch sizing must agree on the cost of one ordinary row.
+const EARLY_COMMIT_ROW_BUDGET_MS = 4;
+
 function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -20,6 +23,10 @@ class ColdCommitQueue {
         this.onResults = options.onResults || (() => {});
         this.onPause = options.onPause || (() => {});
         this.onResume = options.onResume || (() => {});
+        this.admitEarlyFlush = options.admitEarlyFlush || (() => null);
+        this.completeEarlyFlush = options.completeEarlyFlush || (() => {});
+        this.capacityBlocked = false;
+        this.nextEarlyAttemptAt = 0;
         this.now = options.now || Date.now;
         this.targetMs = Math.max(100, Number(options.targetMs) || 2000);
         this.hardMs = Math.max(this.targetMs, Number(options.hardMs) || 5000);
@@ -40,6 +47,9 @@ class ColdCommitQueue {
         this.paused = false;
         this.p1Credit = 0;
         this.samples = { claim: [], commit: [], queue: [] };
+        this.stageSamples = { prepare: [], commitCall: [], afterCommit: [], ackBuild: [] };
+        this.flushReasons = {};
+        this.lastBatchReason = null;
         this.counters = {
             enqueued: 0,
             coalesced: 0,
@@ -52,7 +62,10 @@ class ColdCommitQueue {
             flushes: 0,
             pauses: 0,
             resumes: 0,
-            highWaterHits: 0
+            highWaterHits: 0,
+            earlyAttempts: 0,
+            earlyDenied: 0,
+            earlyEmpty: 0
         };
     }
 
@@ -154,28 +167,35 @@ class ColdCommitQueue {
         return selected;
     }
 
-    takeBatch(force = false) {
+    takeBatch(force = false, rowLimit = this.maxRows) {
         const timestamp = this.now();
-        if (this.p0.length) return this.takeLaneBatch(this.p0, Math.min(16, this.maxRows));
+        this.lastBatchReason = null;
+        if (this.p0.length) {
+            this.lastBatchReason = force ? 'forced' : 'p0';
+            return this.takeLaneBatch(this.p0, Math.min(16, rowLimit));
+        }
         const p2Overdue = this.p2.size > 0 && timestamp - this.oldest(this.p2) >= this.overdueMs;
         const p1Ready = this.p1.length > 0 && (force || timestamp - this.oldest(this.p1) >= this.p1TargetMs);
         const p2Ready = this.p2.size > 0 && (force || timestamp - this.oldest(this.p2) >= this.targetMs);
         if (p2Overdue || (p2Ready && (this.p1Credit >= 4 || !p1Ready))) {
+            this.lastBatchReason = force ? 'forced' : p2Overdue ? 'p2_overdue' : 'p2_target';
             const batch = [...this.p2.values()]
                 .sort((a, b) => a.queuedAt - b.queuedAt)
-                .slice(0, this.maxRows);
+                .slice(0, rowLimit);
             batch.forEach((entry) => this.p2.delete(Number(entry.characterId)));
             this.p1Credit = 0;
             return batch;
         }
         if (p1Ready) {
+            this.lastBatchReason = force ? 'forced' : 'p1';
             this.p1Credit += 1;
-            return this.takeLaneBatch(this.p1, Math.min(16, this.maxRows));
+            return this.takeLaneBatch(this.p1, Math.min(16, rowLimit));
         }
         if (p2Ready) {
+            this.lastBatchReason = force ? 'forced' : 'p2_target';
             const batch = [...this.p2.values()]
                 .sort((a, b) => a.queuedAt - b.queuedAt)
-                .slice(0, this.maxRows);
+                .slice(0, rowLimit);
             batch.forEach((entry) => this.p2.delete(Number(entry.characterId)));
             this.p1Credit = 0;
             return batch;
@@ -201,12 +221,34 @@ class ColdCommitQueue {
 
     async flushDue(force = false) {
         if (this.flushing) return false;
-        const batch = this.takeBatch(force);
-        if (!batch.length) return false;
+        let batch = this.takeBatch(force);
+        let earlyLease = null;
+        if (!batch.length && this.capacityBlocked && this.size() && this.now() >= this.nextEarlyAttemptAt) {
+            this.counters.earlyAttempts += 1;
+            this.nextEarlyAttemptAt = this.now() + 100;
+            earlyLease = this.admitEarlyFlush();
+            if (earlyLease) {
+                // Free a few ownership slots without introducing a full idle
+                // batch into a player window. Atomic groups are never split.
+                const rowLimit = Math.min(this.maxRows, 4, Math.max(1, Math.floor(Number(earlyLease.budgetMs || 8) / EARLY_COMMIT_ROW_BUDGET_MS)));
+                batch = this.takeBatch(true, rowLimit);
+                if (batch.length) this.lastBatchReason = 'capacity';
+                else this.counters.earlyEmpty += 1;
+            } else {
+                this.counters.earlyDenied += 1;
+            }
+        }
+        if (!batch.length) {
+            if (earlyLease) this.completeEarlyFlush(earlyLease, 0);
+            return false;
+        }
         this.flushing = true;
+        const reason = this.lastBatchReason || 'unknown';
+        this.flushReasons[reason] = Number(this.flushReasons[reason] || 0) + 1;
         batch.forEach((entry) => { this.bytes = Math.max(0, this.bytes - entry.bytes); });
         const startedAt = this.now();
         let results = [];
+        let afterCommitMs = 0;
         try {
             const prepared = [];
             for (const proposal of batch) {
@@ -221,13 +263,26 @@ class ColdCommitQueue {
                     results.push({ ok: false, characterId: proposal.characterId, reason: error?.message || 'prepare_error', proposal });
                 }
             }
+            this.recordStage('prepare', this.now() - startedAt);
             if (prepared.length) {
-                const committed = await this.retryBusy(() => this.commit(prepared));
+                const commitStartedAt = this.now();
+                let committed;
+                try {
+                    committed = await this.retryBusy(() => this.commit(prepared));
+                } finally {
+                    // Includes database queueing and busy retries, not just SQL execution.
+                    this.recordStage('commitCall', this.now() - commitStartedAt);
+                }
                 const byId = new Map(prepared.map((entry) => [Number(entry.nextState.characterId), entry]));
                 for (const result of committed || []) {
                     const entry = byId.get(Number(result.characterId));
                     if (result.ok) {
-                        await this.afterCommit(entry, result);
+                        const afterStartedAt = this.now();
+                        try {
+                            await this.afterCommit(entry, result);
+                        } finally {
+                            afterCommitMs += this.now() - afterStartedAt;
+                        }
                         this.counters.committed += 1;
                     } else if (String(result.reason || '').includes('stale') || ['lease_changed', 'owner_changed'].includes(result.reason)) {
                         this.counters.stale += 1;
@@ -247,6 +302,9 @@ class ColdCommitQueue {
                 proposal
             })));
         } finally {
+            this.recordStage('afterCommit', afterCommitMs);
+            if (earlyLease) this.completeEarlyFlush(earlyLease, this.now() - startedAt);
+            if (!this.size()) this.capacityBlocked = false;
             this.samples.commit.push(this.now() - startedAt);
             if (this.samples.commit.length > 256) this.samples.commit.shift();
             this.samples.queue.push(...batch.map((entry) => startedAt - entry.queuedAt));
@@ -300,6 +358,13 @@ class ColdCommitQueue {
         return { drained: this.size() === 0 && !this.flushing, ...this.snapshot() };
     }
 
+    recordStage(stage, durationMs) {
+        const samples = this.stageSamples[stage];
+        if (!samples) return;
+        samples.push(Math.max(0, Number(durationMs) || 0));
+        if (samples.length > 256) samples.shift();
+    }
+
     snapshot() {
         const now = this.now();
         const queued = [...this.p0, ...this.p1, ...this.p2.values()];
@@ -314,10 +379,14 @@ class ColdCommitQueue {
             oldestMs: queued.length ? Math.max(0, now - oldestAt) : 0,
             paused: this.paused,
             flushing: this.flushing,
+            flushReasons: { ...this.flushReasons },
+            stages: Object.fromEntries(Object.entries(this.stageSamples).map(([stage, samples]) => [stage, {
+                count: samples.length, p95Ms: percentile(samples)
+            }])),
             commitP95Ms: percentile(this.samples.commit),
             queueP95Ms: percentile(this.samples.queue)
         };
     }
 }
 
-module.exports = { ColdCommitQueue };
+module.exports = { ColdCommitQueue, EARLY_COMMIT_ROW_BUDGET_MS };

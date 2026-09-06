@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
@@ -117,7 +118,7 @@ async function supplementMaterials(characterId, items, recipe, multiplier = 1) {
         const amount = Number(current?.amount || 0);
         const required = Number(material.amount || 0) * Number(multiplier || 1);
         if (amount >= required) return [];
-        const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(material.selfId));
+        const template = ItemTemplateIndex.find(DataCache.items, material.selfId);
         return [{ material, current, amount: required - amount, name: template?.template?.name || `Item ${material.selfId}` }];
     });
     if (!missing.length) return { items, supplemented: [] };
@@ -179,7 +180,7 @@ async function combineDualSword(state, recipe, station) {
     if (!hasCombinationIngredients(items, recipe)) {
         return { state: await refreshPhysicalInventory(state), crafted: false, reason: 'materials_changed' };
     }
-    const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(recipe.productId));
+    const template = ItemTemplateIndex.find(DataCache.items, recipe.productId);
     if (!template) return { state, crafted: false, reason: 'missing_product' };
 
     let result;
@@ -263,7 +264,7 @@ async function craft(state, random = Math.random) {
 
     const profile = CraftShopService.profileFor(crafterState);
     const entry = profile.entries.find((candidate) => Number(candidate.recipeId) === Number(recipe.recipeId));
-    const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(recipe.productId));
+    const template = ItemTemplateIndex.find(DataCache.items, recipe.productId);
     const stationService = isStationService(crafterState);
     const crafterMp = Number(crafterState.vitals?.mp || 0);
     if (!entry || !template || (!stationService && crafterMp < Number(recipe.mpCost || 0))) {

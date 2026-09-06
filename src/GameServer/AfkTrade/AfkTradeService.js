@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const Actor = invoke('GameServer/Actor/Actor');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
@@ -59,7 +60,7 @@ function onlineSession(characterId) {
 }
 
 function itemTemplate(selfId) {
-    return (DataCache.items || []).find((entry) => Number(entry.selfId) === Number(selfId)) || null;
+    return ItemTemplateIndex.find(DataCache.items, selfId) || null;
 }
 
 function itemName(selfId) {

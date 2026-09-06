@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('./ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 
 function validSlot(value) {
@@ -6,7 +7,7 @@ function validSlot(value) {
 }
 
 function canonicalSlot(selfId, fallback = 0) {
-    const template = (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId));
+    const template = ItemTemplateIndex.find(DataCache.items, selfId);
     if (template) {
         const flattened = utils.crushOb(template);
         const slot = validSlot(flattened.slot ?? template.etc?.slot);

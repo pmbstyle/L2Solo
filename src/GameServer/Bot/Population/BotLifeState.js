@@ -1,3 +1,5 @@
+const LifeStateCache = require('./LifeStateCache');
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Database = invoke('Database');
 const Metrics  = invoke('GameServer/Bot/Population/PopulationMetrics');
 const DataCache = invoke('GameServer/DataCache');
@@ -16,7 +18,7 @@ const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
-const cache = new Map();
+const cache = new LifeStateCache();
 const pendingWrites = new Map();
 const changeListeners = new Set();
 let initialized = false;
@@ -116,7 +118,7 @@ function levelForExp(exp, fallback = 1) {
 }
 
 function itemTemplate(selfId) {
-    return (DataCache.items || []).find((item) => Number(item.selfId) === Number(selfId)) || null;
+    return ItemTemplateIndex.find(DataCache.items, selfId) || null;
 }
 
 function itemName(selfId, fallback = '') {
@@ -513,6 +515,7 @@ function recordFromSession(session, phase, reason = '') {
     const inventory = inventorySummaryFromItems(actor.backpack?.fetchItems ? actor.backpack.fetchItems() : []);
     const stats = {
         role: session.botStatus?.role || null,
+        pvpEnemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session),
         clanGearExchangeRevision: Number(cache.get(characterId)?.stats?.clanGearExchangeRevision || 0),
         classId: actor.fetchClassId ? Number(actor.fetchClassId()) : null,
         // A freshly spawned bot may cool before it has gone through a cold
@@ -884,6 +887,11 @@ function mergeSessionIntoLifeState(session, state, phase, reason = '', options =
     const observedStats = parseJson(observed.statsJson, {});
     const observedInventory = parseJson(observed.inventorySummary, {});
     const timestamp = now();
+    const physicalLoc = options.physicalLocation
+        ? { locX: observed.locX, locY: observed.locY, locZ: observed.locZ } : null;
+    const physicalSpot = physicalLoc ? SpotService.findCurrentSpot(physicalLoc) : null;
+    const physicalActivity = physicalLoc && ['hunting', 'resting', 'shopping', 'pk_hunting'].includes(observed.activity)
+        ? observed.activity : null;
     return {
         ...state,
         accountName: observed.accountName,
@@ -893,8 +901,12 @@ function mergeSessionIntoLifeState(session, state, phase, reason = '', options =
         sp: observed.sp,
         adena: observed.adena,
         phase,
-        activity: options.activity || state.activity || observed.activity,
-        loc: options.loc || state.loc || { locX: observed.locX, locY: observed.locY, locZ: observed.locZ },
+        activity: physicalActivity || options.activity || state.activity || observed.activity,
+        loc: physicalLoc || options.loc || state.loc || { locX: observed.locX, locY: observed.locY, locZ: observed.locZ },
+        spotId: physicalLoc ? physicalSpot?.id || null : state.spotId,
+        currentRegion: physicalLoc
+            ? WorldAreaCatalog.resolve(physicalLoc)?.name || physicalSpot?.name || state.currentRegion
+            : state.currentRegion,
         vitals: { hp: observed.hp, maxHp: observed.maxHp, mp: observed.mp, maxMp: observed.maxMp },
         levelBand: observed.targetLevelBand || state.levelBand,
         timing: {
@@ -903,7 +915,13 @@ function mergeSessionIntoLifeState(session, state, phase, reason = '', options =
             nextResolveAt: options.nextResolveAt ?? state.timing?.nextResolveAt ?? null,
             lastHotAt: phase === 'hot' ? timestamp : state.timing?.lastHotAt || null
         },
-        stats: { ...(state.stats || {}), ...observedStats, lastReason: reason },
+        stats: {
+            ...(state.stats || {}), ...observedStats, lastReason: reason,
+            ...(physicalLoc ? {
+                travel: null,
+                restUntil: physicalActivity === 'resting' ? timestamp + 30000 : null
+            } : {})
+        },
         inventory: preserveStarterLootProvenance(state.inventory, observedInventory)
     };
 }
@@ -1437,12 +1455,12 @@ const BotLifeState = {
             row.spotId = marketState.spotId || row.spotId;
             row.inventorySummary = safeJson(InventorySummary.canonicalize(marketState.inventory));
             row.adena = Number(marketState.adena || row.adena || 0);
-            row.statsJson = safeJson({ ...(marketState.stats || {}), lastReason: reason });
+            row.statsJson = safeJson({ ...(marketState.stats || {}), pvpEnemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session), lastReason: reason });
         } else if (craftState?.stats?.craftShop) {
             row.activity = 'crafting';
             row.currentRegion = craftState.currentRegion || row.currentRegion;
             row.spotId = craftState.spotId || row.spotId;
-            row.statsJson = safeJson({ ...(craftState.stats || {}), lastReason: reason });
+            row.statsJson = safeJson({ ...(craftState.stats || {}), pvpEnemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session), lastReason: reason });
         }
         const characterId = row.characterId;
         const previous = pendingWrites.get(characterId) || Promise.resolve();
@@ -1493,6 +1511,7 @@ const BotLifeState = {
                 },
                 stats: {
                     ...(marketState.stats || {}),
+                    pvpEnemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session),
                     marketStore: {
                         ...(marketState.stats.marketStore || {}),
                         loc: { ...storeLoc },
@@ -1526,15 +1545,17 @@ const BotLifeState = {
                     activityStartedAt: now(),
                     nextResolveAt: null
                 },
-                stats: { ...(craftState.stats || {}), lastReason: reason },
+                stats: { ...(craftState.stats || {}), pvpEnemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session), lastReason: reason },
                 inventory: parseJson(row.inventorySummary, {})
             };
             return this.upsertState(nextState, reason);
         }
 
         if (session.coldLifeState) {
-            const preserved = recoverOrphanedGiranState(session.coldLifeState);
+            const physicalLocation = session.populationLocationPolicy === 'physical';
+            const preserved = physicalLocation ? session.coldLifeState : recoverOrphanedGiranState(session.coldLifeState);
             const nextState = mergeSessionIntoLifeState(session, preserved, 'cold', reason, {
+                physicalLocation,
                 loc: preserved.loc,
                 nextResolveAt: now() + 30000 + Math.round(Math.random() * 90000)
             });
@@ -1620,39 +1641,9 @@ const BotLifeState = {
 
     coldNear(loc, radius, limit = 10) {
         if (!initialized || !loc) return Promise.resolve([]);
-
         const safeRadius = Math.max(1, Number(radius) || 6000);
         const safeLimit = Math.max(1, Math.min(100, Number(limit) || 10));
-        const minX = Number(loc.locX) - safeRadius;
-        const maxX = Number(loc.locX) + safeRadius;
-        const minY = Number(loc.locY) - safeRadius;
-        const maxY = Number(loc.locY) + safeRadius;
-
-        return Database.execute([
-            `SELECT * FROM ${TABLE}
-            WHERE phase = 'cold'
-            AND activity <> 'pk_hunting'
-            AND locX BETWEEN ? AND ?
-            AND locY BETWEEN ? AND ?
-            ORDER BY ((locX - ?) * (locX - ?)) + ((locY - ?) * (locY - ?)) ASC
-            LIMIT ${safeLimit * 3}`,
-            [minX, maxX, minY, maxY, Number(loc.locX), Number(loc.locX), Number(loc.locY), Number(loc.locY)]
-        ]).then((rows) => rows.map((row) => normalize(row))
-            .map((state) => {
-                const dx = state.loc.locX - Number(loc.locX);
-                const dy = state.loc.locY - Number(loc.locY);
-                return { state, distance: Math.sqrt(dx * dx + dy * dy) };
-            })
-            .filter((item) => item.distance <= safeRadius)
-            .sort((a, b) => a.distance - b.distance)
-            .slice(0, safeLimit)
-            .map((item) => {
-                cache.set(item.state.characterId, item.state);
-                return item.state;
-            })).catch((err) => {
-                utils.infoWarn('BotLife', 'failed to fetch nearby cold states: %s', err.message);
-                return [];
-            });
+        return Promise.resolve(cache.near(loc, safeRadius, safeLimit));
     },
 
     dueCold(limit = 10, at = now()) {
@@ -2408,28 +2399,36 @@ const BotLifeState = {
 
     enqueueEquipmentGoalAdvanceForState,
 
-    marketGoalCandidates(limit = 8, timestamp = now()) {
+    marketGoalCandidates(limit = 8, timestamp = now(), options = {}) {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
+        // Filter cooldowns from compact indexed metadata before loading full
+        // lifecycle and goal payloads for the bounded candidate page.
         const fetchAfter = (cursor) => Database.execute([
-            `SELECT states.*, goals.goalJson AS currentGoalJson,
-                goals.updatedAt AS currentGoalUpdatedAt FROM ${TABLE} states
-            INDEXED BY bot_life_state_market_reconcile
+            `WITH candidates AS MATERIALIZED (
+                SELECT states.characterId, states.updatedAt FROM ${TABLE} states
+                INDEXED BY bot_life_state_market_review
+                WHERE states.phase = 'cold'
+                AND (states.partyId IS NULL OR states.partyId = '')
+                AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting')
+                AND COALESCE(CAST(json_extract(states.statsJson, '$.marketSellRetryAfter') AS INTEGER), 0) <= ?
+                AND (states.updatedAt > ?
+                    OR (states.updatedAt = ? AND states.characterId > ?))
+                ORDER BY states.updatedAt ASC, states.characterId ASC
+                LIMIT ${safeLimit}
+            )
+            SELECT states.*, goals.goalJson AS currentGoalJson,
+                goals.updatedAt AS currentGoalUpdatedAt FROM candidates
+            INNER JOIN ${TABLE} states ON states.characterId = candidates.characterId
             LEFT JOIN bot_goal_state goals ON goals.characterId = states.characterId
-            WHERE states.phase = 'cold'
-            AND (states.partyId IS NULL OR states.partyId = '')
-            AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting')
-            AND COALESCE(CAST(json_extract(states.statsJson, '$.marketSellRetryAfter') AS INTEGER), 0) <= ?
-            AND (states.updatedAt > ?
-                OR (states.updatedAt = ? AND states.characterId > ?))
-            ORDER BY states.updatedAt ASC, states.characterId ASC
-            LIMIT ${safeLimit}`,
+            ORDER BY candidates.updatedAt ASC, candidates.characterId ASC`,
             [
                 Number(timestamp) || now(),
                 Number(cursor?.updatedAt || 0),
                 Number(cursor?.updatedAt || 0),
                 Number(cursor?.characterId || 0)
-            ]
+            ],
+            { read: true, onTiming: options.onTiming }
         ], 'bot-life:market-goal-candidates');
         return fetchAfter(marketGoalCursor).then(async (rows) => {
             if (!rows.length && (marketGoalCursor.updatedAt > 0 || marketGoalCursor.characterId > 0)) {
@@ -2443,7 +2442,8 @@ const BotLifeState = {
                     characterId: Math.max(0, Number(last.characterId || 0))
                 };
             }
-            return rows.map((row) => {
+            const startedAt = now();
+            const states = rows.map((row) => {
                 const state = normalize(row);
                 if (row.currentGoalJson) {
                     invoke('GameServer/Bot/Goals/GoalState').prime(
@@ -2455,6 +2455,8 @@ const BotLifeState = {
                 cache.set(state.characterId, state);
                 return state;
             });
+            options.onStage?.('hydrate', now() - startedAt);
+            return states;
         }).catch((err) => {
             utils.infoWarn('BotLife', 'failed to fetch market-goal candidates: %s', err.message);
             return [];
@@ -2622,30 +2624,44 @@ const BotLifeState = {
         });
     },
 
-    staleGoalCandidates(limit = 8, timestamp = now()) {
+    staleGoalCandidates(limit = 8, timestamp = now(), options = {}) {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
+        // Drive selection from ordered, indexed goal metadata. CROSS JOIN keeps
+        // SQLite from scanning large lifecycle rows before applying the limit.
         return Database.execute([
-            `SELECT states.*, goals.goalJson AS currentGoalJson,
-                goals.updatedAt AS currentGoalUpdatedAt FROM ${TABLE} states
-            INNER JOIN bot_goal_state goals ON goals.characterId = states.characterId
-            WHERE states.phase = 'cold'
-            AND (states.partyId IS NULL OR states.partyId = '')
-            AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting')
-            AND COALESCE(CAST(json_extract(goals.goalJson, '$.nextReviewAt') AS INTEGER), 0) <= ?
-            ORDER BY goals.updatedAt ASC, states.updatedAt ASC
-            LIMIT ${safeLimit}`,
-            [Number(timestamp) || now()]
-        ]).then((rows) => rows.map((row) => {
-            const state = normalize(row);
-            invoke('GameServer/Bot/Goals/GoalState').prime(
-                state.characterId,
-                row.currentGoalJson,
-                row.currentGoalUpdatedAt
-            );
-            cache.set(state.characterId, state);
-            return state;
-        })).catch((err) => {
+            `WITH candidates AS MATERIALIZED (
+                SELECT states.characterId FROM bot_goal_state goals INDEXED BY bot_goal_state_review_queue
+                CROSS JOIN ${TABLE} states INDEXED BY bot_life_state_goal_review
+                    ON goals.characterId = states.characterId
+                WHERE states.phase = 'cold'
+                AND (states.partyId IS NULL OR states.partyId = '')
+                AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting')
+                AND COALESCE(CAST(json_extract(goals.goalJson, '$.nextReviewAt') AS INTEGER), 0) <= ?
+                ORDER BY goals.updatedAt ASC, states.updatedAt ASC
+                LIMIT ${safeLimit}
+            )
+            SELECT states.*, goals.goalJson AS currentGoalJson, goals.updatedAt AS currentGoalUpdatedAt
+            FROM candidates INNER JOIN ${TABLE} states USING (characterId)
+            INNER JOIN bot_goal_state goals USING (characterId)
+            ORDER BY goals.updatedAt ASC, states.updatedAt ASC`,
+            [Number(timestamp) || now()],
+            { read: true, onTiming: options.onTiming }
+        ], 'bot-life:stale-goal-candidates').then((rows) => {
+            const startedAt = now();
+            const states = rows.map((row) => {
+                const state = normalize(row);
+                invoke('GameServer/Bot/Goals/GoalState').prime(
+                    state.characterId,
+                    row.currentGoalJson,
+                    row.currentGoalUpdatedAt
+                );
+                cache.set(state.characterId, state);
+                return state;
+            });
+            options.onStage?.('hydrate', now() - startedAt);
+            return states;
+        }).catch((err) => {
             utils.infoWarn('BotLife', 'failed to fetch stale goal candidates: %s', err.message);
             return [];
         });
@@ -3096,6 +3112,7 @@ const BotLifeState = {
             // Publish the committed paperdoll before yielding back to hot AI.
             if (publish) publish({ ...result, state: snapshot });
             notifyColdSnapshot(snapshot, 'clan_warehouse_equipment', { critical: true });
+            invoke('GameServer/Bot/AI/BotClanChat').onWarehouse(snapshot, result, request.clanId);
             return { ...result, state: snapshot };
         }).catch((error) => {
             utils.infoWarn('BotLife', 'failed clan warehouse exchange for %d: %s', id, error.message || error);
@@ -3346,6 +3363,30 @@ const BotLifeState = {
         return cache.get(Number(characterId)) || null;
     },
 
+    rememberEnemies(session) {
+        const id = Number(session?.actor?.fetchId?.());
+        if (!initialized || !cache.has(id)) return Promise.resolve(false);
+        const previous = pendingWrites.get(id) || Promise.resolve();
+        const next = previous.catch(() => {}).then(async () => {
+            const enemies = invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session);
+            const current = cache.get(id);
+            if (!current || current.phase !== 'hot' || JSON.stringify(current.stats?.pvpEnemies || []) === JSON.stringify(enemies)) return false;
+            await Database.execute([
+                `UPDATE ${TABLE} SET statsJson = json_set(COALESCE(statsJson, '{}'), '$.pvpEnemies', json(?)) WHERE characterId = ? AND phase = 'hot'`,
+                [JSON.stringify(enemies), id]
+            ], 'bot:enemy-memory');
+            const latest = cache.get(id);
+            if (latest) cache.set(id, { ...latest, stats: { ...(latest.stats || {}), pvpEnemies: enemies } });
+            return true;
+        }).catch(error => {
+            utils.infoWarn('BotLife', 'failed enemy memory for %s: %s', id, error.message);
+            return false;
+        });
+        const tracked = next.finally(() => { if (pendingWrites.get(id) === tracked) pendingWrites.delete(id); });
+        pendingWrites.set(id, tracked);
+        return tracked;
+    },
+
     acceptAppearanceMetadata(characterId, sex, appearanceVersion) {
         const id = Number(characterId);
         if (!cache.has(id)) return Promise.resolve(null);
@@ -3408,9 +3449,11 @@ const BotLifeState = {
 
     allStates(limit = 500) {
         const safeLimit = Math.max(1, Math.min(2000, Number(limit) || 500));
-        return Array.from(cache.values())
-            .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
-            .slice(0, safeLimit);
+        return cache.recent(safeLimit);
+    },
+
+    stateRevision() {
+        return cache.revision;
     },
 
     marketGoalCursorSnapshot() {

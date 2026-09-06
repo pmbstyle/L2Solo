@@ -121,6 +121,7 @@ function sendStopMove(session, summon) {
 }
 
 function stop(session, summon) {
+    delete summon.attackTargetId;
     summon.controlMode = 'idle';
     summon.followOwner = false;
     clearFollowTimer(summon);
@@ -206,6 +207,7 @@ function scheduleFollowStep(session, actor, summon) {
 }
 
 function startFollowOwner(session, actor, summon) {
+    delete summon.attackTargetId;
     ensureTimerBag(summon);
     clearFollowTimer(summon);
     clearResumeTimer(summon);
@@ -276,6 +278,7 @@ function attack(session, actor, summon) {
         clearFollowTimer(summon);
         clearResumeTimer(summon);
         summon.controlMode = 'attack';
+        summon.attackTargetId = target.fetchId();
         summon.followOwner = false;
         summon.attack?.clearTimers?.();
 
@@ -286,9 +289,8 @@ function attack(session, actor, summon) {
         );
 
         summon.automation.scheduleAction(session, summon, target, attackRange, () => {
-            summon.setLocXYZ(summon.automation.actionStopCoords(summon, target, attackRange));
             attackTick(session, summon, target);
-        });
+        }, { collisionAware: true, action: 'attack' });
     });
 }
 
@@ -308,20 +310,41 @@ function attackTick(session, summon, target) {
         return;
     }
 
+    const Restrictions = invoke('GameServer/Effects/EffectRestrictions');
+    if (!isValidEnemyTarget(session.actor, target) || !Restrictions.canAttack(summon)) {
+        stop(session, summon);
+        return;
+    }
+    const range = Math.max(0, Number(summon.fetchAtkRadius?.()) || 40);
+    const AttackRange = invoke('GameServer/Actor/AttackRange');
+    if (!AttackRange.isWithinRange(summon, target, range)) {
+        summon.state.setHits(false);
+        if (!Restrictions.canMove(summon)) { stop(session, summon); return; }
+        summon.automation.scheduleAction(session, summon, target, range,
+            () => attackTick(session, summon, target), { collisionAware: true, action: 'attack' });
+        return;
+    }
+
     const Attack = invoke('GameServer/Actor/Attack');
     const attackHelper = new Attack();
     const speed = Formulas.calcMeleeAtkTime(summon.fetchCollectiveAtkSpd());
     const hitLanded = Formulas.calcHitChance(summon, target, Math.random, attackHelper.positionContext(summon, target));
     const hit = attackHelper.prepareNpcMeleeHit(summon, target, hitLanded);
 
+    invoke('GameServer/Bot/AI/BotMobCompetition').record(summon, target);
     session.dataSendToMeAndOthers(ServerResponse.attack(summon, target.fetchId(), hit), summon);
     summon.state.setHits(true);
 
     summon.attack.queueTimer(() => {
         if (summon.controlMode !== 'attack' || summon.isDead?.()
             || target.isDead?.() || target.state?.fetchDead?.() === true) return;
+        if (!isValidEnemyTarget(session.actor, target) || !Restrictions.canAttack(summon) ||
+            !AttackRange.isWithinRange(summon, target, range)) return;
         if (hitLanded) {
-            invoke(path.npc).receivedHit(session, summon, target, hit.damage);
+            if (target.fetchKind) invoke(path.npc).receivedHit(session, summon, target, hit.damage);
+            else invoke(path.actor).receivedHit(session, target, hit.damage, { source: summon });
+        } else if (!target.fetchKind && invoke('GameServer/Bot/AI/BotPvpThreats').record(target, summon)) {
+            invoke('GameServer/Actor/PvpFlag').mark(session, session.actor);
         }
     }, speed * 0.644);
 
@@ -397,9 +420,18 @@ function isValidEnemyTarget(actor, target) {
     const duel = ArenaDuelService.duelForActor?.(actor) || ArenaDuelService.duelForActor?.(target);
     const arenaOpponent = duel?.state === 'FIGHTING'
         && invoke('GameServer/World/ArenaCombatRules').canInteract(actor, target);
-    return (target?.fetchAttackable?.() === true || arenaOpponent)
-        && target?.state?.fetchDead?.() !== true
-        && target?.isDead?.() !== true;
+    if (!actor || !target || target === actor || target.state?.fetchDead?.() || target.isDead?.()) return false;
+    if (target.fetchAttackable?.() === true) return true;
+    if (arenaOpponent) return true;
+    if (target.fetchKind) return false;
+    const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
+    const Risk = invoke('GameServer/Bot/AI/BotPvpRisk');
+    return invoke('GameServer/World/ArenaCombatRules').canInteract(actor, target) &&
+        !Threats.inPeace(actor) && !Threats.inPeace(target) &&
+        !Risk.sameParty(actor.session, target.session) && !Risk.sameClan(actor, target) &&
+        !(actor.session?.pvpDefense && Threats.protectedTarget(actor.session, target)) &&
+        (target.fetchPvpFlag?.() > 0 || target.fetchKarma?.() > 0 ||
+            invoke('GameServer/Bot/AI/BotRevenge').allows(actor.session, target));
 }
 
 function resolveSkillTarget(actor, summon, config) {
@@ -479,6 +511,7 @@ module.exports = {
     startFollowOwner,
     startLifetime,
     attackTick,
+    isValidEnemyTarget,
     startPetFeed,
     stop,
     tickLifetime,

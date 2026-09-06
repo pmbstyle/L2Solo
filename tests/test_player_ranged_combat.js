@@ -89,29 +89,18 @@ assert.strictEqual(
     'explicit attack ranges should be preserved'
 );
 
-const bowActor = attackActor('Weapon.Bow');
-AttackRequest(session(), bowActor, { id: 3000001, ctrl: true });
-assert.strictEqual(
-    bowActor.storedAttack.range,
-    AttackRequest.BOW_ATTACK_RANGE,
-    'player bow attack requests should store the bow attack range for AttackExec'
-);
-
-const swordActor = attackActor('Weapon.Sword');
-AttackRequest(session(), swordActor, { id: 3000001, ctrl: true });
-assert.strictEqual(
-    swordActor.storedAttack.range,
-    40,
-    'player melee attack requests should store the sourced melee range'
-);
-
-const poleActor = attackActor('Weapon.Pole');
-AttackRequest(session(), poleActor, { id: 3000001, ctrl: true });
-assert.strictEqual(
-    poleActor.storedAttack.range,
-    66,
-    'player polearm attack requests should store the sourced range for AttackExec'
-);
+const Generics = invoke(path.actor);
+const originalAttackExec = Generics.attackExec;
+try {
+    for (const [kind, range] of [['Weapon.Bow', AttackRequest.BOW_ATTACK_RANGE], ['Weapon.Sword', 40], ['Weapon.Pole', 66]]) {
+        const actor = attackActor(kind);
+        let dispatched;
+        Generics.attackExec = (_session, _actor, data) => { dispatched = data; };
+        AttackRequest(session(), actor, { id: 3000001, ctrl: true });
+        assert.strictEqual(dispatched?.range, range, `${kind} must dispatch its weapon range immediately`);
+        assert.strictEqual(actor.storedAttack, undefined, 'attack must not depend on a later position update');
+    }
+} finally { Generics.attackExec = originalAttackExec; }
 
 (async () => {
     DataCache.init();
