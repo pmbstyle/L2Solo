@@ -59,9 +59,10 @@ function tick(session, bot, Generics, BotAI, { now = Date.now(), rng = Math.rand
         if (session.pvpDefense || session.pvpRevenge) clear(session);
         return false;
     }
-    // Ordinary self-defense ends when the aggressor goes white. Revenge has
-    // explicit, temporary permission for exactly one remembered enemy.
-    const threats = context.threats.filter(entry => entry.actor.fetchPvpFlag?.() > 0 || entry.actor.fetchKarma?.() > 0 || Revenge.allows(session, entry.actor, now));
+    // Attacking a red name need not flag the aggressor. Chaotic defenders
+    // retain permission only for a recent, recorded attacker.
+    const threats = context.threats.filter(entry => entry.actor.fetchPvpFlag?.() > 0 || entry.actor.fetchKarma?.() > 0 ||
+        Threats.canDefendWhileChaotic(session, entry.actor, now) || Revenge.allows(session, entry.actor, now));
     if (!threats.length) { clear(session); return false; }
     context.threats = threats;
     const focus = Threats.focus(session, context, now);

@@ -527,7 +527,9 @@ const BotAI = {
                     session.noTargetTicks = 0;
                     spawnTarget = this.beginPartyTownRecovery(session, bot);
                 } else if (bot.fetchKarma() > 0) {
-                    session.plan = 'pk_hunting';
+                    session.plan = session.pkProfile ? 'pk_hunting' : 'hunting';
+                    session.currentSpot = null;
+                    session.noTargetTicks = 0;
                     spawnTarget = this.getDeathRespawnTarget(session, bot);
                 } else if (session.plan === 'merchant' || (bot.fetchPrivateStore && bot.fetchPrivateStore())) {
                     session.plan = 'merchant';

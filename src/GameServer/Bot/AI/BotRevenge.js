@@ -59,6 +59,11 @@ function request(session, target, reason, lines, attack = true, now = Date.now()
 }
 
 function tryStart(session, now = Date.now(), rng = Math.random) {
+    // Clear karma through hunting before initiating another revenge fight.
+    if (session?.actor?.fetchKarma?.() > 0) {
+        delete session.pendingPvpProvocation;
+        return false;
+    }
     if (session?.pendingPvpProvocation) return flushPending(session, now);
     if (!String(session?.accountId || '').startsWith('bot_') || session.arenaEphemeral ||
         session.staticService || session.pvpDefense || session.pvpRevenge || session.pvpAggressors?.size ||

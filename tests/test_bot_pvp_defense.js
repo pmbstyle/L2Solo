@@ -36,7 +36,7 @@ function actor(id, options = {}) {
         fetchMp() { return this.mp; }, fetchMaxMp: () => 100,
         fetchCp() { return this.cp; }, setCp(n) { this.cp = n; }, fetchMaxCp: () => 100,
         fetchLevel() { return this.level; }, fetchClassId() { return this.classId || 0; },
-        fetchKarma: () => 0, fetchPvpFlag() { return this.flag; }, fetchDestId() { return this.target; },
+        fetchKarma() { return this.karma || 0; }, fetchPvpFlag() { return this.flag; }, fetchDestId() { return this.target; },
         fetchIsOnline() { return this.online; }, isDead() { return this.dead; }, canUseSkill: () => true,
         select(data) { this.target = data.id; }, unselect() { this.target = undefined; }, statusUpdateVitals() {},
         state: { fetchDead: () => value.dead, fetchSeated: () => value.seated, setSeated: n => { value.seated = n; },
@@ -125,6 +125,29 @@ for (const plan of ['hunting', 'resting', 'shopping', 'getting_buffed', 'followi
     assert.strictEqual(tick(own), false);
     assert.strictEqual(own.plan, plan);
     assert.strictEqual(own.currentTargetId, undefined);
+}
+
+// White players can attack a red bot without flagging; only recorded
+// aggressors are eligible, and the permission ends when karma is washed.
+for (const hp of [100, 20]) {
+    const { own, bot, enemy } = setup({ karma: 190, hp });
+    enemy.flag = 0;
+    bot.moveTo = () => ({ usable: true });
+    own.pendingPvpProvocation = { target: enemy, expiresAt: now + 10000 };
+    assert.strictEqual(invoke('GameServer/Bot/AI/BotRevenge').tryStart(own, now, () => 0), false,
+        'karma washing takes priority over starting revenge');
+    assert.strictEqual(own.pendingPvpProvocation, undefined);
+    assert.strictEqual(Threats.canDefendWhileChaotic(own, enemy, now), false);
+    Threats.record(bot, enemy, now);
+    assert.strictEqual(tick(own), true);
+    assert.strictEqual(own.pvpDefense.action, hp === 100 ? 'fight' : 'flee');
+    const attack = new (invoke('GameServer/Actor/Attack'))();
+    assert.strictEqual(attack.blockedPvpDefense(own, bot, enemy), false);
+    assert.strictEqual(Threats.canDefendWhileChaotic(own, enemy, now + Threats.MEMORY_MS + 1), false);
+    bot.karma = 0;
+    assert.strictEqual(attack.blockedPvpDefense(own, bot, enemy), true);
+    assert.strictEqual(tick(own), false);
+    assert.strictEqual(own.plan, 'hunting');
 }
 
 // Fleeing uses real retreat planning and remains committed until safe.

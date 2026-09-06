@@ -42,4 +42,10 @@ eligiblePlayer.actor = actor(2, 35, 500, { destId: 1 });
 assert.strictEqual(PkHunting.activeThreats(pk, profile).length, 2, 'a player explicitly targeting the PK is also a threat');
 World.user = originalUsers;
 
+const ordinary = { plan: 'pk_hunting', currentTargetId: 2, currentSpot: { id: 'old' }, noTargetTicks: 10 };
+PkHunting.tick(ordinary, actor(5, 27, 0, { karma: 190 }));
+assert.strictEqual(ordinary.plan, 'hunting', 'a normal red bot must resume PvE instead of stalling without an encounter profile');
+assert.strictEqual(ordinary.currentTargetId, undefined, 'recovery must release the old player target');
+assert.strictEqual(ordinary.currentSpot, null, 'recovery must reselect a hunting spot after chaotic respawn');
+
 console.log('PK hunting state checks passed');

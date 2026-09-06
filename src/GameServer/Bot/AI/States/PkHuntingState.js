@@ -74,7 +74,15 @@ module.exports = {
 
     tick(session, bot, Generics, BotAI) {
         const profile = session.pkProfile;
-        if (!profile) return;
+        if (!profile) {
+            // Ordinary population bots can acquire karma through PvP. They
+            // wash it through PvE, without becoming scripted PK encounters.
+            session.plan = 'hunting';
+            session.currentTargetId = undefined;
+            session.currentSpot = null;
+            session.noTargetTicks = 0;
+            return;
+        }
 
         const threats = activeThreats(bot, profile);
         const strongestThreat = threats.sort((a, b) => b.fetchLevel() - a.fetchLevel())[0];

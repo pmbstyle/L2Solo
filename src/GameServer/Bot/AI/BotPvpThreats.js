@@ -109,4 +109,11 @@ function context(session, now = Date.now()) {
     return { members: nearby, threats, owner };
 }
 
-module.exports = { record, context, members, character, alive, distance, inPeace, focus, protectedTarget, MEMORY_MS, PARTY_RADIUS };
+function canDefendWhileChaotic(session, target, now = Date.now()) {
+    if (!(session?.actor?.fetchKarma?.() > 0)) return false;
+    const entry = session.pvpAggressors?.get(id(target));
+    return !!entry && now - entry.at <= MEMORY_MS && alive(target) &&
+        distance(session.actor, target) <= PARTY_RADIUS;
+}
+
+module.exports = { record, context, members, character, alive, distance, inPeace, focus, protectedTarget, canDefendWhileChaotic, MEMORY_MS, PARTY_RADIUS };

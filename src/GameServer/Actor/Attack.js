@@ -1195,6 +1195,7 @@ class Attack {
             return true;
         }
         const allowed = (target.fetchPvpFlag?.() > 0 || target.fetchKarma?.() > 0 ||
+            Threats.canDefendWhileChaotic(session, target) ||
             invoke('GameServer/Bot/AI/BotRevenge').allows(session, target)) &&
             !Threats.inPeace(actor) && !Threats.inPeace(target) &&
             !invoke('GameServer/Bot/AI/BotPvpRisk').sameParty(session, target.session) &&
