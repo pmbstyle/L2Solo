@@ -356,13 +356,8 @@ class Npc extends NpcModel {
                             .distance(new SpeckMath.Point(newDstX, newDstY));
                     const canRepath = Date.now() - lastChaseRepathAt >= CHASE_REPATH_INTERVAL_MS;
                     if (targetDrift >= CHASE_REPATH_DISTANCE && canRepath) {
-                        const progress = Math.min(1, Math.max(0, Number(this.automation.fetchDistanceRatio()) || 0));
-                        const moveTarget = activeMoveCoords || coords;
-                        this.setLocXYZ(
-                            new SpeckMath.Point3D(this.fetchLocX(), this.fetchLocY(), this.fetchLocZ())
-                                .midPoint(new SpeckMath.Point3D(moveTarget.locX, moveTarget.locY, moveTarget.locZ), progress)
-                                .toCoords()
-                        );
+                        // Automation tracks actual progress continuously and
+                        // synchronizes the final partial tick when cancelling.
                         this.automation.abortAll(this);
                         activeMoveCoords = null;
                         activePathWaypoints = [];
