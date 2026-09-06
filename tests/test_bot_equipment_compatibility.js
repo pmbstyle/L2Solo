@@ -17,6 +17,7 @@ function plannedItem(plan, slots) {
 }
 
 const profiles = [
+    { classId: 50, role: 'buffer', armor: 'heavy', weapon: 'Weapon.Blunt', shield: true },
     { classId: 5, role: 'tank', armor: 'heavy', weapon: 'Weapon.Sword', shield: true },
     { classId: 8, role: 'dagger', armor: 'light', weapon: 'Weapon.Knife', shield: false },
     { classId: 9, role: 'archer', armor: 'light', weapon: 'Weapon.Bow', shield: false },

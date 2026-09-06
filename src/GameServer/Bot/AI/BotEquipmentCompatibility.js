@@ -1,9 +1,19 @@
 const ClassProgression = invoke('GameServer/ClassProgression');
 
 const CASTER_ROLES = new Set(['mage', 'healer']);
-const CASTER_BUFFER_CLASSES = new Set([17, 49, 50, 51, 52]);
+const CASTER_BUFFER_CLASSES = new Set([17, 49, 51, 52]);
 
 const CLASS_PROFILES = {
+    // First-profession Orc Shamans level through melee while retaining their
+    // support role. A physical blunt preserves Stun Attack; one hand leaves
+    // room for a shield. Second professions keep their own support profiles.
+    50: {
+        weaponKinds: ['Weapon.Blunt'],
+        armorStyle: 'heavy',
+        twoHandedWeaponKinds: [],
+        shield: true,
+        weaponHint: 'one_handed_blunt'
+    },
     2: {
         weaponKinds: ['Weapon.Dual'],
         preferredWeaponKinds: ['Weapon.Dual'],

@@ -259,6 +259,12 @@ function suitable(item, state, role, requiredRank = gradeForLevel(state.level)) 
     return JEWEL_SLOTS.has(slot) && kind === 'Armor.Jewel';
 }
 
+// Existing Shamans may still own the previous caster kit. Do not let that
+// kit satisfy or outscore their new melee progression targets.
+function ownedItemFitsBuild(item, role, classId) {
+    return Number(classId) !== 50 || suitable(item, { classId }, role, item.etc?.rank);
+}
+
 function isSlotUpgrade(item, ownedItems, role, classId) {
     const slot = WEAPON_SLOTS.has(Number(item.etc?.slot || 0)) ? 'weapon' : Number(item.etc?.slot || 0);
     const rank = String(item.etc?.rank || 'none').toLowerCase();
@@ -268,7 +274,8 @@ function isSlotUpgrade(item, ownedItems, role, classId) {
     // only when it is genuinely stronger, or equally strong but from a more
     // expensive progression tier.
     return !ownedItems.some((owned) => (
-        (WEAPON_SLOTS.has(Number(owned.etc?.slot || 0)) ? 'weapon' : Number(owned.etc?.slot || 0)) === slot
+        ownedItemFitsBuild(owned, role, classId)
+        && (WEAPON_SLOTS.has(Number(owned.etc?.slot || 0)) ? 'weapon' : Number(owned.etc?.slot || 0)) === slot
         && String(owned.etc?.rank || 'none').toLowerCase() === rank
         && (itemScore(owned, role, classId) > score
             || (itemScore(owned, role, classId) === score && Number(owned.template?.price || 0) >= price))
@@ -285,6 +292,7 @@ function slotPriority(item) {
 function currentSlotScore(item, ownedItems = [], role, classId) {
     const slot = WEAPON_SLOTS.has(Number(item?.etc?.slot || 0)) ? 'weapon' : Number(item?.etc?.slot || 0);
     return ownedItems
+        .filter((owned) => ownedItemFitsBuild(owned, role, classId))
         .filter((owned) => (
             (WEAPON_SLOTS.has(Number(owned.etc?.slot || 0)) ? 'weapon' : Number(owned.etc?.slot || 0)) === slot
         ))
@@ -529,6 +537,7 @@ function preferredTarget(state = {}, options = {}) {
     const requiredRank = recipeRank || gradeForLevel(state.level);
     const hasCurrentGradeWeapon = ownedItems.some((item) => (
         WEAPON_SLOTS.has(Number(item.etc?.slot || 0))
+        && ownedItemFitsBuild(item, role, classId)
         && rankIndex(item.etc?.rank) >= rankIndex(requiredRank)
     ));
     // A viable weapon is the first milestone of a new grade. Once it is
@@ -735,14 +744,14 @@ function itemMatchesDesiredSlot(item, desiredSlot) {
 function equippedItemAtSlot(state = {}, slot) {
     const wanted = Number(slot || 0);
     return equippedInventoryItems(state.inventory).find((item) => (
-        WEAPON_SLOTS.has(wanted)
+        ownedItemFitsBuild(item, roleFor(state), classIdFor(state)) && (WEAPON_SLOTS.has(wanted)
             ? WEAPON_SLOTS.has(Number(item.etc?.slot || 0))
             : Number(item.etc?.slot || 0) === wanted
                 // Full-body armour occupies both paperdoll body slots. Treat
                 // it as the current chest/legs item while evaluating the NPC
                 // bridge kit, otherwise a stronger full-body set repeatedly
                 // generates weaker chest and legs purchases.
-                || Number(item.etc?.slot || 0) === 15 && [10, 11].includes(wanted)
+                || Number(item.etc?.slot || 0) === 15 && [10, 11].includes(wanted))
     )) || null;
 }
 
