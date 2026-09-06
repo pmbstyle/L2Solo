@@ -322,6 +322,7 @@ try {
         plan: 'getting_buffed',
         partyCompanion: true,
         townNpcApproach: seededGuideApproach.townNpcApproach,
+        townNpcSlot: seededGuideApproach.townNpcSlot,
         resumeAfterBuff: {
             plan: 'following',
             followPlayerSession: { actor: companionLeader, dataSendToMe() {} },

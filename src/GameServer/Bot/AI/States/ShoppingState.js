@@ -328,6 +328,7 @@ module.exports = {
         const distToTarget = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ())
             .distance(new SpeckMath.Point3D(target.locX, target.locY, target.locZ));
         const npcApproach = TownNpcApproach.plan(session, bot, target, 'shopping');
+        if (npcApproach?.waiting) return;
         const readyToInteract = npcApproach?.ready === true
             || (!npcApproach && distToTarget <= 300);
 

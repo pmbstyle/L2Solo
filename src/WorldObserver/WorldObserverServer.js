@@ -1996,7 +1996,12 @@ function worldStatus() {
         population: PopulationStatus.counts(),
         runtime: {
             heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
-            rssMb: Math.round(memory.rss / 1024 / 1024)
+            rssMb: Math.round(memory.rss / 1024 / 1024),
+            townNavigation: {
+                paths: invoke('GameServer/Bot/AI/TownNavigation').forPool(invoke('GameServer/Geodata/PathfindingWorkerPool')).stats(),
+                workers: invoke('GameServer/Geodata/PathfindingWorkerPool').stats(),
+                traffic: invoke('GameServer/Bot/AI/TownTraffic').stats()
+            }
         }
     };
 }
@@ -2085,7 +2090,12 @@ async function snapshot() {
         population: PopulationStatus.counts(),
         runtime: {
             heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
-            rssMb: Math.round(memory.rss / 1024 / 1024)
+            rssMb: Math.round(memory.rss / 1024 / 1024),
+            townNavigation: {
+                paths: invoke('GameServer/Bot/AI/TownNavigation').forPool(invoke('GameServer/Geodata/PathfindingWorkerPool')).stats(),
+                workers: invoke('GameServer/Geodata/PathfindingWorkerPool').stats(),
+                traffic: invoke('GameServer/Bot/AI/TownTraffic').stats()
+            }
         },
         players,
         bots,

@@ -337,7 +337,9 @@ function expireTimedOutSpotRelocation(session, bot) {
     if (!relocation) return false;
     const startedAt = Number(relocation.startedAt);
     if (!Number.isFinite(startedAt) || Date.now() - startedAt < MAX_SPOT_RELOCATION_MS) return false;
-    expireSpotRelocation(session, bot, relocation);
+    if (relocation.method === 'town_gatekeeper') {
+        BotSpotTravel.recoverOrDefer(session, bot, 'gatekeeper_route_timeout');
+    } else expireSpotRelocation(session, bot, relocation);
     return true;
 }
 
@@ -350,7 +352,7 @@ function issueWalkRelocation(session, bot, relocation) {
 function tickSpotRelocation(session, bot) {
     const relocation = session.spotRelocation;
     if (!relocation) return false;
-    if (expireTimedOutSpotRelocation(session, bot)) return false;
+    if (expireTimedOutSpotRelocation(session, bot)) return !!session.spotRelocation;
     if (relocation.method === 'town_gatekeeper') return BotSpotTravel.tick(session, bot);
     if (relocation.method === 'soe_gatekeeper') return true;
 
@@ -365,6 +367,7 @@ function tickSpotRelocation(session, bot) {
 }
 
 function beginSpotRelocation(session, bot, spot, BotAI) {
+    if (Number(session.townTravelRetryAt || 0) > Date.now()) return;
     const destination = { ...spot.center };
     session.currentTargetId = undefined;
     bot.unselect?.();
@@ -380,18 +383,7 @@ function beginSpotRelocation(session, bot, spot, BotAI) {
 
     const travelDistance = SpotService.distance2d(botLocation(bot), destination);
     if (travelDistance > MAX_WALK_SPOT_DISTANCE) {
-        const departureTown = finishedTownErrands
-            ? BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ())
-            : null;
-        if (!departureTown || !BotSpotTravel.startViaTownGatekeeper(
-            session,
-            bot,
-            spot,
-            destination,
-            { townName: departureTown.name }
-        )) {
-            BotSpotTravel.start(session, bot, spot, destination);
-        }
+        BotSpotTravel.start(session, bot, spot, destination);
         return;
     }
 

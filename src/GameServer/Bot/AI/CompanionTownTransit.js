@@ -2,6 +2,7 @@ const CompanionNavigationRecovery = invoke('GameServer/Bot/AI/CompanionNavigatio
 const TownGatekeeperCatalog = invoke('GameServer/Bot/AI/TownGatekeeperCatalog');
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
+const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
 
 const RETRY_DELAY_MS = 5000;
 
@@ -21,6 +22,7 @@ function townCenter(name) {
 function context(bot, leader, options = {}) {
     const botLoc = pointOf(bot);
     const leaderLoc = pointOf(leader);
+    if (!TownTransitPolicy.townAt(botLoc) || !TownTransitPolicy.townAt(leaderLoc)) return null;
     const sourceGatekeeper = TownGatekeeperCatalog.targetNear(botLoc, options);
     const targetGatekeeper = TownGatekeeperCatalog.targetNear(leaderLoc, options);
     if (!sourceGatekeeper || !targetGatekeeper || sourceGatekeeper.town === targetGatekeeper.town) return null;
@@ -82,12 +84,14 @@ function tick(session, bot, leader, options = {}) {
         return { handled: true, status: 'waiting', transit };
     }
 
-    const approach = TownNpcApproach.plan(session, bot, transit.gatekeeper, 'intertown_gatekeeper');
-    const distanceToGatekeeper = Math.hypot(
-        bot.fetchLocX() - transit.gatekeeper.locX,
-        bot.fetchLocY() - transit.gatekeeper.locY
-    );
-    if (approach?.ready || (!approach && distanceToGatekeeper <= 300)) {
+    const approach = TownNpcApproach.planOpen(session, bot, transit.gatekeeper, 'intertown_gatekeeper');
+    if (approach?.waiting) {
+        TownTransitPolicy.interact(transit, bot, false);
+        return { handled: true, status: 'waiting', transit };
+    }
+    const interacted = TownTransitPolicy.interact(transit, bot, approach?.ready === true);
+    if (approach?.ready && !interacted) return { handled: true, status: 'interacting', transit };
+    if (interacted) {
         const destination = { ...transit.destination };
         clear(session);
         const teleportTo = options.teleportTo || invoke('GameServer/Actor/Generics/TeleportTo');

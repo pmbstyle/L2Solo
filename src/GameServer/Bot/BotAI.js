@@ -216,6 +216,8 @@ const BotAI = {
     },
 
     stop(session) {
+        invoke('GameServer/Bot/AI/TownNpcApproach').reset(session);
+        invoke('GameServer/Bot/AI/TownTraffic').remove(Number(session.actor?.fetchId?.()));
         invoke('GameServer/Bot/AI/BotChatReactions').cancel(session);
         session.aiActive = false;
         session.pendingBrainTurns = [];
@@ -389,6 +391,8 @@ const BotAI = {
             clearTacticalState(session);
             HotBotPolicyOverlay.clearForDeath(session);
             BotTradeService.cleanup(session, 'death');
+            invoke('GameServer/Bot/AI/TownNpcApproach').reset(session);
+            invoke('GameServer/Bot/AI/TownTraffic').remove(Number(bot.fetchId()));
             try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'death'); } catch (_) { /* optional ambient module */ }
         } else {
             // TTL expiry is intentionally lazy and bounded to hot ticks; no

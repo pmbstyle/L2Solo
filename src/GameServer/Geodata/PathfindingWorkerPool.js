@@ -25,6 +25,9 @@ class BoundedPathfindingWorkerPool {
         this.started = false;
         this.shuttingDown = false;
         this.unavailable = false;
+        this.townWindowAt = Date.now();
+        this.townWorkMs = 0;
+        this.budgetTimer = null;
         this.metrics = {
             queued: 0,
             completed: 0,
@@ -32,7 +35,8 @@ class BoundedPathfindingWorkerPool {
             preempted: 0,
             errors: 0,
             rejected: 0,
-            maxQueue: 0
+            maxQueue: 0,
+            workerMs: 0, maxQueueWaitMs: 0, budgetDeferrals: 0
         };
     }
 
@@ -93,6 +97,8 @@ class BoundedPathfindingWorkerPool {
             cancelled: false,
             settled: false,
             timer: null,
+            queuedAt: Date.now(),
+            cancelFlag: new Int32Array(new SharedArrayBuffer(4)),
             resolve: null,
             reject: null
         };
@@ -128,6 +134,7 @@ class BoundedPathfindingWorkerPool {
     cancelTask(task, message, code) {
         if (!task || task.cancelled) return;
         task.cancelled = true;
+        Atomics.store(task.cancelFlag, 0, 1);
         this.metrics.stale += 1;
         if (task.state === 'queued') {
             const index = this.queue.indexOf(task);
@@ -141,14 +148,31 @@ class BoundedPathfindingWorkerPool {
 
     dispatch() {
         if (this.shuttingDown) return;
+        if (Date.now() - this.townWindowAt >= 1000) {
+            this.townWindowAt = Date.now();
+            this.townWorkMs = 0;
+        }
         this.workers.forEach((slot) => {
             if (!slot || slot.task) return;
-            let task = this.queue.shift();
+            const eligible = this.queue.findIndex((task) => !task.request.townCorridor || task.priority >= 100 || this.townWorkMs < 80);
+            if (eligible < 0) {
+                if (this.queue.length && !this.budgetTimer) {
+                    this.metrics.budgetDeferrals++;
+                    this.budgetTimer = setTimeout(() => {
+                        this.budgetTimer = null;
+                        this.dispatch();
+                    }, Math.max(1, 1000 - (Date.now() - this.townWindowAt)));
+                    this.budgetTimer.unref?.();
+                }
+                return;
+            }
+            let task = this.queue.splice(eligible, 1)[0];
             while (task?.cancelled) task = this.queue.shift();
             if (!task) return;
             task.state = 'running';
             slot.task = task;
-            slot.worker.postMessage({ type: 'path', id: task.id, request: task.request });
+            this.metrics.maxQueueWaitMs = Math.max(this.metrics.maxQueueWaitMs, Date.now() - task.queuedAt);
+            slot.worker.postMessage({ type: 'path', id: task.id, request: task.request, cancelBuffer: task.cancelFlag.buffer });
         });
     }
 
@@ -156,6 +180,9 @@ class BoundedPathfindingWorkerPool {
         const task = slot.task;
         if (!task || Number(message?.id) !== task.id) return;
         slot.task = null;
+        const workerMs = Math.max(0, Number(message.workerMs) || 0);
+        this.metrics.workerMs += workerMs;
+        if (task.request.townCorridor && task.priority < 100) this.townWorkMs += workerMs;
         if (!task.cancelled) {
             if (message.ok) {
                 this.restartAttempts[slot.index] = 0;
@@ -163,7 +190,7 @@ class BoundedPathfindingWorkerPool {
                 this.finishTask(task, message.path, null);
             } else {
                 this.metrics.errors += 1;
-                this.finishTask(task, null, taskError(message.error || 'path worker failed', 'PATH_WORKER_ERROR'));
+                this.finishTask(task, null, taskError(message.error || 'path worker failed', message.code || 'PATH_WORKER_ERROR'));
             }
         } else {
             this.cleanupTask(task);
@@ -229,10 +256,14 @@ class BoundedPathfindingWorkerPool {
     shutdown() {
         if (this.shuttingDown) return Promise.resolve();
         this.shuttingDown = true;
+        clearTimeout(this.budgetTimer);
         this.unavailable = true;
         this.queue.splice(0).forEach((task) => this.finishTask(task, null, taskError('path worker pool shut down', 'POOL_SHUTDOWN')));
         this.workers.forEach((slot) => {
-            if (slot?.task) this.finishTask(slot.task, null, taskError('path worker pool shut down', 'POOL_SHUTDOWN'));
+            if (slot?.task) {
+                Atomics.store(slot.task.cancelFlag, 0, 1);
+                this.finishTask(slot.task, null, taskError('path worker pool shut down', 'POOL_SHUTDOWN'));
+            }
         });
         const terminations = this.workers.map((slot) => Promise.resolve(slot?.worker?.terminate?.()).catch(() => null));
         this.workers = [];

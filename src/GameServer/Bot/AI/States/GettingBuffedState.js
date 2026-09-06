@@ -147,6 +147,7 @@ module.exports = {
             head: closestGuide.head
         };
         const guideApproach = TownNpcApproach.planOpen(session, bot, guideTarget, 'newbie_guide');
+        if (guideApproach?.waiting) return;
         const readyToInteract = guideApproach?.ready === true;
 
         if (!readyToInteract) {

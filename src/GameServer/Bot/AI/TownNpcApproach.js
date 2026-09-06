@@ -1,4 +1,5 @@
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
+const Slots = invoke('GameServer/Bot/AI/TownNpcSlots');
 
 const STAGING_DISTANCE = 240;
 const INTERACTION_DISTANCE = 72;
@@ -74,6 +75,19 @@ function hasLineOfSight(from, to) {
     );
 }
 
+function reachableCounterSlot(staging, interaction) {
+    // NPC visibility may start inside the counter. Validate the actual A*
+    // arrival cells from the accessible staging side, not from that endpoint.
+    const cx = interaction.locX >> 4, cy = interaction.locY >> 4;
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+        const point = { locX: ((cx + dx) << 4) + 8, locY: ((cy + dy) << 4) + 8, locZ: interaction.locZ };
+        if (distance2d(point, interaction) > INTERACTION_ARRIVAL_RADIUS) continue;
+        point.locZ = GeodataEngine.getHeight(point.locX, point.locY, point.locZ);
+        if (Math.abs(point.locZ - interaction.locZ) <= 64 && hasLineOfSight(staging, point)) return true;
+    }
+    return false;
+}
+
 function angularOffsets() {
     const offsets = [0];
     for (let step = 1; step <= INTERACTION_SEARCH_STEPS / 2; step++) {
@@ -88,6 +102,7 @@ const SEARCH_OFFSETS = Object.freeze(angularOffsets());
 
 function pointCacheKey(target) {
     return [
+        GeodataEngine.navigationRevision || 0,
         Number(target?.npcSelfId || 0),
         Math.round(Number(target?.locX || 0)),
         Math.round(Number(target?.locY || 0)),
@@ -169,6 +184,7 @@ function targetKey(kind, target) {
 
 function reset(session) {
     if (!session) return;
+    Slots.release(session);
     delete session.townNpcApproach;
     session.townRoutePlan = null;
 }
@@ -183,10 +199,35 @@ function skipStaging(session) {
 }
 
 function plan(session, bot, target, kind = 'town_npc') {
-    const points = pointsFor(target);
+    let points = pointsFor(target);
     if (!points) return null;
 
     const botPoint = pointOf(bot);
+    const actorId = Number(bot?.fetchId?.() || 0);
+    if (session?.townNpcSlot && session.townNpcSlot.key !== `counter:${pointCacheKey(target)}`) Slots.release(session);
+    if (session && actorId && distance2d(botPoint, points.interaction) > INTERACTION_READY_RADIUS) {
+        const base = points;
+        points = Slots.reserve(session, `counter:${pointCacheKey(target)}`, () => {
+            const dx = base.interaction.locX - target.locX, dy = base.interaction.locY - target.locY;
+            const length = Math.hypot(dx, dy) || 1;
+            const candidates = [base];
+            for (const offset of [-80, -40, 40, 80]) {
+                const shift = (point) => ({
+                    locX: Math.round(point.locX - dy / length * offset),
+                    locY: Math.round(point.locY + dx / length * offset), locZ: point.locZ
+                });
+                const interaction = shift(base.interaction), staging = shift(base.staging);
+                if (hasLineOfSight(interaction, target) && hasLineOfSight(base.interaction, interaction)
+                    && hasLineOfSight(base.staging, staging)
+                    && reachableCounterSlot(staging, interaction)) candidates.push({ interaction, staging });
+            }
+            return candidates;
+        }, actorId);
+        if (!points) return { ready: false, waiting: true };
+    } else if (session?.townNpcSlot?.key === `counter:${pointCacheKey(target)}`) {
+        // Keep the leased point authoritative through the last few steps.
+        points = Slots.reserve(session, session.townNpcSlot.key, () => [points], actorId) || points;
+    }
     const key = targetKey(kind, target);
     let state = session?.townNpcApproach;
     if (state?.key !== key) {
@@ -218,6 +259,8 @@ function plan(session, bot, target, kind = 'town_npc') {
         && hasLineOfSight(points.interaction, target);
     const ready = state.phase === 'interaction'
         && interactionDistance <= INTERACTION_READY_RADIUS
+        && Math.abs(botPoint.locZ - points.interaction.locZ) <= 64
+        && Math.abs(botPoint.locZ - Number(target.locZ)) <= 64
         && distance2d(botPoint, target) <= MAX_INTERACTION_DISTANCE
         && (targetVisible || reachedValidatedCounterEdge);
     const destination = state.phase === 'staging' ? points.staging : points.interaction;
@@ -250,10 +293,13 @@ function planOpen(session, bot, target, kind = 'town_npc') {
     const key = `${targetKey(kind, target)}:open:${Number(bot?.fetchId?.() ?? bot?.actorId ?? 0)}`;
     let state = session?.townNpcApproach;
     if (state?.key !== key) {
+        Slots.release(session);
         state = {
             key,
             phase: 'interaction',
-            destination: openPointFor(target, bot)
+            destination: openPointFor(target, bot),
+            readyOnEntry: distance2d(botPoint, target) <= OPEN_INTERACTION_READY_RADIUS
+                && Math.abs(botPoint.locZ - Number(target.locZ)) <= 64 && hasLineOfSight(botPoint, target)
         };
         if (session) {
             session.townNpcApproach = state;
@@ -262,7 +308,21 @@ function planOpen(session, bot, target, kind = 'town_npc') {
         }
     }
 
+    if (!state.readyOnEntry && session && Number(bot?.fetchId?.() || 0)) {
+        const assigned = Slots.reserve(session, `open:${pointCacheKey(target)}`, () => {
+            const candidates = [];
+            for (let step = 0; step < 8; step++) {
+                const interaction = radialPoint(target, INTERACTION_DISTANCE, step * Math.PI / 4);
+                if (hasLineOfSight(interaction, target)) candidates.push(interaction);
+            }
+            return candidates.length ? candidates : [state.destination];
+        }, Math.abs(Number(bot.fetchId())));
+        if (!assigned) return { ready: false, waiting: true };
+        state.destination = assigned;
+    }
     const ready = distance2d(botPoint, target) <= OPEN_INTERACTION_READY_RADIUS
+        && Math.abs(botPoint.locZ - Number(target.locZ)) <= 64
+        && (state.readyOnEntry || !session?.townNpcSlot || distance2d(botPoint, state.destination) <= 32)
         && hasLineOfSight(botPoint, target);
 
     return {

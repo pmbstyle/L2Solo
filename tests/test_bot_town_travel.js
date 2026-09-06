@@ -47,6 +47,7 @@ function session(actor) {
 }
 
 const originalSetTimeout = global.setTimeout;
+const originalNow = Date.now;
 const originalCharInfo = Response.charInfo;
 const originalRelationChanged = Response.relationChanged;
 const originalFindById = SpotService.findById;
@@ -186,13 +187,16 @@ try {
     townLoc.locY = approachPoints.staging.locY;
     townLoc.locZ = approachPoints.staging.locZ;
     BotSpotTravel.tick(townSession, townBot);
-    const interaction = approachPoints.interaction;
+    const interaction = townSession.townNpcApproach.destination;
     townLoc.locX = interaction.locX;
     townLoc.locY = interaction.locY;
     townLoc.locZ = interaction.locZ;
     BotSpotTravel.tick(townSession, townBot);
-    assert.strictEqual(townSession.spotRelocation?.arrivalPending, true,
-        'reaching the gatekeeper should immediately begin destination transfer');
+    assert(townSession.spotRelocation?.interactionReadyAt > Date.now(), 'arrival must begin a short visible interaction');
+    assert(!townSession.spotRelocation.arrivalPending, 'arrival must not instantly transfer the bot');
+    townSession.spotRelocation.interactionReadyAt = Date.now() - 1;
+    BotSpotTravel.tick(townSession, townBot);
+    assert.strictEqual(townSession.spotRelocation?.arrivalPending, true, 'interaction must complete before transfer');
     assert.strictEqual(townBot.state.fetchCasts(), false,
         'the transfer at the gatekeeper must remain free of cast animation');
     assert.strictEqual(townSession.currentSpot?.id, remoteSpot.id,
@@ -209,20 +213,92 @@ try {
         true,
         'an unreachable gatekeeper must still begin with the physical town route'
     );
-    assert.strictEqual(fallbackSession.spotRelocation?.method, 'town_gatekeeper',
-        'the first exhausted staging route should retry the gatekeeper interaction point');
-    fallbackSession.spotRelocation.lastCommandAt = 0;
-    BotSpotTravel.tick(fallbackSession, fallbackBot);
+    assert.strictEqual(fallbackSession.spotRelocation, undefined);
     assert.strictEqual(fallbackSession.lastSpotRelocation?.reason, 'gatekeeper_route_unreachable');
-    assert.strictEqual(fallbackSession.spotRelocation?.method, 'soe_gatekeeper',
-        'an exhausted gatekeeper route must preserve the teleport fallback');
-    assert.strictEqual(fallbackBot.state.fetchCasts(), true,
-        'the fallback must visibly cast before teleporting out of town');
-    assert.strictEqual(timers.length - fallbackTimerBase, 1,
-        'the preserved fallback must schedule exactly one teleport cast');
+    assert(fallbackSession.townTravelRetryAt > Date.now(), 'unreachable routes need a finite cooldown');
+    assert.strictEqual(fallbackBot.state.fetchCasts(), false, 'one failed recovery cycle must not grant a teleport');
+    assert.strictEqual(timers.length, fallbackTimerBase, 'navigation failure must not schedule SoE');
+    assert.strictEqual(BotSpotTravel.start(fallbackSession, fallbackBot, remoteSpot), false,
+        'the next hunting tick must respect the cooldown instead of bypassing it with SoE');
+    let recoveryNow = fallbackSession.townTravelRetryAt + 1;
+    Date.now = () => recoveryNow;
+    BotSpotTravel.start(fallbackSession, fallbackBot, remoteSpot);
+    assert.strictEqual(fallbackBot.state.fetchCasts(), false, 'the second exhausted cycle must still wait');
+    recoveryNow = fallbackSession.townTravelRetryAt + 1;
+    BotSpotTravel.start(fallbackSession, fallbackBot, remoteSpot);
+    assert.strictEqual(fallbackBot.state.fetchCasts(), true, 'confirmed prolonged stuckness must retain the emergency SoE');
+    assert.strictEqual(fallbackSession.spotRelocation?.recoveryReason, 'town_stuck_after_recovery');
+    assert.strictEqual(fallbackSession.spotRelocation?.arrivalPending, undefined, 'emergency recovery must not teleport instantly');
+    const emergencyTimer = timers.at(-1);
+    assert.strictEqual(emergencyTimer.delay, BotSpotTravel.SOE_CAST_MS);
+    emergencyTimer.fn();
+    assert.strictEqual(fallbackSession.spotRelocation?.arrivalPending, true, 'the full emergency cast must complete travel');
+    timers.at(-1).fn();
+    assert.strictEqual(fallbackSession.lastSpotRelocation?.recoveryReason, 'town_stuck_after_recovery', 'last-resort escapes must remain diagnosable');
+
+    const movedLoc = { ...fallbackLoc }, movedBot = botAt(movedLoc), movedSession = session(movedBot);
+    for (let cycle = 0; cycle < 3; cycle++) {
+        BotSpotTravel.startViaTownGatekeeper(movedSession, movedBot, remoteSpot);
+        if (cycle < 2) recoveryNow = movedSession.townTravelRetryAt + 1;
+    }
+    assert(movedSession.spotRelocation?.recoveryReason);
+    const movedTimer = timers.at(-1);
+    movedLoc.locX += 32;
+    movedTimer.fn();
+    assert.strictEqual(movedSession.spotRelocation, undefined, 'movement during emergency SoE must cancel the transfer');
+    assert.strictEqual(movedSession.lastSpotRelocation.reason, 'cast_moved');
+
+    CompanionNavigationRecovery.move = () => ({ status: 'moving', failures: 0 });
+    const queuedBot = botAt({ ...fallbackLoc }), queuedSession = session(queuedBot);
+    for (let cycle = 0; cycle < 3; cycle++) {
+        BotSpotTravel.startViaTownGatekeeper(queuedSession, queuedBot, remoteSpot);
+        queuedSession.lastPathfinding = { routeUsable: false, error: 'QUEUE_FULL', at: recoveryNow };
+        recoveryNow += 120000;
+        BotSpotTravel.recoverOrDefer(queuedSession, queuedBot);
+        assert.strictEqual(queuedBot.state.fetchCasts(), false, 'repeated queue timeouts must never grant an escape');
+        assert.strictEqual(queuedSession.townTravelRecovery.failures, 0);
+        recoveryNow = queuedSession.townTravelRetryAt + 1;
+    }
+    const frozenBot = botAt({ ...fallbackLoc }), frozenSession = session(frozenBot);
+    for (let cycle = 0; cycle < 3; cycle++) {
+        BotSpotTravel.startViaTownGatekeeper(frozenSession, frozenBot, remoteSpot);
+        frozenSession.lastPathfinding = { routeUsable: true, at: recoveryNow };
+        recoveryNow += 120000;
+        BotSpotTravel.recoverOrDefer(frozenSession, frozenBot);
+        if (cycle < 2) recoveryNow = frozenSession.townTravelRetryAt + 1;
+    }
+    assert.strictEqual(frozenSession.spotRelocation?.recoveryReason, 'town_stuck_after_recovery',
+        'repeated usable paths with no physical progress must also have a last-resort exit');
+    BotSpotTravel.cancel(frozenSession, frozenBot);
+    const missingGateBot = botAt({ locX: 83000, locY: 148000, locZ: -3400 });
+    const missingGateSession = session(missingGateBot);
+    for (let cycle = 0; cycle < 3; cycle++) {
+        BotSpotTravel.start(missingGateSession, missingGateBot, remoteSpot);
+        if (cycle < 2) {
+            assert.strictEqual(missingGateBot.state.fetchCasts(), false);
+            recoveryNow = missingGateSession.townTravelRetryAt + 1;
+        }
+    }
+    assert.strictEqual(missingGateSession.spotRelocation?.recoveryReason, 'town_stuck_after_recovery',
+        'a missing town service must not trap a stationary bot in cooldowns forever');
+    BotSpotTravel.cancel(missingGateSession, missingGateBot);
+    Date.now = originalNow;
+    CompanionNavigationRecovery.move = originalNavigationMove;
+    const localBot = botAt({ locX: gatekeeper.locX + 60, locY: gatekeeper.locY, locZ: gatekeeper.locZ });
+    const localSession = session(localBot);
+    assert.strictEqual(BotSpotTravel.start(localSession, localBot, remoteSpot), true);
+    assert.strictEqual(localSession.spotRelocation.method, 'town_gatekeeper',
+        'town location must select the gatekeeper even without a shopping announcement flag');
+    assert.strictEqual(localBot.state.fetchCasts(), false);
+    localSession.spotRelocation.startedAt = Date.now() - 120000;
+    BotSpotTravel.recoverOrDefer(localSession, localBot);
+    assert.strictEqual(localSession.spotRelocation.method, 'town_gatekeeper', 'arrival at a usable gatekeeper must win over an expired route timer');
+    assert.strictEqual(localBot.state.fetchCasts(), false);
+    BotSpotTravel.cancel(localSession, localBot);
 
     console.log('Bot town travel checks passed');
 } finally {
+    Date.now = originalNow;
     global.setTimeout = originalSetTimeout;
     Response.charInfo = originalCharInfo;
     Response.relationChanged = originalRelationChanged;

@@ -2,6 +2,7 @@ const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const ServerResponse = invoke('GameServer/Network/Response');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
+const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
 
 const SOE_SKILL_ID = 2013;
 const SOE_CAST_MS = 20000;
@@ -144,7 +145,8 @@ function request(session, bot, BotAI, reason, options = {}) {
     session.plan = 'shopping';
     session.shopTimer = Date.now();
     if (options.preserveShoppingTarget !== true) session.shoppingTarget = undefined;
-    const usesScroll = options.forceScrollOfEscape === true || distance2d(bot, town) > SOE_DISTANCE;
+    const alreadyInTown = TownTransitPolicy.townAt(bot) === town.name;
+    const usesScroll = !alreadyInTown && (options.forceScrollOfEscape === true || distance2d(bot, town) > SOE_DISTANCE);
     if (options.announce !== false) {
         TownChatter.say(session, BotAI, 'town-trip-start', Speech.lines('town.town-trip-start', { town: town.name }));
     }
