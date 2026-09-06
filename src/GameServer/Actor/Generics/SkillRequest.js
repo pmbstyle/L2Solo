@@ -66,6 +66,11 @@ function skillRequest(session, actor, data) {
         return;
     }
 
+    if (!EffectRestrictions.canMove(actor)) {
+        Generics.skillExec(session, actor, data);
+        return;
+    }
+
     if (actor.state.inMotion()) {
         if (actor.state.fetchTowards() === 'melee' || actor.fetchDestId() !== actor.automation.fetchDestId()) {
             actor.storedSpell = data;

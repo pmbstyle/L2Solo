@@ -21,7 +21,7 @@ function attackExec(session, actor, data) {
     }).catch(() => {
         World.fetchUser(data.id).then((user) => {
             actor.automation.scheduleAction(session, actor, user, attackRange, () => {
-                if (data.ctrl) {
+                if (data.ctrl || user.fetchPvpFlag?.() > 0 || user.fetchKarma?.() > 0) {
                     if (!ArenaCombatRules.canInteract(actor, user)) return;
                     if (utils.isInPeaceZone(actor.fetchLocX(), actor.fetchLocY()) || utils.isInPeaceZone(user.fetchLocX(), user.fetchLocY())) {
                         const ServerResponse = invoke('GameServer/Network/Response');

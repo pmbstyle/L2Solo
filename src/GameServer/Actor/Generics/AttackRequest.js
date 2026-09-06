@@ -29,6 +29,13 @@ function attackRequest(session, actor, data) {
         return;
     }
 
+    // A rooted actor cannot acknowledge a StopMove with ValidatePosition.
+    // Execute from its authoritative position; range still gates the action.
+    if (!EffectRestrictions.canMove(actor)) {
+        Generics.attackExec(session, actor, attackData);
+        return;
+    }
+
     if (actor.state.inMotion()) {
         if (actor.state.fetchTowards() === 'remote' || actor.fetchDestId() !== actor.automation.fetchDestId()) {
             actor.storedAttack = attackData;

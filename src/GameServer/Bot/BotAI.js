@@ -82,6 +82,7 @@ const States = {
 };
 
 function clearTacticalState(session) {
+    invoke('GameServer/Bot/AI/BotPvpDefense').clear(session, { dead: true });
     session.currentTargetId = undefined;
     session.targetTrackId = undefined;
     session.targetAcquiredAt = undefined;
@@ -394,7 +395,11 @@ const BotAI = {
             // background timer is needed for a session-local preference.
             HotBotPolicyOverlay.get(session);
         }
-        if (lodContext.tier === 'preload' && !botDead) {
+        // Actual player aggression owns the action window before travel,
+        // conversation, recovery or ordinary party/PvE state routing.
+        const defendingPvp = !botDead && invoke('GameServer/Bot/AI/BotPvpDefense').tick(session, bot, invoke(path.actor), this);
+
+        if (lodContext.tier === 'preload' && !botDead && !defendingPvp) {
             if (Math.random() < 0.05) this.triggerFarAwayChatEvent(session, bot);
             return;
         }
@@ -403,6 +408,10 @@ const BotAI = {
             const statusStartedAt = Date.now();
             session.botStatus = BotStatus.getStatus(session);
             HotActorLodPolicy.recordStatusRefresh(session, Date.now() - statusStartedAt);
+        }
+        if (defendingPvp) {
+            if (session.partyCompanion === true && session.followPlayerSession) PartyCompanionService.updateMember(session);
+            return;
         }
         if (HotActorLodPolicy.budgetExceeded(lodContext, tickStartedAt)) {
             HotActorLodPolicy.recordDeferral();
@@ -590,7 +599,7 @@ const BotAI = {
     },
 
     executePvPCombat(session, bot, victim, Generics, options = {}) {
-        return this.executeCombat(session, bot, victim, Generics, options);
+        return this.executeCombat(session, bot, victim, Generics, { ...options, pvp: true });
     },
 
     executeCombat(session, bot, npc, Generics, options = {}) {
@@ -628,7 +637,7 @@ const BotAI = {
         // A potion is a survival action for a fight already in progress, not
         // routine topping-off. The policy also blocks repeats for the same
         // target and while a previous potion HoT remains active.
-        if (HealingPotionStock.tryUseInCombat(session, bot, npc, { role })) {
+        if (HealingPotionStock.tryUseInCombat(session, bot, npc, { role, pvp: options.pvp === true })) {
             return true;
         }
         if (!options.basicAttackOnly && trySpoil(session, bot, npc, Generics)) {
@@ -664,6 +673,7 @@ const BotAI = {
         // Do not make that policy depend on the generic combat selector.
         const combatPolicy = {
             ...HotBotPolicyOverlay.combatPolicy(session),
+            pvp: options.pvp === true,
             avoidAreaDamage: options.avoidAreaDamage === true || (
                 allowedPlayerPartyRaid && BotRaidSafety.hasControlledRaidMinion(npc)
             )
@@ -683,7 +693,7 @@ const BotAI = {
             };
             return true;
         }
-        const chargeSkill = options.basicAttackOnly || !canCast ? null : BotCombatUtility.selectChargeSkill(bot, role);
+        const chargeSkill = options.basicAttackOnly || !canCast ? null : BotCombatUtility.selectChargeSkill(bot, role, combatPolicy);
         if (chargeSkill) {
             session.lastCombatDecision = {
                 action: 'charge_skill',
@@ -738,7 +748,7 @@ const BotAI = {
         // target cannot be killed in roughly two ordinary hits, waiting for
         // mana or letting the rest of the party continue is preferable to
         // turning the caster into a melee fighter.
-        if (role === 'mage') {
+        if (role === 'mage' && options.pvp !== true) {
             session.lastCombatDecision = {
                 action: 'blocked',
                 role,

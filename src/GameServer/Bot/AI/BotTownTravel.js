@@ -16,7 +16,7 @@ function distance2d(bot, target) {
 function hasCombatThreat(session, bot) {
     const recentIncoming = !!session.incomingThreatId &&
         Date.now() - Number(session.incomingThreatAt || 0) <= 5000;
-    return !!session.currentTargetId || recentIncoming || !!bot.state.fetchHits?.();
+    return !!session.pvpDefense || !!session.currentTargetId || recentIncoming || !!bot.state.fetchHits?.();
 }
 
 function inCombat(session, bot) {

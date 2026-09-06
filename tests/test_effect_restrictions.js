@@ -64,6 +64,13 @@ EffectStore.apply(rooted, { key: 'root', id: 102, type: 'debuff', durationMs: 10
 assert.strictEqual(EffectRestrictions.canMove(rooted), false, 'Root should block movement');
 assert.strictEqual(EffectRestrictions.canAttack(rooted), true, 'Root should not block attacking by itself');
 assert.strictEqual(EffectRestrictions.canCast(rooted), true, 'Root should not block casting by itself');
+const rootedSession = session({ moveTimer: true });
+EffectRestrictions.interruptOnApply(rootedSession, rooted, EffectStore.activeDebuffs(rooted)[0]);
+assert.strictEqual(rootedSession.moveTimer, null, 'Root must stop an active route');
+assert.strictEqual(rooted.attack.timersCleared, false, 'Root must preserve active attack and cast timers');
+assert.strictEqual(rooted.state.hits, true, 'Root must not cancel an in-range swing');
+assert.strictEqual(rooted.state.casts, true, 'Root must not cancel a stationary cast');
+assert.strictEqual(rooted.combatAborted, false, 'Root must preserve the combat loop');
 
 const silenced = actor();
 EffectStore.apply(silenced, { key: 'silence', id: 1064, type: 'debuff', durationMs: 10000 });

@@ -1,6 +1,7 @@
 const { spawnSync } = require('child_process');
 
 const tests = [
+    'tests/test_bot_pvp_defense.js',
     'tests/test_item_template_index.js',
     'tests/test_background_candidate_queue.js',
     'tests/test_cold_commit_admission.js',
@@ -14,6 +15,8 @@ const tests = [
     'tests/test_shot_stock_restock.js',
     'tests/test_shot_stock_restart_persistence.js',
     'tests/test_attack_hit_flags.js',
+    'tests/test_player_attack_range.js',
+    'tests/test_rooted_combat_requests.js',
     'tests/test_giran_arena.js',
     'tests/test_armor_stats.js',
     'tests/test_bot_ai_visibility.js',

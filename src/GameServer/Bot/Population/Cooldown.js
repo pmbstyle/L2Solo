@@ -70,6 +70,7 @@ const Cooldown = {
 
     canCooldown(session, options = {}) {
         if (!session || !session.actor) return { ok: false, reason: 'missing_actor' };
+        if (session.pvpDefense) return { ok: false, reason: 'pvp_active' };
         if (session.plan === 'merchant' && !session.coldMarketState && !session.coldCraftState) return { ok: false, reason: 'merchant' };
         if (session.actor.fetchKarma?.() > 0 && !options.allowPk) return { ok: false, reason: 'pk_active' };
         if (session.partyCompanion === true || session.followPlayerSession) return { ok: false, reason: 'player_party' };

@@ -106,6 +106,13 @@ function receivedHit(session, actor, hit, options = {}) {
     const source = damageSource(session, options);
     const ArenaCombatRules = invoke('GameServer/World/ArenaCombatRules');
     if (source && source !== actor && !ArenaCombatRules.canInteract(source, actor)) return;
+    if (Number(hit) > 0) {
+        const threats = invoke('GameServer/Bot/AI/BotPvpThreats');
+        if (threats.record(actor, source) && source?.fetchKind) {
+            const owner = threats.character(source);
+            if (owner?.session) invoke('GameServer/Actor/PvpFlag').mark(owner.session, owner);
+        }
+    }
     const hpDamage = applyCombatPointShield(session, actor, applyTransferPain(session, actor, hit), source);
 
     if (options.wakeSleep !== false) {

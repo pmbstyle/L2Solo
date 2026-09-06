@@ -128,6 +128,15 @@ function ambient(session, now) {
 }
 
 module.exports = {
+    announceAttack(session, attacker, now = Date.now()) {
+        if (Config.globalChatEnabled === false || !session?.actor || !attacker) return false;
+        const name = String(attacker.fetchName?.() || 'Someone').replace(/\s+/g, ' ').slice(0, 24);
+        return send(session.actor, 'pvp_attack', [
+            `${name} just jumped me while I was minding my own business.`,
+            `Watch out for ${name}. Attacking people who are just trying to hunt.`,
+            `${name} attacked us out of nowhere. Can't even hunt in peace.`
+        ], now, session);
+    },
     maybeAnnounce, maybeAmbient, offerReply, TOPIC_INTERVAL_MS, SPEAKER_INTERVAL_MS,
     reset() { lastGlobalAt = null; nextGlobalAt = 0; recent.length = 0; lastTextByTopic.clear(); Reactions.reset(); Voice.reset(); }
 };

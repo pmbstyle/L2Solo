@@ -60,6 +60,10 @@ function interruptOnApply(session, actor, effect, source = session?.actor) {
 
     // stopMovement below sends the authoritative StopMove packet.
     actor.automation?.abortAll?.(actor, { notifyClient: false });
+    if (impairments.rooted && !impairments.disabled && !confused) {
+        stopMovement(session, actor);
+        return;
+    }
     actor.attack?.clearTimers?.();
     actor.attack?.resetQueuedEvent?.();
     actor.state?.setHits?.(false);

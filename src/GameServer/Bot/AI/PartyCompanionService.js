@@ -391,6 +391,7 @@ function startQueuedGroundPickup(pickerSession) {
     const leaderSession = partyLeaderSession(pickerSession);
     const pullState = leaderSession?.partyPullState || {};
     const partyNeedsAttention = (
+        !!pickerSession.pvpDefense ||
         [leaderSession, ...membersForLeader(leaderSession)].some((memberSession) => memberSession?.actor?.isDead?.()) ||
         ['getting_buffed', 'shopping', 'merchant'].includes(pickerSession.plan) ||
         (

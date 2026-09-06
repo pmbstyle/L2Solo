@@ -170,4 +170,73 @@ try {
     GeodataEngine.hasLineOfSight = originalHasLineOfSight;
 }
 
+// NPCs and summons use their target/owner session to send packets. Their
+// movement must not freeze the bot whose session happens to carry them.
+const CompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const saved = {
+    now: Date.now, timeout: global.setTimeout, clear: global.clearTimeout,
+    clearInterval: global.clearInterval, world: RuntimeWorld.user,
+    findPath: GeodataEngine.findPath, height: GeodataEngine.getHeight,
+    updatePosition: CompanionService.updatePosition
+};
+let clock = 100000;
+const pending = new Map();
+try {
+    Date.now = () => clock;
+    global.setTimeout = (callback, ms) => {
+        const timer = { _idleTimeout: ms };
+        pending.set(timer, { callback, at: clock + ms });
+        return timer;
+    };
+    global.clearTimeout = global.clearInterval = (timer) => pending.delete(timer);
+    GeodataEngine.findPath = (x, y, z, tx, ty, tz) => [
+        { locX: x, locY: y, locZ: z }, { locX: tx, locY: ty, locZ: tz }
+    ];
+    GeodataEngine.getHeight = (x, y, z) => z;
+    CompanionService.updatePosition = () => {};
+    const makeActor = (id) => {
+        const loc = { locX: 0, locY: 0, locZ: 0 };
+        return {
+            state: { towards: false, inMotion() { return this.towards; }, setTowards(v) { this.towards = v; } },
+            effects: {}, automation: new Automation(),
+            fetchId: () => id, fetchHead: () => 0, isDead: () => false, isBlocked: () => false,
+            fetchIsOnline: () => true, fetchCollectiveRunSpd: () => 150,
+            fetchLocX: () => loc.locX, fetchLocY: () => loc.locY, fetchLocZ: () => loc.locZ,
+            setLocXYZ(next) { Object.assign(loc, next); }
+        };
+    };
+    for (const method of ['scheduleAction', 'scheduleMoveToCoords']) {
+        const bot = makeActor(100), npc = makeActor(200);
+        const session = { actor: bot, accountId: 'bot_flee', dataSendToMeAndOthers() {} };
+        bot.session = session;
+        RuntimeWorld.user = { sessions: [session, nearbyPlayer] };
+        moveTo(session, bot, {
+            from: { locX: 0, locY: 0, locZ: 0 }, to: { locX: 900, locY: 0, locZ: 0 }
+        });
+        if (method === 'scheduleAction') {
+            npc.automation.scheduleAction(session, npc, bot, 0, () => {});
+        } else {
+            npc.automation.scheduleMoveToCoords(session, npc, { locX: 100, locY: 0, locZ: 0 });
+        }
+        for (let step = 0; step < 60; step++) {
+            clock += 100;
+            for (const [timer, entry] of [...pending]) {
+                if (entry.at <= clock && pending.delete(timer)) entry.callback();
+            }
+        }
+        assert.strictEqual(bot.fetchLocX(), 900, `${method}: an NPC chase must let the bot finish its escape`);
+        assert.strictEqual(session.moveTimer, null, 'escape must finish without a stranded movement timer');
+        npc.automation.abortAll(npc);
+    }
+} finally {
+    Date.now = saved.now;
+    global.setTimeout = saved.timeout;
+    global.clearTimeout = saved.clear;
+    global.clearInterval = saved.clearInterval;
+    RuntimeWorld.user = saved.world;
+    GeodataEngine.findPath = saved.findPath;
+    GeodataEngine.getHeight = saved.height;
+    CompanionService.updatePosition = saved.updatePosition;
+}
+
 console.log('Bot movement visibility checks passed');

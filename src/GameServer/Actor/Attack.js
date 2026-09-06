@@ -120,9 +120,22 @@ class Attack {
     meleeHit(session, creature) {
         const actor = session.actor;
 
-        if (this.checkParticipants(actor, creature)) {
+        if (this.blockedPvpDefense(session, actor, creature) || this.checkParticipants(actor, creature)) {
             return;
         }
+
+        const attackRange = AttackRange.fetchNormalAttackRange(actor);
+        if (!AttackRange.isWithinRange(actor, creature, attackRange)) {
+            actor.state.setHits(false);
+            // Auto-attacks and chase arrivals both return here. The target
+            // may have moved since the initial attack request or last swing.
+            if (invoke('GameServer/Effects/EffectRestrictions').canMove(actor)) {
+                actor.automation.scheduleAction(session, actor, creature, attackRange,
+                    () => this.meleeHit(session, creature), { collisionAware: true });
+            }
+            return;
+        }
+        const rangedAttack = AttackRange.weaponKind(actor) === 'Weapon.Bow';
 
         // Soulshots are only reloaded after the player enables their hotbar toggle.
         const autoSoulshotId = actor.backpack?.fetchAutoShot?.(actor, 'soulshot');
@@ -171,7 +184,7 @@ class Attack {
         actor.state.setHits(true);
 
         this.queueTimer(() => {
-            if (this.checkParticipants(actor, creature)) {
+            if (this.blockedPvpDefense(session, actor, creature) || this.checkParticipants(actor, creature)) {
                 return;
             }
 
@@ -188,7 +201,11 @@ class Attack {
                 const target = entry.target;
                 if (index > 0 && RaidCurse.normalAttackBlocked(session, actor, target)) return;
                 if (target?.state?.fetchDead?.() || target?.isDead?.()) return;
+                // Check every melee victim again at impact, including polearm
+                // secondary targets. Already-launched arrows keep travelling.
+                if (!rangedAttack && !AttackRange.isWithinRange(actor, target, attackRange)) return;
 
+                if (!entry.hitLanded || entry.hit.damage <= 0) this.recordPlayerAggression(session, actor, target);
                 if (entry.hitLanded) {
                     this.hit(session, actor, target, entry.hit.damage);
                     this.applyDamageAbsorb(session, actor, entry.hit.damage);
@@ -201,7 +218,7 @@ class Attack {
         }, speed * 0.644); // Until hit point
 
         this.queueTimer(() => {
-            if (this.checkParticipants(actor, creature)) {
+            if (this.blockedPvpDefense(session, actor, creature) || this.checkParticipants(actor, creature)) {
                 return;
             }
 
@@ -225,7 +242,7 @@ class Attack {
         const corpseTarget = ['corpse_mob', 'corpse_player', 'corpse_pet', 'corpse_ally']
             .includes(skill.fetchTargetKind?.());
 
-        if (this.checkParticipants(actor, creature, { allowDeadTarget: corpseTarget })) {
+        if (this.blockedPvpDefense(session, actor, creature, skill) || this.checkParticipants(actor, creature, { allowDeadTarget: corpseTarget })) {
             invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill, 'invalid_target');
             invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
             return;
@@ -274,7 +291,7 @@ class Attack {
             // can interleave before MP and effects resolve. Stop watching the
             // target before the authoritative cast work begins.
             HotPartyCastTracker.clear(actor);
-            if (this.checkParticipants(actor, creature, { allowDeadTarget: corpseTarget })) {
+            if (this.blockedPvpDefense(session, actor, creature, skill) || this.checkParticipants(actor, creature, { allowDeadTarget: corpseTarget })) {
                 invoke('GameServer/Bot/AI/BotSupportPlanner').cancelSupportCast(session, actor);
                 invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
                 return;
@@ -353,6 +370,10 @@ class Attack {
                     selfEffectOnly,
                     chargeCount: actor.activeSkillChargeCount
                 });
+                // A hostile control/debuff is aggression even without HP
+                // damage (and even if resisted). Use the same flag and party
+                // wake path as a hit, after native target/cast validation.
+                if (!(outcome.damage > 0) && skill.fetchTargetKind?.() === 'enemy') this.recordPlayerAggression(session, actor, target);
                 // Chat confirmations are emitted only after the authoritative
                 // skill result exists. A queued, interrupted, resisted, or
                 // stack-rejected cast must never claim success to the party.
@@ -1152,6 +1173,30 @@ class Attack {
         return false;
     }
 
+    blockedPvpDefense(session, actor, target, skill = null) {
+        if (!target || !session?.pvpDefense || session.actor !== actor || actor === target || target?.fetchKind ||
+            (skill && skill.fetchTargetKind?.() !== 'enemy')) return false;
+        const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
+        const allowed = (target.fetchPvpFlag?.() > 0 || target.fetchKarma?.() > 0) &&
+            !Threats.inPeace(actor) && !Threats.inPeace(target) &&
+            !invoke('GameServer/Bot/AI/BotPvpRisk').sameParty(session, target.session) &&
+            invoke('GameServer/World/ArenaCombatRules').canInteract(actor, target);
+        if (allowed) return false;
+        // Recheck at landing as well as selection. A queued swing/cast must
+        // not turn into PK after a flag expires, a party invite or a zone move.
+        invoke('GameServer/Bot/AI/BotPvpTactics').stop(session, actor);
+        return true;
+    }
+
+    recordPlayerAggression(session, actor, target) {
+        if (!actor?.fetchKind && !target?.fetchKind && actor !== target &&
+            invoke('GameServer/Bot/AI/BotPvpThreats').record(target, actor)) {
+            invoke('GameServer/Actor/PvpFlag').mark(session, actor);
+            return true;
+        }
+        return false;
+    }
+
     hit(session, actor, creature, hit) {
         ConsoleText.transmit(session, ConsoleText.caption.actorHit, [{ kind: ConsoleText.kind.number, value: hit }]);
         this.tryBreakCast(creature, hit);
@@ -1175,21 +1220,7 @@ class Attack {
             }
 
             // Flag the attacker when hitting another player/bot
-            actor.setPvpFlag(1);
-            session.dataSendToMe(ServerResponse.userInfo(actor));
-            session.dataSendToOthers(ServerResponse.charInfo(actor), actor);
-            session.dataSendToOthers(ServerResponse.relationChanged(actor), actor);
-
-            if (session.pvpFlagTimer) {
-                clearTimeout(session.pvpFlagTimer);
-            }
-            session.pvpFlagTimer = setTimeout(() => {
-                actor.setPvpFlag(0);
-                session.dataSendToMe(ServerResponse.userInfo(actor));
-                session.dataSendToOthers(ServerResponse.charInfo(actor), actor);
-                session.dataSendToOthers(ServerResponse.relationChanged(actor), actor);
-                session.pvpFlagTimer = undefined;
-            }, 15000); // 15 seconds flag duration
+            invoke('GameServer/Actor/PvpFlag').mark(session, actor);
 
             invoke(path.actor).receivedHit(session, creature, hit, { source: actor });
         }

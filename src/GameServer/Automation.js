@@ -192,11 +192,21 @@ class Automation extends SelectedModel {
     }
 
     scheduleAction(session, src, dst, radius, callback, options = {}) {
-        if (session) session.activeMoveGoal = null;
         const movementRadius = options.collisionAware
             ? AttackRange.effectiveRange(src, dst, radius)
             : Math.max(0, Number(radius) || 0);
-
+        if (!invoke('GameServer/Effects/EffectRestrictions').canMove(src)) {
+            const distance = Math.hypot(dst.fetchLocX() - src.fetchLocX(), dst.fetchLocY() - src.fetchLocY());
+            if (distance <= movementRadius) {
+                callback();
+                return true;
+            }
+            invoke('GameServer/Effects/EffectRestrictions').reject(session);
+            return false;
+        }
+        // NPCs and summons also send movement through another actor's session.
+        // Only the moving actor may replace that session's active route.
+        if (session?.actor === src) session.activeMoveGoal = null;
         // Execute each time, or else creature is stuck
         this.setDestId(dst.fetchId());
         session.dataSendToMeAndOthers(ServerResponse.moveToPawn(src, dst, movementRadius), src);
@@ -271,7 +281,6 @@ class Automation extends SelectedModel {
     }
 
     scheduleMoveToCoords(session, src, to, callback = () => {}) {
-        if (session) session.activeMoveGoal = null;
         const from = {
             locX: src.fetchLocX(),
             locY: src.fetchLocY(),
@@ -286,6 +295,8 @@ class Automation extends SelectedModel {
         if (!Object.values(destination).every(Number.isFinite)) {
             return false;
         }
+
+        if (session?.actor === src) session.activeMoveGoal = null;
 
         // Coordinate movement is currently used by NPC path waypoints, but
         // keep it safe for a session moving its own actor too. An older

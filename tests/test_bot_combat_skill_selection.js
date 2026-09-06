@@ -160,6 +160,17 @@ try {
     assert.strictEqual(mage.skillset.skills.length, 0, 'mage should not invent Wind Strike when it is not learned');
     assert.strictEqual(mageGenerics.skills.length, 0, 'mage without learned nuke should not cast an invented skill');
     assert.strictEqual(mageGenerics.attacks.length, 0, 'mage without a learned nuke must not melee a healthy target');
+    const desperateMage = generics();
+    BotAI.executePvPCombat({}, mage, npc(1101), desperateMage);
+    assert.strictEqual(desperateMage.attacks.length, 1, 'a committed PvP mage can fight with its weapon when no spell is available');
+
+    const lastManaFighter = bot(0, [skill(3, { mp: 5, power: 100 })], 10);
+    const pveReserve = generics();
+    BotAI.executeCombat({}, lastManaFighter, npc(1101), pveReserve);
+    assert.strictEqual(pveReserve.skills.length, 0, 'farming still preserves the MP reserve');
+    const pvpReserve = generics();
+    BotAI.executePvPCombat({}, lastManaFighter, npc(1101), pvpReserve);
+    assert.strictEqual(pvpReserve.skills.length, 1, 'PvP may spend the last affordable offensive MP');
 
     const archer = bot(9, [skill(56, { mp: 5, range: 700, power: 24, semantic: { requires: { weaponsAllowed: 32 } } })], 20, 'Weapon.Bow');
     const archerGenerics = generics();
