@@ -37,13 +37,13 @@ function playerId(session) {
     return session?.actor?.fetchId?.() || null;
 }
 
-function partyTurns(state) {
-    return (state?.recentTurns || []).filter((turn) => turn.channel === 'party_chat');
+function channelTurns(state, channel = 'party_chat') {
+    return (state?.recentTurns || []).filter((turn) => turn.channel === channel);
 }
 
-function candidateCard(candidate, state) {
+function candidateCard(candidate, state, channel) {
     const id = candidate?.id ?? null;
-    const lastTurn = [...partyTurns(state)]
+    const lastTurn = [...channelTurns(state, channel)]
         .reverse()
         .find((turn) => turn.role === 'bot' && String(turn.botId) === String(id));
     return {
@@ -55,11 +55,11 @@ function candidateCard(candidate, state) {
     };
 }
 
-function normalizeData(data, candidates) {
-    let route = ['bot', 'party', 'clarify', 'none'].includes(data?.route) ? data.route : 'none';
+function normalizeData(data, candidates, group = 'party') {
+    let route = ['bot', group, 'clarify', 'none'].includes(data?.route) ? data.route : 'none';
     const reason = String(data?.reason || 'router_decision').slice(0, 240);
     const ambiguitySignal = !/\bnot ambiguous\b/i.test(reason) &&
-        /\b(?:ambiguous|ambiguity|clarif(?:y|ication)|specify|which (?:bot|party member)|addressee)\b/i.test(reason);
+        /\b(?:ambiguous|ambiguity|clarif(?:y|ication)|specify|which (?:bot|party member|clan member)|addressee)\b/i.test(reason);
     // Small routers occasionally emit route=none while explicitly explaining
     // that the addressee is ambiguous. Preserve the semantic decision rather
     // than silently dropping a turn that the model itself says needs clarity.
@@ -102,16 +102,18 @@ function normalizeData(data, candidates) {
     return normalized;
 }
 
-function prompt(input, cards) {
+function prompt(input, cards, channel) {
     return {
         message: String(input.text || '').slice(0, 500),
-        channel: 'party_chat',
+        channel,
+        ...(channel === 'clan_chat' ? { player: { id: playerId(input.playerSession), name: input.playerSession?.actor?.fetchName?.() || '' } } : {}),
         selectedBotId: input.selectedBotId ?? null,
         inFlightBotId: input.dialogueState?.inFlightBotId ?? null,
         lastDeliveredBotId: input.dialogueState?.lastDeliveredBotId ?? null,
-        recentPartyTurns: partyTurns(input.dialogueState).slice(-6).map((turn) => ({
+        [channel === 'clan_chat' ? 'recentClanTurns' : 'recentPartyTurns']: channelTurns(input.dialogueState, channel).slice(-6).map((turn) => ({
             role: turn.role,
             botId: turn.botId,
+            ...(turn.name ? { name: turn.name } : {}),
             text: String(turn.text || '').slice(0, 160)
         })),
         candidates: cards
@@ -129,20 +131,29 @@ async function route(input = {}) {
         return { ok: false, route: 'none', candidate: null, reason: 'no_candidates', telemetry: null };
     }
 
-    const userPayload = prompt(input, candidates.map((candidate) => candidateCard(candidate, input.dialogueState)));
+    const group = input.channel === 'clan_chat' ? 'clan' : 'party';
+    const channel = `${group}_chat`;
+    const responseSchema = group === 'clan' ? {
+        name: 'clan_chat_route',
+        schema: { ...ROUTER_SCHEMA.schema, properties: {
+            ...ROUTER_SCHEMA.schema.properties,
+            route: { type: 'string', enum: ['bot', 'clan', 'clarify', 'none'] }
+        } }
+    } : ROUTER_SCHEMA;
+    const userPayload = prompt(input, candidates.map((candidate) => candidateCard(candidate, input.dialogueState, channel)), channel);
     const botId = playerId(input.playerSession);
     const metadata = {
-        event: 'party_chat_route',
-        source: 'party_router',
-        channel: 'party_chat',
+        event: `${group}_chat_route`,
+        source: `${group}_router`,
+        channel,
         playerId: botId,
         candidateCount: candidates.length,
         model: cfg.model,
-        sessionId: `party-chat:${botId || 'unknown'}`
+        sessionId: `${group}-chat:${botId || 'unknown'}`
     };
 
     return LangfuseTracing.withObservation(
-        'party.router.generation',
+        `${group}.router.generation`,
         userPayload,
         metadata,
         async () => {
@@ -153,21 +164,21 @@ async function route(input = {}) {
                     reasoningEffort: 'low',
                     temperature: ROUTER_TEMPERATURE,
                     maxTokens: ROUTER_MAX_TOKENS,
-                    timeoutMs: 0
+                    timeoutMs: group === 'clan' ? 60000 : 0
                 },
-                requestId: `party-router:${botId || 'unknown'}:${Date.now()}`,
-                sessionId: `party-router:${botId || 'unknown'}`,
-                circuitKey: 'party-router',
-                source: 'party_router',
+                requestId: `${group}-router:${botId || 'unknown'}:${Date.now()}`,
+                sessionId: `${group}-router:${botId || 'unknown'}`,
+                circuitKey: `${group}-router`,
+                source: `${group}_router`,
                 playerId: botId,
                 interactive: false,
                 messages: [
                     {
                         role: 'system',
                         content: [
-                            'You are a strict party-chat router for an online game.',
+                            `You are a strict ${group}-chat router for an online game.`,
                             'Choose at most one current candidate bot; never invent IDs.',
-                            'Use route=party only when the message is genuinely for the whole party.',
+                            `Use route=${group} only when the message is genuinely for the whole ${group}.`,
                             'Use clarify when a human should clarify an ambiguous addressee.',
                             'Never use none merely because the addressee is ambiguous; use clarify.',
                             'Use none only for messages that genuinely need no bot response.',
@@ -177,7 +188,7 @@ async function route(input = {}) {
                     },
                     { role: 'user', content: JSON.stringify(userPayload) }
                 ],
-                responseSchema: ROUTER_SCHEMA,
+                responseSchema,
                 repairSchema: true
             });
 
@@ -192,7 +203,7 @@ async function route(input = {}) {
             }
 
             return {
-                ...normalizeData(result.data, candidates),
+                ...normalizeData(result.data, candidates, group),
                 telemetry: result.telemetry || null,
                 usage: result.usage || null
             };

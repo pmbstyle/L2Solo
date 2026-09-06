@@ -34,6 +34,7 @@ const tests = [
     'tests/test_party_dialogue_state.js',
     'tests/test_party_llm_router.js',
     'tests/test_party_chat_routing_integration.js',
+    'tests/test_clan_dialogue.js',
     'tests/test_bot_tool_pending_audit.js',
     'tests/test_bot_conversation_store.js',
     'tests/test_bot_dialogue_arbiter.js',

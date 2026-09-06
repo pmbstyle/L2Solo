@@ -38,7 +38,7 @@ function speak(session, buffer) {
         packet.readS(); // Target name for private tell
     }
 
-    consume(session, {
+    return consume(session, {
         text: packet.data[0],
         kind: packet.data[1],
         target: packet.data[2],
@@ -110,7 +110,7 @@ function consume(session, data) {
         });
         // Clan speech must not leak into local delivery or the nearby-bot
         // dialogue router, which has no clan membership constraint.
-        return;
+        return invoke('GameServer/Bot/AI/ClanDialogueService').handlePlayerSpeak(session, data);
     }
 
     if (data.kind === 2) {

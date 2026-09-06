@@ -212,6 +212,14 @@ which keeps the bounded bot response budget available for the required JSON;
 set `reasoningEffort` to `low`, `medium`, or `high` when the selected model
 benefits from explicit reasoning.
 
+Clan chat uses the same `model` and `partyRouterModel` settings. Names, roles,
+selected clanmates and follow-up messages are routed first; ambiguous messages
+use the routing model to choose one responder or ask for clarification. Both
+active and background clan bots can reply in the clan channel. This path is
+conversation-only, with no tools or game actions. The clan shares a bounded
+in-memory conversation history, separate from party chat and private tells;
+it expires after 30 minutes of inactivity and resets on server restart.
+
 ## In-Game Commands
 
 - `.admin` - open the admin menu.
