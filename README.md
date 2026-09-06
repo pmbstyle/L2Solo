@@ -1,4 +1,6 @@
+<a href="https://l2solo.com">
 <img alt="Lineage2 Solo local server" src="https://github.com/user-attachments/assets/34f25f32-ed7c-4d6d-9d85-ea12e3c56a46" />
+</a>
 
 
 # L2Solo (C4: Scions of Destiny)
