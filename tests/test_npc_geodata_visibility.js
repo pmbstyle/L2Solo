@@ -199,19 +199,35 @@ GeodataEngine.findPath = () => expectedRoute;
 assert.strictEqual(npc.fetchCombatPath(target), expectedRoute, 'NPC combat movement must request a geodata path when direct sight is blocked');
 
 const originalSetTimeout = global.setTimeout;
+const originalClearTimeout = global.clearTimeout;
 const originalSetInterval = global.setInterval;
 const originalDateNow = Date.now;
 const originalAbortCombatState = npc.abortCombatState;
 let combatTickCallback;
 let abortCalls = 0;
 let pathCalls = 0;
-const timeoutCallbacks = [];
+const timeouts = new Map();
 let now = 100000;
+function advanceTime(ms) {
+    const until = now + ms;
+    for (;;) {
+        const next = [...timeouts].filter(([, timer]) => timer.at <= until)
+            .sort((a, b) => a[1].at - b[1].at)[0];
+        if (!next) break;
+        const [handle, timer] = next;
+        timeouts.delete(handle);
+        now = timer.at;
+        timer.callback();
+    }
+    now = until;
+}
 try {
-    global.setTimeout = (callback) => {
-        timeoutCallbacks.push(callback);
-        return {};
+    global.setTimeout = (callback, delay) => {
+        const handle = { _idleTimeout: delay };
+        timeouts.set(handle, { callback, at: now + delay });
+        return handle;
     };
+    global.clearTimeout = (handle) => { timeouts.delete(handle); };
     global.setInterval = (callback) => {
         combatTickCallback = callback;
         return {};
@@ -223,7 +239,7 @@ try {
     npc.selectCombatSkill = () => null;
 
     npc.enterCombatState(session, target);
-    timeoutCallbacks.shift()();
+    advanceTime(Math.min(...[...timeouts.values()].map(timer => timer.at)) - now);
     combatTickCallback();
     combatTickCallback();
     await Promise.resolve();
@@ -248,13 +264,25 @@ try {
     await Promise.resolve();
     await Promise.resolve();
     combatTickCallback();
-    timeoutCallbacks.shift()();
+    const firstMove = npc.automation.moveInterpolation;
+    assert(firstMove, 'the first waypoint must start movement');
+    advanceTime(firstMove.duration / 2);
+    assert(npc.fetchLocX() > 0 && npc.fetchLocX() < 16, 'the NPC must advance toward the first waypoint before arrival');
+    advanceTime(firstMove.duration / 2);
+    assert.strictEqual(npc.fetchLocX(), 16, 'the NPC must arrive at the first cached waypoint');
     combatTickCallback();
 
     assert.strictEqual(cachedPathCalls, 1, 'remaining waypoints must be reused without rebuilding the full A* route');
-    assert.strictEqual(timeoutCallbacks.length, 1, 'the cached second waypoint must schedule the next movement leg');
+    const secondMove = npc.automation.moveInterpolation;
+    assert(secondMove, 'the cached second waypoint must start the next movement leg');
+    assert.strictEqual(secondMove.to.locX, 32, 'the next leg must target the second cached waypoint');
+    advanceTime(secondMove.duration);
+    assert.strictEqual(npc.fetchLocX(), 32, 'the NPC must arrive at the second cached waypoint');
+    assert.strictEqual(npc.state.fetchTowards(), false, 'arrival must clear the movement state');
+    assert.strictEqual(timeouts.size, 0, 'completed movement must leave no interpolation or arrival callbacks');
 } finally {
     global.setTimeout = originalSetTimeout;
+    global.clearTimeout = originalClearTimeout;
     global.setInterval = originalSetInterval;
     Date.now = originalDateNow;
     npc.abortCombatState = originalAbortCombatState;

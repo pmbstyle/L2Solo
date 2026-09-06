@@ -1,6 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { spawnSync } = require('child_process');
 const { DatabaseSync } = require('node:sqlite');
 
@@ -11,7 +12,7 @@ if (process.argv[2] === '--bootstrap') {
     Database.init();
     Database.close().catch(error => { console.error(error); process.exitCode = 1; });
 } else {
-    const directory = fs.mkdtempSync(path.join(process.cwd(), 'tmp', 'test-selection-indexes-'));
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'test-selection-indexes-'));
     const databasePath = path.join(directory, 'states.sqlite');
     const indexNames = ['bot_goal_state_review_queue', 'bot_life_state_goal_review',
         'warehouse_items_positive_self_owner', 'bot_life_state_warehouse_release', 'bot_life_state_warehouse_demand',
