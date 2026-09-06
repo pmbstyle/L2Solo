@@ -80,6 +80,8 @@ See full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 - Quests (0-20lvl + 1st profession change)
 - Private trade or craft
 - Clans, including bot clans
+- PK system
+- Save game
 
 **Character:**
 - Progression depending on chosen rates
@@ -110,6 +112,7 @@ See full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 - Buying needed resources or equipment
 - PK bots
 - Bots attack a PK or run away
+- Bots will argue, then attack if a bot or a player hits the same mob
 - Communication in chat (LFP, LFG, PK alert, etc)
 - Cost parties and friends system
 - Reputation system - bots will reject player party if you treated them badly or become friends and const party members if good
