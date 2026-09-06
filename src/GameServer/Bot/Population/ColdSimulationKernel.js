@@ -162,7 +162,7 @@ function beginRouteTravelState(state = {}, route = null, timestamp = Date.now(),
                 startedAt: timestamp,
                 arrivalAt,
                 regionName: route.regionName || state.currentRegion || 'Hunting Ground',
-                method: 'gatekeeper_spot',
+                method: Number(state.stats?.karma || 0) > 0 ? 'walk' : 'gatekeeper_spot',
                 spotId: route.spotId,
                 arrivalActivity: isPartyRoute ? 'grouped' : 'hunting',
                 arrivalEvent: isPartyRoute ? 'party_arrived_hunting_ground' : 'arrived_hunting_ground',
@@ -241,6 +241,7 @@ function partyTransitionProposals(run, memberStates, party, timestamp, event = n
 
 function lifecycleKind(state = {}, context = {}) {
     if (state.phase !== 'cold' || state.activity === 'pk_hunting') return 'inactive';
+    if (Number(state.stats?.karma || 0) > 0 && !state.party?.partyId && !state.partyId) return 'resolver';
     if (context.isPartyLeader) return 'party';
     if (state.partyId || state.party?.partyId) return 'party_member';
     if ((state.activity === 'merchant' && state.stats?.marketStore)
@@ -1081,12 +1082,12 @@ class ColdSimulationKernel {
             const resolveState = lifecyclePlan?.plannedState || active.state;
             const result = await this.resolveSolo({
                 state: resolveState,
-                spot: resolveState.activity === 'traveling' ? null : active.context.spot || null,
+                spot: resolveState.activity === 'traveling' ? null : lifecyclePlan?.spot || active.context.spot || null,
                 pressure: active.context.pressure || {},
                 targetNpcId: Number(lifecyclePlan?.targetNpcId
-                    || lifecyclePlan?.acquisitionPlan?.next?.npcId
-                    || active.context.targetNpcId
-                    || 0),
+                    ?? lifecyclePlan?.acquisitionPlan?.next?.npcId
+                    ?? active.context.targetNpcId
+                    ?? 0),
                 elapsedMs,
                 rng: deterministicRandom(active.state),
                 timestamp

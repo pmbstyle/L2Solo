@@ -515,6 +515,7 @@ function recordFromSession(session, phase, reason = '') {
     const inventory = inventorySummaryFromItems(actor.backpack?.fetchItems ? actor.backpack.fetchItems() : []);
     const stats = {
         role: session.botStatus?.role || null,
+        karma: Number(actor.fetchKarma?.() || 0),
         pvpEnemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session),
         clanGearExchangeRevision: Number(cache.get(characterId)?.stats?.clanGearExchangeRevision || 0),
         classId: actor.fetchClassId ? Number(actor.fetchClassId()) : null,
@@ -1402,6 +1403,11 @@ const BotLifeState = {
             // even when its wall-clock lease had time remaining. Reclaim the
             // rows before any legacy startup repair can touch them.
             .then(() => invoke('GameServer/Bot/Population/ColdSimulationOwner').recoverStartupLeases())
+            .then(() => Database.execute([`UPDATE ${TABLE}
+                SET statsJson = json_set(COALESCE(statsJson, '{}'), '$.karma',
+                    (SELECT karma FROM characters WHERE id = characterId))
+                WHERE COALESCE(json_extract(statsJson, '$.karma'), 0)
+                    <> (SELECT karma FROM characters WHERE id = characterId)`, []]))
             .then(() => recoverStaleHotStates()).then(() => recoverDissolvedPartyMembers()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => clearPassivePartyRequests()).then(() => expireStalePartyRequests()).then(() => discardInvalidEquipmentPlans()).then(() => discardFulfilledEquipmentPlans()).then(() => hydrateCache()).then((count) => {
             const repairs = [...cache.values()]
                 .map(canonicalizeAreaState)
@@ -2219,6 +2225,8 @@ const BotLifeState = {
         };
         const stats = {
             ...patchedStats,
+            karma: Math.max(0, Number(state.stats?.karma || 0) - Math.floor(
+                Math.max(0, Number(result.materialize?.exp || 0)) / invoke('GameServer/Karma').XP_DIVIDER)),
             fightsWon: Number(state.stats?.fightsWon || 0) + Number(result.debug?.wins || 0),
             fightsResolved: Number(state.stats?.fightsResolved || 0) + Number(result.debug?.fights || 0),
             deaths: Number(result.patch?.deathCount ?? state.stats?.deaths ?? 0),
@@ -2361,7 +2369,9 @@ const BotLifeState = {
                 }
                 const row = rowFromState(profiledState);
                 return save(row)
-                    .then(() => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp))
+                    .then(() => Number(state.stats?.karma || 0) > 0
+                        ? Database.updateColdCharacterExperience(row.characterId, row.level, row.exp, row.sp)
+                        : Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp))
                     .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
                     .then(() => syncInventorySummary(row.characterId, profiledState.inventory))
                     .then(() => {

@@ -388,6 +388,15 @@ function compactHotBot(status, pkIds = new Set(), session = null) {
     };
 }
 
+let persistedPkIds = new Set();
+
+async function refreshPersistedPkIds() {
+    const rows = await Database.execute(['SELECT id FROM characters WHERE karma > 0', []]);
+    const previous = persistedPkIds;
+    persistedPkIds = new Set(rows.map(row => Number(row.id)));
+    return new Set([...previous, ...persistedPkIds]);
+}
+
 function compactStateBot(state, hotIds, leaderState = null) {
     if (hotIds.has(Number(state.characterId))) return null;
     const stats = state.stats || {};
@@ -435,7 +444,8 @@ function compactStateBot(state, hotIds, leaderState = null) {
         blockers: state.activity === 'dead' ? ['dead'] : [],
         updatedAt: state.updatedAt || 0,
         staticService: BotServiceIdentity.isStaticService(state),
-        isPk: state.activity === 'pk_hunting'
+        isPk: state.karma !== undefined ? Number(state.karma) > 0
+            : persistedPkIds.has(Number(state.characterId)) || state.activity === 'pk_hunting'
     };
 }
 
@@ -1830,6 +1840,7 @@ function mapCooperatively(items, mapper, sliceBudgetMs = 4) {
 }
 
 async function collectWorldActors() {
+    await refreshPersistedPkIds();
     const BotManager = invoke('GameServer/Bot/BotManager');
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 
@@ -1947,6 +1958,15 @@ async function refreshDynamicProjection() {
         ...players.map((actor) => `player:${Number(actor.id)}`)
     ]);
     const upserts = [...hot, ...players];
+    const pkIds = await refreshPersistedPkIds();
+    for (const id of pkIds) {
+        if (nextDynamicKeys.has(`bot:${id}`)) continue;
+        const state = LifeState.cachedState(id);
+        if (!state) continue;
+        const leaderId = Number(state.party?.leaderId || state.stats?.leaderId || 0);
+        const actor = compactStateBot(state, new Set(), LifeState.cachedState(leaderId));
+        if (actor) upserts.push(projectionActor(actor, 'bot'));
+    }
     const removals = [];
     projectionRuntime.dynamicKeys.forEach((key) => {
         if (nextDynamicKeys.has(key)) return;
@@ -2175,7 +2195,8 @@ async function botDetail(characterId) {
             leaderState = await LifeState.findByCharacterId(leaderId);
         }
     }
-    return compactColdDetail(state, leaderState);
+    const rows = await Database.execute(['SELECT karma FROM characters WHERE id = ?', [id]]);
+    return compactColdDetail({ ...state, karma: Number(rows[0]?.karma || 0) }, leaderState);
 }
 
 async function actorDetail(kind, characterId) {

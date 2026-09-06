@@ -64,6 +64,8 @@ async function createProbe(index) {
 
 (async () => {
     const states = await Promise.all([1, 2, 3].map(createProbe));
+    await Database.execute(['UPDATE characters SET karma = 45, pk = 1 WHERE id IN (?, ?)', [states[0].characterId, states[1].characterId]]);
+    await Database.execute(['UPDATE characters SET karma = 1 WHERE id = ?', [states[2].characterId]]);
     const claimed = await Owner.claimBatch(states.map((state, index) => ({
         state,
         leaseId: `batch-lease-${index + 1}`
@@ -148,7 +150,7 @@ async function createProbe(index) {
         assert.strictEqual(Number(row.simulationLeaseUntil), 0);
     }
     const physical = await Database.execute([
-        `SELECT c.id, c.classId, c.level, c.exp, c.sp,
+        `SELECT c.id, c.classId, c.level, c.exp, c.sp, c.karma, c.pk,
                 (SELECT amount FROM items WHERE characterId = c.id AND selfId = 57 LIMIT 1) AS adenaItem,
                 (SELECT level FROM skills WHERE characterId = c.id AND selfId = 1000 LIMIT 1) AS skillLevel
          FROM characters c WHERE c.id IN (?, ?) ORDER BY c.id`,
@@ -167,8 +169,14 @@ async function createProbe(index) {
         'stale CAS must not partially mutate character or inventory rows'
     );
 
+    assert.strictEqual(Number(physical[0].karma), 41, '1100 earned XP must wash four karma in the same commit');
+    assert.strictEqual(Number(physical[0].pk), 1, 'washing karma must preserve historical PK count');
+    assert.strictEqual(Number(physical[1].karma), 45, 'rejected commits must not wash karma');
+    const karmaRows = () => Database.execute(['SELECT karma FROM characters ORDER BY id', []]);
+    assert.deepStrictEqual((await karmaRows()).map(row => Number(row.karma)), [41, 45, 0], 'karma must stop at zero');
     const replay = await Owner.commitAndReleaseBatch(entries, { timestamp: 3100 });
     assert(replay.every((result) => !result.ok), 'an ACK-loss replay must never apply progress twice');
+    assert.deepStrictEqual((await karmaRows()).map(row => Number(row.karma)), [41, 45, 0], 'replays must not wash karma again');
     const afterReplay = await Database.execute([
         'SELECT characterId, exp, simulationRevision FROM bot_life_state ORDER BY characterId', []
     ]);

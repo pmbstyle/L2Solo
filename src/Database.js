@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const CheckpointCoordinator = require('./DatabaseCheckpointCoordinator');
+const { XP_DIVIDER: KARMA_XP_DIVIDER } = require('./GameServer/Karma');
 
 let connection;
 let queryTail = Promise.resolve();
@@ -1651,9 +1652,13 @@ function syncInventorySummaryUnsafe(characterId, inventory = {}) {
 }
 
 function applyColdPhysicalStateUnsafe(characterId, physical = {}) {
-    write(`UPDATE characters SET level = ?, exp = ?, sp = ?, hp = ?, maxHp = ?, mp = ?, maxMp = ?${
+    // Use the persisted XP delta inside the fenced transaction: unchanged
+    // snapshots cannot wash karma twice, and non-combat updates grant none.
+    write(`UPDATE characters SET karma = MAX(0, karma - CAST(MAX(0, ? - exp) / ? AS INTEGER)),
+        level = ?, exp = ?, sp = ?, hp = ?, maxHp = ?, mp = ?, maxMp = ?${
         Number.isFinite(Number(physical.classId)) ? ', classId = ?' : ''
     } WHERE id = ?`, [
+        Number(physical.exp || 0), KARMA_XP_DIVIDER,
         Number(physical.level || 1), Number(physical.exp || 0), Number(physical.sp || 0),
         Number(physical.hp || 0), Number(physical.maxHp || 0),
         Number(physical.mp || 0), Number(physical.maxMp || 0),
@@ -5988,6 +5993,12 @@ const Database = {
             }
             return { ok: true, characterId, sex: normalizedSex, appearanceVersion: version };
         }, 'bot-life:generated-appearance'));
+    },
+    updateColdCharacterExperience(id, level, exp, sp) {
+        return withCharacterFlush(id, () => run(`UPDATE characters
+            SET karma = MAX(0, karma - CAST(MAX(0, ? - exp) / ? AS INTEGER)),
+                level = ?, exp = ?, sp = ? WHERE id = ?`,
+            [exp, KARMA_XP_DIVIDER, level, exp, sp, id], 'character:cold-experience'));
     },
     updateCharacterExperience(id, level, exp, sp) { return withCharacterFlush(id, () => update('characters', { level, exp, sp }, 'id = ?', [id], 'character:experience')); },
     updateCharacterVitals(id, hp, maxHp, mp, maxMp) { return withCharacterFlush(id, () => update('characters', { hp, maxHp, mp, maxMp }, 'id = ?', [id], 'character:vitals')); },

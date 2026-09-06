@@ -17,6 +17,11 @@ const originalStop = BotAI.stop;
 const originalAcceptColdState = ColdSimulationCoordinator.acceptColdState;
 
 async function run() {
+    const chaotic = { actor: { fetchKarma: () => 45, state: { fetchDead: () => false } }, plan: 'hunting' };
+    assert.strictEqual(Cooldown.canCooldown(chaotic, { ignoreVisibility: true }).ok, true);
+    assert.strictEqual(Cooldown.canCooldown({ ...chaotic, pvpDefense: {} }, { ignoreVisibility: true }).reason, 'pvp_active');
+    assert.strictEqual(Cooldown.canCooldown({ ...chaotic, pkProfile: {} }, { ignoreVisibility: true }).reason, 'pk_active');
+    assert.strictEqual(Cooldown.canCooldown({ ...chaotic, plan: 'pk_hunting' }, { ignoreVisibility: true }).reason, 'pk_active');
     const packets = [];
     let destroyed = false;
     const botSession = {

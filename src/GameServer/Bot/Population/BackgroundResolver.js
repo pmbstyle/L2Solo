@@ -270,7 +270,9 @@ function resolveTravel(state, timestamp = Date.now()) {
         },
         events: arrived ? [{
             type: travel.arrivalEvent || (arrivalActivity === 'crafting' ? 'arrived_craft_station' : 'arrived_town'),
-            summary: arrivalActivity === 'shopping'
+            summary: travel.method === 'walk'
+                ? `${state.name || 'Bot'} reached ${travel.regionName || 'the hunting area'} on foot`
+                : arrivalActivity === 'shopping'
                 ? `${state.name || 'Bot'} used SoE via ${travel.viaTown || 'town'} and reached ${travel.townName || 'town'} to shop`
                 : arrivalActivity === 'crafting'
                     ? `${state.name || 'Bot'} arrived at ${travel.stationId || 'a Giran craft station'} via SoE and gatekeeper`
@@ -1110,6 +1112,12 @@ const BackgroundResolver = {
             };
         }
 
+        if (state.activity === 'traveling' && Number(state.stats?.karma || 0) > 0
+            && !['hunting', 'grouped'].includes(state.stats?.travel?.arrivalActivity)) {
+            return { patch: { activity: 'hunting', stats: { ...state.stats, travel: null } },
+                events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                nextResolveAt: timestamp + 1000, debug: { reason: 'karma_blocks_town' } };
+        }
         if (state.activity === 'traveling') {
             const travelResult = resolveTravel(state, timestamp);
             if (travelResult) return travelResult;

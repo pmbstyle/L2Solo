@@ -58,6 +58,7 @@ function readyRecipeFor(state, recipe, visited = new Set()) {
 }
 
 function beginTravel(state, timestamp = Date.now()) {
+    if (Number(state?.stats?.karma || 0) > 0) return null;
     const plan = state?.stats?.equipmentPlan;
     if (!state || state.activity === 'traveling' || !['active', 'component_ready', 'ready_to_craft'].includes(plan?.status) || plan.strategy !== 'craft') return null;
     const finalRecipe = C4RecipeItems.resolveByRecipeId(plan.recipeId)

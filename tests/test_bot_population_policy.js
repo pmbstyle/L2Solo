@@ -67,6 +67,7 @@ async function run() {
         populationHotAt: Date.now() - 300000
     });
     const farPk = session('bot_far_pk', actor(6, 16000, 10, 720), { plan: 'pk_hunting', populationHotAt: Date.now() - 300000 });
+    const ordinaryPk = session('bot_ordinary_pk', actor(8, 18000, 27, 45), { populationHotAt: Date.now() - 300000 });
     const youngFarBot = session('bot_young_far', actor(5, 15000), { populationHotAt: Date.now() - 1000 });
 
     Config.activationRadius = 9000;
@@ -76,7 +77,7 @@ async function run() {
     Config.cooldownRadius = 11000;
     Config.cooldownBatchSize = 20;
     World.user = { sessions: [playerSession, nearBotA, nearBotB, farBot, youngFarBot] };
-    BotManager.sessions = [nearBotA, nearBotB, farBot, farCraftBot, farPk, youngFarBot];
+    BotManager.sessions = [nearBotA, nearBotB, farBot, farCraftBot, farPk, ordinaryPk, youngFarBot];
 
     const coldStates = [
         { characterId: 100, name: 'ColdPk', level: 10, activity: 'pk_hunting' },
@@ -131,7 +132,7 @@ async function run() {
         return Promise.resolve({ ok: true });
     };
     await PopulationService.cooldownEligibleHot();
-    assert.deepStrictEqual(cooled, ['bot_far_craft', 'bot_far'], 'cooldown should park distant craft services along with normal cold-backed bots');
+    assert.deepStrictEqual(cooled, ['bot_ordinary_pk', 'bot_far_craft', 'bot_far'], 'cooldown should park distant craft services along with normal cold-backed bots');
 
     const highLevelPlayer = session('player_high_level', actor(9, 0, 78));
     const highBotA = session('bot_high_a', actor(10, 1000, 45), { populationHotAt: Date.now() - 300000 });

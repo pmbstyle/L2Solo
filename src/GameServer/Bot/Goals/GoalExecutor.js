@@ -15,6 +15,7 @@ function marketTown(name = 'Giran') {
 }
 
 function beginMarketTravel(state, goal, timestamp = Date.now()) {
+    if (Number(state?.stats?.karma || 0) > 0) return null;
     if (!state || !goal || ['traveling', 'shopping', 'merchant', 'crafting'].includes(state.activity)) return null;
     const buyingGear = goal.type === 'upgrade_gear'
         && ['market_search_for_weapon', 'market_search_for_gear'].includes(goal.plan?.expectedBenefit);

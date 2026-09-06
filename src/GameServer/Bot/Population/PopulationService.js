@@ -137,7 +137,7 @@ function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
                 startedAt: timestamp,
                 arrivalAt: timestamp + HUNTING_TRAVEL_MS,
                 regionName: spot.name || state.currentRegion || 'Hunting Ground',
-                method: 'gatekeeper_spot',
+                method: Number(state.stats?.karma || 0) > 0 ? 'walk' : 'gatekeeper_spot',
                 spotId: spot.id,
                 arrivalActivity: 'hunting',
                 arrivalEvent: 'arrived_hunting_ground',
@@ -1777,10 +1777,9 @@ const PopulationService = {
             .filter((session) => {
                 if (session.chatArrivalActive) return false;
                 if (session.plan === 'merchant' && !session.coldMarketState && !session.coldCraftState) return false;
-                // Red-name bots are part of the visible PK population, not
-                // disposable ambient population. Keep them hot until their
-                // karma is genuinely cleared.
-                if (session.actor.fetchKarma?.() > 0) return false;
+                // Scripted PK encounters stay hot; ordinary chaotic bots can
+                // continue hunting and washing karma in the cold simulation.
+                if (session.pkProfile || session.plan === 'pk_hunting') return false;
                 if (session.partyCompanion === true || session.followPlayerSession) return false;
                 const lastHotAt = session.populationHotAt || 0;
                 if (lastHotAt && now - lastHotAt < Config.cooldownGraceMs) return false;
@@ -3134,6 +3133,15 @@ const PopulationService = {
 
     resolveColdState(state, workerRequest = null) {
         const startedAt = Date.now();
+        const karmaPolicy = invoke('GameServer/Bot/Population/ColdKarmaPolicy');
+        const karmaPlan = karmaPolicy.active(state) ? karmaPolicy.plan(state, SpotProfiles.ensure(), startedAt) : null;
+        if (karmaPlan && !joinedBackgroundParty(state)) {
+            const result = BackgroundResolver.resolveSolo({ state: karmaPlan.plannedState,
+                spot: karmaPlan.spot, targetNpcId: karmaPlan.targetNpcId, timestamp: startedAt,
+                elapsedMs: Math.max(1000, startedAt - Number(state.timing?.lastResolvedAt || startedAt - 60000)) });
+            return LifeState.applyResolve(karmaPlan.plannedState, result)
+                .then(saved => ({ ok: !!saved, state: saved || state, debug: result.debug }));
+        }
         const precomputedResult = workerRequest?.precomputedResult || null;
         if (joinedBackgroundParty(state)) {
             Metrics.recordSkippedResolve('joined_party_before_resolve');

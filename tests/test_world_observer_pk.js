@@ -335,4 +335,8 @@ const deadDetail = Observer.compactColdDetail({
 assert.strictEqual(deadDetail.intent, 'dead', 'dead cold bots must not claim to be hunting');
 assert.deepStrictEqual(deadDetail.blockers, ['dead'], 'dead cold bots must retain the map marker blocker');
 
+assert.strictEqual(Observer.compactColdDetail({ ...coldState, activity: 'traveling', karma: 45 }).isPk, true,
+    'ordinary cold bots must remain red while traveling with karma');
+assert.strictEqual(Observer.compactColdDetail({ ...coldState, activity: 'hunting', karma: 0 }).isPk, false,
+    'cold bots must stop being red after washing karma');
 console.log('World Observer PK marker checks passed');

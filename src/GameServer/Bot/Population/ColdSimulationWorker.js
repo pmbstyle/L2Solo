@@ -151,6 +151,8 @@ function startKernel(config = {}) {
             };
         },
         planLifecycle: ({ state, context, timestamp }) => {
+            const karmaPlan = invoke('GameServer/Bot/Population/ColdKarmaPolicy').plan(state, planningSpots, timestamp);
+            if (karmaPlan) return karmaPlan;
             const previousPlan = state.stats?.equipmentPlan || null;
             const spots = planningSpots;
             const occupancy = currentPlanningOccupancy(timestamp);
