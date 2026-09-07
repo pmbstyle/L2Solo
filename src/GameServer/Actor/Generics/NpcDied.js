@@ -146,6 +146,11 @@ function npcDied(session, actor, npc) {
         RaidBossMinionManager.onMinionDeath(World, npc);
     }
 
+    if (npc.fetchIsPet?.() === true && npc.petData?.version === 1) {
+        invoke('GameServer/Pets/PetRuntime').die(npc);
+        return;
+    }
+
     if (npc.fetchIsSummon?.() === true) {
         NpcObjectIndex.remove(World, npc);
         World.npc.spawns = World.npc.spawns.filter((spawn) => spawn.fetchId() !== npc.fetchId());
@@ -182,7 +187,9 @@ function npcDied(session, actor, npc) {
             meta: { npcId: npc.fetchId?.(), npcName: npc.fetchName?.() || null }
         })).catch(() => {});
     }
-    const rewards = partyRewardShares(participants, npc.fetchAcquiredExp(), npc.fetchRewardSp());
+    const PetRuntime = invoke('GameServer/Pets/PetRuntime');
+    const remainingShare = PetRuntime.rewardDamage(npc, npc.fetchAcquiredExp(), npc.fetchRewardSp());
+    const rewards = partyRewardShares(participants, npc.fetchAcquiredExp() * remainingShare, npc.fetchRewardSp() * remainingShare);
 
     // C4's ordinary quest callback is attributed to the actual killer, not to
     // every party member that receives shared EXP.
@@ -191,7 +198,11 @@ function npcDied(session, actor, npc) {
     });
 
     rewards.forEach(({ session: memberSession, exp, sp }) => {
-        Generics.experienceReward(memberSession, memberSession.actor, exp, sp);
+        const pet = memberSession.actor.pet;
+        const share = pet?.petData?.version === 1 && !pet.state.fetchDead() && !memberSession.actor.mounted
+            ? invoke('GameServer/Pets/PetRules').typeForNpc(pet.fetchSelfId())?.ownerShare || 0 : 0;
+        if (share) PetRuntime.award(pet, exp * share, sp * share);
+        Generics.experienceReward(memberSession, memberSession.actor, exp * (1 - share), sp * (1 - share));
     });
 }
 

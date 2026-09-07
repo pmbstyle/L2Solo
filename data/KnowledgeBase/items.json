@@ -4414,6 +4414,33 @@
           "groupIndexes": [
             0
           ],
+          "mobId": 919,
+          "mobLevel": 20,
+          "mobName": "Maille Lizardman",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.0177,
+              "expectedAmountPerKill": 0.000177
+            },
+            "x10": {
+              "chancePercent": 0.177,
+              "expectedAmountPerKill": 0.00177
+            },
+            "x50": {
+              "chancePercent": 0.885,
+              "expectedAmountPerKill": 0.00885
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            0
+          ],
           "mobId": 1126,
           "mobLevel": 20,
           "mobName": "Kerope Werewolf",
@@ -5989,6 +6016,33 @@
             "x50": {
               "chancePercent": 4.72282948,
               "expectedAmountPerKill": 0.0472282948
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            0
+          ],
+          "mobId": 919,
+          "mobLevel": 20,
+          "mobName": "Maille Lizardman",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.0282,
+              "expectedAmountPerKill": 0.000282
+            },
+            "x10": {
+              "chancePercent": 0.282,
+              "expectedAmountPerKill": 0.00282
+            },
+            "x50": {
+              "chancePercent": 1.41,
+              "expectedAmountPerKill": 0.0141
             }
           }
         },
@@ -7583,6 +7637,33 @@
             "x50": {
               "chancePercent": 7.136982211499,
               "expectedAmountPerKill": 0.071369822115
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            0
+          ],
+          "mobId": 921,
+          "mobLevel": 24,
+          "mobName": "Maille Lizardman Guard",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.0489,
+              "expectedAmountPerKill": 0.000489
+            },
+            "x10": {
+              "chancePercent": 0.489,
+              "expectedAmountPerKill": 0.00489
+            },
+            "x50": {
+              "chancePercent": 2.445,
+              "expectedAmountPerKill": 0.02445
             }
           }
         },
@@ -9931,6 +10012,33 @@
             "x50": {
               "chancePercent": 7.136982211499,
               "expectedAmountPerKill": 0.071369822115
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            0
+          ],
+          "mobId": 921,
+          "mobLevel": 24,
+          "mobName": "Maille Lizardman Guard",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.0489,
+              "expectedAmountPerKill": 0.000489
+            },
+            "x10": {
+              "chancePercent": 0.489,
+              "expectedAmountPerKill": 0.00489
+            },
+            "x50": {
+              "chancePercent": 2.445,
+              "expectedAmountPerKill": 0.02445
             }
           }
         },
@@ -26945,6 +27053,87 @@
             "x50": {
               "chancePercent": 100,
               "expectedAmountPerKill": 26425
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            1
+          ],
+          "mobId": 919,
+          "mobLevel": 20,
+          "mobName": "Maille Lizardman",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 70,
+              "expectedAmountPerKill": 53.9
+            },
+            "x10": {
+              "chancePercent": 100,
+              "expectedAmountPerKill": 539
+            },
+            "x50": {
+              "chancePercent": 100,
+              "expectedAmountPerKill": 2695
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            0
+          ],
+          "mobId": 920,
+          "mobLevel": 22,
+          "mobName": "Maille Lizardman Scout",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 70,
+              "expectedAmountPerKill": 96.95
+            },
+            "x10": {
+              "chancePercent": 100,
+              "expectedAmountPerKill": 969.5
+            },
+            "x50": {
+              "chancePercent": 100,
+              "expectedAmountPerKill": 4847.5
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            1
+          ],
+          "mobId": 921,
+          "mobLevel": 24,
+          "mobName": "Maille Lizardman Guard",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 70,
+              "expectedAmountPerKill": 67.55
+            },
+            "x10": {
+              "chancePercent": 100,
+              "expectedAmountPerKill": 675.5
+            },
+            "x50": {
+              "chancePercent": 100,
+              "expectedAmountPerKill": 3377.5
             }
           }
         },
@@ -71790,6 +71979,33 @@
               "expectedAmountPerKill": 0.005687538
             }
           }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            1
+          ],
+          "mobId": 920,
+          "mobLevel": 22,
+          "mobName": "Maille Lizardman Scout",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.0052,
+              "expectedAmountPerKill": 0.000052
+            },
+            "x10": {
+              "chancePercent": 0.052,
+              "expectedAmountPerKill": 0.00052
+            },
+            "x50": {
+              "chancePercent": 0.26,
+              "expectedAmountPerKill": 0.0026
+            }
+          }
         }
       ],
       "spoils": []
@@ -85349,6 +85565,33 @@
           "groupIndexes": [
             0
           ],
+          "mobId": 919,
+          "mobLevel": 20,
+          "mobName": "Maille Lizardman",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.0177,
+              "expectedAmountPerKill": 0.000177
+            },
+            "x10": {
+              "chancePercent": 0.177,
+              "expectedAmountPerKill": 0.00177
+            },
+            "x50": {
+              "chancePercent": 0.885,
+              "expectedAmountPerKill": 0.00885
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            0
+          ],
           "mobId": 1126,
           "mobLevel": 20,
           "mobName": "Kerope Werewolf",
@@ -88136,6 +88379,33 @@
             "x50": {
               "chancePercent": 4.72282948,
               "expectedAmountPerKill": 0.0472282948
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            0
+          ],
+          "mobId": 919,
+          "mobLevel": 20,
+          "mobName": "Maille Lizardman",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.0282,
+              "expectedAmountPerKill": 0.000282
+            },
+            "x10": {
+              "chancePercent": 0.282,
+              "expectedAmountPerKill": 0.00282
+            },
+            "x50": {
+              "chancePercent": 1.41,
+              "expectedAmountPerKill": 0.0141
             }
           }
         },
@@ -110974,6 +111244,33 @@
           "groupIndexes": [
             0
           ],
+          "mobId": 919,
+          "mobLevel": 20,
+          "mobName": "Maille Lizardman",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 2.0265,
+              "expectedAmountPerKill": 0.020265
+            },
+            "x10": {
+              "chancePercent": 2.0265,
+              "expectedAmountPerKill": 0.20265
+            },
+            "x50": {
+              "chancePercent": 2.0265,
+              "expectedAmountPerKill": 1.01325
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            0
+          ],
           "mobId": 1208,
           "mobLevel": 20,
           "mobName": "Holy Land Watchman",
@@ -111635,6 +111932,33 @@
             "x50": {
               "chancePercent": 9.517470045257,
               "expectedAmountPerKill": 0.095174700453
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            2
+          ],
+          "mobId": 920,
+          "mobLevel": 22,
+          "mobName": "Maille Lizardman Scout",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.179,
+              "expectedAmountPerKill": 0.00179
+            },
+            "x10": {
+              "chancePercent": 1.79,
+              "expectedAmountPerKill": 0.0179
+            },
+            "x50": {
+              "chancePercent": 2.738259140278,
+              "expectedAmountPerKill": 0.027382591403
             }
           }
         },
@@ -140894,6 +141218,33 @@
             "x50": {
               "chancePercent": 48.7805,
               "expectedAmountPerKill": 0.487805
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            2
+          ],
+          "mobId": 920,
+          "mobLevel": 22,
+          "mobName": "Maille Lizardman Scout",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 4.7742,
+              "expectedAmountPerKill": 0.047742
+            },
+            "x10": {
+              "chancePercent": 47.742,
+              "expectedAmountPerKill": 0.47742
+            },
+            "x50": {
+              "chancePercent": 30.595074193055,
+              "expectedAmountPerKill": 0.730335016062
             }
           }
         },
@@ -178534,6 +178885,33 @@
           "groupIndexes": [
             0
           ],
+          "mobId": 921,
+          "mobLevel": 24,
+          "mobName": "Maille Lizardman Guard",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.6111,
+              "expectedAmountPerKill": 0.006111
+            },
+            "x10": {
+              "chancePercent": 0.6111,
+              "expectedAmountPerKill": 0.06111
+            },
+            "x50": {
+              "chancePercent": 0.6111,
+              "expectedAmountPerKill": 0.30555
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            0
+          ],
           "mobId": 1127,
           "mobLevel": 21,
           "mobName": "Northern Goblin",
@@ -189024,6 +189402,33 @@
             "raidMinion": false
           },
           "groupIndexes": [
+            1
+          ],
+          "mobId": 921,
+          "mobLevel": 24,
+          "mobName": "Maille Lizardman Guard",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 30.5532,
+              "expectedAmountPerKill": 0.305532
+            },
+            "x10": {
+              "chancePercent": 30.5532,
+              "expectedAmountPerKill": 3.05532
+            },
+            "x50": {
+              "chancePercent": 30.5532,
+              "expectedAmountPerKill": 15.2766
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
             0
           ],
           "mobId": 1126,
@@ -193182,6 +193587,33 @@
           "groupIndexes": [
             2
           ],
+          "mobId": 920,
+          "mobLevel": 22,
+          "mobName": "Maille Lizardman Scout",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 2.1484,
+              "expectedAmountPerKill": 0.021484
+            },
+            "x10": {
+              "chancePercent": 21.484,
+              "expectedAmountPerKill": 0.21484
+            },
+            "x50": {
+              "chancePercent": 30.595074193055,
+              "expectedAmountPerKill": 0.328652286982
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            2
+          ],
           "mobId": 1124,
           "mobLevel": 18,
           "mobName": "Red Eye Barbed Bat",
@@ -195170,6 +195602,33 @@
             "x50": {
               "chancePercent": 33.4425,
               "expectedAmountPerKill": 16.72125
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            1
+          ],
+          "mobId": 919,
+          "mobLevel": 20,
+          "mobName": "Maille Lizardman",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 12.1597,
+              "expectedAmountPerKill": 0.121597
+            },
+            "x10": {
+              "chancePercent": 12.1597,
+              "expectedAmountPerKill": 1.21597
+            },
+            "x50": {
+              "chancePercent": 12.1597,
+              "expectedAmountPerKill": 6.07985
             }
           }
         },
@@ -205104,6 +205563,33 @@
             "x50": {
               "chancePercent": 38.581736032468,
               "expectedAmountPerKill": 1.428797423173
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            2
+          ],
+          "mobId": 919,
+          "mobLevel": 20,
+          "mobName": "Maille Lizardman",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 2.3945,
+              "expectedAmountPerKill": 0.023945
+            },
+            "x10": {
+              "chancePercent": 23.945,
+              "expectedAmountPerKill": 0.23945
+            },
+            "x50": {
+              "chancePercent": 43.492443187996,
+              "expectedAmountPerKill": 0.520713276068
             }
           }
         },
@@ -223150,6 +223636,33 @@
             "raidMinion": false
           },
           "groupIndexes": [
+            2
+          ],
+          "mobId": 920,
+          "mobLevel": 22,
+          "mobName": "Maille Lizardman Scout",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 2.1484,
+              "expectedAmountPerKill": 0.021484
+            },
+            "x10": {
+              "chancePercent": 21.484,
+              "expectedAmountPerKill": 0.21484
+            },
+            "x50": {
+              "chancePercent": 30.595074193055,
+              "expectedAmountPerKill": 0.328652286982
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
             1
           ],
           "mobId": 980,
@@ -233832,6 +234345,33 @@
             "x50": {
               "chancePercent": 38.581736032468,
               "expectedAmountPerKill": 1.428797423173
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            2
+          ],
+          "mobId": 919,
+          "mobLevel": 20,
+          "mobName": "Maille Lizardman",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 2.3945,
+              "expectedAmountPerKill": 0.023945
+            },
+            "x10": {
+              "chancePercent": 23.945,
+              "expectedAmountPerKill": 0.23945
+            },
+            "x50": {
+              "chancePercent": 43.492443187996,
+              "expectedAmountPerKill": 0.520713276068
             }
           }
         },
@@ -258252,6 +258792,33 @@
           "groupIndexes": [
             2
           ],
+          "mobId": 920,
+          "mobLevel": 22,
+          "mobName": "Maille Lizardman Scout",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.358,
+              "expectedAmountPerKill": 0.00358
+            },
+            "x10": {
+              "chancePercent": 3.58,
+              "expectedAmountPerKill": 0.0358
+            },
+            "x50": {
+              "chancePercent": 5.476518280557,
+              "expectedAmountPerKill": 0.054765182806
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            2
+          ],
           "mobId": 991,
           "mobLevel": 45,
           "mobName": "Swamp Tribe",
@@ -262462,6 +263029,33 @@
             "raidMinion": false
           },
           "groupIndexes": [
+            2
+          ],
+          "mobId": 921,
+          "mobLevel": 24,
+          "mobName": "Maille Lizardman Guard",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.1805,
+              "expectedAmountPerKill": 0.001805
+            },
+            "x10": {
+              "chancePercent": 1.805,
+              "expectedAmountPerKill": 0.01805
+            },
+            "x50": {
+              "chancePercent": 6.686671112099,
+              "expectedAmountPerKill": 0.066866711121
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
             1
           ],
           "mobId": 1006,
@@ -266566,6 +267160,60 @@
             "raidMinion": false
           },
           "groupIndexes": [
+            2
+          ],
+          "mobId": 919,
+          "mobLevel": 20,
+          "mobName": "Maille Lizardman",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.2394,
+              "expectedAmountPerKill": 0.002394
+            },
+            "x10": {
+              "chancePercent": 2.394,
+              "expectedAmountPerKill": 0.02394
+            },
+            "x50": {
+              "chancePercent": 5.206045449603,
+              "expectedAmountPerKill": 0.052060454496
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            2
+          ],
+          "mobId": 921,
+          "mobLevel": 24,
+          "mobName": "Maille Lizardman Guard",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.2406,
+              "expectedAmountPerKill": 0.002406
+            },
+            "x10": {
+              "chancePercent": 2.406,
+              "expectedAmountPerKill": 0.02406
+            },
+            "x50": {
+              "chancePercent": 8.913091798177,
+              "expectedAmountPerKill": 0.089130917982
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
             1
           ],
           "mobId": 1064,
@@ -269553,6 +270201,33 @@
             "x50": {
               "chancePercent": 16.162397658367,
               "expectedAmountPerKill": 0.161623976584
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            2
+          ],
+          "mobId": 921,
+          "mobLevel": 24,
+          "mobName": "Maille Lizardman Guard",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.4011,
+              "expectedAmountPerKill": 0.004011
+            },
+            "x10": {
+              "chancePercent": 4.011,
+              "expectedAmountPerKill": 0.04011
+            },
+            "x50": {
+              "chancePercent": 14.858857523894,
+              "expectedAmountPerKill": 0.148588575239
             }
           }
         },
@@ -284021,6 +284696,33 @@
             "raidMinion": false
           },
           "groupIndexes": [
+            0
+          ],
+          "mobId": 920,
+          "mobLevel": 22,
+          "mobName": "Maille Lizardman Scout",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 2.2414,
+              "expectedAmountPerKill": 0.022414
+            },
+            "x10": {
+              "chancePercent": 2.2414,
+              "expectedAmountPerKill": 0.22414
+            },
+            "x50": {
+              "chancePercent": 2.2414,
+              "expectedAmountPerKill": 1.1207
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
             1
           ],
           "mobId": 1127,
@@ -293142,6 +293844,33 @@
             "raidMinion": false
           },
           "groupIndexes": [
+            2
+          ],
+          "mobId": 921,
+          "mobLevel": 24,
+          "mobName": "Maille Lizardman Guard",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 2.2253,
+              "expectedAmountPerKill": 0.022253
+            },
+            "x10": {
+              "chancePercent": 2.2253,
+              "expectedAmountPerKill": 0.22253
+            },
+            "x50": {
+              "chancePercent": 2.2253,
+              "expectedAmountPerKill": 1.11265
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
             1
           ],
           "mobId": 1129,
@@ -293562,6 +294291,33 @@
             "x50": {
               "chancePercent": 85.726035577001,
               "expectedAmountPerKill": 1.125448463078
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            0
+          ],
+          "mobId": 921,
+          "mobLevel": 24,
+          "mobName": "Maille Lizardman Guard",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.7713,
+              "expectedAmountPerKill": 0.007713
+            },
+            "x10": {
+              "chancePercent": 7.713,
+              "expectedAmountPerKill": 0.07713
+            },
+            "x50": {
+              "chancePercent": 38.565,
+              "expectedAmountPerKill": 0.38565
             }
           }
         },
@@ -308012,6 +308768,33 @@
               "expectedAmountPerKill": 0.20255
             }
           }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            1
+          ],
+          "mobId": 920,
+          "mobLevel": 22,
+          "mobName": "Maille Lizardman Scout",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.2508,
+              "expectedAmountPerKill": 0.002508
+            },
+            "x10": {
+              "chancePercent": 0.2508,
+              "expectedAmountPerKill": 0.02508
+            },
+            "x50": {
+              "chancePercent": 0.2508,
+              "expectedAmountPerKill": 0.1254
+            }
+          }
         }
       ]
     },
@@ -308359,6 +309142,33 @@
             "x50": {
               "chancePercent": 8.1312462,
               "expectedAmountPerKill": 0.081312462
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            1
+          ],
+          "mobId": 920,
+          "mobLevel": 22,
+          "mobName": "Maille Lizardman Scout",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.0755,
+              "expectedAmountPerKill": 0.000755
+            },
+            "x10": {
+              "chancePercent": 0.755,
+              "expectedAmountPerKill": 0.00755
+            },
+            "x50": {
+              "chancePercent": 3.775,
+              "expectedAmountPerKill": 0.03775
             }
           }
         }
@@ -328316,6 +329126,33 @@
             "x50": {
               "chancePercent": 7.4075,
               "expectedAmountPerKill": 0.074075
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            2
+          ],
+          "mobId": 919,
+          "mobLevel": 20,
+          "mobName": "Maille Lizardman",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.3591,
+              "expectedAmountPerKill": 0.003591
+            },
+            "x10": {
+              "chancePercent": 3.591,
+              "expectedAmountPerKill": 0.03591
+            },
+            "x50": {
+              "chancePercent": 7.809068174405,
+              "expectedAmountPerKill": 0.078090681744
             }
           }
         }
@@ -392598,6 +393435,33 @@
             "x50": {
               "chancePercent": 1.2475,
               "expectedAmountPerKill": 0.012475
+            }
+          }
+        },
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            2
+          ],
+          "mobId": 921,
+          "mobLevel": 24,
+          "mobName": "Maille Lizardman Guard",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.0722,
+              "expectedAmountPerKill": 0.000722
+            },
+            "x10": {
+              "chancePercent": 0.722,
+              "expectedAmountPerKill": 0.00722
+            },
+            "x50": {
+              "chancePercent": 2.67466844484,
+              "expectedAmountPerKill": 0.026746684448
             }
           }
         },
@@ -467773,7 +468637,7 @@
     "template": {
       "etc": {
         "consumable": false,
-        "stackable": false
+        "stackable": true
       },
       "selfId": 4325,
       "template": {
@@ -486150,6 +487014,59 @@
   },
   {
     "grade": "none",
+    "id": 5163,
+    "kind": "Other.Recipe",
+    "name": "Recipe: Blessed Spiritshot (D) Compressed Package (100%)",
+    "sources": {
+      "drops": [],
+      "spoils": [
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            2
+          ],
+          "mobId": 920,
+          "mobLevel": 22,
+          "mobName": "Maille Lizardman Scout",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.8728,
+              "expectedAmountPerKill": 0.008728
+            },
+            "x10": {
+              "chancePercent": 0.8728,
+              "expectedAmountPerKill": 0.08728
+            },
+            "x50": {
+              "chancePercent": 0.8728,
+              "expectedAmountPerKill": 0.4364
+            }
+          }
+        }
+      ]
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 5163,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.Recipe",
+        "mass": 30,
+        "name": "Recipe: Blessed Spiritshot (D) Compressed Package (100%)",
+        "price": 30000
+      }
+    }
+  },
+  {
+    "grade": "none",
     "id": 5164,
     "kind": "Other.Recipe",
     "name": "Recipe: Blessed Spiritshot (C) Compressed Package (100%)",
@@ -488444,6 +489361,33 @@
         }
       ],
       "spoils": [
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            2
+          ],
+          "mobId": 919,
+          "mobLevel": 20,
+          "mobName": "Maille Lizardman",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 0.4864,
+              "expectedAmountPerKill": 0.004864
+            },
+            "x10": {
+              "chancePercent": 0.4864,
+              "expectedAmountPerKill": 0.04864
+            },
+            "x50": {
+              "chancePercent": 0.4864,
+              "expectedAmountPerKill": 0.2432
+            }
+          }
+        },
         {
           "availability": {
             "directSpawn": true,
@@ -547933,6 +548877,134 @@
   },
   {
     "grade": "none",
+    "id": 6648,
+    "kind": "Other.PetCollar",
+    "name": "Baby Buffalo Panpipe",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": false
+      },
+      "selfId": 6648,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.PetCollar",
+        "mass": 20,
+        "name": "Baby Buffalo Panpipe",
+        "price": 0
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 6649,
+    "kind": "Other.PetCollar",
+    "name": "Baby Cougar Chime",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": false
+      },
+      "selfId": 6649,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.PetCollar",
+        "mass": 20,
+        "name": "Baby Cougar Chime",
+        "price": 0
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 6650,
+    "kind": "Other.PetCollar",
+    "name": "Baby Kookaburra Ocarina",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": false
+      },
+      "selfId": 6650,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.PetCollar",
+        "mass": 20,
+        "name": "Baby Kookaburra Ocarina",
+        "price": 0
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 6666,
+    "kind": "Other.None",
+    "name": "Deluxe Chest Key - Grade 2",
+    "sources": {
+      "drops": [
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            2
+          ],
+          "mobId": 921,
+          "mobLevel": 24,
+          "mobName": "Maille Lizardman Guard",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 1.805,
+              "expectedAmountPerKill": 0.01805
+            },
+            "x10": {
+              "chancePercent": 18.05,
+              "expectedAmountPerKill": 0.1805
+            },
+            "x50": {
+              "chancePercent": 66.86671112099,
+              "expectedAmountPerKill": 0.66866711121
+            }
+          }
+        }
+      ],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": true
+      },
+      "selfId": 6666,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.None",
+        "mass": 10,
+        "name": "Deluxe Chest Key - Grade 2",
+        "price": 200
+      }
+    }
+  },
+  {
+    "grade": "none",
     "id": 6667,
     "kind": "Other",
     "name": "Deluxe Chest Key - Grade 3",
@@ -556998,6 +558070,156 @@
     }
   },
   {
+    "grade": "none",
+    "id": 7548,
+    "kind": "Other.Quest",
+    "name": "Map Piece",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7548,
+      "template": {
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
+        "name": "Map Piece",
+        "price": 0
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7549,
+    "kind": "Other.Quest",
+    "name": "Yellow Map",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7549,
+      "template": {
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
+        "name": "Yellow Map",
+        "price": 0
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7550,
+    "kind": "Other.Quest",
+    "name": "Map Piece",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7550,
+      "template": {
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
+        "name": "Map Piece",
+        "price": 0
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7551,
+    "kind": "Other.Quest",
+    "name": "Ivory Colored Map",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7551,
+      "template": {
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
+        "name": "Ivory Colored Map",
+        "price": 0
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7552,
+    "kind": "Other.Quest",
+    "name": "Broken Gemstone Fragment",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7552,
+      "template": {
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
+        "name": "Broken Gemstone Fragment",
+        "price": 0
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7553,
+    "kind": "Other.Quest",
+    "name": "Gold Colored Gemstone",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7553,
+      "template": {
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
+        "name": "Gold Colored Gemstone",
+        "price": 0
+      }
+    }
+  },
+  {
     "grade": "s",
     "id": 7575,
     "kind": "Weapon.Bow",
@@ -557273,6 +558495,106 @@
         "mass": 30,
         "name": "Recipe: Draconic Bow (100%)",
         "price": 976000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7582,
+    "kind": "Other.None",
+    "name": "Baby Spice",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": true
+      },
+      "selfId": 7582,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.None",
+        "mass": 10,
+        "name": "Baby Spice",
+        "price": 100
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7583,
+    "kind": "Other.None",
+    "name": "Pet Exchange Ticket: Buffalo",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7583,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.None",
+        "mass": 20,
+        "name": "Pet Exchange Ticket: Buffalo",
+        "price": 500000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7584,
+    "kind": "Other.None",
+    "name": "Pet Exchange Ticket: Cougar",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7584,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.None",
+        "mass": 20,
+        "name": "Pet Exchange Ticket: Cougar",
+        "price": 500000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7585,
+    "kind": "Other.None",
+    "name": "Pet Exchange Ticket: Kookaburra",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7585,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.None",
+        "mass": 20,
+        "name": "Pet Exchange Ticket: Kookaburra",
+        "price": 500000
       }
     }
   },

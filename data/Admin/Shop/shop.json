@@ -1,4 +1,7 @@
 {
+    "pet-food": "pet:food",
+    "pet-equipment": "pet:equipment",
+    "pet-summons": "pet:summons",
     "armor-none": "armor:none",
     "armor-d": "armor:d",
     "armor-c": "armor:c",

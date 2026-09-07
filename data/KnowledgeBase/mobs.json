@@ -280910,6 +280910,1335 @@
     }
   },
   {
+    "aiType": "fighter",
+    "availability": {
+      "directSpawn": true,
+      "knownReachable": true,
+      "raidMinion": false
+    },
+    "defaultEffectiveStats": {
+      "accuracy": 57.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
+      "evasion": 52.86335345031,
+      "mAtk": 23,
+      "mDef": 76,
+      "maxHp": 271,
+      "maxMp": 213,
+      "pAtk": 57,
+      "pDef": 94,
+      "runSpeed": 143,
+      "walkSpeed": 47
+    },
+    "drops": [
+      {
+        "groupIndex": 0,
+        "items": [
+          {
+            "baseChancePercent": 0.0177,
+            "itemId": 24,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0177,
+                "expectedAmountPerKill": 0.000177
+              },
+              "x10": {
+                "chancePercent": 0.177,
+                "expectedAmountPerKill": 0.00177
+              },
+              "x50": {
+                "chancePercent": 0.885,
+                "expectedAmountPerKill": 0.00885
+              }
+            },
+            "selectionWeightPercent": 19.281045751634,
+            "sourceName": ""
+          },
+          {
+            "baseChancePercent": 0.0282,
+            "itemId": 31,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0282,
+                "expectedAmountPerKill": 0.000282
+              },
+              "x10": {
+                "chancePercent": 0.282,
+                "expectedAmountPerKill": 0.00282
+              },
+              "x50": {
+                "chancePercent": 1.41,
+                "expectedAmountPerKill": 0.0141
+              }
+            },
+            "selectionWeightPercent": 30.718954248366,
+            "sourceName": ""
+          },
+          {
+            "baseChancePercent": 0.0177,
+            "itemId": 390,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0177,
+                "expectedAmountPerKill": 0.000177
+              },
+              "x10": {
+                "chancePercent": 0.177,
+                "expectedAmountPerKill": 0.00177
+              },
+              "x50": {
+                "chancePercent": 0.885,
+                "expectedAmountPerKill": 0.00885
+              }
+            },
+            "selectionWeightPercent": 19.281045751634,
+            "sourceName": ""
+          },
+          {
+            "baseChancePercent": 0.0282,
+            "itemId": 412,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0282,
+                "expectedAmountPerKill": 0.000282
+              },
+              "x10": {
+                "chancePercent": 0.282,
+                "expectedAmountPerKill": 0.00282
+              },
+              "x50": {
+                "chancePercent": 1.41,
+                "expectedAmountPerKill": 0.0141
+              }
+            },
+            "selectionWeightPercent": 30.718954248366,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 0.0918
+      },
+      {
+        "groupIndex": 1,
+        "items": [
+          {
+            "baseChancePercent": 70,
+            "itemId": 57,
+            "maxAmount": 98,
+            "minAmount": 56,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 70,
+                "expectedAmountPerKill": 53.9
+              },
+              "x10": {
+                "chancePercent": 100,
+                "expectedAmountPerKill": 539
+              },
+              "x50": {
+                "chancePercent": 100,
+                "expectedAmountPerKill": 2695
+              }
+            },
+            "selectionWeightPercent": 100,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 70
+      },
+      {
+        "groupIndex": 2,
+        "items": [
+          {
+            "baseChancePercent": 2.3945,
+            "itemId": 1867,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 2.3945,
+                "expectedAmountPerKill": 0.023945
+              },
+              "x10": {
+                "chancePercent": 23.945,
+                "expectedAmountPerKill": 0.23945
+              },
+              "x50": {
+                "chancePercent": 43.492443187996,
+                "expectedAmountPerKill": 0.520713276068
+              }
+            },
+            "selectionWeightPercent": 44.445475638051,
+            "sourceName": ""
+          },
+          {
+            "baseChancePercent": 2.3945,
+            "itemId": 1872,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 2.3945,
+                "expectedAmountPerKill": 0.023945
+              },
+              "x10": {
+                "chancePercent": 23.945,
+                "expectedAmountPerKill": 0.23945
+              },
+              "x50": {
+                "chancePercent": 43.492443187996,
+                "expectedAmountPerKill": 0.520713276068
+              }
+            },
+            "selectionWeightPercent": 44.445475638051,
+            "sourceName": ""
+          },
+          {
+            "baseChancePercent": 0.2394,
+            "itemId": 1881,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.2394,
+                "expectedAmountPerKill": 0.002394
+              },
+              "x10": {
+                "chancePercent": 2.394,
+                "expectedAmountPerKill": 0.02394
+              },
+              "x50": {
+                "chancePercent": 5.206045449603,
+                "expectedAmountPerKill": 0.052060454496
+              }
+            },
+            "selectionWeightPercent": 4.443619489559,
+            "sourceName": ""
+          },
+          {
+            "baseChancePercent": 0.3591,
+            "itemId": 2141,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.3591,
+                "expectedAmountPerKill": 0.003591
+              },
+              "x10": {
+                "chancePercent": 3.591,
+                "expectedAmountPerKill": 0.03591
+              },
+              "x50": {
+                "chancePercent": 7.809068174405,
+                "expectedAmountPerKill": 0.078090681744
+              }
+            },
+            "selectionWeightPercent": 6.665429234339,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 5.3875
+      }
+    ],
+    "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
+    "id": 919,
+    "kind": "Monster",
+    "level": 20,
+    "minionOf": [],
+    "minions": [],
+    "name": "Maille Lizardman",
+    "progression": {
+      "baseExp": 320.5,
+      "baseSp": 14,
+      "expModifier": 1.6025
+    },
+    "raidBoss": false,
+    "skillIds": [
+      "4295:1",
+      "4311:1"
+    ],
+    "spawnIds": [
+      "spawn-919-0a593dc8af2f",
+      "spawn-919-0b30d13783e5",
+      "spawn-919-156ea0833818",
+      "spawn-919-2071e62ea3d3",
+      "spawn-919-228566affd2a",
+      "spawn-919-23da09e95c00",
+      "spawn-919-273bf3d62566",
+      "spawn-919-4aade802ff73",
+      "spawn-919-4ea2deb4db43",
+      "spawn-919-57d369788677",
+      "spawn-919-5ddbb2cb49b5",
+      "spawn-919-605cd05dff7f",
+      "spawn-919-616de5d160ac",
+      "spawn-919-62ce0f6b4b4c",
+      "spawn-919-68f03ed56752",
+      "spawn-919-6aa5190b918a",
+      "spawn-919-764ed81df9c9",
+      "spawn-919-8b1f8c71e685",
+      "spawn-919-8c5329f6e147",
+      "spawn-919-9023ee5c872a",
+      "spawn-919-95b3c5ae7362",
+      "spawn-919-982f3518d778",
+      "spawn-919-b48135a1239e",
+      "spawn-919-b6e24ecba9d8",
+      "spawn-919-bafb375429af",
+      "spawn-919-bb2d698ba200",
+      "spawn-919-bcda64d3ddb9",
+      "spawn-919-c3a7f157534f",
+      "spawn-919-c3fe6f53c1bc",
+      "spawn-919-ced9ea3f81a6",
+      "spawn-919-d121d39863d9",
+      "spawn-919-f0b080ce9658",
+      "spawn-919-fca1be8f59d4"
+    ],
+    "spoils": [
+      {
+        "groupIndex": 0,
+        "items": [
+          {
+            "baseChancePercent": 2.0265,
+            "itemId": 734,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 2.0265,
+                "expectedAmountPerKill": 0.020265
+              },
+              "x10": {
+                "chancePercent": 2.0265,
+                "expectedAmountPerKill": 0.20265
+              },
+              "x50": {
+                "chancePercent": 2.0265,
+                "expectedAmountPerKill": 1.01325
+              }
+            },
+            "selectionWeightPercent": 2.0265,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 100
+      },
+      {
+        "groupIndex": 1,
+        "items": [
+          {
+            "baseChancePercent": 12.1597,
+            "itemId": 1865,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 12.1597,
+                "expectedAmountPerKill": 0.121597
+              },
+              "x10": {
+                "chancePercent": 12.1597,
+                "expectedAmountPerKill": 1.21597
+              },
+              "x50": {
+                "chancePercent": 12.1597,
+                "expectedAmountPerKill": 6.07985
+              }
+            },
+            "selectionWeightPercent": 12.1597,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 100
+      },
+      {
+        "groupIndex": 2,
+        "items": [
+          {
+            "baseChancePercent": 0.4864,
+            "itemId": 5220,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.4864,
+                "expectedAmountPerKill": 0.004864
+              },
+              "x10": {
+                "chancePercent": 0.4864,
+                "expectedAmountPerKill": 0.04864
+              },
+              "x50": {
+                "chancePercent": 0.4864,
+                "expectedAmountPerKill": 0.2432
+              }
+            },
+            "selectionWeightPercent": 0.4864,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 100
+      }
+    ],
+    "template": {
+      "base": {
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "men": 10,
+        "str": 40,
+        "wit": 20
+      },
+      "clan": {
+        "clanName": "lizardman_clan",
+        "helpRadius": 300
+      },
+      "collision": {
+        "radius": 10,
+        "size": 23
+      },
+      "equipment": {
+        "reuseTime": 0,
+        "shield": 0,
+        "weapon": 291
+      },
+      "rewards": {
+        "exp": 1.6025,
+        "sp": 28
+      },
+      "selfId": 919,
+      "speed": {
+        "run": 143,
+        "walk": 47
+      },
+      "stats": {
+        "accur": 4.75,
+        "atkRadius": 40,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 23,
+        "mDef": 76,
+        "pAtk": 57,
+        "pAtkRnd": 30,
+        "pDef": 94
+      },
+      "template": {
+        "ai": "FIGHTER",
+        "hostile": false,
+        "kind": "Monster",
+        "level": 20,
+        "name": "Maille Lizardman",
+        "title": ""
+      },
+      "traits": {
+        "race": "humanoid",
+        "undead": false
+      },
+      "vitals": {
+        "corpseTime": 7000,
+        "maxHp": 541,
+        "maxMp": 213,
+        "revHp": 1.98,
+        "revMp": 1.21
+      }
+    }
+  },
+  {
+    "aiType": "balanced",
+    "availability": {
+      "directSpawn": true,
+      "knownReachable": true,
+      "raidMinion": false
+    },
+    "defaultEffectiveStats": {
+      "accuracy": 59.61335345031,
+      "attackSpeed": 249,
+      "castSpeed": 227,
+      "evasion": 54.86335345031,
+      "mAtk": 28,
+      "mDef": 83,
+      "maxHp": 306,
+      "maxMp": 242,
+      "pAtk": 153,
+      "pDef": 102,
+      "runSpeed": 143,
+      "walkSpeed": 47
+    },
+    "drops": [
+      {
+        "groupIndex": 0,
+        "items": [
+          {
+            "baseChancePercent": 70,
+            "itemId": 57,
+            "maxAmount": 178,
+            "minAmount": 99,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 70,
+                "expectedAmountPerKill": 96.95
+              },
+              "x10": {
+                "chancePercent": 100,
+                "expectedAmountPerKill": 969.5
+              },
+              "x50": {
+                "chancePercent": 100,
+                "expectedAmountPerKill": 4847.5
+              }
+            },
+            "selectionWeightPercent": 100,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 70
+      },
+      {
+        "groupIndex": 1,
+        "items": [
+          {
+            "baseChancePercent": 0.0052,
+            "itemId": 273,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0052,
+                "expectedAmountPerKill": 0.000052
+              },
+              "x10": {
+                "chancePercent": 0.052,
+                "expectedAmountPerKill": 0.00052
+              },
+              "x50": {
+                "chancePercent": 0.26,
+                "expectedAmountPerKill": 0.0026
+              }
+            },
+            "selectionWeightPercent": 6.443618339529,
+            "sourceName": ""
+          },
+          {
+            "baseChancePercent": 0.0755,
+            "itemId": 2016,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0755,
+                "expectedAmountPerKill": 0.000755
+              },
+              "x10": {
+                "chancePercent": 0.755,
+                "expectedAmountPerKill": 0.00755
+              },
+              "x50": {
+                "chancePercent": 3.775,
+                "expectedAmountPerKill": 0.03775
+              }
+            },
+            "selectionWeightPercent": 93.556381660471,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 0.0807
+      },
+      {
+        "groupIndex": 2,
+        "items": [
+          {
+            "baseChancePercent": 0.179,
+            "itemId": 735,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.179,
+                "expectedAmountPerKill": 0.00179
+              },
+              "x10": {
+                "chancePercent": 1.79,
+                "expectedAmountPerKill": 0.0179
+              },
+              "x50": {
+                "chancePercent": 2.738259140278,
+                "expectedAmountPerKill": 0.027382591403
+              }
+            },
+            "selectionWeightPercent": 1.86303080766,
+            "sourceName": ""
+          },
+          {
+            "baseChancePercent": 4.7742,
+            "itemId": 1060,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 4.7742,
+                "expectedAmountPerKill": 0.047742
+              },
+              "x10": {
+                "chancePercent": 47.742,
+                "expectedAmountPerKill": 0.47742
+              },
+              "x50": {
+                "chancePercent": 30.595074193055,
+                "expectedAmountPerKill": 0.730335016062
+              }
+            },
+            "selectionWeightPercent": 49.689841798501,
+            "sourceName": ""
+          },
+          {
+            "baseChancePercent": 2.1484,
+            "itemId": 1865,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 2.1484,
+                "expectedAmountPerKill": 0.021484
+              },
+              "x10": {
+                "chancePercent": 21.484,
+                "expectedAmountPerKill": 0.21484
+              },
+              "x50": {
+                "chancePercent": 30.595074193055,
+                "expectedAmountPerKill": 0.328652286982
+              }
+            },
+            "selectionWeightPercent": 22.360532889259,
+            "sourceName": ""
+          },
+          {
+            "baseChancePercent": 2.1484,
+            "itemId": 1870,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 2.1484,
+                "expectedAmountPerKill": 0.021484
+              },
+              "x10": {
+                "chancePercent": 21.484,
+                "expectedAmountPerKill": 0.21484
+              },
+              "x50": {
+                "chancePercent": 30.595074193055,
+                "expectedAmountPerKill": 0.328652286982
+              }
+            },
+            "selectionWeightPercent": 22.360532889259,
+            "sourceName": ""
+          },
+          {
+            "baseChancePercent": 0.358,
+            "itemId": 1879,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.358,
+                "expectedAmountPerKill": 0.00358
+              },
+              "x10": {
+                "chancePercent": 3.58,
+                "expectedAmountPerKill": 0.0358
+              },
+              "x50": {
+                "chancePercent": 5.476518280557,
+                "expectedAmountPerKill": 0.054765182806
+              }
+            },
+            "selectionWeightPercent": 3.726061615321,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 9.608
+      }
+    ],
+    "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
+    "id": 920,
+    "kind": "Monster",
+    "level": 22,
+    "minionOf": [],
+    "minions": [],
+    "name": "Maille Lizardman Scout",
+    "progression": {
+      "baseExp": 593.5,
+      "baseSp": 28,
+      "expModifier": 2.452479338843
+    },
+    "raidBoss": false,
+    "skillIds": [
+      "4124:2",
+      "4295:1",
+      "4311:1"
+    ],
+    "spawnIds": [
+      "spawn-920-08249b7b279c",
+      "spawn-920-2064e169ed7d",
+      "spawn-920-31092f2d8c40",
+      "spawn-920-421b9d82e7ab",
+      "spawn-920-4575f44c3da7",
+      "spawn-920-45ca9ac48d2e",
+      "spawn-920-48de4051c8ec",
+      "spawn-920-4d6fdf2f9098",
+      "spawn-920-4d7f170d88b5",
+      "spawn-920-65a42f198e99",
+      "spawn-920-6be975ea8d6f",
+      "spawn-920-6d935e9dcaa4",
+      "spawn-920-7b95bbebfaca",
+      "spawn-920-81603363db11",
+      "spawn-920-827ee6d0f728",
+      "spawn-920-832df1a78c4c",
+      "spawn-920-8a33521275ef",
+      "spawn-920-96fe542d3285",
+      "spawn-920-9defccd0a454",
+      "spawn-920-9e251177a306",
+      "spawn-920-a44df57e28dc",
+      "spawn-920-a502b6df1e3f",
+      "spawn-920-ac101c26aa81",
+      "spawn-920-afa2d303644a",
+      "spawn-920-b4c6a502d4af",
+      "spawn-920-ba5e7034b07f",
+      "spawn-920-bc4409764fce",
+      "spawn-920-c03bf941cc74",
+      "spawn-920-c22ef902da50",
+      "spawn-920-c8cbb71191f3",
+      "spawn-920-cc561e981431",
+      "spawn-920-cda9b9a0653f",
+      "spawn-920-d4c4d8b67752",
+      "spawn-920-e6b60580be91",
+      "spawn-920-e8ebeae2b663",
+      "spawn-920-ec86c959a268",
+      "spawn-920-ec909dd4ba75",
+      "spawn-920-f254731bba35",
+      "spawn-920-fda8c982f144"
+    ],
+    "spoils": [
+      {
+        "groupIndex": 0,
+        "items": [
+          {
+            "baseChancePercent": 2.2414,
+            "itemId": 1898,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 2.2414,
+                "expectedAmountPerKill": 0.022414
+              },
+              "x10": {
+                "chancePercent": 2.2414,
+                "expectedAmountPerKill": 0.22414
+              },
+              "x50": {
+                "chancePercent": 2.2414,
+                "expectedAmountPerKill": 1.1207
+              }
+            },
+            "selectionWeightPercent": 2.2414,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 100
+      },
+      {
+        "groupIndex": 1,
+        "items": [
+          {
+            "baseChancePercent": 0.2508,
+            "itemId": 2014,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.2508,
+                "expectedAmountPerKill": 0.002508
+              },
+              "x10": {
+                "chancePercent": 0.2508,
+                "expectedAmountPerKill": 0.02508
+              },
+              "x50": {
+                "chancePercent": 0.2508,
+                "expectedAmountPerKill": 0.1254
+              }
+            },
+            "selectionWeightPercent": 0.2508,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 100
+      },
+      {
+        "groupIndex": 2,
+        "items": [
+          {
+            "baseChancePercent": 0.8728,
+            "itemId": 5163,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.8728,
+                "expectedAmountPerKill": 0.008728
+              },
+              "x10": {
+                "chancePercent": 0.8728,
+                "expectedAmountPerKill": 0.08728
+              },
+              "x50": {
+                "chancePercent": 0.8728,
+                "expectedAmountPerKill": 0.4364
+              }
+            },
+            "selectionWeightPercent": 0.8728,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 100
+      }
+    ],
+    "template": {
+      "base": {
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "men": 10,
+        "str": 40,
+        "wit": 20
+      },
+      "clan": {
+        "clanName": "lizardman_clan",
+        "helpRadius": 300
+      },
+      "collision": {
+        "radius": 10,
+        "size": 22
+      },
+      "equipment": {
+        "reuseTime": 0,
+        "shield": 0,
+        "weapon": 2507
+      },
+      "rewards": {
+        "exp": 2.452479338843,
+        "sp": 56
+      },
+      "selfId": 920,
+      "speed": {
+        "run": 143,
+        "walk": 47
+      },
+      "stats": {
+        "accur": 4.75,
+        "atkRadius": 500,
+        "atkSpd": 249,
+        "castSpd": 227,
+        "mAtk": 28,
+        "mDef": 83,
+        "pAtk": 153,
+        "pAtkRnd": 30,
+        "pDef": 102
+      },
+      "template": {
+        "ai": "BALANCED",
+        "hostile": false,
+        "kind": "Monster",
+        "level": 22,
+        "name": "Maille Lizardman Scout",
+        "title": ""
+      },
+      "traits": {
+        "race": "humanoid",
+        "undead": false
+      },
+      "vitals": {
+        "corpseTime": 7000,
+        "maxHp": 611,
+        "maxMp": 242,
+        "revHp": 2.77,
+        "revMp": 1.53
+      }
+    }
+  },
+  {
+    "aiType": "fighter",
+    "availability": {
+      "directSpawn": true,
+      "knownReachable": true,
+      "raidMinion": false
+    },
+    "defaultEffectiveStats": {
+      "accuracy": 61.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
+      "evasion": 56.86335345031,
+      "mAtk": 34,
+      "mDef": 90,
+      "maxHp": 344,
+      "maxMp": 272,
+      "pAtk": 81,
+      "pDef": 111,
+      "runSpeed": 143,
+      "walkSpeed": 47
+    },
+    "drops": [
+      {
+        "groupIndex": 0,
+        "items": [
+          {
+            "baseChancePercent": 0.0489,
+            "itemId": 39,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0489,
+                "expectedAmountPerKill": 0.000489
+              },
+              "x10": {
+                "chancePercent": 0.489,
+                "expectedAmountPerKill": 0.00489
+              },
+              "x50": {
+                "chancePercent": 2.445,
+                "expectedAmountPerKill": 0.02445
+              }
+            },
+            "selectionWeightPercent": 5.626510182948,
+            "sourceName": ""
+          },
+          {
+            "baseChancePercent": 0.0489,
+            "itemId": 51,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0489,
+                "expectedAmountPerKill": 0.000489
+              },
+              "x10": {
+                "chancePercent": 0.489,
+                "expectedAmountPerKill": 0.00489
+              },
+              "x50": {
+                "chancePercent": 2.445,
+                "expectedAmountPerKill": 0.02445
+              }
+            },
+            "selectionWeightPercent": 5.626510182948,
+            "sourceName": ""
+          },
+          {
+            "baseChancePercent": 0.7713,
+            "itemId": 1930,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.7713,
+                "expectedAmountPerKill": 0.007713
+              },
+              "x10": {
+                "chancePercent": 7.713,
+                "expectedAmountPerKill": 0.07713
+              },
+              "x50": {
+                "chancePercent": 38.565,
+                "expectedAmountPerKill": 0.38565
+              }
+            },
+            "selectionWeightPercent": 88.746979634104,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 0.8691
+      },
+      {
+        "groupIndex": 1,
+        "items": [
+          {
+            "baseChancePercent": 70,
+            "itemId": 57,
+            "maxAmount": 125,
+            "minAmount": 68,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 70,
+                "expectedAmountPerKill": 67.55
+              },
+              "x10": {
+                "chancePercent": 100,
+                "expectedAmountPerKill": 675.5
+              },
+              "x50": {
+                "chancePercent": 100,
+                "expectedAmountPerKill": 3377.5
+              }
+            },
+            "selectionWeightPercent": 100,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 70
+      },
+      {
+        "groupIndex": 2,
+        "items": [
+          {
+            "baseChancePercent": 0.1805,
+            "itemId": 1880,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.1805,
+                "expectedAmountPerKill": 0.001805
+              },
+              "x10": {
+                "chancePercent": 1.805,
+                "expectedAmountPerKill": 0.01805
+              },
+              "x50": {
+                "chancePercent": 6.686671112099,
+                "expectedAmountPerKill": 0.066866711121
+              }
+            },
+            "selectionWeightPercent": 6.686671112099,
+            "sourceName": ""
+          },
+          {
+            "baseChancePercent": 0.2406,
+            "itemId": 1881,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.2406,
+                "expectedAmountPerKill": 0.002406
+              },
+              "x10": {
+                "chancePercent": 2.406,
+                "expectedAmountPerKill": 0.02406
+              },
+              "x50": {
+                "chancePercent": 8.913091798177,
+                "expectedAmountPerKill": 0.089130917982
+              }
+            },
+            "selectionWeightPercent": 8.913091798177,
+            "sourceName": ""
+          },
+          {
+            "baseChancePercent": 0.4011,
+            "itemId": 1882,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.4011,
+                "expectedAmountPerKill": 0.004011
+              },
+              "x10": {
+                "chancePercent": 4.011,
+                "expectedAmountPerKill": 0.04011
+              },
+              "x50": {
+                "chancePercent": 14.858857523894,
+                "expectedAmountPerKill": 0.148588575239
+              }
+            },
+            "selectionWeightPercent": 14.858857523894,
+            "sourceName": ""
+          },
+          {
+            "baseChancePercent": 0.0722,
+            "itemId": 3032,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0722,
+                "expectedAmountPerKill": 0.000722
+              },
+              "x10": {
+                "chancePercent": 0.722,
+                "expectedAmountPerKill": 0.00722
+              },
+              "x50": {
+                "chancePercent": 2.67466844484,
+                "expectedAmountPerKill": 0.026746684448
+              }
+            },
+            "selectionWeightPercent": 2.67466844484,
+            "sourceName": ""
+          },
+          {
+            "baseChancePercent": 1.805,
+            "itemId": 6666,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 1.805,
+                "expectedAmountPerKill": 0.01805
+              },
+              "x10": {
+                "chancePercent": 18.05,
+                "expectedAmountPerKill": 0.1805
+              },
+              "x50": {
+                "chancePercent": 66.86671112099,
+                "expectedAmountPerKill": 0.66866711121
+              }
+            },
+            "selectionWeightPercent": 66.86671112099,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 2.6994
+      }
+    ],
+    "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
+    "id": 921,
+    "kind": "Monster",
+    "level": 24,
+    "minionOf": [],
+    "minions": [],
+    "name": "Maille Lizardman Guard",
+    "progression": {
+      "baseExp": 429,
+      "baseSp": 21,
+      "expModifier": 1.489583333333
+    },
+    "raidBoss": false,
+    "skillIds": [
+      "4071:3",
+      "4295:1",
+      "4311:1"
+    ],
+    "spawnIds": [
+      "spawn-921-039150c423d2",
+      "spawn-921-054ccbc399b6",
+      "spawn-921-0aaf289ecd6d",
+      "spawn-921-0c1ef2bc8dac",
+      "spawn-921-0e459f1c13ed",
+      "spawn-921-128c6f670c7e",
+      "spawn-921-17044b689543",
+      "spawn-921-1fdcbf66dc07",
+      "spawn-921-2d684ea402fa",
+      "spawn-921-39b36fb78cd8",
+      "spawn-921-3f95cc7c4f80",
+      "spawn-921-4046012a4dc2",
+      "spawn-921-436db5eb815e",
+      "spawn-921-46664ed01893",
+      "spawn-921-4ad7d746e6f3",
+      "spawn-921-635d543a9c57",
+      "spawn-921-68f8c1ec289e",
+      "spawn-921-69226ab8cb35",
+      "spawn-921-74c9021a8c31",
+      "spawn-921-7520646c1f91",
+      "spawn-921-754b9ba0d91b",
+      "spawn-921-7924e00aa852",
+      "spawn-921-8525f44a01b9",
+      "spawn-921-867bca3b4fe9",
+      "spawn-921-8b401eade844",
+      "spawn-921-8dec19fc866e",
+      "spawn-921-8f2de25d3203",
+      "spawn-921-952495e55f45",
+      "spawn-921-a0b5725331d7",
+      "spawn-921-a96fd5f25367",
+      "spawn-921-b039240653b3",
+      "spawn-921-b1a4837f21ba",
+      "spawn-921-b539cf3228c6",
+      "spawn-921-b769f48df69e",
+      "spawn-921-b83a68301dfc",
+      "spawn-921-bd5153128507",
+      "spawn-921-c23a88cbd9d6",
+      "spawn-921-c5ef9554b450",
+      "spawn-921-c643ac099e44",
+      "spawn-921-c651db19753d",
+      "spawn-921-c9d88a9f9e6f",
+      "spawn-921-cdf9a9c83217",
+      "spawn-921-d71bf633f593",
+      "spawn-921-d72c875a8008",
+      "spawn-921-d7a090ad3e93",
+      "spawn-921-d9930cc8d0d1",
+      "spawn-921-e2035e4fb6e6",
+      "spawn-921-e36f98e69e96",
+      "spawn-921-e8a32346474a",
+      "spawn-921-ea2a97525d02",
+      "spawn-921-ee07633368a6",
+      "spawn-921-ee2856f84dc9",
+      "spawn-921-efc51c6aa4c2",
+      "spawn-921-f6b5b22f7437",
+      "spawn-921-fbb95929329b",
+      "spawn-921-fc58fcac99c9"
+    ],
+    "spoils": [
+      {
+        "groupIndex": 0,
+        "items": [
+          {
+            "baseChancePercent": 0.6111,
+            "itemId": 1804,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.6111,
+                "expectedAmountPerKill": 0.006111
+              },
+              "x10": {
+                "chancePercent": 0.6111,
+                "expectedAmountPerKill": 0.06111
+              },
+              "x50": {
+                "chancePercent": 0.6111,
+                "expectedAmountPerKill": 0.30555
+              }
+            },
+            "selectionWeightPercent": 0.6111,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 100
+      },
+      {
+        "groupIndex": 1,
+        "items": [
+          {
+            "baseChancePercent": 30.5532,
+            "itemId": 1864,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 30.5532,
+                "expectedAmountPerKill": 0.305532
+              },
+              "x10": {
+                "chancePercent": 30.5532,
+                "expectedAmountPerKill": 3.05532
+              },
+              "x50": {
+                "chancePercent": 30.5532,
+                "expectedAmountPerKill": 15.2766
+              }
+            },
+            "selectionWeightPercent": 30.5532,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 100
+      },
+      {
+        "groupIndex": 2,
+        "items": [
+          {
+            "baseChancePercent": 2.2253,
+            "itemId": 1928,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 2.2253,
+                "expectedAmountPerKill": 0.022253
+              },
+              "x10": {
+                "chancePercent": 2.2253,
+                "expectedAmountPerKill": 0.22253
+              },
+              "x50": {
+                "chancePercent": 2.2253,
+                "expectedAmountPerKill": 1.11265
+              }
+            },
+            "selectionWeightPercent": 2.2253,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 100
+      }
+    ],
+    "template": {
+      "base": {
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "men": 10,
+        "str": 40,
+        "wit": 20
+      },
+      "clan": {
+        "clanName": "lizardman_clan",
+        "helpRadius": 300
+      },
+      "collision": {
+        "radius": 10,
+        "size": 23
+      },
+      "equipment": {
+        "reuseTime": 0,
+        "shield": 0,
+        "weapon": 291
+      },
+      "rewards": {
+        "exp": 1.489583333333,
+        "sp": 42
+      },
+      "selfId": 921,
+      "speed": {
+        "run": 143,
+        "walk": 47
+      },
+      "stats": {
+        "accur": 4.75,
+        "atkRadius": 40,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 34,
+        "mDef": 90,
+        "pAtk": 81,
+        "pAtkRnd": 30,
+        "pDef": 111
+      },
+      "template": {
+        "ai": "FIGHTER",
+        "hostile": true,
+        "kind": "Monster",
+        "level": 24,
+        "name": "Maille Lizardman Guard",
+        "title": ""
+      },
+      "traits": {
+        "race": "humanoid",
+        "undead": false
+      },
+      "vitals": {
+        "corpseTime": 7000,
+        "maxHp": 687,
+        "maxMp": 272,
+        "revHp": 2.77,
+        "revMp": 1.53
+      }
+    }
+  },
+  {
     "aiType": "balanced",
     "availability": {
       "directSpawn": true,
@@ -478932,6 +480261,536 @@
         "maxMp": 1150,
         "revHp": 10.27,
         "revMp": 2.45
+      }
+    }
+  },
+  {
+    "aiType": "fighter",
+    "availability": {
+      "directSpawn": true,
+      "knownReachable": true,
+      "raidMinion": false
+    },
+    "defaultEffectiveStats": {
+      "accuracy": 92.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
+      "evasion": 87.86335345031,
+      "mAtk": 360,
+      "mDef": 261,
+      "maxHp": 2643,
+      "maxMp": 987,
+      "pAtk": 1,
+      "pDef": 273,
+      "runSpeed": 1,
+      "walkSpeed": 1
+    },
+    "drops": [],
+    "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
+    "id": 5185,
+    "kind": "Monster",
+    "level": 55,
+    "minionOf": [],
+    "minions": [],
+    "name": "Fairy Tree of Wind",
+    "progression": {
+      "baseExp": 0,
+      "baseSp": 0,
+      "expModifier": 0
+    },
+    "raidBoss": false,
+    "skillIds": [
+      "4071:3",
+      "4294:1"
+    ],
+    "spawnIds": [
+      "spawn-5185-a90bb8fd6eb5"
+    ],
+    "spoils": [],
+    "template": {
+      "base": {
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "men": 10,
+        "str": 40,
+        "wit": 20
+      },
+      "clan": {
+        "clanName": "q421_tree_clan",
+        "helpRadius": 100
+      },
+      "collision": {
+        "radius": 35,
+        "size": 90
+      },
+      "equipment": {
+        "reuseTime": 0,
+        "shield": 0,
+        "weapon": 0
+      },
+      "rewards": {
+        "exp": 0,
+        "sp": 0
+      },
+      "selfId": 5185,
+      "speed": {
+        "run": 0,
+        "walk": 0
+      },
+      "stats": {
+        "accur": 4.75,
+        "atkRadius": 40,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 360,
+        "mDef": 261,
+        "pAtk": 1,
+        "pAtkRnd": 30,
+        "pDef": 273
+      },
+      "template": {
+        "ai": "FIGHTER",
+        "hostile": false,
+        "kind": "Monster",
+        "level": 55,
+        "name": "Fairy Tree of Wind",
+        "title": "Quest Monster"
+      },
+      "traits": {
+        "race": "plant",
+        "undead": false
+      },
+      "vitals": {
+        "corpseTime": 7000,
+        "maxHp": 2643,
+        "maxMp": 987,
+        "revHp": 10.27,
+        "revMp": 2.45
+      }
+    }
+  },
+  {
+    "aiType": "fighter",
+    "availability": {
+      "directSpawn": true,
+      "knownReachable": true,
+      "raidMinion": false
+    },
+    "defaultEffectiveStats": {
+      "accuracy": 92.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
+      "evasion": 87.86335345031,
+      "mAtk": 360,
+      "mDef": 261,
+      "maxHp": 2643,
+      "maxMp": 987,
+      "pAtk": 1,
+      "pDef": 389,
+      "runSpeed": 1,
+      "walkSpeed": 1
+    },
+    "drops": [],
+    "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
+    "id": 5186,
+    "kind": "Monster",
+    "level": 55,
+    "minionOf": [],
+    "minions": [],
+    "name": "Fairy Tree of Star",
+    "progression": {
+      "baseExp": 0,
+      "baseSp": 0,
+      "expModifier": 0
+    },
+    "raidBoss": false,
+    "skillIds": [
+      "4071:3",
+      "4294:1"
+    ],
+    "spawnIds": [
+      "spawn-5186-ce269b0418aa"
+    ],
+    "spoils": [],
+    "template": {
+      "base": {
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "men": 10,
+        "str": 40,
+        "wit": 20
+      },
+      "clan": {
+        "clanName": "q421_tree_clan",
+        "helpRadius": 100
+      },
+      "collision": {
+        "radius": 35,
+        "size": 90
+      },
+      "equipment": {
+        "reuseTime": 0,
+        "shield": 0,
+        "weapon": 0
+      },
+      "rewards": {
+        "exp": 0,
+        "sp": 0
+      },
+      "selfId": 5186,
+      "speed": {
+        "run": 0,
+        "walk": 0
+      },
+      "stats": {
+        "accur": 4.75,
+        "atkRadius": 40,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 360,
+        "mDef": 261,
+        "pAtk": 1,
+        "pAtkRnd": 30,
+        "pDef": 389
+      },
+      "template": {
+        "ai": "FIGHTER",
+        "hostile": false,
+        "kind": "Monster",
+        "level": 55,
+        "name": "Fairy Tree of Star",
+        "title": "Quest Monster"
+      },
+      "traits": {
+        "race": "plant",
+        "undead": false
+      },
+      "vitals": {
+        "corpseTime": 7000,
+        "maxHp": 2643,
+        "maxMp": 987,
+        "revHp": 10.27,
+        "revMp": 2.45
+      }
+    }
+  },
+  {
+    "aiType": "fighter",
+    "availability": {
+      "directSpawn": true,
+      "knownReachable": true,
+      "raidMinion": false
+    },
+    "defaultEffectiveStats": {
+      "accuracy": 92.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
+      "evasion": 87.86335345031,
+      "mAtk": 360,
+      "mDef": 261,
+      "maxHp": 2643,
+      "maxMp": 987,
+      "pAtk": 1,
+      "pDef": 292,
+      "runSpeed": 1,
+      "walkSpeed": 1
+    },
+    "drops": [],
+    "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
+    "id": 5187,
+    "kind": "Monster",
+    "level": 55,
+    "minionOf": [],
+    "minions": [],
+    "name": "Fairy Tree of Twilight",
+    "progression": {
+      "baseExp": 0,
+      "baseSp": 0,
+      "expModifier": 0
+    },
+    "raidBoss": false,
+    "skillIds": [
+      "4071:3",
+      "4294:1"
+    ],
+    "spawnIds": [
+      "spawn-5187-be95506c2aab"
+    ],
+    "spoils": [],
+    "template": {
+      "base": {
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "men": 10,
+        "str": 40,
+        "wit": 20
+      },
+      "clan": {
+        "clanName": "q421_tree_clan",
+        "helpRadius": 100
+      },
+      "collision": {
+        "radius": 35,
+        "size": 90
+      },
+      "equipment": {
+        "reuseTime": 0,
+        "shield": 0,
+        "weapon": 0
+      },
+      "rewards": {
+        "exp": 0,
+        "sp": 0
+      },
+      "selfId": 5187,
+      "speed": {
+        "run": 0,
+        "walk": 0
+      },
+      "stats": {
+        "accur": 4.75,
+        "atkRadius": 40,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 360,
+        "mDef": 261,
+        "pAtk": 1,
+        "pAtkRnd": 30,
+        "pDef": 292
+      },
+      "template": {
+        "ai": "FIGHTER",
+        "hostile": false,
+        "kind": "Monster",
+        "level": 55,
+        "name": "Fairy Tree of Twilight",
+        "title": "Quest Monster"
+      },
+      "traits": {
+        "race": "plant",
+        "undead": false
+      },
+      "vitals": {
+        "corpseTime": 7000,
+        "maxHp": 2643,
+        "maxMp": 987,
+        "revHp": 10.27,
+        "revMp": 2.45
+      }
+    }
+  },
+  {
+    "aiType": "fighter",
+    "availability": {
+      "directSpawn": true,
+      "knownReachable": true,
+      "raidMinion": false
+    },
+    "defaultEffectiveStats": {
+      "accuracy": 92.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
+      "evasion": 87.86335345031,
+      "mAtk": 360,
+      "mDef": 261,
+      "maxHp": 2643,
+      "maxMp": 987,
+      "pAtk": 1,
+      "pDef": 322,
+      "runSpeed": 1,
+      "walkSpeed": 1
+    },
+    "drops": [],
+    "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
+    "id": 5188,
+    "kind": "Monster",
+    "level": 55,
+    "minionOf": [],
+    "minions": [],
+    "name": "Fairy Tree of Abyss",
+    "progression": {
+      "baseExp": 0,
+      "baseSp": 0,
+      "expModifier": 0
+    },
+    "raidBoss": false,
+    "skillIds": [
+      "4071:3",
+      "4294:1"
+    ],
+    "spawnIds": [
+      "spawn-5188-f891a2a9dfcd"
+    ],
+    "spoils": [],
+    "template": {
+      "base": {
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "men": 10,
+        "str": 40,
+        "wit": 20
+      },
+      "clan": {
+        "clanName": "q421_tree_clan",
+        "helpRadius": 100
+      },
+      "collision": {
+        "radius": 35,
+        "size": 90
+      },
+      "equipment": {
+        "reuseTime": 0,
+        "shield": 0,
+        "weapon": 0
+      },
+      "rewards": {
+        "exp": 0,
+        "sp": 0
+      },
+      "selfId": 5188,
+      "speed": {
+        "run": 0,
+        "walk": 0
+      },
+      "stats": {
+        "accur": 4.75,
+        "atkRadius": 40,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 360,
+        "mDef": 261,
+        "pAtk": 1,
+        "pAtkRnd": 30,
+        "pDef": 322
+      },
+      "template": {
+        "ai": "FIGHTER",
+        "hostile": false,
+        "kind": "Monster",
+        "level": 55,
+        "name": "Fairy Tree of Abyss",
+        "title": "Quest Monster"
+      },
+      "traits": {
+        "race": "plant",
+        "undead": false
+      },
+      "vitals": {
+        "corpseTime": 7000,
+        "maxHp": 2643,
+        "maxMp": 987,
+        "revHp": 10.27,
+        "revMp": 2.45
+      }
+    }
+  },
+  {
+    "aiType": "fighter",
+    "availability": {
+      "directSpawn": false,
+      "knownReachable": false,
+      "raidMinion": false
+    },
+    "defaultEffectiveStats": {
+      "accuracy": 87.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
+      "evasion": 82.86335345031,
+      "mAtk": 264,
+      "mDef": 226,
+      "maxHp": 1123,
+      "maxMp": 830,
+      "pAtk": 509,
+      "pDef": 236,
+      "runSpeed": 154,
+      "walkSpeed": 88
+    },
+    "drops": [],
+    "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
+    "id": 5189,
+    "kind": "Monster",
+    "level": 50,
+    "minionOf": [],
+    "minions": [],
+    "name": "Soul of Tree Guardian",
+    "progression": {
+      "baseExp": 0,
+      "baseSp": 0,
+      "expModifier": 0
+    },
+    "raidBoss": false,
+    "skillIds": [
+      "4275:3",
+      "4278:1",
+      "4290:1",
+      "4311:1"
+    ],
+    "spawnIds": [],
+    "spoils": [],
+    "template": {
+      "base": {
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "men": 10,
+        "str": 40,
+        "wit": 20
+      },
+      "clan": {
+        "clanName": "q421_tree_clan",
+        "helpRadius": 100
+      },
+      "collision": {
+        "radius": 7,
+        "size": 21
+      },
+      "equipment": {
+        "reuseTime": 0,
+        "shield": 0,
+        "weapon": 0
+      },
+      "rewards": {
+        "exp": 0,
+        "sp": 0
+      },
+      "selfId": 5189,
+      "speed": {
+        "run": 154,
+        "walk": 88
+      },
+      "stats": {
+        "accur": 4.75,
+        "atkRadius": 40,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 264,
+        "mDef": 226,
+        "pAtk": 509,
+        "pAtkRnd": 30,
+        "pDef": 236
+      },
+      "template": {
+        "ai": "FIGHTER",
+        "hostile": true,
+        "kind": "Monster",
+        "level": 50,
+        "name": "Soul of Tree Guardian",
+        "title": "Quest Monster"
+      },
+      "traits": {
+        "race": "undead",
+        "undead": true
+      },
+      "vitals": {
+        "corpseTime": 7000,
+        "maxHp": 2245,
+        "maxMp": 830,
+        "revHp": 4.35,
+        "revMp": 2.14
       }
     }
   },

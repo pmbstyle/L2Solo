@@ -1,4 +1,6 @@
 module.exports = {
+    ride: require('./Ride'),
+    petItemList: require('./PetItemList'),
            actionFailed: require('./ActionFailed'),
            autoSoulShot: require('./AutoSoulShot'),
            addShortcut: require('./AddShortcut'),

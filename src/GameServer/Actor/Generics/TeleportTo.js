@@ -82,11 +82,16 @@ function teleportTo(session, actor, coords, options = {}) {
 
     actor.clearDestId();
     actor.automation.abortAll(actor);
+    const PetTravel = invoke('GameServer/Pets/PetTravel');
+    const movedPets = PetTravel.begin(session, actor);
+    const teleportId = actor.teleportSequence = (actor.teleportSequence || 0) + 1;
     session.dataSendToMeAndOthers(ServerResponse.teleportToLocation(actor.fetchId(), coords), actor);
 
     // Turns out to be a viable solution
     setTimeout(() => {
+        if (actor.teleportSequence !== teleportId || session.actor !== actor) return;
         Generics.updatePosition(session, actor, coords, { immediateNpcInfo: true, forceRefresh: true });
+        PetTravel.finish(session, actor, movedPets, coords);
 
         // The leader must be at the destination before companions receive an
         // AI wakeup. Otherwise their follow tick still reads the old leader

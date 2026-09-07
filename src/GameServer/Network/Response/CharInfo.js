@@ -121,7 +121,7 @@ function charInfo(actor) {
         .writeD(EffectStore.abnormalMask(actor))  // Abnormal effect
         .writeC(0x00)  // Recommendations left
         .writeH(0x00)  // Recommendations won
-        .writeD(actor.fetchMountNpcId?.() || 0)  // Mount NPC ID
+        .writeD(1000000 + (actor.fetchMountNpcId?.() || actor.mountNpcId || 0))  // Mount NPC ID
         .writeD(actor.fetchClassId())
         .writeD(0x00)  // Special effects
         .writeC(actor.fetchMounted?.() || actor.mounted ? 0 : weaponEnchantEffect(actor))  // Enchant effect

@@ -346,6 +346,10 @@ enchantedActor.fetchMounted = () => true;
 const mountedUserInfo = ServerResponse.userInfo(enchantedActor);
 assert.strictEqual(mountedUserInfo[enchantedUserNameColorOffset - 21], 0, 'mounted C4 users should suppress the weapon enchant effect');
 assert.strictEqual(ServerResponse.charInfo(enchantedActor)[enchantedCharNameColorOffset - 21], 0, 'mounted C4 characters should suppress the weapon enchant effect');
+enchantedActor.fetchMountNpcId = () => 12527;
+const striderCharInfo = ServerResponse.charInfo(enchantedActor);
+const striderTailEnd = striderCharInfo.lastIndexOf(Buffer.from([0xff, 0xff, 0xff, 0x00])) + 4;
+assert.strictEqual(striderCharInfo.readInt32LE(striderTailEnd-37), 1012527, 'C4 clients identify the actual strider variant');
 const boatActor = fakeActor();
 boatActor.fetchBoatId = () => 7000001;
 assert.strictEqual(ServerResponse.userInfo(boatActor).readInt32LE(13), 7000001, 'C4 UserInfo should preserve an attached boat object id');
@@ -353,7 +357,7 @@ assert.strictEqual(ServerResponse.charInfo(boatActor).readInt32LE(13), 7000001, 
 const nameColorOffset = charInfo.lastIndexOf(Buffer.from([0xff, 0xff, 0xff, 0x00]));
 assert.ok(nameColorOffset > 0, 'C4 CharInfo should end its meaningful payload with name color');
 const charInfoTail = charInfo.subarray(nameColorOffset + 4 - 37, nameColorOffset + 4);
-assert.strictEqual(charInfoTail.readInt32LE(0), 0, 'C4 CharInfo should send mount NPC id before class id');
+assert.strictEqual(charInfoTail.readInt32LE(0), 1000000, 'C4 CharInfo should send mount NPC id with the client NPC offset before class id');
 assert.strictEqual(charInfoTail.readInt32LE(4), 10, 'C4 CharInfo should send class id after mount NPC id');
 assert.strictEqual(charInfoTail.readInt32LE(8), 0, 'C4 CharInfo should not send CP in the public tail');
 

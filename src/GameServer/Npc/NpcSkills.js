@@ -26,6 +26,7 @@ const c4LegacyMonsterSkillTemplates = require('../../../data/Npcs/Skills/c4_lega
 const c4LegacyMonsterSkillRows = require('../../../data/Npcs/Skills/c4_legacy_monsters.json');
 const c4LegacyMonsterIds = new Set(c4LegacyMonsterSkillRows.map((row) => Number(row.npcId)));
 const npcSkillRows = [
+    ...require('../../../data/Pets/c4-quest-npcs.json').skills,
     ...require('../../../data/Npcs/Skills/skills.json').filter((row) => !c4LegacyMonsterIds.has(Number(row.npcId))),
     ...c4LegacyMonsterSkillRows,
     ...require('../../../data/Npcs/Skills/c4_swamp_of_screams.json'),
@@ -87,7 +88,7 @@ const summonActionSkillIds = new Map([
 ]);
 
 const skillTemplates = new Map(
-    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4LegacyMonsterSkillTemplates, ...c4SwampSkills, ...c4GardenSkills, ...c4ValleySkills, ...summonActionSkills, ...c4ForestSkills, ...c4DevilsIsleSkills, ...c4NecropolisSacrificeSkills, ...c4DevastatedCastleSkills, ...c4KetraOrcOutpostSkills, ...c4VarkaSilenosStrongholdSkills, ...c4HotSpringsSkills, ...c4WallOfArgosSkills, ...c4ForgeOfTheGodsSkills, ...c4FieldsSkills, ...c4HeathenCampSkills, ...c4ImperialTombSkills, ...c4LowLevelRaidBossSkills, ...c4RaidBossSkills, ...c4RaidBossMinionSkills]
+    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4LegacyMonsterSkillTemplates, ...c4SwampSkills, ...c4GardenSkills, ...c4ValleySkills, ...summonActionSkills, ...c4ForestSkills, ...c4DevilsIsleSkills, ...c4NecropolisSacrificeSkills, ...c4DevastatedCastleSkills, ...c4KetraOrcOutpostSkills, ...c4VarkaSilenosStrongholdSkills, ...c4HotSpringsSkills, ...c4WallOfArgosSkills, ...c4ForgeOfTheGodsSkills, ...c4FieldsSkills, ...c4HeathenCampSkills, ...c4ImperialTombSkills, ...c4LowLevelRaidBossSkills, ...c4RaidBossSkills, ...c4RaidBossMinionSkills, ...require('../../../data/Pets/c4-skills.json').skills]
         .map((skill) => [Number(skill.selfId), skill])
 );
 
@@ -136,7 +137,7 @@ function instantiate(row) {
 }
 
 function forNpc(npc) {
-    const rows = [...(skillsByNpc.get(Number(npc.fetchSelfId?.())) || [])];
+    const rows = (skillsByNpc.get(Number(npc.fetchSelfId?.())) || []).map(row => ({ ...row }));
     const actionSkillIds = summonActionSkillIds.get(Number(npc.fetchSummonSkillId?.())) || [];
     actionSkillIds.forEach((skillId) => {
         if (!rows.some((row) => row.skillId === skillId)) {
@@ -144,6 +145,16 @@ function forNpc(npc) {
         }
     });
 
+    if (npc.fetchIsPet?.()) {
+        const ids = { 12311: [4710, 4711], 12526: [4710, 4711], 12312: [4712, 4713], 12527: [4712, 4713],
+            12780: [4717, 4718], 12781: [4717, 4718], 12782: [4717, 4718] }[Number(npc.fetchSelfId())] || [];
+        const level = invoke('GameServer/Pets/PetRules').skillLevel(npc.fetchLevel());
+        for (const id of ids) {
+            const previous = rows.find(row => row.skillId === id);
+            if (previous) previous.level = level;
+            else rows.push({ skillId: id, level });
+        }
+    }
     return rows
         .map(instantiate)
         .filter(Boolean);

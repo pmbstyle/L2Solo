@@ -21,6 +21,7 @@ const others = [
     ...require('../data/Items/Others/c4_low_level_raid_bosses.json')
 ];
 const adminShop = require('../data/Admin/Shop/shop.json');
+const petGear = require('../data/Pets/c4-gear.json').gear;
 
 const originalSetTimeout = global.setTimeout;
 const originalSetInterval = global.setInterval;
@@ -176,15 +177,26 @@ for (const rank of ['none', 'd', 'c', 'b', 'a', 's']) {
     assert.strictEqual(adminShop[`weapon-${rank}`], `weapon:${rank}`, `weapon-${rank} should resolve from the live weapon datapack`);
     assert.deepStrictEqual(
         AdminShop.itemIdsForSource(adminShop[`armor-${rank}`]),
-        armors.filter((item) => (item.etc?.rank || 'none') === rank).map((item) => item.selfId),
+        armors.filter((item) => !petGear[item.selfId] && !item.template.kind.endsWith('.Pet') && (item.etc?.rank || 'none') === rank).map((item) => item.selfId),
         `armor-${rank} should expose every ${rank} armor item id`
     );
     assert.deepStrictEqual(
         AdminShop.itemIdsForSource(adminShop[`weapon-${rank}`]),
-        weapons.filter((item) => (item.etc?.rank || 'none') === rank).map((item) => item.selfId),
+        weapons.filter((item) => !petGear[item.selfId] && !item.template.kind.endsWith('.Pet') && (item.etc?.rank || 'none') === rank).map((item) => item.selfId),
         `weapon-${rank} should expose every ${rank} weapon item id`
     );
 }
+const petPage = utils.parseRawFile('data/Html/Admin/pets.html');
+assert(adminHtml.includes('html Admin/pets'));
+for (const category of ['food', 'equipment', 'summons']) {
+    assert(petPage.includes(`admin-shop pet-${category}`));
+    const ids = AdminShop.itemIdsForSource(adminShop[`pet-${category}`]);
+    assert(ids.length > 0);
+    assert(ids.every(id => DataCache.items.some(item => item.selfId === id)), 'pet shop contains only existing templates');
+}
+assert(AdminShop.itemIdsForSource('pet:equipment').includes(2506));
+assert(AdminShop.itemIdsForSource('pet:summons').includes(4424));
+assert(!AdminShop.itemIdsForSource('pet:summons').includes(4425), 'Sin Eater remains out of scope');
 assert.strictEqual(AdminShop.itemIdsForSource('all-armors'), null, 'admin shop should reject old full armor source');
 assert.strictEqual(AdminShop.itemIdsForSource('all-weapons'), null, 'admin shop should reject old full weapon source');
 

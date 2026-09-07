@@ -1103,14 +1103,15 @@ try {
         item(33, { selfId: 2375, kind: 'Other.PetCollar', amount: 1 })
     ];
     const nativePetSummonSession = sessionFor(nativePetSummonBackpack);
+    nativePetSummonSession.persistenceMode = 'ephemeral';
     World.npc = { spawns: [], grid: {}, nextId: 9000100 };
     nativePetSummonBackpack.useItem(nativePetSummonSession, 33);
     assert(nativePetSummonBackpack.fetchItemRaw(33), 'Pet summon control item should not be consumed after native summon');
     assert.strictEqual(nativePetSummonSession.actor.pet.fetchSelfId(), 12077, 'Wolf Collar should create the sourced wolf pet without an injected hook');
     assert.strictEqual(nativePetSummonSession.actor.pet.fetchPetControlItemObjectId(), 33, 'native pet should retain its control item object id');
     assert.deepStrictEqual(nativePetSummonSession.actor.pet.fetchPetFoodCategories(), ['wolf'], 'native pet should retain its sourced food category');
-    assert.strictEqual(nativePetSummonSession.actor.pet.fetchMaxFeed(), 248, 'new wolf should start with the sourced level-1 max feed');
-    assert.strictEqual(nativePetSummonSession.actor.pet.fetchCurrentFeed(), 248, 'new wolf should start fully fed rather than with a 0/0 hunger meter');
+    assert.strictEqual(nativePetSummonSession.actor.pet.fetchMaxFeed(), 1160, 'new wolf should start with the sourced level-15 max feed');
+    assert.strictEqual(nativePetSummonSession.actor.pet.fetchCurrentFeed(), 1160, 'new wolf should start fully fed rather than with a 0/0 hunger meter');
     assert(nativePetSummonSession.packets.some((packet) => packet[0] === 0x16), 'native pet summon should broadcast NpcInfo');
     nativePetSummonSession.actor.pet.destructor(nativePetSummonSession);
 
@@ -1119,6 +1120,7 @@ try {
         item(35, { selfId: 4422, kind: 'Other.PetCollar', amount: 1 })
     ];
     const striderSummonSession = sessionFor(striderSummonBackpack);
+    striderSummonSession.persistenceMode = 'ephemeral';
     World.npc = { spawns: [], grid: {}, nextId: 9000110 };
     striderSummonBackpack.useItem(striderSummonSession, 35);
     assert.strictEqual(striderSummonSession.actor.pet.fetchSelfId(), 12526, 'Strider collar should create its sourced strider NPC through the pet template fallback');

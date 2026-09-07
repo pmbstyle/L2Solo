@@ -712,6 +712,7 @@ class Attack {
         }
         const semantic = skill.fetchSemantic?.() || {};
         const condition = semantic.condition || null;
+        if ((actor.fetchMounted?.() || actor.mounted) && !skill.fetchSpell?.() && skill.fetchSelfId() !== 325) return 'Physical skills cannot be used while riding a strider.';
         const summonFailure = SkillEffects.validateSummonUse?.(actor, null, skill, session);
         if (summonFailure) {
             return summonFailure;
@@ -1020,10 +1021,15 @@ class Attack {
             ? 1
             : Math.round(Formulas.calcMeleeDamage(src.fetchCollectivePAtk(), 0, pDef, {
                 critical,
+                soulshot: src.fetchIsPet?.() === true && !!src.soulshotLoaded,
                 criticalDamageMultiplier: EffectStats.multiplier(src, 'pCritDamageMul'),
                 criticalDamageAdd: EffectStats.add(src, 'pCritDamageAdd')
             }) * weaponModifier * physicalUndeadModifier(src, dst) * physicalRaceModifier(src, dst));
         let flags = 0;
+        if (src.fetchIsPet?.() === true && src.soulshotLoaded) {
+            flags |= ServerResponse.attack.HITFLAG_USESS;
+            src.soulshotLoaded = false;
+        }
 
         if (critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
         if (shielded) flags |= ServerResponse.attack.HITFLAG_SHLD;

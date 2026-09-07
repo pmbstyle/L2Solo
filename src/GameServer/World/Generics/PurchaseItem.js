@@ -2,7 +2,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const DataCache      = invoke('GameServer/DataCache');
 const Database       = invoke('Database');
 
-function purchaseItem(session, selfId, amount) {
+function purchaseItem(session, selfId, amount, metadata = {}) {
     const actor = session.actor;
     const backpack = actor.backpack;
 
@@ -22,9 +22,10 @@ function purchaseItem(session, selfId, amount) {
                     name: item.template.name,
                   amount: amount,
                 equipped: false,
-                    slot: item.etc.slot
+                    slot: item.etc.slot,
+                    ...(metadata.petData ? { petData: metadata.petData } : {})
             }).then((packet) => {
-                backpack.insertItem(Number(packet.insertId), selfId, { amount: amount });
+                backpack.insertItem(Number(packet.insertId), selfId, { amount: amount, ...metadata });
                 session.dataSendToMe(ServerResponse.userInfo(session.actor));
                 session.dataSendToMe(ServerResponse.itemsList(backpack.fetchItems()));
             });

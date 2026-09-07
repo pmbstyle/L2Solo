@@ -70,7 +70,7 @@ function validateLines(lines, items) {
         const amount = Number(line.amount);
         return Number.isSafeInteger(id) && Number.isSafeInteger(amount) && amount > 0
             && !seen.has(id) && (seen.add(id) || true)
-            && items.some((item) => Number(item.fetchId()) === id && amount <= Number(item.fetchAmount()));
+            && items.some((item) => !item.fetchPetLocked?.() && Number(item.fetchId()) === id && amount <= Number(item.fetchAmount()));
     });
 }
 

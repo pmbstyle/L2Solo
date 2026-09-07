@@ -39,18 +39,18 @@
     ]
   },
   "counts": {
-    "dropEntries": 13071,
-    "items": 5067,
-    "knownReachableMobs": 1642,
-    "knownReachableSourcedItems": 1645,
-    "mobs": 2068,
-    "mobsWithDirectSpawns": 1358,
-    "skills": 1022,
-    "sourcedItems": 1655,
-    "spawnDefinitions": 13257,
-    "spawnLocations": 16488,
-    "spoilEntries": 2456,
-    "unresolvedMobAvailability": 426
+    "dropEntries": 13097,
+    "items": 5082,
+    "knownReachableMobs": 1649,
+    "knownReachableSourcedItems": 1647,
+    "mobs": 2076,
+    "mobsWithDirectSpawns": 1365,
+    "skills": 1023,
+    "sourcedItems": 1657,
+    "spawnDefinitions": 13389,
+    "spawnLocations": 16620,
+    "spoilEntries": 2465,
+    "unresolvedMobAvailability": 427
   },
   "deterministic": true,
   "files": {
@@ -89,7 +89,7 @@
       "multiplier": 10,
       "preset": "x10",
       "questAdena": 10,
-      "questDrop": 10,
+      "questDrop": 1,
       "questExp": 10,
       "questReward": 10,
       "questSp": 10,
@@ -103,7 +103,7 @@
       "multiplier": 50,
       "preset": "x50",
       "questAdena": 50,
-      "questDrop": 50,
+      "questDrop": 1,
       "questExp": 50,
       "questReward": 50,
       "questSp": 50,
@@ -113,9 +113,9 @@
   },
   "schemaVersion": 1,
   "sha256": {
-    "items.json": "8738a9fa58466023fc82a67c7c5b61e846498b2d7210aad0a03c69e19b3504c1",
-    "mobs.json": "ac5345082bcb45e0f5391c7dae2392d03fd53b105453d07465285343bfa14c5d",
-    "skills.json": "f6d3894f116457eacfc9a57359b73fa4b10c86d361338edcfaf6fa3a5c8cf2e8",
-    "spawns.json": "875a09059e5b66062a6c419bb57706566a80e6c336b3f23b7ec40b56a37d5cd4"
+    "items.json": "dd34e063c15e6fb950c657539bea8bcd4429b0c3a5d735fb1ddb6c3eb1eac9cd",
+    "mobs.json": "f3749a1192739a1e3e350b82f832c97ae858d0e42ee964497d56dd218242efd6",
+    "skills.json": "827afdca1a6874c4fa1aebd5db482cda4f4012043f0403e8b45f3731e31d71fc",
+    "spawns.json": "7dfde22cadc840e75c3aca26b3ea7aa2d06c6754d2372f138bd05bc12dfeb375"
   }
 }

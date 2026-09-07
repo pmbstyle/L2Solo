@@ -3652,6 +3652,97 @@ const Database = {
         return remove('character_saved_locations', 'characterId = ? AND id = ?', [characterId, id], 'saved-location:delete');
     },
     fetchCharacterQuests(characterId) { return select('character_quests', ['*'], 'characterId = ?', [characterId], 'quest:list'); },
+    feedMountedPet(characterId, controlId, foodId, feed) {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const collar = one('SELECT selfId, petData FROM items WHERE id = ? AND characterId = ?', [controlId, characterId]);
+            const food = one('SELECT selfId, amount FROM items WHERE id = ? AND characterId = ?', [foodId, characterId]);
+            const Rules = require('./GameServer/Pets/PetRules');
+            const type = Rules.TYPES[collar?.selfId];
+            const state = JSON.parse(collar?.petData || '{}');
+            if (!Number.isFinite(feed) || feed <= 0 || type?.category !== 'strider' || state.dead || state.expired || !food || food.amount < 1 || !type.food.includes(food.selfId)) throw new Error('Mounted pet food unavailable');
+            const currentFeed = Math.min(Rules.stats(type.npcId, state.level).maxFeed, state.currentFeed + feed);
+            if (food.amount === 1) write('DELETE FROM items WHERE id = ? AND characterId = ?', [foodId, characterId]);
+            else write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [food.amount-1, foodId, characterId]);
+            write('UPDATE items SET petData = ? WHERE id = ? AND characterId = ?', [JSON.stringify({...state,currentFeed,starvingSince:0}),controlId,characterId]);
+            return { currentFeed, remaining:food.amount-1 };
+        }, 'pet:mount-food'));
+    },
+    applyPetQuestStep(characterId, questId, expected, next, takes, gives) {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            if (![420, 421].includes(questId)) throw new Error('Unsupported pet quest');
+            const row = one('SELECT state, variables FROM character_quests WHERE characterId = ? AND questId = ?', [characterId, questId]);
+            const current = row ? JSON.parse(row.variables || '{}') : {};
+            if ((row?.state || 'created') !== expected.state || JSON.stringify(current) !== JSON.stringify(expected.variables)) throw new Error('Pet quest step changed');
+            const changed = new Set();
+            for (const take of takes) {
+                const items = all('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? AND equipped = 0 ORDER BY id', [characterId, take.selfId]);
+                if (!Number.isSafeInteger(take.amount) || take.amount < 1 || items.reduce((sum, item) => sum + item.amount, 0) < take.amount) throw new Error('Required quest items missing');
+                let remaining = take.amount;
+                for (const item of items) {
+                    const used = Math.min(remaining, item.amount);
+                    if (!used) break;
+                    remaining -= used;
+                    changed.add(item.id);
+                    if (used === item.amount) write('DELETE FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
+                    else write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [item.amount - used, item.id, characterId]);
+                }
+            }
+            for (const give of gives) {
+                if (!Number.isSafeInteger(give.amount) || give.amount < 1 || (!give.stackable && give.amount !== 1)) throw new Error('Invalid quest reward');
+                const item = give.stackable ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, give.selfId]) : null;
+                if (item) { write('UPDATE items SET amount = ? WHERE id = ?', [item.amount + give.amount, item.id]); changed.add(item.id); }
+                else changed.add(Number(write('INSERT INTO items(selfId, name, amount, characterId) VALUES (?, ?, ?, ?)', [give.selfId, give.name, give.amount, characterId]).insertId));
+            }
+            write(UPSERT_CHARACTER_QUEST, [characterId, questId, next.state, JSON.stringify(next.variables)]);
+            return [...changed].map(id => one('SELECT * FROM items WHERE id = ? AND characterId = ?', [id, characterId]) || { id, amount: 0 });
+        }, 'pet:quest-step'));
+    },
+    evolveHatchling(characterId, controlId) {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const quest = one('SELECT state, variables FROM character_quests WHERE characterId = ? AND questId = 421', [characterId]);
+            const variables = JSON.parse(quest?.variables || '{}');
+            const item = one('SELECT * FROM items WHERE id = ? AND characterId = ?', [controlId, characterId]);
+            const target = {3500:4422,3501:4423,3502:4424}[item?.selfId];
+            const saved = JSON.parse(item?.petData || '{}');
+            if (!target || quest?.state !== 'started' || Number(variables.cond) !== 3 || Number(variables.controlId) !== controlId || Number(variables.trees) !== 15 || saved.level < 55 || saved.dead || saved.expired) throw new Error('Hatchling evolution is not ready');
+            const Rules = require('./GameServer/Pets/PetRules');
+            const type = Rules.TYPES[target];
+            const stats = Rules.stats(type.npcId, saved.level);
+            const state = { ...saved, npcId: type.npcId, hp: stats.maxHp, mp: stats.maxMp, currentFeed: stats.maxFeed,
+                maxFeed: stats.maxFeed, feedNormal: stats.feedNormal, feedBattle: stats.feedBattle, starvingSince: 0,
+                inventory: (saved.inventory || []).map(row => ({ ...row, equipped: false })) };
+            write('UPDATE items SET selfId = ?, name = ?, petData = ? WHERE id = ? AND characterId = ?', [target, `Dragon Bugle of ${type.name.slice(11)}`, JSON.stringify(state), controlId, characterId]);
+            write("UPDATE character_quests SET state = 'created', variables = '{}' WHERE characterId = ? AND questId = 421", [characterId]);
+            return { ...item, selfId: target, petData: state };
+        }, 'pet:evolution'));
+    },
+    exchangePetTicket(characterId, ticketId) {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const ticket = one('SELECT selfId, amount, equipped FROM items WHERE id = ? AND characterId = ?', [ticketId, characterId]);
+            const output = require('./GameServer/Pets/PetExchangeData').tickets[ticket?.selfId];
+            if (!ticket || !output || ticket.amount < 1 || ticket.equipped) throw new Error('Pet ticket missing or no longer owned');
+            const slots = one('SELECT COUNT(*) AS count FROM items WHERE characterId = ?', [characterId]).count;
+            if (ticket.amount > 1 && slots >= 80) throw new Error('Inventory is full');
+            const remaining = ticket.amount - 1;
+            if (remaining) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [remaining, ticketId, characterId]);
+            else write('DELETE FROM items WHERE id = ? AND characterId = ?', [ticketId, characterId]);
+            const id = Number(write('INSERT INTO items(selfId, name, amount, characterId) VALUES (?, ?, 1, ?)', [output.itemId, output.name, characterId]).insertId);
+            return { id, selfId: output.itemId, remaining };
+        }, 'pet:ticket-exchange'));
+    },
+    completeWolfQuest(characterId) {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const quest = one('SELECT state, variables FROM character_quests WHERE characterId = ? AND questId = 419', [characterId]);
+            const variables = quest ? JSON.parse(quest.variables || '{}') : {};
+            if (quest?.state !== 'started' || Number(variables.cond) !== 3 || Number(variables.answers) !== 9) throw new Error('Wolf quest reward already claimed or not ready');
+            const list = one('SELECT id FROM items WHERE characterId = ? AND selfId = 3417 AND amount >= 1', [characterId]);
+            if (!list) throw new Error('Animal Lovers List missing');
+            write('DELETE FROM items WHERE id = ? AND characterId = ?', [list.id, characterId]);
+            const id = Number(write("INSERT INTO items(selfId, name, amount, characterId) VALUES (2375, 'Wolf Collar', 1, ?)", [characterId]).insertId);
+            write("UPDATE character_quests SET state = 'created', variables = '{}' WHERE characterId = ? AND questId = 419", [characterId]);
+            return { id, removedItemId: list.id };
+        }, 'pet:wolf-quest-reward'));
+    },
     setCharacterQuest(characterId, questId, state, variables) { return run(UPSERT_CHARACTER_QUEST, [characterId, questId, state, JSON.stringify(variables || {})], 'quest:upsert'); },
     deleteCharacterQuest(characterId, questId) { return remove('character_quests', 'characterId = ? AND questId = ?', [characterId, questId], 'quest:delete'); },
     fetchCharacterRecipes(characterId) { return run('SELECT recipeId, type FROM character_recipes WHERE characterId = ?', [characterId], 'recipe:list'); },
@@ -3884,6 +3975,68 @@ const Database = {
             write('UPDATE characters SET mp = ? WHERE id = ?', [crafterMp, crafterId]);
             return { sources, product: product ? { id: productId, amount: productAmount } : null, customerAdena: fee > 0 ? { id: Number(customerAdena.id), amount: Number(customerAdena.amount) - fee } : null, crafterAdena: fee > 0 ? { id: Number(crafterAdena.id), amount: nextCrafterAdena } : null };
         }, 'craft:customer'));
+    },
+
+    savePetState(characterId, id, state) {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const item = one('SELECT petData FROM items WHERE id = ? AND characterId = ?', [id, characterId]);
+            if (!item) throw new Error('Pet control item no longer owned');
+            const previous = item.petData ? JSON.parse(item.petData) : {};
+            const next = { ...previous, ...state, inventory: previous.inventory || [] };
+            write('UPDATE items SET petData = ? WHERE id = ? AND characterId = ?', [JSON.stringify(next), id, characterId]);
+            return next;
+        }, 'pet:state'));
+    },
+
+    transferPetInventory(characterId, controlId, command) {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const collar = one('SELECT selfId, petData FROM items WHERE id = ? AND characterId = ?', [controlId, characterId]);
+            if (!collar || !require('./GameServer/Pets/PetRules').TYPES[collar.selfId]) throw new Error('Pet control item no longer owned');
+            const state = collar.petData ? JSON.parse(collar.petData) : {};
+            if (state.expired || state.dead) throw new Error('Pet inventory unavailable');
+            const inventory = state.inventory || [];
+            const amount = Number(command.amount);
+            if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 2147483647) throw new Error('Invalid pet item amount');
+            let playerItem = null;
+            if (command.direction === 'deposit') {
+                const source = one('SELECT * FROM items WHERE id = ? AND characterId = ?', [command.itemId, characterId]);
+                if (!source || source.id === controlId || source.equipped || source.amount < amount || source.petData || require('./GameServer/Pets/PetRules').TYPES[source.selfId]) throw new Error('Item cannot be given to a pet');
+                const target = command.stackable ? inventory.find(item => item.selfId === source.selfId && !item.equipped) : null;
+                if (target) {
+                    if (target.amount + amount > 2147483647) throw new Error('Pet stack overflow');
+                    target.amount += amount;
+                } else {
+                    if (inventory.length >= 80) throw new Error('Pet inventory is full');
+                    // Reserve an object ID in the same AUTOINCREMENT namespace as player items.
+                    const id = Number(write('INSERT INTO items(selfId, name, amount, characterId) VALUES (?, ?, 0, ?)', [source.selfId, source.name, characterId]).insertId);
+                    write('DELETE FROM items WHERE id = ?', [id]);
+                    inventory.push({ id, selfId: source.selfId, name: source.name, enchant: source.enchant, amount, equipped: false });
+                }
+                playerItem = { ...source, amount: source.amount - amount };
+                if (playerItem.amount) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [playerItem.amount, source.id, characterId]);
+                else write('DELETE FROM items WHERE id = ? AND characterId = ?', [source.id, characterId]);
+            } else {
+                const source = inventory.find(item => item.id === command.itemId);
+                if (!source || source.amount < amount) throw new Error('Pet item changed');
+                if (command.direction === 'equip') {
+                    for (const item of inventory) if (command.equipIds.includes(item.selfId)) item.equipped = false;
+                    source.equipped = !!command.equipped;
+                } else {
+                    if (source.equipped) throw new Error('Unequip the pet item first');
+                    if (command.direction === 'withdraw') {
+                        const target = command.stackable ? one('SELECT * FROM items WHERE characterId = ? AND selfId = ? AND petData IS NULL ORDER BY id LIMIT 1', [characterId, source.selfId]) : null;
+                        if (target && target.amount + amount > 2147483647) throw new Error('Inventory stack overflow');
+                        const id = target?.id || Number(write('INSERT INTO items(selfId, name, amount, enchant, characterId) VALUES (?, ?, ?, ?, ?)', [source.selfId, source.name, amount, source.enchant || 0, characterId]).insertId);
+                        if (target) write('UPDATE items SET amount = ? WHERE id = ?', [target.amount + amount, id]);
+                        playerItem = { ...source, id, amount: (target?.amount || 0) + amount, equipped: false };
+                    } else if (command.direction !== 'consume') throw new Error('Unknown pet inventory command');
+                    source.amount -= amount;
+                }
+            }
+            state.inventory = inventory.filter(item => item.amount > 0);
+            write('UPDATE items SET petData = ? WHERE id = ? AND characterId = ?', [JSON.stringify(state), controlId, characterId]);
+            return { inventory: state.inventory, playerItem };
+        }, 'pet:inventory'));
     },
 
     updateItemPetData(characterId, id, petData) { return withCharacterFlush(characterId, () => update('items', { petData: JSON.stringify(petData || {}) }, 'id = ? AND characterId = ?', [id, characterId], 'item:pet')); },

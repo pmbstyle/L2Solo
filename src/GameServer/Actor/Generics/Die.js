@@ -22,6 +22,7 @@ function die(session, actor) {
         return;
     }
 
+    if ((actor.fetchMounted?.() || actor.mounted) && actor.pet?.petData) invoke('GameServer/Pets/PetRuntime').die(actor.pet);
     actor.destructor();
     ChargeLifecycle.clear(session, actor);
     clearEffectsOnDeath(session, actor);

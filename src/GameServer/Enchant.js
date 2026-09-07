@@ -109,6 +109,7 @@ async function enchant(session, objectId, options = {}) {
         || Number(scroll.fetchSelfId()) !== Number(active.selfId)
         || scroll.fetchAmount() < 1
         || actor.isDead?.()
+        || actor.fetchMounted?.() || actor.mounted
         || Number(actor.fetchPrivateStoreType?.() || 0) !== 0
         || actor.state?.fetchCasts?.()
         || actor.state?.fetchHits?.()

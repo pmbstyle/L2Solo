@@ -7,7 +7,7 @@ const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 
 function merchantSellRows(actor, store) {
     return actor.backpack.fetchItems()
-        .filter((item) => !item.fetchEquipped() && item.fetchSelfId() !== 57)
+        .filter((item) => !item.fetchPetLocked?.() && !item.fetchEquipped() && item.fetchSelfId() !== 57)
         .map((item) => {
             const wanted = store.items.find((storeItem) => storeItem.selfId === item.fetchSelfId() && storeItem.count > 0);
             if (!wanted) return null;
@@ -23,7 +23,7 @@ function merchantSellRows(actor, store) {
 
 function npcSellRows(actor) {
     return actor.backpack.fetchItems()
-        .filter((item) => !item.fetchEquipped() && item.fetchSelfId() !== 57)
+        .filter((item) => !item.fetchPetLocked?.() && !item.fetchEquipped() && item.fetchSelfId() !== 57)
         .map((item) => ({
             item,
             amount: item.fetchAmount(),
@@ -73,7 +73,7 @@ async function consumeMerchant(session, list, { native = false } = {}) {
             const wanted = store.items.find((storeItem) => storeItem.selfId === line.selfId && storeItem.count > 0);
             const amount = Number(line.amount);
             const matchesPrice = line.price === undefined || Number(line.price) === Number(wanted?.price);
-            if (!item || !wanted || item.fetchEquipped() || item.fetchSelfId() === 57 || item.fetchSelfId() !== line.selfId ||
+            if (!item || !wanted || item.fetchPetLocked?.() || item.fetchEquipped() || item.fetchSelfId() === 57 || item.fetchSelfId() !== line.selfId ||
                 !Number.isSafeInteger(amount) || amount < 1 || amount > item.fetchAmount() || amount > wanted.count || !matchesPrice ||
                 objectIds.has(item.fetchId())) return null;
             objectIds.add(item.fetchId());
@@ -152,7 +152,7 @@ async function sellToNpcShop(session, list) {
             const item = session.actor.backpack.fetchItems().find((ob) => ob.fetchId() === line.objectId);
             const offered = shop.items.get(line.objectId);
             const amount = Number(line.amount);
-            if (!item || !offered || item.fetchEquipped() || item.fetchSelfId() === 57 ||
+            if (!item || !offered || item.fetchPetLocked?.() || item.fetchEquipped() || item.fetchSelfId() === 57 ||
                 item.fetchSelfId() !== line.selfId || item.fetchSelfId() !== offered.selfId ||
                 !Number.isSafeInteger(amount) || amount < 1 || amount > item.fetchAmount()) continue;
 

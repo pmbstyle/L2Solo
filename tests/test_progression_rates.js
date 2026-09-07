@@ -22,12 +22,28 @@ assert.strictEqual(profile.exp, Number(options.default.General.expRate) * 10);
 assert.strictEqual(profile.sp, Number(options.default.General.expRate) * 10);
 assert.strictEqual(profile.adena, Number(options.default.General.adenaRate) * 10);
 assert.strictEqual(profile.drop, Number(options.default.General.dropChanceRate) * 10);
-assert.strictEqual(profile.questDrop, Number(options.default.General.dropChanceRate) * 10);
+assert.strictEqual(profile.questDrop, 1);
 assert.strictEqual(profile.questReward, 10);
 assert.strictEqual(profile.questAdena, 10);
 assert.strictEqual(profile.questExp, 10);
 assert.strictEqual(profile.questSp, 10);
-assert.strictEqual(profile.questDrop, Number(options.default.General.dropChanceRate) * 10);
+const QuestService = invoke('GameServer/Quest/QuestService');
+const originalQuestDropRate = options.default.General.questDropRate;
+try {
+    options.default.General.questDropRate = 25;
+    for (const preset of ['x1', 'x10', 'x50']) {
+        process.env.L2NODE_PROGRESSION_RATE = preset;
+        assert.strictEqual(ProgressionRates.profile().questDrop, 1);
+        assert.strictEqual(QuestService.questDropAmount(1, 30, 0), 1);
+        assert.strictEqual(QuestService.questDropAmount(3, 30, 0), 3, 'preserve authored multi-item drops');
+        assert.strictEqual(QuestService.questDropAmount(3, 30, 29), 1, 'cap at the quest objective');
+        assert.strictEqual(QuestService.questDropAmount(1, 30, 30), 0);
+    }
+} finally {
+    process.env.L2NODE_PROGRESSION_RATE = 'x10';
+    if (originalQuestDropRate === undefined) delete options.default.General.questDropRate;
+    else options.default.General.questDropRate = originalQuestDropRate;
+}
 
 assert.strictEqual(ProgressionRates.normalizePreset('x50'), 'x50');
 assert.strictEqual(ProgressionRates.normalizePreset('bad-rate'), 'x1');

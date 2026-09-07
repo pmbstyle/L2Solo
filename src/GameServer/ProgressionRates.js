@@ -38,7 +38,8 @@ function profile() {
         adena: numberOr(general.adenaRate, 1) * multiplier,
         drop: numberOr(general.dropChanceRate, 1) * multiplier,
         spoil: numberOr(general.spoilRate ?? general.dropChanceRate, 1) * multiplier,
-        questDrop: numberOr(general.questDropRate ?? general.dropChanceRate, 1) * multiplier,
+        // Quest objectives keep their authored item quantities at every preset.
+        questDrop: 1,
         questReward: numberOr(general.questRewardRate, 1) * multiplier,
         questAdena: numberOr(general.questAdenaRate ?? general.questRewardRate, 1) * multiplier,
         questExp: numberOr(general.questExpRate ?? general.questRewardRate, 1) * multiplier,

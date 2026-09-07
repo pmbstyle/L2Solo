@@ -10,6 +10,7 @@ function clearEffectsOnDeath(npc) {
 }
 
 function die(session, actor, npc) {
+    if (npc.state?.fetchDead?.()) return;
     const SpoilSweep = invoke('GameServer/Npc/SpoilSweep');
     const RaidBossMinionManager = invoke('GameServer/World/RaidBossMinionManager');
 
@@ -20,6 +21,7 @@ function die(session, actor, npc) {
     npc.state.setDead(true);
     invoke('GameServer/Bot/AI/HotPartyCastTracker').cancelForDeadNpc(npc);
     clearEffectsOnDeath(npc);
+    invoke('GameServer/Pets/FairyTrees').onDeath(session, actor, npc);
     session.dataSendToMeAndOthers(ServerResponse.die(npc.fetchId(), SpoilSweep.isSweepable(npc)), npc);
     invoke(path.actor).npcDied(session, actor, npc);
 }

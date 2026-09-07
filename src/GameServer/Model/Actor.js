@@ -2,6 +2,10 @@ const CreatureModel = invoke('GameServer/Model/Creature');
 const Formulas = invoke('GameServer/Formulas');
 
 class ActorModel extends CreatureModel {
+    fetchCollectivePAtk() { return invoke('GameServer/Pets/PetMount').stats(this)?.pAtk ?? super.fetchCollectivePAtk(); }
+    fetchCollectiveRunSpd() { return invoke('GameServer/Pets/PetMount').stats(this)?.run ?? super.fetchCollectiveRunSpd(); }
+
+    fetchCollectiveWalkSpd() { return invoke('GameServer/Pets/PetMount').stats(this)?.walk ?? super.fetchCollectiveWalkSpd(); }
 
     // Set
 

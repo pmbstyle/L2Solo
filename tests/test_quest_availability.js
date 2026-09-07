@@ -16,6 +16,8 @@ const spawnGroups = JSON.parse(
 );
 
 const templateIds = new Set(npcTemplates.map((npc) => Number(npc.selfId)));
+const petQuestNpcs = require('../data/Pets/c4-quest-npcs.json');
+petQuestNpcs.npcs.forEach(npc => templateIds.add(npc.selfId));
 const itemIds = new Set([...otherItems, ...weapons].map((item) => Number(item.selfId)));
 const spawnedIds = new Set();
 function collectSpawnIds(value) {
@@ -25,9 +27,10 @@ function collectSpawnIds(value) {
   Object.values(value).forEach(collectSpawnIds);
 }
 collectSpawnIds(spawnGroups);
+collectSpawnIds(petQuestNpcs.spawns);
 
 for (const quest of QuestService.quests()) {
-  for (const npcId of [...(quest.npcs || []), ...(quest.killNpcs || [])]) {
+  for (const npcId of [...(quest.npcs || []), ...(quest.killNpcs || []), ...(quest.attackNpcs || [])]) {
     assert(
       templateIds.has(npcId),
       `Q${quest.id} references NPC ${npcId}, but its template is absent`,
