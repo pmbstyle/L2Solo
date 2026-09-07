@@ -121,8 +121,8 @@ module.exports = function repository({ one, all, write, inTransaction, withChara
                 return { ok: true, advanced: { ok: advanced }, state };
             }, 'clan-alliance:bot');
         },
-        transitionClanAlliance({ clanId, characterId, event, members = [], npcId = 0, roll = 1, chestToken = '', rewardSp = Rules.SP_REWARD, timestamp = Date.now() }) {
-            const ids = [characterId, ...members];
+        transitionClanAlliance({ clanId, characterId, event, members = [], slot = -1, memberId = 0, bloodId = 0, npcId = 0, roll = 1, chestToken = '', rewardSp = Rules.SP_REWARD, timestamp = Date.now() }) {
+            const ids = [characterId, memberId, ...members].filter(Boolean);
             return withCharacterFlushes(ids, () => inTransaction(() => {
                 ensure();
                 const clan = one('SELECT * FROM clans WHERE id = ?', [clanId]);
@@ -140,12 +140,22 @@ module.exports = function repository({ one, all, write, inTransaction, withChara
                 } else {
                     if (!state || state.kind !== 'player' || !validRoster(state, clan)) return { ok: false, code: 'quest_not_active', state };
                     const member = state.members.find(entry => entry.id === Number(characterId));
-                    if (event === 'ritual' && isLeader && state.stage === 'started') {
-                        const selected = [...new Set(members.map(Number))].filter(id => id !== Number(characterId));
+                    if (event === 'assign' && isLeader && state.stage === 'started') {
+                        if (!Number.isInteger(slot) || slot < 0 || slot > 2 || Number(memberId) === Number(characterId)
+                            || !one('SELECT id FROM characters WHERE id = ? AND clanId = ?', [memberId, clanId]))
+                            return { ok: false, code: 'invalid_assignment', state };
+                        state.selection ||= [0, 0, 0];
+                        state.selection = state.selection.map(id => id === Number(memberId) ? 0 : id);
+                        state.selection[slot] = Number(memberId);
+                    } else if (event === 'choose_blood' && isLeader && state.stage === 'started') {
+                        if (!state.selection?.includes(Number(bloodId))) return { ok: false, code: 'select_courier_first', state };
+                        state.bloodId = Number(bloodId);
+                    } else if (event === 'ritual' && isLeader && state.stage === 'started') {
+                        const selected = [...new Set((state.selection || members).map(Number))].filter(id => id && id !== Number(characterId));
                         if (selected.length !== 3 || selected.some(id => !one('SELECT id FROM characters WHERE id = ? AND clanId = ?', [id, clanId])))
                             return { ok: false, code: 'three_clan_members_required', state };
                         state.members = selected.map((id, i) => ({ id, itemId: Rules.HERBS[i].itemId, npcId: Rules.HERBS[i].npcId,
-                            blood: i === 2, pledged: false, loyaltyDelivered: false, herb: false, delivered: false, bloodDelivered: false }));
+                            blood: id === (selected.includes(state.bloodId) ? state.bloodId : selected[2]), pledged: false, loyaltyDelivered: false, herb: false, delivered: false, bloodDelivered: false }));
                         state.stage = 'loyalty';
                     } else if (event === 'pledge' && member && state.stage === 'loyalty' && !member.pledged) {
                         member.pledged = true; award(state, characterId, 3837);

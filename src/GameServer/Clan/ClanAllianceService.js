@@ -30,6 +30,7 @@ function publish(clanId, state) {
             if (session.spotRelocation) invoke('GameServer/Bot/AI/BotSpotTravel').cancel(session, session.actor, 'clan_quest_started');
         }
         if (!active(state) && session.actor.effects?.clan_alliance_poison) stopPoison(session);
+        if (!member) { session.clanAllianceReport = null; session.clanAllianceRecovering = false; }
         session.clanAllianceQuest = member ? { clanId: Number(clanId), leaderId: state.leaderId } : null;
         if (member && botSession(session)) invoke('GameServer/Bot/AI/HotActorLodPolicy').promote?.(session, 'clan_quest');
     }
@@ -113,6 +114,14 @@ async function transition(session, event, extra = {}) {
     if (!clanId) return { ok: false, code: 'clan_required' };
     return serialize(clanId, async () => {
         if (event !== 'fail' && (!online(session) || session.actor.isDead())) return { ok: false, code: 'character_not_ready' };
+        if (event === 'assign' && !candidates(session).some(s => idOf(s) === extra.memberId))
+            return { ok: false, code: 'member_unavailable' };
+        if (event === 'ritual') {
+            const saved = await Database.fetchClanAllianceQuest(clanId);
+            const available = new Set(candidates(session).map(idOf));
+            if (saved?.selection?.length !== 3 || !saved.selection.every(id => available.has(id)))
+                return { ok: false, code: 'choose_three_available_members' };
+        }
         if (event === 'deliver') {
             const state = records.get(clanId);
             const leader = sessions().find(s => idOf(s) === state?.leaderId && online(s));
@@ -145,8 +154,41 @@ async function transition(session, event, extra = {}) {
         return result;
     });
 }
+function candidates(session) {
+    return sessions().filter(s => s !== session && online(s) && !s.actor.isDead() && !s.supplyErrandPhase
+        && !s.activeTrade && clanOf(s) === clanOf(session)).sort((a, b) => idOf(a) - idOf(b));
+}
+function eventName(value) {
+    if (/^status_[0-9]+$/.test(value)) return 'status';
+    if (/^assign_[0-2]_[1-9]\d*$/.test(value)) return 'assign';
+    if (/^choose_blood_[1-9]\d*$/.test(value)) return 'choose_blood';
+    return value;
+}
+function report(session, key, text) {
+    if (!botSession(session) || session.clanAllianceReport === key) return;
+    session.clanAllianceReport = key;
+    const state = records.get(clanOf(session));
+    const leader = sessions().find(s => idOf(s) === state?.leaderId && online(s));
+    if (!leader) return;
+    const manager = invoke('GameServer/Bot/BotManager');
+    if (!manager.botPartySay(session, text, leader)) manager.botTell(session, leader, text);
+}
+function memberStatus(state, member) {
+    const session = sessions().find(s => idOf(s) === member.id && online(s));
+    if (!session) return 'Offline; assignment saved';
+    if (session.actor.isDead()) return 'Dead; awaiting resurrection or town restart';
+    if (state.stage === 'loyalty') return member.loyaltyDelivered ? 'Offering delivered' : member.pledged ? 'Returning with offering' : 'Going to the altar';
+    if (state.stage === 'cured') return 'Trial complete';
+    if (member.delivered && (!member.blood || member.bloodDelivered)) return 'Delivered; supporting the party';
+    if (session.clanAllianceRecovering) return 'Recovering HP / MP';
+    if (!member.herb) return 'Hunting for the herb';
+    if (member.blood && !state.bloodObtained) return 'Collecting Blood of Eva at Athrea';
+    return 'Returning with ingredients';
+}
 async function event(session, name) {
-    const expected = NPC_EVENTS[name];
+    const rawName = name;
+    name = eventName(name);
+    const expected = ['assign', 'choose_blood', 'status'].includes(name) ? Rules.NPC.kalis : NPC_EVENTS[name];
     const talk = session.activeNpcTalk;
     const npc = talk && require('../World/NpcObjectIndex').find(invoke('GameServer/World/World'), talk.objectId);
     if (!expected || !npc || Number(npc.fetchSelfId()) !== expected || !near(session.actor, npc) || session.actor.isDead())
@@ -156,13 +198,21 @@ async function event(session, name) {
         const leader = sessions().find(s => idOf(s) === state?.leaderId && online(s));
         if (!leader || leader.actor.isDead() || !near(session.actor, leader.actor)) return { ok: false, code: 'return_to_your_leader' };
     }
-    let members = [];
-    if (name === 'ritual') {
-        members = sessions().filter(s => s !== session && online(s) && !s.actor.isDead() && !s.supplyErrandPhase && !s.activeTrade && clanOf(s) === clanOf(session))
-            .sort((a, b) => Number(b.followPlayerSession === session) - Number(a.followPlayerSession === session) || idOf(a) - idOf(b))
-            .slice(0, 3).map(idOf);
+    if (name === 'status') { session.clanAlliancePage = Number(rawName.split('_')[1] || 0); return { ok: true, state }; }
+    if (['assign', 'choose_blood', 'ritual'].includes(name) && (state?.leaderId !== idOf(session) || state.stage !== 'started'))
+        return { ok: false, code: 'leader_selection_required' };
+    if (name === 'assign') {
+        const [, slot, memberId] = rawName.split('_').map(Number);
+        if (!candidates(session).some(s => idOf(s) === memberId)) return { ok: false, code: 'member_unavailable' };
+        return transition(session, name, { slot, memberId });
     }
-    return transition(session, name, { members });
+    if (name === 'choose_blood') return transition(session, name, { bloodId: Number(rawName.split('_')[2]) });
+    if (name === 'ritual') {
+        const available = new Set(candidates(session).map(idOf));
+        if (state.selection?.length !== 3 || !state.selection.every(id => available.has(id)))
+            return { ok: false, code: 'choose_three_available_members' };
+    }
+    return transition(session, name);
 }
 async function onKill(session, npc) {
     if (!clanOf(session) || processedKills.has(npc) || !(npc.isDead?.() || npc.state?.fetchDead?.())) return;
@@ -197,8 +247,10 @@ async function resume(session) {
 }
 function onDeath(session) {
     const state = records.get(clanOf(session));
+    if (active(state) && state.members.some(m => m.id === idOf(session)))
+        report(session, 'dead', 'I am down. I will continue my assignment after resurrection or a town restart.');
     if (state?.stage === 'gathering' && state.leaderId === idOf(session))
         transition(session, 'fail').catch(error => utils.infoWarn('ClanQuest', 'death cleanup failed: %s', error.message));
 }
 module.exports = { Rules, records, active, snapshot, resume, event, transition, onKill, onDeath, targetNpc, near, loc,
-    sessions, idOf, clanOf, online, botSession, syncInventory, stopPoison };
+    sessions, idOf, clanOf, online, botSession, syncInventory, stopPoison, candidates, eventName, report, memberStatus };

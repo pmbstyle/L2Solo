@@ -34,7 +34,7 @@ function tick(session, bot, Generics, ai) {
     }
     if (bot.isDead()) return false;
     const leader = Service.sessions().find(s => Service.idOf(s) === state.leaderId && Service.online(s));
-    if (!leader || leader.actor.isDead()) return true;
+    if (!leader || leader.actor.isDead()) { bot.automation?.abortAll?.(bot); return true; }
     if (session.clanAlliancePending) return true;
     // Recheck authoritative membership periodically so a departure, leadership
     // transfer, or resumed game cannot leave an old assignment running.
@@ -58,6 +58,7 @@ function tick(session, bot, Generics, ai) {
     const hp = bot.fetchHp?.() / Math.max(1, bot.fetchMaxHp?.());
     const mp = bot.fetchMp?.() / Math.max(1, bot.fetchMaxMp?.());
     if (hp < 0.35 || mp < 0.2 || session.clanAllianceRecovering && (hp < 0.85 || mp < 0.8)) {
+        Service.report(session, 'recovering', 'I need to recover HP and MP before continuing my assignment.');
         session.clanAllianceRecovering = true;
         bot.automation?.abortAll?.(bot);
         if (!bot.state.fetchSeated?.()) {
@@ -72,6 +73,7 @@ function tick(session, bot, Generics, ai) {
         session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(bot), bot);
     }
     if (state.stage === 'loyalty' && !member.pledged) {
+        Service.report(session, 'altar', 'I am heading to the altar for the loyalty offering.');
         const altar = Service.targetNpc(Rules.NPC.altar, bot);
         if (altar && move(session, altar, 'altar')) request(session, () => Service.transition(session, 'pledge'));
         return true;
@@ -79,6 +81,9 @@ function tick(session, bot, Generics, ai) {
     const returning = state.stage === 'loyalty' || state.stage === 'cured'
         || state.stage === 'gathering' && member.herb && (!member.blood || state.bloodObtained);
     if (returning) {
+        const delivered = state.stage === 'loyalty' ? member.loyaltyDelivered : member.delivered && (!member.blood || member.bloodDelivered);
+        Service.report(session, delivered ? 'delivered' : `returning_${state.stage}`, delivered
+            ? 'My delivery is complete. I am ready to help the party.' : 'I have the quest items. Returning to you now.');
         if (move(session, leader.actor, 'leader')) {
             const needsDelivery = state.stage === 'loyalty' && !member.loyaltyDelivered
                 || state.stage === 'gathering' && (!member.delivered || member.blood && !member.bloodDelivered);
@@ -93,8 +98,12 @@ function tick(session, bot, Generics, ai) {
     }
     if (state.stage !== 'gathering') return true;
     let target;
-    if (!member.herb) target = Service.targetNpc(member.npcId, bot);
+    if (!member.herb) {
+        Service.report(session, 'hunting', `I am going to ${Rules.HERBS.find(h => h.itemId === member.itemId).area} for ${Rules.ITEMS[member.itemId]}.`);
+        target = Service.targetNpc(member.npcId, bot);
+    }
     else if (member.blood && !state.bloodObtained) {
+        Service.report(session, 'athrea', 'I have my herb. Heading to Athrea for Blood of Eva.');
         const athrea = Service.targetNpc(Rules.NPC.athrea, bot);
         if (state.chests?.bingo >= 4) {
             if (athrea && move(session, athrea, 'athrea')) request(session, () => Service.transition(session, 'blood'));

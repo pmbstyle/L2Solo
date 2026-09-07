@@ -8,7 +8,7 @@ const Rules = require('../src/GameServer/Clan/ClanAllianceRules');
 let state = { kind: 'player', stage: 'gathering', leaderId: 1, members: [
     { id: 2, itemId: 3833, npcId: 685, herb: false, delivered: false, blood: false }
 ] };
-const transitions = [], movements = [], fights = [];
+const transitions = [], movements = [], fights = [], reports = [];
 let incomingThreat = null;
 const poisonEffects = [], spawnedChests = [];
 function actor(id, selfId, x = 0) {
@@ -33,6 +33,7 @@ const mocks = {
         }
     },
     'GameServer/World/World': world,
+    'GameServer/Bot/BotManager': { botPartySay: (session, text) => { reports.push(text); return true; }, botTell() { throw new Error('Unexpected whisper'); } },
     'GameServer/Effects/EffectStore': {
         apply(actor, effect) { poisonEffects.push(effect); actor.effects[effect.key] = effect; return effect; },
         remove(actor, key) { delete actor.effects[key]; }
@@ -67,8 +68,10 @@ async function main() {
     assert.strictEqual(movements.length, 1, 'far member physically travels toward the herb mob');
     assert.strictEqual(transitions.length, 0, 'travel does not synthesize kills or items');
     assert.strictEqual(fights.length, 0);
+    const reportCount = reports.length;
     courier.actor.x = herb.x;
     ai.tick(courier, courier.actor, {}, combat);
+    assert.strictEqual(reports.length, reportCount, 'unchanged task does not spam party chat');
     assert.strictEqual(fights.length, 1, 'arrival invokes actual combat');
     assert.strictEqual(transitions.length, 0, 'combat attempt alone is not a kill');
     incomingThreat = actor(200, 123, courier.actor.x);
@@ -87,6 +90,15 @@ async function main() {
     assert.strictEqual(transitions[0].event, 'kill');
     await service.onKill(courier, herb);
     assert.strictEqual(transitions.length, 1, 'duplicate death callbacks do not reroll drops');
+    courier.actor.dead = true;
+    service.onDeath(courier);
+    assert(reports.at(-1).includes('down'));
+    assert.strictEqual(state.stage, 'gathering', 'courier death does not fail the trial');
+    courier.actor.dead = false;
+    service.records.clear();
+    courier.clanAllianceQuest = null;
+    await service.resume(courier);
+    assert(service.records.get(1).members[0].herb, 'resume restores the acquired ingredient assignment');
     ai.tick(courier, courier.actor, {}, combat);
     assert.strictEqual(movements.at(-1)[2].locX, 0, 'carrying member heads to leader, not to warehouse');
     assert(!(await service.transition(courier, 'deliver')).ok, 'even internal delivery requires proximity');
@@ -127,6 +139,29 @@ async function main() {
     await service.transition(courier, 'pledge');
     assert.strictEqual(courier.actor.dead, true, 'the altar sacrifice invokes the normal death lifecycle');
     courier.actor.dead = false;
+    state.stage = 'started'; state.members = []; state.selection = [2, 3, 4];
+    const third = { actor: actor(3, 0), accountId: 'bot_three' };
+    const fourth = { actor: actor(4, 0), accountId: 'bot_four' };
+    world.user.sessions.push(third, fourth);
+    leader.actor.x = kalis.x; leader.activeNpcTalk = { selfId: 7759, objectId: kalis.fetchId() };
+    await service.snapshot(leader);
+    assert((await service.event(leader, 'assign_0_2')).ok);
+    assert.strictEqual(transitions.at(-1).memberId, 2);
+    assert.strictEqual(transitions.at(-1).slot, 0);
+    assert(!(await service.event(leader, 'assign_0_999')).ok, 'unknown member is rejected');
+    courier.actor.x = kalis.x;
+    assert(!(await service.event(courier, 'assign_0_3')).ok, 'only leader can select couriers');
+    assert((await service.event(leader, 'choose_blood_2')).ok);
+    assert.strictEqual(transitions.at(-1).bloodId, 2);
+    fourth.actor.dead = true;
+    assert(!(await service.event(leader, 'ritual')).ok, 'unavailable selection must be corrected before ritual');
+    fourth.actor.dead = false;
+    assert((await service.event(leader, 'ritual')).ok);
+    const quest = load('src/GameServer/Quest/quests/Q501_ProofOfClanAlliance.js');
+    assert.strictEqual(quest.eventNpc('assign_0_2'), Rules.NPC.kalis);
+    assert.strictEqual(quest.eventNpc('assign_8_2'), null);
+    const html = await quest.onTalk({ session: leader }, kalis);
+    assert(html.includes('assign_0_2') && html.includes('choose_blood_2') && html.includes('Confirm assignments'));
     state.stage = 'failed'; await service.snapshot(courier);
     assert.strictEqual(courier.clanAllianceQuest, null, 'failure releases the courier');
     console.log('Clan alliance runtime: physical travel/combat/return, NPC distance, chest ownership, live leader, and task release passed');

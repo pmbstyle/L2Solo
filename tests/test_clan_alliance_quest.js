@@ -61,7 +61,21 @@ async function main() {
     await success('start');
     assert(!(await step('ritual', 5, { members: [6, 7, 9] })).ok, 'outsider cannot be selected');
     assert(!(await step('ritual', 5, { members: [6, 6, 7] })).ok, 'duplicate members cannot satisfy quorum');
-    await success('ritual', 5, { members: [6, 7, 8] });
+    assert(!(await step('assign', 6, { slot: 0, memberId: 7 })).ok);
+    assert(!(await step('assign', 5, { slot: 0, memberId: 9 })).ok);
+    await success('assign', 5, { slot: 0, memberId: 7 });
+    await success('assign', 5, { slot: 1, memberId: 7 });
+    assert.deepStrictEqual((await Database.fetchClanAllianceQuest(2)).selection, [0, 7, 0], 'reassignment clears the previous slot');
+    await success('assign', 5, { slot: 0, memberId: 6 });
+    await success('assign', 5, { slot: 2, memberId: 8 });
+    await success('choose_blood', 5, { bloodId: 6 });
+    await Database.close(); Database.init();
+    const selection = await Database.fetchClanAllianceQuest(2);
+    assert.deepStrictEqual(selection.selection, [6, 7, 8]);
+    assert.strictEqual(selection.bloodId, 6, 'custom Blood of Eva assignment survives reopen');
+    await success('choose_blood', 5, { bloodId: 8 });
+    await success('ritual');
+    assert(!(await step('assign', 5, { slot: 0, memberId: 7 })).ok, 'active assignments cannot be changed');
     assert(!(await step('poison')).ok);
     for (const id of [6, 7, 8]) {
         await success('pledge', id);
@@ -77,6 +91,9 @@ async function main() {
     assert.strictEqual(double.filter(r => r.ok).length, 1);
     assert.strictEqual(await count(6, 3833), 1);
     assert.strictEqual(await count(5, 3833), 0, 'loot starts in courier inventory');
+    await Database.close(); Database.init();
+    assert.strictEqual(await count(6, 3833), 1, 'restart retains the physical ingredient');
+    assert((await Database.fetchClanAllianceQuest(2)).members[0].herb, 'restart retains courier progress');
     await success('kill', 7, { npcId: 644, roll: 0 }); await success('kill', 8, { npcId: 576, roll: 0 });
     assert(!(await step('cure')).ok, 'drops alone are not delivery');
     for (const id of [6, 7, 8]) await success('deliver', id);
@@ -104,6 +121,12 @@ async function main() {
     await success('kill', 6, { npcId: 685, roll: 0 });
     await success('fail');
     assert.strictEqual(await count(6, 3833), 0, 'failure clears the attempt items');
+    await success('start');
+    for (const [slot, memberId] of [6, 7, 8].entries()) await success('assign', 5, { slot, memberId });
+    await success('choose_blood', 5, { bloodId: 6 });
+    const customRitual = await success('ritual');
+    assert.strictEqual(customRitual.state.members.find(m => m.blood).id, 6, 'Blood of Eva follows the chosen courier, not the third slot');
+    await success('fail');
     await begin();
     await sql('UPDATE characters SET clanId = 0 WHERE id = 6');
     assert(!(await step('cure')).ok, 'membership loss invalidates an attempt');

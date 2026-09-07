@@ -305,6 +305,18 @@ const BotAI = {
         const leaderSession = session.followPlayerSession;
         const role = BotRoles.inferRole(bot);
         const spawnTarget = this.getDeathRespawnTarget(session, bot, false);
+        if (session.clanAllianceQuest) {
+            // Resume the saved quest destination from town without queuing a
+            // companion catch-up teleport that would interrupt the courier.
+            session.plan = 'following';
+            session.resumeAfterBuff = null;
+            session.preBuffLocation = null;
+            session.preBuffPlan = null;
+            session.botStay = false;
+            session.stayLocation = null;
+            session.currentTargetId = undefined;
+            return spawnTarget;
+        }
 
         // Keep native party membership and the C4 party window intact. The
         // bot first restarts in town, refreshes Newbie Guide buffs when it is
@@ -522,7 +534,9 @@ const BotAI = {
                         priority: 'critical',
                         key: `party-respawn-timeout:${bot.fetchId()}:${deathStartedAt}`,
                         templates: [
-                            `No resurrection came. Restarting in town, rebuffing if needed, then teleporting back.`
+                            session.clanAllianceQuest
+                                ? `No resurrection came. Restarting in town, then continuing my quest assignment.`
+                                : `No resurrection came. Restarting in town, rebuffing if needed, then teleporting back.`
                         ]
                     });
                     // Keep the party relationship authoritative through the
