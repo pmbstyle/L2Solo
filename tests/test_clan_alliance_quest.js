@@ -1,0 +1,117 @@
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const { DatabaseSync } = require('node:sqlite');
+require('../src/Global');
+const Database = invoke('Database');
+const Rules = require('../src/GameServer/Clan/ClanAllianceRules');
+const root = path.resolve(__dirname, '..');
+const file = path.join(root, 'tmp', `test-clan-alliance-${process.pid}.sqlite`);
+fs.mkdirSync(path.dirname(file), { recursive: true });
+const seed = new DatabaseSync(file);
+seed.exec(fs.readFileSync(path.join(root, 'database/sql/sqlite.sql'), 'utf8'));
+for (let id = 1; id <= 9; id++) {
+    const username = id === 5 ? 'alliance_player' : `bot_pop_alliance${id}`;
+    seed.prepare('INSERT INTO accounts(username, password) VALUES (?, ?)').run(username, 'test');
+    seed.prepare(`INSERT INTO characters(id, username, name, classId, race, level, maxHp, maxMp, sex, face, hair, hairColor, locX, locY, locZ)
+        VALUES (?, ?, ?, 0, 0, ?, 500, 250, 0, 0, 0, 0, 0, 0, 0)`).run(id, username, `Alliance${id}`, id < 5 ? 60 : 1);
+}
+seed.prepare("INSERT INTO clans(id, name, leaderId, level) VALUES (1, 'AutoAlliance', 1, 3), (2, 'PlayerAlliance', 5, 3)").run();
+seed.exec('UPDATE characters SET clanId = CASE WHEN id < 5 THEN 1 WHEN id < 9 THEN 2 ELSE 0 END');
+seed.prepare("INSERT INTO clan_simulation_clans(clanId, mode, createdAt, updatedAt, stateJson) VALUES (1, 'autonomous', 0, 0, '{}'), (2, 'player_managed', 0, 0, '{}')").run();
+seed.close();
+options.default.Database.path = path.relative(root, file);
+Database.init();
+const sql = (query, args = []) => Database.execute([query, args], 'test:alliance');
+const step = (event, characterId = 5, extra = {}) => Database.transitionClanAlliance({ clanId: 2, characterId, event, ...extra });
+const count = async (characterId, itemId) => Number((await sql('SELECT COALESCE(SUM(amount), 0) n FROM items WHERE characterId = ? AND selfId = ?', [characterId, itemId]))[0].n);
+async function success(event, id, extra) { const result = await step(event, id, extra); assert(result.ok, `${event}: ${JSON.stringify(result)}`); return result; }
+async function begin() {
+    await success('start'); await success('ritual', 5, { members: [6, 7, 8] });
+    for (const id of [6, 7, 8]) { await success('pledge', id); await success('deliver', id); }
+    await success('poison');
+}
+async function main() {
+    await sql('UPDATE characters SET level = 59 WHERE id = 4');
+    assert((await Database.resolveBotClanAlliance(1, 1000, 'boot1')).skipped);
+    await sql('UPDATE characters SET level = 60 WHERE id = 4');
+    assert(!(await Database.advanceAutonomousClanLevel({ clanId: 1, fromLevel: 3, toLevel: 4 })).ok, 'legacy advancement cannot bypass the trial');
+    const first = await Database.resolveBotClanAlliance(1, 1000, 'boot1');
+    assert.strictEqual(first.state.members.length, 4);
+    const Contracts = invoke('GameServer/Clan/ClanSimulationContracts');
+    const goal = Contracts.normalizeGoal({ type: 'level', required: 30, target: { level: 4 }, progress: 0,
+        status: 'executing', plan: { kind: 'alliance_trial' }, assignedMemberIds: first.state.members });
+    assert.strictEqual(goal.plan.kind, 'alliance_trial', 'the durable goal contract retains the trial plan');
+    await Database.updateAutonomousClanGoal({ clanId: 1, goal });
+    assert(!first.advanced.ok);
+    assert.strictEqual((await Database.resolveBotClanAlliance(1, 100000, 'boot1')).state.elapsedMs, 99000);
+    await Database.close();
+    Database.init();
+    const restored = await Database.fetchClanAllianceQuest(1);
+    assert.strictEqual(restored.elapsedMs, 99000, 'saved timer survives closing and reopening SQLite');
+    assert.deepStrictEqual(restored.members, first.state.members, 'restart retains the same trial roster');
+    assert.strictEqual(restored.stage, 'running', 'restart must not reset an active trial');
+    assert.strictEqual((await Database.resolveBotClanAlliance(1, 999000, 'boot2')).state.elapsedMs, 99000, 'downtime is excluded');
+    assert(!(await Database.resolveBotClanAlliance(1, 1199999, 'boot2')).advanced.ok);
+    assert((await Database.resolveBotClanAlliance(1, 1200000, 'boot2')).advanced.ok, '30 game minutes are 300 seconds');
+    assert.strictEqual(Number((await sql('SELECT sp FROM characters WHERE id = 1'))[0].sp), 0);
+    assert((await Database.resolveBotClanAlliance(1, 9999999, 'boot2')).skipped, 'no duplicate upgrade');
+    assert((await Database.resolveBotClanAlliance(2, 9999999, 'boot2')).skipped, 'player clan cannot use automatic path');
+    assert(!(await step('start', 6)).ok, 'member cannot start');
+    await success('start');
+    assert(!(await step('ritual', 5, { members: [6, 7, 9] })).ok, 'outsider cannot be selected');
+    assert(!(await step('ritual', 5, { members: [6, 6, 7] })).ok, 'duplicate members cannot satisfy quorum');
+    await success('ritual', 5, { members: [6, 7, 8] });
+    assert(!(await step('poison')).ok);
+    for (const id of [6, 7, 8]) {
+        await success('pledge', id);
+        assert(!(await step('pledge', id)).ok);
+        await success('deliver', id);
+    }
+    await success('poison');
+    assert.strictEqual(await count(5, 3837), 0);
+    assert(!(await step('kill', 6, { npcId: 644, roll: 0 })).ok, 'wrong target is not a herb drop');
+    assert(!(await step('kill', 6, { npcId: 685, roll: 0.35 })).ok, 'drop roll respects 35 percent');
+    assert(!(await step('kill', 5, { npcId: 685, roll: 0 })).ok, 'leader cannot replace the hunters');
+    const double = await Promise.all([step('kill', 6, { npcId: 685, roll: 0 }), step('kill', 6, { npcId: 685, roll: 0 })]);
+    assert.strictEqual(double.filter(r => r.ok).length, 1);
+    assert.strictEqual(await count(6, 3833), 1);
+    assert.strictEqual(await count(5, 3833), 0, 'loot starts in courier inventory');
+    await success('kill', 7, { npcId: 644, roll: 0 }); await success('kill', 8, { npcId: 576, roll: 0 });
+    assert(!(await step('cure')).ok, 'drops alone are not delivery');
+    for (const id of [6, 7, 8]) await success('deliver', id);
+    assert.strictEqual(await count(6, 3833), 0);
+    assert.strictEqual(await count(5, 3833), 1);
+    assert(!(await step('blood', 8)).ok, 'Athrea must be completed');
+    const chest = await success('chests', 8, { timestamp: 1000 });
+    assert(!(await step('chests', 8, { timestamp: 2000 })).ok, 'one trial at a time');
+    assert(!(await step('chest_kill', 8, { npcId: 1, chestToken: 'wrong', roll: 0, timestamp: 2000 })).ok);
+    for (let i = 1; i <= 4; i++) await success('chest_kill', 8, { npcId: i, chestToken: chest.state.chests.token, roll: 0, timestamp: 2000 });
+    assert(!(await step('chest_kill', 8, { npcId: 4, chestToken: chest.state.chests.token, roll: 0, timestamp: 2000 })).ok);
+    await success('blood', 8); await success('deliver', 8); await success('cure');
+    const finish = await Promise.all([step('finish'), step('finish')]);
+    assert.strictEqual(finish.filter(r => r.ok).length, 1);
+    assert.strictEqual(await count(5, 3874), 1);
+    assert.strictEqual(Number((await sql('SELECT sp FROM characters WHERE id = 5'))[0].sp), Rules.SP_REWARD);
+    assert(!(await Database.raisePlayerClanToFour({ clanId: 2, characterId: 5 })).ok);
+    await sql('UPDATE characters SET sp = ? WHERE id = 5', [Rules.SP_COST + 12]);
+    const upgrades = await Promise.all([Database.raisePlayerClanToFour({ clanId: 2, characterId: 5 }), Database.raisePlayerClanToFour({ clanId: 2, characterId: 5 })]);
+    assert.strictEqual(upgrades.filter(r => r.ok).length, 1);
+    assert.strictEqual(await count(5, 3874), 0);
+    assert.strictEqual(Number((await sql('SELECT sp FROM characters WHERE id = 5'))[0].sp), 12);
+    await sql('UPDATE clans SET level = 3 WHERE id = 2');
+    await begin();
+    await success('kill', 6, { npcId: 685, roll: 0 });
+    await success('fail');
+    assert.strictEqual(await count(6, 3833), 0, 'failure clears the attempt items');
+    await begin();
+    await sql('UPDATE characters SET clanId = 0 WHERE id = 6');
+    assert(!(await step('cure')).ok, 'membership loss invalidates an attempt');
+    assert.strictEqual((await Database.fetchClanAllianceQuest(2)).stage, 'failed');
+    assert.strictEqual((await sql('PRAGMA quick_check'))[0].quick_check, 'ok');
+    console.log('Clan alliance: bot timer, restart, level gates, player quest at level 1, real-item delivery, chest ownership, failure, atomic reward and SP upgrade passed');
+}
+main().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
+    await Database.close();
+    for (const suffix of ['', '-wal', '-shm']) fs.rmSync(file + suffix, { force: true });
+});

@@ -1780,7 +1780,7 @@ const PopulationService = {
                 // Scripted PK encounters stay hot; ordinary chaotic bots can
                 // continue hunting and washing karma in the cold simulation.
                 if (session.pkProfile || session.plan === 'pk_hunting') return false;
-                if (session.partyCompanion === true || session.followPlayerSession) return false;
+                if (session.clanAllianceQuest || session.partyCompanion === true || session.followPlayerSession) return false;
                 const lastHotAt = session.populationHotAt || 0;
                 if (lastHotAt && now - lastHotAt < Config.cooldownGraceMs) return false;
                 if (players.length === 0) return true;

@@ -246,6 +246,21 @@ async function resolveClan(clan, options = {}) {
     // planner starts with a clean slate instead of treating that order as its
     // own previous goal.
     const automaticPrevious = String(stateGoal?.controlledBy || '') === 'player' ? null : stateGoal;
+    if (number(clan.level) === 3 && String(clan.state?.mode || '') === 'autonomous') {
+        const trial = await Database.resolveBotClanAlliance(clan.id);
+        if (trial.advanced?.ok) {
+            await ClanService.reload();
+            return { ...trial, clanId: clan.id, changed: true, level: 4 };
+        }
+        if (trial.state?.stage === 'running') {
+            const goal = { type: 'level', status: 'executing', target: { level: 4 }, required: 30,
+                progress: Math.min(30, trial.state.elapsedMs / require('../World/GameTime').GAME_MINUTE_MS), assignedMemberIds: trial.state.members,
+                plan: { kind: 'alliance_trial', reasonCode: 'clan_alliance_trial' }, updatedAt: Date.now() };
+            const saved = await Database.updateAutonomousClanGoal({ clanId: clan.id, goal,
+                eventType: 'alliance_trial_started', reasonCode: 'clan_alliance_trial' });
+            return { ...saved, clanId: clan.id, changed: true, goal };
+        }
+    }
     if (number(clan.level) >= 3) {
         const previous = automaticPrevious;
         const candidateSnapshot = await ClanGoalCandidateService.snapshotFor(clan, previous, options);

@@ -4,7 +4,7 @@ const STATE_VERSION = 1;
 const AUTOMATION_MODES = Object.freeze(['autonomous', 'player_managed']);
 const GOAL_STATUSES = Object.freeze(['planned', 'preparing', 'executing', 'blocked', 'completed']);
 const GOAL_TYPES = Object.freeze(['adena', 'item', 'readiness', 'equipment', 'level']);
-const EXECUTION_PLANS = Object.freeze(['warehouse', 'market', 'craft', 'farm', 'prepare']);
+const EXECUTION_PLANS = Object.freeze(['warehouse', 'market', 'craft', 'farm', 'prepare', 'alliance_trial']);
 
 const REASON_CODES = Object.freeze({
     FOUNDER_LOW_LEVEL: 'founder_low_level',

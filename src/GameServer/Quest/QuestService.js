@@ -78,6 +78,7 @@ const quests = [
   require("./quests/Q419_GetAPet"),
   require("./quests/Q420_LittleWing"),
   require("./quests/Q421_LittleWingsBigAdventure"),
+  require("./quests/Q501_ProofOfClanAlliance"),
 ];
 const byId = new Map(quests.map((quest) => [quest.id, quest]));
 const attackQuests = new Map();
@@ -110,6 +111,7 @@ async function ensureLoaded(session) {
       states(session).set(quest.id, new QuestState(session, quest, row));
   });
   session.questStatesLoaded = true;
+  if (session.actor.fetchClanId?.()) await invoke("GameServer/Clan/ClanAllianceService").resume(session);
 }
 
 function stateFor(session, quest) {
@@ -406,6 +408,7 @@ function rewardExpSp(session, exp, sp) {
 async function onKill(session, npc) {
   return mutate(session, async () => {
     await ensureLoaded(session);
+    await invoke("GameServer/Clan/ClanAllianceService").onKill(session, npc);
     const ownerId = Number(npc.questSpawn?.ownerId) || 0;
     if (ownerId && ownerId !== Number(session.actor.fetchId())) return;
     const spawnedQuestId = Number(npc.questSpawn?.questId) || 0;

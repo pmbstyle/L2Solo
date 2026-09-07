@@ -114,6 +114,8 @@ function actionTypeFor(clan, goal) {
     // the clan re-evaluates the weakest/highest-priority beneficiary on the
     // bounded retry cadence. This also repairs a lost durable plan binding
     // without turning equipment into a per-combat-tick scheduler job.
+    if (goal.plan?.kind === 'alliance_trial' && number(clan.level) === 3
+        && String(clan.state?.mode || '') === 'autonomous') return ACTION_TYPES.CONTRIBUTION;
     if (goal.type === 'equipment') return ACTION_TYPES.PLAN;
     if (number(clan.level) <= 1) return ACTION_TYPES.CONTRIBUTION;
     switch (String(goal.plan?.kind || '')) {

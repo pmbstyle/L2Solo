@@ -90,6 +90,11 @@ async function resolveClan(clan, options = {}) {
     if (!clan || number(clan.level) < 0 || number(clan.level) > 3) {
         return { ok: true, skipped: true, reason: 'level_out_of_slice' };
     }
+    if (number(clan.level) === 3) {
+        const result = await Database.resolveBotClanAlliance(clan.id);
+        if (result.advanced?.ok) { metrics.levelUps += 1; await ClanService.reload(); }
+        return result;
+    }
     const targetLevel = number(clan.level);
     if (targetLevel >= 1) {
         let contributionResult = {

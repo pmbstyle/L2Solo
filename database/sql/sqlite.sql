@@ -390,6 +390,11 @@ CREATE TABLE IF NOT EXISTS character_recipes (
     PRIMARY KEY(characterId, recipeId, type)
 );
 
+CREATE TABLE IF NOT EXISTS clan_alliance_quests (
+    clanId INTEGER PRIMARY KEY REFERENCES clans(id) ON DELETE CASCADE,
+    stateJson TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS character_quests (
     characterId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
     questId INTEGER NOT NULL,

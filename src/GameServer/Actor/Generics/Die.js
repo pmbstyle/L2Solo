@@ -32,6 +32,7 @@ function die(session, actor) {
     // have been cancelled.
     actor.state.destructor();
     actor.state.setDead(true);
+    invoke('GameServer/Clan/ClanAllianceService').onDeath(actor.session || session);
     session.dataSendToMeAndOthers(ServerResponse.die(actor.fetchId()), actor);
     const ArenaDuelService = invoke('GameServer/World/ArenaDuelService');
     // ReceivedHit is invoked with the attacker's session, while the actor

@@ -30,7 +30,7 @@ collectSpawnIds(spawnGroups);
 collectSpawnIds(petQuestNpcs.spawns);
 
 for (const quest of QuestService.quests()) {
-  for (const npcId of [...(quest.npcs || []), ...(quest.killNpcs || []), ...(quest.attackNpcs || [])]) {
+  for (const npcId of [...(quest.npcs || []), ...(quest.killNpcs || []), ...(quest.sharedKillNpcs || []), ...(quest.attackNpcs || [])]) {
     assert(
       templateIds.has(npcId),
       `Q${quest.id} references NPC ${npcId}, but its template is absent`,

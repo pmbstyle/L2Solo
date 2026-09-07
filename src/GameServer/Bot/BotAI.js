@@ -212,6 +212,8 @@ const BotAI = {
     init(session) {
         this.cancelScheduledTick(session);
         session.aiActive = true;
+        if (session.actor?.fetchClanId?.()) invoke('GameServer/Clan/ClanAllianceService').resume(session)
+            .catch(error => utils.infoWarn('ClanQuest', 'resume failed: %s', error.message));
         this.scheduleTick(session, 1000 + Math.random() * 2000);
     },
 
@@ -402,6 +404,9 @@ const BotAI = {
         // Actual player aggression owns the action window before travel,
         // conversation, recovery or ordinary party/PvE state routing.
         const defendingPvp = !botDead && invoke('GameServer/Bot/AI/BotPvpDefense').tick(session, bot, invoke(path.actor), this);
+
+        if (!botDead && !defendingPvp && session.clanAllianceQuest
+            && invoke('GameServer/Bot/AI/ClanAllianceQuestAI').tick(session, bot, invoke(path.actor), this)) return;
 
         if (lodContext.tier === 'preload' && !botDead && !defendingPvp) {
             if (Math.random() < 0.05) this.triggerFarAwayChatEvent(session, bot);
