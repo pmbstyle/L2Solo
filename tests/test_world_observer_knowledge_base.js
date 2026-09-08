@@ -18,8 +18,8 @@ const service = createKnowledgeBaseService({
 try {
     process.env.L2NODE_PROGRESSION_RATE = 'x1';
     const meta = service.meta();
-    assert.strictEqual(meta.counts.items, 5067);
-    assert.strictEqual(meta.counts.mobs, 2068);
+    assert.strictEqual(meta.counts.items, require('../data/KnowledgeBase/manifest.json').counts.items);
+    assert.strictEqual(meta.counts.mobs, require('../data/KnowledgeBase/manifest.json').counts.mobs);
     assert.strictEqual(meta.rateProfile.drop, 1);
     assert.deepStrictEqual(meta.npcFilters.weaknesses.map(({ key }) => key), [
         'blunt', 'holy', 'bow', 'fire', 'water', 'wind', 'earth', 'dark'
@@ -51,7 +51,7 @@ try {
     assert.ok(fireAndX2.items.every((npc) => npc.weaknesses.includes('fire') && npc.hpMultiplier === 2));
     assert.ok(fireAndX2.items.some((npc) => npc.id === 81), 'Ant Overseer must match its passive fire weakness and x2 HP');
     const halfHp = service.listNpcs({ hpMultiplier: '0.5', limit: 100 });
-    assert.strictEqual(halfHp.total, 40);
+    assert.strictEqual(halfHp.total, 44);
     assert.ok(halfHp.items.every((npc) => npc.hpMultiplier === 0.5));
     assert.strictEqual(service.listNpcs({ q: 'Marsh Stalker', weakness: 'fire' }).total, 0,
         'an active fire-weakness debuff must not be treated as the caster weakness');

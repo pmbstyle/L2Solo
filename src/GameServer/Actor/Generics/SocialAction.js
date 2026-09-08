@@ -7,7 +7,7 @@ function socialAction(session, actor, data) {
         return;
     }
 
-    if (actor.isDead() || actor.isBlocked() || actor.state.inMotion()) {
+    if (actor.fetchMounted?.() || actor.mounted || actor.isDead() || actor.isBlocked() || actor.state.inMotion()) {
         return;
     }
 

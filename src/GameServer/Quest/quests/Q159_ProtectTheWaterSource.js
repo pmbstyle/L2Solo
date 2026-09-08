@@ -44,16 +44,16 @@ module.exports = {
           )
         : p("Asterios", "Only elves of level 12 or higher.");
     if (c === 2) {
-      await q.takeItem(s, D, -1);
-      await q.takeItem(s, C1);
+      await q.takeItem(s.session, D, -1);
+      await q.takeItem(s.session, C1);
       await q.giveItem(s.session, C2, 1);
       await s.set("cond", 3);
       s.playSound("ItemSound.quest_middle");
       return p("Asterios", "The source is not clean yet.");
     }
     if (c === 4) {
-      await q.takeItem(s, C2);
-      await q.takeItem(s, D, -1);
+      await q.takeItem(s.session, C2);
+      await q.takeItem(s.session, D, -1);
       await q.rewardAdena(s.session, 18250);
       s.playSound("ItemSound.quest_finish");
       await s.exit(false);

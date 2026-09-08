@@ -4,6 +4,12 @@ const SkillModel = invoke('GameServer/Model/Skill');
 const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
 
 const PARTY_REVIVE_TIMEOUT_MS = 60000;
+const PARTY_REVIVE_APPROACH_DISTANCE = 1500;
+
+function withinReviveApproach(provider, target) {
+    return Math.hypot(provider.fetchLocX() - target.fetchLocX(), provider.fetchLocY() - target.fetchLocY()) <= PARTY_REVIVE_APPROACH_DISTANCE
+        && Math.abs(provider.fetchLocZ() - target.fetchLocZ()) <= 400;
+}
 const PARTY_DEATH_FRUSTRATION_WINDOW_MS = 10 * 60 * 1000;
 const PARTY_DEATH_WARNING_COUNT = 2;
 const RESURRECTION_SCROLL_SKILL_ID = 2014;
@@ -111,6 +117,19 @@ function playerCanResurrect(leaderSession) {
 
 function clearExpiredAttempt(leaderSession, dead, now) {
     const attempt = leaderSession?.partyRevivalAttempt;
+    if (!attempt) return;
+    const provider = partySessions(leaderSession).find(s => s.actor.fetchId() === attempt.providerId);
+    const target = dead.find(s => s.actor.fetchId() === attempt.targetId);
+    if (target && provider && !withinReviveApproach(provider.actor, target.actor)) {
+        if (provider.currentTargetId === attempt.targetId) {
+            provider.actor.automation?.abortAll?.(provider.actor);
+            provider.currentTargetId = undefined;
+            provider.actor.unselect?.();
+            provider.pendingPartyChatResult = undefined;
+        }
+        leaderSession.partyRevivalAttempt = null;
+        return;
+    }
     const targetStillDead = dead.some((memberSession) => (
         Number(memberSession.actor?.fetchId?.()) === Number(attempt?.targetId)
     ));
@@ -153,13 +172,17 @@ function tick(session, leaderSession, Generics) {
 
     // The leader is the party's anchor.  Restore them first even if another
     // companion happens to have a lower character id.
-    const targetSession = dead.sort((a, b) => (
+    const availableProviders = partySessions(leaderSession)
+        .filter(isAlive)
+        .filter(s => s !== leaderSession)
+        .filter(s => !invoke('GameServer/Bot/AI/ClanAllianceSupportAI').leaderFor(s));
+    const targetSession = dead.filter(target => availableProviders.some(provider => withinReviveApproach(provider.actor, target.actor))).sort((a, b) => (
         Number(b === leaderSession) - Number(a === leaderSession) ||
         Number(a.actor.fetchId()) - Number(b.actor.fetchId())
     ))[0];
-    const providers = partySessions(leaderSession)
-        .filter(isAlive)
-        .filter((memberSession) => memberSession !== leaderSession)
+    if (!targetSession) return { handled: false, dead };
+    const providers = availableProviders
+        .filter((memberSession) => withinReviveApproach(memberSession.actor, targetSession.actor))
         .filter((memberSession) => memberSession.actor !== session.actor || !session.actor.state?.fetchCasts?.());
     const skilled = providers
         .map((providerSession) => ({ session: providerSession, skill: resurrectionSkill(providerSession.actor) }))
@@ -204,6 +227,9 @@ function tick(session, leaderSession, Generics) {
 
 function shouldTownRespawn(leaderSession, deadSession, now = Date.now()) {
     if (!isCompanionOf(deadSession, leaderSession) || !leaderSession?.actor?.fetchIsOnline?.()) return true;
+    // A remote courier cannot be rescued by this group. A fight elsewhere
+    // must not pause its town recovery or send support across the map.
+    if (!partySessions(leaderSession).some(s => isAlive(s) && withinReviveApproach(s.actor, deadSession.actor))) return true;
 
     // A resurrection provider cannot safely cast while the party is still
     // fighting. Pause the actual wait budget instead of letting wall-clock
@@ -232,6 +258,7 @@ function shouldTownRespawn(leaderSession, deadSession, now = Date.now()) {
 }
 
 module.exports = {
+    PARTY_REVIVE_APPROACH_DISTANCE,
     PARTY_REVIVE_TIMEOUT_MS,
     PARTY_DEATH_FRUSTRATION_WINDOW_MS,
     PARTY_DEATH_WARNING_COUNT,

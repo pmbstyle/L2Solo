@@ -45,22 +45,22 @@ module.exports = {
           )
         : p("Harris", "Return at level 10.");
     if (id === A && c === 1) {
-      await q.takeItem(s, R1);
+      await q.takeItem(s.session, R1);
       await q.giveItem(s.session, R2, 1);
       await s.set("cond", 2);
       s.playSound("ItemSound.quest_middle");
       return p("Altran", "Bring five golem shards.");
     }
     if (id === A && c === 3) {
-      await q.takeItem(s, SHARD, -1);
+      await q.takeItem(s.session, SHARD, -1);
       await q.giveItem(s.session, BOX, 1);
       await s.set("cond", 4);
       s.playSound("ItemSound.quest_middle");
       return p("Altran", "Take this tool box to Harris.");
     }
     if (id === H && c === 4 && n(s, BOX)) {
-      await q.takeItem(s, R2);
-      await q.takeItem(s, BOX);
+      await q.takeItem(s.session, R2);
+      await q.takeItem(s.session, BOX);
       await q.giveItem(s.session, ARMOR, 1);
       await q.rewardExpSp(s.session, 5000, 0);
       s.playSound("ItemSound.quest_finish");

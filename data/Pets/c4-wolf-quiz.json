@@ -1,0 +1,374 @@
+{
+  "revision": "fdc7e33af5d69067b41a6ee7cc7c07fe7aa35975",
+  "questions": [
+    {
+      "id": 1,
+      "text": "<br>\nThe biological classification of the wolf is 'meat-eating mammal of a dog's family'.\n Then which animal among the following is \n<font color=\"LEVEL\">not </font> a 'meat-eating mammal from a dog's family'?<br>\n",
+      "answers": [
+        {
+          "text": "Raccoon Dog",
+          "correct": false
+        },
+        {
+          "text": "Jackal",
+          "correct": false
+        },
+        {
+          "text": "Fox",
+          "correct": false
+        },
+        {
+          "text": "Shepherd",
+          "correct": false
+        },
+        {
+          "text": "No answer.",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "text": "<br>\nHow far (km) can a wolf's smell reach?<br>\n",
+      "answers": [
+        {
+          "text": "1.4 km",
+          "correct": false
+        },
+        {
+          "text": "2.4 km",
+          "correct": true
+        },
+        {
+          "text": "3.4 km",
+          "correct": false
+        },
+        {
+          "text": "4.4 km",
+          "correct": false
+        },
+        {
+          "text": "No answer",
+          "correct": false
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "text": "<br>\nWhat should you do to make a pet grow faster?<br>\n",
+      "answers": [
+        {
+          "text": "Makes a pet hit a monster a lot.",
+          "correct": true
+        },
+        {
+          "text": "Makes a pet get a lot of items.",
+          "correct": false
+        },
+        {
+          "text": "Makes a pet attack later than its master.",
+          "correct": false
+        },
+        {
+          "text": "Lets pet do what it wants.",
+          "correct": false
+        },
+        {
+          "text": "No answer",
+          "correct": false
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "text": "<br>\nChoose the <font color=\"LEVEL\">wrong</font> \ndescription on the breeding of wolves.<br>\n",
+      "answers": [
+        {
+          "text": "Breeding season is January-February.",
+          "correct": false
+        },
+        {
+          "text": "Pregnancy is nine months.",
+          "correct": true
+        },
+        {
+          "text": "Babies are born in April-June.",
+          "correct": false
+        },
+        {
+          "text": "Has up to ten offspring at one time.",
+          "correct": false
+        },
+        {
+          "text": "No answer",
+          "correct": false
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "text": "<br>\nWhich one among the following does a wolf \n<font color=\"LEVEL\">not</font> eat?<br>\n",
+      "answers": [
+        {
+          "text": "Goat",
+          "correct": false
+        },
+        {
+          "text": "Meat of a dead animal",
+          "correct": false
+        },
+        {
+          "text": "Fruit of a Tree",
+          "correct": false
+        },
+        {
+          "text": "Wild Bird",
+          "correct": false
+        },
+        {
+          "text": "No answer",
+          "correct": true
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "text": "<br>\nWhat kind of wolf leads the rest when it comes to hunting in a pack?<br>\n",
+      "answers": [
+        {
+          "text": "Male",
+          "correct": true
+        },
+        {
+          "text": "Female",
+          "correct": false
+        },
+        {
+          "text": "A baby that was born last year",
+          "correct": false
+        },
+        {
+          "text": "A baby that was born two years ago",
+          "correct": false
+        },
+        {
+          "text": "No answer",
+          "correct": false
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "text": "<br>\nThere is no exact data on the life span of a wild wolf. Then how long does a wolf in captivity normally live?<br>\n",
+      "answers": [
+        {
+          "text": "3-6 years",
+          "correct": false
+        },
+        {
+          "text": "6-9 years",
+          "correct": false
+        },
+        {
+          "text": "9-12 years",
+          "correct": false
+        },
+        {
+          "text": "12-15 years",
+          "correct": true
+        },
+        {
+          "text": "No answer",
+          "correct": false
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "text": "<br>\nThe following are descriptions on the life of a wolf. \nChoose the <font color=\"LEVEL\">wrong </font> description among the choices.<br>\n",
+      "answers": [
+        {
+          "text": "Wolves gather and move in groups of 7-13 animals.",
+          "correct": false
+        },
+        {
+          "text": "Wolves can eat a whole calf in one sitting.",
+          "correct": false
+        },
+        {
+          "text": "If they have water, wolves can live for 5-6 days without eating anything.",
+          "correct": false
+        },
+        {
+          "text": "A pregnant wolf makes its home in a wide open place to have its babies.",
+          "correct": true
+        },
+        {
+          "text": "No answer",
+          "correct": false
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "text": "<br>\nThe following are descriptions about the wolf. \nChoose the <font color=\"LEVEL\">right one</font> \namong the choices.<br>\n",
+      "answers": [
+        {
+          "text": "A grown wolf is still not as heavy as a fully-grown male adult human.",
+          "correct": true
+        },
+        {
+          "text": "A wolf changes into a werewolf during a full-moon.",
+          "correct": false
+        },
+        {
+          "text": "The color of a wolf's fur is the same as the place where it lives.",
+          "correct": false
+        },
+        {
+          "text": "A wolf enjoys eating Dwarves.",
+          "correct": false
+        },
+        {
+          "text": "No answer",
+          "correct": false
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "text": "<br>\nThe following connections are made between the wolves \nin the Lineage world and their habitats. Which of the following is <font color=\"LEVEL\">not</font> connected properly?<br>\n",
+      "answers": [
+        {
+          "text": "Talking Island - Wolf",
+          "correct": false
+        },
+        {
+          "text": "Dark Elven Forest - Ashen Wolf",
+          "correct": false
+        },
+        {
+          "text": "Elven Forest - Gray Wolf",
+          "correct": false
+        },
+        {
+          "text": "Orc - Black Wolf",
+          "correct": true
+        },
+        {
+          "text": "No answer",
+          "correct": false
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "text": "<br>\nNormally, how would a wolf's tail be positioned?<br>\n",
+      "answers": [
+        {
+          "text": "It's tail is always pointing straight down.",
+          "correct": true
+        },
+        {
+          "text": "It's tail is always curled up.",
+          "correct": false
+        },
+        {
+          "text": "It's tail is always wagging back and forth.",
+          "correct": false
+        },
+        {
+          "text": "What are you talking about?! A wolf doesn't have a tail.",
+          "correct": false
+        },
+        {
+          "text": "No answer",
+          "correct": false
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "text": "<br>\nThe owner can use its pet for many different purposes. Which one of the following is <font color=\"LEVEL\">not</font> the purpose of a pet use?<br>\n",
+      "answers": [
+        {
+          "text": "Used for item transportation.",
+          "correct": false
+        },
+        {
+          "text": "Assists in attacks and makes it possible to hunt more easily.",
+          "correct": false
+        },
+        {
+          "text": "Makes to go to the village and buy items rather than sending on an errand.",
+          "correct": true
+        },
+        {
+          "text": "Also puts a pet up for sale if one doesn't have any money left.",
+          "correct": false
+        },
+        {
+          "text": "No answer",
+          "correct": false
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "text": "<br>\nWhat is the name of this animal which is in the wolf family and was thought to be the oldest and most primitive type?It is said that its body and skull were big and heavy,but its brains were so small that it is assumed that its intelligence weren't very high.<br>\n",
+      "answers": [
+        {
+          "text": "Dire Wolf",
+          "correct": true
+        },
+        {
+          "text": "Air Wolf",
+          "correct": false
+        },
+        {
+          "text": "Turek Wolf",
+          "correct": false
+        },
+        {
+          "text": "Kasha Wolf",
+          "correct": false
+        },
+        {
+          "text": "No answer",
+          "correct": false
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "text": "<br>\nThe pet shall disappear forever if you can't resurrect it within a certain amount of time. What is the maximum amount of time to resurrect a pet?<br>\n",
+      "answers": [
+        {
+          "text": "15 minute",
+          "correct": false
+        },
+        {
+          "text": "25 minutes",
+          "correct": false
+        },
+        {
+          "text": "20 minutes",
+          "correct": true
+        },
+        {
+          "text": "10 minutes",
+          "correct": false
+        },
+        {
+          "text": "No answer",
+          "correct": false
+        }
+      ]
+    }
+  ],
+  "tutorials": {
+    "7072": "So, you want to learn about the pets? Good, I will teach you everything.<br>\nFirst of all, I'll tell you about the wolves, since it is the first pet that you will breed. A wolf, is an animal whose sense of smell can reach an object as far as <font color=\"LEVEL\">2.4 km</font> away. Also when they hunt, they have a habit of forming a pack of 7-14 with a <font color=\"LEVEL\">male</font> leader in front.<br>\nConcerning their appearance, a fully grown wolf won't necessarily be heavier than a grown-up man. The difference from a dog, which is a tamed animal, is that wolves always have their tail dangling down.",
+    "7091": "We should talk about the wolf that you will be raising...<br>\nI must first explain their reproductive cycle. A wolf's fertility \nperiod is normally <font color=\"LEVEL\">1-2 months</font>, and the\n pregnancy lasts for approximately <font color=\"LEVEL\">60-62 days\n</font>. Normally, they will give birth to 3-6 cubs, but can produce\n up to 10 cubs at a time. They create a very safe home for their young\n ones. Places such as between rocks, under cliffs, and caves.<br>\nWolves are more omnivirous than assumed. A full grown wolf can easily\n devour a calf or goat whole. Wolves also eat the flesh of dead animals,\n wild pheasants, and even berries. They can go without food for 5-6 days,\n but cannot live long without water.",
+    "7256": "Pets can be very useful creatures.<br>\nIf you are unable to carry items due to space or weight restrictions, \nyou can transfer items to your pet and they will carry them for you. \nBear in mind that they cannot run errands.<br>\nIf your pet is killed it may be resurrected within \n<font color=\"LEVEL\">20 minutes</font>. \nIf it is not revived within the time limit, the pet will be gone forever.<br><br>Your pet shall be a wolf. You must learn more about them.<br>\nWolves are biologically classified as <font color=\"LEVEL\">canines</font>.\n Canines are extremely varied, and include dogs, raccoons, foxes, jackals, \nand even timberwolves. The lifespan of wolves in the wild is unknown, \nbut wolves in captivity can live from 12 to 15 years."
+  }
+}

@@ -246,7 +246,8 @@ function personaSnapshot(session) {
         primaryDrive: persona.primaryDrive,
         archetype: persona.archetype,
         traits: { ...persona.traits },
-        textCard: persona.textCard || ''
+        textCard: persona.textCard || '',
+        dialogueVoice: persona.dialogueVoice || ''
     };
 }
 

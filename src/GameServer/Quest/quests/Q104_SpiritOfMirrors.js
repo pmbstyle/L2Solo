@@ -58,7 +58,7 @@ module.exports = {
       return p("Quest", "Seek the spirits.");
     }
     if (id === G && W.every((z) => n(s, z))) {
-      for (const z of W) await q.takeItem(s, z);
+      for (const z of W) await q.takeItem(s.session, z);
       const mage = Boolean(a.isSpellcaster?.());
       const rewards = [
         [R, 1],
@@ -83,7 +83,7 @@ module.exports = {
       return;
     const i = Number(m.fetchSelfId()) - 5003;
     if (i < 0 || i > 2 || n(s, W[i])) return;
-    await Q().takeItem(s, O);
+    await Q().takeItem(s.session, O);
     await Q().giveItem(s.session, W[i], 1);
     if (W.every((z) => n(s, z))) {
       await s.set("cond", 3);

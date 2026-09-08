@@ -23,6 +23,7 @@ const DataCache = {
         const C4LateTownGatekeepers = invoke('GameServer/World/C4LateTownGatekeepers');
         const C4SevenSignsDungeonTeleports = invoke('GameServer/World/C4SevenSignsDungeonTeleports');
         DataCache.npcs            = applyNpcAiTypes([
+            ...require('../../data/Pets/c4-quest-npcs.json').npcs,
             ...validateModel(path + 'Npcs/npcs').filter((npc) => npc.selfId !== 135 && !c4LegacyMonsterIds.has(Number(npc.selfId))),
             ...c4LegacyMonsters,
             ...validateModel(path + 'Npcs/summons'),
@@ -102,9 +103,11 @@ const DataCache = {
             ...validateModel(path + 'Npcs/Spawns/c4_low_level_raid_bosses'),
             ...validateModel(path + 'Npcs/Spawns/c4_raid_bosses'),
             ...C4LateTownGatekeepers.spawns,
-            ...C4SevenSignsDungeonTeleports.spawns
+            ...C4SevenSignsDungeonTeleports.spawns,
+            ...require('../../data/Pets/c4-quest-npcs.json').spawns
         ];
         DataCache.npcRewards      = [
+            ...require('../../data/Pets/c4-quest-npcs.json').rewards,
             ...validateModel(path + 'Npcs/Rewards/rewards').filter((reward) => reward.selfId !== 135),
             ...validateModel(path + 'Npcs/Rewards/c4_swamp_of_screams'),
             ...validateModel(path + 'Npcs/Rewards/c4_garden_of_beasts'),

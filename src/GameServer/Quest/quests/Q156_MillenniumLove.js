@@ -24,13 +24,13 @@ module.exports = {
     if (!s.isStarted())
       return p("Lilith", '<a action="bypass -h quest 156 start">Accept.</a>');
     if (id === B && s.getInt("cond") === 1) {
-      await q.takeItem(s, A);
+      await q.takeItem(s.session, A);
       await q.giveItem(s.session, D, 1);
       await s.set("cond", 2);
       return p("Baenedes", "Return the diary.");
     }
     if (id === L && s.getInt("cond") === 2) {
-      await q.takeItem(s, D);
+      await q.takeItem(s.session, D);
       await q.giveItem(s.session, 5250, 1);
       await q.rewardExpSp(s.session, 3000, 0);
       s.playSound("ItemSound.quest_finish");

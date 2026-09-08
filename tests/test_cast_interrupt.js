@@ -190,10 +190,16 @@ try {
     assert.strictEqual(timers.filter((timer) => !timer.canceled).length, 1,
         'event-driven death cancellation must not add an HP polling timer');
 
+    // A courier may cast while a native weapon swing is still in flight.
+    // Cancelling the cast clears both timers, so both busy flags must end.
+    partyCaster.state.setHits(true);
+    partyAttack.queueTimer(() => partyCaster.state.setHits(false), 1000);
     npcDie({ dataSendToMeAndOthers() {} }, {}, dyingVictim);
     assert.strictEqual(dyingVictim.state.fetchDead(), true, 'the NPC death boundary must become authoritative first');
     assert.strictEqual(partyCaster.state.fetchCasts(), false,
         'an in-flight hot party cast must be cancelled when its NPC target dies');
+    assert.strictEqual(partyCaster.state.isBlocked(), false,
+        'target death must not leave the cancelled swing blocking movement to the next quest target');
     assert.strictEqual(HotPartyCastTracker.trackedCount(dyingVictim), 0,
         'death cancellation must release the target watcher immediately');
     assert(timers.every((timer) => timer.canceled),

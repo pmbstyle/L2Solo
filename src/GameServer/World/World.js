@@ -388,7 +388,7 @@ const World = {
             return PopulationService.requestActivation(state, 'remote_invite', {
                 playerLoc: actorLoc(actor),
                 forceNearPlayer: true,
-                interruptBackgroundActivity: options.forceFriend === true
+                interruptBackgroundActivity: availability.clanmate || options.forceFriend === true
             }).then((result) => {
                 if (!result.ok) {
                     PartyCompanionService.releaseCapacity(session, capacityReservation);

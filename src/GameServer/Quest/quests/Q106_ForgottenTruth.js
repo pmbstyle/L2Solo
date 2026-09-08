@@ -53,21 +53,21 @@ module.exports = {
           )
         : p("Thifiell", "Only dark elves of level 10 or higher.");
     if (id === K && c === 1) {
-      await q.takeItem(s, X);
+      await q.takeItem(s.session, X);
       await q.giveItem(s.session, Y, 1);
       await s.set("cond", 2);
       s.playSound("ItemSound.quest_middle");
       return p("Kartia", "Find the scroll and tablet.");
     }
     if (id === K && c === 3) {
-      for (const z of [Y, SC, CL]) await q.takeItem(s, z);
+      for (const z of [Y, SC, CL]) await q.takeItem(s.session, z);
       await q.giveItem(s.session, TR, 1);
       await s.set("cond", 4);
       s.playSound("ItemSound.quest_middle");
       return p("Kartia", "Return to Thifiell.");
     }
     if (id === T && c === 4) {
-      await q.takeItem(s, TR);
+      await q.takeItem(s.session, TR);
       for (const [z, c] of [
         [D, 1],
         [HP, 100],

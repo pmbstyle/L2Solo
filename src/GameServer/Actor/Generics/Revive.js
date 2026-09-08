@@ -2,6 +2,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 
 function finishRevive(session, actor) {
     actor.state.setDead(false);
+    actor.refreshVitalsRegeneration?.();
     // BotAI uses this marker to run the one-time death lifecycle.  A native
     // in-place resurrection must release it so a later death is counted and
     // announced instead of looking like the same corpse forever.

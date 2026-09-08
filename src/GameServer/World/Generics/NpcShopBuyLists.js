@@ -565,6 +565,7 @@ const GIRAN_MAGIC_BOOK_BASE = [
 ];
 
 const ADEN_PET_SUPPLY_BASE = [
+    [7582, 100],
     [2505, 14000],
     [3439, 34000],
     [3902, 61000],

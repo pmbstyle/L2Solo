@@ -6,6 +6,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 function refreshLoadedSkillState(session, actor, Generics, response = ServerResponse) {
     Generics.calculateStats(session, actor);
     session.dataSendToMe?.(response.skillsList(actor.skillset.fetchSkills()));
+    session.dataSendToMe?.(ServerResponse.exStorageMaxCount(actor));
     session.dataSendToMe?.(response.userInfo(actor));
     session.dataSendToMe?.(response.abnormalStatusUpdate.fromActor(actor));
     session.dataSendToMe?.(response.shortBuffStatusUpdate.fromActor(actor));

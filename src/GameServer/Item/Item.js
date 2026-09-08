@@ -9,6 +9,11 @@ class Item extends ItemModel {
         this.setId(id);
     }
 
+    fetchPetLocked() {
+        const data = this.fetchPetData();
+        return this.petInUse === true || data?.dead === true || data?.expired === true;
+    }
+
     // Set (Weapon & Armor)
 
     setEquipped(data) {

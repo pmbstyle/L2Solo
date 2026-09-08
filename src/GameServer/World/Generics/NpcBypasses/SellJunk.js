@@ -2,6 +2,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const Database       = invoke('Database');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
+const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 
 module.exports = function(session) {
     const backpack = session.actor.backpack;
@@ -10,8 +11,7 @@ module.exports = function(session) {
         && session.shoppingWarehouseDone !== true;
 
     const sellableItems = ItemDisposition.unreservedActorItems(session.coldLifeState, items)
-        .filter(item => !item.fetchEquipped()
-            && item.fetchSelfId() !== 57
+        .filter(item => NpcSellRules.canSell(item)
             && !ShotStock.SHOT_IDS.includes(Number(item.fetchSelfId()))
             && (!protectPendingWarehouseItems || !ItemDisposition.isWarehouseCandidate(item)));
 

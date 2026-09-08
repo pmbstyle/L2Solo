@@ -22,6 +22,7 @@ function die(session, actor) {
         return;
     }
 
+    if ((actor.fetchMounted?.() || actor.mounted) && actor.pet?.petData) invoke('GameServer/Pets/PetRuntime').die(actor.pet);
     actor.destructor();
     ChargeLifecycle.clear(session, actor);
     clearEffectsOnDeath(session, actor);
@@ -32,6 +33,7 @@ function die(session, actor) {
     actor.state.destructor();
     actor.state.setDead(true);
     session.dataSendToMeAndOthers(ServerResponse.die(actor.fetchId()), actor);
+    invoke('GameServer/Clan/ClanAllianceService').onDeath(actor.session || session);
     const ArenaDuelService = invoke('GameServer/World/ArenaDuelService');
     // ReceivedHit is invoked with the attacker's session, while the actor
     // being killed owns the authoritative victim session. Arena death must

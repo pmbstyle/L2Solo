@@ -162,6 +162,25 @@ function amountOf(rows, selfId) {
     assert.strictEqual(restored[0].title, 'Restart sale');
     assert.strictEqual(restored[0].lines[0].count, 1);
     await Database.closeAfkTradeShop(ownerId);
+
+    const expandedLines = [];
+    for (let index = 0; index < 6; index += 1) {
+        const selfId = 3000 + index;
+        const item = await Database.setItem(ownerId, { selfId, name: 'Expanded stock', amount: 2 });
+        expandedLines.push({ objectId: Number(item.insertId), selfId, count: 2, price: 1, stackable: true });
+    }
+    await assert.rejects(Database.createAfkTradeShop(ownerId, { storeType: 1, lines: expandedLines }), /at most 3/);
+    assert.strictEqual((await Database.fetchAfkTradeShops(ownerId)).length, 0);
+    assert.strictEqual(amountOf(await inventory(ownerId), 3005), 2, 'rejected shop keeps its stock');
+    await Database.setSkill({ selfId: 1370, name: 'Expand Trade', passive: true, level: 3 }, ownerId);
+    await Database.createAfkTradeShop(ownerId, { storeType: 1, lines: expandedLines });
+    await Database.close();
+    Database.init();
+    const expanded = (await Database.fetchAfkTradeShops(ownerId))[0];
+    assert.strictEqual(expanded.lines.length, 6, 'all six slots survive SQLite reopen');
+    assert.deepStrictEqual(expanded.lines.map(line => line.selfId), expandedLines.map(line => line.selfId));
+    await Database.closeAfkTradeShop(ownerId);
+    assert.strictEqual(amountOf(await inventory(ownerId), 3005), 2, 'sixth slot stock returns on closure');
     await Database.close();
     clean();
     console.log('AFK trade database checks passed');

@@ -23,6 +23,7 @@ const quests = [
   require("./quests/Q036_MakeASewingKit"),
   require("./quests/Q042_HelpTheUncle"),
   require("./quests/Q043_HelpTheSister"),
+  require("./quests/Q044_HelpTheSon"),
   require("./quests/Q045_ToTalkingIsland"),
   require("./quests/Q046_OnceMoreInTheArmsOfTheMotherTree"),
   require("./quests/Q047_IntoTheDarkForest"),
@@ -74,8 +75,17 @@ const quests = [
   require("./quests/Q416_PathToOrcShaman"),
   require("./quests/Q417_PathToScavenger"),
   require("./quests/Q418_PathToArtisan"),
+  require("./quests/Q419_GetAPet"),
+  require("./quests/Q420_LittleWing"),
+  require("./quests/Q421_LittleWingsBigAdventure"),
+  require("./quests/Q501_ProofOfClanAlliance"),
 ];
 const byId = new Map(quests.map((quest) => [quest.id, quest]));
+const attackQuests = new Map();
+for (const quest of quests) for (const npcId of quest.attackNpcs || []) {
+  if (!attackQuests.has(npcId)) attackQuests.set(npcId, []);
+  attackQuests.get(npcId).push(quest);
+}
 
 function states(session) {
   if (!session.questStates) session.questStates = new Map();
@@ -101,6 +111,7 @@ async function ensureLoaded(session) {
       states(session).set(quest.id, new QuestState(session, quest, row));
   });
   session.questStatesLoaded = true;
+  if (session.actor.fetchClanId?.()) await invoke("GameServer/Clan/ClanAllianceService").resume(session);
 }
 
 function stateFor(session, quest) {
@@ -245,9 +256,11 @@ async function giveItem(session, selfId, amount) {
     );
     existing.setAmount(total);
   } else {
-    const data = await new Promise((resolve) =>
-      DataCache.fetchItemFromSelfId(selfId, resolve),
-    );
+    // Cache lookup is synchronous and does not call back for unknown IDs.
+    // Reject instead of leaving the entire session's quest queue pending.
+    let data;
+    DataCache.fetchItemFromSelfId(selfId, item => { data = item; });
+    if (!data) throw new Error(`Missing quest item template ${selfId}`);
     const result = await Database.setItem(session.actor.fetchId(), {
       selfId,
       name: data.template.name,
@@ -259,6 +272,18 @@ async function giveItem(session, selfId, amount) {
   }
   session.dataSendToMe(ServerResponse.itemsList(backpack.fetchItems()));
   transmitItemReceived(session, selfId, amount);
+}
+
+async function completeWolfQuest(state) {
+  const session = state.session;
+  const backpack = session.actor.backpack;
+  const result = await Database.completeWolfQuest(session.actor.fetchId());
+  backpack.items = backpack.items.filter(item => item.fetchId() !== result.removedItemId);
+  backpack.insertItem(result.id, 2375, { amount: 1 });
+  state.state = 'created';
+  state.variables = {};
+  session.dataSendToMe(ServerResponse.itemsList(backpack.fetchItems()));
+  transmitItemReceived(session, 2375, 1);
 }
 
 async function takeItem(session, selfId, amount = 1) {
@@ -302,11 +327,9 @@ function rewardAdena(session, amount) {
 }
 
 function questDropAmount(amount, needed, current) {
-  const scaled = Math.floor(
-    Math.max(0, Number(amount) || 0) * questRates().questDrop,
-  );
-  if (scaled <= 0 || current >= needed) return 0;
-  return Math.min(scaled, needed - current);
+  const baseAmount = Math.floor(Math.max(0, Number(amount) || 0));
+  if (baseAmount <= 0 || current >= needed) return 0;
+  return Math.min(baseAmount, needed - current);
 }
 
 function waypointKey(locX, locY, locZ) {
@@ -385,6 +408,7 @@ function rewardExpSp(session, exp, sp) {
 async function onKill(session, npc) {
   return mutate(session, async () => {
     await ensureLoaded(session);
+    await invoke("GameServer/Clan/ClanAllianceService").onKill(session, npc);
     const ownerId = Number(npc.questSpawn?.ownerId) || 0;
     if (ownerId && ownerId !== Number(session.actor.fetchId())) return;
     const spawnedQuestId = Number(npc.questSpawn?.questId) || 0;
@@ -400,6 +424,19 @@ async function onKill(session, npc) {
   });
 }
 
+function onAttack(session, npc, source, damage) {
+  const handlers = attackQuests.get(npc.fetchSelfId?.());
+  if (!handlers || !session?.actor) return Promise.resolve();
+  return mutate(session, async () => {
+    await ensureLoaded(session);
+    for (const quest of handlers) {
+      const state = states(session).get(quest.id);
+      if (state?.isStarted()) await quest.onAttack(state, npc, source, damage);
+    }
+    syncActiveQuests(session);
+  });
+}
+
 function active(session) {
   return [...states(session).values()]
     .filter((state) => state.isStarted())
@@ -411,6 +448,7 @@ function questRates() {
 }
 
 module.exports = {
+  completeWolfQuest,
   ensureLoaded,
   onTalk,
   onEvent,
@@ -427,6 +465,7 @@ module.exports = {
   rewardAdena,
   rewardExpSp,
   questDropAmount,
+  onAttack,
   addRadar,
   removeRadar,
   clearRadars,

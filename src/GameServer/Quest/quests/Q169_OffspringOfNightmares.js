@@ -36,9 +36,9 @@ module.exports = {
       return p("Vlasty", '<a action="bypass -h quest 169 start">Accept.</a>');
     if (s.getInt("cond") !== 2)
       return p("Vlasty", "The perfect skull is still missing.");
-    await q.takeItem(s, P, -1);
+    await q.takeItem(s.session, P, -1);
     const cracked = n(s, C);
-    await q.takeItem(s, C, -1);
+    await q.takeItem(s.session, C, -1);
     await q.giveItem(s.session, G, 1);
     await q.rewardAdena(s.session, 17000 + cracked * 20);
     s.playSound("ItemSound.quest_finish");

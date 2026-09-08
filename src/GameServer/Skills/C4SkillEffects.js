@@ -78,7 +78,7 @@ function execute(session, actor, target, skill, context = {}) {
     }
 
     if (semantic.skillType === C4SkillRules.RESURRECT) {
-        result.resurrected = applyResurrection(session, target);
+        result.resurrected = applyResurrection(session, target, Number(skill.fetchPower?.()) || 0);
         return finish();
     }
 
@@ -568,7 +568,8 @@ function applyGetPlayer(actor, target, rng = Math.random, updatePosition = null)
     return true;
 }
 
-function applyResurrection(session, target) {
+function applyResurrection(session, target, recovery = 0) {
+    if (target?.fetchIsPet?.()) return invoke('GameServer/Npc/SummonControl').revivePet(session, target, recovery);
     if (!target?.state?.fetchDead?.()) return false;
     const targetSession = target.session;
     if (!targetSession) return false;

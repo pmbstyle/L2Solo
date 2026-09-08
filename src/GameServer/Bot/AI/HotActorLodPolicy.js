@@ -95,6 +95,7 @@ function promote(session, reason = 'player_interaction', now = Date.now()) {
 function playerContext(session, realPlayers, now) {
     const bot = session?.actor;
     if (!bot) return null;
+    if (session.clanAllianceQuest) return 'player_clan_quest';
     if (session.partyCompanion === true && session.followPlayerSession) return 'player_party';
     if (session.chatArrivalActive || session.inConversation || session.activeTrade || session.pendingPartyInvite) return 'player_interaction';
 

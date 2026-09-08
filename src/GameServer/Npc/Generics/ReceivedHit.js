@@ -1,4 +1,8 @@
 function receivedHit(session, actor, npc, hit, options = {}) {
+    if (npc.state?.fetchDead?.()) return;
+    invoke('GameServer/Pets/PetRuntime').recordDamage(npc, actor, hit);
+    const questSession = actor.ownerSession || session;
+    invoke('GameServer/Quest/QuestService').onAttack(questSession, npc, actor, hit).catch(error => utils.infoWarn('Quest', 'pet attack: %s', error.message));
     const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
     const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
     const SocialAggro = invoke('GameServer/Npc/SocialAggro');

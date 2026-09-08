@@ -320,10 +320,9 @@ async function deliverNotifications(session) {
     if (!ownerId || isBotSession(session)) return 0;
     const events = await Database.fetchAfkTradeNotifications(ownerId, 50);
     if (!events.length) return 0;
-    events.forEach((event) => session.dataSendToMe(ServerResponse.speak(session.actor, {
-        kind: 8,
-        text: tradeMessage(event)
-    })));
+    events.forEach((event) => commandMessage(session, tradeMessage(event)));
+    // A login backlog gets one sound, not one overlapping sound per trade.
+    session.dataSendToMe(ServerResponse.playSound('ItemSound.quest_itemget'));
     await Database.markAfkTradeNotificationsDelivered(ownerId, events.map((event) => event.id));
     return events.length;
 }
@@ -340,7 +339,8 @@ async function notifyCommitted(result, kind) {
         amount: result.amount,
         totalPrice: result.totalPrice
     };
-    owner.dataSendToMe(ServerResponse.speak(owner.actor, { kind: 8, text: tradeMessage(event) }));
+    commandMessage(owner, tradeMessage(event));
+    owner.dataSendToMe(ServerResponse.playSound('ItemSound.quest_itemget'));
     await Database.markAfkTradeNotificationsDelivered(ownerId, [result.eventId]);
 }
 
@@ -391,7 +391,7 @@ async function finalizeTrade(result, kind, counterpartyId, previousState = null)
 }
 
 function commandMessage(session, text) {
-    session?.dataSendToMe?.(ServerResponse.speak(session.actor, { kind: 8, text }));
+    session?.dataSendToMe?.(ServerResponse.systemMessage.text(text));
 }
 
 async function stop(session) {

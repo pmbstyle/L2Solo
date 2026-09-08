@@ -42,14 +42,14 @@ module.exports = {
     }[e];
     if (x && s.getInt("cond") === x[0]) {
       for (const z of e === "note" ? [DIR, T, B] : [x[2]])
-        if (!(await q.takeItem(s, z))) return null;
+        if (!(await q.takeItem(s.session, z))) return null;
       await q.giveItem(s.session, x[3], 1);
       await s.set("cond", x[1]);
       s.playSound("ItemSound.quest_middle");
       return p("Quest", "Continue the task.");
     }
     if (e === "reward" && s.getInt("cond") === 5) {
-      if (!(await q.takeItem(s, H))) return null;
+      if (!(await q.takeItem(s.session, H))) return null;
       const mage = Boolean(a.isSpellcaster?.());
       const rewards = [[S, 1], [HP, 100], ...E.map((id) => [id, 10])];
       if (a.isNewbie?.()) rewards.push([mage ? SP : SS, mage ? 3000 : 7000]);

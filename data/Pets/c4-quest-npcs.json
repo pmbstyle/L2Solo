@@ -1,0 +1,2955 @@
+{
+  "revision": "fdc7e33af5d69067b41a6ee7cc7c07fe7aa35975",
+  "npcs": [
+    {
+      "selfId": 919,
+      "template": {
+        "kind": "Monster",
+        "name": "Maille Lizardman",
+        "title": "",
+        "level": 20,
+        "hostile": false
+      },
+      "traits": {
+        "race": "humanoid",
+        "undead": false
+      },
+      "base": {
+        "str": 40,
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "wit": 20,
+        "men": 10
+      },
+      "stats": {
+        "pAtk": 57,
+        "pAtkRnd": 30,
+        "pDef": 94,
+        "mAtk": 23,
+        "mDef": 76,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "atkRadius": 40,
+        "accur": 4.75
+      },
+      "speed": {
+        "walk": 47,
+        "run": 143
+      },
+      "vitals": {
+        "maxHp": 541,
+        "maxMp": 213,
+        "revHp": 1.98,
+        "revMp": 1.21,
+        "corpseTime": 7000
+      },
+      "collision": {
+        "radius": 10,
+        "size": 23
+      },
+      "equipment": {
+        "weapon": 291,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "lizardman_clan",
+        "helpRadius": 300
+      },
+      "rewards": {
+        "exp": 1.6025,
+        "sp": 28
+      }
+    },
+    {
+      "selfId": 920,
+      "template": {
+        "kind": "Monster",
+        "name": "Maille Lizardman Scout",
+        "title": "",
+        "level": 22,
+        "hostile": false
+      },
+      "traits": {
+        "race": "humanoid",
+        "undead": false
+      },
+      "base": {
+        "str": 40,
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "wit": 20,
+        "men": 10
+      },
+      "stats": {
+        "pAtk": 153,
+        "pAtkRnd": 30,
+        "pDef": 102,
+        "mAtk": 28,
+        "mDef": 83,
+        "atkSpd": 249,
+        "castSpd": 227,
+        "atkRadius": 500,
+        "accur": 4.75
+      },
+      "speed": {
+        "walk": 47,
+        "run": 143
+      },
+      "vitals": {
+        "maxHp": 611,
+        "maxMp": 242,
+        "revHp": 2.77,
+        "revMp": 1.53,
+        "corpseTime": 7000
+      },
+      "collision": {
+        "radius": 10,
+        "size": 22
+      },
+      "equipment": {
+        "weapon": 2507,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "lizardman_clan",
+        "helpRadius": 300
+      },
+      "rewards": {
+        "exp": 2.4524793388429753,
+        "sp": 56
+      }
+    },
+    {
+      "selfId": 921,
+      "template": {
+        "kind": "Monster",
+        "name": "Maille Lizardman Guard",
+        "title": "",
+        "level": 24,
+        "hostile": true
+      },
+      "traits": {
+        "race": "humanoid",
+        "undead": false
+      },
+      "base": {
+        "str": 40,
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "wit": 20,
+        "men": 10
+      },
+      "stats": {
+        "pAtk": 81,
+        "pAtkRnd": 30,
+        "pDef": 111,
+        "mAtk": 34,
+        "mDef": 90,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "atkRadius": 40,
+        "accur": 4.75
+      },
+      "speed": {
+        "walk": 47,
+        "run": 143
+      },
+      "vitals": {
+        "maxHp": 687,
+        "maxMp": 272,
+        "revHp": 2.77,
+        "revMp": 1.53,
+        "corpseTime": 7000
+      },
+      "collision": {
+        "radius": 10,
+        "size": 23
+      },
+      "equipment": {
+        "weapon": 291,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "lizardman_clan",
+        "helpRadius": 300
+      },
+      "rewards": {
+        "exp": 1.4895833333333333,
+        "sp": 42
+      }
+    },
+    {
+      "selfId": 5185,
+      "template": {
+        "kind": "Monster",
+        "name": "Fairy Tree of Wind",
+        "title": "Quest Monster",
+        "level": 55,
+        "hostile": false
+      },
+      "traits": {
+        "race": "plant",
+        "undead": false
+      },
+      "base": {
+        "str": 40,
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "wit": 20,
+        "men": 10
+      },
+      "stats": {
+        "pAtk": 1,
+        "pAtkRnd": 30,
+        "pDef": 273,
+        "mAtk": 360,
+        "mDef": 261,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "atkRadius": 40,
+        "accur": 4.75
+      },
+      "speed": {
+        "walk": 0,
+        "run": 0
+      },
+      "vitals": {
+        "maxHp": 2643,
+        "maxMp": 987,
+        "revHp": 10.27,
+        "revMp": 2.45,
+        "corpseTime": 7000
+      },
+      "collision": {
+        "radius": 35,
+        "size": 90
+      },
+      "equipment": {
+        "weapon": 0,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "q421_tree_clan",
+        "helpRadius": 100
+      },
+      "rewards": {
+        "exp": 0,
+        "sp": 0
+      }
+    },
+    {
+      "selfId": 5186,
+      "template": {
+        "kind": "Monster",
+        "name": "Fairy Tree of Star",
+        "title": "Quest Monster",
+        "level": 55,
+        "hostile": false
+      },
+      "traits": {
+        "race": "plant",
+        "undead": false
+      },
+      "base": {
+        "str": 40,
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "wit": 20,
+        "men": 10
+      },
+      "stats": {
+        "pAtk": 1,
+        "pAtkRnd": 30,
+        "pDef": 389,
+        "mAtk": 360,
+        "mDef": 261,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "atkRadius": 40,
+        "accur": 4.75
+      },
+      "speed": {
+        "walk": 0,
+        "run": 0
+      },
+      "vitals": {
+        "maxHp": 2643,
+        "maxMp": 987,
+        "revHp": 10.27,
+        "revMp": 2.45,
+        "corpseTime": 7000
+      },
+      "collision": {
+        "radius": 35,
+        "size": 90
+      },
+      "equipment": {
+        "weapon": 0,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "q421_tree_clan",
+        "helpRadius": 100
+      },
+      "rewards": {
+        "exp": 0,
+        "sp": 0
+      }
+    },
+    {
+      "selfId": 5187,
+      "template": {
+        "kind": "Monster",
+        "name": "Fairy Tree of Twilight",
+        "title": "Quest Monster",
+        "level": 55,
+        "hostile": false
+      },
+      "traits": {
+        "race": "plant",
+        "undead": false
+      },
+      "base": {
+        "str": 40,
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "wit": 20,
+        "men": 10
+      },
+      "stats": {
+        "pAtk": 1,
+        "pAtkRnd": 30,
+        "pDef": 292,
+        "mAtk": 360,
+        "mDef": 261,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "atkRadius": 40,
+        "accur": 4.75
+      },
+      "speed": {
+        "walk": 0,
+        "run": 0
+      },
+      "vitals": {
+        "maxHp": 2643,
+        "maxMp": 987,
+        "revHp": 10.27,
+        "revMp": 2.45,
+        "corpseTime": 7000
+      },
+      "collision": {
+        "radius": 35,
+        "size": 90
+      },
+      "equipment": {
+        "weapon": 0,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "q421_tree_clan",
+        "helpRadius": 100
+      },
+      "rewards": {
+        "exp": 0,
+        "sp": 0
+      }
+    },
+    {
+      "selfId": 5188,
+      "template": {
+        "kind": "Monster",
+        "name": "Fairy Tree of Abyss",
+        "title": "Quest Monster",
+        "level": 55,
+        "hostile": false
+      },
+      "traits": {
+        "race": "plant",
+        "undead": false
+      },
+      "base": {
+        "str": 40,
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "wit": 20,
+        "men": 10
+      },
+      "stats": {
+        "pAtk": 1,
+        "pAtkRnd": 30,
+        "pDef": 322,
+        "mAtk": 360,
+        "mDef": 261,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "atkRadius": 40,
+        "accur": 4.75
+      },
+      "speed": {
+        "walk": 0,
+        "run": 0
+      },
+      "vitals": {
+        "maxHp": 2643,
+        "maxMp": 987,
+        "revHp": 10.27,
+        "revMp": 2.45,
+        "corpseTime": 7000
+      },
+      "collision": {
+        "radius": 35,
+        "size": 90
+      },
+      "equipment": {
+        "weapon": 0,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "q421_tree_clan",
+        "helpRadius": 100
+      },
+      "rewards": {
+        "exp": 0,
+        "sp": 0
+      }
+    },
+    {
+      "selfId": 5189,
+      "template": {
+        "kind": "Monster",
+        "name": "Soul of Tree Guardian",
+        "title": "Quest Monster",
+        "level": 50,
+        "hostile": true
+      },
+      "traits": {
+        "race": "undead",
+        "undead": true
+      },
+      "base": {
+        "str": 40,
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "wit": 20,
+        "men": 10
+      },
+      "stats": {
+        "pAtk": 509,
+        "pAtkRnd": 30,
+        "pDef": 236,
+        "mAtk": 264,
+        "mDef": 226,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "atkRadius": 40,
+        "accur": 4.75
+      },
+      "speed": {
+        "walk": 88,
+        "run": 154
+      },
+      "vitals": {
+        "maxHp": 2245,
+        "maxMp": 830,
+        "revHp": 4.35,
+        "revMp": 2.14,
+        "corpseTime": 7000
+      },
+      "collision": {
+        "radius": 7,
+        "size": 21
+      },
+      "equipment": {
+        "weapon": 0,
+        "shield": 0,
+        "reuseTime": 0
+      },
+      "clan": {
+        "clanName": "q421_tree_clan",
+        "helpRadius": 100
+      },
+      "rewards": {
+        "exp": 0,
+        "sp": 0
+      }
+    }
+  ],
+  "skills": [
+    {
+      "npcId": 919,
+      "skillId": 4295,
+      "level": 1
+    },
+    {
+      "npcId": 919,
+      "skillId": 4311,
+      "level": 1
+    },
+    {
+      "npcId": 920,
+      "skillId": 4295,
+      "level": 1
+    },
+    {
+      "npcId": 920,
+      "skillId": 4311,
+      "level": 1
+    },
+    {
+      "npcId": 920,
+      "skillId": 4124,
+      "level": 2
+    },
+    {
+      "npcId": 921,
+      "skillId": 4295,
+      "level": 1
+    },
+    {
+      "npcId": 921,
+      "skillId": 4311,
+      "level": 1
+    },
+    {
+      "npcId": 921,
+      "skillId": 4071,
+      "level": 3
+    },
+    {
+      "npcId": 5185,
+      "skillId": 4294,
+      "level": 1
+    },
+    {
+      "npcId": 5185,
+      "skillId": 4071,
+      "level": 3
+    },
+    {
+      "npcId": 5186,
+      "skillId": 4294,
+      "level": 1
+    },
+    {
+      "npcId": 5186,
+      "skillId": 4071,
+      "level": 3
+    },
+    {
+      "npcId": 5187,
+      "skillId": 4294,
+      "level": 1
+    },
+    {
+      "npcId": 5187,
+      "skillId": 4071,
+      "level": 3
+    },
+    {
+      "npcId": 5188,
+      "skillId": 4294,
+      "level": 1
+    },
+    {
+      "npcId": 5188,
+      "skillId": 4071,
+      "level": 3
+    },
+    {
+      "npcId": 5189,
+      "skillId": 4290,
+      "level": 1
+    },
+    {
+      "npcId": 5189,
+      "skillId": 4311,
+      "level": 1
+    },
+    {
+      "npcId": 5189,
+      "skillId": 4275,
+      "level": 3
+    },
+    {
+      "npcId": 5189,
+      "skillId": 4278,
+      "level": 1
+    }
+  ],
+  "spawns": [
+    {
+      "selfId": "c4_pet_quest_npcs",
+      "bounds": [],
+      "spawns": [
+        {
+          "selfId": 5185,
+          "name": "Fairy Tree of Wind",
+          "coords": [
+            {
+              "locX": 113356,
+              "locY": 93848,
+              "locZ": -2080,
+              "head": 28672
+            }
+          ],
+          "total": 1,
+          "respawn": 60,
+          "bias": 0
+        },
+        {
+          "selfId": 5186,
+          "name": "Fairy Tree of Star",
+          "coords": [
+            {
+              "locX": 117733,
+              "locY": 94108,
+              "locZ": -2064,
+              "head": 57344
+            }
+          ],
+          "total": 1,
+          "respawn": 60,
+          "bias": 0
+        },
+        {
+          "selfId": 5187,
+          "name": "Fairy Tree of Twilight",
+          "coords": [
+            {
+              "locX": 127714,
+              "locY": 90495,
+              "locZ": -2088,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 60,
+          "bias": 0
+        },
+        {
+          "selfId": 5188,
+          "name": "Fairy Tree of Abyss",
+          "coords": [
+            {
+              "locX": 106671,
+              "locY": 93905,
+              "locZ": -2064,
+              "head": 49152
+            }
+          ],
+          "total": 1,
+          "respawn": 60,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -29208,
+              "locY": 115892,
+              "locZ": -3600,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -29611,
+              "locY": 116248,
+              "locZ": -3520,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -25934,
+              "locY": 117651,
+              "locZ": -3720,
+              "head": 19804
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -27597,
+              "locY": 117672,
+              "locZ": -3720,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -27196,
+              "locY": 116960,
+              "locZ": -3720,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -29913,
+              "locY": 116426,
+              "locZ": -3472,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -30115,
+              "locY": 116782,
+              "locZ": -3440,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -28705,
+              "locY": 116070,
+              "locZ": -3672,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -31322,
+              "locY": 116782,
+              "locZ": -3828,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -28302,
+              "locY": 118562,
+              "locZ": -3720,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -29309,
+              "locY": 116070,
+              "locZ": -3592,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -26895,
+              "locY": 116782,
+              "locZ": -3712,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -28304,
+              "locY": 116426,
+              "locZ": -3712,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -32150,
+              "locY": 116279,
+              "locZ": -2720,
+              "head": 10780
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -29764,
+              "locY": 118902,
+              "locZ": -3584,
+              "head": 31244
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -30510,
+              "locY": 123772,
+              "locZ": -3408,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -29805,
+              "locY": 123238,
+              "locZ": -3600,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -27821,
+              "locY": 123300,
+              "locZ": -3608,
+              "head": 54852
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -28603,
+              "locY": 125356,
+              "locZ": -3400,
+              "head": 62621
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -22750,
+              "locY": 118068,
+              "locZ": -3896,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -22597,
+              "locY": 118882,
+              "locZ": -3680,
+              "head": 55860
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -24366,
+              "locY": 122255,
+              "locZ": -3680,
+              "head": 39103
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -22140,
+              "locY": 123387,
+              "locZ": -3552,
+              "head": 1720
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -21540,
+              "locY": 120204,
+              "locZ": -3488,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -18799,
+              "locY": 121020,
+              "locZ": -3240,
+              "head": 8579
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -23071,
+              "locY": 122420,
+              "locZ": -3624,
+              "head": 14355
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -22649,
+              "locY": 119314,
+              "locZ": -3600,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -21977,
+              "locY": 121805,
+              "locZ": -3528,
+              "head": 31667
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -23057,
+              "locY": 122760,
+              "locZ": -3624,
+              "head": 4409
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -25894,
+              "locY": 124809,
+              "locZ": -3432,
+              "head": 31080
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -20108,
+              "locY": 122371,
+              "locZ": -3336,
+              "head": 5340
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -25130,
+              "locY": 117834,
+              "locZ": -3704,
+              "head": 31386
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 919,
+          "name": "Maille Lizardman",
+          "coords": [
+            {
+              "locX": -21339,
+              "locY": 119848,
+              "locZ": -3568,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -26147,
+              "locY": 111585,
+              "locZ": -3688,
+              "head": 59432
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -27248,
+              "locY": 113220,
+              "locZ": -3536,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -27248,
+              "locY": 113932,
+              "locZ": -3520,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -26443,
+              "locY": 112864,
+              "locZ": -3472,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -26497,
+              "locY": 114741,
+              "locZ": -3560,
+              "head": 13732
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -30719,
+              "locY": 117138,
+              "locZ": -3828,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -25046,
+              "locY": 116903,
+              "locZ": -3704,
+              "head": 7623
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -29208,
+              "locY": 117316,
+              "locZ": -3664,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -27359,
+              "locY": 118363,
+              "locZ": -3720,
+              "head": 19083
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -29108,
+              "locY": 116782,
+              "locZ": -3656,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -27999,
+              "locY": 119096,
+              "locZ": -3720,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -26992,
+              "locY": 118384,
+              "locZ": -3720,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -30215,
+              "locY": 116960,
+              "locZ": -3408,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -27699,
+              "locY": 116782,
+              "locZ": -3720,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -30316,
+              "locY": 116426,
+              "locZ": -3392,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -28100,
+              "locY": 118918,
+              "locZ": -3720,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -30014,
+              "locY": 116604,
+              "locZ": -3456,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -30718,
+              "locY": 117850,
+              "locZ": -3828,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -26694,
+              "locY": 116782,
+              "locZ": -3688,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -28704,
+              "locY": 117850,
+              "locZ": -3712,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -27266,
+              "locY": 123933,
+              "locZ": -3568,
+              "head": 52650
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -27600,
+              "locY": 122576,
+              "locZ": -3632,
+              "head": 54060
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -27037,
+              "locY": 124855,
+              "locZ": -3456,
+              "head": 6923
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -29602,
+              "locY": 122526,
+              "locZ": -3632,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -22246,
+              "locY": 119670,
+              "locZ": -3584,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -23657,
+              "locY": 123810,
+              "locZ": -3592,
+              "head": 32151
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -21578,
+              "locY": 122670,
+              "locZ": -3512,
+              "head": 30355
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -23446,
+              "locY": 121602,
+              "locZ": -3624,
+              "head": 43379
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -22346,
+              "locY": 120916,
+              "locZ": -3544,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -20907,
+              "locY": 121079,
+              "locZ": -3400,
+              "head": 12119
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -20650,
+              "locY": 122372,
+              "locZ": -3392,
+              "head": 61140
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -22394,
+              "locY": 122375,
+              "locZ": -3576,
+              "head": 43775
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -19734,
+              "locY": 121942,
+              "locZ": -3280,
+              "head": 52976
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -22044,
+              "locY": 120738,
+              "locZ": -3512,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -23113,
+              "locY": 123300,
+              "locZ": -3624,
+              "head": 16177
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -23241,
+              "locY": 120565,
+              "locZ": -3600,
+              "head": 8735
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -25547,
+              "locY": 124067,
+              "locZ": -3600,
+              "head": 28717
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -24747,
+              "locY": 123566,
+              "locZ": -3688,
+              "head": 30536
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 920,
+          "name": "Maille Lizardman Scout",
+          "coords": [
+            {
+              "locX": -22898,
+              "locY": 124046,
+              "locZ": -3576,
+              "head": 8192
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -27752,
+              "locY": 113754,
+              "locZ": -3520,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -26443,
+              "locY": 113220,
+              "locZ": -3560,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -27147,
+              "locY": 113042,
+              "locZ": -3528,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -28727,
+              "locY": 113338,
+              "locZ": -3392,
+              "head": 48555
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -27450,
+              "locY": 113220,
+              "locZ": -3520,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -24271,
+              "locY": 119291,
+              "locZ": -3624,
+              "head": 4065
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -29487,
+              "locY": 112979,
+              "locZ": -3208,
+              "head": 61958
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -27441,
+              "locY": 117792,
+              "locZ": -3720,
+              "head": 29697
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -29208,
+              "locY": 118028,
+              "locZ": -3704,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -28002,
+              "locY": 116248,
+              "locZ": -3720,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -28201,
+              "locY": 117316,
+              "locZ": -3720,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -26223,
+              "locY": 118796,
+              "locZ": -3712,
+              "head": 2213
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -27426,
+              "locY": 119195,
+              "locZ": -3720,
+              "head": 21570
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -28402,
+              "locY": 117672,
+              "locZ": -3720,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -28906,
+              "locY": 117850,
+              "locZ": -3712,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -26894,
+              "locY": 116426,
+              "locZ": -3680,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -33961,
+              "locY": 117697,
+              "locZ": -2480,
+              "head": 28418
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -29142,
+              "locY": 115280,
+              "locZ": -3544,
+              "head": 55414
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -29813,
+              "locY": 117316,
+              "locZ": -3568,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -28605,
+              "locY": 116604,
+              "locZ": -3704,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -26993,
+              "locY": 123280,
+              "locZ": -3640,
+              "head": 3855
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -29504,
+              "locY": 124128,
+              "locZ": -3512,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -30007,
+              "locY": 123594,
+              "locZ": -3536,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -28440,
+              "locY": 124575,
+              "locZ": -3480,
+              "head": 51512
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -23885,
+              "locY": 122560,
+              "locZ": -3664,
+              "head": 57072
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -20359,
+              "locY": 121267,
+              "locZ": -3336,
+              "head": 32928
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -21513,
+              "locY": 121289,
+              "locZ": -3464,
+              "head": 47908
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -19479,
+              "locY": 121134,
+              "locZ": -3272,
+              "head": 17442
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -23255,
+              "locY": 119670,
+              "locZ": -3584,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -22764,
+              "locY": 121578,
+              "locZ": -3584,
+              "head": 56166
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -22750,
+              "locY": 119848,
+              "locZ": -3568,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -20713,
+              "locY": 121736,
+              "locZ": -3368,
+              "head": 34826
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -20835,
+              "locY": 122933,
+              "locZ": -3432,
+              "head": 47518
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -21944,
+              "locY": 119136,
+              "locZ": -3696,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -23395,
+              "locY": 122394,
+              "locZ": -3632,
+              "head": 54324
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -23382,
+              "locY": 120761,
+              "locZ": -3616,
+              "head": 43756
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -23455,
+              "locY": 118602,
+              "locZ": -3656,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -22950,
+              "locY": 120204,
+              "locZ": -3576,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -30104,
+              "locY": 106948,
+              "locZ": -3440,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -29298,
+              "locY": 108372,
+              "locZ": -3672,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -28393,
+              "locY": 107838,
+              "locZ": -3712,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -30761,
+              "locY": 106467,
+              "locZ": -3304,
+              "head": 46454
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -31314,
+              "locY": 108728,
+              "locZ": -3568,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -29199,
+              "locY": 107126,
+              "locZ": -3536,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -30306,
+              "locY": 107304,
+              "locZ": -3440,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -28796,
+              "locY": 108194,
+              "locZ": -3696,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -27199,
+              "locY": 106218,
+              "locZ": -3720,
+              "head": 10397
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -31413,
+              "locY": 107838,
+              "locZ": -3408,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -34576,
+              "locY": 111539,
+              "locZ": -2344,
+              "head": 23709
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -32240,
+              "locY": 112076,
+              "locZ": -3956,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -31435,
+              "locY": 113500,
+              "locZ": -3956,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -30530,
+              "locY": 112610,
+              "locZ": -3956,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -31333,
+              "locY": 113322,
+              "locZ": -3956,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -30731,
+              "locY": 111898,
+              "locZ": -3956,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -31033,
+              "locY": 112076,
+              "locZ": -3956,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        },
+        {
+          "selfId": 921,
+          "name": "Maille Lizardman Guard",
+          "coords": [
+            {
+              "locX": -31737,
+              "locY": 112254,
+              "locZ": -3956,
+              "head": 0
+            }
+          ],
+          "total": 1,
+          "respawn": 32,
+          "bias": 0
+        }
+      ]
+    }
+  ],
+  "rewards": [
+    {
+      "selfId": 919,
+      "template": {
+        "name": "Maille Lizardman"
+      },
+      "spoils": [
+        {
+          "overall": 100,
+          "items": [
+            {
+              "selfId": 734,
+              "min": 1,
+              "max": 1,
+              "chance": 2.0265
+            }
+          ]
+        },
+        {
+          "overall": 100,
+          "items": [
+            {
+              "selfId": 1865,
+              "min": 1,
+              "max": 1,
+              "chance": 12.1597
+            }
+          ]
+        },
+        {
+          "overall": 100,
+          "items": [
+            {
+              "selfId": 5220,
+              "min": 1,
+              "max": 1,
+              "chance": 0.4864
+            }
+          ]
+        }
+      ],
+      "rewards": [
+        {
+          "overall": 0.09179999999999999,
+          "items": [
+            {
+              "selfId": 24,
+              "min": 1,
+              "max": 1,
+              "chance": 19.28104575163399
+            },
+            {
+              "selfId": 31,
+              "min": 1,
+              "max": 1,
+              "chance": 30.718954248366014
+            },
+            {
+              "selfId": 390,
+              "min": 1,
+              "max": 1,
+              "chance": 19.28104575163399
+            },
+            {
+              "selfId": 412,
+              "min": 1,
+              "max": 1,
+              "chance": 30.718954248366014
+            }
+          ]
+        },
+        {
+          "overall": 70,
+          "items": [
+            {
+              "selfId": 57,
+              "min": 56,
+              "max": 98,
+              "chance": 100
+            }
+          ]
+        },
+        {
+          "overall": 5.387499999999999,
+          "items": [
+            {
+              "selfId": 1867,
+              "min": 1,
+              "max": 1,
+              "chance": 44.44547563805104
+            },
+            {
+              "selfId": 1872,
+              "min": 1,
+              "max": 1,
+              "chance": 44.44547563805104
+            },
+            {
+              "selfId": 1881,
+              "min": 1,
+              "max": 1,
+              "chance": 4.443619489559166
+            },
+            {
+              "selfId": 2141,
+              "min": 1,
+              "max": 1,
+              "chance": 6.665429234338747
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selfId": 920,
+      "template": {
+        "name": "Maille Lizardman Scout"
+      },
+      "spoils": [
+        {
+          "overall": 100,
+          "items": [
+            {
+              "selfId": 1898,
+              "min": 1,
+              "max": 1,
+              "chance": 2.2414
+            }
+          ]
+        },
+        {
+          "overall": 100,
+          "items": [
+            {
+              "selfId": 2014,
+              "min": 1,
+              "max": 1,
+              "chance": 0.2508
+            }
+          ]
+        },
+        {
+          "overall": 100,
+          "items": [
+            {
+              "selfId": 5163,
+              "min": 1,
+              "max": 1,
+              "chance": 0.8728
+            }
+          ]
+        }
+      ],
+      "rewards": [
+        {
+          "overall": 70,
+          "items": [
+            {
+              "selfId": 57,
+              "min": 99,
+              "max": 178,
+              "chance": 100
+            }
+          ]
+        },
+        {
+          "overall": 0.0807,
+          "items": [
+            {
+              "selfId": 273,
+              "min": 1,
+              "max": 1,
+              "chance": 6.443618339529121
+            },
+            {
+              "selfId": 2016,
+              "min": 1,
+              "max": 1,
+              "chance": 93.55638166047089
+            }
+          ]
+        },
+        {
+          "overall": 9.608000000000002,
+          "items": [
+            {
+              "selfId": 735,
+              "min": 1,
+              "max": 1,
+              "chance": 1.8630308076602826
+            },
+            {
+              "selfId": 1060,
+              "min": 1,
+              "max": 1,
+              "chance": 49.68984179850124
+            },
+            {
+              "selfId": 1865,
+              "min": 1,
+              "max": 1,
+              "chance": 22.36053288925895
+            },
+            {
+              "selfId": 1870,
+              "min": 1,
+              "max": 1,
+              "chance": 22.36053288925895
+            },
+            {
+              "selfId": 1879,
+              "min": 1,
+              "max": 1,
+              "chance": 3.7260616153205652
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selfId": 921,
+      "template": {
+        "name": "Maille Lizardman Guard"
+      },
+      "spoils": [
+        {
+          "overall": 100,
+          "items": [
+            {
+              "selfId": 1804,
+              "min": 1,
+              "max": 1,
+              "chance": 0.6111
+            }
+          ]
+        },
+        {
+          "overall": 100,
+          "items": [
+            {
+              "selfId": 1864,
+              "min": 1,
+              "max": 1,
+              "chance": 30.5532
+            }
+          ]
+        },
+        {
+          "overall": 100,
+          "items": [
+            {
+              "selfId": 1928,
+              "min": 1,
+              "max": 1,
+              "chance": 2.2253
+            }
+          ]
+        }
+      ],
+      "rewards": [
+        {
+          "overall": 0.8691,
+          "items": [
+            {
+              "selfId": 39,
+              "min": 1,
+              "max": 1,
+              "chance": 5.626510182947877
+            },
+            {
+              "selfId": 51,
+              "min": 1,
+              "max": 1,
+              "chance": 5.626510182947877
+            },
+            {
+              "selfId": 1930,
+              "min": 1,
+              "max": 1,
+              "chance": 88.74697963410425
+            }
+          ]
+        },
+        {
+          "overall": 70,
+          "items": [
+            {
+              "selfId": 57,
+              "min": 68,
+              "max": 125,
+              "chance": 100
+            }
+          ]
+        },
+        {
+          "overall": 2.6994,
+          "items": [
+            {
+              "selfId": 1880,
+              "min": 1,
+              "max": 1,
+              "chance": 6.686671112098985
+            },
+            {
+              "selfId": 1881,
+              "min": 1,
+              "max": 1,
+              "chance": 8.913091798177373
+            },
+            {
+              "selfId": 1882,
+              "min": 1,
+              "max": 1,
+              "chance": 14.858857523894201
+            },
+            {
+              "selfId": 3032,
+              "min": 1,
+              "max": 1,
+              "chance": 2.674668444839594
+            },
+            {
+              "selfId": 6666,
+              "min": 1,
+              "max": 1,
+              "chance": 66.86671112098985
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "selfId": 5185,
+      "template": {
+        "name": "Fairy Tree of Wind"
+      },
+      "spoils": [],
+      "rewards": []
+    },
+    {
+      "selfId": 5186,
+      "template": {
+        "name": "Fairy Tree of Star"
+      },
+      "spoils": [],
+      "rewards": []
+    },
+    {
+      "selfId": 5187,
+      "template": {
+        "name": "Fairy Tree of Twilight"
+      },
+      "spoils": [],
+      "rewards": []
+    },
+    {
+      "selfId": 5188,
+      "template": {
+        "name": "Fairy Tree of Abyss"
+      },
+      "spoils": [],
+      "rewards": []
+    },
+    {
+      "selfId": 5189,
+      "template": {
+        "name": "Soul of Tree Guardian"
+      },
+      "spoils": [],
+      "rewards": []
+    }
+  ]
+}

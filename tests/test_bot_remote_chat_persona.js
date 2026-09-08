@@ -16,6 +16,7 @@ const first = BotRemoteChat.personaForState(state);
 const second = BotRemoteChat.personaForState(state);
 assert.deepStrictEqual(first, second, 'remote chat must use the same deterministic persona on every reply');
 assert(first?.primaryDrive && first?.archetype && first?.textCard, 'remote chat context must include a complete persona card');
+assert(first.dialogueVoice, 'off-screen private chat must retain the derived dialogue voice');
 
 const soloReply = BotRemoteChat.fallbackReply(state, { available: false, reason: 'prefers_solo' }, 'party?');
 assert(soloReply.includes('get to know'), 'fallback refusal must explain the social path forward');

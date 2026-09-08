@@ -129,6 +129,14 @@ assert.strictEqual(recoveringCompanion.resumeAfterBuff.returnMode, 'teleport', '
 assert.strictEqual(recoveringCompanion.resumeAfterBuff.readyAt, 6_500, 'return should wait for the town teleport to settle');
 assert.strictEqual(recoveringCompanion.botStay, false, 'death recovery should return to the live party instead of the old corpse hold point');
 
+recoveringCompanion.clanAllianceQuest = { clanId: 1, leaderId: 201 };
+const courierTarget = BotAI.beginPartyTownRecovery(recoveringCompanion, recoveringCompanion.actor, 7000);
+assert.deepStrictEqual(courierTarget, recoveryTarget, 'quest courier restarts in the ordinary nearest town');
+assert.strictEqual(recoveringCompanion.resumeAfterBuff, null, 'courier must not retain the companion catch-up teleport');
+assert.strictEqual(recoveringCompanion.plan, 'following');
+assert.strictEqual(recoveringCompanion.followPlayerSession, recoveryLeader, 'quest recovery retains party membership');
+assert.strictEqual(recoveringCompanion.clanAllianceQuest.clanId, 1, 'town recovery retains the quest assignment');
+
 const partyPackets = [];
 const partyLeader = {
     actor: {

@@ -19,7 +19,7 @@ const SummonSkillActions = new Map([
     [1003, { skillId: 4710, target: 'selected' }], // Wind Hatchling/Strider - Wild Stun
     [1004, { skillId: 4711, target: 'self' }],     // Wind Hatchling/Strider - Wild Defense
     [1005, { skillId: 4712, target: 'selected' }], // Star Hatchling/Strider - Bright Burst
-    [1006, { skillId: 4713, target: 'owner' }],    // Star Hatchling/Strider - Bright Heal
+    [1006, { skillId: 4713, target: 'self' }],    // Star Hatchling/Strider - Bright Heal
     [1007, { skillId: 4699, target: 'owner' }],
     [1008, { skillId: 4700, target: 'owner' }],
     [1009, { skillId: 4701, target: 'owner' }],
@@ -88,6 +88,10 @@ function tickPetFeed(session, actor, pet) {
         return;
     }
 
+    if (pet.ownerSession && pet.petData?.version === 1) {
+        invoke('GameServer/Pets/PetRuntime').feedTick(pet).catch(error => utils.infoWarn('Pet', 'feed tick: %s', error.message));
+        return;
+    }
     const active = pet.controlMode === 'attack' || pet.state?.fetchHits?.() === true;
     const consume = Number(active ? pet.petData?.feedBattle : pet.petData?.feedNormal) || 0;
     if (consume <= 0) return;
@@ -356,10 +360,18 @@ function attackTick(session, summon, target) {
 }
 
 function unsummon(session, actor, summon) {
+    if (actor.pet === summon && (actor.fetchMounted?.() || actor.mounted)) invoke('GameServer/Pets/PetMount').set(actor,false);
     stop(session, summon);
     clearLifetimeTimer(summon);
     clearPetFeedTimer(summon);
-    if (summon.fetchPetControlItemObjectId?.()) {
+    summon.destructor?.(session);
+    clearTimeout(summon.timer?.petCorpse);
+    if (summon.ownerSession && summon.petData?.version === 1) {
+        const item = actor.backpack?.fetchItemRaw(summon.fetchPetControlItemObjectId());
+        const saved = Promise.resolve(summon.inventoryTail).then(() => invoke('GameServer/Pets/PetRuntime').persist(summon, actor));
+        summon.teardownTail = saved.then(() => { if (item) item.petInUse = false; }).catch(() => {});
+        summon.persistTail = summon.teardownTail;
+    } else if (summon.fetchPetControlItemObjectId?.()) {
         const controlItem = actor.backpack?.fetchItemRaw?.(summon.fetchPetControlItemObjectId());
         const petData = {
             ...(summon.petData || controlItem?.fetchPetData?.() || {}),
@@ -380,14 +392,16 @@ function unsummon(session, actor, summon) {
     if (actor.summon === summon) actor.summon = null;
     if (actor.pet === summon) actor.pet = null;
     if (session.summon === summon) session.summon = null;
+    if (session.pet === summon) session.pet = null;
     session.dataSendToMeAndOthers(ServerResponse.deleteOb(summon.fetchId()), summon);
 }
 
-function revivePet(session, pet) {
+function revivePet(session, pet, recovery = 0) {
     if (!pet?.fetchIsPet?.() || pet.state?.fetchDead?.() !== true) {
         return false;
     }
 
+    if (pet.petData?.version === 1 && !invoke('GameServer/Pets/PetRuntime').revive(pet, recovery)) return false;
     const ownerSession = (World.user?.sessions || []).find((candidate) => Number(candidate.actor?.fetchId?.()) === Number(pet.fetchOwnerId?.()));
     const owner = ownerSession?.actor;
     pet.state.setDead(false);
@@ -407,7 +421,8 @@ function showStatusWindow(session, actor, summon) {
     session.dataSendToMe(ServerResponse.moveToPawn(actor, summon, InteractionDistance));
     session.dataSendToMe(ServerResponse.petInfo(summon, actor));
     session.dataSendToMe(ServerResponse.petStatusUpdate(summon));
-    session.dataSendToMe(ServerResponse.petStatusShow(1));
+    if (summon.petData?.version === 1) invoke('GameServer/Pets/PetInventory').publish(summon);
+    session.dataSendToMe(ServerResponse.petStatusShow(summon.fetchIsPet?.() ? 2 : 1));
     session.dataSendToMe(ServerResponse.actionFailed());
 }
 

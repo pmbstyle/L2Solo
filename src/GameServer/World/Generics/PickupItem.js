@@ -38,7 +38,7 @@ function pickupItem(session, actor, item) {
     }
 
     const recipientSession = PartyCompanionService.resolveLootSession(session, selfId, claimedItem);
-    this.purchaseItem(recipientSession, selfId, amount);
+    this.purchaseItem(recipientSession, selfId, amount, claimedItem.fetchPetData?.() ? { petData: claimedItem.fetchPetData() } : {});
     transmitPickup(recipientSession, selfId, amount);
     return true;
 }

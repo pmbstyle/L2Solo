@@ -54,14 +54,14 @@ module.exports = {
             ? [T, L, 4]
             : null;
     if (step) {
-      if (!(await q.takeItem(s, step[0]))) return null;
+      if (!(await q.takeItem(s.session, step[0]))) return null;
       await q.giveItem(s.session, step[1], 1);
       await s.set("cond", step[2]);
       s.playSound("ItemSound.quest_middle");
       return p("Quest", "Continue the errand.");
     }
     if (id === N && c === 4) {
-      await q.takeItem(s, L);
+      await q.takeItem(s.session, L);
       await q.giveItem(s.session, P, 5);
       q.rewardExpSp(s.session, 1000, 0);
       s.playSound("ItemSound.quest_finish");

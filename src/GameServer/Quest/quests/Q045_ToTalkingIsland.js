@@ -64,7 +64,7 @@ module.exports = {
     };
     if (steps[e] && s.getInt("cond") === steps[e][0]) {
       const x = steps[e];
-      if (!(await q.takeItem(s, x[2]))) return null;
+      if (!(await q.takeItem(s.session, x[2]))) return null;
       await q.giveItem(s.session, x[3], 1);
       await s.set("cond", x[1]);
       s.playSound(M);
@@ -72,8 +72,8 @@ module.exports = {
     }
     if (e === "reward" && s.getInt("cond") === 6) {
       if (!has(s, NECKLACE)) return null;
-      await q.takeItem(s, MARK);
-      await q.takeItem(s, NECKLACE);
+      await q.takeItem(s.session, MARK);
+      await q.takeItem(s.session, NECKLACE);
       await q.giveItem(s.session, SOE, 1);
       s.playSound(F);
       await s.exit(false);

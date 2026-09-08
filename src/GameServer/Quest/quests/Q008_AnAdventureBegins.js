@@ -48,9 +48,14 @@ module.exports = {
         "Speak with Roselyn before your adventure begins.",
       );
     }
-    if (event === "note" && state.isStarted() && state.getInt("cond") === 1) {
+    if (
+      event === "note" &&
+      state.isStarted() &&
+      (state.getInt("cond") === 1 ||
+        (state.getInt("cond") === 2 && !hasNote(state)))
+    ) {
+      if (!hasNote(state)) await Quest.giveItem(state.session, ROSELYN_NOTE, 1);
       await state.set("cond", 2);
-      await Quest.giveItem(state.session, ROSELYN_NOTE, 1);
       state.playSound(SOUND_MIDDLE);
       return page("Roselyn", "Deliver this note to Harne.");
     }
@@ -107,7 +112,7 @@ module.exports = {
       );
     }
     if (npcId === ROSELYN) {
-      return cond === 1
+      return cond === 1 || (cond === 2 && !hasNote(state))
         ? page(
             "Roselyn",
             "I can prepare a note for Harne.",

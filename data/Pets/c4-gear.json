@@ -1,0 +1,665 @@
+{
+  "revision": "fdc7e33af5d69067b41a6ee7cc7c07fe7aa35975",
+  "gear": {
+    "2505": {
+      "name": "Iron Canine",
+      "category": "wolf",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 4,
+        "mAtk": 5,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "2506": {
+      "name": "Wolf's Leather Armor",
+      "category": "wolf",
+      "slot": "armor",
+      "stats": {
+        "pDef": 9,
+        "mDef": 14
+      }
+    },
+    "3439": {
+      "name": "Shining Canine",
+      "category": "wolf",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 7,
+        "mAtk": 8,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "3891": {
+      "name": "Wolf's Hide Armor",
+      "category": "wolf",
+      "slot": "armor",
+      "stats": {
+        "pDef": 13,
+        "mDef": 16
+      }
+    },
+    "3892": {
+      "name": "Wolf's Hard Leather Mail",
+      "category": "wolf",
+      "slot": "armor",
+      "stats": {
+        "pDef": 16,
+        "mDef": 18
+      }
+    },
+    "3893": {
+      "name": "Wolf's Wooden Armor",
+      "category": "wolf",
+      "slot": "armor",
+      "stats": {
+        "pDef": 19,
+        "mDef": 20
+      }
+    },
+    "3894": {
+      "name": "Wolf's Ring Mail",
+      "category": "wolf",
+      "slot": "armor",
+      "stats": {
+        "pDef": 22,
+        "mDef": 23
+      }
+    },
+    "3895": {
+      "name": "Wolf's Bone Armor",
+      "category": "wolf",
+      "slot": "armor",
+      "stats": {
+        "pDef": 26,
+        "mDef": 26
+      }
+    },
+    "3896": {
+      "name": "Wolf's Scale Male",
+      "category": "wolf",
+      "slot": "armor",
+      "stats": {
+        "pDef": 30,
+        "mDef": 29
+      }
+    },
+    "3897": {
+      "name": "Wof's Bronze Armor",
+      "category": "wolf",
+      "slot": "armor",
+      "stats": {
+        "pDef": 33,
+        "mDef": 31
+      }
+    },
+    "3898": {
+      "name": "Wolf's Plate Mail",
+      "category": "wolf",
+      "slot": "armor",
+      "stats": {
+        "pDef": 37,
+        "mDef": 33
+      }
+    },
+    "3899": {
+      "name": "Wolf's Steel Armor",
+      "category": "wolf",
+      "slot": "armor",
+      "stats": {
+        "pDef": 40,
+        "mDef": 36
+      }
+    },
+    "3900": {
+      "name": "Wolf's Luxury Plate",
+      "category": "wolf",
+      "slot": "armor",
+      "stats": {
+        "pDef": 43,
+        "mDef": 38
+      }
+    },
+    "3901": {
+      "name": "Wolf's Mithril Armor",
+      "category": "wolf",
+      "slot": "armor",
+      "stats": {
+        "pDef": 47,
+        "mDef": 41
+      }
+    },
+    "3902": {
+      "name": "Ghost Canine",
+      "category": "wolf",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 11,
+        "mAtk": 10,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "3903": {
+      "name": "Mithril Canine",
+      "category": "wolf",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 16,
+        "mAtk": 14,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "3904": {
+      "name": "Sylvan Canine",
+      "category": "wolf",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 23,
+        "mAtk": 18,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "3905": {
+      "name": "Orikarukon Canine",
+      "category": "wolf",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 31,
+        "mAtk": 24,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "3906": {
+      "name": "Fang of Saltydog",
+      "category": "wolf",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 40,
+        "mAtk": 30,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "3907": {
+      "name": "Fang of Cerberus",
+      "category": "wolf",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 49,
+        "mAtk": 36,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "3908": {
+      "name": "Fang of Coyote",
+      "category": "wolf",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 58,
+        "mAtk": 42,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "3909": {
+      "name": "Crystalized Ice Canine",
+      "category": "wolf",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 69,
+        "mAtk": 50,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "3910": {
+      "name": "Fang of The Blue Wolf",
+      "category": "wolf",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 80,
+        "mAtk": 58,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "3911": {
+      "name": "Fang of Fenril",
+      "category": "wolf",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 93,
+        "mAtk": 66,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "3912": {
+      "name": "Hatchling's Soft Leather",
+      "category": "hatchling",
+      "slot": "armor",
+      "stats": {
+        "pDef": 26,
+        "mDef": 26
+      }
+    },
+    "3913": {
+      "name": "Hatchling's Scale Mail",
+      "category": "hatchling",
+      "slot": "armor",
+      "stats": {
+        "pDef": 29,
+        "mDef": 29
+      }
+    },
+    "3914": {
+      "name": "Hatchling's Brigandine",
+      "category": "hatchling",
+      "slot": "armor",
+      "stats": {
+        "pDef": 31,
+        "mDef": 31
+      }
+    },
+    "3915": {
+      "name": "Hatchling's Bronze Coat",
+      "category": "hatchling",
+      "slot": "armor",
+      "stats": {
+        "pDef": 33,
+        "mDef": 33
+      }
+    },
+    "3916": {
+      "name": "Hatchling's Steel Coat",
+      "category": "hatchling",
+      "slot": "armor",
+      "stats": {
+        "pDef": 36,
+        "mDef": 36
+      }
+    },
+    "3917": {
+      "name": "Hatchling's Shadowplate",
+      "category": "hatchling",
+      "slot": "armor",
+      "stats": {
+        "pDef": 38,
+        "mDef": 38
+      }
+    },
+    "3918": {
+      "name": "Hatchling's Mithril Coat",
+      "category": "hatchling",
+      "slot": "armor",
+      "stats": {
+        "pDef": 41,
+        "mDef": 41
+      }
+    },
+    "3919": {
+      "name": "Serpent Fang",
+      "category": "hatchling",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 8,
+        "mAtk": 7,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "3920": {
+      "name": "Viperbite",
+      "category": "hatchling",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 9,
+        "mAtk": 10,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "3921": {
+      "name": "Shadow Fang",
+      "category": "hatchling",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 10,
+        "mAtk": 11,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "3922": {
+      "name": "Alya Fang",
+      "category": "hatchling",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 12,
+        "mAtk": 13,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "3923": {
+      "name": "Torturer",
+      "category": "hatchling",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 13,
+        "mAtk": 16,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "3924": {
+      "name": "Unuk Alhay Fang",
+      "category": "hatchling",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 15,
+        "mAtk": 18,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "3925": {
+      "name": "Antiplague",
+      "category": "hatchling",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 17,
+        "mAtk": 21,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "4234": {
+      "name": "Hatchling's Level 65 Armor",
+      "category": "hatchling",
+      "slot": "armor",
+      "stats": {
+        "pDef": 50,
+        "mDef": 50
+      }
+    },
+    "4235": {
+      "name": "Hatchling's Level 75 Armor",
+      "category": "hatchling",
+      "slot": "armor",
+      "stats": {
+        "pDef": 58,
+        "mDef": 58
+      }
+    },
+    "4237": {
+      "name": "Hatchling's Level 65 Weapon",
+      "category": "hatchling",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 24,
+        "mAtk": 32,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "4238": {
+      "name": "Hatchling's Level 75 Weapon",
+      "category": "hatchling",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 31,
+        "mAtk": 43,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "5170": {
+      "name": "Mithril Panzer Coat",
+      "category": "strider",
+      "slot": "armor",
+      "stats": {
+        "pDef": 41,
+        "mDef": 41
+      }
+    },
+    "5171": {
+      "name": "Brigadine Panzer Coat",
+      "category": "strider",
+      "slot": "armor",
+      "stats": {
+        "pDef": 44,
+        "mDef": 44
+      }
+    },
+    "5172": {
+      "name": "Draconic Panzer Coat",
+      "category": "strider",
+      "slot": "armor",
+      "stats": {
+        "pDef": 46,
+        "mDef": 46
+      }
+    },
+    "5173": {
+      "name": "Blood Panzer Coat",
+      "category": "strider",
+      "slot": "armor",
+      "stats": {
+        "pDef": 49,
+        "mDef": 49
+      }
+    },
+    "5174": {
+      "name": "Ophidian Panzer Coat",
+      "category": "strider",
+      "slot": "armor",
+      "stats": {
+        "pDef": 52,
+        "mDef": 52
+      }
+    },
+    "5175": {
+      "name": "Inferno Panzer Coat",
+      "category": "strider",
+      "slot": "armor",
+      "stats": {
+        "pDef": 54,
+        "mDef": 54
+      }
+    },
+    "5176": {
+      "name": "Serpentine Spike",
+      "category": "strider",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 17,
+        "mAtk": 21,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "5177": {
+      "name": "Drake Horn",
+      "category": "strider",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 19,
+        "mAtk": 24,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "5178": {
+      "name": "Assult Alicorn",
+      "category": "strider",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 21,
+        "mAtk": 27,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "5179": {
+      "name": "Draconic Slicer",
+      "category": "strider",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 23,
+        "mAtk": 30,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "5180": {
+      "name": "Ohpdian Lance",
+      "category": "strider",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 25,
+        "mAtk": 34,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "5181": {
+      "name": "Diamond Drill",
+      "category": "strider",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 27,
+        "mAtk": 37,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "5182": {
+      "name": "Hatchling's Gorgon Coat",
+      "category": "hatchling",
+      "slot": "armor",
+      "stats": {
+        "pDef": 44,
+        "mDef": 44
+      }
+    },
+    "5183": {
+      "name": "Hatchling's Ophidian Plate",
+      "category": "hatchling",
+      "slot": "armor",
+      "stats": {
+        "pDef": 46,
+        "mDef": 46
+      }
+    },
+    "5184": {
+      "name": "Hatchling's Crimson Plate",
+      "category": "hatchling",
+      "slot": "armor",
+      "stats": {
+        "pDef": 49,
+        "mDef": 49
+      }
+    },
+    "5185": {
+      "name": "Hatchling's Draconic Plate",
+      "category": "hatchling",
+      "slot": "armor",
+      "stats": {
+        "pDef": 52,
+        "mDef": 52
+      }
+    },
+    "5186": {
+      "name": "Hatchling's Inferno Plate",
+      "category": "hatchling",
+      "slot": "armor",
+      "stats": {
+        "pDef": 54,
+        "mDef": 54
+      }
+    },
+    "5187": {
+      "name": "Serpentine Grinder",
+      "category": "hatchling",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 19,
+        "mAtk": 24,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "5188": {
+      "name": "Fang of Dahak",
+      "category": "hatchling",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 21,
+        "mAtk": 27,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "5189": {
+      "name": "Crimson Blood Fang",
+      "category": "hatchling",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 23,
+        "mAtk": 30,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "5190": {
+      "name": "Draconic Chopper",
+      "category": "hatchling",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 25,
+        "mAtk": 34,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "5191": {
+      "name": "Diabolic Grinder",
+      "category": "hatchling",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 27,
+        "mAtk": 37,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    },
+    "5216": {
+      "name": "Wolf Level 75 Armor",
+      "category": "wolf",
+      "slot": "armor",
+      "stats": {
+        "pDef": 71,
+        "mDef": 58
+      }
+    },
+    "5217": {
+      "name": "Wolf Level 75 Weapon",
+      "category": "wolf",
+      "slot": "weapon",
+      "stats": {
+        "pAtk": 194,
+        "mAtk": 136,
+        "rCrit": 80,
+        "pAtkSpd": 304
+      }
+    }
+  }
+}

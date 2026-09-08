@@ -50,16 +50,16 @@ module.exports = {
           )
         : p("Arnold", "Come back at level 2.");
     if (id === J && n(s, BOX)) {
-      await Q().takeItem(s, BOX);
+      await Q().takeItem(s.session, BOX);
       await Q().giveItem(s.session, JR, 1);
     }
     if (id === S && n(s, CLOTH)) {
-      await Q().takeItem(s, CLOTH);
+      await Q().takeItem(s.session, CLOTH);
       await Q().giveItem(s.session, SR, 1);
       await Q().giveItem(s.session, SS, 3);
     }
     if (id === R && n(s, POT)) {
-      await Q().takeItem(s, POT);
+      await Q().takeItem(s.session, POT);
       await Q().giveItem(s.session, RR, 1);
     }
     if ([JR, SR, RR].every((z) => n(s, z))) {
@@ -67,7 +67,7 @@ module.exports = {
       s.playSound("ItemSound.quest_middle");
     }
     if (id === A && s.getInt("cond") === 2) {
-      for (const z of [LIST, JR, SR, RR]) await Q().takeItem(s, z);
+      for (const z of [LIST, JR, SR, RR]) await Q().takeItem(s.session, z);
       await Q().giveItem(s.session, RING, 2);
       Q().rewardExpSp(s.session, 600, 0);
       s.playSound("ItemSound.quest_finish");

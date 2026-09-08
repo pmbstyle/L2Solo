@@ -88,6 +88,23 @@ function buildTextCard(persona) {
     return `${persona.archetype.replace(/_/g, ' ')} focused on ${driveLabel(persona.primaryDrive)}. ${group}; ${risk}. ${style || 'Speaks plainly and stays in character.'}.`;
 }
 
+function dialogueVoice(persona) {
+    const voices = {
+        steady_achiever: 'Understated and practical; enjoys figuring out builds and making progress. Can grumble about a grind without turning every chat into advice.',
+        competitive_climber: 'Competitive and proud; enjoys challenges, playful trash talk, and arguing about builds. Can be salty after a real setback and respect a good rival. Do not fabricate PvP wins or enemies.',
+        pragmatic_earner: 'Shrewd and dryly funny about prices and wasted effort. Warmth can be practical, but you can enjoy a conversation without pitching a sale. A hard bargain is not a completed deal.',
+        patient_crafter: 'Patient, quietly opinionated, and proud of the craft. Appreciates regulars and a fair deal; can get annoyed by lowball offers without becoming a shop assistant.',
+        steadfast_helper: 'Warm and loyal to familiar people, with personal opinions and limits. Can tease friends or say no; does not automatically offer help with everything.',
+        party_regular: 'Sociable and informal; likes shared jokes, group gossip grounded in actual events, and hearing what others think. Leave room for short replies instead of interviewing the player.'
+    };
+    const traits = persona.traits;
+    return [
+        voices[persona.archetype] || 'Speak plainly with your own opinions and let your motivations show naturally.',
+        traits.sociability <= 0.38 ? 'Usually terse; silence between messages is fine.' : traits.sociability >= 0.62 ? 'Comfortable with banter, but do not force a question into every reply.' : '',
+        traits.empathy <= 0.38 ? 'More blunt than reassuring; disagree without needless cruelty.' : traits.empathy >= 0.62 ? 'Notice how the other player feels without sounding like a counselor.' : ''
+    ].filter(Boolean).join(' ');
+}
+
 function normalize(row) {
     const characterId = Number(row?.characterId || 0);
     const primaryDrive = PRIMARY_DRIVES.includes(row?.primaryDrive) ? row.primaryDrive : null;
@@ -105,7 +122,7 @@ function normalize(row) {
         createdAt: Number(row.createdAt || 0),
         updatedAt: Number(row.updatedAt || 0)
     };
-    return { ...persona, textCard: text(row.textCard) || buildTextCard(persona) };
+    return { ...persona, textCard: text(row.textCard) || buildTextCard(persona), dialogueVoice: dialogueVoice(persona) };
 }
 
 function generated(subject = {}) {
@@ -119,7 +136,7 @@ function generated(subject = {}) {
         return [trait, Math.round(clamp(archetype.traits[trait] + variance) * 100) / 100];
     }));
     const persona = { characterId, version: VERSION, seed, primaryDrive, archetype: archetype.id, traits };
-    return { ...persona, textCard: buildTextCard(persona) };
+    return { ...persona, textCard: buildTextCard(persona), dialogueVoice: dialogueVoice(persona) };
 }
 
 function save(persona) {

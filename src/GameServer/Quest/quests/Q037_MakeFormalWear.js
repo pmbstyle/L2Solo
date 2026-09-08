@@ -46,14 +46,14 @@ module.exports = {
       return page("Leikar", "Take the Signet Ring to Jeremy.");
     }
     if (e === "wine" && s.getInt("cond") === 2) {
-      if (!(await Q.takeItem(s, RING))) return null;
+      if (!(await Q.takeItem(s.session, RING))) return null;
       await Q.giveItem(s.session, WINE, 1);
       await s.set("cond", 3);
       s.playSound(M);
       return page("Jeremy", "Take the Ice Wine to Mist.");
     }
     if (e === "mist" && s.getInt("cond") === 3) {
-      if (!(await Q.takeItem(s, WINE))) return null;
+      if (!(await Q.takeItem(s.session, WINE))) return null;
       await s.set("cond", 4);
       s.playSound(M);
       return page("Mist", "Return to Jeremy.");
@@ -65,7 +65,7 @@ module.exports = {
       return page("Jeremy", "Take the cookies to Leikar.");
     }
     if (e === "components" && s.getInt("cond") === 5) {
-      if (!(await Q.takeItem(s, COOKIES))) return null;
+      if (!(await Q.takeItem(s.session, COOKIES))) return null;
       await s.set("cond", 6);
       s.playSound(M);
       return page("Leikar", "Obtain cloth, a jewel box and a sewing kit.");
@@ -73,15 +73,15 @@ module.exports = {
     if (e === "shoes" && s.getInt("cond") === 6) {
       if (count(s, BOX) < 1 || count(s, CLOTH) < 1 || count(s, KIT) < 1)
         return page("Leikar", "Bring all three components.");
-      await Q.takeItem(s, BOX);
-      await Q.takeItem(s, CLOTH);
-      await Q.takeItem(s, KIT);
+      await Q.takeItem(s.session, BOX);
+      await Q.takeItem(s.session, CLOTH);
+      await Q.takeItem(s.session, KIT);
       await s.set("cond", 7);
       s.playSound(M);
       return page("Leikar", "Now bring Dress Shoes.");
     }
     if (e === "reward" && s.getInt("cond") === 7) {
-      if (!(await Q.takeItem(s, SHOES)))
+      if (!(await Q.takeItem(s.session, SHOES)))
         return page("Leikar", "Bring the Dress Shoes.");
       await Q.giveItem(s.session, WEAR, 1);
       s.playSound(F);

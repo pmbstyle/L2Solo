@@ -32,7 +32,7 @@ module.exports = function create(config) {
       const Q = service();
       const actor = state.session.actor;
       if (event === "start" && !state.isStarted() && !state.isCompleted()) {
-        if (Number(actor.fetchLevel()) >= config.maxLevel) return null;
+        if (Number(actor.fetchLevel()) < config.maxLevel) return null;
         await state.setState("started");
         await state.set("cond", 1);
         state.playSound(A);
@@ -90,7 +90,7 @@ module.exports = function create(config) {
         return page("Quest", "You have already completed this quest.");
       if (!state.isStarted())
         return id === config.startNpc &&
-          Number(state.session.actor.fetchLevel()) < config.maxLevel
+          Number(state.session.actor.fetchLevel()) >= config.maxLevel
           ? page(
               config.startName,
               "I need your help.",
@@ -98,7 +98,7 @@ module.exports = function create(config) {
             )
           : page(
               config.startName,
-              `This task is for adventurers below level ${config.maxLevel}.`,
+              `This task is for adventurers at or above level ${config.maxLevel}.`,
             );
       if (id === config.partnerNpc)
         return c === 4

@@ -23,6 +23,8 @@ function slotFor(item, fallback = 0) {
 }
 
 function bodyPart(item) {
+    const petGear = require('../../../data/Pets/c4-gear.json').gear[item?.fetchSelfId?.()];
+    if (petGear) return { wolf: 0x020000, hatchling: 0x040000, strider: 0x080000 }[petGear.category];
     if (!item?.isWearable?.()) return 0;
     return 2 ** slotFor(item);
 }

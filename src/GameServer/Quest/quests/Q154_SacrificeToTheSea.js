@@ -44,21 +44,21 @@ module.exports = {
           )
         : p("Rockswell", "Come back at level 2.");
     if (id === C && s.getInt("cond") === 2) {
-      await q.takeItem(s, FUR, 10);
+      await q.takeItem(s.session, FUR, 10);
       await q.giveItem(s.session, YARN, 1);
       await s.set("cond", 3);
       s.playSound("ItemSound.quest_middle");
       return p("Cristel", "Take the yarn to Rolfe.");
     }
     if (id === L && s.getInt("cond") === 3) {
-      await q.takeItem(s, YARN);
+      await q.takeItem(s.session, YARN);
       await q.giveItem(s.session, DOLL, 1);
       await s.set("cond", 4);
       s.playSound("ItemSound.quest_middle");
       return p("Rolfe", "Return the doll to Rockswell.");
     }
     if (id === R && s.getInt("cond") === 4) {
-      await q.takeItem(s, DOLL);
+      await q.takeItem(s.session, DOLL);
       await q.giveItem(s.session, EAR, 1);
       q.rewardExpSp(s.session, 100, 0);
       s.playSound("ItemSound.quest_finish");

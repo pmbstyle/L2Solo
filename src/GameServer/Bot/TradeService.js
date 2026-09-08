@@ -82,7 +82,7 @@ function fetchAdena(actor) {
 }
 
 function isSellableInventoryItem(item) {
-    return item && !item.fetchEquipped() && item.fetchSelfId() !== 57;
+    return item && !item.fetchPetLocked?.() && !item.fetchEquipped() && item.fetchSelfId() !== 57;
 }
 
 function normalizeStoreItems(storeCfg) {

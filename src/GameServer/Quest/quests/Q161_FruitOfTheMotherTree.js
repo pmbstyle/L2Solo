@@ -39,14 +39,14 @@ module.exports = {
           )
         : p("Andellia", "This task is for Elves of level 3 or higher.");
     if (id === T && s.getInt("cond") === 1) {
-      if (!(await Q().takeItem(s, L))) return null;
+      if (!(await Q().takeItem(s.session, L))) return null;
       await Q().giveItem(s.session, F, 1);
       await s.set("cond", 2);
       s.playSound("ItemSound.quest_middle");
       return p("Thalia", "Return the fruit to Andellia.");
     }
     if (id === A && s.getInt("cond") === 2) {
-      if (!(await Q().takeItem(s, F))) return null;
+      if (!(await Q().takeItem(s.session, F))) return null;
       await Q().rewardAdena(s.session, 1000);
       Q().rewardExpSp(s.session, 1000, 0);
       s.playSound("ItemSound.quest_finish");

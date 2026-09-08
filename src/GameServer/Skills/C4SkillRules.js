@@ -1,3 +1,4 @@
+const petSkillRules = require('../../../data/Pets/c4-skills.json').rules;
 const DAMAGE = 'damage';
 const DAMAGE_EFFECT = 'damageEffect';
 const DEATH_LINK = 'deathLink';
@@ -115,6 +116,9 @@ const CONTROL_STACK_FAMILY_BY_EFFECT = Object.freeze({
 });
 
 const RULES = {
+    4713: { skillType: HEAL, trait: 'heal', target: 'self', isMagic: true, ssBoost: 1, castRange: -1 },
+    4717: { skillType: HEAL, trait: 'heal', target: 'owner', isMagic: true, ssBoost: 1, castRange: 600 },
+    4718: { skillType: HEAL, trait: 'heal', target: 'owner', isMagic: true, ssBoost: 1, castRange: 600 },
     // Native C4 raid-boss guards. These are applied by RaidCurse at the
     // combat boundary, but keeping the sourced skill semantics here preserves
     // the canonical skill ids for packets/effect tooling.
@@ -985,7 +989,9 @@ const RULES = {
     4230: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, castRange: 2500, effectRange: 3000 },
     4259: { skillType: EFFECT, trait: 'poison', effect: 'toxic_smoke', effectType: 'debuff', target: 'enemy', sourceTarget: 'area', radius: 200, ssBoost: 1, baseLandRate: 80, castRange: 500, effectRange: 1000, dot: { count: 10, intervalMs: 3000, damage: 12 } },
     4378: { skillType: EFFECT, trait: 'buff', effect: 'self_damage_shield', effectType: 'buff', target: 'self', ssBoost: 0, baseLandRate: 100, stats: { reflectDam: 20 } },
-    4711: { skillType: EFFECT, trait: 'buff', effect: 'wild_defense', effectType: 'buff', target: 'self', ssBoost: 0, baseLandRate: 100, stats: { pDefMul: 5, mDefMul: 5, pAtkSpdMul: 0.3, runSpdMul: 0.1 } },
+    4710: { skillType: DAMAGE_EFFECT, trait: 'physical', effectTrait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', isMagic: false, ssBoost: 1, baseLandRate: 15, levelDepend: 1, overHit: true, durationMs: 9000 },
+    4712: { skillType: DAMAGE, trait: 'magic', target: 'enemy', isMagic: true, ssBoost: 1 },
+    4711: { skillType: EFFECT, trait: 'buff', effect: 'wild_defense', effectType: 'buff', target: 'self', ssBoost: 0, baseLandRate: 100, stats: { immobile: true, pDefMul: 5, mDefMul: 5, pAtkSpdMul: 0.3, runSpdMul: 0.1 } },
     4721: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, castRange: 40, effectRange: 200 },
     4723: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, castRange: 40, effectRange: 200 },
     4732: { skillType: BLOW, trait: 'dagger', target: 'enemy', ssBoost: 1, blowChance: 50, castRange: 40, effectRange: 200 },
@@ -1110,7 +1116,8 @@ const SELF_NAME_PATTERNS = [
 
 function resolve(skill = {}) {
     const name = String(skill.name || '');
-    const rule = RULES[Number(skill.selfId)] || {};
+    const id = Number(skill.selfId);
+    const rule = petSkillRules[id] ? { ...petSkillRules[id], ...RULES[id] } : RULES[id] || {};
     const inferred = infer(skill, name);
     const effect = rule.effect || inferred.effect;
     const sourcedStackFamily = STACK_FAMILY_BY_SKILL_ID[Number(skill.selfId)]

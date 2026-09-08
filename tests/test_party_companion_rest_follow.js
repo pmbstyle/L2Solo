@@ -17,6 +17,7 @@ const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotSupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
@@ -284,6 +285,59 @@ try {
     Math.random = () => 1;
     Database.updateCharacterExperience = () => {};
     DataCache.experience = Array.from({ length: 82 }, (_, index) => index * 1000000);
+
+    {
+        const campLeader = fakeSession('player_camp', fakeActor(2000800));
+        const returned = fakeSession('bot_returned', fakeActor(2000801, { locX: 100, classId: 48 }));
+        const courier = fakeSession('bot_courier', fakeActor(2000802, { locX: 40000, classId: 33 }));
+        for (const member of [returned, courier]) {
+            member.followPlayerSession = campLeader;
+            member.partyCompanion = true;
+            member.plan = 'following';
+            member.clanAllianceQuest = { clanId: 1, leaderId: campLeader.actor.fetchId() };
+        }
+        const mob = fakeActor(1000800, { locX: 40050, destId: courier.actor.fetchId() });
+        mob.fetchAttackable = () => true;
+        mob.fetchStateAttack = () => true;
+        mob.state.fetchCombats = () => true;
+        World.user = { sessions: [campLeader, returned, courier] };
+        BotManager.sessions = [returned, courier];
+        World.npc = { spawns: [mob] };
+        World.fetchNpcsInRadius = (x, y, radius) => Math.hypot(mob.locX - x, mob.locY - y) <= radius ? [mob] : [];
+        courier.incomingThreatId = mob.fetchId();
+        courier.incomingThreatAt = Date.now();
+        courier.actor.select({ id: mob.fetchId() });
+        courier.actor.state.setHits(true);
+        assert.strictEqual(PartyAwareness.findThreatTargetingParty(campLeader), null,
+            'a remote quest courier incoming hit must not pull returned companions away from camp');
+        assert.strictEqual(PartyAwareness.npcThreateningActor(courier), mob,
+            'the courier must still detect and defend against its own attacker');
+        assert.strictEqual(PartyCombatState.isActive(campLeader), false,
+            'remote courier attacks must not keep the camp in combat');
+        FollowingState.tick(returned, returned.actor, {}, {
+            say() {}, executeCombat() { assert.fail('returned courier chased a remote quest fight'); },
+            executePvPCombat() { assert.fail('unexpected PvP'); }
+        });
+        assert.strictEqual(returned.actor.moves.length, 0, 'returned courier stays by the leader');
+        courier.actor.state.dead = true;
+        assert.strictEqual(PartyCombatState.isActive(campLeader), false,
+            'a remote courier corpse must not block camp recovery');
+        courier.actor.state.dead = false;
+        courier.actor.locX = 1000;
+        mob.locX = 1050;
+        PartyAwareness.invalidateThreatProjection(campLeader);
+        assert.strictEqual(PartyAwareness.findThreatTargetingParty(campLeader).actor, mob,
+            'couriers near camp must still receive party protection');
+        assert.strictEqual(PartyCombatState.isActive(campLeader), true);
+        courier.actor.locX = 40000;
+        mob.locX = 40050;
+        delete courier.clanAllianceQuest;
+        PartyAwareness.invalidateThreatProjection(campLeader);
+        assert.strictEqual(PartyAwareness.findThreatTargetingParty(campLeader).actor, mob,
+            'ordinary party member protection remains unchanged');
+        World.npc = originalNpcs;
+        BotManager.sessions = originalBotSessions;
+    }
 
     const leader = fakeActor(2000001, { locX: 0, locY: 0 });
     const leaderSession = fakeSession('player_test', leader);

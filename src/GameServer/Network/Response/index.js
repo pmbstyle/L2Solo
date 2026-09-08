@@ -1,4 +1,7 @@
 module.exports = {
+    exStorageMaxCount: require('./ExStorageMaxCount'),
+    ride: require('./Ride'),
+    petItemList: require('./PetItemList'),
            actionFailed: require('./ActionFailed'),
            autoSoulShot: require('./AutoSoulShot'),
            addShortcut: require('./AddShortcut'),

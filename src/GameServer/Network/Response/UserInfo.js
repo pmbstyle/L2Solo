@@ -117,7 +117,7 @@ function userInfo(actor) {
         .writeD(0x00)  // ?
         .writeH(actor.fetchRecRemain())
         .writeH(actor.fetchEvalScore())
-        .writeD(actor.fetchMountNpcId?.() || 0)  // Mount ID
+        .writeD(1000000 + (actor.fetchMountNpcId?.() || actor.mountNpcId || 0))  // Mount ID
         .writeH(0x00)  // Inventory limit
         .writeD(actor.fetchClassId())
         .writeD(0x00)  // Special effects

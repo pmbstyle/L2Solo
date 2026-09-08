@@ -40,7 +40,7 @@ module.exports = {
         : p("Starden", "I cannot ask this of you.");
     if (s.getInt("cond") !== 2)
       return p("Starden", "The poems are still missing.");
-    for (const id of P) await Q().takeItem(s, id, -1);
+    for (const id of P) await Q().takeItem(s.session, id, -1);
     await Q().rewardAdena(s.session, 13890);
     s.playSound("ItemSound.quest_finish");
     await s.exit(false);

@@ -45,8 +45,8 @@ module.exports = {
         : p("Unoren", "I cannot ask this of you.");
     if (s.getInt("cond") !== 2)
       return p("Unoren", "Bring ten bone fragments and three skulls.");
-    await q.takeItem(s, S, -1);
-    await q.takeItem(s, B, -1);
+    await q.takeItem(s.session, S, -1);
+    await q.takeItem(s.session, B, -1);
     await q.giveItem(s.session, SH, 1);
     await q.rewardAdena(s.session, 24000);
     s.playSound("ItemSound.quest_finish");

@@ -52,21 +52,6 @@ function recordEquipmentEvent(session, item, action) {
 
 const MANUFACTURE_STORE_TYPES = [5, 6];
 
-// C4 pets_stats.sql, level 1. Pet progression is not modelled yet, so these
-// values give a newly summoned pet the same initial feed state as Lisvus.
-const PetFeedDefaults = new Map([
-    [12077, { max: 248, normal: 2, battle: 2 }],
-    [12311, { max: 696, normal: 2, battle: 5 }],
-    [12312, { max: 508, normal: 2, battle: 5 }],
-    [12313, { max: 12, normal: 1, battle: 1 }],
-    [12526, { max: 696, normal: 2, battle: 5 }],
-    [12527, { max: 508, normal: 2, battle: 5 }],
-    [12528, { max: 12, normal: 1, battle: 1 }],
-    [12780, { max: 12, normal: 1, battle: 1 }],
-    [12781, { max: 12, normal: 1, battle: 1 }],
-    [12782, { max: 12, normal: 1, battle: 1 }]
-]);
-
 class Backpack extends BackpackModel {
     constructor(data) {
         // Parent inheritance
@@ -91,6 +76,7 @@ class Backpack extends BackpackModel {
         }
 
         this.fetchItem(id, (item) => {
+            if (item.fetchPetLocked?.()) return;
             const total = item.fetchAmount() - amount;
             if (total > 0) {
                 // Update memory state instantly
@@ -186,11 +172,13 @@ class Backpack extends BackpackModel {
     }
 
     dropItem(session, id, amount, locX, locY, locZ) {
+        const petData = this.fetchItemRaw(id)?.fetchPetData?.();
         this.deleteItem(session, id, amount, (selfId) => {
             World.spawnItem(session, selfId, amount, {
                 locX: locX,
                 locY: locY,
                 locZ: locZ,
+                ...(petData ? { petData } : {})
             });
         });
     }
@@ -202,6 +190,7 @@ class Backpack extends BackpackModel {
     useItem(session, id) {
         this.fetchItem(id, (item) => {
             if (item.isWearable()) {
+                if (invoke('GameServer/Pets/PetInventory').gear[item.fetchSelfId()]) return;
                 const slot = ItemSlot.slotFor(item);
                 if (slot !== item.fetchSlot()) item.setSlot(slot);
                 this.equipGear(session, item);
@@ -788,7 +777,7 @@ class Backpack extends BackpackModel {
     }
 
     usePetSummonItem(session, id, itemSkill, skill) {
-        if (!itemSkill.npcId || this.fetchActivePet(session) || session.actor.isMounted?.() || session.actor.mounted) {
+        if (!itemSkill.npcId || session.actor.fetchPrivateStoreType?.() || session.activeTrade || session.botTrade || this.fetchActivePet(session) || session.actor.isMounted?.() || session.actor.mounted) {
             return true;
         }
 
@@ -817,8 +806,8 @@ class Backpack extends BackpackModel {
         }
 
         const apply = () => {
-            session.actor.state.setCasts(false);
-            if (session.actor.isDead()) {
+            session.actor?.state.setCasts(false);
+            if (!session.actor || session.actor.backpack !== this || session.actor.isDead() || !this.fetchItemRaw(id)) {
                 return;
             }
             const payload = {
@@ -853,41 +842,10 @@ class Backpack extends BackpackModel {
             }
 
             const controlItem = this.fetchItemRaw(payload.itemObjectId);
-            const petData = { ...(controlItem?.fetchPetData?.() || {}) };
-            const feedDefaults = PetFeedDefaults.get(Number(payload.npcId)) || { max: 0, normal: 0, battle: 0 };
-            petData.maxFeed ??= feedDefaults.max;
-            petData.feedNormal ??= feedDefaults.normal;
-            petData.feedBattle ??= feedDefaults.battle;
-            petData.currentFeed ??= petData.maxFeed;
-            const npc = new Npc(World.npc.nextId++, {
-                ...utils.crushOb(resolvedNpcData),
-                locX: session.actor.fetchLocX(),
-                locY: session.actor.fetchLocY(),
-                locZ: session.actor.fetchLocZ(),
-                head: session.actor.fetchHead?.() || 0,
-                title: session.actor.fetchName?.() || '',
-                ownerId: session.actor.fetchId?.() || 0,
-                ownerName: session.actor.fetchName?.() || '',
-                isPet: true,
-                isSummon: true,
-                petControlItemObjectId: payload.itemObjectId,
-                petFoodCategories: this.petFoodCategoriesForNpc(payload.npcId),
-                petData
-            });
-
-            npc.petData = petData;
-            npc.fetchCurrentFeed = () => Number(npc.petData.currentFeed) || 0;
-            npc.fetchMaxFeed = () => Number(npc.petData.maxFeed) || 0;
-            npc.setCurrentFeed = (value) => {
-                const maxFeed = npc.fetchMaxFeed();
-                npc.petData.currentFeed = Math.max(0, maxFeed > 0 ? Math.min(maxFeed, Number(value) || 0) : Number(value) || 0);
-                controlItem?.setPetData?.(npc.petData);
-                Database.updateItemPetData?.(session.actor.fetchId(), payload.itemObjectId, npc.petData).catch?.((err) => {
-                    utils.infoWarn('Pet', 'failed to persist pet feed: %s', err.message);
-                });
-            };
-            if (Number.isFinite(Number(petData.hp))) npc.setHp(Math.min(npc.fetchMaxHp(), Number(petData.hp)));
-            if (Number.isFinite(Number(petData.mp))) npc.setMp(Math.min(npc.fetchMaxMp(), Number(petData.mp)));
+            if (!controlItem || session.actor.backpack !== this || session.actor.pet || session.activeTrade || session.actor.fetchPrivateStoreType?.()) return;
+            const PetRuntime = invoke('GameServer/Pets/PetRuntime');
+            const npc = PetRuntime.create(session, controlItem, utils.crushOb(resolvedNpcData));
+            if (!npc) return;
 
             World.npc.spawns.push(npc);
             if (World.addNpcToGrid) World.addNpcToGrid(npc);
@@ -897,8 +855,11 @@ class Backpack extends BackpackModel {
             session.dataSendToMeAndOthers?.(ServerResponse.npcInfo(npc), npc);
 
             const SummonControl = invoke('GameServer/Npc/SummonControl');
-            SummonControl.startFollowOwner(session, session.actor, npc);
-            SummonControl.startPetFeed(session, session.actor, npc);
+            PetRuntime.start(npc);
+            if (!npc.state.fetchDead()) {
+                SummonControl.startFollowOwner(session, session.actor, npc);
+                SummonControl.startPetFeed(session, session.actor, npc);
+            }
         };
 
         const cachedNpc = DataCache.npcs.find((npc) => Number(npc.selfId) === Number(payload.npcId));
@@ -1309,7 +1270,7 @@ class Backpack extends BackpackModel {
                 if (!this.canResurrectTarget(session.actor, target, skill)) {
                     return;
                 }
-                this.applyResurrection(session, target);
+                this.applyResurrection(session, target, Number(skill.fetchPower?.()) || 0);
             };
 
             if (castTime > 0) {
@@ -1445,14 +1406,14 @@ class Backpack extends BackpackModel {
         return range <= 0 || distance <= range;
     }
 
-    applyResurrection(session, target) {
+    applyResurrection(session, target, recovery = 0) {
         if (typeof target.revive === 'function') {
             target.revive();
             return;
         }
 
         if (target.fetchIsPet?.() === true) {
-            invoke('GameServer/Npc/SummonControl').revivePet(session, target);
+            invoke('GameServer/Npc/SummonControl').revivePet(session, target, recovery);
             return;
         }
 

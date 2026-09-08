@@ -48,10 +48,12 @@ module.exports = {
     if (
       event === "recommendation" &&
       state.isStarted() &&
-      state.getInt("cond") === 1
+      (state.getInt("cond") === 1 ||
+        (state.getInt("cond") === 2 && !hasRecommendation(state)))
     ) {
+      if (!hasRecommendation(state))
+        await Quest.giveItem(state.session, ARIEL_RECOMMENDATION, 1);
       await state.set("cond", 2);
-      await Quest.giveItem(state.session, ARIEL_RECOMMENDATION, 1);
       state.playSound(SOUND_MIDDLE);
       return page("Ariel", "Take this recommendation to Asterios.");
     }
@@ -107,7 +109,7 @@ module.exports = {
       );
     }
     if (npcId === ARIEL) {
-      return cond === 1
+      return cond === 1 || (cond === 2 && !hasRecommendation(state))
         ? page(
             "Ariel",
             "I can prepare a recommendation for Asterios.",

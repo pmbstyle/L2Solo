@@ -212,6 +212,8 @@ const BotAI = {
     init(session) {
         this.cancelScheduledTick(session);
         session.aiActive = true;
+        if (session.actor?.fetchClanId?.()) invoke('GameServer/Clan/ClanAllianceService').resume(session)
+            .catch(error => utils.infoWarn('ClanQuest', 'resume failed: %s', error.message));
         this.scheduleTick(session, 1000 + Math.random() * 2000);
     },
 
@@ -303,6 +305,18 @@ const BotAI = {
         const leaderSession = session.followPlayerSession;
         const role = BotRoles.inferRole(bot);
         const spawnTarget = this.getDeathRespawnTarget(session, bot, false);
+        if (session.clanAllianceQuest) {
+            // Resume the saved quest destination from town without queuing a
+            // companion catch-up teleport that would interrupt the courier.
+            session.plan = 'following';
+            session.resumeAfterBuff = null;
+            session.preBuffLocation = null;
+            session.preBuffPlan = null;
+            session.botStay = false;
+            session.stayLocation = null;
+            session.currentTargetId = undefined;
+            return spawnTarget;
+        }
 
         // Keep native party membership and the C4 party window intact. The
         // bot first restarts in town, refreshes Newbie Guide buffs when it is
@@ -394,6 +408,7 @@ const BotAI = {
             invoke('GameServer/Bot/AI/TownNpcApproach').reset(session);
             invoke('GameServer/Bot/AI/TownTraffic').remove(Number(bot.fetchId()));
             try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'death'); } catch (_) { /* optional ambient module */ }
+            if (session.clanAllianceQuest && invoke('GameServer/Clan/ClanAllianceService').recoverDeadCourier(session)) return;
         } else {
             // TTL expiry is intentionally lazy and bounded to hot ticks; no
             // background timer is needed for a session-local preference.
@@ -402,6 +417,12 @@ const BotAI = {
         // Actual player aggression owns the action window before travel,
         // conversation, recovery or ordinary party/PvE state routing.
         const defendingPvp = !botDead && invoke('GameServer/Bot/AI/BotPvpDefense').tick(session, bot, invoke(path.actor), this);
+
+        if (!botDead && !defendingPvp
+            && invoke('GameServer/Bot/AI/ClanAllianceSupportAI').tick(session, bot, invoke(path.actor))) return;
+
+        if (!botDead && !defendingPvp && session.clanAllianceQuest
+            && invoke('GameServer/Bot/AI/ClanAllianceQuestAI').tick(session, bot, invoke(path.actor), this)) return;
 
         if (lodContext.tier === 'preload' && !botDead && !defendingPvp) {
             if (Math.random() < 0.05) this.triggerFarAwayChatEvent(session, bot);
@@ -494,7 +515,9 @@ const BotAI = {
                 }
             }
 
-            const partyRescuePending = wasCompanion && !PartyRevivalService.shouldTownRespawn(
+            const ritualRescuePending = session.clanAllianceQuest
+                && invoke('GameServer/Clan/ClanAllianceService').awaitingRitualResurrection(session);
+            const partyRescuePending = ritualRescuePending || wasCompanion && !PartyRevivalService.shouldTownRespawn(
                 session.followPlayerSession,
                 session
             );
@@ -517,7 +540,9 @@ const BotAI = {
                         priority: 'critical',
                         key: `party-respawn-timeout:${bot.fetchId()}:${deathStartedAt}`,
                         templates: [
-                            `No resurrection came. Restarting in town, rebuffing if needed, then teleporting back.`
+                            session.clanAllianceQuest
+                                ? `No resurrection came. Restarting in town, then continuing my quest assignment.`
+                                : `No resurrection came. Restarting in town, rebuffing if needed, then teleporting back.`
                         ]
                     });
                     // Keep the party relationship authoritative through the

@@ -47,7 +47,7 @@ module.exports = {
           )
         : p("Undrias", "This task is for Dark Elves of level 2 or higher.");
     if (id === U && s.getInt("cond") === 2) {
-      for (const z of [A, W, S, L]) await Q().takeItem(s, z);
+      for (const z of [A, W, S, L]) await Q().takeItem(s.session, z);
       await Q().rewardAdena(s.session, 500);
       Q().rewardExpSp(s.session, 500, 0);
       s.playSound("ItemSound.quest_finish");

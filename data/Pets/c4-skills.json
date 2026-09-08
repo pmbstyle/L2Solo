@@ -1,0 +1,847 @@
+{
+  "revision": "fdc7e33af5d69067b41a6ee7cc7c07fe7aa35975",
+  "skills": [
+    {
+      "selfId": 4710,
+      "template": {
+        "name": "Wild Stun",
+        "passive": false,
+        "spell": false,
+        "distance": 40
+      },
+      "time": {
+        "hitTime": 1100,
+        "reuse": 12000,
+        "buff": 9000
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 16,
+          "mp": 3,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 2,
+          "power": 35,
+          "mp": 5,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 3,
+          "power": 73,
+          "mp": 7,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 4,
+          "power": 138,
+          "mp": 9,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 5,
+          "power": 238,
+          "mp": 12,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 6,
+          "power": 375,
+          "mp": 14,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 7,
+          "power": 537,
+          "mp": 17,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 8,
+          "power": 619,
+          "mp": 18,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 9,
+          "power": 697,
+          "mp": 18,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 10,
+          "power": 766,
+          "mp": 19,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 11,
+          "power": 821,
+          "mp": 20,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 12,
+          "power": 864,
+          "mp": 20,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4711,
+      "template": {
+        "name": "Wild Defense",
+        "passive": false,
+        "spell": false,
+        "distance": -1
+      },
+      "time": {
+        "hitTime": 1100,
+        "reuse": 120000,
+        "buff": 30000
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 0,
+          "mp": 46,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 2,
+          "power": 0,
+          "mp": 76,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 3,
+          "power": 0,
+          "mp": 104,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 4,
+          "power": 0,
+          "mp": 139,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 5,
+          "power": 0,
+          "mp": 179,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 6,
+          "power": 0,
+          "mp": 220,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 7,
+          "power": 0,
+          "mp": 258,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 8,
+          "power": 0,
+          "mp": 275,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 9,
+          "power": 0,
+          "mp": 288,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 10,
+          "power": 0,
+          "mp": 298,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 11,
+          "power": 0,
+          "mp": 305,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 12,
+          "power": 0,
+          "mp": 309,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4712,
+      "template": {
+        "name": "Bright Burst",
+        "passive": false,
+        "spell": true,
+        "distance": 600
+      },
+      "time": {
+        "hitTime": 1500,
+        "reuse": 0,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 6,
+          "mp": 6,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 2,
+          "power": 9,
+          "mp": 6,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 3,
+          "power": 13,
+          "mp": 7,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 4,
+          "power": 17,
+          "mp": 7,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 5,
+          "power": 23,
+          "mp": 8,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 6,
+          "power": 28,
+          "mp": 8,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 7,
+          "power": 34,
+          "mp": 9,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 8,
+          "power": 36,
+          "mp": 9,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 9,
+          "power": 39,
+          "mp": 10,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 10,
+          "power": 41,
+          "mp": 10,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 11,
+          "power": 42,
+          "mp": 11,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 12,
+          "power": 43,
+          "mp": 11,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4713,
+      "template": {
+        "name": "Bright Heal",
+        "passive": false,
+        "spell": true,
+        "distance": -1
+      },
+      "time": {
+        "hitTime": 3000,
+        "reuse": 12000,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 33,
+          "mp": 5,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 2,
+          "power": 61,
+          "mp": 9,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 3,
+          "power": 98,
+          "mp": 11,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 4,
+          "power": 145,
+          "mp": 15,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 5,
+          "power": 198,
+          "mp": 19,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 6,
+          "power": 251,
+          "mp": 23,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 7,
+          "power": 298,
+          "mp": 27,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 8,
+          "power": 316,
+          "mp": 28,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 9,
+          "power": 330,
+          "mp": 30,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 10,
+          "power": 338,
+          "mp": 30,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 11,
+          "power": 341,
+          "mp": 32,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 12,
+          "power": 342,
+          "mp": 32,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4717,
+      "template": {
+        "name": "Heal Trick",
+        "passive": false,
+        "spell": true,
+        "distance": 600
+      },
+      "time": {
+        "hitTime": 4000,
+        "reuse": 8000,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 9,
+          "mp": 5,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 2,
+          "power": 16,
+          "mp": 8,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 3,
+          "power": 25,
+          "mp": 12,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 4,
+          "power": 37,
+          "mp": 17,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 5,
+          "power": 50,
+          "mp": 20,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 6,
+          "power": 63,
+          "mp": 25,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 7,
+          "power": 75,
+          "mp": 29,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 8,
+          "power": 79,
+          "mp": 32,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 9,
+          "power": 83,
+          "mp": 33,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 10,
+          "power": 85,
+          "mp": 33,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 11,
+          "power": 86,
+          "mp": 34,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 12,
+          "power": 86,
+          "mp": 34,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        }
+      ]
+    },
+    {
+      "selfId": 4718,
+      "template": {
+        "name": "Greater Heal Trick",
+        "passive": false,
+        "spell": true,
+        "distance": 600
+      },
+      "time": {
+        "hitTime": 4000,
+        "reuse": 8000,
+        "buff": 0
+      },
+      "levels": [
+        {
+          "level": 1,
+          "power": 37,
+          "mp": 33,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 2,
+          "power": 64,
+          "mp": 59,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 3,
+          "power": 99,
+          "mp": 88,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 4,
+          "power": 139,
+          "mp": 122,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 5,
+          "power": 171,
+          "mp": 159,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 6,
+          "power": 205,
+          "mp": 195,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 7,
+          "power": 236,
+          "mp": 228,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 8,
+          "power": 266,
+          "mp": 242,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 9,
+          "power": 300,
+          "mp": 252,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 10,
+          "power": 332,
+          "mp": 259,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 11,
+          "power": 355,
+          "mp": 262,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        },
+        {
+          "level": 12,
+          "power": 368,
+          "mp": 262,
+          "hp": 0,
+          "itemId": 0,
+          "itemCount": 0
+        }
+      ]
+    }
+  ],
+  "rules": {
+    "4710": {
+      "magicLevelByLevel": [
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+        70,
+        75,
+        80,
+        85,
+        90,
+        95
+      ],
+      "castRange": 40,
+      "effectRange": 200,
+      "nextActionAttack": true
+    },
+    "4711": {
+      "magicLevelByLevel": [
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+        70,
+        75,
+        80,
+        85,
+        90,
+        95
+      ],
+      "aggroPointsByLevel": [
+        138,
+        204,
+        285,
+        379,
+        477,
+        566,
+        635,
+        659,
+        676,
+        689,
+        700,
+        709
+      ],
+      "castRange": -1,
+      "nextActionAttack": false
+    },
+    "4712": {
+      "magicLevelByLevel": [
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+        70,
+        75,
+        80,
+        85,
+        90,
+        95
+      ],
+      "castRange": 600,
+      "effectRange": 1100,
+      "nextActionAttack": true
+    },
+    "4713": {
+      "magicLevelByLevel": [
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+        70,
+        75,
+        80,
+        85,
+        90,
+        95
+      ],
+      "aggroPointsByLevel": [
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44
+      ],
+      "castRange": -1,
+      "nextActionAttack": false
+    },
+    "4717": {
+      "magicLevelByLevel": [
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+        70,
+        75,
+        80,
+        85,
+        90,
+        95
+      ],
+      "aggroPointsByLevel": [
+        9,
+        16,
+        25,
+        37,
+        50,
+        63,
+        75,
+        79,
+        83,
+        85,
+        86,
+        86
+      ],
+      "castRange": 600,
+      "effectRange": 1100,
+      "nextActionAttack": false
+    },
+    "4718": {
+      "magicLevelByLevel": [
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+        70,
+        75,
+        80,
+        85,
+        90,
+        95
+      ],
+      "aggroPointsByLevel": [
+        37,
+        64,
+        99,
+        139,
+        171,
+        205,
+        236,
+        266,
+        300,
+        332,
+        355,
+        368
+      ],
+      "castRange": 600,
+      "effectRange": 1100,
+      "nextActionAttack": false
+    }
+  }
+}

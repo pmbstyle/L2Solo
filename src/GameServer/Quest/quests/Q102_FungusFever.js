@@ -52,22 +52,22 @@ module.exports = {
           )
         : p("Alberius", "Only level 12 elves may help.");
     if (id === C && c === 1) {
-      await q.takeItem(s, L);
+      await q.takeItem(s.session, L);
       await q.giveItem(s.session, AM, 1);
       await s.set("cond", 2);
       s.playSound("ItemSound.quest_middle");
       return p("Cobendell", "Collect ten Dryad Tears.");
     }
     if (id === C && c === 3) {
-      await q.takeItem(s, T, -1);
-      await q.takeItem(s, AM);
+      await q.takeItem(s.session, T, -1);
+      await q.takeItem(s.session, AM);
       for (const z of M) await q.giveItem(s.session, z, 1);
       await s.set("cond", 4);
       s.playSound("ItemSound.quest_middle");
       return p("Cobendell", "Deliver the medicines.");
     }
     if (id === A && c === 4) {
-      await q.takeItem(s, M[0]);
+      await q.takeItem(s.session, M[0]);
       await q.giveItem(s.session, LI, 1);
       await s.set("cond", 5);
       await s.set("medicines", 4);
@@ -77,7 +77,7 @@ module.exports = {
     if (N.includes(id) && c === 5) {
       const item = M[N.indexOf(id) + 1];
       if (n(s, item)) {
-        await q.takeItem(s, item);
+        await q.takeItem(s.session, item);
         const left = s.getInt("medicines") - 1;
         await s.set("medicines", left);
         if (!left) {
@@ -88,7 +88,7 @@ module.exports = {
       return p("Elf", "Thank you for the medicine.");
     }
     if (id === A && c === 6) {
-      await q.takeItem(s, LI);
+      await q.takeItem(s.session, LI);
       await q.giveItem(s.session, a.isSpellcaster?.() ? 744 : 743, 1);
       await q.giveItem(
         s.session,

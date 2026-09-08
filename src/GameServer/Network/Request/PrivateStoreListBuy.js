@@ -6,7 +6,8 @@ module.exports = (session, buffer) => {
         return;
     }
     const packet = new ReceivePacket(buffer); packet.readD(); const count = Number(packet.data[0]);
-    if (!Number.isSafeInteger(count) || count < 1 || count > 4 || buffer.length < 5 + count * 16) {
+    if (!PrivateStore.checkRowCount(session, PrivateStore.BUY, count)) return;
+    if (buffer.length < 5 + count * 16) {
         utils.infoWarn('PrivateStore', 'reject buy publish for %s: len=%d count=%d', session?.actor?.fetchName?.() || 'unknown', buffer.length, count);
         return;
     }

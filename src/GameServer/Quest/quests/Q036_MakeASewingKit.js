@@ -36,7 +36,7 @@ module.exports = {
       return page("Ferris", "Bring 5 Reinforced Steel.");
     }
     if (e === "steel" && s.getInt("cond") === 2) {
-      if (!(await Q.takeItem(s, STEEL, 5))) return null;
+      if (!(await Q.takeItem(s.session, STEEL, 5))) return null;
       await s.set("cond", 3);
       s.playSound(M);
       return page("Ferris", "Bring 10 Artisan’s Frames and 10 Oriharukon.");
@@ -47,8 +47,8 @@ module.exports = {
           "Ferris",
           "You need 10 Artisan’s Frames and 10 Oriharukon.",
         );
-      await Q.takeItem(s, FRAME, 10);
-      await Q.takeItem(s, ORIHARUKON, 10);
+      await Q.takeItem(s.session, FRAME, 10);
+      await Q.takeItem(s.session, ORIHARUKON, 10);
       await Q.giveItem(s.session, KIT, 1);
       s.playSound(F);
       await s.exit(false);

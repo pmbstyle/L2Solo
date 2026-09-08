@@ -42,6 +42,7 @@ function levelUp(session, actor, nextLevel) {
         invoke(path.actor).calculateStats(session, actor);
         actor.fillupVitals();
         session.dataSendToMe(ServerResponse.skillsList(actor.skillset.fetchSkills()));
+        session.dataSendToMe(ServerResponse.exStorageMaxCount(actor));
         if (isBot) {
             // A bot has no client of its own, so nearby players and party
             // members need the normal character refresh after a profession.

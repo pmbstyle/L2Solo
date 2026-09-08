@@ -43,7 +43,7 @@ module.exports = {
       return page("Felton", "Hunt Alligators for Rough Jewels.");
     }
     if (e === "ellie" && s.getInt("cond") === 3) {
-      if (!(await Q.takeItem(s, ROUGH, 10))) return null;
+      if (!(await Q.takeItem(s.session, ROUGH, 10))) return null;
       await s.set("cond", 4);
       s.playSound(M);
       return page(
@@ -58,9 +58,9 @@ module.exports = {
         count(s, THONS) < 150
       )
         return page("Ellie", "You lack the required materials.");
-      await Q.takeItem(s, ORIHARUKON, 5);
-      await Q.takeItem(s, NUGGET, 500);
-      await Q.takeItem(s, THONS, 150);
+      await Q.takeItem(s.session, ORIHARUKON, 5);
+      await Q.takeItem(s.session, NUGGET, 500);
+      await Q.takeItem(s.session, THONS, 150);
       await Q.giveItem(s.session, BOX, 1);
       s.playSound(F);
       await s.exit(false);

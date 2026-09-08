@@ -58,6 +58,10 @@ class Automation extends SelectedModel {
     }
 
     replenishVitalsTick(creature) {
+        if (creature.canReplenishVitals && !creature.canReplenishVitals()) {
+            this.stopReplenish();
+            return;
+        }
         const maxHp = creature.fetchMaxHp();
         const maxMp = creature.fetchMaxMp();
         const hasCp = typeof creature.fetchCp === 'function'

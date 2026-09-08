@@ -12545,7 +12545,7 @@
 },{
     "selfId": 4325,
     "template": { "kind": "Other.Quest", "name": "Fairy Leaf", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
-    "etc": { "stackable": false, "consumable": false }
+    "etc": { "stackable": true, "consumable": false }
 },{
     "selfId": 4326,
     "template": { "kind": "Other.Quest", "name": "Ratman Scavenger's Skull", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
@@ -14069,5 +14069,85 @@
 },{
     "selfId": 5262,
     "template": { "kind": "Other.Shot", "name": "Greater Compressed Package of Blessed Spiritshots: No-grade", "class1": 4, "class2": 0, "mass": 750, "price": 38500 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7548,
+    "template": { "kind": "Other.Quest", "name": "Map Piece", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7549,
+    "template": { "kind": "Other.Quest", "name": "Yellow Map", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7550,
+    "template": { "kind": "Other.Quest", "name": "Map Piece", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7551,
+    "template": { "kind": "Other.Quest", "name": "Ivory Colored Map", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7552,
+    "template": { "kind": "Other.Quest", "name": "Broken Gemstone Fragment", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7553,
+    "template": { "kind": "Other.Quest", "name": "Gold Colored Gemstone", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7583,
+    "template": { "kind": "Other.None", "name": "Pet Exchange Ticket: Buffalo", "class1": 4, "class2": 5, "mass": 20, "price": 500000 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7584,
+    "template": { "kind": "Other.None", "name": "Pet Exchange Ticket: Cougar", "class1": 4, "class2": 5, "mass": 20, "price": 500000 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7585,
+    "template": { "kind": "Other.None", "name": "Pet Exchange Ticket: Kookaburra", "class1": 4, "class2": 5, "mass": 20, "price": 500000 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 6648,
+    "template": { "kind": "Other.PetCollar", "name": "Baby Buffalo Panpipe", "class1": 4, "class2": 5, "mass": 20, "price": 0 },
+    "etc": { "stackable": false, "consumable": true }
+},{
+    "selfId": 6649,
+    "template": { "kind": "Other.PetCollar", "name": "Baby Cougar Chime", "class1": 4, "class2": 5, "mass": 20, "price": 0 },
+    "etc": { "stackable": false, "consumable": true }
+},{
+    "selfId": 6650,
+    "template": { "kind": "Other.PetCollar", "name": "Baby Kookaburra Ocarina", "class1": 4, "class2": 5, "mass": 20, "price": 0 },
+    "etc": { "stackable": false, "consumable": true }
+},{
+    "selfId": 7582,
+    "template": { "kind": "Other.None", "name": "Baby Spice", "class1": 4, "class2": 5, "mass": 10, "price": 100 },
+    "etc": { "stackable": true, "consumable": true }
+},{
+    "selfId": 5163,
+    "template": { "kind": "Other.Recipe", "name": "Recipe: Blessed Spiritshot (D) Compressed Package (100%)", "class1": 4, "class2": 5, "mass": 30, "price": 30000 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 6666,
+    "template": { "kind": "Other.None", "name": "Deluxe Chest Key - Grade 2", "class1": 4, "class2": 5, "mass": 10, "price": 200 },
+    "etc": { "stackable": true, "consumable": true }
+},{
+    "selfId": 7559,
+    "template": { "kind": "Other.Scroll", "name": "Scroll of Escape: Giran Castle Town", "class1": 4, "class2": 5, "mass": 0, "price": 400 },
+    "etc": { "stackable": false, "consumable": true }
+},{
+    "selfId": 7570,
+    "template": { "kind": "Other.Quest", "name": "Mark of Traveler", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7571,
+    "template": { "kind": "Other.Quest", "name": "Baulro's Letter", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7572,
+    "template": { "kind": "Other.Quest", "name": "Ariel's Recommendation", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7573,
+    "template": { "kind": "Other.Quest", "name": "Roselyn's Note", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
     "etc": { "stackable": true, "consumable": false }
 }]

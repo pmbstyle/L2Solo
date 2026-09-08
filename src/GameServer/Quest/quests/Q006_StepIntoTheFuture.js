@@ -45,9 +45,14 @@ module.exports = {
       state.playSound(SOUND_ACCEPT);
       return page("Roxxy", "Speak with Magister Baulro about your journey.");
     }
-    if (event === "letter" && state.isStarted() && state.getInt("cond") === 1) {
+    if (
+      event === "letter" &&
+      state.isStarted() &&
+      (state.getInt("cond") === 1 ||
+        (state.getInt("cond") === 2 && !hasLetter(state)))
+    ) {
+      if (!hasLetter(state)) await Quest.giveItem(state.session, BAULRO_LETTER, 1);
       await state.set("cond", 2);
-      await Quest.giveItem(state.session, BAULRO_LETTER, 1);
       state.playSound(SOUND_MIDDLE);
       return page("Baulro", "Deliver this letter to Sir Collin in Giran.");
     }
@@ -104,7 +109,7 @@ module.exports = {
       );
     }
     if (npcId === BAULRO) {
-      return cond === 1
+      return cond === 1 || (cond === 2 && !hasLetter(state))
         ? page(
             "Baulro",
             "I have a letter for Sir Collin.",

@@ -84,6 +84,7 @@ class Npc extends NpcModel {
     }
 
     destructor(session) {
+        clearInterval(this.timer.babyHeal);
         clearInterval(this.timer.followOwner);
         this.timer.followOwner = undefined;
         clearTimeout(this.timer.summonResume);

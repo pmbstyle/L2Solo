@@ -6,7 +6,7 @@ function petStatusUpdate(summon) {
     const total = Number(summon.summonTotalLifeTime);
 
     packet
-        .writeD(1)
+        .writeD(summon.fetchIsPet?.() ? 2 : 1)
         .writeD(summon.fetchId())
         .writeD(summon.fetchLocX())
         .writeD(summon.fetchLocY())
@@ -19,9 +19,9 @@ function petStatusUpdate(summon) {
         .writeD(summon.fetchMp())
         .writeD(summon.fetchMaxMp())
         .writeD(summon.fetchLevel())
-        .writeD(0)
-        .writeD(0)
-        .writeD(0);
+        .writeD(summon.fetchExp?.() || 0)
+        .writeD(summon.fetchExpForThisLevel?.() || 0)
+        .writeD(summon.fetchExpForNextLevel?.() || 0);
 
     return packet.fetchBuffer();
 }

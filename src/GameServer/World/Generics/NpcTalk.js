@@ -6,6 +6,7 @@ function npcTalk(session, npc) {
     session.activeNpcShop = null;
     session.activeNpcSellShop = null;
     session.activeWarehouse = null;
+    session.activePetExchange = null;
     session.activeNpcTalk = {
         selfId: npc.fetchSelfId(),
         objectId: npc.fetchId(),
@@ -106,6 +107,9 @@ function showDefaultTalk(session, npc, options = {}) {
         utils.fileExists(filename) ? filename : path + 'noquest.html'
     );
     if (options.questLink) html = withQuestLink(html, npc.fetchSelfId());
+    if (invoke('GameServer/Pets/PetExchangeData').managers.has(npc.fetchSelfId())) {
+        html = html.replace(/<\/body>/i, '<br><a action="bypass -h pet-exchange">Exchange a Pet Ticket</a><br></body>');
+    }
 
     session.dataSendToMe(ServerResponse.npcHtml(npc.fetchId(), html));
     // C4 keeps the interaction pending until the response is terminated.

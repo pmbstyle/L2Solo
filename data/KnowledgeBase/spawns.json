@@ -525655,6 +525655,2822 @@
     }
   },
   {
+    "id": "spawn-919-0a593dc8af2f",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -22750,
+        "locY": 118068,
+        "locZ": -3896
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 23,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-0b30d13783e5",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 19804,
+        "locX": -25934,
+        "locY": 117651,
+        "locZ": -3720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 6,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-156ea0833818",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 8579,
+        "locX": -18799,
+        "locY": 121020,
+        "locZ": -3240
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 28,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-2071e62ea3d3",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 39103,
+        "locX": -24366,
+        "locY": 122255,
+        "locZ": -3680
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 25,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-228566affd2a",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -28304,
+        "locY": 116426,
+        "locZ": -3712
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 16,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-23da09e95c00",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -26895,
+        "locY": 116782,
+        "locZ": -3712
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 15,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-273bf3d62566",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -27597,
+        "locY": 117672,
+        "locZ": -3720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 7,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-4aade802ff73",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -29611,
+        "locY": 116248,
+        "locZ": -3520
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 5,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-4ea2deb4db43",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -28705,
+        "locY": 116070,
+        "locZ": -3672
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 11,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-57d369788677",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 31244,
+        "locX": -29764,
+        "locY": 118902,
+        "locZ": -3584
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 18,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-5ddbb2cb49b5",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -28302,
+        "locY": 118562,
+        "locZ": -3720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 13,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-605cd05dff7f",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -22649,
+        "locY": 119314,
+        "locZ": -3600
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 30,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-616de5d160ac",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 31386,
+        "locX": -25130,
+        "locY": 117834,
+        "locZ": -3704
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 35,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-62ce0f6b4b4c",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -30115,
+        "locY": 116782,
+        "locZ": -3440
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 10,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-68f03ed56752",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 31667,
+        "locX": -21977,
+        "locY": 121805,
+        "locZ": -3528
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 31,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-6aa5190b918a",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -31322,
+        "locY": 116782,
+        "locZ": -3828
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 12,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-764ed81df9c9",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 55860,
+        "locX": -22597,
+        "locY": 118882,
+        "locZ": -3680
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 24,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-8b1f8c71e685",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -27196,
+        "locY": 116960,
+        "locZ": -3720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 8,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-8c5329f6e147",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 5340,
+        "locX": -20108,
+        "locY": 122371,
+        "locZ": -3336
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 34,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-9023ee5c872a",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 14355,
+        "locX": -23071,
+        "locY": 122420,
+        "locZ": -3624
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 29,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-95b3c5ae7362",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 1720,
+        "locX": -22140,
+        "locY": 123387,
+        "locZ": -3552
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 26,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-982f3518d778",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -29309,
+        "locY": 116070,
+        "locZ": -3592
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 14,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-b48135a1239e",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 31080,
+        "locX": -25894,
+        "locY": 124809,
+        "locZ": -3432
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 33,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-b6e24ecba9d8",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -29208,
+        "locY": 115892,
+        "locZ": -3600
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 4,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-bafb375429af",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -29913,
+        "locY": 116426,
+        "locZ": -3472
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 9,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-bb2d698ba200",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -30510,
+        "locY": 123772,
+        "locZ": -3408
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 19,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-bcda64d3ddb9",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -21339,
+        "locY": 119848,
+        "locZ": -3568
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 36,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-c3a7f157534f",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 62621,
+        "locX": -28603,
+        "locY": 125356,
+        "locZ": -3400
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 22,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-c3fe6f53c1bc",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 4409,
+        "locX": -23057,
+        "locY": 122760,
+        "locZ": -3624
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 32,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-ced9ea3f81a6",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 10780,
+        "locX": -32150,
+        "locY": 116279,
+        "locZ": -2720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 17,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-d121d39863d9",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -29805,
+        "locY": 123238,
+        "locZ": -3600
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 20,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-f0b080ce9658",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 54852,
+        "locX": -27821,
+        "locY": 123300,
+        "locZ": -3608
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 21,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-919-fca1be8f59d4",
+    "mobId": 919,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -21540,
+        "locY": 120204,
+        "locZ": -3488
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 27,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-08249b7b279c",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 59432,
+        "locX": -26147,
+        "locY": 111585,
+        "locZ": -3688
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 37,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-2064e169ed7d",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 19083,
+        "locX": -27359,
+        "locY": 118363,
+        "locZ": -3720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 45,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-31092f2d8c40",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -30215,
+        "locY": 116960,
+        "locZ": -3408
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 49,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-421b9d82e7ab",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -29602,
+        "locY": 122526,
+        "locZ": -3632
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 60,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-4575f44c3da7",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -30718,
+        "locY": 117850,
+        "locZ": -3828
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 54,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-45ca9ac48d2e",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 7623,
+        "locX": -25046,
+        "locY": 116903,
+        "locZ": -3704
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 43,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-48de4051c8ec",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -27699,
+        "locY": 116782,
+        "locZ": -3720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 50,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-4d6fdf2f9098",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 52976,
+        "locX": -19734,
+        "locY": 121942,
+        "locZ": -3280
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 69,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-4d7f170d88b5",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -26443,
+        "locY": 112864,
+        "locZ": -3472
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 40,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-65a42f198e99",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -30316,
+        "locY": 116426,
+        "locZ": -3392
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 51,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-6be975ea8d6f",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -30719,
+        "locY": 117138,
+        "locZ": -3828
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 42,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-6d935e9dcaa4",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 32151,
+        "locX": -23657,
+        "locY": 123810,
+        "locZ": -3592
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 62,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-7b95bbebfaca",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -26992,
+        "locY": 118384,
+        "locZ": -3720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 48,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-81603363db11",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -27248,
+        "locY": 113220,
+        "locZ": -3536
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 38,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-827ee6d0f728",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -26694,
+        "locY": 116782,
+        "locZ": -3688
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 55,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-832df1a78c4c",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 43379,
+        "locX": -23446,
+        "locY": 121602,
+        "locZ": -3624
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 64,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-8a33521275ef",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 61140,
+        "locX": -20650,
+        "locY": 122372,
+        "locZ": -3392
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 67,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-96fe542d3285",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 16177,
+        "locX": -23113,
+        "locY": 123300,
+        "locZ": -3624
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 71,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-9defccd0a454",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -27248,
+        "locY": 113932,
+        "locZ": -3520
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 39,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-9e251177a306",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 54060,
+        "locX": -27600,
+        "locY": 122576,
+        "locZ": -3632
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 58,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-a44df57e28dc",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 43775,
+        "locX": -22394,
+        "locY": 122375,
+        "locZ": -3576
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 68,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-a502b6df1e3f",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 8192,
+        "locX": -22898,
+        "locY": 124046,
+        "locZ": -3576
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 75,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-ac101c26aa81",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 52650,
+        "locX": -27266,
+        "locY": 123933,
+        "locZ": -3568
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 57,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-afa2d303644a",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -28704,
+        "locY": 117850,
+        "locZ": -3712
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 56,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-b4c6a502d4af",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 30536,
+        "locX": -24747,
+        "locY": 123566,
+        "locZ": -3688
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 74,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-ba5e7034b07f",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -29208,
+        "locY": 117316,
+        "locZ": -3664
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 44,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-bc4409764fce",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 13732,
+        "locX": -26497,
+        "locY": 114741,
+        "locZ": -3560
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 41,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-c03bf941cc74",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -29108,
+        "locY": 116782,
+        "locZ": -3656
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 46,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-c22ef902da50",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 28717,
+        "locX": -25547,
+        "locY": 124067,
+        "locZ": -3600
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 73,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-c8cbb71191f3",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 30355,
+        "locX": -21578,
+        "locY": 122670,
+        "locZ": -3512
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 63,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-cc561e981431",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -27999,
+        "locY": 119096,
+        "locZ": -3720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 47,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-cda9b9a0653f",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 6923,
+        "locX": -27037,
+        "locY": 124855,
+        "locZ": -3456
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 59,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-d4c4d8b67752",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 12119,
+        "locX": -20907,
+        "locY": 121079,
+        "locZ": -3400
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 66,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-e6b60580be91",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 8735,
+        "locX": -23241,
+        "locY": 120565,
+        "locZ": -3600
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 72,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-e8ebeae2b663",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -28100,
+        "locY": 118918,
+        "locZ": -3720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 52,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-ec86c959a268",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -30014,
+        "locY": 116604,
+        "locZ": -3456
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 53,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-ec909dd4ba75",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -22044,
+        "locY": 120738,
+        "locZ": -3512
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 70,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-f254731bba35",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -22246,
+        "locY": 119670,
+        "locZ": -3584
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 61,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-920-fda8c982f144",
+    "mobId": 920,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -22346,
+        "locY": 120916,
+        "locZ": -3544
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 65,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-039150c423d2",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 47908,
+        "locX": -21513,
+        "locY": 121289,
+        "locZ": -3464
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 102,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-054ccbc399b6",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 3855,
+        "locX": -26993,
+        "locY": 123280,
+        "locZ": -3640
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 96,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-0aaf289ecd6d",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -28393,
+        "locY": 107838,
+        "locZ": -3712
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 116,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-0c1ef2bc8dac",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -31033,
+        "locY": 112076,
+        "locZ": -3956
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 130,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-0e459f1c13ed",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -26443,
+        "locY": 113220,
+        "locZ": -3560
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 77,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-128c6f670c7e",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -29208,
+        "locY": 118028,
+        "locZ": -3704
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 84,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-17044b689543",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 2213,
+        "locX": -26223,
+        "locY": 118796,
+        "locZ": -3712
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 87,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-1fdcbf66dc07",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -30007,
+        "locY": 123594,
+        "locZ": -3536
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 98,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-2d684ea402fa",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 34826,
+        "locX": -20713,
+        "locY": 121736,
+        "locZ": -3368
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 107,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-39b36fb78cd8",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -29813,
+        "locY": 117316,
+        "locZ": -3568
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 94,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-3f95cc7c4f80",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -28605,
+        "locY": 116604,
+        "locZ": -3704
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 95,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-4046012a4dc2",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -31314,
+        "locY": 108728,
+        "locZ": -3568
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 118,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-436db5eb815e",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 32928,
+        "locX": -20359,
+        "locY": 121267,
+        "locZ": -3336
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 101,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-46664ed01893",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 29697,
+        "locX": -27441,
+        "locY": 117792,
+        "locZ": -3720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 83,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-4ad7d746e6f3",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -29199,
+        "locY": 107126,
+        "locZ": -3536
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 119,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-635d543a9c57",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 54324,
+        "locX": -23395,
+        "locY": 122394,
+        "locZ": -3632
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 110,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-68f8c1ec289e",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 47518,
+        "locX": -20835,
+        "locY": 122933,
+        "locZ": -3432
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 108,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-69226ab8cb35",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -30731,
+        "locY": 111898,
+        "locZ": -3956
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 129,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-74c9021a8c31",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -29298,
+        "locY": 108372,
+        "locZ": -3672
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 115,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-7520646c1f91",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -30104,
+        "locY": 106948,
+        "locZ": -3440
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 114,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-754b9ba0d91b",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -23455,
+        "locY": 118602,
+        "locZ": -3656
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 112,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-7924e00aa852",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -27147,
+        "locY": 113042,
+        "locZ": -3528
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 78,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-8525f44a01b9",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -31333,
+        "locY": 113322,
+        "locZ": -3956
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 128,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-867bca3b4fe9",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 4065,
+        "locX": -24271,
+        "locY": 119291,
+        "locZ": -3624
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 81,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-8b401eade844",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -28906,
+        "locY": 117850,
+        "locZ": -3712
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 90,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-8dec19fc866e",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -31435,
+        "locY": 113500,
+        "locZ": -3956
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 126,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-8f2de25d3203",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -31737,
+        "locY": 112254,
+        "locZ": -3956
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 131,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-952495e55f45",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 51512,
+        "locX": -28440,
+        "locY": 124575,
+        "locZ": -3480
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 99,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-a0b5725331d7",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 46454,
+        "locX": -30761,
+        "locY": 106467,
+        "locZ": -3304
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 117,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-a96fd5f25367",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -31413,
+        "locY": 107838,
+        "locZ": -3408
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 123,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-b039240653b3",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 48555,
+        "locX": -28727,
+        "locY": 113338,
+        "locZ": -3392
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 79,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-b1a4837f21ba",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -27752,
+        "locY": 113754,
+        "locZ": -3520
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 76,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-b539cf3228c6",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 61958,
+        "locX": -29487,
+        "locY": 112979,
+        "locZ": -3208
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 82,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-b769f48df69e",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 23709,
+        "locX": -34576,
+        "locY": 111539,
+        "locZ": -2344
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 124,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-b83a68301dfc",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -28796,
+        "locY": 108194,
+        "locZ": -3696
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 121,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-bd5153128507",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -28002,
+        "locY": 116248,
+        "locZ": -3720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 85,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-c23a88cbd9d6",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -28201,
+        "locY": 117316,
+        "locZ": -3720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 86,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-c5ef9554b450",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -21944,
+        "locY": 119136,
+        "locZ": -3696
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 109,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-c643ac099e44",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 43756,
+        "locX": -23382,
+        "locY": 120761,
+        "locZ": -3616
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 111,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-c651db19753d",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -27450,
+        "locY": 113220,
+        "locZ": -3520
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 80,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-c9d88a9f9e6f",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -22950,
+        "locY": 120204,
+        "locZ": -3576
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 113,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-cdf9a9c83217",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -30306,
+        "locY": 107304,
+        "locZ": -3440
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 120,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-d71bf633f593",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 10397,
+        "locX": -27199,
+        "locY": 106218,
+        "locZ": -3720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 122,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-d72c875a8008",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -28402,
+        "locY": 117672,
+        "locZ": -3720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 89,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-d7a090ad3e93",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 28418,
+        "locX": -33961,
+        "locY": 117697,
+        "locZ": -2480
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 92,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-d9930cc8d0d1",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 17442,
+        "locX": -19479,
+        "locY": 121134,
+        "locZ": -3272
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 103,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-e2035e4fb6e6",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 55414,
+        "locX": -29142,
+        "locY": 115280,
+        "locZ": -3544
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 93,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-e36f98e69e96",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 21570,
+        "locX": -27426,
+        "locY": 119195,
+        "locZ": -3720
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 88,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-e8a32346474a",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -30530,
+        "locY": 112610,
+        "locZ": -3956
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 127,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-ea2a97525d02",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 56166,
+        "locX": -22764,
+        "locY": 121578,
+        "locZ": -3584
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 105,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-ee07633368a6",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -32240,
+        "locY": 112076,
+        "locZ": -3956
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 125,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-ee2856f84dc9",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -29504,
+        "locY": 124128,
+        "locZ": -3512
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 97,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-efc51c6aa4c2",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 57072,
+        "locX": -23885,
+        "locY": 122560,
+        "locZ": -3664
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 100,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-f6b5b22f7437",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -23255,
+        "locY": 119670,
+        "locZ": -3584
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 104,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-fbb95929329b",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -22750,
+        "locY": 119848,
+        "locZ": -3568
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 106,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-921-fc58fcac99c9",
+    "mobId": 921,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": -26894,
+        "locY": 116426,
+        "locZ": -3680
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 32,
+    "sourceIndex": 91,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
     "id": "spawn-977-b0fa04372de8",
     "mobId": 977,
     "period": "always",
@@ -586315,6 +589131,94 @@
       ],
       "id": "t25_18_qmob_031130_02",
       "sourceIndex": 3612
+    }
+  },
+  {
+    "id": "spawn-5185-a90bb8fd6eb5",
+    "mobId": 5185,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 28672,
+        "locX": 113356,
+        "locY": 93848,
+        "locZ": -2080
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 0,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-5186-ce269b0418aa",
+    "mobId": 5186,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 57344,
+        "locX": 117733,
+        "locY": 94108,
+        "locZ": -2064
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 1,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-5187-be95506c2aab",
+    "mobId": 5187,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": 127714,
+        "locY": 90495,
+        "locZ": -2088
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 2,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
+    }
+  },
+  {
+    "id": "spawn-5188-f891a2a9dfcd",
+    "mobId": 5188,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 49152,
+        "locX": 106671,
+        "locY": 93905,
+        "locZ": -2064
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 60,
+    "sourceIndex": 3,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_pet_quest_npcs",
+      "sourceIndex": 3972
     }
   },
   {

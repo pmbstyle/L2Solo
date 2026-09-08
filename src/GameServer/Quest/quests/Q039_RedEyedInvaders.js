@@ -30,13 +30,13 @@ module.exports = {
       return p("Bathis", "Collect 100 necklaces.");
     }
     if (e === "necklaces" && c === 3) {
-      await q.takeItem(s, BL, -1);
-      await q.takeItem(s, RD, -1);
+      await q.takeItem(s.session, BL, -1);
+      await q.takeItem(s.session, RD, -1);
       await s.set("cond", 4);
       return p("Bathis", "Collect incense and gems.");
     }
     if (e === "finish" && c === 5) {
-      for (const z of [IN, G]) await q.takeItem(s, z, -1);
+      for (const z of [IN, G]) await q.takeItem(s.session, z, -1);
       for (const [id, a] of [
         [6521, 60],
         [6529, 1],

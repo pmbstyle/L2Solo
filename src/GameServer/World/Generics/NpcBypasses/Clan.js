@@ -180,6 +180,24 @@ function levelUp(session) {
         return;
     }
 
+    if (Number(clan.level) === 3) {
+        if (session.clanLevelUpPending) return;
+        session.clanLevelUpPending = true;
+        return Database.raisePlayerClanToFour({ clanId: clan.id, characterId: actor.fetchId() }).then(async result => {
+            if (!result.ok) { sendHtml(session, page(errorText(result.code, result) + returnLink())); return result; }
+            actor.setSp(result.sp);
+            clan.level = 4;
+            await invoke('GameServer/Clan/ClanAllianceService').syncInventory(session);
+            ClanService.onlineSessions(clan).forEach(member => member.dataSendToMe(ServerResponse.pledgeShowInfoUpdate(clan)));
+            session.dataSendToMe(ServerResponse.userInfo(actor));
+            sendHtml(session, page('Clan level increased to <font color="LEVEL">4</font>.' + returnLink()));
+            return result;
+        }).catch(error => {
+            utils.infoWarn('Clan', 'level four upgrade failed: %s', error.message);
+            sendHtml(session, page('Failed to increase clan level.' + returnLink()));
+        }).finally(() => { session.clanLevelUpPending = false; });
+    }
+
     spendLevelCost(session, requirement).then((spent) => {
         if (!spent.ok) {
             sendHtml(session, page(errorText(spent.code, spent) + returnLink()));

@@ -82,7 +82,8 @@ function activeActionTarget(session) {
 }
 
 function combatState(leaderSession, options = {}) {
-    const members = partySessions(leaderSession, { includeDead: true });
+    const members = partySessions(leaderSession, { includeDead: true })
+        .filter(session => !PartyAwareness.isDistantQuestCourier(session, leaderSession));
     const living = members.filter(isAlive);
     const pull = travellingPull(leaderSession);
     const ignoredTargetIds = new Set((options.ignoreTargetIds || [])
