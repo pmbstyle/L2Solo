@@ -1,6 +1,6 @@
 const SendPacket = invoke('Packet/Send');
 
-function shortcutInit(shortcuts) {
+function shortcutInit(shortcuts, skillset) {
     const packet = new SendPacket(0x45);
 
     packet
@@ -14,7 +14,7 @@ function shortcutInit(shortcuts) {
 
         if (shortcut.kind === 2) {
             packet.
-                writeD(0x01);
+                writeD(skillset.fetchSkill(shortcut.id)?.fetchLevel() ?? 1);
         }
 
         packet

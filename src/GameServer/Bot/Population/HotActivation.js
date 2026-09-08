@@ -1,9 +1,7 @@
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
-const Config = invoke('GameServer/Bot/Population/PopulationConfig');
-const SpotService = invoke('GameServer/Bot/AI/SpotService');
-const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
+const ActivationPlacement = invoke('GameServer/Bot/Population/ActivationPlacement');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const { marketStoreTitle } = invoke('GameServer/Bot/Economy/MarketStoreTitle');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
@@ -29,87 +27,6 @@ function distance2d(a, b) {
     const dx = Number(a.locX || 0) - Number(b.locX || 0);
     const dy = Number(a.locY || 0) - Number(b.locY || 0);
     return Math.sqrt(dx * dx + dy * dy);
-}
-
-function randomAround(loc, radius) {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = Math.random() * radius;
-    const locX = Math.round(Number(loc.locX || 0) + Math.cos(angle) * dist);
-    const locY = Math.round(Number(loc.locY || 0) + Math.sin(angle) * dist);
-    const baseZ = Number(loc.locZ || 0);
-
-    return {
-        locX,
-        locY,
-        locZ: GeodataEngine.getHeight(locX, locY, baseZ)
-    };
-}
-
-function pushAwayFromPlayer(loc, playerLoc) {
-    if (!playerLoc || distance2d(loc, playerLoc) >= Config.activationMinPlayerDistance) return loc;
-
-    const dx = Number(loc.locX || 0) - Number(playerLoc.locX || 0);
-    const dy = Number(loc.locY || 0) - Number(playerLoc.locY || 0);
-    const angle = Math.abs(dx) + Math.abs(dy) > 1 ? Math.atan2(dy, dx) : Math.random() * Math.PI * 2;
-    const distance = Config.activationMinPlayerDistance + 120 + Math.random() * 220;
-    const locX = Math.round(Number(playerLoc.locX || 0) + Math.cos(angle) * distance);
-    const locY = Math.round(Number(playerLoc.locY || 0) + Math.sin(angle) * distance);
-    const baseZ = Number(playerLoc.locZ || loc.locZ || 0);
-
-    return {
-        locX,
-        locY,
-        locZ: GeodataEngine.getHeight(locX, locY, baseZ)
-    };
-}
-
-function validPlayerPlacement(loc, playerLoc) {
-    if (!playerLoc) return true;
-    const dist = distance2d(loc, playerLoc);
-    return dist >= Config.activationMinPlayerDistance && dist <= Config.activationRadius;
-}
-
-function hasLocation(loc) {
-    return !!loc
-        && ['locX', 'locY'].every((key) => loc[key] !== null
-            && loc[key] !== undefined
-            && String(loc[key]).trim() !== ''
-            && Number.isFinite(Number(loc[key])));
-}
-
-function activationPlacement(state, options = {}) {
-    if (options.keepStoreLocation && (options.storeLoc || state?.loc)) {
-        const loc = options.storeLoc || state.loc;
-        return { loc: { ...loc }, spot: SpotService.findCurrentSpot(loc) || null };
-    }
-    const savedSpot = state?.spotId ? SpotService.findById(state.spotId) : null;
-    // Coordinates are authoritative for activation. A stale destination spot
-    // must not resurrect a bot on a remote field it never reached.
-    const hasStateLocation = hasLocation(state?.loc);
-    const physicalSpot = hasStateLocation ? SpotService.findCurrentSpot(state.loc) : null;
-    const spot = hasStateLocation ? physicalSpot : savedSpot;
-    const stateLocation = hasStateLocation ? state.loc : null;
-    const baseLoc = options.playerLoc
-        ? (options.forceNearPlayer ? options.playerLoc : (stateLocation || spot?.center || { locX: 0, locY: 0, locZ: 0 }))
-        : (stateLocation || spot?.center || { locX: 0, locY: 0, locZ: 0 });
-    let candidate = null;
-
-    for (let i = 0; i < Config.activationPlacementAttempts; i++) {
-        candidate = spot && !options.playerLoc
-            ? SpotService.randomPointNear(spot, Config.activationPlacementRadius)
-            : randomAround(baseLoc, Config.activationPlacementRadius);
-
-        if (validPlayerPlacement(candidate, options.playerLoc)) {
-            return { loc: candidate, spot: SpotService.findCurrentSpot(candidate) || spot };
-        }
-    }
-
-    const loc = pushAwayFromPlayer(baseLoc, options.playerLoc);
-
-    return {
-        loc,
-        spot: SpotService.findCurrentSpot(loc) || spot
-    };
 }
 
 function spotSnapshot(spot) {
@@ -186,6 +103,17 @@ const HotActivation = {
             if (pendingActivations.has(state.characterId)) {
                 return { ok: false, reason: 'activation_pending', state };
             }
+            const craftShop = state.activity === 'crafting' && state.stats?.craftShop
+                ? CraftShopService.profileFor(state) : null;
+            const marketStore = state.activity === 'merchant' ? state.stats?.marketStore : null;
+            const placement = ActivationPlacement.resolve(state, {
+                ...options,
+                keepStoreLocation: options.keepStoreLocation || !!marketStore || !!craftShop,
+                storeLoc: marketStore?.loc || craftShop?.loc || state.loc
+            });
+            // A failed placement must not dissolve a party, remove a market
+            // listing or hand ownership away from the cold worker.
+            if (!placement) return { ok: false, reason: 'no_safe_activation_placement', state };
             // Reserve the character before party cleanup or recipe sync can
             // yield. Otherwise two concurrent visibility/invite requests can
             // both pass the guard and create independent hot AI sessions.
@@ -231,16 +159,8 @@ const HotActivation = {
                 state = releasedState;
                 releasedForActivation = true;
 
-                const craftShop = state.activity === 'crafting' && state.stats?.craftShop
-                    ? CraftShopService.profileFor(state)
-                    : null;
                 craftActivation = !!craftShop;
                 const plan = activationPlan(state, options);
-                const marketStore = state.activity === 'merchant' ? state.stats?.marketStore : null;
-                const placement = activationPlacement(state, {
-                    ...options,
-                    storeLoc: marketStore?.loc || craftShop?.loc || state.loc
-                });
                 if (marketStore) MarketOpportunity.removeColdStore(state.characterId);
                 const recipesReady = craftShop
                     ? CraftShopService.ensureRecipes(state.characterId, craftShop)

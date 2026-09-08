@@ -1,6 +1,8 @@
 const { spawnSync } = require('child_process');
 
 const tests = [
+    'tests/test_shortcuts.js',
+    'tests/test_shortcut_login.js',
     'tests/test_clan_alliance_quest.js',
     'tests/test_clan_alliance_runtime.js',
     'tests/test_clan_alliance_chests.js',
@@ -38,6 +40,7 @@ const tests = [
     'tests/test_attack_hit_flags.js',
     'tests/test_player_attack_range.js',
     'tests/test_player_attack_approach.js',
+    'tests/test_player_approach_position_refresh.js',
     'tests/test_bot_target_selection.js',
     'tests/test_rooted_combat_requests.js',
     'tests/test_giran_arena.js',
@@ -202,6 +205,7 @@ const tests = [
     'tests/test_bot_shield_reconciliation.js',
     'tests/test_bot_population_policy.js',
     'tests/test_floor_aware_activation_policy.js',
+    'tests/test_bot_activation_placement.js',
     'tests/test_bot_population_scheduler_slices.js',
     'tests/test_bot_protected_party_formation.js',
     'tests/test_bot_population_scheduler_telemetry.js',
@@ -286,6 +290,7 @@ const tests = [
     'tests/test_effect_restrictions.js',
     'tests/test_effect_store_c4_slots.js',
     'tests/test_effect_ticker.js',
+    'tests/test_npc_effect_panels.js',
     'tests/test_automation_regeneration.js',
     'tests/test_equipment_item_skills.js',
     'tests/test_grade_penalty.js',

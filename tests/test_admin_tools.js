@@ -336,6 +336,8 @@ async function assertSetOwnLevelUpdatesRuntimeActor() {
         return Promise.resolve();
     };
     Database.fetchSkills = () => Promise.resolve(storedSkills);
+    Database.fetchShortcuts = async () => storedSkills.filter(skill => !skill.passive).slice(0, 1)
+        .map(skill => ({ kind: 2, slot: 0, id: skill.selfId, unknown: 1 }));
 
     const classInfo = DataCache.classTemplates.find((row) => row.classId === 0);
     const session = {
@@ -384,6 +386,9 @@ async function assertSetOwnLevelUpdatesRuntimeActor() {
     assert.ok(actor.fetchMaxMp() > 30, 'admin level should recalculate max MP');
     assert.ok(actor.skillset.fetchSkills().length > 1, 'admin level should award available skills without relying on a relog');
     assert.ok(session.packets.some((packet) => packet[0] === 0x58), 'admin level should send a SkillsList packet');
+    const shortcut = session.packets.find(packet => packet[0] === 0x44);
+    assert.ok(shortcut, 'admin level must refresh an existing skill shortcut');
+    assert.equal(shortcut.readInt32LE(13), session.actor.skillset.fetchSkill(shortcut.readInt32LE(9)).fetchLevel());
     assert.ok(session.packets.some((packet) => packet[0] === 0x0e), 'admin level should send a StatusUpdate packet');
     assert.ok(session.packets.some((packet) => packet[0] === 0x04), 'admin level should send a UserInfo packet');
 

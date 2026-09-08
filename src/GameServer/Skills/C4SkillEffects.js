@@ -1321,13 +1321,14 @@ function refreshEtcStatus(session, actor) {
 }
 
 function refreshEffects(session, target) {
+    // NPC cast sessions forward to a nearby player; their actor is not the receiver.
+    // Personal effect packets must never describe an NPC, including summons.
+    const owner = !target?.fetchKind && (target?.session?.dataSendToMe
+        ? target.session : session?.actor === target ? session : null);
     const packet = ServerResponse.abnormalStatusUpdate.fromActor(target);
-    if (target?.session?.dataSendToMe) {
-        target.session.dataSendToMe(packet);
-        target.session.dataSendToMe(ServerResponse.shortBuffStatusUpdate.fromActor(target));
-    } else if (target === session?.actor && session?.dataSendToMe) {
-        session.dataSendToMe(packet);
-        session.dataSendToMe(ServerResponse.shortBuffStatusUpdate.fromActor(target));
+    if (owner?.dataSendToMe) {
+        owner.dataSendToMe(packet);
+        owner.dataSendToMe(ServerResponse.shortBuffStatusUpdate.fromActor(target));
     }
 
     if (target?.session?.dataSendToMe && target?.backpack?.fetchPaperdollSelfId) {

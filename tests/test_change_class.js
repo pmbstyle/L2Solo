@@ -50,6 +50,8 @@ Database.updateSkillLevel = (characterId, selfId, level) => {
     return Promise.resolve();
 };
 Database.fetchSkills = () => Promise.resolve(storedSkills);
+Database.fetchShortcuts = async () => storedSkills.filter(skill => !skill.passive).slice(0, 1)
+    .map(skill => ({ kind: 2, slot: 0, id: skill.selfId, unknown: 1 }));
 
 function createSession({ level = 20, classId = 0 } = {}) {
     const classInfo = DataCache.classTemplates.find((row) => row.classId === classId);
@@ -107,6 +109,9 @@ function createSession({ level = 20, classId = 0 } = {}) {
     assert.ok(session.actor.fetchMaxHp() > 80, 'class change should recalculate vitals');
     assert.ok(session.actor.skillset.fetchSkills().length > 1, 'class change should award target-class skills');
     assert.ok(session.packets.some((packet) => packet[0] === 0x58), 'class change should send SkillsList');
+    const shortcut = session.packets.find(packet => packet[0] === 0x44);
+    assert.ok(shortcut, 'class change must refresh an existing skill shortcut');
+    assert.equal(shortcut.readInt32LE(13), session.actor.skillset.fetchSkill(shortcut.readInt32LE(9)).fetchLevel());
     assert.ok(session.packets.some((packet) => packet[0] === 0x04), 'class change should send UserInfo');
     assert.ok(session.packets.some((packet) => packet[0] === 0x0e), 'class change should send StatusUpdate');
     assert.ok(session.packets.some((packet) => packet[0] === 0x03), 'class change should refresh the character class for nearby clients');
