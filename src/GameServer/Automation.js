@@ -242,6 +242,7 @@ class Automation extends SelectedModel {
     }
 
     scheduleAction(session, src, dst, radius, callback, options = {}) {
+        this.playerAttackApproach = null;
         this.stopMoveInterpolation();
         const actionRange = options.collisionAware
             ? AttackRange.effectiveRange(src, dst, radius)
@@ -287,8 +288,18 @@ class Automation extends SelectedModel {
         );
         if (!movingSelf || movingBot) this.startMoveInterpolation(session, src, stopCoords, ticks);
 
+        // Players report position intermittently. Keep the fallback arrival,
+        // but allow an accepted position update to shorten its stale estimate.
+        const approach = movingSelf && !movingBot && weaponAttack ? {
+            session, src, dst, movementRadius, actionRange, dueAt: Date.now() + ticks,
+            stopCoords, finish: null, timerRevision: 0
+        } : null;
+        this.playerAttackApproach = approach;
         // Arrived
-        Timer.start(this.timer.action, () => {
+        const arrive = () => {
+            if (approach && this.playerAttackApproach !== approach) return;
+            this.playerAttackApproach = null;
+            if (approach) Timer.clear(this.timer.action);
             this.stopMoveInterpolation();
             src.state.setTowards(false);
             this.clearDestId();
@@ -296,7 +307,7 @@ class Automation extends SelectedModel {
             // point. C4 need not acknowledge the final MoveToPawn position,
             // so complete the server-owned approach for players as well.
             // Movement cancellation already clears this arrival timer.
-            src.setLocXYZ(stopCoords);
+            src.setLocXYZ(approach ? approach.stopCoords : stopCoords);
             if (movingSelf) {
                 if (session.moveTimer) {
                     clearInterval(session.moveTimer);
@@ -305,10 +316,45 @@ class Automation extends SelectedModel {
             }
             callback();
 
-        }, ticks);
+        };
+        if (approach) {
+            approach.finish = arrive;
+            this.schedulePlayerAttackArrival(approach, ticks);
+        } else {
+            Timer.start(this.timer.action, arrive, ticks);
+        }
+    }
+
+    schedulePlayerAttackArrival(approach, delay) {
+        const revision = ++approach.timerRevision;
+        Timer.start(this.timer.action, () => {
+            if (this.playerAttackApproach !== approach || approach.timerRevision !== revision) return;
+            approach.finish();
+        }, delay);
+    }
+
+    refreshPlayerAttackApproach(session, actor) {
+        const approach = this.playerAttackApproach;
+        if (!approach || approach.session !== session || approach.src !== actor) return;
+        if (actor.isDead?.() || !invoke('GameServer/Effects/EffectRestrictions').canMove(actor)) return;
+        if (AttackRange.distance2d(actor, approach.dst) <= approach.actionRange) {
+            approach.stopCoords = { locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() };
+            approach.finish();
+            return;
+        }
+        const ticks = this.ticksToMove(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ(),
+            approach.dst.fetchLocX(), approach.dst.fetchLocY(), approach.dst.fetchLocZ(),
+            approach.movementRadius, actor.fetchCollectiveRunSpd());
+        const dueAt = Date.now() + ticks;
+        // Duplicated or older reports must not extend the original deadline.
+        if (!Number.isFinite(dueAt) || dueAt >= approach.dueAt) return;
+        approach.dueAt = dueAt;
+        approach.stopCoords = this.actionStopCoords(actor, approach.dst, approach.movementRadius);
+        this.schedulePlayerAttackArrival(approach, ticks);
     }
 
     scheduleMoveToCoords(session, src, to, callback = () => {}) {
+        this.playerAttackApproach = null;
         const from = {
             locX: src.fetchLocX(),
             locY: src.fetchLocY(),
@@ -440,6 +486,7 @@ class Automation extends SelectedModel {
     }
 
     abortAll(creature, { notifyClient = true } = {}) {
+        this.playerAttackApproach = null;
         this.stopMoveInterpolation();
         const wasMoving = !!creature?.state?.inMotion?.() && !creature?.session?.pendingPathRequest;
         this.clearDestId();

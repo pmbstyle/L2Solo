@@ -22,6 +22,7 @@ function updatePosition(session, actor, coords, environmentOptions) {
     invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
 
     // Reschedule actions based on updated position
+    actor.automation?.refreshPlayerAttackApproach?.(session, actor);
     if (actor.storedAttack) {
         Generics.attackExec(session, actor, structuredClone(actor.storedAttack));
         Generics.clearStoredActions(session, actor);

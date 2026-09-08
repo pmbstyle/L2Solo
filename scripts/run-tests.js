@@ -38,6 +38,7 @@ const tests = [
     'tests/test_attack_hit_flags.js',
     'tests/test_player_attack_range.js',
     'tests/test_player_attack_approach.js',
+    'tests/test_player_approach_position_refresh.js',
     'tests/test_bot_target_selection.js',
     'tests/test_rooted_combat_requests.js',
     'tests/test_giran_arena.js',
