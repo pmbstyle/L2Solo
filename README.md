@@ -29,6 +29,8 @@ Support, updates, and communication. Join the Discord to be up to date with deve
 Clean C4 client protocol 656
 
 ## Latest updates
+
+- **2026-09-08** Pets, striders, clan lvl 4, fixes and updates
 - **2026-09-06** Bot PvP, save game, save TP location, optimization, chat, navigation
 - **2026-09-04** Player clan warehouse use for equipment exchange, bug fixes
 - **2026-09-02** AFK trade, market observer, xN mob fix
