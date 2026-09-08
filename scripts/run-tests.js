@@ -203,6 +203,7 @@ const tests = [
     'tests/test_bot_shield_reconciliation.js',
     'tests/test_bot_population_policy.js',
     'tests/test_floor_aware_activation_policy.js',
+    'tests/test_bot_activation_placement.js',
     'tests/test_bot_population_scheduler_slices.js',
     'tests/test_bot_protected_party_formation.js',
     'tests/test_bot_population_scheduler_telemetry.js',

@@ -9,6 +9,8 @@ const PartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const HotActivation = invoke('GameServer/Bot/Population/HotActivation');
+const Geo = invoke('GameServer/Geodata/GeodataEngine');
+const originalGeo = Object.fromEntries(['getCellData', 'getHeight', 'hasGeo', 'hasLineOfSight'].map((key) => [key, Geo[key]]));
 const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const BotManager = invoke('GameServer/Bot/BotManager');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
@@ -51,6 +53,11 @@ const originalFormationState = {
 };
 
 async function run() {
+    // Ownership/party fixtures use synthetic coordinates on an open plane.
+    Geo.getCellData = (x, y, z) => ({ z, nswe: 15 });
+    Geo.getHeight = (x, y, z) => z;
+    Geo.hasGeo = () => true;
+    Geo.hasLineOfSight = () => true;
     Config.partyMinSize = 2;
     Config.partyMaxSize = 5;
     let projectionCalls = 0;
@@ -334,6 +341,11 @@ async function run() {
         return Promise.resolve({ actor: {} });
     };
 
+    Geo.getCellData = (x, y, z) => ({ z, nswe: 0 });
+    const unsafe = await HotActivation.activate(groupedState, 'party_invite', { keepStoreLocation: true });
+    assert.strictEqual(unsafe.reason, 'no_safe_activation_placement');
+    assert.deepStrictEqual(activationOrder, [], 'unsafe placement must not hand off ownership, dissolve the party or spawn');
+    Geo.getCellData = (x, y, z) => ({ z, nswe: 15 });
     const activated = await HotActivation.activate(groupedState, 'party_invite', { keepStoreLocation: true });
     assert.strictEqual(activated.ok, true, 'an explicitly requested grouped bot should still materialize');
     assert.deepStrictEqual(
@@ -528,6 +540,7 @@ run().catch((err) => {
     console.error(err);
     process.exitCode = 1;
 }).finally(() => {
+    Object.assign(Geo, originalGeo);
     PartyState.active = originals.active;
     PartyState.counts = originals.counts;
     LifeState.statesForParty = originals.statesForParty;
