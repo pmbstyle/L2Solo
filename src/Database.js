@@ -2161,13 +2161,16 @@ const Database = {
     createAfkTradeShop(ownerId, config = {}) {
         const characterId = Number(ownerId);
         const storeType = Number(config.storeType);
-        const rows = Array.isArray(config.lines) ? config.lines.slice(0, 4) : [];
+        const rows = Array.isArray(config.lines) ? config.lines.slice() : [];
         if (!characterId || ![1, 3].includes(storeType) || rows.length < 1) {
             return Promise.reject(new Error('invalid_afk_trade_shop'));
         }
         return withCharacterFlush(characterId, () => inTransaction(() => {
-            const owner = one('SELECT id FROM characters WHERE id = ?', [characterId]);
+            const owner = one('SELECT id, race FROM characters WHERE id = ?', [characterId]);
             if (!owner) throw new Error('afk_trade_owner_missing');
+            const expandTrade = one('SELECT level FROM skills WHERE characterId = ? AND selfId = 1370', [characterId]);
+            const limit = require('./GameServer/PrivateStoreLimits').tradeLimit(owner.race, expandTrade?.level || 0, storeType);
+            if (rows.length > limit) throw new Error(`AFK trade allows at most ${limit} item slots`);
             const active = one("SELECT id FROM afk_trade_shops WHERE ownerId = ? AND status = 'active'", [characterId]);
             if (active) throw new Error('afk_trade_already_active');
 

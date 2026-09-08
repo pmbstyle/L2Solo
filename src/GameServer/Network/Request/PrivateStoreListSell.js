@@ -9,7 +9,8 @@ module.exports = (session, buffer) => {
     const packageSale = packet.data[0] === 1; const count = Number(packet.data[1]);
     // The C4 client can append optional fields after the rows. Lisvus validates
     // only that every declared row is present, not that this is the exact end.
-    if (!Number.isSafeInteger(count) || count < 1 || count > 4 || buffer.length < 9 + count * 12) {
+    if (!PrivateStore.checkRowCount(session, PrivateStore.SELL, count)) return;
+    if (buffer.length < 9 + count * 12) {
         utils.infoWarn('PrivateStore', 'reject sell publish for %s: len=%d packaged=%s count=%d', session?.actor?.fetchName?.() || 'unknown', buffer.length, packageSale, count);
         return;
     }

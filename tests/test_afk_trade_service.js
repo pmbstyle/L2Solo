@@ -96,6 +96,21 @@ function sessionFor(accountId, row, items) {
     const customer = sessionFor('afk_service_customer', customerRow, await Database.fetchItems(customerId));
     World.user.sessions.push(owner, customer);
 
+    for (const town of Object.values(invoke('GameServer/World/TownRespawn').towns)) {
+        owner.actor.setLocXYZ(town);
+        for (const type of [AfkTrade.SELL, AfkTrade.BUY]) {
+            assert.strictEqual(await AfkTrade.begin(owner, type), true, `${town.name}: AFK shop window opens`);
+            assert.strictEqual(owner.afkTradeDraft, type);
+            assert.strictEqual(PrivateStore.quit(owner, type), true);
+        }
+    }
+    owner.actor.setLocXYZ({ locX: 0, locY: 0, locZ: 0 });
+    for (const type of [AfkTrade.SELL, AfkTrade.BUY]) {
+        assert.strictEqual(await AfkTrade.begin(owner, type), false, 'AFK shops remain blocked outside towns');
+        assert.strictEqual(owner.afkTradeDraft, null);
+    }
+    owner.actor.setLocXYZ(character('ServiceOwner'));
+
     assert.strictEqual(await AfkTrade.begin(owner, AfkTrade.SELL), true);
     assert.strictEqual(owner.afkTradeDraft, AfkTrade.SELL);
     assert.strictEqual(PrivateStore.setTitle(owner, AfkTrade.SELL, 'AFK materials'), true);
@@ -139,6 +154,7 @@ function sessionFor(accountId, row, items) {
         'equal-price bot offer must yield to the player AFK shop'
     );
 
+    owner.sent.length = 0;
     const trade = await AfkTrade.buyFromShop(
         customerId,
         projection.actor.fetchPrivateStore(),
@@ -147,6 +163,9 @@ function sessionFor(accountId, row, items) {
         { expectedPrice: 11 }
     );
     assert.strictEqual(trade.totalPrice, 11);
+    assert(owner.sent.some(packet => packet[0] === 0x64 && packet.toString('utf16le', 13).includes('[AFK SALE] Sold 1x Varnish for 11 Adena.')));
+    assert.strictEqual(owner.sent.filter(packet => packet[0] === 0x98).length, 1, 'committed sale plays one sound');
+    assert(!owner.sent.some(packet => packet[0] === 0x4a), 'sale notification is not overhead speech');
     assert.strictEqual(customer.actor.backpack.fetchItemFromSelfId(1865).fetchAmount(), 1);
     assert.strictEqual(customer.actor.backpack.fetchTotalAdena(), 89);
     assert.strictEqual(owner.actor.backpack.fetchTotalAdena(), 111);
@@ -167,6 +186,7 @@ function sessionFor(accountId, row, items) {
     assert(AfkTrade.activeDemandSelfIds().includes(1865), 'active AFK WTB stock must enter the demand index');
     assert.strictEqual(owner.actor.backpack.fetchTotalAdena(), 97, 'buy shop must reserve its complete budget');
     const customerVarnish = customer.actor.backpack.fetchItemFromSelfId(1865);
+    owner.sent.length = 0;
     const saleToBuyer = await AfkTrade.sellToShop(
         customerId,
         buyProjection.actor.fetchPrivateStore(),
@@ -175,6 +195,9 @@ function sessionFor(accountId, row, items) {
         { objectId: customerVarnish.fetchId(), expectedPrice: 7 }
     );
     assert.strictEqual(saleToBuyer.totalPrice, 7);
+    assert(owner.sent.some(packet => packet[0] === 0x64 && packet.toString('utf16le', 13).includes('[AFK BUY] Bought 1x Varnish for 7 Adena.')));
+    assert.strictEqual(owner.sent.filter(packet => packet[0] === 0x98).length, 1, 'committed purchase plays one sound');
+    assert(!owner.sent.some(packet => packet[0] === 0x4a), 'purchase notification is not overhead speech');
     assert.strictEqual(customer.actor.backpack.fetchTotalAdena(), 96);
     assert.strictEqual(owner.actor.backpack.fetchItemFromSelfId(1865).fetchAmount(), 5);
     assert.strictEqual(AfkTrade.findProjection(buyProjectionId).actor.fetchPrivateStore().items[0].count, 1);
@@ -199,6 +222,15 @@ function sessionFor(accountId, row, items) {
     assert.strictEqual(owner.actor.fetchPrivateStoreType(), 4);
     assert.strictEqual(PrivateStore.quit(owner, AfkTrade.BUY), true);
 
+    await Database.setSkill({ selfId: 1370, name: 'Expand Trade', passive: true, level: 3 }, ownerId);
+    await owner.actor.skillset.populate(ownerId);
+    assert.strictEqual(owner.actor.skillset.fetchSkill(1370).fetchLevel(), 3, 'Expand Trade loads from persisted skills');
+    assert.strictEqual(await AfkTrade.begin(owner, AfkTrade.BUY), true);
+    const sixRows = [1865, 1864, 1866, 1867, 1868, 1869].map(selfId => ({ selfId, count: 1, price: 1 }));
+    assert.strictEqual(await PrivateStore.publishBuy(owner, sixRows), true);
+    assert.strictEqual((await Database.fetchAfkTradeShops(ownerId))[0].lines.length, 6);
+    assert.strictEqual(AfkTrade.findOwnerProjection(ownerId).actor.fetchPrivateStore().items.length, 6);
+    await AfkTrade.stop(owner);
     await AfkTrade._resetForTests();
     await Database.close();
     clean();

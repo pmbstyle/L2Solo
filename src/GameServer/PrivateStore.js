@@ -4,7 +4,18 @@ const SELL = 1;
 const BUY = 3;
 const SELL_MANAGE = 2;
 const BUY_MANAGE = 4;
-const MAX_ROWS = 4;
+const Limits = require('./PrivateStoreLimits');
+
+function checkRowCount(session, type, count) {
+    const limit = Limits.forActor(session?.actor, type);
+    if (Number.isSafeInteger(count) && count >= 1 && count <= limit) return true;
+    session?.dataSendToMe?.(ServerResponse.exStorageMaxCount(session.actor));
+    session?.dataSendToMe?.(ServerResponse.systemMessage.text(
+        `Private ${type === SELL ? 'sell' : 'buy'} store allows 1 to ${limit} item slots.`
+    ));
+    session?.dataSendToMe?.(ServerResponse.actionFailed());
+    return false;
+}
 
 function store(actor, type) {
     const current = actor.fetchPrivateStore?.();
@@ -40,6 +51,7 @@ function openManageWindow(session, type) {
     sendSitState(session, actor);
     broadcast(session, actor);
     const current = store(actor, type);
+    session.dataSendToMe(ServerResponse.exStorageMaxCount(actor));
     session.dataSendToMe(type === SELL
         ? ServerResponse.privateStoreManageListSell(actor, current)
         : ServerResponse.privateStoreManageListBuy(actor, current));
@@ -64,7 +76,8 @@ function setTitle(session, type, value) {
 
 function publishSell(session, packageSale, rows) {
     const actor = session?.actor;
-    if (!actor || Number(actor.fetchPrivateStoreType()) !== SELL_MANAGE || !Array.isArray(rows) || rows.length < 1 || rows.length > MAX_ROWS) return false;
+    if (!actor || Number(actor.fetchPrivateStoreType()) !== SELL_MANAGE || !Array.isArray(rows)) return false;
+    if (!checkRowCount(session, SELL, rows.length)) return false;
     const ids = new Set();
     const items = rows.map((row) => {
         const item = actor.backpack.fetchItemRaw(row.objectId);
@@ -85,7 +98,8 @@ function publishSell(session, packageSale, rows) {
 
 function publishBuy(session, rows) {
     const actor = session?.actor;
-    if (!actor || Number(actor.fetchPrivateStoreType()) !== BUY_MANAGE || !Array.isArray(rows) || rows.length < 1 || rows.length > MAX_ROWS) return false;
+    if (!actor || Number(actor.fetchPrivateStoreType()) !== BUY_MANAGE || !Array.isArray(rows)) return false;
+    if (!checkRowCount(session, BUY, rows.length)) return false;
     const ids = new Set(); let total = 0;
     const items = rows.map((row) => {
         if (!Number.isSafeInteger(row.selfId) || row.selfId < 1 || !Number.isSafeInteger(row.count) || row.count < 1 || !Number.isSafeInteger(row.price) || row.price < 1 || ids.has(row.selfId)) return null;
@@ -109,4 +123,4 @@ function quit(session, type) {
     actor.setPrivateStoreType(0); actor.state?.setSeated?.(false); session.afkTradeDraft = null; sendSitState(session, actor); broadcast(session, actor); return true;
 }
 
-module.exports = { SELL, BUY, open, setTitle, publishSell, publishBuy, quit };
+module.exports = { SELL, BUY, open, setTitle, publishSell, publishBuy, quit, checkRowCount };

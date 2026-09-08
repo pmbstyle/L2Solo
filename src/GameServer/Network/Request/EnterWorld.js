@@ -31,6 +31,7 @@ function enterWorld(session, buffer) {
         if (session.actor.fetchClanId?.()) invoke('GameServer/Quest/QuestService').ensureLoaded(session)
             .catch(error => utils.infoWarn('ClanQuest', 'login resume failed: %s', error.message));
         session.dataSendToMe(ServerResponse.userInfo(session.actor));
+        session.dataSendToMe(ServerResponse.exStorageMaxCount(session.actor));
         session.dataSendToMe(ServerResponse.abnormalStatusUpdate.fromActor(session.actor));
         session.dataSendToMe(ServerResponse.shortBuffStatusUpdate.fromActor(session.actor));
         session.dataSendToOthers(ServerResponse.charInfo(session.actor), session.actor);
