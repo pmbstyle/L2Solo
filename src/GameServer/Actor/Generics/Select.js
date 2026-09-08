@@ -84,6 +84,9 @@ function openMerchantTradeWindow(session, merchant) {
     }
 
     if (store.storeType === 3) {
+        // Finish the interaction before opening WTB so the C4 client can move
+        // while keeping the buyer targeted, as with manufacture windows.
+        session.dataSendToMe(ServerResponse.actionFailed());
         session.dataSendToMe(ServerResponse.privateStoreListBuy(
             merchant,
             merchantDemandRows(session.actor, store),

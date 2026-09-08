@@ -61,6 +61,42 @@ async function main() {
                 else assert.strictEqual(attacks.length, before + 1, `${kind}: player double-click still attacks`);
             }
         }
+        const inventoryItem = {
+            fetchId: () => 3300, fetchSelfId: () => 17, fetchAmount: () => 10,
+            fetchEquipped: () => false, fetchPrice: () => 2,
+            fetchClass2: () => 0, isWearable: () => false
+        };
+        for (const kind of ['merchant', 'bot', 'player', 'afk']) {
+            const store = { storeType: 3, title: 'WTB', items: [{ selfId: 17, count: 5, price: 1 }] };
+            const buyer = {
+                fetchId: () => 1100, fetchName: () => 'Buyer',
+                fetchPrivateStoreType: () => 3, fetchPrivateStore: () => store
+            };
+            replace(BotManager, 'sessions', ['merchant', 'bot'].includes(kind)
+                ? [{ actor: buyer, plan: kind === 'merchant' ? 'merchant' : 'fighter' }] : []);
+            replace(AfkTrade, 'findProjection', () => kind === 'afk' ? { actor: buyer } : null);
+            replace(World, 'fetchNpc', () => Promise.reject());
+            replace(World, 'fetchItem', () => Promise.reject());
+            replace(World, 'fetchUser', () => Promise.resolve(buyer));
+            let selected = 0;
+            const customer = {
+                fetchId: () => 2200, fetchDestId: () => selected,
+                setDestId: id => { selected = id; },
+                backpack: { fetchItems: () => [inventoryItem], fetchTotalAdena: () => 100 }
+            };
+            const packets = [];
+            const session = { actor: customer, accountId: 'player_store_test', dataSendToMe: p => packets.push(p) };
+            Select(session, customer, { id: 1100 });
+            await flush();
+            assert(!packets.some(p => p[0] === 0xb8), `${kind}: first click only selects the buyer`);
+            Select(session, customer, { id: 1100 });
+            await flush();
+            assert.deepStrictEqual(packets.slice(-2).map(p => p[0]), [0x25, 0xb8],
+                `${kind}: finish the interaction before opening WTB so the C4 client can move`);
+            assert.strictEqual(selected, 1100, `${kind}: opening WTB preserves the target`);
+            assert.strictEqual(packets.at(-1).readUInt32LE(1), 1100, `${kind}: list identifies the buyer`);
+            assert.strictEqual(packets.at(-1).readUInt32LE(9), 1, `${kind}: list retains the wanted item`);
+        }
         console.log('Bot target selection tests passed.');
     } finally {
         saved.reverse().forEach(restore => restore());
