@@ -93,7 +93,7 @@ async function main() {
     const seed = new DatabaseSync(file);
     seed.exec(fs.readFileSync(path.resolve(__dirname, '../database/sql/sqlite.sql'), 'utf8'));
     seed.prepare('INSERT INTO accounts(username, password) VALUES (?, ?)').run('quest_test', 'test');
-    for (let id = 1; id <= 10; id++) {
+    for (let id = 1; id <= 11; id++) {
         seed.prepare(`INSERT INTO characters(id, username, name, classId, race, level, maxHp, maxMp, sex, face, hair, hairColor, locX, locY, locZ)
             VALUES (?, 'quest_test', ?, 31, 2, 6, 187, 74, 0, 0, 0, 0, 0, 0, 0)`).run(id, `QuestTest${id}`);
     }
@@ -267,9 +267,42 @@ async function main() {
         }
     }
 
+    const craftsman = await sessionFor(11);
+    craftsman.actor.fetchLevel = () => 15;
+    assert.match(await talk(craftsman, 7307), /quest 103 start/);
+    await click(craftsman, 103, 'start');
+    assert.equal(count(craftsman, 968), 1);
+    assert.match(await talk(craftsman, 7132), /Speak with Harne/);
+    assert.equal(count(craftsman, 968), 0);
+    assert.equal(count(craftsman, 969), 1);
+    await talk(craftsman, 7144);
+    const originalRandom = Math.random;
+    try {
+        Math.random = () => 0;
+        for (let i = 0; i < 10; i++) await QuestService.onKill(craftsman, { fetchSelfId: () => 455 });
+        assert.equal(count(craftsman, 1107), 10);
+        assert.equal(state(craftsman, 103).getInt('cond'), 4);
+        await talk(craftsman, 7144);
+        assert.equal(count(craftsman, 1107), 0, 'Harne must consume all ten bone fragments');
+        assert.equal(count(craftsman, 971), 1);
+        await talk(craftsman, 7132);
+        assert.equal(count(craftsman, 972), 1);
+        await QuestService.onKill(craftsman, { fetchSelfId: () => 15 });
+    } finally { Math.random = originalRandom; }
+    await talk(craftsman, 7132);
+    assert.equal(count(craftsman, 974), 1);
+    assert.match(await talk(craftsman, 7307), /spirit is at peace/);
+    assert.equal(state(craftsman, 103).isCompleted(), true);
+    assert.equal(count(craftsman, 975), 1);
+    for (const id of [968, 969, 970, 971, 972, 973, 974, 1107]) assert.equal(count(craftsman, id), 0);
+
     await WriteQueue.flushAll();
     await Database.close();
     Database.init();
+    const restoredCraftsman = await sessionFor(11);
+    assert.equal(state(restoredCraftsman, 103).isCompleted(), true);
+    assert.equal(count(restoredCraftsman, 975), 1);
+    assert.equal(count(restoredCraftsman, 1107), 0, 'consuming all fragments must persist');
     const restoredHunt = await sessionFor(1);
     assert.equal(state(restoredHunt, 165).isCompleted(), true);
     assert.equal(count(restoredHunt, 1060), 5);

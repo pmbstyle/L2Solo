@@ -57,7 +57,7 @@ module.exports = {
           )
         : p("Karrod", "Only level 11 dark elves may help.");
     const step = async (take, give, next) => {
-      for (const z of take) await q.takeItem(s.session, z);
+      for (const z of take) await q.takeItem(s.session, z, z === B ? 10 : 1);
       for (const z of give) await q.giveItem(s.session, z, 1);
       await s.set("cond", next);
       s.playSound("ItemSound.quest_middle");
