@@ -9,6 +9,50 @@ class ActorModel extends CreatureModel {
 
     // Set
 
+    canReplenishVitals() {
+        return this.model.isOnline === true
+            && this.session?.actor === this
+            && this.state.fetchDead() !== true
+            && this.fetchHp() > 0;
+    }
+
+    refreshVitalsRegeneration() {
+        const automation = this.automation;
+        // EnterWorld initializes regeneration after restoring the character.
+        if (!automation?.replenishVitals || automation.fetchRevHp?.() === undefined
+            || automation.fetchRevMp?.() === undefined) return;
+        if (!this.canReplenishVitals()) {
+            automation.stopReplenish();
+            return;
+        }
+        if (this.fetchHp() < this.fetchMaxHp() || this.fetchMp() < this.fetchMaxMp()
+            || this.fetchCp() < this.fetchMaxCp()) {
+            automation.replenishVitals(this);
+        } else {
+            automation.stopReplenish();
+        }
+    }
+
+    setHp(data) {
+        super.setHp(data);
+        this.refreshVitalsRegeneration();
+    }
+
+    setMaxHp(data) {
+        super.setMaxHp(data);
+        this.refreshVitalsRegeneration();
+    }
+
+    setMp(data) {
+        super.setMp(data);
+        this.refreshVitalsRegeneration();
+    }
+
+    setMaxMp(data) {
+        super.setMaxMp(data);
+        this.refreshVitalsRegeneration();
+    }
+
     setExp(data) {
         this.model.exp = data;
     }
@@ -19,10 +63,12 @@ class ActorModel extends CreatureModel {
 
     setCp(data) {
         this.model.cp = data;
+        this.refreshVitalsRegeneration();
     }
 
     setMaxCp(data) {
         this.model.maxCp = data;
+        this.refreshVitalsRegeneration();
     }
 
     setCharges(data) {

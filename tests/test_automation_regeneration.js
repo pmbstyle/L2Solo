@@ -134,4 +134,66 @@ assert(cpOnlyResult.cp > 0, 'CP-only damage must start recovery even when HP and
 assert(automation.timer.replenish, 'CP-only damage must keep the regeneration timer alive until CP is full');
 automation.stopReplenish();
 
+// Exercise the production setters used by players and hot bots, including
+// recovery after the full-vitals tick has removed the previous interval.
+const ActorModel = invoke('GameServer/Model/Actor');
+for (const accountId of ['player_regen', 'bot_regen']) {
+    const session = { accountId };
+    const live = new ActorModel({
+        id: 2000001, isOnline: true, level: 40, classId: 0, con: 30, men: 30,
+        hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000, cp: 1000, maxCp: 1000
+    });
+    session.actor = live;
+    live.session = session;
+    live.statusUpdateVitals = () => {};
+    live.automation = new Automation();
+    const regen = live.automation;
+    regen.setRevHp(5.4);
+    regen.setRevMp(2.1);
+    try {
+        regen.replenishVitals(live);
+        regen.replenishVitalsTick(live);
+        assert(!regen.timer.replenish, 'Full vitals should stop regeneration');
+        for (const vital of ['Hp', 'Mp', 'Cp']) {
+            live[`set${vital}`](900);
+            const timer = regen.timer.replenish;
+            assert(timer, `${accountId}: spending ${vital} must restart regeneration`);
+            live[`set${vital}`](899);
+            assert.strictEqual(regen.timer.replenish, timer, 'Repeated changes must not delay the existing tick');
+            regen.replenishVitalsTick(live);
+            assert(live[`fetch${vital}`]() > 899, 'Standing actor must recover');
+            live.fillupVitals();
+            assert(!regen.timer.replenish, 'Refilling all resources must stop the interval');
+
+            live[`setMax${vital}`](1300);
+            assert(regen.timer.replenish, 'Increasing the cap must restart regeneration');
+            regen.replenishVitalsTick(live);
+            assert(live[`fetch${vital}`]() > 1000, 'New capacity must gradually recover');
+            live[`setMax${vital}`](1000);
+            live.fillupVitals();
+        }
+        live.setMp(900);
+        live.setHp(0);
+        assert(!regen.timer.replenish, 'Lethal damage must stop regeneration immediately');
+        live.state.setDead(true);
+        live.setHp(100);
+        live.setMaxHp(1200);
+        assert(!regen.timer.replenish, 'Corpse stat updates must not restart regeneration');
+        regen.replenishVitalsTick(live);
+        assert.strictEqual(live.fetchHp(), 100, 'A stale tick must not heal a corpse');
+        session.dataSendToMeAndOthers = () => {};
+        session.arenaEphemeral = true;
+        invoke('GameServer/Actor/Generics/Revive')(session, live, { delayMs: 0 });
+        assert(regen.timer.replenish, 'Revival must resume partial recovery');
+        session.actor = null;
+        const hpBeforeLogoutTick = live.fetchHp();
+        regen.replenishVitalsTick(live);
+        assert.strictEqual(live.fetchHp(), hpBeforeLogoutTick, 'A detached actor must not regenerate');
+        live.setMp(800);
+        assert(!regen.timer.replenish, 'Late updates after logout must not restart regeneration');
+    } finally {
+        regen.stopReplenish();
+    }
+}
+
 console.log('Automation regeneration checks passed');
