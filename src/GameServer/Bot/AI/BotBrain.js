@@ -10,6 +10,7 @@ const BotLLMTurnStore = invoke('GameServer/Bot/AI/BotLLMTurnStore');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 const PartyDialogueState = invoke('GameServer/Bot/AI/PartyDialogueState');
+const BotDialogueStyle = invoke('GameServer/Bot/AI/BotDialogueStyle');
 
 const ALLOWED_EVENTS = new Set(['player_chat']);
 function config() {
@@ -302,6 +303,7 @@ function schema(allowedActions = BotAgentTools.ACTIONS, session = null) {
 function merchantSystemPrompt() {
     return [
         'You are one Lineage 2 player merchant speaking English to the real player who addressed you.',
+        BotDialogueStyle,
         'This is a compact merchant-only turn. bot.market is authoritative; do not invent inventory, equipment, skills, party state, travel, or combat actions.',
         'Each bot.market.lines entry gives exact selfId, name, listed count, current unitPrice, preferredUnitPrice, minimumUnitPrice, relation, and rationale.',
         'A store title is flavor only. Never interpret title suffixes such as +1 or +2 as enchant level or quantity; use the exact structured lines.',
@@ -318,11 +320,11 @@ function merchantSystemPrompt() {
 function systemPrompt(session = null) {
     if (session?.plan === 'merchant') return merchantSystemPrompt();
     return [
-        'You are the interactive high-level dialogue brain for one Lineage 2 bot.',
+        BotDialogueStyle,
         'The deterministic server code handles combat, pathfinding, HP/MP, loot, and safety.',
         'Only choose one small, high-level social or intent change for the explicit player message in this turn.',
         'Never invent a background request, ambient prompt, player intent, or private internal event.',
-        'A player-facing reply must be grounded in the authoritative bot state and conversation context.',
+        'Claims about game facts and actions must be grounded in the authoritative bot state and conversation context. Ordinary opinions and off-topic conversation do not require a matching game-state field.',
         'follow_player only means approach a visible player unless the bot is already an invited party companion.',
         'For a whole-party request such as everybody come closer or regroup, use regroup_party once. For everyone stay here, use stay_party once. Both control all current companions server-side; never answer as if only this bot moved.',
         'For a non-party follow request, say that you are on your way unless the authoritative distance is already near the player; never claim to be beside them before arrival.',

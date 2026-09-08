@@ -8,6 +8,7 @@ const BotConversationService = invoke('GameServer/Bot/AI/BotConversationService'
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 const ServerResponse = invoke('GameServer/Network/Response');
 const ChatLocation = invoke('GameServer/Bot/AI/BotChatLocation');
+const BotDialogueStyle = invoke('GameServer/Bot/AI/BotDialogueStyle');
 
 // A player can send several tells while the provider is answering.  Keep the
 // pair ordered so each request sees the previous answer in conversation
@@ -77,7 +78,8 @@ function personaForState(state) {
         primaryDrive: persona.primaryDrive,
         archetype: persona.archetype,
         traits: { ...persona.traits },
-        textCard: persona.textCard
+        textCard: persona.textCard,
+        dialogueVoice: persona.dialogueVoice
     };
 }
 
@@ -159,7 +161,8 @@ function schema() {
 function systemPrompt() {
     return [
         'You are replying as one Lineage 2 bot in a private chat while the bot is cold/off-screen.',
-        'The state below is a persistent snapshot of the bot life, not a live actor. Use only the provided state, persona, social memory, availability, conversation, and life events.',
+        BotDialogueStyle,
+        'The state below is a persistent snapshot of the bot life, not a live actor. For claims about your game life, use only the provided state, persona, social memory, availability, conversation, and life events. This does not restrict ordinary conversation topics.',
         'The persona shapes tone and high-level preferences, never facts, safety, or available actions.',
         'Do not invent items, rewards, locations, levels, party membership, combat results, or live observations.',
         'Keep the reply short, grounded, and in character.',

@@ -14,6 +14,7 @@ assert.deepStrictEqual(first, second, 'the same generated seed must produce the 
 assert.deepStrictEqual(BotPersona.PRIMARY_DRIVES, ['progression', 'wealth', 'social'], 'the intentional drive model must not silently grow vague categories');
 assert(BotPersona.PRIMARY_DRIVES.includes(first.primaryDrive), 'persona drive must stay inside the intentional three-drive model');
 assert(first.textCard.includes('focused on'), 'every persona needs a compact model-facing text card');
+assert(first.dialogueVoice, 'generated personas must include a dialogue voice');
 BotPersona.TRAITS.forEach((trait) => {
     assert(Number.isFinite(first.traits[trait]), `${trait} must be numeric`);
     assert(first.traits[trait] >= 0 && first.traits[trait] <= 1, `${trait} must remain normalized`);
@@ -50,7 +51,7 @@ try {
         return Promise.resolve([]);
     };
 
-    BotPersona.ensure(subject).then((persona) => {
+    BotPersona.ensure(subject).then(async (persona) => {
         assert.strictEqual(persona.seed, first.seed, 'persistence must retain the generated seed without mutation');
         assert.deepStrictEqual(persona.traits, first.traits, 'persistence must retain the seed-generated trait profile');
         const insert = statements.find((entry) => entry.sql.startsWith('INSERT INTO bot_personas'));
@@ -58,6 +59,22 @@ try {
         assert.strictEqual(insert.params[2], '987654', 'generated population index must be the durable persona seed');
         assert.strictEqual(insert.params[3], persona.primaryDrive, 'primary drive must be queryable without parsing traits');
         assert.strictEqual(insert.params[4], persona.archetype, 'archetype must be queryable without parsing traits');
+        // Existing rows keep their durable identity and custom text card, but
+        // receive the new derived voice without a migration or replacement.
+        BotPersona.reset();
+        Database.execute = ([sql]) => {
+            if (String(sql).startsWith('SELECT 1')) return Promise.resolve([]);
+            if (String(sql).includes('FROM bot_personas WHERE characterId')) return Promise.resolve([{
+                characterId: first.characterId, version: first.version, seed: first.seed,
+                primaryDrive: first.primaryDrive, archetype: first.archetype,
+                traitsJson: JSON.stringify(first.traits), textCard: 'An existing personal card.'
+            }]);
+            throw new Error('Loading an existing persona must not write to the database');
+        };
+        const loaded = await BotPersona.ensure(subject);
+        assert.strictEqual(loaded.textCard, 'An existing personal card.');
+        assert.strictEqual(loaded.dialogueVoice, first.dialogueVoice);
+        assert.deepStrictEqual(loaded.traits, first.traits);
         const originalEnsure = BotPersona.ensure;
         BotPersona.reset();
         Database.execute = ([sql, params]) => {
