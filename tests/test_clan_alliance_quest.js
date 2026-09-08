@@ -28,7 +28,8 @@ const count = async (characterId, itemId) => Number((await sql('SELECT COALESCE(
 async function success(event, id, extra) { const result = await step(event, id, extra); assert(result.ok, `${event}: ${JSON.stringify(result)}`); return result; }
 async function begin() {
     await success('start'); await success('ritual', 5, { members: [6, 7, 8] });
-    for (const id of [6, 7, 8]) { await success('pledge', id); await success('deliver', id); }
+    for (const id of [6, 7, 8]) await success('pledge', id);
+    for (const id of [6, 7, 8]) await success('deliver', id);
     await success('poison');
 }
 async function main() {
@@ -77,11 +78,17 @@ async function main() {
     await success('ritual');
     assert(!(await step('assign', 5, { slot: 0, memberId: 7 })).ok, 'active assignments cannot be changed');
     assert(!(await step('poison')).ok);
+    assert(!(await step('kill', 6, { npcId: 685, roll: 0 })).ok, 'herbs are unavailable during the loyalty ritual');
+    assert(!(await step('chests', 8)).ok, 'Athrea is unavailable before the leader drinks poison');
     for (const id of [6, 7, 8]) {
         await success('pledge', id);
         assert(!(await step('pledge', id)).ok);
-        await success('deliver', id);
+        if (id !== 8) {
+            assert.strictEqual((await step('deliver', id)).code, 'ritual_not_complete');
+            assert.strictEqual(await count(5, 3837), 0, 'no symbol handoffs before the third sacrifice');
+        }
     }
+    for (const id of [6, 7, 8]) await success('deliver', id);
     await success('poison');
     assert.strictEqual(await count(5, 3837), 0);
     assert(!(await step('kill', 6, { npcId: 644, roll: 0 })).ok, 'wrong target is not a herb drop');
@@ -100,12 +107,16 @@ async function main() {
     assert.strictEqual(await count(6, 3833), 0);
     assert.strictEqual(await count(5, 3833), 1);
     assert(!(await step('blood', 8)).ok, 'Athrea must be completed');
-    const chest = await success('chests', 8, { timestamp: 1000 });
+    const chest = await success('chests', 8, { timestamp: 1000, winningTypes: [5173, 5174] });
     assert(!(await step('chests', 8, { timestamp: 2000 })).ok, 'one trial at a time');
     assert(!(await step('chest_kill', 8, { npcId: 1, chestToken: 'wrong', roll: 0, timestamp: 2000 })).ok);
-    for (let i = 1; i <= 4; i++) await success('chest_kill', 8, { npcId: i, chestToken: chest.state.chests.token, roll: 0, timestamp: 2000 });
+    await success('chest_kill', 8, { npcId: 99, chestTypeId: 5175, chestToken: chest.state.chests.token, roll: 0, timestamp: 2000 });
+    assert.strictEqual((await Database.fetchClanAllianceQuest(2)).chests.bingo, 0, 'a losing box type never wins from a new kill roll');
+    for (let i = 1; i <= 4; i++) await success('chest_kill', 8, { npcId: i, chestTypeId: 5173, chestToken: chest.state.chests.token, roll: 1, timestamp: 2000 });
     assert(!(await step('chest_kill', 8, { npcId: 4, chestToken: chest.state.chests.token, roll: 0, timestamp: 2000 })).ok);
+    assert(!(await step('chests', 8, { timestamp: 70000 })).ok, 'four BINGOs stay successful after the timer instead of restarting');
     await success('blood', 8); await success('deliver', 8); await success('cure');
+    assert.strictEqual(await count(5, 3889), 1, 'Kalis gives a physical Potion of Recovery alongside the voucher');
     const finish = await Promise.all([step('finish'), step('finish')]);
     assert.strictEqual(finish.filter(r => r.ok).length, 1);
     assert.strictEqual(await count(5, 3874), 1);
@@ -131,6 +142,12 @@ async function main() {
     await sql('UPDATE characters SET clanId = 0 WHERE id = 6');
     assert(!(await step('cure')).ok, 'membership loss invalidates an attempt');
     assert.strictEqual((await Database.fetchClanAllianceQuest(2)).stage, 'failed');
+    await sql('UPDATE characters SET clanId = 2 WHERE id = 6');
+    await begin();
+    const timed = await Database.fetchClanAllianceQuest(2);
+    const timeout = await Database.fetchClanAllianceQuest(2, timed.poisonedAt + Rules.POISON.durationMs);
+    assert.strictEqual(timeout.stage, 'failed', 'the hour limit ends an unfinished poison trial');
+    assert.strictEqual(await count(5, 3872), 0, 'timeout cleans the current recipe');
     assert.strictEqual((await sql('PRAGMA quick_check'))[0].quick_check, 'ok');
     console.log('Clan alliance: bot timer, restart, level gates, player quest at level 1, real-item delivery, chest ownership, failure, atomic reward and SP upgrade passed');
 }

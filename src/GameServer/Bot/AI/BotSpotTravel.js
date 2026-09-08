@@ -63,8 +63,13 @@ function completeTeleport(session, bot, spot, relocation, method) {
     const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
     TeleportTo(session, bot, relocation.destination);
     const arrivedSpot = SpotService.findById(spot.id) || spot;
-    SpotService.assignSpot(session, arrivedSpot);
-    session.initialSpawnCoord = { ...arrivedSpot.center };
+    // Quest/NPC destinations are transport waypoints, not hunting profiles.
+    // Assigning one as a spot throws after teleport dispatch and leaves the
+    // gatekeeper trip active, sending the courier back toward the old town.
+    if (relocation.preserveSpot !== true) {
+        SpotService.assignSpot(session, arrivedSpot);
+        session.initialSpawnCoord = { ...arrivedSpot.center };
+    }
     session.townRoutePlan = null;
     TownNpcApproach.reset(session);
     CompanionNavigationRecovery.clear(session);
@@ -113,7 +118,17 @@ function start(session, bot, spot, targetLoc = null) {
     return startScroll(session, bot, spot, targetLoc);
 }
 
-function startScroll(session, bot, spot, targetLoc = null, recoveryReason = null) {
+function startViaEscape(session, bot, spot, targetLoc = null) {
+    if (!session || !bot || !spot) return false;
+    if (session.spotRelocation) return session.spotRelocation.spotId === spot.id;
+    if (bot.isDead?.() || BotTownTravel.hasCombatThreat(session, bot) || bot.state.fetchCasts?.()) return false;
+    const townName = TownTransitPolicy.townAt(bot);
+    if (townName) return startViaTownGatekeeper(session, bot, spot, targetLoc, { townName, preserveSpot: true });
+    const town = invoke('GameServer/Bot/BotAI').getClosestTown(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
+    return startScroll(session, bot, spot, targetLoc, null, town);
+}
+
+function startScroll(session, bot, spot, targetLoc = null, recoveryReason = null, transitTown = null, preserveSpot = !!transitTown) {
     const token = Symbol('spot-relocation');
     const destination = { ...(targetLoc || spot.center) };
     if (!['locX', 'locY', 'locZ'].every((key) => hasFiniteCoordinate(destination[key]))) return false;
@@ -128,7 +143,9 @@ function startScroll(session, bot, spot, targetLoc = null, recoveryReason = null
         startedAt: Date.now(),
         completesAt: Date.now() + SOE_CAST_MS,
         method: 'soe_gatekeeper',
-        ...(recoveryReason ? { recoveryReason, castOrigin: botLocation(bot) } : {})
+        preserveSpot,
+        ...(recoveryReason ? { recoveryReason } : {}),
+        ...((recoveryReason || transitTown) ? { castOrigin: botLocation(bot) } : {})
     };
     bot.state.setCasts(true);
     const skill = {
@@ -160,6 +177,20 @@ function startScroll(session, bot, spot, targetLoc = null, recoveryReason = null
         }
 
         bot.state.setCasts(false);
+        if (transitTown) {
+            invoke('GameServer/Actor/Generics/TeleportTo')(session, bot, {
+                locX: transitTown.x, locY: transitTown.y, locZ: transitTown.z
+            });
+            session.spotRelocation = { ...relocation, arrivalPending: true };
+            session.townRoutePlan = null;
+            TownNpcApproach.reset(session);
+            CompanionNavigationRecovery.clear(session);
+            setTimeout(() => {
+                if (session.spotRelocation?.token !== token) return;
+                session.spotRelocation = undefined;
+            }, TELEPORT_SETTLE_MS);
+            return;
+        }
         completeTeleport(session, bot, spot, relocation, 'soe_gatekeeper');
     }, SOE_CAST_MS);
     return true;
@@ -169,10 +200,10 @@ function recoveryKey(relocation) {
     return `${relocation.gatekeeper.town}:${relocation.gatekeeper.npcSelfId}:${relocation.spotId}`;
 }
 
-function startEmergencyScroll(session, bot, spot, destination) {
+function startEmergencyScroll(session, bot, spot, destination, preserveSpot = false) {
     session.townEmergencyEscapeAt = Date.now();
     delete session.townTravelRecovery;
-    return startScroll(session, bot, spot, destination, 'town_stuck_after_recovery');
+    return startScroll(session, bot, spot, destination, 'town_stuck_after_recovery', null, preserveSpot);
 }
 
 function recoverOrDefer(session, bot, reason = 'gatekeeper_route_timeout') {
@@ -197,7 +228,7 @@ function recoverOrDefer(session, bot, reason = 'gatekeeper_route_timeout') {
     TownTransitPolicy.defer(session, bot, reason);
     if (!escape) return false;
     const spot = SpotService.findById(relocation.spotId) || { id: relocation.spotId, center: relocation.destination };
-    return startEmergencyScroll(session, bot, spot, relocation.destination);
+    return startEmergencyScroll(session, bot, spot, relocation.destination, relocation.preserveSpot);
 }
 
 function startViaTownGatekeeper(session, bot, spot, targetLoc = null, options = {}) {
@@ -226,7 +257,8 @@ function startViaTownGatekeeper(session, bot, spot, targetLoc = null, options = 
         gatekeeper,
         startedAt: Date.now(),
         lastCommandAt: 0,
-        method: 'town_gatekeeper'
+        method: 'town_gatekeeper',
+        preserveSpot: options.preserveSpot === true
     };
     tick(session, bot);
     return true;
@@ -292,6 +324,7 @@ module.exports = {
     cancel,
     recoverOrDefer,
     start,
+    startViaEscape,
     startViaTownGatekeeper,
     tick
 };

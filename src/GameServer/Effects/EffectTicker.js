@@ -299,6 +299,12 @@ function applyDamage(session, source, target, damage) {
     target.setHp(Math.max(0, target.fetchHp() - damage));
     if (target.statusUpdateVitals) target.statusUpdateVitals(target);
     else if (target.broadcastVitals) target.broadcastVitals();
+    // Self-applied damage (including the clan trial poison) bypasses
+    // ReceivedHit, so it must still complete the character death lifecycle.
+    const victimSession = target.session || (session?.actor === target ? session : null);
+    if (target.fetchHp() <= 0 && victimSession && target.fetchId?.() >= 2000000) {
+        invoke('GameServer/Actor/Generics/Die')(victimSession, target);
+    }
 }
 
 function applyManaDamage(target, damage) {

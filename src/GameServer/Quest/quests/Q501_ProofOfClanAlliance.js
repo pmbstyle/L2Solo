@@ -26,12 +26,13 @@ module.exports = {
             ? 'The offering costs your life. Your allies may resurrect you.<br>' + link('pledge', 'Offer my life to the clan.')
             : 'Only the three selected clan members may make an offering.');
         if (npcId === Rules.NPC.athrea) return page(member?.blood && state.stage === 'gathering'
-            ? 'Break my boxes and find four BINGOs within 60 seconds. The first attempt is free; retries cost 10,000 Adena.<br>'
+            ? 'Each box breaks with one damaging hit. Find four BINGOs within 60 seconds. The first attempt is free; retries cost 10,000 Adena.<br>'
                 + (state.chests?.bingo >= 4 ? link('blood', 'Receive the Blood of Eva.') : link('chests', 'Begin the chest trial.'))
             : 'The clan member assigned Blood of Eva must take this trial.');
         let body = '';
         if (leader && state.stage === 'started') {
-            body = 'Assign one clan member to each herb. Leave a healer with you if needed. There is no character-level requirement.<br>';
+            body = 'Assign one clan member to each herb. Leave a healer with you if needed. There is no character-level requirement.<br>'
+                + 'The Oel Mahum courier also collects Blood of Eva by default. Athrea\'s boxes break with one damaging hit; find four BINGOs within 60 seconds. Retries cost 10,000 Adena.<br>';
             const selected = state.selection || [0, 0, 0];
             Rules.HERBS.forEach((herb, slot) => {
                 body += `${herb.name}: ${selected[slot] ? memberName(selected[slot]) : 'Unassigned'}<br>`;
@@ -42,25 +43,33 @@ module.exports = {
             for (const candidate of available.slice(pageIndex * 4, pageIndex * 4 + 4)) {
                 const id = service().idOf(candidate);
                 body += `${memberName(id)} (level ${candidate.actor.fetchLevel()}):<br>`;
-                Rules.HERBS.forEach((herb, slot) => { body += link(`assign_${slot}_${id}`, `Assign ${herb.name}`); });
+                Rules.HERBS.forEach((herb, slot) => { body += link(`assign_${slot}_${id}`, `Assign ${herb.name}${slot === 2 ? ' (Blood of Eva by default)' : ''}`); });
             }
             if (pageIndex > 0) body += link(`status_${pageIndex - 1}`, 'Previous members');
             if ((pageIndex + 1) * 4 < available.length) body += link(`status_${pageIndex + 1}`, 'More members');
             const bloodId = selected.includes(state.bloodId) ? state.bloodId : selected[2];
             body += `<br>Blood of Eva: ${bloodId ? memberName(bloodId) : 'Unassigned'}<br>`;
-            for (const id of selected.filter(Boolean)) body += link(`choose_blood_${id}`, `Send ${memberName(id)} to Athrea after their herb`);
             if (selected.filter(Boolean).length === 3) body += link('ritual', 'Confirm assignments and begin the ritual.');
         }
-        if (state.stage === 'loyalty') body += `Loyalty offerings delivered: ${state.members.filter(m => m.loyaltyDelivered).length}/3.<br>`
-            + (leader ? 'Wait for your members to return from the altar.<br>' + link('poison', 'Drink the poison and send them for ingredients.') : link('deliver', 'Hand my Symbol of Loyalty to the nearby leader.'));
+        if (state.stage === 'loyalty') {
+            body += `Altar sacrifices completed: ${state.members.filter(m => m.pledged).length}/3.<br>`
+                + `Symbols of Loyalty delivered: ${state.members.filter(m => m.loyaltyDelivered).length}/3.<br>`
+                + 'Three different clan members must each offer their life at the altar. Resurrect the fallen members so they can return their Symbols of Loyalty. These symbols are not antidote ingredients.<br>';
+            if (leader) body += state.members.length === 3 && state.members.every(m => m.pledged && m.loyaltyDelivered)
+                ? 'All three symbols are here. Your couriers are waiting for your decision.<br>' + link('poison', 'Drink the poison and send the couriers for ingredients.')
+                : 'The poison trial becomes available after all three symbols reach you. No ingredients can be gathered before you drink the poison.<br>';
+            else if (member) body += link('deliver', 'Hand my Symbol of Loyalty to the nearby leader.');
+        }
         if (state.stage === 'gathering') {
-            body += 'Keep a healer with the poisoned leader. Collect the three herbs and Blood of Eva. Bring the ingredients back to the leader before the poison kills them.<br>';
+            body += 'The poison roots the leader and drains 50 HP each second. Keep a healer beside them. Collect the three herbs and Blood of Eva within one hour and bring them back to the leader.<br>';
             for (const herb of Rules.HERBS) body += `${herb.name}: ${herb.area}.<br>`;
             body += `Herbs delivered: ${state.members.filter(m => m.delivered).length}/3. Blood of Eva: ${state.members.some(m => m.bloodDelivered) ? 'delivered' : 'pending'}.<br>`;
             if (member) body += `Your task: ${Rules.ITEMS[member.itemId]}${member.blood ? ' and Blood of Eva from Athrea' : ''}.<br>`;
-            body += leader ? link('cure', 'Prepare and drink the antidote.') : link('deliver', 'Give my ingredients to the nearby leader.');
+            body += leader ? link('cure', 'Give Kalis the ingredients and receive the Potion of Recovery.') : link('deliver', 'Give my ingredients to the nearby leader.');
         }
-        if (state.stage === 'cured') body += 'Return to Sir Kristof Rodemai in Giran for the Proof of Alliance and 120,000 SP.';
+        if (state.stage === 'cured') body += (state.antidoteReceived && session.actor.effects?.clan_alliance_poison
+            ? 'Use the Potion of Recovery from your inventory to remove the poison and free yourself.<br>' : '')
+            + 'Take the Voucher of Faith to Sir Kristof Rodemai in Giran for the Proof of Alliance and 120,000 SP.';
         if (state.members.length) {
             body += '<br>Assignments:<br>';
             for (const member of state.members) body += `${memberName(member.id)} — ${Rules.ITEMS[member.itemId]}${member.blood ? ' + Blood of Eva' : ''}: ${service().memberStatus(state, member)}.<br>`;

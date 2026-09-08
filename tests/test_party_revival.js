@@ -275,6 +275,52 @@ try {
 
     leader.state.setDead(false);
     healer.state.setDead(true);
+    // A remote corpse must not send the healer across the map, even if
+    // it sorts ahead of another corpse that can actually be rescued.
+    healer.state.setDead(false);
+    leaderSession.partyRevivalAttempt = null;
+    fallen.fetchLocX = () => 85000;
+    assert.strictEqual(PartyRevivalService.tick(healerSession, leaderSession, {
+        skillExec() { throw new Error('Remote corpse must not schedule a cast'); }
+    }).handled, false);
+    assert.strictEqual(PartyRevivalService.shouldTownRespawn(leaderSession, fallenSession), true,
+        'isolated courier can restart without waiting for a distant rescuer');
+    leaderSession.partyRevivalAttempt = { providerId: healer.id, targetId: fallen.id, startedAt: Date.now() };
+    healerSession.currentTargetId = fallen.id;
+    let cancelledRemote = 0;
+    healer.automation.abortAll = () => { cancelledRemote++; };
+    PartyRevivalService.tick(healerSession, leaderSession, { skillExec() { throw new Error('No distant recast'); } });
+    assert.strictEqual(cancelledRemote, 1, 'previously queued remote rescue is cancelled');
+    assert.strictEqual(leaderSession.partyRevivalAttempt, null);
+    fallen.fetchLocX = () => PartyRevivalService.PARTY_REVIVE_APPROACH_DISTANCE;
+    assert.strictEqual(PartyRevivalService.tick(healerSession, leaderSession, { skillExec() {} }).handled, true,
+        'nearby corpse remains eligible for a normal approach and cast');
+    leaderSession.partyRevivalAttempt = null;
+    fallen.fetchLocZ = () => 1000;
+    assert.strictEqual(PartyRevivalService.tick(healerSession, leaderSession, { skillExec() { throw new Error('Different floor'); } }).handled, false);
+    fallen.fetchLocZ = () => 0;
+    fallen.fetchLocX = () => 0;
+    leader.state.setDead(true);
+    leader.fetchLocX = () => 85000;
+    let nearbyTarget = null;
+    PartyRevivalService.tick(healerSession, leaderSession, { skillExec(s, a, request) { nearbyTarget = request.id; } });
+    assert.strictEqual(nearbyTarget, fallen.id, 'remote leader must not block rescue of a reachable party corpse');
+    leader.state.setDead(false);
+    leader.fetchLocX = () => 0;
+    leaderSession.partyRevivalAttempt = null;
+    const clanService = invoke('GameServer/Clan/ClanAllianceService');
+    healer.fetchClassId = () => 17;
+    healer.fetchClanId = () => 6000998;
+    leader.fetchClanId = () => 6000999;
+    leader.effects = { clan_alliance_poison: {} };
+    clanService.records.set(6000999, { stage: 'gathering', leaderId: leader.id, members: [] });
+    assert.strictEqual(PartyRevivalService.tick(healerSession, leaderSession, {
+        skillExec() { throw new Error('Poison support must not leave to resurrect a courier'); }
+    }).handled, false, 'poisoned leader support is excluded from resurrection providers');
+    clanService.records.delete(6000999);
+    leader.effects = {};
+    healer.fetchClassId = () => 0;
+    healer.state.setDead(true);
     leader.skillset.skills = [];
     leader.backpack.fetchItems = () => [];
     BotManager.sessions = [healerSession];

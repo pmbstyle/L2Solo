@@ -37,6 +37,8 @@ module.exports = function repository({ one, all, write, inTransaction, withChara
         // they ended up after a legitimate trade; never unrelated inventory.
         for (const id of state.itemObjectIds || []) write('DELETE FROM items WHERE id = ?', [id]);
     };
+    const expired = (state, timestamp) => state?.kind === 'player' && state.stage === 'gathering'
+        && Number.isFinite(state.poisonedAt) && timestamp >= state.poisonedAt + Rules.POISON.durationMs;
     function award(state, id, itemId) {
         const result = give(id, itemId);
         state.itemObjectIds.push(Number(result.insertId));
@@ -59,13 +61,13 @@ module.exports = function repository({ one, all, write, inTransaction, withChara
                 return { ok: true, sp: Number(actor.sp) - Rules.SP_COST, level: 4 };
             }, 'clan-alliance:player-level-up'));
         },
-        fetchClanAllianceQuest(clanId) {
+        fetchClanAllianceQuest(clanId, timestamp = Date.now()) {
             return inTransaction(() => {
                 ensure();
                 const state = read(Number(clanId));
                 const clan = one('SELECT * FROM clans WHERE id = ?', [clanId]);
                 if (state?.kind === 'player' && !['completed', 'failed'].includes(state.stage)
-                    && (!clan || Number(clan.level) !== 3 || !validRoster(state, clan))) {
+                    && (!clan || Number(clan.level) !== 3 || !validRoster(state, clan) || expired(state, timestamp))) {
                     cleanup(state); state.stage = 'failed'; save(clanId, state); questLog(state);
                 }
                 return state;
@@ -121,7 +123,7 @@ module.exports = function repository({ one, all, write, inTransaction, withChara
                 return { ok: true, advanced: { ok: advanced }, state };
             }, 'clan-alliance:bot');
         },
-        transitionClanAlliance({ clanId, characterId, event, members = [], slot = -1, memberId = 0, bloodId = 0, npcId = 0, roll = 1, chestToken = '', rewardSp = Rules.SP_REWARD, timestamp = Date.now() }) {
+        transitionClanAlliance({ clanId, characterId, event, members = [], slot = -1, memberId = 0, bloodId = 0, npcId = 0, roll = 1, chestToken = '', chestTypeId = 0, winningTypes, rewardSp = Rules.SP_REWARD, timestamp = Date.now() }) {
             const ids = [characterId, memberId, ...members].filter(Boolean);
             return withCharacterFlushes(ids, () => inTransaction(() => {
                 ensure();
@@ -132,7 +134,7 @@ module.exports = function repository({ one, all, write, inTransaction, withChara
                 const leader = one('SELECT username FROM characters WHERE id = ?', [clan.leaderId]);
                 if (String(leader?.username).startsWith('bot_')) return { ok: false, code: 'player_clan_required' };
                 let state = read(clanId);
-                if (state && state.kind === 'player' && !['completed', 'failed'].includes(state.stage) && !validRoster(state, clan)) {
+                if (state && state.kind === 'player' && !['completed', 'failed'].includes(state.stage) && (!validRoster(state, clan) || expired(state, timestamp))) {
                     cleanup(state); state.stage = 'failed'; save(clanId, state); questLog(state);
                 }
                 if (event === 'start' && isLeader && (!state || ['failed', 'completed'].includes(state.stage)) && !count(characterId, 3874)) {
@@ -160,6 +162,7 @@ module.exports = function repository({ one, all, write, inTransaction, withChara
                     } else if (event === 'pledge' && member && state.stage === 'loyalty' && !member.pledged) {
                         member.pledged = true; award(state, characterId, 3837);
                     } else if (event === 'deliver' && member && ['loyalty', 'gathering'].includes(state.stage)) {
+                        if (state.stage === 'loyalty' && !Rules.ritualComplete(state)) return { ok: false, code: 'ritual_not_complete', state };
                         if (state.stage === 'loyalty' && member.pledged && !member.loyaltyDelivered && count(characterId, 3837)) {
                             take(characterId, 3837); award(state, state.leaderId, 3837); member.loyaltyDelivered = true;
                         }
@@ -171,27 +174,30 @@ module.exports = function repository({ one, all, write, inTransaction, withChara
                                 take(characterId, 3835); award(state, state.leaderId, 3835); member.bloodDelivered = true;
                             }
                         }
-                    } else if (event === 'poison' && isLeader && state.stage === 'loyalty' && state.members.every(m => m.loyaltyDelivered) && count(characterId, 3837) >= 3) {
+                    } else if (event === 'poison' && isLeader && state.stage === 'loyalty' && state.members.length === 3
+                        && state.members.every(m => m.pledged && m.loyaltyDelivered) && count(characterId, 3837) >= 3) {
                         take(characterId, 3837, 3); award(state, characterId, 3872);
                         state.stage = 'gathering'; state.poisonedAt = timestamp;
                     } else if (event === 'kill' && member && state.stage === 'gathering' && Number(npcId) === member.npcId && !member.herb && roll < Rules.DROP_CHANCE) {
                         award(state, characterId, member.itemId); member.herb = true;
                     } else if (event === 'chests' && member?.blood && state.stage === 'gathering' && !state.bloodObtained
-                        && (!state.chests || state.chests.deadline <= timestamp)) {
+                        && (!state.chests || state.chests.bingo < 4 && state.chests.deadline <= timestamp)) {
                         if (state.chestAttempts && count(characterId, 57) < 10000) return { ok: false, code: 'chest_retry_costs_10000_adena', state };
                         if (state.chestAttempts) take(characterId, 57, 10000);
                         state.chestAttempts = (state.chestAttempts || 0) + 1;
-                        state.chests = { token: `${state.startedAt}:${state.chestAttempts}`, deadline: timestamp + 60000, kills: [], bingo: 0 };
+                        state.chests = { token: `${state.startedAt}:${state.chestAttempts}`, deadline: timestamp + 60000, kills: [], bingo: 0,
+                            winningTypes: winningTypes || Rules.chestWinningTypes() };
                     } else if (event === 'chest_kill' && member?.blood && state.stage === 'gathering' && state.chests?.token === chestToken
                         && state.chests.deadline > timestamp && !state.chests.kills.includes(npcId) && state.chests.bingo < 4) {
                         state.chests.kills.push(npcId);
-                        if (roll < 0.6) state.chests.bingo += 1;
+                        if (state.chests.winningTypes ? state.chests.winningTypes.includes(Number(chestTypeId)) : roll < 0.6) state.chests.bingo += 1;
                     } else if (event === 'blood' && member?.blood && state.stage === 'gathering' && state.chests?.bingo >= 4 && !state.bloodObtained) {
                         award(state, characterId, 3835); state.bloodObtained = true;
                     } else if (event === 'cure' && isLeader && state.stage === 'gathering' && state.members.every(m => m.delivered && (!m.blood || m.bloodDelivered))
                         && [3832,3833,3834,3835,3872].every(id => count(characterId, id))) {
                         [3832,3833,3834,3835,3872].forEach(id => take(characterId, id));
-                        award(state, characterId, 3873); state.stage = 'cured';
+                        award(state, characterId, 3873); award(state, characterId, 3889);
+                        state.antidoteReceived = true; state.stage = 'cured';
                     } else if (event === 'finish' && isLeader && state.stage === 'cured' && count(characterId, 3873)) {
                         take(characterId, 3873); award(state, characterId, 3874); state.stage = 'completed';
                         write('UPDATE characters SET sp = sp + ? WHERE id = ?', [Math.max(0, Math.floor(rewardSp)), characterId]);

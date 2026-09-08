@@ -106,6 +106,9 @@ class Attack {
         this.clearTimers();
         this.resetQueuedEvent();
         actor.state.setCasts(false);
+        // clearTimers also cancels a weapon swing that overlapped this cast.
+        // Its completion callback can no longer release the movement blocker.
+        actor.state.setHits(false);
         actor.storedSpell = undefined;
         invoke('GameServer/Bot/AI/BotSupportPlanner').cancelSupportCast(session, actor);
 

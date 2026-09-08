@@ -408,6 +408,7 @@ const BotAI = {
             invoke('GameServer/Bot/AI/TownNpcApproach').reset(session);
             invoke('GameServer/Bot/AI/TownTraffic').remove(Number(bot.fetchId()));
             try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'death'); } catch (_) { /* optional ambient module */ }
+            if (session.clanAllianceQuest && invoke('GameServer/Clan/ClanAllianceService').recoverDeadCourier(session)) return;
         } else {
             // TTL expiry is intentionally lazy and bounded to hot ticks; no
             // background timer is needed for a session-local preference.
@@ -416,6 +417,9 @@ const BotAI = {
         // Actual player aggression owns the action window before travel,
         // conversation, recovery or ordinary party/PvE state routing.
         const defendingPvp = !botDead && invoke('GameServer/Bot/AI/BotPvpDefense').tick(session, bot, invoke(path.actor), this);
+
+        if (!botDead && !defendingPvp
+            && invoke('GameServer/Bot/AI/ClanAllianceSupportAI').tick(session, bot, invoke(path.actor))) return;
 
         if (!botDead && !defendingPvp && session.clanAllianceQuest
             && invoke('GameServer/Bot/AI/ClanAllianceQuestAI').tick(session, bot, invoke(path.actor), this)) return;
@@ -511,7 +515,9 @@ const BotAI = {
                 }
             }
 
-            const partyRescuePending = wasCompanion && !PartyRevivalService.shouldTownRespawn(
+            const ritualRescuePending = session.clanAllianceQuest
+                && invoke('GameServer/Clan/ClanAllianceService').awaitingRitualResurrection(session);
+            const partyRescuePending = ritualRescuePending || wasCompanion && !PartyRevivalService.shouldTownRespawn(
                 session.followPlayerSession,
                 session
             );

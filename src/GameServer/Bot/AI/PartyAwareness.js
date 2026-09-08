@@ -14,6 +14,7 @@ const THREAT_PROJECTION_MAX_AGE_MS = 150;
 // discovery must cover that full envelope: a ranged/social add at 1401-1499
 // can still be hitting the puller and therefore must wake the camp.
 const NPC_THREAT_RADIUS = 1500;
+const QUEST_COURIER_PARTY_RADIUS = 2500;
 const threatProjections = new WeakMap();
 
 // World loads bot controls as part of its own initialization. Resolving it at
@@ -47,6 +48,11 @@ function partySessions(leaderSession) {
 
 function partyActors(leaderSession) {
     return partySessions(leaderSession).map((session) => session.actor);
+}
+
+function isDistantQuestCourier(session, leaderSession) {
+    return session !== leaderSession && !!session?.actor && !!session.clanAllianceQuest && !!leaderSession?.actor
+        && distance2d(actorLoc(session.actor), actorLoc(leaderSession.actor)) > QUEST_COURIER_PARTY_RADIUS;
 }
 
 function partyActorIds(leaderSession) {
@@ -171,7 +177,10 @@ function isControlledRaidMinion(leaderSession, npc) {
 }
 
 function findThreatTargetingParty(leaderSession, options = {}) {
-    const memberSessions = partySessions(leaderSession);
+    // Couriers defend themselves through npcThreateningActor. Their remote
+    // quest fights must not send returned companions out of the camp and
+    // into a repeated assist / catch-up teleport cycle.
+    const memberSessions = partySessions(leaderSession).filter(session => !isDistantQuestCourier(session, leaderSession));
     const members = memberSessions.map((session) => session.actor);
     if (members.length === 0) return null;
 
@@ -352,6 +361,7 @@ function leaderCombatTargetId(leaderSession, options = {}) {
 }
 
 module.exports = {
+    isDistantQuestCourier,
     findThreatTargetingParty,
     findThreatTargetingPartyProjected,
     invalidateThreatProjection,

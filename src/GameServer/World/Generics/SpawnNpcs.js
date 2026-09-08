@@ -188,6 +188,13 @@ function spawnQuestNpc(world, {
     const coords = { locX: Number(locX), locY: Number(locY), locZ: Number(locZ), head: Number(head) || 0 };
     if (!template || !Object.values(coords).slice(0, 3).every(Number.isFinite)) return null;
 
+    const alliance = require('../../Clan/ClanAllianceRules');
+    if (Number(questId) === 501 && alliance.isChest(selfId)) {
+        // Athrea tests the chest search, not the participant's class or gear.
+        // Customize only this cloned quest template before HP and NpcInfo init.
+        template.vitals = { ...template.vitals, maxHp: alliance.CHEST_HP, revHp: 0 };
+    }
+
     const npc = createNpc(world, template, coords);
     npc.questSpawn = {
         ownerId: Number(ownerId) || 0,
