@@ -14130,4 +14130,24 @@
     "selfId": 6666,
     "template": { "kind": "Other.None", "name": "Deluxe Chest Key - Grade 2", "class1": 4, "class2": 5, "mass": 10, "price": 200 },
     "etc": { "stackable": true, "consumable": true }
+},{
+    "selfId": 7559,
+    "template": { "kind": "Other.Scroll", "name": "Scroll of Escape: Giran Castle Town", "class1": 4, "class2": 5, "mass": 0, "price": 400 },
+    "etc": { "stackable": false, "consumable": true }
+},{
+    "selfId": 7570,
+    "template": { "kind": "Other.Quest", "name": "Mark of Traveler", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7571,
+    "template": { "kind": "Other.Quest", "name": "Baulro's Letter", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7572,
+    "template": { "kind": "Other.Quest", "name": "Ariel's Recommendation", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7573,
+    "template": { "kind": "Other.Quest", "name": "Roselyn's Note", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
 }]

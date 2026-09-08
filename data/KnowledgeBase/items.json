@@ -558220,6 +558220,131 @@
     }
   },
   {
+    "grade": "none",
+    "id": 7559,
+    "kind": "Other.Scroll",
+    "name": "Scroll of Escape: Giran Castle Town",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": false
+      },
+      "selfId": 7559,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.Scroll",
+        "mass": 0,
+        "name": "Scroll of Escape: Giran Castle Town",
+        "price": 400
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7570,
+    "kind": "Other.Quest",
+    "name": "Mark of Traveler",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7570,
+      "template": {
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
+        "name": "Mark of Traveler",
+        "price": 0
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7571,
+    "kind": "Other.Quest",
+    "name": "Baulro's Letter",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7571,
+      "template": {
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
+        "name": "Baulro's Letter",
+        "price": 0
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7572,
+    "kind": "Other.Quest",
+    "name": "Ariel's Recommendation",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7572,
+      "template": {
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
+        "name": "Ariel's Recommendation",
+        "price": 0
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7573,
+    "kind": "Other.Quest",
+    "name": "Roselyn's Note",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7573,
+      "template": {
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
+        "name": "Roselyn's Note",
+        "price": 0
+      }
+    }
+  },
+  {
     "grade": "s",
     "id": 7575,
     "kind": "Weapon.Bow",

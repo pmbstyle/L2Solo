@@ -53,7 +53,7 @@ module.exports = {
       return page("Quest", "Continue the errand.");
     }
     if (e === "silk" && s.getInt("cond") === 5) {
-      if (!(await Q.takeItem(s, SPINNERET, 10))) return null;
+      if (!(await Q.takeItem(s.session, SPINNERET, 10))) return null;
       await Q.giveItem(s.session, SILK, 1);
       await s.set("cond", 6);
       s.playSound(M);
@@ -69,9 +69,9 @@ module.exports = {
           "Radia",
           "You need 3,000 Suede, 5,000 Thread and the Spider Silk.",
         );
-      await Q.takeItem(s, SILK);
-      await Q.takeItem(s, SUEDE, 3000);
-      await Q.takeItem(s, THREAD, 5000);
+      await Q.takeItem(s.session, SILK);
+      await Q.takeItem(s.session, SUEDE, 3000);
+      await Q.takeItem(s.session, THREAD, 5000);
       await Q.giveItem(s.session, CLOTH, 1);
       s.playSound(F);
       await s.exit(false);

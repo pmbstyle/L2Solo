@@ -4,6 +4,7 @@ const TradeService   = invoke('GameServer/Bot/TradeService');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const Database       = invoke('Database');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
+const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 
 function merchantSellRows(actor, store) {
     return actor.backpack.fetchItems()
@@ -19,16 +20,6 @@ function merchantSellRows(actor, store) {
             };
         })
         .filter((row) => row && row.amount > 0);
-}
-
-function npcSellRows(actor) {
-    return actor.backpack.fetchItems()
-        .filter((item) => !item.fetchPetLocked?.() && !item.fetchEquipped() && item.fetchSelfId() !== 57)
-        .map((item) => ({
-            item,
-            amount: item.fetchAmount(),
-            price: Math.max(1, Math.floor(item.fetchPrice() * 0.5))
-        }));
 }
 
 function sell(session, buffer) {
@@ -152,7 +143,7 @@ async function sellToNpcShop(session, list) {
             const item = session.actor.backpack.fetchItems().find((ob) => ob.fetchId() === line.objectId);
             const offered = shop.items.get(line.objectId);
             const amount = Number(line.amount);
-            if (!item || !offered || item.fetchPetLocked?.() || item.fetchEquipped() || item.fetchSelfId() === 57 ||
+            if (!NpcSellRules.canSell(item) || !offered ||
                 item.fetchSelfId() !== line.selfId || item.fetchSelfId() !== offered.selfId ||
                 !Number.isSafeInteger(amount) || amount < 1 || amount > item.fetchAmount()) continue;
 
@@ -189,7 +180,7 @@ async function sellToNpcShop(session, list) {
             }
         }
 
-        const rows = npcSellRows(session.actor);
+        const rows = NpcSellRules.rows(session.actor);
         shop.items = new Map(rows.map((row) => [row.item.fetchId(), {
             selfId: row.item.fetchSelfId(),
             price: row.price

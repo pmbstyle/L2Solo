@@ -48,14 +48,14 @@ module.exports = {
           )
         : p("Kendell", "Only elves of level 10 or higher.");
     if (c === 2) {
-      for (const z of [...O1, T1]) await q.takeItem(s, z, -1);
+      for (const z of [...O1, T1]) await q.takeItem(s.session, z, -1);
       await q.giveItem(s.session, O2[Math.floor(Math.random() * 4)], 1);
       await s.set("cond", 3);
       s.playSound("ItemSound.quest_middle");
       return p("Kendell", "Now defeat another chief.");
     }
     if (c === 4) {
-      for (const z of [...O2, T2]) await q.takeItem(s, z, -1);
+      for (const z of [...O2, T2]) await q.takeItem(s.session, z, -1);
       await q.giveItem(s.session, a.isSpellcaster?.() ? 754 : 981, 1);
       for (const z of E) await q.giveItem(s.session, z, 10);
       if (a.isNewbie?.())

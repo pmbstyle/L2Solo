@@ -36,30 +36,30 @@ module.exports = {
       return p("Luis", "Collect 100 Feather Ornaments.");
     }
     if (e === "feathers" && c === 2) {
-      await q.takeItem(s, F, 100);
+      await q.takeItem(s.session, F, 100);
       await q.giveItem(s.session, T, 1);
       await s.set("cond", 3);
       return p("Luis", "Take the totem tooth to Iris.");
     }
     if (e === "iris" && c === 3) {
-      await q.takeItem(s, T);
+      await q.takeItem(s.session, T);
       await q.giveItem(s.session, LI, 1);
       await s.set("cond", 4);
       return p("Iris", "Take this to Rohmer.");
     }
     if (e === "rohmer" && c === 4) {
-      await q.takeItem(s, LI);
+      await q.takeItem(s.session, LI);
       await q.giveItem(s.session, LR, 1);
       await s.set("cond", 5);
       return p("Rohmer", "Return to Iris.");
     }
     if (e === "returnIris" && c === 5) {
-      await q.takeItem(s, LR);
+      await q.takeItem(s.session, LR);
       await s.set("cond", 6);
       return p("Iris", "Collect 50 dragon teeth.");
     }
     if (e === "reward" && c === 7) {
-      await q.takeItem(s, D, 50);
+      await q.takeItem(s.session, D, 50);
       const r = REW[Math.floor(Math.random() * REW.length)];
       await q.giveItem(s.session, r[0], 1);
       await q.rewardAdena(s.session, r[1]);

@@ -238,7 +238,10 @@ async function main() {
   const originalRewardAdena = QuestService.rewardAdena;
   const originalAwardFirstProfession = QuestService.awardFirstProfession;
   const calls = [];
-  QuestService.takeItem = async (_, itemId) => calls.push(["take", itemId]);
+  QuestService.takeItem = async (session, itemId) => {
+    assert.ok(session.actor, "takeItem requires the player session, not QuestState");
+    calls.push(["take", itemId]);
+  };
   QuestService.giveItem = async (_, itemId, amount) =>
     calls.push(["give", itemId, amount]);
   QuestService.rewardAdena = async (_, amount) => calls.push(["adena", amount]);
@@ -327,7 +330,8 @@ async function main() {
       playSound: (sound) => calls.push(["sound", sound]),
     };
     QuestService.giveItem = async (_, id, amount) => setItem(id, (items.get(id) || 0) + amount);
-    QuestService.takeItem = async (_, id, amount = 1) => {
+    QuestService.takeItem = async (session, id, amount = 1) => {
+      assert.ok(session.actor, "takeItem requires the player session, not QuestState");
       const current = items.get(id) || 0;
       const remove = amount === -1 ? current : amount;
       if (current < remove) return false;

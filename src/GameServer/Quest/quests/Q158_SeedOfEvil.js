@@ -24,7 +24,7 @@ module.exports = {
     if (!s.isStarted())
       return p("Biotin", '<a action="bypass -h quest 158 start">Accept.</a>');
     if (!n(s, I)) return p("Biotin", "The clay tablet is missing.");
-    await Q().takeItem(s, I);
+    await Q().takeItem(s.session, I);
     await Q().giveItem(s.session, R, 1);
     s.playSound("ItemSound.quest_finish");
     await s.exit(false);

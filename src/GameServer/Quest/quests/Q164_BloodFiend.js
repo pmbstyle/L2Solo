@@ -28,7 +28,7 @@ module.exports = {
     if (!s.isStarted())
       return p("Creamees", '<a action="bypass -h quest 164 start">Accept.</a>');
     if (!n(s, I)) return p("Creamees", "Bring Kirunak's skull.");
-    await Q().takeItem(s, I);
+    await Q().takeItem(s.session, I);
     await Q().rewardAdena(s.session, 42130);
     s.playSound("ItemSound.quest_finish");
     await s.exit(false);

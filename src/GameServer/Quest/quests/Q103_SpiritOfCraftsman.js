@@ -57,7 +57,7 @@ module.exports = {
           )
         : p("Karrod", "Only level 11 dark elves may help.");
     const step = async (take, give, next) => {
-      for (const z of take) await q.takeItem(s, z);
+      for (const z of take) await q.takeItem(s.session, z);
       for (const z of give) await q.giveItem(s.session, z, 1);
       await s.set("cond", next);
       s.playSound("ItemSound.quest_middle");
@@ -83,7 +83,7 @@ module.exports = {
       return p("Cekton", "Return to Karrod.");
     }
     if (id === K && c === 8) {
-      await q.takeItem(s, ST);
+      await q.takeItem(s.session, ST);
       for (const [z, c] of [
         [W, 1],
         [HP, 100],
@@ -116,7 +116,7 @@ module.exports = {
       } else s.playSound("ItemSound.quest_itemget");
     }
     if (c === 6 && [15, 20].includes(id) && Math.random() < 0.3) {
-      await Q().takeItem(s, O);
+      await Q().takeItem(s.session, O);
       await Q().giveItem(s.session, Z, 1);
       await s.set("cond", 7);
       s.playSound("ItemSound.quest_middle");

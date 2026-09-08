@@ -62,7 +62,7 @@ module.exports = (c) => ({
       necklace: [5, 6, O3, N],
     }[e];
     if (x && s.getInt("cond") === x[0]) {
-      if (!(await Q.takeItem(s, x[2]))) return null;
+      if (!(await Q.takeItem(s.session, x[2]))) return null;
       await Q.giveItem(s.session, x[3], 1);
       await s.set("cond", x[1]);
       s.playSound(M);
@@ -70,8 +70,8 @@ module.exports = (c) => ({
     }
     if (e === "reward" && s.getInt("cond") === 6) {
       if (!has(s, N)) return null;
-      await Q.takeItem(s, MARK);
-      await Q.takeItem(s, N);
+      await Q.takeItem(s.session, MARK);
+      await Q.takeItem(s.session, N);
       await Q.giveItem(s.session, c.reward, 1);
       s.playSound(F);
       await s.exit(false);

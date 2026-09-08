@@ -55,20 +55,20 @@ module.exports = {
       return p("Carlon", "Take my letter to Haprock.");
     }
     if (e === "haprock" && s.getInt("cond") === 1) {
-      await q.takeItem(s, L);
+      await q.takeItem(s.session, L);
       await q.giveItem(s.session, NL, 1);
       await q.rewardAdena(s.session, 2000);
       await s.set("cond", 2);
       return p("Haprock", "Take this to Norman, or finish here.");
     }
     if (e === "haprock_finish" && s.getInt("cond") === 2) {
-      await q.takeItem(s, NL);
+      await q.takeItem(s.session, NL);
       await q.rewardAdena(s.session, 3000);
       await s.exit(false);
       return p("Haprock", "Farewell.");
     }
     if (e === "norman_finish" && s.getInt("cond") === 2) {
-      await q.takeItem(s, NL);
+      await q.takeItem(s.session, NL);
       await q.rewardAdena(s.session, 20000);
       await s.exit(false);
       return p("Norman", "Welcome, kin.");

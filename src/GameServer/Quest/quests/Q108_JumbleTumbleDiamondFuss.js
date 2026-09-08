@@ -55,7 +55,7 @@ module.exports = {
           )
         : p("Gouph", "Only level 10 dwarves may help.");
     const move = async (take, give, next, msg) => {
-      for (const z of take) await q.takeItem(s, z, -1);
+      for (const z of take) await q.takeItem(s.session, z, -1);
       for (const z of give) await q.giveItem(s.session, z, 1);
       await s.set("cond", next);
       s.playSound("ItemSound.quest_middle");
@@ -85,7 +85,7 @@ module.exports = {
     if (id === A && c === 10)
       return move([I[10]], [I[11]], 11, "Hunt Blade Bats for the diamond.");
     if (id === G && c === 12) {
-      await q.takeItem(s, I[12], -1);
+      await q.takeItem(s.session, I[12], -1);
       for (const [z, c] of [[1511, 1], [1060, 100], ...E.map((z) => [z, 10])])
         await q.giveItem(s.session, z, c);
       if (a.isNewbie?.())
@@ -114,7 +114,7 @@ module.exports = {
       } else s.playSound("ItemSound.quest_itemget");
     }
     if (c === 11 && id === 480 && Math.random() < 0.2) {
-      await Q().takeItem(s, I[11]);
+      await Q().takeItem(s.session, I[11]);
       await Q().giveItem(s.session, I[12], 1);
       await s.set("cond", 12);
       s.playSound("ItemSound.quest_middle");

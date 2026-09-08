@@ -56,9 +56,9 @@ module.exports = {
         count(s, ADENA) < 200000
       )
         return page("Woodley", "You do not have the required materials.");
-      await Q.takeItem(s, ADENA, 200000);
-      await Q.takeItem(s, LEATHER, 200);
-      await Q.takeItem(s, THREAD, 600);
+      await Q.takeItem(s.session, ADENA, 200000);
+      await Q.takeItem(s.session, LEATHER, 200);
+      await Q.takeItem(s.session, THREAD, 600);
       await s.set("cond", 4);
       s.playSound(M);
       return page("Woodley", "Pay Ian 300,000 Adena.");
@@ -66,7 +66,7 @@ module.exports = {
     if (e === "payment" && s.getInt("cond") === 4) {
       if (count(s, ADENA) < 300000)
         return page("Ian", "You need 300,000 Adena.");
-      await Q.takeItem(s, ADENA, 300000);
+      await Q.takeItem(s.session, ADENA, 300000);
       await s.set("cond", 5);
       s.playSound(M);
       return page("Ian", "Return to Woodley.");

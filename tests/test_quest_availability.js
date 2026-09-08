@@ -42,7 +42,7 @@ for (const quest of QuestService.quests()) {
   }
 }
 
-for (const itemId of [5789, 5790]) {
+for (const itemId of [5789, 5790, 7559, 7570, 7571, 7572, 7573]) {
   assert(
     itemIds.has(itemId),
     `source-backed starter quest reward ${itemId} is missing from the item datapack`,

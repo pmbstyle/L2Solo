@@ -36,7 +36,7 @@ module.exports = {
           )
         : p("Wilford", "Come back at level 5.");
     if (n(s) >= 20) {
-      await Q().takeItem(s, O, 20);
+      await Q().takeItem(s.session, O, 20);
       await Q().giveItem(s.session, B, 1);
       s.playSound("ItemSound.quest_finish");
       await s.exit(false);

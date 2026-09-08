@@ -17,6 +17,7 @@ module.exports = {
     if (
       e !== "start" ||
       s.isStarted() ||
+      s.isCompleted() ||
       Number(s.session.actor.fetchRace()) !== 2 ||
       Number(s.session.actor.fetchLevel()) < 3
     )
@@ -39,7 +40,7 @@ module.exports = {
           )
         : p("Nelsya", "Dark Elves of level 3 or higher only.");
     if (n(s, B) >= 13) {
-      await Q().takeItem(s, B, 13);
+      await Q().takeItem(s.session, B, 13);
       await Q().giveItem(s.session, P, 5);
       Q().rewardExpSp(s.session, 1000, 0);
       s.playSound("ItemSound.quest_finish");

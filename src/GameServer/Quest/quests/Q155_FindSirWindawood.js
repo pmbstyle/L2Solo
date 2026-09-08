@@ -36,7 +36,7 @@ module.exports = {
           )
         : p("Abellos", "Come back at level 3.");
     if (id === W) {
-      if (!(await Q().takeItem(s, L))) return null;
+      if (!(await Q().takeItem(s.session, L))) return null;
       await Q().giveItem(s.session, H, 1);
       s.playSound("ItemSound.quest_finish");
       await s.exit(false);

@@ -378,6 +378,7 @@ const tests = [
     'tests/test_quest_availability.js',
     'tests/test_quest_spawn_radar.js',
     'tests/test_quest_runtime.js',
+    'tests/test_quest_handins.js',
     'tests/test_recipe_book.js',
     'tests/test_common_craft_skill_migration.js',
     'tests/test_recipe_crafting.js',

@@ -28,7 +28,7 @@ module.exports = {
     if (!s.isStarted())
       return p("Vellior", '<a action="bypass -h quest 170 start">Accept.</a>');
     if (!n(s, I)) return p("Vellior", "Bring the nightmare crystal.");
-    await Q().takeItem(s, I, -1);
+    await Q().takeItem(s.session, I, -1);
     await Q().rewardAdena(s.session, 102680);
     s.playSound("ItemSound.quest_finish");
     await s.exit(false);
