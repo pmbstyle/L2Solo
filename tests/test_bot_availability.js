@@ -92,6 +92,25 @@ try {
     });
     assert.strictEqual(result.available, true, 'same-clan cold bot state should ignore party invite refusal reasons');
 
+    for (const activity of ['traveling', 'pk_hunting']) {
+        const clanState = {
+            characterId: 2000024,
+            name: 'BusyClanBot',
+            level: 55,
+            activity,
+            loc: { locX: 100000, locY: 0, locZ: 0 },
+            vitals: { hp: 100 },
+            stats: { clanId: 6000001 }
+        };
+        result = BotAvailability.evaluateState(clanPlayer, clanState);
+        assert.strictEqual(result.clanmate, true);
+        assert.strictEqual(result.available, true, `a clan invitation must interrupt ${activity}`);
+        result = BotAvailability.evaluateState(clanPlayer, { ...clanState, staticService: true });
+        assert.strictEqual(result.reason, 'merchant_duty', 'clan priority must still exclude fixed services');
+        result = BotAvailability.evaluateState(clanPlayer, { ...clanState, stats: { clanId: 6000002 } });
+        assert.strictEqual(result.available, false, 'another clan must not gain the clan summon override');
+    }
+
     const farColdBot = {
         characterId: 2000011,
         name: 'FarColdBot',

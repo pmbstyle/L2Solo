@@ -13,6 +13,9 @@ const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwne
 const BotManager = invoke('GameServer/Bot/BotManager');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const ColdSimulationCoordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+const World = invoke('GameServer/World/World');
+const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 
 const originals = {
     active: PartyState.active,
@@ -376,6 +379,86 @@ async function run() {
     assert.strictEqual(summonedTravel.ok, true, 'a const summon must interrupt background travel and activate the bot');
     assert.strictEqual(summonedState.activity, 'hunting', 'the interrupted travel must not survive into hot AI state');
     assert.strictEqual(summonedState.stats.travel, null, 'the stale background route must be cleared before the bot spawns');
+
+    const inviteOriginals = {
+        findByName: LifeState.findByName,
+        findSessionByName: BotManager.findSessionByName,
+        botTell: BotManager.botTell,
+        getSnapshot: BotSocialMemory.getSnapshot,
+        recordEvent: BotSocialMemory.recordEvent,
+        attach: PartyCompanionService.attach,
+        enabled: Config.enabled
+    };
+    try {
+        Config.enabled = true;
+        const player = {
+            actor: {
+                fetchId: () => 92000,
+                fetchName: () => 'ClanLeader',
+                fetchClanId: () => 77,
+                fetchLevel: () => 20,
+                fetchLocX: () => 1000,
+                fetchLocY: () => 2000,
+                fetchLocZ: () => -3000
+            },
+            dataSendToMe() {}
+        };
+        BotSocialMemory.getSnapshot = () => ({ trust: -10, familiarity: 0, recentlyAbandonedAt: Date.now() });
+        BotSocialMemory.recordEvent = () => Promise.resolve();
+        BotManager.botTell = () => {};
+
+        for (const [index, activity] of ['traveling', 'pk_hunting'].entries()) {
+            const clanState = {
+                ...travelingState,
+                characterId: 92001 + index,
+                name: `ClanSummon${index}`,
+                level: 55,
+                activity,
+                stats: { ...travelingState.stats, clanId: 77 }
+            };
+            let hotSession = null;
+            let attached = false;
+            LifeState.findByName = async () => clanState;
+            BotManager.findSessionByName = () => hotSession;
+            BotManager.loadAndSpawnBot = (_accountName, options) => {
+                assert.strictEqual(options.coldLifeState.activity, 'hunting', 'clan summon must stop the background activity');
+                assert.strictEqual(options.coldLifeState.stats.travel, null, 'clan summon must clear the old route');
+                assert(Math.hypot(options.locX - 1000, options.locY - 2000) <= Config.activationRadius,
+                    'a distant clan bot must materialize near the inviting player');
+                hotSession = {
+                    actor: {
+                        ...player.actor,
+                        fetchId: () => clanState.characterId,
+                        fetchName: () => clanState.name,
+                        fetchLevel: () => 55
+                    },
+                    plan: options.plan,
+                    coldLifeState: options.coldLifeState
+                };
+                return Promise.resolve(hotSession);
+            };
+            PartyCompanionService.attach = (leader, companion, options) => {
+                assert.strictEqual(leader, player);
+                assert.strictEqual(companion, hotSession);
+                assert.strictEqual(options.distribution, 1);
+                PartyCompanionService.releaseCapacity(leader, options.capacityReservation);
+                attached = true;
+                return true;
+            };
+
+            assert.strictEqual(await World.inviteBotByName(player, player.actor, clanState.name, 1, 'invite'), true,
+                `a normal party invite must summon a clan bot during ${activity} without a friend override`);
+            assert.strictEqual(attached, true, 'the activated clan bot must proceed to party attachment');
+        }
+    } finally {
+        LifeState.findByName = inviteOriginals.findByName;
+        BotManager.findSessionByName = inviteOriginals.findSessionByName;
+        BotManager.botTell = inviteOriginals.botTell;
+        BotSocialMemory.getSnapshot = inviteOriginals.getSnapshot;
+        BotSocialMemory.recordEvent = inviteOriginals.recordEvent;
+        PartyCompanionService.attach = inviteOriginals.attach;
+        Config.enabled = inviteOriginals.enabled;
+    }
 
     activationOrder.length = 0;
     const blockedState = {
