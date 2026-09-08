@@ -64,6 +64,7 @@ async function transfer(session, targetClassId, options = {}) {
 
         session.dataSendToMeAndOthers?.(ServerResponse.socialAction(actor.fetchId(), 15), actor);
         session.dataSendToMe?.(ServerResponse.skillsList(actor.skillset.fetchSkills()));
+        await invoke('GameServer/Shortcuts').refreshSkills(session, actor);
         session.dataSendToMe?.(ServerResponse.exStorageMaxCount(actor));
         session.dataSendToMe?.(ServerResponse.userInfo(actor));
         session.dataSendToMe?.(ServerResponse.statusUpdate(actor.fetchId(), statusParams(actor)));

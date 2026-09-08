@@ -11,7 +11,7 @@ function addShortcut(session, buffer) {
         .readD()  // Id
         .readD(); // ?
 
-    consume(session, {
+    return consume(session, {
            kind: packet.data[0],
            slot: packet.data[1],
              id: packet.data[2],
@@ -23,16 +23,20 @@ function consume(session, data) {
     const characterId = session.actor.fetchId();
 
     if (data.kind === 2) {
-        if (session.actor.skillset.fetchSkill(data.id)?.fetchPassive()) {
+        const skill = session.actor.skillset.fetchSkill(data.id);
+        if (!skill || skill.fetchPassive()) {
             return;
         }
     }
 
-    Database.deleteShortcut(characterId, data.slot).then(() => {
+    return Database.deleteShortcut(characterId, data.slot).then(() => {
 
-        Database.setShortcut(characterId, data).then(() => {
+        return Database.setShortcut(characterId, data).then(() => {
             session.dataSendToMe(
-                ServerResponse.addShortcut(data)
+                ServerResponse.addShortcut({
+                    ...data,
+                    level: data.kind === 2 ? session.actor.skillset.fetchSkill(data.id)?.fetchLevel() ?? 1 : undefined
+                })
             );
         });
     });

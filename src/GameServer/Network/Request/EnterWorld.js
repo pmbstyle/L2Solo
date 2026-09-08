@@ -16,16 +16,19 @@ function sendClanWindow(session) {
 function enterWorld(session, buffer) {
     const continueEnter = () => {
         session.dataSendToMe(ServerResponse.itemsList(session.actor.backpack.fetchItems()));
-        Database.fetchMacros(session.actor.fetchId()).then((macros) => {
+        const shortcutsReady = Database.fetchMacros(session.actor.fetchId()).then((macros) => {
             const revision = (session.macroRevision || 0) + 1;
             session.macroRevision = revision;
             ServerResponse.macroList(macros, revision).forEach((packet) => session.dataSendToMe(packet));
             return Database.fetchShortcuts(session.actor.fetchId());
-        }).then((shortcuts) => {
-            session.dataSendToMe(ServerResponse.shortcutInit(shortcuts));
         });
 
-        session.actor.enterWorld();
+        const skillsReady = session.actor.enterWorld();
+        // Slot rows can arrive before the asynchronous skillbook load finishes.
+        // Wait for both, otherwise every unresolved skill is sent as level one.
+        Promise.all([shortcutsReady, skillsReady]).then(([shortcuts]) => {
+            session.dataSendToMe(ServerResponse.shortcutInit(shortcuts, session.actor.skillset));
+        }).catch(error => utils.infoWarn('Character', 'shortcut login initialization failed: %s', error.message));
         session.dataSendToMe(GameTime.isNight() ? ServerResponse.sunset() : ServerResponse.sunrise());
         sendClanWindow(session);
         if (session.actor.fetchClanId?.()) invoke('GameServer/Quest/QuestService').ensureLoaded(session)

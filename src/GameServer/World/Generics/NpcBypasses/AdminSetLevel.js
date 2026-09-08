@@ -68,6 +68,7 @@ function levelStatusParams(actor) {
 async function awardLevelSkills(session, actor) {
     await actor.skillset.awardSkills(actor.fetchId(), actor.fetchClassId(), actor.fetchLevel());
     session.dataSendToMe(ServerResponse.skillsList(actor.skillset.fetchSkills()));
+    await invoke('GameServer/Shortcuts').refreshSkills(session, actor);
 }
 
 async function setOwnLevel(session, level) {

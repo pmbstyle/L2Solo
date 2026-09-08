@@ -6,8 +6,10 @@ function addShortcut(data) {
     packet
         .writeD(data.kind)
         .writeD(data.slot)
-        .writeD(data.id)
-        .writeD(data.unknown);
+        .writeD(data.id);
+
+    if (data.kind === 2) packet.writeD(data.level);
+    packet.writeD(data.unknown);
 
     return packet.fetchBuffer();
 }
