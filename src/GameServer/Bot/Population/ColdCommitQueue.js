@@ -265,7 +265,8 @@ class ColdCommitQueue {
                         results.push({ ok: false, characterId: proposal.characterId, reason: 'prepare_rejected', proposal });
                         continue;
                     }
-                    prepared.push({ proposal, token: proposal.token, nextState, options: proposal.options || {} });
+                    prepared.push({ proposal, token: proposal.token, nextState, options: proposal.options || {},
+                        atomicGroup: proposal.atomicGroup || null });
                 } catch (error) {
                     results.push({ ok: false, characterId: proposal.characterId, reason: error?.message || 'prepare_error', proposal });
                 }
@@ -345,6 +346,7 @@ class ColdCommitQueue {
             proposal,
             token: proposal.token,
             nextState,
+            atomicGroup: proposal.atomicGroup || null,
             options: proposal.options || {}
         }]));
         const result = results?.[0] || { ok: false, characterId: id, reason: 'missing_commit_result' };

@@ -164,6 +164,15 @@ let coordinator = null;
         && row.simulationLeaseId === null && Number(row.simulationLeaseUntil) === 0));
     assert(Number(partyRow.nextResolveAt) > dueAt, 'leader commit must durably advance the party schedule');
     assert(Number(JSON.parse(partyRow.statsJson).fightsResolved || 0) >= 1);
+    const memories = await Database.execute(['SELECT ownerId, snapshotJson FROM bot_interaction_memory ORDER BY ownerId', []]);
+    assert.strictEqual(memories.length, 2, 'real worker wins must commit mutual hunt memory');
+    memories.forEach(row => {
+        const memory = JSON.parse(row.snapshotJson);
+        assert.strictEqual(memory.revision, 1);
+        assert.strictEqual(memory.relations.length, 1);
+        assert.strictEqual(memory.relations[0].trust, 1);
+        assert.strictEqual(memory.relations[0].reasons[0].type, 'hunted_together');
+    });
     assert(Number(Metrics.counters.partyResolves || 0) > partyResolvesBefore,
         'worker party commit must feed the public party resolve metric');
     assert.strictEqual(partyGoalReconciles, 1,

@@ -106,7 +106,8 @@ function distributeRewards({ members, spot, wins, defeatedNpcIds = [], pressure,
 }
 
 const BackgroundPartyResolver = {
-    resolve({ party, members, spot, pressure = {}, targetNpcId = 0, elapsedMs = 60000, rng = Math.random, timestamp = Date.now() }) {
+    resolve({ party, members, spot, pressure = {}, targetNpcId = 0, elapsedMs = 60000, rng = Math.random, timestamp = Date.now(),
+        episodeId = null, assessRelationship = null }) {
         if (!party || !members?.length || !spot) {
             return {
                 memberResults: [],
@@ -247,6 +248,12 @@ const BackgroundPartyResolver = {
         let deaths = 0;
         let resting = 0;
 
+        // Large parties can have more than 64 directed pairs. Unrecorded pairs
+        // remain eligible next resolve; committed pairs are skipped by cooldown.
+        const huntEvents = wins > 0 && losses === 0 && combatMembers.every(member => Number(member.vitals?.hp) > 0)
+            ? invoke('GameServer/Social/SharedHuntMemory').eventsForGroup(members.map(member => Number(member.characterId)),
+                episodeId, timestamp, assessRelationship) : [];
+
         rewards.forEach(({ state, exp, sp, adena, items }, index) => {
             const resolved = combatMembers[index] || state;
             const vitals = resolved.vitals || memberVitals(state);
@@ -302,6 +309,7 @@ const BackgroundPartyResolver = {
                         }
                     },
                     events: [],
+                    memoryEvents: huntEvents.filter(event => event.sourceId === Number(state.characterId)),
                     materialize: { exp, sp, adena, items },
                     nextResolveAt: timestamp + 45000 + Math.round(rng() * 90000),
                     debug: {

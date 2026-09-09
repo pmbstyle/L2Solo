@@ -1135,6 +1135,7 @@ class ColdSimulationCoordinator {
             claimedState.simulation
         );
         if (cleanupState) {
+            if (proposal.atomicGroup) return null;
             proposal.inventoryCleanupForced = true;
             proposal.result = {
                 events: [],

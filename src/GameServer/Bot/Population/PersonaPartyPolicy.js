@@ -62,9 +62,12 @@ function preference(state, peers = [], coverage = {}) {
 function explain(state, peers = [], coverage = {}) {
     const result = preference(state, peers, coverage);
     const intent = backgroundIntent(state);
+    const memoryScore = require('./PartyMemoryPreference').create().score(state, peers);
+    const memoryReason = memoryScore > 0 ? 'positive_interactions' : memoryScore < 0 ? 'personal_conflict' : null;
     return {
         score: result.score,
-        reasons: result.reasons,
+        memoryScore,
+        reasons: [...(memoryReason ? [memoryReason] : []), ...result.reasons].slice(0, 3),
         primaryDrive: result.persona?.primaryDrive || null,
         archetype: result.persona?.archetype || null,
         partyIntent: intent.reason

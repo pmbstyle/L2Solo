@@ -1014,6 +1014,7 @@ class ColdSimulationKernel {
             if (!this.resolveParty) throw new Error('party_resolver_unavailable');
             const lastResolvedAt = Math.min(...run.members.map((member) => Number(member.timing?.lastResolvedAt || startedAt - 60000)));
             const resolution = await this.resolveParty({
+                episodeId: run.grants.get(Number(run.party.leaderId))?.leaseId,
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 party: run.party,
                 members: run.members,
@@ -1025,6 +1026,9 @@ class ColdSimulationKernel {
                 timestamp: startedAt
             });
             const proposals = [];
+            const memoryGroup = (resolution.memberResults || []).some(({ result }) => result.memoryEvents?.length)
+                ? { id: `hunt:${run.grants.get(Number(run.party.leaderId))?.leaseId}`,
+                    memberIds: resolution.memberResults.map(({ state }) => Number(state.characterId)) } : null;
             for (const { state, result } of resolution.memberResults || []) {
                 const id = Number(state.characterId);
                 const projection = this.projectResolve
@@ -1034,7 +1038,8 @@ class ColdSimulationKernel {
                 const proposal = {
                     proposalId: `${run.grants.get(id)?.leaseId}:${run.grants.get(id)?.revision}`,
                     characterId: id,
-                    priority: priorityForResult(state, result),
+                    priority: memoryGroup ? 'P1' : priorityForResult(state, result),
+                    ...(memoryGroup ? { atomicGroup: memoryGroup } : {}),
                     enqueuedAt: this.now(),
                     token: run.grants.get(id),
                     baseState: state,
@@ -1152,27 +1157,32 @@ class ColdSimulationKernel {
             .sort((a, b) => {
                 const rank = { P0: 0, P1: 1, P2: 2 };
                 return rank[a.priority] - rank[b.priority] || a.enqueuedAt - b.enqueuedAt;
-            })
-            .slice(0, limit);
+            });
         const proposals = [];
         const oversized = [];
+        const visited = new Set();
         for (const proposal of eligible) {
-            let transportProposal = proposal;
-            if (proposalPayloadBytes([proposal]) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
-                this.stats.proposalOversize += 1;
-                transportProposal = compactProposal(proposal, true);
-                if (proposalPayloadBytes([transportProposal]) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
-                    transportProposal = compactProposal(proposal, false);
+            if (visited.has(proposal.characterId)) continue;
+            const group = proposal.atomicGroup?.id
+                ? eligible.filter(entry => entry.atomicGroup?.id === proposal.atomicGroup.id) : [proposal];
+            if (proposals.length + group.length > limit) break;
+            group.forEach(entry => visited.add(entry.characterId));
+            let transportGroup = group;
+            if (proposalPayloadBytes(group) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                this.stats.proposalOversize += group.length;
+                transportGroup = group.map(entry => compactProposal(entry, true));
+                if (proposalPayloadBytes(transportGroup) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                    transportGroup = group.map(entry => compactProposal(entry, false));
                 }
-                if (proposalPayloadBytes([transportProposal]) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
-                    oversized.push(proposal);
+                if (proposalPayloadBytes(transportGroup) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                    oversized.push(...group);
                     continue;
                 }
-                this.stats.proposalCompactions += 1;
+                this.stats.proposalCompactions += group.length;
             }
-            const candidate = [...proposals, transportProposal];
+            const candidate = [...proposals, ...transportGroup];
             if (proposalPayloadBytes(candidate) > PROPOSAL_PAYLOAD_LIMIT_BYTES) break;
-            proposals.push(transportProposal);
+            proposals.push(...transportGroup);
         }
         oversized.forEach((proposal) => {
             this.dirty.delete(Number(proposal.characterId));

@@ -204,6 +204,7 @@ function npcDied(session, actor, npc) {
         if (share) PetRuntime.award(pet, exp * share, sp * share);
         Generics.experienceReward(memberSession, memberSession.actor, exp * (1 - share), sp * (1 - share));
     });
+    invoke('GameServer/Social/SharedHuntMemory').recordHot(rewards, npc);
 }
 
 module.exports = npcDied;

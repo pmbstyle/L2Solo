@@ -6,6 +6,7 @@ const REASON_LIMIT = 3;
 const DAY = 86400000;
 const ACCEPT_WINDOW_MS = 7 * DAY;
 const MAX_BATCH = 64;
+const HUNT_COOLDOWN_MS = 30 * 60 * 1000;
 const FIELDS = Object.freeze(['affinity', 'trust', 'hostility', 'fear', 'familiarity']);
 const EVENTS = Object.freeze({
     hunted_together: [2, 1, 0, 0, 1],
@@ -46,6 +47,10 @@ function validate(snapshot) {
     for (const row of snapshot.relations) {
         if (!row || !Object.hasOwn(LIMITS, row.kind)) throw new Error('interaction memory: invalid relation kind');
         id(row.targetId); time(row.at);
+        if (row.lastHuntAt !== undefined) {
+            time(row.lastHuntAt);
+            if (row.lastHuntAt > row.at) throw new Error('interaction memory: invalid hunt time');
+        }
         const key = `${row.kind}:${row.targetId}`;
         counts[row.kind] = (counts[row.kind] || 0) + 1;
         if (targets.has(key) || counts[row.kind] > LIMITS[row.kind]
@@ -116,6 +121,8 @@ function apply(snapshot, input, now) {
     if (e.at > now) return { status: 'future_event', snapshot };
     if (e.at <= snapshot.replayFloor || e.at < now - ACCEPT_WINDOW_MS) return { status: 'expired_event', snapshot };
     const old = snapshot.relations.find(row => row.kind === e.kind && row.targetId === e.targetId);
+    if (e.type === 'hunted_together' && old?.lastHuntAt !== undefined
+        && e.at - old.lastHuntAt < HUNT_COOLDOWN_MS) return { status: 'rate_limited', snapshot };
     const at = Math.max(e.at, old?.at || 0);
     const values = old ? decayed(old, at) : Object.fromEntries(FIELDS.map(field => [field, 0]));
     const factor = Math.pow(0.5, (at - e.at) / (7 * DAY));
@@ -126,6 +133,8 @@ function apply(snapshot, input, now) {
     const reasons = [{ type: e.type, at: e.at }, ...(old?.reasons || [])]
         .sort((a, b) => b.at - a.at).slice(0, REASON_LIMIT);
     const relation = { kind: e.kind, targetId: e.targetId, at, order: snapshot.revision + 1, ...values, reasons };
+    if (e.type === 'hunted_together') relation.lastHuntAt = e.at;
+    else if (old?.lastHuntAt !== undefined) relation.lastHuntAt = old.lastHuntAt;
     const relations = bound([...snapshot.relations.filter(row => row !== old), relation], now);
     const ordered = [...snapshot.recent, e].sort((a, b) => b.at - a.at || a.key.localeCompare(b.key));
     const removed = ordered.slice(RECENT_LIMIT);
@@ -145,7 +154,8 @@ function view(snapshot) {
         relation(kind, targetId, at) {
             time(at);
             const row = rows.get(`${kind}:${targetId}`);
-            return row ? { ...decayed(row, at), reasons: row.reasons.map(reason => ({ ...reason })) } : null;
+            return row ? { ...decayed(row, at), ...(row.lastHuntAt !== undefined ? { lastHuntAt: row.lastHuntAt } : {}),
+                reasons: row.reasons.map(reason => ({ ...reason })) } : null;
         }
     });
 }
@@ -178,5 +188,5 @@ function assess(memory, source, target, context, now) {
         immediateThreat: context.attackingMe === true, reasons };
 }
 
-module.exports = { VERSION, LIMITS, RECENT_LIMIT, REASON_LIMIT, ACCEPT_WINDOW_MS, MAX_BATCH, FIELDS,
+module.exports = { VERSION, LIMITS, RECENT_LIMIT, REASON_LIMIT, ACCEPT_WINDOW_MS, MAX_BATCH, HUNT_COOLDOWN_MS, FIELDS,
     empty, event, apply, view, assess, id, validate };

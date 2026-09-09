@@ -83,7 +83,27 @@ bot's actively targeted, claimed monster, independent of willingness to provoke
 PvP. Party members, raids, arena participants and abandoned targets are excluded.
 Clan membership does not erase personal grievances. Repeated swings/casts on
 the same claim do not create additional episodes; respawn resets the claim.
-There is no positive hunting/help event producer or cold competition producer yet.
+Successful ordinary group hunts now create `hunted_together`. Hot episodes use
+living, online, reward-eligible group members after NPC death; raids are excluded.
+Cold worker episodes require wins, no losses and surviving participants, and
+commit with the complete group's physical outcome. Resting/travel is not a hunt.
+`lastHuntAt` in each retained relation enforces one positive hunt award per 30
+minutes across hot/cold and restart; unrelated events cannot erase that clock.
+The SQL reducer treats a cooldown rejection as an accepted no-op, so stale worker
+views cannot inflate trust or abort legitimate physical outcomes. Large groups
+send at most 64 directed events; remaining pairs stay eligible next resolve.
+There is no automatic heal/help producer or cold competition producer yet.
+
+Background party formation and recruitment use cached personal memory in both
+directions. Among candidates of the same support priority and clan preference,
+the mean bounded score (affinity + 2 * trust - 2 * hostility - fear) takes
+precedence over legacy party-history counts. Unknown/unloaded memory is neutral;
+no SQL is performed during selection. Negative scores are a preference, not a
+veto. Role coverage, level eligibility and structural group scoring remain in
+force. Each added recruit participates in scoring the next recruit; equally
+suitable complete groups are compared by their mean pair score. A per-selection
+cache evaluates each directed pair once at a fixed time. Formation explanations
+include `memoryScore` and `positive_interactions` or `personal_conflict`.
 
 Combat callbacks use `memory.events.enqueue(event)`. The queue holds at most
 1,024 immutable episodes, writes outside the callback, and retains original keys

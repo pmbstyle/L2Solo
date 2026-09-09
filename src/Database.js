@@ -1975,7 +1975,7 @@ function commitInteractionMemoryUnsafe(batch, timestamp) {
             snapshots.set(event.sourceId, row ? InteractionMemoryPolicy.validate(JSON.parse(row.snapshotJson)) : InteractionMemoryPolicy.empty(event.sourceId));
         }
         const result = InteractionMemoryPolicy.apply(snapshots.get(event.sourceId), event, timestamp);
-        if (!['applied', 'duplicate'].includes(result.status)) {
+        if (!['applied', 'duplicate', 'rate_limited'].includes(result.status)) {
             return { ok: false, reason: result.status, key: event.key, snapshots: [] };
         }
         snapshots.set(event.sourceId, result.snapshot);

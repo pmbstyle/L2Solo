@@ -60,8 +60,8 @@ async function run() {
         [timestamp, timestamp + 60000]]);
         const atomicGroup = { id: 'encounter:1', memberIds: [1, 2] };
         const group = [
-            { ...request, expectedRevision: 1, atomicGroup, memoryEvents: [event('group:1')] },
-            { ...request, characterId: 2, leaseId: 'memory-lease-2', atomicGroup, memoryEvents: [event('group:2', 2, 1)] }
+            { ...request, expectedRevision: 1, atomicGroup, memoryEvents: [{ ...event('group:1'), type: 'hunted_together' }] },
+            { ...request, characterId: 2, leaseId: 'memory-lease-2', atomicGroup, memoryEvents: [{ ...event('group:2', 2, 1), type: 'hunted_together' }] }
         ];
         const queuedChange = Database.execute(['UPDATE bot_life_state SET simulationRevision = 1 WHERE characterId = 2', []]);
         const raced = Database.commitAndReleaseColdSimulationLeases(group);
@@ -134,6 +134,9 @@ async function run() {
         assert.deepStrictEqual(await Repository.load(1), saved, 'real close/reopen preserves bounded memory and replay ledger');
         const restarted = new Memory(Repository);
         await restarted.load(1);
+        const throttled = await restarted.recordBatch([{ ...event('hunt-after-restart'), type: 'hunted_together' }]);
+        assert.deepStrictEqual(throttled.statuses, ['rate_limited']);
+        assert.deepStrictEqual(await Repository.load(1), saved, 'restart cannot reset the shared hunt cooldown');
         const worker = new Memory();
         worker.accept(restarted.snapshot(1));
         assert.deepStrictEqual(worker.assess({ id: 1 }, { id: 2 }, {}, timestamp), restarted.assess({ id: 1 }, { id: 2 }, {}, timestamp));

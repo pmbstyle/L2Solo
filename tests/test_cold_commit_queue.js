@@ -119,6 +119,8 @@ function proposal(characterId, priority = 'P2', revision = 1) {
             prepare: async entry => entry.baseState,
             commit: async entries => {
                 const count = entries.reduce((sum, entry) => sum + entry.proposal.result.memoryEvents.length, 0);
+                entries.forEach(entry => assert.deepStrictEqual(entry.atomicGroup, entry.proposal.atomicGroup || null,
+                    'the owner must receive the same atomic group that the queue preserved'));
                 batches.push(entries.map(entry => entry.nextState.characterId));
                 if (count > 64) throw new Error('interaction memory: cold transaction event budget exceeded');
                 return entries.map(entry => ({ ok: true, characterId: entry.nextState.characterId }));
