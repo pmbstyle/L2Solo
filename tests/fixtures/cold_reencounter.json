@@ -1,0 +1,979 @@
+{
+  "source": "simulation-2, accepted episodes recorded on 2026-09-09",
+  "capturedAt": 1788987252044,
+  "scope": "Selected bot identities, current levels, persona seeds and within-roster relationships. Neutral variants are counterfactual controls; this is not a historical world replay.",
+  "cases": [
+    {
+      "name": "solo",
+      "key": "competition:59632846:16_2:588:2000700:2001332",
+      "groups": [
+        [
+          2000700
+        ],
+        [
+          2001332
+        ]
+      ],
+      "spotId": "16_2",
+      "npcId": 588,
+      "states": [
+        {
+          "characterId": 2000700,
+          "name": "EloraFlame",
+          "level": 45,
+          "stats": {
+            "generatedIndex": 1787352013356
+          }
+        },
+        {
+          "characterId": 2001332,
+          "name": "RowanJuniper",
+          "level": 46,
+          "stats": {
+            "generatedIndex": 1787352013988
+          }
+        }
+      ],
+      "snapshots": [
+        {
+          "version": 1,
+          "ownerId": 2000700,
+          "revision": 8,
+          "replayFloor": 1788369012788,
+          "relations": [],
+          "recent": []
+        },
+        {
+          "version": 1,
+          "ownerId": 2001332,
+          "revision": 1,
+          "replayFloor": 1788380580474,
+          "relations": [
+            {
+              "kind": "character",
+              "targetId": 2000700,
+              "at": 1788985380468,
+              "order": 1,
+              "affinity": -2,
+              "trust": -1,
+              "hostility": 3,
+              "fear": 0,
+              "familiarity": 1,
+              "reasons": [
+                {
+                  "type": "mob_contested",
+                  "at": 1788985380468
+                }
+              ]
+            }
+          ],
+          "recent": []
+        }
+      ],
+      "events": [
+        {
+          "key": "competition:59632846:16_2:588:2000700:2001332:contested",
+          "sourceId": 2001332,
+          "targetId": 2000700,
+          "kind": "character",
+          "type": "mob_contested",
+          "at": 1788985380468
+        }
+      ]
+    },
+    {
+      "name": "party",
+      "key": "competition:59632837:23_13:636:2000265:2000754",
+      "groups": [
+        [
+          2000754,
+          2000777,
+          2000886,
+          2000951,
+          2001490
+        ],
+        [
+          2000265,
+          2000824,
+          2000187,
+          2000300,
+          2000704
+        ]
+      ],
+      "spotId": "23_13",
+      "npcId": 636,
+      "states": [
+        {
+          "characterId": 2000754,
+          "name": "AmaraGale",
+          "level": 42,
+          "stats": {
+            "generatedIndex": 1787352013410
+          }
+        },
+        {
+          "characterId": 2000777,
+          "name": "AstridNight",
+          "level": 42,
+          "stats": {
+            "generatedIndex": 1787352013433
+          }
+        },
+        {
+          "characterId": 2000886,
+          "name": "CyraWood",
+          "level": 42,
+          "stats": {
+            "generatedIndex": 1787352013542
+          }
+        },
+        {
+          "characterId": 2000951,
+          "name": "NadiaWave",
+          "level": 42,
+          "stats": {
+            "generatedIndex": 1787352013607
+          }
+        },
+        {
+          "characterId": 2001490,
+          "name": "ArwynRune",
+          "level": 42,
+          "stats": {
+            "generatedIndex": 1787352014146
+          }
+        },
+        {
+          "characterId": 2000265,
+          "name": "KaelaSparrow",
+          "level": 41,
+          "stats": {
+            "generatedIndex": 1787352012921
+          }
+        },
+        {
+          "characterId": 2000824,
+          "name": "WrenLark",
+          "level": 43,
+          "stats": {
+            "generatedIndex": 1787352013480
+          }
+        },
+        {
+          "characterId": 2000187,
+          "name": "RainaUmber",
+          "level": 42,
+          "stats": {
+            "generatedIndex": 1787352012874
+          }
+        },
+        {
+          "characterId": 2000300,
+          "name": "YaraHaven",
+          "level": 42,
+          "stats": {
+            "generatedIndex": 1787352012956
+          }
+        },
+        {
+          "characterId": 2000704,
+          "name": "BrennaBirch",
+          "level": 41,
+          "stats": {
+            "generatedIndex": 1787352013360
+          }
+        }
+      ],
+      "snapshots": [
+        {
+          "version": 1,
+          "ownerId": 2000754,
+          "revision": 17,
+          "replayFloor": 1788380164661,
+          "relations": [
+            {
+              "kind": "character",
+              "targetId": 2001490,
+              "at": 1788984964449,
+              "order": 17,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            },
+            {
+              "kind": "character",
+              "targetId": 2000951,
+              "at": 1788984964449,
+              "order": 16,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            },
+            {
+              "kind": "character",
+              "targetId": 2000886,
+              "at": 1788984964449,
+              "order": 15,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            },
+            {
+              "kind": "character",
+              "targetId": 2000777,
+              "at": 1788984964449,
+              "order": 14,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            }
+          ],
+          "recent": []
+        },
+        {
+          "version": 1,
+          "ownerId": 2000777,
+          "revision": 14,
+          "replayFloor": 1788380164663,
+          "relations": [
+            {
+              "kind": "character",
+              "targetId": 2001490,
+              "at": 1788984964449,
+              "order": 14,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            },
+            {
+              "kind": "character",
+              "targetId": 2000951,
+              "at": 1788984964449,
+              "order": 13,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            },
+            {
+              "kind": "character",
+              "targetId": 2000886,
+              "at": 1788984964449,
+              "order": 12,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            },
+            {
+              "kind": "character",
+              "targetId": 2000754,
+              "at": 1788984964449,
+              "order": 11,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            }
+          ],
+          "recent": []
+        },
+        {
+          "version": 1,
+          "ownerId": 2000886,
+          "revision": 8,
+          "replayFloor": 1788380164665,
+          "relations": [
+            {
+              "kind": "character",
+              "targetId": 2001490,
+              "at": 1788984964449,
+              "order": 8,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            },
+            {
+              "kind": "character",
+              "targetId": 2000951,
+              "at": 1788984964449,
+              "order": 7,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            },
+            {
+              "kind": "character",
+              "targetId": 2000777,
+              "at": 1788984964449,
+              "order": 6,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            },
+            {
+              "kind": "character",
+              "targetId": 2000754,
+              "at": 1788984964449,
+              "order": 5,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            }
+          ],
+          "recent": []
+        },
+        {
+          "version": 1,
+          "ownerId": 2000951,
+          "revision": 8,
+          "replayFloor": 1788380164667,
+          "relations": [
+            {
+              "kind": "character",
+              "targetId": 2001490,
+              "at": 1788984964449,
+              "order": 8,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            },
+            {
+              "kind": "character",
+              "targetId": 2000886,
+              "at": 1788984964449,
+              "order": 7,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            },
+            {
+              "kind": "character",
+              "targetId": 2000777,
+              "at": 1788984964449,
+              "order": 6,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            },
+            {
+              "kind": "character",
+              "targetId": 2000754,
+              "at": 1788984964449,
+              "order": 5,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            }
+          ],
+          "recent": []
+        },
+        {
+          "version": 1,
+          "ownerId": 2001490,
+          "revision": 8,
+          "replayFloor": 1788380164669,
+          "relations": [
+            {
+              "kind": "character",
+              "targetId": 2000951,
+              "at": 1788984964449,
+              "order": 8,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            },
+            {
+              "kind": "character",
+              "targetId": 2000886,
+              "at": 1788984964449,
+              "order": 7,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            },
+            {
+              "kind": "character",
+              "targetId": 2000777,
+              "at": 1788984964449,
+              "order": 6,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            },
+            {
+              "kind": "character",
+              "targetId": 2000754,
+              "at": 1788984964449,
+              "order": 5,
+              "affinity": 3.9949822554895635,
+              "trust": 1.9974911277447818,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1.9974911277447818,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788984964449
+                },
+                {
+                  "type": "hunted_together",
+                  "at": 1788982772602
+                }
+              ],
+              "lastHuntAt": 1788984964449
+            }
+          ],
+          "recent": []
+        },
+        {
+          "version": 1,
+          "ownerId": 2000265,
+          "revision": 9,
+          "replayFloor": 1788382184679,
+          "relations": [
+            {
+              "kind": "character",
+              "targetId": 2001490,
+              "at": 1788985137133,
+              "order": 5,
+              "affinity": -2,
+              "trust": -1,
+              "hostility": 3,
+              "fear": 0,
+              "familiarity": 1,
+              "reasons": [
+                {
+                  "type": "mob_contested",
+                  "at": 1788985137133
+                }
+              ]
+            },
+            {
+              "kind": "character",
+              "targetId": 2000951,
+              "at": 1788985137133,
+              "order": 4,
+              "affinity": -2,
+              "trust": -1,
+              "hostility": 3,
+              "fear": 0,
+              "familiarity": 1,
+              "reasons": [
+                {
+                  "type": "mob_contested",
+                  "at": 1788985137133
+                }
+              ]
+            },
+            {
+              "kind": "character",
+              "targetId": 2000886,
+              "at": 1788985137133,
+              "order": 3,
+              "affinity": -2,
+              "trust": -1,
+              "hostility": 3,
+              "fear": 0,
+              "familiarity": 1,
+              "reasons": [
+                {
+                  "type": "mob_contested",
+                  "at": 1788985137133
+                }
+              ]
+            },
+            {
+              "kind": "character",
+              "targetId": 2000777,
+              "at": 1788985137133,
+              "order": 2,
+              "affinity": -2,
+              "trust": -1,
+              "hostility": 3,
+              "fear": 0,
+              "familiarity": 1,
+              "reasons": [
+                {
+                  "type": "mob_contested",
+                  "at": 1788985137133
+                }
+              ]
+            },
+            {
+              "kind": "character",
+              "targetId": 2000754,
+              "at": 1788985137133,
+              "order": 1,
+              "affinity": -2,
+              "trust": -1,
+              "hostility": 3,
+              "fear": 0,
+              "familiarity": 1,
+              "reasons": [
+                {
+                  "type": "mob_contested",
+                  "at": 1788985137133
+                }
+              ]
+            },
+            {
+              "kind": "character",
+              "targetId": 2000704,
+              "at": 1788986984497,
+              "order": 8,
+              "affinity": 2,
+              "trust": 1,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788986984497
+                }
+              ],
+              "lastHuntAt": 1788986984497
+            },
+            {
+              "kind": "character",
+              "targetId": 2000824,
+              "at": 1788986984497,
+              "order": 7,
+              "affinity": 2,
+              "trust": 1,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788986984497
+                }
+              ],
+              "lastHuntAt": 1788986984497
+            }
+          ],
+          "recent": []
+        },
+        {
+          "version": 1,
+          "ownerId": 2000824,
+          "revision": 12,
+          "replayFloor": 1788382184676,
+          "relations": [
+            {
+              "kind": "character",
+              "targetId": 2000754,
+              "at": 1788985137133,
+              "order": 8,
+              "affinity": -2,
+              "trust": -1,
+              "hostility": 3,
+              "fear": 0,
+              "familiarity": 1,
+              "reasons": [
+                {
+                  "type": "mob_contested",
+                  "at": 1788985137133
+                }
+              ]
+            },
+            {
+              "kind": "character",
+              "targetId": 2000704,
+              "at": 1788986984497,
+              "order": 11,
+              "affinity": 2,
+              "trust": 1,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788986984497
+                }
+              ],
+              "lastHuntAt": 1788986984497
+            },
+            {
+              "kind": "character",
+              "targetId": 2000265,
+              "at": 1788986984497,
+              "order": 10,
+              "affinity": 2,
+              "trust": 1,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788986984497
+                }
+              ],
+              "lastHuntAt": 1788986984497
+            }
+          ],
+          "recent": []
+        },
+        {
+          "version": 1,
+          "ownerId": 2000187,
+          "revision": 13,
+          "replayFloor": 1788373585430,
+          "relations": [],
+          "recent": []
+        },
+        {
+          "version": 1,
+          "ownerId": 2000300,
+          "revision": 4,
+          "replayFloor": 1788368580990,
+          "relations": [],
+          "recent": []
+        },
+        {
+          "version": 1,
+          "ownerId": 2000704,
+          "revision": 4,
+          "replayFloor": 1788382184682,
+          "relations": [
+            {
+              "kind": "character",
+              "targetId": 2000265,
+              "at": 1788986984497,
+              "order": 3,
+              "affinity": 2,
+              "trust": 1,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788986984497
+                }
+              ],
+              "lastHuntAt": 1788986984497
+            },
+            {
+              "kind": "character",
+              "targetId": 2000824,
+              "at": 1788986984497,
+              "order": 2,
+              "affinity": 2,
+              "trust": 1,
+              "hostility": 0,
+              "fear": 0,
+              "familiarity": 1,
+              "reasons": [
+                {
+                  "type": "hunted_together",
+                  "at": 1788986984497
+                }
+              ],
+              "lastHuntAt": 1788986984497
+            }
+          ],
+          "recent": []
+        }
+      ],
+      "events": [
+        {
+          "key": "competition:59632837:23_13:636:2000265:2000754:2000265:2000754",
+          "sourceId": 2000265,
+          "targetId": 2000754,
+          "kind": "character",
+          "type": "mob_contested",
+          "at": 1788985137133
+        },
+        {
+          "key": "competition:59632837:23_13:636:2000265:2000754:2000265:2000777",
+          "sourceId": 2000265,
+          "targetId": 2000777,
+          "kind": "character",
+          "type": "mob_contested",
+          "at": 1788985137133
+        },
+        {
+          "key": "competition:59632837:23_13:636:2000265:2000754:2000265:2000886",
+          "sourceId": 2000265,
+          "targetId": 2000886,
+          "kind": "character",
+          "type": "mob_contested",
+          "at": 1788985137133
+        },
+        {
+          "key": "competition:59632837:23_13:636:2000265:2000754:2000265:2000951",
+          "sourceId": 2000265,
+          "targetId": 2000951,
+          "kind": "character",
+          "type": "mob_contested",
+          "at": 1788985137133
+        },
+        {
+          "key": "competition:59632837:23_13:636:2000265:2000754:2000265:2001490",
+          "sourceId": 2000265,
+          "targetId": 2001490,
+          "kind": "character",
+          "type": "mob_contested",
+          "at": 1788985137133
+        },
+        {
+          "key": "competition:59632837:23_13:636:2000265:2000754:2000824:2000754",
+          "sourceId": 2000824,
+          "targetId": 2000754,
+          "kind": "character",
+          "type": "mob_contested",
+          "at": 1788985137133
+        }
+      ]
+    }
+  ]
+}

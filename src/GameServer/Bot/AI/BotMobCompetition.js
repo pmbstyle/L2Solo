@@ -2,15 +2,19 @@ const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
 const Risk = invoke('GameServer/Bot/AI/BotPvpRisk');
 const Revenge = invoke('GameServer/Bot/AI/BotRevenge');
 const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
+const InteractionMemory = invoke('GameServer/Social/InteractionMemoryRuntime');
+const ResourceCompetition = require('../../Social/ResourceCompetitionPolicy');
 
 const CLAIM_MS = 15000;
 const COOLDOWN_MS = 120000;
 const claims = new WeakMap();
 const { randomUUID } = require('crypto');
 
-function attackChance(session) {
-    return 0.02 + 0.78 * Voice.trait(session, 'assertiveness') *
-        (1 - 0.75 * Voice.trait(session, 'empathy')) * (1 - 0.5 * Voice.trait(session, 'caution'));
+function attackChance(session, opponent, now = Date.now()) {
+    const sourceId = Number(session?.actor?.fetchId?.()), targetId = Number(opponent?.fetchId?.());
+    if (!Number.isSafeInteger(sourceId) || sourceId <= 0 || !Number.isSafeInteger(targetId) || targetId <= 0) return 0;
+    return ResourceCompetition.escalationChance(Voice.profile(session),
+        InteractionMemory.assess({ id: sourceId }, { id: targetId }, {}, now));
 }
 
 // Called when an accepted swing/cast begins, with a damage fallback for
@@ -39,7 +43,7 @@ function record(source, mob, now = Date.now(), rng = Math.random) {
         claim.memoryEvent = { key: `mob:${randomUUID()}`, sourceId: Number(claim.owner.fetchId()),
             targetId: Number(attacker.fetchId()), type: 'mob_contested', at: now };
     }
-    if (claim.memoryEvent && invoke('GameServer/Social/InteractionMemoryRuntime').events.enqueue(claim.memoryEvent)) {
+    if (claim.memoryEvent && InteractionMemory.events.enqueue(claim.memoryEvent)) {
         claim.memoryConsidered = true;
         claim.memoryEvent = null;
     }
@@ -57,7 +61,7 @@ function record(source, mob, now = Date.now(), rng = Math.random) {
     const lines = Voice.trait(session, 'assertiveness') > 0.6
         ? [`${name}, I started on this mob. Back off.`, `Find your own mob, ${name}. I'm not sharing this one.`]
         : [`${name}, I was already fighting this mob. Please find another.`, `I don't like you taking my mob, ${name}.`];
-    const attack = rng() < attackChance(session) && Risk.defenseDecision(session, [attacker]).action === 'fight';
+    const attack = rng() < attackChance(session, attacker, now) && Risk.defenseDecision(session, [attacker]).action === 'fight';
     const started = Revenge.request(session, attacker, 'mob_competition', lines, attack, now, rng);
     return started;
 }

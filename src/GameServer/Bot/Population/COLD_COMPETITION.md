@@ -166,3 +166,45 @@ no farming time or rewards. Successful groups have no fixed maximum lifetime.
 
 Validation: `node tests/test_cold_competition.js`, worker isolation/coordinator
 tests, then observe actual server target groups and scheduler latency.
+
+## Reproducible repeat encounters
+
+`node tests/test_cold_competition_reencounter.js --report` compares the actual
+decision policy on 20,000 fixed seeds in each direction. Its checked-in fixture
+contains two accepted simulation-2 episodes (solo and 5v5), projected identities,
+levels, persona seeds and relationships read from SQLite. Running the test uses
+only that fixture; SQL access is forbidden. It never changes a running world.
+
+The neutral control removes only the episode's directed grievances, preserving
+other relationships. The one-offense variant uses saved relationships. Seven
+additional synthetic episodes, spaced beyond the ten-minute conflict cooldown,
+produce the eight-offense variant through InteractionMemoryPolicy.apply. All
+variants use the same evaluation time, participants, levels, pressure (3), and
+random seeds. This isolates memory effects; it is not an exact historical replay
+or an estimate of encounter frequency on a live server.
+
+Assertions cover changes in competition, avoidance, accepted invitations and
+ordinary recruitment scores, actual cold-monitor decisions, and supporter versus
+bystander reactions. Main-runtime assessments must equal assessments after memory
+serialization and ColdSimulationKernel.upsert. This parity covers relationship
+assessment and escalation intent, not identical hot/cold combat execution.
+Neither the test nor its reported PvP intentions
+executes a fight. Saved evidence and memory must remain unchanged by decisions.
+
+## Hot resource-dispute responses
+
+`Social/ResourceCompetitionPolicy.escalationChance` is shared by cold dispute
+forecasts and hot `BotMobCompetition` reactions. It reads the responder's existing
+personal memory and persona: hostility increases intent, while warmth, fear,
+caution, resilience and empathy reduce it. Intent is capped at 20%; unloaded
+memory produces no attack intent. The hot callback reads only the memory cache,
+without loading SQL. Reencounter tests compare both modes on identical memory,
+persona and RNG, including probability boundaries.
+
+Hot callbacks observe accepted competing swings/casts on a claimed mob, rather
+than forecasting a possible resource shortage. They still write one factual
+episode per mob claim and use the existing warning/cooldown flow. A shared intent
+does not bypass live risk, party/clan protection, peace/arena rules, active combat
+or effect restrictions. Actual PvP continues through Revenge and the ordinary
+combat loop. This change aligns escalation; it does not add hot social invitations
+or replace actual party combat support with a cold simulated outcome.

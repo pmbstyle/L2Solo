@@ -2,6 +2,7 @@ const assert = require('assert');
 require('../src/Global');
 const Competition = invoke('GameServer/Bot/AI/BotMobCompetition');
 const InteractionMemory = invoke('GameServer/Social/InteractionMemoryRuntime');
+const MemoryPolicy = require('../src/GameServer/Social/InteractionMemoryPolicy');
 const originalEnqueue = InteractionMemory.events.enqueue;
 const memories = [];
 InteractionMemory.events.enqueue = event => { memories.push(event); return true; };
@@ -33,6 +34,7 @@ function character(bot = true, level = 40) {
     a.session = { actor: a, aiActive: bot, accountId: bot ? `bot_${a.id}` : 'player', plan: 'hunting',
         persona: { traits: { caution: 0.3, assertiveness: 0.8, empathy: 0.4, resilience: 0.8 } },
         dataSendToOthers(packet) { events.push(['chat', a.id, packet]); } };
+    if (bot) InteractionMemory.accept(MemoryPolicy.empty(a.id));
     return a;
 }
 const events = [];
@@ -97,7 +99,31 @@ try {
     const aggressive = character(), gentle = character();
     aggressive.session.persona.traits = { assertiveness: 0.9, empathy: 0.1, caution: 0.1 };
     gentle.session.persona.traits = { assertiveness: 0.1, empathy: 0.9, caution: 0.9 };
-    assert(Competition.attackChance(aggressive.session) > Competition.attackChance(gentle.session) * 10);
+    assert(Competition.attackChance(aggressive.session, gentle) > Competition.attackChance(gentle.session, aggressive) * 10);
+    // Same accepted claim and same roll; only previously committed memory differs.
+    for (const variant of ['neutral', 'grievance', 'friendly', 'unloaded']) {
+        const x = setup();
+        if (variant === 'unloaded') InteractionMemory.forget(x.bot.id);
+        if (['grievance', 'friendly'].includes(variant)) {
+            const remembered = MemoryPolicy.apply(MemoryPolicy.empty(x.bot.id), {
+                key: `prior-${variant}`, sourceId: x.bot.id, targetId: x.rival.id,
+                type: variant === 'grievance' ? 'mob_contested' : 'resources_received', at: now - 600001
+            }, now).snapshot;
+            InteractionMemory.accept(remembered);
+        }
+        const chance = Competition.attackChance(x.bot.session, x.rival, now);
+        Competition.record(x.bot, x.mob, now);
+        const started = Competition.record(x.rival, x.mob, now + 1, () => 0.01);
+        assert.strictEqual(started, variant === 'grievance', `${variant}: prior memory must affect the real provocation path`);
+        assert.strictEqual(!!x.bot.session.pvpRevenge, variant === 'grievance');
+        if (variant === 'grievance') {
+            assert(chance > 0.01);
+            assert(events.some(e => e[0] === 'chat' && e[1] === x.bot.id), 'a memory-based escalation still warns first');
+        } else assert(chance < 0.01);
+        assert.strictEqual(memories.filter(e => e.sourceId === x.bot.id).length, 1, 'physical competition still records exactly one episode');
+        for (let i = 2; i <= 100; i++) Competition.record(x.rival, x.mob, now + i, () => 0);
+        assert.strictEqual(memories.filter(e => e.sourceId === x.bot.id).length, 1);
+    }
     for (const mode of ['party', 'clan', 'peace', 'left_mob', 'dead', 'raid', 'budget', 'disabled']) {
         const x = setup();
         if (mode === 'party') x.bot.session.coldLifeState = x.rival.session.coldLifeState = { party: { partyId: 'friends' } };
