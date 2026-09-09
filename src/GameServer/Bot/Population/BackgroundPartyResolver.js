@@ -456,4 +456,27 @@ const BackgroundPartyResolver = {
     }
 };
 
+const resolveParty = BackgroundPartyResolver.resolve;
+BackgroundPartyResolver.resolve = (options = {}) => {
+    const timestamp = options.timestamp ?? Date.now();
+    const competition = require('./ColdCompetitionWait').consumeParty(options.party, options.members || [], options.elapsedMs ?? 60000, timestamp);
+    const paused = competition.waiting || competition.elapsedMs === 0;
+    const members = competition.members || options.members || [];
+    const result = paused ? {
+        memberResults: members.map(state => ({ state, result: { patch: {}, events: [],
+            materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: competition.until || timestamp + 1000 } })),
+        events: [], partyPatch: {}, nextResolveAt: competition.until || timestamp + 1000,
+        debug: { reason: 'competition_contest', fights: 0, wins: 0 }
+    } : resolveParty({ ...options, party: competition.party, members, elapsedMs: competition.elapsedMs, timestamp });
+    if (competition.waiting) return result;
+    if (competition.party !== options.party) result.partyPatch = { ...result.partyPatch,
+        stats: { ...(result.partyPatch?.stats || competition.party.stats), coldCompetition: competition.party.stats.coldCompetition } };
+    const cleared = new Map(members.filter((state, index) => state !== options.members?.[index]).map(state => [state.characterId, state]));
+    result.memberResults = (result.memberResults || []).map(entry => {
+        const state = cleared.get(entry.state.characterId);
+        return !state ? entry : { ...entry, result: { ...entry.result, patch: { ...entry.result.patch,
+            stats: { ...(entry.result.patch?.stats || state.stats), coldCompetition: state.stats.coldCompetition } } } };
+    });
+    return result;
+};
 module.exports = BackgroundPartyResolver;

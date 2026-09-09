@@ -144,9 +144,11 @@ const DEFAULTS = {
     // Idle formation can fill six parties per pass; live-player protection
     // still caps the same pass at one party in PopulationService.
     partyFormationBatchSize: 6,
-    // Forecast only: no simulated theft, memory writes, invitations or PvP.
+    // Observation itself only forecasts. Main-process actions validate and
+    // commit cooperation/resource interruptions; PvP remains a forecast.
     coldCompetitionObserveEnabled: true,
     coldCompetitionActionsEnabled: true,
+    coldCompetitionConflictsEnabled: true,
     partyMinSize: 2,
     partyMaxSize: 5,
     // Shared safety ceiling for every background party. Admission never

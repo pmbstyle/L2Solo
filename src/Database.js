@@ -2820,6 +2820,27 @@ const Database = {
                     }
                 }
             }
+            if (!failure && group[0]?.atomicGroup?.partyChanges !== undefined) {
+                const changes = group[0].atomicGroup.partyChanges;
+                failure = !Array.isArray(changes) || changes.length > 2
+                    || new Set(changes.map(change => change.partyId)).size !== changes.length;
+                if (!failure) for (const change of changes) {
+                    const party = one('SELECT status, memberIdsJson, updatedAt FROM bot_background_parties WHERE partyId = ?', [change.partyId]);
+                    const ids = party ? JSON.parse(party.memberIdsJson || '[]').map(Number) : [];
+                    const expected = change.memberIds || [];
+                    if (party?.status !== 'active' || Number(party.updatedAt) !== Number(change.expectedUpdatedAt)
+                        || ids.length < 2 || ids.length > 9 || ids.length !== expected.length
+                        || new Set(expected).size !== expected.length || ids.some(id => !expected.includes(id) || !presentIds.has(id)
+                            || coldSimulationRow(id)?.partyId !== change.partyId)
+                        || !Number.isSafeInteger(change.updatedAt) || change.updatedAt <= Number(party.updatedAt)
+                        || (change.nextResolveAt !== null && (!Number.isSafeInteger(change.nextResolveAt) || change.nextResolveAt < 0))
+                        || !change.statsJson || typeof JSON.parse(change.statsJson) !== 'object') {
+                        failure = true;
+                        break;
+                    }
+                }
+                if (failure) reason = 'party_context_changed';
+            }
             if (failure) atomicGroupFailures.set(groupId, reason || 'party_group_aborted');
         });
         const commitBatch = () => batch.map((request) => {
@@ -2891,7 +2912,22 @@ const Database = {
             // Validate all participants after earlier queued writes have settled.
             // Preflight outside this transaction could allow half an encounter.
             validateAtomicGroups();
-            return commitBatch();
+            const results = commitBatch();
+            for (const [groupId, group] of atomicGroups) {
+                if (atomicGroupFailures.has(groupId)) continue;
+                const changes = group[0].atomicGroup.partyChanges || [];
+                if (!changes.length) continue;
+                if (group.some(request => !results.find(result => result.characterId === Number(request.characterId))?.ok)) {
+                    throw new Error('party conflict: incomplete atomic outcome');
+                }
+                for (const change of changes) {
+                    const updated = write(`UPDATE bot_background_parties SET nextResolveAt = ?, statsJson = ?, updatedAt = ?
+                        WHERE partyId = ? AND status = 'active' AND updatedAt = ?`,
+                    [change.nextResolveAt, change.statsJson, change.updatedAt, change.partyId, change.expectedUpdatedAt]);
+                    if (updated.affectedRows !== 1) throw new Error('party conflict: party changed during commit');
+                }
+            }
+            return results;
         }, 'bot-life:cold-owner-commit-release-batch');
     },
 

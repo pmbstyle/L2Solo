@@ -1386,11 +1386,12 @@ const resolveSolo = BackgroundResolver.resolveSolo;
 BackgroundResolver.resolveSolo = (options = {}) => {
     const timestamp = options.timestamp ?? Date.now();
     const competition = require('./ColdCompetitionWait').consume(options.state, options.elapsedMs ?? 60000, timestamp);
+    const competitionReason = options.state?.stats?.coldCompetition?.action === 'contest' ? 'competition_contest' : 'competition_yield';
     if (competition.waiting) return { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-        nextResolveAt: competition.until, debug: { reason: 'competition_yield', fights: 0, wins: 0 } };
+        nextResolveAt: competition.until, debug: { reason: competitionReason, fights: 0, wins: 0 } };
     const result = competition.state && competition.elapsedMs === 0
         ? { patch: { stats: competition.state.stats }, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-            nextResolveAt: timestamp + 1000, debug: { reason: 'competition_yield', fights: 0, wins: 0 } }
+            nextResolveAt: timestamp + 1000, debug: { reason: competitionReason, fights: 0, wins: 0 } }
         : resolveSolo({ ...options, state: competition.state, elapsedMs: competition.elapsedMs, timestamp });
     if (options.state?.stats?.coldCompetition?.wait) {
         result.patch = { ...result.patch, stats: { ...(result.patch?.stats || competition.state.stats),

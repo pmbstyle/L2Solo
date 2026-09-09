@@ -15,7 +15,7 @@ let now = Date.now();
 async function run() {
     Database.init();
     const stats = { equipmentPlan: { status: 'active', strategy: 'direct_drop', next: { npcId: 10, spotId: 'test' } } };
-    for (const id of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) {
+    for (const id of Array.from({ length: 18 }, (_, index) => index + 1)) {
         await Database.execute(['INSERT INTO accounts(username,password) VALUES (?,?)', [`bot_actions_${id}`, 'test']]);
         await Database.execute([`INSERT INTO characters(id,username,name,classId,race,maxHp,maxMp,sex,face,hair,hairColor,locX,locY,locZ)
             VALUES (?,?,?,0,0,100,100,0,0,0,0,0,0,0)`, [id, `bot_actions_${id}`, `Action${id}`]]);
@@ -138,7 +138,62 @@ async function run() {
         assert.strictEqual(reviewed.party.status, 'active', 'legacy runtime must review rather than expire a new productive goal');
         assert(reviewed.party.stats.sessionReview.nextAt > Date.now());
     } finally { Spots.findById = originalFind; }
+    const runtimeMemory = invoke('GameServer/Social/InteractionMemoryRuntime');
+    await runtimeMemory.ensureMany([13, 14, 15, 16, 17, 18]);
+    const contestNow = Date.now();
+    const conflictOptions = { life: Life, owner: Owner, memory: runtimeMemory, now: () => contestNow,
+        conflictsEnabled: () => true, contestContextAllowed: () => true };
+    const conflicts = new ColdCompetitionActions(conflictOptions);
+    const contestEvent = (a, b) => ({ ...event(a, b, 'contest'), at: contestNow, pvpIntent: true,
+        actor: { id: a, revision: Life.cachedState(a).simulation.revision, memoryRevision: runtimeMemory.snapshot(a).revision },
+        peer: { id: b, revision: Life.cachedState(b).simulation.revision, memoryRevision: runtimeMemory.snapshot(b).revision } });
+    const dispute = contestEvent(13, 14);
+    assert.strictEqual((await new ColdCompetitionActions({ ...conflictOptions, conflictsEnabled: () => false }).apply(dispute)).reason, 'forecast_only');
+    assert.strictEqual((await new ColdCompetitionActions({ ...conflictOptions, contestContextAllowed: () => false }).apply(dispute)).reason, 'contest_context_changed');
+    const contested = await conflicts.apply(dispute);
+    assert(contested.ok, JSON.stringify(contested));
+    assert.strictEqual(contested.pvp, false, 'a PvP intention is not an executed attack');
+    assert.strictEqual(runtimeMemory.snapshot(13).relations.length, 0, 'the aggressor must not invent an offense by the victim');
+    const resentment = runtimeMemory.assess({ id: 14 }, { id: 13 }, {}, contestNow);
+    assert.strictEqual(resentment.personal.hostility, 3);
+    assert.strictEqual(resentment.disposition, 'wary', 'one dispute does not immediately create an enemy');
+    assert.strictEqual(Life.cachedState(13).stats.coldCompetition.wait, undefined);
+    const victim = Life.cachedState(14);
+    const blockedHunt = Resolver.resolveSolo({ state: victim, timestamp: contestNow + 5000 });
+    assert.strictEqual(blockedHunt.debug.reason, 'competition_contest');
+    assert.strictEqual(blockedHunt.materialize.exp, 0);
+    assert.strictEqual(Wait.consume(victim, 30000, contestNow + 30000).elapsedMs, 15000);
+    assert.strictEqual((await conflicts.apply(dispute)).ok, false, 'delivery cannot repeat the loss or the memory');
+    const later = new ColdCompetitionActions({ ...conflictOptions, now: () => contestNow + 120001 });
+    const laterEvent = { ...contestEvent(13, 15), key: 'later-opponent', at: contestNow + 120001 };
+    assert.strictEqual((await later.apply(laterEvent)).reason, 'conflict_cooldown', 'durable conflict budget covers different opponents');
+    const contestedRace = new ColdCompetitionActions({ ...conflictOptions, owner: { ...Owner,
+        commitAndReleaseBatch: async (entries, options) => {
+            await Database.execute(['UPDATE bot_life_state SET simulationRevision=simulationRevision+1 WHERE characterId=16', []]);
+            return Owner.commitAndReleaseBatch(entries, options);
+        } } });
+    assert.strictEqual((await contestedRace.apply(contestEvent(15, 16))).ok, false);
+    const rollback = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId IN (15,16)', []]);
+    assert(rollback.every(row => !JSON.parse(row.statsJson).coldCompetition), 'both physical outcomes abort on one stale lease');
+    assert.strictEqual((await invoke('GameServer/Social/InteractionMemoryRepository').load(16)).relations.length, 0, 'rejected outcome must not write resentment');
+    const memoryRace = new ColdCompetitionActions({ ...conflictOptions, owner: { ...Owner,
+        claimBatch: async (...args) => {
+            const claims = await Owner.claimBatch(...args);
+            await runtimeMemory.recordBatch([{ key: 'concurrent-help', sourceId: 18, targetId: 17, type: 'helped_in_combat', at: contestNow }]);
+            return claims;
+        } } });
+    assert.strictEqual((await memoryRace.apply(contestEvent(17, 18))).reason, 'contest_changed_during_claim');
+    assert.strictEqual(runtimeMemory.assess({ id: 18 }, { id: 17 }, {}, contestNow).personal.hostility, 0);
+    await assert.rejects(conflicts.apply({ ...contestEvent(17, 18), key: 'invalid/key' }), /interaction memory: invalid key/);
+    const memoryRollback = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId IN (17,18)', []]);
+    assert(memoryRollback.every(row => !JSON.parse(row.statsJson).coldCompetition), 'memory failure rolls back both life-state writes');
     await Database.close(); Database.init();
+    const reopenedMemory = await invoke('GameServer/Social/InteractionMemoryRepository').load(14);
+    assert.strictEqual(reopenedMemory.relations[0].hostility, 3, 'resentment survives SQLite close and reopen');
+    assert.strictEqual(reopenedMemory.recent.filter(e => e.type === 'mob_contested').length, 1);
+    const reopenedVictim = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=14', []]);
+    assert.strictEqual(JSON.parse(reopenedVictim[0].statsJson).coldCompetition.wait.until, contested.waitUntil);
+    assert.strictEqual(JSON.parse(reopenedVictim[0].statsJson).coldCompetition.conflictUntil, contestNow + 600000);
     const queuedRows = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId IN (11,12)', []]);
     assert(queuedRows.every(r => JSON.parse(r.statsJson).partyRequest.requestedAt === now), 'both ordinary requests survive restart');
     const socialRows = await Database.execute(['SELECT statsJson FROM bot_background_parties WHERE partyId=?', [socialParty.partyId]]);
@@ -154,6 +209,14 @@ async function run() {
     await scheduler.running;
     assert.deepStrictEqual(scheduled, ['offer_party', 'yield'], 'accepted invitations cannot be starved by yield traffic');
     assert.strictEqual(scheduler.report.budgetSkipped, 1);
+    const conflictScheduler = new ColdCompetitionActions({ now: () => now, conflictsEnabled: () => true });
+    const selectedActions = [];
+    conflictScheduler.apply = async e => { selectedActions.push(e.action); return { ok: true }; };
+    conflictScheduler.submit({ at: now, recent: [yieldEvent, dispute, partyEvent].map(e => ({ ...e, at: now })) });
+    await conflictScheduler.running;
+    assert.deepStrictEqual(selectedActions, ['offer_party', 'contest']);
+    assert.strictEqual(conflictScheduler.snapshot().contests, 1);
+    assert.strictEqual(conflictScheduler.snapshot().mode, 'resource_conflicts');
     console.log('Cold competition native SQLite yield, atomic party, duplicate delivery and reopen checks passed');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {

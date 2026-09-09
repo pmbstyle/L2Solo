@@ -154,6 +154,14 @@ class ColdSimulationCoordinator {
         this.competitionActions = new (require('./ColdCompetitionActions').ColdCompetitionActions)({
             life: LifeState, owner: ColdSimulationOwner,
             memory: invoke('GameServer/Social/InteractionMemoryRuntime'),
+            parties: BackgroundPartyState,
+            personaFor: state => invoke('GameServer/Bot/AI/BotPersona').generate(state),
+            conflictsEnabled: () => Config.coldCompetitionConflictsEnabled === true,
+            contestContextAllowed: (state, event) => {
+                const physical = SpotService.findCurrentSpot(state.loc);
+                const spot = SpotProfiles.findById(event.spotId);
+                return physical?.id === event.spotId && !!spot?.npcEntries?.some(row => Number(row.selfId) === event.npcId);
+            },
             participantAllowed: id => !this.fencedBots.has(Number(id)),
             formParty: (members, event, options) => this.population?.formCompetitionParty?.(members, event, options),
             onState: id => {

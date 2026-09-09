@@ -35,14 +35,21 @@ const mixed = make();
 const mixedEntries = [entries[0], ...teammates.slice(1, 3).map(e => ({ ...e,
     context: { ...e.context, party: { ...e.context.party, updatedAt: at } } }))];
 mixed.sample(mixedEntries, memory, at);
-for (let i = 1; i <= 60; i++) mixed.sample(mixedEntries, memory, at + i * INTERVAL_MS);
+for (let i = 1; i <= 480; i++) mixed.sample(mixedEntries, memory, at + i * INTERVAL_MS);
 assert(mixed.snapshot().recent.length > 0);
+const lastEncounter = new Map();
+const selectedMembers = new Set();
 for (const e of mixed.snapshot().recent) {
     const representative = [e.actor, e.peer].find(p => p.partyId === 'one-party');
     assert(representative, 'party identity must survive worker forecast serialization');
     assert.strictEqual(representative.size, 2);
     assert.strictEqual(representative.partyUpdatedAt, at);
+    selectedMembers.add(representative.id);
+    const lastAt = lastEncounter.get(representative.partyId);
+    if (lastAt !== undefined) assert(e.at - lastAt >= 10 * 60000, 'rotating participants must not bypass the party-pair cooldown');
+    lastEncounter.set(representative.partyId, e.at);
 }
+assert.strictEqual(selectedMembers.size, 2, 'actual party members can take turns as principal');
 const unknown = make(); unknown.sample(entries, new Memory(), at); unknown.sample(entries, new Memory(), at + INTERVAL_MS);
 assert.strictEqual(unknown.snapshot().evaluated, 0, 'unloaded memory must not masquerade as neutrality');
 const slow = make(), fast = make();

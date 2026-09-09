@@ -52,9 +52,10 @@ class ColdCompetitionMonitor {
             const group = groups.get(key), unitKey = partyId || `solo:${state.characterId}`;
             group.demand++;
             if (!group.units.has(unitKey)) group.units.set(unitKey, { id: Number(state.characterId), name: state.name,
-                partyId, size: 0, level: 0, state });
+                partyId, unitKey, size: 0, level: 0, state, members: [] });
             const unit = group.units.get(unitKey);
             unit.size++; unit.level += Number(state.level || 1);
+            unit.members.push(state);
             // A stable representative per independent party; never compare teammates.
             if (Number(state.characterId) < unit.id) Object.assign(unit, { id: Number(state.characterId), name: state.name, state });
         }
@@ -73,13 +74,27 @@ class ColdCompetitionMonitor {
             const rng = seeded(`${group.key}:${Math.floor(timestamp / INTERVAL_MS)}`);
             const units = [...group.units.values()].sort((a, b) => a.id - b.id);
             const aIndex = Math.floor(rng() * units.length);
-            const actor = units[aIndex];
+            let actor = units[aIndex];
             const offset = 1 + Math.floor(rng() * (units.length - 1));
-            const peer = units[(aIndex + offset) % units.length];
-            const pairKey = [actor.id, peer.id].sort((a, b) => a - b).join(':');
-            if (this.pairs.has(pairKey) || this.bots.has(actor.id) || this.bots.has(peer.id)) continue;
+            let peer = units[(aIndex + offset) % units.length];
+            const pairKey = [actor.unitKey, peer.unitKey].sort().join('|');
+            if (this.pairs.has(pairKey) || this.bots.has(actor.unitKey) || this.bots.has(peer.unitKey)) continue;
             const ratePerMinute = Math.min(0.8, 0.1 + (group.pressure - 1) * 0.15);
             if (rng() >= 1 - Math.exp(-ratePerMinute * elapsed / 60000)) continue;
+            // The group remains one competitor, but different actual hunters
+            // can start or suffer a dispute. Cooldowns follow the group identity.
+            const select = (unit, initiating) => {
+                if (unit.members.length === 1) return unit;
+                const candidates = unit.members.slice().sort((a, b) => a.characterId - b.characterId);
+                const weights = candidates.map(s => {
+                    const t = this.personaFor(s)?.traits || {};
+                    return initiating ? 0.1 + Number(t.assertiveness ?? 0.5) + Number(t.ambition ?? 0.5) : 1;
+                });
+                let roll = rng() * weights.reduce((sum, n) => sum + n, 0);
+                const state = candidates.find((s, index) => (roll -= weights[index]) < 0) || candidates.at(-1);
+                return { ...unit, id: Number(state.characterId), name: state.name, state };
+            };
+            actor = select(actor, true); peer = select(peer, false);
             const ab = memory.assess({ id: actor.id }, { id: peer.id }, {}, timestamp);
             const ba = memory.assess({ id: peer.id }, { id: actor.id }, {}, timestamp);
             // An unloaded view is not evidence of neutral relations.
@@ -87,12 +102,12 @@ class ColdCompetitionMonitor {
             const outcome = decide({ pressure: group.pressure, actor, peer, towardPeer: ab, towardActor: ba,
                 actorPersona: this.personaFor(actor.state), peerPersona: this.personaFor(peer.state), rng });
             this.pairs.set(pairKey, timestamp + PAIR_COOLDOWN_MS);
-            this.bots.set(actor.id, timestamp + BOT_COOLDOWN_MS);
-            this.bots.set(peer.id, timestamp + BOT_COOLDOWN_MS);
+            this.bots.set(actor.unitKey, timestamp + BOT_COOLDOWN_MS);
+            this.bots.set(peer.unitKey, timestamp + BOT_COOLDOWN_MS);
             this.report.evaluated++; this.report.lastScanEvents++;
             this.report.outcomes[outcome.action] = (this.report.outcomes[outcome.action] || 0) + 1;
             if (outcome.pvpIntent) this.report.pvpIntents++;
-            this.report.recent.push({ at: timestamp, key: `competition:${Math.floor(timestamp / INTERVAL_MS)}:${group.key}:${pairKey}`,
+            this.report.recent.push({ at: timestamp, key: `competition:${Math.floor(timestamp / INTERVAL_MS)}:${group.key}:${[actor.id, peer.id].sort((a, b) => a - b).join(':')}`,
                 spotId: group.spotId, npcId: group.npcId,
                 demand: group.demand, capacity: group.capacity, pressure: group.pressure,
                 actor: { id: actor.id, name: actor.name, size: actor.size, partyId: actor.partyId,
@@ -106,4 +121,4 @@ class ColdCompetitionMonitor {
     }
     snapshot() { return this.report; }
 }
-module.exports = { ColdCompetitionMonitor, INTERVAL_MS };
+module.exports = { ColdCompetitionMonitor, INTERVAL_MS, seeded };

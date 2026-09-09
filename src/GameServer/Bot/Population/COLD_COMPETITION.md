@@ -14,7 +14,7 @@ Untargeted hunters add proportional demand. Raid/non-monster targets are exclude
 Initial pressure is estimated using existing spot capacity multiplied by the
 target's share of spawns, with a floor of one slot. This is not measured spawn
 availability or kill throughput. Missing spawn data produces no estimate.
-The model must be calibrated before using it to remove hunting opportunities.
+This pressure is an encounter trigger, not proof that a particular NPC was stolen.
 
 At most 32 pressured target groups are sampled per scan with a rotating cursor.
 Per-group encounter hazard is capped at 0.8/minute. There is no backlog catch-up.
@@ -24,9 +24,11 @@ are process-local observation state and reset with the worker. They are NOT the
 durable deduplication needed for future gameplay events.
 
 Decisions use both personal relationships and existing persona traits. An unknown
-relationship is neutral; an unloaded memory view prevents evaluation. A stable
-party representative stands in for each party, so this first estimator does not
-model every member's opinion or clan/alliance diplomacy. Relative level and party
+relationship is neutral; an unloaded memory view prevents evaluation. Each party
+is one competitor; an actual instigator is sampled with assertiveness/ambition
+weights and an actual counterpart is sampled uniformly. Observation cooldowns
+follow party identity, regardless of which member speaks. The estimator does not
+model clan/alliance diplomacy. Relative level and party
 size provide a coarse strength signal. Role, goal and actual membership validation
 must still happen before an eventual invitation can become a real party.
 
@@ -43,8 +45,9 @@ yield/accepted-offer forecasts from a scan, with accepted offers taking priority
 over yields; `budgetSkipped` counts excess
 candidates. Capacity and clan-objective refusals have explicit result reasons.
 Actual results are exported separately
-as `coldCompetitionActions` in the observer. Disputes, avoidance and PvP remain
-forecasts. Two living solo hunters with the same active target can form a party.
+as `coldCompetitionActions` in the observer. Avoidance and PvP remain forecasts.
+Resource disputes can execute under the separate conflicts flag described below.
+Two living solo hunters with the same active target can form a party.
 An accepted offer between a solo hunter and an existing party can instead recruit
 that hunter without consuming a new party slot. Party-to-party mergers and clan
 equipment operations are excluded.
@@ -91,6 +94,50 @@ spot occupancy and compatible demand as tie-breakers. Clan origin grants no
 priority by itself. Protected player-mode formation remains restricted to urgent
 work. This shared count ceiling is a safety bound, not a measured CPU cost model;
 the existing runtime lag/work budgets remain in force.
+
+## Accepted resource disputes
+
+`coldCompetitionConflictsEnabled` adds solo/party `contest` outcomes to the
+existing maximum of two actions per scan. Accepted invitations rank first,
+contests second, and voluntary yields last.
+Main revalidates both active target plans, physical spot, target spawn presence,
+memory revisions, cold ownership and hot-handoff fences. A forecast alone never
+writes an offense.
+
+An accepted contest interrupts the peer's hunting for fifteen seconds. The same
+bounded wait accounting used by yielding prevents later catch-up farming for that
+interval. This is a coarse cold resource interruption, not a live NPC kill or a
+transfer of already awarded loot. The initiator receives no invented rewards.
+The victim alone records `mob_contested` against the initiator, atomically with
+both life states through the existing lease/CAS transaction. A rejected outcome
+writes neither the interruption nor the memory. Accepted snapshots reach the
+main memory cache and the cold worker through the normal state notification.
+
+Both participants retain a ten-minute conflict cooldown in their life state;
+ordinary cooperation preserves it, and restart cannot reset it. One encounter
+adds three hostility points: a neutral victim becomes wary, not immediately
+hostile. `pvpIntent` remains diagnostic; no attack, death, flag or karma change
+is inferred. Observer `contests` counts committed interruptions separately from
+forecast disputes, and recent results identify the victim and memory event.
+
+Party encounters expand at most two complete rosters (18 bots). Every member must
+be present, living, cold, ready for hunting and have loaded memory. The party
+objective and roster version must still match the forecast. Individual members
+support, stand aside or deescalate using their relationships and persona traits.
+A calming leader or a strict calming majority settles the encounter peacefully.
+Otherwise only involved members contribute to the coarse resource contest power;
+the defender may hold ground and the initiator's side loses hunting time instead.
+
+Party metadata, all member states and memory commit in the same lease/CAS
+transaction. A losing party's shared next-resolve deadline moves by 15 seconds;
+the resolver deducts the shared interval once, without catch-up rewards. Members
+also retain the pause so leaving a party cannot erase it. Recovery is unaffected.
+The direct target remembers actual aggressors; defending supporters remember the
+instigator. Bystanders gain no negative relationship. Even 9v9 creates at most
+17 memory events. The ten-minute conflict cooldown is durable on both parties and
+their members. Peaceful settlements retain the cooldown but create no lost time
+or negative memory, and are counted separately as `deescalated`. Recent outcomes
+include matchup, individual roles and affected member IDs. No PvP is executed.
 
 ## Party lifetime
 
