@@ -3,6 +3,7 @@ const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const CheckpointCoordinator = require('./DatabaseCheckpointCoordinator');
 const { XP_DIVIDER: KARMA_XP_DIVIDER } = require('./GameServer/Karma');
+const InteractionMemoryPolicy = require('./GameServer/Social/InteractionMemoryPolicy');
 
 let connection;
 let queryTail = Promise.resolve();
@@ -1087,6 +1088,13 @@ function applySchemaMigrations() {
             );
             CREATE INDEX IF NOT EXISTS character_saved_locations_owner
                 ON character_saved_locations(characterId, id);
+        `)],
+        [37, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS bot_interaction_memory (
+                ownerId INTEGER PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
+                snapshotJson TEXT NOT NULL,
+                updatedAt INTEGER NOT NULL
+            );
         `)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
@@ -1957,6 +1965,49 @@ function completeAfkTradeIfFilledUnsafe(shopId, timestamp) {
     return true;
 }
 
+function commitInteractionMemoryUnsafe(batch, timestamp) {
+    const snapshots = new Map();
+    const changed = new Set();
+    const statuses = [];
+    for (const event of batch) {
+        if (!snapshots.has(event.sourceId)) {
+            const row = one('SELECT snapshotJson FROM bot_interaction_memory WHERE ownerId = ?', [event.sourceId]);
+            snapshots.set(event.sourceId, row ? InteractionMemoryPolicy.validate(JSON.parse(row.snapshotJson)) : InteractionMemoryPolicy.empty(event.sourceId));
+        }
+        const result = InteractionMemoryPolicy.apply(snapshots.get(event.sourceId), event, timestamp);
+        if (!['applied', 'duplicate'].includes(result.status)) {
+            return { ok: false, reason: result.status, key: event.key, snapshots: [] };
+        }
+        snapshots.set(event.sourceId, result.snapshot);
+        if (result.status === 'applied') changed.add(event.sourceId);
+        statuses.push(result.status);
+    }
+    // No write until every event passes; both directed memories are atomic.
+    for (const ownerId of changed) {
+        write(`INSERT INTO bot_interaction_memory(ownerId, snapshotJson, updatedAt) VALUES (?, ?, ?)
+            ON CONFLICT(ownerId) DO UPDATE SET snapshotJson = excluded.snapshotJson, updatedAt = excluded.updatedAt`,
+        [ownerId, JSON.stringify(snapshots.get(ownerId)), timestamp]);
+    }
+    return { ok: true, statuses, snapshots: [...snapshots.values()] };
+}
+
+function commitColdInteractionMemoryUnsafe(request) {
+    if (request.memoryEvents === undefined) return null;
+    if (!Array.isArray(request.memoryEvents) || request.memoryEvents.length > InteractionMemoryPolicy.MAX_BATCH) {
+        throw new Error('interaction memory: invalid cold batch');
+    }
+    if (!request.memoryEvents.length) return null;
+    const events = request.memoryEvents.map(InteractionMemoryPolicy.event);
+    if (events.some(event => event.sourceId !== Number(request.characterId))) {
+        throw new Error('interaction memory: cold event owner mismatch');
+    }
+    const result = commitInteractionMemoryUnsafe(events, now());
+    // Throw to roll back the physical state too. A caller must refresh/replan,
+    // never retry a rejected outcome as a separate successful social event.
+    if (!result.ok) throw new Error(`interaction memory: ${result.reason}`);
+    return result.snapshots;
+}
+
 const Database = {
     init(callback = () => {}) {
         try {
@@ -2440,6 +2491,15 @@ const Database = {
         return inTransaction(() => commitSocialGraphEventUnsafe(input), 'social:event-commit');
     },
 
+    commitInteractionMemory(events) {
+        if (!Array.isArray(events) || !events.length || events.length > InteractionMemoryPolicy.MAX_BATCH) {
+            return Promise.reject(new Error('interaction memory: invalid batch'));
+        }
+        // Normalize before queuing: callers cannot mutate an in-flight batch.
+        const batch = events.map(InteractionMemoryPolicy.event);
+        return inTransaction(() => commitInteractionMemoryUnsafe(batch, now()), 'social-memory:commit');
+    },
+
     commitBackgroundPartyMembership({ party, members = [], event = null } = {}) {
         const batch = Array.isArray(members) ? members.slice(0, 40) : [];
         const characterIds = [...new Set(batch.map((entry) => Number(entry?.row?.characterId)).filter((id) => (
@@ -2693,6 +2753,7 @@ const Database = {
                 revision,
                 leaseUntil,
                 reason: 'committed',
+                ...(request.memoryEvents !== undefined ? { memorySnapshots: commitColdInteractionMemoryUnsafe(request) || [] } : {}),
                 row: coldSimulationRow(characterId)
             };
         }, 'bot-life:cold-owner-commit');
@@ -2701,6 +2762,9 @@ const Database = {
     commitAndReleaseColdSimulationLeases(requests = []) {
         const batch = Array.isArray(requests) ? requests.slice(0, 32) : [];
         if (!batch.length) return Promise.resolve([]);
+        if (batch.reduce((count, request) => count + (request.memoryEvents?.length || 0), 0) > InteractionMemoryPolicy.MAX_BATCH) {
+            return Promise.reject(new Error('interaction memory: cold transaction event budget exceeded'));
+        }
         const atomicGroupFailures = new Map();
         const atomicGroups = new Map();
         batch.forEach((request) => {
@@ -2710,7 +2774,7 @@ const Database = {
             group.push(request);
             atomicGroups.set(groupId, group);
         });
-        atomicGroups.forEach((group, groupId) => {
+        const validateAtomicGroups = () => atomicGroups.forEach((group, groupId) => {
             const expectedIds = new Set((group[0]?.atomicGroup?.memberIds || []).map(Number).filter(Boolean));
             const presentIds = new Set(group.map((request) => Number(request.characterId)).filter(Boolean));
             let failure = expectedIds.size === 0
@@ -2746,7 +2810,7 @@ const Database = {
             }
             if (failure) atomicGroupFailures.set(groupId, reason || 'party_group_aborted');
         });
-        return inTransaction(() => batch.map((request) => {
+        const commitBatch = () => batch.map((request) => {
             const groupId = request.atomicGroup?.id ? String(request.atomicGroup.id) : null;
             if (groupId && atomicGroupFailures.has(groupId)) {
                 return {
@@ -2807,9 +2871,16 @@ const Database = {
                 revision,
                 leaseUntil: 0,
                 reason: 'committed_released',
+                ...(request.memoryEvents !== undefined ? { memorySnapshots: commitColdInteractionMemoryUnsafe(request) || [] } : {}),
                 row: coldSimulationRow(characterId)
             };
-        }), 'bot-life:cold-owner-commit-release-batch');
+        });
+        return inTransaction(() => {
+            // Validate all participants after earlier queued writes have settled.
+            // Preflight outside this transaction could allow half an encounter.
+            validateAtomicGroups();
+            return commitBatch();
+        }, 'bot-life:cold-owner-commit-release-batch');
     },
 
     releaseColdSimulationLeases(requests = []) {

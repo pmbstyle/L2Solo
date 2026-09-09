@@ -103,6 +103,59 @@ function proposal(characterId, priority = 'P2', revision = 1) {
     assert.deepStrictEqual(groupedBatches[1].sort((a, b) => a - b), [31, 32, 33],
         'all members of an atomic party commit must be flushed together');
 
+    function withMemory(id, count, priority, group = null) {
+        const entry = proposal(id, priority);
+        entry.result.memoryEvents = Array.from({ length: count }, (_, index) => ({
+            key: `episode:${id}:${index}`, sourceId: id, targetId: 9999,
+            type: 'attacked', at: now
+        }));
+        if (group) entry.atomicGroup = group;
+        return entry;
+    }
+    for (const priority of ['P0', 'P1', 'P2']) {
+        const batches = [], results = [];
+        const memoryQueue = new ColdCommitQueue({
+            now: () => now,
+            prepare: async entry => entry.baseState,
+            commit: async entries => {
+                const count = entries.reduce((sum, entry) => sum + entry.proposal.result.memoryEvents.length, 0);
+                batches.push(entries.map(entry => entry.nextState.characterId));
+                if (count > 64) throw new Error('interaction memory: cold transaction event budget exceeded');
+                return entries.map(entry => ({ ok: true, characterId: entry.nextState.characterId }));
+            },
+            onResults: entries => results.push(...entries)
+        });
+        for (let id = 100; id < 122; id++) memoryQueue.enqueue(withMemory(id, 3, priority));
+        await memoryQueue.flushDue(true);
+        assert(memoryQueue.size() > 0, 'excess proposals must remain queued');
+        while (memoryQueue.size()) await memoryQueue.flushDue(true);
+        assert.strictEqual(results.length, 22);
+        assert(results.every(result => result.ok), `${priority}: all 22 outcomes must commit`);
+        if (priority === 'P2') assert.deepStrictEqual(batches.map(batch => batch.length), [21, 1]);
+
+        batches.length = 0;
+        results.length = 0;
+        const group = { id: `memory-group-${priority}`, memberIds: [201, 202] };
+        memoryQueue.enqueue(withMemory(200, 40, priority));
+        memoryQueue.enqueue(withMemory(201, 20, priority, group));
+        memoryQueue.enqueue(withMemory(202, 20, priority, group));
+        memoryQueue.enqueue(withMemory(203, 24, priority));
+        while (memoryQueue.size()) await memoryQueue.flushDue(true);
+        assert.deepStrictEqual(batches, [[200], [201, 202, 203]], 'groups stay intact and exactly 64 events fit');
+        assert(results.every(result => result.ok));
+
+        batches.length = 0;
+        results.length = 0;
+        memoryQueue.enqueue(withMemory(200, 1, priority));
+        memoryQueue.enqueue(withMemory(201, 33, priority, group));
+        memoryQueue.enqueue(withMemory(202, 33, priority, group));
+        memoryQueue.enqueue(withMemory(203, 1, priority));
+        while (memoryQueue.size()) await memoryQueue.flushDue(true);
+        assert.deepStrictEqual(batches, [[200], [201, 202], [203]], 'oversized groups must fail alone, without blocking neighbours');
+        assert.deepStrictEqual(results.filter(result => result.ok).map(result => result.characterId), [200, 203]);
+        assert.strictEqual(memoryQueue.bytes, 0);
+    }
+
     let allowed = false;
     let admissions = 0;
     const completedLeases = [];

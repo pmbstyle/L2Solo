@@ -305,6 +305,7 @@ function compactProposal(proposal = {}, includeInventory = true) {
         ...(baseState ? { baseState: compactBaseState } : {}),
         result: {
             events: Array.isArray(result.events) ? result.events : [],
+            ...(result.memoryEvents ? { memoryEvents: result.memoryEvents } : {}),
             debug: result.debug || {}
         }
     };
