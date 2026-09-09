@@ -2,6 +2,7 @@ const { spawnSync } = require('child_process');
 
 const tests = [
     'tests/test_interaction_memory.js',
+    'tests/test_interaction_memory_delivery.js',
     'tests/test_interaction_memory_persistence.js',
     'tests/test_shortcuts.js',
     'tests/test_shortcut_login.js',

@@ -1608,6 +1608,7 @@ function compactHotDetail(status, session) {
         timers: status.timers || {},
         decisions: Object.fromEntries(Object.entries(status.decisions || {}).map(([key, value]) => [key, compactDecision(value)])),
         enemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session),
+        interactionMemory: invoke('GameServer/Social/InteractionMemoryRuntime').inspect(Number(status.id)),
         build: compactBuild(status.build),
         equipment: compactEquipment(context?.equipment),
         persona: status.persona || null,
@@ -1739,6 +1740,7 @@ function compactColdDetail(state, leaderState = null) {
         ...compact,
         kind: 'bot',
         enemies: invoke('GameServer/Bot/AI/BotEnemyMemory').normalize(stats.pvpEnemies),
+        interactionMemory: invoke('GameServer/Social/InteractionMemoryRuntime').inspect(Number(state.characterId)),
         clan: compactActorClan(state),
         classId,
         className: className(classId),
@@ -2169,6 +2171,7 @@ async function botDetail(characterId) {
     const BotManager = invoke('GameServer/Bot/BotManager');
     const hotSession = BotManager.findSessionById(id);
     if (hotSession?.actor) {
+        await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany([id]);
         const status = BotManager.getBotStatus(hotSession);
         return status?.available ? compactHotDetail(status, hotSession) : null;
     }
@@ -2176,6 +2179,7 @@ async function botDetail(characterId) {
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
     const state = await LifeState.findByCharacterId(id);
     if (!state) return null;
+    await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany([id]);
 
     const leaderId = Number(state.party?.leaderId || state.stats?.leaderId || 0) || null;
     let leaderState = leaderId === id ? state : null;

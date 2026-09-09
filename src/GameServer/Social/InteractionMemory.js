@@ -35,7 +35,29 @@ class InteractionMemory {
             }).finally(() => this.loading.delete(ownerId));
             this.loading.set(ownerId, pending);
         }
-        return this.loading.get(ownerId);
+        await this.loading.get(ownerId);
+        return this.snapshot(ownerId);
+    }
+
+    async ensureMany(ownerIds) {
+        if (!this.repository) throw new Error('interaction memory: worker cannot load SQL');
+        const ids = [...new Set(ownerIds.map(Policy.id))];
+        for (let offset = 0; offset < ids.length; offset += Policy.MAX_BATCH) {
+            const page = ids.slice(offset, offset + Policy.MAX_BATCH);
+            const waiting = page.map(id => this.loading.get(id)).filter(Boolean);
+            const missing = page.filter(id => !this.views.has(id) && !this.loading.has(id));
+            if (missing.length) {
+                const pending = this.repository.loadMany(missing).then(snapshots => {
+                    snapshots.forEach(snapshot => this.accept(snapshot));
+                }).finally(() => {
+                    for (const id of missing) if (this.loading.get(id) === pending) this.loading.delete(id);
+                });
+                for (const id of missing) this.loading.set(id, pending);
+                waiting.push(pending);
+            }
+            await Promise.all(waiting);
+            if (offset + Policy.MAX_BATCH < ids.length) await new Promise(resolve => setImmediate(resolve));
+        }
     }
 
     async recordBatch(events) {
@@ -67,6 +89,14 @@ class InteractionMemory {
 
     assess(source, target, context = {}, now = Date.now()) {
         return Policy.assess(this.views.get(source.id) || EMPTY_VIEW, source, target, context, now);
+    }
+
+    inspect(ownerId, now = Date.now()) {
+        const snapshot = this.snapshots.get(ownerId);
+        const view = this.views.get(ownerId);
+        return { ready: !!snapshot, revision: snapshot?.revision || 0,
+            relations: (snapshot?.relations || []).map(row => ({ kind: row.kind, targetId: row.targetId,
+                at: row.at, ageMs: Math.max(0, now - row.at), ...view.relation(row.kind, row.targetId, now) })) };
     }
 
     forget(ownerId) {

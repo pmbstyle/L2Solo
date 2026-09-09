@@ -83,6 +83,51 @@ async function run() {
         assert(repeatedGroup.every(result => !result.ok));
         assert.strictEqual((await Repository.load(1)).revision, 5);
         assert.strictEqual((await Database.execute(['SELECT version FROM schema_migrations WHERE version = 37', []])).length, 1);
+        // Actual hot callback -> queued SQLite write -> cold snapshot -> ACK.
+        const runtime = invoke('GameServer/Social/InteractionMemoryRuntime');
+        await runtime.ensureMany([1, 2]);
+        const Competition = invoke('GameServer/Bot/AI/BotMobCompetition');
+        const actor = id => {
+            const value = { fetchId: () => id, fetchLocX: () => 0, fetchLocY: () => 0,
+                fetchLocZ: () => 0, fetchIsOnline: () => true, isDead: () => false };
+            value.session = { actor: value, accountId: `bot_memory_${id}`, plan: 'hunting',
+                currentTargetId: 999, pvpDefense: {} };
+            return value;
+        };
+        const a = actor(1), b = actor(2);
+        const mob = { fetchId: () => 999, fetchKind: () => 'Monster', fetchHp: () => 100 };
+        Competition.record(a, mob);
+        for (let i = 0; i < 100; i++) Competition.record(b, mob);
+        assert.strictEqual(runtime.events.snapshot().pending, 1, 'one hot episode despite 100 hit callbacks');
+        await runtime.events.flush();
+        assert.strictEqual((await Repository.load(1)).revision, 6);
+        const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
+        const { ColdSimulationCoordinator } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
+        const kernel = new ColdSimulationKernel({ resolveSolo: () => ({}) });
+        const coordinator = new ColdSimulationCoordinator();
+        coordinator.contextIndex = () => ({ spots: new Map(), parties: new Map() });
+        coordinator.routeFor = () => null;
+        const coldState = { characterId: 1, phase: 'cold', activity: 'hunting', stats: {},
+            simulation: { revision: 5 }, timing: { nextResolveAt: Date.now() + 60000 } };
+        const oldPage = coordinator.snapshotEntry(coldState);
+        kernel.upsert(oldPage);
+        assert.deepStrictEqual(kernel.interactionMemory.assess({ id: 1 }, { id: 2 }, {}, timestamp),
+            runtime.assess({ id: 1 }, { id: 2 }, {}, timestamp));
+        assert(!kernel.states.get(1).context.interactionMemory, 'worker stores one indexed view, not an extra context copy');
+        await runtime.recordBatch([event('ack:memory')]);
+        coordinator.postCollections = (type, payload) => {
+            assert.strictEqual(type, 'commit_ack');
+            kernel.onCommitAck(payload);
+        };
+        await coordinator.handleCommitResults([{ ok: true, characterId: 1, nextState: coldState }]);
+        kernel.upsert(oldPage);
+        assert.strictEqual(kernel.interactionMemory.inspect(1).revision, 7, 'late catalog pages cannot overwrite ACK memory');
+        kernel.upsert({ state: { ...coldState, phase: 'hot', simulation: { revision: 6 } } });
+        assert.strictEqual(kernel.interactionMemory.inspect(1).revision, 7, 'phase changes do not erase memory');
+        kernel.remove(1);
+        assert.strictEqual(kernel.interactionMemory.inspect(1).ready, false);
+        kernel.upsert(coordinator.snapshotEntry(coldState));
+        assert.strictEqual(kernel.interactionMemory.inspect(1).revision, 7, 'a returning cold bot is rehydrated');
         const saved = await Repository.load(1);
         await Database.close();
         Database.init();

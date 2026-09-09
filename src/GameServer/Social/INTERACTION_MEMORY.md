@@ -1,8 +1,9 @@
 # Interaction memory foundation
 
 This slice provides durable bounded memory, a shared decision view, and an
-optional transactional cold-outcome event channel. It does **not** start new
-conflicts, implement cold PvP, emit gameplay events automatically, or replace
+optional transactional cold-outcome event channel. Hot mob competition now emits
+one directed memory episode per claim. It does **not** start new
+conflicts, implement cold PvP, or replace
 `partyHistory`, `pvpEnemies`, or player-to-bot `BotSocialMemory` yet.
 
 ## State and cost
@@ -73,14 +74,42 @@ events together for an encounter, with different event types if appropriate.
 Group impressions require explicit attributed evidence (`kind:'clan'` or
 `kind:'alliance'`); no automatic propagation to all members occurs.
 
+BotManager hydrates memory before publishing a hot actor. `ensureMany(ids)`
+coalesces loads, skips cached owners, and reads at most 64 owners per SQL query,
+yielding between pages. A decision never triggers hydration.
+
+`BotMobCompetition.record` records an accepted competing attack against the
+bot's actively targeted, claimed monster, independent of willingness to provoke
+PvP. Party members, raids, arena participants and abandoned targets are excluded.
+Clan membership does not erase personal grievances. Repeated swings/casts on
+the same claim do not create additional episodes; respawn resets the claim.
+There is no positive hunting/help event producer or cold competition producer yet.
+
+Combat callbacks use `memory.events.enqueue(event)`. The queue holds at most
+1,024 immutable episodes, writes outside the callback, and retains original keys
+on transient failure. Full admission returns false; the mob claim retains its
+episode for another callback. The queue is in RAM, so an abrupt crash can lose
+uncommitted episodes. Graceful server shutdown drains it before closing SQLite
+and reports remaining writes if its drain deadline is exhausted.
+
+The Observer bot-detail API exposes `interactionMemory`: readiness, revision,
+bounded relations with decayed scores, reasons and age. `memory.inspect(id)`
+provides the same diagnostic view without SQL; `memory.events.snapshot()` exposes
+queue depth and delivery counters. This does not add a new Observer UI panel.
+
 ## Cold integration contract
 
 Create `new InteractionMemory()` without a repository in a worker. Feed
 `accept(mainMemory.snapshot(id))`; call the same `assess` API. Older or equal
 snapshot revisions cannot replace an already accepted view. Views are read-only:
 they cannot be passed to the durable reducer, and workers cannot write SQL.
-Hydration/snapshot distribution to every running bot is a producer-integration
-step; it is not automatically added to population startup in this slice.
+The coordinator hydrates full/incremental snapshot pages and explicit cold
+handoffs. It includes the owner's compact memory in `context.interactionMemory`,
+including commit ACKs. The kernel indexes that memory separately and removes the
+transport copy from retained context. Social revisions are accepted independently
+of lifecycle revisions, and stale pages cannot overwrite newer ACK memory.
+Removing a worker entry releases its view; returning entries hydrate again.
+Resolver callbacks receive `assessRelationship`, the same evaluator used on main.
 
 `workerMemory.propose(events)` only validates/copies events. Put the result in
 `proposal.result.memoryEvents`. Proposal compaction preserves this field. The
@@ -96,9 +125,9 @@ The single-owner `Owner.commit` path also accepts `options.memoryEvents`.
 Rejected lifecycle proposals write no memory. Invalid/expired social events
 throw and roll back the transaction, including physical changes. Main runtime
 views receive successful cold snapshots through `ColdSimulationOwner.reflect`.
-The current worker ACK does not distribute social views: the future encounter
-producer must hydrate/refresh them explicitly through the snapshot API, using
-the existing byte-bounded message paging. Never record cold events separately
+Worker ACKs distribute current social views through the existing byte-bounded
+message paging. Successful hot episode delivery marks the owner's snapshot dirty.
+Never record cold events separately
 after a failed or merely proposed physical outcome. A multi-party PvP resolver
 must validate all participants' ownership and political context before commit;
 that resolver is outside this foundation.
@@ -106,6 +135,7 @@ that resolver is outside this foundation.
 ## Validation
 
 - `node tests/test_interaction_memory.js`
+- `node tests/test_interaction_memory_delivery.js`
 - `node tests/test_interaction_memory_persistence.js`
 - `node --expose-gc scripts/benchmark-interaction-memory.js`
 

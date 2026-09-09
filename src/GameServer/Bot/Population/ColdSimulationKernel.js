@@ -336,6 +336,7 @@ class ColdSimulationKernel {
             Math.min(this.maxBatch, Number(options.maxAtomicPartySize) || 5)
         );
         this.states = new Map();
+        this.interactionMemory = new (require('../../Social/InteractionMemory'))();
         this.versions = new Map();
         this.heap = new DueHeap();
         this.scheduleTokens = new Map();
@@ -388,6 +389,12 @@ class ColdSimulationKernel {
         const state = entry.state || entry;
         const characterId = Number(state?.characterId || 0);
         if (!characterId) return false;
+        if (entry.context?.interactionMemory) {
+            if (entry.context.interactionMemory.ownerId !== characterId) throw new Error('interaction memory: wrong snapshot owner');
+            this.interactionMemory.accept(entry.context.interactionMemory);
+            const { interactionMemory, ...context } = entry.context;
+            entry = { ...entry, context };
+        }
         const current = this.states.get(characterId);
         const incomingRevision = Math.max(0, Number(state.simulation?.revision || 0));
         const currentRevision = Math.max(0, Number(current?.state?.simulation?.revision || 0));
@@ -432,6 +439,7 @@ class ColdSimulationKernel {
     remove(characterId) {
         const id = Number(characterId);
         this.states.delete(id);
+        this.interactionMemory.forget(id);
         this.versions.set(id, Number(this.versions.get(id) || 0) + 1);
         this.scheduleTokens.delete(id);
         this.claiming.delete(id);
@@ -627,6 +635,7 @@ class ColdSimulationKernel {
                 : null;
             const resolveState = lifecyclePlan?.plannedState || current.state;
             const result = await this.resolveSolo({
+                assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 state: resolveState,
                 spot: current.context.spot || null,
                 pressure: current.context.pressure || {},
@@ -1005,6 +1014,7 @@ class ColdSimulationKernel {
             if (!this.resolveParty) throw new Error('party_resolver_unavailable');
             const lastResolvedAt = Math.min(...run.members.map((member) => Number(member.timing?.lastResolvedAt || startedAt - 60000)));
             const resolution = await this.resolveParty({
+                assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 party: run.party,
                 members: run.members,
                 spot: run.spot,
@@ -1082,6 +1092,7 @@ class ColdSimulationKernel {
                 : null;
             const resolveState = lifecyclePlan?.plannedState || active.state;
             const result = await this.resolveSolo({
+                assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 state: resolveState,
                 spot: resolveState.activity === 'traveling' ? null : lifecyclePlan?.spot || active.context.spot || null,
                 pressure: active.context.pressure || {},

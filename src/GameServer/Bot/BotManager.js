@@ -711,6 +711,7 @@ const BotManager = {
 
                     let hotPersisted = false;
                     try {
+                        await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany([Number(character.id)]);
                         // Persist ownership before publishing the actor to the
                         // world. markHot resolves null on a database failure,
                         // so the result must be treated as an activation error.

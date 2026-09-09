@@ -6,6 +6,7 @@ const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
 const CLAIM_MS = 15000;
 const COOLDOWN_MS = 120000;
 const claims = new WeakMap();
+const { randomUUID } = require('crypto');
 
 function attackChance(session) {
     return 0.02 + 0.78 * Voice.trait(session, 'assertiveness') *
@@ -26,8 +27,23 @@ function record(source, mob, now = Date.now(), rng = Math.random) {
         return false;
     }
     if (claim.owner === attacker) { claim.at = now; return false; }
-    if (claim.considered) return false;
     const session = claim.owner.session;
+    if (!claim.memoryEvent && !claim.memoryConsidered && String(session.accountId || '').startsWith('bot_') &&
+        !session.staticService && !session.arenaEphemeral &&
+        ['hunting', 'following'].includes(session.plan) &&
+        Number(session.currentTargetId) === Number(mob.fetchId()) &&
+        !Risk.sameParty(session, attacker.session) &&
+        Threats.distance(claim.owner, attacker) <= Revenge.NOTICE_RADIUS &&
+        !invoke('GameServer/World/ArenaCombatRules').isArenaParticipant(attacker) &&
+        !invoke('GameServer/World/ArenaCombatRules').isArenaParticipant(claim.owner)) {
+        claim.memoryEvent = { key: `mob:${randomUUID()}`, sourceId: Number(claim.owner.fetchId()),
+            targetId: Number(attacker.fetchId()), type: 'mob_contested', at: now };
+    }
+    if (claim.memoryEvent && invoke('GameServer/Social/InteractionMemoryRuntime').events.enqueue(claim.memoryEvent)) {
+        claim.memoryConsidered = true;
+        claim.memoryEvent = null;
+    }
+    if (claim.considered) return false;
     if (!String(session.accountId || '').startsWith('bot_') || session.staticService ||
         !['hunting', 'following'].includes(session.plan) || session.pvpDefense || session.pvpRevenge || session.pendingPvpProvocation ||
         Number(session.currentTargetId) !== Number(mob.fetchId()) ||

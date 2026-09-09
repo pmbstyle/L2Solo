@@ -1,6 +1,10 @@
 const assert = require('assert');
 require('../src/Global');
 const Competition = invoke('GameServer/Bot/AI/BotMobCompetition');
+const InteractionMemory = invoke('GameServer/Social/InteractionMemoryRuntime');
+const originalEnqueue = InteractionMemory.events.enqueue;
+const memories = [];
+InteractionMemory.events.enqueue = event => { memories.push(event); return true; };
 const Revenge = invoke('GameServer/Bot/AI/BotRevenge');
 const Defense = invoke('GameServer/Bot/AI/BotPvpDefense');
 const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
@@ -83,6 +87,7 @@ try {
     const before = events.length;
     assert(!Competition.record(calm.rival, calm.mob, now + 1, () => 0.99));
     for (let i = 2; i < 502; i++) assert(!Competition.record(calm.rival, calm.mob, now + i, () => 0));
+    assert.strictEqual(memories.filter(event => event.sourceId === calm.bot.id).length, 1, '500 swings produce one social episode even without a PvP attack');
     assert.strictEqual(events.length, before + 1, '500 more swings cannot reroll refusal or repeat the warning');
     const nextMob = { ...calm.mob, id: serial++ };
     calm.bot.session.currentTargetId = nextMob.id;
@@ -106,6 +111,10 @@ try {
         Competition.record(x.bot, x.mob, now);
         const count = events.length;
         assert(!Competition.record(x.rival, x.mob, now + 1, () => 0), mode);
+        if (['party', 'left_mob', 'dead', 'raid'].includes(mode)) {
+            assert(!memories.some(event => event.sourceId === x.bot.id), `${mode}: no false social conflict`);
+        }
+        if (mode === 'clan') assert(memories.some(event => event.sourceId === x.bot.id), 'personal memories remain independent of clan PvP protection');
         assert(!events.slice(count).some(e => ['chat', 'attack'].includes(e[0])), `${mode}: no inappropriate warning or attack`);
         Budget.canSend = () => true;
     }
@@ -156,6 +165,7 @@ try {
     cast.remoteHit(caster.bot.session, caster.mob, skill);
     assert(Competition.record(caster.rival, caster.mob, Date.now(), () => 0), 'accepted hostile cast claims before damage');
 } finally {
+    InteractionMemory.events.enqueue = originalEnqueue;
     utils.isInPeaceZone = original.peace; World.user = original.world;
     Budget.canSend = original.canSend; Budget.record = original.record; Response.speak = original.speak;
     BotAI.promoteForPlayerInteraction = original.promote; Tactics.support = original.support;

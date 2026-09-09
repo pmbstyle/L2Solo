@@ -700,6 +700,7 @@ class ColdSimulationCoordinator {
             : [];
         return {
             spot,
+            interactionMemory: invoke('GameServer/Social/InteractionMemoryRuntime').snapshot(Number(state.characterId)),
             pressure,
             targetNpcId: directDropTargetNpcId(state.stats?.equipmentPlan),
             isPartyLeader: !!party,
@@ -752,6 +753,7 @@ class ColdSimulationCoordinator {
     }
 
     async sendIncrementalEntries(entries, index, pageSize, priority = null) {
+        await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany(entries.map(entry => Number((entry.state || entry).characterId)));
         // Count each row once instead of serializing every growing page prefix.
         // post() still validates the complete envelope before worker delivery.
         const baseBytes = Protocol.byteLength(Protocol.envelope('snapshot_page', this.workerEpoch, {
@@ -815,7 +817,12 @@ class ColdSimulationCoordinator {
             return true;
         };
 
-        for (const state of states) {
+        for (let stateIndex = 0; stateIndex < states.length; stateIndex++) {
+            if (stateIndex % pageSize === 0) {
+                await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany(
+                    states.slice(stateIndex, stateIndex + pageSize).map(state => Number(state.characterId)));
+            }
+            const state = states[stateIndex];
             const row = this.snapshotEntry(state, index);
             const rowBytes = Protocol.byteLength([row]) - 2;
             const tooLarge = page.length > 0 && pageBytes + rowBytes + 1 > PAGE_BYTES;
@@ -993,6 +1000,7 @@ class ColdSimulationCoordinator {
 
     async acceptColdState(state, timeoutMs = 500) {
         if (!state || !this.worker || !this.ready) return { ok: false, reason: 'worker_not_ready' };
+        await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany([Number(state.characterId)]);
         this.fencedBots.delete(Number(state.characterId));
         const msgId = this.post('snapshot_page', {
             rows: [this.snapshotEntry(state)],

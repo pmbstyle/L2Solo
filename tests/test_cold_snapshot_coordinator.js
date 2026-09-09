@@ -7,6 +7,11 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const { ColdSimulationCoordinator } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
 const { PAGE_BYTES } = require('../src/GameServer/Bot/Population/ColdMessagePages');
+// Snapshot fixtures have no SQLite connection. Exercise real batched hydration
+// against an empty repository while keeping transport and cache code intact.
+const Memory = invoke('GameServer/Social/InteractionMemoryRuntime');
+const Policy = require('../src/GameServer/Social/InteractionMemoryPolicy');
+Memory.repository = { loadMany: async ids => ids.map(Policy.empty) };
 
 function setup() {
     const coordinator = new ColdSimulationCoordinator();
@@ -67,6 +72,28 @@ function setup() {
     await new Promise((resolve) => setImmediate(resolve));
     assert.strictEqual(critical.messages[0].payload.priority, 'P0', 'critical state must bypass ordinary refresh');
     assert.strictEqual(critical.messages[0].payload.rows[0].state.characterId, 99);
+
+    const duringBootstrap = setup();
+    const sharedCoordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+    const previous = { cachedState: LifeState.cachedState, markDirty: sharedCoordinator.markDirty,
+        initial: sharedCoordinator.snapshotInFlightInitial };
+    try {
+        const state = { characterId: 99, phase: 'cold' };
+        LifeState.cachedState = () => state;
+        sharedCoordinator.snapshotInFlightInitial = true;
+        duringBootstrap.coordinator.snapshotInFlightInitial = true;
+        sharedCoordinator.markDirty = (value, options) => duringBootstrap.coordinator.markDirty(value, options);
+        Memory.events.onCommit(99);
+        assert.strictEqual(duringBootstrap.coordinator.snapshotQueue.size(), 1, 'memory committed during bootstrap must not be dropped');
+        assert.strictEqual(await duringBootstrap.coordinator.flushCriticalSnapshots(), false);
+        duringBootstrap.coordinator.snapshotInFlightInitial = false;
+        await duringBootstrap.coordinator.flushCriticalSnapshots();
+        assert.strictEqual(duringBootstrap.messages[0].payload.rows[0].state.characterId, 99);
+    } finally {
+        LifeState.cachedState = previous.cachedState;
+        sharedCoordinator.markDirty = previous.markDirty;
+        sharedCoordinator.snapshotInFlightInitial = previous.initial;
+    }
 
     // Exercise actual envelope validation with Unicode payloads large enough
     // to hit the byte limit before the row limit, in both delivery paths.
