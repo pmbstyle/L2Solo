@@ -424,6 +424,7 @@ const BackgroundPartyResolver = {
                 stats: {
                     fightsResolved: Number(party.stats?.fightsResolved || 0) + fights,
                     fightsWon: Number(party.stats?.fightsWon || 0) + wins,
+                    lastProgressAt: wins > 0 ? timestamp : Number(party.stats?.lastProgressAt || 0),
                     deaths: Number(party.stats?.deaths || 0) + deaths,
                     rests: Number(party.stats?.rests || 0) + resting,
                     restUntil: partyRestUntil,

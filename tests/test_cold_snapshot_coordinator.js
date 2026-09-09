@@ -164,6 +164,38 @@ function setup() {
     }
 
     LifeState.allStates = originalAllStates;
+    const sliced = setup();
+    const governor = invoke('GameServer/Bot/Population/BackgroundWorkGovernor');
+    const originalAdmit = governor.admit;
+    const originalComplete = governor.complete;
+    const originalNow = Date.now;
+    let clock = originalNow();
+    let completed = 0;
+    try {
+        Date.now = () => clock;
+        for (let id = 201; id <= 203; id++) sliced.coordinator.markDirty({ characterId: id, phase: 'cold' });
+        sliced.coordinator.snapshotEntry = state => { clock += 20; return { state, context: {} }; };
+        governor.admit = () => ({ ok: true, lease: { budgetMs: 1 } });
+        governor.complete = () => { completed++; };
+        const first = await sliced.coordinator.sendSnapshots(false, true);
+        assert.strictEqual(first.rowsSent, 1, 'deadline must bound serialization work');
+        assert.strictEqual(sliced.coordinator.snapshotQueue.size(), 2, 'unsent suffix must remain queued');
+        assert.strictEqual(completed, 1, 'continuation must account for its actual work');
+        assert(sliced.coordinator.snapshotContinuationTimer, 'remaining work must schedule a continuation');
+        governor.admit = () => ({ ok: false });
+        assert.strictEqual(await sliced.coordinator.sendSnapshots(false, true), false);
+        assert.strictEqual(sliced.messages.length, 1, 'denied budget must not send work');
+        governor.admit = () => ({ ok: true, lease: { budgetMs: 1 } });
+        Date.now = originalNow;
+        await new Promise(resolve => setTimeout(resolve, 350));
+        assert.strictEqual(sliced.coordinator.snapshotQueue.size(), 0, 'timer must drain the retained suffix without a reconcile tick');
+        assert.deepStrictEqual(sliced.messages.flatMap(message => message.payload.rows.map(row => row.state.characterId)), [201, 202, 203]);
+    } finally {
+        Date.now = originalNow;
+        governor.admit = originalAdmit;
+        governor.complete = originalComplete;
+        clearTimeout(sliced.coordinator.snapshotContinuationTimer);
+    }
     console.log('Cold coordinator incremental refresh, cooperative full bootstrap, and P0 bypass checks passed');
 })().catch((error) => {
     console.error(error);

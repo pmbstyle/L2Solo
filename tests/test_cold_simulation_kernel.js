@@ -566,12 +566,13 @@ function state(characterId = 1, overrides = {}) {
     const expiryProposal = expiredPartyMessages.find((entry) => entry.type === 'proposal_batch');
     assert.strictEqual(expiryProposal.payload.proposals.length, 2, 'expired party release must include every member');
     assert(expiryProposal.payload.proposals.every((proposalEntry) => proposalEntry.atomicGroup?.memberIds.join(',') === '22,23'));
-    assert(expiryProposal.payload.proposals.every((proposalEntry) => proposalEntry.nextState.party.partyId === null));
-    assert(expiryProposal.payload.proposals.every((proposalEntry) => proposalEntry.nextState.stats.partyRequest === null));
+    assert(expiryProposal.payload.proposals.every((proposalEntry) => proposalEntry.nextState.party.partyId === 'expired-party'));
     assert.strictEqual(expiryProposal.payload.proposals.find((proposalEntry) => proposalEntry.characterId === 22)
-        .partyResolution.party.status, 'dissolved');
+        .partyResolution.party.status, 'active');
     assert.strictEqual(expiryProposal.payload.proposals.find((proposalEntry) => proposalEntry.characterId === 23)
-        .nextState.activity, 'hunting', 'party travel must not re-enter grouped state after expiry');
+        .nextState.activity, expiredPartyMembers[1].activity, 'a review alone preserves current travel/activity');
+    assert(expiryProposal.payload.proposals.find(p => p.partyResolution).partyResolution.party.stats.sessionReview.nextAt > now,
+        'review must advance its deadline rather than spin on the legacy expiry');
 
     const expiryScheduleMessages = [];
     let expiryScheduleNow = now;
@@ -927,6 +928,31 @@ function state(characterId = 1, overrides = {}) {
     assert.strictEqual(oversizedKernel.snapshot().proposalCompactions, 1);
     assert.strictEqual(oversizedKernel.snapshot().proposalOversize, 1);
 
+    const Delta = require('../src/GameServer/Bot/Population/ColdStateDelta');
+    const largeGroup = [];
+    for (let id = 200; id < 209; id++) {
+        const before = state(id, { stats: { history: 'h'.repeat(40000), removed: 1, list: [1, 2] } });
+        const next = { ...before, stats: { history: before.stats.history, list: [3], added: null }, hp: 8 };
+        const entry = { ...oversizedProposal, characterId: id, token: { ...oversizedProposal.token, characterId: id },
+            baseState: { ...before, hp: 8 }, nextState: next,
+            atomicGroup: { id: 'large-clan', memberIds: Array.from({ length: 9 }, (_, i) => 200 + i) } };
+        oversizedKernel.inFlight.set(id, { state: before, grant: entry.token });
+        oversizedKernel.dirty.set(id, entry);
+        largeGroup.push({ before, next });
+    }
+    oversizedEmitted.length = 0;
+    oversizedKernel.flush(null, true);
+    const sparse = oversizedEmitted.find(e => e.type === 'proposal_batch');
+    assert.strictEqual(sparse.payload.proposals.length, 9, 'nine large members travel as one complete atomic group');
+    assert(Protocol.validateEnvelope(Protocol.envelope('proposal_batch', 'epoch', sparse.payload), 'worker').ok);
+    sparse.payload.proposals.forEach((p, i) => {
+        assert(p.nextStateDelta && !p.nextState);
+        assert.deepStrictEqual(Delta.apply(largeGroup[i].before, p.nextStateDelta), largeGroup[i].next,
+            'transport retains planning changes, deletions, arrays and nulls against the claimed state');
+        assert.strictEqual(largeGroup[i].before.stats.removed, 1, 'applying transport must not mutate its base');
+    });
+    assert.strictEqual(oversizedKernel.snapshot().proposalOversizeRejected, 0);
+
     const capacityFlushMessages = [];
     const capacityFlushKernel = new ColdSimulationKernel({
         resolveSolo: resolver,
@@ -968,8 +994,7 @@ function state(characterId = 1, overrides = {}) {
             'sending proposals must retain ownership until the durable commit ACK');
         readyProposals.forEach(([id, value]) => capacityFlushKernel.dirty.set(id, value));
     }
-    assert.strictEqual(capacityFlushKernel.flushDue(), 8,
-        'a full ownership window must flush immediately instead of waiting two seconds');
+    capacityFlushKernel.tick();
     const capacityFlushBatch = capacityFlushMessages.find((entry) => entry.type === 'proposal_batch');
     assert.strictEqual(capacityFlushBatch.payload.proposals.length, 8);
     assert.strictEqual(capacityFlushBatch.payload.capacityBlocked, true,
@@ -977,6 +1002,29 @@ function state(characterId = 1, overrides = {}) {
     assert.strictEqual(capacityFlushKernel.snapshot().dirty, 0);
     assert.strictEqual(capacityFlushKernel.snapshot().flushReasons.capacity, 1);
     assert.strictEqual(capacityFlushKernel.snapshot().lastFlushRows, 8);
+
+    // An atomic clan party needs the entire small player window. A few free
+    // slots must not leave the completed owners waiting for the ordinary timer.
+    const partialMessages = [];
+    const partialKernel = new ColdSimulationKernel({ resolveSolo: resolver, now: () => now,
+        maxInFlight: 8, maxAtomicPartySize: 9, emit: (type, payload) => partialMessages.push({ type, payload }) });
+    const clanMembers = Array.from({ length: 9 }, (_, i) => state(500 + i, { party: { partyId: 'nine' } }));
+    clanMembers.forEach((s, i) => partialKernel.upsert({ state: s, context: { isPartyLeader: i === 0,
+        party: { partyId: 'nine', leaderId: 500, memberIds: clanMembers.map(m => m.characterId) }, partyMembers: clanMembers } }));
+    for (let id = 600; id < 605; id++) {
+        const pending = { ...oversizedProposal, characterId: id, enqueuedAt: now,
+            token: { ...oversizedProposal.token, characterId: id }, baseState: state(id), nextState: state(id), result: { events: [], debug: {} } };
+        partialKernel.inFlight.set(id, { state: pending.baseState, grant: pending.token });
+        partialKernel.dirty.set(id, pending);
+    }
+    partialKernel.tick();
+    const drained = partialMessages.find(m => m.type === 'proposal_batch');
+    assert.strictEqual(drained.payload.proposals.length, 5, 'an atomic capacity wait must drain completed owners despite free slots');
+    assert.strictEqual(drained.payload.capacityBlocked, true, 'main must receive the atomic capacity pressure');
+    assert.strictEqual(partialKernel.inFlight.size, 5, 'slots remain owned until the commit acknowledgement');
+    partialKernel.onCommitAck({ results: drained.payload.proposals.map(p => ({ ok: true, characterId: p.characterId,
+        state: state(p.characterId, { timing: { nextResolveAt: now + 60000 } }), context: {} })) });
+    assert.strictEqual(partialKernel.dueCandidates(now + 1000, 8).length, 9, 'the complete clan party can run after the owners commit');
 
     const throttledPartyMessages = [];
     const throttledPartyKernel = new ColdSimulationKernel({
@@ -1008,11 +1056,13 @@ function state(characterId = 1, overrides = {}) {
     throttledPartyKernel.upsert({ state: state(100), context: { spot: { id: 'spot' } } });
     throttledPartyKernel.tick();
     const throttledClaim = throttledPartyMessages.find((entry) => entry.type === 'claim_request');
-    assert.deepStrictEqual(throttledClaim.payload.candidates.map((candidate) => candidate.characterId), [39, 100],
-        'a busy ownership window must defer an oversized atomic party without blocking eligible solo work');
+    assert.deepStrictEqual(throttledClaim.payload.candidates.map((candidate) => candidate.characterId), [39],
+        'a valid atomic party must drain earlier owners instead of letting newer solo work refill the window');
     assert.strictEqual(throttledPartyKernel.snapshot().partyCapacityDeferrals, 1);
     assert(throttledPartyMembers.every((member) => !throttledPartyKernel.claiming.has(member.characterId)),
         'a throttled atomic party must remain unclaimed until the ownership window recovers');
+    throttledPartyKernel.claiming.delete(39);
+    assert.deepStrictEqual(throttledPartyKernel.dueCandidates(now, 4).map(c => c.characterId), [40, 41, 42, 43, 44]);
 
     const atomicBurstMessages = [];
     const atomicBurstKernel = new ColdSimulationKernel({

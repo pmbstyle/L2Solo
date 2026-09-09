@@ -2500,7 +2500,7 @@ const Database = {
         return inTransaction(() => commitInteractionMemoryUnsafe(batch, now()), 'social-memory:commit');
     },
 
-    commitBackgroundPartyMembership({ party, members = [], event = null } = {}) {
+    commitBackgroundPartyMembership({ party, members = [], event = null, review = false, expectedPartyUpdatedAt = null } = {}) {
         const batch = Array.isArray(members) ? members.slice(0, 40) : [];
         const characterIds = [...new Set(batch.map((entry) => Number(entry?.row?.characterId)).filter((id) => (
             Number.isSafeInteger(id) && id > 0
@@ -2510,6 +2510,18 @@ const Database = {
         }
 
         return inTransaction(() => {
+            if (review) {
+                const existing = one('SELECT status, memberIdsJson, updatedAt FROM bot_background_parties WHERE partyId = ?', [party.partyId]);
+                const ids = existing ? JSON.parse(existing.memberIdsJson || '[]').map(Number) : [];
+                const retained = JSON.parse(party.memberIdsJson || '[]').map(Number);
+                if (existing?.status !== 'active' || Number(existing.updatedAt) !== Number(expectedPartyUpdatedAt)
+                    || ids.length !== characterIds.length || ids.some(id => !characterIds.includes(id))
+                    || retained.some(id => !characterIds.includes(id))
+                    || batch.some(entry => entry.expectedPartyId !== party.partyId
+                        || String(entry.row.partyId || '') !== (retained.includes(Number(entry.row.characterId)) ? party.partyId : ''))) {
+                    return { ok: false, reason: 'party_review_membership_changed' };
+                }
+            }
             const placeholders = characterIds.map(() => '?').join(', ');
             const currentRows = all(`SELECT characterId, phase, simulationOwner, partyId, updatedAt
                 FROM bot_life_state WHERE characterId IN (${placeholders})`, characterIds);
@@ -2528,7 +2540,7 @@ const Database = {
             const reserved = all(`SELECT characterId FROM clan_operation_members
                 WHERE characterId IN (${placeholders}) AND status = 'active'`, characterIds)
                 .map((row) => Number(row.characterId));
-            if (reserved.length) return { ok: false, reason: 'clan_operation_reserved', conflicts: reserved };
+            if (reserved.length && !review) return { ok: false, reason: 'clan_operation_reserved', conflicts: reserved };
 
             write(`INSERT INTO bot_background_parties (
                 partyId, leaderId, memberIdsJson, spotId, startedAt, nextResolveAt,

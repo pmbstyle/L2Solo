@@ -20,6 +20,7 @@ const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartySt
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const Protocol = require('./ColdSimulationProtocol');
+const ColdStateDelta = require('./ColdStateDelta');
 const { ColdCommitQueue, EARLY_COMMIT_ROW_BUDGET_MS } = require('./ColdCommitQueue');
 const { ColdSnapshotQueue } = require('./ColdSnapshotQueue');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
@@ -135,11 +136,13 @@ class ColdSimulationCoordinator {
         this.snapshotsLoaded = false;
         this.lastHeartbeatAt = 0;
         this.lastWorkerSnapshot = {};
+        this.partyReviews = { committed: 0, departed: 0, dissolved: 0, reasons: {}, recent: [] };
         this.workerMaxInFlight = null;
         this.restartCount = 0;
         this.restartTimer = null;
         this.watchdogTimer = null;
         this.reconcileTimer = null;
+        this.snapshotContinuationTimer = null;
         this.recoveryTimer = null;
         this.renewalTimer = null;
         this.historyCleanupTimer = null;
@@ -148,6 +151,19 @@ class ColdSimulationCoordinator {
         this.seenOrder = [];
         this.waiters = new Map();
         this.commandTail = Promise.resolve();
+        this.competitionActions = new (require('./ColdCompetitionActions').ColdCompetitionActions)({
+            life: LifeState, owner: ColdSimulationOwner,
+            memory: invoke('GameServer/Social/InteractionMemoryRuntime'),
+            participantAllowed: id => !this.fencedBots.has(Number(id)),
+            formParty: (members, event, options) => this.population?.formCompetitionParty?.(members, event, options),
+            onState: id => {
+                const state = LifeState.cachedState(id);
+                if (state) this.markDirty(state, { critical: true, reason: 'competition_action' });
+            },
+            canRun: () => !this.stopping && this.ready && this.snapshotsLoaded && !this.pauseReasons.size
+                && !this.queue?.flushing && !invoke('Database').stats().pending
+                && Number(Metrics.currentEventLoopLag()) < 40
+        });
         this.commandInflight = new Map();
         this.fencedBots = new Set();
         this.pauseReasons = new Set();
@@ -232,6 +248,7 @@ class ColdSimulationCoordinator {
     }
 
     start(population = null) {
+        this.competitionActions.stopping = false;
         if (this.started || Config.enabled === false || Config.backgroundResolverEnabled === false) return Promise.resolve(false);
         this.population = population || this.population;
         this.started = true;
@@ -408,6 +425,7 @@ class ColdSimulationCoordinator {
         case 'heartbeat':
             this.lastHeartbeatAt = Date.now();
             this.lastWorkerSnapshot = payload;
+            if (Config.coldCompetitionActionsEnabled) this.competitionActions.submit(payload.competition);
             break;
         case 'fence_ack':
         case 'drained': {
@@ -736,6 +754,7 @@ class ColdSimulationCoordinator {
         if (result.ok && result.entry.critical && !this.snapshotInFlightInitial) {
             this.flushCriticalSnapshots().catch((error) => this.recordError(error));
         }
+        if (this.snapshotQueue.size() >= this.snapshotQueue.pageSize) this.scheduleSnapshotContinuation();
         return result;
     }
 
@@ -752,7 +771,7 @@ class ColdSimulationCoordinator {
         return true;
     }
 
-    async sendIncrementalEntries(entries, index, pageSize, priority = null) {
+    async sendIncrementalEntries(entries, index, pageSize, priority = null, deadlineAt = Infinity) {
         await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany(entries.map(entry => Number((entry.state || entry).characterId)));
         // Count each row once instead of serializing every growing page prefix.
         // post() still validates the complete envelope before worker delivery.
@@ -777,6 +796,7 @@ class ColdSimulationCoordinator {
         };
 
         for (const entry of entries) {
+            if (rowsSent + page.length > 0 && Date.now() >= deadlineAt) break;
             const row = this.snapshotEntry(entry.state || entry, index);
             const rowBytes = Protocol.byteLength([row]) - 2;
             const tooLarge = page.length > 0 && pageBytes + rowBytes + 1 > PAGE_BYTES;
@@ -923,6 +943,7 @@ class ColdSimulationCoordinator {
                     setImmediate(() => this.sendSnapshots(false).catch((error) => this.recordError(error)));
                 }
                 this.flushCriticalSnapshots().catch((error) => this.recordError(error));
+                if (this.snapshotQueue.size()) this.scheduleSnapshotContinuation();
             }
         })();
         this.snapshotInFlight = job;
@@ -953,7 +974,16 @@ class ColdSimulationCoordinator {
         return job;
     }
 
-    async sendSnapshots(initial = false) {
+    scheduleSnapshotContinuation() {
+        if (this.snapshotContinuationTimer || !this.started || this.stopping || !this.worker || !this.ready) return;
+        this.snapshotContinuationTimer = setTimeout(() => {
+            this.snapshotContinuationTimer = null;
+            this.sendSnapshots(false, true).catch(error => this.recordError(error));
+        }, 100);
+        this.snapshotContinuationTimer.unref?.();
+    }
+
+    async sendSnapshots(initial = false, continuation = false) {
         if (!this.worker || !this.ready) return false;
         if (this.snapshotInFlight || this.criticalSnapshotInFlight) {
             this.snapshotRefreshPending = true;
@@ -983,12 +1013,28 @@ class ColdSimulationCoordinator {
         }
         if (!plan.entries.length) return false;
 
+        const governor = invoke('GameServer/Bot/Population/BackgroundWorkGovernor');
+        let lease = null;
+        if (continuation) {
+            const admission = governor.admit({ job: 'cold_snapshots', resource: 'cold-snapshots',
+                requestedBudgetMs: Math.max(1, Number(Config.schedulerSliceMs) || 12), minimumBudgetMs: 1,
+                playerProtected: pressure.player, lagMs: pressure.lagMs });
+            if (!admission.ok) { this.scheduleSnapshotContinuation(); return false; }
+            lease = admission.lease;
+        }
+
         this.counters.snapshotDirtyRuns += 1;
         return this.startSnapshotJob('dirty', async () => {
-            const index = this.contextIndex({ compactPartyMembers: true });
-            const result = await this.sendIncrementalEntries(plan.entries, index, plan.pageSize);
-            if (result.ok) plan.entries.forEach((entry) => this.snapshotQueue.complete(entry, true));
-            return result;
+            const startedAt = Date.now();
+            try {
+                const index = this.contextIndex({ compactPartyMembers: true });
+                const result = await this.sendIncrementalEntries(plan.entries, index, plan.pageSize, null,
+                    startedAt + (lease?.budgetMs || Math.max(1, Number(Config.schedulerSliceMs) || 12)));
+                if (result.ok) plan.entries.slice(0, result.rowsSent).forEach(entry => this.snapshotQueue.complete(entry, true));
+                return result;
+            } finally {
+                if (lease) governor.complete(lease, { durationMs: Date.now() - startedAt });
+            }
         }, pressure);
     }
 
@@ -1119,6 +1165,14 @@ class ColdSimulationCoordinator {
     async prepareProposal(proposal) {
         const state = LifeState.cachedState(proposal.characterId) || proposal.baseState;
         if (!state) return null;
+        if (proposal.nextStateDelta) {
+            // Never rebase a sparse result over a newer owner or revision.
+            const current = state.simulation || {};
+            if (current.ownerId !== proposal.token.ownerId
+                || Number(current.revision) !== Number(proposal.token.revision)
+                || current.leaseId !== proposal.token.leaseId) return null;
+            proposal.nextState = ColdStateDelta.apply(state, proposal.nextStateDelta);
+        }
         const claimedState = {
             ...state,
             simulation: {
@@ -1179,6 +1233,19 @@ class ColdSimulationCoordinator {
         if (entry.proposal.partyResolution?.party) {
             const party = entry.proposal.partyResolution.party;
             await BackgroundPartyState.createOrUpdate(party);
+            if (entry.proposal.result?.debug?.activity === 'party_session_review') {
+                const review = party.stats?.sessionReview || {};
+                const decisions = review.decisions || [];
+                const departed = Math.max(0, decisions.length - (party.memberIds || []).length);
+                this.partyReviews.committed += 1;
+                this.partyReviews.departed += departed;
+                this.partyReviews.dissolved += Number(party.status === 'dissolved');
+                for (const decision of decisions) {
+                    this.partyReviews.reasons[decision.reason] = (this.partyReviews.reasons[decision.reason] || 0) + 1;
+                }
+                this.partyReviews.recent.unshift({ partyId: party.partyId, at: review.at, departed, status: party.status, decisions });
+                this.partyReviews.recent.length = Math.min(12, this.partyReviews.recent.length);
+            }
             if (party.status === 'dissolved') {
                 await LifeState.clearParty(
                     party.partyId,
@@ -1392,14 +1459,17 @@ class ColdSimulationCoordinator {
     async stop() {
         if (!this.started) return { stopped: true };
         this.stopping = true;
+        await this.competitionActions.stop();
         if (this.watchdogTimer) clearInterval(this.watchdogTimer);
         if (this.reconcileTimer) clearInterval(this.reconcileTimer);
+        if (this.snapshotContinuationTimer) clearTimeout(this.snapshotContinuationTimer);
         if (this.recoveryTimer) clearInterval(this.recoveryTimer);
         if (this.renewalTimer) clearInterval(this.renewalTimer);
         if (this.historyCleanupTimer) clearInterval(this.historyCleanupTimer);
         if (this.restartTimer) clearTimeout(this.restartTimer);
         this.watchdogTimer = null;
         this.reconcileTimer = null;
+        this.snapshotContinuationTimer = null;
         this.recoveryTimer = null;
         this.renewalTimer = null;
         this.historyCleanupTimer = null;
@@ -1437,6 +1507,8 @@ class ColdSimulationCoordinator {
             epoch: this.workerEpoch,
             heartbeatAgeMs: this.worker ? Math.max(0, Date.now() - this.lastHeartbeatAt) : null,
             worker: { ...this.lastWorkerSnapshot },
+            competitionActions: this.competitionActions.snapshot(),
+            partyReviews: this.partyReviews,
             queue: this.queue.snapshot(),
             snapshots: {
                 ...this.snapshotQueue.snapshot(),

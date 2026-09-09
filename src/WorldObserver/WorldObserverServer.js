@@ -2018,6 +2018,9 @@ function worldStatus() {
         uptimeMs: Math.round(process.uptime() * 1000),
         raidBosses: raidBossSnapshot(),
         population: PopulationStatus.counts(),
+        coldCompetition: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().worker?.competition || null,
+        coldCompetitionActions: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().competitionActions || null,
+        partyReviews: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().partyReviews || null,
         runtime: {
             heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
             rssMb: Math.round(memory.rss / 1024 / 1024),
@@ -2112,6 +2115,9 @@ async function snapshot() {
         classes: classCatalog(),
         raidBosses: raidBossSnapshot(),
         population: PopulationStatus.counts(),
+        coldCompetition: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().worker?.competition || null,
+        coldCompetitionActions: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().competitionActions || null,
+        partyReviews: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().partyReviews || null,
         runtime: {
             heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
             rssMb: Math.round(memory.rss / 1024 / 1024),

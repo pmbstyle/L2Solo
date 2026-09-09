@@ -2075,6 +2075,13 @@ const BotLifeState = {
         });
     },
 
+    preparePartyReview(state, nextState) {
+        if (!state?.party?.partyId || state.characterId !== nextState?.characterId) return null;
+        const row = rowFromState({ ...nextState, updatedAt: now() });
+        return { row, snapshot: normalize(row), expectedUpdatedAt: Number(state.updatedAt || 0),
+            expectedPartyId: state.party.partyId };
+    },
+
     preparePartyAssignment(state, partyId, role = 'dps', leaderId = 0, partyNextResolveAt = null) {
         if (!state || !partyId) return null;
         const hasPartyRequest = state.stats?.partyRequest?.status === 'open';

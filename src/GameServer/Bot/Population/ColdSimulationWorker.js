@@ -55,6 +55,7 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const Protocol = require('./ColdSimulationProtocol');
 const RequiredPartyFormation = require('./RequiredPartyFormation');
+const { ColdCompetitionMonitor, INTERVAL_MS: COMPETITION_INTERVAL_MS } = require('./ColdCompetitionMonitor');
 const { ColdSimulationKernel, beginRouteTravelState } = require('./ColdSimulationKernel');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const forbiddenLoaded = Object.keys(require.cache).filter((filename) => (
@@ -71,6 +72,8 @@ let loopTimer = null;
 let flushTimer = null;
 let heartbeatTimer = null;
 let shuttingDown = false;
+let competition = null;
+let competitionReady = false;
 let previousElu = performance.eventLoopUtilization();
 let planningSpots = [];
 let planningNpcOfferRows = [];
@@ -124,6 +127,7 @@ function startKernel(config = {}) {
         resolveParty: (options) => BackgroundPartyResolver.resolve(options),
         partySession: {
             partySessionMaxMs: Config.partySessionMaxMs,
+            partyReviewIntervalMs: Config.partyReviewIntervalMs,
             partySessionJitterMs: Config.partySessionJitterMs,
             partyMinSize: Config.partyMinSize
         },
@@ -286,12 +290,28 @@ function startKernel(config = {}) {
         flushHardMs: config.flushHardMs
     });
     loopTimer = setInterval(() => kernel.tick(), Math.max(5, Number(config.loopIntervalMs) || 20));
+    if (Config.coldCompetitionObserveEnabled) {
+        const allowed = new Set((DataCache.npcs || []).filter(npc => npc.template?.kind === 'Monster'
+            && !invoke('GameServer/Bot/AI/BotRaidSafety').isProtectedRaidEntity(npc)).map(npc => Number(npc.selfId)));
+        competition = new ColdCompetitionMonitor({
+            capacityForSpot: invoke('GameServer/Bot/AI/LevelingRoutes').capacityForSpot,
+            personaFor: state => state.persona?.traits ? state.persona : invoke('GameServer/Bot/AI/BotPersona').generate(state),
+            isTargetAllowed: id => allowed.has(id)
+        });
+    }
     flushTimer = setInterval(() => kernel.flushDue(), Math.max(50, Math.min(250, Number(config.flushTargetMs) || 2000)));
     heartbeatTimer = setInterval(() => {
+        if (competition && competitionReady && !kernel.paused && !shuttingDown
+            && (competition.lastAt === null || Date.now() - competition.lastAt >= COMPETITION_INTERVAL_MS)) {
+            const started = performance.now();
+            competition.sample([...kernel.states.values()], kernel.interactionMemory, Date.now());
+            competition.report.lastSampleMs = performance.now() - started;
+        }
         const elu = performance.eventLoopUtilization(previousElu);
         previousElu = performance.eventLoopUtilization();
         send('heartbeat', {
             ...kernel.snapshot(),
+            competition: competition?.snapshot() || null,
             heapUsed: process.memoryUsage().heapUsed,
             rss: process.memoryUsage().rss,
             eventLoopUtilization: elu.utilization,
@@ -347,7 +367,10 @@ async function handle(message) {
                 characterId: Number(payload.rows?.[0]?.state?.characterId || 0),
                 ...kernel.snapshot()
             }, message.msgId);
-        } else if (payload.done) send('ready', { phase: 'snapshots_loaded', ...kernel.snapshot() }, message.msgId);
+        } else if (payload.done) {
+            competitionReady = true;
+            send('ready', { phase: 'snapshots_loaded', ...kernel.snapshot() }, message.msgId);
+        }
         break;
     case 'claim_ack':
         kernel?.onClaimAck(payload);

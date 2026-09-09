@@ -152,9 +152,23 @@ Database.init();
         [3200003, 3200004]
     ]))[0].n, 0, 'conflicted transaction must not assign any member');
 
+    const reviewMembers = await LifeState.statesForParty('bgp_atomic_success');
+    const [reviewRow] = await Database.execute(['SELECT updatedAt FROM bot_background_parties WHERE partyId=?', ['bgp_atomic_success']]);
+    const Lifecycle = invoke('GameServer/Bot/Population/BackgroundPartyLifecycle');
+    const reviewedParty = PartyState.prepareCommit({ partyId: 'bgp_atomic_success', status: 'dissolved', memberIds: [], stats: {} });
+    const releases = reviewMembers.map(s => LifeState.preparePartyReview(s, Lifecycle.releaseMember(s, Date.now(), 'party_no_progress')));
+    releases[1].expectedUpdatedAt--;
+    const failedReview = await Database.commitBackgroundPartyMembership({ party: reviewedParty.row, members: releases,
+        review: true, expectedPartyUpdatedAt: reviewRow.updatedAt });
+    assert.strictEqual(failedReview.ok, false, 'one stale participant must abort the complete review');
+    assert.strictEqual((await Database.execute(['SELECT COUNT(*) AS count FROM bot_life_state WHERE partyId=?', ['bgp_atomic_success']]))[0].count, 2);
+    releases[1].expectedUpdatedAt++;
+    assert.strictEqual((await Database.commitBackgroundPartyMembership({ party: reviewedParty.row, members: releases,
+        review: true, expectedPartyUpdatedAt: reviewRow.updatedAt })).ok, true);
+    assert.strictEqual((await Database.execute(['SELECT COUNT(*) AS count FROM bot_life_state WHERE partyId=?', ['bgp_atomic_success']]))[0].count, 0);
     assert.strictEqual((await Database.execute(['PRAGMA integrity_check', []]))[0].integrity_check, 'ok');
     await Database.close();
-    console.log('Atomic background party membership checks passed');
+    console.log('Atomic background party membership and review checks passed');
 })().catch(async (error) => {
     console.error(error);
     try { await Database.close(); } catch (_) {}

@@ -91,7 +91,8 @@ const savedEnvironment = { ...process.env };
 try {
     let now = 0;
     let poll;
-    const coordinator = { ready: false, snapshotsLoaded: false };
+    let dirtySnapshots = 30;
+    const coordinator = { ready: false, snapshotsLoaded: false, snapshotQueue: { size: () => dirtySnapshots } };
     const stubs = {
         Database: {},
         'GameServer/Bot/BotManager': {
@@ -139,6 +140,16 @@ try {
     poll();
     assert.strictEqual(measurements, 0, 'worker startup must still pass the stability window');
     now = 1800;
+    poll();
+    assert.strictEqual(measurements, 0, 'post-bootstrap population updates must reach the worker before measurement');
+    dirtySnapshots = 0;
+    coordinator.snapshotInFlight = true;
+    poll();
+    assert.strictEqual(measurements, 0, 'an emptied queue with a send in flight is not ready');
+    coordinator.snapshotInFlight = false;
+    // The already attached player may materialize cold bots during warmup.
+    stubs['GameServer/Bot/Population/BotLifeState'].counts = () => ({ cold: 110, total: 122 });
+    stubs['GameServer/Bot/BotManager'].sessions.pop();
     poll();
     assert.strictEqual(measurements, 1, 'the fully ready mixed world must enter measurement');
 } finally {
