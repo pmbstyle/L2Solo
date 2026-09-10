@@ -339,6 +339,7 @@ class ColdSimulationKernel {
         );
         this.states = new Map();
         this.interactionMemory = new (require('../../Social/InteractionMemory'))();
+        this.interactionMemory.clanSocial = new (require('../../Clan/ClanSocialView'))();
         this.versions = new Map();
         this.heap = new DueHeap();
         this.scheduleTokens = new Map();

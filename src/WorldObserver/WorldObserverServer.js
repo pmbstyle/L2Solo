@@ -2022,6 +2022,7 @@ function worldStatus() {
         coldCompetition: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().worker?.competition || null,
         coldCompetitionActions: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().competitionActions || null,
         partyReviews: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().partyReviews || null,
+        clanSocial: invoke('GameServer/Clan/ClanSocialRuntime').summary(),
         runtime: {
             heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
             rssMb: Math.round(memory.rss / 1024 / 1024),
@@ -2399,6 +2400,11 @@ function route(request, response) {
         return;
     }
 
+    if (url.pathname === '/observer/api/clans/social') {
+        if (request.method !== 'GET') { response.writeHead(405, { Allow: 'GET' }); response.end(); return; }
+        sendJson(response, invoke('GameServer/Clan/ClanSocialRuntime').inspect());
+        return;
+    }
     if (url.pathname === '/observer/api/world/status') {
         try {
             sendJson(response, worldStatus());

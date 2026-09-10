@@ -7,14 +7,17 @@ function reaction(state, principal, opponent, memory, personaFor, rng, now) {
     if (!towardPrincipal.ready || !towardOpponent.ready || state.canParticipate === false) return 'stand_aside';
     const t = personaFor(state)?.traits || {};
     const trait = key => clamp(Number(t[key] ?? 0.5));
-    const warmth = relation => clamp(((relation.personal?.affinity || 0) + (relation.personal?.trust || 0)) / 40, -1, 1);
-    const hostility = clamp((towardOpponent.personal?.hostility || 0) / 30);
+    const feeling = relation => relation.effective || relation.personal;
+    const warmth = relation => clamp(((feeling(relation)?.affinity || 0) + (feeling(relation)?.trust || 0)) / 40, -1, 1);
+    const hostility = clamp((feeling(towardOpponent)?.hostility || 0) / 30);
     const calm = clamp(0.1 + trait('empathy') * 0.35 + Math.max(0, warmth(towardOpponent)) * 0.3
         - trait('assertiveness') * 0.25 - hostility * 0.35, 0, 0.7);
     if (rng() < calm) return 'deescalate';
     const support = clamp(0.2 + trait('commitment') * 0.4 + trait('sociability') * 0.1
         + warmth(towardPrincipal) * 0.3 + hostility * 0.2 - trait('caution') * 0.2
-        - Math.max(0, warmth(towardOpponent)) * 0.3, 0, 0.9);
+        - Math.max(0, warmth(towardOpponent)) * 0.3
+        + (towardPrincipal.affiliation === 'own' ? trait('commitment') * 0.15 : 0)
+        - (['warned', 'probation', 'expulsion_pending'].includes(towardPrincipal.clanSocial?.individual?.discipline?.stage) ? 0.15 : 0), 0, 0.9);
     return rng() < support ? 'support' : 'stand_aside';
 }
 

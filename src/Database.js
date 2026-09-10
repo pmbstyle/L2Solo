@@ -1095,6 +1095,14 @@ function applySchemaMigrations() {
                 snapshotJson TEXT NOT NULL,
                 updatedAt INTEGER NOT NULL
             );
+        `)],
+        [38, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS clan_social_memory (
+                clanId INTEGER PRIMARY KEY REFERENCES clans(id) ON DELETE CASCADE,
+                snapshotJson TEXT NOT NULL,
+                updatedAt INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS clan_social_memory_updated ON clan_social_memory(updatedAt, clanId);
         `)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
@@ -1560,6 +1568,12 @@ function preserveColdVersionedStats(row, patch = {}) {
     const next = { ...patch };
     if (Object.prototype.hasOwnProperty.call(next, 'statsJson')) {
         next.statsJson = preserveVersionedAppearanceStats(row?.statsJson, next.statsJson);
+        const current = jsonObject(row?.statsJson), incoming = jsonObject(next.statsJson);
+        if (Number(current.clanMembershipVersion || 0) > Number(incoming.clanMembershipVersion || 0)) {
+            for (const key of ['clanId', 'clanMembershipVersion', 'clanDiscipline', 'clanPartyObjective']) incoming[key] = current[key];
+            if (incoming.equipmentPlan?.clanGoal?.clanId === current.clanDiscipline?.clanId) incoming.equipmentPlan = null;
+            next.statsJson = JSON.stringify(incoming);
+        }
     }
     return next;
 }
@@ -2008,7 +2022,55 @@ function commitInteractionMemoryUnsafe(batch, timestamp) {
             ON CONFLICT(ownerId) DO UPDATE SET snapshotJson = excluded.snapshotJson, updatedAt = excluded.updatedAt`,
         [ownerId, JSON.stringify(snapshots.get(ownerId)), timestamp]);
     }
+    commitClanSocialUnsafe(batch.filter((_, i) => statuses[i] === 'applied'), timestamp);
     return { ok: true, statuses, snapshots: [...snapshots.values()] };
+}
+
+function commitClanSocialUnsafe(batch, timestamp) {
+    const ClanSocial = require('./GameServer/Clan/ClanSocialPolicy');
+    const clanSnapshots = new Map(), clanContexts = new Map(), changedClans = new Set();
+    for (let i = 0; i < batch.length; i++) {
+        const event = batch[i];
+        if (!event.clan) continue;
+        for (const clanId of new Set([event.clan.sourceClanId, event.clan.targetClanId].filter(Boolean))) {
+            if (!clanContexts.has(clanId)) {
+                const clan = one(`SELECT c.leaderId, p.traitsJson FROM clans c
+                    LEFT JOIN bot_personas p ON p.characterId = c.leaderId WHERE c.id = ?`, [clanId]);
+                clanContexts.set(clanId, clan || null);
+            }
+            const clan = clanContexts.get(clanId);
+            if (!clan) continue;
+            if (!clanSnapshots.has(clanId)) {
+                const row = one('SELECT snapshotJson FROM clan_social_memory WHERE clanId = ?', [clanId]);
+                clanSnapshots.set(clanId, row ? JSON.parse(row.snapshotJson) : ClanSocial.empty(clanId));
+            }
+            const targetLeader = one('SELECT leaderId FROM clans WHERE id = ?', [event.clan.targetClanId]);
+            const currentMember = one('SELECT clanId FROM characters WHERE id = ?', [event.targetId]);
+            const previous = clanSnapshots.get(clanId);
+            const previousRevision = previous.revision;
+            const next = ClanSocial.apply(previous, event, timestamp, {
+                leaderTraits: jsonObject(clan.traitsJson), targetLeaderId: targetLeader?.leaderId,
+                currentTargetClanId: Number(currentMember?.clanId || 0), mutable: true
+            });
+            if (next.revision !== previousRevision) changedClans.add(clanId);
+            clanSnapshots.set(clanId, next);
+        }
+    }
+    for (const [clanId, snapshot] of clanSnapshots) {
+        if (!changedClans.has(clanId)) continue;
+        const changedAt = Math.max(timestamp, Number(one('SELECT MAX(updatedAt) AS at FROM clan_social_memory')?.at || 0) + 1);
+        write(`INSERT INTO clan_social_memory(clanId, snapshotJson, updatedAt) VALUES (?, ?, ?)
+            ON CONFLICT(clanId) DO UPDATE SET snapshotJson = excluded.snapshotJson, updatedAt = MAX(clan_social_memory.updatedAt + 1, excluded.updatedAt)`,
+        [clanId, JSON.stringify(snapshot), changedAt]);
+    }
+}
+
+function rememberClanContributionUnsafe(clanId, contributor, leaderId, ledgerId, requested, sourceBefore, at) {
+    if (!leaderId || leaderId === contributor || requested < Math.max(1000, sourceBefore * 0.01)) return;
+    const event = require('./GameServer/Clan/ClanSocialEvidence').attach({
+        key: `clan-contribution:${ledgerId}`, sourceId: leaderId, targetId: contributor, kind: 'character', type: 'resources_received', at
+    }, { clanId }, { clanId }, `clan-contribution:${ledgerId}`, 'cooperation', true);
+    commitClanSocialUnsafe([event], at);
 }
 
 function commitColdInteractionMemoryUnsafe(request) {
@@ -4863,6 +4925,47 @@ const Database = {
     isAutonomousBotMember(characterId, clanId) {
         return executeReadAutonomousBotMember(characterId, clanId);
     },
+    expelDisciplinedClanMember(clanId, characterId, expectedRevision) {
+        const clan = Number(clanId), id = Number(characterId);
+        return withCharacterFlush(id, () => inTransaction(() => {
+            const socialRow = one('SELECT snapshotJson FROM clan_social_memory WHERE clanId = ?', [clan]);
+            const snapshot = socialRow && JSON.parse(socialRow.snapshotJson);
+            const relation = snapshot?.relations.find(r => r.kind === 'character' && r.targetId === id);
+            const d = relation?.discipline && require('./GameServer/Clan/ClanSocialPolicy').discipline(relation.discipline, 0, now());
+            if (snapshot?.revision !== expectedRevision || d?.stage !== 'expulsion_pending'
+                || !d.warningAt || !d.probationAt || d.lastOffenseAt <= d.probationAt) return { ok: false, reason: 'discipline_changed' };
+            const simulated = one("SELECT s.stateJson, c.leaderId FROM clan_simulation_clans s JOIN clans c ON c.id = s.clanId WHERE s.clanId = ? AND s.mode = 'autonomous'", [clan]);
+            const member = one(`SELECT c.id, c.username, c.clanId, l.accountName, l.statsJson FROM characters c
+                LEFT JOIN bot_life_state l ON l.characterId = c.id WHERE c.id = ?`, [id]);
+            const life = coldSimulationRow(id);
+            if (!simulated || simulated.leaderId === id || !member || Number(member.clanId) !== clan || !generatedBotRow(member)) {
+                return { ok: false, reason: 'discipline_membership_changed' };
+            }
+            if (!life || life.simulationLeaseId || jsonObject(life.statsJson).pvpEncounter) return { ok: false, reason: 'member_busy' };
+            const at = now(), banUntil = at + 7 * 86400000;
+            d.stage = 'expelled'; d.stageAt = at; d.banUntil = banUntil;
+            relation.discipline = d;
+            snapshot.revision++;
+            const changedAt = Math.max(at, Number(one('SELECT MAX(updatedAt) AS at FROM clan_social_memory')?.at || 0) + 1);
+            write('UPDATE clan_social_memory SET snapshotJson = ?, updatedAt = ? WHERE clanId = ?', [JSON.stringify(snapshot), changedAt, clan]);
+            write('UPDATE characters SET clanId = 0, clanPrivileges = 0, clanJoinExpiryTime = ?, title = ? WHERE id = ? AND clanId = ?', [banUntil, '', id, clan]);
+            const stats = jsonObject(life.statsJson);
+            stats.clanId = 0;
+            stats.clanMembershipVersion = at;
+            stats.clanDiscipline = { clanId: clan, expelledAt: at, banUntil, reason: d.reason };
+            stats.clanPartyObjective = null;
+            if (Number(stats.equipmentPlan?.clanGoal?.clanId) === clan) stats.equipmentPlan = null;
+            write('UPDATE bot_life_state SET statsJson = ?, simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?', [JSON.stringify(stats), at, id]);
+            const state = jsonObject(simulated.stateJson);
+            state.memberIds = (state.memberIds || []).filter(n => Number(n) !== id);
+            write('UPDATE clan_simulation_clans SET stateJson = ?, updatedAt = ? WHERE clanId = ?', [JSON.stringify(state), at, clan]);
+            const memory = commitInteractionMemoryUnsafe([{ key: `clan-expelled:${clan}:${id}:${at}`,
+                sourceId: id, targetId: clan, kind: 'clan', type: 'aided_opponent', at }], at);
+            if (!memory.ok) throw Error('expulsion memory rejected');
+            return { ok: true, clanId: clan, characterId: id, banUntil, snapshot,
+                row: coldSimulationRow(id), memorySnapshots: memory.snapshots };
+        }, 'clan-social:expel'));
+    },
     createAutonomousClan({
         name,
         leaderId,
@@ -4897,6 +5000,9 @@ const Database = {
             }
             if (members.some((member) => Number(member.clanId) !== 0 || !generatedBotRow(member))) {
                 return { ok: false, code: 'founder_population_limit' };
+            }
+            if (members.some(member => Number(one('SELECT clanJoinExpiryTime FROM characters WHERE id = ?', [member.id])?.clanJoinExpiryTime || 0) > now())) {
+                return { ok: false, code: 'clan_discipline_cooldown' };
             }
 
             const population = botPopulationUnsafe();
@@ -4969,6 +5075,15 @@ const Database = {
                 WHERE c.id = ?`, [id]);
             if (!candidate || Number(candidate.clanId) !== 0) return { ok: false, code: 'target_has_clan' };
             if (!generatedBotRow(candidate)) return { ok: false, code: 'join_static_service_conflict' };
+            if (Number(one('SELECT clanJoinExpiryTime FROM characters WHERE id = ?', [id])?.clanJoinExpiryTime || 0) > now()) {
+                return { ok: false, code: 'clan_discipline_cooldown' };
+            }
+            const social = one('SELECT snapshotJson FROM clan_social_memory WHERE clanId = ?', [targetClanId]);
+            const reputation = social && JSON.parse(social.snapshotJson).relations.find(r => r.kind === 'character' && r.targetId === id);
+            const feeling = require('./GameServer/Clan/ClanSocialPolicy').relation(reputation, now());
+            if (Number(reputation?.discipline?.banUntil || 0) > now() || (feeling && (feeling.trust < -3 || feeling.hostility >= 10))) {
+                return { ok: false, code: 'clan_distrust' };
+            }
 
             const population = botPopulationUnsafe();
             const maxMembers = Math.floor(Math.max(0, Number(population.population) || 0) * Math.max(0, Math.min(1, Number(maxBotMemberShare) || 0)));
@@ -4982,6 +5097,21 @@ const Database = {
 
             const timestamp = now();
             const previousState = jsonObject(simulation.stateJson);
+            if (reputation?.discipline?.stage === 'expelled') {
+                const snapshot = JSON.parse(social.snapshotJson);
+                const row = snapshot.relations.find(r => r.kind === 'character' && r.targetId === id);
+                row.discipline = { stage: 'clear', score: 0, at: timestamp, stageAt: timestamp,
+                    previousExpulsionAt: row.discipline.stageAt, lastOffenseAt: 0 };
+                snapshot.revision++;
+                const changedAt = Math.max(timestamp, Number(one('SELECT MAX(updatedAt) AS at FROM clan_social_memory')?.at || 0) + 1);
+                write('UPDATE clan_social_memory SET snapshotJson = ?, updatedAt = ? WHERE clanId = ?', [JSON.stringify(snapshot), changedAt, targetClanId]);
+            }
+            const life = coldSimulationRow(id);
+            if (life) {
+                const stats = jsonObject(life.statsJson);
+                stats.clanId = targetClanId; stats.clanMembershipVersion = timestamp;
+                write('UPDATE bot_life_state SET statsJson = ?, simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?', [JSON.stringify(stats), timestamp, id]);
+            }
             const state = simulationState(simulation.stateJson, targetClanId, previousState.leaderId, previousState.memberIds || [], timestamp);
             state.memberIds = [...new Set([...state.memberIds, id])].sort((left, right) => left - right);
             write('UPDATE clan_simulation_clans SET updatedAt = ?, stateJson = ? WHERE clanId = ?', [timestamp, JSON.stringify(state), targetClanId]);
@@ -5090,6 +5220,7 @@ const Database = {
             const ledger = write(`INSERT INTO clan_contributions
                 (clanId, characterId, targetLevel, amount, source, resolveKey, createdAt)
                 VALUES (?, ?, ?, ?, ?, ?, ?)`, [clan, contributor, Number(targetLevel), requested, String(source), key, timestamp]);
+            rememberClanContributionUnsafe(clan, contributor, leader, ledger.insertId, requested, sourceBefore, timestamp);
             syncAdenaSnapshotUnsafe(contributor, sourceBefore - requested, {
                 clanId: clan, targetLevel: Number(targetLevel), amount: -requested, at: timestamp
             });
@@ -6039,6 +6170,7 @@ const Database = {
             const contribution = write(`INSERT INTO clan_contributions
                 (clanId, characterId, targetLevel, amount, source, resolveKey, createdAt)
                 VALUES (?, ?, ?, ?, ?, ?, ?)`, [clan, contributor, Number(targetLevel), requested, source, key, timestamp]);
+            rememberClanContributionUnsafe(clan, contributor, Number(previousState.leaderId), contribution.insertId, requested, sourceBefore, timestamp);
             const ledger = write(`INSERT INTO clan_warehouse_ledger
                 (clanId, characterId, selfId, amount, operation, resolveKey, warehouseRevision, createdAt)
                 VALUES (?, ?, 57, ?, 'adena_contribution', ?, ?, ?)`, [

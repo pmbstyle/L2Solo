@@ -6,10 +6,16 @@ function traits(persona = {}) {
         .map(key => [key, clamp(t[key] ?? 0.5)]));
 }
 function feeling(relation) {
-    if (!relation?.ready || !relation.personal) return { warmth: 0, hostility: 0, fear: 0 };
-    const p = relation.personal;
+    if (!relation?.ready || !(relation.effective || relation.personal)) return { warmth: 0, hostility: 0, fear: 0 };
+    const p = relation.effective || relation.personal;
     return { warmth: clamp((p.affinity + p.trust * 2) / 30, -1, 1),
         hostility: clamp(p.hostility / 30), fear: clamp(p.fear / 30) };
+}
+function disciplineRestraint(persona, relation) {
+    const stage = relation?.clanSocial?.selfDiscipline?.stage;
+    const weight = { concern: 0.2, warned: 0.4, probation: 0.7, expulsion_pending: 0.85 }[stage] || 0;
+    const t = traits(persona);
+    return 1 - weight * (t.commitment + t.empathy) / 2;
 }
 // An accepted dispute has the same escalation policy in both simulation modes.
 // Intent is not attack permission; live combat must still validate its context.
@@ -18,7 +24,7 @@ function escalationChance(persona, towardOpponent) {
     const t = traits(persona), relation = feeling(towardOpponent);
     return clamp(0.01 + t.assertiveness * 0.1 + relation.hostility * 0.15
         - t.caution * 0.08 - t.resilience * 0.06 - t.empathy * 0.04
-        - Math.max(0, relation.warmth) * 0.1 - relation.fear * 0.1, 0, 0.2);
+        - Math.max(0, relation.warmth) * 0.1 - relation.fear * 0.1, 0, 0.2) * disciplineRestraint(persona, towardOpponent);
 }
 function decide({ pressure, actor, peer, actorPersona, peerPersona, towardPeer, towardActor, rng }) {
     const shortage = clamp((pressure - 1) / 2);
@@ -39,7 +45,7 @@ function decide({ pressure, actor, peer, actorPersona, peerPersona, towardPeer, 
     const retreat = clamp(a.caution * (outmatched ? 0.65 : 0.15) + ab.fear * 0.4 + hostile * a.caution * 0.2, 0, 0.85);
     if (rng() < retreat) return { action: 'avoid', pvpIntent: false, reason: outmatched ? 'outmatched' : 'avoid_conflict' };
     const contest = clamp(shortage * (0.03 + a.ambition * 0.12 + a.assertiveness * 0.15
-        + ab.hostility * 0.2 - a.empathy * 0.15 - a.caution * 0.1 - Math.max(0, ab.warmth) * 0.2), 0, 0.35);
+        + ab.hostility * 0.2 - a.empathy * 0.15 - a.caution * 0.1 - Math.max(0, ab.warmth) * 0.2), 0, 0.35) * disciplineRestraint(actorPersona, towardPeer);
     if (rng() < contest) {
         const escalation = escalationChance(peerPersona, towardActor);
         return { action: 'contest', pvpIntent: rng() < escalation, reason: 'resource_dispute' };

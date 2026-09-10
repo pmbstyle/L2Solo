@@ -31,6 +31,8 @@ function assess(party, members, timestamp, options = {}) {
             if (!relation?.ready) { memoryReady = false; continue; }
             friendly ||= relation.disposition === 'friendly';
             hostile ||= relation.disposition === 'hostile' || relation.diplomaticEnemy === true;
+            friendly ||= Number(relation.effective?.trust || 0) >= 5;
+            hostile ||= Number(relation.effective?.hostility || 0) >= 10;
         }
         const plan = member.stats?.equipmentPlan;
         const active = plan?.status === 'active' && !!plan.next?.spotId;

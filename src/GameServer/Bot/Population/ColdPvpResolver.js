@@ -43,6 +43,7 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null }) {
     const windowMs = step ? Math.max(0, Math.min(1000, Math.min(step.until, step.expiresAt) - timestamp)) : MAX_DURATION_MS;
     let time = 0, actions = 0, losingSide = null, outcome = 'disengaged';
     const incidents = new Map();
+    const help = new Map();
     const incident = (victim, attacker, killed = false) => {
         const key = `${victim.id}:${attacker.id}`;
         const old = incidents.get(key);
@@ -79,9 +80,13 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null }) {
             const semantic = Rules.resolve(skill);
             const targets = semantic.target === 'self' ? [next] : semantic.target === 'party' ? allies : [heal.target];
             for (const ally of targets.filter(f => f.vitals.hp > 0)) {
+                const before = ally.vitals.hp;
                 const amount = semantic.skillType === Rules.HEAL_PERCENT
                     ? ally.vitals.maxHp * Number(skill.power || 0) / 100 : Formulas.calcHealAmount(skill.power);
                 ally.vitals.hp = Math.min(ally.vitals.maxHp, ally.vitals.hp + Math.max(0, amount));
+                if (ally.id !== next.id && before < ally.vitals.maxHp * 0.4 && ally.vitals.hp > before) {
+                    help.set(`${ally.id}:${next.id}`, { sourceId: ally.id, targetId: next.id, type: 'healed' });
+                }
             }
             next.heals++;
         } else {
@@ -143,7 +148,7 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null }) {
                     ...(dead ? { effects: [], charges: 0, chargeExpiresAt: null, summon: null } : {}) } } }];
     }));
     return { started: true, ongoing, outcome: ongoing ? 'fighting' : outcome, durationMs, until: step ? step.until : until, losingSide, updates,
-        incidents: [...incidents.values()], fighters: fighters.map(f => ({ id: f.id, side: f.side,
+        incidents: [...incidents.values()], help: [...help.values()], fighters: fighters.map(f => ({ id: f.id, side: f.side,
             hp: f.vitals.hp, mp: f.vitals.mp, cp: f.cp, attacks: f.attacks, skills: f.skills, heals: f.heals, kills: f.kills })), actions };
 }
 

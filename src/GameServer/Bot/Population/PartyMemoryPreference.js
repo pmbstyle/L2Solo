@@ -3,8 +3,8 @@ function create({ memory = invoke('GameServer/Social/InteractionMemoryRuntime'),
     const pairs = new Map();
     const directed = (sourceId, targetId) => {
         const relation = memory.assess({ id: sourceId }, { id: targetId }, {}, timestamp);
-        if (!relation.ready || !relation.personal) return 0;
-        const p = relation.personal;
+        if (!relation.ready || !(relation.effective || relation.personal)) return 0;
+        const p = relation.effective || relation.personal;
         return Math.max(-100, Math.min(100, p.affinity + p.trust * 2 - p.hostility * 2 - p.fear));
     };
     const pair = (a, b) => {

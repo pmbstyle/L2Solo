@@ -11,6 +11,7 @@ const tests = [
     'tests/test_cold_party_conflicts.js',
     'tests/test_cold_pvp.js',
     'tests/test_pvp_encounter_handoff.js',
+    'tests/test_clan_social.js',
     'tests/test_hot_party_lifecycle.js',
     'tests/test_hot_background_party.js',
     'tests/test_hot_ground_loot.js',

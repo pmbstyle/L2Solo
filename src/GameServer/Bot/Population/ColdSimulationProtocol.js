@@ -6,6 +6,7 @@ const MAIN_TYPES = new Set([
     'init',
     'catalog_page',
     'snapshot_page',
+    'clan_social_page',
     'claim_ack',
     'lease_renewal',
     'commit_ack',
@@ -85,6 +86,7 @@ function validateEnvelope(message, direction, options = {}) {
 
     const batchFields = {
         snapshot_page: 'rows',
+        clan_social_page: 'rows',
         catalog_page: 'rows',
         claim_request: 'candidates',
         claim_ack: 'grants',

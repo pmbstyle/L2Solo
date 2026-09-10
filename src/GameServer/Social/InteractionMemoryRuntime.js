@@ -3,6 +3,7 @@ const Repository = invoke('GameServer/Social/InteractionMemoryRepository');
 
 // The main-process instance. Cold workers create repository-free instances.
 const memory = new InteractionMemory(Repository);
+memory.clanSocial = invoke('GameServer/Clan/ClanSocialRuntime').view;
 memory.events = new (require('./InteractionEventQueue'))(memory, {
     onCommit(ownerId) {
         const state = invoke('GameServer/Bot/Population/BotLifeState').cachedState(ownerId);

@@ -42,6 +42,8 @@ function record(source, mob, now = Date.now(), rng = Math.random) {
         !invoke('GameServer/World/ArenaCombatRules').isArenaParticipant(claim.owner)) {
         claim.memoryEvent = { key: `mob:${randomUUID()}`, sourceId: Number(claim.owner.fetchId()),
             targetId: Number(attacker.fetchId()), type: 'mob_contested', at: now };
+        claim.memoryEvent = invoke('GameServer/Clan/ClanSocialEvidence').attach(claim.memoryEvent,
+            claim.owner, attacker, claim.memoryEvent.key, 'aggression');
     }
     if (claim.memoryEvent && InteractionMemory.events.enqueue(claim.memoryEvent)) {
         claim.memoryConsidered = true;

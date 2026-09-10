@@ -277,6 +277,7 @@ class ColdSimulationCoordinator {
             // LifeState startup has already released members of historical
             // dissolved parties. Only then is it safe to trim the rows.
             await BackgroundPartyState.purgeHistory();
+            await invoke('GameServer/Clan/ClanSocialRuntime').refresh(true);
             this.queue.start();
             this.startWorker();
             this.watchdogTimer = setInterval(() => this.watchdog(), 1000);
@@ -827,6 +828,7 @@ class ColdSimulationCoordinator {
     }
 
     async sendFullSnapshot() {
+        invoke('GameServer/Clan/ClanSocialRuntime').send(this);
         await this.reconcileOrphanedBackgroundParties();
         // Re-read after reconciliation: releasing an invalid party updates
         // cached member ownership and membership. Sending the pre-repair
@@ -1001,6 +1003,9 @@ class ColdSimulationCoordinator {
 
     async sendSnapshots(initial = false, continuation = false) {
         if (!this.worker || !this.ready) return false;
+        await invoke('GameServer/Clan/ClanSocialRuntime').refresh();
+        await invoke('GameServer/Clan/ClanSocialRuntime').enforceOne(this);
+        invoke('GameServer/Clan/ClanSocialRuntime').send(this);
         if (this.snapshotInFlight || this.criticalSnapshotInFlight) {
             this.snapshotRefreshPending = true;
             return false;

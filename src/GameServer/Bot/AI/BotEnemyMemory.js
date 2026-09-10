@@ -41,7 +41,7 @@ function record(victim, attacker, killed = false, now = Date.now()) {
     const id = Number(attacker.fetchId?.());
     if (!id) return false;
     const known = entries(session);
-    invoke('GameServer/Social/PvpInteractionMemory').record(session, id, killed, now, known);
+    invoke('GameServer/Social/PvpInteractionMemory').record(session, id, killed, now, known, attacker);
     const entry = known.find(enemy => enemy.id === id) || { id, kills: 0, attacks: 0, lastAttackAt: 0 };
     if (!killed && entry.attacks && now - entry.lastAttackAt < ATTACK_WINDOW_MS) return false;
     const updated = { ...entry, name: attacker.fetchName?.() || entry.name || '', lastSeenAt: now };

@@ -270,7 +270,7 @@ const BackgroundPartyResolver = {
         // remain eligible next resolve; committed pairs are skipped by cooldown.
         const huntEvents = wins > 0 && losses === 0 && combatMembers.every(member => Number(member.vitals?.hp) > 0)
             ? invoke('GameServer/Social/SharedHuntMemory').eventsForGroup(members.map(member => Number(member.characterId)),
-                episodeId, timestamp, assessRelationship) : [];
+                episodeId, timestamp, assessRelationship, id => members.find(m => Number(m.characterId) === id)) : [];
 
         rewards.forEach(({ state, exp, sp, adena, items }, index) => {
             const resolved = combatMembers[index] || state;

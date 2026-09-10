@@ -84,7 +84,8 @@ function event(input) {
     if (typeof input.type !== 'string' || !Object.hasOwn(EVENTS, input.type)) throw new Error('interaction memory: invalid event');
     const sourceId = id(input.sourceId), targetId = id(input.targetId);
     if (kind === 'character' && sourceId === targetId) throw new Error('interaction memory: self interaction');
-    return { key: input.key, sourceId, targetId, kind, type: input.type, at: time(input.at) };
+    return { key: input.key, sourceId, targetId, kind, type: input.type, at: time(input.at),
+        ...(input.clan ? { clan: require('../Clan/ClanSocialPolicy').evidence(input.clan) } : {}) };
 }
 
 function decayed(relation, at) {

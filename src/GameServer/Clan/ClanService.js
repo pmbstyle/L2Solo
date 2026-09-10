@@ -160,6 +160,7 @@ const ClanService = {
                 const clanMembers = members.filter((member) => number(member.clanId) === number(row.id));
                 state.clans.set(number(row.id), normalizeClan(row, clanMembers));
             });
+            invoke('GameServer/Clan/ClanSocialRuntime').syncMemberships();
             return Array.from(state.clans.values());
         });
     },
@@ -238,6 +239,7 @@ const ClanService = {
             setActorClan(actor, clan.id, privileges);
             actor.setClanJoinExpiryTime?.(0);
             replaceMember(clan, actorMember(actor));
+            invoke('GameServer/Clan/ClanSocialRuntime').syncMemberships();
             return Database.syncPlayerManagedClan(clan.id).catch((error) => {
                 utils.infoWarn('Clan', 'player-managed sync failed after member join: %s', error.message);
                 return { ok: false, code: 'automation_sync_failed' };
@@ -259,6 +261,29 @@ const ClanService = {
         return this.removeMemberById(clan, actor.fetchId(), { ...options, actor });
     },
 
+    applyDisciplineRemoval(result) {
+        const clan = this.findById(result.clanId);
+        const member = clan?.members.find(m => m.id === result.characterId);
+        const session = onlineSessionByActorId(result.characterId);
+        if (session?.actor) {
+            clearActorClan(session.actor);
+            session.actor.setClanJoinExpiryTime?.(result.banUntil);
+        }
+        removeMemberFromCache(result.clanId, result.characterId);
+        invoke('GameServer/Clan/ClanSocialRuntime').syncMemberships();
+        const Response = invoke('GameServer/Network/Response');
+        if (session?.actor && session.actor.backpack) {
+            session.dataSendToMe(Response.userInfo(session.actor));
+            session.dataSendToMe(Response.pledgeShowMemberListDelete(member?.name || session.actor.fetchName()));
+            session.dataSendToOthers(Response.charInfo(session.actor), session.actor);
+            session.dataSendToOthers(Response.relationChanged(session.actor), session.actor);
+        }
+        if (clan && member) this.onlineSessions(clan).forEach(s => {
+            s.dataSendToMe(Response.pledgeShowMemberListDelete(member.name));
+            s.dataSendToMe(Response.pledgeShowInfoUpdate(clan));
+        });
+    },
+
     removeMemberById(clan, memberId, options = {}) {
         if (!clan) return Promise.resolve({ ok: false, code: 'no_clan' });
         const member = clan.members.find((entry) => number(entry.id) === number(memberId));
@@ -272,6 +297,7 @@ const ClanService = {
             return Database.removeCharacterFromClan(member.id).then(() => {
                 if (options.actor) clearActorClan(options.actor);
                 removeMemberFromCache(clan.id, member.id);
+                invoke('GameServer/Clan/ClanSocialRuntime').syncMemberships();
                 return Database.syncPlayerManagedClan(clan.id).catch((error) => {
                     utils.infoWarn('Clan', 'player-managed sync failed after member removal: %s', error.message);
                     return { ok: false, code: 'automation_sync_failed' };

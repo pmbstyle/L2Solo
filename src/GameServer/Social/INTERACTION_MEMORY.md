@@ -74,6 +74,14 @@ events together for an encounter, with different event types if appropriate.
 Group impressions require explicit attributed evidence (`kind:'clan'` or
 `kind:'alliance'`); no automatic propagation to all members occurs.
 
+Shared clan reputation now lives separately in `clan_social_memory`. An optional
+validated `clan` envelope on factual character events supplies original
+memberships, encounter identity and responsibility. The same transaction updates
+the clan projection, without copying it into each bot's personal snapshot.
+`assess` preserves personal disposition and also returns effective feelings and
+clan discipline for shared hot/cold decision policies. See
+`../Clan/CLAN_SOCIAL.md` for attribution, limits, discipline and exclusions.
+
 BotManager hydrates memory before publishing a hot actor. `ensureMany(ids)`
 coalesces loads, skips cached owners, and reads at most 64 owners per SQL query,
 yielding between pages. A decision never triggers hydration.

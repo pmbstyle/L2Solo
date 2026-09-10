@@ -10,6 +10,7 @@ class InteractionMemory {
         this.views = new Map();
         this.loading = new Map();
         this.pendingBatches = 0;
+        this.clanSocial = null;
     }
 
     accept(snapshot) {
@@ -88,7 +89,18 @@ class InteractionMemory {
     }
 
     assess(source, target, context = {}, now = Date.now()) {
-        return Policy.assess(this.views.get(source.id) || EMPTY_VIEW, source, target, context, now);
+        if (this.clanSocial) {
+            source = this.clanSocial.identity(source);
+            target = this.clanSocial.identity(target);
+        }
+        const result = Policy.assess(this.views.get(source.id) || EMPTY_VIEW, source, target, context, now);
+        result.sourceClanId = Number(source.clanId || 0);
+        result.targetClanId = Number(target.clanId || 0);
+        if (this.clanSocial) {
+            result.clanSocial = this.clanSocial.assess(source, target, result.personal, now, result.clan);
+            result.effective = result.clanSocial.effective;
+        }
+        return result;
     }
 
     inspect(ownerId, now = Date.now()) {

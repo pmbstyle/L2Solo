@@ -123,6 +123,21 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
                 kind: 'character', type, at: resume?.startedAt || timestamp });
         }
     }
+    for (const helped of pvp?.help || []) {
+        const incidentId = `${helped.sourceId}:${helped.targetId}:healed`;
+        if (resume?.seen.includes(incidentId)) continue;
+        encounter?.seen.push(incidentId);
+        events.push({ ...helped, key: `${event.key}:${incidentId}`, kind: 'character', at: resume?.startedAt || timestamp });
+    }
+    for (let i = 0; i < events.length; i++) {
+        const e = events[i];
+        const aggressor = sides[1].members.some(s => s.characterId === e.targetId);
+        const relation = memory.assess({ id: e.sourceId }, { id: e.targetId }, {}, timestamp);
+        events[i] = require('../../Clan/ClanSocialEvidence').attach(e,
+            relation.sourceClanId !== undefined ? { clanId: relation.sourceClanId } : states.find(s => s.characterId === e.sourceId),
+            relation.targetClanId !== undefined ? { clanId: relation.targetClanId } : states.find(s => s.characterId === e.targetId), event.key,
+            e.type === 'healed' ? 'cooperation' : e.type === 'mob_contested' ? 'aggression' : aggressor ? 'provoked' : 'defense', e.type === 'healed');
+    }
     const { grants } = await owner.claimBatch(states, { timestamp, allowParty: true, allowLifecycle: true });
     try {
         if (grants.length !== states.length) return { ok: false, reason: 'claim_rejected' };

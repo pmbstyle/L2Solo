@@ -49,7 +49,12 @@ function execute(session, actor, target, skill, context = {}) {
         spoilOnHit: false
     };
 
-    const finish = () => finalizeSkillResult(result, session, actor, target, skill, semantic);
+    const beforeHelp = { hp: Number(target?.fetchHp?.() || 0), maxHp: Number(target?.fetchMaxHp?.() || 0),
+        combat: target?.state?.fetchCombats?.() === true };
+    const finish = () => {
+        if (result.heal > 0 || result.resurrected) invoke('GameServer/Social/CombatHelpMemory').record(actor, target, result, beforeHelp);
+        return finalizeSkillResult(result, session, actor, target, skill, semantic);
+    };
 
     if (context.selfEffectOnly === true && semantic.selfEffect) {
         result.selfEffect = applyEffect(session, actor, skill, {

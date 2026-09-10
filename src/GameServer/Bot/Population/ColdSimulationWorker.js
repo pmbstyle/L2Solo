@@ -358,6 +358,11 @@ async function handle(message) {
             }
         }, message.msgId);
         break;
+    case 'clan_social_page':
+        if (!kernel) break;
+        for (const snapshot of payload.rows || []) kernel.interactionMemory.clanSocial.accept(snapshot);
+        if (payload.memberships) kernel.interactionMemory.clanSocial.acceptMemberships(payload.memberships, payload.membershipVersion, payload.activeClanIds);
+        break;
     case 'snapshot_page':
         if (!kernel) throw new Error('kernel_not_initialized');
         kernel.upsertMany(payload.rows || []);

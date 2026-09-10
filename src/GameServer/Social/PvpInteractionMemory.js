@@ -7,17 +7,24 @@ const episodes = new WeakMap();
 // Called only for hostile actions/damage/death accepted by the native PvP path.
 // Keep this independent of the three-slot revenge shortlist: a fourth
 // aggressor still belongs in the wider personal relationship memory.
-function record(session, targetId, killed, at, enemies = []) {
+function record(session, targetId, killed, at, enemies = [], attacker = null) {
     const sourceId = Number(session?.actor?.fetchId?.());
     if (!Number.isSafeInteger(sourceId) || sourceId <= 0 || !Number.isSafeInteger(targetId)
         || targetId <= 0 || sourceId === targetId || !Number.isSafeInteger(at) || at < 0) return false;
     const type = killed ? 'killed' : 'attacked';
     const encounter = session.pvpEncounter;
+    const attach = (event, episode) => {
+        const responsibility = encounter ? (encounter.sides[1].memberIds.includes(targetId) ? 'provoked' : 'defense')
+            : attacker?.session?.pvpDefense ? 'defense'
+                : attacker?.session?.pvpRevenge?.reason === 'mob_competition' ? 'provoked'
+                    : attacker?.session?.pvpRevenge ? 'aggression' : 'unknown';
+        return attacker ? require('../Clan/ClanSocialEvidence').attach(event, session.actor, attacker, episode, responsibility) : event;
+    };
     if (encounter && encounter.sides.some(s => s.memberIds.includes(targetId))
         && encounter.sides.some(s => s.memberIds.includes(sourceId) && !s.memberIds.includes(targetId))) {
         const incident = `${sourceId}:${targetId}:${type}`;
         if (encounter.seen.includes(incident)) return false;
-        const accepted = Memory.events.enqueue({ key: `${encounter.key}:${incident}`, sourceId, targetId, type, at: encounter.startedAt });
+        const accepted = Memory.events.enqueue(attach({ key: `${encounter.key}:${incident}`, sourceId, targetId, type, at: encounter.startedAt }, encounter.key));
         if (accepted) encounter.seen.push(incident);
         return accepted;
     }
@@ -34,10 +41,12 @@ function record(session, targetId, killed, at, enemies = []) {
     if (previous?.accepted && (killed ? at <= previous.at : at - previous.at < ATTACK_WINDOW_MS)) return false;
     // Queue pressure must not consume the incident or change its retry key.
     const eventAt = previous && !previous.accepted ? previous.at : at;
-    const event = { key: `pvp:${type}:${sourceId}:${targetId}:${eventAt}`, sourceId, targetId, type, at: eventAt };
+    const episode = attacker?.session?.pvpRevenge?.startedAt || attacker?.session?.pvpRevenge?.expiresAt || Math.floor(eventAt / ATTACK_WINDOW_MS);
+    const event = previous?.event || attach({ key: `pvp:${type}:${sourceId}:${targetId}:${eventAt}`, sourceId, targetId, type, at: eventAt },
+        `hot:${Math.min(sourceId, targetId)}:${Math.max(sourceId, targetId)}:${episode}`);
     const accepted = Memory.events.enqueue(event);
     recent.delete(key);
-    recent.set(key, { at: eventAt, accepted });
+    recent.set(key, { at: eventAt, accepted, ...(accepted ? {} : { event }) });
     while (recent.size > Policy.LIMITS.character * 2) recent.delete(recent.keys().next().value);
     return accepted;
 }
