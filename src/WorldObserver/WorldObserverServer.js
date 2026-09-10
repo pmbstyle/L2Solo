@@ -2591,6 +2591,15 @@ function route(request, response) {
         return;
     }
 
+    const relationshipMatch = url.pathname.match(/^\/observer\/api\/bot\/(\d+)\/relationships$/);
+    if (relationshipMatch) {
+        if (request.method !== 'GET') { response.writeHead(405, { Allow: 'GET' }); response.end(); return; }
+        invoke('WorldObserver/Relationships').detail(relationshipMatch[1])
+            .then(data => sendJson(response, data || { error: 'Bot not found' }, data ? 200 : 404))
+            .catch(err => sendJson(response, { error: err.message }, 500));
+        return;
+    }
+
     const clanMatch = url.pathname.match(/^\/observer\/api\/clan\/(\d+)$/);
     if (clanMatch) {
         clanDetail(clanMatch[1])

@@ -760,6 +760,27 @@ svg.empty-glyph { width: 38px; height: 38px; }
 .signal-list strong { display: block; margin-top: 4px; overflow: hidden; color: var(--text); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 
 .inspector-block { padding-top: 13px; border-top: 1px solid var(--line-soft); }
+.relationship-note { margin: 0 0 10px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.relationship-filters { display: flex; gap: 5px; margin-bottom: 10px; }
+.relationship-filters button, .relationship-more { border: 1px solid var(--line); background: var(--surface-soft); color: var(--muted); border-radius: 6px; padding: 6px 9px; font: inherit; font-size: 11px; cursor: pointer; }
+.relationship-filters button[aria-pressed="true"] { color: var(--gold); border-color: var(--gold); }
+.relationship-filters button span { margin-left: 3px; opacity: .7; }
+.relationship-row { border-left: 2px solid var(--line); padding: 8px 9px; margin-bottom: 7px; background: var(--surface-soft); border-radius: 0 6px 6px 0; }
+.relationship-row.tension { border-left-color: var(--amber); }
+.relationship-row.friendly { border-left-color: var(--green); }
+.relationship-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 650; }
+.relationship-heading a { min-width: 0; overflow-wrap: anywhere; }
+.relationship-stance { color: var(--muted); font-size: 10px; font-weight: 500; }
+.relationship-stance.hostile { color: var(--red); }
+.relationship-stance.wary { color: var(--amber); }
+.relationship-stance.friendly { color: var(--green); }
+.relationship-scores, .relationship-clan { margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.relationship-clan { color: var(--cyan); }
+.relationship-reasons { padding: 0; margin: 7px 0 0; list-style: none; font-size: 10px; }
+.relationship-reasons li { display: flex; justify-content: space-between; gap: 8px; line-height: 1.6; }
+.relationship-reasons time { color: var(--muted); white-space: nowrap; }
+.relationship-more { width: 100%; }
+.relationship-section button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .inspector-block + .inspector-block { margin-top: 13px; }
 .inspector-block-title { justify-content: space-between; gap: 8px; margin-bottom: 9px; }
 .inspector-block-title h3 { font-size: 12px; font-weight: 820; }
