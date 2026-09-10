@@ -518,8 +518,10 @@ function recordFromSession(session, phase, reason = '') {
         karma: Number(actor.fetchKarma?.() || 0),
         pvpEncounter: session.pvpEncounter || cache.get(characterId)?.stats?.pvpEncounter || null,
         coldPvp: { ...(cache.get(characterId)?.stats?.coldPvp || {}),
+            ...invoke('GameServer/Social/CombatHelpMemory').threatSnapshot(actor, timestamp),
             flagUntil: actor.fetchPvpFlag?.() === 1 ? Number(session.pvpFlagUntil || 0) : 0 },
         pvpEnemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session),
+        revengeUntil: Math.max(Number(session.nextRevengeAt || 0), Number(cache.get(characterId)?.stats?.revengeUntil || 0)),
         clanGearExchangeRevision: Number(cache.get(characterId)?.stats?.clanGearExchangeRevision || 0),
         classId: actor.fetchClassId ? Number(actor.fetchClassId()) : null,
         // A freshly spawned bot may cool before it has gone through a cold

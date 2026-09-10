@@ -1,4 +1,5 @@
-const Memory = invoke('GameServer/Bot/AI/BotEnemyMemory');
+const Memory = invoke('GameServer/Social/InteractionMemoryRuntime');
+const Policy = require('../../Social/RevengePolicy');
 const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
 const Risk = invoke('GameServer/Bot/AI/BotPvpRisk');
 const Arena = invoke('GameServer/World/ArenaCombatRules');
@@ -7,9 +8,18 @@ const Budget = invoke('GameServer/Bot/AI/BotPvpChat');
 const Participation = invoke('GameServer/Bot/AI/BotConflictParticipation');
 
 const SCAN_MS = 5000;
-const RETRY_MS = 120000;
+const RETRY_MS = Policy.RETRY_MS;
 const ENCOUNTER_MS = 30000;
-const NOTICE_RADIUS = 900;
+const NOTICE_RADIUS = Policy.NOTICE_RADIUS;
+
+function assessment(session, target, now) {
+    const identity = actor => ({ id: Number(actor.fetchId()), clanId: Number(actor.fetchClanId?.() || 0),
+        partyId: actor.session?.coldLifeState?.party?.partyId });
+    return Policy.evaluate(Memory.assess(identity(session.actor), identity(target), {}, now), Voice.profile(session));
+}
+function stillWanted(session, objective, now) {
+    return objective.reason !== 'revenge' || assessment(session, objective.target, now).chance > objective.revengeRoll;
+}
 
 function eligible(session, target) {
     const bot = session?.actor;
@@ -36,6 +46,10 @@ function allows(session, target, now = Date.now()) {
         objective.participation = { blocked: true };
         return false;
     }
+    if (!objective.startedAt && !stillWanted(objective.initiator, objective, now)) {
+        objective.participation = { blocked: true };
+        return false;
+    }
     return Participation.supports(objective.participation, session)
         && (objective.initiator === session || Risk.sameParty(session, objective.initiator));
 }
@@ -49,6 +63,10 @@ function flushPending(session, now = Date.now()) {
         Threats.context(session, now).threats.length > 0) {
         // An actual attack supersedes an unsent provocation. Let defense
         // evaluate the current enemies before granting any first-strike permission.
+        delete session.pendingPvpProvocation;
+        return false;
+    }
+    if (!stillWanted(session, pending, now)) {
         delete session.pendingPvpProvocation;
         return false;
     }
@@ -69,16 +87,16 @@ function flushPending(session, now = Date.now()) {
             && (!pending.participation || Participation.available(member, now))
     }).action !== 'fight') return false;
     session.pvpRevenge = { target: pending.target, initiator: session, expiresAt: now + ENCOUNTER_MS,
-        reason: pending.reason, participation: pending.participation };
+        reason: pending.reason, participation: pending.participation, revengeRoll: pending.revengeRoll };
     return true;
 }
 
-function request(session, target, reason, lines, attack = true, now = Date.now(), rng = Math.random) {
+function request(session, target, reason, lines, attack = true, now = Date.now(), rng = Math.random, revengeRoll = null) {
     if (session.pendingPvpProvocation || session.pvpDefense || session.pvpRevenge || !eligible(session, target)) return false;
     const participation = attack ? Participation.prepare(session, target, now, rng) : null;
     if (participation) session.lastConflictParticipation = { ...participation, reason };
     session.pendingPvpProvocation = { target, reason, attack: attack && !participation?.blocked && !participation?.deescalated,
-        participation, text: lines[Math.floor(rng() * lines.length)],
+        participation, revengeRoll, text: lines[Math.floor(rng() * lines.length)],
         expiresAt: now + ENCOUNTER_MS };
     const started = flushPending(session, now);
     if (started || session.pendingPvpProvocation) invoke('GameServer/Bot/BotAI').promoteForPlayerInteraction(session, reason);
@@ -93,27 +111,33 @@ function tryStart(session, now = Date.now(), rng = Math.random) {
     }
     if (session?.pendingPvpProvocation) return flushPending(session, now);
     if (!String(session?.accountId || '').startsWith('bot_') || session.arenaEphemeral ||
-        session.staticService || session.pvpDefense || session.pvpRevenge || session.pvpAggressors?.size ||
+        session.staticService || session.partyCompanion || session.pvpDefense || session.pvpRevenge || session.pvpAggressors?.size ||
         !['hunting', 'resting', 'following'].includes(session.plan) ||
         now < Number(session.nextRevengeAt || 0)) return false;
     if (!invoke('GameServer/Effects/EffectRestrictions').canUseBasicAction(session.actor)) return false;
-    const enemies = Memory.entries(session).filter(entry => entry.kills >= 2);
+    const life = invoke('GameServer/Bot/Population/BotLifeState').cachedState(Number(session.actor.fetchId()));
+    if (now < Math.max(Number(life?.stats?.revengeUntil || 0), Number(life?.stats?.coldCompetition?.conflictUntil || 0))) return false;
+    const enemies = Memory.views.get(Number(session.actor.fetchId()))?.characterIds || [];
     if (!enemies.length || now < Number(session.nextRevengeScanAt || 0)) return false;
     session.nextRevengeScanAt = now + SCAN_MS;
-    for (const enemy of enemies) {
-        const target = invoke('GameServer/Bot/AI/BotPvpIndex').actor(enemy.id);
+    for (const enemyId of enemies) {
+        const target = invoke('GameServer/Bot/AI/BotPvpIndex').actor(enemyId);
         if (!eligible(session, target) || Threats.distance(session.actor, target) > NOTICE_RADIUS) continue;
+        const social = assessment(session, target, now);
+        if (!(social.chance > 0)) continue;
         const decision = Risk.defenseDecision(session, [target]);
         if (decision.action !== 'fight') continue;
         session.nextRevengeAt = now + RETRY_MS;
-        if (rng() >= 0.2 + 0.5 * Voice.trait(session, 'assertiveness')) return false;
-        const name = String(target.fetchName?.() || enemy.name).replace(/[\x00-\x1f]/g, '').slice(0, 24);
+        const roll = rng();
+        session.lastRevengeDecision = { at: now, targetId: enemyId, ...social, roll };
+        if (roll >= social.chance) return false;
+        const name = String(target.fetchName?.() || '').replace(/[\x00-\x1f]/g, '').slice(0, 24);
         const lines = [
-            `${name}, I remember you killing me. Time to settle this.`,
-            `You killed me more than once, ${name}. My turn.`,
+            `${name}, we still have a score to settle.`,
+            `I remember what you did, ${name}.`,
             `Remember me, ${name}? I haven't forgotten.`
         ];
-        return request(session, target, 'revenge', lines, true, now, rng);
+        return request(session, target, 'revenge', lines, true, now, rng, roll);
     }
     return false;
 }

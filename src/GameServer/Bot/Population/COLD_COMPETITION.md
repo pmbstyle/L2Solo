@@ -315,9 +315,49 @@ remain outside this path. Summon attacks retain their owner's identity.
 The existing bounded event queue persists these episodes outside combat callbacks
 and notifies the cold worker. Stable event keys make delivery retries idempotent;
 queue pressure retains the original key for a later callback. Personal relations
-remain available after cooling or restart, independently of the three-entry
-revenge shortlist. This does not change revenge thresholds or spread an individual
-grievance to a clan or alliance.
+remain available after cooling or restart, independently of the old three-entry
+enemy history. That history is retained for diagnostics, not revenge decisions.
+
+## Independent revenge
+
+`Social/RevengePolicy` evaluates the same cached relationship in hot and cold
+mode. Personal hostility of at least 12 and trust at most -5 are required;
+effective hostility must reach 24, with effective trust at most -5 and no
+positive affinity. Clan reputation modulates the personal grievance but cannot
+create a campaign against unknown clan members. Same-party/clan affiliations
+remain protected. Fear, empathy, caution, resilience and clan discipline reduce
+the chance; assertiveness and resentment increase it. The final chance is capped
+at 35% per admitted attempt, with a ten-minute retry interval. These are intent
+thresholds, not PvP or clan-war permissions.
+
+Hot bots look up at most 32 known characters from their shared memory view every
+five seconds, then apply native distance, peace-zone, party, karma and strength
+guards. Human-led companions do not initiate independent revenge. A queued
+warning retains its original roll; changed relations can cancel it before the
+first hostile action. Cooldown is included in normal lifecycle snapshots.
+
+The cold monitor visits at most 128 hunters per thirty-second sample using a
+rotating cursor, with at most 32 known targets per hunter and no all-pairs scan.
+Principals must actually be within 900 units on the same spot/floor. They need
+not hunt the same NPC, and no resource shortage is required. Forecasts use the
+existing two-action main-process admission budget and conflict/PvP enable flags.
+Main rechecks current memory, positions, full party rosters, ownership, cooldowns
+and physical combat permissions. Rejection writes no incident. Accepted fights
+use ordinary participation votes and the existing atomic PvP transaction.
+
+`revenge` encounters preserve their cause through hot/cold transitions. Side 0
+opens independent revenge; side 1 still opens retaliation for a resource dispute.
+The avenger is accountable for fresh aggression; its target's response is defense.
+No `mob_contested` event is invented. Cold outcomes persist health, flags,
+PK/PvP consequences, personal/clan evidence and cooldown together. Forecast-only
+retry clocks live in the worker and reset on worker restart; accepted cooldowns
+survive restart. Observer competition reports expose `revenge` sampling/intent
+counts and `competitionActions.revenges` for accepted fights.
+
+Validation: `test_revenge_policy`, `test_bot_revenge`, `test_cold_pvp`,
+`test_revenge_handoff` and `test_bot_enemy_memory_persistence` cover decay,
+reconciliation before impact, shared decisions, real SQLite combat/rollback,
+attribution, flags, lifecycle transitions and cooldown persistence.
 
 Validation: `test_pvp_interaction_memory.js` covers hit coalescing, death, replay,
 queue pressure, shortlist overflow and SQLite reopen. `test_bot_pvp_defense.js`

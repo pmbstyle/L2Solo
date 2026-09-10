@@ -118,7 +118,9 @@ function receivedHit(session, actor, hit, options = {}) {
     if (options.wakeSleep !== false) {
         EffectRestrictions.wakeOnDamage(actor, victimSession || session);
     }
-    actor.setHp(Math.max(0, actor.fetchHp() - hpDamage)); // HP bar would disappear if less than zero
+    const hpBefore = actor.fetchHp();
+    actor.setHp(Math.max(0, hpBefore - hpDamage)); // HP bar would disappear if less than zero
+    invoke('GameServer/Social/CombatHelpMemory').recordDamage(source, actor, hpBefore - actor.fetchHp());
     actor.statusUpdateVitals(actor);
 
     // On hit, actor should stand-up
@@ -128,6 +130,7 @@ function receivedHit(session, actor, hit, options = {}) {
 
     // Bummer
     if (actor.fetchHp() <= 0) {
+        invoke('GameServer/Social/CombatHelpMemory').recordDefeat(source, actor);
         const killer = invoke('GameServer/Bot/AI/BotPvpThreats').character(source);
         if (killer && !ArenaCombatRules.suppressConsequences(killer, actor)) {
             invoke('GameServer/Bot/AI/BotEnemyMemory').record(actor, killer, true);

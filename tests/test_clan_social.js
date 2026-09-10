@@ -150,7 +150,7 @@ async function run() {
     Memory.events.enqueue = e => { helps.push(e); return true; };
     try {
         const helper = { fetchId: () => 1, fetchClanId: () => 10 };
-        const victim = { fetchId: () => 3, fetchClanId: () => 20, state: { fetchDead: () => false }, session: { accountId: 'bot_pop_test' } };
+        const victim = { fetchId: () => 3, fetchHp: () => 30, fetchClanId: () => 20, state: { fetchDead: () => false }, session: { accountId: 'bot_pop_test' } };
         assert(!Help.record(helper, victim, { heal: 20 }, { hp: 90, maxHp: 100, combat: true }, Date.now()));
         assert(Help.record(helper, victim, { heal: 20 }, { hp: 10, maxHp: 100, combat: true }, Date.now()));
         assert(!Help.record(helper, victim, { heal: 20 }, { hp: 10, maxHp: 100, combat: true }, Date.now()));

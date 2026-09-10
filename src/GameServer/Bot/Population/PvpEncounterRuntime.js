@@ -70,7 +70,7 @@ function tick(actions) {
                         partyUpdatedAt: p?.updatedAt };
                 };
                 const event = { key: e.key, at, pressure: 3, spotId: e.spotId, npcId: e.npcId,
-                    actor: participant(e.sides[0]), peer: participant(e.sides[1]), action: 'contest', pvpIntent: true };
+                    actor: participant(e.sides[0]), peer: participant(e.sides[1]), action: e.reason === 'revenge' ? 'revenge' : 'contest', pvpIntent: true };
                 const result = await require('./ColdPartyConflict').apply({ ...actions, event, resume: e,
                     incrementalPvp: true, onEncounter: register, waitMs: 15000, cooldownMs: 600000,
                     rng: require('./ColdCompetitionMonitor').seeded(`${e.key}:${e.sequence}`) });

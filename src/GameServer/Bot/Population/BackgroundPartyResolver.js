@@ -225,12 +225,14 @@ const BackgroundPartyResolver = {
         let summonActions = 0;
         let potionsUsed = 0;
         const defeatedNpcIds = [];
+        const combatHelp = new Map();
         let combatMembers = members.map((state) => ({
             ...state,
             vitals: BackgroundResolver.applyStandingRegen(state, state.vitals, elapsedMs, timestamp)
         }));
         for (let i = 0; i < fights; i++) {
             const encounter = BackgroundResolver.resolvePartyFight({ members: combatMembers, spot, targetNpcId, rng, timestamp });
+            for (const help of encounter.help || []) combatHelp.set(`${help.sourceId}:${help.targetId}:${help.type}`, help);
             combatActions += Number(encounter.debug?.actions || 0);
             skillUses += encounter.members.reduce((sum, member) => sum + Number(member.skillUses || 0), 0);
             heals += encounter.members.reduce((sum, member) => sum + Number(member.heals || 0), 0);
@@ -268,9 +270,12 @@ const BackgroundPartyResolver = {
 
         // Large parties can have more than 64 directed pairs. Unrecorded pairs
         // remain eligible next resolve; committed pairs are skipped by cooldown.
+        const helpEvents = invoke('GameServer/Social/ColdCombatHelpMemory').eventsFor([...combatHelp.values()],
+            episodeId, timestamp, assessRelationship, id => members.find(m => Number(m.characterId) === id));
         const huntEvents = wins > 0 && losses === 0 && combatMembers.every(member => Number(member.vitals?.hp) > 0)
             ? invoke('GameServer/Social/SharedHuntMemory').eventsForGroup(members.map(member => Number(member.characterId)),
                 episodeId, timestamp, assessRelationship, id => members.find(m => Number(m.characterId) === id)) : [];
+        const memoryEvents = [...helpEvents, ...huntEvents].slice(0, 64);
 
         rewards.forEach(({ state, exp, sp, adena, items }, index) => {
             const resolved = combatMembers[index] || state;
@@ -327,7 +332,7 @@ const BackgroundPartyResolver = {
                         }
                     },
                     events: [],
-                    memoryEvents: huntEvents.filter(event => event.sourceId === Number(state.characterId)),
+                    memoryEvents: memoryEvents.filter(event => event.sourceId === Number(state.characterId)),
                     materialize: { exp, sp, adena, items },
                     nextResolveAt: timestamp + 45000 + Math.round(rng() * 90000),
                     debug: {

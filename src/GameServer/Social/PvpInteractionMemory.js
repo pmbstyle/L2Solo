@@ -14,7 +14,8 @@ function record(session, targetId, killed, at, enemies = [], attacker = null) {
     const type = killed ? 'killed' : 'attacked';
     const encounter = session.pvpEncounter;
     const attach = (event, episode) => {
-        const responsibility = encounter ? (encounter.sides[1].memberIds.includes(targetId) ? 'provoked' : 'defense')
+        const responsibility = encounter ? (encounter.sides[encounter.reason === 'revenge' ? 0 : 1].memberIds.includes(targetId)
+            ? encounter.reason === 'revenge' ? 'aggression' : 'provoked' : 'defense')
             : attacker?.session?.pvpDefense ? 'defense'
                 : attacker?.session?.pvpRevenge?.reason === 'mob_competition' ? 'provoked'
                     : attacker?.session?.pvpRevenge ? 'aggression' : 'unknown';

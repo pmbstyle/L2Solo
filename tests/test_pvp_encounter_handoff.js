@@ -14,6 +14,7 @@ const Flag = invoke('GameServer/Actor/PvpFlag'), Response = invoke('GameServer/N
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-pvp-handoff-'));
 options.default.Database.path = path.join(dir, 'test.sqlite');
 const saved = [], allSessions = [];
+const revengeMode = process.argv.includes('--revenge');
 const patch = (o, k, v) => { const old = o[k]; saved.push(() => { o[k] = old; }); o[k] = v; };
 let clock = Date.now(), failSpawn = 0, spawned = 0, expectedCount = 0;
 const state = id => Life.cachedState(id);
@@ -90,11 +91,14 @@ async function main() {
         return s;
     });
     await party([1, 2]); await party([3, 4]); expectedCount = 4;
-    const started = await Conflict.apply({ ...base, event: event(1, 3) });
+    if (revengeMode) await Memory.recordBatch(['attacked', 'killed', 'killed'].map((type, i) => ({
+        key: `revenge-handoff:${i}`, sourceId: 1, targetId: 3, type, at: clock })));
+    const started = await Conflict.apply({ ...base, event: { ...event(1, 3),
+        ...(revengeMode ? { action: 'revenge', revengeRoll: 0, npcId: 0, pressure: 0 } : {}) } });
     assert(started.ok && started.encounter && started.pvp, JSON.stringify(started));
     let e = started.encounter;
-    assert.strictEqual(state(1).stats.coldPvp.flagUntil, 0, 'receiving an attack does not flag the victim');
-    assert(state(3).stats.coldPvp.flagUntil > clock, 'the retaliator flags on the first accepted hostile action');
+    assert.strictEqual(state(revengeMode ? 3 : 1).stats.coldPvp.flagUntil, 0, 'receiving an attack does not flag the victim');
+    assert(state(revengeMode ? 1 : 3).stats.coldPvp.flagUntil > clock, 'the initiator flags on the first accepted hostile action');
     clock += 1000;
     const secondStep = await Conflict.apply({ ...base, event: event(1, 3, e.key), resume: e });
     assert(secondStep.encounter); e = secondStep.encounter;
@@ -108,6 +112,21 @@ async function main() {
     assert.strictEqual(Manager.sessions[0].pvpFlagUntil, flagUntil);
     assert.strictEqual(Manager.sessions[0].actor.cp, beforeCp, 'no full CP refill');
     assert.strictEqual(JSON.stringify([1,2,3,4].map(n => Memory.snapshot(n))), initialMemory, 'activation creates no incidents');
+    if (revengeMode) {
+        assert(Manager.sessions.every(s => s.pvpEncounter.reason === 'revenge'));
+        const enqueue = Memory.events.enqueue, captured = [];
+        try {
+            Memory.events.enqueue = e => { captured.push(e); return false; };
+            const avenger = Manager.sessions.find(s => s.actor.fetchId() === 1);
+            const target = Manager.sessions.find(s => s.actor.fetchId() === 3);
+            avenger.actor.fetchClanId = () => 5; target.actor.fetchClanId = () => 6;
+            invoke('GameServer/Social/PvpInteractionMemory').record(target, 1, true, clock, [], avenger.actor);
+            invoke('GameServer/Social/PvpInteractionMemory').record(avenger, 3, true, clock, [], target.actor);
+            assert.deepStrictEqual(captured.map(e => e.clan.responsibility), ['aggression', 'defense'],
+                'hot continuation preserves accountability for an independently initiated revenge fight');
+            delete avenger.actor.fetchClanId; delete target.actor.fetchClanId;
+        } finally { Memory.events.enqueue = enqueue; }
+    }
     const duplicate = invoke('GameServer/Social/PvpInteractionMemory').record(Manager.sessions[0], 3, false, clock);
     assert.strictEqual(duplicate, false, 'same attack episode is not remembered again in hot mode');
     const roster = Manager.sessions.slice();
@@ -137,6 +156,7 @@ async function main() {
     assert.strictEqual(state(1).stats.coldPvp.flagUntil, flagUntil, 'handoff never extends flag expiry');
     assert.strictEqual(state(1).timing.lastResolvedAt, clock, 'hot time cannot be farmed again');
     assert.strictEqual(state(1).stats.pvpEncounter.key, e.key);
+    if (revengeMode) assert.strictEqual(state(1).stats.pvpEncounter.reason, 'revenge');
     e = cold.encounter; clock += 1000;
     const resumed = await Conflict.apply({ ...base, event: event(1, 3, e.key), resume: e, contestContextAllowed: () => false });
     assert(resumed.ok && resumed.encounter, JSON.stringify(resumed));
@@ -147,6 +167,7 @@ async function main() {
     await DB.close(); DB.init();
     const persisted = JSON.parse((await DB.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=1', []]))[0].statsJson);
     assert.strictEqual(persisted.pvpEncounter.key, e.key);
+    if (revengeMode) assert.strictEqual(persisted.pvpEncounter.reason, 'revenge');
     clock = e.expiresAt + 1000;
     const ended = await Conflict.apply({ ...base, event: event(1, 3, e.key), resume: e });
     assert(ended.ok && !ended.encounter, JSON.stringify(ended));

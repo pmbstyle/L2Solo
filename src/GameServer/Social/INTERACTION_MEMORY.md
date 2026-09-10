@@ -1,10 +1,11 @@
 # Interaction memory foundation
 
-This slice provides durable bounded memory, a shared decision view, and an
-optional transactional cold-outcome event channel. Hot mob competition now emits
-one directed memory episode per claim. It does **not** start new
-conflicts, implement cold PvP, or replace
-`partyHistory`, `pvpEnemies`, or player-to-bot `BotSocialMemory` yet.
+This module provides durable bounded memory, a shared decision view, and a
+transactional cold-outcome event channel. Resource competition, party decisions
+and independent revenge consume it in both simulation modes. `partyHistory`
+and `pvpEnemies` remain as legacy history; player-to-bot `BotSocialMemory` is a
+separate system. Physical PvP and hot/cold encounters are documented in
+`../Bot/Population/COLD_COMPETITION.md`.
 
 ## State and cost
 
@@ -100,7 +101,30 @@ minutes across hot/cold and restart; unrelated events cannot erase that clock.
 The SQL reducer treats a cooldown rejection as an accepted no-op, so stale worker
 views cannot inflate trust or abort legitimate physical outcomes. Large groups
 send at most 64 directed events; remaining pairs stay eligible next resolve.
-There is no automatic heal/help producer yet. Accepted cold resource disputes
+Native completed healing below 40% HP in combat, restoring at least 5% of maximum
+HP, and successful resurrection
+now emit `healed` / `resurrected` through `CombatHelpMemory`, with repeated help
+coalesced. Cold PvP and party PvE record actual emergency ally heals with their
+physical results. Self-only heals affect their caster; group heals assess each
+actual recipient. Regeneration, potions and ordinary top-ups do not create credit.
+
+`helped_in_combat` means defeating a threat that actually damaged another bot
+within 15 seconds, while that bot is still alive below 40% HP. Native defeat
+callbacks use one weak recent-victim reference per threat and require the helper
+within 1800 units. Cold PvE and PvP use the same injury/time thresholds. A summon
+can earn credit for its owner. Presence, support votes and nonlethal ordinary hits
+do not invent rescues. Arenas and native raid rescues are excluded.
+
+Each retained relation has at most three `lastHelpAt` timestamps (heal, revival,
+combat rescue). They enforce one award of each type per directed pair per 30
+minutes in SQLite, independently of the three recent reasons. Old snapshots are
+compatible; existing reasons seed missing clocks on the next accepted update.
+Hot and worker prechecks use the same cooldown, and SQL rejects stale forecasts
+as accepted no-ops. Help is prioritized over shared-hunt credit within the existing
+64-event group transaction budget. No SQL or population scan is added to damage
+callbacks. A cold recovery timer is not an actual resurrection by another bot.
+
+Accepted cold resource disputes
 and bounded PvP now emit factual episodes through the same atomic channel; see
 `../Bot/Population/COLD_COMPETITION.md` for admission, outcomes and limitations.
 

@@ -1,5 +1,6 @@
 // Shared by the game process and cold workers. No actors, SQL, clocks or RNG.
 const VERSION = 1;
+const Help = require('./CombatHelpPolicy');
 const LIMITS = Object.freeze({ character: 32, clan: 8, alliance: 8 });
 const RECENT_LIMIT = 128;
 const REASON_LIMIT = 3;
@@ -50,6 +51,13 @@ function validate(snapshot) {
         if (row.lastHuntAt !== undefined) {
             time(row.lastHuntAt);
             if (row.lastHuntAt > row.at) throw new Error('interaction memory: invalid hunt time');
+        }
+        if (row.lastHelpAt !== undefined) {
+            if (!row.lastHelpAt || Array.isArray(row.lastHelpAt) || typeof row.lastHelpAt !== 'object') throw Error('interaction memory: invalid help clocks');
+            for (const [type, at] of Object.entries(row.lastHelpAt)) {
+                time(at);
+                if (!Help.TYPES.includes(type) || at > row.at) throw Error('interaction memory: invalid help clock');
+            }
         }
         const key = `${row.kind}:${row.targetId}`;
         counts[row.kind] = (counts[row.kind] || 0) + 1;
@@ -124,6 +132,7 @@ function apply(snapshot, input, now) {
     const old = snapshot.relations.find(row => row.kind === e.kind && row.targetId === e.targetId);
     if (e.type === 'hunted_together' && old?.lastHuntAt !== undefined
         && e.at - old.lastHuntAt < HUNT_COOLDOWN_MS) return { status: 'rate_limited', snapshot };
+    if (Help.TYPES.includes(e.type) && !Help.eligible(old, e.type, e.at)) return { status: 'rate_limited', snapshot };
     const at = Math.max(e.at, old?.at || 0);
     const values = old ? decayed(old, at) : Object.fromEntries(FIELDS.map(field => [field, 0]));
     const factor = Math.pow(0.5, (at - e.at) / (7 * DAY));
@@ -136,6 +145,9 @@ function apply(snapshot, input, now) {
     const relation = { kind: e.kind, targetId: e.targetId, at, order: snapshot.revision + 1, ...values, reasons };
     if (e.type === 'hunted_together') relation.lastHuntAt = e.at;
     else if (old?.lastHuntAt !== undefined) relation.lastHuntAt = old.lastHuntAt;
+    const helpClocks = Object.fromEntries(Help.TYPES.map(type => [type, Help.lastAt(old, type)]).filter(([, at]) => at >= 0));
+    if (Help.TYPES.includes(e.type)) helpClocks[e.type] = e.at;
+    if (Object.keys(helpClocks).length) relation.lastHelpAt = helpClocks;
     const relations = bound([...snapshot.relations.filter(row => row !== old), relation], now);
     const ordered = [...snapshot.recent, e].sort((a, b) => b.at - a.at || a.key.localeCompare(b.key));
     const removed = ordered.slice(RECENT_LIMIT);
@@ -152,10 +164,12 @@ function view(snapshot) {
         ownerId: snapshot?.ownerId || null,
         revision: snapshot?.revision || 0,
         ready: !!snapshot,
+        characterIds: Object.freeze((snapshot?.relations || []).filter(row => row.kind === 'character').map(row => row.targetId)),
         relation(kind, targetId, at) {
             time(at);
             const row = rows.get(`${kind}:${targetId}`);
             return row ? { ...decayed(row, at), ...(row.lastHuntAt !== undefined ? { lastHuntAt: row.lastHuntAt } : {}),
+                ...(row.lastHelpAt ? { lastHelpAt: { ...row.lastHelpAt } } : {}),
                 reasons: row.reasons.map(reason => ({ ...reason })) } : null;
         }
     });

@@ -902,7 +902,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
     };
 }
 
-function chooseHeal(profile, allies, mp, cooldowns, time) {
+function chooseHeal(profile, allies, mp, cooldowns, time, caster) {
     const injured = allies.filter((ally) => ally.vitals.hp > 0 && ally.vitals.hp / Math.max(1, ally.vitals.maxHp) < 0.7)
         .sort((a, b) => (a.vitals.hp / a.vitals.maxHp) - (b.vitals.hp / b.vitals.maxHp))[0];
     if (!injured) return null;
@@ -910,9 +910,26 @@ function chooseHeal(profile, allies, mp, cooldowns, time) {
         if (candidate.passive || Number(candidate.mp || 0) > mp || Number(cooldowns[candidate.selfId] || 0) > time) return false;
         const semantic = C4SkillRules.resolve(candidate);
         return [C4SkillRules.HEAL, C4SkillRules.HEAL_PERCENT].includes(semantic.skillType)
-            && ['self', 'party', 'ally', 'friendly'].includes(semantic.target);
+            && ['self', 'party', 'ally', 'friendly'].includes(semantic.target)
+            && (semantic.target !== 'self' || caster?.vitals.hp > 0 && caster.vitals.hp < caster.vitals.maxHp * 0.7);
     }).sort((a, b) => Number(b.power || 0) - Number(a.power || 0))[0];
-    return skill ? { skill, target: injured } : null;
+    return skill ? { skill, target: C4SkillRules.resolve(skill).target === 'self' ? caster : injured } : null;
+}
+
+function applyAllyHeal(caster, allies, heal) {
+    const semantic = C4SkillRules.resolve(heal.skill);
+    const targets = semantic.target === 'self' ? [caster] : semantic.target === 'party' ? allies : [heal.target];
+    const helped = [];
+    for (const ally of targets.filter(f => f.vitals.hp > 0)) {
+        const before = ally.vitals.hp;
+        const amount = semantic.skillType === C4SkillRules.HEAL_PERCENT
+            ? ally.vitals.maxHp * Number(heal.skill.power || 0) / 100 : Formulas.calcHealAmount(heal.skill.power);
+        ally.vitals.hp = Math.min(ally.vitals.maxHp, before + Math.max(0, amount));
+        if (ally !== caster && require('../../Social/CombatHelpPolicy').meaningfulHeal(before, ally.vitals.hp, ally.vitals.maxHp)) {
+            helped.push({ sourceId: ally.state.characterId, targetId: caster.state.characterId, type: 'healed' });
+        }
+    }
+    return helped;
 }
 
 function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, timestamp = Date.now() }) {
@@ -956,6 +973,16 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
     let time = 0;
     let actions = 0;
     const fightLimitMs = 15000;
+    const Help = require('../../Social/CombatHelpPolicy');
+    const help = new Map();
+    let lastVictim = null;
+    const rescued = helper => {
+        if (lastVictim && helper !== lastVictim.fighter && time - lastVictim.at < Help.THREAT_MS
+            && Help.injured(lastVictim.fighter.vitals.hp, lastVictim.fighter.vitals.maxHp)) {
+            const sourceId = lastVictim.fighter.state.characterId, targetId = helper.state.characterId;
+            help.set(`${sourceId}:${targetId}:helped_in_combat`, { sourceId, targetId, type: 'helped_in_combat' });
+        }
+    };
 
     while (mobHp > 0 && fighters.some((fighter) => fighter.vitals.hp > 0) && time < fightLimitMs && actions < 96) {
         const alive = fighters.filter((fighter) => fighter.vitals.hp > 0);
@@ -983,7 +1010,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             mobHp -= summonDamage(nextSummon, mob, rng);
             nextSummon.summonActions += 1;
             nextSummon.summonReadyAt = time + summonAttackDelay(nextSummon.summon);
-            if (mobHp <= 0) break;
+            if (mobHp <= 0) { rescued(nextSummon); break; }
         }
         else if (botActs) {
             next.actions += 1;
@@ -995,10 +1022,9 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
                 next.readyAt += 250;
                 continue;
             }
-            const heal = chooseHeal(next.profile, fighters, next.vitals.mp, next.cooldowns, timestamp + time);
+            const heal = chooseHeal(next.profile, fighters, next.vitals.mp, next.cooldowns, timestamp + time, next);
             if (heal) {
-                const amount = Formulas.calcHealAmount(heal.skill.power);
-                heal.target.vitals.hp = Math.min(heal.target.vitals.maxHp, heal.target.vitals.hp + amount);
+                for (const event of applyAllyHeal(next, fighters, heal)) help.set(`${event.sourceId}:${event.targetId}:${event.type}`, event);
                 next.vitals.mp = Math.max(0, next.vitals.mp - Number(heal.skill.mp || 0));
                 next.cooldowns[heal.skill.selfId] = timestamp + time + Math.max(0, Number(heal.skill.reuse || 0));
                 next.skillUses += 1;
@@ -1057,6 +1083,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             mobHp -= Math.max(0, damage);
             next.readyAt += actionDelayMs(next.profile, skill);
             if (mobHp <= 0) {
+                rescued(next);
                 const necromancer = fighters.find((fighter) => (
                     fighter.vitals.hp > 0
                     && BotRoles.isNecromancer(fighter.profile?.classId)
@@ -1075,7 +1102,9 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
                 const damage = Formulas.calcMeleeDamage(mob.pAtk, mob.pAtkRnd, target.profile.pDef, {
                     critical: Formulas.rollCritical(mob.critical, rng)
                 }) * coldNpcWeaponModifier(mob, target.profile, timestamp + time);
-                target.vitals.hp = Math.max(0, target.vitals.hp - damage);
+                const before = target.vitals.hp;
+                target.vitals.hp = Math.max(0, before - damage);
+                if (target.vitals.hp < before) lastVictim = { fighter: target, at: time };
             }
             mobReadyAt += Math.max(250, Formulas.calcMeleeAtkTime(mob.atkSpd));
         }
@@ -1088,6 +1117,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
         won: mobHp <= 0,
         timedOut: mobHp > 0 && fighters.some((fighter) => fighter.vitals.hp > 0),
         members: fighters,
+        help: [...help.values()],
         debug: {
             actions,
             skillUses: fighters.reduce((sum, fighter) => sum + fighter.skillUses, 0),
@@ -1101,7 +1131,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
 }
 
 const BackgroundResolver = {
-    combat: { chooseSkill, chooseHeal, actionDelayMs, hitSucceeds },
+    combat: { chooseSkill, chooseHeal, applyAllyHeal, actionDelayMs, hitSucceeds },
     resolveDeathRecovery,
     resolveRest,
     resolvePartyFight,

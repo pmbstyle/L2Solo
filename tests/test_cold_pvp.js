@@ -173,11 +173,55 @@ async function main() {
     assert.strictEqual((await Database.execute(['SELECT hp FROM characters WHERE id=16', []]))[0].hp, 20);
     assert.strictEqual((await Repository.load(16)).relations.length, 0);
 
+    // Independent revenge uses current social memory and a real physical fight,
+    // even when neither principal is pursuing the same monster.
+    async function grievance(a, b) {
+        return Memory.recordBatch(['attacked', 'killed', 'killed'].map((type, i) => ({
+            key: `grievance:${a}:${b}:${i}`, sourceId: a, targetId: b, type, at })));
+    }
+    const revengeEvent = (a, b) => ({ ...event(a, b, `revenge-test:${a}:${b}`),
+        action: 'revenge', revengeRoll: 0, pressure: 0, npcId: 0 });
+    await grievance(21, 22);
+    await party([20, 21]); await party([22, 23]);
+    const revenge = await new ColdCompetitionActions(base).apply(revengeEvent(21, 22));
+    assert(revenge.ok && revenge.pvp, JSON.stringify(revenge));
+    assert.strictEqual(state(22).activity, 'dead', 'the avenger opens the fight, not its unsuspecting target');
+    assert.strictEqual(state(21).stats.coldCompetition.action, 'revenge');
+    assert.strictEqual(state(21).stats.revengeUntil, at + 600000);
+    assert(!(await Repository.load(22)).relations.some(r => r.reasons.some(reason => reason.type === 'mob_contested')),
+        'a revenge fight must not fabricate stolen monsters');
+    assert.strictEqual((await Database.execute(['SELECT pk FROM characters WHERE id=21', []]))[0].pk, 1,
+        'revenge against a white character still incurs normal PK consequences');
+    assert.strictEqual((await new ColdCompetitionActions(base).apply(revengeEvent(21, 22))).ok, false);
+
+    await grievance(29, 32);
+    const refused = await new ColdCompetitionActions({ ...base, pvpEnabled: () => false }).apply(revengeEvent(29, 32));
+    assert.strictEqual(refused.reason, 'forecast_only');
+    const beforeClaim = await Repository.load(32);
+    const staleRelation = await Conflict.apply({ ...base, event: revengeEvent(29, 32), owner: { ...Owner,
+        claimBatch: async (...args) => {
+            const claimed = await Owner.claimBatch(...args);
+            await Memory.recordBatch([{ key: 'reconciled-during-claim', sourceId: 29, targetId: 32, type: 'resurrected', at }]);
+            return claimed;
+        } } });
+    assert.strictEqual(staleRelation.reason, 'contest_changed_during_claim');
+    assert.deepStrictEqual(await Repository.load(32), beforeClaim, 'rejected intent must not create attacks');
+    assert(!state(29).simulation.leaseId);
+    const initial = await Conflict.apply({ ...base, event: revengeEvent(29, 32), incrementalPvp: true });
+    assert(initial.ok && initial.encounter?.reason === 'revenge', JSON.stringify(initial));
+    assert(state(29).stats.coldPvp.flagUntil > at, 'the initiating avenger carries a flag into hot activation');
+    const continued = await Conflict.apply({ ...base, now: () => at + 1000,
+        event: { ...revengeEvent(29, 32), at: at + 1000 }, resume: JSON.parse(JSON.stringify(initial.encounter)), incrementalPvp: true });
+    assert(continued.ok, JSON.stringify(continued));
+    assert(continued.encounter?.reason === 'revenge' || !continued.encounter);
+
     const savedMemory = await Repository.load(1);
     await Database.close(); Database.init();
     assert.deepStrictEqual(await Repository.load(1), savedMemory);
     assert.strictEqual((await Database.execute(['SELECT hp FROM characters WHERE id=1', []]))[0].hp, 0);
     assert.strictEqual((await Database.execute(['SELECT pk,karma FROM characters WHERE id=3', []]))[0].karma, 240);
+    assert.strictEqual(JSON.parse((await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=21', []]))[0].statsJson).revengeUntil,
+        at + 600000, 'revenge cooldown survives SQLite reopen');
     console.log('Cold PvP: deterministic bounded combat, CP/MP, PK/PvP, death/recovery, atomic rollback, replay and SQLite reopen passed');
     console.log(`Cold PvP 9v9: ${fullFight.actions} actions, ${computeMs.toFixed(2)} ms calculation`);
 }

@@ -65,6 +65,14 @@ try {
     Defense.clear(bot.session, { dead: true });
     assert.strictEqual(Memory.entries(bot.session)[0].kills, 2, 'death cleanup must preserve enemies');
 
+    // Legacy counters are diagnostic history only. Decisions require a hydrated,
+    // currently hostile shared relationship (including foes outside the old top three).
+    let shared = SocialPolicy.empty(bot.id);
+    for (const [i, type] of ['attacked', 'killed', 'killed'].entries()) shared = SocialPolicy.apply(shared,
+        { key: `revenge-fixture:${i}`, sourceId: bot.id, targetId: foe.id, type, at: now }, now).snapshot;
+    SocialMemory.accept(shared);
+    bot.session.pvpEnemyMemory = [];
+
     bot.session.coldLifeState = helper.session.coldLifeState = { party: { partyId: 'revenge_party' } };
     const ai = { executePvPCombat(session, actor, target) { events.push(['attack', actor.id, target.id]); } };
     assert(Defense.tick(bot.session, bot, {}, ai, { now, rng: () => 0 }));
@@ -117,6 +125,13 @@ try {
     Budget.canSend = () => false;
     assert(!Revenge.tryStart(bot.session, now, () => 0), 'revenge waits when its required announcement cannot be sent');
     assert(!bot.session.pvpRevenge);
+    assert(bot.session.pendingPvpProvocation, 'an accepted intent waits for its announcement');
+    shared = { ...shared, revision: shared.revision + 1, relations: shared.relations.map(row => ({ ...row,
+        affinity: 20, trust: 20, hostility: 0, fear: 0 })) };
+    SocialMemory.accept(shared);
+    Budget.canSend = () => true;
+    assert(!Revenge.flushPending(bot.session, now), 'reconciliation before the first strike cancels a queued provocation');
+    assert(!bot.session.pendingPvpProvocation && !bot.session.pvpRevenge);
 
     const botKiller = character();
     Memory.record(restored, botKiller, true, now);

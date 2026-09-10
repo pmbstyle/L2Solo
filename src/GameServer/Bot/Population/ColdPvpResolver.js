@@ -19,7 +19,7 @@ function allowed(sides) {
     return !sides[0].members.some(a => sides[1].members.some(b => clan(a) > 0 && clan(a) === clan(b)));
 }
 
-function resolve({ sides, roles, timestamp, rng, personaFor, step = null }) {
+function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openingSide = 1 }) {
     if (!allowed(sides)) return { started: false, reason: 'pvp_protected_context' };
     const fighters = sides.flatMap((side, index) => side.members
         .filter(state => state.characterId === side.principal.characterId || roles.get(state.characterId) === 'support')
@@ -29,17 +29,19 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null }) {
                 vitals: { hp: clamp(state.vitals.hp, 0, profile.maxHp), maxHp: profile.maxHp,
                     mp: clamp(state.vitals.mp, 0, profile.maxMp), maxMp: profile.maxMp },
                 cp: step ? clamp(Number(state.stats?.coldCombat?.cp ?? profile.cp), 0, profile.maxCp) : profile.cp,
-                readyAt: step?.resuming ? Math.max(0, Number(state.stats?.coldPvp?.readyAt || timestamp) - timestamp) : index === 1 ? 0 : 100,
+                readyAt: step?.resuming ? Math.max(0, Number(state.stats?.coldPvp?.readyAt || timestamp) - timestamp) : index === openingSide ? 0 : 100,
                 flagged: Number(state.stats?.coldPvp?.flagUntil || 0) > timestamp,
                 flagUntil: Number(state.stats?.coldPvp?.flagUntil || 0),
+                lastVictimId: Number(state.stats?.coldPvp?.lastVictimId || 0),
+                lastVictimAt: Number(state.stats?.coldPvp?.lastVictimAt || 0),
                 cooldowns: { ...(state.stats?.coldCombat?.cooldowns || {}) },
                 kills: [], attacks: 0, skills: 0, heals: 0 };
         }));
     const power = side => fighters.filter(f => f.side === side).reduce((sum, f) => sum
         + (f.vitals.hp + f.cp) * Math.sqrt(Math.max(f.profile.pAtk, f.profile.mAtk)
             * (f.profile.pDef + f.profile.mDef)), 0);
-    // The victim of the resource intrusion is the one considering retaliation.
-    if (!step?.resuming && power(1) < power(0) * 0.6) return { started: false, reason: 'pvp_outmatched' };
+    // Resource retaliation opens on side 1; an independent grievance opens on side 0.
+    if (!step?.resuming && power(openingSide) < power(1 - openingSide) * 0.6) return { started: false, reason: 'pvp_outmatched' };
     const windowMs = step ? Math.max(0, Math.min(1000, Math.min(step.until, step.expiresAt) - timestamp)) : MAX_DURATION_MS;
     let time = 0, actions = 0, losingSide = null, outcome = 'disengaged';
     const incidents = new Map();
@@ -64,7 +66,7 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null }) {
         }
         actions++;
         const allies = fighters.filter(f => f.side === next.side);
-        const heal = combat.chooseHeal(next.profile, allies, next.vitals.mp, next.cooldowns, timestamp + time);
+        const heal = combat.chooseHeal(next.profile, allies, next.vitals.mp, next.cooldowns, timestamp + time, next);
         const selected = heal ? null : combat.chooseSkill(next.profile, next.vitals.hp, next.vitals.mp,
             next.cooldowns, timestamp + time, 0, rng);
         const skill = heal?.skill || selected?.skill;
@@ -77,17 +79,7 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null }) {
             next.skills++;
         }
         if (heal) {
-            const semantic = Rules.resolve(skill);
-            const targets = semantic.target === 'self' ? [next] : semantic.target === 'party' ? allies : [heal.target];
-            for (const ally of targets.filter(f => f.vitals.hp > 0)) {
-                const before = ally.vitals.hp;
-                const amount = semantic.skillType === Rules.HEAL_PERCENT
-                    ? ally.vitals.maxHp * Number(skill.power || 0) / 100 : Formulas.calcHealAmount(skill.power);
-                ally.vitals.hp = Math.min(ally.vitals.maxHp, ally.vitals.hp + Math.max(0, amount));
-                if (ally.id !== next.id && before < ally.vitals.maxHp * 0.4 && ally.vitals.hp > before) {
-                    help.set(`${ally.id}:${next.id}`, { sourceId: ally.id, targetId: next.id, type: 'healed' });
-                }
-            }
+            for (const event of combat.applyAllyHeal(next, allies, heal)) help.set(`${event.sourceId}:${event.targetId}:${event.type}`, event);
             next.heals++;
         } else {
             if (!(Number(target.state.stats?.karma || 0) > 0)) {
@@ -105,8 +97,16 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null }) {
             damage = Math.max(0, Math.round(damage));
             const shield = Math.min(target.cp, damage);
             target.cp -= shield;
+            const hpBefore = target.vitals.hp;
             target.vitals.hp = Math.max(0, target.vitals.hp - (damage - shield));
+            if (target.vitals.hp < hpBefore) { next.lastVictimId = target.id; next.lastVictimAt = timestamp + time; }
             if (target.vitals.hp <= 0) {
+                const rescued = fighters.find(f => f.id === target.lastVictimId && f.side === next.side && f.id !== next.id);
+                const Help = require('../../Social/CombatHelpPolicy');
+                if (rescued && timestamp + time >= target.lastVictimAt && timestamp + time - target.lastVictimAt < Help.THREAT_MS
+                    && Help.injured(rescued.vitals.hp, rescued.vitals.maxHp)) {
+                    help.set(`${rescued.id}:${next.id}:helped_in_combat`, { sourceId: rescued.id, targetId: next.id, type: 'helped_in_combat' });
+                }
                 incident(target, next, true);
                 next.kills.push({ victimId: target.id, victimLevel: target.state.level,
                     pvp: target.flagged || Number(target.state.stats?.karma || 0) > 0 });
@@ -140,6 +140,7 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null }) {
             stats: { ...f.state.stats, deaths: Number(f.state.stats?.deaths || 0) + Number(dead),
                 restUntil: until, pvpEnemies: enemies.slice(0, 3),
                 coldPvp: { at: timestamp, until: step ? step.until : until, outcome: ongoing ? 'fighting' : outcome,
+                    lastVictimId: f.lastVictimId, lastVictimAt: f.lastVictimAt,
                     readyAt: Math.ceil(timestamp + f.readyAt),
                     flagUntil: dead ? 0 : step ? f.flagUntil : f.flagged ? until : 0,
                     ...(dead ? { recoverUntil: until + RECOVERY_MS } : {}) },

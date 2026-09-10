@@ -16,7 +16,7 @@ assert.strictEqual(Policy.apply(snapshot, events[0], at).status, 'duplicate');
 const hotEvent = { ...events[0], key: 'hot-stale', at: at + 1000 };
 assert.strictEqual(Policy.apply(snapshot, hotEvent, at + 1000).status, 'rate_limited');
 for (let i = 0; i < 5; i++) snapshot = Policy.apply(snapshot,
-    { ...events[0], key: `other:${i}`, type: 'healed', at: at + 2000 + i }, at + 2000 + i).snapshot;
+    { ...events[0], key: `other:${i}`, type: 'attacked', at: at + 2000 + i }, at + 2000 + i).snapshot;
 assert(snapshot.relations[0].reasons.every(reason => reason.type !== 'hunted_together'));
 assert.strictEqual(Policy.apply(snapshot, { ...hotEvent, key: 'after-other-events', at: at + 3000 }, at + 3000).status, 'rate_limited');
 memory.accept(snapshot);

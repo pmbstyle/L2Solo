@@ -16,6 +16,7 @@ class ColdCompetitionMonitor {
         this.cursor = 0;
         this.pairs = new Map();
         this.bots = new Map();
+        this.revenge = new (require('./ColdRevengeMonitor').ColdRevengeMonitor)();
         this.report = { mode: 'observe', scans: 0, evaluated: 0, outcomes: {}, pvpIntents: 0, recent: [] };
     }
     sample(entries, memory, timestamp) {
@@ -118,6 +119,11 @@ class ColdCompetitionMonitor {
             this.report.recent = this.report.recent.slice(-12);
         }
         this.cursor += Math.min(32, pressured.length);
+        if (elapsed > 0) {
+            const revenge = this.revenge.sample(entries, memory, timestamp, this.personaFor, seeded(`revenge:${timestamp}`));
+            this.report.recent = [...this.report.recent, ...revenge].slice(-12);
+            this.report.revenge = { ...this.revenge.report };
+        }
     }
     snapshot() { return this.report; }
 }

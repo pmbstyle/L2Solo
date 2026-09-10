@@ -163,7 +163,7 @@ class ColdSimulationCoordinator {
             contestContextAllowed: (state, event) => {
                 const physical = SpotService.findCurrentSpot(state.loc);
                 const spot = SpotProfiles.findById(event.spotId);
-                return physical?.id === event.spotId && !!spot?.npcEntries?.some(row => Number(row.selfId) === event.npcId);
+                return physical?.id === event.spotId && (event.action === 'revenge' || !!spot?.npcEntries?.some(row => Number(row.selfId) === event.npcId));
             },
             participantAllowed: id => !this.fencedBots.has(Number(id)),
             formParty: (members, event, options) => this.population?.formCompetitionParty?.(members, event, options),

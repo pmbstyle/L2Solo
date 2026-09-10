@@ -16,7 +16,8 @@ personal rather than guessed to be unprovoked attacks.
 
 Current producers are accepted cold/hot resource disputes, attributed PvP,
 successful shared hunts, native healing of a critically injured fighting bot,
-native resurrection, cold PvP emergency healing, and meaningful clan Adena
+native resurrection, cold PvE/PvP emergency healing, defeating a recent threat
+to a critically injured bot, and meaningful clan Adena
 contributions. Ordinary purchases, small gifts, routine buffing, death, weak gear,
 and failed farming do not establish misconduct. Rescue producers exclude arenas
 and self-healing. A rescue is only recorded after its effect succeeds.
@@ -50,7 +51,7 @@ Full worker startup replays the current projections. Replay/evidence ledgers are
 not sent to workers. Main hydration and worker delivery are eventually consistent;
 the admission path never treats reputation as permission to attack.
 
-Resource competition, party preference, party retention and participation now
+Resource competition, independent revenge, party preference, party retention and participation now
 read effective feelings combining personal history and shared reputation.
 Existing friendship moderates collective hostility. Shared membership encourages
 support, while a principal's disciplinary status discourages helping another
