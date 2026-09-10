@@ -12,6 +12,15 @@ function record(session, targetId, killed, at, enemies = []) {
     if (!Number.isSafeInteger(sourceId) || sourceId <= 0 || !Number.isSafeInteger(targetId)
         || targetId <= 0 || sourceId === targetId || !Number.isSafeInteger(at) || at < 0) return false;
     const type = killed ? 'killed' : 'attacked';
+    const encounter = session.pvpEncounter;
+    if (encounter && encounter.sides.some(s => s.memberIds.includes(targetId))
+        && encounter.sides.some(s => s.memberIds.includes(sourceId) && !s.memberIds.includes(targetId))) {
+        const incident = `${sourceId}:${targetId}:${type}`;
+        if (encounter.seen.includes(incident)) return false;
+        const accepted = Memory.events.enqueue({ key: `${encounter.key}:${incident}`, sourceId, targetId, type, at: encounter.startedAt });
+        if (accepted) encounter.seen.push(incident);
+        return accepted;
+    }
     const key = `${targetId}:${type}`;
     let recent = episodes.get(session);
     if (!recent) { recent = new Map(); episodes.set(session, recent); }

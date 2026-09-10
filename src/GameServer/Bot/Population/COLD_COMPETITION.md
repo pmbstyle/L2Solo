@@ -262,11 +262,36 @@ party deadlines and memory commit atomically. No XP or ground loot is invented.
 Death clears buffs, charges and the summon; a 90-second recovery delay precedes
 the existing cold recovery flow. Parties wait for their fallen members.
 
-The result is committed as one completed episode. A bounded settlement interval
-covers its simulated duration plus the flag tail; both rosters lose that farming
-time once, including members who later leave. Neither healing/rest nor hot
-activation can bypass this interval. It is not an ongoing battle transferred to
-the hot world. Survivors retain CP and original buff deadlines on activation.
+Production encounters advance in bounded one-second steps. Each participant
+retains the encounter ID, full roster, original participation votes, deadline,
+next action time and delivered incident IDs. The worker defers ordinary farming
+and lifecycle planning while the main encounter owner advances combat; there is
+no catch-up damage or farming burst after a stall. The complete resolver remains
+available for deterministic offline tests.
+
+Visibility transfers the entire conflict, including both parties and bystanders,
+in one lifecycle transaction. Actors load privately without ready-spawn refills.
+Only after every member is prepared are they published and given their original
+opponents. HP/MP/CP, skill reuse, effect deadlines and the remaining PvP flag are
+preserved. Receiving an attack does not flag a white victim; accepted hostile
+actions against non-chaotic targets do. The first visible CharInfo has the
+restored flag. Karma still controls red names.
+
+Once all participants are beyond player visibility and the cooldown radius,
+cooling drains existing attacks/casts before capturing the whole roster. New
+auto-attacks are held during this drain; a player/NPC intervention or resource
+change aborts the transition. Cold time starts at the handoff, never at the last
+cold tick. Original episode keys deduplicate social memory across transitions.
+The ordinary two-minute visibility grace does not pin an active encounter hot.
+After materialization, cold continuation checks the opponents' actual distance
+and protected context instead of requiring the original resource spot or target.
+Death, retreat, expiry or invalid membership ends the encounter. Spawn failures
+roll back the full hidden roster. Restart reloads unfinished cold encounters;
+expired ones end without catch-up attacks.
+
+This lifecycle currently applies to encounters started by the cold resource
+resolver. A fight that first starts between already-hot actors still uses native
+combat and its existing cooldown guards; it does not create this shared encounter.
 
 Observer `coldCompetitionActions` reports `pvpFights`, `pvpDeaths`, `pkKills` and
 bounded recent results with participants, actions, HP/MP/CP and individual kills.
@@ -274,6 +299,10 @@ These are committed outcomes, distinct from the monitor's `pvpIntents`.
 `test_cold_pvp.js` checks deterministic 1v1 and 9v9 resolution, healing, resource
 loss, PK/PvP, recovery, protection, ownership/context races, complete rollback,
 duplicate delivery and SQLite close/reopen.
+`test_pvp_encounter_handoff.js` checks stepped party combat, complete publication,
+cold/hot/cold resources and flags, memory deduplication, expiry, rollback and
+SQLite reopen. `test_bot_effect_handoff.js` checks native EnterWorld flag and
+skill-reuse restoration in addition to effect expiry.
 
 ## Native PvP memory
 

@@ -121,6 +121,7 @@ class Attack {
     }
 
     meleeHit(session, creature) {
+        if (session?.pvpHandoffPending) return;
         const actor = session.actor;
 
         if (this.blockedPvpDefense(session, actor, creature) || this.checkParticipants(actor, creature)) {
@@ -242,6 +243,7 @@ class Attack {
     }
 
     remoteHit(session, creature, skill) {
+        if (session?.pvpHandoffPending) return;
         const actor = session.actor;
         const corpseTarget = ['corpse_mob', 'corpse_player', 'corpse_pet', 'corpse_ally']
             .includes(skill.fetchTargetKind?.());

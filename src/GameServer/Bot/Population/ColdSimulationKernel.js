@@ -503,6 +503,11 @@ class ColdSimulationKernel {
             // every claim/commit/command completion schedules explicitly.
             if (this.busy(id)) continue;
             const current = this.states.get(id);
+            const encounter = current.state.stats?.pvpEncounter;
+            if (encounter) {
+                this.requeue(id, Math.max(timestamp + 1000, encounter.expiresAt + 1000));
+                continue;
+            }
             const kind = lifecycleKind(current.state, current.context);
             if (kind === 'resolver') {
                 this.claiming.add(id);
@@ -542,6 +547,10 @@ class ColdSimulationKernel {
                 const attachedMembers = members.filter((member) => (
                     String(member.party?.partyId || member.partyId || '') === String(party?.partyId || '')
                 ));
+                if (members.some(member => member.stats?.pvpEncounter)) {
+                    this.requeue(id, timestamp + 1000);
+                    continue;
+                }
                 const invalidPartySize = memberIds.length < this.partyMinSize;
                 const membershipMismatch = attachedMembers.length !== memberIds.length;
                 const invalidReason = invalidPartySize

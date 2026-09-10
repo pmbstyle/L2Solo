@@ -36,7 +36,7 @@ function durableRoundTrip(a, timestamp) {
     finally { db.close(); }
 }
 async function enter(a, coldLifeState) {
-    const s={actor:a,populationStaging:true,coldLifeState};a.session=s;
+    const s={actor:a,populationStaging:true,coldLifeState,packets:[],dataSendToMe(){},dataSendToOthers(p){this.packets.push(p);}};a.session=s;
     await EnterWorld(s,a);
 }
 (async()=>{
@@ -85,6 +85,21 @@ async function enter(a, coldLifeState) {
     await enter(cpArrival,cpState);
     assert.strictEqual(cpArrival.cp,Math.min(200,Profile.profileFor(cpState,clock).cp),
         'native enter-world restores cold CP instead of granting a fresh shield');
+    const Response=invoke('GameServer/Network/Response');
+    patch(Response,'charInfo',a=>({flag:a.fetchPvpFlag()}));
+    patch(Response,'userInfo',()=>({}));patch(Response,'relationChanged',()=>({}));
+    const flagged=actor();flagged.flag=0;flagged.setPvpFlag=v=>{flagged.flag=v;};flagged.fetchPvpFlag=()=>flagged.flag;
+    flagged.skillReuseUntil=new Map();
+    const flagUntil=clock+7500;
+    await enter(flagged,{stats:{coldCombat:{effects:[],cooldowns:{99:clock+5000}},coldPvp:{flagUntil}}});
+    assert.strictEqual(flagged.session.packets.find(p=>p.flag!==undefined).flag,1,'first native CharInfo already has the PvP flag');
+    assert.strictEqual(flagged.session.pvpFlagUntil,flagUntil,'restore absolute flag deadline');
+    assert.strictEqual(flagged.skillReuseUntil.get(99),clock+5000,'restore native skill reuse');
+    clearTimeout(flagged.session.pvpFlagTimer);
+    clock=flagUntil+1;
+    const white=actor();white.flag=0;white.setPvpFlag=v=>{white.flag=v;};white.fetchPvpFlag=()=>white.flag;
+    await enter(white,{stats:{coldCombat:{effects:[]},coldPvp:{flagUntil}}});
+    assert.strictEqual(white.flag,0,'an expired flag is not revived by a handoff');
     console.log('Hot/cold effect handoff: SQLite close/reopen, native enter-world restoration, expiry, HP caps and rebuff planning passed');
  } finally {
     actors.forEach(a=>Ticker.clearAll(a));saved.reverse().forEach(fn=>fn());

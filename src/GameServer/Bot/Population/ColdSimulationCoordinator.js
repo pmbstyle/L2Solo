@@ -158,6 +158,8 @@ class ColdSimulationCoordinator {
             personaFor: state => invoke('GameServer/Bot/AI/BotPersona').generate(state),
             conflictsEnabled: () => Config.coldCompetitionConflictsEnabled === true,
             pvpEnabled: () => Config.coldCompetitionPvpEnabled === true,
+            incrementalPvp: true,
+            onEncounter: encounter => invoke('GameServer/Bot/Population/PvpEncounterRuntime').register(encounter),
             contestContextAllowed: (state, event) => {
                 const physical = SpotService.findCurrentSpot(state.loc);
                 const spot = SpotProfiles.findById(event.spotId);
@@ -278,6 +280,11 @@ class ColdSimulationCoordinator {
             this.queue.start();
             this.startWorker();
             this.watchdogTimer = setInterval(() => this.watchdog(), 1000);
+            const encounters = invoke('GameServer/Bot/Population/PvpEncounterRuntime');
+            LifeState.allStates(2000).forEach(s => encounters.register(s.stats?.pvpEncounter));
+            this.pvpEncounterTimer = setInterval(() => {
+                encounters.tick(this.competitionActions)?.catch(error => this.recordError(error));
+            }, 1000);
             this.reconcileTimer = setInterval(() => {
                 this.sendSnapshots(false).catch((error) => this.recordError(error));
             }, Math.max(2000, Number(Config.coldWorkerSnapshotRefreshMs) || 10000));
@@ -1468,6 +1475,8 @@ class ColdSimulationCoordinator {
     async stop() {
         if (!this.started) return { stopped: true };
         this.stopping = true;
+        if (this.pvpEncounterTimer) clearInterval(this.pvpEncounterTimer);
+        await invoke('GameServer/Bot/Population/PvpEncounterRuntime').stop();
         await this.competitionActions.stop();
         if (this.watchdogTimer) clearInterval(this.watchdogTimer);
         if (this.reconcileTimer) clearInterval(this.reconcileTimer);

@@ -19,7 +19,7 @@ function allowed(sides) {
     return !sides[0].members.some(a => sides[1].members.some(b => clan(a) > 0 && clan(a) === clan(b)));
 }
 
-function resolve({ sides, roles, timestamp, rng, personaFor }) {
+function resolve({ sides, roles, timestamp, rng, personaFor, step = null }) {
     if (!allowed(sides)) return { started: false, reason: 'pvp_protected_context' };
     const fighters = sides.flatMap((side, index) => side.members
         .filter(state => state.characterId === side.principal.characterId || roles.get(state.characterId) === 'support')
@@ -28,7 +28,10 @@ function resolve({ sides, roles, timestamp, rng, personaFor }) {
             return { state, side: index, profile, id: state.characterId,
                 vitals: { hp: clamp(state.vitals.hp, 0, profile.maxHp), maxHp: profile.maxHp,
                     mp: clamp(state.vitals.mp, 0, profile.maxMp), maxMp: profile.maxMp },
-                cp: profile.cp, readyAt: index === 1 ? 0 : 100, flagged: Number(state.stats?.coldPvp?.flagUntil || 0) > timestamp,
+                cp: step ? clamp(Number(state.stats?.coldCombat?.cp ?? profile.cp), 0, profile.maxCp) : profile.cp,
+                readyAt: step?.resuming ? Math.max(0, Number(state.stats?.coldPvp?.readyAt || timestamp) - timestamp) : index === 1 ? 0 : 100,
+                flagged: Number(state.stats?.coldPvp?.flagUntil || 0) > timestamp,
+                flagUntil: Number(state.stats?.coldPvp?.flagUntil || 0),
                 cooldowns: { ...(state.stats?.coldCombat?.cooldowns || {}) },
                 kills: [], attacks: 0, skills: 0, heals: 0 };
         }));
@@ -36,7 +39,8 @@ function resolve({ sides, roles, timestamp, rng, personaFor }) {
         + (f.vitals.hp + f.cp) * Math.sqrt(Math.max(f.profile.pAtk, f.profile.mAtk)
             * (f.profile.pDef + f.profile.mDef)), 0);
     // The victim of the resource intrusion is the one considering retaliation.
-    if (power(1) < power(0) * 0.6) return { started: false, reason: 'pvp_outmatched' };
+    if (!step?.resuming && power(1) < power(0) * 0.6) return { started: false, reason: 'pvp_outmatched' };
+    const windowMs = step ? Math.max(0, Math.min(1000, Math.min(step.until, step.expiresAt) - timestamp)) : MAX_DURATION_MS;
     let time = 0, actions = 0, losingSide = null, outcome = 'disengaged';
     const incidents = new Map();
     const incident = (victim, attacker, killed = false) => {
@@ -45,15 +49,16 @@ function resolve({ sides, roles, timestamp, rng, personaFor }) {
         incidents.set(key, { sourceId: victim.id, targetId: attacker.id,
             targetName: attacker.state.name, killed: killed || old?.killed || false });
     };
-    while (actions < MAX_ACTIONS) {
+    const actionBudget = step ? Math.min(MAX_ACTIONS, step.maxActions ?? MAX_ACTIONS) : MAX_ACTIONS;
+    while (actions < actionBudget) {
         const next = fighters.filter(f => f.vitals.hp > 0).sort((a, b) => a.readyAt - b.readyAt || a.id - b.id)[0];
-        if (!next || next.readyAt > MAX_DURATION_MS) break;
+        if (!next || next.readyAt > windowMs || (step && timestamp + next.readyAt >= step.expiresAt)) break;
         time = next.readyAt;
         const opponents = fighters.filter(f => f.side !== next.side && f.vitals.hp > 0);
         const target = opponents.find(f => f.id === sides[1 - next.side].principal.characterId) || opponents[0];
         if (!target) { losingSide = 1 - next.side; outcome = 'defeated'; break; }
         const caution = clamp(Number(personaFor(next.state)?.traits?.caution ?? 0.5), 0, 1);
-        if (actions > 0 && next.vitals.hp / next.vitals.maxHp < 0.15 + caution * 0.2) {
+        if ((actions > 0 || step?.resuming) && next.vitals.hp / next.vitals.maxHp < 0.15 + caution * 0.2) {
             losingSide = next.side; outcome = 'retreated'; break;
         }
         actions++;
@@ -64,7 +69,7 @@ function resolve({ sides, roles, timestamp, rng, personaFor }) {
         const skill = heal?.skill || selected?.skill;
         const delay = combat.actionDelayMs(next.profile, skill);
         // Resolve only completed actions within the bounded combat window.
-        if (time + delay > MAX_DURATION_MS) { next.readyAt = MAX_DURATION_MS + 1; continue; }
+        if (!step && time + delay > MAX_DURATION_MS) { next.readyAt = MAX_DURATION_MS + 1; continue; }
         if (skill) {
             next.vitals.mp = Math.max(0, next.vitals.mp - Number(skill.mp || 0));
             next.cooldowns[skill.selfId] = timestamp + time + delay + Math.max(0, Number(skill.reuse || 0));
@@ -80,7 +85,10 @@ function resolve({ sides, roles, timestamp, rng, personaFor }) {
             }
             next.heals++;
         } else {
-            next.flagged = true;
+            if (!(Number(target.state.stats?.karma || 0) > 0)) {
+                next.flagged = true;
+                next.flagUntil = Math.ceil(timestamp + time + FLAG_MS);
+            }
             next.attacks++;
             incident(target, next);
             let damage = selected?.magic
@@ -103,16 +111,20 @@ function resolve({ sides, roles, timestamp, rng, personaFor }) {
         }
         next.readyAt = time + delay;
     }
-    if (!fighters.some(f => f.attacks)) return { started: false, reason: 'no_hostile_action' };
+    if (!step?.resuming && !fighters.some(f => f.attacks)) return { started: false, reason: 'no_hostile_action' };
+    const ongoing = !!step && losingSide === null && step.until < step.expiresAt && actions < actionBudget;
     const durationMs = Math.min(MAX_DURATION_MS, Math.max(1000, time));
     const until = timestamp + durationMs + FLAG_MS;
     const updates = new Map(fighters.map(f => {
         const dead = f.vitals.hp <= 0;
         const enemies = [...(f.state.stats?.pvpEnemies || [])].map(e => ({ ...e }));
         for (const event of incidents.values()) if (event.sourceId === f.id) {
+            const newAttack = !step?.seen?.includes(`${event.sourceId}:${event.targetId}:attacked`);
+            const newKill = event.killed && !step?.seen?.includes(`${event.sourceId}:${event.targetId}:killed`);
+            if (!newAttack && !newKill) continue;
             const old = enemies.find(e => e.id === event.targetId) || { id: event.targetId, attacks: 0, kills: 0 };
-            const updated = { ...old, name: event.targetName, attacks: Number(old.attacks || 0) + 1,
-                kills: Number(old.kills || 0) + Number(event.killed), lastAttackAt: timestamp, lastSeenAt: timestamp,
+            const updated = { ...old, name: event.targetName, attacks: Number(old.attacks || 0) + Number(newAttack),
+                kills: Number(old.kills || 0) + Number(!!newKill), lastAttackAt: newAttack ? timestamp : old.lastAttackAt, lastSeenAt: timestamp,
                 ...(event.killed ? { lastKillAt: timestamp } : {}) };
             const index = enemies.findIndex(e => e.id === updated.id);
             if (index >= 0) enemies.splice(index, 1);
@@ -122,13 +134,15 @@ function resolve({ sides, roles, timestamp, rng, personaFor }) {
         return [f.id, { ...f.state, activity: dead ? 'dead' : 'resting', vitals: f.vitals,
             stats: { ...f.state.stats, deaths: Number(f.state.stats?.deaths || 0) + Number(dead),
                 restUntil: until, pvpEnemies: enemies.slice(0, 3),
-                coldPvp: { at: timestamp, until, outcome, flagUntil: !dead && f.flagged ? until : 0,
+                coldPvp: { at: timestamp, until: step ? step.until : until, outcome: ongoing ? 'fighting' : outcome,
+                    readyAt: Math.ceil(timestamp + f.readyAt),
+                    flagUntil: dead ? 0 : step ? f.flagUntil : f.flagged ? until : 0,
                     ...(dead ? { recoverUntil: until + RECOVERY_MS } : {}) },
-                coldCombat: { ...(f.state.stats?.coldCombat || f.profile), cp: dead ? 0 : f.cp, cpAt: until,
+                coldCombat: { ...(f.state.stats?.coldCombat || f.profile), cp: dead ? 0 : f.cp, cpAt: step ? step.until : until,
                     cooldowns: dead ? {} : f.cooldowns,
                     ...(dead ? { effects: [], charges: 0, chargeExpiresAt: null, summon: null } : {}) } } }];
     }));
-    return { started: true, outcome, durationMs, until, losingSide, updates,
+    return { started: true, ongoing, outcome: ongoing ? 'fighting' : outcome, durationMs, until: step ? step.until : until, losingSide, updates,
         incidents: [...incidents.values()], fighters: fighters.map(f => ({ id: f.id, side: f.side,
             hp: f.vitals.hp, mp: f.vitals.mp, cp: f.cp, attacks: f.attacks, skills: f.skills, heals: f.heals, kills: f.kills })), actions };
 }

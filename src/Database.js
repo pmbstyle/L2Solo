@@ -3062,6 +3062,87 @@ const Database = {
         }, 'bot-life:cold-owner-renew-batch');
     },
 
+    endPvpEncounter(key, ids) {
+        if (typeof key !== 'string' || !Array.isArray(ids) || ids.length > 18) return Promise.resolve({ rows: [], complete: false });
+        return inTransaction(() => {
+            const rows = [], timestamp = now();
+            let complete = true;
+            for (const id of ids) {
+                const row = coldSimulationRow(Number(id));
+                const stats = row && JSON.parse(row.statsJson || '{}');
+                if (stats?.pvpEncounter?.key !== key) continue;
+                if (row.simulationLeaseId) { complete = false; continue; }
+                stats.pvpEncounter = null;
+                if (stats.coldCompetition?.key === key) stats.coldCompetition.wait = null;
+                write('UPDATE bot_life_state SET statsJson = ?, lastResolvedAt = ?, nextResolveAt = ?, simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?',
+                    [JSON.stringify(stats), timestamp, row.phase === 'cold' ? timestamp + 1000 : null, timestamp, id]);
+                rows.push(coldSimulationRow(id));
+            }
+            return { rows, complete };
+        }, 'bot-life:pvp-encounter-end');
+    },
+
+    transitionPvpEncounter(request = {}) {
+        const members = request.members || [], ids = members.map(m => Number(m.characterId));
+        if (!request.key || ids.length < 2 || ids.length > 18 || new Set(ids).size !== ids.length
+            || !['hot', 'cold'].includes(request.phase) || !['hot', 'cold'].includes(request.expectedPhase)) {
+            return Promise.resolve({ ok: false, reason: 'invalid_encounter_transition' });
+        }
+        return inTransaction(() => {
+            if (request.validate && !request.validate()) return { ok: false, reason: 'encounter_live_state_changed' };
+            const rows = ids.map(coldSimulationRow);
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i], m = members[i];
+                const encounter = row && JSON.parse(row.statsJson || '{}').pvpEncounter;
+                const declared = encounter?.sides?.flatMap(s => s.memberIds) || [];
+                if (!row || row.phase !== request.expectedPhase || encounter?.key !== request.key
+                    || declared.length !== ids.length || declared.some(id => !ids.includes(id))
+                    || Number(row.simulationRevision) !== m.expectedRevision || Number(row.updatedAt) !== m.expectedUpdatedAt
+                    || ![LEGACY_SIMULATION_OWNER, COLD_SIMULATION_OWNER].includes(row.simulationOwner)
+                    || row.simulationLeaseId
+                    || Object.keys(m.patch || {}).some(key => !COLD_SIMULATION_PATCH_COLUMNS.has(key))
+                    || (m.patch.partyId || null) !== (row.partyId || null) || m.patch.phase !== request.phase) {
+                    return { ok: false, reason: 'encounter_member_changed' };
+                }
+            }
+            const partyIds = [...new Set(rows.map(r => r.partyId).filter(Boolean))];
+            const parties = partyIds.map(id => one('SELECT * FROM bot_background_parties WHERE partyId = ?', [id]));
+            for (const party of parties) {
+                const attached = party && all('SELECT characterId FROM bot_life_state WHERE partyId = ?', [party.partyId]).map(r => r.characterId);
+                const declared = party && JSON.parse(party.memberIdsJson);
+                if (!party || party.status !== (request.expectedPhase === 'hot' ? 'hot' : 'active')
+                    || declared.length !== attached.length || declared.some(id => !ids.includes(id) || !attached.includes(id))) {
+                    return { ok: false, reason: 'encounter_party_changed' };
+                }
+            }
+            const timestamp = Math.max(now(), ...rows.map(r => Number(r.updatedAt) + 1));
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i], m = members[i];
+                const patch = preserveColdVersionedStats(row, { ...m.patch, updatedAt: timestamp });
+                const entries = Object.entries(patch);
+                const changed = write(`UPDATE bot_life_state SET ${entries.map(([k]) => `${escapeIdentifier(k)} = ?`).join(', ')},
+                    simulationOwner = ?, simulationRevision = simulationRevision + 1, simulationLeaseId = NULL, simulationLeaseUntil = 0
+                    WHERE characterId = ? AND simulationRevision = ?`,
+                [...entries.map(([, v]) => v), LEGACY_SIMULATION_OWNER, m.characterId, m.expectedRevision]);
+                if (changed.affectedRows !== 1) throw Error('encounter lifecycle CAS failed');
+                // Staged actors must read the same physical resources as the life snapshot.
+                const combat = JSON.parse(patch.statsJson || '{}').coldCombat;
+                write('UPDATE characters SET hp = ?, mp = ?, cp = COALESCE(?, cp), locX = ?, locY = ?, locZ = ? WHERE id = ?',
+                    [patch.hp, patch.mp, combat?.cp ?? null, patch.locX, patch.locY, patch.locZ, m.characterId]);
+            }
+            for (const party of parties) {
+                const stats = JSON.parse(party.statsJson || '{}');
+                stats.hotLifecycle = request.phase === 'hot' ? { startedAt: timestamp, reason: request.reason } : null;
+                if (stats.coldCompetition) stats.coldCompetition.wait = null;
+                write('UPDATE bot_background_parties SET status = ?, nextResolveAt = ?, statsJson = ?, updatedAt = ? WHERE partyId = ?',
+                    [request.phase === 'hot' ? 'hot' : 'active', request.phase === 'hot' ? null : timestamp + 1000,
+                        JSON.stringify(stats), timestamp, party.partyId]);
+            }
+            return { ok: true, rows: ids.map(coldSimulationRow),
+                parties: partyIds.map(id => one('SELECT * FROM bot_background_parties WHERE partyId = ?', [id])) };
+        }, 'bot-life:pvp-encounter-lifecycle');
+    },
+
     transitionBackgroundParty(request = {}) {
         const members = request.members || [];
         const ids = members.map(m => Number(m.characterId));

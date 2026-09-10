@@ -1,0 +1,181 @@
+const assert = require('assert');
+const fs = require('fs'), os = require('os'), path = require('path');
+require('../src/Global');
+const DB = invoke('Database'), Life = invoke('GameServer/Bot/Population/BotLifeState');
+const Parties = invoke('GameServer/Bot/Population/BackgroundPartyState');
+const Owner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
+const Memory = invoke('GameServer/Social/InteractionMemoryRuntime');
+const Runtime = require('../src/GameServer/Bot/Population/PvpEncounterRuntime');
+const Lifecycle = require('../src/GameServer/Bot/Population/PvpEncounterLifecycle');
+const Conflict = require('../src/GameServer/Bot/Population/ColdPartyConflict');
+const Manager = invoke('GameServer/Bot/BotManager'), World = invoke('GameServer/World/World');
+const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+const Flag = invoke('GameServer/Actor/PvpFlag'), Response = invoke('GameServer/Network/Response');
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-pvp-handoff-'));
+options.default.Database.path = path.join(dir, 'test.sqlite');
+const saved = [], allSessions = [];
+const patch = (o, k, v) => { const old = o[k]; saved.push(() => { o[k] = old; }); o[k] = v; };
+let clock = Date.now(), failSpawn = 0, spawned = 0, expectedCount = 0;
+const state = id => Life.cachedState(id);
+const base = { life: Life, owner: Owner, memory: Memory, parties: Parties, now: () => clock,
+    personaFor: () => ({ traits: { empathy: 0, caution: 0, assertiveness: 1, commitment: 1, sociability: 1 } }),
+    participantAllowed: () => true, contestContextAllowed: () => true, onState() {},
+    pvpEnabled: () => true, incrementalPvp: true, onEncounter: Runtime.register, waitMs: 15000, cooldownMs: 600000, rng: () => 0.5 };
+function event(a, b, key = `handoff:${a}:${b}`) {
+    const p = id => { const s = state(id), party = Parties.find(s.party?.partyId); return { id,
+        partyId: party?.partyId || null, partyUpdatedAt: party?.updatedAt, size: party?.memberIds.length || 1,
+        revision: s.simulation.revision, memoryRevision: Memory.snapshot(id).revision }; };
+    return { key, at: clock, pressure: 3, spotId: 'test', npcId: 10, actor: p(a), peer: p(b), action: 'contest', pvpIntent: true };
+}
+async function party(ids) {
+    const p = Parties.prepareCommit({ partyId: `enc-party-${ids[0]}`, leaderId: ids[0], memberIds: ids,
+        status: 'active', spotId: 'test', startedAt: clock, nextResolveAt: clock + 1000, stats: { objective: { npcId: 10 } } });
+    const members = ids.map(id => Life.preparePartyAssignment(state(id), p.row.partyId, 'dps', ids[0], clock + 1000));
+    assert((await DB.commitBackgroundPartyMembership({ party: p.row, members })).ok);
+    Life.acceptPartyAssignments(members); Parties.acceptCommit(p);
+}
+async function main() {
+    patch(Date, 'now', () => clock);
+    invoke('GameServer/DataCache').init(); DB.init();
+    for (let id = 1; id <= 8; id++) {
+        const stats = { classId: 0, equipmentPlan: { status: 'active', next: { npcId: 10, spotId: 'test' } },
+            coldCombat: { version: 1, classId: 0, cp: 2000, cpAt: clock,
+                base: { str: 40, dex: 30, con: 43, int: 21, wit: 11, men: 25 },
+                equipment: { weaponKind: 'Weapon.Sword', pAtk: 20, pAtkRnd: 0, mAtk: 10, atkSpd: 379,
+                    critical: 0, accur: 50, pDef: 400, mDef: 400, evasion: 0 }, effects: [], skills: [] } };
+        await DB.execute(['INSERT INTO accounts(username,password) VALUES (?,?)', [`bot_enc_${id}`, 'test']]);
+        await DB.execute([`INSERT INTO characters(id,username,name,classId,race,level,hp,maxHp,mp,maxMp,cp,sex,face,hair,hairColor,locX,locY,locZ)
+            VALUES (?,?,?,0,0,40,1000,2000,300,1000,2000,0,0,0,0,0,0,0)`, [id, `bot_enc_${id}`, `Encounter${id}`]]);
+        await DB.execute([`INSERT INTO bot_life_state(characterId,accountName,characterName,phase,activity,spotId,hp,maxHp,mp,maxMp,level,lastResolvedAt,updatedAt,statsJson)
+            VALUES (?,?,?,'cold','hunting','test',1000,2000,300,1000,40,?,?,?)`, [id, `bot_enc_${id}`, `Encounter${id}`, clock - 30000, clock, JSON.stringify(stats)]]);
+    }
+    await Life.init(); await Parties.init(); await Memory.ensureMany([1,2,3,4,5,6,7,8]);
+    patch(World, 'user', { sessions: [] }); patch(Manager, 'sessions', []);
+    patch(World, 'insertUser', s => { World.user.sessions.push(s); });
+    patch(World, 'removeUser', s => { World.user.sessions = World.user.sessions.filter(x => x !== s); });
+    patch(World, 'fetchVisibleRealPlayers', () => []);
+    patch(Coordinator, 'fenceBot', async () => ({ ok: true })); patch(Coordinator, 'notifyState', () => {});
+    patch(invoke('GameServer/Bot/Population/ActivationPlacement'), 'resolve', s => ({ loc: s.loc, spot: { id: 'test' } }));
+    patch(invoke('GameServer/Bot/AI/PartyAwareness'), 'npcThreateningActor', () => null);
+    patch(invoke('GameServer/Bot/AI/BotPvpThreats'), 'context', () => ({ threats: [] }));
+    patch(invoke('GameServer/Bot/AI/BotPvpTactics'), 'stop', () => {});
+    patch(invoke('GameServer/Bot/BotAI'), 'stop', s => { s.aiActive = false; });
+    patch(invoke('GameServer/Bot/BotAI'), 'init', s => {
+        assert.strictEqual(World.user.sessions.length, expectedCount, 'publish the complete conflict before any AI tick');
+        s.aiActive = true;
+    });
+    patch(Response, 'charInfo', a => ({ kind: 'charInfo', id: a.fetchId(), flag: a.fetchPvpFlag() }));
+    patch(Response, 'relationChanged', () => ({})); patch(Response, 'userInfo', () => ({}));
+    patch(Life, 'partySessionSnapshot', (s, old, phase) => ({ ...old, phase, loc: { ...old.loc },
+        vitals: { ...old.vitals, hp: s.actor.hp, mp: s.actor.mp }, stats: { ...old.stats,
+            coldPvp: { ...old.stats.coldPvp, flagUntil: s.pvpFlagUntil || 0 },
+            coldCombat: { ...old.stats.coldCombat, cp: s.actor.cp, cpAt: clock, cooldowns: Object.fromEntries(s.actor.skillReuseUntil) } } }));
+    patch(Manager, 'loadAndSpawnBot', async (_account, data) => {
+        assert(data.prepareOnly && data.spawnReady === false && data.readyOnActivation === false);
+        assert.strictEqual(World.user.sessions.length, 0);
+        if (++spawned === failSpawn) throw Error('test_spawn_failure');
+        const old = data.coldLifeState;
+        const a = { hp: old.vitals.hp, mp: old.vitals.mp, cp: old.stats.coldCombat.cp, flag: 0,
+            skillReuseUntil: new Map(Object.entries(old.stats.coldCombat.cooldowns || {}).map(([k,v]) => [Number(k),v])),
+            fetchId: () => old.characterId, fetchName: () => old.name, fetchKarma: () => 0,
+            fetchLocX: () => data.locX, fetchLocY: () => data.locY, fetchLocZ: () => data.locZ,
+            fetchPvpFlag() { return this.flag; }, setPvpFlag(v) { this.flag = v; },
+            state: { fetchDead: () => false, fetchHits: () => false, fetchCasts: () => false },
+            automation: { replenishVitals() {}, stopReplenish() {} }, destructor() { clearTimeout(s.pvpFlagTimer); } };
+        const s = { actor: a, accountId: old.accountName, coldLifeState: old, populationStaging: true, plan: 'hunting',
+            pvpActionReadyAt: old.stats.coldPvp.readyAt, packets: [], dataSendToMe() {},
+            dataSendToOthers(packet) { if (!this.populationStaging) this.packets.push(packet); } };
+        a.session = s; allSessions.push(s);
+        Flag.restore(s, a, old.stats.coldPvp.flagUntil);
+        return s;
+    });
+    await party([1, 2]); await party([3, 4]); expectedCount = 4;
+    const started = await Conflict.apply({ ...base, event: event(1, 3) });
+    assert(started.ok && started.encounter && started.pvp, JSON.stringify(started));
+    let e = started.encounter;
+    assert.strictEqual(state(1).stats.coldPvp.flagUntil, 0, 'receiving an attack does not flag the victim');
+    assert(state(3).stats.coldPvp.flagUntil > clock, 'the retaliator flags on the first accepted hostile action');
+    clock += 1000;
+    const secondStep = await Conflict.apply({ ...base, event: event(1, 3, e.key), resume: e });
+    assert(secondStep.encounter); e = secondStep.encounter;
+    const initialMemory = JSON.stringify([1,2,3,4].map(n => Memory.snapshot(n)));
+    const flagUntil = state(1).stats.coldPvp.flagUntil;
+    const beforeCp = state(1).stats.coldCombat.cp;
+    const hot = await Lifecycle.activate(e);
+    assert(hot.ok, JSON.stringify(hot));
+    assert(Manager.sessions.every(s => s.pvpRevenge?.target && s.actor.cp === state(s.actor.fetchId()).stats.coldCombat.cp));
+    assert(Manager.sessions.every(s => s.packets.find(p => p.kind === 'charInfo')?.flag === 1), 'first published nick is flagged');
+    assert.strictEqual(Manager.sessions[0].pvpFlagUntil, flagUntil);
+    assert.strictEqual(Manager.sessions[0].actor.cp, beforeCp, 'no full CP refill');
+    assert.strictEqual(JSON.stringify([1,2,3,4].map(n => Memory.snapshot(n))), initialMemory, 'activation creates no incidents');
+    const duplicate = invoke('GameServer/Social/PvpInteractionMemory').record(Manager.sessions[0], 3, false, clock);
+    assert.strictEqual(duplicate, false, 'same attack episode is not remembered again in hot mode');
+    const roster = Manager.sessions.slice();
+    roster[0].actor.hp -= 50; roster[0].actor.mp -= 20; roster[0].actor.cp -= 10;
+    roster[0].actor.skillReuseUntil.set(99, clock + 10000);
+    clock += 500;
+    const originalTransition = DB.transitionPvpEncounter;
+    DB.transitionPvpEncounter = request => {
+        roster[0].actor.hp -= 1;
+        return originalTransition.call(DB, request);
+    };
+    const raced = await Lifecycle.cooldown(e, 'test', { ignoreVisibility: true });
+    DB.transitionPvpEncounter = originalTransition;
+    assert.strictEqual(raced.reason, 'encounter_live_state_changed');
+    assert(roster.every(s => s.aiActive && !s.pvpHandoffPending));
+    assert([1,2,3,4].every(n => state(n).phase === 'hot'), 'intervening damage cannot split or stale-save the roster');
+    roster[0].actor.hp += 1;
+    let landed = false;
+    roster[1].actor.attack = { timers: new Set(['inflight']), resetQueuedEvent() {} };
+    setTimeout(() => { landed = true; roster[1].actor.attack.timers.clear(); }, 20);
+    const cold = await Lifecycle.cooldown(e, 'test', { ignoreVisibility: true });
+    assert(cold.ok, JSON.stringify(cold));
+    assert(landed, 'handoff waits for an already launched action');
+    assert.strictEqual(World.user.sessions.length, 0);
+    assert.strictEqual(state(1).vitals.hp, hot.states[0].vitals.hp - 50);
+    assert.strictEqual(state(1).stats.coldCombat.cooldowns[99], clock + 9500);
+    assert.strictEqual(state(1).stats.coldPvp.flagUntil, flagUntil, 'handoff never extends flag expiry');
+    assert.strictEqual(state(1).timing.lastResolvedAt, clock, 'hot time cannot be farmed again');
+    assert.strictEqual(state(1).stats.pvpEncounter.key, e.key);
+    e = cold.encounter; clock += 1000;
+    const resumed = await Conflict.apply({ ...base, event: event(1, 3, e.key), resume: e, contestContextAllowed: () => false });
+    assert(resumed.ok && resumed.encounter, JSON.stringify(resumed));
+    assert(resumed.combat.actions > 0, 'continuation follows nearby opponents even after leaving the original resource spot');
+    assert.strictEqual(JSON.stringify([1,2,3,4].map(n => Memory.snapshot(n))), initialMemory, 'cold continuation does not duplicate memory');
+    assert(!(await Conflict.apply({ ...base, event: event(1, 3, e.key), resume: e })).ok, 'stale encounter sequence is rejected');
+    e = resumed.encounter;
+    await DB.close(); DB.init();
+    const persisted = JSON.parse((await DB.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=1', []]))[0].statsJson);
+    assert.strictEqual(persisted.pvpEncounter.key, e.key);
+    clock = e.expiresAt + 1000;
+    const ended = await Conflict.apply({ ...base, event: event(1, 3, e.key), resume: e });
+    assert(ended.ok && !ended.encounter, JSON.stringify(ended));
+    assert.strictEqual(ended.combat.actions, 0, 'an expired encounter cannot produce catch-up damage');
+    assert.strictEqual(state(1).stats.pvpEncounter, null);
+    assert(!require('../src/GameServer/Bot/Population/ColdCompetitionWait').consume(state(1), 1000, clock + 1000).waiting);
+    expectedCount = 2; spawned = 0; failSpawn = 2;
+    const solo = await Conflict.apply({ ...base, event: event(5, 6) });
+    assert(solo.encounter);
+    const failed = await Lifecycle.activate(solo.encounter);
+    assert.strictEqual(failed.reason, 'test_spawn_failure');
+    assert([5,6].every(n => state(n).phase === 'cold'));
+    assert.strictEqual(Manager.sessions.length, 0, 'failed staging publishes nobody');
+    assert(!Runtime.pending.size);
+    const running = await Conflict.apply({ ...base, event: event(7, 8) });
+    assert(running.encounter);
+    Runtime.encounters.clear(); Runtime.register(running.encounter);
+    clock += 1100;
+    const steps = [];
+    await Runtime.tick({ ...base, canRun: () => true, recordPvpStep: r => steps.push(r) });
+    assert.strictEqual(steps.length, 1, 'normal runtime timer advances an indexed encounter');
+    assert(state(7).stats.pvpEncounter.sequence > running.encounter.sequence);
+    clock = running.encounter.expiresAt + 2000;
+    await Runtime.tick({ ...base, canRun: () => true, recordPvpStep: r => steps.push(r) });
+    assert.strictEqual(state(7).stats.pvpEncounter, null);
+    console.log('PvP handoff: stepped party combat, atomic cold/hot/cold, first nick flag, resources, reuse, memory dedup, expiry, rollback and SQLite reopen passed');
+}
+main().catch(e => { console.error(e); process.exitCode = 1; }).finally(async () => {
+    allSessions.forEach(s => clearTimeout(s.pvpFlagTimer));
+    await Memory.events.flush(); await DB.close(); saved.reverse().forEach(fn => fn());
+    Runtime.encounters.clear(); fs.rmSync(dir, { recursive: true, force: true });
+});

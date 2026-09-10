@@ -40,8 +40,12 @@ function enterWorld(session, actor) {
     // Calculate accumulated statistics
     Generics.calculateStats(session, actor);
     CharacterStatus.restoreVitals(actor, vitals);
+    for (const [skillId, until] of Object.entries(session.coldLifeState?.stats?.coldCombat?.cooldowns || {})) {
+        if (until > Date.now()) actor.skillReuseUntil?.set(Number(skillId), until);
+    }
+    session.pvpActionReadyAt = Number(session.coldLifeState?.stats?.coldPvp?.readyAt || 0);
     const flagRemaining = Number(session.coldLifeState?.stats?.coldPvp?.flagUntil || 0) - Date.now();
-    if (flagRemaining > 0) invoke('GameServer/Actor/PvpFlag').mark(session, actor, flagRemaining);
+    if (flagRemaining > 0) invoke('GameServer/Actor/PvpFlag').restore(session, actor, session.coldLifeState.stats.coldPvp.flagUntil);
     const skillReady = actor.skillset.populateForActor(actor, () => {
         // Skill loading is asynchronous.  The first calculation above runs
         // before Expertise is available and can temporarily apply the C4

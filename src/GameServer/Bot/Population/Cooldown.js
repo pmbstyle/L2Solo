@@ -71,7 +71,8 @@ const Cooldown = {
 
     canCooldown(session, options = {}) {
         if (!session || !session.actor) return { ok: false, reason: 'missing_actor' };
-        if (session.pvpDefense || session.pvpRevenge || session.pendingPvpProvocation) return { ok: false, reason: 'pvp_active' };
+        const encounterHandoff = options.encounterKey && session.pvpEncounter?.key === options.encounterKey;
+        if (!encounterHandoff && (session.pvpDefense || session.pvpRevenge || session.pendingPvpProvocation)) return { ok: false, reason: 'pvp_active' };
         if (session.plan === 'merchant' && !session.coldMarketState && !session.coldCraftState) return { ok: false, reason: 'merchant' };
         if ((session.pkProfile || session.plan === 'pk_hunting') && !options.allowPk) return { ok: false, reason: 'pk_active' };
         if (session.clanAllianceQuest) return { ok: false, reason: 'player_clan_quest' };
@@ -84,6 +85,8 @@ const Cooldown = {
     },
 
     cooldown(session, reason = 'cooldown', options = {}) {
+        const encounter = session?.pvpEncounter || session?.coldLifeState?.stats?.pvpEncounter;
+        if (encounter) return invoke('GameServer/Bot/Population/PvpEncounterLifecycle').cooldown(encounter, reason, options);
         if (session?.hotBackgroundPartyId) {
             return invoke('GameServer/Bot/Population/HotPartyLifecycle').cooldown(session.hotBackgroundPartyId, reason, options);
         }

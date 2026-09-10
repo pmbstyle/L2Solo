@@ -22,8 +22,9 @@ function eligible(state, event, participant, now) {
 // duplicate deliveries, hot handoffs, target changes and concurrent worker work.
 class ColdCompetitionActions {
     constructor({ life, owner, memory, parties, personaFor = () => ({ traits: {} }), formParty, onState = () => {}, canRun = () => true, participantAllowed = () => true,
-        conflictsEnabled = () => false, pvpEnabled = () => false, contestContextAllowed = () => false, now = Date.now }) {
+        conflictsEnabled = () => false, pvpEnabled = () => false, incrementalPvp = false, onEncounter = () => {}, contestContextAllowed = () => false, now = Date.now }) {
         Object.assign(this, { life, owner, memory, parties, personaFor, formParty, onState, canRun, participantAllowed, conflictsEnabled, pvpEnabled, contestContextAllowed, now });
+        Object.assign(this, { incrementalPvp, onEncounter });
         this.stopping = false;
         this.running = null;
         this.lastScanAt = 0;
@@ -142,6 +143,12 @@ class ColdCompetitionActions {
         }
     }
     async stop() { this.stopping = true; if (this.running) await this.running; }
+    recordPvpStep(result) {
+        const kills = result.combat?.fighters.flatMap(f => f.kills) || [];
+        this.report.pvpDeaths += kills.length;
+        this.report.pkKills += kills.filter(k => !k.pvp).length;
+        this.report.lastPvpStep = { at: this.now(), ...result };
+    }
     snapshot() { return { ...this.report, mode: this.conflictsEnabled() ? this.pvpEnabled() ? 'resource_pvp' : 'resource_conflicts' : 'cooperation' }; }
 }
 module.exports = { ColdCompetitionActions, eligible, WAIT_MS, CONFLICT_COOLDOWN_MS };

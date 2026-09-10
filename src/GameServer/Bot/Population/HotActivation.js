@@ -95,6 +95,8 @@ const HotActivation = {
 
         return loadState.then((state) => {
             if (!state) return { ok: false, reason: 'missing_state' };
+            const encounter = invoke('GameServer/Bot/Population/PvpEncounterRuntime').active(state);
+            if (encounter) return invoke('GameServer/Bot/Population/PvpEncounterLifecycle').activate(encounter, reason, options);
             if (state.stats?.coldCompetition?.wait?.combat && state.stats.coldCompetition.wait.until > Date.now()) {
                 return { ok: false, reason: 'cold_pvp_settling' };
             }

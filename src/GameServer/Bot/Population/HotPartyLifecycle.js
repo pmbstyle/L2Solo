@@ -76,6 +76,8 @@ function publish(sessions, states, party) {
 }
 
 async function activate(partyId, reason = 'near_player', options = {}) {
+    const encounter = members(Parties.find(partyId))?.map(s => s.stats?.pvpEncounter).find(Boolean);
+    if (encounter) return invoke('GameServer/Bot/Population/PvpEncounterLifecycle').activate(encounter, reason, options);
     if (pending.has(partyId)) return { ok: false, reason: 'party_transition_pending' };
     pending.add(partyId);
     let party, states, reserved = false;
@@ -142,6 +144,8 @@ async function activate(partyId, reason = 'near_player', options = {}) {
 }
 
 async function cooldown(partyId, reason = 'policy', options = {}) {
+    const encounter = members(Parties.find(partyId))?.map(s => s.stats?.pvpEncounter).find(Boolean);
+    if (encounter) return invoke('GameServer/Bot/Population/PvpEncounterLifecycle').cooldown(encounter, reason, options);
     if (pending.has(partyId)) return { ok: false, reason: 'party_transition_pending' };
     pending.add(partyId);
     let sessions = [], stopped = false, committed = false;

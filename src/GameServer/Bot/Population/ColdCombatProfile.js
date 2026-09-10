@@ -427,6 +427,7 @@ function capture(actor, timestamp = Date.now()) {
         capturedAt: timestamp,
         cp: number(actor.fetchCp?.()),
         cpAt: timestamp,
+        cooldowns: Object.fromEntries([...(actor.skillReuseUntil || [])].filter(([, until]) => until > timestamp)),
         classId: number(actor.fetchClassId?.()),
         base: {
             str: number(actor.fetchStr?.(), 1), dex: number(actor.fetchDex?.(), 1), con: number(actor.fetchCon?.(), 1),

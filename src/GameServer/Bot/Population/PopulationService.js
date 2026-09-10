@@ -1824,7 +1824,7 @@ const PopulationService = {
                 if (session.pkProfile || session.plan === 'pk_hunting') return false;
                 if (session.clanAllianceQuest || session.partyCompanion === true || session.followPlayerSession) return false;
                 const lastHotAt = session.populationHotAt || 0;
-                if (lastHotAt && now - lastHotAt < Config.cooldownGraceMs) return false;
+                if (lastHotAt && now - lastHotAt < Config.cooldownGraceMs && !session.pvpEncounter) return false;
                 if (players.length === 0) return true;
                 return players.every((playerSession) => (
                     distance2d(session.actor, playerSession.actor) > cooldownRadius
