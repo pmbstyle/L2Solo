@@ -79,6 +79,12 @@ async function enter(a, coldLifeState) {
     assert.strictEqual(Store.list(legacy).length,1,'legacy bots without a cold effect snapshot retain the existing fallback');
     const player=actor([stale]);await enter(player,undefined);
     assert.strictEqual(Store.list(player).length,1,'ordinary player login keeps character effects');
+    const wounded=actor();wounded.fetchCp=()=>35;
+    const cpState={level:20,stats:{coldCombat:Profile.capture(wounded,clock)}};
+    const cpArrival=actor();cpArrival.setCp=value=>cpArrival.cp=value;cpArrival.fetchMaxCp=()=>200;
+    await enter(cpArrival,cpState);
+    assert.strictEqual(cpArrival.cp,Math.min(200,Profile.profileFor(cpState,clock).cp),
+        'native enter-world restores cold CP instead of granting a fresh shield');
     console.log('Hot/cold effect handoff: SQLite close/reopen, native enter-world restoration, expiry, HP caps and rebuff planning passed');
  } finally {
     actors.forEach(a=>Ticker.clearAll(a));saved.reverse().forEach(fn=>fn());

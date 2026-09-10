@@ -145,10 +145,11 @@ const DEFAULTS = {
     // still caps the same pass at one party in PopulationService.
     partyFormationBatchSize: 6,
     // Observation itself only forecasts. Main-process actions validate and
-    // commit cooperation/resource interruptions; PvP remains a forecast.
+    // commit cooperation, resource interruptions and optional bounded PvP.
     coldCompetitionObserveEnabled: true,
     coldCompetitionActionsEnabled: true,
     coldCompetitionConflictsEnabled: true,
+    coldCompetitionPvpEnabled: true,
     partyMinSize: 2,
     partyMaxSize: 5,
     // Shared safety ceiling for every background party. Admission never

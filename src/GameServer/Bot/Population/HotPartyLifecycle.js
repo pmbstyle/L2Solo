@@ -11,6 +11,7 @@ const id = session => Number(session?.actor?.fetchId?.());
 function ready(party, states) {
     return party?.status === 'active' && states && !party.stats?.travel
         && states.every(s => s.phase === 'cold' && s.accountName && ['grouped', 'hunting', 'resting'].includes(s.activity)
+            && !(s.stats?.coldCompetition?.wait?.combat && s.stats.coldCompetition.wait.until > Date.now())
             && !s.stats?.travel && !s.stats?.supplyErrand && !s.stats?.warehouseWorkflow && s.vitals.hp > 0);
 }
 

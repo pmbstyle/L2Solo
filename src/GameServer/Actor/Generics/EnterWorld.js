@@ -27,6 +27,9 @@ function enterWorld(session, actor) {
     // Effects must be available before the stat calculation; e.g. a max-HP
     // buff affects the cap used when the persisted HP is restored.
     const vitals = CharacterStatus.savedVitals(actor);
+    if (Number.isFinite(session.coldLifeState?.stats?.coldCombat?.cp)) {
+        vitals.cp = invoke('GameServer/Bot/Population/ColdCombatProfile').profileFor(session.coldLifeState).cp;
+    }
     const coldEffects = session.coldLifeState?.stats?.coldCombat?.effects;
     // A cold snapshot is authoritative even when empty: falling back then
     // would resurrect stale effects from the character's last logout.
@@ -37,6 +40,8 @@ function enterWorld(session, actor) {
     // Calculate accumulated statistics
     Generics.calculateStats(session, actor);
     CharacterStatus.restoreVitals(actor, vitals);
+    const flagRemaining = Number(session.coldLifeState?.stats?.coldPvp?.flagUntil || 0) - Date.now();
+    if (flagRemaining > 0) invoke('GameServer/Actor/PvpFlag').mark(session, actor, flagRemaining);
     const skillReady = actor.skillset.populateForActor(actor, () => {
         // Skill loading is asynchronous.  The first calculation above runs
         // before Expertise is available and can temporarily apply the C4

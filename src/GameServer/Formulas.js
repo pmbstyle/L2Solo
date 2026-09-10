@@ -259,8 +259,9 @@ const Formulas = {
         return this.calcMeleeDamage(pAtk, pAtkRnd, pDef);
     },
 
-    calcMeleeDamage(pAtk, pAtkRnd, pDef, { critical = false, soulshot = false, skillPower = 0, criticalDamageMultiplier = 1, criticalDamageAdd = 0 } = {}) {
-        const pAtkRndMul = 1 + (utils.oneFromSpan(-pAtkRnd, pAtkRnd) / 100);
+    calcMeleeDamage(pAtk, pAtkRnd, pDef, { critical = false, soulshot = false, skillPower = 0, criticalDamageMultiplier = 1, criticalDamageAdd = 0, rng } = {}) {
+        const variation = rng ? Math.floor(rng() * (2 * pAtkRnd + 1)) - pAtkRnd : utils.oneFromSpan(-pAtkRnd, pAtkRnd);
+        const pAtkRndMul = 1 + variation / 100;
         let damage = (pAtk * (soulshot ? 2 : 1)) + (Number(skillPower) || 0);
 
         if (critical) {

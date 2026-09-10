@@ -95,6 +95,9 @@ const HotActivation = {
 
         return loadState.then((state) => {
             if (!state) return { ok: false, reason: 'missing_state' };
+            if (state.stats?.coldCompetition?.wait?.combat && state.stats.coldCompetition.wait.until > Date.now()) {
+                return { ok: false, reason: 'cold_pvp_settling' };
+            }
             if (state.phase === 'hot') return { ok: false, reason: 'already_hot', state };
             if (state.party?.partyId && options.interruptBackgroundActivity !== true
                 && !['remote_invite', 'party_invite'].includes(reason)) {

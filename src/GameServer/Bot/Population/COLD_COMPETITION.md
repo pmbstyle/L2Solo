@@ -230,8 +230,50 @@ supporters from allied strength.
 An actual incoming attack still follows existing party defense. Human-led bot
 companions retain their existing coordination. These are participation decisions,
 not simulated damage: hot combat and its existing factual memory producers remain
-responsible for what actually happens. Actual cold PvP resolution and transfer of
-an ongoing fight between hot and cold modes remain separate follow-up work.
+responsible for what actually happens. Bounded cold PvP resolution is described
+below. Transfer of an ongoing fight between hot and cold modes remains separate
+follow-up work.
+
+## Bounded cold PvP
+
+`coldCompetitionPvpEnabled` consumes accepted contest episodes whose existing
+forecast includes `pvpIntent`. It shares the same two-action admission budget,
+ten-minute durable cooldowns, roster votes, memory revisions and ownership fences.
+No new encounter generator or backlog replay is introduced. Peace zones and
+same-clan opponents cannot grant attack permission; a materially outmatched
+responder declines escalation. Clan membership and karma are rechecked against
+character rows inside the commit transaction.
+
+The responder to the resource intrusion starts the skirmish. At most 18 fighters
+execute 256 coarse actions within a 30-second simulated window. Profiles include
+current equipment, active buffs, HP, MP and CP. Existing physical/magic formulas,
+learned offensive skills, healing, reuse deadlines and persona-based retreat
+drive the result. Skill selection and damage use episode-seeded randomness.
+The first casualty ends the skirmish; otherwise retreat or the work/time cap ends
+it. This is a bounded approximation, not full native pathfinding, projectile,
+control, summon or consumable simulation.
+
+Only actual attackers produce `attacked` episodes; the casualty also remembers
+`killed`. Resource grievances retain their existing directed attribution. A
+completed attack marks the attacker for this simulated encounter; killing an
+unflagged, karma-free opponent is PK, otherwise it increments PvP. Character
+counters and native karma awards, life-state health/resources, death, cooldowns,
+party deadlines and memory commit atomically. No XP or ground loot is invented.
+Death clears buffs, charges and the summon; a 90-second recovery delay precedes
+the existing cold recovery flow. Parties wait for their fallen members.
+
+The result is committed as one completed episode. A bounded settlement interval
+covers its simulated duration plus the flag tail; both rosters lose that farming
+time once, including members who later leave. Neither healing/rest nor hot
+activation can bypass this interval. It is not an ongoing battle transferred to
+the hot world. Survivors retain CP and original buff deadlines on activation.
+
+Observer `coldCompetitionActions` reports `pvpFights`, `pvpDeaths`, `pkKills` and
+bounded recent results with participants, actions, HP/MP/CP and individual kills.
+These are committed outcomes, distinct from the monitor's `pvpIntents`.
+`test_cold_pvp.js` checks deterministic 1v1 and 9v9 resolution, healing, resource
+loss, PK/PvP, recovery, protection, ownership/context races, complete rollback,
+duplicate delivery and SQLite close/reopen.
 
 ## Native PvP memory
 

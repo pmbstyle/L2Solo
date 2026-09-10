@@ -299,8 +299,12 @@ function staleShopping(state) {
 }
 
 function resolveDeathRecovery(state, timestamp = Date.now()) {
+    const pvpRecovery = Number(state.stats?.coldPvp?.recoverUntil || 0);
+    if (pvpRecovery > timestamp) return { patch: {}, events: [],
+        materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: pvpRecovery,
+        debug: { activity: 'dead', reason: 'pvp_recovery' } };
     const combat = botCombatStats(state, timestamp);
-    const respawnDelayMs = 90000;
+    const respawnDelayMs = pvpRecovery ? 1000 : 90000;
 
     return {
         patch: {
@@ -314,9 +318,11 @@ function resolveDeathRecovery(state, timestamp = Date.now()) {
             stats: {
                 ...(state.stats || {}),
                 lastRespawnAt: timestamp,
+                ...(pvpRecovery ? { coldPvp: { ...state.stats.coldPvp, recoverUntil: 0, flagUntil: 0 } } : {}),
                 restUntil: timestamp + respawnDelayMs,
                 coldCombat: {
                     ...(state.stats?.coldCombat || {}),
+                    ...(pvpRecovery ? { cp: combat.maxCp, cpAt: timestamp, effects: [] } : {}),
                     charges: 0,
                     chargeExpiresAt: null,
                     summon: null
@@ -357,7 +363,7 @@ function effectiveSkillPower(profile, skill, hp) {
         : basePower;
 }
 
-function chooseSkill(profile, hp, mp, cooldowns, time, charges = 0) {
+function chooseSkill(profile, hp, mp, cooldowns, time, charges = 0, rng) {
     return ColdCombatProfile.offensiveSkills(profile)
         .filter((skill) => {
             const requiredCharges = Math.max(0, Number(C4SkillRules.resolve(skill).requires?.charges) || 0);
@@ -371,7 +377,7 @@ function chooseSkill(profile, hp, mp, cooldowns, time, charges = 0) {
             const power = effectiveSkillPower(profile, skill, hp);
             let rawDamage = magic
                 ? Formulas.calcMagicDamage(profile.mAtk, Math.max(1, power), 1)
-                : Formulas.calcPhysicalDamage(profile.pAtk, profile.equipment.pAtkRnd, 1, power);
+                : Formulas.calcPhysicalDamage(profile.pAtk, profile.equipment.pAtkRnd, 1, power, { rng });
             const requiredCharges = Math.max(0, Number(semantic.requires?.charges) || 0);
             if (requiredCharges > 0) rawDamage *= 0.8 + (0.201 * charges);
             return { skill, magic, power, score: rawDamage / actionDelayMs(profile, skill) };
@@ -1095,6 +1101,8 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
 }
 
 const BackgroundResolver = {
+    combat: { chooseSkill, chooseHeal, actionDelayMs, hitSucceeds },
+    resolveDeathRecovery,
     resolveRest,
     resolvePartyFight,
     needsRest,

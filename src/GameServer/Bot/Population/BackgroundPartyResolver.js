@@ -118,6 +118,24 @@ const BackgroundPartyResolver = {
             };
         }
 
+        // A cold PvP casualty holds the roster through the ordinary recovery
+        // delay. Neither standing regeneration nor the next PvE fight revives it.
+        if (members.some(s => Number(s.stats?.coldPvp?.recoverUntil || 0) > 0 && s.vitals.hp <= 0)) {
+            const memberResults = members.map(state => ({ state, result: state.vitals.hp <= 0
+                ? BackgroundResolver.resolveDeathRecovery(state, timestamp)
+                : { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 1000 } }));
+            const nextResolveAt = Math.max(...memberResults.map(r => r.result.nextResolveAt));
+            for (const { state, result } of memberResults) {
+                if ((result.patch.vitals?.hp ?? state.vitals.hp) > 0) {
+                    result.patch = { ...result.patch, activity: 'resting',
+                        stats: { ...(result.patch.stats || state.stats), restUntil: nextResolveAt } };
+                }
+                result.nextResolveAt = nextResolveAt;
+            }
+            return { memberResults, events: [], nextResolveAt,
+                partyPatch: { stats: { ...party.stats, restUntil: nextResolveAt, lastResolveAt: timestamp } },
+                debug: { reason: 'party_pvp_recovery', fights: 0, wins: 0 } };
+        }
         // A party shares its hunting cadence.  If even one member is resting,
         // pause the whole group: otherwise the resolver keeps granting fights
         // and draining the exhausted member on every cold tick.

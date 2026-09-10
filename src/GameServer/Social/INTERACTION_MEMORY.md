@@ -92,7 +92,9 @@ minutes across hot/cold and restart; unrelated events cannot erase that clock.
 The SQL reducer treats a cooldown rejection as an accepted no-op, so stale worker
 views cannot inflate trust or abort legitimate physical outcomes. Large groups
 send at most 64 directed events; remaining pairs stay eligible next resolve.
-There is no automatic heal/help producer or cold competition producer yet.
+There is no automatic heal/help producer yet. Accepted cold resource disputes
+and bounded PvP now emit factual episodes through the same atomic channel; see
+`../Bot/Population/COLD_COMPETITION.md` for admission, outcomes and limitations.
 
 Background party formation and recruitment use cached personal memory in both
 directions. Among candidates of the same support priority and clan preference,

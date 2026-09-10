@@ -516,6 +516,8 @@ function recordFromSession(session, phase, reason = '') {
     const stats = {
         role: session.botStatus?.role || null,
         karma: Number(actor.fetchKarma?.() || 0),
+        coldPvp: { ...(cache.get(characterId)?.stats?.coldPvp || {}),
+            flagUntil: actor.fetchPvpFlag?.() === 1 ? Number(session.pvpFlagUntil || 0) : 0 },
         pvpEnemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session),
         clanGearExchangeRevision: Number(cache.get(characterId)?.stats?.clanGearExchangeRevision || 0),
         classId: actor.fetchClassId ? Number(actor.fetchClassId()) : null,

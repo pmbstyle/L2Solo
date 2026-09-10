@@ -1682,6 +1682,26 @@ function applyColdPhysicalStateUnsafe(characterId, physical = {}) {
         ]);
     });
     if (physical.inventory) syncInventorySummaryUnsafe(characterId, physical.inventory);
+    if (physical.pvpKills?.length) {
+        if (physical.pvpKills.length > 18) throw Error('cold PvP: too many kills');
+        const current = one('SELECT level, pvp, pk, karma FROM characters WHERE id = ?', [characterId]);
+        for (const kill of physical.pvpKills) {
+            if (!Number.isSafeInteger(kill.victimId) || kill.victimId === characterId
+                || !Number.isSafeInteger(kill.victimLevel) || kill.victimLevel < 1 || typeof kill.pvp !== 'boolean') {
+                throw Error('cold PvP: invalid kill');
+            }
+            if (kill.pvp) current.pvp++;
+            else {
+                current.karma += require('./GameServer/Karma').pkKillKarma({ fetchPk: () => current.pk,
+                    fetchLevel: () => current.level }, { fetchLevel: () => kill.victimLevel });
+                current.pk++;
+            }
+        }
+        write('UPDATE characters SET pvp = ?, pk = ?, karma = ? WHERE id = ?',
+            [current.pvp, current.pk, current.karma, characterId]);
+        write("UPDATE bot_life_state SET statsJson = json_set(statsJson, '$.karma', ?) WHERE characterId = ?",
+            [current.karma, characterId]);
+    }
 }
 
 function coldSimulationPartition(row, options = {}) {
@@ -2793,6 +2813,17 @@ const Database = {
                 || expectedIds.size !== presentIds.size
                 || [...expectedIds].some((id) => !presentIds.has(id));
             let reason = failure ? 'party_group_incomplete' : null;
+            const pvpContext = group[0]?.atomicGroup?.pvpContext;
+            if (!failure && pvpContext) {
+                const members = Array.isArray(pvpContext) ? pvpContext.flat() : [];
+                const rows = members.map(m => one('SELECT id, clanId, karma FROM characters WHERE id = ?', [m.id]));
+                failure = pvpContext.length !== 2 || members.length > 18 || members.length !== expectedIds.size
+                    || new Set(members.map(m => m.id)).size !== expectedIds.size
+                    || members.some((m, i) => !expectedIds.has(m.id) || !rows[i]
+                        || Number(rows[i].clanId || 0) !== m.clanId || Number(rows[i].karma || 0) !== m.karma)
+                    || pvpContext[0].some(a => pvpContext[1].some(b => a.clanId > 0 && a.clanId === b.clanId));
+                if (failure) reason = 'pvp_context_changed';
+            }
             if (!failure) {
                 for (const request of group) {
                     const characterId = Number(request.characterId);

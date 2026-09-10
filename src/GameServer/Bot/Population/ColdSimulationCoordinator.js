@@ -157,6 +157,7 @@ class ColdSimulationCoordinator {
             parties: BackgroundPartyState,
             personaFor: state => invoke('GameServer/Bot/AI/BotPersona').generate(state),
             conflictsEnabled: () => Config.coldCompetitionConflictsEnabled === true,
+            pvpEnabled: () => Config.coldCompetitionPvpEnabled === true,
             contestContextAllowed: (state, event) => {
                 const physical = SpotService.findCurrentSpot(state.loc);
                 const spot = SpotProfiles.findById(event.spotId);

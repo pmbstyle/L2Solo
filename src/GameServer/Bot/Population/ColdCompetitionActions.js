@@ -22,12 +22,12 @@ function eligible(state, event, participant, now) {
 // duplicate deliveries, hot handoffs, target changes and concurrent worker work.
 class ColdCompetitionActions {
     constructor({ life, owner, memory, parties, personaFor = () => ({ traits: {} }), formParty, onState = () => {}, canRun = () => true, participantAllowed = () => true,
-        conflictsEnabled = () => false, contestContextAllowed = () => false, now = Date.now }) {
-        Object.assign(this, { life, owner, memory, parties, personaFor, formParty, onState, canRun, participantAllowed, conflictsEnabled, contestContextAllowed, now });
+        conflictsEnabled = () => false, pvpEnabled = () => false, contestContextAllowed = () => false, now = Date.now }) {
+        Object.assign(this, { life, owner, memory, parties, personaFor, formParty, onState, canRun, participantAllowed, conflictsEnabled, pvpEnabled, contestContextAllowed, now });
         this.stopping = false;
         this.running = null;
         this.lastScanAt = 0;
-        this.report = { mode: 'cooperation', applied: 0, rejected: 0, yields: 0, contests: 0, deescalated: 0, parties: 0, recruits: 0, queued: 0, budgetSkipped: 0, recent: [] };
+        this.report = { mode: 'cooperation', applied: 0, rejected: 0, yields: 0, contests: 0, deescalated: 0, parties: 0, recruits: 0, queued: 0, pvpFights: 0, pvpDeaths: 0, pkKills: 0, budgetSkipped: 0, recent: [] };
     }
     submit(forecast) {
         if (this.stopping || this.running || !forecast || forecast.at <= this.lastScanAt || !this.canRun()) return;
@@ -45,6 +45,12 @@ class ColdCompetitionActions {
                 catch (error) { result = { ok: false, reason: 'action_error', error: error.message }; }
                 this.report[result.ok ? 'applied' : 'rejected']++;
                 if (result.ok) this.report[result.deescalated ? 'deescalated' : result.queued ? 'queued' : event.action === 'contest' ? 'contests' : event.action === 'yield' ? 'yields' : result.recruited ? 'recruits' : 'parties']++;
+                if (result.ok && result.pvp) {
+                    this.report.pvpFights++;
+                    const kills = result.combat.fighters.flatMap(f => f.kills);
+                    this.report.pvpDeaths += kills.length;
+                    this.report.pkKills += kills.filter(k => !k.pvp).length;
+                }
                 this.report.recent = [...this.report.recent, { key: event.key, at: this.now(), actorId: event.actor.id,
                     peerId: event.peer.id, action: event.action, ...result }].slice(-12);
             }
@@ -56,7 +62,7 @@ class ColdCompetitionActions {
             || !(event.pressure > 1)) return { ok: false, reason: 'invalid_or_expired' };
         const participants = [event.actor, event.peer];
         if (!participants.every(p => this.participantAllowed(p.id))) return { ok: false, reason: 'hot_handoff_fenced' };
-        if (event.action === 'contest' && participants.some(p => p.partyId)) {
+        if (event.action === 'contest' && (participants.some(p => p.partyId) || event.pvpIntent === true && this.pvpEnabled())) {
             if (!this.conflictsEnabled()) return { ok: false, reason: 'forecast_only' };
             return require('./ColdPartyConflict').apply({ ...this, event, waitMs: WAIT_MS, cooldownMs: CONFLICT_COOLDOWN_MS });
         }
@@ -136,6 +142,6 @@ class ColdCompetitionActions {
         }
     }
     async stop() { this.stopping = true; if (this.running) await this.running; }
-    snapshot() { return { ...this.report, mode: this.conflictsEnabled() ? 'resource_conflicts' : 'cooperation' }; }
+    snapshot() { return { ...this.report, mode: this.conflictsEnabled() ? this.pvpEnabled() ? 'resource_pvp' : 'resource_conflicts' : 'cooperation' }; }
 }
 module.exports = { ColdCompetitionActions, eligible, WAIT_MS, CONFLICT_COOLDOWN_MS };

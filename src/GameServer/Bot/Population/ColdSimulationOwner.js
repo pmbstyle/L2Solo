@@ -323,6 +323,7 @@ function commitAndReleaseBatch(entries = [], options = {}) {
                     classId: Number(entry.proposal.durable.classId),
                     skills: entry.proposal.durable.skills || []
                 } : {}),
+                ...(entry.proposal?.durable?.pvpKills ? { pvpKills: entry.proposal.durable.pvpKills } : {}),
                 ...(inventoryChanged ? { inventory: canonicalInventory } : {})
             },
             allowParty: entry.options?.allowParty === true || options.allowParty === true,

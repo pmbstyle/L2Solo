@@ -3,15 +3,15 @@
 function consume(state, elapsedMs, timestamp) {
     const wait = state?.stats?.coldCompetition?.wait;
     if (!wait) return { state, elapsedMs };
-    if (state.activity === 'hunting' && timestamp < wait.until) return { waiting: true, until: wait.until };
+    if ((state.activity === 'hunting' || wait.combat) && timestamp < wait.until) return { waiting: true, until: wait.until };
     const overlap = Math.max(0, Math.min(timestamp, wait.until) - Math.max(timestamp - elapsedMs, wait.start));
     return { state: { ...state, stats: { ...state.stats, coldCompetition: { ...state.stats.coldCompetition, wait: null } } },
-        elapsedMs: state.activity === 'hunting' ? Math.max(0, elapsedMs - overlap) : elapsedMs };
+        elapsedMs: state.activity === 'hunting' || wait.combat ? Math.max(0, elapsedMs - overlap) : elapsedMs };
 }
 function consumeParty(party, members, elapsedMs, timestamp) {
     const waits = [party, ...members].map(s => s?.stats?.coldCompetition?.wait).filter(Boolean);
     if (!waits.length) return { party, members, elapsedMs };
-    const resting = members.some(s => s.activity === 'resting');
+    const resting = !waits.some(w => w.combat) && members.some(s => s.activity === 'resting');
     const until = Math.max(...waits.map(w => w.until));
     if (!resting && timestamp < until) return { waiting: true, until };
     // Merge intervals: the same shared pause is also stored on every member
