@@ -166,6 +166,13 @@ class ColdSimulationCoordinator {
                 return physical?.id === event.spotId && (event.action === 'revenge' || !!spot?.npcEntries?.some(row => Number(row.selfId) === event.npcId));
             },
             participantAllowed: id => !this.fencedBots.has(Number(id)),
+            retreatRoute: (members, party, event, timestamp) => {
+                const leader = members.find(s => s.characterId === party?.leaderId) || members[0];
+                const index = this.contextIndex();
+                index.timestamp = timestamp;
+                const route = this.routeFor(leader, index.spots.get(String(event.spotId)), party, members, index);
+                return route ? { ...route, cause: 'competition_avoid', reason: party ? 'party_spot_replan' : 'competition_avoid' } : null;
+            },
             formParty: (members, event, options) => this.population?.formCompetitionParty?.(members, event, options),
             onState: id => {
                 const state = LifeState.cachedState(id);

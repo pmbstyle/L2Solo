@@ -22,21 +22,21 @@ function eligible(state, event, participant, now) {
 // duplicate deliveries, hot handoffs, target changes and concurrent worker work.
 class ColdCompetitionActions {
     constructor({ life, owner, memory, parties, personaFor = () => ({ traits: {} }), formParty, onState = () => {}, canRun = () => true, participantAllowed = () => true,
-        conflictsEnabled = () => false, pvpEnabled = () => false, incrementalPvp = false, onEncounter = () => {}, contestContextAllowed = () => false, now = Date.now }) {
+        conflictsEnabled = () => false, pvpEnabled = () => false, incrementalPvp = false, onEncounter = () => {}, contestContextAllowed = () => false, retreatRoute = () => null, now = Date.now }) {
         Object.assign(this, { life, owner, memory, parties, personaFor, formParty, onState, canRun, participantAllowed, conflictsEnabled, pvpEnabled, contestContextAllowed, now });
-        Object.assign(this, { incrementalPvp, onEncounter });
+        Object.assign(this, { incrementalPvp, onEncounter, retreatRoute });
         this.stopping = false;
         this.running = null;
         this.lastScanAt = 0;
-        this.report = { mode: 'cooperation', applied: 0, rejected: 0, yields: 0, contests: 0, revenges: 0, deescalated: 0, parties: 0, recruits: 0, queued: 0, pvpFights: 0, pvpDeaths: 0, pkKills: 0, budgetSkipped: 0, recent: [] };
+        this.report = { mode: 'cooperation', applied: 0, rejected: 0, avoids: 0, yields: 0, contests: 0, revenges: 0, deescalated: 0, parties: 0, recruits: 0, queued: 0, pvpFights: 0, pvpDeaths: 0, pkKills: 0, budgetSkipped: 0, recent: [] };
     }
     submit(forecast) {
         if (this.stopping || this.running || !forecast || forecast.at <= this.lastScanAt || !this.canRun()) return;
         this.lastScanAt = forecast.at;
         const candidates = (forecast.recent || []).filter(e => e.at === forecast.at
-            && (e.action === 'yield' || (e.action === 'contest' && this.conflictsEnabled())
+            && (e.action === 'avoid' || e.action === 'yield' || (e.action === 'contest' && this.conflictsEnabled())
                 || (e.action === 'revenge' && this.conflictsEnabled() && this.pvpEnabled()) || (e.action === 'offer_party' && e.accepted)))
-            .sort((a, b) => ({ offer_party: 2, contest: 1, revenge: 1, yield: 0 }[b.action] - { offer_party: 2, contest: 1, revenge: 1, yield: 0 }[a.action]));
+            .sort((a, b) => ({ offer_party: 2, contest: 1, revenge: 1, avoid: 0, yield: 0 }[b.action] - { offer_party: 2, contest: 1, revenge: 1, avoid: 0, yield: 0 }[a.action]));
         this.report.budgetSkipped += Math.max(0, candidates.length - 2);
         const events = candidates.slice(0, 2);
         this.running = (async () => {
@@ -46,7 +46,7 @@ class ColdCompetitionActions {
                 try { result = await this.apply(event); }
                 catch (error) { result = { ok: false, reason: 'action_error', error: error.message }; }
                 this.report[result.ok ? 'applied' : 'rejected']++;
-                if (result.ok) this.report[result.deescalated ? 'deescalated' : result.queued ? 'queued' : event.action === 'revenge' ? 'revenges' : event.action === 'contest' ? 'contests' : event.action === 'yield' ? 'yields' : result.recruited ? 'recruits' : 'parties']++;
+                if (result.ok) this.report[result.deescalated ? 'deescalated' : result.queued ? 'queued' : event.action === 'revenge' ? 'revenges' : event.action === 'contest' ? 'contests' : event.action === 'avoid' ? 'avoids' : event.action === 'yield' ? 'yields' : result.recruited ? 'recruits' : 'parties']++;
                 if (result.ok && result.pvp) {
                     this.report.pvpFights++;
                     const kills = result.combat.fighters.flatMap(f => f.kills);
@@ -64,6 +64,9 @@ class ColdCompetitionActions {
             || (event.action !== 'revenge' && !(event.pressure > 1))) return { ok: false, reason: 'invalid_or_expired' };
         const participants = [event.actor, event.peer];
         if (!participants.every(p => this.participantAllowed(p.id))) return { ok: false, reason: 'hot_handoff_fenced' };
+        if (event.action === 'avoid' || event.action === 'yield' && participants.some(p => p.partyId)) {
+            return require('./ColdCompetitionRetreat').apply({ ...this, event, waitMs: WAIT_MS });
+        }
         if (event.action === 'revenge') {
             if (!this.conflictsEnabled() || !this.pvpEnabled()) return { ok: false, reason: 'forecast_only' };
             return require('./ColdPartyConflict').apply({ ...this, event, waitMs: WAIT_MS, cooldownMs: CONFLICT_COOLDOWN_MS });

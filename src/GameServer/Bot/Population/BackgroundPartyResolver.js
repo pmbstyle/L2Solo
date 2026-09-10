@@ -492,7 +492,7 @@ BackgroundPartyResolver.resolve = (options = {}) => {
         memberResults: members.map(state => ({ state, result: { patch: {}, events: [],
             materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: competition.until || timestamp + 1000 } })),
         events: [], partyPatch: {}, nextResolveAt: competition.until || timestamp + 1000,
-        debug: { reason: 'competition_contest', fights: 0, wins: 0 }
+        debug: { reason: options.party?.stats?.coldCompetition?.action === 'yield' ? 'competition_yield' : 'competition_contest', fights: 0, wins: 0 }
     } : resolveParty({ ...options, party: competition.party, members, elapsedMs: competition.elapsedMs, timestamp });
     if (competition.waiting) return result;
     if (competition.party !== options.party) result.partyPatch = { ...result.partyPatch,

@@ -127,6 +127,8 @@ function excludedSpotIdsForStates(states = [], timestamp = Date.now()) {
     const excluded = new Set();
     (states || []).forEach((state) => {
         activeBackoffs(state, timestamp).forEach((entry) => excluded.add(entry.spotId));
+        const avoid = state.stats?.coldCompetition?.avoid;
+        if (normalizedSpotId(avoid?.spotId) && Number(avoid.until) > timestamp) excluded.add(normalizedSpotId(avoid.spotId));
         const pressure = deathPressure(state);
         if (pressure) excluded.add(pressure.spotId);
     });

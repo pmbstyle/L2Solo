@@ -41,11 +41,11 @@ No negative memory may be produced merely from a forecast or shared objective.
 ## First real actions
 
 `coldCompetitionActionsEnabled` lets the main process consume at most two fresh
-yield/accepted-offer forecasts from a scan, with accepted offers taking priority
-over yields; `budgetSkipped` counts excess
+yield/avoid/accepted-offer forecasts from a scan, with accepted offers taking priority
+over voluntary retreats; `budgetSkipped` counts excess
 candidates. Capacity and clan-objective refusals have explicit result reasons.
 Actual results are exported separately
-as `coldCompetitionActions` in the observer. Avoidance and PvP remain forecasts.
+as `coldCompetitionActions` in the observer. PvP requires its separate enable flag.
 Resource disputes can execute under the separate conflicts flag described below.
 Two living solo hunters with the same active target can form a party.
 An accepted offer between a solo hunter and an existing party can instead recruit
@@ -57,11 +57,26 @@ hot-handoff fences and a durable two-minute participant cooldown. Old forecasts
 expire after ten seconds. Main-process backlog/lag defers admission; there is no
 catch-up queue. The forecast is consumed once per scan, including rejections.
 
-A yield claims both participants and atomically records the episode with a
-15-second delay for the actor. No relationship event is written. The resolver
+A yield claims both hunting units and atomically records the episode with a
+15-second delay for the actor's unit (solo or full party). No relationship event is written. The resolver
 deducts the idle interval once from subsequent farming time and clears the wait.
 Party selection excludes pending waits. CAS validation rejects duplicate delivery
 even after restart, and a stale participant aborts both writes.
+
+An avoid decision uses the ordinary suitable-spot selector and capacity check,
+excluding the current spot for ten minutes. A successful action starts normal
+travel, with its existing arrival time and zero farming rewards during transit.
+All departing party members and the party's destination/schedule commit together;
+the other unit keeps hunting. A missing destination returns `no_retreat_route`,
+not a successful departure. The bounded `coldCompetition.avoid` entry survives
+restart and later encounters, expires without escalating PvE death backoff, and
+does not create resentment. `coldCompetitionActions.avoids` counts committed
+departures; recent results include the destination and affected members.
+
+Party yields and all avoids validate the complete rosters (at most 18 hunters),
+physical presence, targets, memory versions and hot-handoff fences. The checks
+are repeated after claiming ownership, and SQLite validates party versions in
+the same transaction as all member writes. Partial claims are released.
 
 An accepted offer uses the existing atomic party-membership transaction for both
 solo hunters, with the episode marker in their persisted stats. Population limits

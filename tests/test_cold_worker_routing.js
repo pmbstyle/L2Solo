@@ -176,6 +176,27 @@ try {
     assert.strictEqual(solo.spotId, targetSpot.id);
     assert.deepStrictEqual(solo.destinations['1'], destinationFor({ characterId: 1 }));
 
+    const retreatAt = Date.now();
+    const retreatState = { characterId: 2, phase: 'cold', activity: 'hunting', level: 16,
+        spotId: currentSpot.id, loc: { locX: 1, locY: 2, locZ: 3 },
+        stats: { coldCompetition: { avoid: { spotId: currentSpot.id, until: retreatAt + 600000 } } } };
+    const savedIndex = coordinator.contextIndex;
+    coordinator.contextIndex = () => ({ spots: new Map([[currentSpot.id, currentSpot], [targetSpot.id, targetSpot]]), occupancy: {} });
+    SpotProfiles.findForState = (state, options) => {
+        assert(options.excludedSpotIds.has(currentSpot.id), 'voluntary avoidance reaches the real route selector');
+        assert.strictEqual(options.timestamp, retreatAt);
+        return targetSpot;
+    };
+    const retreatRoute = coordinator.competitionActions.retreatRoute([retreatState], null, { spotId: currentSpot.id }, retreatAt);
+    assert.strictEqual(retreatRoute.cause, 'competition_avoid');
+    assert.strictEqual(retreatRoute.spotId, targetSpot.id);
+    assert(!retreatRoute.spotBackoff, 'a social retreat does not invent PvE deaths or escalate their backoff');
+    SpotProfiles.findForState = () => null;
+    assert.strictEqual(coordinator.competitionActions.retreatRoute([retreatState], null, { spotId: currentSpot.id }, retreatAt), null,
+        'no suitable destination means no invented successful retreat');
+    coordinator.contextIndex = savedIndex;
+    SpotProfiles.findForState = routeTargetForState;
+
     const sharedIndex = { occupancy: {} };
     const batchRouteFor = (characterId) => coordinator.routeFor({
         characterId,

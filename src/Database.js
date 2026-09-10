@@ -2927,6 +2927,7 @@ const Database = {
                             || coldSimulationRow(id)?.partyId !== change.partyId)
                         || !Number.isSafeInteger(change.updatedAt) || change.updatedAt <= Number(party.updatedAt)
                         || (change.nextResolveAt !== null && (!Number.isSafeInteger(change.nextResolveAt) || change.nextResolveAt < 0))
+                        || (change.spotId !== undefined && (typeof change.spotId !== 'string' || !change.spotId.length || change.spotId.length > 256))
                         || !change.statsJson || typeof JSON.parse(change.statsJson) !== 'object') {
                         failure = true;
                         break;
@@ -3014,9 +3015,9 @@ const Database = {
                     throw new Error('party conflict: incomplete atomic outcome');
                 }
                 for (const change of changes) {
-                    const updated = write(`UPDATE bot_background_parties SET nextResolveAt = ?, statsJson = ?, updatedAt = ?
+                    const updated = write(`UPDATE bot_background_parties SET nextResolveAt = ?, statsJson = ?, updatedAt = ?, spotId = COALESCE(?, spotId)
                         WHERE partyId = ? AND status = 'active' AND updatedAt = ?`,
-                    [change.nextResolveAt, change.statsJson, change.updatedAt, change.partyId, change.expectedUpdatedAt]);
+                    [change.nextResolveAt, change.statsJson, change.updatedAt, change.spotId ?? null, change.partyId, change.expectedUpdatedAt]);
                     if (updated.affectedRows !== 1) throw new Error('party conflict: party changed during commit');
                 }
             }
