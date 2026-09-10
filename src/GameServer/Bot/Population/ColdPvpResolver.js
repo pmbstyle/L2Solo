@@ -3,6 +3,7 @@ const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const { combat } = invoke('GameServer/Bot/Population/BackgroundResolver');
 const Formulas = invoke('GameServer/Formulas');
 const Rules = invoke('GameServer/Skills/C4SkillRules');
+const Aid = require('../../Social/OpponentAidPolicy');
 const MAX_ACTIONS = 256;
 const MAX_DURATION_MS = 30000;
 const FLAG_MS = 15000;
@@ -46,6 +47,7 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
     let time = 0, actions = 0, losingSide = null, outcome = 'disengaged';
     const incidents = new Map();
     const help = new Map();
+    const opponentAid = new Map();
     const incident = (victim, attacker, killed = false) => {
         const key = `${victim.id}:${attacker.id}`;
         const old = incidents.get(key);
@@ -79,7 +81,12 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
             next.skills++;
         }
         if (heal) {
-            for (const event of combat.applyAllyHeal(next, allies, heal)) help.set(`${event.sourceId}:${event.targetId}:${event.type}`, event);
+            for (const event of combat.applyAllyHeal(next, allies, heal)) {
+                help.set(`${event.sourceId}:${event.targetId}:${event.type}`, event);
+                const recipient = allies.find(f => f.id === event.sourceId);
+                const victim = opponents.find(f => f.id === Aid.victimId(recipient, next.id, timestamp + time));
+                if (victim) opponentAid.set(`${victim.id}:${next.id}`, { sourceId: victim.id, targetId: next.id, type: 'aided_opponent' });
+            }
             next.heals++;
         } else {
             if (!(Number(target.state.stats?.karma || 0) > 0)) {
@@ -149,7 +156,7 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
                     ...(dead ? { effects: [], charges: 0, chargeExpiresAt: null, summon: null } : {}) } } }];
     }));
     return { started: true, ongoing, outcome: ongoing ? 'fighting' : outcome, durationMs, until: step ? step.until : until, losingSide, updates,
-        incidents: [...incidents.values()], help: [...help.values()], fighters: fighters.map(f => ({ id: f.id, side: f.side,
+        incidents: [...incidents.values()], help: [...help.values()], opponentAid: [...opponentAid.values()], fighters: fighters.map(f => ({ id: f.id, side: f.side,
             hp: f.vitals.hp, mp: f.vitals.mp, cp: f.cp, attacks: f.attacks, skills: f.skills, heals: f.heals, kills: f.kills })), actions };
 }
 

@@ -434,6 +434,21 @@ Party spells see the full roster, and visible or fighting members keep their
 allies' AI active. They retain distinct identities from
 human-led companions. Observer exposes the durable party ID for hot members.
 
+Meaningful combat healing also creates `aided_opponent` for the recipient's
+last directly damaged, living bot opponent, when that damage is less than 15
+seconds old. Native resurrection uses the same recent-victim evidence. This is
+not a roster-wide grievance: bystanders, old enemies, ambient healing and
+self-healing do not qualify. Native observations require the victim within
+1800 units; cold observations require an actual opposing fighter. Each retained
+personal relation permits one such grievance per helper per 30 minutes, using
+a durable `lastAidAt` clock shared by hot/cold decisions and SQL admission.
+The trace tracks the latest HP-damage victim only; it does not scan population
+relationships. Cold healing commits the fact atomically with its combat result.
+Clan evidence follows the known side's responsibility: aggression/provocation
+can count, while defense and unknown responsibility cannot assign clan guilt.
+This adds no war permission. Cold resurrection and HoT tick attribution remain
+separate support work; defeating a threat does not itself accuse its rescuer.
+
 Safe hot parties use native healing, resurrection and learned party buffs before
 resuming their hunt. Autonomous resurrection requires a learned skill or a real
 scroll; fallen members wait for rescue while it remains possible. Hot/cold effect

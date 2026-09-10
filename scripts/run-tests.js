@@ -17,6 +17,7 @@ const tests = [
     'tests/test_revenge_policy.js',
     'tests/test_revenge_handoff.js',
     'tests/test_combat_help_memory.js',
+    'tests/test_opponent_aid_memory.js',
     'tests/test_cold_combat_help.js',
     'tests/test_player_party_relationship.js',
     'tests/test_hot_party_lifecycle.js',

@@ -5,6 +5,7 @@ const TYPES = {
     mob_contested: { harm: 2, trust: -1, halfLife: DAY },
     attacked: { harm: 6, trust: -4, halfLife: DAY * 3 },
     killed: { harm: 12, trust: -8, fear: 4, halfLife: DAY * 7 },
+    aided_opponent: { harm: 4, trust: -3, halfLife: DAY * 3 },
     hunted_together: { harm: 0, trust: 1, halfLife: DAY * 7 },
     helped_in_combat: { harm: -2, trust: 4, halfLife: DAY * 7 },
     healed: { harm: -1, trust: 2, halfLife: DAY * 7 },
@@ -76,6 +77,7 @@ function apply(snapshot, event, at, context = {}) {
     const observed = snapshot.clanId === fact.sourceClanId;
     if (!own && !observed) return snapshot;
     const positive = type.trust > 0;
+    if (event.type === 'aided_opponent' && !fact.significant) return snapshot;
     if (positive && event.type !== 'hunted_together' && !fact.significant) return snapshot;
     const factor = positive ? 1 : fact.responsibility === 'aggression' ? 1 : fact.responsibility === 'provoked' ? 0.4 : 0;
     if (!factor) return snapshot; // Unknown responsibility is not collective guilt.

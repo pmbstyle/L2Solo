@@ -141,7 +141,7 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
                 kind: 'character', type, at: resume?.startedAt || timestamp });
         }
     }
-    for (const helped of pvp?.help || []) {
+    for (const helped of [...(pvp?.help || []), ...(pvp?.opponentAid || [])]) {
         if (events.length >= 64) break;
         const incidentId = `${helped.sourceId}:${helped.targetId}:${helped.type}`;
         if (resume?.seen.includes(incidentId)) continue;
@@ -157,7 +157,7 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
             relation.sourceClanId !== undefined ? { clanId: relation.sourceClanId } : states.find(s => s.characterId === e.sourceId),
             relation.targetClanId !== undefined ? { clanId: relation.targetClanId } : states.find(s => s.characterId === e.targetId), event.key,
             positive ? 'cooperation' : e.type === 'mob_contested' ? 'aggression'
-                : aggressor ? revenge ? 'aggression' : 'provoked' : 'defense', positive);
+                : aggressor ? revenge ? 'aggression' : 'provoked' : 'defense', positive || e.type === 'aided_opponent');
     }
     const { grants } = await owner.claimBatch(states, { timestamp, allowParty: true, allowLifecycle: true });
     try {

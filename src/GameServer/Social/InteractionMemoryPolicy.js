@@ -1,6 +1,7 @@
 // Shared by the game process and cold workers. No actors, SQL, clocks or RNG.
 const VERSION = 1;
 const Help = require('./CombatHelpPolicy');
+const Aid = require('./OpponentAidPolicy');
 const LIMITS = Object.freeze({ character: 32, clan: 8, alliance: 8 });
 const RECENT_LIMIT = 128;
 const REASON_LIMIT = 3;
@@ -48,6 +49,10 @@ function validate(snapshot) {
     for (const row of snapshot.relations) {
         if (!row || !Object.hasOwn(LIMITS, row.kind)) throw new Error('interaction memory: invalid relation kind');
         id(row.targetId); time(row.at);
+        if (row.lastAidAt !== undefined) {
+            time(row.lastAidAt);
+            if (row.lastAidAt > row.at) throw Error('interaction memory: invalid aid time');
+        }
         if (row.lastHuntAt !== undefined) {
             time(row.lastHuntAt);
             if (row.lastHuntAt > row.at) throw new Error('interaction memory: invalid hunt time');
@@ -133,6 +138,7 @@ function apply(snapshot, input, now) {
     if (e.type === 'hunted_together' && old?.lastHuntAt !== undefined
         && e.at - old.lastHuntAt < HUNT_COOLDOWN_MS) return { status: 'rate_limited', snapshot };
     if (Help.TYPES.includes(e.type) && !Help.eligible(old, e.type, e.at)) return { status: 'rate_limited', snapshot };
+    if (e.kind === 'character' && e.type === 'aided_opponent' && !Aid.eligible(old, e.at)) return { status: 'rate_limited', snapshot };
     const at = Math.max(e.at, old?.at || 0);
     const values = old ? decayed(old, at) : Object.fromEntries(FIELDS.map(field => [field, 0]));
     const factor = Math.pow(0.5, (at - e.at) / (7 * DAY));
@@ -148,6 +154,8 @@ function apply(snapshot, input, now) {
     const helpClocks = Object.fromEntries(Help.TYPES.map(type => [type, Help.lastAt(old, type)]).filter(([, at]) => at >= 0));
     if (Help.TYPES.includes(e.type)) helpClocks[e.type] = e.at;
     if (Object.keys(helpClocks).length) relation.lastHelpAt = helpClocks;
+    const aidAt = e.kind === 'character' && e.type === 'aided_opponent' ? e.at : Aid.lastAt(old);
+    if (aidAt >= 0) relation.lastAidAt = aidAt;
     const relations = bound([...snapshot.relations.filter(row => row !== old), relation], now);
     const ordered = [...snapshot.recent, e].sort((a, b) => b.at - a.at || a.key.localeCompare(b.key));
     const removed = ordered.slice(RECENT_LIMIT);
@@ -170,6 +178,7 @@ function view(snapshot) {
             const row = rows.get(`${kind}:${targetId}`);
             return row ? { ...decayed(row, at), ...(row.lastHuntAt !== undefined ? { lastHuntAt: row.lastHuntAt } : {}),
                 ...(row.lastHelpAt ? { lastHelpAt: { ...row.lastHelpAt } } : {}),
+                ...(row.lastAidAt !== undefined ? { lastAidAt: row.lastAidAt } : {}),
                 reasons: row.reasons.map(reason => ({ ...reason })) } : null;
         }
     });

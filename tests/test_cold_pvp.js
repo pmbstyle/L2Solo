@@ -18,7 +18,7 @@ const PartyResolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver'
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-cold-pvp-'));
 options.default.Database.path = path.join(dir, 'test.sqlite');
 const at = Date.now();
-const ids = Array.from({ length: 32 }, (_, i) => i + 1);
+const ids = Array.from({ length: 38 }, (_, i) => i + 1);
 const traits = { empathy: 0, assertiveness: 1, commitment: 1, sociability: 1, caution: 0 };
 const personaFor = () => ({ traits });
 const state = id => Life.cachedState(id);
@@ -101,6 +101,16 @@ async function main() {
         roles: new Map([[90, 'support']]), timestamp: at, rng: seeded('heal'), personaFor });
     assert(healedFight.started && healedFight.fighters.some(f => f.heals > 0), 'learned healing participates in the skirmish');
     assert(healedFight.fighters.find(f => f.id === healer.characterId).mp < healer.vitals.mp);
+    const recentVictim = { ...injured, stats: { ...injured.stats, coldPvp: { lastVictimId: left.characterId, lastVictimAt: at } } };
+    const waitingVictim = { ...left, stats: { ...left.stats, coldPvp: { readyAt: at + 1000 } } };
+    const aidSides = [{ principal: waitingVictim, members: [waitingVictim] }, { principal: healer, members: [healer, recentVictim] }];
+    const healOnly = input => Pvp.resolve({ sides: input, roles: new Map([[90, 'support']]), timestamp: at, rng: seeded('aid'), personaFor,
+        step: { resuming: true, until: at + 1, expiresAt: at + 30000, maxActions: 1 } });
+    const aid = healOnly(aidSides);
+    assert.deepStrictEqual(aid.opponentAid, [{ sourceId: left.characterId, targetId: healer.characterId, type: 'aided_opponent' }]);
+    assert.deepStrictEqual(healOnly(JSON.parse(JSON.stringify(aidSides))).opponentAid, aid.opponentAid);
+    recentVictim.stats.coldPvp.lastVictimAt = at - 15000;
+    assert.deepStrictEqual(healOnly(aidSides).opponentAid, [], 'stale damage cannot blame a cold healer');
     const noIntent = await Conflict.apply({ ...base, event: { ...event(25, 27), pvpIntent: false } });
     assert(noIntent.ok && !noIntent.pvp, 'resource disputes do not all become fights');
 
@@ -215,9 +225,34 @@ async function main() {
     assert(continued.ok, JSON.stringify(continued));
     assert(continued.encounter?.reason === 'revenge' || !continued.encounter);
 
+    // A real accepted cold heal commits the grievance with its HP/MP outcome.
+    await party([35, 36]);
+    for (const id of [35, 36]) {
+        const s = state(id);
+        await Life.upsertState({ ...s, vitals: { ...s.vitals, hp: id === 36 ? 350 : 1000 },
+            stats: { ...s.stats, coldPvp: { lastVictimId: id === 36 ? 38 : 0, lastVictimAt: at },
+                coldCombat: { ...s.stats.coldCombat, equipment: { ...s.stats.coldCombat.equipment, pAtk: 300 },
+                    ...(id === 35 ? { skills: healer.stats.coldCombat.skills } : {}) } } }, 'test_aid');
+    }
+    const beforeAid = await Repository.load(38), beforeHelper = state(35).vitals.mp;
+    await assert.rejects(Conflict.apply({ ...base, event: event(38, 35), owner: { ...Owner,
+        commitAndReleaseBatch: (entries, options) => {
+            const aid = entries.flatMap(e => e.proposal.result.memoryEvents).find(e => e.type === 'aided_opponent');
+            assert(aid, 'the rejected proposal contained a real aid event');
+            aid.key = '';
+            return Owner.commitAndReleaseBatch(entries, options);
+        } } }), /memory/i);
+    assert.deepStrictEqual(await Repository.load(38), beforeAid, 'a rejected fight cannot leave an aid grievance');
+    assert.strictEqual(state(35).vitals.mp, beforeHelper);
+    const aidedFight = await Conflict.apply({ ...base, event: event(38, 35) });
+    assert(aidedFight.ok && aidedFight.pvp, JSON.stringify(aidedFight));
+    const aidMemory = await Repository.load(38);
+    assert(aidMemory.recent.some(e => e.type === 'aided_opponent' && e.targetId === 35), JSON.stringify(aidMemory));
+    assert(state(35).vitals.mp < 500, 'the cold helper really spent MP');
     const savedMemory = await Repository.load(1);
     await Database.close(); Database.init();
     assert.deepStrictEqual(await Repository.load(1), savedMemory);
+    assert.deepStrictEqual(await Repository.load(38), aidMemory, 'cold aid consequences survive SQLite reopen');
     assert.strictEqual((await Database.execute(['SELECT hp FROM characters WHERE id=1', []]))[0].hp, 0);
     assert.strictEqual((await Database.execute(['SELECT pk,karma FROM characters WHERE id=3', []]))[0].karma, 240);
     assert.strictEqual(JSON.parse((await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=21', []]))[0].statsJson).revengeUntil,
