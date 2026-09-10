@@ -7,9 +7,22 @@ function record(helper, target, result, before, at = Date.now()) {
     const type = result.resurrected === true && target?.fetchHp?.() > 0 && !target?.state?.fetchDead?.() ? 'resurrected'
         : result.heal > 0 && before?.combat && Policy.meaningfulHeal(before.hp, target?.fetchHp?.(), before.maxHp) ? 'healed' : null;
     if (!type) return false;
+    return recordHelp(helper, target, type, at);
+}
+function recordHelp(helper, target, type, at) {
     const grateful = remember(helper, target, type, at);
     const offended = recordOpponentAid(helper, target, at);
     return grateful || offended;
+}
+function recordPeriodic(helper, target, actualHeal, before, progress, at = Date.now()) {
+    if (!(actualHeal > 0) || !before.combat || !Policy.injured(before.hp, before.maxHp)) {
+        progress.helpHp = 0;
+        return false;
+    }
+    progress.helpHp = Number(progress.helpHp || 0) + actualHeal;
+    if (progress.helpHp < before.maxHp * 0.05) return false;
+    progress.helpHp = 0;
+    return recordHelp(helper, target, 'healed', at);
 }
 function remember(helper, target, type, at, responsibility = 'cooperation', episode = null) {
     const session = target?.session, sourceId = Number(target?.fetchId?.()), targetId = Number(helper?.fetchId?.());
@@ -80,4 +93,4 @@ function recordDefeat(helper, threat, at = Date.now()) {
             character.fetchLocZ?.() - victim.fetchLocZ?.()) <= 1800)) return false;
     return remember(character, victim, 'helped_in_combat', at);
 }
-module.exports = { record, recordDamage, recordDefeat, threatSnapshot };
+module.exports = { record, recordPeriodic, recordDamage, recordDefeat, threatSnapshot };

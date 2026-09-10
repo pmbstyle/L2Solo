@@ -118,9 +118,11 @@ const BackgroundPartyResolver = {
             };
         }
 
+        const revival = require('./ColdPartyRevival').resolve({ party, members, timestamp, episodeId, assessRelationship });
+        if (revival) return revival;
         // A cold PvP casualty holds the roster through the ordinary recovery
         // delay. Neither standing regeneration nor the next PvE fight revives it.
-        if (members.some(s => Number(s.stats?.coldPvp?.recoverUntil || 0) > 0 && s.vitals.hp <= 0)) {
+        if (members.some(s => s.vitals.hp <= 0)) {
             const memberResults = members.map(state => ({ state, result: state.vitals.hp <= 0
                 ? BackgroundResolver.resolveDeathRecovery(state, timestamp)
                 : { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 1000 } }));

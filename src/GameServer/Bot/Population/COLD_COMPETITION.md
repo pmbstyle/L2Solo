@@ -446,8 +446,28 @@ The trace tracks the latest HP-damage victim only; it does not scan population
 relationships. Cold healing commits the fact atomically with its combat result.
 Clan evidence follows the known side's responsibility: aggression/provocation
 can count, while defense and unknown responsibility cannot assign clan guilt.
-This adds no war permission. Cold resurrection and HoT tick attribution remain
-separate support work; defeating a threat does not itself accuse its rescuer.
+This adds no war permission. Defeating a threat does not itself accuse its rescuer.
+
+The cold worker can resurrect a party casualty with a nearby living member's
+learned single-target resurrection skill. One aggregate outcome commits the MP
+cost, reuse deadline, 1 HP revival and gratitude together. The party then uses
+its ordinary recovery schedule for a 15-second pause. There is no pending cast,
+cast-speed calculation or separate completion/cancellation pass. The outcome
+requires the whole roster even if memory is unloaded or gratitude is on cooldown;
+hot activation racing the commit is rejected by the existing ownership checks.
+Active PvP and travel exclude a rescue. Without an eligible caster, ordinary death recovery remains
+the fallback and grants no gratitude. Resurrection does not restore EXP, buffs,
+CP or full vitals. Mass resurrection and cold scroll consumption are not modeled.
+The legacy sequential resolver keeps ordinary recovery; paid resurrection uses
+the worker's atomic commit path. Party review and new travel wait for casualties.
+
+Native resurrection records gratitude when the death flag is actually cleared,
+not when the cast is merely accepted. Native HoT ticks accumulate actual healing
+while an injured recipient is in combat. A total of 5% max HP qualifies through
+the existing shared help cooldown. The effect stores its caster identity,
+partial credit and remaining ticks so restored effects retain attribution without
+renewing the tick count. Ambient regeneration and self-healing grant no credit.
+Cold combat does not yet execute the periodic HoT effect ticks.
 
 Safe hot parties use native healing, resurrection and learned party buffs before
 resuming their hunt. Autonomous resurrection requires a learned skill or a real

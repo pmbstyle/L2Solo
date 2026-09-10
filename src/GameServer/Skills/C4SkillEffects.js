@@ -83,7 +83,7 @@ function execute(session, actor, target, skill, context = {}) {
     }
 
     if (semantic.skillType === C4SkillRules.RESURRECT) {
-        result.resurrected = applyResurrection(session, target, Number(skill.fetchPower?.()) || 0);
+        result.resurrected = applyResurrection(session, target, Number(skill.fetchPower?.()) || 0, actor);
         return finish();
     }
 
@@ -573,12 +573,12 @@ function applyGetPlayer(actor, target, rng = Math.random, updatePosition = null)
     return true;
 }
 
-function applyResurrection(session, target, recovery = 0) {
+function applyResurrection(session, target, recovery = 0, helper = session?.actor) {
     if (target?.fetchIsPet?.()) return invoke('GameServer/Npc/SummonControl').revivePet(session, target, recovery);
     if (!target?.state?.fetchDead?.()) return false;
     const targetSession = target.session;
     if (!targetSession) return false;
-    invoke(path.actor).revive(targetSession, target);
+    invoke(path.actor).revive(targetSession, target, { helper });
     return true;
 }
 
@@ -906,7 +906,7 @@ function applyEffect(session, target, skill, semantic, source = session?.actor) 
     }
 
     if (effect?.hot) {
-        EffectTicker.applyHot(session, session?.actor, target, effect);
+        EffectTicker.applyHot(session, source, target, effect);
     }
 
     EffectTicker.scheduleExpiry(session, target, effect);

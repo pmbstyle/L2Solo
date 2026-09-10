@@ -58,7 +58,7 @@ function normalize(effect = {}) {
         healthDot: effect.healthDot || null,
         manaDot: effect.manaDot || null,
         manaHot: effect.manaHot || null,
-        hot: effect.hot || null,
+        hot: effect.hot ? { ...effect.hot } : null,
         confusionMobOnly: effect.confusionMobOnly === true,
         expiresAt,
         sequence: claimSequence(effect.sequence)

@@ -905,7 +905,8 @@ class ColdSimulationKernel {
                 return;
             }
 
-            if (BackgroundPartyLifecycle.sessionExpired(run.party, startedAt, this.partySession)) {
+            const rescuing = run.members.some(s => s.vitals?.hp <= 0);
+            if (!rescuing && BackgroundPartyLifecycle.sessionExpired(run.party, startedAt, this.partySession)) {
                 const review = BackgroundPartyLifecycle.review(run.party, run.members, startedAt, {
                     ...this.partySession,
                     assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
@@ -981,7 +982,7 @@ class ColdSimulationKernel {
                 return;
             }
 
-            if (run.route?.needed) {
+            if (!rescuing && run.route?.needed) {
                 const arrivalAt = startedAt + Math.max(1000, Number(run.route.travelMs) || HUNTING_TRAVEL_MS);
                 const travellingMembers = run.members.map((state) => (
                     beginRouteTravelState(state, run.route, startedAt)
@@ -1034,7 +1035,7 @@ class ColdSimulationKernel {
                 timestamp: startedAt
             });
             const proposals = [];
-            const memoryGroup = (resolution.memberResults || []).some(({ result }) => result.memoryEvents?.length)
+            const memoryGroup = resolution.atomic || (resolution.memberResults || []).some(({ result }) => result.memoryEvents?.length)
                 ? { id: `hunt:${run.grants.get(Number(run.party.leaderId))?.leaseId}`,
                     memberIds: resolution.memberResults.map(({ state }) => Number(state.characterId)) } : null;
             for (const { state, result } of resolution.memberResults || []) {

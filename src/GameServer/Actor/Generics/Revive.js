@@ -1,7 +1,11 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 
-function finishRevive(session, actor) {
+function finishRevive(session, actor, helper) {
+    const wasDead = actor.state.fetchDead?.() === true;
+    if (actor.fetchHp && !(actor.fetchHp() > 0)) actor.setHp(1);
     actor.state.setDead(false);
+    actor.statusUpdateVitals?.(actor);
+    if (helper && wasDead) invoke('GameServer/Social/CombatHelpMemory').record(helper, actor, { resurrected: true });
     actor.refreshVitalsRegeneration?.();
     // BotAI uses this marker to run the one-time death lifecycle.  A native
     // in-place resurrection must release it so a later death is counted and
@@ -21,7 +25,7 @@ function finishRevive(session, actor) {
     }
 }
 
-function revive(session, actor, { delayMs = 2500, restoreFullVitals = false } = {}) {
+function revive(session, actor, { delayMs = 2500, restoreFullVitals = false, helper = null } = {}) {
     if (restoreFullVitals) {
         actor.automation.stopReplenish();
         actor.fillupVitals();
@@ -30,7 +34,7 @@ function revive(session, actor, { delayMs = 2500, restoreFullVitals = false } = 
     }
 
     if (delayMs <= 0) {
-        finishRevive(session, actor);
+        finishRevive(session, actor, helper);
         session.dataSendToMeAndOthers(ServerResponse.revive(actor.fetchId()), actor);
         session.dataSendToMeAndOthers(ServerResponse.socialAction(actor.fetchId(), 9), actor);
         return;
@@ -39,7 +43,7 @@ function revive(session, actor, { delayMs = 2500, restoreFullVitals = false } = 
     session.dataSendToMeAndOthers(ServerResponse.revive(actor.fetchId()), actor);
 
     setTimeout(() => {
-        finishRevive(session, actor);
+        finishRevive(session, actor, helper);
         session.dataSendToMeAndOthers(ServerResponse.socialAction(actor.fetchId(), 9), actor); // SWAG stand-up
     }, delayMs);
 }
