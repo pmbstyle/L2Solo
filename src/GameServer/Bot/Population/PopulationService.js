@@ -717,7 +717,7 @@ function commitPartyMembership(party, members = [], event = null) {
 }
 
 async function createAndCommitBackgroundParty(members = [], objectiveOverride = null) {
-    const release = partyAdmission.reserve(BackgroundPartyState.active(), Config);
+    const release = partyAdmission.reserve(BackgroundPartyState.admitted(), Config);
     if (!release) return null;
     try { return await createBackgroundParty(members, objectiveOverride); }
     finally { release(); }
@@ -3557,6 +3557,10 @@ const PopulationService = {
 
     prepareInventoryCleanupProposal(state, timestamp = Date.now(), simulation = null) {
         return inventoryCleanupTravelState(state, timestamp, simulation);
+    },
+
+    reserveCompetitionPartySlot() {
+        return Config.backgroundPartyEnabled ? partyAdmission.reserve(BackgroundPartyState.admitted(), Config) : null;
     },
 
     async formCompetitionParty(members, event, options = {}) {

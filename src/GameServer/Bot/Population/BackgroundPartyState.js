@@ -242,6 +242,10 @@ const BackgroundPartyState = {
         return Array.from(cache.values()).filter((party) => party.status === 'active');
     },
 
+    admitted() {
+        return Array.from(cache.values()).filter(party => ['active', 'hot'].includes(party.status));
+    },
+
     due(limit = 10, at = now()) {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(100, Number(limit) || 10));

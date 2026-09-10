@@ -68,4 +68,10 @@ function record(source, mob, now = Date.now(), rng = Math.random) {
     return started;
 }
 
-module.exports = { record, attackChance, reset(mob) { claims.delete(mob); }, CLAIM_MS, COOLDOWN_MS };
+function owner(mob, now = Date.now()) {
+    const claim = claims.get(mob);
+    return claim && now - claim.at <= CLAIM_MS && Threats.alive(claim.owner)
+        && claim.owner.session?.actor === claim.owner ? claim.owner : null;
+}
+
+module.exports = { record, owner, attackChance, reset(mob) { claims.delete(mob); }, CLAIM_MS, COOLDOWN_MS };

@@ -947,7 +947,7 @@ const PartyCompanionService = {
         if (!leader || !bot) return false;
         // An autonomous hot roster has one lifecycle owner. Do not leave its
         // other actors orphaned by attaching a single member to a player.
-        if (companionSession.hotBackgroundPartyId) return false;
+        if (companionSession.hotBackgroundPartyId || companionSession.hotCompetitionCommit) return false;
         const reservation = options.capacityReservation || companionSession;
         if (!hasCapacity(leaderSession, companionSession, reservation)) return false;
         releaseCapacity(leaderSession, reservation);

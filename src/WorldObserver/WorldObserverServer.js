@@ -2021,6 +2021,7 @@ function worldStatus() {
         population: PopulationStatus.counts(),
         coldCompetition: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().worker?.competition || null,
         coldCompetitionActions: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().competitionActions || null,
+        hotCompetitionActions: invoke('GameServer/Bot/AI/HotResourceCompetition').report,
         partyReviews: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().partyReviews || null,
         clanSocial: invoke('GameServer/Clan/ClanSocialRuntime').summary(),
         runtime: {

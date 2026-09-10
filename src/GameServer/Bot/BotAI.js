@@ -611,6 +611,7 @@ const BotAI = {
         if (visibleRealPlayers.length) invoke('GameServer/Bot/AI/BotChatReactions').offerLocal(session, tickStartedAt);
 
         // 3. Dynamic State Machine Routing
+        if (invoke('GameServer/Bot/AI/HotResourceCompetition').tick(session)) return;
         if (session.hotBackgroundPartyId && invoke('GameServer/Bot/AI/HotBackgroundParty').tick(session, bot, Generics, this)) return;
         const state = States[session.plan];
         if (state) {
@@ -666,6 +667,7 @@ const BotAI = {
             }
             return false;
         }
+        if (!options.pvp && invoke('GameServer/Bot/AI/HotResourceCompetition').beforeAttack(session, npc)) return false;
         const role = BotRoles.combatRoleFor(bot);
         // A potion is a survival action for a fight already in progress, not
         // routine topping-off. The policy also blocks repeats for the same

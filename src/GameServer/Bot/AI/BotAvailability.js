@@ -115,7 +115,7 @@ const BotAvailability = {
 
         let reason = 'available';
         if (staticService) reason = 'merchant_duty';
-        else if (botSession.hotBackgroundPartyId) reason = 'already_grouped';
+        else if (botSession.hotBackgroundPartyId || botSession.hotCompetitionCommit) reason = 'already_grouped';
         else if (!options.forceFriend && result.relationshipReason) reason = result.relationshipReason;
         else if (result.clanmate) reason = 'available';
         else if (player.isDead && player.isDead()) reason = 'player_dead';

@@ -2582,7 +2582,8 @@ const Database = {
         return inTransaction(() => commitInteractionMemoryUnsafe(batch, now()), 'social-memory:commit');
     },
 
-    commitBackgroundPartyMembership({ party, members = [], event = null, review = false, expectedPartyUpdatedAt = null } = {}) {
+    commitBackgroundPartyMembership({ party, members = [], event = null, review = false, expectedPartyUpdatedAt = null,
+        expectedPhase = 'cold', canCommitHot = null } = {}) {
         const batch = Array.isArray(members) ? members.slice(0, 40) : [];
         const characterIds = [...new Set(batch.map((entry) => Number(entry?.row?.characterId)).filter((id) => (
             Number.isSafeInteger(id) && id > 0
@@ -2592,6 +2593,21 @@ const Database = {
         }
 
         return inTransaction(() => {
+            if (!['cold', 'hot'].includes(expectedPhase)) return { ok: false, reason: 'invalid_membership_phase' };
+            if (expectedPhase === 'hot') {
+                const declared = JSON.parse(party.memberIdsJson || '[]').map(Number);
+                const existing = one('SELECT status, memberIdsJson, updatedAt FROM bot_background_parties WHERE partyId = ?', [party.partyId]);
+                const previousIds = existing ? JSON.parse(existing.memberIdsJson || '[]').map(Number) : [];
+                if (review || party.status !== 'hot' || declared.length < 2 || declared.length > 9
+                    || declared.length !== characterIds.length || !declared.includes(Number(party.leaderId))
+                    || new Set(declared).size !== declared.length || declared.some(id => !characterIds.includes(id))
+                    || batch.some(e => e.row.partyId !== party.partyId || (e.expectedPartyId && e.expectedPartyId !== party.partyId))
+                    || (expectedPartyUpdatedAt === null ? !!existing : existing?.status !== 'hot'
+                        || Number(existing.updatedAt) !== Number(expectedPartyUpdatedAt)
+                        || previousIds.some(id => !characterIds.includes(id))
+                        || batch.some(e => !!e.expectedPartyId !== previousIds.includes(Number(e.row.characterId))))
+                    || typeof canCommitHot !== 'function' || !canCommitHot()) return { ok: false, reason: 'hot_party_context_changed' };
+            }
             if (review) {
                 const existing = one('SELECT status, memberIdsJson, updatedAt FROM bot_background_parties WHERE partyId = ?', [party.partyId]);
                 const ids = existing ? JSON.parse(existing.memberIdsJson || '[]').map(Number) : [];
@@ -2612,7 +2628,7 @@ const Database = {
                 const row = entry.row;
                 const current = currentById.get(Number(row.characterId));
                 return !current
-                    || current.phase !== 'cold'
+                    || current.phase !== expectedPhase
                     || String(current.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER
                     || String(current.partyId || '') !== String(entry.expectedPartyId || '')
                     || Number(current.updatedAt || 0) !== Number(entry.expectedUpdatedAt || 0);
@@ -2648,15 +2664,16 @@ const Database = {
                 const row = entry.row;
                 const result = write(`UPDATE bot_life_state
                     SET activity = ?, activityStartedAt = ?, nextResolveAt = ?,
-                        partyId = ?, statsJson = ?, updatedAt = ?
+                        partyId = ?, statsJson = ?, updatedAt = ?, spotId = COALESCE(?, spotId)
                     WHERE characterId = ?
-                    AND phase = 'cold'
+                    AND phase = ?
                     AND simulationOwner = ?
                     AND COALESCE(partyId, '') = ?
                     AND updatedAt = ?`, [
                     row.activity, row.activityStartedAt, row.nextResolveAt,
                     row.partyId, row.statsJson, row.updatedAt,
-                    row.characterId, LEGACY_SIMULATION_OWNER,
+                    expectedPhase === 'hot' ? row.spotId : null,
+                    row.characterId, expectedPhase, LEGACY_SIMULATION_OWNER,
                     String(entry.expectedPartyId || ''), Number(entry.expectedUpdatedAt || 0)
                 ]);
                 if (result.affectedRows !== 1) {

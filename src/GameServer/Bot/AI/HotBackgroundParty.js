@@ -161,6 +161,8 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         return true;
     }
     let target = incoming || owner.backgroundHuntTarget;
+    const allowedHunt = npc => legal(npc) && !invoke('GameServer/Bot/AI/HotResourceCompetition').blockedTarget(owner, npc, now);
+    if (!incoming && target && !allowedHunt(target)) target = null;
     if (!legal(target) || (!incoming && Threats.distance(owner.actor, target) > 2000)) target = null;
     if (!target && !incoming) {
         const low = members.some(s => ratio(s.actor.fetchHp(), s.actor.fetchMaxHp()) < 0.55
@@ -197,7 +199,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
             owner.nextBackgroundTargetScanAt = now + 2000;
             const npcId = Number(party.stats?.objective?.npcId || party.stats?.acquisitionGoal?.next?.npcId || 0);
             const npcs = World.fetchNpcsInRadius(owner.actor.fetchLocX(), owner.actor.fetchLocY(), radius)
-                .filter(legal).filter(n => Math.abs(n.fetchLocZ() - owner.actor.fetchLocZ()) < 500);
+                .filter(allowedHunt).filter(n => Math.abs(n.fetchLocZ() - owner.actor.fetchLocZ()) < 500);
             target = npcs.sort((a, b) => Number(b.fetchSelfId() === npcId) - Number(a.fetchSelfId() === npcId)
                 || Threats.distance(owner.actor, a) - Threats.distance(owner.actor, b))[0] || null;
         }
@@ -210,7 +212,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     if (Tactics.support(session, bot, { owner, members: near, threats: [] }, Generics, now)) return true;
     if (!target) {
         session.currentTargetId = undefined;
-        searchGround(session, owner, members, party, legal, now);
+        searchGround(session, owner, members, party, allowedHunt, now);
         return true;
     }
     session.backgroundSearchDestination = null;

@@ -71,6 +71,7 @@ const Cooldown = {
 
     canCooldown(session, options = {}) {
         if (!session || !session.actor) return { ok: false, reason: 'missing_actor' };
+        if (session.hotCompetitionCommit) return { ok: false, reason: 'social_party_commit' };
         const encounterHandoff = options.encounterKey && session.pvpEncounter?.key === options.encounterKey;
         if (!encounterHandoff && (session.pvpDefense || session.pvpRevenge || session.pendingPvpProvocation)) return { ok: false, reason: 'pvp_active' };
         if (session.plan === 'merchant' && !session.coldMarketState && !session.coldCraftState) return { ok: false, reason: 'merchant' };

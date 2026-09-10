@@ -101,6 +101,7 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     const eligibleNearbyNpcs = allNearbyNpcs
         .filter((npc) => !options.excludeTargetId || npc.fetchId() !== options.excludeTargetId)
         .filter((npc) => !BotRaidSafety.isProtectedRaidEntity(npc))
+        .filter((npc) => !invoke('GameServer/Bot/AI/HotResourceCompetition').blockedTarget(session, npc))
         .filter((npc) => BotHuntingTargetPolicy.canHunt(npc))
         .filter((npc) => npc.fetchAttackable() && !npc.isDead());
     const nearbyNpcs = limitTargetCandidates(session, bot, eligibleNearbyNpcs);

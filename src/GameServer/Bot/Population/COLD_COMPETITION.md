@@ -1,4 +1,40 @@
-# Cold resource competition: observation rollout
+# Resource competition in cold and hot simulation
+
+## Hot decisions before a competing attack
+
+`HotResourceCompetition` runs at the autonomous bot combat entrypoint, before
+the first hostile action on a mob claimed by another autonomous bot. A claim
+still requires a real accepted swing/cast; selecting a target never owns it.
+The shared `ResourceCompetitionPolicy` reads both relationships and personas.
+Hot pressure uses the two hunting units and the nearby living NPCs of the same
+type. It is a local contention estimate, not a server-wide spawn reservation.
+
+Coexist releases the contested target and promptly looks for another. Yield
+pauses the whole initiating unit for 15 seconds. Avoid requests native movement
+along safe retreat plans and excludes the rival's local hunting area for two
+minutes; unsafe routes fall back to yielding. Cold avoidance chooses another
+abstract spot, while visible hot actors walk away locally. These are tactical
+hot-session commands, not new grievance events. Incoming NPC/PvP combat takes
+priority, including attacks on another member. No accepted cast is cancelled
+to negotiate, and human-led companion parties keep their existing behavior.
+
+An accepted offer creates or recruits into a persistent `hot` background party
+through the ordinary membership transaction, without actor respawns or attaching
+player companions. Both cold and hot formations use the same admission budget.
+Before committing, the transaction rechecks live consent, roster, phase, memory
+versions, clan reservations and existing-party version. Cooldown/player admission
+cannot interrupt an in-flight membership change. The full roster is published
+synchronously after commit and uses normal hot combat, loot and cold lifecycle.
+Party mergers and recruitment into clan objectives are excluded. Merely joining
+does not award shared-hunting memory; actual later hunting still supplies it.
+
+Only an accepted competing attack writes `mob_contested`; a contest forecast
+does not. Existing victim provocation, risk and PvP permission checks remain in
+force. Decisions are bounded by a two-minute unit cooldown. No claim means a
+constant-time return, and there is no population polling timer or SQL decision
+read. `/observer/api/world/status` exposes `hotCompetitionActions` separately
+from cold forecasts and actions; recent results distinguish executed outcomes
+and failed invitations.
 
 `coldCompetitionObserveEnabled` enables a read-only forecast in the cold worker.
 The monitor does not reserve mobs, change rewards, send invitations, write relationships,
