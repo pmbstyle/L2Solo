@@ -65,13 +65,8 @@ function recordOpponentAid(helper, recipient, at) {
     if (!victim || Number(victim.fetchId?.()) !== id || victim.fetchIsOnline?.() === false || !(victim.fetchHp?.() > 0)
         || !(Math.hypot(recipient.fetchLocX?.() - victim.fetchLocX?.(), recipient.fetchLocY?.() - victim.fetchLocY?.(),
             recipient.fetchLocZ?.() - victim.fetchLocZ?.()) <= 1800)) return false;
-    const targetId = Number(recipient.fetchId?.()), encounter = recipient.session?.pvpEncounter;
-    const side = encounter?.sides.findIndex(s => s.memberIds.includes(targetId));
-    const opposed = side >= 0 && encounter.sides.some((s, i) => i !== side && s.memberIds.includes(id));
-    const responsibility = opposed ? side === (encounter.reason === 'revenge' ? 0 : 1)
-        ? encounter.reason === 'revenge' ? 'aggression' : 'provoked' : 'defense'
-        : recipient.session?.pvpDefense ? 'defense' : 'unknown';
-    return remember(helper, victim, 'aided_opponent', at, responsibility, opposed ? encounter.key : null);
+    const fact = require('./PvpResponsibility').assess(recipient, victim, at);
+    return remember(helper, victim, 'aided_opponent', at, fact.responsibility, fact.episode);
 }
 function threatSnapshot(threat, at = Date.now()) {
     const recent = threats.get(threat);

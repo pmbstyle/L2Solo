@@ -61,7 +61,13 @@ function record(victim, source, now = Date.now()) {
         const entry = member.pvpAggressors?.get(id(victim));
         if (entry && distance(member.actor, attacker) <= PARTY_RADIUS) entry.at = now;
     }
-    invoke('GameServer/Bot/AI/BotEnemyMemory').record(victim, attacker, false, now);
+    const changed = invoke('GameServer/Social/PvpResponsibility').record(attacker, victim,
+        party.filter(member => distance(member.actor, victim) <= PARTY_RADIUS), now);
+    const remembered = invoke('GameServer/Bot/AI/BotEnemyMemory').record(victim, attacker, false, now);
+    for (const member of changed) {
+        if (member === session && remembered) continue; // The accepted enemy write includes the new causal fact.
+        if (String(member.accountId || '').startsWith('bot_')) invoke('GameServer/Bot/Population/BotLifeState').rememberEnemies(member);
+    }
     invoke('GameServer/Bot/AI/BotRevenge').onAttack(attacker, victim, now);
     // Wake the whole nearby defending party, including when its human leader
     // is hit. Damage wake coalescing bounds this independently per member.

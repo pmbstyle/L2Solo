@@ -14,12 +14,9 @@ function record(session, targetId, killed, at, enemies = [], attacker = null) {
     const type = killed ? 'killed' : 'attacked';
     const encounter = session.pvpEncounter;
     const attach = (event, episode) => {
-        const responsibility = encounter ? (encounter.sides[encounter.reason === 'revenge' ? 0 : 1].memberIds.includes(targetId)
-            ? encounter.reason === 'revenge' ? 'aggression' : 'provoked' : 'defense')
-            : attacker?.session?.pvpDefense ? 'defense'
-                : attacker?.session?.pvpRevenge?.reason === 'mob_competition' ? 'provoked'
-                    : attacker?.session?.pvpRevenge ? 'aggression' : 'unknown';
-        return attacker ? require('../Clan/ClanSocialEvidence').attach(event, session.actor, attacker, episode, responsibility) : event;
+        const fact = require('./PvpResponsibility').assess(attacker, session.actor, at);
+        return attacker ? require('../Clan/ClanSocialEvidence').attach(event, session.actor, attacker,
+            fact.episode || episode, fact.responsibility) : event;
     };
     if (encounter && encounter.sides.some(s => s.memberIds.includes(targetId))
         && encounter.sides.some(s => s.memberIds.includes(sourceId) && !s.memberIds.includes(targetId))) {

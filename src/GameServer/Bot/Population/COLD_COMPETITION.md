@@ -448,6 +448,19 @@ Clan evidence follows the known side's responsibility: aggression/provocation
 can count, while defense and unknown responsibility cannot assign clan guilt.
 This adds no war permission. Defeating a threat does not itself accuse its rescuer.
 
+Native hostile actions also retain responsibility for ordinary player/bot fights.
+The first accepted action establishes the initiator for that opponent; return
+attacks retain self-defense, including nearby party members defending the actual
+victim. Witnesses receive no invented offense and the attacker's party does not
+inherit guilt. Flags, karma and an unrelated revenge/defense objective do not
+establish responsibility. Known managed encounters keep their existing sides.
+The same evidence attributes meaningful aid to a combat opponent.
+Each hot session holds at most 32 opponent records, expiring after 60 seconds
+without activity. New facts share the existing serialized enemy-memory write;
+ordinary repeated hits only refresh RAM. Bot lifecycle snapshots preserve these
+records across hot/cold handoff; expired records do not resume an old incident.
+There is no new cold combat pass, relationship scan or independent SQL writer.
+
 The cold worker can resurrect a party casualty with a nearby living member's
 learned single-target resurrection skill. One aggregate outcome commits the MP
 cost, reuse deadline, 1 HP revival and gratitude together. The party then uses

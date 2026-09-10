@@ -95,6 +95,39 @@ async function run() {
     actor.session = restarted;
     Enemy.record(actor, foe(6), false, at + 60009);
     assert.strictEqual(Social.events.pending.size, 0, 'hot reactivation recovers the attack cooldown from social memory');
+
+    // Native first-aggressor facts share the lifecycle write and survive actual
+    // SQLite close/reopen even when the human peer has lost its session state.
+    const Facts = invoke('GameServer/Social/PvpResponsibility');
+    const active = await Life.upsertState({ ...cold, phase: 'hot' });
+    restarted.coldLifeState = active;
+    const human = { ...foe(6), session: { accountId: 'human' } };
+    human.fetchClanId = () => 20;
+    actor.fetchClanId = () => 10;
+    const nativeAt = Date.now();
+    Facts.record(human, actor, [], nativeAt);
+    await Life.rememberEnemies(restarted);
+    const durable = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=1', []]);
+    const facts = JSON.parse(durable[0].statsJson).pvpIncidents;
+    assert.strictEqual(facts[0].responsibility, 'defense');
+    const afterHandoff = await Life.markCold(restarted, 'native_pvp_facts');
+    assert.deepStrictEqual(afterHandoff.stats.pvpIncidents, facts, 'cooldown preserves the causal facts');
+    await Database.close(); Database.init();
+    const reopened = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=1', []]);
+    const reactivated = { ...actor, session: { accountId: 'bot_test_1', coldLifeState: { stats: JSON.parse(reopened[0].statsJson) } } };
+    reactivated.session.actor = reactivated;
+    const reconnect = { ...foe(6), fetchClanId: () => 20, session: { accountId: 'human' } };
+    assert.strictEqual(Facts.assess(reactivated, reconnect).responsibility, 'defense');
+    assert.strictEqual(Facts.assess(reconnect, reactivated).responsibility, 'aggression');
+    assert.strictEqual(Facts.assess(reconnect, reactivated).episode, facts[0].episode);
+    const beforeNative = (await Repository.load(1)).revision;
+    Enemy.record(reactivated, reconnect, true);
+    await Social.events.flush();
+    const afterNative = await Repository.load(1);
+    assert.strictEqual(afterNative.revision, beforeNative + 1, 'post-handoff death is still a real memory event');
+    assert.strictEqual(afterNative.recent.find(e => e.type === 'killed' && e.targetId === 6).clan.responsibility, 'aggression',
+        'post-handoff clan evidence is durably attributed to the original initiator');
+    assert.strictEqual(Facts.assess(reactivated, reconnect, nativeAt + Facts.IDLE_MS + 1).responsibility, 'unknown');
     console.log('PvP interaction memory: factual episodes, bounded spam, death, replay, queue retry, shortlist independence, worker delivery and SQLite reopen passed');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {

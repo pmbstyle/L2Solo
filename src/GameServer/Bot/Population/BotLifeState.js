@@ -521,6 +521,7 @@ function recordFromSession(session, phase, reason = '') {
             ...invoke('GameServer/Social/CombatHelpMemory').threatSnapshot(actor, timestamp),
             flagUntil: actor.fetchPvpFlag?.() === 1 ? Number(session.pvpFlagUntil || 0) : 0 },
         pvpEnemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session),
+        pvpIncidents: invoke('GameServer/Social/PvpResponsibility').snapshot(actor, timestamp),
         revengeUntil: Math.max(Number(session.nextRevengeAt || 0), Number(cache.get(characterId)?.stats?.revengeUntil || 0)),
         clanGearExchangeRevision: Number(cache.get(characterId)?.stats?.clanGearExchangeRevision || 0),
         classId: actor.fetchClassId ? Number(actor.fetchClassId()) : null,
@@ -3410,14 +3411,16 @@ const BotLifeState = {
         const previous = pendingWrites.get(id) || Promise.resolve();
         const next = previous.catch(() => {}).then(async () => {
             const enemies = invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session);
+            const incidents = invoke('GameServer/Social/PvpResponsibility').snapshot(session.actor);
             const current = cache.get(id);
-            if (!current || current.phase !== 'hot' || JSON.stringify(current.stats?.pvpEnemies || []) === JSON.stringify(enemies)) return false;
+            if (!current || current.phase !== 'hot' || (JSON.stringify(current.stats?.pvpEnemies || []) === JSON.stringify(enemies)
+                && JSON.stringify(current.stats?.pvpIncidents || []) === JSON.stringify(incidents))) return false;
             await Database.execute([
-                `UPDATE ${TABLE} SET statsJson = json_set(COALESCE(statsJson, '{}'), '$.pvpEnemies', json(?)) WHERE characterId = ? AND phase = 'hot'`,
-                [JSON.stringify(enemies), id]
+                `UPDATE ${TABLE} SET statsJson = json_set(COALESCE(statsJson, '{}'), '$.pvpEnemies', json(?), '$.pvpIncidents', json(?)) WHERE characterId = ? AND phase = 'hot'`,
+                [JSON.stringify(enemies), JSON.stringify(incidents), id]
             ], 'bot:enemy-memory');
             const latest = cache.get(id);
-            if (latest) cache.set(id, { ...latest, stats: { ...(latest.stats || {}), pvpEnemies: enemies } });
+            if (latest) cache.set(id, { ...latest, stats: { ...(latest.stats || {}), pvpEnemies: enemies, pvpIncidents: incidents } });
             return true;
         }).catch(error => {
             utils.infoWarn('BotLife', 'failed enemy memory for %s: %s', id, error.message);
