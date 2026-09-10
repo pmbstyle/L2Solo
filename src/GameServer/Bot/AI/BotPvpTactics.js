@@ -60,7 +60,8 @@ function support(session, bot, context, Generics, now) {
         .sort((a, b) => ratio(a) - ratio(b));
     const target = wounded[0];
     if (target) {
-        const nativeParty = session.partyCompanion === true || context.members.some(member => member.followPlayerSession === session);
+        const nativeParty = !!session.hotBackgroundPartyId || session.partyCompanion === true
+            || context.members.some(member => member.followPlayerSession === session);
         const group = wounded.length >= 3 && nativeParty;
         const skills = Capabilities.healSkills(bot).filter(skill => usable(bot, skill))
             .filter(skill => skill.fetchTargetKind() !== 'party' || nativeParty);

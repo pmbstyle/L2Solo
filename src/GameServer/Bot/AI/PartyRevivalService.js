@@ -29,8 +29,17 @@ function isCompanionOf(session, leaderSession) {
 
 function partySessions(leaderSession) {
     if (!leaderSession?.actor) return [];
+    if (leaderSession.hotBackgroundPartyId && !leaderSession.partyCompanion) {
+        return invoke('GameServer/Bot/AI/HotBackgroundParty').roster(leaderSession);
+    }
     const BotManager = invoke('GameServer/Bot/BotManager');
     return [leaderSession, ...(BotManager.sessions || []).filter((session) => isCompanionOf(session, leaderSession))];
+}
+
+function isRescueMember(session, leaderSession) {
+    return leaderSession?.hotBackgroundPartyId && !leaderSession.partyCompanion
+        ? partySessions(leaderSession).includes(session)
+        : isCompanionOf(session, leaderSession);
 }
 
 function isAlive(session) {
@@ -62,6 +71,14 @@ function noteCompanionDeath(leaderSession, deadSession, now = Date.now()) {
 }
 
 function partyCombatInProgress(leaderSession) {
+    if (leaderSession?.hotBackgroundPartyId && !leaderSession.partyCompanion) {
+        const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
+        const living = partySessions(leaderSession).filter(isAlive);
+        if (living.some(s => Threats.context(s).threats.length > 0)) return true;
+        // An autonomous leader's stale selection is not an order to pull
+        // another monster while a party member needs resurrection.
+        return PartyCombatState.isActive(leaderSession, { ignoreLeaderSelection: true });
+    }
     return PartyCombatState.isActive(leaderSession);
 }
 
@@ -120,6 +137,10 @@ function clearExpiredAttempt(leaderSession, dead, now) {
     if (!attempt) return;
     const provider = partySessions(leaderSession).find(s => s.actor.fetchId() === attempt.providerId);
     const target = dead.find(s => s.actor.fetchId() === attempt.targetId);
+    if (!isAlive(provider)) {
+        leaderSession.partyRevivalAttempt = null;
+        return;
+    }
     if (target && provider && !withinReviveApproach(provider.actor, target.actor)) {
         if (provider.currentTargetId === attempt.targetId) {
             provider.actor.automation?.abortAll?.(provider.actor);
@@ -152,7 +173,8 @@ function castScroll(session, actor, target, skill) {
 }
 
 function tick(session, leaderSession, Generics) {
-    if (!isCompanionOf(session, leaderSession) || !isAlive(session)) return { handled: false };
+    if (!isRescueMember(session, leaderSession) || !isAlive(session)) return { handled: false };
+    const background = !!leaderSession.hotBackgroundPartyId && !leaderSession.partyCompanion;
 
     const now = Date.now();
     const dead = deadMembers(leaderSession);
@@ -164,7 +186,9 @@ function tick(session, leaderSession, Generics) {
         leaderSession.partyRevivalAttempt = null;
         return { handled: false, dead };
     }
-    const combat = PartyCombatState.combatState(leaderSession);
+    const combat = background
+        ? { active: partyCombatInProgress(leaderSession), reason: 'party_combat' }
+        : PartyCombatState.combatState(leaderSession);
     if (combat.active) return { handled: false, dead, blockedBy: combat.reason, threat: combat.target };
 
     const attempt = leaderSession.partyRevivalAttempt;
@@ -174,8 +198,11 @@ function tick(session, leaderSession, Generics) {
     // companion happens to have a lower character id.
     const availableProviders = partySessions(leaderSession)
         .filter(isAlive)
-        .filter(s => s !== leaderSession)
-        .filter(s => !invoke('GameServer/Bot/AI/ClanAllianceSupportAI').leaderFor(s));
+        .filter(s => background || s !== leaderSession)
+        .filter(s => !invoke('GameServer/Bot/AI/ClanAllianceSupportAI').leaderFor(s))
+        // Background parties use learned resurrection. Do not inherit the
+        // player-companion fallback that manufactures a scroll cast.
+        .filter(s => !background || learnedResurrectionSkills(s.actor).length > 0);
     const targetSession = dead.filter(target => availableProviders.some(provider => withinReviveApproach(provider.actor, target.actor))).sort((a, b) => (
         Number(b === leaderSession) - Number(a === leaderSession) ||
         Number(a.actor.fetchId()) - Number(b.actor.fetchId())
@@ -183,17 +210,26 @@ function tick(session, leaderSession, Generics) {
     if (!targetSession) return { handled: false, dead };
     const providers = availableProviders
         .filter((memberSession) => withinReviveApproach(memberSession.actor, targetSession.actor))
-        .filter((memberSession) => memberSession.actor !== session.actor || !session.actor.state?.fetchCasts?.());
+        .filter((memberSession) => !memberSession.actor.state?.fetchCasts?.())
+        .filter(s => !background || invoke('GameServer/Effects/EffectRestrictions').canCast(s.actor));
     const skilled = providers
         .map((providerSession) => ({ session: providerSession, skill: resurrectionSkill(providerSession.actor) }))
         .filter((entry) => entry.skill)
         .sort((a, b) => Number(a.session.actor.fetchId()) - Number(b.session.actor.fetchId()))[0] || null;
     const provider = skilled?.session || providers.sort((a, b) => Number(a.actor.fetchId()) - Number(b.actor.fetchId()))[0] || null;
     if (!provider || provider !== session) return { handled: false, dead };
+    if (background && !skilled) return { handled: false, dead };
 
     const skill = skilled?.skill || resurrectionScrollSkill();
     if (!skill) return { handled: false, dead };
 
+    if (background) {
+        invoke('GameServer/Bot/AI/BotPvpTactics').stop(session, session.actor);
+        if (session.actor.state.fetchSeated?.()) {
+            session.actor.state.setSeated(false);
+            session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(session.actor), session.actor);
+        }
+    }
     leaderSession.partyRevivalAttempt = {
         providerId: session.actor.fetchId(),
         targetId: targetSession.actor.fetchId(),
@@ -226,10 +262,13 @@ function tick(session, leaderSession, Generics) {
 }
 
 function shouldTownRespawn(leaderSession, deadSession, now = Date.now()) {
-    if (!isCompanionOf(deadSession, leaderSession) || !leaderSession?.actor?.fetchIsOnline?.()) return true;
+    if (!isRescueMember(deadSession, leaderSession) || !leaderSession?.actor?.fetchIsOnline?.()) return true;
     // A remote courier cannot be rescued by this group. A fight elsewhere
     // must not pause its town recovery or send support across the map.
     if (!partySessions(leaderSession).some(s => isAlive(s) && withinReviveApproach(s.actor, deadSession.actor))) return true;
+    const background = !!leaderSession.hotBackgroundPartyId && !leaderSession.partyCompanion;
+    if (background && !partySessions(leaderSession).some(s => isAlive(s)
+        && withinReviveApproach(s.actor, deadSession.actor) && learnedResurrectionSkills(s.actor).length > 0)) return true;
 
     // A resurrection provider cannot safely cast while the party is still
     // fighting. Pause the actual wait budget instead of letting wall-clock
@@ -250,7 +289,15 @@ function shouldTownRespawn(leaderSession, deadSession, now = Date.now()) {
     const members = partySessions(leaderSession);
     const living = members.filter(isAlive);
     if (living.length === 0) return true;
-    if (living.length === 1 && living[0] === leaderSession && !playerCanResurrect(leaderSession)) return true;
+    if (!background && living.length === 1 && living[0] === leaderSession && !playerCanResurrect(leaderSession)) return true;
+
+    // A cast accepted before the deadline must be allowed to land, including
+    // the native stand-up animation. Failed attempts remain time-bounded.
+    const attempt = leaderSession.partyRevivalAttempt;
+    if (background && attempt?.targetId === deadSession.actor.fetchId()
+        && now - Number(attempt.startedAt || 0) < 25000
+        && living.some(s => s.actor.fetchId() === attempt.providerId
+            && withinReviveApproach(s.actor, deadSession.actor))) return false;
 
     const waitedMs = now - Number(deadSession.deathTimerStart || now) -
         Number(deadSession.partyReviveCombatPausedMs || 0);

@@ -27,7 +27,12 @@ function enterWorld(session, actor) {
     // Effects must be available before the stat calculation; e.g. a max-HP
     // buff affects the cap used when the persisted HP is restored.
     const vitals = CharacterStatus.savedVitals(actor);
-    CharacterStatus.restoreEffects(session, actor, actor.model.effects);
+    const coldEffects = session.coldLifeState?.stats?.coldCombat?.effects;
+    // A cold snapshot is authoritative even when empty: falling back then
+    // would resurrect stale effects from the character's last logout.
+    // restoreEffects keeps absolute expiry times and drops expired entries.
+    CharacterStatus.restoreEffects(session, actor,
+        Array.isArray(coldEffects) ? coldEffects : actor.model.effects);
 
     // Calculate accumulated statistics
     Generics.calculateStats(session, actor);
@@ -43,10 +48,10 @@ function enterWorld(session, actor) {
     // Start vitals replenish
     actor.automation.setRevHp(DataCache.revitalize.hp[actor.fetchLevel()]);
     actor.automation.setRevMp(DataCache.revitalize.mp[actor.fetchLevel()]);
-    actor.automation.replenishVitals(actor);
+    if (!session.populationStaging) actor.automation.replenishVitals(actor);
 
     // Show NPCs based on radius
-    Generics.updatePosition(session, actor, {
+    if (!session.populationStaging) Generics.updatePosition(session, actor, {
         locX: actor.fetchLocX(),
         locY: actor.fetchLocY(),
         locZ: actor.fetchLocZ(),

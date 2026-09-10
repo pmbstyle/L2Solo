@@ -25,6 +25,7 @@ class BotSession {
     }
 
     dataSendToOthers(data, creature) {
+        if (this.populationStaging) return;
         const visibleUsers = typeof World.fetchVisibleRealPlayers === 'function'
             ? World.fetchVisibleRealPlayers(this, creature)
             : World.fetchVisibleUsers(this, creature);

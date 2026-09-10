@@ -207,4 +207,97 @@ episode per mob claim and use the existing warning/cooldown flow. A shared inten
 does not bypass live risk, party/clan protection, peace/arena rules, active combat
 or effect restrictions. Actual PvP continues through Revenge and the ordinary
 combat loop. This change aligns escalation; it does not add hot social invitations
-or replace actual party combat support with a cold simulated outcome.
+or replace actual combat with a cold simulated outcome.
+
+## Shared conflict participation
+
+`Social/ConflictParticipationPolicy` selects individual roles for both cold
+resource contests and autonomous hot party provocations. The same cached memory,
+personas and RNG produce the same roles for an identical eligible roster, in
+character-ID order. At most two nine-member parties participate. Unloaded memory
+and unavailable hot members cannot grant support. A calming leader or strict
+majority can stop the planned escalation. Voting itself creates no grievance.
+
+Hot `BotConflictParticipation` saves one bounded decision per encounter. Revenge
+checks the nearby roster and leadership again before sending a pending warning,
+during AI selection and at native impact before the first hostile action.
+Changed rosters permanently revoke that episode's permission, without rerolling
+or reviving it when the old roster returns. Only available consenting members receive proactive combat
+permission after that action; new members cannot inherit it and departing
+supporters lose it. The final pre-attack risk check excludes bystanders and busy
+supporters from allied strength.
+
+An actual incoming attack still follows existing party defense. Human-led bot
+companions retain their existing coordination. These are participation decisions,
+not simulated damage: hot combat and its existing factual memory producers remain
+responsible for what actually happens. Actual cold PvP resolution and transfer of
+an ongoing fight between hot and cold modes remain separate follow-up work.
+
+## Native PvP memory
+
+Accepted hostile actions, damage and deaths feed `Social/PvpInteractionMemory`
+through `BotEnemyMemory`. The victim remembers the attacker personally: repeated
+hits are coalesced into one `attacked` episode per minute, while death adds a
+separate `killed` episode. Arena fights and existing native protection exclusions
+remain outside this path. Summon attacks retain their owner's identity.
+
+The existing bounded event queue persists these episodes outside combat callbacks
+and notifies the cold worker. Stable event keys make delivery retries idempotent;
+queue pressure retains the original key for a later callback. Personal relations
+remain available after cooling or restart, independently of the three-entry
+revenge shortlist. This does not change revenge thresholds or spread an individual
+grievance to a clan or alliance.
+
+Validation: `test_pvp_interaction_memory.js` covers hit coalescing, death, replay,
+queue pressure, shortlist overflow and SQLite reopen. `test_bot_pvp_defense.js`
+checks attack and death episodes through native `ReceivedHit`.
+
+## Whole-party visibility lifecycle
+
+Near-player activation treats each autonomous background party as one unit (2–9
+members). A full party can consume an otherwise empty activation pass even when
+the solo budget is smaller. All members must have safe placements near their
+leader and pass the floor check. The cold worker is fenced before a transaction
+reserves the whole roster as hot. Actors load privately; only a fully prepared,
+persisted roster is published and starts AI. Spawn failure rolls the group back.
+The party's identity, leader, roles, objective and social memories remain intact.
+
+Hot background parties regroup, share a hunting target and recovery, and use
+native party EXP/SP and loot distribution. Hot solo and party drops appear on
+the ground; the nearest eligible bot runs to collect them through native pickup.
+Only after arrival does pickup split Adena across the eligible roster or select
+an item recipient by the party policy. A party waits for its collector before a
+fresh pull, while incoming combat, revival and support casts retain priority.
+Party spells see the full roster, and visible or fighting members keep their
+allies' AI active. They retain distinct identities from
+human-led companions. Observer exposes the durable party ID for hot members.
+
+Safe hot parties use native healing, resurrection and learned party buffs before
+resuming their hunt. Autonomous resurrection requires a learned skill or a real
+scroll; fallen members wait for rescue while it remains possible. Hot/cold effect
+handoff restores the saved effects with their original expiration times, so
+activation does not renew existing buffs or require a full rebuff.
+
+When the 1800-unit combat scan is empty, the leader searches up to 4500 units
+within the same spot, at most once per five seconds. It walks toward a reachable
+live monster or known spawn point; native movement and the normal combat scan
+take over en route. Each search checks at most eight destination surfaces, avoids raids
+and other floors, and does not replace pending movement. Native pathfinding checks
+the route; recent destinations have a retry cooldown. Followers regroup;
+the leader waits for stragglers. Recovery and actual combat take priority.
+
+Cooling requires every member to be away from players, beyond the grace period
+and free of combat/trade obligations. All live snapshots commit together before
+actors are removed and worker snapshots are notified. Cold time resumes at the
+transition, so time already played hot is never awarded again. Startup recovers
+hot reservations to cold groups without dissolving membership.
+
+Validation: `test_hot_party_lifecycle.js` covers full-roster publication, failed
+spawn rollback, duplicate requests, stale worker leases, 9-member CAS, memory,
+visibility/PvP guards, SQLite reopen and recovery in a fresh process.
+`test_hot_background_party.js` exercises target sharing, support priority,
+regrouping under attack, native death rewards, shared-hunt memory and Adena
+distribution. `test_bot_population_policy.js` checks whole-party activation
+when the per-pass solo budget is smaller than the roster. Live activation must
+additionally prove that the native actors publish with the same roster and
+that the cold worker resumes after the full group leaves the world.

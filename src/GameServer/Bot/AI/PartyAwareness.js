@@ -29,6 +29,9 @@ function isOnlineActor(actor) {
 }
 
 function isPartySession(session, leaderSession) {
+    if (leaderSession?.hotBackgroundPartyId) {
+        return invoke('GameServer/Bot/AI/HotBackgroundParty').roster(leaderSession).includes(session);
+    }
     return session === leaderSession || (
         session &&
         session.followPlayerSession === leaderSession &&
@@ -38,6 +41,10 @@ function isPartySession(session, leaderSession) {
 
 function partySessions(leaderSession) {
     if (!leaderSession) return [];
+    if (leaderSession.hotBackgroundPartyId) {
+        return invoke('GameServer/Bot/AI/HotBackgroundParty').roster(leaderSession)
+            .filter(session => isOnlineActor(session.actor));
+    }
 
     return (world().user?.sessions || []).filter((session) => (
         session &&

@@ -329,6 +329,7 @@ async function run() {
     };
     PartyState.setStatus = async (partyId, status) => {
         activationOrder.push(`status:${partyId}:${status}`);
+        return { partyId, status };
     };
     LifeState.releaseDissolvedPartyMembers = async (partyId, reason) => {
         activationOrder.push(`release:${partyId}:${reason}`);
@@ -500,7 +501,7 @@ async function run() {
         activationOrder.push(`restore:${state.characterId}`);
         return { ok: true, reason: 'restored_for_test' };
     };
-    const failedSpawn = await HotActivation.activate(failedSpawnState, 'spawn_failure', { keepStoreLocation: true });
+    const failedSpawn = await HotActivation.activate(failedSpawnState, 'spawn_failure', { keepStoreLocation: true, interruptBackgroundActivity: true });
     assert.strictEqual(failedSpawn.ok, false, 'failed hot spawn must be reported as failed');
     assert.strictEqual(activationOrder.at(-1), 'restore:91004', 'failed activation must return its released state to the cold worker');
 
@@ -525,10 +526,10 @@ async function run() {
     LifeState.releaseDissolvedPartyMembers = async () => 2;
     LifeState.cachedState = (characterId) => characterId === concurrentState.characterId ? concurrentReleasedState : null;
 
-    const firstActivation = HotActivation.activate(concurrentState, 'concurrent_first', { keepStoreLocation: true });
-    const secondActivation = HotActivation.activate(concurrentState, 'concurrent_second', { keepStoreLocation: true });
+    const firstActivation = HotActivation.activate(concurrentState, 'concurrent_first', { keepStoreLocation: true, interruptBackgroundActivity: true });
+    const secondActivation = HotActivation.activate(concurrentState, 'concurrent_second', { keepStoreLocation: true, interruptBackgroundActivity: true });
     await Promise.resolve();
-    releaseStatus();
+    releaseStatus({ partyId: concurrentState.party.partyId, status: 'dissolved' });
     const concurrentResults = await Promise.all([firstActivation, secondActivation]);
     assert.strictEqual(concurrentResults.filter((result) => result.ok).length, 1, 'only one concurrent request may activate a character');
     assert.strictEqual(concurrentResults.filter((result) => result.reason === 'activation_pending').length, 1, 'the competing request must observe the early activation reservation');

@@ -365,6 +365,7 @@ function compactHotBot(status, pkIds = new Set(), session = null) {
             distance: status.target.distance ? Math.round(status.target.distance) : null
         } : null,
         party: status.party ? {
+            id: status.party.id || null,
             leader: compactPartyLeader(status.party.leader),
             leaderId: Number(status.party.leader?.id || 0) || null,
             stance: status.party.stance,

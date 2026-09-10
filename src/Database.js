@@ -3031,6 +3031,52 @@ const Database = {
         }, 'bot-life:cold-owner-renew-batch');
     },
 
+    transitionBackgroundParty(request = {}) {
+        const members = request.members || [];
+        const ids = members.map(m => Number(m.characterId));
+        if (ids.length < 2 || ids.length > 9 || new Set(ids).size !== ids.length
+            || !['hot', 'cold'].includes(request.phase) || !['hot', 'cold'].includes(request.expectedPhase)) {
+            return Promise.resolve({ ok: false, reason: 'invalid_party_transition' });
+        }
+        return inTransaction(() => {
+            const party = one('SELECT * FROM bot_background_parties WHERE partyId = ?', [request.partyId]);
+            const declared = party ? JSON.parse(party.memberIdsJson) : [];
+            if (!party || party.status !== request.expectedStatus || Number(party.updatedAt) !== request.expectedUpdatedAt
+                || declared.length !== ids.length || declared.some(id => !ids.includes(Number(id)))) {
+                return { ok: false, reason: 'party_changed' };
+            }
+            const attached = all('SELECT characterId FROM bot_life_state WHERE partyId = ?', [request.partyId]);
+            if (attached.length !== ids.length || attached.some(r => !ids.includes(Number(r.characterId)))) {
+                return { ok: false, reason: 'party_membership_changed' };
+            }
+            const rows = members.map(m => coldSimulationRow(Number(m.characterId)));
+            for (let i = 0; i < members.length; i++) {
+                const row = rows[i], m = members[i];
+                if (!row || row.phase !== request.expectedPhase || row.partyId !== request.partyId
+                    || Number(row.simulationRevision) !== m.expectedRevision || Number(row.updatedAt) !== m.expectedUpdatedAt
+                    || ![LEGACY_SIMULATION_OWNER, COLD_SIMULATION_OWNER].includes(row.simulationOwner)
+                    || Object.keys(m.patch || {}).some(key => !COLD_SIMULATION_PATCH_COLUMNS.has(key))
+                    || m.patch.partyId !== request.partyId || m.patch.phase !== request.phase) {
+                    return { ok: false, reason: 'member_changed' };
+                }
+            }
+            const timestamp = Math.max(now(), Number(party.updatedAt) + 1);
+            for (let i = 0; i < members.length; i++) {
+                const m = members[i], row = rows[i];
+                const entries = Object.entries(preserveColdVersionedStats(row, { ...m.patch, updatedAt: timestamp }));
+                const changed = write(`UPDATE bot_life_state SET ${entries.map(([key]) => `${escapeIdentifier(key)} = ?`).join(', ')},
+                    simulationOwner = ?, simulationRevision = simulationRevision + 1, simulationLeaseId = NULL, simulationLeaseUntil = 0
+                    WHERE characterId = ? AND simulationRevision = ?`,
+                [...entries.map(([, value]) => value), LEGACY_SIMULATION_OWNER, m.characterId, m.expectedRevision]);
+                if (changed.affectedRows !== 1) throw Error('party lifecycle CAS failed');
+            }
+            write('UPDATE bot_background_parties SET status = ?, nextResolveAt = ?, statsJson = ?, updatedAt = ? WHERE partyId = ?',
+                [request.phase === 'hot' ? 'hot' : 'active', request.nextResolveAt, request.statsJson, timestamp, request.partyId]);
+            return { ok: true, rows: ids.map(coldSimulationRow),
+                party: one('SELECT * FROM bot_background_parties WHERE partyId = ?', [request.partyId]) };
+        }, 'bot-life:party-lifecycle');
+    },
+
     handoffColdSimulationToMain(request = {}) {
         const characterId = Number(request.characterId);
         const expectedRevision = request.expectedRevision === null || request.expectedRevision === undefined

@@ -7,7 +7,7 @@ function skillStarted(actor, npcId, skill) {
         .writeD(actor.fetchId())
         .writeD(npcId)
         .writeD(skill.fetchSelfId())
-        .writeD(0x01)
+        .writeD(skill.fetchLevel?.() ?? 1)
         .writeD(skill.fetchCalculatedHitTime())
         .writeD(skill.fetchReuseTime())
         .writeD(actor.fetchLocX())
@@ -15,7 +15,9 @@ function skillStarted(actor, npcId, skill) {
         .writeD(actor.fetchLocZ())
         .writeD(0x00);
 
-    return packet.fetchBuffer();
+    const buffer = packet.fetchBuffer();
+    buffer.__packetTrace = `actor=${actor.fetchId()}:target=${npcId}:skill=${skill.fetchSelfId()}:level=${skill.fetchLevel?.() ?? 1}:hitTime=${skill.fetchCalculatedHitTime()}`;
+    return buffer;
 }
 
 module.exports = skillStarted;

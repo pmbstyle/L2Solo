@@ -104,6 +104,9 @@ for (const plan of ['hunting', 'resting', 'shopping', 'getting_buffed', 'followi
     // Avoid a packet-only stand action in this small damage fixture.
     bot.seated = false;
     ReceivedHit(attacker, bot, 5);
+    assert([...invoke('GameServer/Social/InteractionMemoryRuntime').events.pending.values()].some(e =>
+        e.sourceId === bot.id && e.targetId === enemy.id && e.type === 'attacked'),
+    'native damage updates directed social memory as well as immediate defense');
     bot.seated = true;
     assert.strictEqual(bot.cp, 95);
     assert.strictEqual(bot.hp, 100);
@@ -351,6 +354,30 @@ function skill(id, type, target, effect, power = 100) {
     GlobalChat.reset();
 }
 
+{
+    const { bot, own, enemy, attacker } = setup({ hp: 10, flag: 1 });
+    const Generics = invoke(path.actor), Database = invoke('Database');
+    const saved = { die: Generics.die, update: Database.updateCharacterPvpPkKarma,
+        userInfo: Response.userInfo, charInfo: Response.charInfo, relation: Response.relationChanged };
+    try {
+        Generics.die = (_session, victim) => { victim.dead = true; };
+        Database.updateCharacterPvpPkKarma = () => Promise.resolve();
+        Response.userInfo = Response.charInfo = Response.relationChanged = () => Buffer.alloc(0);
+        own.dataSendToMe = attacker.dataSendToMe = () => {};
+        enemy.fetchPvp = enemy.fetchPk = () => 0;
+        enemy.setPvp = () => {};
+        bot.setPvpFlag = flag => { bot.flag = flag; };
+        ReceivedHit(attacker, bot, 20);
+        assert(bot.dead);
+        const events = [...invoke('GameServer/Social/InteractionMemoryRuntime').events.pending.values()]
+            .filter(e => e.sourceId === bot.id && e.targetId === enemy.id);
+        assert.deepStrictEqual(events.map(e => e.type), ['attacked', 'killed'],
+            'fatal native damage records both the attack episode and death before corpse cleanup');
+    } finally {
+        Generics.die = saved.die; Database.updateCharacterPvpPkKarma = saved.update;
+        Response.userInfo = saved.userInfo; Response.charInfo = saved.charInfo; Response.relationChanged = saved.relation;
+    }
+}
 utils.isInPeaceZone = originalPeace;
 BotAI.promoteForPlayerInteraction = originalPromote;
 Response.speak = originalSpeak;

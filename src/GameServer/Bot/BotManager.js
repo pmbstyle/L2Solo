@@ -574,6 +574,7 @@ const BotManager = {
 
     loadAndSpawnBot(username, botData = {}) {
         const session = new BotSession(username);
+        session.populationStaging = botData.prepareOnly === true;
 
         return Shared.fetchCharacters(username).then((characters) => {
             const firstCharacter = characters[0];
@@ -591,6 +592,7 @@ const BotManager = {
                 .then((reconciledCharacters) => {
                     const reconciledCharacter = reconciledCharacters[0];
                     if (!reconciledCharacter) return null;
+                    if (botData.prepareOnly) return reconciledCharacters;
                     return ShotStock.ensureCharacterStock(reconciledCharacter.id, {
                         classId: reconciledCharacter.classId,
                         targetAmount: ShotStock.DEFAULT_TARGET_AMOUNT
@@ -712,6 +714,11 @@ const BotManager = {
                     let hotPersisted = false;
                     try {
                         await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany([Number(character.id)]);
+                        if (botData.prepareOnly) {
+                            await session.actor.enterWorld();
+                            this.finalizeReadyActivation(session, botData);
+                            return session;
+                        }
                         // Persist ownership before publishing the actor to the
                         // world. markHot resolves null on a database failure,
                         // so the result must be treated as an activation error.
@@ -761,6 +768,12 @@ const BotManager = {
                     }
                 });
             });
+        }).catch(error => {
+            if (botData.prepareOnly && session.actor) {
+                session.actor.destructor();
+                session.actor = null;
+            }
+            throw error;
         });
     },
 

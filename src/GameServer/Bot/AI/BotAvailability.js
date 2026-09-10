@@ -98,6 +98,7 @@ const BotAvailability = {
 
         let reason = 'available';
         if (staticService) reason = 'merchant_duty';
+        else if (botSession.hotBackgroundPartyId) reason = 'already_grouped';
         else if (result.clanmate) reason = 'available';
         else if (player.isDead && player.isDead()) reason = 'player_dead';
         else if (bot.isDead && bot.isDead()) reason = 'bot_dead';

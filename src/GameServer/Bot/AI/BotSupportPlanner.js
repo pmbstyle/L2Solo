@@ -736,7 +736,7 @@ function nextAction(caster, members, providers = members.map((member) => member.
             });
         }
     }
-    if (next?.provider !== caster) return null;
+    if (!next || (caster && next.provider !== caster)) return null;
 
     // Other companions can reuse the party-wide choice without touching the
     // effect graph again. The selected provider still validates the cached
@@ -787,6 +787,7 @@ module.exports = {
     finishSupportCast,
     cancelSupportCast,
     nextAction,
+    nextPartyAction: (members, providers) => nextAction(null, members, providers),
     canPlanSupportAction,
     rebuffRequest
 };

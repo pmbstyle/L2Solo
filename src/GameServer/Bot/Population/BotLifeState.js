@@ -871,7 +871,7 @@ function recoverDissolvedPartyMembers() {
             ),
             updatedAt = ?
         WHERE partyId IN (
-            SELECT partyId FROM bot_background_parties WHERE status <> 'active'
+            SELECT partyId FROM bot_background_parties WHERE status NOT IN ('active', 'hot')
         )`,
         [timestamp, timestamp, timestamp]
     ]).then((result) => {
@@ -1440,6 +1440,25 @@ const BotLifeState = {
         });
 
         return initPromise;
+    },
+
+    async settleWrites(ids) {
+        await Promise.all(ids.map(id => pendingWrites.get(Number(id)) || Promise.resolve()));
+    },
+
+    acceptLifecycleRow(row) {
+        const snapshot = normalize(row);
+        cache.set(snapshot.characterId, snapshot);
+        return snapshot;
+    },
+
+    partySessionSnapshot(session, state, phase, reason) {
+        const snapshot = mergeSessionIntoLifeState(session, state, phase, reason, { physicalLocation: true });
+        snapshot.activity = 'grouped';
+        snapshot.spotId = state.spotId;
+        snapshot.party = { ...state.party };
+        snapshot.stats = { ...snapshot.stats, role: state.party.role, leaderId: state.party.leaderId };
+        return snapshot;
     },
 
     markHot(session, reason = 'hot') {

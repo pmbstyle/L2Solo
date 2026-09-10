@@ -1742,14 +1742,19 @@ const PopulationService = {
                         // persisted route. Keep it cold until its resolver
                         // reaches the destination, instead of spawning a
                         // hunter/resting bot stranded on a road or plaza.
-                        // A persisted background party is one lifecycle unit.
-                        // Ambient visibility must not materialize one member
-                        // as a solo hot bot and silently dissolve the group.
+                        // A party contributes one candidate; its lifecycle
+                        // transition reserves and materializes the full roster.
+                        const seenParties = new Set();
                         const available = states.filter((state) => (
                             !['pk_hunting', 'traveling'].includes(state.activity) &&
-                            !state.stats?.supplyErrand &&
-                            !state.party?.partyId
-                        ));
+                            !state.stats?.supplyErrand
+                        )).filter(state => {
+                            const partyId = state.party?.partyId;
+                            if (!partyId) return true;
+                            if (seenParties.has(partyId) || BackgroundPartyState.find(partyId)?.status !== 'active') return false;
+                            seenParties.add(partyId);
+                            return true;
+                        });
                         const merchants = available.filter((state) => state.activity === 'merchant' && state.stats?.marketStore);
                         const crafters = available.filter((state) => state.activity === 'crafting' && state.stats?.craftShop);
                         // There is intentionally no local population target
@@ -1773,6 +1778,13 @@ const PopulationService = {
                         }).accepted;
                         return floorAware.reduce((stateChain, state) => (
                             stateChain.then(() => {
+                                const craft = state.activity === 'crafting' && state.stats?.craftShop;
+                                const size = state.party?.partyId ? BackgroundPartyState.find(state.party.partyId)?.memberIds.length || 1 : 1;
+                                // One full party may exceed the solo per-scan budget
+                                // (9 versus 6), but may not be split or starve forever.
+                                if (!craft && ambientActivated.length && ambientActivated.length + size > Config.maxActivationsPerScan) {
+                                    return { ok: false, reason: 'activation_budget' };
+                                }
                                 return this.requestActivation(state, 'near_player', {
                                     recoverOnActivation: this.isRestingActivationState(state),
                                     readyOnActivation: true,
@@ -1783,7 +1795,9 @@ const PopulationService = {
                             }).then((result) => {
                                 if (result.ok) {
                                     activated.push(result);
-                                    if (state.activity !== 'crafting' || !state.stats?.craftShop) ambientActivated.push(result);
+                                    if (state.activity !== 'crafting' || !state.stats?.craftShop) {
+                                        ambientActivated.push(...Array(result.count || 1).fill(result));
+                                    }
                                 }
                             })
                         ), Promise.resolve());
@@ -1799,6 +1813,7 @@ const PopulationService = {
         const now = Date.now();
         const players = this.realPlayerSessions();
         const cooldownRadius = Math.max(Config.cooldownRadius, Config.activationRadius);
+        const seenParties = new Set();
         const candidates = BotManager.sessions
             .filter((session) => session.actor && session.accountId && String(session.accountId).startsWith('bot_'))
             .filter((session) => {
@@ -1814,6 +1829,12 @@ const PopulationService = {
                 return players.every((playerSession) => (
                     distance2d(session.actor, playerSession.actor) > cooldownRadius
                 ));
+            })
+            .filter(session => {
+                if (!session.hotBackgroundPartyId) return true;
+                if (seenParties.has(session.hotBackgroundPartyId)) return false;
+                seenParties.add(session.hotBackgroundPartyId);
+                return true;
             })
             .sort((a, b) => {
                 const aDistance = players.length

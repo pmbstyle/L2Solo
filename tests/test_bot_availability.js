@@ -55,6 +55,9 @@ try {
     result = BotAvailability.evaluate(clanPlayer, clanBot);
     assert.strictEqual(result.available, true, 'same-clan hot bot should ignore party invite level gap');
     assert.strictEqual(result.clanmate, true);
+    const autonomousClanBot = { ...clanBot, hotBackgroundPartyId: 'native-party' };
+    assert.strictEqual(BotAvailability.evaluate(clanPlayer, autonomousClanBot, { forceFriend: true }).reason, 'already_grouped',
+        'a player invite must not split an autonomous hot lifecycle roster');
 
     const merchantClanBot = session(actor(2000005, 55, 6000001), { plan: 'merchant' });
     result = BotAvailability.evaluate(clanPlayer, merchantClanBot);

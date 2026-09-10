@@ -73,7 +73,7 @@ try {
     World.user.sessions.push(helper.session);
     assert(!helper.session.pvpRevenge);
     Threats.record(f.rival, f.bot, now + 3);
-    assert.strictEqual(helper.session.pvpRevenge, f.bot.session.pvpRevenge, 'party joins after the first hostile action');
+    assert(!helper.session.pvpRevenge, 'a party formed after the decision cannot inherit permission to attack');
 
     const second = setup(true);
     Competition.record(second.rival, second.mob, now);
@@ -144,6 +144,137 @@ try {
         assert(!events.slice(count).some(e => ['chat', 'attack'].includes(e[0])), `${mode}: no inappropriate warning or attack`);
         Budget.canSend = () => true;
     }
+    const Participation = invoke('GameServer/Bot/AI/BotConflictParticipation');
+    const ParticipationPolicy = require('../src/GameServer/Social/ConflictParticipationPolicy');
+    const { seeded } = require('../src/GameServer/Bot/Population/ColdCompetitionMonitor');
+    const supportTraits = { assertiveness: 1, empathy: 0, commitment: 1, sociability: 1, caution: 0 };
+    const bystanderTraits = { assertiveness: 1, empathy: 0, commitment: 0, sociability: 0, caution: 1 };
+    const group = (size, level = 40) => {
+        const actors = Array.from({ length: size }, () => character(true, level));
+        for (const a of actors) {
+            if (size > 1) a.session.coldLifeState = { party: { partyId: `vote-${actors[0].id}`, leaderId: actors[0].id } };
+            a.session.persona.traits = { ...supportTraits };
+            World.user.sessions.push(a.session);
+        }
+        return actors;
+    };
+    for (const sizes of [[1, 1], [3, 1], [1, 3], [3, 3], [9, 9]]) {
+        const left = group(sizes[0]), right = group(sizes[1], 10);
+        const hot = Participation.prepare(left[0].session, right[0], now, seeded('shared-roster'));
+        const sides = [left, right].map(actors => ({ principal: { characterId: actors[0].id },
+            party: actors.length > 1 ? { leaderId: actors[0].id } : null,
+            members: actors.map(a => ({ characterId: a.id, persona: a.session.persona })) }));
+        const cold = ParticipationPolicy.select(sides, InteractionMemory, s => s.persona, seeded('shared-roster'), now);
+        assert.deepStrictEqual(hot.participants, [...cold.roles].map(([id, role]) => ({ id, role })), `${sizes}: hot/cold participation parity`);
+        assert.strictEqual(hot.deescalated, cold.deescalated);
+        const reordered = ParticipationPolicy.select(sides.map(s => ({ ...s, members: s.members.slice().reverse() })),
+            InteractionMemory, s => s.persona, seeded('shared-roster'), now);
+        assert.deepStrictEqual([...reordered.roles], [...cold.roles], 'roster iteration order cannot change a vote');
+    }
+    const voters = group(3), votedTarget = group(1, 10)[0];
+    voters[2].session.persona.traits = { ...bystanderTraits };
+    const beforeVoteMemories = memories.length;
+    assert(Revenge.request(voters[0].session, votedTarget, 'mob_competition', ['Back off.'], true, now, () => 0.2));
+    const voted = voters[0].session.pvpRevenge;
+    assert(!voters[1].session.pvpRevenge && !voters[2].session.pvpRevenge, 'support is only intent before the first attack');
+    assert.strictEqual(memories.length, beforeVoteMemories, 'a vote creates no negative memory');
+    const risk = invoke('GameServer/Bot/AI/BotPvpRisk').defenseDecision(voters[0].session, [votedTarget], {
+        allyAllowed: member => Participation.supports(voted.participation, member) && Participation.available(member, now)
+    });
+    assert.deepStrictEqual(risk.allyIds, [voters[1].id], 'proactive risk counts only available consenting allies');
+    Threats.record(votedTarget, voters[0], now + 1);
+    assert.strictEqual(voters[1].session.pvpRevenge, voted, 'only the consenting supporter joins');
+    assert(!voters[2].session.pvpRevenge, 'bystander stays out of proactive combat');
+    const extra = group(1)[0];
+    extra.session.coldLifeState = voters[0].session.coldLifeState;
+    for (let i = 2; i < 100; i++) Revenge.onAttack(voters[0], votedTarget, now + i, () => { throw Error('must not reroll'); });
+    assert(!extra.session.pvpRevenge, 'joining a fighting party does not inherit an earlier vote');
+    assert(!voters[2].session.pvpRevenge);
+    voters[1].session.coldLifeState = { party: { partyId: 'left-party' } };
+    assert(!Revenge.allows(voters[1].session, votedTarget, now + 100), 'departed supporters lose their borrowed permission');
+    votedTarget.flag = 1;
+    Threats.record(voters[2], votedTarget, now + 101);
+    Defense.tick(voters[2].session, voters[2], {}, ai, { now: now + 102, rng: () => 0.2 });
+    assert(events.some(e => e[0] === 'attack' && e[1] === voters[2].id && e[2] === votedTarget.id),
+        'a former bystander can defend against an actual attack');
+
+    const calming = group(3), calmTarget = group(1, 10)[0];
+    calming.forEach(a => { a.session.coldLifeState.party.leaderId = calming[1].id; });
+    calming[1].session.persona.traits = { empathy: 1, assertiveness: 0 };
+    assert(!Revenge.request(calming[0].session, calmTarget, 'mob_competition', ['Enough.'], true, now, () => 0.2));
+    assert(calming[0].session.lastConflictParticipation.deescalated, 'the leader can settle a hot dispute');
+    assert(calming.every(a => !a.session.pvpRevenge));
+
+    const majority = group(3), majorityTarget = group(1, 10)[0];
+    majority.slice(1).forEach(a => { a.session.persona.traits = { empathy: 1, assertiveness: 0 }; });
+    assert(Participation.prepare(majority[0].session, majorityTarget, now, () => 0.2).deescalated,
+        'a strict majority can calm an initiating leader');
+    const busy = group(2), busyTarget = group(1, 10)[0];
+    assert(Revenge.request(busy[0].session, busyTarget, 'mob_competition', ['Back off.'], true, now, () => 0.2));
+    busy[1].fakeDeath = true;
+    Threats.record(busyTarget, busy[0], now + 1);
+    assert(!busy[1].session.pvpRevenge, 'a supporter disabled before the hit cannot join');
+
+    const unloaded = group(2), unloadedTarget = group(1, 10)[0];
+    InteractionMemory.forget(unloaded[1].id);
+    assert.strictEqual(Participation.prepare(unloaded[0].session, unloadedTarget, now, () => 0.2)
+        .participants.find(p => p.id === unloaded[1].id).role, 'stand_aside', 'unloaded memory is not consent');
+    const absent = group(2), absentTarget = group(1, 10)[0];
+    absent[1].x = Threats.PARTY_RADIUS + 1;
+    assert(!Participation.prepare(absent[0].session, absentTarget, now, () => 0.2).participants.some(p => p.id === absent[1].id));
+
+    const delayed = group(2), delayedTarget = group(1, 10)[0];
+    Budget.canSend = () => false;
+    assert(!Revenge.request(delayed[0].session, delayedTarget, 'mob_competition', ['Wait.'], true, now, () => 0.2));
+    assert(delayed[0].session.pendingPvpProvocation);
+    delayed[1].session.coldLifeState = { party: { partyId: 'changed-before-warning' } };
+    Budget.canSend = () => true;
+    assert(!Revenge.flushPending(delayed[0].session, now + 1));
+    assert(!delayed[0].session.pendingPvpProvocation && !delayed[0].session.pvpRevenge,
+        'a changed party cancels the pending episode without rerolling');
+
+    for (const stage of ['before_selection', 'before_landing']) {
+        for (const change of ['member_left', 'leader_changed', 'opponent_leader_changed']) {
+            const changed = group(2), opponents = group(2, 10), target = opponents[0];
+            const session = changed[0].session;
+            assert(Revenge.request(session, target, 'mob_competition', ['Back off.'], true, now, () => 0.2));
+            const objective = session.pvpRevenge;
+            if (stage === 'before_landing') {
+                Defense.tick(session, changed[0], {}, ai, { now: now + 1, rng: () => 0.2 });
+                assert(session.pvpDefense && !objective.startedAt);
+            }
+            const previousParty = { ...changed[1].session.coldLifeState.party };
+            if (change === 'member_left') changed[1].session.coldLifeState.party = { partyId: 'left-before-impact' };
+            if (change === 'leader_changed') changed.forEach(a => { a.session.coldLifeState.party.leaderId = changed[1].id; });
+            if (change === 'opponent_leader_changed') opponents.forEach(a => { a.session.coldLifeState.party.leaderId = opponents[1].id; });
+            const beforeCheck = events.length;
+            if (stage === 'before_landing') {
+                assert(new Attack().blockedPvpDefense(session, changed[0], target), `${change}: native impact must be blocked`);
+            } else {
+                assert(!Revenge.allows(session, target, now + 2), `${change}: stale permission must be revoked before selection`);
+            }
+            assert(objective.participation.blocked, 'revocation is sticky for this episode');
+            // Rejoining or restoring leadership cannot revive a revoked vote.
+            changed[1].session.coldLifeState.party = previousParty;
+            changed[0].session.coldLifeState.party.leaderId = changed[0].id;
+            opponents.forEach(a => { a.session.coldLifeState.party.leaderId = opponents[0].id; });
+            assert(!Revenge.allows(session, target, now + 3));
+            Defense.tick(session, changed[0], {}, ai, { now: now + 3, rng: () => { throw Error('must not reroll'); } });
+            assert(!events.slice(beforeCheck).some(e => e[0] === 'attack'), 'no new attack after revocation');
+            assert(!target.session.pvpAggressors?.size && !target.session.pvpEnemyMemory?.length,
+                'cancelled first strikes create no victim aggression history');
+            assert(!changed[1].session.pvpRevenge, 'cancelled first strikes never recruit assistance');
+        }
+    }
+
+    const companions = group(2), humanLeader = character(false), companionTarget = group(1, 10)[0];
+    World.user.sessions.push(humanLeader.session);
+    companions.forEach(a => { a.session.partyCompanion = true; a.session.followPlayerSession = humanLeader.session; });
+    assert.strictEqual(Participation.prepare(companions[0].session, companionTarget, now, () => 0.2), null);
+    assert(Revenge.request(companions[0].session, companionTarget, 'mob_competition', ['Back off.'], true, now, () => 0.2));
+    Threats.record(companionTarget, companions[0], now + 1);
+    assert.strictEqual(companions[1].session.pvpRevenge, companions[0].session.pvpRevenge,
+        'player-led companions preserve their existing combat coordination');
     for (const mode of ['outmatched', 'pvp_averse']) {
         const x = setup();
         if (mode === 'outmatched') { x.bot.level = 1; x.rival.level = 80; }

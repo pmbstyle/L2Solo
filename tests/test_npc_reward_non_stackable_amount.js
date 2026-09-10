@@ -72,24 +72,23 @@ try {
     };
 
     NpcRewards.call(world, playerSession, npc);
-    NpcRewards.call(world, botSession, npc);
-
-    assert.deepStrictEqual(groundDrops, [
+    const expectedDrops = [
         { selfId: 955, amount: 1 },
         { selfId: 955, amount: 1 },
         { selfId: 955, amount: 1 },
         { selfId: 1865, amount: 3 }
-    ], 'scaled non-stackable drops must spawn separate instances while stackable drops stay consolidated');
+    ];
+    assert.deepStrictEqual(groundDrops, expectedDrops,
+        'scaled player drops separate non-stackable instances and consolidate stacks');
+    groundDrops.length = 0;
+    NpcRewards.call(world, botSession, npc);
+    assert.deepStrictEqual(groundDrops, expectedDrops,
+        'hot bot drops use the same ground-instance normalization as player drops');
     assert.deepStrictEqual(observedDrops, [
         { selfId: 955, amount: 3 },
         { selfId: 1865, amount: 3 }
     ], 'loot observers must receive the complete scaled amount for both item kinds');
-    assert.deepStrictEqual(directAwards, [
-        { selfId: 955, amount: 1 },
-        { selfId: 955, amount: 1 },
-        { selfId: 955, amount: 1 },
-        { selfId: 1865, amount: 3 }
-    ], 'bot direct rewards must persist non-stackables separately without splitting resource stacks');
+    assert.deepStrictEqual(directAwards, [], 'hot bot rewards must wait for physical pickup');
 } finally {
     DataCache.fetchNpcRewardsFromSelfId = originalFetchRewards;
     DataCache.fetchItemFromSelfId = originalFetchItem;

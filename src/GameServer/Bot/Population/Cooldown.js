@@ -34,6 +34,7 @@ function isVisibleToRealPlayer(session) {
 }
 
 const Cooldown = {
+    removeFromClientWorld,
     transitionToColdState(session, state, reason = 'transition') {
         if (!session || !session.actor || !state) return Promise.resolve({ ok: false, reason: 'missing_state' });
         const BotManager = invoke('GameServer/Bot/BotManager');
@@ -83,6 +84,9 @@ const Cooldown = {
     },
 
     cooldown(session, reason = 'cooldown', options = {}) {
+        if (session?.hotBackgroundPartyId) {
+            return invoke('GameServer/Bot/Population/HotPartyLifecycle').cooldown(session.hotBackgroundPartyId, reason, options);
+        }
         const eligibility = this.canCooldown(session, options);
         if (!eligibility.ok) {
             return Promise.resolve({ ok: false, reason: eligibility.reason });

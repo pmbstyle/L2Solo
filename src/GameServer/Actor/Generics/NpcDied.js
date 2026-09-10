@@ -30,6 +30,7 @@ function uniqueSessions(sessions) {
 }
 
 function partyLeaderSession(killerSession) {
+    if (killerSession?.hotBackgroundPartyId) return invoke('GameServer/Bot/AI/HotBackgroundParty').leader(killerSession);
     if (killerSession?.partyCompanion === true && killerSession.followPlayerSession) {
         return killerSession.followPlayerSession;
     }
@@ -49,6 +50,7 @@ function rewardParticipants(killerSession, killer, npc) {
     if (!leader) return killer && !killer.isDead() ? [killerSession] : [];
 
     const members = [leaderSession, killerSession];
+    if (killerSession?.hotBackgroundPartyId) members.push(...invoke('GameServer/Bot/AI/HotBackgroundParty').roster(killerSession));
     World.user.sessions.forEach((candidate) => {
         if (
             candidate !== leaderSession &&
