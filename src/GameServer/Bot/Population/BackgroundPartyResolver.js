@@ -351,7 +351,10 @@ const BackgroundPartyResolver = {
                         // leader may be replaced or leave while the resulting
                         // state updates are persisted, so use the stable local
                         // result order to nominate exactly one aggregate owner.
-                        populationTelemetryOwner: index === 0
+                        populationTelemetryOwner: index === 0,
+                        // The worker delivers member results, not the outer
+                        // aggregate. Carry combat totals on this owner only.
+                        ...(index === 0 ? { combatActions, skillUses, heals } : {})
                     }
                 }
             });

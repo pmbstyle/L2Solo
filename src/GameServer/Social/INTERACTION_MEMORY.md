@@ -108,6 +108,12 @@ coalesced. Cold PvP and party PvE record actual emergency ally heals with their
 physical results. Self-only heals affect their caster; group heals assess each
 actual recipient. Regeneration, potions and ordinary top-ups do not create credit.
 
+Cold solo PvE uses the same direct/percentage heal selection below 70% HP,
+paying MP, reuse and action time; self healing creates no social event.
+The public `heals` counter includes all such casts, not just emergency gratitude.
+Party worker results carry shared combat/cast/heal totals on exactly one stable
+member result, so the main process counts each aggregate once after commit.
+
 `helped_in_combat` means defeating a threat that actually damaged another bot
 within 15 seconds, while that bot is still alive below 40% HP. Native defeat
 callbacks use one weak recent-victim reference per threat and require the helper

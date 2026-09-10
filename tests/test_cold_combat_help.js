@@ -41,6 +41,42 @@ assert.strictEqual(JSON.stringify([injured, healer]), input, 'resolving is a pur
 const facts = Resolver.resolvePartyFight({ members: [injured, healer], spot, timestamp: at, rng: () => 0.5 });
 assert(facts.members.find(f => f.state.characterId === 2).vitals.mp < Profile.profileFor(healer, at).maxMp,
     'help follows a real paid heal');
+const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
+const beforeMetrics = { ...Metrics.counters };
+for (const member of healed.memberResults) Metrics.recordCombat(member.result.debug);
+for (const key of ['combatActions', 'skillUses', 'heals']) {
+    assert.strictEqual(Metrics.counters[key] - beforeMetrics[key], healed.debug[key],
+        `worker member deliveries must count party ${key} exactly once`);
+}
+const soloHealer = fighter(3, 1, 30, [healerSkill]);
+soloHealer.activity = 'hunting';
+delete soloHealer.party;
+const soloInput = JSON.stringify(soloHealer);
+const soloResolve = state => Resolver.resolveSolo({ state, spot, elapsedMs: 1, timestamp: at, rng: () => 0.5 });
+const soloHealed = soloResolve(soloHealer);
+assert(soloHealed.debug.heals > 0, 'an injured cold solo bot must cast its learned heal');
+assert(soloHealed.patch.vitals.hp > soloHealer.vitals.hp, 'solo healing must actually restore HP');
+assert(soloHealed.patch.vitals.mp < soloHealer.vitals.mp, 'solo healing must pay MP');
+assert(soloHealed.patch.stats.coldCombat.cooldowns[1011] > at, 'solo healing must persist reuse');
+assert.strictEqual(soloHealed.debug.skillUses, soloHealed.debug.heals, 'heals use the shared bounded cast budget');
+assert.strictEqual(soloHealed.memoryEvents?.length || 0, 0, 'self healing cannot earn gratitude');
+assert.strictEqual(JSON.stringify(soloHealer), soloInput, 'solo healing must not mutate its input');
+const unavailable = [
+    { ...soloHealer, vitals: { ...soloHealer.vitals, mp: 0 } },
+    { ...soloHealer, vitals: { ...soloHealer.vitals, hp: Profile.profileFor(soloHealer, at).maxHp } },
+    { ...soloHealer, stats: { ...soloHealer.stats, coldCombat: { ...soloHealer.stats.coldCombat,
+        cooldowns: { 1011: at + 60000 } } } }
+];
+for (const state of unavailable) assert.strictEqual(soloResolve(state).debug.heals, 0,
+    'healthy, out-of-mana, and cooldown-bound solo bots must not cast a heal');
+for (const skill of [{ ...healerSkill, selfId: 45 }, { ...healerSkill, selfId: 109, power: 20 }]) {
+    const state = { ...soloHealer, stats: { ...soloHealer.stats,
+        coldCombat: { ...soloHealer.stats.coldCombat, skills: [skill] } } };
+    const won = Resolver.resolveSolo({ state, spot: { ...spot, mob: { hp: 1, damage: 1 } },
+        elapsedMs: 1, timestamp: at, rng: () => 0.5 });
+    assert(won.debug.wins > 0 && won.debug.heals > 0, 'self and percentage heals must survive a winning solo result');
+    assert(won.patch.vitals.hp > state.vitals.hp);
+}
 assert(!resolve([injured, fighter(2, 1, 1000)]).memberResults.some(m => m.result.memoryEvents.some(e => e.type === 'healed')),
     'healer role alone is not evidence of a cast');
 const snapshot = P.apply(P.empty(1), events.find(e => e.type === 'healed'), at).snapshot;

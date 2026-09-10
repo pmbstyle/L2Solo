@@ -703,6 +703,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
     let mobHp = mob.maxHp;
     let actions = 0;
     let skillUses = 0;
+    let heals = 0;
     let musicUses = 0;
     let summonUses = 0;
     let summonActions = 0;
@@ -755,6 +756,16 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             chargeExpiresAt = heldCharges.chargeExpiresAt;
             if (startColdPotion(soloFighter, time)) {
                 botReadyAt += 250;
+                continue;
+            }
+            const heal = chooseHeal(bot, [soloFighter], vitals.mp, cooldowns, timestamp + time, soloFighter);
+            if (heal) {
+                applyAllyHeal(soloFighter, [soloFighter], heal);
+                vitals.mp = Math.max(0, vitals.mp - Number(heal.skill.mp || 0));
+                cooldowns[heal.skill.selfId] = timestamp + time + Math.max(0, Number(heal.skill.reuse || 0));
+                skillUses += 1;
+                heals += 1;
+                botReadyAt += actionDelayMs(bot, heal.skill);
                 continue;
             }
             const music = chooseMusicAction(soloFighter, [soloFighter], timestamp + time);
@@ -854,7 +865,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             effects: soloFighter.profile.effects,
             inventory: fightState.inventory,
             summon: soloFighter.summon || null,
-            debug: { actions, skillUses, musicUses, summonUses, summonActions, potionsUsed: soloFighter.potionsUsed, mobSelfId: mob.selfId || null, timedOut: !died }
+            debug: { actions, skillUses, heals, musicUses, summonUses, summonActions, potionsUsed: soloFighter.potionsUsed, mobSelfId: mob.selfId || null, timedOut: !died }
         };
     }
 
@@ -898,7 +909,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         effects: soloFighter.profile.effects,
         inventory: fightState.inventory,
         summon: soloFighter.summon || null,
-        debug: { actions, skillUses, musicUses, summonUses, summonActions, potionsUsed: soloFighter.potionsUsed, mobSelfId: mob.selfId || null, timedOut: false }
+        debug: { actions, skillUses, heals, musicUses, summonUses, summonActions, potionsUsed: soloFighter.potionsUsed, mobSelfId: mob.selfId || null, timedOut: false }
     };
 }
 
@@ -1305,6 +1316,7 @@ const BackgroundResolver = {
         let died = false;
         let combatActions = 0;
         let skillUses = 0;
+        let heals = 0;
         let musicUses = 0;
         let summonUses = 0;
         let summonActions = 0;
@@ -1342,6 +1354,7 @@ const BackgroundResolver = {
             materialize.items.push(...result.loot);
             combatActions += Number(result.debug?.actions || 0);
             skillUses += Number(result.debug?.skillUses || 0);
+            heals += Number(result.debug?.heals || 0);
             musicUses += Number(result.debug?.musicUses || 0);
             summonUses += Number(result.debug?.summonUses || 0);
             summonActions += Number(result.debug?.summonActions || 0);
@@ -1407,6 +1420,7 @@ const BackgroundResolver = {
                 route: spot.route || null,
                 combatActions,
                 skillUses,
+                heals,
                 musicUses,
                 summonUses,
                 summonActions,

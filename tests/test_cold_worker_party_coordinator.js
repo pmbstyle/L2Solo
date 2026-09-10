@@ -118,6 +118,7 @@ let coordinator = null;
     let mainCommands = 0;
     let partyGoalReconciles = 0;
     const partyResolvesBefore = Number(Metrics.counters.partyResolves || 0);
+    const combatActionsBefore = Number(Metrics.counters.combatActions || 0);
     LifeState.enqueueEquipmentGoalAdvanceForState = async () => {
         throw new Error('synthetic equipment goal wakeup failure');
     };
@@ -181,6 +182,8 @@ let coordinator = null;
     });
     assert(Number(Metrics.counters.partyResolves || 0) > partyResolvesBefore,
         'worker party commit must feed the public party resolve metric');
+    assert(Number(Metrics.counters.combatActions || 0) > combatActionsBefore,
+        'actual worker transport and commit must preserve the shared party combat counters');
     assert.strictEqual(partyGoalReconciles, 1,
         'one committed worker party combat result must reconcile party goals exactly once through the leader');
 
