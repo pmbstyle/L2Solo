@@ -431,6 +431,8 @@ async function run() {
             };
             let hotSession = null;
             let attached = false;
+            invoke('GameServer/Social/InteractionMemoryRuntime').accept(
+                require('../src/GameServer/Social/InteractionMemoryPolicy').empty(clanState.characterId));
             LifeState.findByName = async () => clanState;
             BotManager.findSessionByName = () => hotSession;
             BotManager.loadAndSpawnBot = (_accountName, options) => {

@@ -356,12 +356,13 @@ const World = {
         }
 
         ConsoleText.transmit(session, ConsoleText.caption.waitForResponse);
-        return LifeState.findByName(lookup).then((state) => {
+        return LifeState.findByName(lookup).then(async (state) => {
             if (!state) {
                 session.dataSendToMe(ServerResponse.actionFailed());
                 return false;
             }
 
+            await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany([Number(state.characterId)]);
             const availability = BotAvailability.evaluateState(session, state, options);
             if (!availability.available) {
                 BotSocialMemory.recordEvent(session, state, 'invite_attempt', source);

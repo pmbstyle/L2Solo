@@ -4,6 +4,8 @@ require('../src/Global');
 
 const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const InteractionMemory = invoke('GameServer/Social/InteractionMemoryRuntime');
+const originalAssess = InteractionMemory.assess;
 
 function actor(id, level, clanId = 0, options = {}) {
     return {
@@ -31,6 +33,7 @@ const originalPeekSnapshot = BotSocialMemory.peekSnapshot;
 const originalRelationship = BotSocialMemory.relationship;
 
 try {
+    InteractionMemory.assess = () => ({ ready: true, personal: null });
     let memory = { trust: 0, familiarity: 0, recentlyAbandonedAt: null };
     let snapshotReads = 0;
     let previewReads = 0;
@@ -258,6 +261,7 @@ try {
 
     console.log('Bot availability checks passed');
 } finally {
+    InteractionMemory.assess = originalAssess;
     BotSocialMemory.getSnapshot = originalGetSnapshot;
     BotSocialMemory.peekSnapshot = originalPeekSnapshot;
     BotSocialMemory.relationship = originalRelationship;

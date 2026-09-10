@@ -9,6 +9,15 @@ separate system. Physical PvP and hot/cold encounters are documented in
 
 ## State and cost
 
+Player party admission reads the same shared field relationship as revenge,
+alongside legacy player-specific history. Shared hostility blocks ordinary
+invitations even within the same clan; explicit const-friend overrides remain.
+Overlapping positive trust/familiarity use their maximum rather than a sum;
+negative legacy history and recent abandonment remain relevant. This is a
+read-time view, not a migration or a second write of the same episode.
+Unloaded shared memory defers admission. Named cold invitations hydrate the
+requested bot before evaluating; availability previews only read shared caches.
+
 Each rememberer has at most 32 character relations, 8 clan impressions and 8
 alliance impressions. Relations are directed; membership is separate from
 personal trust/hostility. Half the slots retain strong relations, the rest recent

@@ -597,6 +597,10 @@ try {
         };
         inviteBotSession.persona = socialPersona;
         nativeAnswerSession.persona = socialPersona;
+        const MemoryPolicy = require('../src/GameServer/Social/InteractionMemoryPolicy');
+        for (const member of [inviteBotSession, nativeAnswerSession, nativeDeclineSession]) {
+            invoke('GameServer/Social/InteractionMemoryRuntime').accept(MemoryPolicy.empty(Number(member.actor.fetchId())));
+        }
         BotManager.sessions = [inviteBotSession, nativeAnswerSession, nativeDeclineSession];
 
         assert.strictEqual(World.inviteBotCompanion(leaderSession, leader, inviteBotSession, 1, 'test_invite'), true, 'available resting bot should join the party');
