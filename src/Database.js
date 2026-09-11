@@ -3144,23 +3144,37 @@ const Database = {
         }, 'bot-life:cold-owner-renew-batch');
     },
 
-    endPvpEncounter(key, ids) {
+    endPvpEncounter(key, ids, outcome = 'pvp_expired') {
         if (typeof key !== 'string' || !Array.isArray(ids) || ids.length > 18) return Promise.resolve({ rows: [], complete: false });
         return inTransaction(() => {
-            const rows = [], timestamp = now();
+            const rows = [], parties = [], partyIds = new Set(), timestamp = now();
             let complete = true;
             for (const id of ids) {
                 const row = coldSimulationRow(Number(id));
                 const stats = row && JSON.parse(row.statsJson || '{}');
-                if (stats?.pvpEncounter?.key !== key) continue;
+                if (row?.partyId) partyIds.add(row.partyId);
+                if (stats?.pvpEncounter?.key !== key && !(stats?.coldCompetition?.key === key
+                    && stats.coldCompetition.outcome === 'pvp_fighting' && !stats.pvpEncounter)) continue;
                 if (row.simulationLeaseId) { complete = false; continue; }
                 stats.pvpEncounter = null;
-                if (stats.coldCompetition?.key === key) stats.coldCompetition.wait = null;
+                if (stats.coldCompetition?.key === key) {
+                    stats.coldCompetition = { ...stats.coldCompetition, wait: null, outcome, endedAt: timestamp };
+                }
                 write('UPDATE bot_life_state SET statsJson = ?, lastResolvedAt = ?, nextResolveAt = ?, simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?',
                     [JSON.stringify(stats), timestamp, row.phase === 'cold' ? timestamp + 1000 : null, timestamp, id]);
                 rows.push(coldSimulationRow(id));
             }
-            return { rows, complete };
+            for (const partyId of partyIds) {
+                const party = one('SELECT * FROM bot_background_parties WHERE partyId = ?', [partyId]);
+                const stats = party && JSON.parse(party.statsJson || '{}');
+                if (stats?.coldCompetition?.key !== key) continue;
+                if (JSON.parse(party.memberIdsJson).some(id => coldSimulationRow(id)?.simulationLeaseId)) { complete = false; continue; }
+                stats.coldCompetition = { ...stats.coldCompetition, wait: null, outcome, endedAt: timestamp };
+                write('UPDATE bot_background_parties SET statsJson = ?, updatedAt = ? WHERE partyId = ?',
+                    [JSON.stringify(stats), Math.max(timestamp, Number(party.updatedAt) + 1), partyId]);
+                parties.push(one('SELECT * FROM bot_background_parties WHERE partyId = ?', [partyId]));
+            }
+            return { rows, parties, complete };
         }, 'bot-life:pvp-encounter-end');
     },
 

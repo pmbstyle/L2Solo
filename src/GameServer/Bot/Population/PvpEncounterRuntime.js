@@ -25,14 +25,16 @@ function restoreTargets(e, roster) {
             expiresAt: e.expiresAt, startedAt: e.startedAt, participation: null };
     }
 }
-async function finish(e, actions) {
-    const result = await invoke('Database').endPvpEncounter(e.key, ids(e));
+async function finish(e, actions, reason = 'pvp_interrupted') {
+    const result = await invoke('Database').endPvpEncounter(e.key, ids(e), reason);
     for (const row of result.rows) {
         const state = actions.life.acceptLifecycleRow(row);
         actions.onState(state.characterId);
     }
+    for (const row of result.parties || []) actions.parties?.acceptRow(row);
     if (result.complete) {
         encounters.delete(e.key);
+        actions.recordPvpStep({ ok: true, key: e.key, encounter: null, outcome: reason });
         for (const session of sessions(e).filter(Boolean)) {
             if (session.pvpEncounter?.key === e.key) delete session.pvpEncounter;
             if (session.pvpRevenge?.reason === 'continued_encounter') delete session.pvpRevenge;
@@ -50,14 +52,12 @@ function tick(actions) {
         for (const e of encounters.values()) {
             if (!budget || actions.stopping || !actions.canRun()) break;
             if (pending.has(e.key)) continue;
+            if (e.expiresAt <= Date.now()) { budget--; await finish(e, actions, 'pvp_expired'); continue; }
             const states = ids(e).map(id => life.cachedState(id));
             if (states.some(s => snapshot(s)?.key !== e.key || !(s.vitals?.hp > 0))) {
                 budget--; await finish(e, actions); continue;
             }
-            if (states.every(s => s.phase === 'hot')) {
-                if (e.expiresAt <= Date.now()) { budget--; await finish(e, actions); }
-                continue;
-            }
+            if (states.every(s => s.phase === 'hot')) continue;
             if (states.some(s => s.phase !== 'cold') || Date.now() - e.stepAt < 1000) continue;
             budget--;
             pending.add(e.key);
@@ -79,7 +79,8 @@ function tick(actions) {
                     if (!result.encounter) encounters.delete(e.key);
                 } else {
                     actions.report && (actions.report.lastPvpStepFailure = { key: e.key, at, reason: result.reason });
-                    if (result.reason === 'encounter_separated_or_protected' || e.expiresAt <= Date.now()) await finish(e, actions);
+                    if (result.reason === 'encounter_separated_or_protected') await finish(e, actions, 'pvp_separated_or_protected');
+                    else if (e.expiresAt <= Date.now()) await finish(e, actions, 'pvp_expired');
                 }
             } finally { pending.delete(e.key); }
         }

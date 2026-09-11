@@ -158,8 +158,9 @@ async function cooldown(e, reason = 'policy', options = {}) {
         committed = true;
         discard(roster);
         saved.forEach(s => coordinator().notifyState(s));
-        Runtime.encounters.delete(e.key);
-        if (resumed) Runtime.register(resumed);
+        // Expiry during handoff still needs the normal finalization path:
+        // clear the persisted outcome and count completion exactly once.
+        Runtime.register(resumed || e);
         saved.forEach(() => invoke('GameServer/Bot/Population/PopulationMetrics').recordCooldown());
         return { ok: true, count: saved.length, states: saved, encounter: resumed };
     } catch (error) {

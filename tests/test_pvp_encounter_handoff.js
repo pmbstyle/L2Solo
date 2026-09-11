@@ -38,7 +38,7 @@ async function party(ids) {
 async function main() {
     patch(Date, 'now', () => clock);
     invoke('GameServer/DataCache').init(); DB.init();
-    for (let id = 1; id <= 8; id++) {
+    for (let id = 1; id <= 12; id++) {
         const stats = { classId: 0, equipmentPlan: { status: 'active', next: { npcId: 10, spotId: 'test' } },
             coldCombat: { version: 1, classId: 0, cp: 2000, cpAt: clock,
                 base: { str: 40, dex: 30, con: 43, int: 21, wit: 11, men: 25 },
@@ -50,7 +50,7 @@ async function main() {
         await DB.execute([`INSERT INTO bot_life_state(characterId,accountName,characterName,phase,activity,spotId,hp,maxHp,mp,maxMp,level,lastResolvedAt,updatedAt,statsJson)
             VALUES (?,?,?,'cold','hunting','test',1000,2000,300,1000,40,?,?,?)`, [id, `bot_enc_${id}`, `Encounter${id}`, clock - 30000, clock, JSON.stringify(stats)]]);
     }
-    await Life.init(); await Parties.init(); await Memory.ensureMany([1,2,3,4,5,6,7,8]);
+    await Life.init(); await Parties.init(); await Memory.ensureMany([1,2,3,4,5,6,7,8,9,10,11,12]);
     patch(World, 'user', { sessions: [] }); patch(Manager, 'sessions', []);
     patch(World, 'insertUser', s => { World.user.sessions.push(s); });
     patch(World, 'removeUser', s => { World.user.sessions = World.user.sessions.filter(x => x !== s); });
@@ -112,6 +112,20 @@ async function main() {
     assert.strictEqual(Manager.sessions[0].pvpFlagUntil, flagUntil);
     assert.strictEqual(Manager.sessions[0].actor.cp, beforeCp, 'no full CP refill');
     assert.strictEqual(JSON.stringify([1,2,3,4].map(n => Memory.snapshot(n))), initialMemory, 'activation creates no incidents');
+    if (process.argv.includes('--expire-cooldown')) {
+        clock = e.expiresAt + 1000;
+        const expired = await Lifecycle.cooldown(e, 'expired-test', { ignoreVisibility: true });
+        assert(expired.ok && !expired.encounter, JSON.stringify(expired));
+        const completions = [];
+        await Runtime.tick({ ...base, canRun: () => true, recordPvpStep: r => completions.push(r) });
+        assert.strictEqual(completions.length, 1, 'expiry during hot-to-cold handoff is counted');
+        assert([1,2,3,4].every(id => !state(id).stats.pvpEncounter && state(id).stats.coldCompetition.outcome === 'pvp_expired'));
+        assert.strictEqual(Parties.find('enc-party-1').stats.coldCompetition.outcome, 'pvp_expired');
+        await Runtime.tick({ ...base, canRun: () => true, recordPvpStep: r => completions.push(r) });
+        assert.strictEqual(completions.length, 1);
+        console.log('Expiry during hot-to-cold handoff finalized once');
+        return;
+    }
     if (revengeMode) {
         assert(Manager.sessions.every(s => s.pvpEncounter.reason === 'revenge'));
         const enqueue = Memory.events.enqueue, captured = [];
@@ -158,9 +172,13 @@ async function main() {
     assert.strictEqual(state(1).stats.pvpEncounter.key, e.key);
     if (revengeMode) assert.strictEqual(state(1).stats.pvpEncounter.reason, 'revenge');
     e = cold.encounter; clock += 1000;
+    await DB.execute([`UPDATE bot_life_state SET statsJson=json_set(statsJson,'$.supplyErrand',json(?)),
+        simulationRevision=simulationRevision+1 WHERE characterId=2`, [JSON.stringify({ reason: 'pending_supplies' })]]);
+    Life.acceptLifecycleRow((await DB.execute(['SELECT * FROM bot_life_state WHERE characterId=2', []]))[0]);
     const resumed = await Conflict.apply({ ...base, event: event(1, 3, e.key), resume: e, contestContextAllowed: () => false });
     assert(resumed.ok && resumed.encounter, JSON.stringify(resumed));
     assert(resumed.combat.actions > 0, 'continuation follows nearby opponents even after leaving the original resource spot');
+    assert.strictEqual(state(2).stats.supplyErrand.reason, 'pending_supplies', 'pending errands survive but do not veto an active fight');
     assert.strictEqual(JSON.stringify([1,2,3,4].map(n => Memory.snapshot(n))), initialMemory, 'cold continuation does not duplicate memory');
     assert(!(await Conflict.apply({ ...base, event: event(1, 3, e.key), resume: e })).ok, 'stale encounter sequence is rejected');
     e = resumed.encounter;
@@ -193,6 +211,32 @@ async function main() {
     clock = running.encounter.expiresAt + 2000;
     await Runtime.tick({ ...base, canRun: () => true, recordPvpStep: r => steps.push(r) });
     assert.strictEqual(state(7).stats.pvpEncounter, null);
+    assert.strictEqual(state(7).stats.coldCompetition.outcome, 'pvp_expired');
+    assert.strictEqual(steps.filter(r => !r.encounter).length, 1, 'expiry counts one completion');
+    await Runtime.tick({ ...base, canRun: () => true, recordPvpStep: r => steps.push(r) });
+    assert.strictEqual(steps.filter(r => !r.encounter).length, 1, 'cleanup cannot count the same encounter again');
+    await party([9, 10]); await party([11, 12]);
+    const split = await Conflict.apply({ ...base, event: event(9, 11) });
+    assert(split.encounter);
+    // An incomplete lifecycle transition must not keep a fight alive forever.
+    await DB.execute(['UPDATE bot_life_state SET phase=? WHERE characterId=10', ['warm']]);
+    Life.acceptLifecycleRow((await DB.execute(['SELECT * FROM bot_life_state WHERE characterId=10', []]))[0]);
+    clock = split.encounter.expiresAt + 2000;
+    const { grants } = await Owner.claimBatch([state(9)], { timestamp: clock, allowParty: true, allowLifecycle: true });
+    assert.strictEqual(grants.length, 1);
+    await Runtime.tick({ ...base, canRun: () => true, recordPvpStep: r => steps.push(r) });
+    assert(Runtime.encounters.has(split.encounter.key), 'cleanup waits for an outstanding writer lease');
+    assert.strictEqual(steps.filter(r => !r.encounter).length, 1, 'partial cleanup is not a completed encounter');
+    await Owner.releaseBatch(grants);
+    await Runtime.tick({ ...base, canRun: () => true, recordPvpStep: r => steps.push(r) });
+    assert(!Runtime.encounters.has(split.encounter.key));
+    assert([9, 10, 11, 12].every(id => !state(id).stats.pvpEncounter));
+    assert.strictEqual(Parties.find('enc-party-9').stats.coldCompetition.outcome, 'pvp_expired');
+    assert.strictEqual(Parties.find('enc-party-11').stats.coldCompetition.wait, null);
+    assert.strictEqual(steps.filter(r => !r.encounter).length, 2, 'mixed-state expiry counts once after all writes settle');
+    await DB.close(); DB.init();
+    const closed = (await DB.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=9', []]))[0];
+    assert.strictEqual(JSON.parse(closed.statsJson).coldCompetition.outcome, 'pvp_expired', 'final outcome survives SQLite reopen');
     console.log('PvP handoff: stepped party combat, atomic cold/hot/cold, first nick flag, resources, reuse, memory dedup, expiry, rollback and SQLite reopen passed');
 }
 main().catch(e => { console.error(e); process.exitCode = 1; }).finally(async () => {
