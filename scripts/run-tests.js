@@ -232,6 +232,7 @@ const tests = [
     'tests/test_bot_party_market_break.js',
     'tests/test_bot_party_recruitment_chat.js',
     'tests/test_bot_hunting_self_defense.js',
+    'tests/test_bot_emergency_finisher.js',
     'tests/test_bot_retreat_planner.js',
     'tests/test_bot_leveling_routes.js',
     'tests/test_bot_market_opportunity.js',

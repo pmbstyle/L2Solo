@@ -15,6 +15,7 @@ const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const BotTownTravel  = invoke('GameServer/Bot/AI/BotTownTravel');
 const BotSpotTravel  = invoke('GameServer/Bot/AI/BotSpotTravel');
 const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
+const BotEmergencyFinisher = invoke('GameServer/Bot/AI/BotEmergencyFinisher');
 const BotRaidSafety   = invoke('GameServer/Bot/AI/BotRaidSafety');
 const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
 const BotRangedCombatPositioning = invoke('GameServer/Bot/AI/BotRangedCombatPositioning');
@@ -619,6 +620,8 @@ module.exports = {
                 })
                 : { allowed: true };
             if (!groundSafety.allowed || needsEmergencyRetreat(bot)) {
+                if (groundSafety.allowed && isSoloHunter(session) &&
+                    BotEmergencyFinisher.tryFinish(session, bot, incomingMonster, Generics, BotAI)) return;
                 retreatFromThreat(session, bot, incomingMonster);
                 return;
             }
@@ -655,6 +658,12 @@ module.exports = {
             if (BotRaidSafety.retreat(session, bot, liveEncounterTarget, { distance: EMERGENCY_RETREAT_DISTANCE })) {
                 return;
             }
+            const ground = currentHuntingGround(session, bot);
+            const allowed = !ground || BotHuntingGroundPolicy.evaluate(ground, { level: bot.fetchLevel() }, {
+                mode: 'solo', equipment: equippedItems(bot)
+            }).allowed;
+            if (allowed && isSoloHunter(session) &&
+                BotEmergencyFinisher.tryFinish(session, bot, liveEncounterTarget, Generics, BotAI)) return;
             retreatFromThreat(session, bot, liveEncounterTarget);
             return;
         }

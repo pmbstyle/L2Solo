@@ -668,6 +668,17 @@ const BotAI = {
             return false;
         }
         if (!options.pvp && invoke('GameServer/Bot/AI/HotResourceCompetition').beforeAttack(session, npc)) return false;
+        if (options.emergencyFinisher && !options.pvp) {
+            const finish = invoke('GameServer/Bot/AI/BotEmergencyFinisher').evaluate(session, bot, npc);
+            if (!finish) return false;
+            session.lastCombatDecision = { ...finish, reason: 'safe_emergency_finisher', at: Date.now() };
+            if (finish.action === 'cast_skill') {
+                Generics.skillExec(session, bot, { id: npc.fetchId(), selfId: finish.skillId, ctrl: true });
+            } else {
+                Generics.attackExec(session, bot, { id: npc.fetchId(), ctrl: true });
+            }
+            return true;
+        }
         const role = BotRoles.combatRoleFor(bot);
         // A potion is a survival action for a fight already in progress, not
         // routine topping-off. The policy also blocks repeats for the same

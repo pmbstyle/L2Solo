@@ -93,6 +93,7 @@ class Attack {
     }
 
     clearTimers() {
+        this.activeCast = null;
         this.timers.forEach((timer) => clearTimeout(timer));
         this.timers.clear();
     }
@@ -291,6 +292,9 @@ class Attack {
         session.dataSendToMeAndOthers(ServerResponse.skillStarted(actor, creature.fetchId(), skill), actor);
         session.dataSendToMe(ServerResponse.skillDurationBar(skill.fetchCalculatedHitTime()));
         actor.state.setCasts(true);
+        // Tactical readers need the accepted cast, not skill availability:
+        // reuse starts above, before this cast has dealt any damage.
+        this.activeCast = { target: creature, skill, landsAt: Date.now() + skill.fetchCalculatedHitTime() };
         HotPartyCastTracker.begin(session, actor, creature, skill);
 
         const castTime = skill.fetchCalculatedHitTime();
@@ -299,6 +303,7 @@ class Attack {
         // casts at their existing duration, without negative timer delays.
         const launchLead = magicSkill && castTime > 420 ? 400 : 0;
         const land = () => {
+            this.activeCast = null;
             // Once the landing callback owns the turn, no other damage event
             // can interleave before MP and effects resolve. Stop watching the
             // target before the authoritative cast work begins.
@@ -1356,3 +1361,6 @@ function physicalRaceModifier(attacker, target) {
 module.exports = Attack;
 module.exports.weaponMaskFor = weaponMaskFor;
 module.exports.physicalRaceModifier = physicalRaceModifier;
+module.exports.traitVulnerabilityModifier = traitVulnerabilityModifier;
+module.exports.incomingWeaponVulnerabilityModifier = incomingWeaponVulnerabilityModifier;
+module.exports.physicalUndeadModifier = physicalUndeadModifier;

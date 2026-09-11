@@ -120,9 +120,13 @@ try {
     assert.strictEqual(timers.length, 2, 'remote skill schedules launch and impact from the same start');
     assert.strictEqual(timers[0].delay, 4600, 'launch happens 400 ms before the 5000 ms cast ends');
     assert.strictEqual(caster.canUseSkill(skill()), false, 'starting a cast should start that skill reuse timer');
+    assert.strictEqual(attack.activeCast.target, victim, 'accepted cast records its actual target');
+    assert.strictEqual(attack.activeCast.skill.fetchSelfId(), skill().fetchSelfId());
+    assert(attack.activeCast.landsAt > Date.now(), 'accepted cast records its impact deadline');
 
     destCancel(session, Buffer.from([0x37, 0x00, 0x00]));
     assert.strictEqual(caster.state.fetchCasts(), false, 'ESC target cancel should clear casting state');
+    assert.strictEqual(attack.activeCast, null, 'cancelled cast cannot justify an emergency finisher');
     assert.strictEqual(caster.storedSpell, undefined, 'ESC target cancel should clear stored spell');
     assert(timers.every((timer) => timer.canceled), 'ESC target cancel should clear pending skill timers');
     assert(packets.some((packet) => packet[0] === 0x49), 'ESC target cancel should broadcast MagicSkillCanceld');
@@ -156,6 +160,7 @@ try {
     assert.strictEqual(timers.at(-1).delay, 5000);
     assert.strictEqual(timers.at(-1).delay - timers[0].delay, 400);
     timers.at(-1).callback();
+    assert.strictEqual(landingAttack.activeCast, null, 'landed cast must release its finishing window');
     assert.strictEqual(landingCaster.mp, 40, 'MP is spent at the original cast deadline');
     assert.strictEqual(landingCaster.state.fetchCasts(), false);
     assert.strictEqual(packets.filter(packet => packet[0] === 0x76).length, 1, 'impact must not replay the projectile animation');
