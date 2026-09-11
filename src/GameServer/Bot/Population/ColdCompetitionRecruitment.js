@@ -13,7 +13,7 @@ async function recruit({ participants, event, parties, life, memory, composition
         || forecast.size !== party.memberIds.length) return { rejected: 'party_changed' };
     const objective = party.stats?.objective;
     if (objective?.clanGoalKey || objective?.clanOperation || participants.some(clanReserved)) return { rejected: 'clan_objective' };
-    const target = Number(objective?.npcId || party.stats?.acquisitionGoal?.next?.npcId || 0);
+    const target = require('./PartyHuntingTarget').npcId(party, life.cachedState(party.leaderId));
     if (target !== event.npcId) return { rejected: 'party_target_changed' };
     const limits = limitsFor(objective);
     if (party.memberIds.length >= limits.maxSize) return { rejected: 'party_full' };
@@ -22,7 +22,7 @@ async function recruit({ participants, event, parties, life, memory, composition
         || !party.memberIds.includes(representative.characterId)
         || !party.memberIds.includes(party.leaderId)
         || members.length < limits.minSize
-        || !members.every(s => s && s.phase === 'cold' && ['grouped', 'hunting'].includes(s.activity)
+        || !members.every(s => s && s.phase === 'cold' && ['grouped', 'hunting', 'resting'].includes(s.activity)
             && s.vitals?.hp > 0 && s.party?.partyId === partyId && s.spotId === event.spotId
             && (s.simulation?.ownerId || 'legacy_main') === 'legacy_main'
             && !s.stats?.travel && !s.stats?.coldCompetition?.wait && !s.stats?.supplyErrand

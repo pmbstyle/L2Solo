@@ -21,7 +21,7 @@ const base = { life: Life, owner: Owner, parties: Party, memory: Memory, now: ()
     waitMs: WAIT_MS, cooldownMs: 600000, rng: () => 0.2 };
 async function createParty(ids, name = `party-${ids[0]}`) {
     const prepared = Party.prepareCommit({ partyId: name, leaderId: ids[0], memberIds: ids,
-        spotId: 'test', status: 'active', startedAt: at, nextResolveAt: at + 45000, stats: { objective: { npcId: 10 } } });
+        spotId: 'test', status: 'active', startedAt: at, nextResolveAt: at + 45000, stats: { objective: ids[0] === 1 ? null : { npcId: 10 } } });
     const assigned = ids.map(id => Life.preparePartyAssignment(state(id), name, 'dps', ids[0], at + 45000));
     assert((await Database.commitBackgroundPartyMembership({ party: prepared.row, members: assigned })).ok);
     Life.acceptPartyAssignments(assigned);
@@ -40,24 +40,32 @@ const apply = (a, b, overrides = {}) => Conflict.apply({ ...base, event: event(a
 async function run() {
     Database.init();
     const stats = { equipmentPlan: { status: 'active', next: { npcId: 10, spotId: 'test' } } };
-    for (const id of range(1, 52)) {
+    for (const id of range(1, 64)) {
         await Database.execute(['INSERT INTO accounts(username,password) VALUES (?,?)', [`bot_conflict_${id}`, 'test']]);
         await Database.execute([`INSERT INTO characters(id,username,name,classId,race,maxHp,maxMp,sex,face,hair,hairColor,locX,locY,locZ)
             VALUES (?,?,?,0,0,100,100,0,0,0,0,0,0,0)`, [id, `bot_conflict_${id}`, `Conflict${id}`]]);
         await Database.execute([`INSERT INTO bot_life_state(characterId,accountName,characterName,phase,activity,spotId,hp,maxHp,mp,maxMp,level,
             nextResolveAt,lastResolvedAt,updatedAt,statsJson) VALUES (?,?,?,'cold','hunting','test',100,100,100,100,20,?,?,?,?)`,
-        [id, `bot_conflict_${id}`, `Conflict${id}`, at + 60000, at - 30000, at, JSON.stringify(stats)]]);
+        [id, `bot_conflict_${id}`, `Conflict${id}`, at + 60000, at - 30000, at, JSON.stringify(id <= 4 ? { ...stats, coldCompetition: { key: 'old-pvp', at: at - 700000,
+            outcome: 'pvp_fighting', endedAt: at - 600000, avoid: { spotId: 'elsewhere', until: at + 600000 } } } : stats)]]);
     }
     await Life.init();
     await Party.init();
-    await Memory.ensureMany(range(1, 52));
+    await Memory.ensureMany(range(1, 64));
     await createParty([1, 2, 3]);
+    await Database.execute(['UPDATE bot_life_state SET activity=? WHERE characterId=?', ['resting', 3]]);
+    Life.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=?', [3]]))[0]);
     const firstEvent = event(1, 4);
-    const first = await apply(1, 4);
+    const first = await apply(1, 4, { disputeCooldownMs: 180000 });
     assert(first.ok, JSON.stringify(first));
+    assert.strictEqual(state(1).stats.coldCompetition.outcome, first.outcome);
+    assert.strictEqual(state(1).stats.coldCompetition.endedAt, undefined);
+    assert.strictEqual(state(1).stats.coldCompetition.avoid.spotId, 'elsewhere');
     assert.strictEqual(first.matchup, 'party_vs_solo');
+    assert.strictEqual(Party.find('party-1').stats.coldCompetition.conflictUntil, at + 180000);
+    assert.strictEqual(state(4).stats.coldCompetition.conflictUntil, at + 180000);
     assert.deepStrictEqual(first.affectedIds, [4]);
-    assert.strictEqual(first.memoryEvents, 3);
+    assert.strictEqual(first.memoryEvents, 3, 'a nearby recovering teammate can support the dispute without invalidating the roster');
     assert.strictEqual(state(4).timing.nextResolveAt, at + 60000 + WAIT_MS);
     assert.strictEqual(Party.find('party-1').nextResolveAt, at + 45000);
     assert.strictEqual(Memory.snapshot(4).relations.length, 3, 'target remembers the three actual aggressors');
@@ -126,6 +134,37 @@ async function run() {
     assert.strictEqual((await apply(34, 36, { contestContextAllowed: s => s.characterId !== 35 })).ok, false, 'every member must physically occupy the spot');
     assert.strictEqual((await apply(34, 36, { memory: { ...Memory, snapshot: id => id === 35 ? null : Memory.snapshot(id) } })).ok, false);
     assert.strictEqual((await apply(34, 36, { event: { ...event(34, 36), actor: { ...event(34, 36).actor, size: 1 } } })).reason, 'party_changed');
+    for (const [detail, patch] of [
+        ['member_supply_errand', { stats: { ...state(35).stats, supplyErrand: { reason: 'potions' } } }],
+        ['member_warehouse_workflow', { stats: { ...state(35).stats, warehouseWorkflow: {} } }],
+        ['member_market_return', { stats: { ...state(35).stats, marketReturn: {} } }],
+        ['member_travelling', { stats: { ...state(35).stats, travel: {} } }],
+        ['member_not_cold', { phase: 'hot' }],
+        ['member_dead', { vitals: { hp: 0 } }],
+        ['member_competition_wait', { stats: { ...state(35).stats, coldCompetition: { wait: { until: at - 1 } } } }],
+    ]) {
+        const failure = await apply(34, 36, { life: { cachedState: id => id === 35 ? { ...state(id), ...patch } : state(id) } });
+        assert.strictEqual(failure.detail, detail, JSON.stringify(failure));
+        assert.strictEqual(failure.rejectionContext.characterId, 35);
+        assert.strictEqual(failure.rejectionContext.partyId, 'party-34');
+        if (detail === 'member_competition_wait') assert.strictEqual(failure.rejectionContext.expired, true);
+    }
+    for (const [detail, patch] of [
+        ['party_revision_changed', { updatedAt: Party.find('party-34').updatedAt + 1 }],
+        ['party_travelling', { stats: { objective: { npcId: 10 }, travel: {} } }],
+        ['party_target_changed', { stats: { objective: { npcId: 11 } } }],
+        ['party_competition_wait', { stats: { objective: { npcId: 10 }, coldCompetition: { wait: { until: at + 1 } } } }],
+    ]) {
+        const failure = await apply(34, 36, { parties: { find: id => ({ ...Party.find(id), ...patch }) } });
+        assert.strictEqual(failure.detail, detail, JSON.stringify(failure));
+    }
+    assert.strictEqual((await Repository.load(36)).relations.length, 0, 'diagnostics cannot create an incident');
+    const targetChange = await apply(35, 36, {
+        parties: { find: id => ({ ...Party.find(id), stats: {} }) },
+        life: { cachedState: id => id === 34 ? { ...state(id), stats: { equipmentPlan: { status: 'active', next: { npcId: 11 } } } } : state(id) }
+    });
+    assert.strictEqual(targetChange.detail, 'party_target_changed');
+    assert.strictEqual(targetChange.rejectionContext.actual, 11, 'validate the current leader target, not the representative or stale forecast');
     const partial = await apply(34, 36, { owner: { ...Owner, claimBatch: (states, opts) => Owner.claimBatch(states.slice(0, 2), opts) } });
     assert.strictEqual(partial.reason, 'claim_rejected');
     assert([34, 35, 36].every(id => !state(id).simulation.leaseId), 'partial grants are released');
@@ -179,6 +218,44 @@ async function run() {
     } } });
     assert.strictEqual(memoryRace.reason, 'contest_changed_during_claim');
     assert([49, 50, 51].every(id => !state(id).simulation.leaseId));
+    const freshActions = new ColdCompetitionActions({ ...base, conflictsEnabled: () => true });
+    const forecast = (a, b) => ({ ...event(a, b), contextVersion: 1, decisionRolls: [0.99, 0.99, 0, 0.99] });
+    await createParty([53, 54]);
+    const staleForecast = forecast(53, 55), savedForecast = JSON.stringify(staleForecast);
+    const beforeSave = Party.find('party-53');
+    await Database.execute(['UPDATE bot_background_parties SET updatedAt=updatedAt+1, nextResolveAt=nextResolveAt+100 WHERE partyId=?', ['party-53']]);
+    Party.acceptRow((await Database.execute(['SELECT * FROM bot_background_parties WHERE partyId=?', ['party-53']]))[0]);
+    await Database.execute(['UPDATE bot_life_state SET hp=99,simulationRevision=simulationRevision+1 WHERE characterId=53', []]);
+    Life.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=53', []]))[0]);
+    await Memory.recordBatch([{ key: 'unrelated-help', sourceId: 53, targetId: 64, type: 'healed', at }]);
+    const refreshed = await freshActions.apply(staleForecast);
+    assert(refreshed.ok, JSON.stringify(refreshed));
+    assert.strictEqual(Party.find('party-53').nextResolveAt,
+        beforeSave.nextResolveAt + 100 + (refreshed.affectedIds.includes(53) ? WAIT_MS : 0), 'apply any new wait to the newest party schedule');
+    assert.strictEqual(state(53).vitals.hp, 99, 'preserve newer physical resources');
+    assert(Memory.snapshot(53).relations.some(r => r.targetId === 64), 'preserve unrelated newer memory');
+    assert.strictEqual(JSON.stringify(staleForecast), savedForecast, 'refresh never mutates the delivered forecast');
+    assert(!(await freshActions.apply(staleForecast)).ok, 'refresh cannot bypass durable duplicate/cooldown guards');
+
+    await createParty([56, 57]);
+    const joining = forecast(56, 58);
+    await createParty([56, 57, 59], 'party-56');
+    const joined = await freshActions.apply(joining);
+    assert(joined.ok, JSON.stringify(joined));
+    assert(joined.participants.some(p => p.id === 59), 'a new teammate is evaluated from the actual roster');
+    const friendlyForecast = forecast(60, 61);
+    for (let i = 0; i < 5; i++) await Memory.recordBatch([
+        { key: `friendly-a-${i}`, sourceId: 60, targetId: 61, type: 'resources_received', at },
+        { key: `friendly-b-${i}`, sourceId: 61, targetId: 60, type: 'resources_received', at }
+    ]);
+    // Even if the old forecast expected a fight, current friendship calms it.
+    friendlyForecast.decisionRolls = [0.99, 0.99, 0.3, 0];
+    const changed = await freshActions.apply(friendlyForecast);
+    assert.strictEqual(changed.reason, 'decision_changed');
+    assert.strictEqual(state(60).stats.coldCompetition, undefined, 'cancelled intent creates no physical offense');
+    const merged = forecast(62, 63);
+    await createParty([62, 63]);
+    assert.strictEqual((await freshActions.apply(merged)).reason, 'overlapping_sides', 'hunters who joined one party cannot fight their stale forecast');
     await Database.close();
     Database.init();
     const persisted = await Database.execute(['SELECT statsJson,nextResolveAt FROM bot_background_parties WHERE partyId=?', ['party-6']]);

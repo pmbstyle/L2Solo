@@ -1,3 +1,5 @@
+const Validation = require('./ColdCompetitionValidation');
+const Episode = require('./ColdCompetitionEpisode');
 // Main-process execution of one bounded encounter (at most two C4 parties).
 // Membership alone never makes a bot an aggressor or creates a memory edge.
 const { seeded } = require('./ColdCompetitionMonitor');
@@ -7,7 +9,7 @@ const partyIdOf = state => state?.party?.partyId || state?.partyId || null;
 const { reaction, select } = require('../../Social/ConflictParticipationPolicy');
 
 async function apply({ event, life, owner, memory, parties, personaFor, participantAllowed,
-    contestContextAllowed, onState, now, waitMs, cooldownMs, pvpEnabled = () => false,
+    contestContextAllowed, onState, now, waitMs, cooldownMs, disputeCooldownMs = cooldownMs, pvpEnabled = () => false,
     incrementalPvp = false, resume = null, onEncounter = () => {}, rng = seeded(event.key) }) {
     if (!parties) return { ok: false, reason: 'party_conflicts_unavailable' };
     const timestamp = now();
@@ -16,32 +18,18 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
     const sides = [];
     for (const participant of [event.actor, event.peer]) {
         const principal = life.cachedState(participant.id);
-        if (!principal || partyIdOf(principal) !== (participant.partyId || null)
-            || Number(principal.simulation?.revision || 0) !== participant.revision
-            || memory.snapshot(participant.id)?.revision !== participant.memoryRevision) {
-            return { ok: false, reason: 'state_or_memory_changed' };
-        }
+        const validation = { resume, revenge, at: timestamp, memory, participantAllowed, contestContextAllowed };
+        const principalFailure = Validation.principal(principal, participant, memory);
+        if (principalFailure) return principalFailure;
         const party = participant.partyId ? parties.find(participant.partyId) : null;
-        if (participant.partyId && (!party || party.status !== 'active' || party.updatedAt !== participant.partyUpdatedAt
-            || party.memberIds.length !== participant.size || party.memberIds.length < 2 || party.memberIds.length > 9
-            || !party.memberIds.includes(participant.id) || !party.memberIds.includes(party.leaderId)
-            || new Set(party.memberIds).size !== party.memberIds.length || (!resume && party.spotId !== event.spotId)
-            || (!resume && !revenge && Number(party.stats?.objective?.npcId || party.stats?.acquisitionGoal?.next?.npcId || 0) !== event.npcId)
-            || party.stats?.travel || (!resume && party.stats?.coldCompetition?.wait))) return { ok: false, reason: 'party_changed' };
-        const members = party ? party.memberIds.map(id => life.cachedState(id)) : [principal];
-        for (const state of members) {
-            const plan = state?.stats?.equipmentPlan;
-            if (!state || state.phase !== 'cold' || !(resume ? ['grouped', 'hunting', 'resting'] : ['grouped', 'hunting']).includes(state.activity) || !(state.vitals?.hp > 0)
-                || partyIdOf(state) !== (participant.partyId || null) || (!resume && state.spotId !== event.spotId)
-                || state.stats?.travel || (!resume && state.stats?.coldCompetition?.wait) || state.stats?.supplyErrand
-                || state.stats?.warehouseWorkflow || state.stats?.marketReturn
-                || (state.simulation?.ownerId || 'legacy_main') !== 'legacy_main'
-                || !participantAllowed(state.characterId) || (!resume && !contestContextAllowed(state, event))
-                || !memory.snapshot(state.characterId)
-                || (!resume && timestamp - Number(state.stats?.coldCompetition?.at || 0) < 120000)
-                || (resume && (state.stats?.pvpEncounter?.key !== resume.key || state.stats.pvpEncounter.sequence !== resume.sequence))
-                || (!resume && !revenge && !party && (state.activity !== 'hunting' || plan?.status !== 'active'
-                    || Number(plan.next?.npcId || plan.targetNpcId || 0) !== event.npcId))) return { ok: false, reason: 'party_member_busy_or_changed' };
+        const partyFailure = Validation.party(party, participant, event, { ...validation,
+            leader: party ? life.cachedState(party.leaderId) : null });
+        if (partyFailure) return partyFailure;
+        const memberIds = party ? party.memberIds : [participant.id];
+        const members = memberIds.map(id => life.cachedState(id));
+        for (let i = 0; i < members.length; i++) {
+            const failure = Validation.member(members[i], memberIds[i], participant, event, { ...validation, party });
+            if (failure) return failure;
         }
         if (!resume && (Number(party?.stats?.coldCompetition?.conflictUntil || 0) > timestamp
             || members.some(s => Number(s.stats?.coldCompetition?.conflictUntil || 0) > timestamp))) return { ok: false, reason: 'conflict_cooldown' };
@@ -93,7 +81,7 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
         sides: sides.map(s => ({ principalId: s.principal.characterId, memberIds: s.members.map(m => m.characterId), partyId: s.party?.partyId || null })),
         roles: [...roles], seen: [...(resume?.seen || [])] } : null;
     const episode = { key: event.key, at: resume?.startedAt || timestamp, action: revenge ? 'revenge' : 'contest', npcId: event.npcId,
-        conflictUntil: (resume?.startedAt || timestamp) + cooldownMs, outcome };
+        conflictUntil: (resume?.startedAt || timestamp) + (pvp?.started ? cooldownMs : disputeCooldownMs), outcome };
     const wait = { start: timestamp, until: encounter ? timestamp + 1000 : pvp?.started ? Math.max(timestamp, pvp.until) : timestamp + waitMs,
         ...(pvp?.started ? { combat: true } : {}) };
     const preparedParties = sides.map((side, index) => {
@@ -102,8 +90,8 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
         const prepared = parties.prepareCommit({ ...side.party,
             nextResolveAt: delayed ? (pvp?.started ? Math.max(wait.until, Number(side.party.nextResolveAt || 0))
                 : Math.max(timestamp, Number(side.party.nextResolveAt || 0)) + waitMs) : side.party.nextResolveAt,
-            stats: { ...side.party.stats, coldCompetition: { ...episode, peerId: sides[1 - index].principal.characterId,
-                ...(delayed ? { wait } : {}) } } });
+            stats: { ...side.party.stats, coldCompetition: Episode.begin(side.party.stats?.coldCompetition, { ...episode, peerId: sides[1 - index].principal.characterId,
+                ...(delayed ? { wait } : {}) }) } });
         prepared.row.updatedAt = Math.max(prepared.row.updatedAt, side.party.updatedAt + 1);
         prepared.snapshot.updatedAt = prepared.row.updatedAt;
         return prepared;
@@ -113,9 +101,9 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
         const result = pvp?.updates?.get(state.characterId) || state;
         return { ...result, stats: { ...result.stats,
             ...(revenge ? { revengeUntil: Math.max(Number(state.stats?.revengeUntil || 0), (resume?.startedAt || timestamp) + Revenge.RETRY_MS) } : {}),
-            ...(incrementalPvp ? { pvpEncounter: encounter } : {}), coldCompetition: { ...state.stats?.coldCompetition, ...episode,
+            ...(incrementalPvp ? { pvpEncounter: encounter } : {}), coldCompetition: Episode.begin(state.stats?.coldCompetition, { ...episode,
             peerId: sides[1 - index].principal.characterId, role: roles.get(state.characterId),
-            ...(delayed ? { wait } : {}) } }, timing: delayed ? { ...state.timing,
+            ...(delayed ? { wait } : {}) }) }, timing: delayed ? { ...state.timing,
                 ...(pvp?.started ? { lastResolvedAt: timestamp } : {}),
                 nextResolveAt: preparedParties[index]?.row.nextResolveAt
                     || (pvp?.started ? Math.max(wait.until, Number(state.timing?.nextResolveAt || 0))

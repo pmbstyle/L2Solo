@@ -43,7 +43,7 @@ class ColdRevengeMonitor {
                     this.cooldowns.set(unitId(b), at + Policy.RETRY_MS);
                     this.report.intents++;
                     events.push({ key: `revenge:${at}:${a.characterId}:${b.characterId}`, at, action: 'revenge', reason: social.reason,
-                        spotId: a.spotId, npcId: 0, pvpIntent: true, revengeRoll: roll, chance: social.chance,
+                        spotId: a.spotId, npcId: 0, contextVersion: 1, pvpIntent: true, revengeRoll: roll, chance: social.chance,
                         actor: participant(actor), peer: participant(peer) });
                 }
                 break;

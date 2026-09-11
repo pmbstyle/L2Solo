@@ -116,9 +116,13 @@ async function main() {
 
     // A real accepted solo-vs-party episode commits health, death, PK and memory together.
     await party([1, 2]);
+    await Database.execute(['UPDATE bot_life_state SET activity=? WHERE characterId=?', ['resting', 2]]);
+    Life.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=?', [2]]))[0]);
     const firstEvent = event(1, 3);
     const first = await new ColdCompetitionActions(base).apply(firstEvent);
     assert(first.ok && first.pvp, JSON.stringify(first));
+    assert.strictEqual(state(2).stats.coldCompetition.conflictUntil, at + 600000,
+        'a party with a recovering teammate can fight and retains the full PvP cooldown');
     assert.strictEqual(first.outcome, 'pvp_killed');
     assert.strictEqual(state(1).activity, 'dead');
     assert.strictEqual(state(1).vitals.hp, 0);

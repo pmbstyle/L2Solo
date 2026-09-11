@@ -16,6 +16,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-retreat-'));
 options.default.Database.path = path.join(dir, 'test.sqlite');
 const at = Date.now(), state = id => Life.cachedState(id);
 const range = (start, count) => Array.from({ length: count }, (_, i) => start + i);
+const oldEpisode = { key: 'old-pvp', at: at - 700000, outcome: 'pvp_fighting', role: 'attack', endedAt: at - 600000, conflictUntil: at + 60000 };
 const destination = { locX: 3000, locY: 1000, locZ: 0 };
 const base = { life: Life, owner: Owner, parties: Party, memory: Memory, now: () => at,
     participantAllowed: () => true, contestContextAllowed: () => true,
@@ -26,7 +27,7 @@ const base = { life: Life, owner: Owner, parties: Party, memory: Memory, now: ()
     } };
 async function createParty(ids) {
     const p = Party.prepareCommit({ partyId: `p${ids[0]}`, leaderId: ids[0], memberIds: ids,
-        spotId: 'test', status: 'active', startedAt: at, nextResolveAt: at + 45000, stats: { objective: { npcId: 10 } } });
+        spotId: 'test', status: 'active', startedAt: at, nextResolveAt: at + 45000, stats: { objective: ids[0] <= 22 ? null : { npcId: 10 }, ...(ids[0] <= 22 ? { coldCompetition: oldEpisode } : {}) } });
     const assigned = ids.map(id => Life.preparePartyAssignment(state(id), p.row.partyId, 'dps', ids[0], at + 45000));
     assert((await Database.commitBackgroundPartyMembership({ party: p.row, members: assigned })).ok);
     Life.acceptPartyAssignments(assigned); Party.acceptCommit(p);
@@ -48,7 +49,7 @@ async function run() {
             VALUES (?,?,?,0,0,100,100,0,0,0,0,0,0,0)`, [id, `retreat${id}`, `Retreat${id}`]]);
         await Database.execute([`INSERT INTO bot_life_state(characterId,accountName,characterName,phase,activity,spotId,hp,maxHp,mp,maxMp,level,
             nextResolveAt,lastResolvedAt,updatedAt,statsJson) VALUES (?,?,?,'cold','hunting','test',100,100,100,100,20,?,?,?,?)`,
-        [id, `retreat${id}`, `Retreat${id}`, at + 60000, at - 30000, at, JSON.stringify(stats)]]);
+        [id, `retreat${id}`, `Retreat${id}`, at + 60000, at - 30000, at, JSON.stringify(id <= 22 ? { ...stats, coldCompetition: oldEpisode } : stats)]]);
     }
     await Life.init(); await Party.init(); await Memory.ensureMany(range(1, 40));
     const actions = new ColdCompetitionActions(base);
@@ -56,9 +57,20 @@ async function run() {
         [6, 7, [6], [7, 8]], [9, 11, [9, 10], [11, 12]]]) {
         if (actorIds.length > 1) await createParty(actorIds);
         if (peerIds.length > 1) await createParty(peerIds);
+        for (const id of [...actorIds.slice(1), ...peerIds.slice(1)]) {
+            await Database.execute(['UPDATE bot_life_state SET activity=? WHERE characterId=?', ['resting', id]]);
+            Life.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=?', [id]]))[0]);
+        }
         const forecast = event(a, b), peerDue = state(b).timing.nextResolveAt;
         const result = await actions.apply(forecast);
         assert(result.ok, JSON.stringify(result));
+        for (const id of [...actorIds, ...peerIds]) {
+            const episode = state(id).stats.coldCompetition;
+            assert.strictEqual(episode.outcome, 'avoid');
+            assert.strictEqual(episode.endedAt, undefined);
+            assert.strictEqual(episode.role, undefined);
+            assert.strictEqual(episode.conflictUntil, oldEpisode.conflictUntil);
+        }
         assert.deepStrictEqual(result.affectedIds, actorIds);
         assert.strictEqual(result.memoryEvents, 0);
         assert.strictEqual(state(b).timing.nextResolveAt, peerDue);
@@ -82,6 +94,9 @@ async function run() {
         }
         if (actorIds.length > 1) {
             const party = Party.find(`p${a}`);
+            assert.strictEqual(party.stats.coldCompetition.outcome, 'avoid');
+            assert.strictEqual(party.stats.coldCompetition.endedAt, undefined);
+            assert.strictEqual(party.stats.coldCompetition.conflictUntil, oldEpisode.conflictUntil);
             assert.strictEqual(party.spotId, 'other');
             assert.strictEqual(party.stats.travel.arrivalAt, at + 30000);
         }
@@ -93,6 +108,11 @@ async function run() {
         const prior = Party.find(`p${a}`)?.nextResolveAt || state(a).timing.nextResolveAt, peerDue = state(b).timing.nextResolveAt;
         const result = await actions.apply(event(a, b, 'yield'));
         assert(result.ok, JSON.stringify(result));
+        for (const id of [...actorIds, ...peerIds]) {
+            assert.strictEqual(state(id).stats.coldCompetition.outcome, 'yield');
+            assert.strictEqual(state(id).stats.coldCompetition.endedAt, undefined);
+            assert.strictEqual(state(id).stats.coldCompetition.conflictUntil, oldEpisode.conflictUntil);
+        }
         assert.deepStrictEqual(result.affectedIds, actorIds);
         assert(actorIds.every(id => state(id).timing.nextResolveAt === prior + WAIT_MS));
         assert.strictEqual(state(b).timing.nextResolveAt, peerDue);

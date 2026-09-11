@@ -387,10 +387,7 @@ function directDropTargetNpcId(...plans) {
 }
 
 function partyTargetNpcId(party, leader) {
-    const objectiveNpcId = Number(party.stats?.objective?.npcId || 0);
-    return objectiveNpcId > 0
-        ? objectiveNpcId
-        : directDropTargetNpcId(leader.stats?.equipmentPlan, party.stats?.acquisitionGoal);
+    return require('./PartyHuntingTarget').npcId(party, leader);
 }
 
 function joinedBackgroundParty(state) {

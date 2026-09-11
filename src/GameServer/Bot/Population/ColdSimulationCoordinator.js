@@ -744,7 +744,8 @@ class ColdSimulationCoordinator {
             spot,
             interactionMemory: invoke('GameServer/Social/InteractionMemoryRuntime').snapshot(Number(state.characterId)),
             pressure,
-            targetNpcId: directDropTargetNpcId(state.stats?.equipmentPlan),
+            targetNpcId: party ? require('./PartyHuntingTarget').npcId(party, state)
+                : directDropTargetNpcId(state.stats?.equipmentPlan),
             isPartyLeader: !!party,
             party,
             partyMembers,

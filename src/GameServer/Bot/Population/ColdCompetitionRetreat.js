@@ -1,5 +1,6 @@
+const Validation = require('./ColdCompetitionValidation');
+const Episode = require('./ColdCompetitionEpisode');
 // Voluntary decisions affect the actor's whole hunting unit, without blame.
-const partyIdOf = s => s?.party?.partyId || s?.partyId || null;
 const AVOID_MS = 10 * 60000;
 
 async function apply({ event, life, owner, memory, parties, participantAllowed, contestContextAllowed,
@@ -7,29 +8,18 @@ async function apply({ event, life, owner, memory, parties, participantAllowed, 
     const at = now(), sides = [];
     for (const participant of [event.actor, event.peer]) {
         const principal = life.cachedState(participant.id);
-        if (!principal || partyIdOf(principal) !== (participant.partyId || null)
-            || Number(principal.simulation?.revision || 0) !== participant.revision
-            || memory.snapshot(participant.id)?.revision !== participant.memoryRevision) return { ok: false, reason: 'state_or_memory_changed' };
+        const validation = { retreat: true, at, memory, participantAllowed, contestContextAllowed };
+        const principalFailure = Validation.principal(principal, participant, memory);
+        if (principalFailure) return principalFailure;
         const party = participant.partyId ? parties?.find(participant.partyId) : null;
-        if (participant.partyId && (!party || party.status !== 'active' || party.updatedAt !== participant.partyUpdatedAt
-            || party.memberIds.length !== participant.size || party.memberIds.length < 2 || party.memberIds.length > 9
-            || !party.memberIds.includes(participant.id) || !party.memberIds.includes(party.leaderId)
-            || party.spotId !== event.spotId || party.stats?.travel || party.stats?.coldCompetition?.wait
-            || Number(party.stats?.objective?.npcId || party.stats?.acquisitionGoal?.next?.npcId || 0) !== event.npcId)) {
-            return { ok: false, reason: 'party_changed' };
-        }
-        const members = party ? party.memberIds.map(id => life.cachedState(id)) : [principal];
-        if (members.some(s => !s || s.phase !== 'cold' || !(s.vitals?.hp > 0)
-            || !(party ? ['grouped', 'hunting'] : ['hunting']).includes(s.activity)
-            || partyIdOf(s) !== (participant.partyId || null) || s.spotId !== event.spotId
-            || s.stats?.travel || s.stats?.coldCompetition?.wait || s.stats?.pvpEncounter
-            || s.stats?.supplyErrand || s.stats?.warehouseWorkflow || s.stats?.marketReturn
-            || (s.simulation?.ownerId || 'legacy_main') !== 'legacy_main'
-            || !participantAllowed(s.characterId) || !contestContextAllowed(s, event) || !memory.snapshot(s.characterId)
-            || at - Number(s.stats?.coldCompetition?.at || 0) < 120000
-            || (!party && (s.stats?.equipmentPlan?.status !== 'active'
-                || Number(s.stats.equipmentPlan.next?.npcId || s.stats.equipmentPlan.targetNpcId || 0) !== event.npcId)))) {
-            return { ok: false, reason: 'member_busy_or_changed' };
+        const partyFailure = Validation.party(party, participant, event, { ...validation,
+            leader: party ? life.cachedState(party.leaderId) : null });
+        if (partyFailure) return partyFailure;
+        const memberIds = party ? party.memberIds : [participant.id];
+        const members = memberIds.map(id => life.cachedState(id));
+        for (let i = 0; i < members.length; i++) {
+            const failure = Validation.member(members[i], memberIds[i], participant, event, { ...validation, party });
+            if (failure) return failure;
         }
         sides.push({ principal, party, members });
     }
@@ -52,19 +42,19 @@ async function apply({ event, life, owner, memory, parties, participantAllowed, 
         const prepared = parties.prepareCommit({ ...side.party,
             spotId: travel ? route.spotId : side.party.spotId,
             nextResolveAt: i === 0 ? travel?.arrivalAt || Math.max(at, Number(side.party.nextResolveAt || 0)) + waitMs : side.party.nextResolveAt,
-            stats: { ...side.party.stats, ...(travel ? { travel } : {}), coldCompetition: {
-                ...side.party.stats?.coldCompetition, key: event.key, at, action: event.action, peerId: sides[1 - i].principal.characterId,
+            stats: { ...side.party.stats, ...(travel ? { travel } : {}), coldCompetition: Episode.begin(side.party.stats?.coldCompetition, {
+                outcome: event.action, key: event.key, at, action: event.action, peerId: sides[1 - i].principal.characterId,
                 ...(i === 0 ? avoiding ? { avoid } : { wait: { start: at, until: at + waitMs } } : {})
-            } } });
+            }) } });
         prepared.row.updatedAt = Math.max(prepared.row.updatedAt, side.party.updatedAt + 1);
         prepared.snapshot.updatedAt = prepared.row.updatedAt;
         return prepared;
     });
     const next = sides.flatMap((side, i) => side.members.map((s, j) => {
         const result = avoiding && i === 0 ? travelling[j] : s;
-        return { ...result, stats: { ...result.stats, coldCompetition: { ...result.stats?.coldCompetition,
-            key: event.key, at, action: event.action, peerId: sides[1 - i].principal.characterId,
-            ...(i === 0 && !avoiding ? { wait: { start: at, until: at + waitMs } } : {}) } },
+        return { ...result, stats: { ...result.stats, coldCompetition: Episode.begin(result.stats?.coldCompetition, {
+            outcome: event.action, key: event.key, at, action: event.action, peerId: sides[1 - i].principal.characterId,
+            ...(i === 0 && !avoiding ? { wait: { start: at, until: at + waitMs } } : {}) }) },
         timing: i === 0 ? { ...result.timing,
             nextResolveAt: preparedParties[i]?.row.nextResolveAt || (avoiding ? result.timing.nextResolveAt : Math.max(at, Number(s.timing?.nextResolveAt || 0)) + waitMs) } : s.timing };
     }));

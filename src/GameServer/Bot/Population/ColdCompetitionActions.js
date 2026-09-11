@@ -1,7 +1,13 @@
+const Episode = require('./ColdCompetitionEpisode');
 const TTL_MS = 10000;
 const COOLDOWN_MS = 2 * 60000;
 const WAIT_MS = 15000;
 const CONFLICT_COOLDOWN_MS = 10 * 60000;
+// Losing a mob is a provocation, but should not exhaust the budget of a real fight.
+const DISPUTE_COOLDOWN_MS = 3 * 60000;
+const MAX_APPLIED = 4, MAX_ATTEMPTS = 8, BUDGET_MS = 75;
+const count = (map, key) => { map[key] = (map[key] || 0) + 1; };
+const priority = e => e.action === 'revenge' || e.pvpIntent ? 3 : e.action === 'offer_party' ? 2 : e.action === 'contest' ? 1 : 0;
 
 function eligible(state, event, participant, now) {
     const plan = state?.stats?.equipmentPlan;
@@ -22,46 +28,88 @@ function eligible(state, event, participant, now) {
 // duplicate deliveries, hot handoffs, target changes and concurrent worker work.
 class ColdCompetitionActions {
     constructor({ life, owner, memory, parties, personaFor = () => ({ traits: {} }), formParty, onState = () => {}, canRun = () => true, participantAllowed = () => true,
-        conflictsEnabled = () => false, pvpEnabled = () => false, incrementalPvp = false, onEncounter = () => {}, contestContextAllowed = () => false, retreatRoute = () => null, now = Date.now }) {
+        conflictsEnabled = () => false, pvpEnabled = () => false, incrementalPvp = false, onEncounter = () => {}, contestContextAllowed = () => false, retreatRoute = () => null, now = Date.now, budgetNow = () => performance.now() }) {
         Object.assign(this, { life, owner, memory, parties, personaFor, formParty, onState, canRun, participantAllowed, conflictsEnabled, pvpEnabled, contestContextAllowed, now });
-        Object.assign(this, { incrementalPvp, onEncounter, retreatRoute });
+        Object.assign(this, { incrementalPvp, onEncounter, retreatRoute, budgetNow });
         this.stopping = false;
         this.running = null;
         this.lastScanAt = 0;
+        this.spotActivity = new Map();
+        this.spotActivityEvicted = 0;
         this.report = { mode: 'cooperation', applied: 0, rejected: 0, avoids: 0, yields: 0, contests: 0, revenges: 0, deescalated: 0, parties: 0, recruits: 0, queued: 0, pvpFights: 0, pvpDeaths: 0, pkKills: 0, budgetSkipped: 0, recent: [] };
+        Object.assign(this.report, { attempted: 0, decisionRefreshes: 0, rejectedReasons: {}, rejectionExamples: [], skippedActions: {}, pvpRejected: {}, pvpSuppressed: {}, pvpCompleted: 0, pvpOutcomes: {} });
     }
     submit(forecast) {
         if (this.stopping || this.running || !forecast || forecast.at <= this.lastScanAt || !this.canRun()) return;
         this.lastScanAt = forecast.at;
-        const candidates = (forecast.recent || []).filter(e => e.at === forecast.at
+        const candidates = (forecast.events || forecast.recent || []).filter(e => e.at === forecast.at
             && (e.action === 'avoid' || e.action === 'yield' || (e.action === 'contest' && this.conflictsEnabled())
                 || (e.action === 'revenge' && this.conflictsEnabled() && this.pvpEnabled()) || (e.action === 'offer_party' && e.accepted)))
-            .sort((a, b) => ({ offer_party: 2, contest: 1, revenge: 1, avoid: 0, yield: 0 }[b.action] - { offer_party: 2, contest: 1, revenge: 1, avoid: 0, yield: 0 }[a.action]));
-        this.report.budgetSkipped += Math.max(0, candidates.length - 2);
-        const events = candidates.slice(0, 2);
+            .sort((a, b) => priority(b) - priority(a));
         this.running = (async () => {
-            for (const event of events) {
-                if (this.stopping || !this.canRun()) break;
+            const started = this.budgetNow();
+            let attempted = 0, applied = 0;
+            for (const event of candidates) {
+                if (this.stopping || !this.canRun() || applied >= MAX_APPLIED || attempted >= MAX_ATTEMPTS
+                    || this.budgetNow() - started >= BUDGET_MS) break;
+                attempted++; this.report.attempted++;
                 let result;
                 try { result = await this.apply(event); }
                 catch (error) { result = { ok: false, reason: 'action_error', error: error.message }; }
                 this.report[result.ok ? 'applied' : 'rejected']++;
+                if (result.ok) applied++;
+                else count(this.report.rejectedReasons, result.detail || result.reason || 'unknown');
+                if (!result.ok && result.detail) {
+                    this.report.rejectionExamples = [...this.report.rejectionExamples.filter(e => e.detail !== result.detail), {
+                        at: this.now(), key: event.key, action: event.action, pvpIntent: !!event.pvpIntent,
+                        spotId: event.spotId, reason: result.reason, detail: result.detail, ...result.rejectionContext
+                    }].slice(-16);
+                }
+                if (event.pvpIntent || event.action === 'revenge') {
+                    if (!result.ok) count(this.report.pvpRejected, result.detail || result.reason || 'unknown');
+                    else if (!result.pvp) count(this.report.pvpSuppressed, result.deescalated ? 'deescalated' : result.pvpReason || 'not_started');
+                }
                 if (result.ok) this.report[result.deescalated ? 'deescalated' : result.queued ? 'queued' : event.action === 'revenge' ? 'revenges' : event.action === 'contest' ? 'contests' : event.action === 'avoid' ? 'avoids' : event.action === 'yield' ? 'yields' : result.recruited ? 'recruits' : 'parties']++;
                 if (result.ok && result.pvp) {
                     this.report.pvpFights++;
                     const kills = result.combat.fighters.flatMap(f => f.kills);
                     this.report.pvpDeaths += kills.length;
                     this.report.pkKills += kills.filter(k => !k.pvp).length;
+                    if (!result.encounter) { this.report.pvpCompleted++; count(this.report.pvpOutcomes, result.outcome || 'finished'); }
+                }
+                if (result.ok && event.spotId) {
+                    const activity = this.spotActivity.get(event.spotId) || { spotId: event.spotId,
+                        since: this.now(), applied: 0, contests: 0, pvpFights: 0, lastPvpAt: null };
+                    activity.applied++;
+                    activity.contests += Number(event.action === 'contest' && !result.deescalated);
+                    activity.pvpFights += Number(!!result.pvp);
+                    activity.lastAt = this.now();
+                    if (result.pvp) activity.lastPvpAt = activity.lastAt;
+                    this.spotActivity.delete(event.spotId);
+                    this.spotActivity.set(event.spotId, activity);
+                    // Session telemetry, not another durable relationship store.
+                    if (this.spotActivity.size > 128) {
+                        this.spotActivity.delete(this.spotActivity.keys().next().value);
+                        this.spotActivityEvicted++;
+                    }
                 }
                 this.report.recent = [...this.report.recent, { key: event.key, at: this.now(), actorId: event.actor.id,
-                    peerId: event.peer.id, action: event.action, ...result }].slice(-12);
+                    peerId: event.peer.id, spotId: event.spotId, action: event.action, ...result }].slice(-12);
             }
+            this.report.budgetSkipped += candidates.length - attempted;
+            for (const event of candidates.slice(attempted)) count(this.report.skippedActions, event.pvpIntent ? 'pvp' : event.action);
         })().finally(() => { this.running = null; });
     }
     async apply(event) {
         const now = this.now();
         if (!event.key || event.at > now || now - event.at > TTL_MS || event.actor.id === event.peer.id
             || (event.action !== 'revenge' && !(event.pressure > 1))) return { ok: false, reason: 'invalid_or_expired' };
+        if (event.action === 'contest' || event.action === 'revenge') {
+            const current = require('./ColdConflictDecision').refresh(event, this, now);
+            if (!current.event) return { ok: false, reason: current.reason, decision: current.decision };
+            event = current.event;
+            if (current.refreshed) this.report.decisionRefreshes++;
+        }
         const participants = [event.actor, event.peer];
         if (!participants.every(p => this.participantAllowed(p.id))) return { ok: false, reason: 'hot_handoff_fenced' };
         if (event.action === 'avoid' || event.action === 'yield' && participants.some(p => p.partyId)) {
@@ -69,11 +117,11 @@ class ColdCompetitionActions {
         }
         if (event.action === 'revenge') {
             if (!this.conflictsEnabled() || !this.pvpEnabled()) return { ok: false, reason: 'forecast_only' };
-            return require('./ColdPartyConflict').apply({ ...this, event, waitMs: WAIT_MS, cooldownMs: CONFLICT_COOLDOWN_MS });
+            return require('./ColdPartyConflict').apply({ ...this, event, waitMs: WAIT_MS, cooldownMs: CONFLICT_COOLDOWN_MS, disputeCooldownMs: DISPUTE_COOLDOWN_MS });
         }
         if (event.action === 'contest' && (participants.some(p => p.partyId) || event.pvpIntent === true && this.pvpEnabled())) {
             if (!this.conflictsEnabled()) return { ok: false, reason: 'forecast_only' };
-            return require('./ColdPartyConflict').apply({ ...this, event, waitMs: WAIT_MS, cooldownMs: CONFLICT_COOLDOWN_MS });
+            return require('./ColdPartyConflict').apply({ ...this, event, waitMs: WAIT_MS, cooldownMs: CONFLICT_COOLDOWN_MS, disputeCooldownMs: DISPUTE_COOLDOWN_MS });
         }
         const states = participants.map(p => this.life.cachedState(p.id));
         if (!states.every((s, i) => eligible(s, event, participants[i], now))) return { ok: false, reason: 'state_changed_or_busy' };
@@ -87,13 +135,12 @@ class ColdCompetitionActions {
             const view = this.memory.snapshot(s.characterId);
             return view && view.revision === participants[i].memoryRevision;
         })) return { ok: false, reason: 'memory_changed' };
-        const next = states.map((s, i) => ({ ...s, stats: { ...s.stats, coldCompetition: {
-            ...s.stats?.coldCompetition,
-            key: event.key, at: now, action: event.action, peerId: participants[1 - i].id,
-            ...(contest ? { conflictUntil: now + CONFLICT_COOLDOWN_MS, npcId: event.npcId } : {}),
+        const next = states.map((s, i) => ({ ...s, stats: { ...s.stats, coldCompetition: Episode.begin(s.stats?.coldCompetition, {
+            outcome: event.action, key: event.key, at: now, action: event.action, peerId: participants[1 - i].id,
+            ...(contest ? { conflictUntil: now + DISPUTE_COOLDOWN_MS, npcId: event.npcId } : {}),
             ...((event.action === 'yield' && i === 0) || (contest && i === 1)
                 ? { wait: { start: now, until: now + WAIT_MS } } : {})
-        } } }));
+        }) } }));
         let queued = false;
         if (event.action === 'offer_party' && event.accepted) {
             if (Math.abs(states[0].level - states[1].level) > 4) return { ok: false, reason: 'level_mismatch' };
@@ -155,8 +202,11 @@ class ColdCompetitionActions {
         const kills = result.combat?.fighters.flatMap(f => f.kills) || [];
         this.report.pvpDeaths += kills.length;
         this.report.pkKills += kills.filter(k => !k.pvp).length;
+        if (!result.encounter) { this.report.pvpCompleted++; count(this.report.pvpOutcomes, result.outcome || 'finished'); }
         this.report.lastPvpStep = { at: this.now(), ...result };
     }
-    snapshot() { return { ...this.report, mode: this.conflictsEnabled() ? this.pvpEnabled() ? 'resource_pvp' : 'resource_conflicts' : 'cooperation' }; }
+    snapshot() { return { ...this.report, spotActivity: [...this.spotActivity.values()].map(row => ({ ...row })),
+        spotActivityEvicted: this.spotActivityEvicted,
+        mode: this.conflictsEnabled() ? this.pvpEnabled() ? 'resource_pvp' : 'resource_conflicts' : 'cooperation' }; }
 }
 module.exports = { ColdCompetitionActions, eligible, WAIT_MS, CONFLICT_COOLDOWN_MS };

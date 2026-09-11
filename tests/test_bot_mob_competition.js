@@ -99,7 +99,7 @@ try {
     const aggressive = character(), gentle = character();
     aggressive.session.persona.traits = { assertiveness: 0.9, empathy: 0.1, caution: 0.1 };
     gentle.session.persona.traits = { assertiveness: 0.1, empathy: 0.9, caution: 0.9 };
-    assert(Competition.attackChance(aggressive.session, gentle) > Competition.attackChance(gentle.session, aggressive) * 10);
+    assert(Competition.attackChance(aggressive.session, gentle) > Competition.attackChance(gentle.session, aggressive) * 5);
     // Same accepted claim and same roll; only previously committed memory differs.
     for (const variant of ['neutral', 'grievance', 'friendly', 'unloaded']) {
         const x = setup();
@@ -113,17 +113,22 @@ try {
         }
         const chance = Competition.attackChance(x.bot.session, x.rival, now);
         Competition.record(x.bot, x.mob, now);
-        const started = Competition.record(x.rival, x.mob, now + 1, () => 0.01);
+        const started = Competition.record(x.rival, x.mob, now + 1, () => 0.6);
         assert.strictEqual(started, variant === 'grievance', `${variant}: prior memory must affect the real provocation path`);
         assert.strictEqual(!!x.bot.session.pvpRevenge, variant === 'grievance');
         if (variant === 'grievance') {
-            assert(chance > 0.01);
+            assert(chance > 0.6);
             assert(events.some(e => e[0] === 'chat' && e[1] === x.bot.id), 'a memory-based escalation still warns first');
-        } else assert(chance < 0.01);
+        } else assert(chance < 0.6);
         assert.strictEqual(memories.filter(e => e.sourceId === x.bot.id).length, 1, 'physical competition still records exactly one episode');
         for (let i = 2; i <= 100; i++) Competition.record(x.rival, x.mob, now + i, () => 0);
         assert.strictEqual(memories.filter(e => e.sourceId === x.bot.id).length, 1);
     }
+    const stranger = setup(true);
+    Competition.record(stranger.bot, stranger.mob, now);
+    assert(Competition.record(stranger.rival, stranger.mob, now + 1, () => 0.1),
+        'an accepted offense can provoke PvP before a bot has accumulated an old grievance');
+    assert(stranger.bot.session.pvpRevenge);
     for (const mode of ['party', 'clan', 'peace', 'left_mob', 'dead', 'raid', 'budget', 'disabled']) {
         const x = setup();
         if (mode === 'party') x.bot.session.coldLifeState = x.rival.session.coldLifeState = { party: { partyId: 'friends' } };

@@ -98,7 +98,8 @@ function monitorReplay(c, memory) {
     const spot = { id: c.spotId, npcEntries: [{ selfId: c.npcId, count: 1 }] };
     const entries = c.states.map(s => {
         const side = c.groups.findIndex(ids => ids.includes(s.characterId)), u = unit(c, side);
-        const party = u.partyId ? { partyId: u.partyId, updatedAt: timestamp, stats: { objective: { npcId: c.npcId } } } : null;
+        const party = u.partyId ? { partyId: u.partyId, memberIds: c.groups[side], leaderId: c.groups[side][0],
+            status: 'active', spotId: c.spotId, updatedAt: timestamp, stats: { objective: { npcId: c.npcId } } } : null;
         return { state: { ...s, phase: 'cold', activity: party ? 'grouped' : 'hunting', spotId: c.spotId,
             vitals: { hp: 100 }, party: { partyId: party?.partyId || null } },
         context: { spot, party, targetNpcId: c.npcId } };
@@ -130,7 +131,8 @@ function run() {
         assert(counts('one').contest > counts('neutral').contest, 'one remembered offense must affect actual decisions');
         assert(counts('repeated').contest > counts('one').contest);
         assert(counts('repeated').avoid > counts('neutral').avoid, 'hostility can also increase avoidance');
-        assert(counts('repeated').contest < SAMPLES / 2, 'even repeated resource conflicts must not force universal aggression');
+        assert(counts('repeated').contest < SAMPLES * 0.8, 'remembered enemies can compete more often while retaining peaceful alternatives');
+        assert(counts('repeated').pvpIntent < SAMPLES * 0.45, 'even repeated resource conflicts usually stop short of PvP');
         if (c.name === 'solo') {
             assert(counts('one').accepted < counts('neutral').accepted);
             assert(counts('repeated').accepted < counts('one').accepted);
