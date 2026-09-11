@@ -255,6 +255,13 @@ const SpotService = {
         return this.findById(spotIdAt(loc).id);
     },
 
+    containsLocation(spot, loc) {
+        if (!loc || !['locX', 'locY', 'locZ'].every(key => Number.isFinite(Number(loc[key])))) return false;
+        // Non-grid profiles are used by callers with their own routing geometry.
+        if (!/^(-?\d+)_(-?\d+)(?::.+)?$/.test(String(spot?.id || ''))) return true;
+        return spotIdAt(loc).id === spot.id;
+    },
+
     findBestSpot(status, options = {}) {
         const loc = status.loc;
         const targetLevel = options.level || status.level || 1;
@@ -372,19 +379,22 @@ const SpotService = {
         const anchorHash = stableHash(`${seed}:anchor`);
         const angleHash = stableHash(`${seed}:angle`);
         const radiusHash = stableHash(`${seed}:radius`);
-        const anchor = points[anchorHash % points.length] || spot.center;
         const angle = ((angleHash % 360) * Math.PI) / 180;
         const radius = 96 + (radiusHash % 161);
-        const point = constrainToSpotGrid(
-            spot,
-            Math.round(Number(anchor.locX || 0) + Math.cos(angle) * radius),
-            Math.round(Number(anchor.locY || 0) + Math.sin(angle) * radius)
-        );
-        return {
-            locX: point.locX,
-            locY: point.locY,
-            locZ: GeodataEngine.getHeight(point.locX, point.locY, Number(anchor.locZ || spot.center.locZ || 0))
-        };
+        // Offset and geodata height can leave a dungeon even inside the same
+        // X/Y grid. Fall back to a known spawn on that layer, never its surface.
+        for (let i = 0; i < Math.min(points.length, 8); i++) {
+            const anchor = points[(anchorHash + i) % points.length];
+            const point = constrainToSpotGrid(spot,
+                Math.round(Number(anchor.locX) + Math.cos(angle) * radius),
+                Math.round(Number(anchor.locY) + Math.sin(angle) * radius));
+            const offset = { ...point, locZ: GeodataEngine.getHeight(point.locX, point.locY, Number(anchor.locZ)) };
+            if (this.containsLocation(spot, offset)) return offset;
+            const grounded = { ...anchor, locZ: GeodataEngine.getHeight(anchor.locX, anchor.locY, anchor.locZ) };
+            if (this.containsLocation(spot, grounded)) return grounded;
+            if (this.containsLocation(spot, anchor)) return { ...anchor };
+        }
+        return null;
     },
 
     describe(spot) {

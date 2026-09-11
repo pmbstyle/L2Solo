@@ -216,6 +216,21 @@ const BackgroundPartyResolver = {
             };
         }
 
+        if (!require('./PartyHuntingAssembly').ready(party, members, spot)) {
+            // No route may mean admission is temporarily unavailable. Do not
+            // turn that into remote combat or rewrite a member's physical spot.
+            const nextResolveAt = timestamp + 30000;
+            return {
+                memberResults: members.map(state => ({ state, result: {
+                    patch: {}, events: [], memoryEvents: [],
+                    materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt
+                } })),
+                events: [], nextResolveAt,
+                partyPatch: { stats: { lastResolveAt: timestamp } },
+                debug: { reason: 'party_assembling', fights: 0, wins: 0, spotId: spot.id }
+            };
+        }
+
         const fights = estimateFightCount({ party, members, spot, elapsedMs });
         let wins = 0;
         let losses = 0;

@@ -371,6 +371,74 @@ try {
     assert.strictEqual(Object.keys(partyRoute.destinations).length, 2);
     assert.deepStrictEqual(partyRoute.destinations['3'], destinationFor(members[1]));
 
+    const dungeonPoint = { locX: 145224, locY: 120001, locZ: -4500 };
+    const lair = { ...targetSpot, id: '24_20:antharas_lair', center: dungeonPoint, name: "Antharas' Lair" };
+    const displacedMembers = members.map((m, i) => ({ ...m, spotId: lair.id, vitals: { hp: 100 },
+        loc: { ...dungeonPoint, ...(i ? { locZ: 160 } : {}) } }));
+    const displacedParty = { ...party, spotId: lair.id };
+    SpotService.findCurrentSpot = loc => SpotService.containsLocation(lair, loc) ? lair : { id: '24_20' };
+    SpotProfiles.findForState = () => lair;
+    SpotService.arrivalPointForState = () => dungeonPoint;
+    try {
+        const repairOccupancy = { [lair.id]: { count: 2, reservedCount: 2, capacity: 2,
+            retained: new Set(['2', '3']), reservedKeys: new Set(['2', '3']) } };
+        const repairedRoute = coordinator.routeFor(displacedMembers[0], lair, displacedParty, displacedMembers, { occupancy: repairOccupancy });
+        assert(repairedRoute?.needed);
+        assert.strictEqual(repairOccupancy[lair.id].reservedCount, 2, 'position repair does not reserve existing members twice');
+        assert.strictEqual(repairedRoute.cause, 'position_mismatch');
+        assert.strictEqual(repairedRoute.reason, 'party_spot_replan');
+        const Kernel = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
+        const departing = Kernel.beginRouteTravelState(displacedMembers[1], repairedRoute, 1000);
+        assert.strictEqual(departing.loc.locZ, 160, 'repair uses ordinary travel, not an instant move');
+        assert.strictEqual(Kernel.finishPartyRouteTravelState(departing, 2000), null);
+        const arrived = Kernel.finishPartyRouteTravelState(departing, 1000 + repairedRoute.travelMs);
+        assert(SpotService.containsLocation(lair, arrived.loc));
+        assert.strictEqual(arrived.spotId, lair.id);
+        for (const patch of [{ phase: 'hot' }, { activity: 'resting' }, { stats: { pvpEncounter: { key: 'fighting' } } }]) {
+            const blockedMembers = [displacedMembers[0], { ...displacedMembers[1], ...patch }];
+            assert.strictEqual(coordinator.routeFor(blockedMembers[0], lair, displacedParty, blockedMembers, { occupancy: {} }), null);
+        }
+        const validMembers = displacedMembers.map(m => ({ ...m, loc: dungeonPoint }));
+        assert.strictEqual(coordinator.routeFor(validMembers[0], lair, displacedParty, validMembers, { occupancy: {} }), null,
+            'valid positions do not cause endless repair journeys');
+        // Route planning uses full cached members even when the worker payload is compact.
+        LifeState.cachedState = id => displacedMembers.find(m => m.characterId === id);
+        const context = coordinator.contextFor(displacedMembers[0], { spots: new Map([[lair.id, lair]]),
+            parties: new Map([[displacedParty.leaderId, displacedParty]]), occupancy: repairOccupancy, compactPartyMembers: true });
+        assert(context.partyMembers.every(m => m.compact));
+        assert.strictEqual(context.route.cause, 'position_mismatch');
+
+        // The leader is already here, but two teammates still occupy another spot.
+        const joiningMembers = [displacedMembers[0],
+            { ...displacedMembers[1], spotId: currentSpot.id },
+            { ...displacedMembers[1], characterId: 4, spotId: currentSpot.id }];
+        const joiningParty = { ...displacedParty, memberIds: [2, 3, 4] };
+        const occupied = { [lair.id]: { count: 3, reservedCount: 3, capacity: 4,
+            retained: new Set(['2', '8', '9']), reservedKeys: new Set(['2', '8', '9']) } };
+        assert.strictEqual(coordinator.routeFor(joiningMembers[0], lair, joiningParty, joiningMembers, { occupancy: occupied }), null,
+            'repair cannot bring two unreserved members into one remaining slot');
+        assert.strictEqual(occupied[lair.id].reservedCount, 3);
+        assert.deepStrictEqual([...occupied[lair.id].reservedKeys], ['2', '8', '9'], 'rejected repair leaves reservations unchanged');
+        occupied[lair.id].reservedKeys.delete('9');
+        occupied[lair.id].retained.delete('9');
+        occupied[lair.id].count = occupied[lair.id].reservedCount = 2;
+        assert(coordinator.routeFor(joiningMembers[0], lair, joiningParty, joiningMembers, { occupancy: occupied })?.needed,
+            'repair can proceed when both missing reservations fit');
+        assert.strictEqual(occupied[lair.id].reservedCount, 4);
+        assert(occupied[lair.id].reservedKeys.has('3') && occupied[lair.id].reservedKeys.has('4'));
+        assert.strictEqual(SpotProfiles.reserveCapacity(occupied, lair, [{ characterId: 5 }]), false,
+            'later routes must see the space taken by the arriving party');
+        // Fixing coordinates of already counted hunters must also work on an overfull spot.
+        occupied[lair.id].capacity = 3;
+        assert(coordinator.routeFor(joiningMembers[0], lair, joiningParty, joiningMembers, { occupancy: occupied })?.needed);
+        assert.strictEqual(occupied[lair.id].reservedCount, 4, 'repeated repair cannot add reservations');
+    } finally {
+        SpotService.findCurrentSpot = () => currentSpot;
+        SpotProfiles.findForState = routeTargetForState;
+        SpotService.arrivalPointForState = destinationFor;
+        LifeState.cachedState = originalCachedState;
+    }
+
     const pressuredMembers = [
         members[0],
         {

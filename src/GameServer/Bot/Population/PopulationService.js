@@ -115,8 +115,9 @@ function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
     if (!hasLocation) return null;
     const physical = SpotService.findCurrentSpot(from);
     const currentId = physical?.id || options.currentSpotId || state.spotId || null;
-    if (currentId === spot.id) return null;
+    if (currentId === spot.id && !options.regroup) return null;
     const destination = SpotService.arrivalPointForState(state, spot);
+    if (!destination) return null;
     const spotBackoff = options.spotBackoff
         || SpotRiskPolicy.backoffForStates([state], currentId, timestamp);
     const routedState = spotBackoff
@@ -155,7 +156,7 @@ function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
 }
 
 function beginPartySpotTravel(state, spot, timestamp = Date.now(), options = {}) {
-    const travelling = beginHuntingTravel(state, spot, timestamp, options);
+    const travelling = beginHuntingTravel(state, spot, timestamp, { ...options, regroup: true });
     if (!travelling) return null;
     return {
         ...travelling,
@@ -3014,14 +3015,23 @@ const PopulationService = {
 
             const leaderPhysicalSpot = SpotService.findCurrentSpot(leader.loc);
             const physicalSpotId = leaderPhysicalSpot?.id || leader.spotId || party.spotId;
-            if (physicalSpotId && physicalSpotId !== spot.id) {
-                const spotBackoff = SpotRiskPolicy.backoffForStates(members, physicalSpotId, startedAt);
-                const travellingMembers = members.map((member) => beginPartySpotTravel(
+            const assembling = members.every(member => member.phase === 'cold' && member.vitals?.hp > 0
+                && ['grouped', 'hunting'].includes(member.activity) && !member.stats?.travel && !member.stats?.pvpEncounter)
+                && !require('./PartyHuntingAssembly').ready(party, members, spot);
+            const occupancy = assembling ? SpotProfiles.currentOccupancy(SpotProfiles.ensure()) : null;
+            const reservedKeys = occupancy?.[spot.id]?.reservedKeys;
+            const assemblyAdmitted = assembling && ((reservedKeys instanceof Set
+                && members.every(member => reservedKeys.has(String(member.characterId))))
+                || SpotProfiles.reserveCapacity(occupancy, spot, members));
+            const needsTravel = (physicalSpotId && physicalSpotId !== spot.id && !assembling) || assemblyAdmitted;
+            const spotBackoff = needsTravel ? SpotRiskPolicy.backoffForStates(members, physicalSpotId, startedAt) : null;
+            const travellingMembers = needsTravel ? members.map((member) => beginPartySpotTravel(
                     member,
                     spot,
                     startedAt,
                     { currentSpotId: physicalSpotId, spotBackoff }
-                ) || member);
+                )) : null;
+            if (travellingMembers?.every(Boolean)) {
                 const arrivalAt = startedAt + HUNTING_TRAVEL_MS;
                 return travellingMembers.reduce((chain, member) => (
                     chain.then(() => LifeState.upsertState(member, 'party_spot_travel'))

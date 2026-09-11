@@ -218,6 +218,7 @@ const tests = [
     'tests/test_bot_background_drops.js',
     'tests/test_bot_background_rest.js',
     'tests/test_bot_background_party_rest.js',
+    'tests/test_cold_party_assembly.js',
     'tests/test_bot_party_gear_loot.js',
     'tests/test_bot_background_respawn.js',
     'tests/test_bot_background_rest_scheduling.js',

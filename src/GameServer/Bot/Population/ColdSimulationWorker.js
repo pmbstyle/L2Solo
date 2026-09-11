@@ -32,7 +32,8 @@ const stubs = new Map([
     ['GameServer/Bot/Economy/MarketOpportunity', {
         TOWN_NPC_SELLERS: {}, bestOffer: () => null, npcOffersAll: () => []
     }],
-    ['GameServer/World/WorldAreaCatalog', {}],
+    // Immutable map boundaries only; no live World, geodata or database access.
+    ['GameServer/World/WorldAreaCatalog', { resolve: originalInvoke('GameServer/World/WorldAreaCatalog').resolve }],
     ['GameServer/World/Generics/NpcShopBuyLists', { allEntries: () => [] }]
 ]);
 

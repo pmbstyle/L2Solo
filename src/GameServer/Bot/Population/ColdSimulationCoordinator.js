@@ -689,9 +689,20 @@ class ColdSimulationCoordinator {
         }
         if (!selected) return null;
 
-        if (String(selected.id) === String(currentId || '')) return null;
+        const repairingPartyPosition = partyRoute && String(selected.id) === String(party.spotId || '')
+            && partyMembers.every(member => member.phase === 'cold' && member.vitals?.hp > 0
+                && !member.stats?.pvpEncounter && !member.stats?.travel)
+            && partyMembers.some(member => !SpotService.containsLocation(selected, member.loc));
+        if (String(selected.id) === String(currentId || '') && !repairingPartyPosition
+            && (!partyRoute || String(party.spotId || '') === String(selected.id))) return null;
 
-        const reserved = SpotProfiles.reserveCapacity(index.occupancy, selected, routedMembers, {
+        // Coordinate repair may include teammates whose reservation is still
+        // on another spot. Only bypass admission when every member is counted;
+        // reserveCapacity adds missing members without counting existing ones twice.
+        const reservedKeys = index.occupancy?.[selected.id]?.reservedKeys;
+        const repairAlreadyReserved = repairingPartyPosition && reservedKeys instanceof Set
+            && routedMembers.every(member => reservedKeys.has(String(member.characterId)));
+        const reserved = repairAlreadyReserved || SpotProfiles.reserveCapacity(index.occupancy, selected, routedMembers, {
             maxOverflowUnits: unsafeSoloGround ? 1 : 0
         });
         if (!reserved) return null;
@@ -717,7 +728,8 @@ class ColdSimulationCoordinator {
                 : unsafeSoloGround ? 'unsafe_ground_evacuation'
                 : spotBackoff ? 'death_pressure_replan'
                     : activeEquipmentPlan ? 'equipment_source_replan' : 'level_replan',
-            ...(spotBackoff ? { cause: 'death_pressure', spotBackoff } : {}),
+            ...(spotBackoff ? { cause: 'death_pressure', spotBackoff }
+                : repairingPartyPosition ? { cause: 'position_mismatch' } : {}),
             to: destinations[String(state.characterId)] || null,
             destinations
         };
@@ -732,14 +744,14 @@ class ColdSimulationCoordinator {
         let pressure = {};
         try { pressure = Director.pressureForState(state) || {}; } catch (_) { pressure = {}; }
         const party = index.parties.get(Number(state.characterId)) || null;
-        const partyMembers = party
-            ? (party.memberIds || []).map((characterId) => LifeState.cachedState(characterId)).filter(Boolean).map((member) => {
+        const fullPartyMembers = party
+            ? (party.memberIds || []).map((characterId) => LifeState.cachedState(characterId)).filter(Boolean) : [];
+        const partyMembers = fullPartyMembers.map((member) => {
                 const memberId = Number(member.characterId || 0);
                 const compact = index.compactPartyMembers === true
                     || index.compactPartyMemberIds?.has(memberId);
                 return compact ? compactPartyMemberContext(member) : member;
-            })
-            : [];
+            });
         return {
             spot,
             interactionMemory: invoke('GameServer/Social/InteractionMemoryRuntime').snapshot(Number(state.characterId)),
@@ -749,7 +761,7 @@ class ColdSimulationCoordinator {
             isPartyLeader: !!party,
             party,
             partyMembers,
-            route: this.routeFor(state, spot, party, partyMembers, index)
+            route: this.routeFor(state, spot, party, fullPartyMembers, index)
         };
     }
 
