@@ -366,9 +366,16 @@ const SpotProfiles = {
         } : {};
         const routeOptions = { ...options, occupancy, excludedSpotIds, capacityUnits, ...reservationOptions };
         const currentMatch = currentSpot ? LevelingRoutes.scoreSpot(currentSpot, state, routeOptions) : null;
+        // Staying on the leader's ground still admits any teammates reserved
+        // elsewhere. Check them before either current-spot shortcut, while
+        // leaving redistribution of already counted hunters to the retained set.
+        const currentNeedsRoom = currentSpot
+            && capacityUnitsFor(capacityStates, occupancy[currentSpot.id]) > 0
+            && !hasCapacityForStates(currentSpot, capacityStates, occupancy, reservationOptions);
         const mustRelocate = currentSpot && (currentMatch.localityPenalty > 0
             || currentMatch.huntingGround?.allowed === false
             || shouldLeaveOverCapacity(state, currentSpot, occupancy)
+            || currentNeedsRoom
             || excludedSpotIds.has(String(currentSpot.id)));
         const keepCurrentSpot = currentSpot && (!acquisitionPlan || protectedStarterCohort)
             && !mustRelocate

@@ -85,6 +85,42 @@ try {
         'a surplus party leader must select another spot so the party can travel together'
     );
 
+    const remoteMember = { ...partyTwo, spotId: alternate.id };
+    const assembling = [partyOne, remoteMember];
+    const assemblyOccupancy = SpotProfiles.occupancySnapshot(SpotProfiles.cache, [
+        partyOne, remoteMember, surplusSolo
+    ]);
+    GearAcquisitionPlanner.bestSourceForPlan = () => null;
+    for (const equipmentPlan of [null, { status: 'active', strategy: 'direct_drop' }]) {
+        const leader = { ...partyOne, stats: { equipmentPlan } };
+        assert.strictEqual(
+            SpotProfiles.findForState(leader, { occupancy: assemblyOccupancy, capacityStates: assembling }).id,
+            alternate.id,
+            'a retained leader must choose room for the whole party, including when its gear source is unavailable'
+        );
+        SpotProfiles.cache = [crowded];
+        assert.strictEqual(
+            SpotProfiles.findForState(leader, { occupancy: assemblyOccupancy, capacityStates: assembling }),
+            null,
+            'without an alternative, an unassembled party must not repeatedly select a full leader spot'
+        );
+        SpotProfiles.cache = [crowded, alternate];
+    }
+    GearAcquisitionPlanner.bestSourceForPlan = originalBestSourceForPlan;
+    assert.strictEqual(assemblyOccupancy[crowded.id].reservedCount, 2,
+        'spot selection must not reserve capacity before a route is admitted');
+    const roomForParty = SpotProfiles.occupancySnapshot(SpotProfiles.cache, assembling);
+    assert.strictEqual(
+        SpotProfiles.findForState(partyOne, { occupancy: roomForParty, capacityStates: assembling }).id,
+        crowded.id,
+        'a leader may stay when its absent teammate fits in the remaining slot'
+    );
+    assert.strictEqual(
+        SpotProfiles.findForState(partyOne, { occupancy, capacityStates: [partyOne, partyTwo] }).id,
+        crowded.id,
+        'an already reserved retained party must stay even while surplus hunters make the spot overfull'
+    );
+
     const occupancyByPresence = SpotProfiles.occupancySnapshot(SpotProfiles.cache, [
         { characterId: 4, activity: 'merchant', spotId: crowded.id },
         { characterId: 5, activity: 'shopping', spotId: crowded.id },
