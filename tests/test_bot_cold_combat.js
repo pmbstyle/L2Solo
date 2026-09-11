@@ -483,6 +483,27 @@ assert.strictEqual(strongSoloResult.materialize.exp, Math.round(2376 * Progressi
 assert.strictEqual(strongSoloResult.materialize.sp, 108 * ProgressionRates.profile().sp);
 assert.strictEqual(strongSoloResult.materialize.adena, 0);
 
+for (const restUntil of [timestamp - 600000, timestamp + 600000]) {
+    const scheduled = BackgroundResolver.resolveSolo({
+        state: { ...strongColdHunter, stats: { ...strongColdHunter.stats, restUntil } },
+        spot: gigantSpot, targetNpcId: 1187, elapsedMs: 12000, timestamp, rng: () => 0.1
+    });
+    assert.strictEqual(scheduled.patch.activity, 'hunting');
+    assert.strictEqual(scheduled.patch.stats.restUntil, null, 'a completed hunt must clear the previous recovery deadline');
+    assert.strictEqual(scheduled.nextResolveAt, strongSoloResult.nextResolveAt, 'old recovery state must not cause a tight resolve loop');
+    assert.deepStrictEqual(scheduled.materialize, strongSoloResult.materialize, 'scheduling must preserve XP/SP/Adena and drops');
+    assert.deepStrictEqual(scheduled.debug, strongSoloResult.debug, 'scheduling must preserve combat actions');
+    assert.deepStrictEqual(scheduled.patch.vitals, strongSoloResult.patch.vitals);
+}
+const injuredHunt = BackgroundResolver.resolveSolo({
+    state: { ...strongColdHunter, vitals: { ...strongColdHunter.vitals, hp: 100 },
+        stats: { ...strongColdHunter.stats, restUntil: timestamp - 1 } },
+    spot: gigantSpot, targetNpcId: 1187, elapsedMs: 12000, timestamp, rng: () => 0.1
+});
+assert.strictEqual(injuredHunt.patch.activity, 'resting', 'an injured hunter still needs real recovery');
+assert(injuredHunt.patch.stats.restUntil > timestamp, 'new recovery must replace an expired deadline');
+assert.strictEqual(injuredHunt.nextResolveAt, injuredHunt.patch.stats.restUntil);
+
 const strongPartyResult = BackgroundPartyResolver.resolve({
     party: { partyId: 'strong_type_party', cohesion: 1, risk: 0, roleCoverage: {}, stats: {} },
     members: [strongColdHunter, { ...strongColdHunter, characterId: 920, name: 'StrongColdHunterTwo' }],

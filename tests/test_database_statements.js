@@ -1,0 +1,27 @@
+const assert = require('assert');
+const { DatabaseSync } = require('node:sqlite');
+const Statements = require('../src/DatabaseStatements');
+
+const db = new DatabaseSync(':memory:');
+db.exec('CREATE TABLE items(id INTEGER PRIMARY KEY, amount INTEGER CHECK(amount >= 0));');
+const put = 'INSERT INTO items VALUES (?, ?)';
+const get = 'SELECT amount FROM items WHERE id = ?';
+Statements.prepare(db, put).run(1, 10);
+Statements.prepare(db, put).run(2, 20);
+assert.strictEqual(Statements.prepare(db, get).get(1).amount, 10);
+assert.strictEqual(Statements.prepare(db, get).get(2).amount, 20, 'bindings cannot leak across calls');
+assert.strictEqual(Statements.prepare(db, get).get(), undefined, 'missing bindings must not reuse a prior ID');
+assert.throws(() => Statements.prepare(db, put).run(3, -1), /constraint/i);
+Statements.prepare(db, put).run(3, 30);
+db.exec('BEGIN');
+Statements.prepare(db, 'UPDATE items SET amount = ? WHERE id = ?').run(100, 1);
+db.exec('ROLLBACK');
+assert.strictEqual(Statements.prepare(db, get).get(1).amount, 10);
+db.exec('ALTER TABLE items ADD COLUMN label TEXT; CREATE INDEX items_amount ON items(amount);');
+assert.strictEqual(Statements.prepare(db, get).get(2).amount, 20, 'schema changes must not leave stale results');
+db.close();
+const reopened = new DatabaseSync(':memory:');
+reopened.exec('CREATE TABLE items(id INTEGER PRIMARY KEY, amount INTEGER); INSERT INTO items VALUES(1, 99)');
+assert.strictEqual(Statements.prepare(reopened, get).get(1).amount, 99, 'cached statements must belong to their connection');
+reopened.close();
+console.log('Database statement reuse checks passed');

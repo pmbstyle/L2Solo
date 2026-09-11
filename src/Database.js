@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
+const Statements = require('./DatabaseStatements');
 const CheckpointCoordinator = require('./DatabaseCheckpointCoordinator');
 const { XP_DIVIDER: KARMA_XP_DIVIDER } = require('./GameServer/Karma');
 const InteractionMemoryPolicy = require('./GameServer/Social/InteractionMemoryPolicy');
@@ -185,7 +186,7 @@ function run(sql, params = [], operation, readOverride = null, onTiming = null) 
     const read = readOverride === null ? isReadStatement(sql) : !!readOverride;
     return enqueue(() => {
         if (!connection) throw new Error(`SQLite is not initialized (${operation || operationName(sql)})`);
-        const statement = connection.prepare(sql);
+        const statement = Statements.prepare(connection, sql);
         if (read) return normalizeRows(statement.all(...params));
         const result = statement.run(...params);
         return {
@@ -1103,7 +1104,8 @@ function applySchemaMigrations() {
                 updatedAt INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS clan_social_memory_updated ON clan_social_memory(updatedAt, clanId);
-        `)]
+        `)],
+        [39, () => require('./DatabasePartyCandidateProjection').install(connection)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
@@ -1126,15 +1128,15 @@ function applySchemaMigrations() {
 }
 
 function one(sql, params = []) {
-    return normalizeRow(connection.prepare(sql).get(...params));
+    return normalizeRow(Statements.prepare(connection, sql).get(...params));
 }
 
 function all(sql, params = []) {
-    return normalizeRows(connection.prepare(sql).all(...params));
+    return normalizeRows(Statements.prepare(connection, sql).all(...params));
 }
 
 function write(sql, params = []) {
-    const result = connection.prepare(sql).run(...params);
+    const result = Statements.prepare(connection, sql).run(...params);
     return { affectedRows: Number(result.changes || 0), insertId: Number(result.lastInsertRowid || 0) };
 }
 

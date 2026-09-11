@@ -116,7 +116,83 @@ Database.init();
             partyObjectiveSpot: 'spot-0'
         }
     );
+    const scalarFields = `characterId, characterName, level, activity, spotId,
+        activityStartedAt, updatedAt, simulationOwner, simulationRevision,
+        phase, partyId, partyObjectiveSpot, partyRequestStatus, partyRequestPriority`;
+    const projectedFields = ['role', 'generatedIndex', 'partyRequestJson',
+        'clanPartyObjectiveJson', 'equipmentPlanJson', 'partyHistoryJson']
+        .map((name, index) => `json_extract(payloadJson, '$[${index}]') ${name}`).join(', ');
+    const legacyFields = `json_extract(statsJson, '$.role') role,
+        json_extract(statsJson, '$.generatedIndex') generatedIndex,
+        json_extract(statsJson, '$.partyRequest') partyRequestJson,
+        json_extract(statsJson, '$.clanPartyObjective') clanPartyObjectiveJson,
+        json_extract(statsJson, '$.equipmentPlan') equipmentPlanJson,
+        json_extract(statsJson, '$.partyHistory') partyHistoryJson`;
+    const verifyProjection = async () => {
+        const expected = await Database.execute([`SELECT ${scalarFields}, ${legacyFields}
+            FROM bot_life_state ORDER BY characterId`, []]);
+        const actual = await Database.execute([`SELECT ${scalarFields}, ${projectedFields}
+            FROM bot_life_state INNER JOIN bot_party_candidate_projection USING (characterId) ORDER BY characterId`, []]);
+        assert.deepStrictEqual(actual, expected, 'projection must exactly match authoritative fields');
+    };
+    await verifyProjection(); // Includes migration backfill of pre-existing states.
+    const changedStats = {
+        role: 'buffer', generatedIndex: 17,
+        partyRequest: { status: 'open', priority: 'required', spotId: 'new-spot', requestedAt: 123 },
+        clanPartyObjective: { target: { itemId: 57 } },
+        equipmentPlan: { next: { spotId: 'fallback-spot' } },
+        partyHistory: { friends: [3100001, 3100002], nested: { keep: true } }
+    };
+    await Database.execute(['UPDATE bot_life_state SET statsJson = ?, level = ?, spotId = ? WHERE characterId = ?',
+        [JSON.stringify(changedStats), 44, 'new-spot', 3100000]]);
+    await verifyProjection();
+    const changed = (await LifeState.coldPartyCandidateProjections()).find(row => row.characterId === 3100000);
+    assert.strictEqual(changed.party.role, 'buffer');
+    assert.deepStrictEqual(changed.stats.partyHistory, changedStats.partyHistory);
+    await Database.execute(['CREATE TABLE projection_writes(n INTEGER)', []]);
+    await Database.execute([`CREATE TRIGGER observe_projection_write AFTER UPDATE ON bot_party_candidate_projection
+        BEGIN INSERT INTO projection_writes VALUES(1); END`, []]);
+    await Database.execute(['UPDATE bot_life_state SET statsJson = ? WHERE characterId = ?',
+        [JSON.stringify({ ...changedStats, coldCombat: { hp: 10, effects: [] } }), 3100000]]);
+    assert.strictEqual((await Database.execute(['SELECT count(*) n FROM projection_writes', []]))[0].n, 0,
+        'unrelated combat updates must not rewrite the party payload');
+    await Database.execute([`UPDATE bot_life_state SET simulationOwner = 'cold_simulation_owner',
+        simulationRevision = simulationRevision + 1 WHERE characterId = ?`, [3100000]]);
+    assert(!(await LifeState.coldPartyCandidateProjections()).some(row => row.characterId === 3100000),
+        'a claimed bot must disappear immediately, without waiting for cache expiry');
+    await verifyProjection();
+    await Database.execute(['BEGIN IMMEDIATE', []]);
+    await Database.execute([`UPDATE bot_life_state SET simulationOwner = 'legacy_main', statsJson = '{}' WHERE characterId = ?`, [3100000]]);
+    await verifyProjection();
+    await Database.execute(['ROLLBACK', []]);
+    await verifyProjection();
+    assert(!(await LifeState.coldPartyCandidateProjections()).some(row => row.characterId === 3100000));
+    await Database.execute([`UPDATE bot_life_state SET simulationOwner = 'legacy_main', statsJson = '{}' WHERE characterId = ?`, [3100000]]);
+    await verifyProjection(); // Removed JSON keys must not survive in the projection.
+    await Database.execute(["INSERT INTO clans(id, name, leaderId) VALUES(900, 'ProjectionClan', 3100000)", []]);
+    await Database.execute([`INSERT INTO clan_operations(id, clanId, operationKey, operationType, leaderId)
+        VALUES(901, 900, 'projection-reservation', 'raid', 3100000)`, []]);
+    await Database.execute([`INSERT INTO clan_operation_members(operationId, clanId, characterId)
+        VALUES(901, 900, 3100000)`, []]);
+    assert(!(await LifeState.coldPartyCandidateProjections()).some(row => row.characterId === 3100000),
+        'an active operation reservation must still exclude its member');
+    await Database.execute(["UPDATE clan_operation_members SET status = 'released' WHERE characterId = ?", [3100000]]);
+    assert((await LifeState.coldPartyCandidateProjections()).some(row => row.characterId === 3100000),
+        'released reservations must become eligible immediately');
+    await Database.execute(['DELETE FROM bot_life_state WHERE characterId = ?', [3100000]]);
+    await verifyProjection();
+    await Database.execute([`INSERT INTO bot_life_state(characterId, accountName, characterName, level,
+        spotId, activity, phase, statsJson, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [3100000, 'party_projection_probe', 'Reinserted', 44, 'new-spot', 'hunting', 'cold', JSON.stringify(changedStats), 123]]);
+    await verifyProjection();
     assert.strictEqual((await Database.execute(['PRAGMA integrity_check', []]))[0].integrity_check, 'ok');
+    assert.deepStrictEqual(await Database.execute(['PRAGMA foreign_key_check', []]), []);
+    await Database.close();
+    Database.init();
+    await verifyProjection();
+    assert.strictEqual((await Database.execute(['SELECT count(*) n FROM schema_migrations WHERE version = 39', []]))[0].n, 1);
+    assert((await LifeState.coldPartyCandidateProjections()).some(row => row.characterId === 3100000),
+        'the projection must survive close/reopen');
     await Database.close();
     console.log(`party candidate projection performance checks passed p95=${p95Ms.toFixed(1)}ms`);
 })().catch(async (error) => {

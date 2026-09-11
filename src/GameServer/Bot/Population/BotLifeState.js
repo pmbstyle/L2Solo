@@ -2514,13 +2514,9 @@ const BotLifeState = {
         return Database.execute([
             `SELECT characterId, characterName, level, activity, spotId,
                 activityStartedAt, updatedAt, simulationOwner, simulationRevision,
-                json_extract(statsJson, '$.role') AS role,
-                json_extract(statsJson, '$.generatedIndex') AS generatedIndex,
-                json_extract(statsJson, '$.partyRequest') AS partyRequestJson,
-                json_extract(statsJson, '$.clanPartyObjective') AS clanPartyObjectiveJson,
-                json_extract(statsJson, '$.equipmentPlan') AS equipmentPlanJson,
-                json_extract(statsJson, '$.partyHistory') AS partyHistoryJson
+                payloadJson
             FROM ${TABLE} INDEXED BY bot_life_state_party_candidate_projection
+            INNER JOIN bot_party_candidate_projection USING (characterId)
             WHERE phase = 'cold'
             AND simulationOwner = 'legacy_main'
             AND (partyId IS NULL OR partyId = '')
@@ -2534,11 +2530,13 @@ const BotLifeState = {
             [],
             { read: true }
         ], 'bot-life:party-candidate-projection').then((rows) => rows.map((row) => {
-            const role = row.role || null;
-            const partyRequest = parseJson(row.partyRequestJson, null);
-            const clanPartyObjective = parseJson(row.clanPartyObjectiveJson, null);
-            const equipmentPlan = parseJson(row.equipmentPlanJson, null);
-            const partyHistory = parseJson(row.partyHistoryJson, null);
+            const projected = parseJson(row.payloadJson, []);
+            // Match json_extract's scalar types and the old JSON-field decoder.
+            const scalar = value => typeof value === 'boolean' ? Number(value) : value;
+            const role = scalar(projected[0]) || null;
+            const generatedIndex = scalar(projected[1]);
+            const [partyRequest, clanPartyObjective, equipmentPlan, partyHistory] = projected.slice(2)
+                .map(value => typeof value === 'string' ? parseJson(value, null) : scalar(value));
             return {
                 characterId: Number(row.characterId),
                 name: row.characterName || '',
@@ -2552,8 +2550,8 @@ const BotLifeState = {
                 party: { partyId: null, role, leaderId: null },
                 stats: {
                     ...(role ? { role } : {}),
-                    ...(row.generatedIndex !== null && row.generatedIndex !== undefined
-                        ? { generatedIndex: row.generatedIndex }
+                    ...(generatedIndex !== null && generatedIndex !== undefined
+                        ? { generatedIndex }
                         : {}),
                     ...(partyRequest ? { partyRequest } : {}),
                     ...(clanPartyObjective ? { clanPartyObjective } : {}),

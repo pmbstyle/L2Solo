@@ -1309,6 +1309,9 @@ const BackgroundResolver = {
         const patch = {
             vitals: applyStandingRegen(state, state.vitals, elapsedMs, timestamp),
             activity: 'hunting',
+            // A prior recovery deadline must not reschedule a new hunt in the
+            // past. A fight that needs recovery below assigns a fresh deadline.
+            stats: { ...(state.stats || {}), restUntil: null },
             spotId: spot.id
         };
 
