@@ -3,6 +3,8 @@ const assert = require('assert');
 require('../src/Global');
 
 const BotBrain = invoke('GameServer/Bot/AI/BotBrain');
+const Memory = invoke('GameServer/Social/InteractionMemoryRuntime');
+const MemoryPolicy = invoke('GameServer/Social/InteractionMemoryPolicy');
 
 function actor(id, name) {
     return {
@@ -27,6 +29,8 @@ function decision() {
 }
 
 function main() {
+    // Admission requires loaded field memory, even for first-time strangers.
+    for (const id of [9102, 9103]) Memory.accept(MemoryPolicy.empty(id));
     assert.strictEqual(BotBrain.isPartyCandidateRequest('do you know anybody to join our party?'), true);
     assert.strictEqual(BotBrain.isPartyRequest('do you know anybody to join our party?'), false);
     assert.strictEqual(BotBrain.isPartyCandidateRequest('I meant other bots'), true);
