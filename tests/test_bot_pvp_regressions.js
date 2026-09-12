@@ -13,6 +13,14 @@ const Potions = invoke('GameServer/Bot/AI/HealingPotionStock');
 const GearValue = invoke('GameServer/Item/EquipmentValue');
 const Observer = invoke('WorldObserver/WorldObserverServer');
 const Rules = invoke('GameServer/Skills/C4SkillRules');
+const Social = invoke('GameServer/Social/InteractionMemoryRuntime');
+const SocialPolicy = require('../src/GameServer/Social/InteractionMemoryPolicy');
+function grievance(own, enemy) {
+    let snapshot = SocialPolicy.empty(Number(own.actor.fetchId()));
+    for (const [i, type] of ['attacked', 'killed', 'killed'].entries()) snapshot = SocialPolicy.apply(snapshot,
+        { key: `grievance:${snapshot.ownerId}:${i}`, sourceId: snapshot.ownerId, targetId: Number(enemy.fetchId()), type, at: now }, now).snapshot;
+    Social.accept(snapshot);
+}
 
 const originalPeace = utils.isInPeaceZone;
 utils.isInPeaceZone = (x) => x === 99999;
@@ -163,6 +171,7 @@ Potions.tryUseInCombat = () => false;
 {
     Chat.reset(); Ambient.reset();
     const { bot, own, enemy } = setup(); enemy.level = 10;
+    grievance(own, enemy);
     Ambient.record(own, 'conversation', now);
     assert(Chat.canSend(own, 'revenge', now), 'ordinary conversation does not consume the conflict budget');
     Chat.record(session(actor(nextId++)), 'revenge', now);
@@ -199,6 +208,7 @@ Potions.tryUseInCombat = () => false;
     for (const wait of [0, Chat.AREA_MS + 1]) {
         Chat.reset();
         const { bot, own, enemy } = setup(); enemy.level = 10;
+        grievance(own, enemy);
         const strong = actor(nextId++, { level: 80, gear: 10000000, flag: 1 });
         World.user.sessions.push(session(strong, { accountId: 'player2' }));
         Chat.record(session(actor(nextId++)), 'revenge', now);

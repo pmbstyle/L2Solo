@@ -25,7 +25,7 @@ async function run() {
     try {
         Database.execute = async ([sql, params = []]) => {
             const statement = db.prepare(sql);
-            if (statement.columns().length) return statement.all(...params.map(v => v ?? null));
+            if (/^\s*(SELECT|PRAGMA)\b/i.test(sql)) return statement.all(...params.map(v => v ?? null));
             if (sql.includes("'$.pvpEnemies'")) writes++;
             const result = statement.run(...params.map(v => v ?? null));
             return { affectedRows: Number(result.changes) };
@@ -56,13 +56,16 @@ async function run() {
         assert.strictEqual(read().pvpEnemies[0].kills, 2);
         assert.strictEqual(read().sentinel, 'keep', 'enemy updates must preserve unrelated lifecycle metadata');
 
+        session.nextRevengeAt = Date.now() + 600000;
         const cold = await Life.markCold(session, 'test_enemy_handoff');
         assert.strictEqual(cold.stats.pvpEnemies[0].kills, 2, 'cooldown snapshots must carry enemy memory');
+        assert.strictEqual(cold.stats.revengeUntil, session.nextRevengeAt, 'hot revenge cooldown crosses into cold simulation');
         const reader = new DatabaseSync(file, { readOnly: true });
         const persisted = JSON.parse(reader.prepare('SELECT statsJson FROM bot_life_state WHERE characterId = 1').get().statsJson);
         reader.close();
         const restarted = { actor, coldLifeState: { stats: persisted } };
         assert.strictEqual(Memory.entries(restarted)[0].kills, 2, 'a fresh session must recover memory from the database');
+        assert.strictEqual(persisted.revengeUntil, session.nextRevengeAt);
         await new Promise(resolve => setImmediate(resolve));
     } finally {
         Database.execute = saved.execute; Database.updateCharacterLocation = saved.location;

@@ -97,6 +97,12 @@ function playerContext(session, realPlayers, now) {
     if (!bot) return null;
     if (session.clanAllianceQuest) return 'player_clan_quest';
     if (session.partyCompanion === true && session.followPlayerSession) return 'player_party';
+    if (session.hotBackgroundPartyId) {
+        const group = invoke('GameServer/Bot/AI/HotBackgroundParty').roster(session);
+        if (group.some(member => member.actor?.state?.fetchHits?.() || member.actor?.state?.fetchCasts?.()
+            || now - Number(member.incomingThreatAt || 0) < PLAYER_THREAT_HOLD_MS
+            || realPlayers.some(player => distance2d(member.actor, player.actor) <= VISIBILITY_RADIUS))) return 'hot_party';
+    }
     if (session.chatArrivalActive || session.inConversation || session.activeTrade || session.pendingPartyInvite) return 'player_interaction';
 
     const botId = actorId(bot);

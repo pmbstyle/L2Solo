@@ -47,7 +47,7 @@ async function createMember(index, spot, dueAt) {
             spot.region || spot.name, spot.region || spot.name, spot.id,
             dueAt - 60000, dueAt, dueAt - 60000,
             spot.center.locX, spot.center.locY, spot.center.locZ,
-            JSON.stringify({ classId: 0, role: index === 1 ? 'tank' : 'dps' }), dueAt]
+            JSON.stringify({ classId: 0, role: index === 1 ? 'tank' : 'dps', transportFixture: 'x'.repeat(140000) }), dueAt]
     ]);
     return Number(character.id);
 }
@@ -108,8 +108,8 @@ let coordinator = null;
         `INSERT INTO bot_background_parties (
             partyId, leaderId, memberIdsJson, spotId, startedAt, nextResolveAt,
             cohesion, risk, status, roleCoverageJson, statsJson, updatedAt
-        ) VALUES ('worker-party', ?, ?, ?, ?, ?, 0.65, 0.25, 'active', '{}', '{}', ?)`,
-        [memberIds[0], JSON.stringify(memberIds), spot.id, dueAt - 120000, dueAt, dueAt]
+        ) VALUES ('worker-party', ?, ?, ?, ?, ?, 0.65, 0.25, 'active', '{}', json_object('sessionExpiresAt', ?), ?)`,
+        [memberIds[0], JSON.stringify(memberIds), spot.id, dueAt - 120000, dueAt, dueAt - 1, dueAt]
     ]);
     assert.strictEqual(await PartyState.init(), true);
     assert.strictEqual(await LifeState.init(), true);
@@ -118,6 +118,7 @@ let coordinator = null;
     let mainCommands = 0;
     let partyGoalReconciles = 0;
     const partyResolvesBefore = Number(Metrics.counters.partyResolves || 0);
+    const combatActionsBefore = Number(Metrics.counters.combatActions || 0);
     LifeState.enqueueEquipmentGoalAdvanceForState = async () => {
         throw new Error('synthetic equipment goal wakeup failure');
     };
@@ -159,17 +160,44 @@ let coordinator = null;
     assert.strictEqual(mainCommands, 0, 'party combat must never execute on the main lifecycle command bridge');
     assert(Number(snapshot.worker.resolved || 0) >= 2, 'worker must resolve every claimed party member');
     assert(Number(snapshot.queue.committed || 0) >= 2, 'main DB gateway must commit every party member');
+    assert(Number(snapshot.worker.proposalCompactions || 0) >= 2, 'the real worker must compact a party exceeding one IPC message');
+    assert.strictEqual(snapshot.partyReviews.committed, 1, 'review telemetry counts the committed review once, not once per member');
+    assert.strictEqual(snapshot.partyReviews.departed, 0);
+    const preserved = await Database.execute([`SELECT statsJson FROM bot_life_state WHERE partyId = 'worker-party'`, []]);
+    assert(preserved.every(row => JSON.parse(row.statsJson).transportFixture.length === 140000),
+        'sparse transport must preserve unchanged durable state for every party member');
     assert(rows.every((row) => Number(row.lastResolvedAt) > dueAt));
     assert(rows.every((row) => row.simulationOwner === Owner.LEGACY_OWNER_ID
         && row.simulationLeaseId === null && Number(row.simulationLeaseUntil) === 0));
     assert(Number(partyRow.nextResolveAt) > dueAt, 'leader commit must durably advance the party schedule');
     assert(Number(JSON.parse(partyRow.statsJson).fightsResolved || 0) >= 1);
+    const memories = await Database.execute(['SELECT ownerId, snapshotJson FROM bot_interaction_memory ORDER BY ownerId', []]);
+    assert.strictEqual(memories.length, 2, 'real worker wins must commit mutual hunt memory');
+    memories.forEach(row => {
+        const memory = JSON.parse(row.snapshotJson);
+        assert.strictEqual(memory.revision, 1);
+        assert.strictEqual(memory.relations.length, 1);
+        assert.strictEqual(memory.relations[0].trust, 1);
+        assert.strictEqual(memory.relations[0].reasons[0].type, 'hunted_together');
+    });
     assert(Number(Metrics.counters.partyResolves || 0) > partyResolvesBefore,
         'worker party commit must feed the public party resolve metric');
+    assert(Number(Metrics.counters.combatActions || 0) > combatActionsBefore,
+        'actual worker transport and commit must preserve the shared party combat counters');
     assert.strictEqual(partyGoalReconciles, 1,
         'one committed worker party combat result must reconcile party goals exactly once through the leader');
 
     await coordinator.stop();
+    const cachedState = LifeState.cachedState;
+    const claimed = { characterId: 99, simulation: { ownerId: 'worker', revision: 4, leaseId: 'lease' }, stats: { keep: 1 } };
+    LifeState.cachedState = () => claimed;
+    try {
+        const delta = require('../src/GameServer/Bot/Population/ColdStateDelta').create(claimed, { ...claimed, hp: 25 });
+        assert.strictEqual(await coordinator.prepareProposal({ characterId: 99, token: { ownerId: 'worker', revision: 3, leaseId: 'lease' }, nextStateDelta: delta }), null,
+            'a sparse result must never be applied to a newer revision');
+        assert.strictEqual(await coordinator.prepareProposal({ characterId: 99, token: { ownerId: 'worker', revision: 4, leaseId: 'different' }, nextStateDelta: delta }), null,
+            'a sparse result must never be applied to another lease');
+    } finally { LifeState.cachedState = cachedState; }
     console.log('Cold worker party compute and durable batch-CAS integration checks passed');
 })().catch((error) => {
     console.error(error);

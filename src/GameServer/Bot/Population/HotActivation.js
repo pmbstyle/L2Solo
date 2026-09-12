@@ -51,9 +51,14 @@ function activationDistance(placement, options) {
 function releaseBackgroundParty(state, reason) {
     const partyId = state?.party?.partyId;
     if (!partyId) return Promise.resolve(state);
+    if (invoke('GameServer/Bot/Population/HotPartyLifecycle').pending.has(partyId)
+        || BackgroundPartyState.find(partyId)?.status === 'hot') return Promise.reject(Error('party_transition_pending'));
 
     return BackgroundPartyState.setStatus(partyId, 'dissolved')
-        .then(() => LifeState.releaseDissolvedPartyMembers(partyId, `hot_activation_${reason}`))
+        .then(saved => {
+            if (!saved) throw Error('background_party_release_failed');
+            return LifeState.releaseDissolvedPartyMembers(partyId, `hot_activation_${reason}`);
+        })
         .then((cleared) => {
             const refreshed = LifeState.cachedState(state.characterId);
             if (refreshed && !refreshed.party?.partyId) return refreshed;
@@ -90,7 +95,16 @@ const HotActivation = {
 
         return loadState.then((state) => {
             if (!state) return { ok: false, reason: 'missing_state' };
+            const encounter = invoke('GameServer/Bot/Population/PvpEncounterRuntime').active(state);
+            if (encounter) return invoke('GameServer/Bot/Population/PvpEncounterLifecycle').activate(encounter, reason, options);
+            if (state.stats?.coldCompetition?.wait?.combat && state.stats.coldCompetition.wait.until > Date.now()) {
+                return { ok: false, reason: 'cold_pvp_settling' };
+            }
             if (state.phase === 'hot') return { ok: false, reason: 'already_hot', state };
+            if (state.party?.partyId && options.interruptBackgroundActivity !== true
+                && !['remote_invite', 'party_invite'].includes(reason)) {
+                return invoke('GameServer/Bot/Population/HotPartyLifecycle').activate(state.party.partyId, reason, options);
+            }
             if (state.activity === 'pk_hunting'
                 && options.pkEncounter !== true
                 && options.interruptBackgroundActivity !== true) {

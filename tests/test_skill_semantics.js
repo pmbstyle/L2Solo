@@ -1022,7 +1022,7 @@ SkillEffects.execute(session(), deflectTarget, deflectTarget, deflectArrow, {
 const bowAttacker = creature({ pAtk: 100 });
 bowAttacker.backpack.fetchTotalWeaponKind = () => 'Weapon.Bow';
 const deflectPowerShot = skill({ selfId: 19, name: 'Power Shot', spell: false, power: 100, level: 1 });
-const sourcedBowDamage = new Attack().prepareSkillDamage(bowAttacker, deflectTarget, deflectPowerShot, false, () => 1);
+const sourcedBowDamage = new Attack().prepareSkillDamage(bowAttacker, deflectTarget, deflectPowerShot, false, () => 0.99);
 assert.strictEqual(
     sourcedBowDamage,
     Math.round(Formulas.calcPhysicalDamage(100, 0, 100, 100) * 0.75),

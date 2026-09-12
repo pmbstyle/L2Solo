@@ -49,7 +49,12 @@ function execute(session, actor, target, skill, context = {}) {
         spoilOnHit: false
     };
 
-    const finish = () => finalizeSkillResult(result, session, actor, target, skill, semantic);
+    const beforeHelp = { hp: Number(target?.fetchHp?.() || 0), maxHp: Number(target?.fetchMaxHp?.() || 0),
+        combat: target?.state?.fetchCombats?.() === true };
+    const finish = () => {
+        if (result.heal > 0 || result.resurrected) invoke('GameServer/Social/CombatHelpMemory').record(actor, target, result, beforeHelp);
+        return finalizeSkillResult(result, session, actor, target, skill, semantic);
+    };
 
     if (context.selfEffectOnly === true && semantic.selfEffect) {
         result.selfEffect = applyEffect(session, actor, skill, {
@@ -78,7 +83,7 @@ function execute(session, actor, target, skill, context = {}) {
     }
 
     if (semantic.skillType === C4SkillRules.RESURRECT) {
-        result.resurrected = applyResurrection(session, target, Number(skill.fetchPower?.()) || 0);
+        result.resurrected = applyResurrection(session, target, Number(skill.fetchPower?.()) || 0, actor);
         return finish();
     }
 
@@ -568,12 +573,12 @@ function applyGetPlayer(actor, target, rng = Math.random, updatePosition = null)
     return true;
 }
 
-function applyResurrection(session, target, recovery = 0) {
+function applyResurrection(session, target, recovery = 0, helper = session?.actor) {
     if (target?.fetchIsPet?.()) return invoke('GameServer/Npc/SummonControl').revivePet(session, target, recovery);
     if (!target?.state?.fetchDead?.()) return false;
     const targetSession = target.session;
     if (!targetSession) return false;
-    invoke(path.actor).revive(targetSession, target);
+    invoke(path.actor).revive(targetSession, target, { helper });
     return true;
 }
 
@@ -901,7 +906,7 @@ function applyEffect(session, target, skill, semantic, source = session?.actor) 
     }
 
     if (effect?.hot) {
-        EffectTicker.applyHot(session, session?.actor, target, effect);
+        EffectTicker.applyHot(session, source, target, effect);
     }
 
     EffectTicker.scheduleExpiry(session, target, effect);

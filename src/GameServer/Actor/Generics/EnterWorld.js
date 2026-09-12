@@ -27,11 +27,25 @@ function enterWorld(session, actor) {
     // Effects must be available before the stat calculation; e.g. a max-HP
     // buff affects the cap used when the persisted HP is restored.
     const vitals = CharacterStatus.savedVitals(actor);
-    CharacterStatus.restoreEffects(session, actor, actor.model.effects);
+    if (Number.isFinite(session.coldLifeState?.stats?.coldCombat?.cp)) {
+        vitals.cp = invoke('GameServer/Bot/Population/ColdCombatProfile').profileFor(session.coldLifeState).cp;
+    }
+    const coldEffects = session.coldLifeState?.stats?.coldCombat?.effects;
+    // A cold snapshot is authoritative even when empty: falling back then
+    // would resurrect stale effects from the character's last logout.
+    // restoreEffects keeps absolute expiry times and drops expired entries.
+    CharacterStatus.restoreEffects(session, actor,
+        Array.isArray(coldEffects) ? coldEffects : actor.model.effects);
 
     // Calculate accumulated statistics
     Generics.calculateStats(session, actor);
     CharacterStatus.restoreVitals(actor, vitals);
+    for (const [skillId, until] of Object.entries(session.coldLifeState?.stats?.coldCombat?.cooldowns || {})) {
+        if (until > Date.now()) actor.skillReuseUntil?.set(Number(skillId), until);
+    }
+    session.pvpActionReadyAt = Number(session.coldLifeState?.stats?.coldPvp?.readyAt || 0);
+    const flagRemaining = Number(session.coldLifeState?.stats?.coldPvp?.flagUntil || 0) - Date.now();
+    if (flagRemaining > 0) invoke('GameServer/Actor/PvpFlag').restore(session, actor, session.coldLifeState.stats.coldPvp.flagUntil);
     const skillReady = actor.skillset.populateForActor(actor, () => {
         // Skill loading is asynchronous.  The first calculation above runs
         // before Expertise is available and can temporarily apply the C4
@@ -43,10 +57,10 @@ function enterWorld(session, actor) {
     // Start vitals replenish
     actor.automation.setRevHp(DataCache.revitalize.hp[actor.fetchLevel()]);
     actor.automation.setRevMp(DataCache.revitalize.mp[actor.fetchLevel()]);
-    actor.automation.replenishVitals(actor);
+    if (!session.populationStaging) actor.automation.replenishVitals(actor);
 
     // Show NPCs based on radius
-    Generics.updatePosition(session, actor, {
+    if (!session.populationStaging) Generics.updatePosition(session, actor, {
         locX: actor.fetchLocX(),
         locY: actor.fetchLocY(),
         locZ: actor.fetchLocZ(),

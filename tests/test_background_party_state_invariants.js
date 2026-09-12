@@ -13,7 +13,7 @@ const originalExecute = Database.execute;
     BackgroundPartyState.init = () => Promise.resolve(true);
     Database.execute = (...args) => {
         queries.push(args);
-        return Promise.resolve([]);
+        return Promise.resolve({ affectedRows: 1 });
     };
 
     const saved = await BackgroundPartyState.createOrUpdate({

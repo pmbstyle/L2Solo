@@ -455,7 +455,7 @@ const BotAI = {
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
         const visibleRealPlayers = this.visibleRealPlayers(session, bot, World);
 
-        if (!botDead && onlinePlayers.length > 0 && visibleRealPlayers.length === 0 && !isCompanion && session.plan !== 'shopping' && session.plan !== 'pk_hunting') {
+        if (!botDead && onlinePlayers.length > 0 && visibleRealPlayers.length === 0 && !isCompanion && !session.hotBackgroundPartyId && session.plan !== 'shopping' && session.plan !== 'pk_hunting') {
             // Far-away bot: light background event processing, skip everything else
             if (Math.random() < 0.05) {
                 this.triggerFarAwayChatEvent(session, bot);
@@ -517,8 +517,10 @@ const BotAI = {
 
             const ritualRescuePending = session.clanAllianceQuest
                 && invoke('GameServer/Clan/ClanAllianceService').awaitingRitualResurrection(session);
-            const partyRescuePending = ritualRescuePending || wasCompanion && !PartyRevivalService.shouldTownRespawn(
-                session.followPlayerSession,
+            const rescueLeader = wasCompanion ? session.followPlayerSession
+                : session.hotBackgroundPartyId ? invoke('GameServer/Bot/AI/HotBackgroundParty').leader(session) : null;
+            const partyRescuePending = ritualRescuePending || rescueLeader && !PartyRevivalService.shouldTownRespawn(
+                rescueLeader,
                 session
             );
             // Companions wait for the party's resurrection attempt.  The
@@ -591,11 +593,10 @@ const BotAI = {
         BotEquipmentUpgrade.applyBestUpgrades(session);
         recordHotStage('equipmentUpgrade', equipmentStartedAt);
 
-        // Ground drops belong to the party, not to a particular movement
-        // plan. Reconcile them before routing follow/hold/rest/pull states so
-        // idle companions can collect available loot in every party stance.
-        // PartyCompanionService itself blocks real combat and incoming adds.
-        if (isCompanion) {
+        // Physical hot actors collect their ground drops before selecting the
+        // next hunt or formation move. The queue yields to combat and support.
+        if (isCompanion || session.hotBackgroundPartyId || session.partyGroundPickupQueue?.length
+            || ['hunting', 'resting'].includes(session.plan)) {
             const groundLootStartedAt = performance.now();
             PartyCompanionService.reconcileGroundLoot(session);
             const startedGroundPickup = PartyCompanionService.startQueuedGroundPickup(session);
@@ -610,6 +611,8 @@ const BotAI = {
         if (visibleRealPlayers.length) invoke('GameServer/Bot/AI/BotChatReactions').offerLocal(session, tickStartedAt);
 
         // 3. Dynamic State Machine Routing
+        if (invoke('GameServer/Bot/AI/HotResourceCompetition').tick(session)) return;
+        if (session.hotBackgroundPartyId && invoke('GameServer/Bot/AI/HotBackgroundParty').tick(session, bot, Generics, this)) return;
         const state = States[session.plan];
         if (state) {
             const stateName = session.plan;
@@ -663,6 +666,18 @@ const BotAI = {
                 };
             }
             return false;
+        }
+        if (!options.pvp && invoke('GameServer/Bot/AI/HotResourceCompetition').beforeAttack(session, npc)) return false;
+        if (options.emergencyFinisher && !options.pvp) {
+            const finish = invoke('GameServer/Bot/AI/BotEmergencyFinisher').evaluate(session, bot, npc);
+            if (!finish) return false;
+            session.lastCombatDecision = { ...finish, reason: 'safe_emergency_finisher', at: Date.now() };
+            if (finish.action === 'cast_skill') {
+                Generics.skillExec(session, bot, { id: npc.fetchId(), selfId: finish.skillId, ctrl: true });
+            } else {
+                Generics.attackExec(session, bot, { id: npc.fetchId(), ctrl: true });
+            }
+            return true;
         }
         const role = BotRoles.combatRoleFor(bot);
         // A potion is a survival action for a fight already in progress, not

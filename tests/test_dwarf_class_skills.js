@@ -352,7 +352,7 @@ assert.strictEqual(emptyAuraCaster.state.casts, false, 'targetless Earthquake sh
 const skillCritAttack = new Attack();
 const skillCritCaster = actor({ weaponKind: 'Weapon.Pole', str: 40 });
 const skillCritTarget = actor({ id: 1000009, pDef: 100 });
-const normalQuakeDamage = skillCritAttack.prepareSkillDamage(skillCritCaster, skillCritTarget, earthquake, false, () => 1);
+const normalQuakeDamage = skillCritAttack.prepareSkillDamage(skillCritCaster, skillCritTarget, earthquake, false, () => 0.99);
 const criticalQuakeDamage = skillCritAttack.prepareSkillDamage(skillCritCaster, skillCritTarget, earthquake, false, () => 0);
 assert.strictEqual(criticalQuakeDamage, normalQuakeDamage * 2, 'Earthquake physical skill critical should double final damage without melee critical-power modifiers');
 

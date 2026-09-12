@@ -516,7 +516,13 @@ function recordFromSession(session, phase, reason = '') {
     const stats = {
         role: session.botStatus?.role || null,
         karma: Number(actor.fetchKarma?.() || 0),
+        pvpEncounter: session.pvpEncounter || cache.get(characterId)?.stats?.pvpEncounter || null,
+        coldPvp: { ...(cache.get(characterId)?.stats?.coldPvp || {}),
+            ...invoke('GameServer/Social/CombatHelpMemory').threatSnapshot(actor, timestamp),
+            flagUntil: actor.fetchPvpFlag?.() === 1 ? Number(session.pvpFlagUntil || 0) : 0 },
         pvpEnemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session),
+        pvpIncidents: invoke('GameServer/Social/PvpResponsibility').snapshot(actor, timestamp),
+        revengeUntil: Math.max(Number(session.nextRevengeAt || 0), Number(cache.get(characterId)?.stats?.revengeUntil || 0)),
         clanGearExchangeRevision: Number(cache.get(characterId)?.stats?.clanGearExchangeRevision || 0),
         classId: actor.fetchClassId ? Number(actor.fetchClassId()) : null,
         // A freshly spawned bot may cool before it has gone through a cold
@@ -871,7 +877,7 @@ function recoverDissolvedPartyMembers() {
             ),
             updatedAt = ?
         WHERE partyId IN (
-            SELECT partyId FROM bot_background_parties WHERE status <> 'active'
+            SELECT partyId FROM bot_background_parties WHERE status NOT IN ('active', 'hot')
         )`,
         [timestamp, timestamp, timestamp]
     ]).then((result) => {
@@ -1440,6 +1446,25 @@ const BotLifeState = {
         });
 
         return initPromise;
+    },
+
+    async settleWrites(ids) {
+        await Promise.all(ids.map(id => pendingWrites.get(Number(id)) || Promise.resolve()));
+    },
+
+    acceptLifecycleRow(row) {
+        const snapshot = normalize(row);
+        cache.set(snapshot.characterId, snapshot);
+        return snapshot;
+    },
+
+    partySessionSnapshot(session, state, phase, reason) {
+        const snapshot = mergeSessionIntoLifeState(session, state, phase, reason, { physicalLocation: true });
+        snapshot.activity = 'grouped';
+        snapshot.spotId = state.spotId;
+        snapshot.party = { ...state.party };
+        snapshot.stats = { ...snapshot.stats, role: state.party.role, leaderId: state.party.leaderId };
+        return snapshot;
     },
 
     markHot(session, reason = 'hot') {
@@ -2075,6 +2100,13 @@ const BotLifeState = {
         });
     },
 
+    preparePartyReview(state, nextState) {
+        if (!state?.party?.partyId || state.characterId !== nextState?.characterId) return null;
+        const row = rowFromState({ ...nextState, updatedAt: now() });
+        return { row, snapshot: normalize(row), expectedUpdatedAt: Number(state.updatedAt || 0),
+            expectedPartyId: state.party.partyId };
+    },
+
     preparePartyAssignment(state, partyId, role = 'dps', leaderId = 0, partyNextResolveAt = null) {
         if (!state || !partyId) return null;
         const hasPartyRequest = state.stats?.partyRequest?.status === 'open';
@@ -2482,13 +2514,9 @@ const BotLifeState = {
         return Database.execute([
             `SELECT characterId, characterName, level, activity, spotId,
                 activityStartedAt, updatedAt, simulationOwner, simulationRevision,
-                json_extract(statsJson, '$.role') AS role,
-                json_extract(statsJson, '$.generatedIndex') AS generatedIndex,
-                json_extract(statsJson, '$.partyRequest') AS partyRequestJson,
-                json_extract(statsJson, '$.clanPartyObjective') AS clanPartyObjectiveJson,
-                json_extract(statsJson, '$.equipmentPlan') AS equipmentPlanJson,
-                json_extract(statsJson, '$.partyHistory') AS partyHistoryJson
+                payloadJson
             FROM ${TABLE} INDEXED BY bot_life_state_party_candidate_projection
+            INNER JOIN bot_party_candidate_projection USING (characterId)
             WHERE phase = 'cold'
             AND simulationOwner = 'legacy_main'
             AND (partyId IS NULL OR partyId = '')
@@ -2502,11 +2530,13 @@ const BotLifeState = {
             [],
             { read: true }
         ], 'bot-life:party-candidate-projection').then((rows) => rows.map((row) => {
-            const role = row.role || null;
-            const partyRequest = parseJson(row.partyRequestJson, null);
-            const clanPartyObjective = parseJson(row.clanPartyObjectiveJson, null);
-            const equipmentPlan = parseJson(row.equipmentPlanJson, null);
-            const partyHistory = parseJson(row.partyHistoryJson, null);
+            const projected = parseJson(row.payloadJson, []);
+            // Match json_extract's scalar types and the old JSON-field decoder.
+            const scalar = value => typeof value === 'boolean' ? Number(value) : value;
+            const role = scalar(projected[0]) || null;
+            const generatedIndex = scalar(projected[1]);
+            const [partyRequest, clanPartyObjective, equipmentPlan, partyHistory] = projected.slice(2)
+                .map(value => typeof value === 'string' ? parseJson(value, null) : scalar(value));
             return {
                 characterId: Number(row.characterId),
                 name: row.characterName || '',
@@ -2520,8 +2550,8 @@ const BotLifeState = {
                 party: { partyId: null, role, leaderId: null },
                 stats: {
                     ...(role ? { role } : {}),
-                    ...(row.generatedIndex !== null && row.generatedIndex !== undefined
-                        ? { generatedIndex: row.generatedIndex }
+                    ...(generatedIndex !== null && generatedIndex !== undefined
+                        ? { generatedIndex }
                         : {}),
                     ...(partyRequest ? { partyRequest } : {}),
                     ...(clanPartyObjective ? { clanPartyObjective } : {}),
@@ -3379,14 +3409,16 @@ const BotLifeState = {
         const previous = pendingWrites.get(id) || Promise.resolve();
         const next = previous.catch(() => {}).then(async () => {
             const enemies = invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session);
+            const incidents = invoke('GameServer/Social/PvpResponsibility').snapshot(session.actor);
             const current = cache.get(id);
-            if (!current || current.phase !== 'hot' || JSON.stringify(current.stats?.pvpEnemies || []) === JSON.stringify(enemies)) return false;
+            if (!current || current.phase !== 'hot' || (JSON.stringify(current.stats?.pvpEnemies || []) === JSON.stringify(enemies)
+                && JSON.stringify(current.stats?.pvpIncidents || []) === JSON.stringify(incidents))) return false;
             await Database.execute([
-                `UPDATE ${TABLE} SET statsJson = json_set(COALESCE(statsJson, '{}'), '$.pvpEnemies', json(?)) WHERE characterId = ? AND phase = 'hot'`,
-                [JSON.stringify(enemies), id]
+                `UPDATE ${TABLE} SET statsJson = json_set(COALESCE(statsJson, '{}'), '$.pvpEnemies', json(?), '$.pvpIncidents', json(?)) WHERE characterId = ? AND phase = 'hot'`,
+                [JSON.stringify(enemies), JSON.stringify(incidents), id]
             ], 'bot:enemy-memory');
             const latest = cache.get(id);
-            if (latest) cache.set(id, { ...latest, stats: { ...(latest.stats || {}), pvpEnemies: enemies } });
+            if (latest) cache.set(id, { ...latest, stats: { ...(latest.stats || {}), pvpEnemies: enemies, pvpIncidents: incidents } });
             return true;
         }).catch(error => {
             utils.infoWarn('BotLife', 'failed enemy memory for %s: %s', id, error.message);

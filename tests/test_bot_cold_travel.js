@@ -271,3 +271,24 @@ assert.notDeepStrictEqual(SpotService.arrivalPointForState(anonymousB, anonymous
     'distinct anonymous state objects must not collapse onto one shared arrival point');
 
 console.log('Bot cold travel checks passed');
+
+const Geo = invoke('GameServer/Geodata/GeodataEngine');
+const originalHeight = Geo.getHeight;
+try {
+    const anchor = { locX: 145224, locY: 120001, locZ: -4500 };
+    const lair = { id: '24_20:antharas_lair', center: anchor, arrivalPoints: [anchor] };
+    Geo.getHeight = () => 160; // A nearby geodata cell resolves to the surface.
+    for (let characterId = 1; characterId <= 100; characterId++) {
+        const arrival = SpotService.arrivalPointForState({ characterId }, lair);
+        assert(SpotService.containsLocation(lair, arrival), 'arrival must stay on the dungeon layer as well as in its grid');
+        assert.strictEqual(arrival.locZ, -4500, 'known spawn height survives an incompatible surface result');
+    }
+    const field = { id: '24_20', center: { ...anchor, locZ: 160 } };
+    Geo.getHeight = () => -4500;
+    assert(SpotService.containsLocation(field, SpotService.arrivalPointForState({ characterId: 7 }, field)),
+        'surface hunters must not be placed in the dungeon below them');
+    const invalid = { ...lair, center: field.center, arrivalPoints: [field.center] };
+    Geo.getHeight = () => 160;
+    assert.strictEqual(SpotService.arrivalPointForState({ characterId: 7 }, invalid), null,
+        'a profile without any valid arrival must fail closed');
+} finally { Geo.getHeight = originalHeight; }

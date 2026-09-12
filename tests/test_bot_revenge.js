@@ -1,6 +1,8 @@
 const assert = require('assert');
 require('../src/Global');
 const Memory = invoke('GameServer/Bot/AI/BotEnemyMemory');
+const SocialMemory = invoke('GameServer/Social/InteractionMemoryRuntime');
+const SocialPolicy = require('../src/GameServer/Social/InteractionMemoryPolicy');
 const Revenge = invoke('GameServer/Bot/AI/BotRevenge');
 const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
 const Defense = invoke('GameServer/Bot/AI/BotPvpDefense');
@@ -29,6 +31,7 @@ function character(bot = true, level = 40) {
     a.session = { actor: a, aiActive: bot, accountId: bot ? `bot_${a.id}` : 'player', plan: 'hunting',
         persona: { traits: { caution: 0.3, assertiveness: 0.8, empathy: 0.4, resilience: 0.8 } },
         dataSendToOthers(packet) { events.push(['chat', a.id, packet]); } };
+    if (bot) SocialMemory.accept(SocialPolicy.empty(a.id));
     return a;
 }
 const events = [], writes = [];
@@ -43,6 +46,7 @@ try {
     BotAI.promoteForPlayerInteraction = session => events.push(['wake', session.actor.id]);
     Tactics.support = Tactics.control = Potions.tryUseInCombat = () => false;
     const bot = character(), foe = character(false, 10), helper = character(), outsider = character();
+    helper.session.persona.traits = { assertiveness: 1, empathy: 0, commitment: 1, sociability: 1, caution: 0 };
     World.user = { sessions: [bot.session, foe.session, helper.session, outsider.session] };
     for (let i = 0; i < 500; i++) Memory.record(bot, foe, false, now + i);
     assert.strictEqual(Memory.entries(bot.session)[0].attacks, 1, 'a burst of damage counts as one incident');
@@ -60,6 +64,14 @@ try {
     assert.strictEqual(Memory.entries(restored.session)[0].kills, 2, 'memory reload preserves repeated kills');
     Defense.clear(bot.session, { dead: true });
     assert.strictEqual(Memory.entries(bot.session)[0].kills, 2, 'death cleanup must preserve enemies');
+
+    // Legacy counters are diagnostic history only. Decisions require a hydrated,
+    // currently hostile shared relationship (including foes outside the old top three).
+    let shared = SocialPolicy.empty(bot.id);
+    for (const [i, type] of ['attacked', 'killed', 'killed'].entries()) shared = SocialPolicy.apply(shared,
+        { key: `revenge-fixture:${i}`, sourceId: bot.id, targetId: foe.id, type, at: now }, now).snapshot;
+    SocialMemory.accept(shared);
+    bot.session.pvpEnemyMemory = [];
 
     bot.session.coldLifeState = helper.session.coldLifeState = { party: { partyId: 'revenge_party' } };
     const ai = { executePvPCombat(session, actor, target) { events.push(['attack', actor.id, target.id]); } };
@@ -88,8 +100,10 @@ try {
     foe.clan = bot.clan = 0;
 
     const opener = character(), ally = character(), neutral = character(false);
+    ally.session.persona.traits = { assertiveness: 1, empathy: 0, commitment: 1, sociability: 1, caution: 0 };
     opener.session.coldLifeState = ally.session.coldLifeState = { party: { partyId: 'opening_party' } };
     World.user.sessions.push(opener.session, ally.session, neutral.session);
+    Revenge.onAttack(opener, neutral, now, () => 0.2);
     Threats.record(neutral, opener, now);
     assert.strictEqual(ally.session.pvpRevenge?.reason, 'party_attack',
         'party assistance must also handle a first attack without revenge history');
@@ -111,6 +125,13 @@ try {
     Budget.canSend = () => false;
     assert(!Revenge.tryStart(bot.session, now, () => 0), 'revenge waits when its required announcement cannot be sent');
     assert(!bot.session.pvpRevenge);
+    assert(bot.session.pendingPvpProvocation, 'an accepted intent waits for its announcement');
+    shared = { ...shared, revision: shared.revision + 1, relations: shared.relations.map(row => ({ ...row,
+        affinity: 20, trust: 20, hostility: 0, fear: 0 })) };
+    SocialMemory.accept(shared);
+    Budget.canSend = () => true;
+    assert(!Revenge.flushPending(bot.session, now), 'reconciliation before the first strike cancels a queued provocation');
+    assert(!bot.session.pendingPvpProvocation && !bot.session.pvpRevenge);
 
     const botKiller = character();
     Memory.record(restored, botKiller, true, now);

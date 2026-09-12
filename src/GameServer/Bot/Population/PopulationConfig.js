@@ -144,28 +144,26 @@ const DEFAULTS = {
     // Idle formation can fill six parties per pass; live-player protection
     // still caps the same pass at one party in PopulationService.
     partyFormationBatchSize: 6,
+    // Observation itself only forecasts. Main-process actions validate and
+    // commit cooperation, resource interruptions and optional bounded PvP.
+    coldCompetitionObserveEnabled: true,
+    coldCompetitionActionsEnabled: true,
+    coldCompetitionConflictsEnabled: true,
+    coldCompetitionPvpEnabled: true,
     partyMinSize: 2,
     partyMaxSize: 5,
-    // At roughly one party resolve per 90 seconds, forty parties consume
-    // about 27 of the 36 bounded resolves available each minute.  This opens
-    // enough party-wait capacity without increasing work in a scheduler tick.
-    maxBackgroundParties: 40,
-    // A required request is actionable work, not a reason to wait forever.
-    // Open a few bounded party slots as soon as several compatible requests
-    // accumulate; the old 250-request threshold was unreachable for this
-    // population and left persistent parties above the nominal base cap.
-    partyBacklogCapacityThreshold: 10,
-    partyBacklogCapacityStep: 4,
-    partyBacklogCapacityMaxExtra: 16,
+    // Shared safety ceiling for every background party. Admission never
+    // depends on social/clan origin or opens extra slots for a backlog.
+    maxBackgroundParties: 60,
     partyRequestMaxAgeMs: 15 * 60 * 1000,
     partyPreferredMaxAgeMs: 5 * 60 * 1000,
     partyRequestCooldownMs: 5 * 60 * 1000,
     partyRequestCleanupIntervalMs: 30000,
     partyRequestCleanupBatchSize: 100,
-    // A background party is a time slice, not a permanent ownership claim on
-    // its members. Rotate old groups so stale objectives and role gaps can be
-    // re-matched without increasing the number of simultaneous groups.
+    // Stagger the first shared-hunt review; this is no longer a hard lifetime.
+    // Later reviews use goals, progress, relationships and individual patience.
     partySessionMaxMs: 20 * 60 * 1000,
+    partyReviewIntervalMs: 5 * 60 * 1000,
     partyRequirementRefreshMs: 5 * 60 * 1000,
     partyRequirementRefreshBatchSize: 2,
     partySessionJitterMs: 5 * 60 * 1000,

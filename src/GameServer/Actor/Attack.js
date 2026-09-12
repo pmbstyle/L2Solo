@@ -93,6 +93,7 @@ class Attack {
     }
 
     clearTimers() {
+        this.activeCast = null;
         this.timers.forEach((timer) => clearTimeout(timer));
         this.timers.clear();
     }
@@ -121,6 +122,7 @@ class Attack {
     }
 
     meleeHit(session, creature) {
+        if (session?.pvpHandoffPending) return;
         const actor = session.actor;
 
         if (this.blockedPvpDefense(session, actor, creature) || this.checkParticipants(actor, creature)) {
@@ -242,6 +244,7 @@ class Attack {
     }
 
     remoteHit(session, creature, skill) {
+        if (session?.pvpHandoffPending) return;
         const actor = session.actor;
         const corpseTarget = ['corpse_mob', 'corpse_player', 'corpse_pet', 'corpse_ally']
             .includes(skill.fetchTargetKind?.());
@@ -289,9 +292,18 @@ class Attack {
         session.dataSendToMeAndOthers(ServerResponse.skillStarted(actor, creature.fetchId(), skill), actor);
         session.dataSendToMe(ServerResponse.skillDurationBar(skill.fetchCalculatedHitTime()));
         actor.state.setCasts(true);
+        // Tactical readers need the accepted cast, not skill availability:
+        // reuse starts above, before this cast has dealt any damage.
+        this.activeCast = { target: creature, skill, landsAt: Date.now() + skill.fetchCalculatedHitTime() };
         HotPartyCastTracker.begin(session, actor, creature, skill);
 
-        this.queueTimer(() => {
+        const castTime = skill.fetchCalculatedHitTime();
+        // Lisvus C4 launches the client animation 400 ms before impact for
+        // casts longer than its 420 ms gauge threshold. Keep short/static
+        // casts at their existing duration, without negative timer delays.
+        const launchLead = magicSkill && castTime > 420 ? 400 : 0;
+        const land = () => {
+            this.activeCast = null;
             // Once the landing callback owns the turn, no other damage event
             // can interleave before MP and effects resolve. Stop watching the
             // target before the authoritative cast work begins.
@@ -328,7 +340,7 @@ class Attack {
                 return;
             }
 
-            if (magicSkill && executionTargets.length > 0) {
+            if (magicSkill && !launchLead && executionTargets.length > 0) {
                 session.dataSendToMeAndOthers(ServerResponse.magicSkillLaunched(actor, skill, executionTargets), actor);
             }
 
@@ -438,7 +450,31 @@ class Attack {
                 return;
             }
 
-        }, skill.fetchCalculatedHitTime());
+        };
+
+        if (launchLead) {
+            this.queueTimer(() => {
+                if (this.blockedPvpDefense(session, actor, creature, skill)
+                    || this.checkParticipants(actor, creature, { allowDeadTarget: corpseTarget })) {
+                    this.clearTimers();
+                    HotPartyCastTracker.clear(actor);
+                    invoke('GameServer/Bot/AI/BotSupportPlanner').cancelSupportCast(session, actor);
+                    invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
+                    return;
+                }
+                const targets = this.resolveSkillTargets(session, actor, creature, skill);
+                const semantic = skill.fetchSemantic?.() || {};
+                const animationTargets = !targets.length && semantic.sourceTarget === 'aura' && semantic.selfEffect
+                    ? [actor] : targets;
+                if (animationTargets.length) {
+                    session.dataSendToMeAndOthers(ServerResponse.magicSkillLaunched(actor, skill, animationTargets), actor);
+                }
+            }, castTime - launchLead);
+        }
+        // Schedule from the same start time: a delayed launch callback must
+        // not shift impact past the original deadline or a pet's follow timer.
+        // Cancellation clears both native timers, and casting stays active.
+        this.queueTimer(land, castTime);
 
     }
 
@@ -1325,3 +1361,6 @@ function physicalRaceModifier(attacker, target) {
 module.exports = Attack;
 module.exports.weaponMaskFor = weaponMaskFor;
 module.exports.physicalRaceModifier = physicalRaceModifier;
+module.exports.traitVulnerabilityModifier = traitVulnerabilityModifier;
+module.exports.incomingWeaponVulnerabilityModifier = incomingWeaponVulnerabilityModifier;
+module.exports.physicalUndeadModifier = physicalUndeadModifier;

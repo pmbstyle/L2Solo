@@ -3,6 +3,12 @@ const DEFAULT_LEVEL_RANGE = 4;
 const PartyAffinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity');
 const PersonaPartyPolicy = invoke('GameServer/Bot/Population/PersonaPartyPolicy');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const PartyMemoryPreference = require('./PartyMemoryPreference');
+const PartyRewards = require('../../Actor/PartyRewardMath');
+
+function sharesExperience(members) {
+    return PartyRewards.validMemberIndexes(members.map(levelOf)).length === members.length;
+}
 
 function levelOf(state) {
     return Math.max(1, Number(state?.level || 1));
@@ -32,7 +38,13 @@ function roleCoverage(states) {
     }, {});
 }
 
-function compareCandidate(anchor, coverage, peers = [anchor]) {
+function compareCandidate(anchor, coverage, peers = [anchor], memoryPreference) {
+    const memoryScores = new Map();
+    const personaScores = new Map();
+    const cached = (scores, state, compute) => {
+        if (!scores.has(state)) scores.set(state, compute());
+        return scores.get(state);
+    };
     return (a, b) => {
         const aRole = roleForState(a);
         const bRole = roleForState(b);
@@ -47,6 +59,10 @@ function compareCandidate(anchor, coverage, peers = [anchor]) {
             if (aClan !== bClan) return aClan - bClan;
         }
 
+        const memoryDifference = cached(memoryScores, b, () => memoryPreference.score(b, peers))
+            - cached(memoryScores, a, () => memoryPreference.score(a, peers));
+        if (memoryDifference) return memoryDifference;
+
         const aAffinity = PartyAffinity.affinity(a, peers);
         const bAffinity = PartyAffinity.affinity(b, peers);
         if (aAffinity !== bAffinity) return bAffinity - aAffinity;
@@ -57,8 +73,8 @@ function compareCandidate(anchor, coverage, peers = [anchor]) {
 
         // Persona only distinguishes otherwise equally effective choices. It
         // must not displace established party bonds or a tighter level match.
-        const aPreference = PersonaPartyPolicy.preference(a, peers, coverage).score;
-        const bPreference = PersonaPartyPolicy.preference(b, peers, coverage).score;
+        const aPreference = cached(personaScores, a, () => PersonaPartyPolicy.preference(a, peers, coverage).score);
+        const bPreference = cached(personaScores, b, () => PersonaPartyPolicy.preference(b, peers, coverage).score);
         if (aPreference !== bPreference) return bPreference - aPreference;
         return Number(a.characterId || 0) - Number(b.characterId || 0);
     };
@@ -83,7 +99,7 @@ function bestCandidates(candidates, limit, compare) {
     return best;
 }
 
-function buildAround(anchor, candidates, maxSize, levelRange) {
+function buildAround(anchor, candidates, maxSize, levelRange, memoryPreference) {
     const eligible = candidates.filter((state) => Math.abs(levelOf(state) - levelOf(anchor)) <= levelRange);
     const selected = [anchor];
     const used = new Set([Number(anchor.characterId)]);
@@ -92,9 +108,10 @@ function buildAround(anchor, candidates, maxSize, levelRange) {
     SUPPORT_ROLES.forEach((role) => {
         if (selected.length >= maxSize || coverage[role]) return;
         const support = bestCandidates(
-            eligible.filter((state) => !used.has(Number(state.characterId)) && roleForState(state) === role),
+            eligible.filter((state) => !used.has(Number(state.characterId)) && roleForState(state) === role
+                && sharesExperience([...selected, state])),
             1,
-            compareCandidate(anchor, coverage, selected)
+            compareCandidate(anchor, coverage, selected, memoryPreference)
         )[0];
         if (!support) return;
         selected.push(support);
@@ -102,16 +119,18 @@ function buildAround(anchor, candidates, maxSize, levelRange) {
         coverage[role] = 1;
     });
 
-    bestCandidates(
-        eligible.filter((state) => !used.has(Number(state.characterId))),
-        maxSize - selected.length,
-        compareCandidate(anchor, coverage, selected)
-    ).forEach((state) => {
+    while (selected.length < maxSize) {
+        const state = bestCandidates(
+            eligible.filter((candidate) => !used.has(Number(candidate.characterId)) && sharesExperience([...selected, candidate])),
+            1,
+            compareCandidate(anchor, coverage, selected, memoryPreference)
+        )[0];
+        if (!state) break;
         selected.push(state);
         used.add(Number(state.characterId));
         const role = roleForState(state);
         coverage[role] = (coverage[role] || 0) + 1;
-    });
+    }
 
     const levels = selected.map(levelOf);
     const levelSpread = Math.max(...levels) - Math.min(...levels);
@@ -124,6 +143,7 @@ function buildAround(anchor, candidates, maxSize, levelRange) {
         members: selected,
         coverage,
         levelSpread,
+        memoryScore: memoryPreference.groupScore(selected),
         score: supportCount * 1000 + clanCount * 100 + selected.length * 10 - levelSpread
     };
 }
@@ -133,15 +153,18 @@ function selectMembers(candidates = [], options = {}) {
     const minSize = Math.max(2, Math.min(maxSize, Number(options.minSize || 2)));
     const levelRange = Math.max(0, Number(options.levelRange ?? DEFAULT_LEVEL_RANGE));
     const unique = Array.from(new Map((candidates || [])
-        .filter((state) => state?.characterId)
+        .filter((state) => state?.characterId && !state.stats?.coldCompetition?.wait)
         .map((state) => [Number(state.characterId), state])).values());
     if (unique.length < minSize) return [];
+    const memoryPreference = PartyMemoryPreference.create(options);
 
     const best = unique.reduce((current, anchor) => {
-        const candidate = buildAround(anchor, unique, maxSize, levelRange);
+        const candidate = buildAround(anchor, unique, maxSize, levelRange, memoryPreference);
         if (candidate.members.length < minSize) return current;
         if (!current || candidate.score > current.score) return candidate;
         if (candidate.score === current.score && candidate.levelSpread < current.levelSpread) return candidate;
+        if (candidate.score === current.score && candidate.levelSpread === current.levelSpread
+            && candidate.memoryScore > current.memoryScore) return candidate;
         return current;
     }, null);
 
@@ -153,11 +176,13 @@ function selectRecruits(members = [], candidates = [], options = {}) {
     const levelRange = Math.max(0, Number(options.levelRange ?? DEFAULT_LEVEL_RANGE));
     const leader = chooseLeader(members);
     if (!leader || members.length >= maxSize) return [];
+    const memoryPreference = PartyMemoryPreference.create(options);
 
     const used = new Set(members.map((state) => Number(state.characterId)));
     const coverage = roleCoverage(members);
     const eligible = (candidates || []).filter((state) => (
         state?.characterId &&
+        !state.stats?.coldCompetition?.wait &&
         !used.has(Number(state.characterId)) &&
         Math.abs(levelOf(state) - levelOf(leader)) <= levelRange
     ));
@@ -166,9 +191,10 @@ function selectRecruits(members = [], candidates = [], options = {}) {
     SUPPORT_ROLES.forEach((role) => {
         if (members.length + recruits.length >= maxSize || coverage[role]) return;
         const recruit = bestCandidates(
-            eligible.filter((state) => !used.has(Number(state.characterId)) && roleForState(state) === role),
+            eligible.filter((state) => !used.has(Number(state.characterId)) && roleForState(state) === role
+                && sharesExperience([...members, ...recruits, state])),
             1,
-            compareCandidate(leader, coverage, members)
+            compareCandidate(leader, coverage, [...members, ...recruits], memoryPreference)
         )[0];
         if (!recruit) return;
         recruits.push(recruit);
@@ -176,16 +202,19 @@ function selectRecruits(members = [], candidates = [], options = {}) {
         coverage[role] = 1;
     });
 
-    bestCandidates(
-        eligible.filter((state) => !used.has(Number(state.characterId))),
-        maxSize - members.length - recruits.length,
-        compareCandidate(leader, coverage, members)
-    ).forEach((state) => {
+    while (members.length + recruits.length < maxSize) {
+        const state = bestCandidates(
+            eligible.filter((candidate) => !used.has(Number(candidate.characterId))
+                && sharesExperience([...members, ...recruits, candidate])),
+            1,
+            compareCandidate(leader, coverage, [...members, ...recruits], memoryPreference)
+        )[0];
+        if (!state) break;
         recruits.push(state);
         used.add(Number(state.characterId));
         const role = roleForState(state);
         coverage[role] = (coverage[role] || 0) + 1;
-    });
+    }
 
     return recruits;
 }

@@ -44,6 +44,7 @@ function receivedHit(session, actor, npc, hit, options = {}) {
     npc.broadcastVitals();
 
     if (npc.fetchHp() <= 0) {
+        invoke('GameServer/Social/CombatHelpMemory').recordDefeat(actor, npc);
         // C4 notifies the minion's master before the killed NPC is removed.
         // Keep the same ordering so a lethal hit still pulls the boss and its
         // surviving minions into combat.

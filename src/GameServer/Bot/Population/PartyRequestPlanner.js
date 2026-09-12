@@ -44,9 +44,13 @@ function clanPartyObjectiveForState(state) {
 
 function partyRequestForPlan(state, plan, timestamp = Date.now()) {
     if (!partyRequestEligible(state)) return null;
-    const objective = partyObjectiveForPlan(plan) || clanPartyObjectiveForState(state);
-    if (!objective) return null;
     const previous = state.stats?.partyRequest;
+    const sharedTarget = previous?.reason === 'shared_target' && ['open', 'deferred'].includes(previous.status)
+        && plan?.status === 'active' && previous.spotId === plan.next?.spotId
+        && Number(previous.npcId) === Number(plan.next?.npcId || plan.targetNpcId)
+        ? { ...previous, status: 'open' } : null;
+    const objective = partyObjectiveForPlan(plan) || clanPartyObjectiveForState(state) || sharedTarget;
+    if (!objective) return null;
     const sameRequest = ['open', 'deferred'].includes(previous?.status)
         && previous.objectiveKey === objective.objectiveKey
         && Number(previous.itemId || 0) === Number(objective.itemId || 0)

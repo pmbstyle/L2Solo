@@ -365,6 +365,7 @@ function compactHotBot(status, pkIds = new Set(), session = null) {
             distance: status.target.distance ? Math.round(status.target.distance) : null
         } : null,
         party: status.party ? {
+            id: status.party.id || null,
             leader: compactPartyLeader(status.party.leader),
             leaderId: Number(status.party.leader?.id || 0) || null,
             stance: status.party.stance,
@@ -1608,6 +1609,7 @@ function compactHotDetail(status, session) {
         timers: status.timers || {},
         decisions: Object.fromEntries(Object.entries(status.decisions || {}).map(([key, value]) => [key, compactDecision(value)])),
         enemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session),
+        interactionMemory: invoke('GameServer/Social/InteractionMemoryRuntime').inspect(Number(status.id)),
         build: compactBuild(status.build),
         equipment: compactEquipment(context?.equipment),
         persona: status.persona || null,
@@ -1739,6 +1741,7 @@ function compactColdDetail(state, leaderState = null) {
         ...compact,
         kind: 'bot',
         enemies: invoke('GameServer/Bot/AI/BotEnemyMemory').normalize(stats.pvpEnemies),
+        interactionMemory: invoke('GameServer/Social/InteractionMemoryRuntime').inspect(Number(state.characterId)),
         clan: compactActorClan(state),
         classId,
         className: className(classId),
@@ -2016,6 +2019,11 @@ function worldStatus() {
         uptimeMs: Math.round(process.uptime() * 1000),
         raidBosses: raidBossSnapshot(),
         population: PopulationStatus.counts(),
+        coldCompetition: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().worker?.competition || null,
+        coldCompetitionActions: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().competitionActions || null,
+        hotCompetitionActions: invoke('GameServer/Bot/AI/HotResourceCompetition').report,
+        partyReviews: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().partyReviews || null,
+        clanSocial: invoke('GameServer/Clan/ClanSocialRuntime').summary(),
         runtime: {
             heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
             rssMb: Math.round(memory.rss / 1024 / 1024),
@@ -2110,6 +2118,9 @@ async function snapshot() {
         classes: classCatalog(),
         raidBosses: raidBossSnapshot(),
         population: PopulationStatus.counts(),
+        coldCompetition: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().worker?.competition || null,
+        coldCompetitionActions: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().competitionActions || null,
+        partyReviews: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().partyReviews || null,
         runtime: {
             heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
             rssMb: Math.round(memory.rss / 1024 / 1024),
@@ -2169,6 +2180,7 @@ async function botDetail(characterId) {
     const BotManager = invoke('GameServer/Bot/BotManager');
     const hotSession = BotManager.findSessionById(id);
     if (hotSession?.actor) {
+        await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany([id]);
         const status = BotManager.getBotStatus(hotSession);
         return status?.available ? compactHotDetail(status, hotSession) : null;
     }
@@ -2176,6 +2188,7 @@ async function botDetail(characterId) {
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
     const state = await LifeState.findByCharacterId(id);
     if (!state) return null;
+    await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany([id]);
 
     const leaderId = Number(state.party?.leaderId || state.stats?.leaderId || 0) || null;
     let leaderState = leaderId === id ? state : null;
@@ -2388,6 +2401,11 @@ function route(request, response) {
         return;
     }
 
+    if (url.pathname === '/observer/api/clans/social') {
+        if (request.method !== 'GET') { response.writeHead(405, { Allow: 'GET' }); response.end(); return; }
+        sendJson(response, invoke('GameServer/Clan/ClanSocialRuntime').inspect());
+        return;
+    }
     if (url.pathname === '/observer/api/world/status') {
         try {
             sendJson(response, worldStatus());
@@ -2570,6 +2588,15 @@ function route(request, response) {
                 ? sendClanCrest(request, response, crest, url)
                 : sendJson(response, { error: 'Clan crest not found' }, 404))
             .catch((err) => sendJson(response, { error: err.message }, 500));
+        return;
+    }
+
+    const relationshipMatch = url.pathname.match(/^\/observer\/api\/bot\/(\d+)\/relationships$/);
+    if (relationshipMatch) {
+        if (request.method !== 'GET') { response.writeHead(405, { Allow: 'GET' }); response.end(); return; }
+        invoke('WorldObserver/Relationships').detail(relationshipMatch[1])
+            .then(data => sendJson(response, data || { error: 'Bot not found' }, data ? 200 : 404))
+            .catch(err => sendJson(response, { error: err.message }, 500));
         return;
     }
 

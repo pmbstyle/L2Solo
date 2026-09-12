@@ -63,7 +63,11 @@ async function tradeDone(session, buffer) {
                 BotManager.botTell(
                     confirmation.trade.botSession,
                     session,
-                    "I can't accept this right now — my inventory is full."
+                    result.capacityBlocked?.player && result.capacityBlocked?.bot
+                        ? "We both need more inventory space to complete this trade."
+                        : result.capacityBlocked?.player
+                            ? "You need more inventory space to receive these items."
+                            : "I need more inventory space to receive these items."
                 );
             }
             BotTradeService.cancel(session);

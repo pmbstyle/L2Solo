@@ -9,6 +9,8 @@ const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 const BotInferenceBudget = invoke('GameServer/Bot/AI/BotInferenceBudget');
 const BotManager = invoke('GameServer/Bot/BotManager');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+const Memory = invoke('GameServer/Social/InteractionMemoryRuntime');
+const MemoryPolicy = invoke('GameServer/Social/InteractionMemoryPolicy');
 
 function actor(id, name, x = 0) {
     return {
@@ -89,6 +91,9 @@ async function main() {
             vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
             stats: { generatedIndex: 19 }
         };
+        // The cold coordinator loads this before dispatching a real bot. This
+        // isolated chat fixture supplies a known neutral relationship instead.
+        Memory.accept(MemoryPolicy.empty(state.characterId));
 
         const first = BotRemoteChat.replyForState(playerSession, state, 'hello');
         const second = BotRemoteChat.replyForState(playerSession, state, 'where are you?');

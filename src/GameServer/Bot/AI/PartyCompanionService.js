@@ -181,6 +181,7 @@ function isAliveOnline(session) {
 }
 
 function partyLeaderSession(session) {
+    if (session?.hotBackgroundPartyId) return invoke('GameServer/Bot/AI/HotBackgroundParty').leader(session);
     if (session?.partyCompanion === true && session.followPlayerSession) {
         return session.followPlayerSession;
     }
@@ -189,6 +190,9 @@ function partyLeaderSession(session) {
 
 function membersForLeader(leaderSession) {
     if (!leaderSession) return [];
+    if (leaderSession.hotBackgroundPartyId) {
+        return invoke('GameServer/Bot/AI/HotBackgroundParty').roster(leaderSession).filter(s => s !== leaderSession);
+    }
     return botSessions().filter((session) => isActiveCompanion(session, leaderSession));
 }
 
@@ -259,7 +263,8 @@ function nextTurnMember(leaderSession, members) {
 
 function canPickGroundLoot(session, leaderSession, item) {
     const actor = session?.actor;
-    if (!isActiveCompanion(session, leaderSession) || !isAliveOnline(session)) return false;
+    if (!(isActiveCompanion(session, leaderSession) || autonomousLootBot(session)
+        && partyLeaderSession(session) === leaderSession) || !isAliveOnline(session)) return false;
     // A finished fight often leaves the whole party seated.  Ground loot is
     // still available then: the chosen companion stands, picks it up and the
     // normal following/resting logic puts it back into formation afterwards.
@@ -277,6 +282,15 @@ function canPickGroundLoot(session, leaderSession, item) {
         delete actor.storedPickup;
     }
     return distance2d(actor, item) <= PARTY_GROUND_LOOT_LEASH_RADIUS;
+}
+
+function autonomousLootBot(session) {
+    return !!session && !session.partyCompanion && (session.hotBackgroundPartyId
+        || session.botSession === true || String(session.accountId || '').startsWith('bot_'));
+}
+
+function groundLootPickers(leaderSession) {
+    return [...(autonomousLootBot(leaderSession) ? [leaderSession] : []), ...membersForLeader(leaderSession)];
 }
 
 function partyGroundLootLeaderId(item) {
@@ -300,7 +314,7 @@ function partyCombatInProgress(leaderSession) {
 }
 
 function queuedGroundLootIds(leaderSession) {
-    return new Set(membersForLeader(leaderSession)
+    return new Set(groundLootPickers(leaderSession)
         .flatMap((memberSession) => memberSession.partyGroundPickupQueue || [])
         .map((entry) => Number(entry?.id || 0))
         .filter(Boolean));
@@ -355,10 +369,11 @@ function reconcileGroundLoot(looterSession) {
 
 function nearestGroundLootPicker(looterSession, item) {
     const leaderSession = partyLeaderSession(looterSession);
-    if (!leaderSession || !item || !AUTOMATED_LOOT_DISTRIBUTIONS.has(distributionForLeader(leaderSession))) return null;
+    if (!leaderSession || !item || !autonomousLootBot(leaderSession)
+        && !AUTOMATED_LOOT_DISTRIBUTIONS.has(distributionForLeader(leaderSession))) return null;
     if (!isOwnedPartyGroundLoot(leaderSession, item) || !isInsidePartyGroundLootLeash(leaderSession, item)) return null;
 
-    return membersForLeader(leaderSession)
+    return groundLootPickers(leaderSession)
         .filter((memberSession) => canPickGroundLoot(memberSession, leaderSession, item))
         .sort((a, b) => (
             distance2d(a.actor, item) - distance2d(b.actor, item) ||
@@ -446,7 +461,8 @@ function startQueuedGroundPickup(pickerSession) {
             Number(picker.fetchId?.()) === Number(pullState.pullerId || 0)
         )
     ) return false;
-    if (partyCombatInProgress(leaderSession) || hasCampThreat(leaderSession)) return false;
+    if (partyNeedsAttention || picker.state?.fetchCasts?.()
+        || Number(pickerSession.pendingSupportCast?.expiresAt || 0) > now) return false;
     if (picker.state?.fetchPickinUp?.()) return false;
 
     if (!queuedItem ||
@@ -898,6 +914,7 @@ const PartyCompanionService = {
     startQueuedGroundPickup,
 
     reconcileGroundLoot,
+    groundLootLeader: partyLeaderSession,
 
     bringToLeader(leaderSession, companionSession) {
         if (!isActiveCompanion(companionSession, leaderSession)) return false;
@@ -928,6 +945,9 @@ const PartyCompanionService = {
         const leader = leaderSession?.actor;
         const bot = companionSession?.actor;
         if (!leader || !bot) return false;
+        // An autonomous hot roster has one lifecycle owner. Do not leave its
+        // other actors orphaned by attaching a single member to a player.
+        if (companionSession.hotBackgroundPartyId || companionSession.hotCompetitionCommit) return false;
         const reservation = options.capacityReservation || companionSession;
         if (!hasCapacity(leaderSession, companionSession, reservation)) return false;
         releaseCapacity(leaderSession, reservation);

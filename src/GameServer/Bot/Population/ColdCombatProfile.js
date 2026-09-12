@@ -425,6 +425,9 @@ function capture(actor, timestamp = Date.now()) {
         version: PROFILE_VERSION,
         skillSource: 'hot',
         capturedAt: timestamp,
+        cp: number(actor.fetchCp?.()),
+        cpAt: timestamp,
+        cooldowns: Object.fromEntries([...(actor.skillReuseUntil || [])].filter(([, until]) => until > timestamp)),
         classId: number(actor.fetchClassId?.()),
         base: {
             str: number(actor.fetchStr?.(), 1), dex: number(actor.fetchDex?.(), 1), con: number(actor.fetchCon?.(), 1),
@@ -483,6 +486,12 @@ function profileFor(state = {}, timestamp = Date.now()) {
     const maxHp = (Formulas.calcHp(level, classId, con) * multiplier(profile, 'maxHpMul', timestamp, sources)) + add(profile, 'maxHpAdd', timestamp, sources);
     const maxMp = ((Formulas.calcMp(level, spellcaster ? 1 : 0, classTransfer, men) + number(equipment.bonusMp))
         * multiplier(profile, 'maxMpMul', timestamp, sources)) + add(profile, 'maxMpAdd', timestamp, sources);
+    const maxCp = Math.max(0, Formulas.calcCp(level, classId, con)
+        * multiplier(profile, 'maxCpMul', timestamp, sources) + add(profile, 'maxCpAdd', timestamp, sources));
+    const cpRegen = Math.max(0, number(DataCache.revitalize?.hp?.[level]) * Formulas.calcLevelMod(level)
+        * Formulas.calcBaseMod.CON(con) * multiplier(profile, 'regCp', timestamp, sources));
+    const cp = Number.isFinite(saved?.cp) ? Math.min(maxCp, Math.max(0, saved.cp)
+        + Math.floor(Math.max(0, timestamp - number(saved.cpAt, timestamp)) / 3000) * cpRegen) : maxCp;
     const pAtk = Math.round(Formulas.calcPAtk(level, str, number(equipment.pAtk, number(profile.base.pAtk)))
         * multiplier(profile, 'pAtkMul', timestamp, sources)) + add(profile, 'pAtkAdd', timestamp, sources);
     const mAtk = Math.round(Formulas.calcMAtk(level, int, number(equipment.mAtk, number(profile.base.mAtk)))
@@ -500,7 +509,7 @@ function profileFor(state = {}, timestamp = Date.now()) {
         * multiplier(profile, 'pAtkSpdMul', timestamp, sources));
     const castSpd = Math.round(Formulas.calcCastSpd(wit) * multiplier(profile, 'castSpdMul', timestamp, sources));
     return {
-        ...profile, level, maxHp: Math.max(1, maxHp), maxMp: Math.max(1, maxMp), pAtk: Math.max(1, pAtk), mAtk: Math.max(1, mAtk),
+        ...profile, level, maxCp, cp, maxHp: Math.max(1, maxHp), maxMp: Math.max(1, maxMp), pAtk: Math.max(1, pAtk), mAtk: Math.max(1, mAtk),
         pDef: Math.max(1, pDef), mDef: Math.max(1, mDef), accur: Math.max(1, accur), evasion: Math.max(0, evasion),
         critical: Math.max(0, critical), atkSpd: Math.max(1, atkSpd), castSpd: Math.max(1, castSpd),
         weaponMask: (WEAPON_MASK_BY_KIND[equipment.weaponKind] || 0) | (number(equipment.shieldPDef) > 0 ? 1048576 : 0)

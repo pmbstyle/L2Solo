@@ -4,6 +4,7 @@ const WorldState = window.WorldObserverWorldState;
 const MapClusters = window.WorldObserverMapClusters;
 const Router = window.WorldObserverSpaRouter;
 const UiLanguage = window.WorldObserverUiLanguage;
+const Relationships = window.WorldObserverRelationships;
 
 const state = {
     snapshot: null,
@@ -28,6 +29,13 @@ const state = {
     detailLoading: false,
     detailError: null,
     detailRequest: 0,
+    relationships: null,
+    relationshipOwner: null,
+    relationshipRequest: null,
+    relationshipAt: 0,
+    relationshipError: null,
+    relationshipFilter: 'all',
+    relationshipExpanded: false,
     clusterScope: null,
     clanMapScope: null,
     clanMapRequest: 0,
@@ -83,6 +91,7 @@ function commitRoute(route, { replace = false } = {}) {
 }
 
 function clearActorSelection() {
+    resetRelationships();
     state.selectedId = null;
     state.selectedRaidBossId = null;
     state.detail = null;
@@ -375,7 +384,12 @@ function formatRelative(timestamp) {
     const seconds = Math.max(0, Math.round((Date.now() - Number(timestamp)) / 1000));
     if (seconds < 5) return 'just now';
     if (seconds < 60) return `${seconds}s ago`;
-    return `${Math.round(seconds / 60)}m ago`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h${minutes % 60 ? ` ${minutes % 60}m` : ''} ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d${hours % 24 ? ` ${hours % 24}h` : ''} ago`;
 }
 
 function clamp(value, min, max) {
@@ -2742,6 +2756,62 @@ function renderSelectedCard() {
     `;
 }
 
+function resetRelationships() {
+    state.relationshipRequest?.abort();
+    state.relationshipRequest = null;
+    state.relationshipOwner = null;
+    state.relationships = null;
+    state.relationshipAt = 0;
+    state.relationshipError = null;
+    state.relationshipFilter = 'all';
+    state.relationshipExpanded = false;
+}
+
+async function loadRelationships(force = false) {
+    const selected = state.selectedId;
+    if (!selected || selected.kind !== 'bot') { resetRelationships(); return; }
+    if (document.hidden || (!force && (!state.live || state.clanOpen || state.rankingOpen || state.raidBossOpen))) return;
+    const id = Number(selected.id);
+    if (state.relationshipOwner !== id) { resetRelationships(); state.relationshipOwner = id; }
+    if (state.relationshipRequest || (!force && Date.now() - state.relationshipAt < 10000)) return;
+    const controller = new AbortController();
+    state.relationshipRequest = controller;
+    state.relationshipAt = Date.now();
+    try {
+        const response = await fetch(`/observer/api/bot/${id}/relationships`, { signal: controller.signal, cache: 'no-store' });
+        if (!response.ok) throw Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        if (state.relationshipRequest !== controller || Number(state.selectedId?.id) !== id || state.selectedId?.kind !== 'bot') return;
+        state.relationships = data;
+        state.relationshipError = null;
+    } catch (error) {
+        if (state.relationshipRequest === controller && error.name !== 'AbortError') state.relationshipError = error.message;
+    } finally {
+        if (state.relationshipRequest === controller) {
+            state.relationshipRequest = null;
+            renderRelationshipPanel();
+        }
+    }
+}
+
+function relationshipContent(actor) {
+    const view = state.relationshipOwner === Number(actor.id) ? state.relationships : null;
+    const error = state.relationshipOwner === Number(actor.id) && state.relationshipError;
+    return `${error ? `<p class="detail-error">Relationships could not refresh · ${text(error)} <button type="button" data-retry-relationships>Retry</button></p>` : ''}
+        ${view ? Relationships.render(view, { ownerName: actor.name, filter: state.relationshipFilter,
+            expanded: state.relationshipExpanded, relative: formatRelative }) : `<p class="relationship-note">${error ? 'Relationship data unavailable.' : 'Loading relationships…'}</p>`}`;
+}
+
+function renderRelationshipPanel() {
+    const panel = document.getElementById('relationshipContent'), actor = selectedActor();
+    if (panel && actor && state.selectedId?.kind === 'bot') panel.innerHTML = relationshipContent(actor);
+}
+
+function renderRelationships(actor) {
+    if (state.selectedId?.kind !== 'bot') return '';
+    return `<section class="inspector-block relationship-section"><div class="inspector-block-title"><h3>Relationships</h3><span>Personal &amp; clan</span></div><div id="relationshipContent">${relationshipContent(actor)}</div></section>`;
+}
+
 function renderInspector() {
     const actor = selectedActor();
     if (!actor) {
@@ -2821,6 +2891,7 @@ function renderInspector() {
         </div>
         ${renderSignals(actor)}
         ${actor.equipment || actor.combat ? renderEquipment(actor.equipment, actor.combat) : ''}
+        ${renderRelationships(actor)}
         ${renderBuild(build)}
         ${renderDecisions(actor)}
         ${renderProgress(actor)}
@@ -2893,6 +2964,7 @@ async function loadActorDetail(id, kind = state.selectedId?.kind || 'bot', showL
 }
 
 function selectActor(id, kind = 'bot', focus = false, updateRoute = true) {
+    resetRelationships();
     const actorKind = ActorFilters.actorKind(id, kind, state.snapshot);
     state.selectedRaidBossId = null;
     state.selectedId = { id, kind: actorKind };
@@ -2917,6 +2989,7 @@ function selectActor(id, kind = 'bot', focus = false, updateRoute = true) {
     renderRoster();
     renderSelected();
     loadActorDetail(id, actorKind);
+    loadRelationships(true);
     if (updateRoute) commitRoute({ name: 'actor', kind: actorKind, id });
 }
 
@@ -3014,6 +3087,7 @@ async function loadWorldStatus(force = false) {
 
 async function refresh() {
     if (!state.live || document.hidden || state.refreshing) return;
+    loadRelationships();
     state.refreshing = true;
     try {
         if (!state.snapshot) {
@@ -3338,6 +3412,24 @@ els.zoomInButton?.addEventListener('click', () => zoomMap(0.7));
 els.zoomOutButton?.addEventListener('click', () => zoomMap(1.3));
 
 document.addEventListener('click', (event) => {
+    const relationship = event.target.closest('[data-relationship-id]');
+    if (relationship) {
+        if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        selectActor(relationship.dataset.relationshipId, relationship.dataset.relationshipKind, true);
+        return;
+    }
+    const relationshipFilter = event.target.closest('[data-relationship-filter]');
+    if (relationshipFilter) {
+        state.relationshipFilter = relationshipFilter.dataset.relationshipFilter;
+        state.relationshipExpanded = false;
+        renderRelationshipPanel(); return;
+    }
+    if (event.target.closest('[data-relationship-expand]')) {
+        state.relationshipExpanded = !state.relationshipExpanded;
+        renderRelationshipPanel(); return;
+    }
+    if (event.target.closest('[data-retry-relationships]')) { loadRelationships(true); return; }
     const worldLink = event.target.closest('[data-spa-route="world"]');
     if (worldLink) {
         event.preventDefault();

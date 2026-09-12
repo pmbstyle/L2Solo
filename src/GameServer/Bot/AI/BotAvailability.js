@@ -2,6 +2,8 @@ const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
 const PersonaPartyDecisionPolicy = invoke('GameServer/Bot/AI/PersonaPartyDecisionPolicy');
 const SpeckMath = invoke('GameServer/SpeckMath');
+const InteractionMemory = invoke('GameServer/Social/InteractionMemoryRuntime');
+const PlayerPartyRelationship = require('../../Social/PlayerPartyRelationship');
 
 const MAX_LEVEL_GAP = 12;
 const RECENT_ABANDON_MS = 5 * 60 * 1000;
@@ -28,6 +30,8 @@ function reasonText(reason) {
         already_grouped: 'already grouped',
         merchant_duty: 'merchant duty',
         low_trust: 'low trust',
+        relationship_unloaded: 'give me a moment before we decide',
+        relationship_hostile: 'we still have a conflict to settle',
         recently_abandoned: 'recently abandoned',
         level_gap_too_large: 'level gap too large',
         prefers_solo: 'prefers a solo run for now',
@@ -70,17 +74,30 @@ function catalogKey(subject) {
 }
 
 function emptyResult(playerSession, botSubject, options = {}) {
-    const memory = options.loadMemory === false
+    const legacy = options.loadMemory === false
         ? BotSocialMemory.peekSnapshot(playerSession, botSubject)
         : BotSocialMemory.getSnapshot(playerSession, botSubject);
+    const sourceId = subjectId(botSubject), targetId = subjectId(playerSession);
+    const at = options.timestamp ?? Date.now();
+    const botSession = botSubject?.actor ? botSubject : botSubject?.session;
+    const aggressor = botSession?.pvpAggressors?.get(targetId);
+    const relation = Number.isSafeInteger(sourceId) && sourceId > 0 && Number.isSafeInteger(targetId) && targetId > 0 ? InteractionMemory.assess(
+        { id: sourceId, clanId: clanIdOf(botSubject) },
+        { id: targetId, clanId: clanIdOf(playerSession) },
+        { attackingMe: !!aggressor && at >= aggressor.at
+            && at - aggressor.at <= invoke('GameServer/Bot/AI/BotPvpThreats').MEMORY_MS }, at) : null;
+    const shared = PlayerPartyRelationship.combine(legacy, relation);
+    const memory = shared.memory;
     return {
         available: false,
         reason: 'missing_actor',
         reasonText: reasonText('missing_actor'),
         distance: null,
         clanmate: false,
-        relationship: BotSocialMemory.relationship(memory),
-        memory
+        relationship: shared.reason === 'relationship_hostile' ? 'hostile' : BotSocialMemory.relationship(memory),
+        memory,
+        sharedRelationship: shared.relation,
+        relationshipReason: shared.reason
     };
 }
 
@@ -98,6 +115,8 @@ const BotAvailability = {
 
         let reason = 'available';
         if (staticService) reason = 'merchant_duty';
+        else if (botSession.hotBackgroundPartyId || botSession.hotCompetitionCommit) reason = 'already_grouped';
+        else if (!options.forceFriend && result.relationshipReason) reason = result.relationshipReason;
         else if (result.clanmate) reason = 'available';
         else if (player.isDead && player.isDead()) reason = 'player_dead';
         else if (bot.isDead && bot.isDead()) reason = 'bot_dead';
@@ -131,6 +150,7 @@ const BotAvailability = {
 
         let reason = 'available';
         if (staticService) reason = 'merchant_duty';
+        else if (!options.forceFriend && result.relationshipReason) reason = result.relationshipReason;
         else if (result.clanmate) reason = 'available';
         else if (!options.forceFriend && state.activity === 'traveling') reason = 'in_transit';
         else if (!options.forceFriend && state.activity === 'pk_hunting') reason = 'pk_encounter_only';

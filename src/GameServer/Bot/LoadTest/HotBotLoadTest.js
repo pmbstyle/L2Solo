@@ -238,7 +238,7 @@ const HotBotLoadTest = {
             const seeding = mode === 'mixed'
                 ? invoke('GameServer/Bot/Population/GeneratedColdSeeder').running
                 : false;
-            const playerSourceReady = mode !== 'mixed' || BotManager.sessions.some((session) => (
+            const playerSourceReady = mode !== 'mixed' || !!this.playerSession || BotManager.sessions.some((session) => (
                 session?.actor && String(session.accountId || '') === PLAYER_ACCOUNT
             ));
             const coordinator = mode === 'mixed'
@@ -246,14 +246,16 @@ const HotBotLoadTest = {
             const workerReady = mode !== 'mixed' || !!(coordinator.ready && coordinator.snapshotsLoaded);
             const warmupReady = spawned === count
                 && workerReady
-                && (mode !== 'mixed' || (playerSourceReady && cold >= coldMin));
+                && (mode !== 'mixed' || (playerSourceReady && (cold >= coldMin || !!this.playerSession)));
             if (!warmupReady || seeding || lifeCounts.total !== this.stableStateTotal) {
                 this.stableStateTotal = lifeCounts.total;
                 this.stableSince = Date.now();
             }
             const stable = warmupReady && !seeding && Date.now() - this.stableSince >= warmupStableMs;
             if (mode === 'mixed' && stable && !this.playerSession) this.playerSession = attachPlayerProbe();
-            const ready = stable && (mode !== 'mixed' || !!this.playerSession);
+            const catalogReady = mode !== 'mixed' || (!coordinator.snapshotInFlight
+                && !coordinator.criticalSnapshotInFlight && !coordinator.snapshotQueue.size());
+            const ready = stable && catalogReady && (mode !== 'mixed' || !!this.playerSession);
             if (!ready && Date.now() < provisionDeadline) return;
             clearInterval(waitForBots);
             if (!ready) {
@@ -266,6 +268,7 @@ const HotBotLoadTest = {
                     cold,
                     coldMin,
                     workerReady,
+                    catalogReady,
                     playerReady: !!this.playerSession,
                     provisionMs: Date.now() - runStartedAt
                 });
@@ -393,6 +396,9 @@ const HotBotLoadTest = {
             const scheduled = hotSessions().filter((session, index) => index % shards === activeShard);
             let remaining = scheduled.length;
             scheduled.forEach((session) => {
+                // Keep the requested load actors hot for the entire measurement;
+                // ordinary population bots still follow activation/cooldown policy.
+                session.populationHotAt = Date.now();
                 HotAiDispatcher.enqueue(session, () => {
                   try {
                     const actor = session.actor;
@@ -450,7 +456,14 @@ const HotBotLoadTest = {
             }
         }, playerIntervalMs) : null;
 
+        const coldBacklog = [];
         const observerTimer = mixed ? setInterval(() => {
+            if (!coldBacklog.length || Date.now() - coldBacklog.at(-1).at >= 5000) {
+                const snapshot = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot();
+                coldBacklog.push({ at: Date.now(), states: snapshot.worker?.states,
+                    scheduled: snapshot.worker?.dueFences?.scheduled, dueAgeMs: snapshot.worker?.dueAgeMs,
+                    snapshots: snapshot.snapshots.dirty, snapshotAgeMs: snapshot.snapshots.oldestMs });
+            }
             const observerStartedAt = performance.now();
             let pending;
             pending = Promise.resolve()
@@ -488,6 +501,7 @@ const HotBotLoadTest = {
                     counts: LifeState.counts(),
                     delta: counterDelta(populationBaseline, PopulationMetrics.counters),
                     activity: PopulationService.playerActivityProfile(),
+                    coldBacklog,
                     worker: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot()
                 } : null;
                 const observerAfter = mixed ? WorldObserver.snapshotCacheStats() : null;

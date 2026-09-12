@@ -143,19 +143,33 @@ function applyHot(session, source, target, effect) {
 
     const heal = Math.max(0, Number(hot.heal) || 0);
     const intervalMs = Math.max(1, Number(hot.intervalMs) || 1000);
-    let remaining = Math.max(0, Number(hot.count) || 0);
+    let remaining = Math.max(0, Number(hot.remaining ?? hot.count) || 0);
     if (!heal || !remaining) return false;
+
+    if (hot.sourceId === undefined) {
+        hot.sourceId = source?.fetchKind ? 0 : Number(source?.fetchId?.() || 0);
+        hot.sourceClanId = Number(source?.fetchClanId?.() || 0);
+        hot.sourceArena = !!source && invoke('GameServer/World/ArenaCombatRules').isArenaParticipant(source);
+    }
+    const helper = source && Number(source.fetchId?.()) === hot.sourceId ? source : hot.sourceId > 0
+        ? { fetchId: () => hot.sourceId, fetchClanId: () => hot.sourceClanId || 0,
+            session: { arenaEphemeral: hot.sourceArena === true } } : null;
 
     const timers = ensureTimers(target);
     clear(target, effect.key);
     timers[effect.key] = setInterval(() => {
-        if (target.state?.fetchDead?.()) {
+        if (target.state?.fetchDead?.() || (effect.expiresAt && effect.expiresAt <= Date.now())) {
             clearRuntime(target, effect.key);
             return;
         }
 
+        const before = { hp: Number(target.fetchHp?.() || 0), maxHp: Number(target.fetchMaxHp?.() || 0),
+            combat: target.state?.fetchCombats?.() === true };
         applyHeal(target, heal);
+        if (helper) invoke('GameServer/Social/CombatHelpMemory').recordPeriodic(helper, target,
+            target.fetchHp() - before.hp, before, hot);
         remaining -= 1;
+        hot.remaining = remaining;
         if (remaining <= 0) {
             clearRuntime(target, effect.key);
         }

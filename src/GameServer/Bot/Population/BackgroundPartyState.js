@@ -107,7 +107,8 @@ function save(row) {
             status = excluded.status,
             roleCoverageJson = excluded.roleCoverageJson,
             statsJson = excluded.statsJson,
-            updatedAt = excluded.updatedAt`,
+            updatedAt = excluded.updatedAt
+        WHERE ${TABLE}.status <> 'hot'`,
         [
             row.partyId,
             row.leaderId,
@@ -131,7 +132,9 @@ const BackgroundPartyState = {
         if (initStarted) return initPromise;
         initStarted = true;
 
-        initPromise = Database.execute(['SELECT 1', []], 'schema:bot-parties').then(() => this.loadActive()).then(() => {
+        initPromise = Database.execute(['SELECT 1', []], 'schema:bot-parties')
+            .then(() => Database.execute([`UPDATE ${TABLE} SET status = 'active', nextResolveAt = ?, updatedAt = ? WHERE status = 'hot'`, [now() + 30000, now()]], 'bot-party:startup-recovery'))
+            .then(() => this.loadActive()).then(() => {
             initialized = true;
             utils.infoSuccess('BotParty', 'background party table ready');
             return true;
@@ -195,7 +198,10 @@ const BackgroundPartyState = {
 
         return ready.then((isReady) => {
             if (!isReady) return null;
-            return save(prepared.row).then(() => {
+            return save(prepared.row).then((result) => {
+                // Only the whole-party lifecycle can change a hot roster.
+                // A cold maintenance job may have prepared this save before activation.
+                if (!result.affectedRows) return null;
                 this.acceptCommit(prepared);
                 return prepared.snapshot;
             });
@@ -222,12 +228,22 @@ const BackgroundPartyState = {
         return snapshot;
     },
 
+    acceptRow(row) {
+        const snapshot = normalize(row);
+        cache.set(snapshot.partyId, snapshot);
+        return snapshot;
+    },
+
     find(partyId) {
         return cache.get(String(partyId || '')) || null;
     },
 
     active() {
         return Array.from(cache.values()).filter((party) => party.status === 'active');
+    },
+
+    admitted() {
+        return Array.from(cache.values()).filter(party => ['active', 'hot'].includes(party.status));
     },
 
     due(limit = 10, at = now()) {

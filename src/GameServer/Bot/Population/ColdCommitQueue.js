@@ -1,4 +1,5 @@
 const Protocol = require('./ColdSimulationProtocol');
+const { MAX_BATCH: MAX_MEMORY_EVENTS } = require('../../Social/InteractionMemoryPolicy');
 
 // Admission and batch sizing must agree on the cost of one ordinary row.
 const EARLY_COMMIT_ROW_BUDGET_MS = 4;
@@ -145,6 +146,7 @@ class ColdCommitQueue {
     takeLaneBatch(lane, limit) {
         const selected = [];
         const selectedEntries = new Set();
+        let memoryEvents = 0;
         for (const entry of lane) {
             if (selectedEntries.has(entry)) continue;
             const groupId = entry.atomicGroup?.id;
@@ -153,10 +155,17 @@ class ColdCommitQueue {
                 : [entry];
             if (selected.length && selected.length + group.length > limit) break;
             if (!selected.length && group.length > limit) break;
+            const groupMemoryEvents = group.reduce((count, candidate) =>
+                count + (candidate.result?.memoryEvents?.length || 0), 0);
+            if (selected.length && memoryEvents + groupMemoryEvents > MAX_MEMORY_EVENTS) break;
             group.forEach((candidate) => {
                 selected.push(candidate);
                 selectedEntries.add(candidate);
             });
+            memoryEvents += groupMemoryEvents;
+            // An oversized group cannot be split. Submit it alone so database
+            // validation rejects it without blocking or rejecting its neighbours.
+            if (memoryEvents >= MAX_MEMORY_EVENTS) break;
             if (selected.length >= limit) break;
         }
         if (!selected.length) return [];
@@ -179,9 +188,8 @@ class ColdCommitQueue {
         const p2Ready = this.p2.size > 0 && (force || timestamp - this.oldest(this.p2) >= this.targetMs);
         if (p2Overdue || (p2Ready && (this.p1Credit >= 4 || !p1Ready))) {
             this.lastBatchReason = force ? 'forced' : p2Overdue ? 'p2_overdue' : 'p2_target';
-            const batch = [...this.p2.values()]
-                .sort((a, b) => a.queuedAt - b.queuedAt)
-                .slice(0, rowLimit);
+            const batch = this.takeLaneBatch([...this.p2.values()]
+                .sort((a, b) => a.queuedAt - b.queuedAt), rowLimit);
             batch.forEach((entry) => this.p2.delete(Number(entry.characterId)));
             this.p1Credit = 0;
             return batch;
@@ -193,9 +201,8 @@ class ColdCommitQueue {
         }
         if (p2Ready) {
             this.lastBatchReason = force ? 'forced' : 'p2_target';
-            const batch = [...this.p2.values()]
-                .sort((a, b) => a.queuedAt - b.queuedAt)
-                .slice(0, rowLimit);
+            const batch = this.takeLaneBatch([...this.p2.values()]
+                .sort((a, b) => a.queuedAt - b.queuedAt), rowLimit);
             batch.forEach((entry) => this.p2.delete(Number(entry.characterId)));
             this.p1Credit = 0;
             return batch;
@@ -258,7 +265,8 @@ class ColdCommitQueue {
                         results.push({ ok: false, characterId: proposal.characterId, reason: 'prepare_rejected', proposal });
                         continue;
                     }
-                    prepared.push({ proposal, token: proposal.token, nextState, options: proposal.options || {} });
+                    prepared.push({ proposal, token: proposal.token, nextState, options: proposal.options || {},
+                        atomicGroup: proposal.atomicGroup || null });
                 } catch (error) {
                     results.push({ ok: false, characterId: proposal.characterId, reason: error?.message || 'prepare_error', proposal });
                 }
@@ -338,6 +346,7 @@ class ColdCommitQueue {
             proposal,
             token: proposal.token,
             nextState,
+            atomicGroup: proposal.atomicGroup || null,
             options: proposal.options || {}
         }]));
         const result = results?.[0] || { ok: false, characterId: id, reason: 'missing_commit_result' };

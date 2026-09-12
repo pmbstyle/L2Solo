@@ -299,8 +299,12 @@ function staleShopping(state) {
 }
 
 function resolveDeathRecovery(state, timestamp = Date.now()) {
+    const pvpRecovery = Number(state.stats?.coldPvp?.recoverUntil || 0);
+    if (pvpRecovery > timestamp) return { patch: {}, events: [],
+        materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: pvpRecovery,
+        debug: { activity: 'dead', reason: 'pvp_recovery' } };
     const combat = botCombatStats(state, timestamp);
-    const respawnDelayMs = 90000;
+    const respawnDelayMs = pvpRecovery ? 1000 : 90000;
 
     return {
         patch: {
@@ -314,9 +318,11 @@ function resolveDeathRecovery(state, timestamp = Date.now()) {
             stats: {
                 ...(state.stats || {}),
                 lastRespawnAt: timestamp,
+                ...(pvpRecovery ? { coldPvp: { ...state.stats.coldPvp, recoverUntil: 0, flagUntil: 0 } } : {}),
                 restUntil: timestamp + respawnDelayMs,
                 coldCombat: {
                     ...(state.stats?.coldCombat || {}),
+                    ...(pvpRecovery ? { cp: combat.maxCp, cpAt: timestamp, effects: [] } : {}),
                     charges: 0,
                     chargeExpiresAt: null,
                     summon: null
@@ -357,7 +363,7 @@ function effectiveSkillPower(profile, skill, hp) {
         : basePower;
 }
 
-function chooseSkill(profile, hp, mp, cooldowns, time, charges = 0) {
+function chooseSkill(profile, hp, mp, cooldowns, time, charges = 0, rng) {
     return ColdCombatProfile.offensiveSkills(profile)
         .filter((skill) => {
             const requiredCharges = Math.max(0, Number(C4SkillRules.resolve(skill).requires?.charges) || 0);
@@ -371,7 +377,7 @@ function chooseSkill(profile, hp, mp, cooldowns, time, charges = 0) {
             const power = effectiveSkillPower(profile, skill, hp);
             let rawDamage = magic
                 ? Formulas.calcMagicDamage(profile.mAtk, Math.max(1, power), 1)
-                : Formulas.calcPhysicalDamage(profile.pAtk, profile.equipment.pAtkRnd, 1, power);
+                : Formulas.calcPhysicalDamage(profile.pAtk, profile.equipment.pAtkRnd, 1, power, { rng });
             const requiredCharges = Math.max(0, Number(semantic.requires?.charges) || 0);
             if (requiredCharges > 0) rawDamage *= 0.8 + (0.201 * charges);
             return { skill, magic, power, score: rawDamage / actionDelayMs(profile, skill) };
@@ -697,6 +703,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
     let mobHp = mob.maxHp;
     let actions = 0;
     let skillUses = 0;
+    let heals = 0;
     let musicUses = 0;
     let summonUses = 0;
     let summonActions = 0;
@@ -749,6 +756,16 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             chargeExpiresAt = heldCharges.chargeExpiresAt;
             if (startColdPotion(soloFighter, time)) {
                 botReadyAt += 250;
+                continue;
+            }
+            const heal = chooseHeal(bot, [soloFighter], vitals.mp, cooldowns, timestamp + time, soloFighter);
+            if (heal) {
+                applyAllyHeal(soloFighter, [soloFighter], heal);
+                vitals.mp = Math.max(0, vitals.mp - Number(heal.skill.mp || 0));
+                cooldowns[heal.skill.selfId] = timestamp + time + Math.max(0, Number(heal.skill.reuse || 0));
+                skillUses += 1;
+                heals += 1;
+                botReadyAt += actionDelayMs(bot, heal.skill);
                 continue;
             }
             const music = chooseMusicAction(soloFighter, [soloFighter], timestamp + time);
@@ -848,7 +865,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             effects: soloFighter.profile.effects,
             inventory: fightState.inventory,
             summon: soloFighter.summon || null,
-            debug: { actions, skillUses, musicUses, summonUses, summonActions, potionsUsed: soloFighter.potionsUsed, mobSelfId: mob.selfId || null, timedOut: !died }
+            debug: { actions, skillUses, heals, musicUses, summonUses, summonActions, potionsUsed: soloFighter.potionsUsed, mobSelfId: mob.selfId || null, timedOut: !died }
         };
     }
 
@@ -892,11 +909,11 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         effects: soloFighter.profile.effects,
         inventory: fightState.inventory,
         summon: soloFighter.summon || null,
-        debug: { actions, skillUses, musicUses, summonUses, summonActions, potionsUsed: soloFighter.potionsUsed, mobSelfId: mob.selfId || null, timedOut: false }
+        debug: { actions, skillUses, heals, musicUses, summonUses, summonActions, potionsUsed: soloFighter.potionsUsed, mobSelfId: mob.selfId || null, timedOut: false }
     };
 }
 
-function chooseHeal(profile, allies, mp, cooldowns, time) {
+function chooseHeal(profile, allies, mp, cooldowns, time, caster) {
     const injured = allies.filter((ally) => ally.vitals.hp > 0 && ally.vitals.hp / Math.max(1, ally.vitals.maxHp) < 0.7)
         .sort((a, b) => (a.vitals.hp / a.vitals.maxHp) - (b.vitals.hp / b.vitals.maxHp))[0];
     if (!injured) return null;
@@ -904,9 +921,26 @@ function chooseHeal(profile, allies, mp, cooldowns, time) {
         if (candidate.passive || Number(candidate.mp || 0) > mp || Number(cooldowns[candidate.selfId] || 0) > time) return false;
         const semantic = C4SkillRules.resolve(candidate);
         return [C4SkillRules.HEAL, C4SkillRules.HEAL_PERCENT].includes(semantic.skillType)
-            && ['self', 'party', 'ally', 'friendly'].includes(semantic.target);
+            && ['self', 'party', 'ally', 'friendly'].includes(semantic.target)
+            && (semantic.target !== 'self' || caster?.vitals.hp > 0 && caster.vitals.hp < caster.vitals.maxHp * 0.7);
     }).sort((a, b) => Number(b.power || 0) - Number(a.power || 0))[0];
-    return skill ? { skill, target: injured } : null;
+    return skill ? { skill, target: C4SkillRules.resolve(skill).target === 'self' ? caster : injured } : null;
+}
+
+function applyAllyHeal(caster, allies, heal) {
+    const semantic = C4SkillRules.resolve(heal.skill);
+    const targets = semantic.target === 'self' ? [caster] : semantic.target === 'party' ? allies : [heal.target];
+    const helped = [];
+    for (const ally of targets.filter(f => f.vitals.hp > 0)) {
+        const before = ally.vitals.hp;
+        const amount = semantic.skillType === C4SkillRules.HEAL_PERCENT
+            ? ally.vitals.maxHp * Number(heal.skill.power || 0) / 100 : Formulas.calcHealAmount(heal.skill.power);
+        ally.vitals.hp = Math.min(ally.vitals.maxHp, before + Math.max(0, amount));
+        if (ally !== caster && require('../../Social/CombatHelpPolicy').meaningfulHeal(before, ally.vitals.hp, ally.vitals.maxHp)) {
+            helped.push({ sourceId: ally.state.characterId, targetId: caster.state.characterId, type: 'healed' });
+        }
+    }
+    return helped;
 }
 
 function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, timestamp = Date.now() }) {
@@ -950,6 +984,16 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
     let time = 0;
     let actions = 0;
     const fightLimitMs = 15000;
+    const Help = require('../../Social/CombatHelpPolicy');
+    const help = new Map();
+    let lastVictim = null;
+    const rescued = helper => {
+        if (lastVictim && helper !== lastVictim.fighter && time - lastVictim.at < Help.THREAT_MS
+            && Help.injured(lastVictim.fighter.vitals.hp, lastVictim.fighter.vitals.maxHp)) {
+            const sourceId = lastVictim.fighter.state.characterId, targetId = helper.state.characterId;
+            help.set(`${sourceId}:${targetId}:helped_in_combat`, { sourceId, targetId, type: 'helped_in_combat' });
+        }
+    };
 
     while (mobHp > 0 && fighters.some((fighter) => fighter.vitals.hp > 0) && time < fightLimitMs && actions < 96) {
         const alive = fighters.filter((fighter) => fighter.vitals.hp > 0);
@@ -977,7 +1021,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             mobHp -= summonDamage(nextSummon, mob, rng);
             nextSummon.summonActions += 1;
             nextSummon.summonReadyAt = time + summonAttackDelay(nextSummon.summon);
-            if (mobHp <= 0) break;
+            if (mobHp <= 0) { rescued(nextSummon); break; }
         }
         else if (botActs) {
             next.actions += 1;
@@ -989,10 +1033,9 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
                 next.readyAt += 250;
                 continue;
             }
-            const heal = chooseHeal(next.profile, fighters, next.vitals.mp, next.cooldowns, timestamp + time);
+            const heal = chooseHeal(next.profile, fighters, next.vitals.mp, next.cooldowns, timestamp + time, next);
             if (heal) {
-                const amount = Formulas.calcHealAmount(heal.skill.power);
-                heal.target.vitals.hp = Math.min(heal.target.vitals.maxHp, heal.target.vitals.hp + amount);
+                for (const event of applyAllyHeal(next, fighters, heal)) help.set(`${event.sourceId}:${event.targetId}:${event.type}`, event);
                 next.vitals.mp = Math.max(0, next.vitals.mp - Number(heal.skill.mp || 0));
                 next.cooldowns[heal.skill.selfId] = timestamp + time + Math.max(0, Number(heal.skill.reuse || 0));
                 next.skillUses += 1;
@@ -1051,6 +1094,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             mobHp -= Math.max(0, damage);
             next.readyAt += actionDelayMs(next.profile, skill);
             if (mobHp <= 0) {
+                rescued(next);
                 const necromancer = fighters.find((fighter) => (
                     fighter.vitals.hp > 0
                     && BotRoles.isNecromancer(fighter.profile?.classId)
@@ -1069,7 +1113,9 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
                 const damage = Formulas.calcMeleeDamage(mob.pAtk, mob.pAtkRnd, target.profile.pDef, {
                     critical: Formulas.rollCritical(mob.critical, rng)
                 }) * coldNpcWeaponModifier(mob, target.profile, timestamp + time);
-                target.vitals.hp = Math.max(0, target.vitals.hp - damage);
+                const before = target.vitals.hp;
+                target.vitals.hp = Math.max(0, before - damage);
+                if (target.vitals.hp < before) lastVictim = { fighter: target, at: time };
             }
             mobReadyAt += Math.max(250, Formulas.calcMeleeAtkTime(mob.atkSpd));
         }
@@ -1082,6 +1128,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
         won: mobHp <= 0,
         timedOut: mobHp > 0 && fighters.some((fighter) => fighter.vitals.hp > 0),
         members: fighters,
+        help: [...help.values()],
         debug: {
             actions,
             skillUses: fighters.reduce((sum, fighter) => sum + fighter.skillUses, 0),
@@ -1095,6 +1142,8 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
 }
 
 const BackgroundResolver = {
+    combat: { chooseSkill, chooseHeal, applyAllyHeal, actionDelayMs, hitSucceeds },
+    resolveDeathRecovery,
     resolveRest,
     resolvePartyFight,
     needsRest,
@@ -1260,6 +1309,9 @@ const BackgroundResolver = {
         const patch = {
             vitals: applyStandingRegen(state, state.vitals, elapsedMs, timestamp),
             activity: 'hunting',
+            // A prior recovery deadline must not reschedule a new hunt in the
+            // past. A fight that needs recovery below assigns a fresh deadline.
+            stats: { ...(state.stats || {}), restUntil: null },
             spotId: spot.id
         };
 
@@ -1267,6 +1319,7 @@ const BackgroundResolver = {
         let died = false;
         let combatActions = 0;
         let skillUses = 0;
+        let heals = 0;
         let musicUses = 0;
         let summonUses = 0;
         let summonActions = 0;
@@ -1304,6 +1357,7 @@ const BackgroundResolver = {
             materialize.items.push(...result.loot);
             combatActions += Number(result.debug?.actions || 0);
             skillUses += Number(result.debug?.skillUses || 0);
+            heals += Number(result.debug?.heals || 0);
             musicUses += Number(result.debug?.musicUses || 0);
             summonUses += Number(result.debug?.summonUses || 0);
             summonActions += Number(result.debug?.summonActions || 0);
@@ -1369,6 +1423,7 @@ const BackgroundResolver = {
                 route: spot.route || null,
                 combatActions,
                 skillUses,
+                heals,
                 musicUses,
                 summonUses,
                 summonActions,
@@ -1380,4 +1435,23 @@ const BackgroundResolver = {
     }
 };
 
+// Keep pause accounting outside the resolver's many lifecycle early returns.
+// Even a missing spot or changed activity must clear a consumed pause.
+const resolveSolo = BackgroundResolver.resolveSolo;
+BackgroundResolver.resolveSolo = (options = {}) => {
+    const timestamp = options.timestamp ?? Date.now();
+    const competition = require('./ColdCompetitionWait').consume(options.state, options.elapsedMs ?? 60000, timestamp);
+    const competitionReason = options.state?.stats?.coldCompetition?.action === 'contest' ? 'competition_contest' : 'competition_yield';
+    if (competition.waiting) return { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+        nextResolveAt: competition.until, debug: { reason: competitionReason, fights: 0, wins: 0 } };
+    const result = options.state?.stats?.coldCompetition?.wait && competition.state && competition.elapsedMs === 0
+        ? { patch: { stats: competition.state.stats }, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+            nextResolveAt: timestamp + 1000, debug: { reason: competitionReason, fights: 0, wins: 0 } }
+        : resolveSolo({ ...options, state: competition.state, elapsedMs: competition.elapsedMs, timestamp });
+    if (options.state?.stats?.coldCompetition?.wait) {
+        result.patch = { ...result.patch, stats: { ...(result.patch?.stats || competition.state.stats),
+            coldCompetition: { ...competition.state.stats.coldCompetition, wait: null } } };
+    }
+    return result;
+};
 module.exports = BackgroundResolver;

@@ -101,7 +101,7 @@ function combatState(leaderSession, options = {}) {
         }
     }
 
-    const leaderTargetId = PartyAwareness.leaderCombatTargetId(leaderSession);
+    const leaderTargetId = options.ignoreLeaderSelection ? null : PartyAwareness.leaderCombatTargetId(leaderSession);
     if (leaderTargetId && !ignoredTargetIds.has(Number(leaderTargetId))) {
         return { active: true, reason: 'leader_targeting_hostile', target: npcById(leaderTargetId) };
     }

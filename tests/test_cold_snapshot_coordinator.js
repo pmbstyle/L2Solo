@@ -7,6 +7,11 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const { ColdSimulationCoordinator } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
 const { PAGE_BYTES } = require('../src/GameServer/Bot/Population/ColdMessagePages');
+// Snapshot fixtures have no SQLite connection. Exercise real batched hydration
+// against an empty repository while keeping transport and cache code intact.
+const Memory = invoke('GameServer/Social/InteractionMemoryRuntime');
+const Policy = require('../src/GameServer/Social/InteractionMemoryPolicy');
+Memory.repository = { loadMany: async ids => ids.map(Policy.empty) };
 
 function setup() {
     const coordinator = new ColdSimulationCoordinator();
@@ -67,6 +72,28 @@ function setup() {
     await new Promise((resolve) => setImmediate(resolve));
     assert.strictEqual(critical.messages[0].payload.priority, 'P0', 'critical state must bypass ordinary refresh');
     assert.strictEqual(critical.messages[0].payload.rows[0].state.characterId, 99);
+
+    const duringBootstrap = setup();
+    const sharedCoordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+    const previous = { cachedState: LifeState.cachedState, markDirty: sharedCoordinator.markDirty,
+        initial: sharedCoordinator.snapshotInFlightInitial };
+    try {
+        const state = { characterId: 99, phase: 'cold' };
+        LifeState.cachedState = () => state;
+        sharedCoordinator.snapshotInFlightInitial = true;
+        duringBootstrap.coordinator.snapshotInFlightInitial = true;
+        sharedCoordinator.markDirty = (value, options) => duringBootstrap.coordinator.markDirty(value, options);
+        Memory.events.onCommit(99);
+        assert.strictEqual(duringBootstrap.coordinator.snapshotQueue.size(), 1, 'memory committed during bootstrap must not be dropped');
+        assert.strictEqual(await duringBootstrap.coordinator.flushCriticalSnapshots(), false);
+        duringBootstrap.coordinator.snapshotInFlightInitial = false;
+        await duringBootstrap.coordinator.flushCriticalSnapshots();
+        assert.strictEqual(duringBootstrap.messages[0].payload.rows[0].state.characterId, 99);
+    } finally {
+        LifeState.cachedState = previous.cachedState;
+        sharedCoordinator.markDirty = previous.markDirty;
+        sharedCoordinator.snapshotInFlightInitial = previous.initial;
+    }
 
     // Exercise actual envelope validation with Unicode payloads large enough
     // to hit the byte limit before the row limit, in both delivery paths.
@@ -137,6 +164,38 @@ function setup() {
     }
 
     LifeState.allStates = originalAllStates;
+    const sliced = setup();
+    const governor = invoke('GameServer/Bot/Population/BackgroundWorkGovernor');
+    const originalAdmit = governor.admit;
+    const originalComplete = governor.complete;
+    const originalNow = Date.now;
+    let clock = originalNow();
+    let completed = 0;
+    try {
+        Date.now = () => clock;
+        for (let id = 201; id <= 203; id++) sliced.coordinator.markDirty({ characterId: id, phase: 'cold' });
+        sliced.coordinator.snapshotEntry = state => { clock += 20; return { state, context: {} }; };
+        governor.admit = () => ({ ok: true, lease: { budgetMs: 1 } });
+        governor.complete = () => { completed++; };
+        const first = await sliced.coordinator.sendSnapshots(false, true);
+        assert.strictEqual(first.rowsSent, 1, 'deadline must bound serialization work');
+        assert.strictEqual(sliced.coordinator.snapshotQueue.size(), 2, 'unsent suffix must remain queued');
+        assert.strictEqual(completed, 1, 'continuation must account for its actual work');
+        assert(sliced.coordinator.snapshotContinuationTimer, 'remaining work must schedule a continuation');
+        governor.admit = () => ({ ok: false });
+        assert.strictEqual(await sliced.coordinator.sendSnapshots(false, true), false);
+        assert.strictEqual(sliced.messages.length, 1, 'denied budget must not send work');
+        governor.admit = () => ({ ok: true, lease: { budgetMs: 1 } });
+        Date.now = originalNow;
+        await new Promise(resolve => setTimeout(resolve, 350));
+        assert.strictEqual(sliced.coordinator.snapshotQueue.size(), 0, 'timer must drain the retained suffix without a reconcile tick');
+        assert.deepStrictEqual(sliced.messages.flatMap(message => message.payload.rows.map(row => row.state.characterId)), [201, 202, 203]);
+    } finally {
+        Date.now = originalNow;
+        governor.admit = originalAdmit;
+        governor.complete = originalComplete;
+        clearTimeout(sliced.coordinator.snapshotContinuationTimer);
+    }
     console.log('Cold coordinator incremental refresh, cooperative full bootstrap, and P0 bypass checks passed');
 })().catch((error) => {
     console.error(error);

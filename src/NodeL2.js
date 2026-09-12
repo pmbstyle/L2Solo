@@ -38,6 +38,10 @@ function shutdown(signal) {
         .catch((error) => utils.infoWarn('DB', 'final buffered flush failed: %s', error.message))
         .then(() => PathfindingWorkerPool.shutdown())
         .then(() => LangfuseTracing.shutdown())
+        .then(async () => {
+            const result = await invoke('GameServer/Social/InteractionMemoryRuntime').events.drain();
+            if (!result.drained) utils.infoWarn('InteractionMemory', 'shutdown left %d unwritten episodes', result.pending);
+        })
         .then(() => Database.close())
         .catch((error) => utils.infoWarn('DB', 'graceful SQLite close failed: %s', error.message))
         .finally(() => process.exit(0));

@@ -200,8 +200,8 @@ async function run() {
         { characterId: 117, level: 25, stats: { partyRequest: { status: 'open', priority: 'required', objectiveKey: 'large-normal' } } },
         { characterId: 118, level: 25, stats: { clanPartyObjective: { status: 'open', priority: 'required', objectiveKey: 'clan-route', clanId: 77, clanGoalKey: 'clan-equipment:77:118:88:7', clanOperation: 'equipment' } } }
     ], { prioritizePartyWait: true });
-    assert.strictEqual(prioritizedClanGroups[0][0].characterId, 118,
-        'clan equipment groups must be admitted before larger ordinary required queues');
+    assert.strictEqual(prioritizedClanGroups[0][0].characterId, 116,
+        'clan origin alone must not override equal urgency and larger compatible demand');
     assert.strictEqual(PopulationService.partyObjectivesShareRoute(
         { spotId: 'cruma', npcId: 701, clanGoalKey: 'clan-equipment:77:114:88:7' },
         { spotId: 'cruma', npcId: 701, clanGoalKey: 'clan-equipment:78:115:88:7' }
@@ -254,7 +254,8 @@ async function run() {
     const requiredParty = { partyId: 'bgp_required', leaderId: 21, memberIds: [21, 22], spotId: 'dion', startedAt: 2 };
     const reclaimed = [];
     const dissolvedReleases = [];
-    PartyState.active = () => [electiveParty, requiredParty];
+    const socialParty = { ...electiveParty, partyId: 'bgp_social', stats: { capacityPool: 'social' } };
+    PartyState.active = () => [electiveParty, requiredParty, socialParty];
     PartyState.setStatus = (partyId, status) => {
         reclaimed.push({ partyId, status });
         return Promise.resolve({ partyId, status });
@@ -269,14 +270,14 @@ async function run() {
     ]);
     Config.maxBackgroundParties = 2;
     Config.partyFormationBatchSize = 2;
-    assert.strictEqual(PopulationService.maxBackgroundPartiesForBacklog(0), 2, 'without a backlog the base party capacity must remain unchanged');
-    assert(PopulationService.maxBackgroundPartiesForBacklog(1000) > 2, 'a sustained party-wait backlog should open bounded spare party capacity');
-    const released = await PopulationService.reclaimBackgroundPartyCapacity([
+    assert.strictEqual(PopulationService.partyCapacityLimit(), 2, 'without a backlog the base party capacity must remain unchanged');
+    assert.strictEqual(PopulationService.partyCapacityLimit(), 2, 'all requests share one capacity ceiling');
+    const released = await PopulationService.reviewBackgroundPartyDemand([
         { characterId: 31 }, { characterId: 32 }, { characterId: 33 }, { characterId: 34 }
     ]);
-    assert.deepStrictEqual(released.map((party) => party.partyId), ['bgp_elective']);
-    assert.deepStrictEqual(reclaimed, [{ partyId: 'bgp_elective', status: 'dissolved' }]);
-    assert.deepStrictEqual(dissolvedReleases, [{ partyId: 'bgp_elective', reason: 'party_capacity_reclaimed' }]);
+    assert.deepStrictEqual(released, [], 'waiting candidates cannot evict an existing party');
+    assert.deepStrictEqual(reclaimed, []);
+    assert.deepStrictEqual(dissolvedReleases, []);
 
     reclaimed.length = 0;
     dissolvedReleases.length = 0;
@@ -296,9 +297,8 @@ async function run() {
             }
         }
     }));
-    const clanReleased = await PopulationService.reclaimBackgroundPartyCapacity(clanWaiters);
-    assert.deepStrictEqual(clanReleased.map((party) => party.partyId), ['bgp_required_a'],
-        'a saturated queue must yield one ordinary required party slot to a missing clan equipment group');
+    const clanReleased = await PopulationService.reviewBackgroundPartyDemand(clanWaiters);
+    assert.deepStrictEqual(clanReleased, [], 'clan demand cannot evict another viable party');
 
     const activationOrder = [];
     ColdSimulationOwner.handoffToMain = async (state) => {
@@ -329,6 +329,7 @@ async function run() {
     };
     PartyState.setStatus = async (partyId, status) => {
         activationOrder.push(`status:${partyId}:${status}`);
+        return { partyId, status };
     };
     LifeState.releaseDissolvedPartyMembers = async (partyId, reason) => {
         activationOrder.push(`release:${partyId}:${reason}`);
@@ -430,6 +431,8 @@ async function run() {
             };
             let hotSession = null;
             let attached = false;
+            invoke('GameServer/Social/InteractionMemoryRuntime').accept(
+                require('../src/GameServer/Social/InteractionMemoryPolicy').empty(clanState.characterId));
             LifeState.findByName = async () => clanState;
             BotManager.findSessionByName = () => hotSession;
             BotManager.loadAndSpawnBot = (_accountName, options) => {
@@ -500,7 +503,7 @@ async function run() {
         activationOrder.push(`restore:${state.characterId}`);
         return { ok: true, reason: 'restored_for_test' };
     };
-    const failedSpawn = await HotActivation.activate(failedSpawnState, 'spawn_failure', { keepStoreLocation: true });
+    const failedSpawn = await HotActivation.activate(failedSpawnState, 'spawn_failure', { keepStoreLocation: true, interruptBackgroundActivity: true });
     assert.strictEqual(failedSpawn.ok, false, 'failed hot spawn must be reported as failed');
     assert.strictEqual(activationOrder.at(-1), 'restore:91004', 'failed activation must return its released state to the cold worker');
 
@@ -525,10 +528,10 @@ async function run() {
     LifeState.releaseDissolvedPartyMembers = async () => 2;
     LifeState.cachedState = (characterId) => characterId === concurrentState.characterId ? concurrentReleasedState : null;
 
-    const firstActivation = HotActivation.activate(concurrentState, 'concurrent_first', { keepStoreLocation: true });
-    const secondActivation = HotActivation.activate(concurrentState, 'concurrent_second', { keepStoreLocation: true });
+    const firstActivation = HotActivation.activate(concurrentState, 'concurrent_first', { keepStoreLocation: true, interruptBackgroundActivity: true });
+    const secondActivation = HotActivation.activate(concurrentState, 'concurrent_second', { keepStoreLocation: true, interruptBackgroundActivity: true });
     await Promise.resolve();
-    releaseStatus();
+    releaseStatus({ partyId: concurrentState.party.partyId, status: 'dissolved' });
     const concurrentResults = await Promise.all([firstActivation, secondActivation]);
     assert.strictEqual(concurrentResults.filter((result) => result.ok).length, 1, 'only one concurrent request may activate a character');
     assert.strictEqual(concurrentResults.filter((result) => result.reason === 'activation_pending').length, 1, 'the competing request must observe the early activation reservation');

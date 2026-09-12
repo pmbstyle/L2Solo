@@ -104,6 +104,10 @@ function withPersistedStats(state, result) {
 
 function reflect(result, committedState = null) {
     if (!result?.ok || !result.characterId) return result;
+    if (result.memorySnapshots?.length) {
+        const memory = invoke('GameServer/Social/InteractionMemoryRuntime');
+        result.memorySnapshots.forEach(snapshot => memory.accept(snapshot));
+    }
     const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
     BotLifeState.acceptSimulationOwnership(result.characterId, result, committedState);
     return result;
@@ -214,7 +218,8 @@ function commit(claimToken, nextState, options = {}) {
         leaseId: claimToken.leaseId,
         timestamp,
         leaseUntil: timestamp + leaseMs,
-        patch: persistencePatch(canonicalState, timestamp)
+        patch: persistencePatch(canonicalState, timestamp),
+        ...(options.memoryEvents ? { memoryEvents: options.memoryEvents } : {})
     }).then((result) => {
         Metrics().recordColdOwnerCommit(result, Date.now() - startedAt);
         return reflect(result, withPersistedStats(canonicalState, result));
@@ -318,11 +323,13 @@ function commitAndReleaseBatch(entries = [], options = {}) {
                     classId: Number(entry.proposal.durable.classId),
                     skills: entry.proposal.durable.skills || []
                 } : {}),
+                ...(entry.proposal?.durable?.pvpKills ? { pvpKills: entry.proposal.durable.pvpKills } : {}),
                 ...(inventoryChanged ? { inventory: canonicalInventory } : {})
             },
             allowParty: entry.options?.allowParty === true || options.allowParty === true,
             allowLifecycle: entry.options?.allowLifecycle === true || options.allowLifecycle === true,
-            atomicGroup: entry.atomicGroup || null
+            atomicGroup: entry.atomicGroup || null,
+            ...(entry.proposal?.result?.memoryEvents ? { memoryEvents: entry.proposal.result.memoryEvents } : {})
         });
     });
     if (!requests.length) return Promise.resolve(rejected);

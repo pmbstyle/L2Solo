@@ -106,7 +106,8 @@ function distributeRewards({ members, spot, wins, defeatedNpcIds = [], pressure,
 }
 
 const BackgroundPartyResolver = {
-    resolve({ party, members, spot, pressure = {}, targetNpcId = 0, elapsedMs = 60000, rng = Math.random, timestamp = Date.now() }) {
+    resolve({ party, members, spot, pressure = {}, targetNpcId = 0, elapsedMs = 60000, rng = Math.random, timestamp = Date.now(),
+        episodeId = null, assessRelationship = null }) {
         if (!party || !members?.length || !spot) {
             return {
                 memberResults: [],
@@ -117,6 +118,26 @@ const BackgroundPartyResolver = {
             };
         }
 
+        const revival = require('./ColdPartyRevival').resolve({ party, members, timestamp, episodeId, assessRelationship });
+        if (revival) return revival;
+        // A cold PvP casualty holds the roster through the ordinary recovery
+        // delay. Neither standing regeneration nor the next PvE fight revives it.
+        if (members.some(s => s.vitals.hp <= 0)) {
+            const memberResults = members.map(state => ({ state, result: state.vitals.hp <= 0
+                ? BackgroundResolver.resolveDeathRecovery(state, timestamp)
+                : { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 1000 } }));
+            const nextResolveAt = Math.max(...memberResults.map(r => r.result.nextResolveAt));
+            for (const { state, result } of memberResults) {
+                if ((result.patch.vitals?.hp ?? state.vitals.hp) > 0) {
+                    result.patch = { ...result.patch, activity: 'resting',
+                        stats: { ...(result.patch.stats || state.stats), restUntil: nextResolveAt } };
+                }
+                result.nextResolveAt = nextResolveAt;
+            }
+            return { memberResults, events: [], nextResolveAt,
+                partyPatch: { stats: { ...party.stats, restUntil: nextResolveAt, lastResolveAt: timestamp } },
+                debug: { reason: 'party_pvp_recovery', fights: 0, wins: 0 } };
+        }
         // A party shares its hunting cadence.  If even one member is resting,
         // pause the whole group: otherwise the resolver keeps granting fights
         // and draining the exhausted member on every cold tick.
@@ -195,6 +216,21 @@ const BackgroundPartyResolver = {
             };
         }
 
+        if (!require('./PartyHuntingAssembly').ready(party, members, spot)) {
+            // No route may mean admission is temporarily unavailable. Do not
+            // turn that into remote combat or rewrite a member's physical spot.
+            const nextResolveAt = timestamp + 30000;
+            return {
+                memberResults: members.map(state => ({ state, result: {
+                    patch: {}, events: [], memoryEvents: [],
+                    materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt
+                } })),
+                events: [], nextResolveAt,
+                partyPatch: { stats: { lastResolveAt: timestamp } },
+                debug: { reason: 'party_assembling', fights: 0, wins: 0, spotId: spot.id }
+            };
+        }
+
         const fights = estimateFightCount({ party, members, spot, elapsedMs });
         let wins = 0;
         let losses = 0;
@@ -206,12 +242,14 @@ const BackgroundPartyResolver = {
         let summonActions = 0;
         let potionsUsed = 0;
         const defeatedNpcIds = [];
+        const combatHelp = new Map();
         let combatMembers = members.map((state) => ({
             ...state,
             vitals: BackgroundResolver.applyStandingRegen(state, state.vitals, elapsedMs, timestamp)
         }));
         for (let i = 0; i < fights; i++) {
             const encounter = BackgroundResolver.resolvePartyFight({ members: combatMembers, spot, targetNpcId, rng, timestamp });
+            for (const help of encounter.help || []) combatHelp.set(`${help.sourceId}:${help.targetId}:${help.type}`, help);
             combatActions += Number(encounter.debug?.actions || 0);
             skillUses += encounter.members.reduce((sum, member) => sum + Number(member.skillUses || 0), 0);
             heals += encounter.members.reduce((sum, member) => sum + Number(member.heals || 0), 0);
@@ -246,6 +284,15 @@ const BackgroundPartyResolver = {
         const events = [];
         let deaths = 0;
         let resting = 0;
+
+        // Large parties can have more than 64 directed pairs. Unrecorded pairs
+        // remain eligible next resolve; committed pairs are skipped by cooldown.
+        const helpEvents = invoke('GameServer/Social/ColdCombatHelpMemory').eventsFor([...combatHelp.values()],
+            episodeId, timestamp, assessRelationship, id => members.find(m => Number(m.characterId) === id));
+        const huntEvents = wins > 0 && losses === 0 && combatMembers.every(member => Number(member.vitals?.hp) > 0)
+            ? invoke('GameServer/Social/SharedHuntMemory').eventsForGroup(members.map(member => Number(member.characterId)),
+                episodeId, timestamp, assessRelationship, id => members.find(m => Number(m.characterId) === id)) : [];
+        const memoryEvents = [...helpEvents, ...huntEvents].slice(0, 64);
 
         rewards.forEach(({ state, exp, sp, adena, items }, index) => {
             const resolved = combatMembers[index] || state;
@@ -302,6 +349,7 @@ const BackgroundPartyResolver = {
                         }
                     },
                     events: [],
+                    memoryEvents: memoryEvents.filter(event => event.sourceId === Number(state.characterId)),
                     materialize: { exp, sp, adena, items },
                     nextResolveAt: timestamp + 45000 + Math.round(rng() * 90000),
                     debug: {
@@ -320,7 +368,10 @@ const BackgroundPartyResolver = {
                         // leader may be replaced or leave while the resulting
                         // state updates are persisted, so use the stable local
                         // result order to nominate exactly one aggregate owner.
-                        populationTelemetryOwner: index === 0
+                        populationTelemetryOwner: index === 0,
+                        // The worker delivers member results, not the outer
+                        // aggregate. Carry combat totals on this owner only.
+                        ...(index === 0 ? { combatActions, skillUses, heals } : {})
                     }
                 }
             });
@@ -416,6 +467,7 @@ const BackgroundPartyResolver = {
                 stats: {
                     fightsResolved: Number(party.stats?.fightsResolved || 0) + fights,
                     fightsWon: Number(party.stats?.fightsWon || 0) + wins,
+                    lastProgressAt: wins > 0 ? timestamp : Number(party.stats?.lastProgressAt || 0),
                     deaths: Number(party.stats?.deaths || 0) + deaths,
                     rests: Number(party.stats?.rests || 0) + resting,
                     restUntil: partyRestUntil,
@@ -447,4 +499,28 @@ const BackgroundPartyResolver = {
     }
 };
 
+const resolveParty = BackgroundPartyResolver.resolve;
+BackgroundPartyResolver.resolve = (options = {}) => {
+    const timestamp = options.timestamp ?? Date.now();
+    const competition = require('./ColdCompetitionWait').consumeParty(options.party, options.members || [], options.elapsedMs ?? 60000, timestamp);
+    const hadWait = [options.party, ...(options.members || [])].some(state => state?.stats?.coldCompetition?.wait);
+    const paused = competition.waiting || (hadWait && competition.elapsedMs === 0);
+    const members = competition.members || options.members || [];
+    const result = paused ? {
+        memberResults: members.map(state => ({ state, result: { patch: {}, events: [],
+            materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: competition.until || timestamp + 1000 } })),
+        events: [], partyPatch: {}, nextResolveAt: competition.until || timestamp + 1000,
+        debug: { reason: options.party?.stats?.coldCompetition?.action === 'yield' ? 'competition_yield' : 'competition_contest', fights: 0, wins: 0 }
+    } : resolveParty({ ...options, party: competition.party, members, elapsedMs: competition.elapsedMs, timestamp });
+    if (competition.waiting) return result;
+    if (competition.party !== options.party) result.partyPatch = { ...result.partyPatch,
+        stats: { ...(result.partyPatch?.stats || competition.party.stats), coldCompetition: competition.party.stats.coldCompetition } };
+    const cleared = new Map(members.filter((state, index) => state !== options.members?.[index]).map(state => [state.characterId, state]));
+    result.memberResults = (result.memberResults || []).map(entry => {
+        const state = cleared.get(entry.state.characterId);
+        return !state ? entry : { ...entry, result: { ...entry.result, patch: { ...entry.result.patch,
+            stats: { ...(entry.result.patch?.stats || state.stats), coldCompetition: state.stats.coldCompetition } } } };
+    });
+    return result;
+};
 module.exports = BackgroundPartyResolver;

@@ -280,7 +280,7 @@ const BotStatus = {
         const combat = leaderSession ? PartyCombatState.combatState(leaderSession) : null;
         const isAssignedPuller = partySettings?.pullMode === 'bot' &&
             Number(partySettings.pullerId || 0) === Number(bot.fetchId());
-        const party = leaderSession ? {
+        let party = leaderSession ? {
             leader: actorSummary(leaderSession.actor, bot),
             role,
             settings: partySettings,
@@ -321,6 +321,15 @@ const BotStatus = {
                 startedAt: leaderSession.partyRevivalAttempt.startedAt
             } : null
         } : null;
+
+        if (!party && session.hotBackgroundPartyId) {
+            const background = invoke('GameServer/Bot/AI/HotBackgroundParty');
+            const leader = background.leader(session);
+            party = { id: session.hotBackgroundPartyId, leader: actorSummary(leader.actor, bot),
+                role: session.coldLifeState?.party?.role || role, stance: 'shared_hunt',
+                members: background.roster(session).map(member => partyMemberSummary(member, leader, bot)),
+                decision: session.lastDecision || null };
+        }
 
         const status = {
             available: true,

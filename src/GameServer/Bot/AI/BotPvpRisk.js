@@ -106,10 +106,10 @@ function combatStrength(actor, { includeSummon = true } = {}) {
     return { level, gearValue, hpRatio, mpRatio, cpRatio, combatFactor, supplyFactor, summonPower, power };
 }
 
-function defenseDecision(session, threats) {
+function defenseDecision(session, threats, { allyAllowed = () => true } = {}) {
     const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
     const own = combatStrength(session.actor);
-    const allies = Threats.members(session).filter(member => member !== session &&
+    const allies = Threats.members(session).filter(member => member !== session && allyAllowed(member) &&
         !Threats.inPeace(member.actor) && Threats.distance(session.actor, member.actor) <= Threats.PARTY_RADIUS);
     const opponents = new Map(threats.map(actor => [actorId(actor), actor]));
     for (const threat of threats) for (const member of Threats.members(threat.session)) {

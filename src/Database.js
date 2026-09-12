@@ -1,8 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
+const Statements = require('./DatabaseStatements');
 const CheckpointCoordinator = require('./DatabaseCheckpointCoordinator');
 const { XP_DIVIDER: KARMA_XP_DIVIDER } = require('./GameServer/Karma');
+const InteractionMemoryPolicy = require('./GameServer/Social/InteractionMemoryPolicy');
 
 let connection;
 let queryTail = Promise.resolve();
@@ -184,7 +186,7 @@ function run(sql, params = [], operation, readOverride = null, onTiming = null) 
     const read = readOverride === null ? isReadStatement(sql) : !!readOverride;
     return enqueue(() => {
         if (!connection) throw new Error(`SQLite is not initialized (${operation || operationName(sql)})`);
-        const statement = connection.prepare(sql);
+        const statement = Statements.prepare(connection, sql);
         if (read) return normalizeRows(statement.all(...params));
         const result = statement.run(...params);
         return {
@@ -1087,7 +1089,23 @@ function applySchemaMigrations() {
             );
             CREATE INDEX IF NOT EXISTS character_saved_locations_owner
                 ON character_saved_locations(characterId, id);
-        `)]
+        `)],
+        [37, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS bot_interaction_memory (
+                ownerId INTEGER PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
+                snapshotJson TEXT NOT NULL,
+                updatedAt INTEGER NOT NULL
+            );
+        `)],
+        [38, () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS clan_social_memory (
+                clanId INTEGER PRIMARY KEY REFERENCES clans(id) ON DELETE CASCADE,
+                snapshotJson TEXT NOT NULL,
+                updatedAt INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS clan_social_memory_updated ON clan_social_memory(updatedAt, clanId);
+        `)],
+        [39, () => require('./DatabasePartyCandidateProjection').install(connection)]
     ];
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
@@ -1110,15 +1128,15 @@ function applySchemaMigrations() {
 }
 
 function one(sql, params = []) {
-    return normalizeRow(connection.prepare(sql).get(...params));
+    return normalizeRow(Statements.prepare(connection, sql).get(...params));
 }
 
 function all(sql, params = []) {
-    return normalizeRows(connection.prepare(sql).all(...params));
+    return normalizeRows(Statements.prepare(connection, sql).all(...params));
 }
 
 function write(sql, params = []) {
-    const result = connection.prepare(sql).run(...params);
+    const result = Statements.prepare(connection, sql).run(...params);
     return { affectedRows: Number(result.changes || 0), insertId: Number(result.lastInsertRowid || 0) };
 }
 
@@ -1552,6 +1570,12 @@ function preserveColdVersionedStats(row, patch = {}) {
     const next = { ...patch };
     if (Object.prototype.hasOwnProperty.call(next, 'statsJson')) {
         next.statsJson = preserveVersionedAppearanceStats(row?.statsJson, next.statsJson);
+        const current = jsonObject(row?.statsJson), incoming = jsonObject(next.statsJson);
+        if (Number(current.clanMembershipVersion || 0) > Number(incoming.clanMembershipVersion || 0)) {
+            for (const key of ['clanId', 'clanMembershipVersion', 'clanDiscipline', 'clanPartyObjective']) incoming[key] = current[key];
+            if (incoming.equipmentPlan?.clanGoal?.clanId === current.clanDiscipline?.clanId) incoming.equipmentPlan = null;
+            next.statsJson = JSON.stringify(incoming);
+        }
     }
     return next;
 }
@@ -1674,6 +1698,26 @@ function applyColdPhysicalStateUnsafe(characterId, physical = {}) {
         ]);
     });
     if (physical.inventory) syncInventorySummaryUnsafe(characterId, physical.inventory);
+    if (physical.pvpKills?.length) {
+        if (physical.pvpKills.length > 18) throw Error('cold PvP: too many kills');
+        const current = one('SELECT level, pvp, pk, karma FROM characters WHERE id = ?', [characterId]);
+        for (const kill of physical.pvpKills) {
+            if (!Number.isSafeInteger(kill.victimId) || kill.victimId === characterId
+                || !Number.isSafeInteger(kill.victimLevel) || kill.victimLevel < 1 || typeof kill.pvp !== 'boolean') {
+                throw Error('cold PvP: invalid kill');
+            }
+            if (kill.pvp) current.pvp++;
+            else {
+                current.karma += require('./GameServer/Karma').pkKillKarma({ fetchPk: () => current.pk,
+                    fetchLevel: () => current.level }, { fetchLevel: () => kill.victimLevel });
+                current.pk++;
+            }
+        }
+        write('UPDATE characters SET pvp = ?, pk = ?, karma = ? WHERE id = ?',
+            [current.pvp, current.pk, current.karma, characterId]);
+        write("UPDATE bot_life_state SET statsJson = json_set(statsJson, '$.karma', ?) WHERE characterId = ?",
+            [current.karma, characterId]);
+    }
 }
 
 function coldSimulationPartition(row, options = {}) {
@@ -1955,6 +1999,97 @@ function completeAfkTradeIfFilledUnsafe(shopId, timestamp) {
         SET status = 'filled', escrowAdena = 0, revision = revision + 1, updatedAt = ?, closedAt = ?
         WHERE id = ? AND status = 'active'`, [timestamp, timestamp, shopId]);
     return true;
+}
+
+function commitInteractionMemoryUnsafe(batch, timestamp) {
+    const snapshots = new Map();
+    const changed = new Set();
+    const statuses = [];
+    for (const event of batch) {
+        if (!snapshots.has(event.sourceId)) {
+            const row = one('SELECT snapshotJson FROM bot_interaction_memory WHERE ownerId = ?', [event.sourceId]);
+            snapshots.set(event.sourceId, row ? InteractionMemoryPolicy.validate(JSON.parse(row.snapshotJson)) : InteractionMemoryPolicy.empty(event.sourceId));
+        }
+        const result = InteractionMemoryPolicy.apply(snapshots.get(event.sourceId), event, timestamp);
+        if (!['applied', 'duplicate', 'rate_limited'].includes(result.status)) {
+            return { ok: false, reason: result.status, key: event.key, snapshots: [] };
+        }
+        snapshots.set(event.sourceId, result.snapshot);
+        if (result.status === 'applied') changed.add(event.sourceId);
+        statuses.push(result.status);
+    }
+    // No write until every event passes; both directed memories are atomic.
+    for (const ownerId of changed) {
+        write(`INSERT INTO bot_interaction_memory(ownerId, snapshotJson, updatedAt) VALUES (?, ?, ?)
+            ON CONFLICT(ownerId) DO UPDATE SET snapshotJson = excluded.snapshotJson, updatedAt = excluded.updatedAt`,
+        [ownerId, JSON.stringify(snapshots.get(ownerId)), timestamp]);
+    }
+    commitClanSocialUnsafe(batch.filter((_, i) => statuses[i] === 'applied'), timestamp);
+    return { ok: true, statuses, snapshots: [...snapshots.values()] };
+}
+
+function commitClanSocialUnsafe(batch, timestamp) {
+    const ClanSocial = require('./GameServer/Clan/ClanSocialPolicy');
+    const clanSnapshots = new Map(), clanContexts = new Map(), changedClans = new Set();
+    for (let i = 0; i < batch.length; i++) {
+        const event = batch[i];
+        if (!event.clan) continue;
+        for (const clanId of new Set([event.clan.sourceClanId, event.clan.targetClanId].filter(Boolean))) {
+            if (!clanContexts.has(clanId)) {
+                const clan = one(`SELECT c.leaderId, p.traitsJson FROM clans c
+                    LEFT JOIN bot_personas p ON p.characterId = c.leaderId WHERE c.id = ?`, [clanId]);
+                clanContexts.set(clanId, clan || null);
+            }
+            const clan = clanContexts.get(clanId);
+            if (!clan) continue;
+            if (!clanSnapshots.has(clanId)) {
+                const row = one('SELECT snapshotJson FROM clan_social_memory WHERE clanId = ?', [clanId]);
+                clanSnapshots.set(clanId, row ? JSON.parse(row.snapshotJson) : ClanSocial.empty(clanId));
+            }
+            const targetLeader = one('SELECT leaderId FROM clans WHERE id = ?', [event.clan.targetClanId]);
+            const currentMember = one('SELECT clanId FROM characters WHERE id = ?', [event.targetId]);
+            const previous = clanSnapshots.get(clanId);
+            const previousRevision = previous.revision;
+            const next = ClanSocial.apply(previous, event, timestamp, {
+                leaderTraits: jsonObject(clan.traitsJson), targetLeaderId: targetLeader?.leaderId,
+                currentTargetClanId: Number(currentMember?.clanId || 0), mutable: true
+            });
+            if (next.revision !== previousRevision) changedClans.add(clanId);
+            clanSnapshots.set(clanId, next);
+        }
+    }
+    for (const [clanId, snapshot] of clanSnapshots) {
+        if (!changedClans.has(clanId)) continue;
+        const changedAt = Math.max(timestamp, Number(one('SELECT MAX(updatedAt) AS at FROM clan_social_memory')?.at || 0) + 1);
+        write(`INSERT INTO clan_social_memory(clanId, snapshotJson, updatedAt) VALUES (?, ?, ?)
+            ON CONFLICT(clanId) DO UPDATE SET snapshotJson = excluded.snapshotJson, updatedAt = MAX(clan_social_memory.updatedAt + 1, excluded.updatedAt)`,
+        [clanId, JSON.stringify(snapshot), changedAt]);
+    }
+}
+
+function rememberClanContributionUnsafe(clanId, contributor, leaderId, ledgerId, requested, sourceBefore, at) {
+    if (!leaderId || leaderId === contributor || requested < Math.max(1000, sourceBefore * 0.01)) return;
+    const event = require('./GameServer/Clan/ClanSocialEvidence').attach({
+        key: `clan-contribution:${ledgerId}`, sourceId: leaderId, targetId: contributor, kind: 'character', type: 'resources_received', at
+    }, { clanId }, { clanId }, `clan-contribution:${ledgerId}`, 'cooperation', true);
+    commitClanSocialUnsafe([event], at);
+}
+
+function commitColdInteractionMemoryUnsafe(request) {
+    if (request.memoryEvents === undefined) return null;
+    if (!Array.isArray(request.memoryEvents) || request.memoryEvents.length > InteractionMemoryPolicy.MAX_BATCH) {
+        throw new Error('interaction memory: invalid cold batch');
+    }
+    if (!request.memoryEvents.length) return null;
+    const events = request.memoryEvents.map(InteractionMemoryPolicy.event);
+    if (events.some(event => event.sourceId !== Number(request.characterId))) {
+        throw new Error('interaction memory: cold event owner mismatch');
+    }
+    const result = commitInteractionMemoryUnsafe(events, now());
+    // Throw to roll back the physical state too. A caller must refresh/replan,
+    // never retry a rejected outcome as a separate successful social event.
+    if (!result.ok) throw new Error(`interaction memory: ${result.reason}`);
+    return result.snapshots;
 }
 
 const Database = {
@@ -2440,7 +2575,17 @@ const Database = {
         return inTransaction(() => commitSocialGraphEventUnsafe(input), 'social:event-commit');
     },
 
-    commitBackgroundPartyMembership({ party, members = [], event = null } = {}) {
+    commitInteractionMemory(events) {
+        if (!Array.isArray(events) || !events.length || events.length > InteractionMemoryPolicy.MAX_BATCH) {
+            return Promise.reject(new Error('interaction memory: invalid batch'));
+        }
+        // Normalize before queuing: callers cannot mutate an in-flight batch.
+        const batch = events.map(InteractionMemoryPolicy.event);
+        return inTransaction(() => commitInteractionMemoryUnsafe(batch, now()), 'social-memory:commit');
+    },
+
+    commitBackgroundPartyMembership({ party, members = [], event = null, review = false, expectedPartyUpdatedAt = null,
+        expectedPhase = 'cold', canCommitHot = null } = {}) {
         const batch = Array.isArray(members) ? members.slice(0, 40) : [];
         const characterIds = [...new Set(batch.map((entry) => Number(entry?.row?.characterId)).filter((id) => (
             Number.isSafeInteger(id) && id > 0
@@ -2450,6 +2595,33 @@ const Database = {
         }
 
         return inTransaction(() => {
+            if (!['cold', 'hot'].includes(expectedPhase)) return { ok: false, reason: 'invalid_membership_phase' };
+            if (expectedPhase === 'hot') {
+                const declared = JSON.parse(party.memberIdsJson || '[]').map(Number);
+                const existing = one('SELECT status, memberIdsJson, updatedAt FROM bot_background_parties WHERE partyId = ?', [party.partyId]);
+                const previousIds = existing ? JSON.parse(existing.memberIdsJson || '[]').map(Number) : [];
+                if (review || party.status !== 'hot' || declared.length < 2 || declared.length > 9
+                    || declared.length !== characterIds.length || !declared.includes(Number(party.leaderId))
+                    || new Set(declared).size !== declared.length || declared.some(id => !characterIds.includes(id))
+                    || batch.some(e => e.row.partyId !== party.partyId || (e.expectedPartyId && e.expectedPartyId !== party.partyId))
+                    || (expectedPartyUpdatedAt === null ? !!existing : existing?.status !== 'hot'
+                        || Number(existing.updatedAt) !== Number(expectedPartyUpdatedAt)
+                        || previousIds.some(id => !characterIds.includes(id))
+                        || batch.some(e => !!e.expectedPartyId !== previousIds.includes(Number(e.row.characterId))))
+                    || typeof canCommitHot !== 'function' || !canCommitHot()) return { ok: false, reason: 'hot_party_context_changed' };
+            }
+            if (review) {
+                const existing = one('SELECT status, memberIdsJson, updatedAt FROM bot_background_parties WHERE partyId = ?', [party.partyId]);
+                const ids = existing ? JSON.parse(existing.memberIdsJson || '[]').map(Number) : [];
+                const retained = JSON.parse(party.memberIdsJson || '[]').map(Number);
+                if (existing?.status !== 'active' || Number(existing.updatedAt) !== Number(expectedPartyUpdatedAt)
+                    || ids.length !== characterIds.length || ids.some(id => !characterIds.includes(id))
+                    || retained.some(id => !characterIds.includes(id))
+                    || batch.some(entry => entry.expectedPartyId !== party.partyId
+                        || String(entry.row.partyId || '') !== (retained.includes(Number(entry.row.characterId)) ? party.partyId : ''))) {
+                    return { ok: false, reason: 'party_review_membership_changed' };
+                }
+            }
             const placeholders = characterIds.map(() => '?').join(', ');
             const currentRows = all(`SELECT characterId, phase, simulationOwner, partyId, updatedAt
                 FROM bot_life_state WHERE characterId IN (${placeholders})`, characterIds);
@@ -2458,7 +2630,7 @@ const Database = {
                 const row = entry.row;
                 const current = currentById.get(Number(row.characterId));
                 return !current
-                    || current.phase !== 'cold'
+                    || current.phase !== expectedPhase
                     || String(current.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER
                     || String(current.partyId || '') !== String(entry.expectedPartyId || '')
                     || Number(current.updatedAt || 0) !== Number(entry.expectedUpdatedAt || 0);
@@ -2468,7 +2640,7 @@ const Database = {
             const reserved = all(`SELECT characterId FROM clan_operation_members
                 WHERE characterId IN (${placeholders}) AND status = 'active'`, characterIds)
                 .map((row) => Number(row.characterId));
-            if (reserved.length) return { ok: false, reason: 'clan_operation_reserved', conflicts: reserved };
+            if (reserved.length && !review) return { ok: false, reason: 'clan_operation_reserved', conflicts: reserved };
 
             write(`INSERT INTO bot_background_parties (
                 partyId, leaderId, memberIdsJson, spotId, startedAt, nextResolveAt,
@@ -2494,15 +2666,16 @@ const Database = {
                 const row = entry.row;
                 const result = write(`UPDATE bot_life_state
                     SET activity = ?, activityStartedAt = ?, nextResolveAt = ?,
-                        partyId = ?, statsJson = ?, updatedAt = ?
+                        partyId = ?, statsJson = ?, updatedAt = ?, spotId = COALESCE(?, spotId)
                     WHERE characterId = ?
-                    AND phase = 'cold'
+                    AND phase = ?
                     AND simulationOwner = ?
                     AND COALESCE(partyId, '') = ?
                     AND updatedAt = ?`, [
                     row.activity, row.activityStartedAt, row.nextResolveAt,
                     row.partyId, row.statsJson, row.updatedAt,
-                    row.characterId, LEGACY_SIMULATION_OWNER,
+                    expectedPhase === 'hot' ? row.spotId : null,
+                    row.characterId, expectedPhase, LEGACY_SIMULATION_OWNER,
                     String(entry.expectedPartyId || ''), Number(entry.expectedUpdatedAt || 0)
                 ]);
                 if (result.affectedRows !== 1) {
@@ -2693,6 +2866,7 @@ const Database = {
                 revision,
                 leaseUntil,
                 reason: 'committed',
+                ...(request.memoryEvents !== undefined ? { memorySnapshots: commitColdInteractionMemoryUnsafe(request) || [] } : {}),
                 row: coldSimulationRow(characterId)
             };
         }, 'bot-life:cold-owner-commit');
@@ -2701,6 +2875,9 @@ const Database = {
     commitAndReleaseColdSimulationLeases(requests = []) {
         const batch = Array.isArray(requests) ? requests.slice(0, 32) : [];
         if (!batch.length) return Promise.resolve([]);
+        if (batch.reduce((count, request) => count + (request.memoryEvents?.length || 0), 0) > InteractionMemoryPolicy.MAX_BATCH) {
+            return Promise.reject(new Error('interaction memory: cold transaction event budget exceeded'));
+        }
         const atomicGroupFailures = new Map();
         const atomicGroups = new Map();
         batch.forEach((request) => {
@@ -2710,13 +2887,24 @@ const Database = {
             group.push(request);
             atomicGroups.set(groupId, group);
         });
-        atomicGroups.forEach((group, groupId) => {
+        const validateAtomicGroups = () => atomicGroups.forEach((group, groupId) => {
             const expectedIds = new Set((group[0]?.atomicGroup?.memberIds || []).map(Number).filter(Boolean));
             const presentIds = new Set(group.map((request) => Number(request.characterId)).filter(Boolean));
             let failure = expectedIds.size === 0
                 || expectedIds.size !== presentIds.size
                 || [...expectedIds].some((id) => !presentIds.has(id));
             let reason = failure ? 'party_group_incomplete' : null;
+            const pvpContext = group[0]?.atomicGroup?.pvpContext;
+            if (!failure && pvpContext) {
+                const members = Array.isArray(pvpContext) ? pvpContext.flat() : [];
+                const rows = members.map(m => one('SELECT id, clanId, karma FROM characters WHERE id = ?', [m.id]));
+                failure = pvpContext.length !== 2 || members.length > 18 || members.length !== expectedIds.size
+                    || new Set(members.map(m => m.id)).size !== expectedIds.size
+                    || members.some((m, i) => !expectedIds.has(m.id) || !rows[i]
+                        || Number(rows[i].clanId || 0) !== m.clanId || Number(rows[i].karma || 0) !== m.karma)
+                    || pvpContext[0].some(a => pvpContext[1].some(b => a.clanId > 0 && a.clanId === b.clanId));
+                if (failure) reason = 'pvp_context_changed';
+            }
             if (!failure) {
                 for (const request of group) {
                     const characterId = Number(request.characterId);
@@ -2744,9 +2932,31 @@ const Database = {
                     }
                 }
             }
+            if (!failure && group[0]?.atomicGroup?.partyChanges !== undefined) {
+                const changes = group[0].atomicGroup.partyChanges;
+                failure = !Array.isArray(changes) || changes.length > 2
+                    || new Set(changes.map(change => change.partyId)).size !== changes.length;
+                if (!failure) for (const change of changes) {
+                    const party = one('SELECT status, memberIdsJson, updatedAt FROM bot_background_parties WHERE partyId = ?', [change.partyId]);
+                    const ids = party ? JSON.parse(party.memberIdsJson || '[]').map(Number) : [];
+                    const expected = change.memberIds || [];
+                    if (party?.status !== 'active' || Number(party.updatedAt) !== Number(change.expectedUpdatedAt)
+                        || ids.length < 2 || ids.length > 9 || ids.length !== expected.length
+                        || new Set(expected).size !== expected.length || ids.some(id => !expected.includes(id) || !presentIds.has(id)
+                            || coldSimulationRow(id)?.partyId !== change.partyId)
+                        || !Number.isSafeInteger(change.updatedAt) || change.updatedAt <= Number(party.updatedAt)
+                        || (change.nextResolveAt !== null && (!Number.isSafeInteger(change.nextResolveAt) || change.nextResolveAt < 0))
+                        || (change.spotId !== undefined && (typeof change.spotId !== 'string' || !change.spotId.length || change.spotId.length > 256))
+                        || !change.statsJson || typeof JSON.parse(change.statsJson) !== 'object') {
+                        failure = true;
+                        break;
+                    }
+                }
+                if (failure) reason = 'party_context_changed';
+            }
             if (failure) atomicGroupFailures.set(groupId, reason || 'party_group_aborted');
         });
-        return inTransaction(() => batch.map((request) => {
+        const commitBatch = () => batch.map((request) => {
             const groupId = request.atomicGroup?.id ? String(request.atomicGroup.id) : null;
             if (groupId && atomicGroupFailures.has(groupId)) {
                 return {
@@ -2807,9 +3017,31 @@ const Database = {
                 revision,
                 leaseUntil: 0,
                 reason: 'committed_released',
+                ...(request.memoryEvents !== undefined ? { memorySnapshots: commitColdInteractionMemoryUnsafe(request) || [] } : {}),
                 row: coldSimulationRow(characterId)
             };
-        }), 'bot-life:cold-owner-commit-release-batch');
+        });
+        return inTransaction(() => {
+            // Validate all participants after earlier queued writes have settled.
+            // Preflight outside this transaction could allow half an encounter.
+            validateAtomicGroups();
+            const results = commitBatch();
+            for (const [groupId, group] of atomicGroups) {
+                if (atomicGroupFailures.has(groupId)) continue;
+                const changes = group[0].atomicGroup.partyChanges || [];
+                if (!changes.length) continue;
+                if (group.some(request => !results.find(result => result.characterId === Number(request.characterId))?.ok)) {
+                    throw new Error('party conflict: incomplete atomic outcome');
+                }
+                for (const change of changes) {
+                    const updated = write(`UPDATE bot_background_parties SET nextResolveAt = ?, statsJson = ?, updatedAt = ?, spotId = COALESCE(?, spotId)
+                        WHERE partyId = ? AND status = 'active' AND updatedAt = ?`,
+                    [change.nextResolveAt, change.statsJson, change.updatedAt, change.spotId ?? null, change.partyId, change.expectedUpdatedAt]);
+                    if (updated.affectedRows !== 1) throw new Error('party conflict: party changed during commit');
+                }
+            }
+            return results;
+        }, 'bot-life:cold-owner-commit-release-batch');
     },
 
     releaseColdSimulationLeases(requests = []) {
@@ -2910,6 +3142,147 @@ const Database = {
                 };
             });
         }, 'bot-life:cold-owner-renew-batch');
+    },
+
+    endPvpEncounter(key, ids, outcome = 'pvp_expired') {
+        if (typeof key !== 'string' || !Array.isArray(ids) || ids.length > 18) return Promise.resolve({ rows: [], complete: false });
+        return inTransaction(() => {
+            const rows = [], parties = [], partyIds = new Set(), timestamp = now();
+            let complete = true;
+            for (const id of ids) {
+                const row = coldSimulationRow(Number(id));
+                const stats = row && JSON.parse(row.statsJson || '{}');
+                if (row?.partyId) partyIds.add(row.partyId);
+                if (stats?.pvpEncounter?.key !== key && !(stats?.coldCompetition?.key === key
+                    && stats.coldCompetition.outcome === 'pvp_fighting' && !stats.pvpEncounter)) continue;
+                if (row.simulationLeaseId) { complete = false; continue; }
+                stats.pvpEncounter = null;
+                if (stats.coldCompetition?.key === key) {
+                    stats.coldCompetition = { ...stats.coldCompetition, wait: null, outcome, endedAt: timestamp };
+                }
+                write('UPDATE bot_life_state SET statsJson = ?, lastResolvedAt = ?, nextResolveAt = ?, simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?',
+                    [JSON.stringify(stats), timestamp, row.phase === 'cold' ? timestamp + 1000 : null, timestamp, id]);
+                rows.push(coldSimulationRow(id));
+            }
+            for (const partyId of partyIds) {
+                const party = one('SELECT * FROM bot_background_parties WHERE partyId = ?', [partyId]);
+                const stats = party && JSON.parse(party.statsJson || '{}');
+                if (stats?.coldCompetition?.key !== key) continue;
+                if (JSON.parse(party.memberIdsJson).some(id => coldSimulationRow(id)?.simulationLeaseId)) { complete = false; continue; }
+                stats.coldCompetition = { ...stats.coldCompetition, wait: null, outcome, endedAt: timestamp };
+                write('UPDATE bot_background_parties SET statsJson = ?, updatedAt = ? WHERE partyId = ?',
+                    [JSON.stringify(stats), Math.max(timestamp, Number(party.updatedAt) + 1), partyId]);
+                parties.push(one('SELECT * FROM bot_background_parties WHERE partyId = ?', [partyId]));
+            }
+            return { rows, parties, complete };
+        }, 'bot-life:pvp-encounter-end');
+    },
+
+    transitionPvpEncounter(request = {}) {
+        const members = request.members || [], ids = members.map(m => Number(m.characterId));
+        if (!request.key || ids.length < 2 || ids.length > 18 || new Set(ids).size !== ids.length
+            || !['hot', 'cold'].includes(request.phase) || !['hot', 'cold'].includes(request.expectedPhase)) {
+            return Promise.resolve({ ok: false, reason: 'invalid_encounter_transition' });
+        }
+        return inTransaction(() => {
+            if (request.validate && !request.validate()) return { ok: false, reason: 'encounter_live_state_changed' };
+            const rows = ids.map(coldSimulationRow);
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i], m = members[i];
+                const encounter = row && JSON.parse(row.statsJson || '{}').pvpEncounter;
+                const declared = encounter?.sides?.flatMap(s => s.memberIds) || [];
+                if (!row || row.phase !== request.expectedPhase || encounter?.key !== request.key
+                    || declared.length !== ids.length || declared.some(id => !ids.includes(id))
+                    || Number(row.simulationRevision) !== m.expectedRevision || Number(row.updatedAt) !== m.expectedUpdatedAt
+                    || ![LEGACY_SIMULATION_OWNER, COLD_SIMULATION_OWNER].includes(row.simulationOwner)
+                    || row.simulationLeaseId
+                    || Object.keys(m.patch || {}).some(key => !COLD_SIMULATION_PATCH_COLUMNS.has(key))
+                    || (m.patch.partyId || null) !== (row.partyId || null) || m.patch.phase !== request.phase) {
+                    return { ok: false, reason: 'encounter_member_changed' };
+                }
+            }
+            const partyIds = [...new Set(rows.map(r => r.partyId).filter(Boolean))];
+            const parties = partyIds.map(id => one('SELECT * FROM bot_background_parties WHERE partyId = ?', [id]));
+            for (const party of parties) {
+                const attached = party && all('SELECT characterId FROM bot_life_state WHERE partyId = ?', [party.partyId]).map(r => r.characterId);
+                const declared = party && JSON.parse(party.memberIdsJson);
+                if (!party || party.status !== (request.expectedPhase === 'hot' ? 'hot' : 'active')
+                    || declared.length !== attached.length || declared.some(id => !ids.includes(id) || !attached.includes(id))) {
+                    return { ok: false, reason: 'encounter_party_changed' };
+                }
+            }
+            const timestamp = Math.max(now(), ...rows.map(r => Number(r.updatedAt) + 1));
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i], m = members[i];
+                const patch = preserveColdVersionedStats(row, { ...m.patch, updatedAt: timestamp });
+                const entries = Object.entries(patch);
+                const changed = write(`UPDATE bot_life_state SET ${entries.map(([k]) => `${escapeIdentifier(k)} = ?`).join(', ')},
+                    simulationOwner = ?, simulationRevision = simulationRevision + 1, simulationLeaseId = NULL, simulationLeaseUntil = 0
+                    WHERE characterId = ? AND simulationRevision = ?`,
+                [...entries.map(([, v]) => v), LEGACY_SIMULATION_OWNER, m.characterId, m.expectedRevision]);
+                if (changed.affectedRows !== 1) throw Error('encounter lifecycle CAS failed');
+                // Staged actors must read the same physical resources as the life snapshot.
+                const combat = JSON.parse(patch.statsJson || '{}').coldCombat;
+                write('UPDATE characters SET hp = ?, mp = ?, cp = COALESCE(?, cp), locX = ?, locY = ?, locZ = ? WHERE id = ?',
+                    [patch.hp, patch.mp, combat?.cp ?? null, patch.locX, patch.locY, patch.locZ, m.characterId]);
+            }
+            for (const party of parties) {
+                const stats = JSON.parse(party.statsJson || '{}');
+                stats.hotLifecycle = request.phase === 'hot' ? { startedAt: timestamp, reason: request.reason } : null;
+                if (stats.coldCompetition) stats.coldCompetition.wait = null;
+                write('UPDATE bot_background_parties SET status = ?, nextResolveAt = ?, statsJson = ?, updatedAt = ? WHERE partyId = ?',
+                    [request.phase === 'hot' ? 'hot' : 'active', request.phase === 'hot' ? null : timestamp + 1000,
+                        JSON.stringify(stats), timestamp, party.partyId]);
+            }
+            return { ok: true, rows: ids.map(coldSimulationRow),
+                parties: partyIds.map(id => one('SELECT * FROM bot_background_parties WHERE partyId = ?', [id])) };
+        }, 'bot-life:pvp-encounter-lifecycle');
+    },
+
+    transitionBackgroundParty(request = {}) {
+        const members = request.members || [];
+        const ids = members.map(m => Number(m.characterId));
+        if (ids.length < 2 || ids.length > 9 || new Set(ids).size !== ids.length
+            || !['hot', 'cold'].includes(request.phase) || !['hot', 'cold'].includes(request.expectedPhase)) {
+            return Promise.resolve({ ok: false, reason: 'invalid_party_transition' });
+        }
+        return inTransaction(() => {
+            const party = one('SELECT * FROM bot_background_parties WHERE partyId = ?', [request.partyId]);
+            const declared = party ? JSON.parse(party.memberIdsJson) : [];
+            if (!party || party.status !== request.expectedStatus || Number(party.updatedAt) !== request.expectedUpdatedAt
+                || declared.length !== ids.length || declared.some(id => !ids.includes(Number(id)))) {
+                return { ok: false, reason: 'party_changed' };
+            }
+            const attached = all('SELECT characterId FROM bot_life_state WHERE partyId = ?', [request.partyId]);
+            if (attached.length !== ids.length || attached.some(r => !ids.includes(Number(r.characterId)))) {
+                return { ok: false, reason: 'party_membership_changed' };
+            }
+            const rows = members.map(m => coldSimulationRow(Number(m.characterId)));
+            for (let i = 0; i < members.length; i++) {
+                const row = rows[i], m = members[i];
+                if (!row || row.phase !== request.expectedPhase || row.partyId !== request.partyId
+                    || Number(row.simulationRevision) !== m.expectedRevision || Number(row.updatedAt) !== m.expectedUpdatedAt
+                    || ![LEGACY_SIMULATION_OWNER, COLD_SIMULATION_OWNER].includes(row.simulationOwner)
+                    || Object.keys(m.patch || {}).some(key => !COLD_SIMULATION_PATCH_COLUMNS.has(key))
+                    || m.patch.partyId !== request.partyId || m.patch.phase !== request.phase) {
+                    return { ok: false, reason: 'member_changed' };
+                }
+            }
+            const timestamp = Math.max(now(), Number(party.updatedAt) + 1);
+            for (let i = 0; i < members.length; i++) {
+                const m = members[i], row = rows[i];
+                const entries = Object.entries(preserveColdVersionedStats(row, { ...m.patch, updatedAt: timestamp }));
+                const changed = write(`UPDATE bot_life_state SET ${entries.map(([key]) => `${escapeIdentifier(key)} = ?`).join(', ')},
+                    simulationOwner = ?, simulationRevision = simulationRevision + 1, simulationLeaseId = NULL, simulationLeaseUntil = 0
+                    WHERE characterId = ? AND simulationRevision = ?`,
+                [...entries.map(([, value]) => value), LEGACY_SIMULATION_OWNER, m.characterId, m.expectedRevision]);
+                if (changed.affectedRows !== 1) throw Error('party lifecycle CAS failed');
+            }
+            write('UPDATE bot_background_parties SET status = ?, nextResolveAt = ?, statsJson = ?, updatedAt = ? WHERE partyId = ?',
+                [request.phase === 'hot' ? 'hot' : 'active', request.nextResolveAt, request.statsJson, timestamp, request.partyId]);
+            return { ok: true, rows: ids.map(coldSimulationRow),
+                party: one('SELECT * FROM bot_background_parties WHERE partyId = ?', [request.partyId]) };
+        }, 'bot-life:party-lifecycle');
     },
 
     handoffColdSimulationToMain(request = {}) {
@@ -4586,6 +4959,47 @@ const Database = {
     isAutonomousBotMember(characterId, clanId) {
         return executeReadAutonomousBotMember(characterId, clanId);
     },
+    expelDisciplinedClanMember(clanId, characterId, expectedRevision) {
+        const clan = Number(clanId), id = Number(characterId);
+        return withCharacterFlush(id, () => inTransaction(() => {
+            const socialRow = one('SELECT snapshotJson FROM clan_social_memory WHERE clanId = ?', [clan]);
+            const snapshot = socialRow && JSON.parse(socialRow.snapshotJson);
+            const relation = snapshot?.relations.find(r => r.kind === 'character' && r.targetId === id);
+            const d = relation?.discipline && require('./GameServer/Clan/ClanSocialPolicy').discipline(relation.discipline, 0, now());
+            if (snapshot?.revision !== expectedRevision || d?.stage !== 'expulsion_pending'
+                || !d.warningAt || !d.probationAt || d.lastOffenseAt <= d.probationAt) return { ok: false, reason: 'discipline_changed' };
+            const simulated = one("SELECT s.stateJson, c.leaderId FROM clan_simulation_clans s JOIN clans c ON c.id = s.clanId WHERE s.clanId = ? AND s.mode = 'autonomous'", [clan]);
+            const member = one(`SELECT c.id, c.username, c.clanId, l.accountName, l.statsJson FROM characters c
+                LEFT JOIN bot_life_state l ON l.characterId = c.id WHERE c.id = ?`, [id]);
+            const life = coldSimulationRow(id);
+            if (!simulated || simulated.leaderId === id || !member || Number(member.clanId) !== clan || !generatedBotRow(member)) {
+                return { ok: false, reason: 'discipline_membership_changed' };
+            }
+            if (!life || life.simulationLeaseId || jsonObject(life.statsJson).pvpEncounter) return { ok: false, reason: 'member_busy' };
+            const at = now(), banUntil = at + 7 * 86400000;
+            d.stage = 'expelled'; d.stageAt = at; d.banUntil = banUntil;
+            relation.discipline = d;
+            snapshot.revision++;
+            const changedAt = Math.max(at, Number(one('SELECT MAX(updatedAt) AS at FROM clan_social_memory')?.at || 0) + 1);
+            write('UPDATE clan_social_memory SET snapshotJson = ?, updatedAt = ? WHERE clanId = ?', [JSON.stringify(snapshot), changedAt, clan]);
+            write('UPDATE characters SET clanId = 0, clanPrivileges = 0, clanJoinExpiryTime = ?, title = ? WHERE id = ? AND clanId = ?', [banUntil, '', id, clan]);
+            const stats = jsonObject(life.statsJson);
+            stats.clanId = 0;
+            stats.clanMembershipVersion = at;
+            stats.clanDiscipline = { clanId: clan, expelledAt: at, banUntil, reason: d.reason };
+            stats.clanPartyObjective = null;
+            if (Number(stats.equipmentPlan?.clanGoal?.clanId) === clan) stats.equipmentPlan = null;
+            write('UPDATE bot_life_state SET statsJson = ?, simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?', [JSON.stringify(stats), at, id]);
+            const state = jsonObject(simulated.stateJson);
+            state.memberIds = (state.memberIds || []).filter(n => Number(n) !== id);
+            write('UPDATE clan_simulation_clans SET stateJson = ?, updatedAt = ? WHERE clanId = ?', [JSON.stringify(state), at, clan]);
+            const memory = commitInteractionMemoryUnsafe([{ key: `clan-expelled:${clan}:${id}:${at}`,
+                sourceId: id, targetId: clan, kind: 'clan', type: 'aided_opponent', at }], at);
+            if (!memory.ok) throw Error('expulsion memory rejected');
+            return { ok: true, clanId: clan, characterId: id, banUntil, snapshot,
+                row: coldSimulationRow(id), memorySnapshots: memory.snapshots };
+        }, 'clan-social:expel'));
+    },
     createAutonomousClan({
         name,
         leaderId,
@@ -4620,6 +5034,9 @@ const Database = {
             }
             if (members.some((member) => Number(member.clanId) !== 0 || !generatedBotRow(member))) {
                 return { ok: false, code: 'founder_population_limit' };
+            }
+            if (members.some(member => Number(one('SELECT clanJoinExpiryTime FROM characters WHERE id = ?', [member.id])?.clanJoinExpiryTime || 0) > now())) {
+                return { ok: false, code: 'clan_discipline_cooldown' };
             }
 
             const population = botPopulationUnsafe();
@@ -4692,6 +5109,15 @@ const Database = {
                 WHERE c.id = ?`, [id]);
             if (!candidate || Number(candidate.clanId) !== 0) return { ok: false, code: 'target_has_clan' };
             if (!generatedBotRow(candidate)) return { ok: false, code: 'join_static_service_conflict' };
+            if (Number(one('SELECT clanJoinExpiryTime FROM characters WHERE id = ?', [id])?.clanJoinExpiryTime || 0) > now()) {
+                return { ok: false, code: 'clan_discipline_cooldown' };
+            }
+            const social = one('SELECT snapshotJson FROM clan_social_memory WHERE clanId = ?', [targetClanId]);
+            const reputation = social && JSON.parse(social.snapshotJson).relations.find(r => r.kind === 'character' && r.targetId === id);
+            const feeling = require('./GameServer/Clan/ClanSocialPolicy').relation(reputation, now());
+            if (Number(reputation?.discipline?.banUntil || 0) > now() || (feeling && (feeling.trust < -3 || feeling.hostility >= 10))) {
+                return { ok: false, code: 'clan_distrust' };
+            }
 
             const population = botPopulationUnsafe();
             const maxMembers = Math.floor(Math.max(0, Number(population.population) || 0) * Math.max(0, Math.min(1, Number(maxBotMemberShare) || 0)));
@@ -4705,6 +5131,21 @@ const Database = {
 
             const timestamp = now();
             const previousState = jsonObject(simulation.stateJson);
+            if (reputation?.discipline?.stage === 'expelled') {
+                const snapshot = JSON.parse(social.snapshotJson);
+                const row = snapshot.relations.find(r => r.kind === 'character' && r.targetId === id);
+                row.discipline = { stage: 'clear', score: 0, at: timestamp, stageAt: timestamp,
+                    previousExpulsionAt: row.discipline.stageAt, lastOffenseAt: 0 };
+                snapshot.revision++;
+                const changedAt = Math.max(timestamp, Number(one('SELECT MAX(updatedAt) AS at FROM clan_social_memory')?.at || 0) + 1);
+                write('UPDATE clan_social_memory SET snapshotJson = ?, updatedAt = ? WHERE clanId = ?', [JSON.stringify(snapshot), changedAt, targetClanId]);
+            }
+            const life = coldSimulationRow(id);
+            if (life) {
+                const stats = jsonObject(life.statsJson);
+                stats.clanId = targetClanId; stats.clanMembershipVersion = timestamp;
+                write('UPDATE bot_life_state SET statsJson = ?, simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?', [JSON.stringify(stats), timestamp, id]);
+            }
             const state = simulationState(simulation.stateJson, targetClanId, previousState.leaderId, previousState.memberIds || [], timestamp);
             state.memberIds = [...new Set([...state.memberIds, id])].sort((left, right) => left - right);
             write('UPDATE clan_simulation_clans SET updatedAt = ?, stateJson = ? WHERE clanId = ?', [timestamp, JSON.stringify(state), targetClanId]);
@@ -4813,6 +5254,7 @@ const Database = {
             const ledger = write(`INSERT INTO clan_contributions
                 (clanId, characterId, targetLevel, amount, source, resolveKey, createdAt)
                 VALUES (?, ?, ?, ?, ?, ?, ?)`, [clan, contributor, Number(targetLevel), requested, String(source), key, timestamp]);
+            rememberClanContributionUnsafe(clan, contributor, leader, ledger.insertId, requested, sourceBefore, timestamp);
             syncAdenaSnapshotUnsafe(contributor, sourceBefore - requested, {
                 clanId: clan, targetLevel: Number(targetLevel), amount: -requested, at: timestamp
             });
@@ -5762,6 +6204,7 @@ const Database = {
             const contribution = write(`INSERT INTO clan_contributions
                 (clanId, characterId, targetLevel, amount, source, resolveKey, createdAt)
                 VALUES (?, ?, ?, ?, ?, ?, ?)`, [clan, contributor, Number(targetLevel), requested, source, key, timestamp]);
+            rememberClanContributionUnsafe(clan, contributor, Number(previousState.leaderId), contribution.insertId, requested, sourceBefore, timestamp);
             const ledger = write(`INSERT INTO clan_warehouse_ledger
                 (clanId, characterId, selfId, amount, operation, resolveKey, warehouseRevision, createdAt)
                 VALUES (?, ?, 57, ?, 'adena_contribution', ?, ?, ?)`, [

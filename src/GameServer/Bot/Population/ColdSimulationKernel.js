@@ -3,6 +3,7 @@ const HUNTING_TRAVEL_MS = 25000;
 const PROPOSAL_PAYLOAD_LIMIT_BYTES = 240 * 1024;
 const BackgroundPartyLifecycle = require('./BackgroundPartyLifecycle');
 const Protocol = require('./ColdSimulationProtocol');
+const ColdStateDelta = require('./ColdStateDelta');
 const SpotRiskPolicy = require('./SpotRiskPolicy');
 
 class DueHeap {
@@ -79,7 +80,8 @@ function partySessionExpiryAt(state = {}, context = {}, partySession = {}) {
     if (!partyId) return 0;
 
     const explicitExpiry = Number(
-        party?.stats?.sessionExpiresAt
+        party?.stats?.sessionReview?.nextAt
+        || party?.stats?.sessionExpiresAt
         || state.stats?.sessionExpiresAt
         || 0
     );
@@ -227,7 +229,7 @@ function partyTransitionProposals(run, memberStates, party, timestamp, event = n
                 patch: {},
                 events,
                 materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-                nextResolveAt,
+                nextResolveAt: Number(state.timing?.nextResolveAt || nextResolveAt),
                 debug: { activity, partyId: run.party.partyId, spotId: party.spotId || null }
             },
             options: { allowParty: true, allowLifecycle: true },
@@ -305,6 +307,7 @@ function compactProposal(proposal = {}, includeInventory = true) {
         ...(baseState ? { baseState: compactBaseState } : {}),
         result: {
             events: Array.isArray(result.events) ? result.events : [],
+            ...(result.memoryEvents ? { memoryEvents: result.memoryEvents } : {}),
             debug: result.debug || {}
         }
     };
@@ -335,6 +338,8 @@ class ColdSimulationKernel {
             Math.min(this.maxBatch, Number(options.maxAtomicPartySize) || 5)
         );
         this.states = new Map();
+        this.interactionMemory = new (require('../../Social/InteractionMemory'))();
+        this.interactionMemory.clanSocial = new (require('../../Clan/ClanSocialView'))();
         this.versions = new Map();
         this.heap = new DueHeap();
         this.scheduleTokens = new Map();
@@ -387,6 +392,12 @@ class ColdSimulationKernel {
         const state = entry.state || entry;
         const characterId = Number(state?.characterId || 0);
         if (!characterId) return false;
+        if (entry.context?.interactionMemory) {
+            if (entry.context.interactionMemory.ownerId !== characterId) throw new Error('interaction memory: wrong snapshot owner');
+            this.interactionMemory.accept(entry.context.interactionMemory);
+            const { interactionMemory, ...context } = entry.context;
+            entry = { ...entry, context };
+        }
         const current = this.states.get(characterId);
         const incomingRevision = Math.max(0, Number(state.simulation?.revision || 0));
         const currentRevision = Math.max(0, Number(current?.state?.simulation?.revision || 0));
@@ -431,6 +442,7 @@ class ColdSimulationKernel {
     remove(characterId) {
         const id = Number(characterId);
         this.states.delete(id);
+        this.interactionMemory.forget(id);
         this.versions.set(id, Number(this.versions.get(id) || 0) + 1);
         this.scheduleTokens.delete(id);
         this.claiming.delete(id);
@@ -473,6 +485,7 @@ class ColdSimulationKernel {
     }
 
     dueCandidates(timestamp = this.now(), capacity = this.maxBatch) {
+        this.partyCapacityBlocked = false;
         const limit = Math.max(0, Math.min(this.maxBatch, Number(capacity) || 0));
         const candidates = [];
         while (candidates.length < limit && this.heap.size > 0) {
@@ -491,6 +504,11 @@ class ColdSimulationKernel {
             // every claim/commit/command completion schedules explicitly.
             if (this.busy(id)) continue;
             const current = this.states.get(id);
+            const encounter = current.state.stats?.pvpEncounter;
+            if (encounter) {
+                this.requeue(id, Math.max(timestamp + 1000, encounter.expiresAt + 1000));
+                continue;
+            }
             const kind = lifecycleKind(current.state, current.context);
             if (kind === 'resolver') {
                 this.claiming.add(id);
@@ -530,6 +548,10 @@ class ColdSimulationKernel {
                 const attachedMembers = members.filter((member) => (
                     String(member.party?.partyId || member.partyId || '') === String(party?.partyId || '')
                 ));
+                if (members.some(member => member.stats?.pvpEncounter)) {
+                    this.requeue(id, timestamp + 1000);
+                    continue;
+                }
                 const invalidPartySize = memberIds.length < this.partyMinSize;
                 const membershipMismatch = attachedMembers.length !== memberIds.length;
                 const invalidReason = invalidPartySize
@@ -548,12 +570,15 @@ class ColdSimulationKernel {
                     && candidateMemberIds.length <= this.maxAtomicPartySize
                     && occupiedOwnership === 0;
                 if (candidateMemberIds.length > this.maxInFlight && !atomicCapacityBurst) {
-                    // A temporary lag throttle may shrink the ownership window
-                    // below an otherwise valid atomic party. Move that party
-                    // behind currently eligible solo work instead of pinning
-                    // the due-heap head until pressure recovers.
-                    this.schedule(id, current.version, this.now() + 250);
+                    this.partyCapacityBlocked = true;
                     this.stats.partyCapacityDeferrals += 1;
+                    if (candidateMemberIds.length <= this.maxAtomicPartySize) {
+                        // Let current owners drain so the oldest valid party
+                        // gets its bounded atomic turn even under player limits.
+                        this.schedule(id, current.version, entry.dueAt);
+                        break;
+                    }
+                    this.schedule(id, current.version, this.now() + 250);
                     continue;
                 }
                 if (!party || !partyMembers.length
@@ -562,6 +587,7 @@ class ColdSimulationKernel {
                     continue;
                 }
                 if (candidates.length + candidateMemberIds.length > limit && !atomicCapacityBurst) {
+                    this.partyCapacityBlocked = true;
                     // Keep the original overdue priority. Moving a party to
                     // now+100 on every partially free tick lets an endless
                     // stream of overdue solo work starve the atomic claim.
@@ -626,6 +652,7 @@ class ColdSimulationKernel {
                 : null;
             const resolveState = lifecyclePlan?.plannedState || current.state;
             const result = await this.resolveSolo({
+                assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 state: resolveState,
                 spot: current.context.spot || null,
                 pressure: current.context.pressure || {},
@@ -728,8 +755,15 @@ class ColdSimulationKernel {
         this.recoverOrphanedSchedules(this.stats.lastLoopAt);
         if (this.paused || this.stopping) return;
         const capacity = this.maxInFlight - this.claiming.size - this.inFlight.size - this.commanding.size;
-        if (capacity <= 0) return;
+        if (capacity <= 0) {
+            // Completed work owns these slots until main acknowledges its
+            // commit. Drain it on the scheduler tick instead of leaving a
+            // full (especially player-sized) window idle until the flush timer.
+            this.flushDue();
+            return;
+        }
         const candidates = this.dueCandidates(this.now(), capacity);
+        if (this.partyCapacityBlocked) this.flushDue();
         if (!candidates.length) return;
         this.stats.selected += candidates.length;
         this.emit('claim_request', { candidates: candidates.map(({ state, context, ...candidate }) => candidate) });
@@ -871,35 +905,20 @@ class ColdSimulationKernel {
                 return;
             }
 
-            if (BackgroundPartyLifecycle.sessionExpired(run.party, startedAt, this.partySession)) {
-                const releasedMembers = run.members.map((state) => (
-                    BackgroundPartyLifecycle.releaseMember(state, startedAt)
-                ));
-                const dissolvedParty = {
-                    ...run.party,
-                    status: 'dissolved',
-                    nextResolveAt: null,
-                    stats: {
-                        ...(run.party.stats || {}),
-                        partyBreakReason: 'party_session_rotation',
-                        sessionExpiredAt: startedAt,
-                        travel: null
-                    }
-                };
-                const proposals = partyTransitionProposals(
-                    run,
-                    releasedMembers,
-                    dissolvedParty,
-                    startedAt,
-                    {
-                        type: 'party_session_rotation',
-                        summary: `Party ${run.party.partyId} rotated after its session expired`,
-                        weight: 1,
-                        meta: { partyId: run.party.partyId, reason: 'party_session_rotation' }
-                    },
-                    'party_session_rotation'
-                );
-                proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
+            const rescuing = run.members.some(s => s.vitals?.hp <= 0);
+            if (!rescuing && BackgroundPartyLifecycle.sessionExpired(run.party, startedAt, this.partySession)) {
+                const review = BackgroundPartyLifecycle.review(run.party, run.members, startedAt, {
+                    ...this.partySession,
+                    assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
+                    chooseLeader: states => typeof invoke === 'function' ? invoke('GameServer/Bot/Population/BackgroundPartyComposition').chooseLeader(states) : states[0],
+                    roleCoverage: states => typeof invoke === 'function' ? invoke('GameServer/Bot/Population/BackgroundPartyComposition').roleCoverage(states) : run.party.roleCoverage,
+                    personaFor: state => typeof invoke === 'function' ? invoke('GameServer/Bot/AI/BotPersona').generate(state) : state.persona
+                });
+                const proposals = partyTransitionProposals(run, review.states, review.party, startedAt, {
+                    type: 'party_session_review', summary: `Party ${run.party.partyId} reviewed its shared hunt`, weight: 1,
+                    meta: { partyId: run.party.partyId, departed: [...review.leaving.keys()], decisions: review.decisions }
+                }, 'party_session_review');
+                proposals.forEach(proposal => this.dirty.set(proposal.characterId, proposal));
                 this.stats.resolved += proposals.length;
                 this.flush(null, true);
                 return;
@@ -963,7 +982,7 @@ class ColdSimulationKernel {
                 return;
             }
 
-            if (run.route?.needed) {
+            if (!rescuing && run.route?.needed) {
                 const arrivalAt = startedAt + Math.max(1000, Number(run.route.travelMs) || HUNTING_TRAVEL_MS);
                 const travellingMembers = run.members.map((state) => (
                     beginRouteTravelState(state, run.route, startedAt)
@@ -1004,6 +1023,8 @@ class ColdSimulationKernel {
             if (!this.resolveParty) throw new Error('party_resolver_unavailable');
             const lastResolvedAt = Math.min(...run.members.map((member) => Number(member.timing?.lastResolvedAt || startedAt - 60000)));
             const resolution = await this.resolveParty({
+                episodeId: run.grants.get(Number(run.party.leaderId))?.leaseId,
+                assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 party: run.party,
                 members: run.members,
                 spot: run.spot,
@@ -1014,6 +1035,9 @@ class ColdSimulationKernel {
                 timestamp: startedAt
             });
             const proposals = [];
+            const memoryGroup = resolution.atomic || (resolution.memberResults || []).some(({ result }) => result.memoryEvents?.length)
+                ? { id: `hunt:${run.grants.get(Number(run.party.leaderId))?.leaseId}`,
+                    memberIds: resolution.memberResults.map(({ state }) => Number(state.characterId)) } : null;
             for (const { state, result } of resolution.memberResults || []) {
                 const id = Number(state.characterId);
                 const projection = this.projectResolve
@@ -1023,7 +1047,8 @@ class ColdSimulationKernel {
                 const proposal = {
                     proposalId: `${run.grants.get(id)?.leaseId}:${run.grants.get(id)?.revision}`,
                     characterId: id,
-                    priority: priorityForResult(state, result),
+                    priority: memoryGroup ? 'P1' : priorityForResult(state, result),
+                    ...(memoryGroup ? { atomicGroup: memoryGroup } : {}),
                     enqueuedAt: this.now(),
                     token: run.grants.get(id),
                     baseState: state,
@@ -1081,6 +1106,7 @@ class ColdSimulationKernel {
                 : null;
             const resolveState = lifecyclePlan?.plannedState || active.state;
             const result = await this.resolveSolo({
+                assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 state: resolveState,
                 spot: resolveState.activity === 'traveling' ? null : lifecyclePlan?.spot || active.context.spot || null,
                 pressure: active.context.pressure || {},
@@ -1140,27 +1166,40 @@ class ColdSimulationKernel {
             .sort((a, b) => {
                 const rank = { P0: 0, P1: 1, P2: 2 };
                 return rank[a.priority] - rank[b.priority] || a.enqueuedAt - b.enqueuedAt;
-            })
-            .slice(0, limit);
+            });
         const proposals = [];
         const oversized = [];
+        const visited = new Set();
         for (const proposal of eligible) {
-            let transportProposal = proposal;
-            if (proposalPayloadBytes([proposal]) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
-                this.stats.proposalOversize += 1;
-                transportProposal = compactProposal(proposal, true);
-                if (proposalPayloadBytes([transportProposal]) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
-                    transportProposal = compactProposal(proposal, false);
+            if (visited.has(proposal.characterId)) continue;
+            const group = proposal.atomicGroup?.id
+                ? eligible.filter(entry => entry.atomicGroup?.id === proposal.atomicGroup.id) : [proposal];
+            if (proposals.length + group.length > limit) break;
+            group.forEach(entry => visited.add(entry.characterId));
+            let transportGroup = group;
+            if (proposalPayloadBytes(group) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                this.stats.proposalOversize += group.length;
+                transportGroup = group.map(entry => compactProposal(entry, true));
+                if (proposalPayloadBytes(transportGroup) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                    transportGroup = group.map(entry => compactProposal(entry, false));
                 }
-                if (proposalPayloadBytes([transportProposal]) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
-                    oversized.push(proposal);
+                if (proposalPayloadBytes(transportGroup) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                    transportGroup = transportGroup.map(entry => {
+                        const base = this.inFlight.get(Number(entry.characterId))?.state;
+                        if (!base || !entry.nextState) return entry;
+                        const { nextState, ...transport } = entry;
+                        return { ...transport, nextStateDelta: ColdStateDelta.create(base, nextState) };
+                    });
+                }
+                if (proposalPayloadBytes(transportGroup) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                    oversized.push(...group);
                     continue;
                 }
-                this.stats.proposalCompactions += 1;
+                this.stats.proposalCompactions += group.length;
             }
-            const candidate = [...proposals, transportProposal];
+            const candidate = [...proposals, ...transportGroup];
             if (proposalPayloadBytes(candidate) > PROPOSAL_PAYLOAD_LIMIT_BYTES) break;
-            proposals.push(transportProposal);
+            proposals.push(...transportGroup);
         }
         oversized.forEach((proposal) => {
             this.dirty.delete(Number(proposal.characterId));
@@ -1181,7 +1220,8 @@ class ColdSimulationKernel {
         this.stats.flushReasons[reason] = Number(this.stats.flushReasons[reason] || 0) + 1;
         // Sent proposals keep their ownership slots until the commit ACK.
         // Priority and party flushes can fill that window just like a timer flush.
-        const capacityBlocked = this.claiming.size + this.inFlight.size + this.commanding.size >= this.maxInFlight;
+        const capacityBlocked = this.partyCapacityBlocked === true
+            || this.claiming.size + this.inFlight.size + this.commanding.size >= this.maxInFlight;
         this.emit('proposal_batch', { proposals, capacityBlocked });
         return proposals.length;
     }
@@ -1192,7 +1232,7 @@ class ColdSimulationKernel {
         if (!this.dirty.size) return 0;
         const ageMs = now - oldest;
         const capacity = this.maxInFlight - this.claiming.size - this.inFlight.size - this.commanding.size;
-        if (capacity <= 0) {
+        if (capacity <= 0 || this.partyCapacityBlocked) {
             // A player-aware ownership window can be smaller than maxBatch.
             // Do not wait for an unreachable batch threshold while completed
             // proposals occupy every lease; the main commit queue still

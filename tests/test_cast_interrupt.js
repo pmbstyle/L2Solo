@@ -11,6 +11,7 @@ const npcDie = invoke('GameServer/Npc/Generics/Die');
 const ActorGenerics = invoke('GameServer/Actor/Generics');
 const SpoilSweep = invoke('GameServer/Npc/SpoilSweep');
 const DataCache = invoke('GameServer/DataCache');
+const SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
 
 function actor(overrides = {}) {
     const state = new State();
@@ -75,7 +76,7 @@ function skill(overrides = {}) {
         fetchCalculatedHitTime() { return this.calculatedHitTime; },
         setCalculatedHitTime(value) { this.calculatedHitTime = value; },
         fetchSelfId: () => overrides.selfId ?? 1011,
-        fetchLevel: () => 1,
+        fetchLevel: () => overrides.level ?? 1,
         fetchPower: () => overrides.power ?? 10,
         fetchTargetKind: () => overrides.targetKind ?? 'enemy',
         fetchSemantic: () => ({ skillType: 'damage', trait: 'wind' }),
@@ -87,6 +88,7 @@ const savedSetTimeout = global.setTimeout;
 const savedClearTimeout = global.clearTimeout;
 const savedNpcDied = ActorGenerics.npcDied;
 const savedFetchNpcRewardsFromSelfId = DataCache.fetchNpcRewardsFromSelfId;
+const savedExecuteSkill = SkillEffects.execute;
 const timers = [];
 global.setTimeout = (callback, delay) => {
     const timer = { callback, delay, canceled: false };
@@ -115,11 +117,16 @@ try {
 
     attack.remoteHit(session, victim, skill());
     assert.strictEqual(caster.state.fetchCasts(), true, 'remote skill should mark actor as casting before hit time');
-    assert.strictEqual(timers.length, 1, 'remote skill should only schedule the cast landing timer');
+    assert.strictEqual(timers.length, 2, 'remote skill schedules launch and impact from the same start');
+    assert.strictEqual(timers[0].delay, 4600, 'launch happens 400 ms before the 5000 ms cast ends');
     assert.strictEqual(caster.canUseSkill(skill()), false, 'starting a cast should start that skill reuse timer');
+    assert.strictEqual(attack.activeCast.target, victim, 'accepted cast records its actual target');
+    assert.strictEqual(attack.activeCast.skill.fetchSelfId(), skill().fetchSelfId());
+    assert(attack.activeCast.landsAt > Date.now(), 'accepted cast records its impact deadline');
 
     destCancel(session, Buffer.from([0x37, 0x00, 0x00]));
     assert.strictEqual(caster.state.fetchCasts(), false, 'ESC target cancel should clear casting state');
+    assert.strictEqual(attack.activeCast, null, 'cancelled cast cannot justify an emergency finisher');
     assert.strictEqual(caster.storedSpell, undefined, 'ESC target cancel should clear stored spell');
     assert(timers.every((timer) => timer.canceled), 'ESC target cancel should clear pending skill timers');
     assert(packets.some((packet) => packet[0] === 0x49), 'ESC target cancel should broadcast MagicSkillCanceld');
@@ -138,9 +145,84 @@ try {
         dataSendToMe(packet) { packets.push(packet); },
         dataSendToMeAndOthers(packet) { packets.push(packet); }
     };
-    landingAttack.remoteHit(landingSession, victim, skill({ power: 0 }));
+    landingAttack.remoteHit(landingSession, victim, skill({ power: 0, level: 8 }));
+    const startPacket = packets.find(packet => packet[0] === 0x48);
+    assert.strictEqual(startPacket.readInt32LE(13), 8, 'cast start must identify the learned skill level, not level one');
+    assert.strictEqual(startPacket.readInt32LE(17), 5000, 'skill level must not shift the cast-time wire field');
     timers.find((timer) => !timer.canceled && timer.delay > 0).callback();
-    assert(packets.some((packet) => packet[0] === 0x76 && packet.readInt32LE(5) === 1011), 'completed magic cast should broadcast MagicSkillLaunched on landing');
+    assert(packets.some((packet) => packet[0] === 0x76 && packet.readInt32LE(5) === 1011), 'magic launch precedes impact');
+    const launchPacket = packets.find(packet => packet[0] === 0x76);
+    assert.strictEqual(launchPacket.readInt32LE(9), startPacket.readInt32LE(13), 'start and launch must refer to the same skill level');
+    assert(startPacket.__packetTrace.includes('level=8:hitTime=5000'));
+    assert(launchPacket.__packetTrace.includes('level=8:targets=3000001'));
+    assert.strictEqual(landingCaster.mp, undefined, 'launch must not spend MP');
+    assert.strictEqual(landingCaster.state.fetchCasts(), true, 'actor remains busy during the launch-to-impact interval');
+    assert.strictEqual(timers.at(-1).delay, 5000);
+    assert.strictEqual(timers.at(-1).delay - timers[0].delay, 400);
+    timers.at(-1).callback();
+    assert.strictEqual(landingAttack.activeCast, null, 'landed cast must release its finishing window');
+    assert.strictEqual(landingCaster.mp, 40, 'MP is spent at the original cast deadline');
+    assert.strictEqual(landingCaster.state.fetchCasts(), false);
+    assert.strictEqual(packets.filter(packet => packet[0] === 0x76).length, 1, 'impact must not replay the projectile animation');
+
+    landingAttack.broadcastShotCharge(landingSession, landingCaster, 2061);
+    const shotPacket = packets.at(-1);
+    assert.strictEqual(shotPacket.readInt32LE(9), 2061);
+    assert.strictEqual(shotPacket.readInt32LE(13), 1, 'shot pseudo-skills without fetchLevel must retain level one');
+    assert.strictEqual(shotPacket.readInt32LE(17), 0, 'shot activation remains instantaneous');
+
+    // Exercise the actual native cast timer chain, with damage calculation
+    // isolated from timing. The hit itself must not run in the launch phase.
+    SkillEffects.execute = () => ({ damage: 17 });
+    for (const scenario of ['complete', 'cancel_after_launch', 'target_dies', 'short', 'physical', 'spiritshot', 'fastest']) {
+        timers.length = 0; packets.length = 0;
+        const a = actor(), v = target(), runtime = new Attack();
+        a.attack = runtime;
+        a.spiritshotLoaded = scenario === 'spiritshot';
+        if (scenario === 'fastest') a.fetchCollectiveCastSpd = () => 10000;
+        const k = skill();
+        if (scenario === 'short') {
+            k.fetchHitTime = () => 200;
+            k.fetchSemantic = () => ({ staticHitTime: true });
+        }
+        if (scenario === 'physical') k.fetchSpell = () => false;
+        const s = { actor: a, dataSendToMe(packet) { packets.push(packet); },
+            dataSendToMeAndOthers(packet) { packets.push(packet); } };
+        let damage = 0;
+        runtime.hit = (_s, _a, _v, amount) => { damage += amount; };
+        runtime.remoteHit(s, v, k);
+        const total = k.fetchCalculatedHitTime();
+        const split = !['short', 'physical'].includes(scenario);
+        assert.strictEqual(timers[0].delay, total - (split ? 400 : 0), scenario);
+        assert.strictEqual(damage, 0);
+        timers[0].callback();
+        if (split) {
+            assert.strictEqual(damage, 0, `${scenario}: launch is visual only`);
+            assert.strictEqual(a.mp, undefined);
+            assert.strictEqual(timers.at(-1).delay, total);
+            assert.strictEqual(timers.at(-1).delay - timers[0].delay, 400);
+            if (scenario === 'cancel_after_launch') {
+                destCancel(s, Buffer.from([0x37, 0, 0]));
+                assert(timers.at(-1).canceled, 'ESC cancels the pending impact');
+                assert.strictEqual(a.mp, undefined);
+                assert.strictEqual(damage, 0);
+                continue;
+            }
+            if (scenario === 'target_dies') v.state.setDead(true);
+            timers.at(-1).callback();
+        }
+        if (scenario === 'target_dies') {
+            assert.strictEqual(damage, 0, 'a target that died in flight is not hit');
+            assert.strictEqual(a.mp, undefined);
+        } else {
+            assert.strictEqual(damage, 17, `${scenario}: one hit at impact`);
+            assert.strictEqual(a.mp, 40);
+        }
+        assert.strictEqual(a.state.fetchCasts(), false);
+        assert.strictEqual(packets.filter(p => p[0] === 0x76).length, scenario === 'physical' ? 0 : 1);
+        runtime.clearTimers();
+    }
+    SkillEffects.execute = savedExecuteSkill;
 
     const cooldownPackets = [];
     const cooldownActor = actor();
@@ -187,8 +269,8 @@ try {
     partyAttack.remoteHit(partySession, dyingVictim, skill());
     assert.strictEqual(HotPartyCastTracker.trackedCount(dyingVictim), 1,
         'a hot party cast should register once against its concrete NPC target');
-    assert.strictEqual(timers.filter((timer) => !timer.canceled).length, 1,
-        'event-driven death cancellation must not add an HP polling timer');
+    assert.strictEqual(timers.filter((timer) => !timer.canceled).length, 2,
+        'event-driven death cancellation only needs the launch and impact timers, not HP polling');
 
     // A courier may cast while a native weapon swing is still in flight.
     // Cancelling the cast clears both timers, so both busy flags must end.
@@ -254,6 +336,7 @@ try {
     assert.strictEqual(spoiler.mp, undefined,
         'a Spoil cast cancelled by NPC death must not consume MP');
 } finally {
+    SkillEffects.execute = savedExecuteSkill;
     DataCache.fetchNpcRewardsFromSelfId = savedFetchNpcRewardsFromSelfId;
     ActorGenerics.npcDied = savedNpcDied;
     global.setTimeout = savedSetTimeout;

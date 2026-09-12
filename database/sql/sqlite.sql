@@ -771,6 +771,12 @@ CREATE TABLE IF NOT EXISTS social_projection_cursors (
     updatedAt INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS bot_interaction_memory (
+    ownerId INTEGER PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
+    snapshotJson TEXT NOT NULL,
+    updatedAt INTEGER NOT NULL
+);
+
 INSERT OR IGNORE INTO sqlite_sequence(name, seq) VALUES ('characters', 1999999);
 UPDATE sqlite_sequence SET seq = MAX(seq, 1999999) WHERE name = 'characters';
 INSERT OR IGNORE INTO sqlite_sequence(name, seq) VALUES ('clans', 5999999);

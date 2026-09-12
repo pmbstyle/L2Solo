@@ -24,6 +24,8 @@ function rotationExpiry(partyId, startedAt, options = {}) {
 }
 
 function sessionExpired(party, timestamp = Date.now(), options = {}) {
+    const reviewAt = Number(party?.stats?.sessionReview?.nextAt || 0);
+    if (reviewAt > 0) return timestamp >= reviewAt;
     const sessionExpiresAt = Number(party?.stats?.sessionExpiresAt || 0);
     if (sessionExpiresAt > 0) return timestamp >= sessionExpiresAt;
 
@@ -40,7 +42,8 @@ function releaseMember(state, timestamp = Date.now(), reason = 'party_session_ro
         'party_session_rotation',
         'party_min_size',
         'invalid_party_size',
-        'party_membership_mismatch'
+        'party_membership_mismatch',
+        'party_relationship_conflict', 'party_goals_diverged', 'party_no_progress', 'party_no_experience', 'party_review_min_size'
     ].includes(reason);
     const nextActivity = releasedFromObjective && (state.activity === 'grouped' || partyTravel)
         ? 'hunting'
@@ -64,8 +67,33 @@ function releaseMember(state, timestamp = Date.now(), reason = 'party_session_ro
     };
 }
 
+function review(party, members, timestamp, options = {}) {
+    const result = require('./PartySessionReview').assess(party, members, timestamp, options);
+    const leaving = new Map(result.decisions.filter(d => d.leave).map(d => [d.characterId, d.reason]));
+    let retained = members.filter(s => !leaving.has(s.characterId));
+    const dissolved = retained.length < Math.max(2, Number(options.partyMinSize) || 2);
+    if (dissolved) {
+        members.forEach(s => { if (!leaving.has(s.characterId)) leaving.set(s.characterId, 'party_review_min_size'); });
+        retained = [];
+    }
+    const leaderId = retained.find(s => s.characterId === party.leaderId)?.characterId
+        || (options.chooseLeader?.(retained) || retained[0])?.characterId || party.leaderId;
+    const nextResolveAt = Math.max(timestamp + 1000, Number(party.nextResolveAt || 0));
+    const states = members.map(s => leaving.has(s.characterId)
+        ? releaseMember(s, timestamp, leaving.get(s.characterId))
+        : { ...s, party: { ...s.party, leaderId }, stats: { ...s.stats, leaderId },
+            timing: { ...s.timing, nextResolveAt } });
+    const nextParty = { ...party, status: dissolved ? 'dissolved' : party.status || 'active',
+        memberIds: retained.map(s => s.characterId), leaderId, nextResolveAt: dissolved ? null : nextResolveAt,
+        roleCoverage: options.roleCoverage?.(retained) || party.roleCoverage,
+        stats: { ...party.stats, sessionReview: result.review, memberNames: retained.map(s => s.name),
+            ...(dissolved ? { dissolvedAt: timestamp, partyBreakReason: 'party_review_min_size' } : {}) } };
+    return { party: nextParty, states, leaving, decisions: result.decisions };
+}
+
 module.exports = {
     rotationExpiry,
     sessionExpired,
+    review,
     releaseMember
 };

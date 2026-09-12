@@ -2,14 +2,19 @@ const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
 const Risk = invoke('GameServer/Bot/AI/BotPvpRisk');
 const Revenge = invoke('GameServer/Bot/AI/BotRevenge');
 const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
+const InteractionMemory = invoke('GameServer/Social/InteractionMemoryRuntime');
+const ResourceCompetition = require('../../Social/ResourceCompetitionPolicy');
 
 const CLAIM_MS = 15000;
 const COOLDOWN_MS = 120000;
 const claims = new WeakMap();
+const { randomUUID } = require('crypto');
 
-function attackChance(session) {
-    return 0.02 + 0.78 * Voice.trait(session, 'assertiveness') *
-        (1 - 0.75 * Voice.trait(session, 'empathy')) * (1 - 0.5 * Voice.trait(session, 'caution'));
+function attackChance(session, opponent, now = Date.now()) {
+    const sourceId = Number(session?.actor?.fetchId?.()), targetId = Number(opponent?.fetchId?.());
+    if (!Number.isSafeInteger(sourceId) || sourceId <= 0 || !Number.isSafeInteger(targetId) || targetId <= 0) return 0;
+    return ResourceCompetition.escalationChance(Voice.profile(session),
+        InteractionMemory.assess({ id: sourceId }, { id: targetId }, {}, now));
 }
 
 // Called when an accepted swing/cast begins, with a damage fallback for
@@ -26,8 +31,25 @@ function record(source, mob, now = Date.now(), rng = Math.random) {
         return false;
     }
     if (claim.owner === attacker) { claim.at = now; return false; }
-    if (claim.considered) return false;
     const session = claim.owner.session;
+    if (!claim.memoryEvent && !claim.memoryConsidered && String(session.accountId || '').startsWith('bot_') &&
+        !session.staticService && !session.arenaEphemeral &&
+        ['hunting', 'following'].includes(session.plan) &&
+        Number(session.currentTargetId) === Number(mob.fetchId()) &&
+        !Risk.sameParty(session, attacker.session) &&
+        Threats.distance(claim.owner, attacker) <= Revenge.NOTICE_RADIUS &&
+        !invoke('GameServer/World/ArenaCombatRules').isArenaParticipant(attacker) &&
+        !invoke('GameServer/World/ArenaCombatRules').isArenaParticipant(claim.owner)) {
+        claim.memoryEvent = { key: `mob:${randomUUID()}`, sourceId: Number(claim.owner.fetchId()),
+            targetId: Number(attacker.fetchId()), type: 'mob_contested', at: now };
+        claim.memoryEvent = invoke('GameServer/Clan/ClanSocialEvidence').attach(claim.memoryEvent,
+            claim.owner, attacker, claim.memoryEvent.key, 'aggression');
+    }
+    if (claim.memoryEvent && InteractionMemory.events.enqueue(claim.memoryEvent)) {
+        claim.memoryConsidered = true;
+        claim.memoryEvent = null;
+    }
+    if (claim.considered) return false;
     if (!String(session.accountId || '').startsWith('bot_') || session.staticService ||
         !['hunting', 'following'].includes(session.plan) || session.pvpDefense || session.pvpRevenge || session.pendingPvpProvocation ||
         Number(session.currentTargetId) !== Number(mob.fetchId()) ||
@@ -41,9 +63,15 @@ function record(source, mob, now = Date.now(), rng = Math.random) {
     const lines = Voice.trait(session, 'assertiveness') > 0.6
         ? [`${name}, I started on this mob. Back off.`, `Find your own mob, ${name}. I'm not sharing this one.`]
         : [`${name}, I was already fighting this mob. Please find another.`, `I don't like you taking my mob, ${name}.`];
-    const attack = rng() < attackChance(session) && Risk.defenseDecision(session, [attacker]).action === 'fight';
+    const attack = rng() < attackChance(session, attacker, now) && Risk.defenseDecision(session, [attacker]).action === 'fight';
     const started = Revenge.request(session, attacker, 'mob_competition', lines, attack, now, rng);
     return started;
 }
 
-module.exports = { record, attackChance, reset(mob) { claims.delete(mob); }, CLAIM_MS, COOLDOWN_MS };
+function owner(mob, now = Date.now()) {
+    const claim = claims.get(mob);
+    return claim && now - claim.at <= CLAIM_MS && Threats.alive(claim.owner)
+        && claim.owner.session?.actor === claim.owner ? claim.owner : null;
+}
+
+module.exports = { record, owner, attackChance, reset(mob) { claims.delete(mob); }, CLAIM_MS, COOLDOWN_MS };

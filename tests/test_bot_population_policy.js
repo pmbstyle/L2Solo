@@ -42,6 +42,8 @@ const originalSessions = BotManager.sessions;
 const originalColdNear = LifeState.coldNear;
 const originalRequestActivation = PopulationService.requestActivation;
 const originalCooldownSession = PopulationService.cooldownSession;
+const Parties = invoke('GameServer/Bot/Population/BackgroundPartyState');
+const originalFindParty = Parties.find;
 const originalConfig = {
     activationRadius: Config.activationRadius,
     activationLevelRange: Config.activationLevelRange,
@@ -149,6 +151,15 @@ async function run() {
     assert.deepStrictEqual(activated, ['ColdLevel45'],
         'local visibility must not stop activating an eligible nearby bot after the old density target is removed');
 
+    const grouped = Array.from({ length: 9 }, (_, i) => ({ characterId: 200 + i, name: `Group${i}`, level: 45,
+        activity: 'grouped', party: { partyId: 'full-party' } }));
+    Parties.find = () => ({ status: 'active', memberIds: grouped.map(s => s.characterId) });
+    LifeState.coldNear = async () => grouped;
+    activated.length = 0;
+    PopulationService.requestActivation = async state => { activated.push(state.name); return { ok: true, count: 9 }; };
+    await PopulationService.activateNearPlayers();
+    assert.strictEqual(activated.length, 1, 'a full party gets one activation request even when the solo budget is one');
+
     PopulationService.resolving = true;
     assert.deepStrictEqual(await PopulationService.formBackgroundParties(), [], 'party formation must not overlap a cold scheduler pass');
     assert.strictEqual(PopulationService.partyFormationPending, true,
@@ -170,6 +181,7 @@ run()
         LifeState.coldNear = originalColdNear;
         PopulationService.requestActivation = originalRequestActivation;
         PopulationService.cooldownSession = originalCooldownSession;
+        Parties.find = originalFindParty;
         Object.assign(PopulationService, originalLifecycleFlags);
         Object.assign(Config, originalConfig);
     });
