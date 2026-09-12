@@ -47,15 +47,24 @@ Travel/rest are excluded. Party members use their leader context's objective and
 are one independent competitor; their occupied capacity still counts per member.
 Untargeted hunters add proportional demand. Raid/non-monster targets are excluded.
 
+When no active equipment goal names a monster, ordinary hunters use a stable
+representative NPC drawn from level-appropriate spawn entries, weighted by spawn
+count. Parties share the leader's representative. Forecasts and execution use
+the same target calculation; this does not pin the actual PvE target or add a
+durable goal. Market plans and completed equipment goals no longer prevent
+ordinary hunting competition.
+
 Initial pressure is estimated using existing spot capacity multiplied by the
 target's share of spawns, with a floor of one slot. This is not measured spawn
 availability or kill throughput. Missing spawn data produces no estimate.
 This pressure is an encounter trigger, not proof that a particular NPC was stolen.
 
-At most 32 pressured target groups are sampled per scan with a rotating cursor.
-Per-group encounter hazard is capped at 0.8/minute. There is no backlog catch-up.
-Pair and participant cooldowns are ten and two minutes respectively. Expired keys
-are removed; at most twelve recent forecasts are exported. Cooldowns and counters
+At most 32 pairs are sampled per scan with a rotating ground cursor. Each ground
+has at most eight pair slots; encounter hazard scales with pressure and is capped
+at four per minute per sampled pair. There is no backlog catch-up. Pair and unit
+forecast cooldowns are both two minutes; accepted disputes retain their separate
+durable cooldowns. Expired keys are removed; at most twelve recent forecasts are
+retained, while the action consumer receives the current bounded event batch. Cooldowns and counters
 are process-local observation state and reset with the worker. They are NOT the
 durable deduplication needed for future gameplay events.
 
@@ -201,6 +210,13 @@ Goal/conflict concerns must persist through a grace period. Recovery and travel
 suspend that grace without erasing it. Repeated failed fights can still exhaust
 patience during recovery; elapsed recovery alone cannot. No negative memory is invented by review.
 
+Group wins do not prove that every member earns experience. A member excluded
+by C4 party reward eligibility leaves with `party_no_experience` after at least
+three newly observed wins and their persona-dependent patience window. Rest
+alone cannot trigger this decision, and renewed eligibility clears its evidence.
+Formation and recruitment also reject compositions that exclude a participant
+from experience, including recruitment that would exclude an existing member.
+
 Large worker results use sparse JSON transport against the leased input state
 when ordinary compaction exceeds the IPC limit. Main checks the lease identity
 before reconstruction; the complete party retains its existing atomic CAS commit.
@@ -288,7 +304,7 @@ follow-up work.
 ## Bounded cold PvP
 
 `coldCompetitionPvpEnabled` consumes accepted contest episodes whose existing
-forecast includes `pvpIntent`. It shares the same two-action admission budget,
+forecast includes `pvpIntent`. It shares the same four-success/eight-attempt admission budget,
 ten-minute durable cooldowns, roster votes, memory revisions and ownership fences.
 No new encounter generator or backlog replay is introduced. Peace zones and
 same-clan opponents cannot grant attack permission; a materially outmatched
@@ -319,6 +335,16 @@ next action time and delivered incident IDs. The worker defers ordinary farming
 and lifecycle planning while the main encounter owner advances combat; there is
 no catch-up damage or farming burst after a stall. The complete resolver remains
 available for deterministic offline tests.
+
+The initial live encounter deadline is 30 seconds. A newly resolved cold attack
+in the final five seconds can extend an ongoing fight by 15 seconds, at most
+twice, with a hard deadline 60 seconds after the original start. The total cold
+action budget remains 256. Idle/heal-only steps, retreat, death and expired
+encounters do not extend it. Hot/cold transitions preserve the current deadline
+and spent cold actions rather than granting fresh budgets. Extension does not
+create another aggression episode. Observer `coldCompetitionActions` exposes
+`pvpExtensions` and `pvpExtendedMs` for committed grants; two extensions can
+belong to the same fight.
 
 Visibility transfers the entire conflict, including both parties and bystanders,
 in one lifecycle transaction. Actors load privately without ready-spawn refills.
