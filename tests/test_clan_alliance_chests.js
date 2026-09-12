@@ -12,6 +12,7 @@ const mocks = {
     'GameServer/Pets/PetRuntime': { recordDamage() {} },
     'GameServer/Quest/QuestService': { onAttack: async () => {} },
     'GameServer/Bot/AI/BotSocialMemory': { recordCombatHelp() {} },
+    'GameServer/Social/CombatHelpMemory': { recordDefeat() {} },
     'GameServer/Effects/EffectRestrictions': { wakeOnDamage() {} },
     'GameServer/Npc/SocialAggro': { notifyClan() {} },
     'GameServer/World/RaidBossMinionManager': {},

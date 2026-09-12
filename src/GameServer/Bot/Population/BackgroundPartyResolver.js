@@ -503,7 +503,8 @@ const resolveParty = BackgroundPartyResolver.resolve;
 BackgroundPartyResolver.resolve = (options = {}) => {
     const timestamp = options.timestamp ?? Date.now();
     const competition = require('./ColdCompetitionWait').consumeParty(options.party, options.members || [], options.elapsedMs ?? 60000, timestamp);
-    const paused = competition.waiting || competition.elapsedMs === 0;
+    const hadWait = [options.party, ...(options.members || [])].some(state => state?.stats?.coldCompetition?.wait);
+    const paused = competition.waiting || (hadWait && competition.elapsedMs === 0);
     const members = competition.members || options.members || [];
     const result = paused ? {
         memberResults: members.map(state => ({ state, result: { patch: {}, events: [],

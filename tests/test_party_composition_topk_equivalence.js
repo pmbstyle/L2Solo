@@ -5,6 +5,7 @@ require('../src/Global');
 const Composition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const Affinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity');
 const PersonaPolicy = invoke('GameServer/Bot/Population/PersonaPartyPolicy');
+const PartyRewards = invoke('GameServer/Actor/PartyRewardMath');
 const SUPPORT_ROLES = ['tank', 'healer', 'buffer'];
 
 function levelOf(state) {
@@ -23,7 +24,11 @@ function coverageFor(states) {
     }, {});
 }
 
-function legacyCompare(anchor, coverage, peers = [anchor]) {
+function sharesExperience(states) {
+    return PartyRewards.validMemberIndexes(states.map(levelOf)).length === states.length;
+}
+
+function referenceCompare(anchor, coverage, peers = [anchor]) {
     return (a, b) => {
         const aRole = roleForState(a);
         const bRole = roleForState(b);
@@ -43,7 +48,7 @@ function legacyCompare(anchor, coverage, peers = [anchor]) {
     };
 }
 
-function legacyBuildAround(anchor, candidates, maxSize, levelRange) {
+function referenceBuildAround(anchor, candidates, maxSize, levelRange) {
     const eligible = candidates.filter((state) => Math.abs(levelOf(state) - levelOf(anchor)) <= levelRange);
     const selected = [anchor];
     const used = new Set([Number(anchor.characterId)]);
@@ -51,34 +56,36 @@ function legacyBuildAround(anchor, candidates, maxSize, levelRange) {
     SUPPORT_ROLES.forEach((role) => {
         if (selected.length >= maxSize || coverage[role]) return;
         const support = eligible
-            .filter((state) => !used.has(Number(state.characterId)) && roleForState(state) === role)
-            .sort(legacyCompare(anchor, coverage, selected))[0];
+            .filter((state) => !used.has(Number(state.characterId)) && roleForState(state) === role
+                && sharesExperience([...selected, state]))
+            .sort(referenceCompare(anchor, coverage, selected))[0];
         if (!support) return;
         selected.push(support);
         used.add(Number(support.characterId));
         coverage[role] = 1;
     });
-    eligible
-        .filter((state) => !used.has(Number(state.characterId)))
-        .sort(legacyCompare(anchor, coverage, selected))
-        .some((state) => {
-            if (selected.length >= maxSize) return true;
-            selected.push(state);
-            used.add(Number(state.characterId));
-            const role = roleForState(state);
-            coverage[role] = (coverage[role] || 0) + 1;
-            return false;
-        });
+    // Use a full sort as the independent oracle for bounded selection. Each
+    // admission changes the peers, role coverage and XP eligibility of the next.
+    while (selected.length < maxSize) {
+        const state = eligible
+            .filter((candidate) => !used.has(Number(candidate.characterId)) && sharesExperience([...selected, candidate]))
+            .sort(referenceCompare(anchor, coverage, selected))[0];
+        if (!state) break;
+        selected.push(state);
+        used.add(Number(state.characterId));
+        const role = roleForState(state);
+        coverage[role] = (coverage[role] || 0) + 1;
+    }
     const levels = selected.map(levelOf);
     const spread = Math.max(...levels) - Math.min(...levels);
     const supportCount = SUPPORT_ROLES.filter((role) => coverage[role]).length;
-    return { members: selected, levelSpread: spread, score: supportCount * 1000 + selected.length * 100 - spread };
+    return { members: selected, levelSpread: spread, score: supportCount * 1000 + selected.length * 10 - spread };
 }
 
-function legacySelectMembers(candidates, { minSize = 2, maxSize = 5, levelRange = 4 } = {}) {
+function referenceSelectMembers(candidates, { minSize = 2, maxSize = 5, levelRange = 4 } = {}) {
     const unique = Array.from(new Map(candidates.map((state) => [Number(state.characterId), state])).values());
     const best = unique.reduce((current, anchor) => {
-        const candidate = legacyBuildAround(anchor, unique, maxSize, levelRange);
+        const candidate = referenceBuildAround(anchor, unique, maxSize, levelRange);
         if (candidate.members.length < minSize) return current;
         if (!current || candidate.score > current.score) return candidate;
         if (candidate.score === current.score && candidate.levelSpread < current.levelSpread) return candidate;
@@ -122,7 +129,7 @@ for (let sample = 0; sample < 80; sample += 1) {
         };
     });
     const options = { minSize: 2, maxSize: 5, levelRange: 4 };
-    const expected = legacySelectMembers(candidates, options).map((state) => state.characterId);
+    const expected = referenceSelectMembers(candidates, options).map((state) => state.characterId);
     const actual = Composition.selectMembers(candidates, options).map((state) => state.characterId);
     assert.deepStrictEqual(actual, expected, `top-K selection changed composition for sample ${sample}`);
 }

@@ -1444,7 +1444,7 @@ BackgroundResolver.resolveSolo = (options = {}) => {
     const competitionReason = options.state?.stats?.coldCompetition?.action === 'contest' ? 'competition_contest' : 'competition_yield';
     if (competition.waiting) return { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
         nextResolveAt: competition.until, debug: { reason: competitionReason, fights: 0, wins: 0 } };
-    const result = competition.state && competition.elapsedMs === 0
+    const result = options.state?.stats?.coldCompetition?.wait && competition.state && competition.elapsedMs === 0
         ? { patch: { stats: competition.state.stats }, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
             nextResolveAt: timestamp + 1000, debug: { reason: competitionReason, fights: 0, wins: 0 } }
         : resolveSolo({ ...options, state: competition.state, elapsedMs: competition.elapsedMs, timestamp });

@@ -63,6 +63,10 @@ async function run() {
     const idle = Resolver.resolveSolo({ state: paused, timestamp: now + 5000 });
     assert.strictEqual(idle.materialize.exp, 0);
     assert.strictEqual(idle.debug.reason, 'competition_yield');
+    const consumedOnly = Resolver.resolveSolo({ state: paused, elapsedMs: WAIT_MS, timestamp: now + WAIT_MS });
+    assert.strictEqual(consumedOnly.debug.fights, 0, 'a fully consumed conflict pause cannot earn a minimum fight');
+    assert.strictEqual(consumedOnly.materialize.exp, 0);
+    assert.strictEqual(consumedOnly.patch.stats.coldCompetition.wait, null);
     const missingSpot = Resolver.resolveSolo({ state: paused, timestamp: now + 30000, spot: null });
     assert.strictEqual(missingSpot.patch.stats.coldCompetition.wait, null, 'lifecycle early returns cannot strand a paused hunter');
     const resumed = Wait.consume(paused, 75000, now + 30000);
