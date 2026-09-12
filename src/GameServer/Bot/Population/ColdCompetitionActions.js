@@ -36,7 +36,7 @@ class ColdCompetitionActions {
         this.spotActivity = new Map();
         this.spotActivityEvicted = 0;
         this.report = { mode: 'cooperation', applied: 0, rejected: 0, avoids: 0, yields: 0, contests: 0, revenges: 0, deescalated: 0, parties: 0, recruits: 0, queued: 0, pvpFights: 0, pvpDeaths: 0, pkKills: 0, budgetSkipped: 0, recent: [] };
-        Object.assign(this.report, { attempted: 0, decisionRefreshes: 0, rejectedReasons: {}, rejectionExamples: [], skippedActions: {}, pvpRejected: {}, pvpSuppressed: {}, pvpCompleted: 0, pvpOutcomes: {} });
+        Object.assign(this.report, { attempted: 0, decisionRefreshes: 0, rejectedReasons: {}, rejectionExamples: [], skippedActions: {}, pvpRejected: {}, pvpSuppressed: {}, pvpCompleted: 0, pvpOutcomes: {}, pvpExtensions: 0, pvpExtendedMs: 0 });
     }
     submit(forecast) {
         if (this.stopping || this.running || !forecast || forecast.at <= this.lastScanAt || !this.canRun()) return;
@@ -202,6 +202,10 @@ class ColdCompetitionActions {
     }
     async stop() { this.stopping = true; if (this.running) await this.running; }
     recordPvpStep(result) {
+        if (result.ok && result.extensionMs > 0) {
+            this.report.pvpExtensions++;
+            this.report.pvpExtendedMs += result.extensionMs;
+        }
         const kills = result.combat?.fighters.flatMap(f => f.kills) || [];
         this.report.pvpDeaths += kills.length;
         this.report.pkKills += kills.filter(k => !k.pvp).length;

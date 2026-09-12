@@ -15,6 +15,9 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-pvp-handoff-'));
 options.default.Database.path = path.join(dir, 'test.sqlite');
 const saved = [], allSessions = [];
 const revengeMode = process.argv.includes('--revenge');
+const extensionMode = process.argv.includes('--extension');
+const Budget = require('../src/GameServer/Bot/Population/PvpEncounterBudget');
+const telemetry = new (require('../src/GameServer/Bot/Population/ColdCompetitionActions').ColdCompetitionActions)({});
 const patch = (o, k, v) => { const old = o[k]; saved.push(() => { o[k] = old; }); o[k] = v; };
 let clock = Date.now(), failSpawn = 0, spawned = 0, expectedCount = 0;
 const state = id => Life.cachedState(id);
@@ -43,7 +46,8 @@ async function main() {
             coldCombat: { version: 1, classId: 0, cp: 2000, cpAt: clock,
                 base: { str: 40, dex: 30, con: 43, int: 21, wit: 11, men: 25 },
                 equipment: { weaponKind: 'Weapon.Sword', pAtk: 20, pAtkRnd: 0, mAtk: 10, atkSpd: 379,
-                    critical: 0, accur: 50, pDef: 400, mDef: 400, evasion: 0 }, effects: [], skills: [] } };
+                    critical: 0, accur: 50, pDef: extensionMode ? 100000 : 400,
+                    mDef: extensionMode ? 100000 : 400, evasion: 0 }, effects: [], skills: [] } };
         await DB.execute(['INSERT INTO accounts(username,password) VALUES (?,?)', [`bot_enc_${id}`, 'test']]);
         await DB.execute([`INSERT INTO characters(id,username,name,classId,race,level,hp,maxHp,mp,maxMp,cp,sex,face,hair,hairColor,locX,locY,locZ)
             VALUES (?,?,?,0,0,40,1000,2000,300,1000,2000,0,0,0,0,0,0,0)`, [id, `bot_enc_${id}`, `Encounter${id}`]]);
@@ -102,11 +106,26 @@ async function main() {
     clock += 1000;
     const secondStep = await Conflict.apply({ ...base, event: event(1, 3, e.key), resume: e });
     assert(secondStep.encounter); e = secondStep.encounter;
+    if (extensionMode) {
+        const deadline = e.expiresAt;
+        while (clock < e.startedAt + 26000) {
+            clock += 1000;
+            const step = await Conflict.apply({ ...base, event: event(1, 3, e.key), resume: e });
+            assert(step.ok && step.encounter, JSON.stringify(step));
+            telemetry.recordPvpStep(step);
+            e = step.encounter;
+        }
+        assert.strictEqual(e.expiresAt, deadline + 15000, 'real ongoing attacks extend the persisted encounter');
+        assert.strictEqual(e.extensions, 1);
+        assert([1,2,3,4].every(id => state(id).stats.pvpEncounter.expiresAt === e.expiresAt));
+    }
     const initialMemory = JSON.stringify([1,2,3,4].map(n => Memory.snapshot(n)));
     const flagUntil = state(1).stats.coldPvp.flagUntil;
     const beforeCp = state(1).stats.coldCombat.cp;
     const hot = await Lifecycle.activate(e);
     assert(hot.ok, JSON.stringify(hot));
+    assert(Manager.sessions.every(s => s.pvpEncounter.expiresAt === e.expiresAt
+        && s.pvpRevenge.expiresAt === e.expiresAt), 'hot combat inherits the current encounter deadline');
     assert(Manager.sessions.every(s => s.pvpRevenge?.target && s.actor.cp === state(s.actor.fetchId()).stats.coldCombat.cp));
     assert(Manager.sessions.every(s => s.packets.find(p => p.kind === 'charInfo')?.flag === 1), 'first published nick is flagged');
     assert.strictEqual(Manager.sessions[0].pvpFlagUntil, flagUntil);
@@ -170,6 +189,8 @@ async function main() {
     assert.strictEqual(state(1).stats.coldPvp.flagUntil, flagUntil, 'handoff never extends flag expiry');
     assert.strictEqual(state(1).timing.lastResolvedAt, clock, 'hot time cannot be farmed again');
     assert.strictEqual(state(1).stats.pvpEncounter.key, e.key);
+    assert.strictEqual(cold.encounter.expiresAt, e.expiresAt, 'handoff preserves rather than renews the deadline');
+    assert.strictEqual(cold.encounter.actions, e.actions, 'handoff preserves the cold action budget');
     if (revengeMode) assert.strictEqual(state(1).stats.pvpEncounter.reason, 'revenge');
     e = cold.encounter; clock += 1000;
     await DB.execute([`UPDATE bot_life_state SET statsJson=json_set(statsJson,'$.supplyErrand',json(?)),
@@ -182,9 +203,28 @@ async function main() {
     assert.strictEqual(JSON.stringify([1,2,3,4].map(n => Memory.snapshot(n))), initialMemory, 'cold continuation does not duplicate memory');
     assert(!(await Conflict.apply({ ...base, event: event(1, 3, e.key), resume: e })).ok, 'stale encounter sequence is rejected');
     e = resumed.encounter;
+    if (extensionMode) {
+        const originalStart = e.startedAt;
+        while (clock < originalStart + Budget.MAX_MS - 2000) {
+            clock += 1000;
+            const step = await Conflict.apply({ ...base, event: event(1, 3, e.key), resume: e });
+            assert(step.ok && step.encounter, JSON.stringify(step));
+            telemetry.recordPvpStep(step);
+            e = step.encounter;
+        }
+        assert.strictEqual(e.expiresAt, originalStart + Budget.MAX_MS);
+        assert.strictEqual(e.extensions, 2, 'ongoing attacks cannot extend beyond one minute');
+        assert.strictEqual(telemetry.snapshot().pvpExtensions, 2, 'count committed extensions, not each continued step');
+        assert.strictEqual(telemetry.snapshot().pvpExtendedMs, 30000);
+        assert(e.actions <= Budget.MAX_ACTIONS);
+        assert.strictEqual(JSON.stringify([1,2,3,4].map(n => Memory.snapshot(n))), initialMemory,
+            'extensions remain one incident, not repeated aggression');
+    }
     await DB.close(); DB.init();
     const persisted = JSON.parse((await DB.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=1', []]))[0].statsJson);
     assert.strictEqual(persisted.pvpEncounter.key, e.key);
+    assert.strictEqual(persisted.pvpEncounter.expiresAt, e.expiresAt, 'deadline survives SQLite reopen');
+    assert.strictEqual(persisted.pvpEncounter.actions, e.actions, 'spent actions survive SQLite reopen');
     if (revengeMode) assert.strictEqual(persisted.pvpEncounter.reason, 'revenge');
     clock = e.expiresAt + 1000;
     const ended = await Conflict.apply({ ...base, event: event(1, 3, e.key), resume: e });

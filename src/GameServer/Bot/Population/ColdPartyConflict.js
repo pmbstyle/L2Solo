@@ -1,5 +1,6 @@
 const Validation = require('./ColdCompetitionValidation');
 const Episode = require('./ColdCompetitionEpisode');
+const EncounterBudget = require('./PvpEncounterBudget');
 // Main-process execution of one bounded encounter (at most two C4 parties).
 // Membership alone never makes a bot an aggressor or creates a memory edge.
 const { seeded } = require('./ColdCompetitionMonitor');
@@ -58,7 +59,8 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
     const { roles, deescalated } = resume ? { roles: new Map(resume.roles), deescalated: false }
         : select(sides, memory, personaFor, rng, timestamp);
     const step = incrementalPvp ? { resuming: !!resume, seen: resume?.seen || [],
-        until: timestamp, expiresAt: resume?.expiresAt || timestamp + 30000, maxActions: Math.max(0, 256 - (resume?.actions || 0)) } : null;
+        until: timestamp, expiresAt: resume?.expiresAt || timestamp + EncounterBudget.INITIAL_MS,
+        maxActions: Math.max(0, EncounterBudget.MAX_ACTIONS - (resume?.actions || 0)) } : null;
     const pvp = !deescalated && event.pvpIntent === true && pvpEnabled()
         ? require('./ColdPvpResolver').resolve({ sides, roles, timestamp: resume ? Math.max(resume.stepAt, timestamp - 1000) : timestamp,
             rng, personaFor, step, openingSide: revenge ? 0 : 1 }) : null;
@@ -72,14 +74,15 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
     const displaced = !deescalated && rng() < clamp(0.5 + (power(sides[0]) - power(sides[1])) / 40, 0.1, 0.9);
     const losingIndex = pvp?.started ? pvp.losingSide : displaced ? 1 : 0;
     const outcome = pvp?.started ? `pvp_${pvp.outcome}` : deescalated ? 'deescalated' : displaced ? 'displaced' : 'held_ground';
-    const encounter = pvp?.ongoing ? { key: event.key, startedAt: resume?.startedAt || timestamp,
+    const encounter = pvp?.ongoing ? EncounterBudget.extend({ key: event.key, startedAt: resume?.startedAt || timestamp,
         expiresAt: step.expiresAt, stepAt: timestamp, sequence: (resume?.sequence || 0) + 1,
         actions: (resume?.actions || 0) + pvp.actions,
+        extensions: Number(resume?.extensions || 0),
         materialized: resume?.materialized === true,
         ...(revenge ? { reason: 'revenge' } : {}),
         spotId: event.spotId, npcId: event.npcId,
         sides: sides.map(s => ({ principalId: s.principal.characterId, memberIds: s.members.map(m => m.characterId), partyId: s.party?.partyId || null })),
-        roles: [...roles], seen: [...(resume?.seen || [])] } : null;
+        roles: [...roles], seen: [...(resume?.seen || [])] }, pvp, timestamp) : null;
     const episode = { key: event.key, at: resume?.startedAt || timestamp, action: revenge ? 'revenge' : 'contest', npcId: event.npcId,
         conflictUntil: (resume?.startedAt || timestamp) + (pvp?.started ? cooldownMs : disputeCooldownMs), outcome };
     const wait = { start: timestamp, until: encounter ? timestamp + 1000 : pvp?.started ? Math.max(timestamp, pvp.until) : timestamp + waitMs,
@@ -171,7 +174,8 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
         if (encounter) onEncounter(encounter);
         return { ok: true, deescalated, outcome, pvp: !!pvp?.started,
             ...(pvp ? { pvpReason: pvp.reason || outcome } : {}),
-            ...(pvp?.started ? { encounter, combat: { durationMs: pvp.durationMs, actions: pvp.actions, fighters: pvp.fighters } } : {}),
+            ...(pvp?.started ? { encounter, extensionMs: encounter ? Math.max(0, encounter.expiresAt - step.expiresAt) : 0,
+                combat: { durationMs: pvp.durationMs, actions: pvp.actions, fighters: pvp.fighters } } : {}),
             matchup: sides.map(s => s.party ? 'party' : 'solo').join('_vs_'),
             affectedIds: deescalated ? [] : pvp?.started ? [...pvp.updates.keys()] : sides[losingIndex].members.map(s => s.characterId),
             participants: [...roles].map(([id, role]) => ({ id, role })), memoryEvents: events.length,
