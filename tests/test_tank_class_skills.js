@@ -256,7 +256,10 @@ const lifeOutcome = C4SkillEffects.execute(session(lifeCaster), lifeCaster, life
 assert.strictEqual(lifeOutcome.heal, 500, 'Touch of Life should immediately heal 50 percent of max HP');
 assert.strictEqual(lifeTarget.hp, 600, 'Touch of Life should work on a friendly target');
 assert.strictEqual(lifeOutcome.effect.expiresAt - Date.now() > 119000, true, 'Touch of Life should last 120 seconds');
-assert.deepStrictEqual(lifeOutcome.effect.hot, { count: 40, intervalMs: 3000, heal: 150 }, 'Touch of Life should restore 150 HP every 3 seconds');
+assert.deepStrictEqual(lifeOutcome.effect.hot, {
+    count: 40, intervalMs: 3000, heal: 150,
+    sourceId: lifeCaster.fetchId(), sourceClanId: 0, sourceArena: false
+}, 'Touch of Life should restore 150 HP every 3 seconds and retain the healer for social attribution');
 assert.strictEqual(EffectStats.multiplier(lifeTarget, 'gainHpMul'), 1.3, 'Touch of Life should increase received healing');
 
 const deathTarget = actor({ id: 1000004 });
