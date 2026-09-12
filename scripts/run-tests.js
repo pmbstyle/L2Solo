@@ -142,6 +142,7 @@ const tests = [
     'tests/test_bot_player_trade.js',
     'tests/test_bot_trade_reservations.js',
     'tests/test_bot_trade_atomicity.js',
+    'tests/test_bot_trade_capacity.js',
     'tests/test_bot_trade_database.js',
     'tests/test_bot_availability.js',
     'tests/test_bot_party_menu.js',

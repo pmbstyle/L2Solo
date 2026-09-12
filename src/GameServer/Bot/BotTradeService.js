@@ -364,28 +364,39 @@ function validateLine(trade, session, line, { botSide = false } = {}) {
     return { ok: true, item: liveItem };
 }
 
-function inventoryCapacity(session, outgoingLines) {
+function inventoryCapacity(session, incomingLines, outgoingLines) {
     const inventory = session.actor.backpack.fetchItems();
     const equippedItems = inventory.filter((item) => !!item.fetchEquipped?.()).length;
     const stackableItems = inventory.filter((item) => !!item.fetchStackable?.());
     const existingSelfIds = new Set(stackableItems.map((item) => Number(item.fetchSelfId())));
-    const incomingNew = outgoingLines.filter((line) => !line.stackable && !existingSelfIds.has(Number(line.selfId))).length;
+    const outgoingAmounts = new Map(outgoingLines.map((line) => [Number(line.objectId), Number(line.count)]));
+    const remaining = inventory.filter((item) => Number(item.fetchAmount()) > (outgoingAmounts.get(Number(item.fetchId())) || 0));
+    const remainingStacks = new Set(remaining.filter((item) => item.fetchStackable?.()).map((item) => Number(item.fetchSelfId())));
+    let incomingNew = 0;
+    for (const line of incomingLines) {
+        if (!line.stackable) incomingNew += Number(line.count);
+        else if (!remainingStacks.has(Number(line.selfId))) {
+            incomingNew += 1;
+            remainingStacks.add(Number(line.selfId));
+        }
+    }
     const canonicalSlots = new Set(stackableItems.map((item) => Number(item.fetchSelfId()))).size
         + inventory.filter((item) => !item.fetchStackable?.()).length;
-    const projectedRawItems = inventory.length + incomingNew;
+    const projectedRawItems = remaining.length + incomingNew;
     return {
-        ok: projectedRawItems <= MAX_INVENTORY_ITEMS,
+        // Let an already over-capacity character give items away without adding slots.
+        ok: projectedRawItems <= Math.max(MAX_INVENTORY_ITEMS, inventory.length),
         rawItems: inventory.length,
         equippedItems,
         looseItems: inventory.length - equippedItems,
         stackableItems: stackableItems.length,
         stackableKinds: existingSelfIds.size,
         canonicalSlots,
-        incomingLines: outgoingLines.length,
+        incomingLines: incomingLines.length,
         incomingNew,
         projectedRawItems,
         maxItems: MAX_INVENTORY_ITEMS,
-        incoming: outgoingLines.map((line) => ({
+        incoming: incomingLines.map((line) => ({
             selfId: Number(line.selfId),
             count: Number(line.count),
             stackable: !!line.stackable,
@@ -506,12 +517,15 @@ async function commit(playerSession) {
             return validation;
         }
     }
-    const playerCapacity = inventoryCapacity(trade.playerSession, [...trade.botItems.values()]);
-    const botCapacity = inventoryCapacity(trade.botSession, [...trade.playerItems.values()]);
+    const playerCapacity = inventoryCapacity(trade.playerSession, [...trade.botItems.values()], [...trade.playerItems.values()]);
+    const botCapacity = inventoryCapacity(trade.botSession, [...trade.playerItems.values()], [...trade.botItems.values()]);
     logInventoryCapacity(trade, trade.playerSession, playerCapacity);
     logInventoryCapacity(trade, trade.botSession, botCapacity);
     if (!playerCapacity.ok || !botCapacity.ok) {
-        const result = { ok: false, reason: 'inventory_capacity' };
+        const result = { ok: false, reason: 'inventory_capacity', capacityBlocked: {
+            player: !playerCapacity.ok,
+            bot: !botCapacity.ok
+        } };
         recordSupplyTrade(trade, 'failed', result.reason, false);
         return result;
     }

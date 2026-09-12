@@ -122,7 +122,13 @@ const botTellCalls = [];
         await tradeDone(player, Buffer.from([0x17, 1, 0, 0, 0]));
         assert.strictEqual(botTellCalls.length, tellsBeforeCapacityFailure + 1, 'capacity failure should notify the player in chat');
         assert.strictEqual(botTellCalls.at(-1).target, player, 'capacity notice should target the trading player');
-        assert(botTellCalls.at(-1).text.includes('inventory is full'), 'capacity notice should explain the inventory blocker');
+        assert.strictEqual(botTellCalls.at(-1).text, 'I need more inventory space to receive these items.');
+
+        player.actor.backpack.items = Array.from({ length: 80 }, (_, index) => item(3000 + index, 4000 + index, 1, `Player Slot ${index}`));
+        assert.strictEqual(BotTradeService.startBotTrade(bot, player).ok, true);
+        assert.strictEqual(BotTradeService.offerBotItem(bot, 1000, 1).ok, true);
+        await tradeDone(player, Buffer.from([0x17, 1, 0, 0, 0]));
+        assert.strictEqual(botTellCalls.at(-1).text, 'You need more inventory space to receive these items.');
         console.log('Bot player trade packet checks passed');
     } finally {
         Database.transferInventoryBetweenCharacters = original.transfer;
