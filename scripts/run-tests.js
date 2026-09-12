@@ -391,6 +391,7 @@ const tests = [
     'tests/test_macros.js',
     'tests/test_npc_combat_range.js',
     'tests/test_npc_skill_selection.js',
+    'tests/test_npc_offensive_targets.js',
     'tests/test_npc_threat.js',
     'tests/test_npc_geodata_visibility.js',
     'tests/test_npc_interaction_completion.js',
