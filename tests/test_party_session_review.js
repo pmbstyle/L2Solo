@@ -45,3 +45,22 @@ const conflict = Lifecycle.review(party, members, at, hostileOptions);
 assert.deepStrictEqual([...Lifecycle.review(conflict.party, members, at + 5 * minute, hostileOptions).leaving.keys()], [1]);
 assert.strictEqual(JSON.parse(JSON.stringify(successful.party)).stats.sessionReview.nextAt, at + 5 * minute);
 console.log('Party reviews: progress, individual departure, leadership, recovery, friendship and conflict checks passed');
+
+const unequal = members.map((m, i) => ({ ...m, level: i === 0 ? 1 : 20 }));
+const observed = Lifecycle.review(party, unequal, at);
+assert.strictEqual(observed.leaving.size, 0, 'new or temporary XP exclusion needs observed evidence');
+const rested = Lifecycle.review({ ...observed.party, stats: { ...observed.party.stats, restUntil: at + 60 * minute } }, unequal, at + 30 * minute);
+assert.strictEqual(rested.leaving.size, 0, 'time without additional wins is not evidence of missed XP');
+const gainedParty = { ...observed.party, stats: { ...observed.party.stats, fightsWon: 15,
+    fightsResolved: 20, lastProgressAt: at + 29 * minute, restUntil: at + 31 * minute } };
+const missed = Lifecycle.review(gainedParty, unequal, at + 30 * minute, {
+    personaFor: () => ({ traits: { commitment: 1, empathy: 1, sociability: 1 } }),
+    assessRelationship: () => ({ ready: true, disposition: 'friendly' })
+});
+assert.deepStrictEqual([...missed.leaving.keys()], [1], 'friends and group wins cannot hide sustained XP exclusion');
+assert.strictEqual(missed.decisions[0].reason, 'party_no_experience');
+assert.strictEqual(missed.states[0].activity, 'hunting', 'an excluded hunter must resume solo decisions');
+assert.strictEqual(missed.party.leaderId, 2);
+const recovered = Lifecycle.review(gainedParty, unequal.map(m => ({ ...m, level: 20 })), at + 30 * minute);
+assert.strictEqual(recovered.leaving.size, 0, 'a roster change restoring XP eligibility clears the concern');
+assert.deepStrictEqual(recovered.party.stats.sessionReview.experience, {});

@@ -37,8 +37,7 @@ class ColdCompetitionMonitor {
                 parties.set(party.partyId, party);
             }
         }
-        const partyTargets = new Map([...parties].map(([id, party]) =>
-            [id, require('./PartyHuntingTarget').npcId(party, states.get(Number(party.leaderId)))]));
+        const partyTargets = new Map();
         const groups = new Map(), untargeted = new Map();
         let active = 0;
         for (const { state, context = {} } of entries) {
@@ -48,7 +47,13 @@ class ColdCompetitionMonitor {
                 || state.spotId !== context.spot.id) continue;
             active++;
             const partyId = state.party?.partyId || state.partyId || null;
-            const target = partyId ? partyTargets.get(partyId) || 0 : Number(context.targetNpcId || 0);
+            if (partyId && !partyTargets.has(partyId)) {
+                const party = parties.get(partyId);
+                partyTargets.set(partyId, party ? require('./PartyHuntingTarget').competitionNpcId(
+                    party, states.get(Number(party.leaderId)), context.spot) : 0);
+            }
+            const target = partyId ? partyTargets.get(partyId) || 0 : Number(context.targetNpcId || 0)
+                || require('./PartyHuntingTarget').competitionNpcId(null, state, context.spot);
             if (!target) { untargeted.set(state.spotId, (untargeted.get(state.spotId) || 0) + 1); continue; }
             if (!this.isTargetAllowed(target)) continue;
             const spawnRows = context.spot.npcEntries || [];

@@ -27,7 +27,7 @@ function party(state, participant, event, { resume = null, revenge = false, retr
     if (!ids.includes(state.leaderId)) return fail('party_leader_missing', { leaderId: state.leaderId });
     if (!retreat && new Set(ids).size !== ids.length) return fail('party_duplicate_members');
     if (!resume && state.spotId !== event.spotId) return fail('party_spot_changed', { expected: event.spotId, actual: state.spotId });
-    const npcId = require('./PartyHuntingTarget').npcId(state, leader);
+    const npcId = require('./PartyHuntingTarget').competitionNpcId(state, leader);
     if (!resume && !revenge && npcId !== event.npcId) return fail('party_target_changed', { expected: event.npcId, actual: npcId });
     if (state.stats?.travel) return fail('party_travelling');
     const wait = state.stats?.coldCompetition?.wait;
@@ -60,10 +60,8 @@ function member(state, characterId, participant, event, { party: group, resume =
     if (!resume && at - lastAt < 120000) return fail('member_decision_cooldown', { until: lastAt + 120000 });
     if (resume && (state.stats?.pvpEncounter?.key !== resume.key || state.stats.pvpEncounter.sequence !== resume.sequence)) return fail('member_encounter_changed');
     if (!resume && !revenge && !group) {
-        const plan = state.stats?.equipmentPlan;
         if (!retreat && state.activity !== 'hunting') return fail('member_not_hunting');
-        if (plan?.status !== 'active') return fail('member_target_inactive');
-        const npcId = Number(plan.next?.npcId || plan.targetNpcId || 0);
+        const npcId = require('./PartyHuntingTarget').competitionNpcId(null, state);
         if (npcId !== event.npcId) return fail('member_target_changed', { expected: event.npcId, actual: npcId });
     }
     return null;

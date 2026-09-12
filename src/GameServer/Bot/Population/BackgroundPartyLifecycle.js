@@ -43,7 +43,7 @@ function releaseMember(state, timestamp = Date.now(), reason = 'party_session_ro
         'party_min_size',
         'invalid_party_size',
         'party_membership_mismatch',
-        'party_relationship_conflict', 'party_goals_diverged', 'party_no_progress', 'party_review_min_size'
+        'party_relationship_conflict', 'party_goals_diverged', 'party_no_progress', 'party_no_experience', 'party_review_min_size'
     ].includes(reason);
     const nextActivity = releasedFromObjective && (state.activity === 'grouped' || partyTravel)
         ? 'hunting'

@@ -1,5 +1,6 @@
 const MINUTE = 60000;
 const clamp = n => Math.max(0, Math.min(1, Number(n) || 0));
+const Rewards = require('../../Actor/PartyRewardMath');
 
 // A timer schedules a conversation, not a forced disband. No random rolls:
 // rereading the same persisted evidence produces the same individual decisions.
@@ -19,7 +20,8 @@ function assess(party, members, timestamp, options = {}) {
     const profitable = (gained || progressAt > 0) && timestamp - noProgressSince < 2 * interval;
     const paused = party.stats?.travel || Number(party.stats?.restUntil || 0) > timestamp;
     const target = Number(party.stats?.objective?.npcId || party.stats?.acquisitionGoal?.next?.npcId || 0);
-    const concerns = {}, decisions = [];
+    const concerns = {}, decisions = [], experience = {};
+    const eligible = new Set(Rewards.validMemberIndexes(members.map(m => Number(m.level || 1))));
     for (const member of members) {
         const traits = (options.personaFor?.(member) || member.persona)?.traits || {};
         const commitment = clamp(traits.commitment ?? 0.5), caution = clamp(traits.caution ?? 0.5);
@@ -44,6 +46,16 @@ function assess(party, members, timestamp, options = {}) {
         const helping = friendly && (empathy + commitment >= 1.2);
         const patience = (8 + commitment * 8 + (friendly ? social * 6 : 0) - caution * 2) * MINUTE;
         const stalled = attemptsSinceProgress >= 3 && timestamp - noProgressSince >= patience;
+        // Group wins must not reset the patience of a member excluded from XP.
+        // Only fights observed while this particular member is excluded count.
+        const excluded = !eligible.has(members.indexOf(member));
+        const priorXp = previous.experience?.[member.characterId];
+        if (excluded) experience[member.characterId] = {
+            since: Number(priorXp?.since ?? timestamp),
+            wins: Number(priorXp?.wins ?? wins)
+        };
+        const noExperience = excluded && wins - experience[member.characterId].wins >= 3
+            && timestamp - experience[member.characterId].since >= patience;
         let reason = null;
         if (!paused) {
             if (hostile) reason = 'party_relationship_conflict';
@@ -52,7 +64,8 @@ function assess(party, members, timestamp, options = {}) {
         }
         // Recovery alone proves nothing, but it must not hide repeated failed
         // fights already observed over the member's patience window.
-        if (!reason && stalled) reason = 'party_no_progress';
+        if (noExperience) reason = 'party_no_experience';
+        else if (!reason && stalled) reason = 'party_no_progress';
         const prior = previous.concerns?.[member.characterId];
         const since = prior?.reason === reason ? Number(prior.since) : timestamp;
         // Suspend a goal/conflict grace period while recovering instead of
@@ -61,14 +74,14 @@ function assess(party, members, timestamp, options = {}) {
             ...prior, since: Number(prior.since) + Math.max(0, timestamp - Number(previous.at || timestamp))
         };
         if (reason) concerns[member.characterId] = { reason, since };
-        const grace = reason === 'party_no_progress' ? 0 : (2 + commitment * 4) * MINUTE;
+        const grace = ['party_no_progress', 'party_no_experience'].includes(reason) ? 0 : (2 + commitment * 4) * MINUTE;
         const leave = !!reason && timestamp - since >= grace;
         decisions.push({ characterId: member.characterId, leave,
             reason: reason || (paused ? 'party_recovering_or_travelling' : sameTarget || sharedClan ? 'party_shared_goal'
                 : friendly ? 'party_friends' : 'party_observing_progress'), memoryReady });
     }
     return { decisions, review: { at: timestamp, nextAt, wins, fights, attemptsSinceProgress,
-        noProgressSince, concerns,
+        noProgressSince, concerns, experience,
         decisions } };
 }
 module.exports = { assess };

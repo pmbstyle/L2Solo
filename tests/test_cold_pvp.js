@@ -22,6 +22,7 @@ const ids = Array.from({ length: 38 }, (_, i) => i + 1);
 const traits = { empathy: 0, assertiveness: 1, commitment: 1, sociability: 1, caution: 0 };
 const personaFor = () => ({ traits });
 const state = id => Life.cachedState(id);
+const ordinaryHunt = process.argv.includes('--ordinary-hunt');
 const base = { life: Life, owner: Owner, parties: Parties, memory: Memory, now: () => at,
     participantAllowed: () => true, contestContextAllowed: () => true, onState() {},
     pvpEnabled: () => true, conflictsEnabled: () => true, personaFor,
@@ -37,7 +38,8 @@ function event(a, b, key = `cold-pvp:${a}:${b}`) {
 }
 async function party(members) {
     const prepared = Parties.prepareCommit({ partyId: `pvp-party-${members[0]}`, leaderId: members[0], memberIds: members,
-        spotId: 'test', status: 'active', startedAt: at, nextResolveAt: at + 45000, stats: { objective: { npcId: 10 } } });
+        spotId: 'test', status: 'active', startedAt: at, nextResolveAt: at + 45000,
+        stats: ordinaryHunt ? {} : { objective: { npcId: 10 } } });
     const assigned = members.map(id => Life.preparePartyAssignment(state(id), prepared.row.partyId, 'dps', members[0], at + 45000));
     assert((await Database.commitBackgroundPartyMembership({ party: prepared.row, members: assigned })).ok);
     Life.acceptPartyAssignments(assigned);
@@ -45,9 +47,13 @@ async function party(members) {
 }
 async function main() {
     invoke('GameServer/DataCache').init();
+    if (ordinaryHunt) invoke('GameServer/Bot/Population/SpotProfiles').cache = [
+        { id: 'test', avgLevel: 40, npcEntries: [{ selfId: 10, level: 40, count: 10 }] }
+    ];
     Database.init();
     for (const id of ids) {
-        const stats = { classId: 0, equipmentPlan: { status: 'active', next: { npcId: 10, spotId: 'test' } },
+        const stats = { classId: 0, equipmentPlan: ordinaryHunt ? { status: 'active', strategy: 'market', market: { town: 'Dion' } }
+            : { status: 'active', next: { npcId: 10, spotId: 'test' } },
             coldCombat: { version: 1, classId: 0, cp: id % 3 === 1 ? 0 : 500, cpAt: at,
                 base: { str: 40, dex: 30, con: 43, int: 21, wit: 11, men: 25 },
                 equipment: { weaponKind: 'Weapon.Sword', pAtk: id % 3 === 0 ? 5000 : 300, pAtkRnd: 0,

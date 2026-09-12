@@ -4,6 +4,11 @@ const PartyAffinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity'
 const PersonaPartyPolicy = invoke('GameServer/Bot/Population/PersonaPartyPolicy');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const PartyMemoryPreference = require('./PartyMemoryPreference');
+const PartyRewards = require('../../Actor/PartyRewardMath');
+
+function sharesExperience(members) {
+    return PartyRewards.validMemberIndexes(members.map(levelOf)).length === members.length;
+}
 
 function levelOf(state) {
     return Math.max(1, Number(state?.level || 1));
@@ -103,7 +108,8 @@ function buildAround(anchor, candidates, maxSize, levelRange, memoryPreference) 
     SUPPORT_ROLES.forEach((role) => {
         if (selected.length >= maxSize || coverage[role]) return;
         const support = bestCandidates(
-            eligible.filter((state) => !used.has(Number(state.characterId)) && roleForState(state) === role),
+            eligible.filter((state) => !used.has(Number(state.characterId)) && roleForState(state) === role
+                && sharesExperience([...selected, state])),
             1,
             compareCandidate(anchor, coverage, selected, memoryPreference)
         )[0];
@@ -115,7 +121,7 @@ function buildAround(anchor, candidates, maxSize, levelRange, memoryPreference) 
 
     while (selected.length < maxSize) {
         const state = bestCandidates(
-            eligible.filter((candidate) => !used.has(Number(candidate.characterId))),
+            eligible.filter((candidate) => !used.has(Number(candidate.characterId)) && sharesExperience([...selected, candidate])),
             1,
             compareCandidate(anchor, coverage, selected, memoryPreference)
         )[0];
@@ -185,7 +191,8 @@ function selectRecruits(members = [], candidates = [], options = {}) {
     SUPPORT_ROLES.forEach((role) => {
         if (members.length + recruits.length >= maxSize || coverage[role]) return;
         const recruit = bestCandidates(
-            eligible.filter((state) => !used.has(Number(state.characterId)) && roleForState(state) === role),
+            eligible.filter((state) => !used.has(Number(state.characterId)) && roleForState(state) === role
+                && sharesExperience([...members, ...recruits, state])),
             1,
             compareCandidate(leader, coverage, [...members, ...recruits], memoryPreference)
         )[0];
@@ -197,7 +204,8 @@ function selectRecruits(members = [], candidates = [], options = {}) {
 
     while (members.length + recruits.length < maxSize) {
         const state = bestCandidates(
-            eligible.filter((candidate) => !used.has(Number(candidate.characterId))),
+            eligible.filter((candidate) => !used.has(Number(candidate.characterId))
+                && sharesExperience([...members, ...recruits, candidate])),
             1,
             compareCandidate(leader, coverage, [...members, ...recruits], memoryPreference)
         )[0];

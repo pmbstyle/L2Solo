@@ -7,6 +7,7 @@ const tests = [
     'tests/test_shared_hunt_memory.js',
     'tests/test_party_memory_preference.js',
     'tests/test_cold_competition.js',
+    'tests/test_cold_ordinary_competition.js',
     'tests/test_resource_competition_balance.js',
     'tests/test_cold_competition_cadence.js',
     'tests/test_party_admission.js',

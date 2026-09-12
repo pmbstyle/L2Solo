@@ -13,7 +13,7 @@ async function recruit({ participants, event, parties, life, memory, composition
         || forecast.size !== party.memberIds.length) return { rejected: 'party_changed' };
     const objective = party.stats?.objective;
     if (objective?.clanGoalKey || objective?.clanOperation || participants.some(clanReserved)) return { rejected: 'clan_objective' };
-    const target = require('./PartyHuntingTarget').npcId(party, life.cachedState(party.leaderId));
+    const target = require('./PartyHuntingTarget').competitionNpcId(party, life.cachedState(party.leaderId));
     if (target !== event.npcId) return { rejected: 'party_target_changed' };
     const limits = limitsFor(objective);
     if (party.memberIds.length >= limits.maxSize) return { rejected: 'party_full' };

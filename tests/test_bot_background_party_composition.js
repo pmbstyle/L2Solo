@@ -3,6 +3,7 @@ const assert = require('assert');
 require('../src/Global');
 
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
+const PartyRewards = invoke('GameServer/Actor/PartyRewardMath');
 
 function bot(characterId, level, role) {
     return { characterId, level, party: { role } };
@@ -17,6 +18,13 @@ const candidates = [
     bot(6, 28, 'dps')
 ];
 const members = PartyComposition.selectMembers(candidates, { minSize: 2, maxSize: 5 });
+const beginners = [bot(101, 1, 'healer'), bot(102, 4, 'tank'), bot(103, 4, 'dps'), bot(104, 1, 'dps')];
+const beginnerGroup = PartyComposition.selectMembers(beginners, { minSize: 2, maxSize: 5 });
+assert(beginnerGroup.length >= 2);
+assert.strictEqual(PartyRewards.validMemberIndexes(beginnerGroup.map(m => m.level)).length, beginnerGroup.length,
+    'low-level formation must not create members excluded from XP despite a small numeric level gap');
+assert.deepStrictEqual(PartyComposition.selectRecruits([beginners[0], beginners[3]], [beginners[1]], { maxSize: 5 }), [],
+    'a recruit must not take existing beginners out of XP distribution');
 const memberIds = members.map((state) => state.characterId);
 
 assert.strictEqual(members.length, 5);

@@ -14,7 +14,10 @@ options.default.Database.path = path.join(dir, 'test.sqlite');
 let now = Date.now();
 async function run() {
     Database.init();
-    const stats = { equipmentPlan: { status: 'active', strategy: 'direct_drop', next: { npcId: 10, spotId: 'test' } } };
+    const ordinaryHunt = process.argv.includes('--ordinary-hunt');
+    if (ordinaryHunt) invoke('GameServer/Bot/Population/SpotProfiles').findById = id => id === 'test'
+        ? { id: 'test', avgLevel: 20, npcEntries: [{ selfId: 10, level: 20, count: 10 }] } : null;
+    const stats = ordinaryHunt ? {} : { equipmentPlan: { status: 'active', strategy: 'direct_drop', next: { npcId: 10, spotId: 'test' } } };
     const oldEpisode = { key: 'old-fight', at: now - 700000, outcome: 'pvp_fighting', role: 'support', endedAt: now - 600000,
         conflictUntil: now + 60000, avoid: { spotId: 'elsewhere', until: now + 600000 } };
     for (const id of Array.from({ length: 18 }, (_, index) => index + 1)) {

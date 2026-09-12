@@ -153,4 +153,7 @@ const completedLeader = ordinaryEntries.map(e => e.state.characterId === 2
     ? { ...e, state: { ...e.state, stats: { equipmentPlan: { status: 'complete', next: { npcId: 10 } } } } } : e);
 const finished = make();
 finished.sample(completedLeader, memory, at);
-assert.strictEqual(finished.snapshot().pressuredGroups, 0, 'an old completed leader goal is not an active competition target');
+assert.strictEqual(require('../src/GameServer/Bot/Population/PartyHuntingTarget').npcId(
+    {}, completedLeader.find(e => e.state.characterId === 2).state), 0,
+    'a completed plan is not an explicit target');
+assert(finished.snapshot().pressuredGroups > 0, 'ordinary hunting remains competitive after a gear goal completes');

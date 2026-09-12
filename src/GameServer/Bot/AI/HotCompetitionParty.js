@@ -7,6 +7,9 @@ async function form(sides, context, valid) {
     const Lifecycle = invoke('GameServer/Bot/Population/HotPartyLifecycle');
     const sessions = sides.flatMap(s => s.sessions), grouped = sides.filter(s => s.party);
     if (grouped.length > 1 || sessions.length < 2 || sessions.length > 5 || sessions.some(s => s.hotCompetitionCommit)) return { ok: false, reason: 'party_unavailable' };
+    if (require('../../Actor/PartyRewardMath').validMemberIndexes(sessions.map(s => s.actor.fetchLevel())).length !== sessions.length) {
+        return { ok: false, reason: 'party_experience_mismatch' };
+    }
     const existing = grouped[0]?.party;
     if (existing?.stats?.objective?.clanGoalKey || existing?.stats?.objective?.clanOperation) return { ok: false, reason: 'clan_objective' };
     const release = existing ? () => {} : invoke('GameServer/Bot/Population/PopulationService').reserveCompetitionPartySlot();

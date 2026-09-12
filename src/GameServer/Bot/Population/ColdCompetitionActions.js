@@ -10,7 +10,6 @@ const count = (map, key) => { map[key] = (map[key] || 0) + 1; };
 const priority = e => e.action === 'revenge' || e.pvpIntent ? 3 : e.action === 'offer_party' ? 2 : e.action === 'contest' ? 1 : 0;
 
 function eligible(state, event, participant, now) {
-    const plan = state?.stats?.equipmentPlan;
     const partyId = state?.party?.partyId || state?.partyId || null;
     const recruiting = event.action === 'offer_party' && event.accepted && participant.partyId;
     return state?.phase === 'cold' && (recruiting ? ['grouped', 'hunting'].includes(state.activity) : state.activity === 'hunting') && state.vitals?.hp > 0
@@ -20,7 +19,7 @@ function eligible(state, event, participant, now) {
         && (state.simulation?.ownerId || 'legacy_main') === 'legacy_main'
         && Number(state.simulation?.revision || 0) === participant.revision
         && state.spotId === event.spotId
-        && (recruiting || (plan?.status === 'active' && Number(plan.next?.npcId || plan.targetNpcId || 0) === event.npcId))
+        && (recruiting || require('./PartyHuntingTarget').competitionNpcId(null, state) === event.npcId)
         && now - Number(state.stats?.coldCompetition?.at || 0) >= COOLDOWN_MS;
 }
 
@@ -144,6 +143,10 @@ class ColdCompetitionActions {
         let queued = false;
         if (event.action === 'offer_party' && event.accepted) {
             if (Math.abs(states[0].level - states[1].level) > 4) return { ok: false, reason: 'level_mismatch' };
+            if (!states.some(s => s.party?.partyId || s.partyId)
+                && require('../../Actor/PartyRewardMath').validMemberIndexes(states.map(s => s.level || 1)).length !== states.length) {
+                return { ok: false, reason: 'party_experience_mismatch' };
+            }
             const party = await this.formParty(next, event, { participantAllowed: this.participantAllowed });
             if (party?.partyId) (party.memberIds || states.map(s => s.characterId)).forEach(id => this.onState(id));
             if (party?.partyId) return { ok: true, partyId: party.partyId, ...(party.recruited ? { recruited: party.recruited } : {}) };
@@ -156,7 +159,7 @@ class ColdCompetitionActions {
             queued = true;
             next.forEach(s => {
                 if (s.stats.partyRequest?.status === 'open' && s.stats.partyRequest.priority === 'required') return;
-                const plan = s.stats.equipmentPlan;
+                const plan = s.stats.equipmentPlan || {};
                 const objectiveKey = `${plan.strategy || 'acquisition'}:${event.spotId}:${event.npcId}`;
                 const previous = s.stats.partyRequest;
                 s.stats.partyRequest = { status: 'open', priority: 'preferred', reason: 'shared_target',
