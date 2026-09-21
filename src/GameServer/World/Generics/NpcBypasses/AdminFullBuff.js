@@ -4,6 +4,7 @@ const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const ClassProgression = invoke('GameServer/ClassProgression');
 const SummonControl = invoke('GameServer/Npc/SummonControl');
+const BotManager = invoke('GameServer/Bot/BotManager');
 const activeSkills = C4SkillRules.expandSourcedLevels(require('../../../../../data/Skills/Active/active.json'));
 
 const ADMIN_BUFF_DURATION_MS = 20 * 60 * 1000;
@@ -197,9 +198,9 @@ function effectFromSkill(skill, expiresAt) {
 function refreshActor(session, actor, Generics = invoke(path.actor)) {
     Generics.calculateStats(session, actor);
     actor.statusUpdateVitals(actor);
-    session.dataSendToMe(ServerResponse.userInfo(actor));
-    session.dataSendToMe(ServerResponse.abnormalStatusUpdate.fromActor(actor));
-    session.dataSendToMe(ServerResponse.shortBuffStatusUpdate.fromActor(actor));
+    session?.dataSendToMe?.(ServerResponse.userInfo(actor));
+    session?.dataSendToMe?.(ServerResponse.abnormalStatusUpdate.fromActor(actor));
+    session?.dataSendToMe?.(ServerResponse.shortBuffStatusUpdate.fromActor(actor));
 
     try {
         invoke('GameServer/Bot/AI/PartyCompanionService').updateActorEffects(session);
@@ -209,9 +210,9 @@ function refreshActor(session, actor, Generics = invoke(path.actor)) {
 }
 
 function refreshSummon(session, summon) {
-    session.dataSendToMe?.(ServerResponse.partySpelled.fromActor(summon, 1));
-    session.dataSendToMe?.(ServerResponse.petStatusUpdate(summon));
-    session.dataSendToMeAndOthers?.(ServerResponse.npcInfo(summon), summon);
+    session?.dataSendToMe?.(ServerResponse.partySpelled.fromActor(summon, 1));
+    session?.dataSendToMe?.(ServerResponse.petStatusUpdate(summon));
+    session?.dataSendToMeAndOthers?.(ServerResponse.npcInfo(summon), summon);
 }
 
 function applyProfile(session, actor, profile, options = {}) {
@@ -257,6 +258,31 @@ function applyFullBuff(session, actor, options = {}) {
     return { profile, applied, summon, summonApplied };
 }
 
+function resolveTargetSession(session) {
+    const actor = session?.actor;
+    if (!actor) return null;
+
+    const destId = Number(actor.fetchDestId?.() ?? actor.destId ?? 0);
+    if (!destId) return null;
+
+    if (destId === Number(actor.fetchId?.() ?? actor.id)) {
+        return session;
+    }
+
+    try {
+        const botSession = BotManager.findSessionById(destId);
+        if (botSession?.actor) return botSession;
+    } catch (err) {}
+
+    try {
+        const World = invoke('GameServer/World/World');
+        const playerSession = World?.user?.sessions?.find((s) => s.actor && Number(s.actor.fetchId()) === destId);
+        if (playerSession?.actor) return playerSession;
+    } catch (err) {}
+
+    return null;
+}
+
 function adminFullBuff(session) {
     const actor = session?.actor;
     if (!actor) {
@@ -264,12 +290,35 @@ function adminFullBuff(session) {
         return [];
     }
 
-    const result = applyFullBuff(session, actor);
+    const targetSession = resolveTargetSession(session);
+    if (!targetSession || !targetSession.actor) {
+        session.dataSendToMe(ServerResponse.speak(actor, {
+            kind: 0,
+            text: 'Please select a valid target first.'
+        }));
+        session.dataSendToMe(ServerResponse.actionFailed());
+        return [];
+    }
+
+    const targetActor = targetSession.actor;
+    const result = applyFullBuff(targetSession, targetActor);
     const summonText = result.summonApplied.length ? ` + servitor ${result.summonApplied.length}` : '';
-    session.dataSendToMe(ServerResponse.speak(actor, {
-        kind: 0,
-        text: `Admin: ${result.profile} full buff applied (${result.applied.length}${summonText} effects, 20 minutes).`
-    }));
+
+    if (session !== targetSession) {
+        session.dataSendToMe(ServerResponse.speak(actor, {
+            kind: 0,
+            text: `Admin: ${result.profile} full buff applied to ${targetActor.fetchName()} (${result.applied.length}${summonText} effects).`
+        }));
+        targetSession.dataSendToMe?.(ServerResponse.speak(targetActor, {
+            kind: 0,
+            text: `Admin applied ${result.profile} full buff (${result.applied.length}${summonText} effects, 20 minutes).`
+        }));
+    } else {
+        session.dataSendToMe(ServerResponse.speak(actor, {
+            kind: 0,
+            text: `Admin: ${result.profile} full buff applied (${result.applied.length}${summonText} effects, 20 minutes).`
+        }));
+    }
     return result.applied;
 }
 

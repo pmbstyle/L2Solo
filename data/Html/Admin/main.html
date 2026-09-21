@@ -4,34 +4,32 @@
     <br>
     <font color="LEVEL">NodeL2 Admin - Main</font>
     <br><br>
-    See which users are online, in the same session
-    <a action="bypass -h html Admin/users">Users</a>
-    <br><br>
-    Teleport directory with separate city and dungeon pages
-    <a action="bypass -h html Admin/teleport">Teleport Directory</a>
-    <a action="bypass admin-teleport-random">Surprise me!</a>
-    <br><br>
-    One-click full buff selected from your current class
-    <a action="bypass admin-full-buff">Full Buff (Auto: Class Profile)</a>
-    <br><br>
-    <a action="bypass -h html Admin/pets">Pets</a>
-    <br><br>
-    Free admin equipment
-    <a action="bypass -h html Admin/shop">Equipment Shop</a>
-    <br><br>
-    <font color="LEVEL">Set Your Level:</font><br>
-    Level: <edit var="admin_level" width=40 height=15><br>
-    <a action="bypass -h admin-set-level $admin_level">Apply Level</a>
-    <br><br>
-    Class transfer
-    <a action="bypass -h html 7070">Change Profession</a>
-    <br><br>
-    Client HTML test window
-    <a action="bypass -h ui-test">UI Lab</a>
-    <br><br>
-    <font color="LEVEL">Give Adena to Player:</font><br>
-    Name: <edit var="char_name" width=120 height=15><br>
-    Amount: <edit var="adena_amt" width=120 height=15><br>
-    <a action="bypass -h admin-give-adena $char_name $adena_amt">Send Adena</a>
+    <table width=240>
+        <tr><td align=center><font color="ae9977">-- Navigation & Users --</font></td></tr>
+        <tr><td align=center><a action="bypass -h html Admin/users">Online Users</a></td></tr>
+        <tr><td align=center><a action="bypass -h html Admin/teleport">Teleport Directory</a></td></tr>
+        <tr><td align=center><a action="bypass admin-teleport-random">Surprise me!</a></td></tr>
+        <tr><td align=center><a action="bypass -h html Admin/shop">Equipment Shop</a></td></tr>
+        <tr><td align=center><a action="bypass -h html 7070">Change Profession</a></td></tr>
+        <tr><td align=center><br><font color="ae9977">-- Target Controls --</font></td></tr>
+        <tr><td align=center><a action="bypass admin-full-buff">Give Buff To Target</a></td></tr>
+        <tr><td align=center><a action="bypass admin-heal">Give Heal To Target (HP / MP / CP)</a></td></tr>
+        <tr><td align=center><br></td></tr>
+        <tr>
+            <td align=center>
+                Level: <edit var="target_level" width=50 height=15><br>
+                <a action="bypass -h admin-set-level $target_level">Set Level To Target</a>
+            </td>
+        </tr>
+        <tr><td align=center><br></td></tr>
+        <tr>
+            <td align=center>
+                Adena Amount: <edit var="target_adena" width=100 height=15><br>
+                <a action="bypass -h admin-give-adena $target_adena">Give Adena To Target</a>
+            </td>
+        </tr>
+        <tr><td align=center><br><font color="ae9977">-- Developer --</font></td></tr>
+        <tr><td align=center><a action="bypass -h ui-test">UI Lab</a></td></tr>
+    </table>
 </center>
 </body></html>
