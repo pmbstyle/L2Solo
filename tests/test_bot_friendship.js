@@ -72,7 +72,7 @@ Promise.all([
     assert.strictEqual(staticService.reason, 'merchant_duty', 'fixed craft services must not be eligible for friendship');
     const configuredMerchant = await BotFriendship.request({ characterId: 42 }, {
         characterId: 104,
-        name: 'Nika',
+        name: 'IslandMats',
         activity: 'merchant',
         stats: { classId: 53 }
     });
