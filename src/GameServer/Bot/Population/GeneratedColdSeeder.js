@@ -16,7 +16,7 @@ const BotNameGenerator = invoke('GameServer/Bot/Population/BotNameGenerator');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 
-const NAME_GENERATOR_VERSION = 2;
+const NAME_GENERATOR_VERSION = 3;
 const APPEARANCE_VERSION = 2;
 const TARGET_SPOT_SCORE_BAND = 90;
 const TARGET_SPOT_SHORTLIST_LIMIT = 12;
@@ -164,27 +164,68 @@ function usernameFor(index) {
     return `bot_scale_${String(index).padStart(4, '0')}`.slice(0, 16);
 }
 
-function nameFor(index) {
-    return BotNameGenerator.nameFor(index);
+function nameFor(index, base = null) {
+    return BotNameGenerator.nameFor(index, base);
 }
 
-function uniqueNameFor(index, attempt = 0, characterId = null) {
-    // A collision advances to the next readable pair instead of appending a
+function uniqueNameFor(index, attempt = 0, characterId = null, base = null) {
+    if (attempt >= 150) return Promise.reject(new Error(`Unable to allocate a unique generated name for index ${index}`));
+
+    // A collision advances to the next candidate instead of appending a
     // technical suffix to the visible character name.
-    const candidate = nameFor(Math.max(0, Number(index) || 0) + attempt);
+    const probeIndex = Math.max(0, Number(index) || 0) + (attempt * 37);
+    const candidate = nameFor(probeIndex, base);
+
     return Database.fetchCharacterName(candidate).then((rows) => {
         if (!rows[0] || Number(rows[0].id) === Number(characterId)) return candidate;
-        return uniqueNameFor(index, attempt + 1, characterId);
+        return uniqueNameFor(index, attempt + 1, characterId, base);
     });
 }
 
+function migrationBaseFor(state) {
+    const stats = state.stats || {};
+    const classId = Number(stats.classId);
+    const storedRace = Number(stats.race);
+    const inferredRace = classId >= 0 && classId <= 17 || classId >= 88 && classId <= 98 ? 0
+        : classId >= 18 && classId <= 30 || classId >= 99 && classId <= 105 ? 1
+            : classId >= 31 && classId <= 43 || classId >= 106 && classId <= 112 ? 2
+                : classId >= 44 && classId <= 52 || classId >= 113 && classId <= 116 ? 3
+                    : classId >= 53 && classId <= 57 || classId >= 117 && classId <= 118 ? 4
+                        : null;
+
+    const rawIndex = Number(stats.generatedIndex);
+    const isCraftService = Boolean(
+        stats.serviceCrafter
+        || stats.craftStationId
+        || state.activity === 'crafting'
+        || (rawIndex >= CRAFT_SERVICE_INDEX_BASE && rawIndex < CRAFT_SERVICE_INDEX_BASE + CRAFT_SERVICE_COUNT)
+        || /^bot_craft_/i.test(String(state.accountName || ''))
+    );
+
+    return {
+        ...stats,
+        classId: isCraftService ? 57 : classId,
+        race: isCraftService ? 4 : (Number.isFinite(storedRace) ? storedRace : inferredRace),
+        role: isCraftService ? 'crafter' : stats.role,
+        serviceCrafter: isCraftService
+    };
+}
+
 function migratePopulationNames(states = []) {
-    const candidates = states.filter((state) => state.accountName?.startsWith('bot_pop_')
-        && state.stats?.generatedCold
-        && Number(state.stats?.nameGeneratorVersion || 0) < NAME_GENERATOR_VERSION
-        && Number.isFinite(Number(state.stats?.generatedIndex)));
-    return candidates.reduce((chain, state) => chain.then(() => (
-        uniqueNameFor(state.stats.generatedIndex, 0, state.characterId).then((name) => {
+    const candidates = states.filter((state) => {
+        const isBot = /^bot_(pop|scale|craft)_/i.test(String(state.accountName || ''))
+            || Boolean(state.stats?.generatedCold)
+            || Number(state.stats?.generatedIndex) >= 10000;
+        const needsUpdate = Number(state.stats?.nameGeneratorVersion || 0) < NAME_GENERATOR_VERSION;
+        return isBot && needsUpdate;
+    });
+
+    return candidates.reduce((chain, state) => chain.then(() => {
+        const rawIndex = state.stats?.generatedIndex ?? state.characterId ?? 0;
+        const index = Number(rawIndex) || 0;
+        const base = migrationBaseFor(state);
+
+        return uniqueNameFor(index, 0, state.characterId, base).then((name) => {
             const nextState = {
                 ...state,
                 name,
@@ -193,15 +234,18 @@ function migratePopulationNames(states = []) {
             const rename = name === state.name
                 ? Promise.resolve()
                 : Database.updateCharacterName(state.characterId, name);
+
             return rename.then(() => LifeState.upsertState(nextState, 'generated_name_migration'));
-        })
-    )), Promise.resolve()).then(() => candidates.length);
+        });
+    }), Promise.resolve()).then(() => candidates.length);
 }
 
 function migratePopulationAppearances(states = []) {
-    const candidates = states.filter((state) => state.stats?.generatedCold
-        && Number(state.stats?.appearanceVersion || 0) < APPEARANCE_VERSION
-        && Number.isFinite(Number(state.stats?.generatedIndex)));
+    const candidates = states.filter((state) => (
+        Boolean(state.stats?.generatedCold) || Number(state.stats?.generatedIndex) >= 10000
+    ) && Number(state.stats?.appearanceVersion || 0) < APPEARANCE_VERSION
+      && Number.isFinite(Number(state.stats?.generatedIndex)));
+
     return cooperativeEach(candidates, (state) => {
         const sex = sexForIndex(state.stats.generatedIndex);
         return LifeState.acceptAppearanceMetadata(state.characterId, sex, APPEARANCE_VERSION)
@@ -342,7 +386,7 @@ function ensureCharacter(username, index, base = baseForIndex(index), seedProfil
         const spot = seedProfile?.spot || targetSpot(level, index, base);
         const loc = randomNear(spot?.center || { locX: 0, locY: 0, locZ: 0 }, index);
         const vitals = vitalsFor(template, level);
-        return uniqueNameFor(index).then((name) => {
+        return uniqueNameFor(index, 0, null, base).then((name) => {
             const charData = {
                 name,
                 race: base.race,
@@ -397,7 +441,7 @@ function stateFor(character, index, seedMeta = {}) {
     const initial = {
         characterId: Number(character.id),
         accountName: character.username || usernameFor(index),
-        name: character.name || nameFor(index),
+        name: character.name || nameFor(index, base),
         level,
         exp: ProgressionCap.clampTotalExperience(Number(character.exp || expForLevel(level))),
         sp: Number(character.sp || Math.round(level * level * 3)),
@@ -420,6 +464,7 @@ function stateFor(character, index, seedMeta = {}) {
         stats: {
             role: base.role,
             classId,
+            race: Number(base.race),
             route: spot?.route || null,
             build: GearSkillHints.forCharacter({ classId, level }, { role: base.role }),
             classProgressionLevel: level,
@@ -593,8 +638,8 @@ const GeneratedColdSeeder = {
 
         this.running = true;
         return Promise.resolve()
-            .then(() => migratePopulationNames(LifeState.allStates(limit + 100)))
-            .then(() => migratePopulationAppearances(LifeState.allStates(limit + 100)))
+            .then(() => migratePopulationNames(LifeState.allStates(50000)))
+            .then(() => migratePopulationAppearances(LifeState.allStates(50000)))
             .then(() => {
             const plan = SeedPlanner.plan(
                 SpotProfiles.ensure(),
@@ -635,7 +680,6 @@ const GeneratedColdSeeder = {
                             });
                     });
             }).then(() => this.ensureCraftServices()).then((services) => ({
-
                 created: created + services.created,
                 seeded,
                 // `population` includes generated merchants, unlike the

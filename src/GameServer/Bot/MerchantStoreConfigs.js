@@ -22,7 +22,7 @@ const shotsForGrade = (grade) => (SHOT_IDS_BY_GRADE[grade] || SHOT_IDS_BY_GRADE[
 
 module.exports = {
     // Talking Island
-    "Mira": {
+    "IslandMats": {
         title: "Local mats",
         town: "Talking Island",
         storeType: 1,
@@ -33,7 +33,7 @@ module.exports = {
             s(1060, 0.78, 250), s(736, 0.75, 150), s(1835, 0.70, 30000)
         ]
     },
-    "Korin": {
+    "TomRiddle": {
         title: "Starter gear",
         town: "Talking Island",
         storeType: 1,
@@ -44,7 +44,7 @@ module.exports = {
             s(2006, 0.62, 60), s(2007, 0.62, 60), s(1796, 0.60, 25)
         ]
     },
-    "Nika": {
+    "4manda": {
         title: "Buy starter mats",
         town: "Talking Island",
         storeType: 3,
@@ -55,7 +55,7 @@ module.exports = {
             rb(1872), b(17, 0.55)
         ]
     },
-    "Tarin": {
+    "Addicted": {
         title: "Buy island drops",
         town: "Talking Island",
         storeType: 3,
@@ -68,7 +68,7 @@ module.exports = {
     },
 
     // Gludio
-    "Lysa": {
+    "MeryJane": {
         title: "D mats and gear",
         town: "Gludio",
         storeType: 1,
@@ -79,7 +79,7 @@ module.exports = {
             rs(1880, 1200), s(15, 0.64, 5), s(216, 0.66, 7)
         ]
     },
-    "Darin": {
+    "RustyAnvil": {
         title: "Gludio stock",
         town: "Gludio",
         storeType: 1,
@@ -90,7 +90,7 @@ module.exports = {
             s(1921, 0.62, 150), s(1922, 0.62, 120), s(1923, 0.62, 120)
         ]
     },
-    "Ewan": {
+    "SoulLess": {
         title: "Buy D mats",
         town: "Gludio",
         storeType: 3,
@@ -101,7 +101,7 @@ module.exports = {
             rb(1878), b(1341, 0.55)
         ]
     },
-    "Maren": {
+    "FriendShip": {
         title: "Buy plains drops",
         town: "Gludio",
         storeType: 3,
@@ -114,7 +114,7 @@ module.exports = {
     },
 
     // Dion
-    "Rina": {
+    "CraftStash": {
         title: "C craft stock",
         town: "Dion",
         storeType: 1,
@@ -125,7 +125,7 @@ module.exports = {
             rs(1884, 3000), s(272, 0.62, 4), s(219, 0.63, 5)
         ]
     },
-    "Soren": {
+    "Mayan": {
         title: "Dion gear parts",
         town: "Dion",
         storeType: 1,
@@ -136,7 +136,7 @@ module.exports = {
             s(2143, 0.64, 100), s(2144, 0.64, 100), s(2139, 0.64, 80)
         ]
     },
-    "Vera": {
+    "GeAnA": {
         title: "Buy C mats",
         town: "Dion",
         storeType: 3,
@@ -147,7 +147,7 @@ module.exports = {
             rb(1887), rb(1888)
         ]
     },
-    "Borin": {
+    "Sunday": {
         title: "Buy Dion drops",
         town: "Dion",
         storeType: 3,
@@ -160,7 +160,7 @@ module.exports = {
     },
 
     // Giran
-    "Elin": {
+    "RareSupplier": {
         title: "C/B materials",
         town: "Giran",
         storeType: 1,
@@ -171,7 +171,7 @@ module.exports = {
             rs(1889, 1400), s(78, 0.61, 2), s(91, 0.62, 3)
         ]
     },
-    "Naren": {
+    "Haldise": {
         title: "Giran gear",
         town: "Giran",
         storeType: 1,
@@ -182,7 +182,7 @@ module.exports = {
             s(877, 0.68, 10), s(908, 0.68, 6), s(1539, 0.76, 500)
         ]
     },
-    "Pavel": {
+    "ProStyle": {
         title: "Buy Giran mats",
         town: "Giran",
         storeType: 3,
@@ -193,7 +193,7 @@ module.exports = {
             rb(1893), rb(1894)
         ]
     },
-    "Tessa": {
+    "Veteranas": {
         title: "Buy Giran drops",
         town: "Giran",
         storeType: 3,
@@ -206,7 +206,7 @@ module.exports = {
     },
 
     // Oren
-    "Iris": {
+    "StayTun3d": {
         title: "B/A materials",
         town: "Oren",
         storeType: 1,
@@ -217,7 +217,7 @@ module.exports = {
             rs(1893, 450), rs(1894, 1400), s(80, 0.60, 2)
         ]
     },
-    "Helga": {
+    "BarterKing": {
         title: "Oren gear",
         town: "Oren",
         storeType: 1,
@@ -228,7 +228,7 @@ module.exports = {
             s(2463, 0.62, 5), s(856, 0.64, 6), s(887, 0.64, 8)
         ]
     },
-    "Oskar": {
+    "Puffy": {
         title: "Buy Oren mats",
         town: "Oren",
         storeType: 3,
@@ -239,7 +239,7 @@ module.exports = {
             rb(1874), rb(1875)
         ]
     },
-    "Selin": {
+    "NastyDream": {
         title: "Buy Oren drops",
         town: "Oren",
         storeType: 3,
@@ -253,7 +253,7 @@ module.exports = {
 
     // Heine market around dagger's captured plaza position (111380, 219034).
     // Together with Lina, four stalls sit 140 units from the center.
-    "Maelis": {
+    "HarborTrader": {
         title: "B/A materials",
         town: "Heine",
         storeType: 1,
@@ -264,7 +264,7 @@ module.exports = {
             rs(1893, 450), rs(1894, 1400), s(80, 0.60, 2)
         ]
     },
-    "Nelio": {
+    "RadSkin": {
         title: "Heine gear",
         town: "Heine",
         storeType: 1,
@@ -275,7 +275,7 @@ module.exports = {
             s(2463, 0.62, 5), s(856, 0.64, 6), s(887, 0.64, 8)
         ]
     },
-    "Corvin": {
+    "MissaSic": {
         title: "Buy mats and drops",
         town: "Heine",
         storeType: 3,
@@ -292,7 +292,7 @@ module.exports = {
     // Starter-village liquidity. These stores complement the dedicated shot
     // sellers below: each racial starting market gets useful no-grade stock
     // and a local material/drop buyer instead of routing every bag to TI.
-    "Fael": {
+    "Seduza": {
         title: "Elven field gear",
         town: "Elven Village",
         storeType: 1,
@@ -303,7 +303,7 @@ module.exports = {
             rs(1864, 1800), rs(1865, 1800), rs(1867, 1400)
         ]
     },
-    "Lethia": {
+    "CursedMan": {
         title: "Buy forest drops",
         town: "Elven Village",
         storeType: 3,
@@ -314,7 +314,7 @@ module.exports = {
             b(1119, 0.62), b(1121, 0.62), b(1122, 0.62), b(1129, 0.62)
         ]
     },
-    "Nyra": {
+    "Kayser": {
         title: "Dark forest gear",
         town: "Dark Elven Village",
         storeType: 1,
@@ -325,7 +325,7 @@ module.exports = {
             rs(1864, 1800), rs(1866, 1600), rs(1868, 1600)
         ]
     },
-    "Varek": {
+    "ShillienLoot": {
         title: "Buy swamp drops",
         town: "Dark Elven Village",
         storeType: 3,
@@ -336,7 +336,7 @@ module.exports = {
             b(945, 0.60), b(946, 0.60), b(907, 0.58), b(989, 0.58)
         ]
     },
-    "Grom": {
+    "PedingBear": {
         title: "Plateau gear",
         town: "Orc Village",
         storeType: 1,
@@ -347,7 +347,7 @@ module.exports = {
             rs(1864, 1800), rs(1868, 1600), rs(1869, 1600)
         ]
     },
-    "Korga": {
+    "TuskCollector": {
         title: "Buy plateau drops",
         town: "Orc Village",
         storeType: 3,
@@ -358,7 +358,7 @@ module.exports = {
             b(1510, 0.58), b(2371, 0.58), b(67, 0.56), b(154, 0.56)
         ]
     },
-    "Dori": {
+    "MineSupplies": {
         title: "Mining supplies",
         town: "Dwarven Village",
         storeType: 1,
@@ -369,7 +369,7 @@ module.exports = {
             rs(1864, 1800), rs(1866, 1600), rs(1869, 1600)
         ]
     },
-    "Minka": {
+    "Angel": {
         title: "Buy mine drops",
         town: "Dwarven Village",
         storeType: 3,
@@ -383,105 +383,105 @@ module.exports = {
 
     // Dedicated shot stores sell every player shot type at the town's exact
     // progression grade. They deliberately do not carry lower grades.
-    "Tia": {
+    "Pingu": {
         title: "Shots: No Grade",
         town: "Talking Island",
         storeType: 1,
         locX: -84250, locY: 244680, locZ: -3730,
         items: shotsForGrade(0)
     },
-    "Elya": {
+    "Kent8": {
         title: "Shots: No Grade",
         town: "Elven Village",
         storeType: 1,
         locX: 47166, locY: 51511, locZ: -2992,
         items: shotsForGrade(0)
     },
-    "Dena": {
+    "FakinMachine": {
         title: "Shots: No Grade",
         town: "Dark Elven Village",
         storeType: 1,
         locX: 9550, locY: 15717, locZ: -4568,
         items: shotsForGrade(0)
     },
-    "Orik": {
+    "Mochito": {
         title: "Shots: No Grade",
         town: "Orc Village",
         storeType: 1,
         locX: -45264, locY: -112292, locZ: -240,
         items: shotsForGrade(0)
     },
-    "Bran": {
+    "DubDub": {
         title: "Shots: No Grade",
         town: "Dwarven Village",
         storeType: 1,
         locX: 115072, locY: -177956, locZ: -880,
         items: shotsForGrade(0)
     },
-    "Rolf": {
+    "J3dSanta": {
         title: "Shots: D Grade",
         town: "Gludin",
         storeType: 1,
         locX: -80620, locY: 150020, locZ: -3040,
         items: shotsForGrade(1)
     },
-    "Sila": {
+    "Musa": {
         title: "Shots: D Grade",
         town: "Gludio",
         storeType: 1,
         locX: -14480, locY: 123730, locZ: -3117,
         items: shotsForGrade(1)
     },
-    "Tara": {
+    "Reanimator": {
         title: "Shots: D Grade",
         town: "Dion",
         storeType: 1,
         locX: 15910, locY: 143200, locZ: -2707,
         items: shotsForGrade(1)
     },
-    "Eris": {
+    "Squeesh": {
         title: "Shots: C Grade",
         town: "Giran",
         storeType: 1,
         locX: 83600, locY: 148300, locZ: -3406,
         items: shotsForGrade(2)
     },
-    "Sera": {
+    "M3tLa": {
         title: "Shots: B Grade",
         town: "Oren",
         storeType: 1,
         locX: 83000, locY: 53400, locZ: -1488,
         items: shotsForGrade(3)
     },
-    "Nora": {
+    "Petec": {
         title: "Shots: B Grade",
         town: "Hunter's Village",
         storeType: 1,
         locX: 117129, locY: 77137, locZ: -2696,
         items: shotsForGrade(3)
     },
-    "Lina": {
+    "Original91": {
         title: "Shots: B Grade",
         town: "Heine",
         storeType: 1,
         locX: 111380, locY: 219174, locZ: -3536,
         items: shotsForGrade(3)
     },
-    "Mila": {
+    "Lowfiles": {
         title: "Shots: A Grade",
         town: "Aden",
         storeType: 1,
         locX: 146497, locY: 25807, locZ: -2008,
         items: shotsForGrade(4)
     },
-    "Sven": {
+    "TinWh1skey": {
         title: "Shots: S Grade",
         town: "Goddard",
         storeType: 1,
         locX: 148050, locY: -55340, locZ: -2728,
         items: shotsForGrade(5)
     },
-    "Runa": {
+    "Ora": {
         title: "Shots: S Grade",
         town: "Rune",
         storeType: 1,
