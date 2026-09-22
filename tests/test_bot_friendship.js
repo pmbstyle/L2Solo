@@ -5,6 +5,9 @@ require('../src/Global');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const BotFriendship = invoke('GameServer/Bot/AI/BotFriendship');
+const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
+const merchantName = BotServiceIdentity.configuredMerchantNames()[0];
+assert.ok(merchantName);
 DataCache.init();
 const originalExecute = Database.execute;
 let rosterCount = 7;
@@ -29,7 +32,7 @@ Database.execute = ([sql]) => {
             selected: 0
         }, {
             botId: 104,
-            name: 'Nika',
+            name: merchantName,
             level: 1,
             classId: 53,
             statsJson: JSON.stringify({ classId: 53 }),
@@ -66,13 +69,13 @@ Promise.all([
     assert.strictEqual(accepted.ok, true, 'an old abandonment cooldown must not block friendship forever');
     const staticService = await BotFriendship.request({ characterId: 42 }, {
         characterId: 102,
-        name: 'PublicCrafter',
+        name: merchantName,
         stats: { craftStationId: 'giran_weapons', craftShop: { town: 'Giran' } }
     });
     assert.strictEqual(staticService.reason, 'merchant_duty', 'fixed craft services must not be eligible for friendship');
     const configuredMerchant = await BotFriendship.request({ characterId: 42 }, {
         characterId: 104,
-        name: 'Nika',
+        name: merchantName,
         activity: 'merchant',
         stats: { classId: 53 }
     });

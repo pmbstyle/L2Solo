@@ -98,7 +98,9 @@ const gludioCandidateNearLysa = ListingService.chooseGludioDMarketStall(
     })(),
     gludioStaticStalls
 );
-assert(Math.hypot(gludioCandidateNearLysa.locX - MerchantStoreConfigs.Lysa.locX, gludioCandidateNearLysa.locY - MerchantStoreConfigs.Lysa.locY) >= ListingService.GLUDIO_D_STALL_MIN_DISTANCE, 'dynamic Gludio stalls must keep their distance from fixed merchants');
+assert(gludioStaticStalls.every((stall) =>
+    Math.hypot(gludioCandidateNearLysa.locX - stall.locX, gludioCandidateNearLysa.locY - stall.locY) >= ListingService.GLUDIO_D_STALL_MIN_DISTANCE
+), 'dynamic Gludio stalls must keep their distance from fixed merchants');
 
 const noGradeState = {
     ...state,

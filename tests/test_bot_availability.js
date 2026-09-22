@@ -3,11 +3,14 @@ const assert = require('assert');
 require('../src/Global');
 
 const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
+const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const InteractionMemory = invoke('GameServer/Social/InteractionMemoryRuntime');
 const originalAssess = InteractionMemory.assess;
 const ClanService = invoke('GameServer/Clan/ClanService');
 const originalFindClan = ClanService.findById;
+const merchantName = BotServiceIdentity.configuredMerchantNames()[0];
+assert.ok(merchantName);
 
 function actor(id, level, clanId = 0, options = {}) {
     return {
@@ -212,7 +215,7 @@ try {
     assert.strictEqual(result.available, false, 'const friend overrides must never recruit a fixed merchant');
     assert.strictEqual(result.reason, 'merchant_duty');
 
-    const configuredMerchant = session(actor(2000018, 1, 0, { name: 'Nika' }), {
+    const configuredMerchant = session(actor(2000018, 1, 0, { name: merchantName }), {
         plan: 'merchant',
         coldLifeState: { stats: { classId: 53 } }
     });
@@ -251,11 +254,11 @@ try {
     );
     assert.deepStrictEqual(
         catalog.map((candidate) => candidate.name).sort(),
-        ['Actor2000014', 'ColdAdventure', 'DynamicSeller'],
+        [farSocialBot.actor.fetchName(), coldAdventure.name, dynamicMerchant.actor.fetchName()].sort(),
         'the global party catalog should merge hot and cold bots, deduplicate snapshots, hide own companions and exclude static services'
     );
-    assert.strictEqual(catalog.find((candidate) => candidate.name === 'Actor2000014').phase, 'hot', 'a live session should win over its cold snapshot');
-    assert.strictEqual(catalog.find((candidate) => candidate.name === 'ColdAdventure').phase, 'cold', 'background adventurers should remain discoverable');
+    assert.strictEqual(catalog.find((candidate) => candidate.name === farSocialBot.actor.fetchName()).phase, 'hot', 'a live session should win over its cold snapshot');
+    assert.strictEqual(catalog.find((candidate) => candidate.name === coldAdventure.name).phase, 'cold', 'background adventurers should remain discoverable');
     assert.strictEqual(snapshotReads, snapshotReadsBeforeCatalog,
         'building catalog metadata must not fan out social-memory reads across the whole population');
     result = BotAvailability.evaluate(lowPlayer, farSocialBot, { loadMemory: false });

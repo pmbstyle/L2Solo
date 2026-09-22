@@ -6,6 +6,9 @@ const DataCache = invoke('GameServer/DataCache');
 DataCache.init();
 const Observer = invoke('WorldObserver/WorldObserverServer');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
+const configuredMerchantName = BotServiceIdentity.configuredMerchantNames()[0];
+assert(configuredMerchantName, 'at least one configured merchant is required');
 
 const observerClasses = Observer.classCatalog();
 assert(observerClasses.some((entry) => entry.classId === 21 && entry.className === 'Swordsinger'),
@@ -184,7 +187,7 @@ assert.strictEqual(craftService.staticService, true, 'dedicated cold craft stati
 
 const configuredMerchantState = Observer.compactStateBot({
     characterId: 50,
-    name: 'Nika',
+    name: configuredMerchantName,
     level: 1,
     phase: 'hot',
     activity: 'merchant',

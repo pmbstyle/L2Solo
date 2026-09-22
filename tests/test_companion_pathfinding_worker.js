@@ -123,7 +123,8 @@ async function run() {
         await autonomousFixture.session.pendingPathRequest.promise;
         assert.strictEqual(synchronousFindPathCalls, 0,
             'autonomous town errands must not execute A* on the game thread');
-        assert.strictEqual(autonomousFixture.session.lastPathfinding.strategy, 'worker_geodata');
+        assert.strictEqual(autonomousFixture.session.lastPathfinding.strategy, 'worker_geodata',
+            JSON.stringify(autonomousFixture.session.lastPathfinding));
         assert.strictEqual(autonomousFixture.session.lastPathfinding.routeUsable, true,
             'the real Giran route to Groot must use the requested errand budget');
         assert.strictEqual(autonomousFixture.session.lastPathfinding.maxNodes, 30000);

@@ -8,6 +8,7 @@ const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const BotSupplyErrand = invoke('GameServer/Bot/AI/BotSupplyErrand');
 const TradeService = invoke('GameServer/Bot/TradeService');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
+const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 
 function inventoryItem(id, selfId, amount) {
     let count = amount;
@@ -36,9 +37,15 @@ async function main() {
         town: 'Talking Island',
         items: [{ selfId: 1864, price: 10, count: 2 }]
     };
+    const merchantName = Object.entries(MerchantStoreConfigs).find(([, config]) =>
+        config.storeType === 1
+        && config.town === store.town
+        && config.items.some((item) => item.selfId === 1864)
+    )?.[0];
+    assert(merchantName, 'Talking Island must have a configured merchant selling Varnish');
     const merchant = {
         fetchId: () => 7200,
-        fetchName: () => 'Mira',
+        fetchName: () => merchantName,
         fetchLocX: () => -84168,
         fetchLocY: () => 244729,
         fetchLocZ: () => -3730,
@@ -76,7 +83,7 @@ async function main() {
             workflowId: 'workflow-stock-reject',
             sourceType: 'configured_store',
             sourceId: 7200,
-            sourceName: 'Mira',
+            sourceName: merchantName,
             itemId: 1864,
             amount: 3,
             unitPrice: 10
@@ -90,7 +97,7 @@ async function main() {
             workflowId: 'workflow-stock-ok',
             sourceType: 'configured_store',
             sourceId: 7200,
-            sourceName: 'Mira',
+            sourceName: merchantName,
             itemId: 1864,
             amount: 1,
             unitPrice: 10

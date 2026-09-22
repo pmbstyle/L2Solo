@@ -20,6 +20,15 @@ const originals = {
 };
 const templates = new Map(DataCache.items.map((item) => [item.selfId, item]));
 const normalize = (store) => TradeService.normalizeStoreItems(store, { staticStore: true });
+const storeFor = (town, storeType, selfId) => {
+    const matches = Object.values(Configs).filter((store) =>
+        store.town === town
+        && store.storeType === storeType
+        && store.items.some((line) => line.selfId === selfId)
+    );
+    assert.strictEqual(matches.length, 1, `expected one ${town} store of type ${storeType} for item ${selfId}`);
+    return matches[0];
+};
 
 function inventoryItem(selfId, amount) {
     return {
@@ -68,19 +77,19 @@ async function run() {
         };
         const cold = StaticBuyerService.candidatesFor(state, 'Gludio').find((line) => line.selfId === 1921);
         assert(cold, 'cold liquidation must still accept the configured material');
-        assert.strictEqual(cold.npcPrice, normalize(Configs.Maren).find((line) => line.selfId === 1921).price);
-        assert.strictEqual(normalize(Configs.Nika).find((line) => line.selfId === 1864).price,
+        assert.strictEqual(cold.npcPrice, normalize(storeFor('Gludio', 3, 1921)).find((line) => line.selfId === 1921).price);
+        assert.strictEqual(normalize(storeFor('Talking Island', 3, 1864)).find((line) => line.selfId === 1864).price,
             TradeService.ratedPrice(1864, 0.8), 'resource liquidity without a cheaper NPC source keeps its authored price');
     }
 
     // Explicit static prices and future inverted coefficients must also be capped.
     const inflated = { selfId: 2006, price: 99999999, count: 10 };
-    const cap = Math.floor(normalize(Configs.Korin).find((line) => line.selfId === 2006).price * 0.9);
-    assert.strictEqual(Pricing.priceFor(Configs.Tarin, inflated), cap);
+    const cap = Math.floor(normalize(storeFor('Talking Island', 1, 2006)).find((line) => line.selfId === 2006).price * 0.9);
+    assert.strictEqual(Pricing.priceFor(storeFor('Talking Island', 3, 2006), inflated), cap);
     assert.strictEqual(normalize({ storeType: 3, items: [inflated] })[0].price, cap);
     assert.strictEqual(TradeService.normalizeStoreItems({ storeType: 3, items: [inflated] })[0].price,
         inflated.price, 'dynamic stores retain their negotiated prices');
-    assert.strictEqual(Pricing.priceFor(Configs.Tessa, { selfId: 219, priceRate: 100 }), 241560,
+    assert.strictEqual(Pricing.priceFor(storeFor('Giran', 3, 219), { selfId: 219, priceRate: 100 }), 241560,
         'use Graham at 268400, not an earlier NPC list at 292800');
 
     // Reproduce purchase -> inventory delivery -> static buyback with real
@@ -103,7 +112,7 @@ async function run() {
         } }, { actor }, [{ selfId: 219, amount: 1 }], { prices: new Map([[219, price]]) });
     });
     assert.strictEqual(adena.fetchAmount(), 731600);
-    const store = { storeType: 3, items: normalize(Configs.Tessa) };
+    const store = { storeType: 3, items: normalize(storeFor('Giran', 3, 219)) };
     const sale = await TradeService.sellToStore(actor, store, 219, 1);
     assert.strictEqual(sale.totalAdena, 241560);
     assert.strictEqual(adena.fetchAmount(), 973160, 'round trip must lose 26840 Adena, not mint millions');

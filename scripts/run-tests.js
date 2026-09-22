@@ -549,7 +549,10 @@ const tests = [
     'tests/test_ui_test_window.js'
 ];
 
-for (const testFile of tests) {
+const startIndex = process.argv[2] ? tests.indexOf(`tests/${process.argv[2]}.js`) : 0;
+if (startIndex < 0) throw new Error(`Test not found: ${process.argv[2]}`);
+
+for (const testFile of tests.slice(startIndex)) {
     console.log(`\n> node ${testFile}`);
     const result = spawnSync(process.execPath, [testFile], {
         cwd: process.cwd(),

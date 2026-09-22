@@ -41,14 +41,18 @@ try {
     assert(!MarketOpportunity.findOffers(2, { town: 'Giran' }).some((offer) => offer.sourceType === 'private_store'));
 
     playerStore.items[0].count = 1;
-    World.user.sessions[0].accountId = 'bot_mira';
-    World.user.sessions[0].actor.fetchName = () => 'Mira';
+    const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
+    const fixedMerchantName = Object.entries(MerchantStoreConfigs)
+        .find(([, store]) => store.town === 'Giran' && store.storeType === 1)?.[0];
+    assert(fixedMerchantName, 'Giran must have a configured selling merchant');
+    World.user.sessions[0].accountId = `bot_${fixedMerchantName.toLowerCase()}`;
+    World.user.sessions[0].actor.fetchName = () => fixedMerchantName;
     assert.strictEqual(
         MarketOpportunity.findOffers(2, { town: 'Giran' }).find((offer) => offer.sourceType === 'private_store').sellerKind,
         'fixed',
         'configured liquidity merchants must not be counted as peer bots'
     );
-    World.user.sessions[0].name = 'Mira';
+    World.user.sessions[0].name = fixedMerchantName;
     World.user.sessions[0].actor.fetchName = () => undefined;
     assert.strictEqual(
         MarketOpportunity.findOffers(2, { town: 'Giran' }).find((offer) => offer.sourceType === 'private_store').sellerKind,

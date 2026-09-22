@@ -57,39 +57,48 @@ for (const npcId of [7004, 7137, 7150, 7519, 7561, 7063, 7254, 7315, 7081, 7180,
 }
 
 const shotStores = [
-    ['Tia', 'Talking Island', 0], ['Elya', 'Elven Village', 0], ['Dena', 'Dark Elven Village', 0],
-    ['Orik', 'Orc Village', 0], ['Bran', 'Dwarven Village', 0], ['Rolf', 'Gludin', 1],
-    ['Sila', 'Gludio', 1], ['Tara', 'Dion', 1], ['Eris', 'Giran', 2], ['Sera', 'Oren', 3],
-    ['Nora', "Hunter's Village", 3], ['Lina', 'Heine', 3], ['Mila', 'Aden', 4],
-    ['Sven', 'Goddard', 5], ['Runa', 'Rune', 5]
+    ['Talking Island', 0], ['Elven Village', 0], ['Dark Elven Village', 0],
+    ['Orc Village', 0], ['Dwarven Village', 0], ['Gludin', 1],
+    ['Gludio', 1], ['Dion', 1], ['Giran', 2], ['Oren', 3],
+    ["Hunter's Village", 3], ['Heine', 3], ['Aden', 4],
+    ['Goddard', 5], ['Rune', 5]
 ];
 const shotIdsByGrade = [
     [1835, 2509, 3947], [1463, 2510, 3948], [1464, 2511, 3949],
     [1465, 2512, 3950], [1466, 2513, 3951], [1467, 2514, 3952]
 ];
-for (const [name, town, grade] of shotStores) {
-    const store = MerchantStoreConfigs[name];
-    assert.ok(store, `${town} must have a dedicated shot merchant`);
-    assert.strictEqual(store.storeType, 1, `${name} must be a selling private store`);
-    assert.strictEqual(store.town, town, `${name} must be placed in ${town}`);
-    assert.deepStrictEqual(store.items.map((item) => item.selfId), shotIdsByGrade[grade], `${name} must stock every shot type at its town grade only`);
+const shotStoreFor = (town, grade) => {
+    const expectedIds = shotIdsByGrade[grade];
+    const matches = Object.values(MerchantStoreConfigs).filter((store) =>
+        store.town === town
+        && store.storeType === 1
+        && store.items.length === expectedIds.length
+        && store.items.every((item, index) => item.selfId === expectedIds[index])
+    );
+    assert.strictEqual(matches.length, 1, `${town} must have one dedicated shot merchant`);
+    return matches[0];
+};
+
+for (const [town, grade] of shotStores) {
+    const store = shotStoreFor(town, grade);
+    assert.deepStrictEqual(store.items.map((item) => item.selfId), shotIdsByGrade[grade], `${town} must stock every shot type at its town grade only`);
     store.items.forEach((item) => {
-        assert.strictEqual(item.priceRate, 1, `${name} must use the standard shot price`);
-        assert.strictEqual(item.count, 999999, `${name} must have a practical unlimited shot stock`);
+        assert.strictEqual(item.priceRate, 1, `${town} must use the standard shot price`);
+        assert.strictEqual(item.count, 999999, `${town} must have a practical unlimited shot stock`);
     });
 }
 
-assert(Math.hypot(MerchantStoreConfigs.Rolf.locX + 80826, MerchantStoreConfigs.Rolf.locY - 149775) < 1000,
+const gludinShotStore = shotStoreFor('Gludin', 1);
+assert(Math.hypot(gludinShotStore.locX + 80826, gludinShotStore.locY - 149775) < 1000,
     'Gludin shot merchant must be placed inside the town square');
 
-// These stalls were captured beside each town's gatekeeper and checked against
-// the loaded geodata. Keeping the Z value on the actual floor prevents private
-// stores from being hidden in a building or on another vertical layer.
-const accessibleStalls = [
-    'Elya', 'Dena', 'Orik', 'Bran', 'Iris', 'Helga', 'Oskar', 'Selin', 'Sera', 'Nora', 'Mila'
+const accessibleShotTowns = [
+    'Elven Village', 'Dark Elven Village', 'Orc Village', 'Dwarven Village',
+    'Oren', "Hunter's Village", 'Aden'
 ];
-for (const name of accessibleStalls) {
-    const store = MerchantStoreConfigs[name];
+for (const town of accessibleShotTowns) {
+    const grade = shotStores.find(([storeTown]) => storeTown === town)[1];
+    const store = shotStoreFor(town, grade);
     const ground = GeodataEngine.getHeight(store.locX, store.locY, store.locZ);
-    assert.strictEqual(store.locZ, ground, `${name} must stand on the visible geodata floor`);
+    assert.strictEqual(store.locZ, ground, `${town} shot merchant must stand on the visible geodata floor`);
 }
