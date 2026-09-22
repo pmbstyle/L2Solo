@@ -185,6 +185,7 @@ assert.ok(new Set(generatedNames.map((name) => name.toLowerCase())).size > 700, 
     const originalSpots = SpotProfiles.ensure;
     const originalServices = GeneratedColdSeeder.ensureCraftServices;
     const originalFetchUserPassword = Database.fetchUserPassword;
+    const originalAllStates = LifeState.allStates;
     // More than both the former 1800 seed slice and the 2000 UI bound.
     const overCap = Array.from({ length: 2200 }, (_, index) => ({
         ...missingMetadata[index % missingMetadata.length],
@@ -203,6 +204,7 @@ assert.ok(new Set(generatedNames.map((name) => name.toLowerCase())).size > 700, 
         assert.strictEqual(LifeState.allStates(1800).length, 1800);
         assert.strictEqual(LifeState.populationSeedStates().length, 2274,
             'population accounting must not inherit recent-state limits');
+        LifeState.allStates = () => [];
         const result = await GeneratedColdSeeder.seedPopulation();
         assert.strictEqual(result.error, undefined);
         assert.strictEqual(result.total, 2200, 'the real seeder must report every dynamic identity');
@@ -211,6 +213,7 @@ assert.ok(new Set(generatedNames.map((name) => name.toLowerCase())).size > 700, 
         SpotProfiles.ensure = originalSpots;
         GeneratedColdSeeder.ensureCraftServices = originalServices;
         Database.fetchUserPassword = originalFetchUserPassword;
+        LifeState.allStates = originalAllStates;
     }
     let clock = 0;
     let yields = 0;
