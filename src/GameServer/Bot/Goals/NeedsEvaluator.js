@@ -176,10 +176,16 @@ function evaluate(state = {}, options = {}) {
     const gear = equipmentNeed(state);
     if (gear) {
         const requiredAdena = Math.max(0, gear.desiredItem.price + gear.reserve - Number(state.adena || 0));
-        const weaponUpgrade = gear.slot === 7;
+        const weaponUpgrade = [7, 14].includes(gear.slot);
         const wealthInvestment = WealthInvestmentPolicy.investmentOpportunity(state, gear.desiredItem.price);
         const npcPurchasePriority = requiredAdena === 0 ? affordableNpcGearPriority(gear) : null;
         const clanPurchasePriority = requiredAdena === 0 && gear.clanRequired ? 89 : null;
+        // A compatible weapon bridge is itself recovery: the current weapon
+        // cannot execute this class build at all. Let a funded NPC bridge beat
+        // ordinary HP/MP recovery so stale party_wait states can reach town;
+        // genuinely dead states still return from evaluate() above.
+        const weaponBridgePriority = requiredAdena === 0
+            && state.stats?.equipmentPlan?.weaponBridge ? 91 : null;
         candidates.push({
             type: 'upgrade_gear',
             // An affordable static-shop upgrade must outrank inventory sales,
@@ -189,7 +195,8 @@ function evaluate(state = {}, options = {}) {
             // weapon/core-armour priorities while still beating a normal sale.
             // A funded clan assignment is stronger than a voluntary wealth
             // sale, but recovery and forced inventory cleanup still win.
-            priority: clanPurchasePriority
+            priority: weaponBridgePriority
+                || clanPurchasePriority
                 || npcPurchasePriority
                 || (wealthInvestment?.affordable ? 81 : requiredAdena > 0 ? 72 : 58),
             target: {

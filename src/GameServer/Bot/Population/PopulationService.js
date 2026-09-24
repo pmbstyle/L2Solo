@@ -404,7 +404,7 @@ function canResumeAffordableMarketPlan(state, timestamp = Date.now()) {
     const targetId = Number(plan?.target?.selfId || 0);
     const targetSlot = Number(plan?.target?.slot || 0);
     const requiredClanPurchase = plan?.clanGoal?.priority === 'required';
-    if (state?.activity !== 'hunting'
+    if (!['hunting', 'party_wait'].includes(state?.activity)
         || plan?.status !== 'active'
         || plan?.strategy !== 'market'
         || (![7, 14].includes(targetSlot) && !requiredClanPurchase)
@@ -3375,6 +3375,7 @@ const PopulationService = {
         const replanContext = workerPlan
             ? { failure: workerPlan.replanFailure || null }
             : GearAcquisitionPlanner.replanContextFor(state, previousPlan, startedAt);
+        const weaponBridgePlan = GearAcquisitionPlanner.npcWeaponBridgePlan(state);
         let acquisitionPlan = workerPlan?.acquisitionPlan || null;
         const workerPlanHasSource = acquisitionPlan?.status === 'active'
             && ['direct_drop', 'craft'].includes(acquisitionPlan.strategy)
@@ -3411,20 +3412,21 @@ const PopulationService = {
             const previousAvailabilitySource = previousFarmPlan && !replanContext.failure
                 ? GearAcquisitionPlanner.bestSourceForPlan(state, previousPlan, spots, { occupancy })
                 : null;
-            const reusablePartyRequest = !state.party?.partyId
+            const reusablePartyRequest = !weaponBridgePlan
+                && !state.party?.partyId
                 && previousPlan?.next
                 && (!previousFarmPlan || !!previousAvailabilitySource)
                 && replanContext.routeCurrent
                 && !replanContext.failure
                 && state.stats?.partyRequest?.status === 'open'
                 && Number(state.stats.partyRequest.reviewAt || 0) > startedAt;
-            const upgradedPlan = previousAvailabilitySource
+            const upgradedPlan = weaponBridgePlan || (previousAvailabilitySource
                 ? GearAcquisitionPlanner.retargetPlanSource(state, previousPlan, previousAvailabilitySource)
                 : previousFarmPlan && !GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan)
                     ? GearAcquisitionPlanner.replacementPlanFor(state, previousPlan, spots, { occupancy, ...replanContext })
                     : reusablePartyRequest
                         ? previousPlan
-                        : GearAcquisitionPlanner.planFor(state, { spots, occupancy, ...replanContext });
+                        : GearAcquisitionPlanner.planFor(state, { spots, occupancy, ...replanContext }));
             const previousRefresh = previousPlan?.recipeId && !reusablePartyRequest
                 ? GearAcquisitionPlanner.planFor(state, { spots, occupancy, recipeId: previousPlan.recipeId, ...replanContext })
                 : null;
@@ -3433,7 +3435,9 @@ const PopulationService = {
                 : upgradedPlan;
             const finalizedPlan = reusablePartyRequest
                 ? previousPlan
-                : GearAcquisitionPlanner.finalizePlan(state, previousPlan, rawAcquisitionPlan, replanContext, startedAt);
+                : GearAcquisitionPlanner.finalizePlan(state, previousPlan, rawAcquisitionPlan,
+                    weaponBridgePlan ? { ...replanContext, allowClanGoalReplan: true } : replanContext,
+                    startedAt);
             acquisitionPlan = {
                 ...finalizedPlan,
                 marketFallback: finalizedPlan.status === 'active' && finalizedPlan.strategy === 'craft'

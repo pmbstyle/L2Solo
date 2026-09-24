@@ -28,6 +28,32 @@ for (const [state, kind] of [[polearm, 'Weapon.Pole'], [archer, 'Weapon.Bow']]) 
     assert.strictEqual(Gear.combatReadiness({ ...state, inventory: equipped }).hasWeapon, true,
         'the affordable compatible replacement must actually equip over the old weapon');
 }
+const staleArcherPlan = {
+    status: 'active', strategy: 'direct_drop', grade: 'c', plannedForLevel: archer.level,
+    target: { selfId: 282, name: 'Elemental Bow', slot: 14 },
+    next: { spotId: 'stale-bow-route', npcId: 20201, itemId: 282 },
+    clanGoal: { clanId: 7, goalKey: 'clan-equipment:7:1:282:14' }
+};
+const bridgePlan = Gear.npcWeaponBridgePlan({ ...archer, stats: {
+    ...archer.stats, equipmentPlan: staleArcherPlan
+} });
+assert.strictEqual(bridgePlan.strategy, 'market',
+    'an incompatible inherited weapon must interrupt a stale bow farming plan');
+assert.strictEqual(bridgePlan.weaponBridge, true,
+    'the bridge remains distinguishable from an ordinary gear upgrade');
+assert.strictEqual(bridgePlan.target.selfId, 274,
+    'the emergency bridge must use the affordable D-grade Strengthened Bow');
+const ownedBridge = { ...archer, inventory: {
+    ...archer.inventory,
+    274: { selfId: 274, amount: 1, equipped: false, slot: 14 }
+} };
+assert.strictEqual(Gear.npcWeaponBridgePlan(ownedBridge), null,
+    'an owned compatible bridge must be equipped instead of purchased twice');
+assert.strictEqual(Gear.equipInventoryUpgrades(ownedBridge, ownedBridge.inventory)[274].equipped, true);
+assert.strictEqual(Gear.replacementPlanFor({ ...archer, stats: {
+    ...archer.stats, equipmentPlan: staleArcherPlan
+} }, staleArcherPlan).target.selfId, 274,
+    'route replacement must prefer the D-grade weapon bridge even for a clan-owned plan');
 const Safety = invoke('GameServer/Bot/Population/ClanEquipmentPartyPolicy');
 const PartyRisk = invoke('GameServer/Bot/Population/PartySpotRiskPolicy');
 const Equipment = invoke('GameServer/Clan/ClanEquipmentService');
@@ -178,15 +204,21 @@ async function checkMissingSpotRecovery() {
         assert.strictEqual(craftResult.state.timing.nextResolveAt, craftResult.state.stats.travel.arrivalAt);
         Goals.review = async () => ({ current: { type: 'upgrade_gear', target: { itemId: 291 },
             plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' } } });
-        const buyer = { ...state, inventory: polearm.inventory, adena: polearm.adena,
-            loc: provider.loc, stats: { ...polearm.stats, equipmentPlan: Gear.staticNpcUpgradePlan(polearm) } };
+        const buyer = { ...state, activity: 'party_wait', inventory: polearm.inventory, adena: polearm.adena,
+            loc: provider.loc, vitals: { hp: 1000, maxHp: 1000, mp: 100, maxMp: 1000 },
+            stats: { ...polearm.stats, equipment: [{ selfId: 129, slot: 7, rank: 'd' }],
+                equipmentPlan: Gear.npcWeaponBridgePlan(polearm) } };
+        const Needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
+        const bridgeGoal = Needs.evaluate(buyer).sort((left, right) => right.priority - left.priority)[0];
+        assert.strictEqual(bridgeGoal.plan.expectedBenefit, 'market_search_for_weapon',
+            'a funded weapon bridge must outrank ordinary MP recovery');
         const purchasedTrip = await Population.executeWorkerLifecycleCommand(buyer, {
             precomputedResult: { patch: { activity: 'resting' }, materialize: { exp: 100 } }
         });
         assert(purchasedTrip.ok);
         assert.strictEqual(savedReason, 'goal_market_travel_before_combat');
         assert.strictEqual(purchasedTrip.state.stats.travel.reason, 'market_search_for_weapon',
-            'a funded two-handed weapon must leave for market before a worker fight can exhaust the buyer again');
+            'a funded two-handed weapon must leave stale party wait for market before a worker fight can exhaust the buyer again');
         const savesBeforeStaleTrip = saves;
         let current = buyer;
         Life.cachedState = () => current;

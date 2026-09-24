@@ -2649,7 +2649,8 @@ const BotLifeState = {
                 AND reserved.status = 'active'
             )
             AND spotId IS NOT NULL
-            AND activity IN ('hunting', 'resting', 'party_wait')`,
+            AND activity IN ('hunting', 'resting', 'party_wait')
+            AND COALESCE(json_extract(statsJson, '$.equipmentPlan.strategy'), '') <> 'market'`,
             [],
             { read: true }
         ], 'bot-life:party-candidate-projection').then((rows) => rows.map((row) => {

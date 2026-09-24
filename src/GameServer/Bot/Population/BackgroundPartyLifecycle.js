@@ -47,11 +47,14 @@ function releaseMember(state, timestamp = Date.now(), reason = 'party_session_ro
         'party_min_size', 'clan_party_unsafe',
         'invalid_party_size',
         'party_membership_mismatch',
-        'party_relationship_conflict', 'party_goals_diverged', 'party_no_progress', 'party_no_experience', 'party_review_min_size'
+        'party_relationship_conflict', 'party_goals_diverged', 'party_no_progress', 'party_no_experience',
+        'party_review_min_size', 'weapon_bridge'
     ].includes(reason);
-    const nextActivity = releasedFromObjective && (state.activity === 'grouped' || partyTravel)
+    const nextActivity = reason === 'weapon_bridge'
         ? 'hunting'
-        : state.activity;
+        : releasedFromObjective && (state.activity === 'grouped' || partyTravel)
+            ? 'hunting'
+            : state.activity;
 
     return {
         ...state,
@@ -69,7 +72,8 @@ function releaseMember(state, timestamp = Date.now(), reason = 'party_session_ro
                 : null
         },
         timing: releasedFromObjective
-            ? { ...(state.timing || {}), activityStartedAt: timestamp, nextResolveAt: timestamp + 30000 }
+            ? { ...(state.timing || {}), activityStartedAt: timestamp,
+                nextResolveAt: timestamp + (reason === 'weapon_bridge' ? 1000 : 30000) }
             : state.timing,
         updatedAt: timestamp
     };

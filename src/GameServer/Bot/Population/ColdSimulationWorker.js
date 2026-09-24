@@ -137,6 +137,10 @@ function startKernel(config = {}) {
             partyMinSize: Config.partyMinSize
         },
         partyMinSize: Config.partyMinSize,
+        requiresWeaponBridge: (state) => Boolean(GearAcquisitionPlanner.npcWeaponBridgePlan(
+            state,
+            planningNpcCatalog.plannerOptions
+        )),
         projectResolve: async (state, result, timestamp) => {
             const projected = await LifeStateProjector.prepareResolve(state, result, {
                 persist: false,
@@ -169,7 +173,9 @@ function startKernel(config = {}) {
                 .excludedSpotIdsForStates([state], timestamp);
             const npcPlanningOptions = { ...planningNpcCatalog.plannerOptions, excludedSpotIds };
             const replanContext = GearAcquisitionPlanner.replanContextFor(state, previousPlan, timestamp);
-            const clanGoalLocked = GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan);
+            const weaponBridgePlan = GearAcquisitionPlanner.npcWeaponBridgePlan(state, npcPlanningOptions);
+            const clanGoalLocked = !weaponBridgePlan
+                && GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan);
             const availabilitySource = !replanContext.failure && previousPlan?.status === 'active'
                 && ['direct_drop', 'craft'].includes(previousPlan.strategy)
                 ? GearAcquisitionPlanner.bestSourceForPlan(state, previousPlan, spots, { occupancy, excludedSpotIds })
@@ -178,7 +184,7 @@ function startKernel(config = {}) {
                 String(availabilitySource.spotId || '') !== String(previousPlan?.next?.spotId || '')
                 || Number(availabilitySource.npcId || 0) !== Number(previousPlan?.next?.npcId || 0)
             );
-            const availabilityPlan = previousPlan?.status === 'blocked' && !clanGoalLocked
+            const availabilityPlan = weaponBridgePlan || (previousPlan?.status === 'blocked' && !clanGoalLocked
                 ? GearAcquisitionPlanner.replacementPlanFor(state, previousPlan, spots, {
                     occupancy,
                     ...replanContext,
@@ -194,8 +200,9 @@ function startKernel(config = {}) {
                             ...replanContext,
                             ...npcPlanningOptions
                         })
-                        : null;
-            const reusablePartyRequest = !state.party?.partyId
+                        : null);
+            const reusablePartyRequest = !weaponBridgePlan
+                && !state.party?.partyId
                 && previousPlan?.next
                 && !!availabilitySource
                 && replanContext.routeCurrent
@@ -220,10 +227,13 @@ function startKernel(config = {}) {
                 ? { ...previousRefresh, finishBeforeUpgrade: true }
                 : upgradedPlan;
             const canFinalizeLockedRoute = clanGoalLocked && availabilityRouteChanged;
-            const finalizationContext = canFinalizeLockedRoute
+            const finalizationContext = weaponBridgePlan
+                ? { ...replanContext, allowClanGoalReplan: true }
+                : canFinalizeLockedRoute
                 ? { ...replanContext, allowClanGoalReplan: true }
                 : replanContext;
-            const preservePreviousPlan = reusablePartyRequest || (clanGoalLocked && !canFinalizeLockedRoute);
+            const preservePreviousPlan = !weaponBridgePlan
+                && (reusablePartyRequest || (clanGoalLocked && !canFinalizeLockedRoute));
             const finalizedPlan = preservePreviousPlan
                 ? previousPlan
                 : GearAcquisitionPlanner.finalizePlan(state, previousPlan, rawPlan, finalizationContext, timestamp);

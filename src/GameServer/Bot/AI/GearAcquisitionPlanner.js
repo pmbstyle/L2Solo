@@ -899,6 +899,22 @@ function staticNpcKitAdequate(state = {}, options = {}) {
     });
 }
 
+// A profession change may invalidate the equipped weapon while an older
+// higher-grade farm or clan objective is still active.  Establish a usable
+// NPC-bought bridge before continuing that longer route; otherwise archers
+// can spend thousands of fights carrying the dagger from their former class.
+function npcWeaponBridgePlan(state = {}, options = {}) {
+    if (combatReadiness(state).hasWeapon) return null;
+    const optimizedInventory = equipInventoryUpgrades(state, state.inventory || {});
+    if (combatReadiness({ ...state, inventory: optimizedInventory }).hasWeapon) return null;
+    const plan = staticNpcUpgradePlan(state, options);
+    return plan?.status === 'active'
+        && plan.strategy === 'market'
+        && WEAPON_SLOTS.has(Number(plan.target?.slot || 0))
+        ? { ...plan, weaponBridge: true, partyNeedReason: 'weapon_bridge' }
+        : null;
+}
+
 function marketPlanForTarget(state = {}, targetId, options = {}) {
     const target = ItemTemplateIndex.find(DataCache.items, targetId);
     const role = roleFor(state);
@@ -1485,6 +1501,8 @@ function replacementPlanFor(state = {}, previousPlan = {}, spots = [], options =
     const recovery = options.levelingRecovery || levelingRecoveryFor(state, previousPlan, options.timestamp);
     if (recovery) return levelingRecoveryPlan(state, recovery, previousPlan);
     if (ClanCrafting.isPersonalCraft(state, previousPlan) && !options.clanCrafting) return planFor(state, { ...options, spots });
+    const weaponBridge = npcWeaponBridgePlan(state, options);
+    if (weaponBridge) return weaponBridge;
     const targetId = Number(previousPlan?.target?.selfId || 0);
     const excluded = new Set((options.excludedTargetIds || []).map(Number).filter(Boolean));
     if (!excluded.has(targetId)) {
@@ -1895,4 +1913,4 @@ function sameObjective(left, right) {
     );
 }
 
-module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
+module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, npcWeaponBridgePlan, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };

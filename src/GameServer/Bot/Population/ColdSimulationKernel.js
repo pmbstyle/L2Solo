@@ -250,6 +250,7 @@ function lifecycleKind(state = {}, context = {}) {
     if ((state.activity === 'merchant' && state.stats?.marketStore)
         || (state.activity === 'crafting' && state.stats?.craftShop)) return 'event_driven';
     const stats = state.stats || {};
+    const plan = stats.equipmentPlan || {};
     if (context.clanHallServices || stats.clanHallVisit) return 'command';
     // Finite travel/rest/death transitions are completely represented by the
     // pure resolver result and the owner CAS proposal. Economy follow-up, if
@@ -261,6 +262,11 @@ function lifecycleKind(state = {}, context = {}) {
     // Finish town services before waiting for a clan hunt. The pure shopping
     // resolver only advances its deadline and cannot buy, sell or leave town.
     if (['shopping', 'crafting', 'merchant'].includes(state.activity)) return 'command';
+    if (String(plan.strategy || '') === 'market') {
+        const price = Math.max(0, Number(plan.market?.price || 0));
+        const reserve = Math.max(0, Number(plan.market?.reserve || 0));
+        if (state.activity !== 'hunting' || (price > 0 && Number(state.adena || 0) >= price + reserve)) return 'command';
+    }
     if (require('./ClanPartyDuty').waiting(state)) return 'resolver';
     if (!SIMPLE_ACTIVITIES.has(String(state.activity || ''))) return 'command';
     // craftReturn is a saved destination, not an outstanding crafting action.
@@ -270,12 +276,6 @@ function lifecycleKind(state = {}, context = {}) {
     if (stats.mammonReturn || (Number(stats.mammonRetryAt || 0) <= Date.now()
         && Object.values(state.inventory || {}).some(item => Number(item.amount)>0
             && invoke('GameServer/Items/C4Unseal').options(item.selfId).length))) return 'command';
-    const plan = stats.equipmentPlan || {};
-    if (String(plan.strategy || '') === 'market') {
-        const price = Math.max(0, Number(plan.market?.price || 0));
-        const reserve = Math.max(0, Number(plan.market?.reserve || 0));
-        if (state.activity !== 'hunting' || (price > 0 && Number(state.adena || 0) >= price + reserve)) return 'command';
-    }
     if (String(plan.strategy || '') === 'craft') {
         if (state.activity !== 'hunting' || ['component_ready', 'ready_to_craft'].includes(String(plan.status || ''))) return 'command';
     }
@@ -332,6 +332,9 @@ class ColdSimulationKernel {
         this.resolveSolo = options.resolveSolo;
         this.resolveParty = typeof options.resolveParty === 'function' ? options.resolveParty : null;
         this.planLifecycle = typeof options.planLifecycle === 'function' ? options.planLifecycle : null;
+        this.requiresWeaponBridge = typeof options.requiresWeaponBridge === 'function'
+            ? options.requiresWeaponBridge
+            : null;
         this.projectResolve = typeof options.projectResolve === 'function' ? options.projectResolve : null;
         this.now = options.now || Date.now;
         this.emit = options.emit || (() => {});
@@ -925,14 +928,18 @@ class ColdSimulationKernel {
             }
 
             const rescuing = run.members.some(s => s.vitals?.hp <= 0);
+            const weaponBridgeReview = !rescuing && this.requiresWeaponBridge
+                && run.members.some((member) => this.requiresWeaponBridge(member));
             if (!rescuing && (BackgroundPartyLifecycle.sessionExpired(run.party, startedAt, this.partySession)
-                || require('./ClanEquipmentPartyPolicy').needsReview(run.party, run.members, startedAt))) {
+                || require('./ClanEquipmentPartyPolicy').needsReview(run.party, run.members, startedAt)
+                || weaponBridgeReview)) {
                 const review = BackgroundPartyLifecycle.review(run.party, run.members, startedAt, {
                     ...this.partySession,
                     assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                     chooseLeader: states => typeof invoke === 'function' ? invoke('GameServer/Bot/Population/BackgroundPartyComposition').chooseLeader(states) : states[0],
                     roleCoverage: states => typeof invoke === 'function' ? invoke('GameServer/Bot/Population/BackgroundPartyComposition').roleCoverage(states) : run.party.roleCoverage,
-                    personaFor: state => typeof invoke === 'function' ? invoke('GameServer/Bot/AI/BotPersona').generate(state) : state.persona
+                    personaFor: state => typeof invoke === 'function' ? invoke('GameServer/Bot/AI/BotPersona').generate(state) : state.persona,
+                    requiresWeaponBridge: this.requiresWeaponBridge
                 });
                 const proposals = partyTransitionProposals(run, review.states, review.party, startedAt, {
                     type: 'party_session_review', summary: `Party ${run.party.partyId} reviewed its shared hunt`, weight: 1,

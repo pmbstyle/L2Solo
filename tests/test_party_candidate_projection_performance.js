@@ -149,6 +149,13 @@ Database.init();
     const changed = (await LifeState.coldPartyCandidateProjections()).find(row => row.characterId === 3100000);
     assert.strictEqual(changed.party.role, 'buffer');
     assert.deepStrictEqual(changed.stats.partyHistory, changedStats.partyHistory);
+    await Database.execute(['UPDATE bot_life_state SET statsJson = ? WHERE characterId = ?',
+        [JSON.stringify({ ...changedStats, equipmentPlan: { status: 'active', strategy: 'market',
+            target: { selfId: 274, slot: 14 } } }), 3100000]]);
+    assert(!(await LifeState.coldPartyCandidateProjections()).some(row => row.characterId === 3100000),
+        'a bot shopping for its equipment bridge must not immediately reform a hunting party');
+    await Database.execute(['UPDATE bot_life_state SET statsJson = ? WHERE characterId = ?',
+        [JSON.stringify(changedStats), 3100000]]);
     await Database.execute(['CREATE TABLE projection_writes(n INTEGER)', []]);
     await Database.execute([`CREATE TRIGGER observe_projection_write AFTER UPDATE ON bot_party_candidate_projection
         BEGIN INSERT INTO projection_writes VALUES(1); END`, []]);
