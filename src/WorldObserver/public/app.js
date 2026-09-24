@@ -2263,22 +2263,35 @@ function updateLevelFilter(changed) {
     renderFilteredActorViews();
 }
 
+function populationDisplayCounts(population = {}) {
+    const services = Number(population.services ?? population.merchants ?? 0);
+    const active = Number(population.active ?? Math.max(0, Number(population.hot || 0) - services));
+    return { active, services };
+}
+
 function renderPopulation() {
     const snap = state.snapshot;
     const population = snap.population || {};
     const total = Number(population.total || snap.bots.length || 0);
+    const { active, services } = populationDisplayCounts(population);
     els.botsTotal.textContent = total.toLocaleString();
     els.playersTotal.textContent = (snap.players?.length || 0).toLocaleString();
-    els.populationSubline.textContent = `${number(population.hot || 0)} active on field · ${number(population.persisted || total)} persisted · ${number(population.parties || 0)} background parties`;
+    els.populationSubline.textContent = `${number(active)} active on field · ${number(services)} services · ${number(population.persisted || total)} persisted · ${number(population.parties || 0)} background parties`;
     els.lastRefresh.textContent = formatTime(snap.generatedAt);
 
-    const phaseTotal = Math.max(1, Number(population.hot || 0) + Number(population.warm || 0) + Number(population.cold || 0));
-    els.phaseBars.innerHTML = ['hot', 'warm', 'cold'].map((phase) => {
-        const count = Number(population[phase] || 0);
+    const phases = [
+        { key: 'active', label: 'Active', className: 'hot', count: active },
+        { key: 'services', label: 'Services', className: 'services', count: services },
+        { key: 'warm', label: phaseLabel('warm'), className: 'warm', count: Number(population.warm || 0) },
+        { key: 'cold', label: phaseLabel('cold'), className: 'cold', count: Number(population.cold || 0) }
+    ];
+    const phaseTotal = Math.max(1, phases.reduce((sum, phase) => sum + phase.count, 0));
+    els.phaseBars.innerHTML = phases.map((phase) => {
+        const count = phase.count;
         const width = Math.max(count ? 2 : 0, (count / phaseTotal) * 100);
         return `<div class="population-bar-row">
-            <span class="phase-label"><i class="legend-dot ${phase}"></i>${phaseLabel(phase)}</span>
-            <div class="population-track"><div class="population-fill ${phase}" style="width:${width}%"></div></div>
+            <span class="phase-label"><i class="legend-dot ${phase.className}"></i>${phase.label}</span>
+            <div class="population-track"><div class="population-fill ${phase.className}" style="width:${width}%"></div></div>
             <strong>${count.toLocaleString()}</strong>
         </div>`;
     }).join('');
@@ -2959,7 +2972,8 @@ function renderSnapshot() {
     if (!snap) return;
 
     const population = snap.population || {};
-    els.serverLine.textContent = `${number(population.total || snap.bots.length)} bots in simulation · ${number(population.hot || 0)} active · uptime ${formatDuration(snap.uptimeMs)}`;
+    const { active, services } = populationDisplayCounts(population);
+    els.serverLine.textContent = `${number(population.total || snap.bots.length)} bots in simulation · ${number(active)} active · ${number(services)} services · uptime ${formatDuration(snap.uptimeMs)}`;
     setSvgViewBox();
     renderTiles();
     renderGrid();
@@ -3119,7 +3133,8 @@ async function loadWorldStatus(force = false) {
         state.worldStatusAt = Date.now();
         state.snapshot = { ...state.snapshot, ...status };
         const population = state.snapshot.population || {};
-        els.serverLine.textContent = `${number(population.total || state.snapshot.bots.length)} bots in simulation · ${number(population.hot || 0)} active · uptime ${formatDuration(state.snapshot.uptimeMs)}`;
+        const { active, services } = populationDisplayCounts(population);
+        els.serverLine.textContent = `${number(population.total || state.snapshot.bots.length)} bots in simulation · ${number(active)} active · ${number(services)} services · uptime ${formatDuration(state.snapshot.uptimeMs)}`;
         renderFilterCounts();
         renderPopulation();
         renderMarket();

@@ -9,6 +9,7 @@ const DataCache = invoke('GameServer/DataCache');
 const GearPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
+const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 
 DataCache.init();
 
@@ -76,7 +77,39 @@ try {
 
     BotLifeState.init().then((ready) => {
         assert.strictEqual(ready, true);
-        const recovery = statements.find((entry) => entry.sql.includes("WHERE phase = 'hot'"));
+        const retiredStaticMerchants = statements.find((entry) => entry.sql.includes('retired_static_merchant'));
+        assert(retiredStaticMerchants, 'bot life init should remove hot lifecycle rows for retired static merchants');
+        assert(retiredStaticMerchants.sql.includes("json_extract(statsJson, '$.marketStore') IS NULL"),
+            'dynamic market stores must survive static-service retirement cleanup');
+        assert(retiredStaticMerchants.sql.includes('characterName NOT IN'),
+            'configured static merchants must remain available for startup spawning');
+        assert.deepStrictEqual(retiredStaticMerchants.params, Object.keys(MerchantStoreConfigs),
+            'retirement cleanup must use the current static merchant configuration as its allowlist');
+        const retirementProbe = new DatabaseSync(':memory:');
+        try {
+            retirementProbe.exec(`CREATE TABLE bot_life_state (
+                characterId INTEGER PRIMARY KEY,
+                characterName TEXT NOT NULL,
+                phase TEXT NOT NULL,
+                activity TEXT NOT NULL,
+                statsJson TEXT NOT NULL
+            )`);
+            const configuredName = Object.keys(MerchantStoreConfigs)[0];
+            const insertRetirementProbe = retirementProbe.prepare(`INSERT INTO bot_life_state
+                (characterId, characterName, phase, activity, statsJson) VALUES (?, ?, ?, ?, ?)`);
+            insertRetirementProbe.run(1, configuredName, 'hot', 'merchant', '{}');
+            insertRetirementProbe.run(2, 'RetiredStaticMerchant', 'hot', 'merchant', '{}');
+            insertRetirementProbe.run(3, 'DynamicMarketStore', 'hot', 'merchant', JSON.stringify({ marketStore: { storeType: 1 } }));
+            insertRetirementProbe.run(4, 'ColdMerchant', 'cold', 'merchant', '{}');
+            retirementProbe.prepare(retiredStaticMerchants.sql).run(...retiredStaticMerchants.params);
+            assert.deepStrictEqual(retirementProbe.prepare('SELECT characterId FROM bot_life_state ORDER BY characterId').all()
+                .map((row) => Number(row.characterId)), [1, 3, 4],
+            'startup cleanup must remove only retired hot static merchants');
+        } finally {
+            retirementProbe.close();
+        }
+        const recovery = statements.find((entry) => entry.sql.includes("SET phase = 'cold'")
+            && entry.sql.includes("WHERE phase = 'hot'"));
         assert(recovery, 'bot life init should recover stale hot records on startup');
         assert(recovery.sql.includes("activity <> 'merchant' OR statsJson LIKE '%\"marketStore\"%'"), 'only dynamic market merchants should be recovered; configured static merchants remain hot');
         assert(!recovery.sql.includes('activity <> \'crafting\''), 'craft services must recover as cold because they have no static startup owner');

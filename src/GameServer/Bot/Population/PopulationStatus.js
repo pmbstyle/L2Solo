@@ -25,6 +25,7 @@ const PopulationStatus = {
         const sessions = BotManager.sessions || [];
         const hot = sessions.filter((session) => isBotSession(session) && session.actor).length;
         const merchants = sessions.filter((session) => isBotSession(session) && session.actor && session.plan === 'merchant').length;
+        const active = Math.max(0, hot - merchants);
         const lifeCounts = LifeState.counts();
         const coldQueue = LifeState.coldDueSummary();
         const partyCounts = PartyState.counts();
@@ -33,10 +34,12 @@ const PopulationStatus = {
 
         return {
             hot,
+            active,
             warm: lifeCounts.warm || 0,
             cold: lifeCounts.cold || 0,
             parties: partyCounts.active || 0,
             merchants,
+            services: merchants,
             total: Math.max(hot, lifeCounts.total || 0),
             persisted: lifeCounts.total || 0,
             coldQueue,

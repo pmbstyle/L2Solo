@@ -11,6 +11,7 @@ const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 if (previousMaxPlayingPopulation === undefined) delete process.env.BOT_POPULATION_MAX_PLAYING;
 else process.env.BOT_POPULATION_MAX_PLAYING = previousMaxPlayingPopulation;
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+const PopulationStatus = invoke('GameServer/Bot/Population/PopulationStatus');
 
 assert.strictEqual(Config.maxPlayingPopulation, 1700, 'population cap must be normalized to a whole character count');
 
@@ -80,6 +81,11 @@ async function run() {
     Config.cooldownBatchSize = 20;
     World.user = { sessions: [playerSession, nearBotA, nearBotB, farBot, youngFarBot] };
     BotManager.sessions = [nearBotA, nearBotB, farBot, farCraftBot, farPk, ordinaryPk, youngFarBot];
+    const populationCounts = PopulationStatus.counts();
+    assert.strictEqual(populationCounts.hot, 7, 'raw hot telemetry must retain every materialized bot session');
+    assert.strictEqual(populationCounts.merchants, 1, 'merchant telemetry must retain materialized service sessions');
+    assert.strictEqual(populationCounts.active, 6, 'field-active telemetry must exclude merchant services');
+    assert.strictEqual(populationCounts.services, 1, 'observer service telemetry must expose merchants separately');
 
     const coldStates = [
         { characterId: 100, name: 'ColdPk', level: 10, activity: 'pk_hunting' },
