@@ -78,7 +78,8 @@ assert(sources.length, 'the reproduction must use a real Crystal Staff source');
 assert.strictEqual(Planner.safeFallbackForPlan(legacy, legacyPlan, [sourceSpot]), null,
     'a required-party route must never fall back to another unsafe solo source');
 const strong = { ...healthy, level: 78 };
-assert(Planner.safeFallbackForPlan(strong, plan, [sourceSpot]), 'a solo-safe source must remain usable');
+assert.strictEqual(Planner.safeFallbackForPlan(strong, plan, [sourceSpot]), null,
+    'a source below the voluntary hot-combat level band must not remain usable just because it is solo-safe');
 assert.deepStrictEqual(Planner.retargetPlanSource(healthy, plan, sources[0]).targetProgress, plan.targetProgress,
     'refreshing the same source must not reset its failure counters');
 const previousSpots = Spots.cache;

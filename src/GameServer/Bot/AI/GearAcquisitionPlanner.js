@@ -18,6 +18,7 @@ const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
+const BotTargetScorer = invoke('GameServer/Bot/AI/BotTargetScorer');
 const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 
@@ -25,7 +26,7 @@ const RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
 const WEAPON_SLOTS = new Set([7, 14]);
 const ARMOR_SLOTS = new Set([6, 9, 10, 11, 12, 15]);
 const JEWEL_SLOTS = new Set([1, 2, 3, 4, 5]);
-const RATE_MODEL_VERSION = 11;
+const RATE_MODEL_VERSION = 12;
 const DIRECT_FAILURE_RESOLVE_LIMIT = 8;
 const DIRECT_DROP_EXHAUSTION_MULTIPLIER = 3;
 const DIRECT_ROUTE_COOLDOWN_MS = 60 * 60 * 1000;
@@ -994,13 +995,30 @@ function clanGoalPlanLocked(state = {}, plan = state?.stats?.equipmentPlan) {
         && !require('./EquipmentAcquisitionProgress').componentAcquired(state, plan)
         && (
             plan?.status === 'blocked' && plan?.reason === 'equipment_effort_limit'
-            || plan?.status !== 'blocked' && (!npcId || isBotEligibleSourceNpcId(npcId))
+            || plan?.status !== 'blocked' && (!npcId || isPlanSourceViableForState(state, plan))
         );
 }
 
 function isBotEligibleSourceNpcId(npcId) {
     const npc = catalogNpc(npcId);
     return !!npc && BotHuntingTargetPolicy.canHunt(npc);
+}
+
+function sourceWithinVoluntaryHuntBand(state = {}, source = {}) {
+    const botLevel = Number(state.level || 0);
+    const sourceLevel = Number(source.npcLevel || source.spotLevel || 0);
+    if (!botLevel || !sourceLevel) return true;
+    return sourceLevel - botLevel >= BotTargetScorer.MIN_LEVEL_GAP;
+}
+
+function isPlanSourceViableForState(state = {}, plan = {}) {
+    const npcId = Number(plan?.next?.npcId || 0);
+    if (!npcId) return true;
+    if (!isBotEligibleSourceNpcId(npcId)) return false;
+    const npc = catalogNpc(npcId);
+    return sourceWithinVoluntaryHuntBand(state, {
+        npcLevel: Number(npc?.template?.level || npc?.level || 0)
+    });
 }
 
 function directPlanFailure(state = {}, plan = {}, timestamp = Date.now()) {
@@ -1128,6 +1146,7 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
     const levelingRecovery = levelingRecoveryFor(state, previousPlan, timestamp);
     const sourceNpcId = Number(previousPlan?.next?.npcId || 0);
     const sourceAllowed = !sourceNpcId || isBotEligibleSourceNpcId(sourceNpcId);
+    const sourceViable = !sourceNpcId || isPlanSourceViableForState(state, previousPlan);
     const modelCurrent = Number(previousPlan?.rateModelVersion || 0) >= RATE_MODEL_VERSION
         && String(previousPlan?.rateProfileSignature || '') === rateProfileSignature();
     const recoveryTargets = sameGrade ? (previousPlan.recoveryTargets || [])
@@ -1162,9 +1181,14 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
         routeCurrent: !levelingRecovery && !ClanCrafting.isPersonalCraft(state, previousPlan) && Boolean(previousPlan)
             && sameGrade
             && sourceAllowed
+            && sourceViable
             && modelCurrent
             && Number(previousPlan.plannedForLevel || 0) === currentLevel,
-        invalidSource: sourceAllowed ? null : { npcId: sourceNpcId, reason: 'protected_raid_source' },
+        invalidSource: !sourceAllowed
+            ? { npcId: sourceNpcId, reason: 'protected_raid_source' }
+            : !sourceViable
+                ? { npcId: sourceNpcId, reason: 'level_too_low' }
+                : null,
         failure,
         recoveryTargets,
         excludedTargetIds: recoveryTargets.map((entry) => Number(entry.targetId)),
@@ -1404,7 +1428,9 @@ function sourceIsExcluded(source, options = {}) {
 }
 
 function bestSourceForState(sources = [], state = {}, options = {}) {
-    const allowedSources = sources.filter((source) => !sourceIsExcluded(source, options));
+    const allowedSources = sources
+        .filter((source) => !sourceIsExcluded(source, options))
+        .filter((source) => sourceWithinVoluntaryHuntBand(state, source));
     const safeSources = allowedSources.filter((source) => soloSafeForSource(state, source));
     if (!options.occupancy) return safeSources[0] || allowedSources[0] || null;
     const safeAvailable = safeSources.filter((source) => sourceHasCapacity(source, state, options));
@@ -1913,4 +1939,4 @@ function sameObjective(left, right) {
     );
 }
 
-module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, npcWeaponBridgePlan, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
+module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, npcWeaponBridgePlan, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, sourceWithinVoluntaryHuntBand, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isPlanSourceViableForState, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };

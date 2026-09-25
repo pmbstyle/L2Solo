@@ -155,7 +155,7 @@ async function run() {
 
     await PopulationService.activateNearPlayers();
     assert.deepStrictEqual(activated, ['ColdLevel45'],
-        'local visibility must not stop activating an eligible nearby bot after the old density target is removed');
+        'physical proximity must activate the local cold bot without a player-level filter');
 
     const grouped = Array.from({ length: 9 }, (_, i) => ({ characterId: 200 + i, name: `Group${i}`, level: 45,
         activity: 'grouped', party: { partyId: 'full-party' } }));

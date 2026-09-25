@@ -100,6 +100,41 @@ assert.strictEqual(
     'safe',
     'material planning must prefer a viable lower-yield solo source over a dangerous one'
 );
+assert.strictEqual(
+    GearAcquisitionPlanner.bestSourceForState([
+        { npcLevel: 22, id: 'deep-blue-source', expectedYield: 10 },
+        { npcLevel: 23, id: 'hot-eligible-source', expectedYield: 1 }
+    ], gearedLevel30).id,
+    'hot-eligible-source',
+    'equipment planning must ignore a higher-yield source that hot AI rejects as level_too_low'
+);
+assert.strictEqual(
+    GearAcquisitionPlanner.bestSourceForState([
+        { npcLevel: 22, id: 'deep-blue-source', expectedYield: 10 }
+    ], gearedLevel30),
+    null,
+    'equipment planning must not retain a deep-blue-only source when no hot-eligible source exists'
+);
+
+const staleLowLevelSourcePlan = {
+    status: 'active',
+    grade: GearAcquisitionPlanner.gradeForLevel(36),
+    strategy: 'direct_drop',
+    plannedForLevel: 36,
+    rateModelVersion: GearAcquisitionPlanner.RATE_MODEL_VERSION,
+    rateProfileSignature: GearAcquisitionPlanner.rateProfileSignature(),
+    target: { selfId: handAxe.selfId, name: 'Hand Axe', slot: 7 },
+    next: { npcId: 414, spotId: wereratChiefSpot.id, itemId: handAxe.selfId }
+};
+const staleLowLevelContext = GearAcquisitionPlanner.replanContextFor({
+    level: 36,
+    stats: { classId: 0, role: 'dps', equipmentPlan: staleLowLevelSourcePlan },
+    inventory: {}
+}, staleLowLevelSourcePlan, Date.now());
+assert.strictEqual(staleLowLevelContext.routeCurrent, false,
+    'a persisted equipment route must be replanned once its source falls below the hot target band');
+assert.strictEqual(staleLowLevelContext.invalidSource?.reason, 'level_too_low',
+    'persisted deep-blue-only routes must expose the same rejection reason as hot target selection');
 
 const previousProgressionRate = process.env.L2NODE_PROGRESSION_RATE;
 const caveMaidenSpot = {

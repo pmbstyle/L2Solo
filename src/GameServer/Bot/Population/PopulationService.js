@@ -886,18 +886,6 @@ function syncPartyLeader(members = [], party, leaderId) {
     return assignPartyMembers(staleMembers, { ...party, leaderId: nextLeaderId });
 }
 
-function activationCandidatesForPlayer(states, playerLevel) {
-    const level = Number(playerLevel || 1);
-    const range = Math.max(0, Number(Config.activationLevelRange || 0));
-    const matching = states.filter((state) => {
-        const stateLevel = Number(state.level || 1);
-        if (Math.abs(stateLevel - level) <= range) return true;
-        return !!state.stats?.newbieAnchor && level <= Config.newbieAnchorMaxLevel + 2;
-    });
-
-    return matching.length > 0 ? matching : states;
-}
-
 function distance2d(a, b) {
     const dx = Number(a?.fetchLocX?.() || 0) - Number(b?.fetchLocX?.() || 0);
     const dy = Number(a?.fetchLocY?.() || 0) - Number(b?.fetchLocY?.() || 0);
@@ -1845,10 +1833,11 @@ const PopulationService = {
                             0,
                             Config.maxActivationsPerScan - ambientActivated.length
                         );
-                        const candidates = [...crafters, ...merchants, ...activationCandidatesForPlayer(
-                            available.filter((state) => state.activity !== 'merchant' && state.activity !== 'crafting'),
-                            actor.fetchLevel()
-                        )].slice(0, crafters.length + ambientRemaining);
+                        const ambient = available.filter((state) => (
+                            state.activity !== 'merchant' && state.activity !== 'crafting'
+                        ));
+                        const candidates = [...crafters, ...merchants, ...ambient]
+                            .slice(0, crafters.length + ambientRemaining);
                         const floorAware = FloorAwareActivationPolicy.filterCandidates(candidates, {
                             playerLoc: loc,
                             reason: 'near_player'
