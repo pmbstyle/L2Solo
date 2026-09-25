@@ -18,6 +18,8 @@ const { weaponMaskFor } = invoke('GameServer/Skills/WeaponMask');
 class Attack {
     constructor() {
         this.timers = new Set();
+        this.bowReloading = false;
+        this.bowRepeatTarget = null;
         this.resetQueuedEvent();
     }
 
@@ -68,6 +70,8 @@ class Attack {
         this.activeCast = null;
         this.timers.forEach((timer) => clearTimeout(timer));
         this.timers.clear();
+        this.bowReloading = false;
+        this.bowRepeatTarget = null;
     }
 
     abortCast(session, actor) {
@@ -102,6 +106,13 @@ class Attack {
         }
 
         const attackRange = AttackRange.fetchNormalAttackRange(actor);
+        const rangedAttack = AttackRange.weaponKind(actor) === 'Weapon.Bow';
+        if (rangedAttack && this.bowReloading) {
+            // Movement and other actions are legal after the arrow is released,
+            // but another arrow must still wait for the weapon reuse phase.
+            this.bowRepeatTarget = creature;
+            return;
+        }
         if (!AttackRange.isWithinRange(actor, creature, attackRange)) {
             actor.state.setHits(false);
             // Auto-attacks and chase arrivals both return here. The target
@@ -112,7 +123,6 @@ class Attack {
             }
             return;
         }
-        const rangedAttack = AttackRange.weaponKind(actor) === 'Weapon.Bow';
         if (rangedAttack && !invoke('GameServer/Actor/BowResources').consume(session, actor)) return;
 
         // Soulshots are only reloaded after the player enables their hotbar toggle.
@@ -142,6 +152,11 @@ class Attack {
                 EffectStats.multiplier(actor, 'atkReuseMul'))
             : { drawMs: Formulas.calcMeleeAtkTime(attackSpeed) * 0.644,
                 cycleMs: Formulas.calcMeleeAtkTime(attackSpeed) };
+        const movementGeneration = Number(session.moveRouteGeneration || 0);
+        if (rangedAttack) {
+            this.bowReloading = true;
+            this.bowRepeatTarget = null;
+        }
         let secondaryDamageMultiplier = 0.85;
         const hits = this.resolveMeleeTargets(actor, creature).map((target, index) => {
             const hitLanded = Formulas.calcHitChance(actor, target, Math.random, this.positionContext(actor, target));
@@ -174,7 +189,14 @@ class Attack {
         actor.state.setHits(true);
 
         this.queueTimer(() => {
+            const releaseBowMovement = () => {
+                if (!rangedAttack) return;
+                actor.state.setHits(false);
+                if (this.queue.name) this.dequeueEvent(session);
+            };
+
             if (this.blockedPvpDefense(session, actor, creature) || this.checkParticipants(actor, creature)) {
+                releaseBowMovement();
                 return;
             }
 
@@ -182,6 +204,7 @@ class Attack {
                 if (usedSoulshot) {
                     actor.soulshotLoaded = false;
                 }
+                releaseBowMovement();
                 return;
             }
 
@@ -205,10 +228,18 @@ class Attack {
                 }
             });
 
+            releaseBowMovement();
+
         }, timing.drawMs); // Until hit point
 
         this.queueTimer(() => {
-            if (this.blockedPvpDefense(session, actor, creature) || this.checkParticipants(actor, creature)) {
+            const repeatTarget = rangedAttack ? this.bowRepeatTarget : null;
+            const nextTarget = repeatTarget || creature;
+            if (rangedAttack) {
+                this.bowReloading = false;
+                this.bowRepeatTarget = null;
+            }
+            if (this.blockedPvpDefense(session, actor, nextTarget) || this.checkParticipants(actor, nextTarget)) {
                 return;
             }
 
@@ -221,6 +252,17 @@ class Attack {
                 this.dequeueEvent(session);
                 return;
             }
+
+            if (rangedAttack && repeatTarget) {
+                this.meleeHit(session, nextTarget);
+                return;
+            }
+
+            if (rangedAttack && (
+                Number(session.moveRouteGeneration || 0) !== movementGeneration
+                || actor.state.inMotion?.()
+                || actor.isBlocked?.()
+            )) return;
 
             this.meleeHit(session, creature);
 

@@ -17,7 +17,12 @@ function fixture(kind = 'Weapon.DualFist', targetX = 40) {
         fetchId: () => 2000001, fetchLocX() { return this.x; },
         fetchLocY: () => 0, fetchLocZ: () => 0, fetchRadius: () => 8,
         fetchCollectiveAtkSpd: () => 333,
-        state: { fetchDead: () => false, setHits(value) { this.hits = value; } },
+        state: {
+            fetchDead: () => false,
+            fetchHits() { return !!this.hits; },
+            inMotion() { return false; },
+            setHits(value) { this.hits = value; }
+        },
         backpack: { fetchTotalWeaponKind: () => kind },
         automation: { scheduleAction(session, source, target, range, callback, options) {
             chases.push({ target, range, callback, options });
@@ -106,10 +111,34 @@ try {
     bow.target.x = 1000;
     bow.timers[0]();
     assert.strictEqual(bow.damage.length, 1, 'a launched arrow may reach a target that leaves bow range');
+    assert.strictEqual(bow.actor.state.fetchHits(), false, 'movement should unlock as soon as the arrow is released');
     bow.timers[1]();
     assert.strictEqual(bow.chases.length, 1, 'the next arrow must still require bow range');
     assert.strictEqual(bow.actor.fetchMp(), 8, 'chasing must not spend MP');
     assert.strictEqual(bow.actor.backpack.fetchItemFromSelfId(17).fetchAmount(), 1);
+
+    const movingBow = fixture('Weapon.Bow', 600);
+    movingBow.attack.meleeHit(movingBow.session, movingBow.target);
+    movingBow.timers[0]();
+    movingBow.session.moveRouteGeneration = 1;
+    movingBow.timers[1]();
+    assert.strictEqual(movingBow.timerDelays.length, 2,
+        'movement during bow reload should cancel the automatic next shot');
+    assert.strictEqual(movingBow.actor.fetchMp(), 8, 'movement during reload must not spend MP on another arrow');
+    assert.strictEqual(movingBow.actor.backpack.fetchItemFromSelfId(17).fetchAmount(), 1,
+        'movement during reload must not consume another arrow');
+
+    const reloadingBow = fixture('Weapon.Bow', 600);
+    reloadingBow.attack.meleeHit(reloadingBow.session, reloadingBow.target);
+    reloadingBow.timers[0]();
+    reloadingBow.attack.meleeHit(reloadingBow.session, reloadingBow.target);
+    assert.strictEqual(reloadingBow.actor.fetchMp(), 8, 'a repeated attack request must wait for bow reload');
+    assert.strictEqual(reloadingBow.actor.backpack.fetchItemFromSelfId(17).fetchAmount(), 1,
+        'a repeated attack request must not consume an arrow during bow reload');
+    reloadingBow.timers[1]();
+    assert.strictEqual(reloadingBow.actor.fetchMp(), 6, 'the queued attack should start when bow reload completes');
+    assert.strictEqual(reloadingBow.actor.backpack.fetchItemFromSelfId(17), undefined,
+        'the queued attack should consume and remove its last arrow only after bow reload completes');
 
     const missed = fixture('Weapon.Bow', 600);
     Formulas.calcHitChance = () => false;
