@@ -135,7 +135,13 @@ class Attack {
             }, autoSoulshotId);
         }
 
-        const speed = Formulas.calcMeleeAtkTime(actor.fetchCollectiveAtkSpd());
+        const attackSpeed = actor.fetchCollectiveAtkSpd();
+        const weapon = actor.backpack?.fetchEquippedWeapon?.();
+        const timing = rangedAttack
+            ? Formulas.calcBowAttackTimes(attackSpeed, weapon?.fetchAttackReuseDelay?.() ?? 1500,
+                EffectStats.multiplier(actor, 'atkReuseMul'))
+            : { drawMs: Formulas.calcMeleeAtkTime(attackSpeed) * 0.644,
+                cycleMs: Formulas.calcMeleeAtkTime(attackSpeed) };
         let secondaryDamageMultiplier = 0.85;
         const hits = this.resolveMeleeTargets(actor, creature).map((target, index) => {
             const hitLanded = Formulas.calcHitChance(actor, target, Math.random, this.positionContext(actor, target));
@@ -152,6 +158,11 @@ class Attack {
         const primary = hits[0];
         const usedSoulshot = hits.some((entry) => entry.usedSoulshot);
         hits.forEach(({ target }) => invoke('GameServer/Bot/AI/BotMobCompetition').record(actor, target));
+
+        if (rangedAttack && !session.botSession) {
+            ConsoleText.transmit(session, ConsoleText.caption.shootArrow);
+            session.dataSendToMe(ServerResponse.skillDurationBar(Math.round(timing.cycleMs)));
+        }
 
         session.dataSendToMeAndOthers(ServerResponse.attack(actor, creature.fetchId(), {
             ...primary.hit,
@@ -194,7 +205,7 @@ class Attack {
                 }
             });
 
-        }, speed * 0.644); // Until hit point
+        }, timing.drawMs); // Until hit point
 
         this.queueTimer(() => {
             if (this.blockedPvpDefense(session, actor, creature) || this.checkParticipants(actor, creature)) {
@@ -213,7 +224,7 @@ class Attack {
 
             this.meleeHit(session, creature);
 
-        }, speed); // Until end of combat move
+        }, timing.cycleMs); // Until end of combat move or bow reload
     }
 
     remoteHit(session, creature, skill) {

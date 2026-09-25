@@ -9,7 +9,7 @@ const Item = invoke('GameServer/Item/Item');
 const CompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 
 function fixture(kind = 'Weapon.DualFist', targetX = 40) {
-    const timers = [], packets = [], damage = [], chases = [];
+    const timers = [], timerDelays = [], packets = [], damage = [], chases = [];
     const actor = {
         x: 0, effects: {}, mp: 10,
         isDead: () => false, fetchMp() { return this.mp; },
@@ -37,11 +37,11 @@ function fixture(kind = 'Weapon.DualFist', targetX = 40) {
     };
     const session = { actor, persistenceMode: 'ephemeral', dataSendToMe(packet) { packets.push(packet); }, dataSendToMeAndOthers(packet) { packets.push(packet); } };
     const attack = new Attack();
-    attack.queueTimer = (callback) => timers.push(callback);
+    attack.queueTimer = (callback, delay) => { timers.push(callback); timerDelays.push(delay); };
     attack.prepareMeleeHit = () => ({ damage: 10, flags: 0 });
     attack.hit = (session, source, victim, amount) => damage.push({ victim, amount });
     attack.applyDamageAbsorb = () => {};
-    return { actor, target, session, attack, timers, packets, damage, chases };
+    return { actor, target, session, attack, timers, timerDelays, packets, damage, chases };
 }
 
 const originalChance = Formulas.calcHitChance;
@@ -97,6 +97,12 @@ try {
     bow.attack.meleeHit(bow.session, bow.target);
     assert.strictEqual(bow.actor.fetchMp(), 8);
     assert.strictEqual(bow.actor.backpack.fetchItemFromSelfId(17).fetchAmount(), 1);
+    assert.deepStrictEqual(
+        bow.timerDelays.map(Math.round),
+        [1554, 3108],
+        'a bow hit should land after drawing and repeat only after the separate C4 reuse phase'
+    );
+    assert(bow.packets.some(packet => packet[0] === 0x6d), 'a player bow attack should show its draw and reload gauge');
     bow.target.x = 1000;
     bow.timers[0]();
     assert.strictEqual(bow.damage.length, 1, 'a launched arrow may reach a target that leaves bow range');

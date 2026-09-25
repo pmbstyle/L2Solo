@@ -61,6 +61,16 @@ const physicalWithSoulshot = Math.round(Formulas.calcPhysicalDamage(100, 0, 100,
 assert.strictEqual(physicalWithSoulshot, 158, 'physical skills should add skill power after soulshot boosts PAtk');
 assert.strictEqual(Math.round(Formulas.calcMeleeAtkTime(1000)), 470, 'melee attack time should use the L2J 470000/rate constant');
 assert.strictEqual(Formulas.calcMeleeAtkTime(1), 2700, 'melee attack time should keep the L2J low-rate guard');
+assert.deepStrictEqual(
+    Formulas.calcBowAttackTimes(345),
+    { drawMs: 1500, reuseMs: 1500, cycleMs: 3000 },
+    'a C4 bow should separate its sourced draw time from its weapon reuse delay'
+);
+assert.deepStrictEqual(
+    Formulas.calcBowAttackTimes(690, 1500, 0.8),
+    { drawMs: 750, reuseMs: 600, cycleMs: 1350 },
+    'bow attack speed and reuse modifiers should scale the two phases independently'
+);
 assert.strictEqual(Math.round(Formulas.calcRemoteAtkTime(1500, 333)), 1500, 'skill hit time should scale with the 333/rate constant');
 
 const castActor = actor();
