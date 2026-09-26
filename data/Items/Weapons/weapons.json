@@ -196,7 +196,7 @@
 },{
     "selfId": 89,
     "template": { "kind": "Weapon.Blunt", "name": "Big Hammer", "class1": 0, "class2": 0, "mass": 1710, "price": 2290000 },
-    "stats": { "pAtk": 107, "pAtkRnd": 20, "mAtk": 61, "atkSpd": 379, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 107, "pAtkRnd": 20, "mAtk": 61, "atkSpd": 379, "crit": 40, "accur": 4 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 916 }
 },{
     "selfId": 90,
@@ -206,12 +206,12 @@
 },{
     "selfId": 91,
     "template": { "kind": "Weapon.Blunt", "name": "Heavy War Axe", "class1": 0, "class2": 0, "mass": 1620, "price": 8680000 },
-    "stats": { "pAtk": 175, "pAtkRnd": 20, "mAtk": 91, "atkSpd": 379, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 175, "pAtkRnd": 20, "mAtk": 91, "atkSpd": 379, "crit": 40, "accur": 4 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "b", "cristals": 1157 }
 },{
     "selfId": 92,
     "template": { "kind": "Weapon.Blunt", "name": "Sprite's Staff", "class1": 0, "class2": 0, "mass": 960, "price": 8680000 },
-    "stats": { "pAtk": 170, "pAtkRnd": 20, "mAtk": 122, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 170, "pAtkRnd": 20, "mAtk": 122, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "b", "cristals": 1157 }
 },{
     "selfId": 93,
@@ -221,27 +221,27 @@
 },{
     "selfId": 94,
     "template": { "kind": "Weapon.Pole", "name": "Bec de Corbin", "class1": 0, "class2": 0, "mass": 2020, "price": 2870000 },
-    "stats": { "pAtk": 122, "pAtkRnd": 10, "mAtk": 68, "atkSpd": 325, "crit": 80, "accur": -3.75 },
+    "stats": { "pAtk": 122, "pAtkRnd": 10, "mAtk": 68, "atkSpd": 325, "crit": 80, "accur": -3 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 1148 }
 },{
     "selfId": 95,
     "template": { "kind": "Weapon.Pole", "name": "Poleaxe", "class1": 0, "class2": 0, "mass": 2010, "price": 4300000 },
-    "stats": { "pAtk": 139, "pAtkRnd": 10, "mAtk": 76, "atkSpd": 325, "crit": 80, "accur": -3.75 },
+    "stats": { "pAtk": 139, "pAtkRnd": 10, "mAtk": 76, "atkSpd": 325, "crit": 80, "accur": -3 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1720 }
 },{
     "selfId": 96,
     "template": { "kind": "Weapon.Pole", "name": "Scythe", "class1": 0, "class2": 0, "mass": 2040, "price": 2290000 },
-    "stats": { "pAtk": 107, "pAtkRnd": 10, "mAtk": 61, "atkSpd": 325, "crit": 80, "accur": -3.75 },
+    "stats": { "pAtk": 107, "pAtkRnd": 10, "mAtk": 61, "atkSpd": 325, "crit": 80, "accur": -3 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 916 }
 },{
     "selfId": 97,
     "template": { "kind": "Weapon.Pole", "name": "Lance", "class1": 0, "class2": 0, "mass": 1920, "price": 13100000 },
-    "stats": { "pAtk": 194, "pAtkRnd": 10, "mAtk": 99, "atkSpd": 325, "crit": 80, "accur": -3.75 },
+    "stats": { "pAtk": 194, "pAtkRnd": 10, "mAtk": 99, "atkSpd": 325, "crit": 80, "accur": -3 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "b", "cristals": 1746 }
 },{
     "selfId": 98,
     "template": { "kind": "Weapon.Pole", "name": "Halberd", "class1": 0, "class2": 0, "mass": 1900, "price": 18300000 },
-    "stats": { "pAtk": 213, "pAtkRnd": 10, "mAtk": 107, "atkSpd": 325, "crit": 80, "accur": -3.75 },
+    "stats": { "pAtk": 213, "pAtkRnd": 10, "mAtk": 107, "atkSpd": 325, "crit": 80, "accur": -3 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 1464 }
 },{
     "selfId": 99,
@@ -416,7 +416,7 @@
 },{
     "selfId": 151,
     "template": { "kind": "Weapon.Sword", "name": "Sword of Miracles", "class1": 0, "class2": 0, "mass": 840, "price": 27000000 },
-    "stats": { "pAtk": 176, "pAtkRnd": 10, "mAtk": 146, "atkSpd": 379, "crit": 80, "accur": 0 },
+    "stats": { "pAtk": 186, "pAtkRnd": 10, "mAtk": 152, "atkSpd": 379, "crit": 80, "accur": 0 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 2160 }
 },{
     "selfId": 152,
@@ -461,17 +461,17 @@
 },{
     "selfId": 160,
     "template": { "kind": "Weapon.Blunt", "name": "Battle Axe", "class1": 0, "class2": 0, "mass": 1720, "price": 2290000 },
-    "stats": { "pAtk": 107, "pAtkRnd": 20, "mAtk": 61, "atkSpd": 379, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 107, "pAtkRnd": 20, "mAtk": 61, "atkSpd": 379, "crit": 40, "accur": 4 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 916 }
 },{
     "selfId": 161,
     "template": { "kind": "Weapon.Blunt", "name": "Silver Axe", "class1": 0, "class2": 0, "mass": 1690, "price": 2290000 },
-    "stats": { "pAtk": 107, "pAtkRnd": 20, "mAtk": 61, "atkSpd": 379, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 107, "pAtkRnd": 20, "mAtk": 61, "atkSpd": 379, "crit": 40, "accur": 4 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 916 }
 },{
     "selfId": 162,
     "template": { "kind": "Weapon.Blunt", "name": "War Axe", "class1": 0, "class2": 0, "mass": 1660, "price": 4300000 },
-    "stats": { "pAtk": 139, "pAtkRnd": 20, "mAtk": 76, "atkSpd": 379, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 139, "pAtkRnd": 20, "mAtk": 76, "atkSpd": 379, "crit": 40, "accur": 4 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1720 }
 },{
     "selfId": 163,
@@ -481,7 +481,7 @@
 },{
     "selfId": 164,
     "template": { "kind": "Weapon.Blunt", "name": "Elysian", "class1": 0, "class2": 0, "mass": 1580, "price": 27000000 },
-    "stats": { "pAtk": 232, "pAtkRnd": 20, "mAtk": 114, "atkSpd": 379, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 232, "pAtkRnd": 20, "mAtk": 114, "atkSpd": 379, "crit": 40, "accur": 4 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 2160 }
 },{
     "selfId": 165,
@@ -516,7 +516,7 @@
 },{
     "selfId": 171,
     "template": { "kind": "Weapon.Blunt", "name": "Deadman's Glory", "class1": 0, "class2": 0, "mass": 1600, "price": 13100000 },
-    "stats": { "pAtk": 194, "pAtkRnd": 20, "mAtk": 99, "atkSpd": 379, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 194, "pAtkRnd": 20, "mAtk": 99, "atkSpd": 379, "crit": 40, "accur": 4 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "b", "cristals": 1746 }
 },{
     "selfId": 172,
@@ -526,17 +526,17 @@
 },{
     "selfId": 173,
     "template": { "kind": "Weapon.Blunt", "name": "Skull Graver", "class1": 0, "class2": 0, "mass": 1640, "price": 2290000 },
-    "stats": { "pAtk": 107, "pAtkRnd": 20, "mAtk": 61, "atkSpd": 379, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 107, "pAtkRnd": 20, "mAtk": 61, "atkSpd": 379, "crit": 40, "accur": 4 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 916 }
 },{
     "selfId": 174,
     "template": { "kind": "Weapon.Blunt", "name": "Nirvana Axe", "class1": 0, "class2": 0, "mass": 1150, "price": 4300000 },
-    "stats": { "pAtk": 111, "pAtkRnd": 20, "mAtk": 101, "atkSpd": 379, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 111, "pAtkRnd": 20, "mAtk": 101, "atkSpd": 379, "crit": 40, "accur": 4 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1720 }
 },{
     "selfId": 175,
     "template": { "kind": "Weapon.Blunt", "name": "Art of Battle Axe", "class1": 0, "class2": 0, "mass": 1570, "price": 13100000 },
-    "stats": { "pAtk": 194, "pAtkRnd": 20, "mAtk": 99, "atkSpd": 379, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 194, "pAtkRnd": 20, "mAtk": 99, "atkSpd": 379, "crit": 40, "accur": 4 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "b", "cristals": 1746 }
 },{
     "selfId": 176,
@@ -616,82 +616,82 @@
 },{
     "selfId": 191,
     "template": { "kind": "Weapon.Blunt", "name": "Heavy Doom Hammer", "class1": 0, "class2": 0, "mass": 1020, "price": 2290000 },
-    "stats": { "pAtk": 103, "pAtkRnd": 20, "mAtk": 81, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 103, "pAtkRnd": 20, "mAtk": 81, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 916 }
 },{
     "selfId": 192,
     "template": { "kind": "Weapon.Blunt", "name": "Crystal Staff", "class1": 0, "class2": 0, "mass": 1020, "price": 2290000 },
-    "stats": { "pAtk": 103, "pAtkRnd": 20, "mAtk": 81, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 103, "pAtkRnd": 20, "mAtk": 81, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 916 }
 },{
     "selfId": 193,
     "template": { "kind": "Weapon.Blunt", "name": "Stick of Faith", "class1": 0, "class2": 0, "mass": 1160, "price": 2290000 },
-    "stats": { "pAtk": 85, "pAtkRnd": 20, "mAtk": 81, "atkSpd": 379, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 85, "pAtkRnd": 20, "mAtk": 81, "atkSpd": 379, "crit": 40, "accur": 4 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 916 }
 },{
     "selfId": 194,
     "template": { "kind": "Weapon.Blunt", "name": "Heavy Doom Axe", "class1": 0, "class2": 0, "mass": 1010, "price": 2290000 },
-    "stats": { "pAtk": 103, "pAtkRnd": 20, "mAtk": 81, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 103, "pAtkRnd": 20, "mAtk": 81, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 916 }
 },{
     "selfId": 195,
     "template": { "kind": "Weapon.Blunt", "name": "Cursed Staff", "class1": 0, "class2": 0, "mass": 1000, "price": 2870000 },
-    "stats": { "pAtk": 119, "pAtkRnd": 20, "mAtk": 91, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 119, "pAtkRnd": 20, "mAtk": 91, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 1148 }
 },{
     "selfId": 196,
     "template": { "kind": "Weapon.Blunt", "name": "Stick of Eternity", "class1": 0, "class2": 0, "mass": 1130, "price": 4300000 },
-    "stats": { "pAtk": 111, "pAtkRnd": 20, "mAtk": 101, "atkSpd": 379, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 111, "pAtkRnd": 20, "mAtk": 101, "atkSpd": 379, "crit": 40, "accur": 4 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1720 }
 },{
     "selfId": 197,
     "template": { "kind": "Weapon.Blunt", "name": "Paradia Staff", "class1": 0, "class2": 0, "mass": 1010, "price": 4300000 },
-    "stats": { "pAtk": 135, "pAtkRnd": 20, "mAtk": 101, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 135, "pAtkRnd": 20, "mAtk": 101, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1720 }
 },{
     "selfId": 198,
     "template": { "kind": "Weapon.Blunt", "name": "Inferno Staff", "class1": 0, "class2": 0, "mass": 1000, "price": 4300000 },
-    "stats": { "pAtk": 135, "pAtkRnd": 20, "mAtk": 101, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 135, "pAtkRnd": 20, "mAtk": 101, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1720 }
 },{
     "selfId": 199,
     "template": { "kind": "Weapon.Blunt", "name": "Pa'agrian Hammer", "class1": 0, "class2": 0, "mass": 1010, "price": 4300000 },
-    "stats": { "pAtk": 135, "pAtkRnd": 20, "mAtk": 101, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 135, "pAtkRnd": 20, "mAtk": 101, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1720 }
 },{
     "selfId": 200,
     "template": { "kind": "Weapon.Blunt", "name": "Sage's Staff", "class1": 0, "class2": 0, "mass": 1000, "price": 4300000 },
-    "stats": { "pAtk": 135, "pAtkRnd": 20, "mAtk": 101, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 135, "pAtkRnd": 20, "mAtk": 101, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1720 }
 },{
     "selfId": 201,
     "template": { "kind": "Weapon.Blunt", "name": "Club of Nature", "class1": 0, "class2": 0, "mass": 1100, "price": 4300000 },
-    "stats": { "pAtk": 111, "pAtkRnd": 20, "mAtk": 101, "atkSpd": 379, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 111, "pAtkRnd": 20, "mAtk": 101, "atkSpd": 379, "crit": 40, "accur": 4 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1720 }
 },{
     "selfId": 202,
     "template": { "kind": "Weapon.Blunt", "name": "Mace of The Underworld", "class1": 0, "class2": 0, "mass": 1090, "price": 4300000 },
-    "stats": { "pAtk": 111, "pAtkRnd": 20, "mAtk": 101, "atkSpd": 379, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 111, "pAtkRnd": 20, "mAtk": 101, "atkSpd": 379, "crit": 40, "accur": 4 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1720 }
 },{
     "selfId": 203,
     "template": { "kind": "Weapon.Blunt", "name": "Pa'agrian Axe", "class1": 0, "class2": 0, "mass": 990, "price": 4780000 },
-    "stats": { "pAtk": 141, "pAtkRnd": 20, "mAtk": 104, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 141, "pAtkRnd": 20, "mAtk": 104, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1912 }
 },{
     "selfId": 204,
     "template": { "kind": "Weapon.Blunt", "name": "Deadman's Staff", "class1": 0, "class2": 0, "mass": 1010, "price": 6130000 },
-    "stats": { "pAtk": 152, "pAtkRnd": 20, "mAtk": 111, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 152, "pAtkRnd": 20, "mAtk": 111, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 2452 }
 },{
     "selfId": 205,
     "template": { "kind": "Weapon.Blunt", "name": "Ghoul's Staff", "class1": 0, "class2": 0, "mass": 1000, "price": 6130000 },
-    "stats": { "pAtk": 152, "pAtkRnd": 20, "mAtk": 111, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 152, "pAtkRnd": 20, "mAtk": 111, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 2452 }
 },{
     "selfId": 206,
     "template": { "kind": "Weapon.Blunt", "name": "Demon's Staff", "class1": 0, "class2": 0, "mass": 990, "price": 6130000 },
-    "stats": { "pAtk": 152, "pAtkRnd": 20, "mAtk": 111, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 152, "pAtkRnd": 20, "mAtk": 111, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 2452 }
 },{
     "selfId": 207,
@@ -711,7 +711,7 @@
 },{
     "selfId": 210,
     "template": { "kind": "Weapon.Blunt", "name": "Staff of Evil Spirits", "class1": 0, "class2": 0, "mass": 930, "price": 13100000 },
-    "stats": { "pAtk": 189, "pAtkRnd": 20, "mAtk": 132, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 189, "pAtkRnd": 20, "mAtk": 132, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "b", "cristals": 1746 }
 },{
     "selfId": 211,
@@ -721,12 +721,12 @@
 },{
     "selfId": 212,
     "template": { "kind": "Weapon.Blunt", "name": "Dasparion's Staff", "class1": 0, "class2": 0, "mass": 920, "price": 18300000 },
-    "stats": { "pAtk": 207, "pAtkRnd": 20, "mAtk": 143, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 207, "pAtkRnd": 20, "mAtk": 143, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 1464 }
 },{
     "selfId": 213,
     "template": { "kind": "Weapon.Blunt", "name": "Branch of The Mother Tree", "class1": 0, "class2": 0, "mass": 900, "price": 27000000 },
-    "stats": { "pAtk": 226, "pAtkRnd": 20, "mAtk": 152, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 226, "pAtkRnd": 20, "mAtk": 152, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 2160 }
 },{
     "selfId": 214,
@@ -791,22 +791,22 @@
 },{
     "selfId": 226,
     "template": { "kind": "Weapon.Knife", "name": "Cursed Dagger", "class1": 0, "class2": 0, "mass": 1040, "price": 2290000 },
-    "stats": { "pAtk": 94, "pAtkRnd": 5, "mAtk": 61, "atkSpd": 433, "crit": 120, "accur": -3.75 },
+    "stats": { "pAtk": 94, "pAtkRnd": 5, "mAtk": 61, "atkSpd": 433, "crit": 120, "accur": -3 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 916 }
 },{
     "selfId": 227,
     "template": { "kind": "Weapon.Knife", "name": "Stiletto", "class1": 0, "class2": 0, "mass": 1030, "price": 2870000 },
-    "stats": { "pAtk": 107, "pAtkRnd": 5, "mAtk": 68, "atkSpd": 433, "crit": 120, "accur": -3.75 },
+    "stats": { "pAtk": 107, "pAtkRnd": 5, "mAtk": 68, "atkSpd": 433, "crit": 120, "accur": -3 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 1148 }
 },{
     "selfId": 228,
     "template": { "kind": "Weapon.Knife", "name": "Crystal Dagger", "class1": 0, "class2": 0, "mass": 1000, "price": 6130000 },
-    "stats": { "pAtk": 136, "pAtkRnd": 5, "mAtk": 83, "atkSpd": 433, "crit": 120, "accur": -3.75 },
+    "stats": { "pAtk": 136, "pAtkRnd": 5, "mAtk": 83, "atkSpd": 433, "crit": 120, "accur": -3 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 2452 }
 },{
     "selfId": 229,
     "template": { "kind": "Weapon.Knife", "name": "Kris", "class1": 0, "class2": 0, "mass": 980, "price": 8680000 },
-    "stats": { "pAtk": 153, "pAtkRnd": 5, "mAtk": 91, "atkSpd": 433, "crit": 120, "accur": -3.75 },
+    "stats": { "pAtk": 153, "pAtkRnd": 5, "mAtk": 91, "atkSpd": 433, "crit": 120, "accur": -3 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "b", "cristals": 1157 }
 },{
     "selfId": 230,
@@ -816,32 +816,32 @@
 },{
     "selfId": 231,
     "template": { "kind": "Weapon.Knife", "name": "Grace Dagger", "class1": 0, "class2": 0, "mass": 1020, "price": 4300000 },
-    "stats": { "pAtk": 122, "pAtkRnd": 5, "mAtk": 76, "atkSpd": 433, "crit": 120, "accur": -3.75 },
+    "stats": { "pAtk": 122, "pAtkRnd": 5, "mAtk": 76, "atkSpd": 433, "crit": 120, "accur": -3 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1720 }
 },{
     "selfId": 232,
     "template": { "kind": "Weapon.Knife", "name": "Dark Elven Dagger", "class1": 0, "class2": 0, "mass": 1050, "price": 2290000 },
-    "stats": { "pAtk": 94, "pAtkRnd": 5, "mAtk": 61, "atkSpd": 433, "crit": 120, "accur": -3.75 },
+    "stats": { "pAtk": 94, "pAtkRnd": 5, "mAtk": 61, "atkSpd": 433, "crit": 120, "accur": -3 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 916 }
 },{
     "selfId": 233,
     "template": { "kind": "Weapon.Knife", "name": "Dark Screamer", "class1": 0, "class2": 0, "mass": 1010, "price": 4300000 },
-    "stats": { "pAtk": 122, "pAtkRnd": 5, "mAtk": 76, "atkSpd": 433, "crit": 120, "accur": -3.75 },
+    "stats": { "pAtk": 122, "pAtkRnd": 5, "mAtk": 76, "atkSpd": 433, "crit": 120, "accur": -3 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1720 }
 },{
     "selfId": 234,
     "template": { "kind": "Weapon.Knife", "name": "Demon Dagger", "class1": 0, "class2": 0, "mass": 970, "price": 13100000 },
-    "stats": { "pAtk": 170, "pAtkRnd": 5, "mAtk": 99, "atkSpd": 433, "crit": 120, "accur": -3.75 },
+    "stats": { "pAtk": 170, "pAtkRnd": 5, "mAtk": 99, "atkSpd": 433, "crit": 120, "accur": -3 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "b", "cristals": 1746 }
 },{
     "selfId": 235,
     "template": { "kind": "Weapon.Knife", "name": "Bloody Orchid", "class1": 0, "class2": 0, "mass": 960, "price": 18300000 },
-    "stats": { "pAtk": 186, "pAtkRnd": 5, "mAtk": 107, "atkSpd": 433, "crit": 120, "accur": -3.75 },
+    "stats": { "pAtk": 186, "pAtkRnd": 5, "mAtk": 107, "atkSpd": 433, "crit": 120, "accur": -3 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 1464 }
 },{
     "selfId": 236,
     "template": { "kind": "Weapon.Knife", "name": "Soul Separator", "class1": 0, "class2": 0, "mass": 950, "price": 27000000 },
-    "stats": { "pAtk": 203, "pAtkRnd": 5, "mAtk": 114, "atkSpd": 433, "crit": 120, "accur": -3.75 },
+    "stats": { "pAtk": 203, "pAtkRnd": 5, "mAtk": 114, "atkSpd": 433, "crit": 120, "accur": -3 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 2160 }
 },{
     "selfId": 237,
@@ -871,12 +871,12 @@
 },{
     "selfId": 242,
     "template": { "kind": "Weapon.Knife", "name": "Soulfire Dirk", "class1": 0, "class2": 0, "mass": 750, "price": 2870000 },
-    "stats": { "pAtk": 86, "pAtkRnd": 5, "mAtk": 91, "atkSpd": 433, "crit": 120, "accur": -3.75 },
+    "stats": { "pAtk": 86, "pAtkRnd": 5, "mAtk": 91, "atkSpd": 433, "crit": 120, "accur": -3 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 1148 }
 },{
     "selfId": 243,
     "template": { "kind": "Weapon.Knife", "name": "Hell Knife", "class1": 0, "class2": 0, "mass": 740, "price": 8680000 },
-    "stats": { "pAtk": 122, "pAtkRnd": 5, "mAtk": 122, "atkSpd": 433, "crit": 120, "accur": -3.75 },
+    "stats": { "pAtk": 122, "pAtkRnd": 5, "mAtk": 122, "atkSpd": 433, "crit": 120, "accur": -3 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "b", "cristals": 1157 }
 },{
     "selfId": 244,
@@ -976,7 +976,7 @@
 },{
     "selfId": 263,
     "template": { "kind": "Weapon.DualFist", "name": "Chakram", "class1": 0, "class2": 0, "mass": 1490, "price": 2290000 },
-    "stats": { "pAtk": 130, "pAtkRnd": 5, "mAtk": 61, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 130, "pAtkRnd": 5, "mAtk": 61, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 916 }
 },{
     "selfId": 264,
@@ -986,32 +986,32 @@
 },{
     "selfId": 265,
     "template": { "kind": "Weapon.DualFist", "name": "Fisted Blade", "class1": 0, "class2": 0, "mass": 1480, "price": 4300000 },
-    "stats": { "pAtk": 169, "pAtkRnd": 5, "mAtk": 76, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 169, "pAtkRnd": 5, "mAtk": 76, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1720 }
 },{
     "selfId": 266,
     "template": { "kind": "Weapon.DualFist", "name": "Great Pata", "class1": 0, "class2": 0, "mass": 1460, "price": 6130000 },
-    "stats": { "pAtk": 190, "pAtkRnd": 5, "mAtk": 83, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 190, "pAtkRnd": 5, "mAtk": 83, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 2452 }
 },{
     "selfId": 267,
     "template": { "kind": "Weapon.DualFist", "name": "Arthro Nail", "class1": 0, "class2": 0, "mass": 1420, "price": 8680000 },
-    "stats": { "pAtk": 213, "pAtkRnd": 5, "mAtk": 91, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 213, "pAtkRnd": 5, "mAtk": 91, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "b", "cristals": 1157 }
 },{
     "selfId": 268,
     "template": { "kind": "Weapon.DualFist", "name": "Bellion Cestus", "class1": 0, "class2": 0, "mass": 1390, "price": 13100000 },
-    "stats": { "pAtk": 236, "pAtkRnd": 5, "mAtk": 99, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 236, "pAtkRnd": 5, "mAtk": 99, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "b", "cristals": 1746 }
 },{
     "selfId": 269,
     "template": { "kind": "Weapon.DualFist", "name": "Blood Tornado", "class1": 0, "class2": 0, "mass": 1370, "price": 18300000 },
-    "stats": { "pAtk": 259, "pAtkRnd": 5, "mAtk": 107, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 259, "pAtkRnd": 5, "mAtk": 107, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 1464 }
 },{
     "selfId": 270,
     "template": { "kind": "Weapon.DualFist", "name": "Dragon Grinder", "class1": 0, "class2": 0, "mass": 1350, "price": 27000000 },
-    "stats": { "pAtk": 282, "pAtkRnd": 5, "mAtk": 114, "atkSpd": 325, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 282, "pAtkRnd": 5, "mAtk": 114, "atkSpd": 325, "crit": 40, "accur": 4 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 2160 }
 },{
     "selfId": 271,
@@ -1066,48 +1066,48 @@
 },{
     "selfId": 281,
     "template": { "kind": "Weapon.Bow", "name": "Crystallized Ice Bow", "class1": 0, "class2": 0, "mass": 1790, "price": 2290000 },
-    "stats": { "pAtk": 220, "pAtkRnd": 5, "mAtk": 61, "atkSpd": 293, "crit": 120, "accur": -3.75 },
-    "etc": { "slot": 14, "mp": 7, "soulshot": 8, "spiritshot": 2, "rank": "c", "cristals": 916 }
+    "stats": { "pAtk": 220, "pAtkRnd": 5, "mAtk": 61, "atkSpd": 293, "crit": 120, "accur": -3 },
+    "etc": { "slot": 14, "mp": 6, "soulshot": 8, "spiritshot": 2, "rank": "c", "cristals": 916 }
 },{
     "selfId": 282,
     "template": { "kind": "Weapon.Bow", "name": "Elemental Bow", "class1": 0, "class2": 0, "mass": 1770, "price": 2870000 },
-    "stats": { "pAtk": 277, "pAtkRnd": 5, "mAtk": 75, "atkSpd": 227, "crit": 120, "accur": -3.75 },
-    "etc": { "slot": 14, "mp": 8, "soulshot": 8, "spiritshot": 2, "rank": "c", "cristals": 1148 }
+    "stats": { "pAtk": 277, "pAtkRnd": 5, "mAtk": 75, "atkSpd": 227, "crit": 120, "accur": -3 },
+    "etc": { "slot": 14, "mp": 7, "soulshot": 8, "spiritshot": 2, "rank": "c", "cristals": 1148 }
 },{
     "selfId": 283,
     "template": { "kind": "Weapon.Bow", "name": "Akat Long Bow", "class1": 0, "class2": 0, "mass": 1740, "price": 4300000 },
-    "stats": { "pAtk": 315, "pAtkRnd": 5, "mAtk": 83, "atkSpd": 227, "crit": 120, "accur": -3.75 },
-    "etc": { "slot": 14, "mp": 8, "soulshot": 9, "spiritshot": 3, "rank": "c", "cristals": 1720 }
+    "stats": { "pAtk": 316, "pAtkRnd": 5, "mAtk": 84, "atkSpd": 227, "crit": 120, "accur": -3 },
+    "etc": { "slot": 14, "mp": 7, "soulshot": 9, "spiritshot": 3, "rank": "c", "cristals": 1720 }
 },{
     "selfId": 284,
     "template": { "kind": "Weapon.Bow", "name": "Dark Elven Long Bow", "class1": 0, "class2": 0, "mass": 1720, "price": 8680000 },
-    "stats": { "pAtk": 397, "pAtkRnd": 5, "mAtk": 100, "atkSpd": 227, "crit": 120, "accur": -3.75 },
-    "etc": { "slot": 14, "mp": 9, "soulshot": 3, "spiritshot": 1, "rank": "b", "cristals": 1157 }
+    "stats": { "pAtk": 397, "pAtkRnd": 5, "mAtk": 100, "atkSpd": 227, "crit": 120, "accur": -3 },
+    "etc": { "slot": 14, "mp": 8, "soulshot": 3, "spiritshot": 1, "rank": "b", "cristals": 1157 }
 },{
     "selfId": 285,
     "template": { "kind": "Weapon.Bow", "name": "Noble Elven Bow", "class1": 0, "class2": 0, "mass": 1760, "price": 2870000 },
-    "stats": { "pAtk": 252, "pAtkRnd": 5, "mAtk": 68, "atkSpd": 293, "crit": 120, "accur": -3.75 },
-    "etc": { "slot": 14, "mp": 8, "soulshot": 8, "spiritshot": 2, "rank": "c", "cristals": 1148 }
+    "stats": { "pAtk": 252, "pAtkRnd": 5, "mAtk": 68, "atkSpd": 293, "crit": 120, "accur": -3 },
+    "etc": { "slot": 14, "mp": 7, "soulshot": 8, "spiritshot": 2, "rank": "c", "cristals": 1148 }
 },{
     "selfId": 286,
     "template": { "kind": "Weapon.Bow", "name": "Eminence Bow", "class1": 0, "class2": 0, "mass": 1720, "price": 6130000 },
-    "stats": { "pAtk": 323, "pAtkRnd": 5, "mAtk": 83, "atkSpd": 293, "crit": 120, "accur": -3.75 },
-    "etc": { "slot": 14, "mp": 9, "soulshot": 10, "spiritshot": 3, "rank": "c", "cristals": 2452 }
+    "stats": { "pAtk": 323, "pAtkRnd": 5, "mAtk": 83, "atkSpd": 293, "crit": 120, "accur": -3 },
+    "etc": { "slot": 14, "mp": 8, "soulshot": 10, "spiritshot": 3, "rank": "c", "cristals": 2452 }
 },{
     "selfId": 287,
     "template": { "kind": "Weapon.Bow", "name": "Bow of Peril", "class1": 0, "class2": 0, "mass": 1700, "price": 13100000 },
-    "stats": { "pAtk": 400, "pAtkRnd": 5, "mAtk": 99, "atkSpd": 293, "crit": 120, "accur": -3.75 },
-    "etc": { "slot": 14, "mp": 10, "soulshot": 3, "spiritshot": 1, "rank": "b", "cristals": 1746 }
+    "stats": { "pAtk": 400, "pAtkRnd": 5, "mAtk": 99, "atkSpd": 293, "crit": 120, "accur": -3 },
+    "etc": { "slot": 14, "mp": 9, "soulshot": 3, "spiritshot": 1, "rank": "b", "cristals": 1746 }
 },{
     "selfId": 288,
     "template": { "kind": "Weapon.Bow", "name": "Carnage Bow", "class1": 0, "class2": 0, "mass": 1670, "price": 18300000 },
-    "stats": { "pAtk": 440, "pAtkRnd": 5, "mAtk": 107, "atkSpd": 293, "crit": 120, "accur": -3.75 },
-    "etc": { "slot": 14, "mp": 10, "soulshot": 2, "spiritshot": 1, "rank": "a", "cristals": 1464 }
+    "stats": { "pAtk": 440, "pAtkRnd": 5, "mAtk": 107, "atkSpd": 293, "crit": 120, "accur": -3 },
+    "etc": { "slot": 14, "mp": 9, "soulshot": 2, "spiritshot": 1, "rank": "a", "cristals": 1464 }
 },{
     "selfId": 289,
     "template": { "kind": "Weapon.Bow", "name": "Soul Bow", "class1": 0, "class2": 0, "mass": 1660, "price": 27000000 },
-    "stats": { "pAtk": 528, "pAtkRnd": 5, "mAtk": 126, "atkSpd": 227, "crit": 120, "accur": -3.75 },
-    "etc": { "slot": 14, "mp": 12, "soulshot": 2, "spiritshot": 1, "rank": "a", "cristals": 2160 }
+    "stats": { "pAtk": 528, "pAtkRnd": 5, "mAtk": 125, "atkSpd": 227, "crit": 120, "accur": -3 },
+    "etc": { "slot": 14, "mp": 10, "soulshot": 2, "spiritshot": 1, "rank": "a", "cristals": 2160 }
 },{
     "selfId": 290,
     "template": { "kind": "Weapon.Bow", "name": "The Bow", "class1": 0, "class2": 0, "mass": 1650, "price": 35300000 },
@@ -1151,32 +1151,32 @@
 },{
     "selfId": 298,
     "template": { "kind": "Weapon.Pole", "name": "Orcish Glaive", "class1": 0, "class2": 0, "mass": 2030, "price": 2290000 },
-    "stats": { "pAtk": 107, "pAtkRnd": 10, "mAtk": 61, "atkSpd": 325, "crit": 80, "accur": -3.75 },
+    "stats": { "pAtk": 107, "pAtkRnd": 10, "mAtk": 61, "atkSpd": 325, "crit": 80, "accur": -3 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 916 }
 },{
     "selfId": 299,
     "template": { "kind": "Weapon.Pole", "name": "Orcish Poleaxe", "class1": 0, "class2": 0, "mass": 1950, "price": 6130000 },
-    "stats": { "pAtk": 156, "pAtkRnd": 10, "mAtk": 83, "atkSpd": 325, "crit": 80, "accur": -3.75 },
+    "stats": { "pAtk": 156, "pAtkRnd": 10, "mAtk": 83, "atkSpd": 325, "crit": 80, "accur": -3 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 2452 }
 },{
     "selfId": 300,
     "template": { "kind": "Weapon.Pole", "name": "Great Axe", "class1": 0, "class2": 0, "mass": 1940, "price": 8680000 },
-    "stats": { "pAtk": 175, "pAtkRnd": 10, "mAtk": 91, "atkSpd": 325, "crit": 80, "accur": -3.75 },
+    "stats": { "pAtk": 175, "pAtkRnd": 10, "mAtk": 91, "atkSpd": 325, "crit": 80, "accur": -3 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "b", "cristals": 1157 }
 },{
     "selfId": 301,
     "template": { "kind": "Weapon.Pole", "name": "Scorpion", "class1": 0, "class2": 0, "mass": 1990, "price": 4780000 },
-    "stats": { "pAtk": 144, "pAtkRnd": 10, "mAtk": 78, "atkSpd": 325, "crit": 80, "accur": -3.75 },
+    "stats": { "pAtk": 144, "pAtkRnd": 10, "mAtk": 78, "atkSpd": 325, "crit": 80, "accur": -3 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1912 }
 },{
     "selfId": 302,
     "template": { "kind": "Weapon.Pole", "name": "Body Slasher", "class1": 0, "class2": 0, "mass": 2030, "price": 2290000 },
-    "stats": { "pAtk": 107, "pAtkRnd": 10, "mAtk": 61, "atkSpd": 325, "crit": 80, "accur": -3.75 },
+    "stats": { "pAtk": 107, "pAtkRnd": 10, "mAtk": 61, "atkSpd": 325, "crit": 80, "accur": -3 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 916 }
 },{
     "selfId": 303,
     "template": { "kind": "Weapon.Pole", "name": "Widow Maker", "class1": 0, "class2": 0, "mass": 1980, "price": 4780000 },
-    "stats": { "pAtk": 144, "pAtkRnd": 10, "mAtk": 78, "atkSpd": 325, "crit": 80, "accur": -3.75 },
+    "stats": { "pAtk": 144, "pAtkRnd": 10, "mAtk": 78, "atkSpd": 325, "crit": 80, "accur": -3 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 1912 }
 },{
     "selfId": 304,
@@ -1186,7 +1186,7 @@
 },{
     "selfId": 305,
     "template": { "kind": "Weapon.Pole", "name": "Tallum Glaive", "class1": 0, "class2": 0, "mass": 1840, "price": 27000000 },
-    "stats": { "pAtk": 232, "pAtkRnd": 10, "mAtk": 114, "atkSpd": 325, "crit": 80, "accur": -3.75 },
+    "stats": { "pAtk": 232, "pAtkRnd": 10, "mAtk": 114, "atkSpd": 325, "crit": 80, "accur": -3 },
     "etc": { "slot": 14, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 2160 }
 },{
     "selfId": 306,
@@ -1621,17 +1621,17 @@
 },{
     "selfId": 2502,
     "template": { "kind": "Weapon.Blunt", "name": "Dwarven War Hammer", "class1": 0, "class2": 0, "mass": 1670, "price": 2870000 },
-    "stats": { "pAtk": 122, "pAtkRnd": 20, "mAtk": 68, "atkSpd": 379, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 122, "pAtkRnd": 20, "mAtk": 68, "atkSpd": 379, "crit": 40, "accur": 4 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 2, "spiritshot": 2, "rank": "c", "cristals": 1148 }
 },{
     "selfId": 2503,
     "template": { "kind": "Weapon.Blunt", "name": "Yaksa Mace", "class1": 0, "class2": 0, "mass": 1640, "price": 6130000 },
-    "stats": { "pAtk": 156, "pAtkRnd": 20, "mAtk": 83, "atkSpd": 379, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 156, "pAtkRnd": 20, "mAtk": 83, "atkSpd": 379, "crit": 40, "accur": 4 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 3, "spiritshot": 3, "rank": "c", "cristals": 2452 }
 },{
     "selfId": 2504,
     "template": { "kind": "Weapon.Blunt", "name": "Meteor Shower", "class1": 0, "class2": 0, "mass": 1600, "price": 18300000 },
-    "stats": { "pAtk": 213, "pAtkRnd": 20, "mAtk": 107, "atkSpd": 379, "crit": 40, "accur": 4.75 },
+    "stats": { "pAtk": 213, "pAtkRnd": 20, "mAtk": 107, "atkSpd": 379, "crit": 40, "accur": 4 },
     "etc": { "slot": 7, "mp": 0, "soulshot": 1, "spiritshot": 1, "rank": "a", "cristals": 1464 }
 },{
     "selfId": 2505,

@@ -971,7 +971,7 @@ class Npc extends NpcModel {
         this.broadcastVitals();
     }
 
-    addAbsorber(actor) {
+    addAbsorber(actor, crystalItemId) {
         if (!actor?.fetchId) {
             return;
         }
@@ -984,6 +984,7 @@ class Npc extends NpcModel {
         this.soulCrystalAbsorbers.set(absorberId, {
             actor,
             absorberId,
+            crystalItemId,
             absorbedHp: this.fetchHp()
         });
         this.soulCrystalAbsorbed = true;

@@ -4277,6 +4277,18 @@ const Database = {
             return { ...item, selfId: target, petData: state };
         }, 'pet:evolution'));
     },
+    replaceSoulCrystal(characterId, id, expectedSelfId, selfId, name, crystalIds, isStillValid) {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            if (!isStillValid()) return false;
+            const quest = one('SELECT state FROM character_quests WHERE characterId = ? AND questId = 350', [characterId]);
+            const item = one('SELECT selfId, amount, equipped FROM items WHERE id = ? AND characterId = ?', [id, characterId]);
+            if (quest?.state !== 'started' || !item || item.selfId !== expectedSelfId || item.amount !== 1 || item.equipped) return false;
+            const quantity = one(`SELECT SUM(amount) AS count FROM items WHERE characterId = ? AND amount > 0 AND selfId IN (${crystalIds.map(() => '?').join(',')})`, [characterId, ...crystalIds]);
+            if (quantity.count !== 1) return false;
+            write('UPDATE items SET selfId = ?, name = ? WHERE id = ? AND characterId = ?', [selfId, name, id, characterId]);
+            return true;
+        }, 'item:soul-crystal'));
+    },
     exchangePetTicket(characterId, ticketId) {
         return withCharacterFlush(characterId, () => inTransaction(() => {
             const ticket = one('SELECT selfId, amount, equipped FROM items WHERE id = ? AND characterId = ?', [ticketId, characterId]);
@@ -4326,6 +4338,40 @@ const Database = {
             write('UPDATE characters SET mp = ? WHERE id = ?', [mp, characterId]);
             return { sources, product: product ? { id: productId, amount: productAmount } : null };
         }, 'craft:self'));
+    },
+
+    exchangeWeaponSA(characterId, { npcId, recipeId, sourceObjectId, expectedSelfId, expectedEnchant, validate }) {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            validate();
+            const catalog = invoke('GameServer/Items/C4WeaponSAExchange');
+            const recipe = catalog.resolve(npcId, recipeId);
+            const target = recipe && invoke('GameServer/DataCache').items.find(item => item.selfId === recipe.productId);
+            const weapon = one('SELECT * FROM items WHERE id = ? AND characterId = ?', [sourceObjectId, characterId]);
+            if (!recipe || !target || !weapon || weapon.selfId !== expectedSelfId || weapon.selfId !== recipe.sourceId
+                || weapon.enchant !== expectedEnchant || weapon.amount !== 1 || weapon.equipped) throw Error('weapon_sa_source_changed');
+            const consumed = [];
+            for (const cost of catalog.costs(recipe)) {
+                const rows = all('SELECT * FROM items WHERE characterId = ? AND selfId = ? AND amount > 0 AND equipped = 0 ORDER BY id', [characterId, cost.selfId]);
+                validate(rows);
+                let remaining = cost.amount;
+                for (const row of rows) {
+                    if (remaining <= 0) break;
+                    const amount = Math.min(remaining, row.amount);
+                    consumed.push({ id: row.id, selfId: row.selfId, remaining: row.amount - amount });
+                    remaining -= amount;
+                }
+                if (remaining) throw Error('weapon_sa_missing_materials');
+            }
+            for (const row of consumed) {
+                if (row.remaining) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [row.remaining, row.id, characterId]);
+                else write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]);
+            }
+            // Enchant is deliberately absent from this UPDATE. Installation and
+            // removal preserve the selected instance rather than creating +0 gear.
+            write('UPDATE items SET selfId = ?, name = ?, slot = ? WHERE id = ? AND characterId = ?',
+                [target.selfId, target.template.name, target.etc.slot, sourceObjectId, characterId]);
+            return { weapon: { ...weapon, selfId: target.selfId, name: target.template.name, slot: target.etc.slot }, consumed };
+        }, 'item:weapon-sa'));
     },
 
     unsealInventoryItem(characterId, sourceId, productId, validate) {

@@ -14,7 +14,7 @@
             "pAtkRnd": 10,
             "mAtk": 132,
             "atkSpd": 379,
-            "crit": 8,
+            "crit": 80,
             "accur": 0
         },
         "etc": {
@@ -41,7 +41,7 @@
             "pAtkRnd": 20,
             "mAtk": 175,
             "atkSpd": 325,
-            "crit": 4,
+            "crit": 40,
             "accur": 4
         },
         "etc": {
@@ -68,7 +68,7 @@
             "pAtkRnd": 5,
             "mAtk": 132,
             "atkSpd": 433,
-            "crit": 12,
+            "crit": 120,
             "accur": -3
         },
         "etc": {
@@ -95,7 +95,7 @@
             "pAtkRnd": 10,
             "mAtk": 132,
             "atkSpd": 325,
-            "crit": 8,
+            "crit": 80,
             "accur": -3
         },
         "etc": {
@@ -122,7 +122,7 @@
             "pAtkRnd": 5,
             "mAtk": 132,
             "atkSpd": 325,
-            "crit": 4,
+            "crit": 40,
             "accur": 4
         },
         "etc": {
@@ -149,7 +149,7 @@
             "pAtkRnd": 10,
             "mAtk": 132,
             "atkSpd": 325,
-            "crit": 8,
+            "crit": 80,
             "accur": 0
         },
         "etc": {
@@ -176,7 +176,7 @@
             "pAtkRnd": 20,
             "mAtk": 175,
             "atkSpd": 379,
-            "crit": 4,
+            "crit": 40,
             "accur": 4
         },
         "etc": {
@@ -230,7 +230,7 @@
             "pAtkRnd": 5,
             "mAtk": 132,
             "atkSpd": 293,
-            "crit": 12,
+            "crit": 120,
             "accur": -3
         },
         "etc": {

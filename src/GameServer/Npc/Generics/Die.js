@@ -14,6 +14,8 @@ function die(session, actor, npc) {
     const SpoilSweep = invoke('GameServer/Npc/SpoilSweep');
     const RaidBossMinionManager = invoke('GameServer/World/RaidBossMinionManager');
 
+    npc.soulCrystalReward = invoke('GameServer/Items/SoulCrystalProgression').onDeath(session, actor, npc)
+        .catch(error => utils.infoWarn('SoulCrystal', 'reward failed: %s', error.message));
     npc.destructor(session);
     if (npc.fetchIsRaidBoss?.() === true) {
         RaidBossMinionManager.onBossDeath(invoke('GameServer/World/World'), npc, session);

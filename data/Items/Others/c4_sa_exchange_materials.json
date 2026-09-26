@@ -1,0 +1,17 @@
+[
+  {
+    "selfId": 5575,
+    "template": {
+      "kind": "Other.None",
+      "name": "Ancient Adena",
+      "class1": 4,
+      "class2": 4,
+      "mass": 0,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  }
+]

@@ -12,7 +12,7 @@ function reject(session, actor, message) {
 }
 
 // Player inventory costs only: bot ammunition provisioning is not implemented.
-function consume(session, actor) {
+function consume(session, actor, rng = Math.random) {
     if (session.botSession) return true;
     const backpack = actor.backpack;
     const weapon = backpack.fetchEquippedWeapon?.();
@@ -20,7 +20,7 @@ function consume(session, actor) {
     const arrow = arrowId && backpack.fetchItemFromSelfId(arrowId);
     if (!arrow || arrow.fetchAmount() < 1 || arrow.fetchPetLocked?.())
         return reject(session, actor, ConsoleText.caption.depletedArrows);
-    const mp = Math.max(0, Number(weapon.fetchConsumedMp()) || 0);
+    const mp = invoke('GameServer/Items/C4WeaponSA').bowMpCost(weapon, rng);
     if (actor.fetchMp() < mp)
         return reject(session, actor, ConsoleText.caption.depletedMp);
     let consumed = false;

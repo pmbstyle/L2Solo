@@ -190,6 +190,7 @@ function attackableNpc(options = {}) {
     const absorbed = [];
     return {
         fetchId: () => options.id ?? 3000001,
+        fetchSelfId: () => options.selfId ?? 583,
         fetchName: () => options.name || 'Soul Target',
         fetchLocX: () => options.locX ?? 100,
         fetchLocY: () => options.locY ?? 0,
@@ -802,6 +803,7 @@ try {
         item(20, { selfId: 4630, kind: 'Other.Scroll', amount: 1 })
     ];
     const drainSession = sessionFor(soulCrystalBackpack, { destId: drainTarget.fetchId(), mp: 50 });
+    drainSession.questStates = new Map([[350, { isStarted: () => true }]]);
     soulCrystalBackpack.useItem(drainSession, 20);
     assert.strictEqual(soulCrystalBackpack.fetchItemFromSelfId(4630).fetchAmount(), 1, 'Soul Crystal should not be consumed when Drain Soul is cast');
     assert.strictEqual(drainSession.actor.fetchMp(), 24, 'Soul Crystal should consume sourced mpConsume 26 on successful Drain Soul cast');

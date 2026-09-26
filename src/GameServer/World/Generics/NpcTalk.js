@@ -7,6 +7,7 @@ function npcTalk(session, npc) {
     session.activeNpcSellShop = null;
     session.activeWarehouse = null;
     session.activePetExchange = null;
+    session.activeWeaponSA = null;
     session.activeNpcTalk = {
         selfId: npc.fetchSelfId(),
         objectId: npc.fetchId(),
@@ -70,7 +71,8 @@ function npcTalk(session, npc) {
     const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
     const NpcExchangeShopLists = invoke('GameServer/World/Generics/NpcExchangeShopLists');
     const hasNpcShop = NpcShopBuyLists.fetchForNpc(npc.fetchSelfId()).length > 0
-        || NpcExchangeShopLists.fetchForNpc(npc.fetchSelfId()).length > 0;
+        || NpcExchangeShopLists.fetchForNpc(npc.fetchSelfId()).length > 0
+        || !!invoke('GameServer/Items/C4WeaponSAExchange').station(npc.fetchSelfId());
     if (!QuestService.handlesNpc(npc) || hasNpcShop) {
         showDefaultTalk(session, npc, {
             questLink: hasNpcShop && QuestService.handlesNpc(npc)
@@ -116,10 +118,13 @@ function showDefaultTalk(session, npc, options = {}) {
         return;
     }
 
-    let html = utils.parseRawFile(
-        utils.fileExists(filename) ? filename : path + 'noquest.html'
-    );
+    const weaponServices = invoke('GameServer/Items/C4WeaponSAExchange');
+    let html = utils.fileExists(filename) ? utils.parseRawFile(filename)
+        : weaponServices.station(npc.fetchSelfId())
+            ? '<html><body>I can help you with weapon special abilities.<br></body></html>'
+            : utils.parseRawFile(path + 'noquest.html');
     if (options.questLink) html = withQuestLink(html, npc.fetchSelfId());
+    html = html.replace(/<\/body>/i, weaponServices.links(npc.fetchSelfId()) + '</body>');
     if (invoke('GameServer/Pets/PetExchangeData').managers.has(npc.fetchSelfId())) {
         html = html.replace(/<\/body>/i, '<br><a action="bypass -h pet-exchange">Exchange a Pet Ticket</a><br></body>');
     }

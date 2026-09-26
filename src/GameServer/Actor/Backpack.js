@@ -109,7 +109,7 @@ class Backpack extends BackpackModel {
         const plan = ShotStock.planForActorKind('soulshot', session.actor);
 
         const found = this.items.find(item => item.fetchSelfId() === (selfId || plan.selfId));
-        const cost = this.fetchShotCost('soulshot');
+        const cost = invoke('GameServer/Items/C4WeaponSA').soulshotCost(this.fetchEquippedWeapon());
         if (cost > 0 && found && found.fetchAmount() >= cost) {
             this.deleteItem(session, found.fetchId(), cost, () => {
                 callback(true, this.shotChargeInfo(found.fetchSelfId()));
@@ -1192,10 +1192,14 @@ class Backpack extends BackpackModel {
     }
 
     useDrainSoulItem(session, id, itemSkill, skill) {
+        const actor = session.actor;
+        const crystal = this.fetchItemRaw(id);
+        const progression = invoke('GameServer/Items/SoulCrystalProgression');
         const target = this.fetchSelectedNpcTarget(session);
         if (!this.canDrainSoulTarget(session.actor, target, skill)) {
             return true;
         }
+        if (!progression.canUse(session, crystal, target)) return true;
 
         if (session.actor.state.fetchCasts()) {
             return true;
@@ -1215,13 +1219,16 @@ class Backpack extends BackpackModel {
         }
 
         const apply = () => {
-            session.actor.state.setCasts(false);
-            if (session.actor.isDead()) {
+            if (session.actor !== actor || !actor.state.fetchCasts()) return;
+            actor.state.setCasts(false);
+            if (actor.isDead() || actor.fetchIsOnline?.() === false || !progression.canUse(session, crystal, target)) {
                 return;
             }
             if (!this.canDrainSoulTarget(session.actor, target, skill)) {
                 return;
             }
+
+            if (typeof actor.fetchMp === 'function' && actor.fetchMp() < mpCost) return;
 
             if (mpCost > 0 && typeof session.actor.fetchMp === 'function' && typeof session.actor.setMp === 'function') {
                 session.actor.setMp(Math.max(0, session.actor.fetchMp() - mpCost));
@@ -1230,12 +1237,14 @@ class Backpack extends BackpackModel {
 
             SkillEffects.execute(session, session.actor, target, skill, {
                 magicSkill: skill.fetchSpell(),
+                soulCrystalItemId: id,
                 attack: { clearLoadedShot() {} }
             });
         };
 
         if (castTime > 0) {
-            setTimeout(apply, castTime);
+            if (actor.attack?.queueTimer) actor.attack.queueTimer(apply, castTime);
+            else setTimeout(apply, castTime);
         } else {
             apply();
         }

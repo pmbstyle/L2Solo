@@ -34,7 +34,12 @@ class ActorModel extends CreatureModel {
     }
 
     setHp(data) {
+        const wasLow = this.fetchHp() <= this.fetchMaxHp() * 0.6;
         super.setHp(data);
+        const isLow = this.fetchHp() <= this.fetchMaxHp() * 0.6;
+        if (wasLow !== isLow && invoke('GameServer/Items/C4WeaponSA').hasRisk(this)) {
+            invoke('GameServer/Actor/Generics/CalculateStats').refreshConditionalCombatStats(this);
+        }
         this.refreshVitalsRegeneration();
     }
 

@@ -1,0 +1,5193 @@
+{
+  "source": "Lisvus/L2J C4",
+  "revision": "fdc7e33af5d69067b41a6ee7cc7c07fe7aa35975",
+  "weapons": {
+    "2523": {
+      "name": "Saber*Sword of Revolution",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "2524": {
+      "name": "Saber*Elven Long Sword",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "2531": {
+      "name": "Bastard Sword*Sword of Revolution",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "2532": {
+      "name": "Bastard Sword*Elven Long Sword",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "2538": {
+      "name": "Spinebone Sword*Sword of Revolution",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "2539": {
+      "name": "Spinebone Sword*Elven Long Sword",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "2544": {
+      "name": "Artisan's Sword*Sword of Revolution",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "2545": {
+      "name": "Artisan's Sword*Elven Long Sword",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "2549": {
+      "name": "Knight's Sword*Sword of Revolution",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "2550": {
+      "name": "Knight's Sword*Elven Long Sword",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "2551": {
+      "name": "Crimson Sword*Crimson Sword",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "2552": {
+      "name": "Crimson Sword*Elven Sword",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "2553": {
+      "name": "Crimson Sword*Sword of Revolution",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "2554": {
+      "name": "Crimson Sword*Elven Long Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAccuracyCombatAdd": 2
+          }
+        }
+      ]
+    },
+    "2555": {
+      "name": "Elven Sword*Elven Sword",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "2556": {
+      "name": "Elven Sword*Sword of Revolution",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "2557": {
+      "name": "Elven Sword*Elven Long Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritDamageAdd": 61
+          }
+        }
+      ]
+    },
+    "2558": {
+      "name": "Sword of Revolution*Sword of Revolution",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "maxHpMul": 1.25
+          }
+        }
+      ]
+    },
+    "2559": {
+      "name": "Sword of Revolution*Elven Long Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritRateAdd": 50
+          }
+        }
+      ]
+    },
+    "2560": {
+      "name": "Elven Long Sword*Elven Long Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAtkSpdMul": 1.04
+          }
+        }
+      ]
+    },
+    "2561": {
+      "name": "Stormbringer*Stormbringer",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAccuracyCombatAdd": 2
+          }
+        }
+      ]
+    },
+    "2562": {
+      "name": "Stormbringer*Shamshir",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritDamageAdd": 49
+          }
+        }
+      ]
+    },
+    "2563": {
+      "name": "Stormbringer*Katana",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "maxHpMul": 1.25
+          }
+        }
+      ]
+    },
+    "2564": {
+      "name": "Stormbringer*Spirit Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritRateAdd": 24
+          }
+        }
+      ]
+    },
+    "2565": {
+      "name": "Stormbringer*Raid Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAtkSpdMul": 1.02
+          }
+        }
+      ]
+    },
+    "2566": {
+      "name": "Stormbringer*Caliburs",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAccuracyCombatAdd": 5
+          }
+        }
+      ]
+    },
+    "2567": {
+      "name": "Stormbringer*Sword of Limit",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritDamageAdd": 166
+          }
+        }
+      ]
+    },
+    "2568": {
+      "name": "Stormbringer*Sword of Delusion",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "maxHpMul": 1.25
+          }
+        }
+      ]
+    },
+    "2569": {
+      "name": "Stormbringer*Sword of Nightmare",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritRateAdd": 76
+          }
+        }
+      ]
+    },
+    "2570": {
+      "name": "Stormbringer*Tsurugi",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAtkSpdMul": 1.07
+          }
+        }
+      ]
+    },
+    "2571": {
+      "name": "Stormbringer*Samurai Long sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAccuracyCombatAdd": 4
+          }
+        }
+      ]
+    },
+    "2572": {
+      "name": "Shamshir*Shamshir",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAccuracyCombatAdd": 2
+          }
+        }
+      ]
+    },
+    "2573": {
+      "name": "Shamshir*Katana",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritDamageAdd": 84
+          }
+        }
+      ]
+    },
+    "2574": {
+      "name": "Shamshir*Spirit Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "maxHpMul": 1.25
+          }
+        }
+      ]
+    },
+    "2575": {
+      "name": "Shamshir*Raid Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritRateAdd": 40
+          }
+        }
+      ]
+    },
+    "2576": {
+      "name": "Shamshir*Caliburs",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAccuracyCombatAdd": 4
+          }
+        }
+      ]
+    },
+    "2577": {
+      "name": "Shamshir*Sword of Limit",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritDamageAdd": 146
+          }
+        }
+      ]
+    },
+    "2578": {
+      "name": "Shamshir*Sword of Delusion",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "maxHpMul": 1.25
+          }
+        }
+      ]
+    },
+    "2579": {
+      "name": "Shamshir*Sword of Nightmare",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritRateAdd": 65
+          }
+        }
+      ]
+    },
+    "2580": {
+      "name": "Shamshir*Tsurugi",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAtkSpdMul": 1.06
+          }
+        }
+      ]
+    },
+    "2581": {
+      "name": "Shamshir*Samurai Long Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAccuracyCombatAdd": 3
+          }
+        }
+      ]
+    },
+    "2582": {
+      "name": "Katana*Katana",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAtkSpdMul": 1.04
+          }
+        }
+      ]
+    },
+    "2583": {
+      "name": "Katana*Spirit Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAccuracyCombatAdd": 2
+          }
+        }
+      ]
+    },
+    "2584": {
+      "name": "Katana*Raid Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritDamageAdd": 84
+          }
+        }
+      ]
+    },
+    "2585": {
+      "name": "Katana*Caliburs",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAccuracyCombatAdd": 4
+          }
+        }
+      ]
+    },
+    "2586": {
+      "name": "Katana*Sword of Limit",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritDamageAdd": 146
+          }
+        }
+      ]
+    },
+    "2587": {
+      "name": "Katana*Sword of Delusion",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "maxHpMul": 1.25
+          }
+        }
+      ]
+    },
+    "2588": {
+      "name": "Katana*Sword of Nightmare",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritRateAdd": 65
+          }
+        }
+      ]
+    },
+    "2589": {
+      "name": "Katana*Tsurugi",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAtkSpdMul": 1.06
+          }
+        }
+      ]
+    },
+    "2590": {
+      "name": "Katana*Samurai Long Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritDamageAdd": 106
+          }
+        }
+      ]
+    },
+    "2591": {
+      "name": "Spirit Sword*Spirit Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "maxHpMul": 1.25
+          }
+        }
+      ]
+    },
+    "2592": {
+      "name": "Spirit Sword*Raid Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritRateAdd": 40
+          }
+        }
+      ]
+    },
+    "2593": {
+      "name": "Spirit Sword*Caliburs",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAccuracyCombatAdd": 4
+          }
+        }
+      ]
+    },
+    "2594": {
+      "name": "Spirit Sword*Sword of Limit",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritDamageAdd": 146
+          }
+        }
+      ]
+    },
+    "2595": {
+      "name": "Spirit Sword*Sword of Delusion",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "maxHpMul": 1.25
+          }
+        }
+      ]
+    },
+    "2596": {
+      "name": "Spirit Sword*Sword of Nightmare",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritRateAdd": 65
+          }
+        }
+      ]
+    },
+    "2597": {
+      "name": "Spirit Sword*Tsurugi",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAtkSpdMul": 1.06
+          }
+        }
+      ]
+    },
+    "2598": {
+      "name": "Spirit Sword*Samurai Long Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "maxHpMul": 1.25
+          }
+        }
+      ]
+    },
+    "2599": {
+      "name": "Raid Sword*Raid Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAtkSpdMul": 1.04
+          }
+        }
+      ]
+    },
+    "2600": {
+      "name": "Raid Sword*Caliburs",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAccuracyCombatAdd": 4
+          }
+        }
+      ]
+    },
+    "2601": {
+      "name": "Raid Sword*Sword of Limit",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritDamageAdd": 146
+          }
+        }
+      ]
+    },
+    "2602": {
+      "name": "Raid Sword*Sword of Delusion",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "maxHpMul": 1.25
+          }
+        }
+      ]
+    },
+    "2603": {
+      "name": "Raid Sword*Sword of Nightmare",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritRateAdd": 65
+          }
+        }
+      ]
+    },
+    "2604": {
+      "name": "Raid Sword*Tsurugi",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAtkSpdMul": 1.06
+          }
+        }
+      ]
+    },
+    "2605": {
+      "name": "Raid Sword*Samurai Long Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritRateAdd": 43
+          }
+        }
+      ]
+    },
+    "2606": {
+      "name": "Caliburs*Caliburs",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritDamageAdd": 127
+          }
+        }
+      ]
+    },
+    "2607": {
+      "name": "Caliburs*Sword of Limit",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "maxHpMul": 1.25
+          }
+        }
+      ]
+    },
+    "2608": {
+      "name": "Caliburs*Sword of Delusion",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritRateAdd": 54
+          }
+        }
+      ]
+    },
+    "2609": {
+      "name": "Caliburs*Sword of Nightmare",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAtkSpdMul": 1.05
+          }
+        }
+      ]
+    },
+    "2610": {
+      "name": "Caliburs*Tsurugi",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAccuracyCombatAdd": 4
+          }
+        }
+      ]
+    },
+    "2611": {
+      "name": "Caliburs*Samurai Long Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAtkSpdMul": 1.05
+          }
+        }
+      ]
+    },
+    "2612": {
+      "name": "Sword of Limit*Sword of Limit",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritDamageAdd": 127
+          }
+        }
+      ]
+    },
+    "2613": {
+      "name": "Sword of Limit*Sword of Delusion",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "maxHpMul": 1.25
+          }
+        }
+      ]
+    },
+    "2614": {
+      "name": "Sword of Limit*Sword of Nightmare",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritRateAdd": 54
+          }
+        }
+      ]
+    },
+    "2615": {
+      "name": "Sword of Limit*Tsurugi",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAtkSpdMul": 1.05
+          }
+        }
+      ]
+    },
+    "2616": {
+      "name": "Sword of Limit*Samurai Long Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAccuracyCombatAdd": 3
+          }
+        }
+      ]
+    },
+    "2617": {
+      "name": "Sword of Delusion*Sword of Delusion",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAccuracyCombatAdd": 4
+          }
+        }
+      ]
+    },
+    "2618": {
+      "name": "Sword of Delusion*Sword of Nightmare",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritDamageAdd": 127
+          }
+        }
+      ]
+    },
+    "2619": {
+      "name": "Sword of Delusion*Tsurugi",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "maxHpMul": 1.25
+          }
+        }
+      ]
+    },
+    "2620": {
+      "name": "Sword of Delusion*Samurai Long Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritDamageAdd": 133
+          }
+        }
+      ]
+    },
+    "2621": {
+      "name": "Sword of Nightmare*Sword of Nightmare",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritRateAdd": 54
+          }
+        }
+      ]
+    },
+    "2622": {
+      "name": "Sword of Nightmare*Tsurugi",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAtkSpdMul": 1.05
+          }
+        }
+      ]
+    },
+    "2623": {
+      "name": "Sword of Nightmare*Samurai Long Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "maxHpMul": 1.25
+          }
+        }
+      ]
+    },
+    "2624": {
+      "name": "Tsurugi*Tsurugi",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritRateAdd": 54
+          }
+        }
+      ]
+    },
+    "2625": {
+      "name": "Tsurugi*Samurai Long Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pCritRateAdd": 52
+          }
+        }
+      ]
+    },
+    "2626": {
+      "name": "Samurai Long Sword*Samurai Long Sword",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAtkSpdMul": 1.04
+          }
+        }
+      ]
+    },
+    "4681": {
+      "name": "Stormbringer - Critical Anger",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3026,
+        "level": 1
+      }
+    },
+    "4682": {
+      "name": "Stormbringer - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3010,
+        "level": 1
+      }
+    },
+    "4683": {
+      "name": "Stormbringer - Light",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "4684": {
+      "name": "Shamshir - Guidance",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3007,
+        "level": 2
+      }
+    },
+    "4685": {
+      "name": "Shamshir - Back Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3018,
+        "level": 2
+      }
+    },
+    "4686": {
+      "name": "Shamshir - Rsk. Evasion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3028,
+        "level": 2
+      }
+    },
+    "4687": {
+      "name": "Katana - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3010,
+        "level": 2
+      }
+    },
+    "4688": {
+      "name": "Katana - Critical Damage",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3023,
+        "level": 2
+      }
+    },
+    "4689": {
+      "name": "Katana - Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3037,
+        "level": 2
+      }
+    },
+    "4690": {
+      "name": "Spirit Sword - Critical Damage",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3023,
+        "level": 2
+      }
+    },
+    "4691": {
+      "name": "Spirit Sword - Critical Poison",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3024,
+        "level": 4,
+        "chance": 15
+      }
+    },
+    "4692": {
+      "name": "Spirit Sword - Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3037,
+        "level": 2
+      }
+    },
+    "4693": {
+      "name": "Raid Sword - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3010,
+        "level": 2
+      }
+    },
+    "4694": {
+      "name": "Raid Sword - Critical Drain",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3022,
+        "level": 2,
+        "chance": 15
+      }
+    },
+    "4695": {
+      "name": "Raid Sword - Critical Poison",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3024,
+        "level": 4,
+        "chance": 15
+      }
+    },
+    "4696": {
+      "name": "Caliburs - Guidance",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3007,
+        "level": 3
+      }
+    },
+    "4697": {
+      "name": "Caliburs - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3010,
+        "level": 3
+      }
+    },
+    "4698": {
+      "name": "Caliburs - Critical Damage",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3023,
+        "level": 3
+      }
+    },
+    "4699": {
+      "name": "Sword of Delusion - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3010,
+        "level": 3
+      }
+    },
+    "4700": {
+      "name": "Sword of Delusion - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 1
+      }
+    },
+    "4701": {
+      "name": "Sword of Delusion - Rsk. Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3032,
+        "level": 3
+      }
+    },
+    "4702": {
+      "name": "Tsurugi - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3010,
+        "level": 3
+      }
+    },
+    "4703": {
+      "name": "Tsurugi - Critical Damage",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3023,
+        "level": 3
+      }
+    },
+    "4704": {
+      "name": "Tsurugi - Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3037,
+        "level": 3
+      }
+    },
+    "4705": {
+      "name": "Sword of Nightmare - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 1
+      }
+    },
+    "4706": {
+      "name": "Sword of Nightmare - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3010,
+        "level": 3
+      }
+    },
+    "4707": {
+      "name": "Sword of Nightmare - Light",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "4708": {
+      "name": "Samurai Longsword - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3010,
+        "level": 4
+      }
+    },
+    "4709": {
+      "name": "Samurai Longsword - Critical Damage",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3023,
+        "level": 4
+      }
+    },
+    "4710": {
+      "name": "Samurai Longsword - Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3037,
+        "level": 4
+      }
+    },
+    "4711": {
+      "name": "Flamberge - Critical Damage",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3023,
+        "level": 1
+      }
+    },
+    "4712": {
+      "name": "Flamberge - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3010,
+        "level": 1
+      }
+    },
+    "4713": {
+      "name": "Flamberge - Light",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "4714": {
+      "name": "Keshanberk - Guidance",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3007,
+        "level": 5
+      }
+    },
+    "4715": {
+      "name": "Keshanberk - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3010,
+        "level": 5
+      }
+    },
+    "4716": {
+      "name": "Keshanberk - Back Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3018,
+        "level": 5
+      }
+    },
+    "4717": {
+      "name": "Sword of Damascus - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3010,
+        "level": 6
+      }
+    },
+    "4718": {
+      "name": "Sword of Damascus - Critical Damage",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3023,
+        "level": 3
+      }
+    },
+    "4719": {
+      "name": "Sword of Damascus - Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3037,
+        "level": 6
+      }
+    },
+    "4720": {
+      "name": "Tallum Blade - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 3
+      }
+    },
+    "4721": {
+      "name": "Tallum Blade - Rsk. Evasion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3028,
+        "level": 1
+      }
+    },
+    "4722": {
+      "name": "Tallum Blade - Rsk. Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3032,
+        "level": 2
+      }
+    },
+    "4723": {
+      "name": "Great Sword - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 1
+      }
+    },
+    "4724": {
+      "name": "Great Sword - Critical Damage",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3023,
+        "level": 5
+      }
+    },
+    "4725": {
+      "name": "Great Sword - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3010,
+        "level": 5
+      }
+    },
+    "4726": {
+      "name": "Big Hammer - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 1
+      }
+    },
+    "4727": {
+      "name": "Big Hammer - Rsk.Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3027,
+        "level": 1
+      }
+    },
+    "4728": {
+      "name": "Big Hammer - Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3037,
+        "level": 1
+      }
+    },
+    "4729": {
+      "name": "Battle Axe - Anger",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3012,
+        "level": 1
+      }
+    },
+    "4730": {
+      "name": "Battle Axe - Rsk.Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3027,
+        "level": 1
+      }
+    },
+    "4731": {
+      "name": "Battle Axe - Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3037,
+        "level": 1
+      }
+    },
+    "4732": {
+      "name": "Silver Axe - Anger",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3012,
+        "level": 1
+      }
+    },
+    "4733": {
+      "name": "Silver Axe - Rsk.Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3027,
+        "level": 1
+      }
+    },
+    "4734": {
+      "name": "Silver Axe - Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3037,
+        "level": 1
+      }
+    },
+    "4735": {
+      "name": "Skull Graver - Anger",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3012,
+        "level": 1
+      }
+    },
+    "4736": {
+      "name": "Skull Graver - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 1
+      }
+    },
+    "4737": {
+      "name": "Skull Graver - Rsk.Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3027,
+        "level": 1
+      }
+    },
+    "4738": {
+      "name": "Dwarven War Hammer - Anger",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3012,
+        "level": 2
+      }
+    },
+    "4739": {
+      "name": "Dwarven War Hammer - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 1
+      }
+    },
+    "4740": {
+      "name": "Dwarven War Hammer - Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3037,
+        "level": 2
+      }
+    },
+    "4741": {
+      "name": "War Axe - Anger",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3012,
+        "level": 3
+      }
+    },
+    "4742": {
+      "name": "War Axe - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 1
+      }
+    },
+    "4743": {
+      "name": "War Axe - Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3037,
+        "level": 3
+      }
+    },
+    "4744": {
+      "name": "Yaksa Mace - Anger",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3012,
+        "level": 4
+      }
+    },
+    "4745": {
+      "name": "Yaksa Mace - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 1
+      }
+    },
+    "4746": {
+      "name": "Yaksa Mace - Rsk. Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3027,
+        "level": 4
+      }
+    },
+    "4747": {
+      "name": "Heavy War Axe - Anger",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3012,
+        "level": 5
+      }
+    },
+    "4748": {
+      "name": "Heavy War Axe - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 1
+      }
+    },
+    "4749": {
+      "name": "Heavy War Axe - Rsk. Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3027,
+        "level": 5
+      }
+    },
+    "4750": {
+      "name": "Deadman's Glory - Anger",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3012,
+        "level": 6
+      }
+    },
+    "4751": {
+      "name": "Deadman's Glory - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 1
+      }
+    },
+    "4752": {
+      "name": "Deadman's Glory - Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3037,
+        "level": 6
+      }
+    },
+    "4753": {
+      "name": "Art of Battle Axe - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 1
+      }
+    },
+    "4754": {
+      "name": "Art of Battle Axe - Rsk. Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3027,
+        "level": 6
+      }
+    },
+    "4755": {
+      "name": "Art of Battle Axe - Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3037,
+        "level": 6
+      }
+    },
+    "4756": {
+      "name": "Meteor Shower - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 1
+      }
+    },
+    "4757": {
+      "name": "Meteor Shower - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3010,
+        "level": 1
+      }
+    },
+    "4758": {
+      "name": "Meteor Shower - P.Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3010,
+        "level": 1
+      }
+    },
+    "4759": {
+      "name": "Cursed Dagger - Critical Bleed",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3021,
+        "level": 3,
+        "chance": 12
+      }
+    },
+    "4760": {
+      "name": "Cursed Dagger - Critical Poison",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3024,
+        "level": 4,
+        "chance": 4
+      }
+    },
+    "4761": {
+      "name": "Cursed Dagger - Rsk. Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3033,
+        "level": 1
+      }
+    },
+    "4762": {
+      "name": "Dark Elven Dagger - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3011,
+        "level": 1
+      }
+    },
+    "4763": {
+      "name": "Dark Elven Dagger - Back Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3019,
+        "level": 1
+      }
+    },
+    "4764": {
+      "name": "Dark Elven Dagger - Mortal Strike",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3035,
+        "level": 1
+      }
+    },
+    "4765": {
+      "name": "Stiletto - Critical Bleed",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3021,
+        "level": 3,
+        "chance": 12
+      }
+    },
+    "4766": {
+      "name": "Stiletto - Critical Poison",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3024,
+        "level": 4,
+        "chance": 4
+      }
+    },
+    "4767": {
+      "name": "Stiletto - Mortal Strike",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3035,
+        "level": 2
+      }
+    },
+    "4768": {
+      "name": "Grace Dagger - Evasion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3009,
+        "level": 3
+      }
+    },
+    "4769": {
+      "name": "Grace Dagger - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3011,
+        "level": 3
+      }
+    },
+    "4770": {
+      "name": "Grace Dagger - Back Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3019,
+        "level": 3
+      }
+    },
+    "4771": {
+      "name": "Dark Screamer - Evasion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3009,
+        "level": 3
+      }
+    },
+    "4772": {
+      "name": "Dark Screamer - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3011,
+        "level": 3
+      }
+    },
+    "4773": {
+      "name": "Dark Screamer - Critical Bleed",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3021,
+        "level": 4,
+        "chance": 10
+      }
+    },
+    "4774": {
+      "name": "Crystal Dagger - Critical Bleed",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3021,
+        "level": 4,
+        "chance": 10
+      }
+    },
+    "4775": {
+      "name": "Crystal Dagger - Critical Poison",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3024,
+        "level": 5,
+        "chance": 3
+      }
+    },
+    "4776": {
+      "name": "Crystal Dagger - Mortal Strike",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3035,
+        "level": 4
+      }
+    },
+    "4777": {
+      "name": "Kris - Evasion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3009,
+        "level": 5
+      }
+    },
+    "4778": {
+      "name": "Kris - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3011,
+        "level": 5
+      }
+    },
+    "4779": {
+      "name": "Kris - Back Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3019,
+        "level": 5
+      }
+    },
+    "4780": {
+      "name": "Demon Dagger - Critical Bleed",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3021,
+        "level": 4,
+        "chance": 10
+      }
+    },
+    "4781": {
+      "name": "Demon Dagger - Critical Poison",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3024,
+        "level": 5,
+        "chance": 3
+      }
+    },
+    "4782": {
+      "name": "Demon Dagger - Mortal Strike",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3035,
+        "level": 6
+      }
+    },
+    "4783": {
+      "name": "Bloody Orchid - Evasion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3009,
+        "level": 6
+      }
+    },
+    "4784": {
+      "name": "Bloody Orchid - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3011,
+        "level": 2
+      }
+    },
+    "4785": {
+      "name": "Bloody Orchid - Back Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3019,
+        "level": 6
+      }
+    },
+    "4786": {
+      "name": "Hell Knife - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3011,
+        "level": 5
+      }
+    },
+    "4787": {
+      "name": "Hell Knife - Back Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3018,
+        "level": 5
+      }
+    },
+    "4788": {
+      "name": "Hell Knife - Mortal Strike",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3035,
+        "level": 5
+      }
+    },
+    "4789": {
+      "name": "Chakram - Critical Drain",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3022,
+        "level": 1,
+        "chance": 10
+      }
+    },
+    "4790": {
+      "name": "Chakram - Critical Poison",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3024,
+        "level": 4,
+        "chance": 8
+      }
+    },
+    "4791": {
+      "name": "Chakram - Rsk. Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3034,
+        "level": 1
+      }
+    },
+    "4792": {
+      "name": "Fisted Blade - Rsk. Evasion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3030,
+        "level": 3
+      }
+    },
+    "4793": {
+      "name": "Fisted Blade - Rsk. Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3034,
+        "level": 3
+      }
+    },
+    "4794": {
+      "name": "Fisted Blade - Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3037,
+        "level": 3
+      }
+    },
+    "4795": {
+      "name": "Great Pata - Critical Drain",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3022,
+        "level": 3,
+        "chance": 10
+      }
+    },
+    "4796": {
+      "name": "Great Pata - Critical Poison",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3024,
+        "level": 5,
+        "chance": 7
+      }
+    },
+    "4797": {
+      "name": "Great Pata - Rsk. Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3034,
+        "level": 4
+      }
+    },
+    "4798": {
+      "name": "Knuckle Duster - Rsk. Evasion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3030,
+        "level": 2
+      }
+    },
+    "4799": {
+      "name": "Knuckle Duster - Rsk. Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3034,
+        "level": 2
+      }
+    },
+    "4800": {
+      "name": "Knuckle Duster - Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3037,
+        "level": 2
+      }
+    },
+    "4801": {
+      "name": "Arthro Nail - Critical Poison",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3024,
+        "level": 5,
+        "chance": 7
+      }
+    },
+    "4802": {
+      "name": "Arthro Nail - Rsk. Evasion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3030,
+        "level": 5
+      }
+    },
+    "4803": {
+      "name": "Arthro Nail - Rsk. Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3034,
+        "level": 5
+      }
+    },
+    "4804": {
+      "name": "Bellion Cestus - Critical Drain",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3022,
+        "level": 5,
+        "chance": 10
+      }
+    },
+    "4805": {
+      "name": "Bellion Cestus - Critical Poison",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3024,
+        "level": 6,
+        "chance": 6
+      }
+    },
+    "4806": {
+      "name": "Bellion Cestus - Rsk. Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3034,
+        "level": 6
+      }
+    },
+    "4807": {
+      "name": "Blood Tornado - Critical Drain",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3022,
+        "level": 6,
+        "chance": 10
+      }
+    },
+    "4808": {
+      "name": "Blood Tornado - Rsk. Evasion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3030,
+        "level": 6
+      }
+    },
+    "4809": {
+      "name": "Blood Tornado - Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3037,
+        "level": 6
+      }
+    },
+    "4810": {
+      "name": "Crystallized Ice Bow - Guidance",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3008,
+        "level": 1
+      }
+    },
+    "4811": {
+      "name": "Crystallized Ice Bow - Evasion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3009,
+        "level": 1
+      }
+    },
+    "4812": {
+      "name": "Crystallized Ice Bow - Quick Recovery",
+      "stats": {
+        "atkReuseMul": 0.83
+      },
+      "conditionalStats": []
+    },
+    "4813": {
+      "name": "Elemental Bow - Guidance",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3008,
+        "level": 2
+      }
+    },
+    "4814": {
+      "name": "Elemental Bow - Miser",
+      "stats": {},
+      "conditionalStats": [],
+      "miser": {
+        "count": 7,
+        "chance": 30
+      }
+    },
+    "4815": {
+      "name": "Elemental Bow - Quick Recovery",
+      "stats": {
+        "atkReuseMul": 0.8
+      },
+      "conditionalStats": []
+    },
+    "4816": {
+      "name": "Elven Bow of Nobility - Evasion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3009,
+        "level": 2
+      }
+    },
+    "4817": {
+      "name": "Elven Bow of Nobility - Miser",
+      "stats": {},
+      "conditionalStats": [],
+      "miser": {
+        "count": 7,
+        "chance": 30
+      }
+    },
+    "4818": {
+      "name": "Elven Bow of Nobility - Cheap Shot",
+      "stats": {},
+      "conditionalStats": [],
+      "cheapShot": {
+        "mp": 2,
+        "chance": 46
+      }
+    },
+    "4819": {
+      "name": "Akat Long Bow - Guidance",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3008,
+        "level": 3
+      }
+    },
+    "4820": {
+      "name": "Akat Long Bow - Evasion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3009,
+        "level": 3
+      }
+    },
+    "4821": {
+      "name": "Akat Long Bow - Miser",
+      "stats": {},
+      "conditionalStats": [],
+      "miser": {
+        "count": 8,
+        "chance": 30
+      }
+    },
+    "4822": {
+      "name": "Eminence Bow - Guidance",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3008,
+        "level": 4
+      }
+    },
+    "4823": {
+      "name": "Eminence Bow - Miser",
+      "stats": {},
+      "conditionalStats": [],
+      "miser": {
+        "count": 9,
+        "chance": 30
+      }
+    },
+    "4824": {
+      "name": "Eminence Bow - Cheap Shot",
+      "stats": {},
+      "conditionalStats": [],
+      "cheapShot": {
+        "mp": 1,
+        "chance": 34
+      }
+    },
+    "4825": {
+      "name": "Dark Elven Long Bow - Evasion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3009,
+        "level": 5
+      }
+    },
+    "4826": {
+      "name": "Dark Elven Long Bow - Critical Bleed",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3021,
+        "level": 4,
+        "chance": 30
+      }
+    },
+    "4827": {
+      "name": "Dark Elven Long Bow - Miser",
+      "stats": {},
+      "conditionalStats": [],
+      "miser": {
+        "count": 2,
+        "chance": 30
+      }
+    },
+    "4828": {
+      "name": "Bow of Peril - Guidance",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3008,
+        "level": 6
+      }
+    },
+    "4829": {
+      "name": "Bow of Peril - Quick Recovery",
+      "stats": {
+        "atkReuseMul": 0.87
+      },
+      "conditionalStats": []
+    },
+    "4830": {
+      "name": "Bow of Peril - Cheap Shot",
+      "stats": {},
+      "conditionalStats": [],
+      "cheapShot": {
+        "mp": 2,
+        "chance": 42
+      }
+    },
+    "4831": {
+      "name": "Carnage Bow - Critical Bleed",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3021,
+        "level": 4,
+        "chance": 30
+      }
+    },
+    "4832": {
+      "name": "Carnage Bow - Mana Up",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3014,
+        "level": 2
+      }
+    },
+    "4833": {
+      "name": "Carnage Bow - Quick Recovery",
+      "stats": {
+        "atkReuseMul": 0.9,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": []
+    },
+    "4834": {
+      "name": "Scythe - Anger",
+      "stats": {
+        "pAtkAdd": 20,
+        "maxHpMul": 0.85
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3600,
+        "level": 1
+      }
+    },
+    "4835": {
+      "name": "Scythe - Critical Stun",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3571,
+        "level": 1,
+        "chance": 18
+      }
+    },
+    "4836": {
+      "name": "Scythe - Light",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "4837": {
+      "name": "Orcish Glaive - Anger",
+      "stats": {
+        "pAtkAdd": 20,
+        "maxHpMul": 0.85
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3600,
+        "level": 1
+      }
+    },
+    "4838": {
+      "name": "Orcish Glaive - Critical Stun",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3571,
+        "level": 1,
+        "chance": 18
+      }
+    },
+    "4839": {
+      "name": "Orcish Glaive - Towering Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3599,
+        "level": 1
+      }
+    },
+    "4840": {
+      "name": "Body Slasher - Critical Stun",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3571,
+        "level": 1,
+        "chance": 18
+      }
+    },
+    "4841": {
+      "name": "Body Slasher - Towering Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3599,
+        "level": 1
+      }
+    },
+    "4842": {
+      "name": "Body Slasher - Wide Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3599,
+        "level": 1
+      },
+      "attackAngle": 180
+    },
+    "4843": {
+      "name": "Bec de Corbin - Critical Stun",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3571,
+        "level": 1,
+        "chance": 17
+      }
+    },
+    "4844": {
+      "name": "Bec de Corbin - Towering Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3599,
+        "level": 1
+      }
+    },
+    "4845": {
+      "name": "Bec de Corbin - Light",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "4846": {
+      "name": "Scorpion - Anger",
+      "stats": {
+        "pAtkAdd": 24,
+        "maxHpMul": 0.85
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3600,
+        "level": 3
+      }
+    },
+    "4847": {
+      "name": "Scorpion - Critical Stun",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3571,
+        "level": 1,
+        "chance": 16
+      }
+    },
+    "4848": {
+      "name": "Scorpion - Towering Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3599,
+        "level": 1
+      }
+    },
+    "4849": {
+      "name": "Widow Maker - Critical Stun",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3571,
+        "level": 1,
+        "chance": 16
+      }
+    },
+    "4850": {
+      "name": "Widow Maker - Towering Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3599,
+        "level": 1
+      }
+    },
+    "4851": {
+      "name": "Widow Maker - Wide Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3599,
+        "level": 1
+      },
+      "attackAngle": 180
+    },
+    "4852": {
+      "name": "Orcish Poleaxe - Critical Stun",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3571,
+        "level": 1,
+        "chance": 15
+      }
+    },
+    "4853": {
+      "name": "Orcish Poleaxe - Towering Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3599,
+        "level": 1
+      }
+    },
+    "4854": {
+      "name": "Orcish Poleaxe - Wide Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3599,
+        "level": 1
+      },
+      "attackAngle": 180
+    },
+    "4855": {
+      "name": "Great Axe - Anger",
+      "stats": {
+        "pAtkAdd": 28,
+        "maxHpMul": 0.85
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3600,
+        "level": 5
+      }
+    },
+    "4856": {
+      "name": "Great Axe - Critical Stun",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3571,
+        "level": 1,
+        "chance": 14
+      }
+    },
+    "4857": {
+      "name": "Great Axe - Light",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "4858": {
+      "name": "Lance - Anger",
+      "stats": {
+        "pAtkAdd": 30,
+        "maxHpMul": 0.85
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3600,
+        "level": 6
+      }
+    },
+    "4859": {
+      "name": "Lance - Critical Stun",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3571,
+        "level": 1,
+        "chance": 13
+      }
+    },
+    "4860": {
+      "name": "Lance - Towering Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3599,
+        "level": 1
+      }
+    },
+    "4861": {
+      "name": "Halberd - Critical Stun",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3571,
+        "level": 1,
+        "chance": 15
+      }
+    },
+    "4862": {
+      "name": "Halberd - Towering Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3599,
+        "level": 1
+      }
+    },
+    "4863": {
+      "name": "Halberd - Wide Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3599,
+        "level": 1
+      },
+      "attackAngle": 180
+    },
+    "4864": {
+      "name": "Heavy Doom Hammer - Magic Regeneration",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1044,
+        "level": 1,
+        "chance": 30
+      }
+    },
+    "4865": {
+      "name": "Heavy Doom Hammer - Mental Shield",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1035,
+        "level": 2,
+        "chance": 30
+      }
+    },
+    "4866": {
+      "name": "Heavy Doom Hammer - Magic Hold",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 3577,
+        "level": 1,
+        "chance": 10
+      }
+    },
+    "4867": {
+      "name": "Crystal Staff - Rsk. Evasion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3031,
+        "level": 1
+      }
+    },
+    "4868": {
+      "name": "Crystal Staff - Mana Up",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3014,
+        "level": 1
+      }
+    },
+    "4869": {
+      "name": "Crystal Staff - Bodily Blessing",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1045,
+        "level": 2,
+        "chance": 20
+      }
+    },
+    "4870": {
+      "name": "Heavy Doom Axe - Magic Poison",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1168,
+        "level": 6,
+        "chance": 8
+      }
+    },
+    "4871": {
+      "name": "Heavy Doom Axe - Magic Weakness",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1164,
+        "level": 6,
+        "chance": 8
+      }
+    },
+    "4872": {
+      "name": "Heavy Doom Axe - Magic Chaos",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1222,
+        "level": 2,
+        "chance": 8
+      }
+    },
+    "4873": {
+      "name": "Cursed Staff - Magic Hold",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 3577,
+        "level": 1,
+        "chance": 10
+      }
+    },
+    "4874": {
+      "name": "Cursed Staff - Magic Poison",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1168,
+        "level": 6,
+        "chance": 8
+      }
+    },
+    "4875": {
+      "name": "Cursed Staff - Magic Weakness",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1164,
+        "level": 6,
+        "chance": 8
+      }
+    },
+    "4876": {
+      "name": "Paradia Staff - Magic Regeneration",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1044,
+        "level": 2,
+        "chance": 30
+      }
+    },
+    "4877": {
+      "name": "Paradia Staff - Mental Shield",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1035,
+        "level": 3,
+        "chance": 30
+      }
+    },
+    "4878": {
+      "name": "Paradia Staff - Magic Hold",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 3577,
+        "level": 1,
+        "chance": 10
+      }
+    },
+    "4879": {
+      "name": "Pa'agrian Hammer - Rsk. Evasion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3031,
+        "level": 3
+      }
+    },
+    "4880": {
+      "name": "Pa'agrian Hammer - Magic Poison",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1168,
+        "level": 6,
+        "chance": 7
+      }
+    },
+    "4881": {
+      "name": "Pa'agrian Hammer - Magic Weakness",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1164,
+        "level": 6,
+        "chance": 7
+      }
+    },
+    "4882": {
+      "name": "Sage's Staff - Magic Hold",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 3577,
+        "level": 1,
+        "chance": 10
+      }
+    },
+    "4883": {
+      "name": "Sage's Staff - Magic Poison",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1168,
+        "level": 6,
+        "chance": 7
+      }
+    },
+    "4884": {
+      "name": "Sage's Staff - Magic Weakness",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1164,
+        "level": 6,
+        "chance": 7
+      }
+    },
+    "4885": {
+      "name": "Pa'agrian Axe - Mana Up",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3014,
+        "level": 1
+      }
+    },
+    "4886": {
+      "name": "Pa'agrian Axe - Magic Weakness",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1164,
+        "level": 6,
+        "chance": 7
+      }
+    },
+    "4887": {
+      "name": "Pa'agrian Axe - Magic Chaos",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1222,
+        "level": 2,
+        "chance": 7
+      }
+    },
+    "4888": {
+      "name": "Deadman's Staff - Magic Regeneration",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1044,
+        "level": 2,
+        "chance": 30
+      }
+    },
+    "4889": {
+      "name": "Deadman's Staff - Mental Shield",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1035,
+        "level": 3,
+        "chance": 30
+      }
+    },
+    "4890": {
+      "name": "Deadman's Staff - Magic Hold",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 3577,
+        "level": 1,
+        "chance": 10
+      }
+    },
+    "4891": {
+      "name": "Ghoul's Staff - Rsk. Evasion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3031,
+        "level": 4
+      }
+    },
+    "4892": {
+      "name": "Ghoul's Staff - Mana Up",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3014,
+        "level": 1
+      }
+    },
+    "4893": {
+      "name": "Ghoul's Staff - Bodily Blessing",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1045,
+        "level": 4,
+        "chance": 20
+      }
+    },
+    "4894": {
+      "name": "Demon's Staff - Magic Poison",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1168,
+        "level": 6,
+        "chance": 7
+      }
+    },
+    "4895": {
+      "name": "Demon's Staff - Magic Weakness",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1164,
+        "level": 6,
+        "chance": 7
+      }
+    },
+    "4896": {
+      "name": "Demon's Staff - Magic Chaos",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1222,
+        "level": 2,
+        "chance": 7
+      }
+    },
+    "4897": {
+      "name": "Sprite's Staff - Magic Regeneration",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1044,
+        "level": 3,
+        "chance": 30
+      }
+    },
+    "4898": {
+      "name": "Sprite's Staff - Mental Shield",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1035,
+        "level": 4,
+        "chance": 30
+      }
+    },
+    "4899": {
+      "name": "Sprite's Staff - Magic Hold",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 3577,
+        "level": 1,
+        "chance": 10
+      }
+    },
+    "4900": {
+      "name": "Staff of Evil Spirits - Magic Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1077,
+        "level": 3,
+        "chance": 20
+      }
+    },
+    "4901": {
+      "name": "Staff of Evil Spirits - Bodily Blessing",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1045,
+        "level": 5,
+        "chance": 20
+      }
+    },
+    "4902": {
+      "name": "Staff of Evil Spirits - Magic Poison",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1168,
+        "level": 6,
+        "chance": 6
+      }
+    },
+    "5233": {
+      "name": "Keshanberk*Keshanberk",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAtkSpdMul": 1.08
+          }
+        }
+      ]
+    },
+    "5596": {
+      "name": "Dasparion's Staff - Mana Up",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3014,
+        "level": 2
+      }
+    },
+    "5597": {
+      "name": "Dasparion's Staff - Conversion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3048,
+        "level": 2
+      }
+    },
+    "5598": {
+      "name": "Dasparion's Staff - Acumen",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3047,
+        "level": 2
+      }
+    },
+    "5599": {
+      "name": "Meteor Shower - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3050,
+        "level": 1
+      }
+    },
+    "5600": {
+      "name": "Meteor Shower - Critical Bleed",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3021,
+        "level": 5,
+        "chance": 42
+      }
+    },
+    "5601": {
+      "name": "Meteor Shower - Rsk. Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3056,
+        "level": 1
+      }
+    },
+    "5602": {
+      "name": "Elysian - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 3
+      },
+      "oncrit": {
+        "skillId": 3021,
+        "level": 5,
+        "chance": 42
+      }
+    },
+    "5603": {
+      "name": "Elysian - Anger",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3057,
+        "level": 2
+      }
+    },
+    "5604": {
+      "name": "Elysian - Critical Drain",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": []
+    },
+    "5605": {
+      "name": "Branch of The Mother Tree - Conversion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3048,
+        "level": 2
+      }
+    },
+    "5606": {
+      "name": "Branch of The Mother Tree - Magic Damage",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3552,
+        "level": 1
+      }
+    },
+    "5607": {
+      "name": "Branch of The Mother Tree - Acumen",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3047,
+        "level": 2
+      }
+    },
+    "5608": {
+      "name": "Carnage Bow - Light",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "5609": {
+      "name": "Carnage Bow - Critical Bleed",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3021,
+        "level": 5,
+        "chance": 35
+      }
+    },
+    "5610": {
+      "name": "Carnage Bow - Mana Up",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3014,
+        "level": 2
+      }
+    },
+    "5611": {
+      "name": "Soul Bow - Cheap Shot",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "cheapShot": {
+        "mp": 2,
+        "chance": 38
+      }
+    },
+    "5612": {
+      "name": "Soul Bow - Quick Recovery",
+      "stats": {
+        "atkReuseMul": 0.85,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": []
+    },
+    "5613": {
+      "name": "Soul Bow - Critical Poison",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3024,
+        "level": 6,
+        "chance": 18
+      }
+    },
+    "5614": {
+      "name": "Bloody Orchid - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3051,
+        "level": 1
+      }
+    },
+    "5615": {
+      "name": "Bloody Orchid - Back Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3063,
+        "level": 1
+      }
+    },
+    "5616": {
+      "name": "Bloody Orchid - Critical Bleed",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3021,
+        "level": 5,
+        "chance": 35
+      }
+    },
+    "5617": {
+      "name": "Soul Separator - Guidance",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3064,
+        "level": 1
+      }
+    },
+    "5618": {
+      "name": "Soul Separator - Critical Damage",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3066,
+        "level": 1
+      }
+    },
+    "5619": {
+      "name": "Soul Separator - Rsk. Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3056,
+        "level": 1
+      }
+    },
+    "5620": {
+      "name": "Blood Tornado - Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3068,
+        "level": 1
+      }
+    },
+    "5621": {
+      "name": "Blood Tornado - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3050,
+        "level": 1
+      }
+    },
+    "5622": {
+      "name": "Blood Tornado - Anger",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3058,
+        "level": 1
+      }
+    },
+    "5623": {
+      "name": "Dragon Grinder - Rsk. Evasion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3069,
+        "level": 1
+      }
+    },
+    "5624": {
+      "name": "Dragon Grinder - Guidance",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3065,
+        "level": 1
+      }
+    },
+    "5625": {
+      "name": "Dragon Grinder - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 3
+      }
+    },
+    "5626": {
+      "name": "Halberd - Haste",
+      "stats": {
+        "pAtkSpdMul": 1.06,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3601,
+        "level": 7
+      }
+    },
+    "5627": {
+      "name": "Halberd - Critical Stun",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3070,
+        "level": 1,
+        "chance": 25
+      }
+    },
+    "5628": {
+      "name": "Halberd - Wide Blow",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "attackAngle": 180
+    },
+    "5632": {
+      "name": "Tallum Glaive - Guidance",
+      "stats": {
+        "pAccuracyCombatAdd": 4,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3602,
+        "level": 8
+      }
+    },
+    "5633": {
+      "name": "Tallum Glaive - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 4
+      }
+    },
+    "5634": {
+      "name": "Tallum Glaive - Wide Blow",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "attackAngle": 180
+    },
+    "5635": {
+      "name": "Tallum Blade - Critical Poison",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3024,
+        "level": 5,
+        "chance": 10
+      }
+    },
+    "5636": {
+      "name": "Tallum Blade - Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3068,
+        "level": 1
+      }
+    },
+    "5637": {
+      "name": "Tallum Blade - Anger",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3057,
+        "level": 1
+      }
+    },
+    "5638": {
+      "name": "Elemental Sword - Magic Power",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3073,
+        "level": 1
+      }
+    },
+    "5639": {
+      "name": "Elemental Sword - Magic Paralyze",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 3075,
+        "level": 1,
+        "chance": 10
+      }
+    },
+    "5640": {
+      "name": "Elemental Sword - Empower",
+      "stats": {
+        "mAtkAdd": 30,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": []
+    },
+    "5641": {
+      "name": "Sword of Miracles - Magic Power",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3073,
+        "level": 2
+      }
+    },
+    "5642": {
+      "name": "Sword of Miracles - Magic Silence",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 3074,
+        "level": 1,
+        "chance": 10
+      }
+    },
+    "5643": {
+      "name": "Sword of Miracles - Acumen",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3047,
+        "level": 2
+      }
+    },
+    "5644": {
+      "name": "Dragon Slayer - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 3
+      }
+    },
+    "5645": {
+      "name": "Dragon Slayer - Critical Bleed",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3021,
+        "level": 5,
+        "chance": 24
+      }
+    },
+    "5646": {
+      "name": "Dragon Slayer - Critical Drain",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3022,
+        "level": 4,
+        "chance": 20
+      }
+    },
+    "5647": {
+      "name": "Dark Legion's Edge - Critical Damage",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3067,
+        "level": 2
+      }
+    },
+    "5648": {
+      "name": "Dark Legion's Edge - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 3
+      }
+    },
+    "5649": {
+      "name": "Dark Legion's Edge - Rsk. Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3071,
+        "level": 2
+      }
+    },
+    "5704": {
+      "name": "Keshanberk*Keshanberk",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAtkSpdMul": 1.08
+          }
+        }
+      ]
+    },
+    "5705": {
+      "name": "Keshanberk*Damascus",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "maxHpMul": 1.25
+          }
+        }
+      ]
+    },
+    "5706": {
+      "name": "Damascus*Damascus",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "pAccuracyCombatAdd": 6
+          }
+        }
+      ]
+    },
+    "6307": {
+      "name": "Sword of Limit - Guidance",
+      "stats": {
+        "pAccuracyCombatAdd": 5
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3573,
+        "level": 1
+      }
+    },
+    "6308": {
+      "name": "Sword of Limit - Critical Drain",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3022,
+        "level": 2,
+        "chance": 10
+      }
+    },
+    "6309": {
+      "name": "Sword of Limit - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 1
+      }
+    },
+    "6310": {
+      "name": "Sword of Whispering Death - Empower",
+      "stats": {
+        "mAtkAdd": 24
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3072,
+        "level": 1
+      }
+    },
+    "6311": {
+      "name": "Sword of Whispering Death - Magic Power",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3077,
+        "level": 1
+      }
+    },
+    "6312": {
+      "name": "Sword of Whispering Death - Magic Silence",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 3078,
+        "level": 2,
+        "chance": 10
+      }
+    },
+    "6313": {
+      "name": "Homunkulus's Sword - Acumen",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3047,
+        "level": 1
+      }
+    },
+    "6314": {
+      "name": "Homunkulus's Sword - Conversion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3048,
+        "level": 1
+      }
+    },
+    "6315": {
+      "name": "Homunkulus's Sword - Magic Paralyze",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 3079,
+        "level": 1,
+        "chance": 5
+      }
+    },
+    "6347": {
+      "name": "Berserker Blade - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3010,
+        "level": 4
+      }
+    },
+    "6348": {
+      "name": "Berserker Blade - Critical Damage",
+      "stats": {
+        "pCritDamageAdd": 270
+      },
+      "conditionalStats": []
+    },
+    "6349": {
+      "name": "Berserker Blade - Haste",
+      "stats": {
+        "pAtkSpdMul": 1.07
+      },
+      "conditionalStats": []
+    },
+    "6356": {
+      "name": "Dark Elven Dagger - Rsk. Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3056,
+        "level": 2
+      }
+    },
+    "6357": {
+      "name": "Stiletto - Rsk. Haste",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3056,
+        "level": 2
+      }
+    },
+    "6358": {
+      "name": "Crystal Dagger - Critical Damage",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3043,
+        "level": 1
+      }
+    },
+    "6359": {
+      "name": "Demon Dagger - Critical Damage",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3043,
+        "level": 2
+      }
+    },
+    "6580": {
+      "name": "Tallum Blade*Dark Legion's Edge",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "maxHpMul": 1.15
+          }
+        },
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "maxMpMul": 1.2
+          }
+        },
+        {
+          "condition": {
+            "minEnchantLevel": 4
+          },
+          "stats": {
+            "maxCpMul": 1.3
+          }
+        }
+      ]
+    },
+    "6581": {
+      "name": "Forgotten Blade - Haste",
+      "stats": {
+        "pAtkSpdMul": 1.07,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3564,
+        "level": 1
+      }
+    },
+    "6582": {
+      "name": "Forgotten Blade - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 4
+      }
+    },
+    "6583": {
+      "name": "Forgotten Blade - Focus",
+      "stats": {
+        "pCritRateAdd": 84,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3566,
+        "level": 1
+      }
+    },
+    "6584": {
+      "name": "Basalt Battlehammer - HP Drain",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3022,
+        "level": 7,
+        "chance": 20
+      }
+    },
+    "6585": {
+      "name": "Basalt Battlehammer - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 1
+      }
+    },
+    "6586": {
+      "name": "Basalt Battlehammer - HP Regeneration",
+      "stats": {
+        "regHpAdd": 2.04,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3569,
+        "level": 1
+      }
+    },
+    "6587": {
+      "name": "Imperial Staff - Empower",
+      "stats": {
+        "mAtkAdd": 60,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3575,
+        "level": 1
+      }
+    },
+    "6588": {
+      "name": "Imperial Staff - MP Regeneration",
+      "stats": {
+        "regMpAdd": 0.54,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3576,
+        "level": 1
+      }
+    },
+    "6589": {
+      "name": "Imperial Staff - Magic Hold",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 3577,
+        "level": 1,
+        "chance": 30
+      }
+    },
+    "6590": {
+      "name": "Angel Slayer - Crt. Damage",
+      "stats": {
+        "pCritDamageAdd": 265,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3572,
+        "level": 1
+      }
+    },
+    "6591": {
+      "name": "Angel Slayer - HP Drain",
+      "stats": {
+        "absorbDam": 3,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3022,
+        "level": 7,
+        "chance": 20
+      }
+    },
+    "6592": {
+      "name": "Angel Slayer - Haste",
+      "stats": {
+        "pAtkSpdMul": 1.07,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3564,
+        "level": 1
+      }
+    },
+    "6593": {
+      "name": "Shining Bow - Cheap Shot",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "cheapShot": {
+        "mp": 1,
+        "chance": 26
+      }
+    },
+    "6594": {
+      "name": "Shining Bow - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3567,
+        "level": 1
+      }
+    },
+    "6595": {
+      "name": "Shining Bow - Crt. Slow",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3574,
+        "level": 1,
+        "chance": 10
+      }
+    },
+    "6596": {
+      "name": "Dragon Hunter Axe - HP Regeneration",
+      "stats": {
+        "regHpAdd": 2.04,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3569,
+        "level": 1
+      }
+    },
+    "6597": {
+      "name": "Dragon Hunter Axe - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 1
+      }
+    },
+    "6598": {
+      "name": "Dragon Hunter Axe - HP Drain",
+      "stats": {
+        "absorbDam": 3,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3022,
+        "level": 7,
+        "chance": 20
+      }
+    },
+    "6599": {
+      "name": "Saint Spear - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 4
+      }
+    },
+    "6600": {
+      "name": "Saint Spear - Guidance",
+      "stats": {
+        "pAccuracyCombatAdd": 5,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3602,
+        "level": 5
+      }
+    },
+    "6601": {
+      "name": "Saint Spear - Haste",
+      "stats": {
+        "pAtkSpdMul": 1.07,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3564,
+        "level": 1
+      }
+    },
+    "6602": {
+      "name": "Demon Splinter - Focus",
+      "stats": {
+        "pCritRateAdd": 80,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3565,
+        "level": 1
+      }
+    },
+    "6603": {
+      "name": "Demon Splinter - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 4
+      }
+    },
+    "6604": {
+      "name": "Demon Splinter - Crt. Stun",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3070,
+        "level": 1,
+        "chance": 25
+      }
+    },
+    "6605": {
+      "name": "Heavens Divider - Haste",
+      "stats": {
+        "pAtkSpdMul": 1.07,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3601,
+        "level": 9
+      }
+    },
+    "6606": {
+      "name": "Heavens Divider - Health",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3013,
+        "level": 4
+      }
+    },
+    "6607": {
+      "name": "Heavens Divider - Focus",
+      "stats": {
+        "pCritRateAdd": 84,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3566,
+        "level": 1
+      }
+    },
+    "6608": {
+      "name": "Arcana Mace - Acumen",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3047,
+        "level": 2
+      }
+    },
+    "6609": {
+      "name": "Arcana Mace - MP Regeneration",
+      "stats": {
+        "regMpAdd": 0.54,
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3576,
+        "level": 1
+      }
+    },
+    "6610": {
+      "name": "Arcana Mace - Mana Up",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3014,
+        "level": 2
+      }
+    },
+    "7576": {
+      "name": "Draconic Bow - Cheap Shot",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "cheapShot": {
+        "mp": 1,
+        "chance": 26
+      }
+    },
+    "7577": {
+      "name": "Draconic Bow - Focus",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3567,
+        "level": 1
+      }
+    },
+    "7578": {
+      "name": "Draconic Bow - Critical Slow",
+      "stats": {
+        "pvpPhysDmg": 1.05,
+        "pvpPhysSkillsDmg": 1.05,
+        "pvpMagicalDmg": 1.05
+      },
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3574,
+        "level": 1,
+        "chance": 10
+      }
+    },
+    "7701": {
+      "name": "Stick of Faith - Mana Up",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3014,
+        "level": 1
+      }
+    },
+    "7702": {
+      "name": "Stick of Faith - Magic Hold",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 3577,
+        "level": 1,
+        "chance": 10
+      }
+    },
+    "7703": {
+      "name": "Stick of Faith - Magic Shield",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1035,
+        "level": 2,
+        "chance": 50
+      }
+    },
+    "7704": {
+      "name": "Stick of Eternity - Empower",
+      "stats": {
+        "mAtkAdd": 24
+      },
+      "conditionalStats": []
+    },
+    "7705": {
+      "name": "Stick of Eternity - Rsk.,Evasion",
+      "stats": {},
+      "conditionalStats": [
+        {
+          "condition": {
+            "actorHpPercentAtMost": 60
+          },
+          "stats": {
+            "pEvasionRateAdd": 7
+          }
+        }
+      ]
+    },
+    "7706": {
+      "name": "Stick of Eternity - Blessed Body",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1045,
+        "level": 3,
+        "chance": 20
+      }
+    },
+    "7707": {
+      "name": "Nirvana Axe - Magic Power",
+      "stats": {
+        "mAtkAdd": 99,
+        "magicalMpConsumeRateMul": 1.15
+      },
+      "conditionalStats": []
+    },
+    "7708": {
+      "name": "Nirvana Axe - Magic Poison",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1168,
+        "level": 6,
+        "chance": 7
+      }
+    },
+    "7709": {
+      "name": "Nirvana Axe - Magic Weakness",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1164,
+        "level": 6,
+        "chance": 7
+      }
+    },
+    "7710": {
+      "name": "Club of Nature - Acumen",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3047,
+        "level": 1
+      }
+    },
+    "7711": {
+      "name": "Club of Nature - Magic Mental Shield",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1035,
+        "level": 3,
+        "chance": 50
+      }
+    },
+    "7712": {
+      "name": "Club of Nature - Magic Hold",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 3577,
+        "level": 1,
+        "chance": 10
+      }
+    },
+    "7713": {
+      "name": "Mace of The Underworld - Mana Up",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3014,
+        "level": 1
+      }
+    },
+    "7714": {
+      "name": "Mace of The Underworld - Magic Silence",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 3078,
+        "level": 2,
+        "chance": 10
+      }
+    },
+    "7715": {
+      "name": "Mace of The Underworld - Conversion",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3048,
+        "level": 1
+      }
+    },
+    "7716": {
+      "name": "Inferno Staff - Acumen",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3047,
+        "level": 1
+      }
+    },
+    "7717": {
+      "name": "Inferno Staff - Magic Silence",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 3078,
+        "level": 2,
+        "chance": 10
+      }
+    },
+    "7718": {
+      "name": "Inferno Staff - Magic Paralyze",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 3079,
+        "level": 1,
+        "chance": 5
+      }
+    },
+    "7719": {
+      "name": "Poleaxe - Critical Stun",
+      "stats": {},
+      "conditionalStats": [],
+      "oncrit": {
+        "skillId": 3070,
+        "level": 1,
+        "chance": 25
+      }
+    },
+    "7720": {
+      "name": "Poleaxe - Towering Blow",
+      "stats": {},
+      "conditionalStats": []
+    },
+    "7721": {
+      "name": "Poleaxe - Wide Blow",
+      "stats": {},
+      "conditionalStats": [],
+      "attackAngle": 180
+    },
+    "7722": {
+      "name": "Sword of Valhalla - Acumen",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3047,
+        "level": 1
+      }
+    },
+    "7723": {
+      "name": "Sword of Valhalla - Magic Weakness",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1164,
+        "level": 6,
+        "chance": 7
+      }
+    },
+    "7724": {
+      "name": "Sword of Valhalla - Magic Regeneration",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1044,
+        "level": 3,
+        "chance": 30
+      }
+    },
+    "7810": {
+      "name": "Soulfire Dirk - Mana Up",
+      "stats": {},
+      "conditionalStats": [],
+      "passive": {
+        "skillId": 3014,
+        "level": 1
+      }
+    },
+    "7811": {
+      "name": "Soulfire Dirk - Magic Hold",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 3577,
+        "level": 1,
+        "chance": 10
+      }
+    },
+    "7812": {
+      "name": "Soulfire Dirk - Magic Silence",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 3078,
+        "level": 2,
+        "chance": 10
+      }
+    },
+    "7813": {
+      "name": "Hell Knife - Magic Regeneration",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1044,
+        "level": 3,
+        "chance": 30
+      }
+    },
+    "7814": {
+      "name": "Hell Knife - Mental Shield",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1035,
+        "level": 3,
+        "chance": 50
+      }
+    },
+    "7815": {
+      "name": "Hell Knife - Magic Weakness",
+      "stats": {},
+      "conditionalStats": [],
+      "oncast": {
+        "skillId": 1164,
+        "level": 3,
+        "chance": 7
+      }
+    }
+  },
+  "procs": {
+    "3024-4": {
+      "selfId": 3024,
+      "level": 4,
+      "name": "Special Ability: Critical Poison",
+      "spell": true,
+      "power": 100,
+      "buffTime": 21000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1,
+        "durationMs": 21000,
+        "skillType": "effect",
+        "effect": "poison",
+        "effectType": "debuff",
+        "target": "enemy",
+        "trait": "poison",
+        "dot": {
+          "count": 7,
+          "intervalMs": 3000,
+          "damage": 31
+        }
+      }
+    },
+    "3022-2": {
+      "selfId": 3022,
+      "level": 2,
+      "name": "Special Ability: Critical Drain",
+      "spell": true,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1
+      }
+    },
+    "3021-3": {
+      "selfId": 3021,
+      "level": 3,
+      "name": "Special Ability: Critical Bleed",
+      "spell": false,
+      "power": 100,
+      "buffTime": 35000,
+      "semantic": {
+        "isMagic": false,
+        "baseLandRate": 100,
+        "levelDepend": 1,
+        "durationMs": 35000,
+        "skillType": "effect",
+        "effect": "bleed",
+        "effectType": "debuff",
+        "target": "enemy",
+        "trait": "bleed",
+        "dot": {
+          "count": 7,
+          "intervalMs": 5000,
+          "damage": 22
+        }
+      }
+    },
+    "3021-4": {
+      "selfId": 3021,
+      "level": 4,
+      "name": "Special Ability: Critical Bleed",
+      "spell": false,
+      "power": 100,
+      "buffTime": 35000,
+      "semantic": {
+        "isMagic": false,
+        "baseLandRate": 100,
+        "levelDepend": 1,
+        "durationMs": 35000,
+        "skillType": "effect",
+        "effect": "bleed",
+        "effectType": "debuff",
+        "target": "enemy",
+        "trait": "bleed",
+        "dot": {
+          "count": 7,
+          "intervalMs": 5000,
+          "damage": 27
+        }
+      }
+    },
+    "3024-5": {
+      "selfId": 3024,
+      "level": 5,
+      "name": "Special Ability: Critical Poison",
+      "spell": true,
+      "power": 100,
+      "buffTime": 21000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1,
+        "durationMs": 21000,
+        "skillType": "effect",
+        "effect": "poison",
+        "effectType": "debuff",
+        "target": "enemy",
+        "trait": "poison",
+        "dot": {
+          "count": 7,
+          "intervalMs": 3000,
+          "damage": 38
+        }
+      }
+    },
+    "3022-1": {
+      "selfId": 3022,
+      "level": 1,
+      "name": "Special Ability: Critical Drain",
+      "spell": true,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1
+      }
+    },
+    "3022-3": {
+      "selfId": 3022,
+      "level": 3,
+      "name": "Special Ability: Critical Drain",
+      "spell": true,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1
+      }
+    },
+    "3022-5": {
+      "selfId": 3022,
+      "level": 5,
+      "name": "Special Ability: Critical Drain",
+      "spell": true,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1
+      }
+    },
+    "3024-6": {
+      "selfId": 3024,
+      "level": 6,
+      "name": "Special Ability: Critical Poison",
+      "spell": true,
+      "power": 100,
+      "buffTime": 21000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1,
+        "durationMs": 21000,
+        "skillType": "effect",
+        "effect": "poison",
+        "effectType": "debuff",
+        "target": "enemy",
+        "trait": "poison",
+        "dot": {
+          "count": 7,
+          "intervalMs": 3000,
+          "damage": 44
+        }
+      }
+    },
+    "3022-6": {
+      "selfId": 3022,
+      "level": 6,
+      "name": "Special Ability: Critical Drain",
+      "spell": true,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1
+      }
+    },
+    "3571-1": {
+      "selfId": 3571,
+      "level": 1,
+      "name": "Special Ability: Crt. Stun",
+      "spell": false,
+      "power": 70,
+      "buffTime": 9000,
+      "semantic": {
+        "isMagic": false,
+        "baseLandRate": 70,
+        "levelDepend": 1,
+        "magicLevel": 65,
+        "durationMs": 9000,
+        "skillType": "effect",
+        "effect": "stun",
+        "effectType": "debuff",
+        "target": "enemy",
+        "trait": "shock",
+        "stackFamily": "Stun",
+        "stackOrder": 1
+      }
+    },
+    "1044-1": {
+      "selfId": 1044,
+      "level": 1,
+      "name": "Regeneration",
+      "spell": true,
+      "buffTime": 1200000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1,
+        "durationMs": 1200000
+      }
+    },
+    "1035-2": {
+      "selfId": 1035,
+      "level": 2,
+      "name": "Mental Shield",
+      "spell": true,
+      "buffTime": 1200000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1,
+        "durationMs": 1200000
+      }
+    },
+    "3577-1": {
+      "selfId": 3577,
+      "level": 1,
+      "name": "Special Ability: Magic Hold",
+      "spell": true,
+      "power": 100,
+      "buffTime": 30000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 2,
+        "magicLevel": 75,
+        "durationMs": 30000,
+        "skillType": "effect",
+        "effect": "root",
+        "effectType": "debuff",
+        "target": "enemy",
+        "trait": "root",
+        "stackFamily": "Root",
+        "stackOrder": 1
+      }
+    },
+    "1045-2": {
+      "selfId": 1045,
+      "level": 2,
+      "name": "Bless the Body",
+      "spell": true,
+      "buffTime": 1200000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1,
+        "durationMs": 1200000
+      }
+    },
+    "1168-6": {
+      "selfId": 1168,
+      "level": 6,
+      "name": "Curse:Poison",
+      "spell": true,
+      "power": 7,
+      "buffTime": 30000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 7,
+        "levelDepend": 1,
+        "magicLevel": 62,
+        "durationMs": 30000
+      }
+    },
+    "1164-6": {
+      "selfId": 1164,
+      "level": 6,
+      "name": "Curse:Weakness",
+      "spell": true,
+      "power": 80,
+      "buffTime": 15000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 80,
+        "levelDepend": 2,
+        "magicLevel": 40,
+        "durationMs": 15000
+      }
+    },
+    "1222-2": {
+      "selfId": 1222,
+      "level": 2,
+      "name": "Curse Chaos",
+      "spell": true,
+      "power": 80,
+      "buffTime": 15000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 80,
+        "levelDepend": 2,
+        "magicLevel": 40,
+        "durationMs": 15000
+      }
+    },
+    "1044-2": {
+      "selfId": 1044,
+      "level": 2,
+      "name": "Regeneration",
+      "spell": true,
+      "buffTime": 1200000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1,
+        "durationMs": 1200000
+      }
+    },
+    "1035-3": {
+      "selfId": 1035,
+      "level": 3,
+      "name": "Mental Shield",
+      "spell": true,
+      "buffTime": 1200000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1,
+        "durationMs": 1200000
+      }
+    },
+    "1045-4": {
+      "selfId": 1045,
+      "level": 4,
+      "name": "Bless the Body",
+      "spell": true,
+      "buffTime": 1200000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1,
+        "durationMs": 1200000
+      }
+    },
+    "1044-3": {
+      "selfId": 1044,
+      "level": 3,
+      "name": "Regeneration",
+      "spell": true,
+      "buffTime": 1200000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1,
+        "durationMs": 1200000
+      }
+    },
+    "1035-4": {
+      "selfId": 1035,
+      "level": 4,
+      "name": "Mental Shield",
+      "spell": true,
+      "buffTime": 1200000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1,
+        "durationMs": 1200000
+      }
+    },
+    "1077-3": {
+      "selfId": 1077,
+      "level": 3,
+      "name": "Focus",
+      "spell": true,
+      "buffTime": 1200000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1,
+        "durationMs": 1200000
+      }
+    },
+    "1045-5": {
+      "selfId": 1045,
+      "level": 5,
+      "name": "Bless the Body",
+      "spell": true,
+      "buffTime": 1200000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1,
+        "durationMs": 1200000
+      }
+    },
+    "3021-5": {
+      "selfId": 3021,
+      "level": 5,
+      "name": "Special Ability: Critical Bleed",
+      "spell": false,
+      "power": 100,
+      "buffTime": 35000,
+      "semantic": {
+        "isMagic": false,
+        "baseLandRate": 100,
+        "levelDepend": 1,
+        "durationMs": 35000,
+        "skillType": "effect",
+        "effect": "bleed",
+        "effectType": "debuff",
+        "target": "enemy",
+        "trait": "bleed",
+        "dot": {
+          "count": 7,
+          "intervalMs": 5000,
+          "damage": 31
+        }
+      }
+    },
+    "3070-1": {
+      "selfId": 3070,
+      "level": 1,
+      "name": "Special Ability: Critical Stun",
+      "spell": false,
+      "power": 70,
+      "buffTime": 9000,
+      "semantic": {
+        "isMagic": false,
+        "baseLandRate": 70,
+        "levelDepend": 1,
+        "magicLevel": 64,
+        "durationMs": 9000,
+        "skillType": "effect",
+        "effect": "stun",
+        "effectType": "debuff",
+        "target": "enemy",
+        "trait": "shock",
+        "stackFamily": "Stun",
+        "stackOrder": 1
+      }
+    },
+    "3075-1": {
+      "selfId": 3075,
+      "level": 1,
+      "name": "Special Ability: Magic Paralyze",
+      "spell": true,
+      "power": 100,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1
+      }
+    },
+    "3074-1": {
+      "selfId": 3074,
+      "level": 1,
+      "name": "Special Ability: Magic Silence",
+      "spell": true,
+      "power": 80,
+      "buffTime": 30000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 80,
+        "levelDepend": 2,
+        "magicLevel": 64,
+        "durationMs": 30000,
+        "skillType": "effect",
+        "effect": "silence",
+        "effectType": "debuff",
+        "target": "enemy",
+        "trait": "silence",
+        "stackFamily": "silence",
+        "stackOrder": 1
+      }
+    },
+    "3022-4": {
+      "selfId": 3022,
+      "level": 4,
+      "name": "Special Ability: Critical Drain",
+      "spell": true,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1
+      }
+    },
+    "3078-2": {
+      "selfId": 3078,
+      "level": 2,
+      "name": "Special Ability: Magic Silence",
+      "spell": true,
+      "power": 80,
+      "buffTime": 30000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 80,
+        "levelDepend": 2,
+        "magicLevel": 49,
+        "durationMs": 30000,
+        "skillType": "effect",
+        "effect": "silence",
+        "effectType": "debuff",
+        "target": "enemy",
+        "trait": "silence",
+        "stackFamily": "silence",
+        "stackOrder": 1
+      }
+    },
+    "3079-1": {
+      "selfId": 3079,
+      "level": 1,
+      "name": "Special Ability: Magic Paralyze",
+      "spell": true,
+      "power": 100,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1
+      }
+    },
+    "3022-7": {
+      "selfId": 3022,
+      "level": 7,
+      "name": "Special Ability: Critical Drain",
+      "spell": true,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1
+      }
+    },
+    "3574-1": {
+      "selfId": 3574,
+      "level": 1,
+      "name": "Special Ability: Crt. Slow",
+      "spell": false,
+      "power": 70,
+      "buffTime": 120000,
+      "semantic": {
+        "isMagic": false,
+        "baseLandRate": 70,
+        "levelDepend": 1,
+        "magicLevel": 64,
+        "durationMs": 120000,
+        "skillType": "effect",
+        "effect": "slow",
+        "effectType": "debuff",
+        "target": "enemy",
+        "trait": "slow",
+        "stackFamily": "RunSpeedDown",
+        "stackOrder": 0.5,
+        "stats": {
+          "runSpdMul": 0.5
+        }
+      }
+    },
+    "1045-3": {
+      "selfId": 1045,
+      "level": 3,
+      "name": "Bless the Body",
+      "spell": true,
+      "buffTime": 1200000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 100,
+        "levelDepend": 1,
+        "durationMs": 1200000
+      }
+    },
+    "1164-3": {
+      "selfId": 1164,
+      "level": 3,
+      "name": "Curse:Weakness",
+      "spell": true,
+      "power": 80,
+      "buffTime": 15000,
+      "semantic": {
+        "isMagic": true,
+        "baseLandRate": 80,
+        "levelDepend": 2,
+        "magicLevel": 25,
+        "durationMs": 15000
+      }
+    }
+  }
+}

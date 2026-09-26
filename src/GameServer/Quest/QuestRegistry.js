@@ -83,6 +83,7 @@ const entries = [
     [168, "Q168_DeliverSupplies"],
     [169, "Q169_OffspringOfNightmares"],
     [170, "Q170_DangerousSeduction"],
+    [350, "Q350_EnhanceYourWeapon"],
     [401, "Q401_PathToWarrior"],
     [402, "Q402_PathToKnight"],
     [403, "Q403_PathToRogue"],
