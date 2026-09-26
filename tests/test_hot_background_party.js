@@ -10,6 +10,7 @@ const Raid = invoke('GameServer/Bot/AI/BotRaidSafety');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const NpcDied = invoke('GameServer/Actor/Generics/NpcDied');
 const Generics = invoke(path.actor);
+const Geo = invoke('GameServer/Geodata/GeodataEngine');
 const saved = [];
 function replace(object, key, value) { const old = object[key]; saved.push(() => object[key] = old); object[key] = value; }
 function actor(id, x = 0, kind = null) {
@@ -21,6 +22,7 @@ function actor(id, x = 0, kind = null) {
         automation: { replenishVitals() {} }, select() {}, moveTo(coords) { this.moved = true; this.move = coords; } };
 }
 try {
+    replace(Geo, 'hasLineOfSight', () => true);
     const group = [1, 2, 3].map(id => ({ hotBackgroundPartyId: 'group', actor: actor(id), dataSendToOthers() {} }));
     const [leader, healer, follower] = group;
     const party = { partyId: 'group', leaderId: 1, memberIds: [1, 2, 3], status: 'hot', stats: { objective: { npcId: 20 } } };
@@ -39,6 +41,16 @@ try {
     const attacks = [];
     const AI = { executeCombat: (s, _bot, target) => attacks.push([s.actor.fetchId(), target.fetchId()]) };
     const tick = s => Party.tick(s, s.actor, Generics, AI, 10000);
+    wanted.x = 1600;
+    Geo.hasLineOfSight = (_x, _y, _z, x) => x !== wanted.x;
+    tick(leader);
+    assert.strictEqual(leader.backgroundHuntTarget, other,
+        'a hidden objective mob must not draw the group past a visible local mob');
+    leader.backgroundHuntTarget = null;
+    leader.nextBackgroundTargetScanAt = 0;
+    attacks.length = 0;
+    wanted.x = 400;
+    Geo.hasLineOfSight = () => true;
     follower.partyGroundPickupInProgress = true;
     follower.partyGroundPickupDeadlineAt = 15000;
     tick(leader);
@@ -73,7 +85,6 @@ try {
     // of its spot, without widening each member's combat scan or teleporting.
     leader.actor.hp = 100;
     const Spots = invoke('GameServer/Bot/AI/SpotService');
-    const Geo = invoke('GameServer/Geodata/GeodataEngine');
     party.spotId = 'test';
     const spot = { id: 'test', arrivalPoints: [{ locX: 2800, locY: 0, locZ: 0 }] };
     replace(Spots, 'findById', () => spot);
@@ -147,6 +158,37 @@ try {
     assert.strictEqual(leader.lastDecision.action, 'party_search_wait');
     searchTick(leader, 62000);
     assert.strictEqual(leader.actor.move.to.locX, 2600, 'rejected points cannot starve a later valid destination');
+
+    // Neither monsters nor known spawn points may bypass the visibility
+    // filter by becoming exploration destinations through a wall.
+    leader.backgroundHuntTarget = null;
+    leader.nextBackgroundTargetScanAt = 0;
+    leader.backgroundSearchHistory.clear();
+    available = [remote];
+    spot.arrivalPoints = [{ locX: 2800, locY: 0, locZ: 0 }];
+    Geo.getCellData = () => ({ nswe: 15, z: 0 });
+    Geo.hasLineOfSight = () => false;
+    leader.actor.move = null;
+    searchTick(leader, 68000);
+    assert.strictEqual(leader.actor.move, null, 'hidden mobs and spawn points cannot lure the group out');
+    assert.strictEqual(leader.lastDecision.action, 'party_search_wait');
+
+    const crowd = [1, 2, 3, 4, 5].map(n => actor(100 + n, n * 100, 'Monster'));
+    available = crowd;
+    Geo.hasLineOfSight = (_x, _y, _z, x) => x === 500;
+    searchTick(leader, 74000);
+    assert.strictEqual(leader.backgroundHuntTarget, null);
+    assert.strictEqual(leader.lastDecision.action, 'party_search_visibility');
+    assert.strictEqual(leader.actor.move, null, 'unfinished visibility scans must not trigger exploration');
+    searchTick(leader, 76000);
+    assert.strictEqual(leader.backgroundHuntTarget, crowd[4], 'blocked candidates cannot starve a visible fifth mob');
+
+    Geo.hasLineOfSight = () => false;
+    leader.incoming = other;
+    searchTick(leader, 78000);
+    assert.strictEqual(attacks.at(-1)[1], other.fetchId(), 'visibility filtering must not erase an actual attacker');
+    leader.incoming = null;
+    Geo.hasLineOfSight = () => true;
 
     // Exercise the real death callback: every nearby native party actor gets
     // the C4 share, including a healer that never hit the monster.

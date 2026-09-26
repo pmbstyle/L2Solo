@@ -14,6 +14,7 @@ const tests = [
     'tests/test_clan_hall_notifications.js',
     'tests/test_clan_hall_doors.js',
     'tests/test_bot_hunting_route_failure.js',
+    'tests/test_bot_hunting_visibility.js',
     'tests/test_skill_cooldowns.js',
     'tests/test_cold_pve_continuation.js',
     'tests/test_bot_acquisition_recovery.js',

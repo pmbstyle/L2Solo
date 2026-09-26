@@ -5,6 +5,7 @@ const Restrictions = invoke('GameServer/Effects/EffectRestrictions');
 const Tactics = invoke('GameServer/Bot/AI/BotPvpTactics');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const Support = invoke('GameServer/Bot/AI/BotSupportPlanner');
+const HuntingVisibility = invoke('GameServer/Bot/AI/BotHuntingVisibility');
 
 function roster(session) {
     const party = session?.hotBackgroundPartyId && Parties.find(session.hotBackgroundPartyId);
@@ -99,10 +100,13 @@ function searchGround(session, owner, members, party, legal, now) {
         // the native route must still reach this floor without teleporting.
         if (!cell.nswe || !Number.isFinite(cell.z) || Math.abs(cell.z - origin.locZ) >= 500) continue;
         const to = { locX: point.locX, locY: point.locY, locZ: cell.z };
+        // Exploration must not reintroduce an unseen monster as a movement
+        // goal after the combat scan rejected it through a wall.
+        if (!Geo.hasLineOfSight(origin.locX, origin.locY, origin.locZ, to.locX, to.locY, to.locZ)) continue;
         session.backgroundSearchDestination = to;
         session.lastDecision = { action: 'party_search', partyId: party.partyId, destination: to, at: now };
-        // Native bounded pathfinding may go around a wall. A failed route
-        // leaves us idle; the next search tries another destination.
+        // Native bounded pathfinding still owns movement to the visible
+        // point. A failed route leaves the next search to try another one.
         bot.moveTo({ from: origin, to });
         return;
     }
@@ -164,6 +168,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     const allowedHunt = npc => legal(npc) && !invoke('GameServer/Bot/AI/HotResourceCompetition').blockedTarget(owner, npc, now);
     if (!incoming && target && !allowedHunt(target)) target = null;
     if (!legal(target) || (!incoming && Threats.distance(owner.actor, target) > 2000)) target = null;
+    if (!incoming && target && !HuntingVisibility.canSee(owner.actor, target)) target = null;
     if (!target && !incoming) {
         const low = members.some(s => ratio(s.actor.fetchHp(), s.actor.fetchMaxHp()) < 0.55
             || (Roles.shouldRestForMana(s.actor) && ratio(s.actor.fetchMp(), s.actor.fetchMaxMp()) < 0.35));
@@ -200,8 +205,11 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
             const npcId = Number(party.stats?.objective?.npcId || party.stats?.acquisitionGoal?.next?.npcId || 0);
             const npcs = World.fetchNpcsInRadius(owner.actor.fetchLocX(), owner.actor.fetchLocY(), radius)
                 .filter(allowedHunt).filter(n => Math.abs(n.fetchLocZ() - owner.actor.fetchLocZ()) < 500);
-            target = npcs.sort((a, b) => Number(b.fetchSelfId() === npcId) - Number(a.fetchSelfId() === npcId)
-                || Threats.distance(owner.actor, a) - Threats.distance(owner.actor, b))[0] || null;
+            npcs.sort((a, b) => Number(b.fetchSelfId() === npcId) - Number(a.fetchSelfId() === npcId)
+                || Threats.distance(owner.actor, a) - Threats.distance(owner.actor, b));
+            const scan = HuntingVisibility.select(owner, 'party', owner.actor, npcs);
+            target = scan.candidate;
+            owner.backgroundTargetScanPending = scan.pending;
         }
     }
     owner.backgroundHuntTarget = target;
@@ -211,7 +219,15 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     }
     if (Tactics.support(session, bot, { owner, members: near, threats: [] }, Generics, now)) return true;
     if (!target) {
+        if (session.currentTargetId) {
+            Tactics.stop(session, bot);
+            bot.unselect?.();
+        }
         session.currentTargetId = undefined;
+        if (owner.backgroundTargetScanPending) {
+            session.lastDecision = { action: 'party_search_visibility', partyId: party.partyId, at: now };
+            return true;
+        }
         searchGround(session, owner, members, party, allowedHunt, now);
         return true;
     }

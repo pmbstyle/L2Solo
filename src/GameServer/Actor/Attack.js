@@ -113,7 +113,8 @@ class Attack {
             this.bowRepeatTarget = creature;
             return;
         }
-        if (!AttackRange.isWithinRange(actor, creature, attackRange)) {
+        if (!AttackRange.isWithinRange(actor, creature, attackRange)
+            || invoke('GameServer/Automation').needsGeodataApproach(session, actor, creature)) {
             actor.state.setHits(false);
             // Auto-attacks and chase arrivals both return here. The target
             // may have moved since the initial attack request or last swing.

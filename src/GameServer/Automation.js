@@ -6,6 +6,15 @@ const EffectStats    = invoke('GameServer/Effects/EffectStats');
 const AttackRange    = invoke('GameServer/Actor/AttackRange');
 
 class Automation extends SelectedModel {
+    static needsGeodataApproach(session, src, dst) {
+        const bot = session?.actor === src && (session.constructor?.name === 'BotSession'
+            || session.accountId?.startsWith?.('bot_'));
+        return !!bot && src !== dst && !invoke('GameServer/Geodata/GeodataEngine').hasLineOfSight(
+            src.fetchLocX(), src.fetchLocY(), src.fetchLocZ(),
+            dst.fetchLocX(), dst.fetchLocY(), dst.fetchLocZ()
+        );
+    }
+
     constructor() {
         // Parent inheritance
         super();
@@ -243,6 +252,21 @@ class Automation extends SelectedModel {
     }
 
     scheduleAction(session, src, dst, radius, callback, options = {}) {
+        // MoveToPawn interpolates a straight line. Bot actions must not use
+        // it to cross a wall, even when the target is already in hit range.
+        // The AI retries the action after the ordinary geodata route ends.
+        if (Automation.needsGeodataApproach(session, src, dst)) {
+            if (invoke('GameServer/Effects/EffectRestrictions').canMove(src)) {
+                // moveTo owns cancellation and deduplicates an active route.
+                // Aborting first would restart that route on every AI retry.
+                src.moveTo({
+                    from: { locX: src.fetchLocX(), locY: src.fetchLocY(), locZ: src.fetchLocZ() },
+                    to: { locX: dst.fetchLocX(), locY: dst.fetchLocY(), locZ: dst.fetchLocZ() },
+                    targetActor: dst
+                });
+            } else this.abortAll(src);
+            return false;
+        }
         this.clearPlayerAttackApproach();
         this.stopMoveInterpolation();
         const actionRange = options.collisionAware
@@ -314,6 +338,10 @@ class Automation extends SelectedModel {
                     clearInterval(session.moveTimer);
                     session.moveTimer = null;
                 }
+            }
+            if (Automation.needsGeodataApproach(session, src, dst)) {
+                this.scheduleAction(session, src, dst, radius, callback, options);
+                return;
             }
             callback();
 
