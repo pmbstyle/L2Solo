@@ -77,6 +77,8 @@ function assess(party, members, timestamp, options = {}) {
                 && (!profitable || plan.requiresParty || plan.partyNeed === 'required')) reason = 'party_goals_diverged';
         }
         if (options.requiresWeaponBridge?.(member)) reason = 'weapon_bridge';
+        const equipmentBridgeReason = options.equipmentBridgeReason?.(member);
+        if (equipmentBridgeReason) reason = equipmentBridgeReason;
         // Recovery alone proves nothing, but it must not hide repeated failed
         // fights already observed over the member's patience window.
         if (!marketPaused && noExperience) reason = 'party_no_experience';
@@ -94,7 +96,7 @@ function assess(party, members, timestamp, options = {}) {
             ...prior, since: Number(prior.since) + Math.max(0, timestamp - Number(previous.at || timestamp))
         };
         if (reason) concerns[member.characterId] = { reason, since };
-        const grace = [AssemblyRecovery.REASON, 'party_no_progress', 'party_no_experience', 'clan_party_unsafe', 'weapon_bridge', 'raid_failed'].includes(reason)
+        const grace = [AssemblyRecovery.REASON, 'party_no_progress', 'party_no_experience', 'clan_party_unsafe', 'weapon_bridge', 'class_armor_bridge', 'raid_failed'].includes(reason)
             ? 0
             : (2 + commitment * 4) * MINUTE;
         const leave = !!reason && timestamp - since >= grace;

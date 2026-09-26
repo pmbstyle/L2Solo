@@ -149,10 +149,13 @@ function startKernel(config = {}) {
             partyMinSize: Config.partyMinSize
         },
         partyMinSize: Config.partyMinSize,
-        requiresWeaponBridge: (state) => Boolean(GearAcquisitionPlanner.npcWeaponBridgePlan(
-            state,
-            planningNpcCatalog.plannerOptions
-        )),
+        equipmentBridgeReason: (state) => {
+            const plan = GearAcquisitionPlanner.npcEquipmentBridgePlan(state, planningNpcCatalog.plannerOptions);
+            if (plan?.weaponBridge) return 'weapon_bridge';
+            return plan?.equipmentBridge && Number(state.adena || 0)
+                >= Number(plan.market?.price || 0) + Number(plan.market?.reserve || 0)
+                ? 'class_armor_bridge' : null;
+        },
         projectResolve: async (state, result, timestamp) => {
             const projected = await LifeStateProjector.prepareResolve(state, result, {
                 persist: false,
@@ -188,7 +191,7 @@ function startKernel(config = {}) {
                 && previousPlan?.next?.sourceKind === 'raid';
             if (clanRaidPlan) npcPlanningOptions.allowRaidSources = true;
             const replanContext = GearAcquisitionPlanner.replanContextFor(state, previousPlan, timestamp);
-            const weaponBridgePlan = GearAcquisitionPlanner.npcWeaponBridgePlan(state, npcPlanningOptions);
+            const weaponBridgePlan = GearAcquisitionPlanner.npcEquipmentBridgePlan(state, npcPlanningOptions);
             const clanGoalLocked = !weaponBridgePlan
                 && GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan);
             const availabilitySource = !replanContext.failure && previousPlan?.status === 'active'

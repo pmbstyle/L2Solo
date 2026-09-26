@@ -507,7 +507,7 @@ assert.notStrictEqual(Number(alternativePlan.target?.selfId || 0), Number(failed
 
 const gradeChangedContext = GearAcquisitionPlanner.replanContextFor({ ...failedDropState, level: 20 }, failedDropPlan, 21 * 60 * 1000);
 assert.strictEqual(gradeChangedContext.planCurrent, false, 'a level-up into a new grade must invalidate an open no-grade plan and party request');
-assert.deepStrictEqual(gradeChangedContext.excludedTargetIds, [], 'old no-grade failures must not contaminate the new grade target list');
+assert.deepStrictEqual(gradeChangedContext.excludedTargetIds, [failedTarget.selfId], 'a failed old-grade target must remain excluded while selecting the new grade');
 assert.strictEqual(
     GearAcquisitionPlanner.replanContextFor({ ...failedDropState, level: 11 }, failedDropPlan, 21 * 60 * 1000).planCurrent,
     false,

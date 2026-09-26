@@ -3409,7 +3409,7 @@ const PopulationService = {
         const replanContext = workerPlan
             ? { failure: workerPlan.replanFailure || null }
             : GearAcquisitionPlanner.replanContextFor(state, previousPlan, startedAt);
-        const weaponBridgePlan = GearAcquisitionPlanner.npcWeaponBridgePlan(state);
+        const weaponBridgePlan = GearAcquisitionPlanner.npcEquipmentBridgePlan(state);
         let acquisitionPlan = workerPlan?.acquisitionPlan || null;
         const workerPlanHasSource = acquisitionPlan?.status === 'active'
             && ['direct_drop', 'craft'].includes(acquisitionPlan.strategy)

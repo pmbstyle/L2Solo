@@ -911,7 +911,21 @@ function maintainHotMarketStores(sessions = [], limit = 10, timestamp = Date.now
 
 function resolve(state, timestamp = Date.now()) {
     const store = state?.stats?.marketStore;
-    if (!state || state.activity !== 'merchant' || !store) return Promise.resolve({ state, closed: false });
+    if (!state || state.activity !== 'merchant') return Promise.resolve({ state, closed: false });
+    if (!store) {
+        if (invoke('GameServer/Bot/AI/BotServiceIdentity').isStaticService(state)) {
+            return Promise.resolve({ state, closed: false });
+        }
+        // Historical store cleanup can leave an adventurer in merchant mode
+        // without a shop. There is then no expiry event to release the bot.
+        const recovered = { ...state, activity: state.stats?.marketReturn ? 'shopping' : 'hunting',
+            timing: { ...(state.timing || {}), nextResolveAt: timestamp } };
+        return LifeState.upsertState(recovered, 'orphaned_market_recovery').then(saved => {
+            if (!saved) return { state, closed: false };
+            MarketOpportunity.removeColdStore(state.characterId);
+            return { state: saved, closed: true, reason: 'orphaned_market_recovery' };
+        });
+    }
     if (Number(store.storeType || 1) === 3) {
         const hasDemand = (store.items || []).some((item) => Number(item.count || 0) > 0);
         if (hasDemand && Number(store.expiresAt || 0) > timestamp) {

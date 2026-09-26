@@ -335,6 +335,8 @@ class ColdSimulationKernel {
         this.requiresWeaponBridge = typeof options.requiresWeaponBridge === 'function'
             ? options.requiresWeaponBridge
             : null;
+        this.equipmentBridgeReason = typeof options.equipmentBridgeReason === 'function'
+            ? options.equipmentBridgeReason : null;
         this.projectResolve = typeof options.projectResolve === 'function' ? options.projectResolve : null;
         this.now = options.now || Date.now;
         this.emit = options.emit || (() => {});
@@ -929,18 +931,19 @@ class ColdSimulationKernel {
             }
 
             const rescuing = run.members.some(s => s.vitals?.hp <= 0);
-            const weaponBridgeReview = !rescuing && !BackgroundPartyLifecycle.raidStarted(run.party)
-                && run.members.some(member => this.requiresWeaponBridge?.(member));
+            const equipmentBridgeReview = !rescuing && !BackgroundPartyLifecycle.raidStarted(run.party)
+                && run.members.some(member => this.equipmentBridgeReason?.(member) || this.requiresWeaponBridge?.(member));
             if (!rescuing && (BackgroundPartyLifecycle.sessionExpired(run.party, startedAt, this.partySession)
                 || require('./ClanEquipmentPartyPolicy').needsReview(run.party, run.members, startedAt)
-                || weaponBridgeReview)) {
+                || equipmentBridgeReview)) {
                 const review = BackgroundPartyLifecycle.review(run.party, run.members, startedAt, {
                     ...this.partySession,
                     assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                     chooseLeader: states => typeof invoke === 'function' ? invoke('GameServer/Bot/Population/BackgroundPartyComposition').chooseLeader(states) : states[0],
                     roleCoverage: states => typeof invoke === 'function' ? invoke('GameServer/Bot/Population/BackgroundPartyComposition').roleCoverage(states) : run.party.roleCoverage,
                     personaFor: state => typeof invoke === 'function' ? invoke('GameServer/Bot/AI/BotPersona').generate(state) : state.persona,
-                    requiresWeaponBridge: this.requiresWeaponBridge
+                    requiresWeaponBridge: this.requiresWeaponBridge,
+                    equipmentBridgeReason: this.equipmentBridgeReason
                 });
                 const proposals = partyTransitionProposals(run, review.states, review.party, startedAt, {
                     type: 'party_session_review', summary: `Party ${run.party.partyId} reviewed its shared hunt`, weight: 1,

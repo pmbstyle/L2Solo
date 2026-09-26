@@ -60,9 +60,9 @@ function releaseMember(state, timestamp = Date.now(), reason = 'party_session_ro
         'invalid_party_size',
         'party_membership_mismatch',
         'party_relationship_conflict', 'party_goals_diverged', 'party_no_progress', 'party_no_experience',
-        'party_review_min_size', 'weapon_bridge', 'raid_failed', 'raid_defeated', 'raid_unavailable'
+        'party_review_min_size', 'weapon_bridge', 'class_armor_bridge', 'raid_failed', 'raid_defeated', 'raid_unavailable'
     ].includes(reason);
-    const equipmentBridge = ['weapon_bridge'].includes(reason);
+    const equipmentBridge = ['weapon_bridge', 'class_armor_bridge'].includes(reason);
     const nextActivity = equipmentBridge
         ? 'hunting'
         : releasedFromObjective && (state.activity === 'grouped' || partyTravel)

@@ -93,7 +93,9 @@ function equipmentNeed(state) {
         ? itemBySelfId(acquisitionPlan.target.selfId)
         : null;
     const plannedSlot = Number(acquisitionPlan?.target?.slot || plannedTarget?.etc?.slot || 0);
-    const plannedAlreadyEquipped = plannedTarget && plannedSlot > 0 && equipment.some((item) => (
+    const buyingCombinationBlade = acquisitionPlan?.combine?.resultId
+        && Number(acquisitionPlan.combine.resultId) !== Number(plannedTarget?.selfId);
+    const plannedAlreadyEquipped = !buyingCombinationBlade && plannedTarget && plannedSlot > 0 && equipment.some((item) => (
         Number(item.slot) === plannedSlot && Number(item.selfId) === Number(plannedTarget.selfId)
     ));
     const npcOnlyTier = Number(state.level || build.level || 1) < 40;
@@ -176,6 +178,7 @@ function evaluate(state = {}, options = {}) {
     const gear = equipmentNeed(state);
     if (gear) {
         const requiredAdena = Math.max(0, gear.desiredItem.price + gear.reserve - Number(state.adena || 0));
+        const fundedMarketOffer = requiredAdena === 0 && gear.priceSource === 'offer' && gear.marketTown;
         const weaponUpgrade = [7, 14].includes(gear.slot);
         const wealthInvestment = WealthInvestmentPolicy.investmentOpportunity(state, gear.desiredItem.price);
         const npcPurchasePriority = requiredAdena === 0 ? affordableNpcGearPriority(gear) : null;
@@ -228,7 +231,9 @@ function evaluate(state = {}, options = {}) {
                     }
                 } : {})
             },
-            blockers: spot ? [] : ['missing_spot'],
+            // A funded purchase can travel straight to its quoted market;
+            // only earning the missing Adena still requires a farming spot.
+            blockers: spot || fundedMarketOffer ? [] : ['missing_spot'],
             nextReviewAt: timestamp + 10 * 60 * 1000
         });
     }
