@@ -22,6 +22,12 @@ const speak = (text) => { requestTime += 250; return Speak(session, new Send(0x3
 const fixture = () => fixtures.push(body());
 try {
     process.env.L2NODE_PROGRESSION_RATE = 'x1';
+    const rareChances = [0, 100, 1.666, 0.05, 0.01, 0.00432, 0.000001, 0.00000001];
+    for (const tab of ['drops', 'spoils']) {
+        const detail = { id: 1, sources: { [tab]: rareChances.map((chancePercent) => ({ id: 0, chancePercent })) } };
+        assert.deepStrictEqual(Native.sourceRows(detail, tab, 0).rows.map((r) => r.chance),
+            ['0.00', '100.00', '1.67', '0.05', '0.01', '0.0043', '0.0000010', '0.00000001']);
+    }
     speak('.items Sword of Revolution');
     assert(body().includes('<title>Item Database</title>'), 'unmodified clients get HTML');
     assert.strictEqual(session.nativeItemsView.query, 'Sword of Revolution');
@@ -53,7 +59,12 @@ try {
                 command(`tab ${tab}`);
                 const detail = catalog.itemDetail(id), sources = detail.sources[tab];
                 assert.strictEqual(Number(state()[10]), sources.length);
-                assert.deepStrictEqual(rows().map((r) => r[7]), sources.slice(0, 8).map((r) => r.chancePercent.toFixed(2)));
+                rows().forEach((r, index) => {
+                    const actual = Number(r[7]), expected = sources[index].chancePercent;
+                    if (expected > 0) assert(actual > 0, 'positive drop/spoil chances survive wire formatting');
+                    assert(Math.abs(actual - expected) <= Math.min(0.005, expected * 0.05) + 1e-12,
+                        `displayed chance ${r[7]} stays close to catalog chance ${expected}`);
+                });
                 fixture();
                 command('page 999999'); assert.strictEqual(Number(state()[8]), Number(state()[9]) - 1); fixture();
             }

@@ -10,6 +10,14 @@ function view(session) {
     return session.nativeItemsView ||= { query: '', category: 'all', grade: 'all', tab: 'list', listPage: 0, sourcePage: 0, itemId: 0 };
 }
 function searchText(value) { return Protocol.text(value, 48).trim(); }
+function chanceText(value) {
+    const chance = Number(value);
+    // Keep two significant digits for rare rewards, up to the catalog's
+    // eight decimal places, so a positive catalog chance never displays as zero.
+    const digits = chance > 0 && chance < 0.01
+        ? Math.min(8, 1 - Math.floor(Math.log10(chance))) : 2;
+    return chance.toFixed(digits);
+}
 function sourceRows(detail, tab, page) {
     const sources = detail.sources[tab], pages = Math.max(1, Math.ceil(sources.length / 8));
     page = Math.min(page, pages - 1);
@@ -21,7 +29,7 @@ function sourceRows(detail, tab, page) {
         const low = rolls.length ? Math.min(...rolls.map((r) => r.minAmount)) : 0;
         const high = rolls.length ? Math.max(...rolls.map((r) => r.maxAmount)) : 0;
         return { id: npc.id, name: npc.name, level: npc.level, raid: npc.raidBoss, reachable: npc.knownReachable,
-            amount: low === high ? String(low) : `${low}-${high}`, chance: Number(npc.chancePercent).toFixed(2) };
+            amount: low === high ? String(low) : `${low}-${high}`, chance: chanceText(npc.chancePercent) };
     });
     return { page, pages, total: sources.length, rows };
 }
