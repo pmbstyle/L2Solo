@@ -1,6 +1,7 @@
 const data = require('../../../data/Items/weapon_sa_exchanges.json');
 const byId = new Map(data.recipes.map(recipe => [recipe.id, recipe]));
 const blacksmiths = new Set(data.blacksmiths);
+const crystalIds = new Set(Object.keys(require('../../../data/Items/soul_crystals.json').crystals).map(Number));
 function station(npcId) {
     if (Number(npcId) === 8126) return 'mammon';
     if (Number(npcId) === 8092) return 'blackMarket';
@@ -16,10 +17,10 @@ function options(npcId, sourceId, operation) {
 // Lisvus tax-only Adena ingredients are a tax base, not a service fee. The
 // current world has no castle tax service, so its effective rate is zero.
 function costs(recipe) {
-    // Temporary installation policy until A/S gemstones and Ancient Adena
-    // acquisition are available. Keep the sourced recipes for later restoration.
+    // Installation requires only the weapon and its exact Soul Crystal at every
+    // grade. Keep sourced material costs for reference and possible restoration.
     return recipe.operation === 'install'
-        ? recipe.costs.filter(cost => ![2133, 2134, 5575].includes(cost.selfId))
+        ? recipe.costs.filter(cost => crystalIds.has(cost.selfId))
         : recipe.costs;
 }
 function links(npcId) {

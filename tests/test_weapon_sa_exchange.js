@@ -91,7 +91,6 @@ async function questToWeapon(session) {
     const recipe = Catalog.recipes.find(r => r.productId === 4682);
     const weapon = await add(session, recipe.sourceId, 1, 7);
     const weaponId = weapon.fetchId();
-    await add(session, 2131, 97);
     talkTo(session, smith);
     await apply(session, weapon, recipe);
     assert.equal(actor.backpack.fetchItemRaw(crystalId), undefined, 'the grown crystal is consumed');
@@ -133,11 +132,11 @@ async function run() {
     for (const recipe of Catalog.recipes) {
         assert(template(recipe.sourceId) && template(recipe.productId));
         for (const cost of recipe.costs) assert(template(cost.selfId) && Number.isSafeInteger(cost.amount) && cost.amount > 0);
-        if (recipe.operation === 'install' && recipe.station === 'mammon') {
-            assert.equal(Catalog.costs(recipe).length, 1, 'A/S installation requires only its Soul Crystal');
+        if (recipe.operation === 'install') {
+            assert.equal(Catalog.costs(recipe).length, 1, 'every grade requires only its Soul Crystal');
             assert(invoke('GameServer/Items/SoulCrystalProgression').crystalIds.includes(Catalog.costs(recipe)[0].selfId));
         } else {
-            assert.deepEqual(Catalog.costs(recipe), recipe.costs, 'C/B installation and removal keep their sourced costs');
+            assert.deepEqual(Catalog.costs(recipe), recipe.costs, 'removal keeps its sourced costs');
         }
     }
     // Every installable variant must round-trip with its exact enchanted instance.
@@ -169,19 +168,19 @@ async function run() {
     }
     // Waived ingredients must be absent from the preview and remain untouched
     // even if the player already owns them. The crystal is still mandatory.
-    for (const grade of ['a', 's']) {
+    for (const grade of ['c', 'b', 'a', 's']) {
         const highRecipe = installs.find(r => template(r.sourceId).etc.rank === grade);
         const weapon = await setup(a, highRecipe, 16);
         const crystal = a.actor.backpack.fetchItemFromSelfId(Catalog.costs(highRecipe)[0].selfId);
-        for (const selfId of [2133, 2134, 5575]) await add(a, selfId, 123);
+        for (const selfId of [57, 2131, 2132, 2133, 2134, 5575]) await add(a, selfId, 123);
         const token = Service.preview(a, weapon.fetchId(), highRecipe.id);
-        assert.doesNotMatch(html(a), /Gemstone [AS]|Ancient Adena/);
+        assert.doesNotMatch(html(a), /Gemstone|Adena/);
         assert.match(html(a), /Soul Crystal/);
         await Service.exchange(a, token);
         assert.equal(weapon.fetchEnchantLevel(), 16);
         assert.equal(a.actor.backpack.fetchItemRaw(crystal.fetchId()), undefined);
         const rows = await Database.fetchItems(1);
-        for (const selfId of [2133, 2134, 5575]) {
+        for (const selfId of [57, 2131, 2132, 2133, 2134, 5575]) {
             assert.equal(a.actor.backpack.fetchItemFromSelfId(selfId).fetchAmount(), 123);
             assert.equal(rows.find(row => row.selfId === selfId).amount, 123);
         }
@@ -197,7 +196,8 @@ async function run() {
     Service.menu(a);
     assert.match(html(a), /\+16 Stormbringer/);
     const token = Service.preview(a, item.fetchId(), recipe.id);
-    assert.match(html(a), /97 × Gemstone C/);
+    assert.doesNotMatch(html(a), /Gemstone|Adena/);
+    assert.match(html(a), /1 × Red Soul Crystal - Stage 5/);
     assert.match(html(a), /Enchantment \+16 is preserved/);
     const results = await Promise.allSettled([Service.exchange(a, token), Service.exchange(a, token)]);
     assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
@@ -210,12 +210,12 @@ async function run() {
     assert.equal(restored.fetchItemRaw(item.fetchId()).fetchEnchantLevel(), 16, 'reload keeps enchant');
 
     // Missing/wrong materials cannot consume a partial payment.
-    for (const missing of [4634, 2131]) {
+    for (const substitute of [4645, 4635, 5908]) {
         item = await setup(a, recipe);
-        const material = a.actor.backpack.fetchItemFromSelfId(missing);
+        const material = a.actor.backpack.fetchItemFromSelfId(4634);
         await Database.deleteItem(1, material.fetchId());
         a.actor.backpack.items = a.actor.backpack.items.filter(i => i !== material);
-        await add(a, missing === 4634 ? 4645 : 2132, 200);
+        await add(a, substitute, 1);
         const before = await Database.fetchItems(1);
         await assert.rejects(apply(a, item, recipe), /missing_materials/);
         assert.deepEqual(await Database.fetchItems(1), before);
@@ -277,11 +277,10 @@ async function run() {
 
     // Split stacks and more than one crystal: installation consumes only one.
     item = await setup(a, recipe);
-    const gems = a.actor.backpack.fetchItemFromSelfId(2131);
-    gems.setAmount(50); WriteQueue.itemAmount(1, gems.fetchId(), 50);
+    await add(a, 2131, 50);
     await add(a, 2131, 60); await add(a, 4634);
     await apply(a, item, recipe);
-    assert.equal(a.actor.backpack.fetchItems().filter(i => i.fetchSelfId() === 2131).reduce((n,i) => n+i.fetchAmount(), 0), 13);
+    assert.equal(a.actor.backpack.fetchItems().filter(i => i.fetchSelfId() === 2131).reduce((n,i) => n+i.fetchAmount(), 0), 110);
     assert.equal(a.actor.backpack.fetchItems().filter(i => i.fetchSelfId() === 4634).length, 1);
 
     const paidRemoval = Catalog.options(8092, 4681, 'remove')[0];

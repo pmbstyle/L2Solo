@@ -60,10 +60,9 @@ also states that SA does not alter weapon enchantment.
   85 A/S-grade installations and 352 removals. His unsealing menu is retained.
 - Black Marketeer of Mammon (8092) offers 298 sourced removal recipes, charging
   their exact Ancient Adena amounts. Mammon's own removal recipes are free.
-- Installation consumes the exact color/stage Soul Crystal. C/B installations
-  also consume their sourced gemstones. **Temporary policy:** Gemstone A/S
-  (2133/2134) and Ancient Adena (5575) are excluded from installation costs;
-  all 85 A/S installations currently require only the Soul Crystal. The preview
+- **Current installation policy for every grade:** only the weapon and the exact
+  color/stage Soul Crystal are required. All 328 C/B/A/S installations exclude
+  gemstones, Adena and Ancient Adena from their costs. The preview
   and transaction use the same filtered costs; owned waived materials are not
   consumed. Original recipes remain in the catalog for later restoration.
   A higher-stage or differently colored crystal cannot substitute. Removal
@@ -108,8 +107,8 @@ the SA without losing enchantment or retaining its bonus.
   by existing NPC shops, but Gemstone A (2133) and S (2134) have no implemented
   shop/drop source. Lisvus Merchant of Mammon multisell 81132501 sells them for
   30,000 and 100,000 Ancient Adena respectively. Neither that exchange nor the
-  Seven Signs currency acquisition cycle is implemented. The temporary
-  installation waiver above lets players install A/S abilities without those
+  Seven Signs currency acquisition cycle is implemented. The
+  installation policy above lets players install abilities without those
   materials. Paid Black Marketeer removal still requires Ancient Adena;
   Blacksmith of Mammon's free removal remains available.
 - Only 62 of 110 absorption targets currently have runtime templates; see
