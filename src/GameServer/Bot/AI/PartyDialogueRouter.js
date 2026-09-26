@@ -239,6 +239,30 @@ function select({
         };
     }
 
+    // Joining an autonomous party is a server-owned action, so route it to
+    // an actual member of a nearby autonomous roster instead of whichever
+    // unrelated bot happens to appear first in the world-session list.
+    if (invoke('GameServer/Bot/AI/PlayerPartyTakeover').isJoinRequest(text)) {
+        const partyMembers = candidates
+            .filter((candidate) => !!(
+                candidate.session?.hotBackgroundPartyId ||
+                candidate.source?.hotBackgroundPartyId ||
+                candidate.source?.party?.partyId ||
+                candidate.source?.coldLifeState?.party?.partyId
+            ))
+            .sort((left, right) => Number(left.distance ?? Infinity) - Number(right.distance ?? Infinity) || left.id - right.id);
+        const candidate = partyMembers.find((entry) => entry.selected) || partyMembers[0] || null;
+        if (candidate) {
+            return {
+                candidate,
+                candidates,
+                status: 'matched',
+                reason: candidate.selected ? 'selected_party_member' : 'nearby_party_member',
+                matchType: 'party_join'
+            };
+        }
+    }
+
     const pending = candidates.find((candidate) => candidate.pendingInteraction);
     if (pending) {
         return { candidate: pending, candidates, status: 'matched', reason: 'pending_interaction', matchType: null };

@@ -3470,6 +3470,188 @@ const Database = {
         }, 'bot-life:party-lifecycle');
     },
 
+    takeOverBackgroundParty(request = {}) {
+        const members = request.members || [];
+        const ids = members.map((member) => Number(member.characterId));
+        const playerId = Number(request.playerId || 0);
+        if (!request.partyId || !Number.isSafeInteger(playerId) || playerId <= 0
+            || ids.length < 2 || ids.length > 8 || new Set(ids).size !== ids.length) {
+            return Promise.resolve({ ok: false, reason: 'invalid_party_takeover' });
+        }
+        return inTransaction(() => {
+            const party = one('SELECT * FROM bot_background_parties WHERE partyId = ?', [request.partyId]);
+            const declared = party ? JSON.parse(party.memberIdsJson || '[]').map(Number) : [];
+            if (!party || party.status !== 'hot' || Number(party.updatedAt) !== Number(request.expectedUpdatedAt)
+                || declared.length !== ids.length || declared.some((id) => !ids.includes(id))) {
+                return { ok: false, reason: 'party_changed' };
+            }
+            const attached = all('SELECT characterId FROM bot_life_state WHERE partyId = ?', [request.partyId])
+                .map((row) => Number(row.characterId));
+            if (attached.length !== ids.length || attached.some((id) => !ids.includes(id))) {
+                return { ok: false, reason: 'party_membership_changed' };
+            }
+            const rows = members.map((member) => coldSimulationRow(member.characterId));
+            for (let index = 0; index < members.length; index += 1) {
+                const member = members[index];
+                const row = rows[index];
+                if (!row || row.phase !== 'hot' || row.partyId !== request.partyId
+                    || Number(row.simulationRevision) !== Number(member.expectedRevision)
+                    || Number(row.updatedAt) !== Number(member.expectedUpdatedAt)
+                    || String(row.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER
+                    || row.simulationLeaseId) {
+                    return { ok: false, reason: 'member_changed' };
+                }
+            }
+
+            const timestamp = Math.max(now(), Number(party.updatedAt) + 1,
+                ...rows.map((row) => Number(row.updatedAt) + 1));
+            for (let index = 0; index < members.length; index += 1) {
+                const member = members[index];
+                const row = rows[index];
+                const stats = parsedObject(row.statsJson) || {};
+                stats.leaderId = playerId;
+                stats.backgroundPartyId = null;
+                stats.partyRequest = null;
+                stats.partyBreakReason = 'player_takeover';
+                stats.playerPartyTakeover = {
+                    partyId: request.partyId,
+                    playerId,
+                    source: String(request.source || 'player_request').slice(0, 64),
+                    at: timestamp
+                };
+                const changed = write(`UPDATE bot_life_state SET
+                    partyId = NULL, activity = 'hunting', activityStartedAt = ?, nextResolveAt = NULL,
+                    lastResolvedAt = ?, statsJson = ?, updatedAt = ?, simulationOwner = ?,
+                    simulationRevision = simulationRevision + 1, simulationLeaseId = NULL, simulationLeaseUntil = 0
+                    WHERE characterId = ? AND partyId = ? AND phase = 'hot' AND simulationRevision = ?`, [
+                    timestamp,
+                    timestamp,
+                    JSON.stringify(stats),
+                    timestamp,
+                    LEGACY_SIMULATION_OWNER,
+                    member.characterId,
+                    request.partyId,
+                    member.expectedRevision
+                ]);
+                if (changed.affectedRows !== 1) throw Error('party takeover CAS failed');
+            }
+
+            const partyStats = parsedObject(party.statsJson) || {};
+            partyStats.hotLifecycle = null;
+            partyStats.partyBreakReason = 'player_takeover';
+            partyStats.playerTakeover = {
+                playerId,
+                source: String(request.source || 'player_request').slice(0, 64),
+                at: timestamp
+            };
+            const changedParty = write(`UPDATE bot_background_parties
+                SET status = 'player_taken_over', nextResolveAt = NULL, statsJson = ?, updatedAt = ?
+                WHERE partyId = ? AND status = 'hot' AND updatedAt = ?`, [
+                JSON.stringify(partyStats), timestamp, request.partyId, request.expectedUpdatedAt
+            ]);
+            if (changedParty.affectedRows !== 1) throw Error('party takeover party CAS failed');
+            return {
+                ok: true,
+                rows: ids.map(coldSimulationRow),
+                party: one('SELECT * FROM bot_background_parties WHERE partyId = ?', [request.partyId])
+            };
+        }, 'bot-life:party-takeover');
+    },
+
+    restoreTakenOverBackgroundParty(request = {}) {
+        const partyId = String(request.partyId || '');
+        const playerId = Number(request.playerId || 0);
+        if (!partyId || !Number.isSafeInteger(playerId) || playerId <= 0) {
+            return Promise.resolve({ ok: false, reason: 'invalid_party_restore' });
+        }
+        return inTransaction(() => {
+            const party = one('SELECT * FROM bot_background_parties WHERE partyId = ?', [partyId]);
+            const partyStats = parsedObject(party?.statsJson) || {};
+            const declared = party ? JSON.parse(party.memberIdsJson || '[]').map(Number) : [];
+            if (!party || party.status !== 'player_taken_over'
+                || Number(partyStats.playerTakeover?.playerId || 0) !== playerId
+                || declared.length < 2 || declared.length > 8 || new Set(declared).size !== declared.length) {
+                return { ok: false, reason: 'party_changed' };
+            }
+
+            const placeholders = declared.map(() => '?').join(', ');
+            const rows = all(`SELECT * FROM bot_life_state WHERE characterId IN (${placeholders})`, declared);
+            if (rows.length !== declared.length) return { ok: false, reason: 'party_membership_changed' };
+            const phases = new Set(rows.map((row) => row.phase));
+            if (phases.size !== 1 || !['hot', 'cold'].includes(rows[0]?.phase)) {
+                return { ok: false, reason: 'member_changed' };
+            }
+            for (const row of rows) {
+                const stats = parsedObject(row.statsJson) || {};
+                if (row.partyId || Number(stats.playerPartyTakeover?.playerId || 0) !== playerId
+                    || stats.playerPartyTakeover?.partyId !== partyId
+                    || String(row.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER
+                    || row.simulationLeaseId) {
+                    return { ok: false, reason: 'member_changed' };
+                }
+            }
+
+            const phase = rows[0].phase;
+            const status = phase === 'hot' ? 'hot' : 'active';
+            const timestamp = Math.max(now(), Number(party.updatedAt) + 1,
+                ...rows.map((row) => Number(row.updatedAt) + 1));
+            const nextResolveAt = phase === 'hot' ? null : timestamp + 1000;
+            for (const row of rows) {
+                const stats = parsedObject(row.statsJson) || {};
+                stats.leaderId = Number(party.leaderId);
+                stats.backgroundPartyId = partyId;
+                stats.partyRequest = null;
+                stats.partyBreakReason = 'player_party_released';
+                delete stats.playerPartyTakeover;
+                const changed = write(`UPDATE bot_life_state SET
+                    partyId = ?, activity = 'grouped', activityStartedAt = ?, nextResolveAt = ?,
+                    lastResolvedAt = ?, statsJson = ?, updatedAt = ?, simulationOwner = ?,
+                    simulationRevision = simulationRevision + 1, simulationLeaseId = NULL, simulationLeaseUntil = 0
+                    WHERE characterId = ? AND partyId IS NULL AND simulationRevision = ?`, [
+                    partyId,
+                    timestamp,
+                    nextResolveAt,
+                    timestamp,
+                    JSON.stringify(stats),
+                    timestamp,
+                    LEGACY_SIMULATION_OWNER,
+                    Number(row.characterId),
+                    Number(row.simulationRevision)
+                ]);
+                if (changed.affectedRows !== 1) throw Error('party restore CAS failed');
+            }
+
+            delete partyStats.playerTakeover;
+            partyStats.partyBreakReason = 'player_party_released';
+            // Time spent under a player leader is not autonomous party-session
+            // age. Start a fresh review window when the bots resume control.
+            partyStats.formedAt = timestamp;
+            partyStats.sessionExpiresAt = null;
+            partyStats.sessionReview = null;
+            partyStats.lastProgressAt = timestamp;
+            partyStats.partySpotRisk = null;
+            partyStats.hotLifecycle = phase === 'hot'
+                ? { startedAt: timestamp, reason: 'player_party_released' }
+                : null;
+            const changedParty = write(`UPDATE bot_background_parties
+                SET status = ?, nextResolveAt = ?, statsJson = ?, updatedAt = ?
+                WHERE partyId = ? AND status = 'player_taken_over' AND updatedAt = ?`, [
+                status,
+                nextResolveAt,
+                JSON.stringify(partyStats),
+                timestamp,
+                partyId,
+                Number(party.updatedAt)
+            ]);
+            if (changedParty.affectedRows !== 1) throw Error('party restore party CAS failed');
+            return {
+                ok: true,
+                rows: declared.map(coldSimulationRow),
+                party: one('SELECT * FROM bot_background_parties WHERE partyId = ?', [partyId])
+            };
+        }, 'bot-life:party-restore');
+    },
+
     handoffColdSimulationToMain(request = {}) {
         const characterId = Number(request.characterId);
         const expectedRevision = request.expectedRevision === null || request.expectedRevision === undefined

@@ -251,6 +251,7 @@ it expires after 30 minutes of inactivity and resets on server restart.
 - `.afkstop` - close the active AFK shop remotely and return all remaining reserved items or Adena.
 - `.bot` / `.b` - open companion controls.
 - `.botparty` / `.bp` - search active bots to join the player party; distant companions catch up after joining.
+- `.joinparty [name]` - ask to take over the named bot's autonomous party, or the nearest eligible bot party when no name is given; if accepted, the player becomes leader and the bots resume their autonomous party after the player leaves.
 - `.botfriends` / `.bf` - friend list and const party management.
 - `.botstatus` / `.bs` - show a bot overview panel.
 - `.botstatus <name>` / `.bs <name>` - show detailed status for a specific bot.

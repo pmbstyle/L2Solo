@@ -16,6 +16,10 @@ function actorLoc(actor) {
     };
 }
 
+function actorIdForTarget(target) {
+    return Number(target?.actor?.fetchId?.() || target?.characterId || target?.coldLifeState?.characterId || 0);
+}
+
 function coldActor(state) {
     return {
         fetchId: () => Number(state.characterId || 0),
@@ -474,6 +478,70 @@ const World = {
             });
         }).catch((err) => {
             utils.infoWarn('BotRemoteChat', 'remote message failed for %s: %s', lookup, err.message);
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return false;
+        });
+    },
+
+    requestJoinBotPartyByName(session, actor, name, source = 'join_party_command') {
+        const lookup = String(name || '').trim();
+        if (!session?.actor) {
+            session?.dataSendToMe?.(ServerResponse.actionFailed());
+            return Promise.resolve(false);
+        }
+        const BotManager = invoke('GameServer/Bot/BotManager');
+        const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+        const Takeover = invoke('GameServer/Bot/AI/PlayerPartyTakeover');
+        let hotSession = lookup ? BotManager.findSessionByName(lookup) : null;
+        if (!lookup) {
+            const selectedId = Number(actor?.fetchDestId?.() || 0);
+            const candidates = (BotManager.sessions || []).filter((candidate) => (
+                candidate?.actor && candidate.hotBackgroundPartyId &&
+                candidate.actor.fetchIsOnline?.() !== false && !candidate.actor.isDead?.()
+            )).map((candidate) => {
+                const dx = Number(candidate.actor.fetchLocX?.() || 0) - Number(actor.fetchLocX?.() || 0);
+                const dy = Number(candidate.actor.fetchLocY?.() || 0) - Number(actor.fetchLocY?.() || 0);
+                const dz = Number(candidate.actor.fetchLocZ?.() || 0) - Number(actor.fetchLocZ?.() || 0);
+                return { session: candidate, distance: Math.sqrt(dx * dx + dy * dy + dz * dz) };
+            }).filter((candidate) => candidate.distance <= 1500)
+                .sort((left, right) => left.distance - right.distance);
+            hotSession = candidates.find((candidate) => Number(candidate.session.actor.fetchId?.()) === selectedId)?.session
+                || candidates[0]?.session || null;
+        }
+        const resolveTarget = hotSession
+            ? Promise.resolve(hotSession)
+            : lookup ? LifeState.findByName(lookup) : Promise.resolve(null);
+
+        ConsoleText.transmit(session, ConsoleText.caption.waitForResponse);
+        return resolveTarget.then((target) => {
+            if (!target) {
+                if (lookup) unknownBotReply(session, lookup, BotManager, LifeState);
+                else session.dataSendToMe(ServerResponse.actionFailed());
+                utils.infoWarn('BotParty', 'join request has no target player=%s lookup=%s',
+                    actor.fetchName?.() || 'unknown', lookup || 'nearest');
+                return false;
+            }
+            const requestedPartyId = Takeover.partyIdFor(target);
+            return Takeover.request({ playerSession: session, target, source }).then((result) => {
+                const speaker = BotManager.findSessionById(actorIdForTarget(target));
+                if (speaker?.actor) {
+                    BotManager.botTell(speaker, session, result.reply);
+                } else {
+                    coldBotTell(session, target.coldLifeState || target, result.reply);
+                }
+                if (!result.ok) session.dataSendToMe(ServerResponse.actionFailed());
+                console.info(
+                    'BotParty :: command join request player=%s target=%s party=%s result=%s applied=%s',
+                    actor.fetchName?.() || 'unknown',
+                    speaker?.actor?.fetchName?.() || target.name || lookup || 'unknown',
+                    requestedPartyId || result.partyId || 'none',
+                    result.reason || 'unknown',
+                    result.applied === true
+                );
+                return result.ok === true;
+            });
+        }).catch((error) => {
+            utils.infoWarn('BotParty', 'join-party request failed for %s: %s', lookup, error.message || error);
             session.dataSendToMe(ServerResponse.actionFailed());
             return false;
         });

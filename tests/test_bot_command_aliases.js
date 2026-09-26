@@ -36,6 +36,11 @@ try {
                 return (target, parts) => calls.push(['status', target, parts]);
             case 'GameServer/World/Generics/NpcBypasses/BotPath':
                 return (target, parts) => calls.push(['path', target, parts]);
+            case 'GameServer/World/World':
+                return {
+                    requestJoinBotPartyByName: (target, actor, name, source) =>
+                        calls.push(['join-party', target, actor, name, source])
+                };
             default:
                 return originalInvoke(module);
         }
@@ -47,6 +52,8 @@ try {
     Speak(session, chatBuffer('.bp'));
     Speak(session, chatBuffer('.bs AliasBot'));
     Speak(session, chatBuffer('.bpath AliasBot'));
+    Speak(session, chatBuffer('.joinparty'));
+    Speak(session, chatBuffer('.joinparty AliasBot'));
 
     assert.deepStrictEqual(calls, [
         ['bot', session],
@@ -54,7 +61,9 @@ try {
         ['friends', session, 'add'],
         ['party', session],
         ['status', session, ['bot-status', 'AliasBot']],
-        ['path', session, ['bot-path', 'AliasBot']]
+        ['path', session, ['bot-path', 'AliasBot']],
+        ['join-party', session, session.actor, '', 'join_party_command'],
+        ['join-party', session, session.actor, 'AliasBot', 'join_party_command']
     ], 'short bot commands should use the canonical command handlers and preserve arguments');
 
     assert.strictEqual(Speak.expandBotCommandAlias('.bystander'), '.bystander', 'aliases should only match a complete command token');

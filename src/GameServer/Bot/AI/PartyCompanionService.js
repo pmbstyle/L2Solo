@@ -978,6 +978,105 @@ const PartyCompanionService = {
         }
     },
 
+    canAttachRoster(leaderSession, companionSessions, options = {}) {
+        const leader = leaderSession?.actor;
+        const roster = Array.isArray(companionSessions) ? companionSessions : [];
+        if (!leader || leader.fetchIsOnline?.() === false || leader.isDead?.()) {
+            return { ok: false, reason: 'player_unavailable' };
+        }
+        if (membersForLeader(leaderSession).length > 0 || reservationsForLeader(leaderSession)?.size) {
+            return { ok: false, reason: 'player_party_not_empty' };
+        }
+        if (roster.length < 2 || roster.length > MAX_COMPANIONS || new Set(roster).size !== roster.length) {
+            return { ok: false, reason: 'invalid_party_roster' };
+        }
+        const expectedPartyId = options.expectedBackgroundPartyId || null;
+        for (const companionSession of roster) {
+            const bot = companionSession?.actor;
+            if (!bot || bot.fetchIsOnline?.() === false || bot.isDead?.()) {
+                return { ok: false, reason: 'party_member_unavailable' };
+            }
+            if (companionSession.partyCompanion === true || companionSession.followPlayerSession) {
+                return { ok: false, reason: 'party_member_already_attached' };
+            }
+            if (companionSession.hotCompetitionCommit) {
+                return { ok: false, reason: 'party_special_operation' };
+            }
+            if (expectedPartyId && companionSession.hotBackgroundPartyId !== expectedPartyId) {
+                return { ok: false, reason: 'party_roster_changed' };
+            }
+        }
+        return { ok: true, reason: 'ready' };
+    },
+
+    attachRoster(leaderSession, companionSessions, options = {}) {
+        const roster = Array.isArray(companionSessions) ? companionSessions : [];
+        const validation = this.canAttachRoster(leaderSession, roster, options);
+        if (!validation.ok) return validation;
+
+        const leader = leaderSession.actor;
+        const statesById = new Map((options.lifeStates || [])
+            .map((state) => [Number(state?.characterId || 0), state]));
+        if (hasOwn(options, 'distribution')) {
+            setDistribution(leaderSession, options.distribution);
+        } else {
+            settingsForLeader(leaderSession);
+        }
+
+        // Change runtime ownership for the whole roster before any party UI
+        // or AI tick can observe a partly transferred autonomous party.
+        roster.forEach((companionSession) => {
+            const bot = companionSession.actor;
+            cancelCompanionAction(companionSession);
+            bot.automation?.stopReplenish?.();
+            if (bot.state?.fetchSeated?.() === true) {
+                bot.state.setSeated(false);
+                companionSession.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(bot), bot);
+            }
+            companionSession.hotBackgroundPartyId = null;
+            companionSession.coldLifeState = statesById.get(Number(bot.fetchId?.())) || companionSession.coldLifeState;
+            companionSession.plan = 'following';
+            companionSession.followPlayerSession = leaderSession;
+            companionSession.partyCompanion = true;
+            companionSession.botStay = false;
+            companionSession.stayLocation = null;
+            companionSession.currentTargetId = undefined;
+            companionSession.incomingThreatId = undefined;
+            companionSession.incomingThreatAt = undefined;
+            companionSession.partyPuller = false;
+            companionSession.roleDecision = null;
+            companionSession.lastFollowMoveTarget = null;
+            companionSession.stuckTicks = 0;
+            companionSession.autoTaunt = settingsForLeader(leaderSession).pullMode !== 'off';
+            bot.unselect?.();
+            invoke('GameServer/Bot/BotAI').cancelScheduledTick(companionSession);
+        });
+        invoke('GameServer/Bot/AI/BotPvpIndex').invalidate();
+
+        leaderSession.dataSendToMe?.(ServerResponse.joinParty(1));
+        roster.forEach((companionSession) => {
+            if (!this.bringToLeader(leaderSession, companionSession)) {
+                invoke('GameServer/Bot/BotAI').wakeup(companionSession, { urgent: true });
+            }
+        });
+        refreshLeaderView(leaderSession);
+
+        roster.forEach((companionSession) => {
+            const bot = companionSession.actor;
+            Promise.resolve(BotEventJournal.record({
+                playerId: leader.fetchId(),
+                botId: bot.fetchId(),
+                eventType: 'party_join',
+                summary: `${bot.fetchName?.() || 'Companion'} joined ${leader.fetchName?.() || 'the player'}'s party with its full roster.`,
+                weight: 5,
+                dedupeKey: `party_takeover:${leader.fetchId()}:${bot.fetchId()}`,
+                coalesceWindowMs: 5000,
+                meta: { backgroundPartyId: options.expectedBackgroundPartyId || null }
+            })).catch(() => {});
+        });
+        return { ok: true, reason: 'party_taken_over', count: roster.length };
+    },
+
     attach(leaderSession, companionSession, options = {}) {
         const leader = leaderSession?.actor;
         const bot = companionSession?.actor;
@@ -1078,6 +1177,10 @@ const PartyCompanionService = {
 
     detachAll(leaderSession, options = {}) {
         const members = membersForLeader(leaderSession);
+        const Takeover = invoke('GameServer/Bot/AI/PlayerPartyTakeover');
+        const restoration = options.restoreAutonomousParty === false
+            ? null
+            : Takeover.restorationTarget(leaderSession, members);
         members.forEach((memberSession) => {
             this.detach(leaderSession, memberSession, {
                 ...options,
@@ -1086,6 +1189,23 @@ const PartyCompanionService = {
             });
         });
         refreshLeaderView(leaderSession, options);
+        if (restoration) {
+            const restorationPromise = Takeover.restoreAutonomousParty({
+                ...restoration,
+                companionSessions: members,
+                source: options.source || 'player_party_released'
+            }).catch((error) => {
+                utils.infoWarn('BotParty', 'failed to restore autonomous party %s: %s',
+                    restoration.partyId, error?.message || error);
+                return { ok: false, reason: 'party_restore_failed' };
+            });
+            leaderSession.partyTakeoverRestorePromise = restorationPromise;
+            restorationPromise.finally(() => {
+                if (leaderSession.partyTakeoverRestorePromise === restorationPromise) {
+                    leaderSession.partyTakeoverRestorePromise = null;
+                }
+            });
+        }
         return members.length;
     },
 
