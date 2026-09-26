@@ -169,7 +169,7 @@ async function summarize(input = {}) {
             return { ok: false, reason: 'nothing_to_compact', conversation: current.conversation };
         }
 
-        const cfg = OpenRouterGateway.config({ maxTokens: SUMMARY_MAX_TOKENS, temperature: 0.1 });
+        const cfg = OpenRouterGateway.config({ maxTokens: SUMMARY_MAX_TOKENS });
         const messages = [
             {
                 role: 'system',

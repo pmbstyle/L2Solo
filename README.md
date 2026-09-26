@@ -202,6 +202,14 @@ apiKey = <your-OpenRouter-key-here>
 apiUrl = https://openrouter.ai/api/v1/chat/completions
 model = openai/gpt-5.6-luna
 partyRouterModel = openai/gpt-5.6-luna
+# Leave empty if the selected model does not accept temperature.
+temperature =
+completionLimitParam = max_tokens
+strictSchema = true
+providerOrder = OpenAI
+providerSort = price
+allowFallbacks = false
+requireParameters = true
 debug = true
 ```
 
@@ -222,6 +230,10 @@ apiUrl = http://127.0.0.1:1234/v1/chat/completions
 apiKey = lm-studio
 model = <model-id-from-the-provider>
 partyRouterModel = <model-id-from-the-provider>
+# Model-specific request parameters are configured explicitly.
+# temperature = 0.35
+# completionLimitParam = max_tokens
+# strictSchema = false
 # Optional for thinking models: off (default), low, medium, or high.
 # reasoningEffort = off
 ```

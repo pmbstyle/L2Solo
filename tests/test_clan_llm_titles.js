@@ -89,7 +89,7 @@ async function main() {
             enabled: true,
             apiKey: 'test-key',
             apiUrl: OpenRouterGateway.OPENROUTER_URL,
-            model: 'openai/gpt-5.6-luna',
+            model: 'test/clan-model',
             reasoningEffort: 'off',
             maxTokens: ClanTitleBrain.MAX_COMPLETION_TOKENS,
             timeoutMs: 1000,

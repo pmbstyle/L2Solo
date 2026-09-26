@@ -17,7 +17,6 @@ const ROUTER_SCHEMA = {
     }
 };
 
-const ROUTER_TEMPERATURE = 0.1;
 const ROUTER_MAX_TOKENS = 512;
 
 function config() {
@@ -161,8 +160,6 @@ async function route(input = {}) {
                 config: {
                     ...cfg,
                     model: cfg.model,
-                    reasoningEffort: 'low',
-                    temperature: ROUTER_TEMPERATURE,
                     maxTokens: ROUTER_MAX_TOKENS,
                     timeoutMs: group === 'clan' ? 60000 : 0
                 },
@@ -215,7 +212,6 @@ async function route(input = {}) {
 module.exports = {
     ROUTER_MAX_TOKENS,
     ROUTER_SCHEMA,
-    ROUTER_TEMPERATURE,
     config,
     enabled,
     route
