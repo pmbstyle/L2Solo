@@ -48,6 +48,7 @@ async function main() {
             enabled: true,
             apiKey: 'state-change-test-key',
             model: 'test/state-change',
+            strictSchema: false,
             maxConcurrentRequests: 5
         };
         World.user = { sessions: [playerSession, botSession] };
