@@ -73,11 +73,15 @@ function routeSnapshot(plan = {}) {
         available: kind !== 'prepare' && String(plan.status || '') !== 'blocked',
         status: String(plan.status || ''),
         expectedKills: Math.max(0, Math.ceil(number(plan.expectedKills))),
+        expectedEffort: Math.max(0, Math.ceil(number(plan.expectedEffort, number(plan.expectedKills)))),
         partyNeed: String(plan.partyNeed || (plan.requiresParty ? 'required' : 'solo_ok')),
         source: plan.next ? {
             spotId: plan.next.spotId || null,
             npcId: number(plan.next.npcId) || null,
-            npcName: plan.next.npcName || null
+            npcName: plan.next.npcName || null,
+            sourceKind: plan.next.sourceKind || plan.next.kind || null,
+            raidBoss: plan.next.raidBoss === true,
+            raidRosterSize: Math.max(0, number(plan.next.raidRosterSize))
         } : null,
         market: plan.market ? {
             town: plan.market.town || null,

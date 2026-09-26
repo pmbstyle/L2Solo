@@ -63,6 +63,39 @@ assert.strictEqual(rescued.party.stats.assemblyWait, null);
 const rested = { ...restored, stats: { ...restored.stats, restUntil: timestamp + minute } };
 assert.strictEqual(Lifecycle.review(rested, members, timestamp).leaving.size, 0);
 assert.strictEqual(Lifecycle.sessionExpired(rested, timestamp), false);
+const staleRaidAssembly = {
+    ...restored,
+    stats: {
+        ...restored.stats,
+        objective: { ...objective, sourceKind: 'raid', raidBoss: true },
+        raidPreparation: { status: 'ready' },
+        raidEncounter: { status: 'active' }
+    }
+};
+assert.strictEqual(Lifecycle.sessionExpired(staleRaidAssembly, timestamp), true,
+    'an active raid snapshot must not keep an incomplete roster stuck after its assembly timeout');
+const gatheredRaidWithoutTank = {
+    ...staleRaidAssembly,
+    partyId: 'raid-without-tank',
+    memberIds: [1, 2, 3, 4, 5, 6, 7]
+};
+const gatheredRaidMembers = gatheredRaidWithoutTank.memberIds.map((id) => ({
+    characterId: id,
+    name: `RaidHunter${id}`,
+    level: 55,
+    phase: 'cold',
+    activity: 'grouped',
+    party: { partyId: gatheredRaidWithoutTank.partyId, leaderId: 1 },
+    spotId: spot.id,
+    loc: { ...members[0].loc },
+    vitals: { ...members[0].vitals },
+    inventory: {},
+    stats: { role: id === 1 ? 'healer' : id === 2 ? 'buffer' : 'dps' }
+}));
+const invalidRaidReview = Lifecycle.review(gatheredRaidWithoutTank, gatheredRaidMembers, timestamp);
+assert.strictEqual(invalidRaidReview.party.status, 'dissolved',
+    'physical assembly must not rescue a raid roster that still lacks a required combat role');
+assert([...invalidRaidReview.leaving.values()].every((reason) => reason === Recovery.REASON));
 const away = { ...restored, stats: { ...restored.stats, travel: { arrivalAt: timestamp + minute } } };
 assert.strictEqual(Lifecycle.review(away, members, timestamp).leaving.size, 0);
 const afterDowntime = Recovery.record(party, timestamp + 24 * 60 * minute);

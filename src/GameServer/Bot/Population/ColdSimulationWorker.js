@@ -17,9 +17,21 @@ const stubs = new Map([
             return () => Promise.reject(new Error(`cold worker database call forbidden: ${String(property)}`));
         }
     })],
-    ['GameServer/Effects/EffectStore', { list: () => [] }],
+    ['GameServer/Effects/EffectStore', {
+        BUFF_LIMIT: 20,
+        DEBUFF_RESERVED_SLOTS: 4,
+        includedInBuffCount: (effect) => effect?.type !== 'debuff'
+            && effect?.type !== 'item_passive'
+            && effect?.toggle !== true
+            && !['hp_recover', 'life_force_orc'].includes(effect?.stackFamily),
+        list: () => []
+    }],
     ['GameServer/Skills/ChargeLifecycle', { EXPIRY_MS: 600000 }],
     ['GameServer/Bot/AI/BotRaidSafety', {
+        isRaidBoss: (target) => target?.raidBoss === true
+            || target?.template?.raidBoss === true
+            || String(target?.kind || '').toLowerCase() === 'boss'
+            || String(target?.template?.kind || '').toLowerCase() === 'boss',
         isProtectedRaidEntity: (target) => target?.raidBoss === true
             || target?.template?.raidBoss === true
             || String(target?.kind || '').toLowerCase() === 'boss'
@@ -172,13 +184,18 @@ function startKernel(config = {}) {
             const excludedSpotIds = invoke('GameServer/Bot/Population/SpotRiskPolicy')
                 .excludedSpotIdsForStates([state], timestamp);
             const npcPlanningOptions = { ...planningNpcCatalog.plannerOptions, excludedSpotIds };
+            const clanRaidPlan = GearAcquisitionPlanner.isClanOwnedPlan(previousPlan)
+                && previousPlan?.next?.sourceKind === 'raid';
+            if (clanRaidPlan) npcPlanningOptions.allowRaidSources = true;
             const replanContext = GearAcquisitionPlanner.replanContextFor(state, previousPlan, timestamp);
             const weaponBridgePlan = GearAcquisitionPlanner.npcWeaponBridgePlan(state, npcPlanningOptions);
             const clanGoalLocked = !weaponBridgePlan
                 && GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan);
             const availabilitySource = !replanContext.failure && previousPlan?.status === 'active'
                 && ['direct_drop', 'craft'].includes(previousPlan.strategy)
-                ? GearAcquisitionPlanner.bestSourceForPlan(state, previousPlan, spots, { occupancy, excludedSpotIds })
+                ? GearAcquisitionPlanner.bestSourceForPlan(state, previousPlan, spots, {
+                    occupancy, excludedSpotIds, allowRaidSources: clanRaidPlan
+                })
                 : null;
             const availabilityRouteChanged = availabilitySource && (
                 String(availabilitySource.spotId || '') !== String(previousPlan?.next?.spotId || '')
@@ -270,7 +287,8 @@ function startKernel(config = {}) {
             const fallbackLevel = LevelingRoutes.targetLevelForState(fallbackState);
             const genericFallback = partyRouteWaiting && !safePlannedFallback
                 ? LevelingRoutes.bestSpot(spots.filter((spot) => (
-                    Number(spot.minLevel || 1) <= fallbackLevel + 4
+                    spot.raidBoss !== true
+                    && Number(spot.minLevel || 1) <= fallbackLevel + 4
                     && Number(spot.maxLevel || spot.minLevel || 1) >= fallbackLevel - 4
                 )), fallbackState, { occupancy, excludedSpotIds })?.spot || null
                 : null;

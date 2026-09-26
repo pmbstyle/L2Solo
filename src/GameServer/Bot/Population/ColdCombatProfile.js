@@ -9,6 +9,7 @@ const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
+const RAID_MINIONS = require('../../../../data/Npcs/Minions/c4_raid_bosses.json');
 
 // Rebuild database-derived snapshots that omitted template magic/cast/reuse metadata.
 const PROFILE_VERSION = 5;
@@ -74,6 +75,7 @@ function equipmentFromTemplates(items = [], spellcaster = false, fallback = {}) 
 
     return {
         weaponKind: weapon?.template?.kind || fallback.weaponKind || '',
+        attackReuseDelay: number(weapon?.stats?.reuseDelay, 1500),
         pAtk: number(weapon?.stats?.pAtk, fallback.pAtk),
         pAtkRnd: number(weapon?.stats?.pAtkRnd, fallback.pAtkRnd),
         mAtk: number(weapon?.stats?.mAtk, fallback.mAtk),
@@ -417,6 +419,7 @@ function capture(actor, timestamp = Date.now()) {
     const backpack = actor.backpack;
     const equipment = {
         weaponKind: backpack?.fetchTotalWeaponKind?.() || '',
+        attackReuseDelay: backpack?.fetchEquippedWeapon?.()?.fetchAttackReuseDelay?.() ?? 1500,
         pAtk: number(backpack?.fetchTotalWeaponPAtk?.(), number(actor.fetchPAtk?.())),
         pAtkRnd: number(backpack?.fetchTotalWeaponPAtkRnd?.()),
         mAtk: number(backpack?.fetchTotalWeaponMAtk?.(), number(actor.fetchMAtk?.())),
@@ -631,7 +634,11 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
     const rawEntries = Array.isArray(spot.npcEntries) && spot.npcEntries.length ? spot.npcEntries : (spot.npcSelfIds || []).map((selfId) => ({ selfId, count: 1 }));
     let entries = rawEntries.filter((entry) => {
         const npc = (DataCache.npcs || []).find((candidate) => number(candidate.selfId) === number(entry.selfId));
-        return npc && !BotRaidSafety.isProtectedRaidEntity(npc) && BotHuntingTargetPolicy.canHunt(npc);
+        const explicitRaid = options.allowRaid === true && spot.raidBoss === true
+            && BotRaidSafety.isRaidBoss(npc)
+            && number(spot.raidBossTemplateId) === number(npc.selfId);
+        return npc && (explicitRaid
+            || !BotRaidSafety.isProtectedRaidEntity(npc) && BotHuntingTargetPolicy.canHunt(npc));
     });
     if (entries.length === 0) return null;
     const encounterEntries = entries;
@@ -679,10 +686,38 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
     const npc = (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(selected?.selfId));
     if (!npc) return null;
     const combat = npcCombatStats(npc);
+    const explicitRaid = options.allowRaid === true && spot.raidBoss === true;
+    const minionRows = explicitRaid
+        ? RAID_MINIONS.filter((row) => number(row.bossId) === number(npc.selfId))
+        : [];
+    const minionPressure = minionRows.reduce((pressure, row) => {
+        const minion = (DataCache.npcs || []).find((candidate) => number(candidate.selfId) === number(row.minionId));
+        const profile = npcCombatStats(minion);
+        const count = Math.max(0, number(row.max, row.min));
+        if (!profile || !count) return pressure;
+        pressure.count += count;
+        pressure.hp += profile.maxHp * count;
+        pressure.pAtk += profile.pAtk * count;
+        return pressure;
+    }, { count: 0, hp: 0, pAtk: 0 });
+    const representedMinionHp = Math.round(minionPressure.hp * 0.35);
+    const representedMinionPAtk = Math.round(minionPressure.pAtk * 0.5);
     return {
         selfId: number(npc.selfId),
         aggressiveInterruption: !!preferred && selected !== preferred,
-        ...combat
+        ...combat,
+        ...(explicitRaid ? {
+            // Cold mode represents the raid group as one bounded encounter.
+            // Adds contribute part of their HP and incoming damage instead of
+            // disappearing merely because no live actors are materialized.
+            maxHp: combat.maxHp + representedMinionHp,
+            pAtk: combat.pAtk + representedMinionPAtk,
+            raidBossMaxHp: combat.maxHp,
+            raidBossPAtk: combat.pAtk,
+            raidMinionHp: representedMinionHp,
+            raidMinionPAtk: representedMinionPAtk,
+            raidMinionCount: minionPressure.count
+        } : {})
     };
 }
 

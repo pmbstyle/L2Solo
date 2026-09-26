@@ -937,7 +937,10 @@ function applyEffect(session, target, skill, semantic, source = session?.actor) 
     EffectTicker.scheduleExpiry(session, target, effect);
     EffectRestrictions.interruptOnApply(target?.session || session, target, effect, source);
     if (effect.stats?.immobile === true) {
-        target.automation?.abortAll?.(target, { notifyClient: false });
+        // Ultimate Defense, Vengeance, Snipe, and similar stationary stances
+        // cancel only locomotion. They must not tear down the actor's attack
+        // target or native hit cycle while the actor remains in range.
+        target.automation?.abortMovement?.(target, { notifyClient: false });
         EffectRestrictions.stopMovement(target?.session || session, target);
     }
     if (hasStats(effect) || effect.removedEffects.some(hasStats)) {

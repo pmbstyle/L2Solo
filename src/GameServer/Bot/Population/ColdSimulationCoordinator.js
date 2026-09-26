@@ -284,6 +284,7 @@ class ColdSimulationCoordinator {
             // LifeState startup has already released members of historical
             // dissolved parties. Only then is it safe to trim the rows.
             await BackgroundPartyState.purgeHistory();
+            await require('./ColdRaidAuthority').init();
             await invoke('GameServer/Clan/ClanSocialRuntime').refresh(true);
             this.queue.start();
             this.startWorker();
@@ -575,7 +576,17 @@ class ColdSimulationCoordinator {
 
         let physical = null;
         try { physical = SpotService.findCurrentSpot(state.loc); } catch (_) { physical = null; }
-        const currentId = physical?.id || currentSpot?.id || state.spotId || party?.spotId || null;
+        // Virtual raid profiles share the ordinary world grid with their
+        // surrounding field. Once the party has arrived, its persisted raid
+        // spot is the semantic destination; preferring the grid id here would
+        // schedule another 25-second trip to the same coordinates forever.
+        const declaredSpotId = party?.spotId || state.spotId || null;
+        const declaredSpot = declaredSpotId
+            ? index.spots?.get?.(String(declaredSpotId)) || SpotProfiles.findById(declaredSpotId)
+            : null;
+        const currentId = declaredSpot?.raidBoss === true
+            ? declaredSpot.id
+            : physical?.id || currentSpot?.id || declaredSpotId;
         const timestamp = Number(index.timestamp || Date.now());
         const routedMembers = partyRoute ? partyMembers : [state];
         const partyRisk = require('./PartySpotRiskPolicy');
@@ -670,6 +681,7 @@ class ColdSimulationCoordinator {
             // soft capacity by one.
             const emergencyOptions = { ...options, mode: 'solo' };
             const candidatesWithRoom = (index.profiles || [...index.spots.values()])
+                .filter((profile) => profile.raidBoss !== true)
                 .filter((profile) => String(profile.id) !== String(currentId || ''))
                 .filter((profile) => !excludedSpotIds.has(String(profile.id)))
                 .filter((profile) => (
@@ -754,8 +766,13 @@ class ColdSimulationCoordinator {
     contextFor(state, index = this.contextIndex()) {
         let physical = null;
         try { physical = SpotService.findCurrentSpot(state.loc); } catch (_) { physical = null; }
-        const spot = (physical && index.spots.get(String(physical.id)))
-            || index.spots.get(String(state.spotId || ''))
+        const declared = index.spots.get(String(state.spotId || '')) || null;
+        // A raid profile is virtual and sits inside an ordinary coordinate
+        // sector. The party resolver needs the declared boss profile (HP,
+        // drops, shared encounter key), not the surrounding leveling field.
+        const spot = (declared?.raidBoss === true ? declared : null)
+            || (physical && index.spots.get(String(physical.id)))
+            || declared
             || null;
         let pressure = {};
         try { pressure = Director.pressureForState(state) || {}; } catch (_) { pressure = {}; }
@@ -769,7 +786,7 @@ class ColdSimulationCoordinator {
                 return compact ? compactPartyMemberContext(member) : member;
             });
         return {
-            spot,
+            spot: invoke('GameServer/RaidBoss/RaidEncounterScope').decorateSpot(spot),
             interactionMemory: invoke('GameServer/Social/InteractionMemoryRuntime').snapshot(Number(state.characterId)),
             clanHallServices: invoke('GameServer/ClanHall/ColdVisit').needed(state),
             pressure,
@@ -1140,6 +1157,27 @@ class ColdSimulationCoordinator {
             }
             const purpose = candidate.purpose || null;
             purposes.set(Number(candidate.characterId), purpose);
+            const partyId = String(purpose?.partyId || state.party?.partyId || state.partyId || '');
+            if (partyId && invoke('GameServer/Bot/Population/HotPartyLifecycle').pending.has(partyId)) {
+                Metrics.recordColdOwnerRejected('party_hot_transition');
+                missing.push({
+                    ok: false,
+                    characterId: Number(candidate.characterId),
+                    reason: 'party_hot_transition',
+                    retryAfterMs: Math.max(1000, Number(Config.phasePolicyIntervalMs) || 10000)
+                });
+                continue;
+            }
+            if (this.visibleToRealPlayer(state)) {
+                Metrics.recordColdOwnerRejected('visible_to_player');
+                missing.push({
+                    ok: false,
+                    characterId: Number(candidate.characterId),
+                    reason: 'visible_to_player',
+                    retryAfterMs: Math.max(1000, Number(Config.phasePolicyIntervalMs) || 10000)
+                });
+                continue;
+            }
             if (purpose?.kind === 'party') {
                 const expectedPartyId = String(purpose.partyId || '');
                 const currentPartyId = String(state.party?.partyId || state.partyId || '');
@@ -1204,13 +1242,41 @@ class ColdSimulationCoordinator {
         }, message.msgId);
     }
 
+    visibleToRealPlayer(state) {
+        if (!state || ['pk_hunting', 'traveling'].includes(state.activity) || state.stats?.supplyErrand) return false;
+        const players = this.population?.realPlayerSessions?.() || [];
+        if (!players.length) return false;
+        const candidateLoc = state.stats?.marketStore?.loc || state.stats?.craftShop?.loc || state.loc;
+        if (!candidateLoc) return false;
+        const radius = Math.max(1, Number(Config.activationRadius) || 9000);
+        const floor = invoke('GameServer/Bot/Population/FloorAwareActivationPolicy');
+        return players.some((playerSession) => {
+            const actor = playerSession?.actor;
+            if (!actor) return false;
+            const playerLoc = {
+                locX: Number(actor.fetchLocX?.()),
+                locY: Number(actor.fetchLocY?.()),
+                locZ: Number(actor.fetchLocZ?.())
+            };
+            if (![playerLoc.locX, playerLoc.locY, playerLoc.locZ].every(Number.isFinite)) return false;
+            const dx = Number(candidateLoc.locX) - playerLoc.locX;
+            const dy = Number(candidateLoc.locY) - playerLoc.locY;
+            if (!Number.isFinite(dx) || !Number.isFinite(dy) || dx * dx + dy * dy > radius * radius) return false;
+            return floor.evaluateCandidate(state, {
+                playerLoc,
+                candidateLoc,
+                reason: 'near_player'
+            }).accepted === true;
+        });
+    }
+
     handleProposalBatch(message) {
         if (message.payload.capacityBlocked === true) this.queue.capacityBlocked = true;
         const rejected = [];
         (message.payload.proposals || []).forEach((proposal) => {
             const tokenValid = Protocol.validateToken(proposal.token);
             if (!tokenValid.ok || Number(proposal.characterId) !== Number(proposal.token?.characterId)) {
-                rejected.push({ ok: false, characterId: Number(proposal.characterId || 0), reason: tokenValid.reason || 'token_character' });
+                rejected.push({ ok: false, characterId: Number(proposal.characterId || 0), reason: tokenValid.reason || 'token_character', proposal });
                 return;
             }
             const queued = this.queue.enqueue(proposal);
@@ -1221,8 +1287,14 @@ class ColdSimulationCoordinator {
     }
 
     async prepareProposal(proposal) {
+        if (proposal.atomicGroup?.raidCommit) {
+            if (!require('./ColdRaidAuthority').prepare(proposal.atomicGroup.raidCommit)) return null;
+        }
         const state = LifeState.cachedState(proposal.characterId) || proposal.baseState;
         if (!state) return null;
+        const partyId = String(state.party?.partyId || state.partyId || '');
+        if ((partyId && invoke('GameServer/Bot/Population/HotPartyLifecycle').pending.has(partyId))
+            || this.visibleToRealPlayer(state)) return null;
         if (proposal.nextStateDelta) {
             // Never rebase a sparse result over a newer owner or revision.
             const current = state.simulation || {};
@@ -1280,7 +1352,13 @@ class ColdSimulationCoordinator {
         });
     }
 
-    async afterCommit(entry) {
+    async afterCommit(entry, committed = {}) {
+        if (committed.raidPartyRow && Number(BackgroundPartyState.find(committed.raidPartyRow.partyId)?.updatedAt || 0)
+            < Number(committed.raidPartyRow.updatedAt)) BackgroundPartyState.acceptRow(committed.raidPartyRow);
+        if (committed.raidRow) require('./ColdRaidAuthority').accept(committed.raidRow);
+        if (committed.raidPartyRow && entry.proposal.partyResolution?.party?.stats?.raidEncounter?.status === 'defeated') {
+            await require('./ColdRaidWorldBridge').settle(entry.proposal.partyResolution.party, { respawnAt: committed.raidRespawnAt });
+        }
         const state = LifeState.cachedState(entry.nextState.characterId) || entry.nextState;
         await LifeEvents.recordMany(state.characterId, entry.proposal.result?.events || []);
         await LifeState.enqueueEquipmentGoalAdvanceForState(state)
@@ -1290,7 +1368,17 @@ class ColdSimulationCoordinator {
             });
         if (entry.proposal.partyResolution?.party) {
             const party = entry.proposal.partyResolution.party;
-            await BackgroundPartyState.createOrUpdate(party);
+            if (!committed.raidPartyRow) await BackgroundPartyState.createOrUpdate(party);
+            if (!committed.raidPartyRow && party.stats?.raidEncounter?.status === 'defeated') {
+                await invoke('GameServer/Bot/Population/ColdRaidWorldBridge').settle(party)
+                    .catch((error) => utils.infoWarn('RaidBoss', 'cold raid settlement failed for %s: %s',
+                        party.partyId, error?.message || error));
+            }
+            if (party.stats?.raidEncounter?.status === 'failed') {
+                await invoke('GameServer/Clan/ClanEquipmentService').recordRaidFailure(party)
+                    .catch((error) => utils.infoWarn('RaidBoss', 'raid failure planning failed for %s: %s',
+                        party.partyId, error?.message || error));
+            }
             if (entry.proposal.result?.debug?.activity === 'party_session_review') {
                 const review = party.stats?.sessionReview || {};
                 const decisions = review.decisions || [];
@@ -1339,6 +1427,7 @@ class ColdSimulationCoordinator {
                 characterId: Number(result.characterId),
                 reason: result.reason || (result.ok ? 'committed' : 'rejected'),
                 revision: result.revision,
+                raidStepId: result.proposal?.raidStepId,
                 state,
                 context: state ? this.contextFor(state, index) : {}
             };

@@ -49,6 +49,38 @@ const shaman = actor('Noren', 49, [soulShieldTwo]);
 const mage = actor('Saren', 25, [shieldOne]);
 const target = actor('Slava', 0);
 
+const sharedRaidShield = skill(1040, 'Shield', 3, 'shield', { pDefMul: 1.15 });
+const raidHealer = actor('RaidHealer', 43, [sharedRaidShield], 100);
+const raidBuffer = actor('RaidProphet', 17, [sharedRaidShield], 60);
+const buffRecipient = actor('RaidRecipient', 5);
+assert.strictEqual(BotSupportPlanner.nextPartyAction([{ actor: buffRecipient }], [raidHealer, raidBuffer]).provider,
+    raidBuffer, 'an equivalent buff must use buffer MP before the richer healer reserve');
+const emptyBuffer = actor('EmptyProphet', 17, [sharedRaidShield], 0);
+assert.strictEqual(BotSupportPlanner.nextPartyAction([{ actor: buffRecipient }], [raidHealer, emptyBuffer]).provider,
+    raidHealer, 'the healer can fill in when the alternate buffer cannot cast');
+const weakerBuffer = actor('WeakProphet', 17, [shieldOne], 100);
+assert.strictEqual(BotSupportPlanner.nextPartyAction([{ actor: buffRecipient }], [raidHealer, weakerBuffer]).provider,
+    raidHealer, 'do not sacrifice a stronger healer buff solely to save MP');
+const uniqueHealer = actor('UniqueSupport', 43, [empower]);
+const mageRecipient = actor('RaidMage', 10);
+assert.strictEqual(BotSupportPlanner.nextPartyAction([{ actor: mageRecipient }], [uniqueHealer]).provider,
+    uniqueHealer, 'unique useful healer buffs must remain in the preparation plan');
+
+const preparationTarget = actor('RaidTank', 5);
+const preparationShield = skill(2040, 'Raid Shield', 1, 'raid_shield', { pDefMul: 1.08 });
+const preparationSong = skill(2264, 'Raid Song', 1, 'song_of_earth', { pDefMul: 1.25 }, 'party');
+preparationSong.fetchBuffTime = () => 120000;
+const preparationProvider = actor('RaidBuffer', 21, [preparationSong, preparationShield]);
+assert.strictEqual(
+    BotSupportPlanner.nextPartyAction(
+        [{ actor: preparationTarget, leader: true }],
+        [preparationProvider],
+        { partyMusicLast: true }
+    ).skill,
+    preparationShield,
+    'raid preparation must finish individual buffs before short party music'
+);
+
 [
     { id: 264, name: 'Song of Earth', key: 'song_of_earth', stats: { pDefMul: 1.25 } },
     { id: 271, name: 'Dance of Warrior', key: 'dance_of_warrior', stats: { pAtkMul: 1.12 } }

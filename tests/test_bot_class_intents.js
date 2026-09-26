@@ -48,10 +48,19 @@ mage.x = 0;
 const healer = actor(10, 16), dead = actor(11, 0, 0), far = actor(12, 0, 5, 800), near = actor(13, 0, 30, 100);
 healer.skills = [skill(1011, '', {}, 'friendly', Rules.HEAL)];
 const session = { actor: healer }, owner = {}, casts = [];
+let seated = true;
+let stands = 0;
+healer.state.fetchSeated = () => seated;
+healer.state.setSeated = next => { seated = next; };
+healer.fetchLocZ = () => 0;
+healer.fetchHead = () => 0;
+session.dataSendToOthers = () => stands++;
 const generics = { skillExec: (_s, _a, data) => casts.push(data) };
 const context = { owner, members: [dead, far, near].map(actor => ({ actor })), threats: [] };
 assert(Tactics.support(session, healer, context, generics, Date.now()));
 assert.strictEqual(casts.at(-1).id, 13);
+assert.strictEqual(seated, false, 'support wakes a seated healer before the skill request');
+assert.strictEqual(stands, 1);
 assert(!Tactics.support(session, healer, context, generics, Date.now()), 'heal reservation prevents duplicate dispatch');
 
 caster.skills = [silence];
@@ -70,6 +79,46 @@ raider.effects.frenzy = { id: 176, key: 'frenzy', stackFamily: 'OrcBuff', expire
 assert.strictEqual(Self.selfAction(raider, { activeMobs: 2 }), null, 'target count changes must not oscillate OrcBuff');
 raider.effects = {}; raider.hp = 31;
 assert.strictEqual(Self.selfAction(raider, { activeMobs: 1 }), null);
+
+const singer = actor(21, 21, 40);
+const ud = skill(110, 'ultimate_defense', { effectType: 'buff' }, 'self');
+singer.skills = [ud];
+assert.strictEqual(Self.selfAction(singer, { raidBoss: true, activeMobs: 1, target: warrior }).skill, ud,
+    'a SwS holding an add can use learned UD even though its role is buffer');
+warrior.x = 1000;
+assert.strictEqual(Self.selfAction(singer, { raidBoss: true, activeMobs: 1, target: warrior }), null,
+    'UD must not freeze a knight before reaching weapon range');
+warrior.x = 0;
+
+const root = skill(1201, 'root');
+caster.skills = [sleep, root];
+assert.strictEqual(Self.supportCrowdControl(caster, [warrior], { raid: true, primaryTargetId: warrior.fetchId() }).skill, root,
+    'a single focused minion may be rooted, never slept');
+warrior.effects.root = { id: 1201, key: 'root', type: 'debuff', expiresAt: Date.now() + 60000 };
+assert.strictEqual(Self.supportCrowdControl(caster, [warrior], { raid: true }), null, 'an immobilized add needs no repeated control');
+warrior.effects = {};
+caster.skills = [sleep];
+assert.strictEqual(Self.supportCrowdControl(caster, [warrior], { raid: true, primaryTargetId: warrior.fetchId() }), null);
+assert.strictEqual(Self.supportCrowdControl(caster, [warrior], { raid: true }).skill, sleep);
+assert.strictEqual(Self.supportCrowdControl(caster, [warrior], { raid: true, canAttempt: () => false }), null);
+warrior.x = 1000;
+assert.strictEqual(Self.supportCrowdControl(caster, [warrior], { raid: true }), null, 'control does not chase distant adds');
+warrior.x = 0;
+const stun = skill(260, 'stun');
+singer.skills = [stun];
+assert.strictEqual(Self.supportCrowdControl(singer, [warrior], { raid: true }).skill, stun, 'control uses learned capabilities, not caster-role labels');
+
+const Awareness = invoke('GameServer/Bot/AI/PartyAwareness');
+const oldRadiusQuery = World.fetchNpcsInRadius;
+let mobTarget = warrior.fetchId();
+World.fetchNpcsInRadius = () => [{ fetchAttackable: () => true, isDead: () => false,
+    fetchDestId: () => mobTarget, getHating: () => 100 }];
+try {
+    assert(Awareness.npcThreateningActor(session), 'ordinary threat discovery still sees heal hate');
+    assert.strictEqual(Awareness.underDirectNpcAttack(session), false, 'heal hate alone must not block sitting or resurrection');
+    mobTarget = healer.fetchId();
+    assert.strictEqual(Awareness.underDirectNpcAttack(session), true, 'a mob actually targeting the healer blocks recovery');
+} finally { World.fetchNpcsInRadius = oldRadiusQuery; }
 
 const scout = actor(30, 22), mob = { fetchAttackable: () => true };
 assert(!Ranged.isAutonomousArcher({}, scout, mob));

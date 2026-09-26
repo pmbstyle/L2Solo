@@ -176,6 +176,49 @@ try {
     assert.strictEqual(solo.spotId, targetSpot.id);
     assert.deepStrictEqual(solo.destinations['1'], destinationFor({ characterId: 1 }));
 
+    const raidSpot = {
+        id: 'raid:10103',
+        name: 'Sorcerer Isirr',
+        raidBoss: true,
+        center: { locX: 135872, locY: 94592, locZ: -3735 }
+    };
+    const raidMembers = [1, 2, 3].map((characterId) => ({
+        characterId,
+        phase: 'cold',
+        activity: 'grouped',
+        spotId: raidSpot.id,
+        loc: { locX: 135200 + characterId * 20, locY: 94300, locZ: -3700 },
+        vitals: { hp: 100, maxHp: 100 },
+        stats: {},
+        party: { partyId: 'raid-party' }
+    }));
+    const raidParty = {
+        partyId: 'raid-party',
+        spotId: raidSpot.id,
+        stats: { objective: { sourceKind: 'raid', spotId: raidSpot.id, raidBossTemplateId: 10103 } }
+    };
+    assert.strictEqual(
+        coordinator.routeFor(
+            raidMembers[0],
+            currentSpot,
+            raidParty,
+            raidMembers,
+            { spots: new Map([[currentSpot.id, currentSpot], [raidSpot.id, raidSpot]]), occupancy: {} }
+        ),
+        null,
+        'a cold raid party already at its virtual raid spot must not repeat the same 25-second travel'
+    );
+    const raidContext = coordinator.contextFor(
+        raidMembers[0],
+        {
+            spots: new Map([[currentSpot.id, currentSpot], [raidSpot.id, raidSpot]]),
+            parties: new Map(),
+            occupancy: {}
+        }
+    );
+    assert.strictEqual(raidContext.spot.id, raidSpot.id,
+        'the cold resolver must receive the virtual raid profile instead of its surrounding grid sector');
+
     const retreatAt = Date.now();
     const retreatState = { characterId: 2, phase: 'cold', activity: 'hunting', level: 16,
         spotId: currentSpot.id, loc: { locX: 1, locY: 2, locZ: 3 },

@@ -1157,6 +1157,17 @@ function applySchemaMigrations() {
             connection.exec(fs.readFileSync(path.join(__dirname, '../database/sql/market-store-history.sql'), 'utf8'));
         }]
     ];
+    migrations.push([45, () => connection.exec(`CREATE TABLE IF NOT EXISTS bot_raid_encounters (
+        raidKey TEXT PRIMARY KEY, revision INTEGER NOT NULL, snapshotJson TEXT NOT NULL
+    )`)]);
+    migrations.push([46, () => {
+        if (!connection.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='raid_boss_state'").get()) return;
+        // Existing raid rows are written at defeat. Rebase old datapack
+        // windows once, retaining that wall-clock origin across restarts.
+        // Keep this migration's historical five-hour value fixed.
+        connection.exec(`UPDATE raid_boss_state SET respawnTime = updatedAt + 18000000
+            WHERE respawnTime > 0 AND updatedAt > 0`);
+    }]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
@@ -3014,6 +3025,7 @@ const Database = {
             group.push(request);
             atomicGroups.set(groupId, group);
         });
+        const validatedRaidKeys = new Set();
         const validateAtomicGroups = () => atomicGroups.forEach((group, groupId) => {
             const expectedIds = new Set((group[0]?.atomicGroup?.memberIds || []).map(Number).filter(Boolean));
             const presentIds = new Set(group.map((request) => Number(request.characterId)).filter(Boolean));
@@ -3022,6 +3034,16 @@ const Database = {
                 || [...expectedIds].some((id) => !presentIds.has(id));
             let reason = failure ? 'party_group_incomplete' : null;
             const pvpContext = group[0]?.atomicGroup?.pvpContext;
+            const raidCommit = group[0]?.atomicGroup?.raidCommit;
+            if (!failure && raidCommit) {
+                const saved = one('SELECT revision FROM bot_raid_encounters WHERE raidKey = ?', [raidCommit.key]);
+                failure = validatedRaidKeys.has(raidCommit.key) || Number(saved?.revision || 0) !== raidCommit.expectedRevision
+                    || !Number.isSafeInteger(raidCommit.expectedRevision) || raidCommit.expectedRevision < 0
+                    || raidCommit.revision !== raidCommit.expectedRevision + 1
+                    || raidCommit.snapshot?.key !== raidCommit.key
+                    || group[0].atomicGroup.partyChanges?.length !== 1;
+                if (failure) reason = 'raid_revision_changed';
+            }
             if (!failure && pvpContext) {
                 const members = Array.isArray(pvpContext) ? pvpContext.flat() : [];
                 const rows = members.map(m => one('SELECT id, clanId, karma FROM characters WHERE id = ?', [m.id]));
@@ -3074,6 +3096,7 @@ const Database = {
                         || !Number.isSafeInteger(change.updatedAt) || change.updatedAt <= Number(party.updatedAt)
                         || (change.nextResolveAt !== null && (!Number.isSafeInteger(change.nextResolveAt) || change.nextResolveAt < 0))
                         || (change.spotId !== undefined && (typeof change.spotId !== 'string' || !change.spotId.length || change.spotId.length > 256))
+                        || (change.status !== undefined && !['active', 'dissolved'].includes(change.status))
                         || !change.statsJson || typeof JSON.parse(change.statsJson) !== 'object') {
                         failure = true;
                         break;
@@ -3082,6 +3105,7 @@ const Database = {
                 if (failure) reason = 'party_context_changed';
             }
             if (failure) atomicGroupFailures.set(groupId, reason || 'party_group_aborted');
+            else if (raidCommit) validatedRaidKeys.add(raidCommit.key);
         });
         const commitBatch = () => batch.map((request) => {
             const groupId = request.atomicGroup?.id ? String(request.atomicGroup.id) : null;
@@ -3165,10 +3189,30 @@ const Database = {
                     throw new Error('party conflict: incomplete atomic outcome');
                 }
                 for (const change of changes) {
-                    const updated = write(`UPDATE bot_background_parties SET nextResolveAt = ?, statsJson = ?, updatedAt = ?, spotId = COALESCE(?, spotId)
+                    const updated = write(`UPDATE bot_background_parties SET nextResolveAt = ?, statsJson = ?, updatedAt = ?, spotId = COALESCE(?, spotId),
+                        status = COALESCE(?, status), cohesion = COALESCE(?, cohesion), risk = COALESCE(?, risk)
                         WHERE partyId = ? AND status = 'active' AND updatedAt = ?`,
-                    [change.nextResolveAt, change.statsJson, change.updatedAt, change.spotId ?? null, change.partyId, change.expectedUpdatedAt]);
+                    [change.nextResolveAt, change.statsJson, change.updatedAt, change.spotId ?? null,
+                        change.status ?? null, change.cohesion ?? null, change.risk ?? null, change.partyId, change.expectedUpdatedAt]);
                     if (updated.affectedRows !== 1) throw new Error('party conflict: party changed during commit');
+                }
+                const raidCommit = group[0].atomicGroup.raidCommit;
+                if (raidCommit) {
+                    write(`INSERT INTO bot_raid_encounters(raidKey, revision, snapshotJson) VALUES (?, ?, ?)
+                        ON CONFLICT(raidKey) DO UPDATE SET revision=excluded.revision, snapshotJson=excluded.snapshotJson`,
+                    [raidCommit.key, raidCommit.revision, JSON.stringify(raidCommit.snapshot)]);
+                    if (raidCommit.worldDefeat) {
+                        const defeat = raidCommit.worldDefeat;
+                        write(`INSERT INTO raid_boss_state(npcId, respawnTime, hp, mp, updatedAt) VALUES (?, ?, 0, 0, ?)
+                            ON CONFLICT(npcId) DO UPDATE SET respawnTime=excluded.respawnTime, hp=0, mp=0, updatedAt=excluded.updatedAt`,
+                        [defeat.npcId, defeat.respawnTime, now()]);
+                    }
+                    for (const request of group) {
+                        const result = results.find(result => result.characterId === Number(request.characterId));
+                        result.raidRow = one('SELECT * FROM bot_raid_encounters WHERE raidKey = ?', [raidCommit.key]);
+                        result.raidRespawnAt = raidCommit.worldDefeat?.respawnTime || null;
+                        result.raidPartyRow = one('SELECT * FROM bot_background_parties WHERE partyId = ?', [changes[0].partyId]);
+                    }
                 }
             }
             return results;

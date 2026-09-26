@@ -166,6 +166,13 @@ async function run() {
     await PopulationService.activateNearPlayers();
     assert.strictEqual(activated.length, 1, 'a full party gets one activation request even when the solo budget is one');
 
+    const closerSolo = { characterId: 299, name: 'CloserSolo', level: 45, activity: 'hunting' };
+    LifeState.coldNear = async () => [closerSolo, ...grouped];
+    activated.length = 0;
+    await PopulationService.activateNearPlayers();
+    assert.strictEqual(activated[0], 'Group0',
+        'a visible party must be activated before standalone cold simulation can consume the scan budget');
+
     PopulationService.resolving = true;
     assert.deepStrictEqual(await PopulationService.formBackgroundParties(), [], 'party formation must not overlap a cold scheduler pass');
     assert.strictEqual(PopulationService.partyFormationPending, true,

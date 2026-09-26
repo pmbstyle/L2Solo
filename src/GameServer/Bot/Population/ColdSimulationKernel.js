@@ -886,6 +886,7 @@ class ColdSimulationKernel {
         const run = this.partyRuns.get(String(partyId));
         if (!run || this.stopping) return;
         const startedAt = this.now();
+        let raidStepId = null;
         try {
             if (run.invalidReason) {
                 const releasedMembers = run.members.map((state) => (
@@ -928,8 +929,8 @@ class ColdSimulationKernel {
             }
 
             const rescuing = run.members.some(s => s.vitals?.hp <= 0);
-            const weaponBridgeReview = !rescuing && this.requiresWeaponBridge
-                && run.members.some((member) => this.requiresWeaponBridge(member));
+            const weaponBridgeReview = !rescuing && !BackgroundPartyLifecycle.raidStarted(run.party)
+                && run.members.some(member => this.requiresWeaponBridge?.(member));
             if (!rescuing && (BackgroundPartyLifecycle.sessionExpired(run.party, startedAt, this.partySession)
                 || require('./ClanEquipmentPartyPolicy').needsReview(run.party, run.members, startedAt)
                 || weaponBridgeReview)) {
@@ -1050,7 +1051,7 @@ class ColdSimulationKernel {
 
             if (!this.resolveParty) throw new Error('party_resolver_unavailable');
             const lastResolvedAt = Math.min(...run.members.map((member) => Number(member.timing?.lastResolvedAt || startedAt - 60000)));
-            const resolution = await this.resolveParty({
+            const resolveOptions = {
                 episodeId: run.grants.get(Number(run.party.leaderId))?.leaseId,
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 party: run.party,
@@ -1061,22 +1062,62 @@ class ColdSimulationKernel {
                 elapsedMs: Math.max(1000, startedAt - lastResolvedAt),
                 rng: deterministicRandom(run.members[0] || {}),
                 timestamp: startedAt
-            });
+            };
+            const raids = require('./ColdRaidEncounter');
+            const raid = run.spot?.raidBoss === true;
+            let staged = null;
+            if (raid) {
+                raidStepId = `raid:${run.grants.get(Number(run.party.leaderId))?.leaseId}`;
+                staged = await raids.stage({ key: raids.keyFor(run.spot, run.targetNpcId), id: raidStepId,
+                    memberIds: run.members.map(member => Number(member.characterId)) }, () => this.resolveParty(resolveOptions));
+            }
+            const resolution = staged ? staged.result : await this.resolveParty(resolveOptions);
             const proposals = [];
-            const memoryGroup = resolution.atomic || (resolution.memberResults || []).some(({ result }) => result.memoryEvents?.length)
+            const resolvedParty = {
+                ...run.party,
+                ...resolution.partyPatch,
+                stats: { ...(run.party.stats || {}), ...(resolution.partyPatch?.stats || {}) },
+                nextResolveAt: resolution.nextResolveAt
+            };
+            const memoryGroup = raid || resolution.atomic || (resolution.memberResults || []).some(({ result }) => result.memoryEvents?.length)
                 ? { id: `hunt:${run.grants.get(Number(run.party.leaderId))?.leaseId}`,
                     memberIds: resolution.memberResults.map(({ state }) => Number(state.characterId)) } : null;
+            if (raid) {
+                resolvedParty.updatedAt = Math.max(startedAt, Number(run.party.updatedAt) + 1);
+                memoryGroup.partyChanges = [{ partyId: run.party.partyId, memberIds: run.party.memberIds,
+                    expectedUpdatedAt: run.party.updatedAt, updatedAt: resolvedParty.updatedAt,
+                    nextResolveAt: resolvedParty.nextResolveAt, statsJson: JSON.stringify(resolvedParty.stats),
+                    status: resolvedParty.status, cohesion: resolvedParty.cohesion, risk: resolvedParty.risk }];
+                // Even a preparation or unavailable-boss result is atomic.
+                const snapshot = staged.snapshot || run.spot.raidAuthority || {
+                    key: raids.keyFor(run.spot, run.targetNpcId), raidInstanceId: run.spot.raidInstanceId,
+                    status: run.spot.raidWorldAvailable === false ? 'unavailable' : 'active',
+                    hp: null, revision: 0, updatedAt: startedAt };
+                memoryGroup.raidCommit = { key: snapshot.key,
+                    worldRequired: run.spot.raidWorldAvailable !== false,
+                    expectedRevision: Number(run.spot.raidAuthorityRevision || 0),
+                    revision: Number(run.spot.raidAuthorityRevision || 0) + 1, snapshot };
+            }
             for (const { state, result } of resolution.memberResults || []) {
                 const id = Number(state.characterId);
                 const projection = this.projectResolve
                     ? await this.projectResolve(state, result, startedAt)
                     : null;
-                const projectedState = projection?.state || projection;
+                let projectedState = projection?.state || projection;
+                if (resolvedParty.status === 'dissolved') {
+                    projectedState = BackgroundPartyLifecycle.releaseMember(
+                        projectedState,
+                        startedAt,
+                        resolvedParty.stats?.partyBreakReason || 'party_dissolved',
+                        resolvedParty.stats?.objective
+                    );
+                }
                 const proposal = {
                     proposalId: `${run.grants.get(id)?.leaseId}:${run.grants.get(id)?.revision}`,
                     characterId: id,
                     priority: memoryGroup ? 'P1' : priorityForResult(state, result),
                     ...(memoryGroup ? { atomicGroup: memoryGroup } : {}),
+                    ...(raid ? { raidStepId } : {}),
                     enqueuedAt: this.now(),
                     token: run.grants.get(id),
                     baseState: state,
@@ -1093,12 +1134,7 @@ class ColdSimulationKernel {
                     partyResolution: id === Number(run.party.leaderId) ? {
                         partyId: run.party.partyId,
                         reviewGoals: true,
-                        party: {
-                            ...run.party,
-                            ...resolution.partyPatch,
-                            stats: { ...(run.party.stats || {}), ...(resolution.partyPatch?.stats || {}) },
-                            nextResolveAt: resolution.nextResolveAt
-                        }
+                        party: resolvedParty
                     } : null
                 };
                 this.dirty.set(id, proposal);
@@ -1107,8 +1143,12 @@ class ColdSimulationKernel {
             this.stats.resolved += proposals.length;
             this.flush(null, true);
         } catch (error) {
-            this.stats.errors += 1;
-            this.emit('fault', { reason: error?.message || 'party_resolver_error', stage: 'party_project' });
+            if (raidStepId) require('./ColdRaidEncounter').abort(raidStepId);
+            for (const [id, proposal] of this.dirty) if (proposal.raidStepId === raidStepId && raidStepId) this.dirty.delete(id);
+            if (error?.message !== 'raid_step_pending') {
+                this.stats.errors += 1;
+                this.emit('fault', { reason: error?.message || 'party_resolver_error', stage: 'party_project' });
+            }
             this.emit('release_request', {
                 releases: [...run.grants.values()].map((token) => ({ token, reason: error?.message || 'party_resolver_error' }))
             });
@@ -1230,6 +1270,7 @@ class ColdSimulationKernel {
             proposals.push(...transportGroup);
         }
         oversized.forEach((proposal) => {
+            if (proposal.raidStepId) require('./ColdRaidEncounter').abort(proposal.raidStepId);
             this.dirty.delete(Number(proposal.characterId));
             this.stats.proposalOversizeRejected += 1;
             this.emit('release_request', {
@@ -1281,6 +1322,7 @@ class ColdSimulationKernel {
 
     onCommitAck(payload = {}) {
         (payload.results || []).forEach((result) => {
+            if (result.raidStepId) require('./ColdRaidEncounter').acknowledge(result.raidStepId, result.characterId, result.ok);
             const id = Number(result.characterId);
             this.inFlight.delete(id);
             if (result.ok && result.state) {

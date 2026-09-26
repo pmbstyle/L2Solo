@@ -54,6 +54,13 @@ try {
     Geo.hasLineOfSight = () => true;
     samplePoint(flat, { locX: 100, locY: 0 });
     assert.strictEqual(Placement.resolve({ loc: flat }).loc.locX, 100);
+    let sample = 0;
+    Math.random = () => sample++ % 2 === 0 ? 0 : 1;
+    assert.strictEqual(Placement.resolve({ loc: flat }, { placementRadius: 240 }).loc.locX, 240,
+        'party placement can constrain the search radius around its shared anchor');
+    assert.deepStrictEqual(Placement.resolve({ loc: flat }, { preferAnchor: true, placementRadius: 240 }).loc, flat,
+        'party leader prefers the persisted safe anchor before any displacement');
+    samplePoint(flat, { locX: 100, locY: 0 });
     Geo.getCellData = (x) => ({ z: 0, nswe: x >= 96 ? 0 : 15 });
     assert.deepStrictEqual(Placement.resolve({ loc: flat }).loc, flat,
         'a wall cell must be rejected even if a height exists');

@@ -134,6 +134,17 @@ function npcThreateningActor(session, npcRadius = 2500) {
     )) || null;
 }
 
+// Healing adds hate even when a tank securely holds the mob. Recovery and
+// resurrection need direct pressure, not mere membership in its hate list.
+function underDirectNpcAttack(session, npcRadius = 2500) {
+    if (!session?.actor) return false;
+    if (recentIncomingNpc(session, npcRadius)) return true;
+    const actor = session.actor;
+    return (world().fetchNpcsInRadius?.(actor.fetchLocX(), actor.fetchLocY(), npcRadius) || [])
+        .some(npc => npc.fetchAttackable?.() === true && npc.isDead?.() !== true
+            && npc.state?.fetchDead?.() !== true && Number(npc.fetchDestId?.()) === Number(actor.fetchId()));
+}
+
 function recentIncomingNpcThreat(leaderSession, memberSessions, npcRadius) {
     for (const memberSession of memberSessions) {
         const npc = recentIncomingNpc(memberSession, npcRadius);
@@ -368,6 +379,7 @@ function leaderCombatTargetId(leaderSession, options = {}) {
 }
 
 module.exports = {
+    underDirectNpcAttack,
     isDistantQuestCourier,
     findThreatTargetingParty,
     findThreatTargetingPartyProjected,

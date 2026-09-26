@@ -306,6 +306,19 @@ try {
         dangerous.id,
         'the original equipment source may be reconsidered after its cooldown expires'
     );
+
+    const raid = {
+        id: 'raid:999', name: 'Shared raid boss', avgLevel: 8, minLevel: 3, maxLevel: 10,
+        density: 1, capacity: 999, raidBoss: true, raidBossTemplateId: 999,
+        center: { locX: 5000, locY: 5000, locZ: 0 }
+    };
+    SpotProfiles.cache = [raid, safer];
+    GearAcquisitionPlanner.bestSourceForPlan = originalBestSourceForPlan;
+    assert.strictEqual(
+        SpotProfiles.findForState({ characterId: 70, level: 8, spotId: raid.id }, { occupancy: {} }).id,
+        safer.id,
+        'an ordinary bot already placed on raid ground must evacuate to a normal hunting spot'
+    );
 } finally {
     SpotProfiles.cache = originalCache;
     GearAcquisitionPlanner.bestSourceForPlan = originalBestSourceForPlan;

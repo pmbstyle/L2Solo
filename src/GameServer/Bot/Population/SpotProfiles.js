@@ -94,6 +94,19 @@ function clanEquipmentReservationKey(state = {}, spotId = null) {
     return identity ? `clan-equipment:${identity}` : null;
 }
 
+function explicitClanRaidSpot(state = {}, profile = null) {
+    if (profile?.raidBoss !== true) return false;
+    const spotId = String(profile.id || '');
+    const objective = state.stats?.clanPartyObjective;
+    if (objective?.sourceKind === 'raid'
+        && objective?.clanOperation === 'equipment'
+        && String(objective.spotId || '') === spotId) return true;
+    const plan = state.stats?.equipmentPlan;
+    return plan?.next?.sourceKind === 'raid'
+        && GearAcquisitionPlanner.isClanOwnedPlan(plan)
+        && String(plan.next?.spotId || '') === spotId;
+}
+
 function occupiedSpotId(state = {}) {
     if (state.activity === 'traveling' && state.stats?.travel?.spotId) return state.stats.travel.spotId;
     if (['merchant', 'shopping', 'crafting', 'traveling'].includes(state.activity)) return null;
@@ -231,6 +244,7 @@ function reservationGroupHasCapacity(entry, options = {}) {
 }
 
 function hasCapacityForStates(spot, states = [], occupancy = {}, options = {}) {
+    if (spot?.raidBoss === true) return true;
     if (!spot?.id) return false;
     const entry = occupancy?.[spot.id];
     const maxOverflowUnits = Math.max(0, Math.floor(Number(options.maxOverflowUnits || 0)));
@@ -243,6 +257,7 @@ function hasCapacityForStates(spot, states = [], occupancy = {}, options = {}) {
 }
 
 function reserveCapacity(occupancy, spot, states = [], options = {}) {
+    if (spot?.raidBoss === true) return true;
     if (!occupancy || !spot?.id) return false;
     const entry = occupancy[spot.id] || {
         count: 0,
@@ -334,7 +349,10 @@ const SpotProfiles = {
 
     ensure() {
         if (this.cache) return this.cache;
-        this.cache = SpotService.ensureIndexed().map(profileFromSpot);
+        this.cache = [
+            ...SpotService.ensureIndexed().map(profileFromSpot),
+            ...invoke('GameServer/RaidBoss/RaidBossSourceCatalog').all()
+        ];
         return this.cache;
     },
 
@@ -381,6 +399,7 @@ const SpotProfiles = {
             && capacityUnitsFor(capacityStates, occupancy[currentSpot.id]) > 0
             && !hasCapacityForStates(currentSpot, capacityStates, occupancy, reservationOptions);
         const mustRelocate = currentSpot && (currentMatch.localityPenalty > 0
+            || (currentSpot.raidBoss === true && !explicitClanRaidSpot(state, currentSpot))
             || currentMatch.targetMatchup?.eligible === false
             || currentMatch.huntingGround?.allowed === false
             || shouldLeaveOverCapacity(state, currentSpot, occupancy)
@@ -405,7 +424,9 @@ const SpotProfiles = {
                 state,
                 acquisitionPlan,
                 profiles,
-                { occupancy, excludedSpotIds, capacityUnits, ...reservationOptions }
+                { occupancy, excludedSpotIds, capacityUnits, ...reservationOptions,
+                    allowRaidSources: acquisitionPlan.next?.sourceKind === 'raid'
+                        && GearAcquisitionPlanner.isClanOwnedPlan(acquisitionPlan) }
             );
             const planned = plannedSource
                 ? this.findById(plannedSource.spotId)
@@ -433,6 +454,7 @@ const SpotProfiles = {
         }
 
         const candidates = profiles
+            .filter((profile) => profile.raidBoss !== true)
             .filter((profile) => !excludedSpotIds.has(String(profile.id)))
             // Level bounds are cheap and independent of the detailed route
             // policy. Reject out-of-range spots before deriving their tags.
@@ -448,7 +470,8 @@ const SpotProfiles = {
         // otherwise a perfectly healthy bot repeats missing_spot forever.
         if (!routeCandidates.length && !['party', 'duo'].includes(LevelingRoutes.modeForState(state, options))) {
             const recoveryState = { ...state, stats: { ...state.stats, equipmentPlan: null } };
-            routeCandidates = profiles.filter(profile => profile.maxLevel >= targetLevel - 16
+            routeCandidates = profiles.filter(profile => profile.raidBoss !== true
+                && profile.maxLevel >= targetLevel - 16
                 && profile.maxLevel < targetLevel - 4
                 && !excludedSpotIds.has(String(profile.id))
                 && hasCapacityForStates(profile, capacityStates, occupancy, reservationOptions)

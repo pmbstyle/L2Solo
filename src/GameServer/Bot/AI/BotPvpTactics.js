@@ -48,10 +48,23 @@ function cast(session, actor, target, skill, Generics, reason, hostile = false) 
     // Cancel the old auto-attack before a control or heal; otherwise the next
     // queued swing can break Sleep or replace a friendly target mid-cast.
     stop(session, actor);
+    if (actor.state?.fetchSeated?.()) {
+        actor.state.setSeated(false);
+        session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(actor), actor);
+    }
     session.lastCombatDecision = { action: hostile ? 'pvp_control' : 'pvp_support', reason,
         skillId: skill.fetchSelfId(), targetId: target.fetchId(), at: Date.now() };
     Generics.skillExec(session, actor, { id: target.fetchId(), selfId: skill.fetchSelfId(), ctrl: hostile });
     return true;
+}
+
+function alliedForHeal(provider, target) {
+    if (provider === target) return true;
+    const clanId = Number(provider.fetchClanId?.());
+    if (clanId > 0 && clanId === Number(target.fetchClanId?.())) return true;
+    const Pledge = invoke('GameServer/Network/Response/PledgeHelpers');
+    const allyId = Number(Pledge.allyId(provider));
+    return allyId > 0 && allyId === Number(Pledge.allyId(target));
 }
 
 function support(session, bot, context, Generics, now) {
@@ -62,26 +75,49 @@ function support(session, bot, context, Generics, now) {
     for (const target of wounded) {
         const nativeParty = !!session.hotBackgroundPartyId || session.partyCompanion === true
             || context.members.some(member => member.followPlayerSession === session);
-        const group = wounded.length >= 3 && nativeParty;
-        const skills = Capabilities.healSkills(bot).filter(skill => usable(bot, skill) && Intent.inRange(bot,target,skill))
-            .filter(skill => skill.fetchTargetKind() !== 'party' || nativeParty);
+        const recipientsFor = skill => {
+            const kind = skill.fetchTargetKind();
+            if (kind === 'friendly') return Intent.inRange(bot, target, skill) ? [target] : [];
+            if (kind === 'party' && !nativeParty) return [];
+            const radius = Number(skill.fetchSemantic?.()?.radius || skill.fetchDistance?.() || 900);
+            return wounded.filter(actor => Threats.distance(bot, actor) <= radius
+                && (kind !== 'ally' || alliedForHeal(bot, actor)));
+        };
+        const skills = Capabilities.healSkills(bot).filter(skill => usable(bot, skill))
+            .filter(skill => recipientsFor(skill).includes(target))
+            .filter(skill => !skill.fetchSemantic?.()?.hot || !Intent.equivalentActive(target, skill));
         const chosen = [...skills].sort((a, b) => {
-            const preferred = skill => (skill.fetchTargetKind() === 'party' && group ? 100000 : 0) + Number(skill.fetchPower?.() || 0);
+            const preferred = skill => {
+                const semantic = skill.fetchSemantic?.() || {};
+                const power = semantic.skillType === SkillRules.HEAL_PERCENT
+                    ? target.fetchMaxHp() * Number(skill.fetchPower?.() || 0) / 100
+                    : Number(semantic.hot?.heal ?? semantic.healPower ?? skill.fetchPower?.() ?? 0);
+                return invoke('GameServer/Bot/AI/PartyHealPolicy').score({
+                    missingHp: target.fetchMaxHp() - target.fetchHp(), maxHp: target.fetchMaxHp(),
+                    power, cost: Number(skill.fetchConsumedMp?.() || 0), castMs: Number(skill.fetchHitTime?.() || 0),
+                    periodic: !!semantic.hot, ticks: semantic.hot?.count,
+                    recipients: recipientsFor(skill).length
+                });
+            };
             return preferred(b) - preferred(a);
         })[0];
         const claims = context.owner.pvpHealClaims || (context.owner.pvpHealClaims = new Map());
         for (const [key, expiry] of claims) if (expiry <= now) claims.delete(key);
         if (chosen && !claims.has(target.fetchId()) && cast(session, bot, target, chosen, Generics, 'wounded_party_member')) {
-            const recipients = chosen.fetchTargetKind() === 'party' ? wounded : [target];
-            for (const recipient of recipients) claims.set(recipient.fetchId(), now + 1500);
+            // HoT upkeep must not reserve the target away from emergency heals.
+            const duration = chosen.fetchSemantic?.()?.hot ? 250 : Math.max(1500, Number(chosen.fetchHitTime?.() || 0));
+            for (const recipient of recipientsFor(chosen)) claims.set(recipient.fetchId(), now + duration);
             return true;
         }
     }
     const recharge = Capabilities.manaRechargeSkill(bot);
-    const drained = context.members.map(member => member.actor).find(actor => actor !== bot && Intent.alive(actor) &&
+    const raid = context.raid === true;
+    const drained = context.members.map(member => member.actor).filter(actor => actor !== bot && Intent.alive(actor) &&
         Roles.shouldRestForMana(actor) && actor.fetchMp() / Math.max(1, actor.fetchMaxMp()) < 0.2 &&
-        recharge && Intent.inRange(bot,actor,recharge));
-    if (drained && bot.fetchMp() / Math.max(1, bot.fetchMaxMp()) > 0.35 &&
+        (!raid || Roles.inferRole(bot) !== 'healer' || Roles.inferRole(actor) === 'healer') &&
+        recharge && Intent.inRange(bot,actor,recharge))
+        .sort((a, b) => Number(Roles.inferRole(b) === 'healer') - Number(Roles.inferRole(a) === 'healer'))[0];
+    if (drained && (bot.fetchMp() - Number(recharge.fetchConsumedMp?.() || 0)) / Math.max(1, bot.fetchMaxMp()) > (raid ? 0.6 : 0.35) &&
         cast(session, bot, drained, recharge, Generics, 'party_mana')) return true;
     const self = ClassTactics.selfAction(bot, { role: Roles.inferRole(bot), activeMobs: context.threats.length });
     return !!self && cast(session, bot, bot, self.skill, Generics, self.reason);

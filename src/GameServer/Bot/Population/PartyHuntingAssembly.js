@@ -10,7 +10,7 @@ function nearby(members) {
 function ready(party, members, spot) {
     // Non-grid profiles have caller-defined geometry. Production hunting
     // sectors use the shared grid and dungeon partition classification.
-    if (!/^(-?\d+)_(-?\d+)(?::.+)?$/.test(String(spot?.id || ''))) return true;
+    if (!/^(-?\d+)_(-?\d+)(?::.+)?$/.test(String(spot?.id || '')) && spot?.raidBoss !== true) return true;
     return party?.spotId === spot.id && members.length > 0 && nearby(members) && members.every(member =>
         member.phase === 'cold' && ['grouped', 'hunting'].includes(member.activity)
         && !member.stats?.travel && SpotService.containsLocation(spot, member.loc));

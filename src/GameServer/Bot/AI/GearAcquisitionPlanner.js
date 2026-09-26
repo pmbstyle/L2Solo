@@ -26,7 +26,8 @@ const RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
 const WEAPON_SLOTS = new Set([7, 14]);
 const ARMOR_SLOTS = new Set([6, 9, 10, 11, 12, 15]);
 const JEWEL_SLOTS = new Set([1, 2, 3, 4, 5]);
-const RATE_MODEL_VERSION = 12;
+const RATE_MODEL_VERSION = 16;
+const RAID_MIN_ROSTER_LABOR = 7;
 const DIRECT_FAILURE_RESOLVE_LIMIT = 8;
 const DIRECT_DROP_EXHAUSTION_MULTIPLIER = 3;
 const DIRECT_ROUTE_COOLDOWN_MS = 60 * 60 * 1000;
@@ -61,7 +62,7 @@ function withinExpectedKillLimit(plan, maxExpectedKills = Infinity) {
         : persistedLimit;
     if (!Number.isFinite(limit) || limit <= 0) return true;
     if (!['direct_drop', 'craft'].includes(String(plan?.strategy || ''))) return true;
-    return Math.max(0, Number(plan?.expectedKills || 0)) <= limit;
+    return Math.max(0, Number(plan?.expectedEffort ?? plan?.expectedKills ?? 0)) <= limit;
 }
 
 function catalogItem(selfId) {
@@ -322,10 +323,7 @@ function candidateEffort(candidate, state, options = {}) {
     // every component tree when no spot atlas is available.
     if (!spots.length) return marketEffortValue;
     const direct = bestSourceForState(sourceForItem(item.selfId, spots, state, options), state, options);
-    const directEffort = direct
-        ? (1 / Math.max(Number(direct.expectedYield || 0), 0.000001))
-            * (soloSafeForSource(state, direct) ? 1 : 1.35)
-        : Infinity;
+    const directEffort = direct ? sourceEffort(direct, state, options) : Infinity;
     if (!candidate.recipe) return Math.min(directEffort, marketEffortValue);
 
     const allowedRecipeIds = options.allowedRecipeIds || stationRecipeIds();
@@ -1004,7 +1002,19 @@ function isBotEligibleSourceNpcId(npcId) {
     return !!npc && BotHuntingTargetPolicy.canHunt(npc);
 }
 
+function isPlanSourceEligible(plan = {}) {
+    const npcId = Number(plan?.next?.npcId || 0);
+    if (!npcId) return true;
+    if (isBotEligibleSourceNpcId(npcId)) return true;
+    const npc = catalogNpc(npcId);
+    return isClanOwnedPlan(plan)
+        && plan?.next?.sourceKind === 'raid'
+        && BotRaidSafety.isRaidBoss(npc)
+        && Number(plan.next.raidBossTemplateId || npcId) === npcId;
+}
+
 function sourceWithinVoluntaryHuntBand(state = {}, source = {}) {
+    if (source?.sourceKind === 'raid' || source?.raidBoss === true) return true;
     const botLevel = Number(state.level || 0);
     const sourceLevel = Number(source.npcLevel || source.spotLevel || 0);
     if (!botLevel || !sourceLevel) return true;
@@ -1012,9 +1022,10 @@ function sourceWithinVoluntaryHuntBand(state = {}, source = {}) {
 }
 
 function isPlanSourceViableForState(state = {}, plan = {}) {
+    if (!isPlanSourceEligible(plan)) return false;
+    if (plan?.next?.sourceKind === 'raid' || plan?.next?.raidBoss === true) return true;
     const npcId = Number(plan?.next?.npcId || 0);
     if (!npcId) return true;
-    if (!isBotEligibleSourceNpcId(npcId)) return false;
     const npc = catalogNpc(npcId);
     return sourceWithinVoluntaryHuntBand(state, {
         npcLevel: Number(npc?.template?.level || npc?.level || 0)
@@ -1023,6 +1034,7 @@ function isPlanSourceViableForState(state = {}, plan = {}) {
 
 function directPlanFailure(state = {}, plan = {}, timestamp = Date.now()) {
     if (plan?.status !== 'active' || plan.strategy !== 'direct_drop') return null;
+    if (isClanOwnedPlan(plan) && plan?.next?.sourceKind === 'raid') return null;
     const targetId = Number(plan.target?.selfId || 0);
     const npcId = Number(plan.next?.npcId || 0);
     if (!targetId || !npcId) return null;
@@ -1145,7 +1157,7 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
     const sameGrade = previousPlan?.grade === currentGrade;
     const levelingRecovery = levelingRecoveryFor(state, previousPlan, timestamp);
     const sourceNpcId = Number(previousPlan?.next?.npcId || 0);
-    const sourceAllowed = !sourceNpcId || isBotEligibleSourceNpcId(sourceNpcId);
+    const sourceAllowed = !sourceNpcId || isPlanSourceEligible(previousPlan);
     const sourceViable = !sourceNpcId || isPlanSourceViableForState(state, previousPlan);
     const modelCurrent = Number(previousPlan?.rateModelVersion || 0) >= RATE_MODEL_VERSION
         && String(previousPlan?.rateProfileSignature || '') === rateProfileSignature();
@@ -1344,7 +1356,32 @@ function soloSafeForSource(state = {}, source = {}) {
     return partyNeedForSource(state, source) === 'solo_ok';
 }
 
+function sourceEffort(source = {}, state = {}, options = {}) {
+    const attempts = 1 / Math.max(Number(source.expectedYield || 0), 0.000001);
+    if (source?.sourceKind === 'raid' || source?.raidBoss === true) {
+        // A boss attempt occupies a complete clan roster. Compare that lost
+        // farming time with solo/craft/market routes instead of treating the
+        // raid as one slightly harder monster for one beneficiary.
+        const rosterLabor = Math.max(
+            RAID_MIN_ROSTER_LABOR,
+            Math.floor(Number(source.raidRosterSize || options.raidRosterSize || 0))
+        );
+        const estimate = source.raidEstimate || options.raidEstimate;
+        if (!estimate) return attempts * rosterLabor;
+        const chance = Math.max(0.1, Math.min(1, Number(estimate.successChance) || 0.1));
+        const seconds = Math.max(0, Number(estimate.preparationSeconds) || 0)
+            + Math.max(1, Number(estimate.fightSeconds) || 1)
+            + (1 - chance) * Math.max(0, Number(estimate.recoverySeconds) || 0);
+        // Keep the common effort unit: equivalent ordinary farming kills.
+        return attempts * rosterLabor * seconds / 20 / chance;
+    }
+    return attempts * (soloSafeForSource(state, source) ? 1 : 1.35);
+}
+
 function partyNeedAssessmentForSource(state = {}, source = {}) {
+    if (source?.sourceKind === 'raid' || source?.raidBoss === true) {
+        return { need: 'required', reason: 'raid_roster_required' };
+    }
     const readiness = combatReadiness(state);
     const targetLevel = Number(source?.npcLevel || source?.spotLevel || Infinity);
     const margin = readiness.effectiveLevel - targetLevel;
@@ -1380,6 +1417,9 @@ function sourceStateKey(state = {}) {
 }
 
 function sourceHasCapacity(source, state, options = {}) {
+    // Raid bosses are shared world objectives. Capacity is the boss itself,
+    // not an exclusive hunting-sector reservation: several clans may race it.
+    if (source?.sourceKind === 'raid' || source?.raidBoss === true) return true;
     const entry = sourceOccupancyEntry(source, options.occupancy);
     const units = Math.max(1, Math.floor(Number(options.capacityUnits || 1)));
     if (!entry) {
@@ -1479,6 +1519,11 @@ function retargetPlanSource(state = {}, plan = {}, source = null) {
         npcId: Number(source.npcId || 0) || null,
         npcName: source.npcName || null,
         kind: source.kind || 'drop',
+        sourceKind: source.sourceKind || source.kind || 'drop',
+        raidBoss: source.raidBoss === true,
+        sharedEncounter: source.sharedEncounter === true,
+        raidRosterSize: Number(source.raidRosterSize || 0) || null,
+        raidBossTemplateId: Number(source.raidBossTemplateId || 0) || null,
         itemId,
         amount: plan.next?.amount || 1,
         requiredTotal: plan.next?.requiredTotal
@@ -1499,6 +1544,7 @@ function retargetPlanSource(state = {}, plan = {}, source = null) {
         requiresParty: assessment.need === 'required',
         ...(plan.strategy === 'direct_drop' ? {
             expectedKills: Math.ceil(1 / Math.max(Number(source.expectedYield || 0), 0.000001)),
+            expectedEffort: Math.ceil(sourceEffort(source, state)),
             targetProgress: Number(plan.targetProgress?.npcId) === Number(source.npcId)
                 ? plan.targetProgress : {
                 npcId: Number(source.npcId || 0),
@@ -1585,19 +1631,27 @@ function sourceIndexFor(spots = []) {
 
     const byItemId = new Map();
     rewards.forEach((reward) => {
-        if (BotRaidSafety.isProtectedRaidEntity(npcById.get(Number(reward.selfId)))) return;
+        const protectedRaid = BotRaidSafety.isProtectedRaidEntity(npcById.get(Number(reward.selfId)));
         const spotsForNpc = [...new Map([
             ...(spotByNpc.get(Number(reward.selfId)) || []),
             ...(spotByName.get(String(reward.template?.name || '').trim().toLowerCase()) || [])
         ].map((spot) => [spot.id, spot])).values()];
         if (!spotsForNpc.length) return;
+        // Only the explicit raid-source atlas may opt a protected NPC into
+        // equipment planning. Mentioning that NPC in an ordinary spot never
+        // bypasses the global bot raid guard.
+        const eligibleSpots = protectedRaid
+            ? spotsForNpc.filter((spot) => spot?.raidBoss === true
+                && Number(spot.raidBossTemplateId || 0) === Number(reward.selfId))
+            : spotsForNpc.filter((spot) => spot?.raidBoss !== true);
+        if (!eligibleSpots.length) return;
         const itemKinds = [
             ['drop', reward.rewards || []],
             ['spoil', reward.spoils || []]
         ].flatMap(([kind, groups]) => groups.flatMap((group) => (
             (group.items || []).map((item) => ({ id: Number(item.selfId || 0), kind })).filter((item) => item.id)
         )));
-        spotsForNpc.forEach((spot) => itemKinds.forEach(({ id, kind }) => {
+        eligibleSpots.forEach((spot) => itemKinds.forEach(({ id, kind }) => {
             const entries = byItemId.get(id) || [];
             if (!entries.some((entry) => entry.reward === reward && entry.spot.id === spot.id && entry.kind === kind)) {
                 entries.push({ reward, spot, kind, npcLevel: npcLevels.get(Number(reward.selfId)) || 0 });
@@ -1613,7 +1667,8 @@ function sourceIndexFor(spots = []) {
 function sourceForItem(itemId, spots = [], state = {}, options = {}) {
     const sourceCache = options.sourceCache;
     const spoilCapable = options.spoilCapable === true || roleFor(state) === 'spoiler';
-    const cacheKey = `${Number(itemId)}:${Number(state.level || 0)}:${spoilCapable ? 1 : 0}`;
+    const allowRaidSources = options.allowRaidSources === true;
+    const cacheKey = `${Number(itemId)}:${Number(state.level || 0)}:${spoilCapable ? 1 : 0}:${allowRaidSources ? 1 : 0}`;
     if (sourceCache?.has(cacheKey)) return sourceCache.get(cacheKey);
     const sourceIndex = sourceIndexFor(spots);
     const rates = ProgressionRates.profile();
@@ -1623,8 +1678,9 @@ function sourceForItem(itemId, spots = [], state = {}, options = {}) {
         sourceCache?.set(cacheKey, cached);
         return cached;
     }
-    const sources = (sourceIndex.get(Number(itemId)) || []).filter(({ kind }) => (
-        kind !== 'spoil' || spoilCapable
+    const sources = (sourceIndex.get(Number(itemId)) || []).filter(({ kind, spot }) => (
+        (kind !== 'spoil' || spoilCapable)
+        && (spot?.raidBoss !== true || allowRaidSources)
     )).map(({ reward, spot, kind, npcLevel }) => {
         const sourceLevel = Number(npcLevel || spot?.avgLevel || 1);
         const { chance, expectedYield } = itemDropYield(reward, itemId, kind, {
@@ -1641,9 +1697,20 @@ function sourceForItem(itemId, spots = [], state = {}, options = {}) {
             spotId: spot.id,
             spotLevel: Number(spot.avgLevel || 1),
             npcLevel: sourceLevel,
-            capacity: LevelingRoutes.capacityForSpot(spot)
+            capacity: LevelingRoutes.capacityForSpot(spot),
+            sourceKind: spot?.raidBoss === true ? 'raid' : kind,
+            raidBoss: spot?.raidBoss === true,
+            sharedEncounter: spot?.sharedEncounter === true,
+            raidEstimate: spot?.raidEstimate || null,
+            raidRosterSize: spot?.raidBoss === true
+                ? Math.max(RAID_MIN_ROSTER_LABOR, Number(spot.raidRosterSize || 0))
+                : null,
+            raidBossTemplateId: spot?.raidBoss === true
+                ? Number(spot.raidBossTemplateId || reward.selfId)
+                : null
         };
-    }).filter(Boolean).sort((a, b) => b.expectedYield - a.expectedYield);
+    }).filter(Boolean).sort((a, b) => sourceEffort(a, state, options) - sourceEffort(b, state, options)
+        || b.expectedYield - a.expectedYield);
     if (sourceIndexCache.resolved.size >= MAX_RESOLVED_SOURCE_CACHE) {
         sourceIndexCache.resolved.delete(sourceIndexCache.resolved.keys().next().value);
     }
@@ -1665,7 +1732,7 @@ function farmSourceForMaterial(itemId, state, spots, allowedRecipeIds, requiredA
     const direct = bestSourceForState(sourceForItem(itemId, spots, state, options), state, options);
     const directRoute = direct ? { ...direct, itemId: Number(itemId), requiredAmount,
         requiredTotal: requiredAmount + Number(state.inventory?.[itemId]?.amount || 0),
-        effort: requiredAmount / Math.max(direct.expectedYield || 0, 0.000001) } : null;
+        effort: requiredAmount * sourceEffort(direct, state, options) } : null;
     const component = options.recipeCatalog?.get(Number(itemId)) || C4RecipeItems.resolveByProductId(itemId);
     if (!component || !allowedRecipeIds.has(Number(component.recipeId))) return directRoute;
     const nextVisited = new Set(visited).add(Number(itemId));
@@ -1794,7 +1861,8 @@ function rawPlanFor(state = {}, options = {}) {
             : null;
         const offer = marketOfferForTarget(target, state, planningOptions);
         const directKills = source ? 1 / Math.max(source.expectedYield, 0.000001) : Infinity;
-        const buy = offer && marketEffort(offer, state) <= directKills;
+        const directEffort = source ? sourceEffort(source, state, planningOptions) : Infinity;
+        const buy = offer && marketEffort(offer, state) <= directEffort;
         const sourceAssessment = source ? partyNeedAssessmentForSource(state, source) : null;
         return target && buy ? {
             status: 'active', phase: GearLifecycle.phaseFor(state), grade: 'none', role: roleFor(state), strategy: 'market', soloSafe: true, requiresParty: false,
@@ -1810,6 +1878,7 @@ function rawPlanFor(state = {}, options = {}) {
             requiresParty: sourceAssessment.need === 'required',
             rateModelVersion: RATE_MODEL_VERSION,
             expectedKills: Math.ceil(1 / Math.max(source.expectedYield, 0.000001)),
+            expectedEffort: Math.ceil(directEffort),
             target: { selfId: Number(target.selfId), name: target.template?.name || `Item ${target.selfId}`, slot: Number(target.etc?.slot || 0) },
             recipeId: null, materials: [], next: { ...source, itemId: Number(target.selfId) }
         } : { status: 'no_grade_drop_only', grade: 'none', role: roleFor(state), strategy: 'direct_drop', rateModelVersion: RATE_MODEL_VERSION, recipeId: null, materials: [], next: null };
@@ -1835,15 +1904,16 @@ function rawPlanFor(state = {}, options = {}) {
         (b.source?.effort ?? Infinity) - (a.source?.effort ?? Infinity)
     ))[0] || null;
     const directKills = direct ? 1 / Math.max(direct.expectedYield, 0.000001) : Infinity;
+    const directEffort = direct ? sourceEffort(direct, state, planningOptions) : Infinity;
     const craftKills = target.recipe
         ? missingMaterialPlans.reduce((sum, material) => sum + (material.source?.effort ?? Infinity), 0)
         : Infinity;
     const offer = marketOfferForTarget(target.item, state, planningOptions);
-    const buy = offer && marketEffort(offer, state) <= Math.min(directKills, craftKills);
+    const buy = offer && marketEffort(offer, state) <= Math.min(directEffort, craftKills);
     const directAssessment = direct ? partyNeedAssessmentForSource(state, direct) : null;
     const soloSafe = direct && directAssessment.need === 'solo_ok';
     const strategy = buy ? 'market'
-        : direct && (!target.recipe || !Number.isFinite(craftKills) || soloSafe && directKills <= craftKills * 0.8) ? 'direct_drop'
+        : direct && (!target.recipe || !Number.isFinite(craftKills) || soloSafe && directEffort <= craftKills * 0.8) ? 'direct_drop'
             : target.recipe ? 'craft' : 'blocked';
     const next = strategy === 'direct_drop'
         ? direct && { ...direct, itemId: Number(target.item.selfId) }
@@ -1881,9 +1951,16 @@ function rawPlanFor(state = {}, options = {}) {
         partyNeedReason,
         requiresParty,
         expectedKills: next ? Math.ceil(strategy === 'direct_drop' ? directKills : craftKills) : 0,
+        expectedEffort: next ? Math.ceil(strategy === 'direct_drop' ? directEffort : craftKills) : 0,
         market: buy ? { town: offer.town || 'Giran', price: Number(offer.price), sourceType: offer.sourceType } : null,
         materials: materialPlans.map(({ source, ...material }) => ({ ...material, sourceSpotId: source?.spotId || null })),
-        next: next ? { spotId: next.spotId, npcId: next.npcId, npcName: next.npcName, kind: next.kind, itemId: next.itemId, amount: next.requiredAmount || 1, requiredTotal: next.requiredTotal } : null,
+        next: next ? { spotId: next.spotId, npcId: next.npcId, npcName: next.npcName, kind: next.kind,
+            sourceKind: next.sourceKind || next.kind, raidBoss: next.raidBoss === true,
+            sharedEncounter: next.sharedEncounter === true,
+            raidRosterSize: Number(next.raidRosterSize || 0) || null,
+            raidEstimate: next.raidEstimate || null,
+            raidBossTemplateId: Number(next.raidBossTemplateId || 0) || null,
+            itemId: next.itemId, amount: next.requiredAmount || 1, requiredTotal: next.requiredTotal } : null,
         ...(combine ? { combine } : {})
     };
 }
@@ -1939,4 +2016,4 @@ function sameObjective(left, right) {
     );
 }
 
-module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, npcWeaponBridgePlan, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, sourceWithinVoluntaryHuntBand, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isPlanSourceViableForState, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
+module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, npcWeaponBridgePlan, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, sourceEffort, sourceWithinVoluntaryHuntBand, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isPlanSourceEligible, isPlanSourceViableForState, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };

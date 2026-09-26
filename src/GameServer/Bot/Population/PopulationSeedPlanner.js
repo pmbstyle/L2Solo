@@ -95,13 +95,15 @@ function nextWave(snapshot = {}, levelThreshold = waveLevelThreshold()) {
 
 function eligibleSpots(profiles = [], maxMobLevel = 1) {
     return profiles
-        .filter((spot) => number(spot.minLevel, 0) >= 1 && number(spot.minLevel, 0) <= maxMobLevel)
+        .filter((spot) => spot.raidBoss !== true
+            && number(spot.minLevel, 0) >= 1 && number(spot.minLevel, 0) <= maxMobLevel)
         .sort((left, right) => number(left.minLevel, 0) - number(right.minLevel, 0)
             || number(left.avgLevel, 0) - number(right.avgLevel, 0)
             || String(left.id).localeCompare(String(right.id)));
 }
 
 function starterSlots(spots = [], botsPerRace = 30, waves = 1) {
+    spots = spots.filter((spot) => spot.raidBoss !== true);
     const starters = spots.filter((spot) => number(spot.minLevel, 0) === 1);
     const slotsPerRace = Math.max(0, number(botsPerRace, 30)) * Math.max(1, number(waves, 1));
     const fallback = starters.length ? starters : spots;

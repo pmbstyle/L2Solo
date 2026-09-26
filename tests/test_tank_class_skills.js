@@ -200,6 +200,7 @@ assert.strictEqual(EffectStats.add(defender, 'pDefAdd'), 3600, 'Ultimate Defense
 assert.strictEqual(EffectStats.add(defender, 'mDefAdd'), 2700, 'Ultimate Defense level 2 should add sourced M.Def');
 assert.strictEqual(EffectRestrictions.canMove(defender), false, 'Ultimate Defense should make the caster immobile');
 assert.strictEqual(EffectRestrictions.canAttack(defender), true, 'Ultimate Defense should still allow attacks');
+assert.strictEqual(defender.automation.aborted, false, 'Ultimate Defense must not abort the active attack cycle');
 
 const taunter = actor();
 const taunted = actor({ id: 1000001 });

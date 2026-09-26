@@ -42,12 +42,15 @@ async function createMember(index, spot, dueAt) {
             locX, locY, locZ, hp, maxHp, mp, maxMp, partyId,
             statsJson, inventorySummary, updatedAt
         ) VALUES (?, ?, ?, ?, 1000, 100, 500, ?, ?, ?, 'hunting', 'cold',
-            ?, ?, ?, ?, ?, ?, 300, 300, 120, 120, 'worker-party', ?, '{}', ?)`,
+            ?, ?, ?, ?, ?, ?, 300, 300, 120, 120, 'worker-party', ?, ?, ?)`,
         [Number(character.id), accountName, name, Math.max(8, Number(spot.minLevel || 8)),
             spot.region || spot.name, spot.region || spot.name, spot.id,
             dueAt - 60000, dueAt, dueAt - 60000,
             spot.center.locX, spot.center.locY, spot.center.locZ,
-            JSON.stringify({ classId: 0, role: index === 1 ? 'tank' : 'dps', transportFixture: 'x'.repeat(140000) }), dueAt]
+            JSON.stringify({ classId: 0, role: index === 1 ? 'tank' : 'dps', transportFixture: 'x'.repeat(140000) }),
+            // This fixture exercises combat transport, not an unarmed bot's
+            // legitimate departure to buy its first usable weapon.
+            JSON.stringify({ 1: { selfId: 1, amount: 1, equipped: true, equippedCount: 1, equippedSlots: [7], slot: 7 } }), dueAt]
     ]);
     return Number(character.id);
 }

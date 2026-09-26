@@ -517,9 +517,7 @@ class Automation extends SelectedModel {
         return true;
     }
 
-    abortAll(creature, { notifyClient = true } = {}) {
-        this.pickupGeneration = Number(this.pickupGeneration || 0) + 1;
-        this.pickupTargetId = null;
+    abortMovement(creature, { notifyClient = true } = {}) {
         this.clearPlayerAttackApproach();
         this.stopMoveInterpolation();
         const wasMoving = !!creature?.state?.inMotion?.() && !creature?.session?.pendingPathRequest;
@@ -571,6 +569,13 @@ class Automation extends SelectedModel {
                 creature
             );
         }
+    }
+
+    abortAll(creature, { notifyClient = true } = {}) {
+        this.pickupGeneration = Number(this.pickupGeneration || 0) + 1;
+        this.pickupTargetId = null;
+        this.abortMovement(creature, { notifyClient });
+        Timer.clear(this.timer.pickup);
     }
 }
 

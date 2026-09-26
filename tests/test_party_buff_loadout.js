@@ -157,5 +157,49 @@ try {
         assert(!Planner.desiredLoadout(party,[provider.actor]).selected.get(target.actor).has('resist_fire'),'retire resistance after leaving the encounter');
     } finally {Date.now=realNow;World.npc=oldNpc;World.fetchNpcsInRadius=oldRadius;}
     assert.strictEqual(Loadout.useful(leader.actor,skill(1191),{fire:true}),true);
+
+    // Raid preparation trades a few unused caster slots for substantially
+    // fewer native casts, while ordinary mixed-party slot policy stays intact.
+    const raidTank=member(6), raidHealer=member(43,[skill(1040,3),skill(1059,3)]),
+        raidProphet=member(17,[skill(1040,3),skill(1068,3)]),
+        raidOrc=member(52,[skill(1009,3),skill(1007,3)]),
+        raidDps=member(0), raidSinger=member(21,[skill(264)]), raidDancer=member(34,[skill(271)]);
+    const raidRows=[raidTank,raidHealer,raidProphet,raidOrc,raidDps,raidSinger,raidDancer];
+    const raidProviders=raidRows.map(r=>r.actor);
+    const Parties=invoke('GameServer/Bot/Population/BackgroundPartyState'),findParty=Parties.find;
+    raidTank.actor.session.hotBackgroundPartyId='buff-test-raid';
+    try {
+        Parties.find=id=>id==='buff-test-raid'?{stats:{objective:{sourceKind:'raid'}}}:findParty.call(Parties,id);
+        const raidLoadout=Planner.desiredLoadout(raidRows,raidProviders,{});
+        assert(raidLoadout.selected.get(raidTank.actor).has('chant_of_battle'),
+            'prefer a same-strength group chant over many individual Might casts during a raid');
+        assert(raidLoadout.selected.get(raidTank.actor).has('chant_of_shielding'));
+        for(const r of raidRows) {
+            assert(raidLoadout.selected.get(r.actor).size<=20);
+            assert(raidLoadout.selected.get(r.actor).has('song_of_earth'));
+            assert(raidLoadout.selected.get(r.actor).has('dance_of_warrior'));
+        }
+        let raidCasts=0,healerCasts=0;
+        for(;raidCasts<30;raidCasts++) {
+            const action=Planner.nextPartyAction(raidRows,raidProviders,{partyMusicLast:true});
+            if(!action)break;
+            if(action.provider===raidHealer.actor) {
+                healerCasts++;
+                assert.equal(action.skill.fetchSelfId(),1059,'healer only supplies its unique Empower, not shared Shield');
+            }
+            const semantic=action.skill.fetchSemantic();
+            const recipients=action.skill.fetchTargetKind()==='party'?raidRows.map(r=>r.actor):[action.target];
+            for(const recipient of recipients)Effects.apply(recipient,{...semantic,key:semantic.effect,
+                id:action.skill.fetchSelfId(),level:action.skill.fetchLevel(),type:'buff',durationMs:action.skill.fetchBuffTime()});
+            Planner.reconcileLoadout(raidRows,raidProviders);
+        }
+        assert(raidCasts<15,'mass buffs must converge with fewer casts than two single-target buffs per member');
+        assert(healerCasts>0,'the healer still supplies useful unique buffs');
+        assert.equal(Planner.hasPendingAction(raidRows,raidProviders),false,
+            'readiness must use the same raid loadout as casting, not wait for replaced single buffs');
+        assert(Effects.list(raidTank.actor).some(e=>e.key==='chant_of_battle'),
+            'loadout maintenance must not strip the selected raid chant');
+        console.log(`Raid group-buff preparation converged in ${raidCasts} casts (${healerCasts} unique healer casts)`);
+    } finally {Parties.find=findParty;}
     console.log(`Party buff loadout: mixed roles, equipment, encounter protection, stable allocation, passive slots and ${casts} casts converged`);
 } finally {Ticker.refreshEffects=originalRefresh;}

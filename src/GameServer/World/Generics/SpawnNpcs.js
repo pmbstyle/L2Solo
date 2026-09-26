@@ -34,6 +34,7 @@ function notifyNearby(world, npc, response = ServerResponse) {
 function createNpc(world, npc, coords, spawnDefinition = null) {
     const instance = new Npc(world.npc.nextId++, { ...utils.crushOb(npc), ...coords });
     instance.spawnDefinition = spawnDefinition;
+    if (npc.template?.raidBoss === true) instance.raidInstanceId = `${Date.now()}:${instance.fetchId()}`;
     NpcAggro.armSpawnGrace(instance);
     world.npc.spawns.push(instance);
     return instance;
@@ -292,4 +293,9 @@ module.exports.respawnDelayMs = function respawnDelayMs(spawn, random = Math.ran
     const seconds = Math.max(0, Number(spawn?.respawn) || 0);
     const bias = Math.max(0, Number(spawn?.bias) || 0);
     return Math.round((seconds - bias + (random() * bias * 2)) * 1000);
+};
+module.exports.respawnDelayForDefinitionMs = function respawnDelayForDefinitionMs(definition, random = Math.random) {
+    return isRaidBossDefinition(definition)
+        ? require('../../RaidBoss/RespawnPolicy').RESPAWN_DELAY_MS
+        : module.exports.respawnDelayMs(definition?.spawn, random);
 };

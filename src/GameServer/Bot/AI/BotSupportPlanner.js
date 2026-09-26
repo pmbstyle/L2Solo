@@ -250,8 +250,19 @@ function situationalBuffUseful(effect, context = {}) {
     return false;
 }
 
-function createPlanningContext() {
+function raidBuffPreference(members) {
+    return members.some(({ actor }) => {
+        const id = actor?.session?.hotBackgroundPartyId;
+        if (!id) return false;
+        const objective = invoke('GameServer/Bot/Population/BackgroundPartyState').find(id)?.stats?.objective;
+        return objective?.sourceKind === 'raid' || objective?.raidBoss === true;
+    });
+}
+
+function createPlanningContext(members = [], options = {}) {
     return {
+        preferGroupBuffs: options.preferGroupBuffs ?? raidBuffPreference(members),
+        allowAttackInterrupt: options.allowAttackInterrupt === true,
         effects: new Map(),
         capacity: new Map(),
         providerSkills: new Map(),
@@ -509,7 +520,8 @@ function canStartSupportCast(action, planning = null) {
         !planningEffects(actor, planning).some((effect) => (
             effect.type === 'debuff' && (effect.key === 'silence' || effect.category === 'silence')
         )) &&
-        !isBusy(actor);
+        (!isBusy(actor) || planning?.allowAttackInterrupt === true
+            && !actor?.state?.fetchCasts?.() && !actor?.state?.fetchTowards?.());
 }
 
 function actorOrder(actor) {
@@ -551,13 +563,29 @@ function actionCompare(a, b) {
     const strongerFirst = Number(b.skill.fetchLevel?.() || 1) - Number(a.skill.fetchLevel?.() || 1);
     if (strongerFirst) return strongerFirst;
 
+    // Equivalent support should spend the dedicated buffer's MP before the
+    // healer's reserve. Unique/stronger healer buffs remain eligible.
+    const preserveHealer = Number(BotRoles.inferRole(a.provider) === 'healer')
+        - Number(BotRoles.inferRole(b.provider) === 'healer');
+    if (preserveHealer) return preserveHealer;
+
     const moreManaFirst = Number(b.provider.fetchMp?.() || 0) - Number(a.provider.fetchMp?.() || 0);
     if (moreManaFirst) return moreManaFirst;
 
     return actorOrder(a.provider) - actorOrder(b.provider);
 }
 
-function allActions(members, providers, respectReservations = true, planning = createPlanningContext()) {
+function raidPreparationActionCompare(a, b) {
+    // Songs and dances last only two minutes.  On a full raid roster they can
+    // expire while single-target buffs are still being distributed, causing
+    // preparation to restart from the first song forever.  Finish the long
+    // individual package first, then apply party music immediately before the
+    // pull.
+    const musicLast = Number(isPartyMusic(a.skill)) - Number(isPartyMusic(b.skill));
+    return musicLast || actionCompare(a, b);
+}
+
+function allActions(members, providers, respectReservations = true, planning = createPlanningContext(members)) {
     const context = cachedEncounterContext(members);
     const loadout = desiredLoadout(members,providers,context,planning);
     providers.forEach((provider) => {
@@ -585,8 +613,9 @@ function allActions(members, providers, respectReservations = true, planning = c
             }))));
 }
 
-function desiredLoadout(members,providers,context=cachedEncounterContext(members),planning=createPlanningContext()) {
+function desiredLoadout(members,providers,context=cachedEncounterContext(members),planning=createPlanningContext(members)) {
     return BuffLoadout.build(members,providers,context,{
+        preferGroupBuffs: planning.preferGroupBuffs,
         skills:actor=>supportSkills(actor).filter(skill=>{
             const semantic=skill.fetchSemantic(),required=Number(semantic.requires?.weaponsAllowed)||0;
             return !semantic.notUsedInC4 && (!required || (required & WeaponMask.weaponMaskFor(actor))!==0);
@@ -766,23 +795,52 @@ function cancelSupportCast(session, provider) {
     return !!(active || pending);
 }
 
-function hasPendingAction(members, providers = members.map((member) => member.actor).filter(Boolean)) {
+function missingRecoveryFamilies(target) {
+    const active = new Set(EffectStore.list(target).filter(effect => effect.type === 'buff')
+        .map(effect => BuffLoadout.family(effect.key)));
+    return BuffLoadout.raidRecoveryFamilies(target).filter(family => !active.has(family));
+}
+
+function actionAllowed(action, options = {}) {
+    if (options.musicOnly && !isPartyMusic(action.skill)) return false;
+    if (!options.raidRecovery) return true;
+    const family = BuffLoadout.family(action.skill.fetchSemantic?.()?.effect);
+    return missingRecoveryFamilies(action.target).includes(family)
+        && Intent.inRange(action.provider, action.target, action.skill);
+}
+
+function hasPendingAction(members, providers = members.map((member) => member.actor).filter(Boolean), options = {}) {
     // A reservation only prevents two casters from duplicating the same cast;
     // it does not mean the buff has landed.  Pulling must remain paused until
     // the structured effect is actually present on the recipient.
-    const hasActiveReservation = members.some((member) => Object.values(member?.actor?.supportReservations || {})
-        .some((reservation) => Number(reservation?.expiresAt || 0) > Date.now()));
+    const hasActiveReservation = members.some((member) => Object.entries(member?.actor?.supportReservations || {})
+        .some(([key, reservation]) => Number(reservation?.expiresAt || 0) > Date.now()
+            && (!options.raidRecovery || key.split('|').some(part =>
+                missingRecoveryFamilies(member.actor).includes(BuffLoadout.family(part))))));
     const hasQueuedCast = providers.some((provider) => (
         Number(provider?.session?.pendingSupportCast?.expiresAt || 0) > Date.now()
+        && (!options.raidRecovery || members.some(member => {
+            const pending = provider.session.pendingSupportCast;
+            const skill = supportSkills(provider).find(skill => Number(skill.fetchSelfId()) === Number(pending.skillId));
+            return Number(member.actor.fetchId()) === Number(pending.targetId) && skill
+                && actionAllowed({ provider, target: member.actor, skill }, options);
+        }))
     ));
-    const planning = createPlanningContext();
+    const planning = createPlanningContext(members, options);
     return hasActiveReservation || hasQueuedCast || allActions(members, providers, false, planning)
-        .some((action) => canStartSupportCast(action, planning));
+        .filter(action => actionAllowed(action, options))
+        .some(action => options.raidRecovery
+            // A brief cast may occupy the provider; allow the bounded raid
+            // recovery window to wait, but never wait for a remote provider.
+            ? Intent.inRange(action.provider, action.target, action.skill)
+                && Number(action.provider.fetchMp?.() || 0) / Math.max(1, Number(action.provider.fetchMaxMp?.() || 1)) >= MIN_SUPPORT_MP_RATIO
+            : canStartSupportCast(action, planning));
 }
 
-function nextAction(caster, members, providers = members.map((member) => member.actor).filter(Boolean)) {
+function nextAction(caster, members, providers = members.map((member) => member.actor).filter(Boolean), options = {}) {
     const cacheOwner = partyActionCacheOwner(members);
-    const cacheKey = partyActionCacheKey(members, providers);
+    const preferGroupBuffs = options.preferGroupBuffs ?? raidBuffPreference(members);
+    const cacheKey = `${partyActionCacheKey(members, providers)}|${options.partyMusicLast === true ? 'music_last' : 'default'}|${preferGroupBuffs}|${options.musicOnly === true}|${options.allowAttackInterrupt === true}|${options.raidRecovery === true}`;
     const now = Date.now();
     const cached = cacheOwner && partyActionCache.get(cacheOwner);
     let next;
@@ -796,10 +854,11 @@ function nextAction(caster, members, providers = members.map((member) => member.
         next = cached.action;
         reused = true;
     } else {
-        const planning = createPlanningContext();
+        const planning = createPlanningContext(members, { ...options, preferGroupBuffs });
         next = allActions(members, providers, true, planning)
+            .filter(action => actionAllowed(action, options))
             .filter((action) => canStartSupportCast(action, planning))
-            .sort(actionCompare)[0] || null;
+            .sort(options.partyMusicLast === true ? raidPreparationActionCompare : actionCompare)[0] || null;
         if (cacheOwner) {
             partyActionCache.set(cacheOwner, {
                 key: cacheKey,
@@ -818,13 +877,14 @@ function nextAction(caster, members, providers = members.map((member) => member.
     // stale cast.
     if (reused && (
         next.target?.state?.fetchDead?.() ||
-        !canStartSupportCast(next) ||
+        !actionAllowed(next, options) ||
+        !canStartSupportCast(next, createPlanningContext(members, options)) ||
         !needsSkill(next.target, next.skill) ||
         !canPlanSupportAction(next.target, next.provider, next.skill, members) ||
         isReserved(next.target, next.skill)
     )) {
         partyActionCache.delete(cacheOwner);
-        return nextAction(caster, members, providers);
+        return nextAction(caster, members, providers, options);
     }
     return next;
 }
@@ -862,7 +922,7 @@ module.exports = {
     finishSupportCast,
     cancelSupportCast,
     nextAction,
-    nextPartyAction: (members, providers) => nextAction(null, members, providers),
+    nextPartyAction: (members, providers, options) => nextAction(null, members, providers, options),
     canPlanSupportAction,
     rebuffRequest
 };

@@ -6,6 +6,7 @@ const FRIENDLY_HEAL_TYPES = new Set([
     C4SkillRules.HEAL_PERCENT,
     C4SkillRules.HEAL_STATIC,
     C4SkillRules.HEAL_HOT,
+    C4SkillRules.HOT,
     C4SkillRules.HEAL_CLEANSE
 ]);
 const FRIENDLY_MANA_TYPES = new Set([
@@ -24,7 +25,7 @@ function learnedSkill(actor, selfId) {
 function healSkills(actor) {
     return activeSkills(actor)
         .filter((skill) => FRIENDLY_HEAL_TYPES.has(skill.fetchSkillType?.()))
-        .filter((skill) => ['friendly', 'party'].includes(skill.fetchTargetKind?.()));
+        .filter((skill) => ['friendly', 'party', 'ally'].includes(skill.fetchTargetKind?.()));
 }
 
 function healName(skill) {

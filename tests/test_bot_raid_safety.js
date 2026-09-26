@@ -4,6 +4,7 @@ require('../src/Global');
 
 const World = invoke('GameServer/World/World');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
+const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const BotAI = invoke('GameServer/Bot/BotAI');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyClassTactics = invoke('GameServer/Bot/AI/PartyClassTactics');
@@ -73,6 +74,13 @@ const minion = actor(6002, {
     minionBossObjectId: boss.fetchId(),
     locX: 120
 });
+const secondMinion = actor(6008, {
+    selfId: 10003,
+    name: 'second raid minion',
+    attackable: true,
+    minionBossObjectId: boss.fetchId(),
+    locX: 130
+});
 const staleBoss = actor(6004, {
     selfId: 10004,
     name: 'stale raid boss',
@@ -133,6 +141,27 @@ assert.strictEqual(BotHuntingTargetPolicy.canHunt({ clan: { clanName: 'ant_clan'
 World.user = { sessions: [leaderSession, companionSession] };
 World.npc = { spawns: [boss, minion, regular, siegeGuard, crumaInterior, crumaSurface], grid: {} };
 World.fetchNpcsInRadius = () => [boss, minion, regular, siegeGuard];
+
+const originalPartyFind = BackgroundPartyState.find;
+const autonomousRaidSession = {
+    actor: companion,
+    hotBackgroundPartyId: 'autonomous-raid',
+    plan: 'hunting'
+};
+BackgroundPartyState.find = () => ({
+    partyId: 'autonomous-raid',
+    status: 'hot',
+    stats: {
+        objective: { sourceKind: 'raid', raidBossTemplateId: boss.fetchSelfId() },
+        raidEncounter: { status: 'active' }
+    }
+});
+assert.strictEqual(BotRaidSafety.canEngageBotClanRaid(autonomousRaidSession, boss), true,
+    'an active autonomous clan raid must authorize its own boss');
+assert.strictEqual(BotRaidSafety.retreat(autonomousRaidSession, companion, boss), false,
+    'generic raid safety must not make a clan raid member flee from its authorized encounter');
+assert.strictEqual(autonomousRaidSession.plan, 'hunting');
+BackgroundPartyState.find = originalPartyFind;
 
 const threat = PartyAwareness.findThreatTargetingParty(leaderSession);
 assert.strictEqual(threat.type, 'raid', 'a raid entity targeting the party must be reported as an escape threat');
@@ -243,7 +272,7 @@ leader.state.fetchCombats = () => true;
 engagement = BotRaidSafety.syncPlayerPartyRaid(leaderSession, 1001);
 assert.strictEqual(engagement.phase, 'combat', 'a player hit must release the party into standard raid combat');
 staleBoss.model = { raidBoss: true, raidAttackers: new Set() };
-World.npc.spawns = [boss, minion, regular, staleBoss];
+World.npc.spawns = [boss, minion, secondMinion, regular, staleBoss];
 leaderSession.partyRaidEngagement = {
     bossId: staleBoss.fetchId(),
     bossTemplateId: staleBoss.fetchSelfId(),
@@ -297,6 +326,38 @@ mage.skillset = { fetchSkill: (id) => Number(id) === 1069 ? sleepSkill : null };
 const control = PartyClassTactics.supportCrowdControl(mage, [boss, minion], { primaryTargetId: boss.fetchId() });
 assert.strictEqual(control?.target, minion, 'a mage must use learned single-target sleep on a raid minion add');
 assert.strictEqual(control?.skill, sleepSkill, 'raid add control must use the mage actual learned skill');
+const autonomousOwner = {};
+let autonomousPlan = BotRaidSafety.botClanRaidCombatPlan(autonomousOwner, boss);
+assert.strictEqual(autonomousPlan.focusMinion, minion,
+    'an autonomous raid must deterministically keep one minion as the shared damage focus');
+EffectStore.apply(minion, { key: 'sleep', id: 1069, category: 'sleep', type: 'debuff', duration: 30000 });
+autonomousPlan = BotRaidSafety.botClanRaidCombatPlan(autonomousOwner, boss);
+assert.strictEqual(autonomousPlan.focusMinion, secondMinion,
+    'hard-controlling the old focus must move damage to another add instead of waking it');
+assert.deepStrictEqual(autonomousPlan.controlTargets, [minion],
+    'the sleeping add must remain outside the party focus list');
+EffectStore.remove(minion, 'sleep');
+
+const weaknessSkill = {
+    fetchSelfId: () => 1160,
+    fetchPassive: () => false,
+    fetchConsumedMp: () => 20,
+    fetchConsumedHp: () => 0,
+    fetchTargetKind: () => 'enemy',
+    fetchSkillType: () => 'effect',
+    fetchDistance: () => 600,
+    fetchLevel: () => 1,
+    fetchSemantic: () => ({ effect: 'weakness', effectType: 'debuff', skillType: 'effect', target: 'enemy' })
+};
+const controlSkillset = mage.skillset;
+mage.skillset = { skills: [weaknessSkill], fetchSkills: () => [weaknessSkill], fetchSkill: () => null };
+const weakness = PartyClassTactics.raidDebuffAction(mage, [boss], { primaryTargetId: boss.fetchId() });
+assert.strictEqual(weakness?.skill, weaknessSkill, 'a learned single-target debuff must be usable on the raid boss');
+assert.strictEqual(PartyClassTactics.raidDebuffAction(mage, [boss], {
+    primaryTargetId: boss.fetchId(),
+    canAttempt: () => false
+}), null, 'the shared retry claim must suppress repeated resisted debuff attempts');
+mage.skillset = controlSkillset;
 assert.strictEqual(BotRaidSafety.hasControlledRaidMinion(boss), false,
     'ordinary raid combat must keep the standard area-damage policy before an add is controlled');
 EffectStore.apply(minion, { key: 'root', id: 1208, type: 'debuff', durationMs: 10000, rooted: true });

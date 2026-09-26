@@ -11,6 +11,10 @@ const World = invoke('GameServer/World/World');
     DataCache.init();
     RaidBossState.resetForTests();
 
+    assert.strictEqual(Observer.loopbackRequest({ socket: { remoteAddress: '127.0.0.1' } }), true);
+    assert.strictEqual(Observer.loopbackRequest({ socket: { remoteAddress: '::ffff:127.0.0.1' } }), true);
+    assert.strictEqual(Observer.loopbackRequest({ socket: { remoteAddress: '100.92.15.42' } }), false);
+
     const catalog = Observer.raidBossCatalog();
     assert.strictEqual(catalog.length, 179, 'observer must expose all ordinary C4 raid bosses');
 
@@ -36,6 +40,8 @@ const World = invoke('GameServer/World/World');
     assert.deepStrictEqual(live.loc, definition.spawnLoc);
 
     World.npc = { spawns: [] };
+    assert.strictEqual(definition.respawnMs, 5 * 60 * 60 * 1000,
+        'Observer must report the effective real-time raid respawn, not the original datapack window');
     await RaidBossState.markDefeated(definition.id, now + 90_000);
     snapshot = Observer.raidBossSnapshot(now);
     const respawning = snapshot.bosses.find((boss) => boss.id === definition.id);

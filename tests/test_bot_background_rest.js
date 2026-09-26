@@ -44,6 +44,21 @@ const ready = BackgroundResolver.resolveSolo({
 assert.strictEqual(ready.patch.activity, 'hunting', 'a recovered cold bot should return to hunting after its recovery delay');
 assert.strictEqual(ready.patch.stats.restUntil, null, 'completed recovery must clear its persisted deadline');
 
+const readyBeforeEstimate = BackgroundResolver.resolveSolo({
+    state: {
+        ...state,
+        vitals: { hp: 100000, maxHp: 100000, mp: 100000, maxMp: 100000 },
+        stats: { ...state.stats, classId: 11, role: 'mage', restUntil: now + 8000 }
+    },
+    spot: { id: 'execution_ground' },
+    elapsedMs: 3000,
+    timestamp: now
+});
+assert.strictEqual(readyBeforeEstimate.patch.activity, 'hunting',
+    'full vitals must end recovery even when its estimated deadline is still in the future');
+assert.strictEqual(readyBeforeEstimate.patch.stats.restUntil, null,
+    'waking before the estimate must clear the deadline instead of moving it forward');
+
 const lowManaDps = {
     ...state,
     vitals: { hp: 1200, maxHp: 1200, mp: 0, maxMp: 650 },

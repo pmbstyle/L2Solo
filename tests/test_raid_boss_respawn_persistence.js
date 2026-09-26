@@ -48,6 +48,31 @@ async function main() {
 
     assert.strictEqual(await RaidBossState.markSpawned(10019), true);
     assert.strictEqual(RaidBossState.get(10019), null);
+
+    const fiveHours = 5 * 60 * 60 * 1000;
+    const killedAt = Date.now() - 2 * 60 * 60 * 1000;
+    const expiredKill = Date.now() - 6 * 60 * 60 * 1000;
+    await Database.execute(['DELETE FROM schema_migrations WHERE version = 46', []]);
+    for (const [npcId, death] of [[10019, killedAt], [10020, expiredKill]]) {
+        await Database.execute([`INSERT INTO raid_boss_state(npcId, respawnTime, hp, mp, updatedAt)
+            VALUES (?, ?, 0, 0, ?)`, [npcId, death + 36 * 60 * 60 * 1000, death]]);
+    }
+    await Database.close(); Database.init();
+    RaidBossState.resetForTests(); await RaidBossState.load();
+    assert.strictEqual(RaidBossState.get(10019).respawnTime, killedAt + fiveHours);
+    assert.strictEqual(RaidBossState.get(10019).updatedAt, killedAt, 'migration preserves the original death timestamp');
+    assert.strictEqual(RaidBossState.isDelayed(10020), false, 'five hours elapsed while offline counts toward respawn');
+    assert.strictEqual(RaidBossState.isDelayed(10019, killedAt + fiveHours - 1), true);
+    assert.strictEqual(RaidBossState.isDelayed(10019, killedAt + fiveHours), false);
+    await Database.close(); Database.init();
+    RaidBossState.resetForTests(); await RaidBossState.load();
+    assert.strictEqual(RaidBossState.get(10019).respawnTime, killedAt + fiveHours,
+        'another restart must not start a fresh five-hour countdown');
+    assert.strictEqual(SpawnNpcs.respawnDelayForDefinitionMs(definition), fiveHours);
+    const profiles = invoke('GameServer/RaidBoss/RaidBossSourceCatalog').all();
+    assert(profiles.length > 100);
+    assert(profiles.every(profile => profile.respawnSeconds === 18000 && profile.respawnBiasSeconds === 0),
+        'bot planning metadata must reflect the actual fixed respawn window');
     await Database.close();
     console.log('Raid boss respawn persistence ok');
 }

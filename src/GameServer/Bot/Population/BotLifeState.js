@@ -2904,6 +2904,7 @@ const BotLifeState = {
 
     leaveParty(state, reason = 'party_break', options = {}) {
         if (!state?.characterId) return Promise.resolve(null);
+        if (require('./RaidSoloBoundary').stale(state)) state = require('./RaidSoloBoundary').clear(state);
         const timestamp = now();
         const partyTravel = state.stats?.travel?.reason === 'party_spot_replan';
         // `grouped` and party-route travel are not valid solo lifecycle

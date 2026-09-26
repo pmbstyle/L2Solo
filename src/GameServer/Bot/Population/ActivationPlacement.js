@@ -74,9 +74,14 @@ function resolve(state, options = {}) {
             }
         }
     }
+    if (options.preferAnchor === true) {
+        const placement = acceptable(anchor);
+        if (placement) return placement;
+    }
+    const placementRadius = Math.max(0, Number(options.placementRadius ?? Config.activationPlacementRadius) || 0);
     for (let i = 0; i < Config.activationPlacementAttempts; i++) {
         const angle = Math.random() * Math.PI * 2;
-        const radius = Math.random() * Config.activationPlacementRadius;
+        const radius = Math.random() * placementRadius;
         const locX = Math.round(anchor.locX + Math.cos(angle) * radius);
         const locY = Math.round(anchor.locY + Math.sin(angle) * radius);
         const placement = acceptable({ locX, locY, locZ: Geo.getHeight(locX, locY, anchor.locZ) });

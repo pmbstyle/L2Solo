@@ -31,8 +31,9 @@ try {
     const healer = member(2000101, [resurrection]);
     const fallen = member(2000102);
     const group = [leader, healer, fallen];
+    const stats = {};
     patch(Parties, 'find', id => id === 'revival' ? { partyId: id, status: 'hot', leaderId: 2000100,
-        memberIds: group.map(s => s.actor.fetchId()), stats: {} } : null);
+        memberIds: group.map(s => s.actor.fetchId()), stats } : null);
     patch(World, 'user', { sessions: group });
     patch(World, 'npc', { spawns: [] });
     patch(World, 'fetchNpcsInRadius', () => []);
@@ -59,6 +60,8 @@ try {
     // Run the actual resurrection effect and stand-up callback, rather than
     // treating a skill selection as evidence that the target revived.
     const nativeTimers = [];
+    fallen.hotRaidCasualtyAt = now;
+    fallen.hotRaidCasualtyRole = 'damage';
     patch(global, 'setTimeout', fn => { nativeTimers.push(fn); return 0; });
     const result = Effects.execute(leader, leader.actor, fallen.actor, resurrection);
     assert.strictEqual(result.resurrected, true);
@@ -66,6 +69,8 @@ try {
     nativeTimers.forEach(fn => fn());
     assert.strictEqual(fallen.actor.isDead(), false);
     assert.strictEqual(fallen.deathTimerStart, undefined);
+    assert.strictEqual(fallen.hotRaidCasualtyAt, undefined, 'a real resurrection returns a tolerated casualty to the raid');
+    assert.strictEqual(fallen.hotRaidCasualtyRole, undefined);
     assert.strictEqual(fallen.actor.x, 0, 'native resurrection keeps the corpse location');
     saved.pop()();
     leader.actor.state.setCasts(false);
@@ -95,5 +100,44 @@ try {
     assert.strictEqual(Revival.shouldTownRespawn(leader, fallen, now + 90000), false, 'combat time does not consume the safe resurrection budget');
     leader.actor.state.setDead(true); healer.actor.state.setDead(true);
     assert.strictEqual(Revival.shouldTownRespawn(leader, fallen, now), true, 'a wipe releases the group for town recovery');
+
+    // An ongoing autonomous raid can rescue a DPS without stopping everyone.
+    stats.objective = { sourceKind: 'raid' };
+    leader.raidPreparationComplete = true;
+    leader.actor.state.setDead(false); healer.actor.state.setDead(false);
+    leader.actor.fetchClassId = () => 43;
+    healer.actor.fetchClassId = () => 17;
+    leader.actor.skillset.skills = [resurrection];
+    healer.actor.skillset.skills = [resurrection];
+    fallen.hotRaidCasualtyAt = now;
+    fallen.deathTimerStart = now - 13000;
+    fallen.partyReviveCombatPausedMs = undefined;
+    leader.partyRevivalAttempt = null;
+    patch(invoke('GameServer/Bot/AI/PartyCombatState'), 'isActive', () => true);
+    let attacked = false;
+    patch(invoke('GameServer/Bot/AI/PartyAwareness'), 'underDirectNpcAttack', () => attacked);
+    assert.strictEqual(Revival.tick(leader, leader, Generics).handled, false, 'the healer yields resurrection to a non-healer');
+    tick(healer);
+    assert.strictEqual(healer.lastDecision.action, 'raid_resurrect', 'hot raid routing includes tolerated casualties');
+    assert.strictEqual(requests.at(-1).s, healer, 'the non-healer owns the single rescue cast');
+    leader.partyRevivalAttempt = null; healer.actor.state.setCasts(false);
+    fallen.hotRaidCasualtyAt = undefined;
+    assert.strictEqual(Revival.tick(healer, leader, Generics).handled, false, 'combat rescue cannot override critical-death classification');
+    fallen.hotRaidCasualtyAt = now;
+    attacked = true;
+    assert.strictEqual(Revival.tick(healer, leader, Generics).handled, false, 'an attacked provider cannot start a long resurrection');
+    attacked = false;
+    healer.actor.mp = 0;
+    leader.actor.fetchHp = () => 40;
+    assert.strictEqual(Revival.tick(leader, leader, Generics).handled, false, 'low-HP healer keeps healing duty');
+    leader.actor.fetchHp = () => 100;
+    assert.strictEqual(Revival.tick(leader, leader, Generics).handled, true, 'a healthy healer is the fallback when no non-healer can cast');
+    leader.partyRevivalAttempt = null; leader.actor.state.setCasts(false);
+    assert.strictEqual(Revival.shouldTownRespawn(leader, fallen, now + 61000), true, 'combat resurrection waiting remains bounded');
+    danger = true;
+    assert.strictEqual(Revival.combatResurrectionAllowed(leader), false, 'raid objectives do not bypass PvP safety');
+    danger = false;
+    stats.raidEncounter = { status: 'failed' };
+    assert.strictEqual(Revival.tick(leader, leader, Generics).handled, false, 'a failed raid cannot restart resurrection in combat');
     console.log('Hot background party resurrection checks passed');
 } finally { saved.reverse().forEach(fn => fn()); }

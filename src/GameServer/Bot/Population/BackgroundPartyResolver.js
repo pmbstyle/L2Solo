@@ -7,8 +7,11 @@ const PartyAffinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity'
 const PartyLootAllocator = invoke('GameServer/Bot/Population/PartyLootAllocator');
 const PartyRewardMath = invoke('GameServer/Actor/PartyRewardMath');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const ClanRaidPolicy = invoke('GameServer/Clan/ClanRaidPolicy');
+const ColdRaidEncounter = require('./ColdRaidEncounter');
 
 const MAX_DROPS_PER_RESOLVE = 4;
+const RAID_RESOLVE_INTERVAL_MS = 15000;
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -120,12 +123,47 @@ const BackgroundPartyResolver = {
                 debug: { reason: 'missing_party_members_or_spot' }
             };
         }
+        const raidObjective = spot.raidBoss === true
+            && party.stats?.objective?.sourceKind === 'raid'
+            && Number(party.stats.objective.raidBossTemplateId || party.stats.objective.npcId)
+                === Number(spot.raidBossTemplateId);
+        const raidCombatActive = raidObjective
+            && party.stats?.raidEncounter?.status === 'active'
+            && !!party.stats.raidEncounter.encounter;
 
-        const revival = require('./ColdPartyRevival').resolve({ party, members, timestamp, episodeId, assessRelationship });
+        let raidSnapshot = raidObjective
+            ? ColdRaidEncounter.begin(party, spot, targetNpcId, timestamp) : null;
+        // A hot victory has already issued its rewards. Complete it before
+        // availability, resurrection, assembly, or preparation can reopen it.
+        const completed = party.stats?.raidEncounter?.status === 'defeated'
+            ? party.stats.raidEncounter : raidSnapshot;
+        if (raidObjective && completed?.status === 'defeated') {
+            return {
+                memberResults: members.map(state => ({ state, result: {
+                    patch: {}, events: [], memoryEvents: [],
+                    materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 30000
+                } })), events: [], nextResolveAt: null,
+                partyPatch: { status: 'dissolved', nextResolveAt: null, stats: {
+                    raidEncounter: completed, pveEncounter: null, restUntil: null,
+                    partyBreakReason: 'raid_defeated', dissolvedAt: timestamp, lastResolveAt: timestamp
+                } },
+                debug: { reason: 'raid_already_defeated', fights: 0, wins: 0,
+                    raidBossTemplateId: completed.bossTemplateId }
+            };
+        }
+
+        if (raidObjective && spot.raidWorldAvailable === false) {
+            return { memberResults: members.map(state => ({ state, result: { patch: {}, events: [],
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 1000 } })),
+                events: [], nextResolveAt: null, partyPatch: { status: 'dissolved',
+                    stats: { ...party.stats, partyBreakReason: 'raid_unavailable', dissolvedAt: timestamp } },
+                debug: { reason: 'raid_unavailable', fights: 0, wins: 0 } };
+        }
+        const revival = !raidCombatActive && require('./ColdPartyRevival').resolve({ party, members, timestamp, episodeId, assessRelationship });
         if (revival) return revival;
         // A cold PvP casualty holds the roster through the ordinary recovery
         // delay. Neither standing regeneration nor the next PvE fight revives it.
-        if (members.some(s => s.vitals.hp <= 0)) {
+        if (!raidCombatActive && members.some(s => s.vitals.hp <= 0)) {
             const memberResults = members.map(state => ({ state, result: state.vitals.hp <= 0
                 ? BackgroundResolver.resolveDeathRecovery(state, timestamp)
                 : { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 1000 } }));
@@ -144,7 +182,7 @@ const BackgroundPartyResolver = {
         // A party shares its hunting cadence.  If even one member is resting,
         // pause the whole group: otherwise the resolver keeps granting fights
         // and draining the exhausted member on every cold tick.
-        if (members.some((state) => state.activity === 'resting')) {
+        if (members.some((state) => state.activity === 'resting') && !raidCombatActive) {
             const partyRestUntil = Math.max(
                 Number(party.stats?.restUntil || 0),
                 ...members.map((state) => Number(state.stats?.restUntil || 0))
@@ -186,7 +224,7 @@ const BackgroundPartyResolver = {
                     result: {
                         ...result,
                         patch: { ...result.patch, activity: 'grouped' },
-                        nextResolveAt: timestamp + 45000
+                        nextResolveAt: timestamp + (raidObjective ? RAID_RESOLVE_INTERVAL_MS : 45000)
                     }
                 }));
 
@@ -203,7 +241,7 @@ const BackgroundPartyResolver = {
                         lastResolveAt: timestamp
                     }
                 },
-                nextResolveAt: resting ? nextRestUntil : timestamp + 45000,
+                nextResolveAt: resting ? nextRestUntil : timestamp + (raidObjective ? RAID_RESOLVE_INTERVAL_MS : 45000),
                 debug: {
                     activity: resting > 0 ? 'resting' : 'recovered',
                     fights: 0,
@@ -219,9 +257,15 @@ const BackgroundPartyResolver = {
             };
         }
 
+        const raid = raidObjective;
+        const raidComposition = raid ? ClanRaidPolicy.composition(members) : null;
         const understaffed = party.stats?.objective?.clanGoalKey
             && members.length < Math.max(2, Number(party.stats.objective.minPartySize) || 3);
-        if (understaffed || !require('./PartyHuntingAssembly').ready(party, members, spot)) {
+        const raidRosterIncomplete = raid && !raidComposition.ready;
+        const assemblyMembers = raidCombatActive
+            ? members.map((member) => ({ ...member, activity: 'grouped' }))
+            : members;
+        if (understaffed || raidRosterIncomplete || !require('./PartyHuntingAssembly').ready(party, assemblyMembers, spot)) {
             // No route may mean admission is temporarily unavailable. Do not
             // turn that into remote combat or rewrite a member's physical spot.
             const nextResolveAt = timestamp + 30000;
@@ -233,14 +277,71 @@ const BackgroundPartyResolver = {
                 events: [], nextResolveAt,
                 partyPatch: { stats: { lastResolveAt: timestamp,
                     assemblyWait: require('./PartyAssemblyRecovery').record(party, timestamp) } },
-                debug: { reason: understaffed ? 'clan_party_understaffed' : 'party_assembling', fights: 0, wins: 0, spotId: spot.id }
+                debug: {
+                    reason: understaffed ? 'clan_party_understaffed'
+                        : raidRosterIncomplete ? raidComposition.reason : 'party_assembling',
+                    fights: 0,
+                    wins: 0,
+                    spotId: spot.id
+                }
             };
         }
 
-        const fightBudget = estimateFightCount({ party, members, spot, elapsedMs });
+        if (raid && !raidCombatActive) {
+            const preparation = BackgroundResolver.prepareRaidParty(members, timestamp);
+            const previous = party.stats?.raidPreparation || {};
+            const firstPreparation = previous.status !== 'ready';
+            // Preparation is a real phase, not free work hidden inside the
+            // opening combat slice. Any cast, recovery need, or first ready
+            // assessment commits before the boss can act.
+            if (preparation.casts > 0 || preparation.needsRest || firstPreparation) {
+                const status = preparation.ready ? 'ready' : 'preparing';
+                return {
+                    memberResults: preparation.memberResults,
+                    events: [],
+                    partyPatch: { stats: {
+                        raidPreparation: {
+                            status,
+                            startedAt: Number(previous.startedAt || timestamp),
+                            updatedAt: timestamp,
+                            readyAt: preparation.ready ? timestamp : null,
+                            passes: Number(previous.passes || 0) + 1,
+                            buffCasts: Number(previous.buffCasts || 0) + preparation.buffCasts,
+                            musicCasts: Number(previous.musicCasts || 0) + preparation.musicCasts,
+                            summonCasts: Number(previous.summonCasts || 0) + preparation.summonCasts,
+                            chargeCasts: Number(previous.chargeCasts || 0) + preparation.chargeCasts,
+                            remainingBuffs: preparation.remainingBuffs,
+                            remainingMusic: preparation.remainingMusic
+                        },
+                        raidEncounter: raidSnapshot,
+                        assemblyWait: null,
+                        restUntil: preparation.restUntil,
+                        lastResolveAt: timestamp
+                    } },
+                    nextResolveAt: preparation.nextResolveAt,
+                    debug: {
+                        reason: preparation.ready ? 'raid_prepared' : 'raid_preparing',
+                        fights: 0,
+                        wins: 0,
+                        raidBossTemplateId: raidSnapshot.bossTemplateId,
+                        buffCasts: preparation.buffCasts,
+                        musicUses: preparation.musicCasts,
+                        summonUses: preparation.summonCasts,
+                        chargeCasts: preparation.chargeCasts
+                    }
+                };
+            }
+        }
+
+        const alreadyFailed = raid && members.filter(member => member.vitals.hp <= 0).some((member, index) =>
+            require('./RaidCasualtyPolicy').disposition(member, { previousDamageCasualties: index,
+                remainingHpRatio: Number(raidSnapshot?.hp) / Math.max(1, Number(raidSnapshot?.maxHp || 1)) }) !== 'continue');
+        const fightBudget = raid ? Number(!alreadyFailed) : estimateFightCount({ party, members, spot, elapsedMs });
         let fights = 0;
         let attemptedFights = 0;
-        let pending = PveEncounter.read(party.stats?.pveEncounter, PveEncounter.key(members, spot, targetNpcId, party.partyId), timestamp);
+        let pending = raid
+            ? raidSnapshot?.encounter || null
+            : PveEncounter.read(party.stats?.pveEncounter, PveEncounter.key(members, spot, targetNpcId, party.partyId), timestamp);
         let wins = 0;
         const overhitContexts = [];
         let losses = 0;
@@ -259,13 +360,24 @@ const BackgroundPartyResolver = {
             vitals: pending ? { ...state.vitals } : BackgroundResolver.applyStandingRegen(state, state.vitals, elapsedMs, timestamp)
         }));
         for (let i = 0; i < fightBudget; i++) {
-            const encounter = BackgroundResolver.resolvePartyFight({ members: combatMembers, spot, targetNpcId, rng, timestamp, encounter: pending, partyId: party.partyId });
+            const encounter = BackgroundResolver.resolvePartyFight({
+                members: combatMembers,
+                spot,
+                targetNpcId,
+                rng,
+                timestamp,
+                encounter: pending,
+                partyId: party.partyId,
+                encounterKey: raidSnapshot?.key || null,
+                sharedEncounter: raid
+            });
             if (encounter.avoided) {
                 avoidedReason = encounter.reason;
                 break;
             }
             attemptedFights += 1;
             pending = encounter.encounter || null;
+            if (raid) raidSnapshot = ColdRaidEncounter.record(party, raidSnapshot, encounter, timestamp);
             if (encounter.won || !pending) fights += 1;
             for (const help of encounter.help || []) combatHelp.set(`${help.sourceId}:${help.targetId}:${help.type}`, help);
             combatActions += Number(encounter.debug?.actions || 0);
@@ -323,9 +435,10 @@ const BackgroundPartyResolver = {
 
             if (hp <= 0) {
                 activity = 'dead';
-                deathCount += 1;
-                deaths += 1;
-                events.push({
+                const newlyDead = Number(state.vitals?.hp) > 0;
+                deathCount += Number(newlyDead);
+                deaths += Number(newlyDead);
+                if (newlyDead) events.push({
                     characterId: state.characterId,
                     type: 'death',
                     summary: `${state.name || 'Bot'} died while grouped near ${spot.name}`,
@@ -333,7 +446,7 @@ const BackgroundPartyResolver = {
                     meta: { partyId: party.partyId, spotId: spot.id, fights, wins }
                 });
             } else {
-                if (BackgroundResolver.needsRest(state, vitals, {
+                if (!raid && BackgroundResolver.needsRest(state, vitals, {
                     party: true,
                     hpThreshold: 0.3,
                     mpThreshold: 0.18
@@ -358,6 +471,7 @@ const BackgroundPartyResolver = {
                         },
                         stats: {
                             ...(resolved.stats || {}),
+                            ...(raid ? { restUntil: null } : {}),
                             ...(avoidedReason ? { lastReason: avoidedReason } : {}),
                             coldCombat: hp <= 0 ? {
                                 ...(resolved.stats?.coldCombat || {}),
@@ -371,7 +485,11 @@ const BackgroundPartyResolver = {
                     events: [],
                     memoryEvents: memoryEvents.filter(event => event.sourceId === Number(state.characterId)),
                     materialize: { exp, sp, adena, items },
-                    nextResolveAt: timestamp + 45000 + Math.round(rng() * 90000),
+                    // One cold raid slice represents fifteen seconds of real
+                    // combat. Keep an active boss on that cadence so a remote
+                    // raid does not spend most of its lifetime sleeping
+                    // between otherwise continuous combat rounds.
+                    nextResolveAt: timestamp + (raid ? RAID_RESOLVE_INTERVAL_MS : 45000 + Math.round(rng() * 90000)),
                     debug: {
                         partyId: party.partyId,
                         fights,
@@ -475,16 +593,49 @@ const BackgroundPartyResolver = {
                 }
             });
         });
-        if (pending && (resting > 0 || deaths > 0 || pending.slices >= PveEncounter.MAX_SLICES)) {
+        const casualties = combatMembers.filter(member => Number(member.vitals?.hp) <= 0);
+        const remainingHpRatio = Number(raidSnapshot?.hp || 0) / Math.max(1, Number(raidSnapshot?.maxHp || 1));
+        const raidFailed = raid && raidSnapshot?.status !== 'defeated' && casualties.some((member, index) =>
+            require('./RaidCasualtyPolicy').disposition(member, { previousDamageCasualties: index, remainingHpRatio }) !== 'continue');
+        const raidDefeated = raid && raidSnapshot?.status === 'defeated';
+        if (!raid && pending && (resting > 0 || deaths > 0 || pending.slices >= PveEncounter.MAX_SLICES)) {
             pending = null;
             fights += 1;
             losses += 1;
+        } else if (raidFailed) {
+            // A death ends this clan's attempt. Persist the actual remaining
+            // HP for retry policy, then reset the shared boss to full health
+            // before another clan or retry can begin.
+            raidSnapshot = ColdRaidEncounter.fail(party, raidSnapshot, timestamp, 'party_death');
+            pending = null;
+            fights += 1;
+            losses += 1;
+            events.push({
+                characterId: party.leaderId,
+                type: 'raid_failed',
+                summary: `Party ${party.partyId} failed its raid near ${spot.name}`,
+                weight: 4,
+                meta: {
+                    partyId: party.partyId,
+                    spotId: spot.id,
+                    raidBossTemplateId: Number(spot.raidBossTemplateId),
+                    remainingHpRatio: raidSnapshot?.remainingHpRatio,
+                    reason: 'party_death'
+                }
+            });
         }
         // Member telemetry must describe actual completed encounters, including withdrawals.
         for (const entry of distributedMemberResults) {
             entry.result.debug.fights = fights;
             entry.result.debug.losses = losses;
             entry.result.debug.pendingFight = !!pending;
+            if (raid) {
+                entry.result.debug.raidBossTemplateId = Number(spot.raidBossTemplateId);
+                entry.result.debug.raidDefeated = raidSnapshot?.status === 'defeated';
+                entry.result.debug.raidFailed = raidSnapshot?.status === 'failed';
+                entry.result.debug.raidRemainingHpRatio = raidSnapshot?.remainingHpRatio ?? null;
+                entry.result.debug.raidWinnerPartyId = raidSnapshot?.winnerPartyId || null;
+            }
         }
         const cohesionDelta = !fights ? 0 : wins >= losses ? 0.015 : -0.035;
         const riskDelta = !fights ? 0 : deaths > 0 ? 0.05 : losses > wins ? 0.02 : -0.01;
@@ -493,10 +644,12 @@ const BackgroundPartyResolver = {
             memberResults: distributedMemberResults,
             events,
             partyPatch: {
+                ...(raidFailed || raidDefeated ? { status: 'dissolved', nextResolveAt: null } : {}),
                 cohesion: clamp(Number(party.cohesion || 0.65) + cohesionDelta, 0.1, 1),
                 risk: clamp(Number(party.risk || 0.25) + riskDelta, 0.05, 0.95),
                 stats: {
-                    pveEncounter: pending,
+                    pveEncounter: raid ? null : pending,
+                    ...(raid ? { raidEncounter: raidSnapshot } : {}),
                     assemblyWait: null,
                     fightsResolved: Number(party.stats?.fightsResolved || 0) + fights,
                     fightsWon: Number(party.stats?.fightsWon || 0) + wins,
@@ -504,10 +657,19 @@ const BackgroundPartyResolver = {
                     deaths: Number(party.stats?.deaths || 0) + deaths,
                     rests: Number(party.stats?.rests || 0) + resting,
                     restUntil: partyRestUntil,
-                    lastResolveAt: timestamp
+                    lastResolveAt: timestamp,
+                    ...(raidFailed ? {
+                        dissolvedAt: timestamp,
+                        partyBreakReason: 'raid_failed'
+                    } : raidDefeated ? {
+                        dissolvedAt: timestamp,
+                        partyBreakReason: 'raid_defeated'
+                    } : {})
                 }
             },
-            nextResolveAt: partyRestUntil || timestamp + 45000 + Math.round(rng() * 90000),
+            nextResolveAt: raidFailed || raidDefeated
+                ? null
+                : partyRestUntil || timestamp + (raid ? RAID_RESOLVE_INTERVAL_MS : 45000 + Math.round(rng() * 90000)),
             debug: {
                 fights,
                 attemptedFights,
@@ -515,6 +677,8 @@ const BackgroundPartyResolver = {
                 wins,
                 losses,
                 deaths,
+                raidFailed,
+                raidRemainingHpRatio: raidSnapshot?.remainingHpRatio ?? null,
                 resting,
                 dropsRolled: rewards.reduce((sum, reward) => sum + reward.items.length, 0),
                 dropsAwarded: rewards.reduce((sum, reward) => sum + reward.items.reduce((itemSum, item) => itemSum + Number(item.amount || 0), 0), 0),
@@ -528,6 +692,9 @@ const BackgroundPartyResolver = {
                 summonActions,
                 potionsUsed,
                 targetNpcId: Number(targetNpcId) || null,
+                raidBossTemplateId: raid ? Number(spot.raidBossTemplateId) : null,
+                raidDefeated: raidSnapshot?.status === 'defeated',
+                raidWinnerPartyId: raidSnapshot?.winnerPartyId || null,
                 defeatedNpcIds
             }
         };

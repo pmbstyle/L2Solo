@@ -4,11 +4,19 @@ require('../src/Global');
 
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ClanEquipmentPolicy = invoke('GameServer/Clan/ClanEquipmentPolicy');
+
+assert(
+    ClanEquipmentPolicy.planPriority({ status: 'active', expectedEffort: 10 })
+        > ClanEquipmentPolicy.planPriority({ status: 'active', expectedEffort: 1000 }),
+    'equally ready clan equipment routes must prefer lower opportunity cost'
+);
 const ClanEquipmentService = invoke('GameServer/Clan/ClanEquipmentService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const PartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
+const ClanEquipmentPartyPolicy = invoke('GameServer/Bot/Population/ClanEquipmentPartyPolicy');
+const BackgroundPartyLifecycle = invoke('GameServer/Bot/Population/BackgroundPartyLifecycle');
 
 const clanPlan = {
     status: 'active',
@@ -71,6 +79,112 @@ async function main() {
     SpotProfiles.ensure = () => [];
 
     try {
+        const raidParty = {
+            partyId: 'bgp-active-clan-raid',
+            status: 'active',
+            memberIds: [1, 2, 3, 4, 5, 6, 7],
+            stats: {
+                objective: { clanId: 77, sourceKind: 'raid', raidBoss: true, spotId: 'raid:10029', minPartySize: 7 },
+                raidEncounter: { status: 'active' },
+                sessionExpiresAt: 1
+            }
+        };
+        PartyState.active = () => [raidParty];
+        assert.strictEqual(ClanEquipmentService.activeRaidPartyForClan(77), raidParty,
+            'an unresolved raid party must lock its clan equipment target');
+        const pinnedRaid = await ClanEquipmentService.resolveClan({ id: 77 }, { goalKey: 'active-raid-goal' });
+        assert.deepStrictEqual(
+            { skipped: pinnedRaid.skipped, reason: pinnedRaid.reason, partyId: pinnedRaid.partyId },
+            { skipped: true, reason: 'raid_in_progress', partyId: raidParty.partyId },
+            'equipment replanning must not rotate a clan away from an active raid'
+        );
+        let activeRaidReads = 0;
+        PartyState.active = () => (++activeRaidReads === 1 ? [] : [raidParty]);
+        const racedRaid = await ClanEquipmentService.resolveClan(
+            { id: 77 },
+            { goalKey: 'active-raid-goal' },
+            { planning: { plans: new Map(), selection: null } }
+        );
+        assert.deepStrictEqual(
+            { skipped: racedRaid.skipped, reason: racedRaid.reason, partyId: racedRaid.partyId },
+            { skipped: true, reason: 'raid_in_progress', partyId: raidParty.partyId },
+            'an async equipment plan must recheck the raid lock before applying its stale result'
+        );
+        PartyState.active = () => [raidParty];
+        assert.strictEqual(PopulationService.partySessionExpired(raidParty, Date.now()), false,
+            'a started raid must not expire through ordinary party rotation');
+        assert.strictEqual(ClanEquipmentPartyPolicy.needsReview(raidParty, [{ level: 99, stats: {} }], Date.now()), false,
+            'ordinary route eligibility must not dismantle a raid after preparation or combat starts');
+        assert.strictEqual(ClanEquipmentPartyPolicy.needsReview({
+            ...raidParty,
+            stats: { ...raidParty.stats, objective: {
+                ...raidParty.stats.objective,
+                raidBossTemplateId: 999999,
+                sourceLevel: 50
+            } }
+        }, [{ level: 59, stats: {} }], Date.now()), true,
+        'an overlevel member must be removed even after raid preparation starts because Raid Curse disables combat');
+        assert.strictEqual(ClanEquipmentPartyPolicy.needsReview(raidParty, [{
+            level: 99,
+            stats: { clanHuntBackoffs: [{ spotId: 'raid:10029', until: Date.now() + 60000 }] }
+        }], Date.now()), false, 'ordinary hunt backoff must not dismantle a raid already in progress');
+        const abandonedLegacyRaid = {
+            ...raidParty,
+            spotId: 'fallback-farm',
+            stats: {
+                ...raidParty.stats,
+                raidEncounter: { status: 'active', hp: 900, maxHp: 1000 },
+                partySpotRisk: { spotBackoffs: [{
+                    spotId: 'raid:10029', deaths: 2, attempts: 2, reason: 'death_pressure'
+                }] }
+            }
+        };
+        assert.strictEqual(ClanEquipmentPartyPolicy.needsReview(abandonedLegacyRaid,
+            [{ level: 50, stats: {} }], Date.now()), true,
+        'a legacy raid that already retreated after a decisive failure must release its stale party');
+        PartyState.active = () => [abandonedLegacyRaid];
+        assert.strictEqual(ClanEquipmentService.activeRaidPartyForClan(77), null,
+            'a retreated legacy raid must not keep the clan equipment planner locked');
+        const abandonedReview = BackgroundPartyLifecycle.review(abandonedLegacyRaid,
+            abandonedLegacyRaid.memberIds.map((characterId) => ({
+                characterId,
+                level: 50,
+                activity: 'grouped',
+                party: { partyId: abandonedLegacyRaid.partyId },
+                stats: { clanPartyObjective: abandonedLegacyRaid.stats.objective }
+            })), Date.now());
+        assert.strictEqual(abandonedReview.party.status, 'dissolved',
+            'the stale retreated raid roster must dissolve immediately when reviewed');
+        assert([...abandonedReview.leaving.values()].every((reason) => reason === 'raid_failed'),
+            'legacy raid retreat cleanup must use the same terminal failure reason as current raids');
+        const failedRaidParty = {
+            ...raidParty,
+            stats: { ...raidParty.stats, raidEncounter: { status: 'failed' } }
+        };
+        PartyState.active = () => [failedRaidParty];
+        assert.strictEqual(ClanEquipmentService.activeRaidPartyForClan(77), null,
+            'a failed raid must release the equipment planning lock');
+        assert.strictEqual(ClanEquipmentPartyPolicy.needsReview(failedRaidParty, [{ level: 50, stats: {} }], Date.now()), true,
+            'a failed raid must be reviewed and released immediately');
+        PartyState.active = () => [raidParty];
+        const raidOutcome = { debug: { fights: 1 }, patch: { deathCount: 1, stats: {} } };
+        assert.strictEqual(ClanEquipmentPartyPolicy.recordOutcome(
+            { stats: { deaths: 0 } }, raidOutcome, raidParty.stats.objective, Date.now()
+        ), raidOutcome, 'raid deaths must not create ordinary hunting-ground backoff');
+        assert.deepStrictEqual(await PopulationService.refreshBackgroundPartyRequirements([raidParty]), [],
+            'ordinary equipment requirement refresh must not rewrite a started raid objective');
+        PartyState.active = () => [{
+            ...raidParty,
+            partyId: 'bgp-assembling-clan-raid',
+            stats: { ...raidParty.stats, raidEncounter: null }
+        }];
+        assert.strictEqual(ClanEquipmentService.activeRaidPartyForClan(77), null,
+            'an unstarted raid must remain replaceable when its roster cannot assemble');
+        PartyState.active = () => [{ ...raidParty, memberIds: raidParty.memberIds.slice(0, 6) }];
+        assert.strictEqual(ClanEquipmentService.activeRaidPartyForClan(77), null,
+            'a started raid below its minimum roster must remain replaceable');
+        PartyState.active = () => [];
+
         assert.strictEqual(
             GearAcquisitionPlanner.clanGoalPlanLocked({ inventory: {} }, clanPlan),
             true,

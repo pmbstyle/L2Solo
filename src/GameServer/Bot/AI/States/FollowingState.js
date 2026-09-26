@@ -1682,7 +1682,8 @@ module.exports = {
         if (!acted && partyThreat?.actor && !isBusy(bot)) {
             const selfTactic = PartyClassTactics.selfAction(bot, {
                 role,
-                activeMobs: activePartyThreats.length
+                activeMobs: activePartyThreats.length,
+                target: partyThreat.actor
             });
             if (selfTactic) {
                 acted = true;
