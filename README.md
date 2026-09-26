@@ -36,6 +36,7 @@ Optional but recommended for a better experience
 
 ## Latest updates
 
+- **2026-09-26** Bot raid boss farm, player bot party join, SA, fixes and updates
 - **2026-09-22** Bot progression, clan party, craft, trading fixes; realistic bot and clan names
 - **2026-09-21** L2Solo client mod, server-side mod support, in-game items db
 - **2026-09-20** Clan halls, clan craft goals, clan WH resources collection, fixes and improvements
@@ -100,6 +101,7 @@ See full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 - PK system
 - Save game
 - Clan halls
+- SA
 
 **Character:**
 - Progression depending on chosen rates
@@ -142,6 +144,8 @@ See full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 - Bot persona traits: Sociability, Commitment, Caution, Ambition, Assertiveness, Empathy, Resilience
 - Bots create clans, level clans up, form clan farm parties
 - Bots will fight over mobs on a farm spot
+- Bot clans can form raid boss farm parties
+- Players can join bot parties
 
 ### ✴️ Will be added
 
