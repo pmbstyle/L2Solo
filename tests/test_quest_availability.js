@@ -1,33 +1,15 @@
 const assert = require("assert");
-const fs = require("fs");
 
 require("../src/Global");
 
 const QuestService = invoke("GameServer/Quest/QuestService");
-const npcTemplates = JSON.parse(fs.readFileSync("data/Npcs/npcs.json", "utf8"));
-const otherItems = JSON.parse(
-  fs.readFileSync("data/Items/Others/others.json", "utf8"),
-);
-const weapons = JSON.parse(
-  fs.readFileSync("data/Items/Weapons/weapons.json", "utf8"),
-);
-const spawnGroups = JSON.parse(
-  fs.readFileSync("data/Npcs/Spawns/spawns.json", "utf8"),
-);
-
-const templateIds = new Set(npcTemplates.map((npc) => Number(npc.selfId)));
-const petQuestNpcs = require('../data/Pets/c4-quest-npcs.json');
-petQuestNpcs.npcs.forEach(npc => templateIds.add(npc.selfId));
-const itemIds = new Set([...otherItems, ...weapons].map((item) => Number(item.selfId)));
-const spawnedIds = new Set();
-function collectSpawnIds(value) {
-  if (Array.isArray(value)) return value.forEach(collectSpawnIds);
-  if (!value || typeof value !== "object") return;
-  if (Number.isInteger(value.selfId)) spawnedIds.add(value.selfId);
-  Object.values(value).forEach(collectSpawnIds);
-}
-collectSpawnIds(spawnGroups);
-collectSpawnIds(petQuestNpcs.spawns);
+// Inspect the actual cache, including the supplemental quest datapack.
+const DataCache = invoke("GameServer/DataCache");
+DataCache.init();
+const templateIds = new Set(DataCache.npcs.map(npc => Number(npc.selfId)));
+const itemIds = new Set(DataCache.items.map(item => Number(item.selfId)));
+const spawnedIds = new Set(DataCache.npcSpawns.flatMap(group =>
+  (group.spawns || []).map(spawn => Number(spawn.selfId))));
 
 for (const quest of QuestService.quests()) {
   for (const npcId of [...(quest.npcs || []), ...(quest.killNpcs || []), ...(quest.sharedKillNpcs || []), ...(quest.attackNpcs || [])]) {

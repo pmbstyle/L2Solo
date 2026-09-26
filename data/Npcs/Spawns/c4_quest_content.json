@@ -1,0 +1,557 @@
+[
+    {
+        "selfId": "c4_quest_content",
+        "bounds": [],
+        "spawns": [
+            {
+                "selfId": 7956,
+                "name": "Nanarin",
+                "coords": [
+                    {
+                        "locX": 17025,
+                        "locY": 146070,
+                        "locZ": -3074,
+                        "head": 35523
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 7957,
+                "name": "Swan",
+                "coords": [
+                    {
+                        "locX": 18378,
+                        "locY": 145052,
+                        "locZ": -3074,
+                        "head": 64312
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 7958,
+                "name": "Galion",
+                "coords": [
+                    {
+                        "locX": 44721,
+                        "locY": 190698,
+                        "locZ": -3626,
+                        "head": 28672
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 7959,
+                "name": "Barbado",
+                "coords": [
+                    {
+                        "locX": 20175,
+                        "locY": 145480,
+                        "locZ": -3114,
+                        "head": 16384
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 7960,
+                "name": "Beer Chest",
+                "coords": [
+                    {
+                        "locX": 21025,
+                        "locY": 144931,
+                        "locZ": -3070,
+                        "head": 40960
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 7961,
+                "name": "Cloth Chest",
+                "coords": [
+                    {
+                        "locX": 19490,
+                        "locY": 145930,
+                        "locZ": -3072,
+                        "head": 0
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 112,
+                "name": "Salamander Elder",
+                "coords": [
+                    {
+                        "locX": 46398,
+                        "locY": 243131,
+                        "locZ": -6604,
+                        "head": 0
+                    },
+                    {
+                        "locX": 46802,
+                        "locY": 243487,
+                        "locZ": -6604,
+                        "head": 0
+                    },
+                    {
+                        "locX": 47103,
+                        "locY": 243309,
+                        "locZ": -6604,
+                        "head": 0
+                    }
+                ],
+                "total": 1,
+                "respawn": 100,
+                "bias": 0
+            },
+            {
+                "selfId": 113,
+                "name": "Undine Elder",
+                "coords": [
+                    {
+                        "locX": 45174,
+                        "locY": 242779,
+                        "locZ": -6502,
+                        "head": 0
+                    },
+                    {
+                        "locX": 45577,
+                        "locY": 242779,
+                        "locZ": -6502,
+                        "head": 0
+                    },
+                    {
+                        "locX": 45932,
+                        "locY": 242794,
+                        "locZ": -6464,
+                        "head": 0
+                    }
+                ],
+                "total": 1,
+                "respawn": 100,
+                "bias": 0
+            },
+            {
+                "selfId": 114,
+                "name": "Salamander Noble",
+                "coords": [
+                    {
+                        "locX": 45046,
+                        "locY": 245580,
+                        "locZ": -6663,
+                        "head": 0
+                    },
+                    {
+                        "locX": 45247,
+                        "locY": 245580,
+                        "locZ": -6663,
+                        "head": 0
+                    },
+                    {
+                        "locX": 45649,
+                        "locY": 245580,
+                        "locZ": -6663,
+                        "head": 0
+                    },
+                    {
+                        "locX": 46724,
+                        "locY": 245079,
+                        "locZ": -6656,
+                        "head": 0
+                    },
+                    {
+                        "locX": 46724,
+                        "locY": 245435,
+                        "locZ": -6656,
+                        "head": 0
+                    }
+                ],
+                "total": 1,
+                "respawn": 100,
+                "bias": 0
+            },
+            {
+                "selfId": 115,
+                "name": "Undine Noble",
+                "coords": [
+                    {
+                        "locX": 45046,
+                        "locY": 245936,
+                        "locZ": -6663,
+                        "head": 0
+                    },
+                    {
+                        "locX": 45157,
+                        "locY": 246173,
+                        "locZ": -6608,
+                        "head": 49873
+                    },
+                    {
+                        "locX": 45550,
+                        "locY": 246114,
+                        "locZ": -6663,
+                        "head": 0
+                    },
+                    {
+                        "locX": 46786,
+                        "locY": 246075,
+                        "locZ": -6662,
+                        "head": 0
+                    },
+                    {
+                        "locX": 46988,
+                        "locY": 246431,
+                        "locZ": -6662,
+                        "head": 0
+                    }
+                ],
+                "total": 1,
+                "respawn": 100,
+                "bias": 0
+            },
+            {
+                "selfId": 8488,
+                "name": "Rift Post Recruit",
+                "coords": [
+                    {
+                        "locX": -114224,
+                        "locY": -181504,
+                        "locZ": -6752,
+                        "head": 32768
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 8489,
+                "name": "Rift Post Soldier",
+                "coords": [
+                    {
+                        "locX": -114216,
+                        "locY": -178698,
+                        "locZ": -6752,
+                        "head": 32768
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 8490,
+                "name": "Rift Post Officer",
+                "coords": [
+                    {
+                        "locX": -114798,
+                        "locY": -178084,
+                        "locZ": -6752,
+                        "head": 49152
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 8491,
+                "name": "Rift Post Captain",
+                "coords": [
+                    {
+                        "locX": -115362,
+                        "locY": -178692,
+                        "locZ": -6752,
+                        "head": 0
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 8492,
+                "name": "Rift Post Commander",
+                "coords": [
+                    {
+                        "locX": -115364,
+                        "locY": -181517,
+                        "locZ": -6752,
+                        "head": 0
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 8493,
+                "name": "Rift Post Hero",
+                "coords": [
+                    {
+                        "locX": -114793,
+                        "locY": -182125,
+                        "locZ": -6752,
+                        "head": 16384
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 8494,
+                "name": "Dimension Keeper",
+                "coords": [
+                    {
+                        "locX": -41251,
+                        "locY": 209886,
+                        "locZ": -5085,
+                        "head": 32000
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 8495,
+                "name": "Dimension Keeper",
+                "coords": [
+                    {
+                        "locX": 43050,
+                        "locY": 143869,
+                        "locZ": -5383,
+                        "head": 16000
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 8496,
+                "name": "Dimension Keeper",
+                "coords": [
+                    {
+                        "locX": 44953,
+                        "locY": 123778,
+                        "locZ": -5408,
+                        "head": 0
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 8497,
+                "name": "Dimension Keeper",
+                "coords": [
+                    {
+                        "locX": 46327,
+                        "locY": 170013,
+                        "locZ": -4979,
+                        "head": 16000
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 8498,
+                "name": "Dimension Keeper",
+                "coords": [
+                    {
+                        "locX": 111379,
+                        "locY": 173725,
+                        "locZ": -5432,
+                        "head": 16000
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 8499,
+                "name": "Dimension Keeper",
+                "coords": [
+                    {
+                        "locX": 78042,
+                        "locY": 78340,
+                        "locZ": -5128,
+                        "head": 16000
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 8500,
+                "name": "Dimension Keeper",
+                "coords": [
+                    {
+                        "locX": -21635,
+                        "locY": 77075,
+                        "locZ": -5168,
+                        "head": 16000
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 8501,
+                "name": "Dimension Keeper",
+                "coords": [
+                    {
+                        "locX": 140532,
+                        "locY": 79384,
+                        "locZ": -5424,
+                        "head": 16000
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 8502,
+                "name": "Dimension Keeper",
+                "coords": [
+                    {
+                        "locX": -52142,
+                        "locY": 78814,
+                        "locZ": -4736,
+                        "head": 16000
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 8503,
+                "name": "Dimension Keeper",
+                "coords": [
+                    {
+                        "locX": 118387,
+                        "locY": 132477,
+                        "locZ": -4824,
+                        "head": 16000
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 8504,
+                "name": "Dimension Keeper",
+                "coords": [
+                    {
+                        "locX": 172427,
+                        "locY": -17871,
+                        "locZ": -4927,
+                        "head": 16000
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 8505,
+                "name": "Dimension Keeper",
+                "coords": [
+                    {
+                        "locX": 83187,
+                        "locY": 208917,
+                        "locZ": -5465,
+                        "head": 16000
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 8506,
+                "name": "Dimension Keeper",
+                "coords": [
+                    {
+                        "locX": -19309,
+                        "locY": 13210,
+                        "locZ": -4927,
+                        "head": 16000
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 8507,
+                "name": "Dimension Keeper",
+                "coords": [
+                    {
+                        "locX": 113865,
+                        "locY": 84479,
+                        "locZ": -6545,
+                        "head": 16000
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            },
+            {
+                "selfId": 7981,
+                "name": "Black Judge",
+                "coords": [
+                    {
+                        "locX": 15520,
+                        "locY": 174572,
+                        "locZ": -3637,
+                        "head": 57344
+                    },
+                    {
+                        "locX": 106131,
+                        "locY": 105979,
+                        "locZ": -3482,
+                        "head": 28672
+                    },
+                    {
+                        "locX": -18960,
+                        "locY": 209834,
+                        "locZ": -3656,
+                        "head": 0
+                    }
+                ],
+                "total": 1,
+                "respawn": 60,
+                "bias": 0
+            }
+        ]
+    }
+]

@@ -20,6 +20,16 @@ function auditQuestRegistry({ root = path.resolve(__dirname, "..") } = {}) {
       errors.push(`invalid registry status for ${entry?.modulePath || "<missing path>"}`);
       continue;
     }
+    if (entry.definitionId) {
+      const definition = require(path.join(root, 'src/GameServer/Quest/LowLevelDefinitions')).find(d => d.id === entry.definitionId);
+      if (!definition || definition.id !== entry.id || ids.has(entry.id)) errors.push(`Invalid/duplicate declarative quest ${entry.id}`);
+      else {
+        try { require(path.join(root, 'src/GameServer/Quest/DeclarativeQuest')).validate(definition); }
+        catch (error) { errors.push(`Q${entry.id}: ${error.message}`); }
+      }
+      ids.add(entry.id);
+      continue;
+    }
     if (!entry.modulePath || paths.has(entry.modulePath)) {
       errors.push(`duplicate or missing module path: ${entry.modulePath || "<missing>"}`);
       continue;

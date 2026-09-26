@@ -103920,6 +103920,166 @@
     }
   },
   {
+    "id": "spawn-112-5589a904d658",
+    "mobId": 112,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": 46398,
+        "locY": 243131,
+        "locZ": -6604
+      },
+      {
+        "head": 0,
+        "locX": 46802,
+        "locY": 243487,
+        "locZ": -6604
+      },
+      {
+        "head": 0,
+        "locX": 47103,
+        "locY": 243309,
+        "locZ": -6604
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 100,
+    "sourceIndex": 6,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_quest_content",
+      "sourceIndex": 3970
+    }
+  },
+  {
+    "id": "spawn-113-ef87d563aa00",
+    "mobId": 113,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": 45174,
+        "locY": 242779,
+        "locZ": -6502
+      },
+      {
+        "head": 0,
+        "locX": 45577,
+        "locY": 242779,
+        "locZ": -6502
+      },
+      {
+        "head": 0,
+        "locX": 45932,
+        "locY": 242794,
+        "locZ": -6464
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 100,
+    "sourceIndex": 7,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_quest_content",
+      "sourceIndex": 3970
+    }
+  },
+  {
+    "id": "spawn-114-0842c1ea5fe4",
+    "mobId": 114,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": 45046,
+        "locY": 245580,
+        "locZ": -6663
+      },
+      {
+        "head": 0,
+        "locX": 45247,
+        "locY": 245580,
+        "locZ": -6663
+      },
+      {
+        "head": 0,
+        "locX": 45649,
+        "locY": 245580,
+        "locZ": -6663
+      },
+      {
+        "head": 0,
+        "locX": 46724,
+        "locY": 245079,
+        "locZ": -6656
+      },
+      {
+        "head": 0,
+        "locX": 46724,
+        "locY": 245435,
+        "locZ": -6656
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 100,
+    "sourceIndex": 8,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_quest_content",
+      "sourceIndex": 3970
+    }
+  },
+  {
+    "id": "spawn-115-8c5f7dee18a8",
+    "mobId": 115,
+    "period": "always",
+    "possibleLocations": [
+      {
+        "head": 0,
+        "locX": 45046,
+        "locY": 245936,
+        "locZ": -6663
+      },
+      {
+        "head": 49873,
+        "locX": 45157,
+        "locY": 246173,
+        "locZ": -6608
+      },
+      {
+        "head": 0,
+        "locX": 45550,
+        "locY": 246114,
+        "locZ": -6663
+      },
+      {
+        "head": 0,
+        "locX": 46786,
+        "locY": 246075,
+        "locZ": -6662
+      },
+      {
+        "head": 0,
+        "locX": 46988,
+        "locY": 246431,
+        "locZ": -6662
+      }
+    ],
+    "randomBiasSeconds": 0,
+    "respawnSeconds": 100,
+    "sourceIndex": 9,
+    "total": 1,
+    "zone": {
+      "bounds": [],
+      "id": "c4_quest_content",
+      "sourceIndex": 3970
+    }
+  },
+  {
     "id": "spawn-117-7515c374233f",
     "mobId": 117,
     "period": "always",
@@ -525673,7 +525833,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -525695,7 +525855,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -525717,7 +525877,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -525739,7 +525899,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -525761,7 +525921,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -525783,7 +525943,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -525805,7 +525965,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -525827,7 +525987,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -525849,7 +526009,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -525871,7 +526031,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -525893,7 +526053,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -525915,7 +526075,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -525937,7 +526097,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -525959,7 +526119,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -525981,7 +526141,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526003,7 +526163,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526025,7 +526185,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526047,7 +526207,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526069,7 +526229,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526091,7 +526251,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526113,7 +526273,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526135,7 +526295,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526157,7 +526317,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526179,7 +526339,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526201,7 +526361,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526223,7 +526383,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526245,7 +526405,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526267,7 +526427,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526289,7 +526449,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526311,7 +526471,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526333,7 +526493,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526355,7 +526515,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526377,7 +526537,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526399,7 +526559,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526421,7 +526581,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526443,7 +526603,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526465,7 +526625,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526487,7 +526647,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526509,7 +526669,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526531,7 +526691,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526553,7 +526713,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526575,7 +526735,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526597,7 +526757,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526619,7 +526779,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526641,7 +526801,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526663,7 +526823,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526685,7 +526845,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526707,7 +526867,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526729,7 +526889,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526751,7 +526911,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526773,7 +526933,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526795,7 +526955,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526817,7 +526977,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526839,7 +526999,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526861,7 +527021,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526883,7 +527043,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526905,7 +527065,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526927,7 +527087,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526949,7 +527109,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526971,7 +527131,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -526993,7 +527153,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527015,7 +527175,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527037,7 +527197,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527059,7 +527219,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527081,7 +527241,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527103,7 +527263,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527125,7 +527285,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527147,7 +527307,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527169,7 +527329,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527191,7 +527351,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527213,7 +527373,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527235,7 +527395,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527257,7 +527417,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527279,7 +527439,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527301,7 +527461,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527323,7 +527483,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527345,7 +527505,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527367,7 +527527,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527389,7 +527549,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527411,7 +527571,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527433,7 +527593,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527455,7 +527615,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527477,7 +527637,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527499,7 +527659,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527521,7 +527681,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527543,7 +527703,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527565,7 +527725,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527587,7 +527747,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527609,7 +527769,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527631,7 +527791,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527653,7 +527813,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527675,7 +527835,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527697,7 +527857,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527719,7 +527879,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527741,7 +527901,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527763,7 +527923,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527785,7 +527945,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527807,7 +527967,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527829,7 +527989,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527851,7 +528011,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527873,7 +528033,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527895,7 +528055,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527917,7 +528077,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527939,7 +528099,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527961,7 +528121,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -527983,7 +528143,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528005,7 +528165,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528027,7 +528187,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528049,7 +528209,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528071,7 +528231,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528093,7 +528253,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528115,7 +528275,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528137,7 +528297,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528159,7 +528319,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528181,7 +528341,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528203,7 +528363,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528225,7 +528385,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528247,7 +528407,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528269,7 +528429,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528291,7 +528451,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528313,7 +528473,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528335,7 +528495,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528357,7 +528517,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528379,7 +528539,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528401,7 +528561,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528423,7 +528583,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528445,7 +528605,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -528467,7 +528627,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -589152,7 +589312,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -589174,7 +589334,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -589196,7 +589356,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {
@@ -589218,7 +589378,7 @@
     "zone": {
       "bounds": [],
       "id": "c4_pet_quest_npcs",
-      "sourceIndex": 3974
+      "sourceIndex": 3975
     }
   },
   {

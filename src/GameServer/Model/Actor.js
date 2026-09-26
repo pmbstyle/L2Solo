@@ -190,6 +190,12 @@ class ActorModel extends CreatureModel {
         return this.model.username;
     }
 
+    fetchNewbie() { return this.model.newbie ?? -1; }
+
+    fetchNewbieShotsReceived() { return this.model.newbieShotsReceived ?? 0; }
+
+    setNewbieShotsReceived(value) { this.model.newbieShotsReceived = value; }
+
     fetchClassId() {
         return this.model.classId;
     }

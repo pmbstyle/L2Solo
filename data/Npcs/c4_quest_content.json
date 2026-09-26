@@ -1,0 +1,1682 @@
+[
+    {
+        "selfId": 7989,
+        "template": {
+            "kind": "Thing",
+            "name": "Chest of Bifrons",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 12,
+            "size": 9
+        },
+        "equipment": {
+            "weapon": 0,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        }
+    },
+    {
+        "selfId": 7956,
+        "template": {
+            "kind": "Citizen",
+            "name": "Nanarin",
+            "title": "Musician",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 8,
+            "size": 23
+        },
+        "equipment": {
+            "weapon": 325,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        }
+    },
+    {
+        "selfId": 7957,
+        "template": {
+            "kind": "Citizen",
+            "name": "Swan",
+            "title": "Bard",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 8,
+            "size": 22
+        },
+        "equipment": {
+            "weapon": 4202,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        }
+    },
+    {
+        "selfId": 7958,
+        "template": {
+            "kind": "Citizen",
+            "name": "Galion",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 8,
+            "size": 17
+        },
+        "equipment": {
+            "weapon": 0,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        }
+    },
+    {
+        "selfId": 7959,
+        "template": {
+            "kind": "Citizen",
+            "name": "Barbado",
+            "title": "Musician",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 8,
+            "size": 17.5
+        },
+        "equipment": {
+            "weapon": 5133,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        }
+    },
+    {
+        "selfId": 7960,
+        "template": {
+            "kind": "Thing",
+            "name": "Beer Chest",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 18,
+            "size": 14
+        },
+        "equipment": {
+            "weapon": 0,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        }
+    },
+    {
+        "selfId": 7961,
+        "template": {
+            "kind": "Thing",
+            "name": "Cloth Chest",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 12,
+            "size": 9.5
+        },
+        "equipment": {
+            "weapon": 0,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        }
+    },
+    {
+        "selfId": 8488,
+        "template": {
+            "kind": "Citizen",
+            "name": "Rift Post Recruit",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 7,
+            "size": 24
+        },
+        "equipment": {
+            "weapon": 94,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "humanoid",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 8489,
+        "template": {
+            "kind": "Citizen",
+            "name": "Rift Post Soldier",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 7,
+            "size": 24
+        },
+        "equipment": {
+            "weapon": 304,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "humanoid",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 8490,
+        "template": {
+            "kind": "Citizen",
+            "name": "Rift Post Officer",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 7,
+            "size": 24
+        },
+        "equipment": {
+            "weapon": 79,
+            "shield": 111,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "humanoid",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 8491,
+        "template": {
+            "kind": "Citizen",
+            "name": "Rift Post Captain",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 7,
+            "size": 24
+        },
+        "equipment": {
+            "weapon": 76,
+            "shield": 660,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "humanoid",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 8492,
+        "template": {
+            "kind": "Citizen",
+            "name": "Rift Post Commander",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 7,
+            "size": 23
+        },
+        "equipment": {
+            "weapon": 80,
+            "shield": 655,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "humanoid",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 8493,
+        "template": {
+            "kind": "Citizen",
+            "name": "Rift Post Hero",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 8,
+            "size": 23.5
+        },
+        "equipment": {
+            "weapon": 135,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "humanoid",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 8494,
+        "template": {
+            "kind": "Citizen",
+            "name": "Dimension Keeper",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 38,
+            "size": 120.5
+        },
+        "equipment": {
+            "weapon": 0,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "construct",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 8495,
+        "template": {
+            "kind": "Citizen",
+            "name": "Dimension Keeper",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 38,
+            "size": 120.5
+        },
+        "equipment": {
+            "weapon": 0,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "construct",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 8496,
+        "template": {
+            "kind": "Citizen",
+            "name": "Dimension Keeper",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 38,
+            "size": 120.5
+        },
+        "equipment": {
+            "weapon": 0,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "construct",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 8497,
+        "template": {
+            "kind": "Citizen",
+            "name": "Dimension Keeper",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 38,
+            "size": 120.5
+        },
+        "equipment": {
+            "weapon": 0,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "construct",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 8498,
+        "template": {
+            "kind": "Citizen",
+            "name": "Dimension Keeper",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 38,
+            "size": 120.5
+        },
+        "equipment": {
+            "weapon": 0,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "construct",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 8499,
+        "template": {
+            "kind": "Citizen",
+            "name": "Dimension Keeper",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 38,
+            "size": 120.5
+        },
+        "equipment": {
+            "weapon": 0,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "construct",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 8500,
+        "template": {
+            "kind": "Citizen",
+            "name": "Dimension Keeper",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 38,
+            "size": 120.5
+        },
+        "equipment": {
+            "weapon": 0,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "construct",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 8501,
+        "template": {
+            "kind": "Citizen",
+            "name": "Dimension Keeper",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 38,
+            "size": 120.5
+        },
+        "equipment": {
+            "weapon": 0,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "construct",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 8502,
+        "template": {
+            "kind": "Citizen",
+            "name": "Dimension Keeper",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 38,
+            "size": 120.5
+        },
+        "equipment": {
+            "weapon": 0,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "construct",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 8503,
+        "template": {
+            "kind": "Citizen",
+            "name": "Dimension Keeper",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 38,
+            "size": 120.5
+        },
+        "equipment": {
+            "weapon": 0,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "construct",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 8504,
+        "template": {
+            "kind": "Citizen",
+            "name": "Dimension Keeper",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 38,
+            "size": 120.5
+        },
+        "equipment": {
+            "weapon": 0,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "construct",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 8505,
+        "template": {
+            "kind": "Citizen",
+            "name": "Dimension Keeper",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 38,
+            "size": 120.5
+        },
+        "equipment": {
+            "weapon": 0,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "construct",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 8506,
+        "template": {
+            "kind": "Citizen",
+            "name": "Dimension Keeper",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 38,
+            "size": 120.5
+        },
+        "equipment": {
+            "weapon": 0,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "construct",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 8507,
+        "template": {
+            "kind": "Citizen",
+            "name": "Dimension Keeper",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 38,
+            "size": 120.5
+        },
+        "equipment": {
+            "weapon": 0,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "construct",
+            "undead": false
+        }
+    },
+    {
+        "selfId": 7981,
+        "template": {
+            "kind": "Citizen",
+            "name": "Black Judge",
+            "title": "",
+            "level": 70,
+            "hostile": false
+        },
+        "base": {
+            "str": 40,
+            "dex": 30,
+            "con": 43,
+            "int": 21,
+            "wit": 20,
+            "men": 10
+        },
+        "stats": {
+            "pAtk": 688.86373,
+            "pAtkRnd": 30,
+            "pDef": 295.91597,
+            "mAtk": 470.40463,
+            "mDef": 216.53847,
+            "accur": 5,
+            "atkSpd": 253,
+            "castSpd": 333,
+            "atkRadius": 40
+        },
+        "speed": {
+            "walk": 50,
+            "run": 120
+        },
+        "vitals": {
+            "maxHp": 2444.46819,
+            "maxMp": 1345.8,
+            "revHp": 7.5,
+            "revMp": 2.7,
+            "corpseTime": 7000
+        },
+        "collision": {
+            "radius": 8,
+            "size": 25
+        },
+        "equipment": {
+            "weapon": 0,
+            "shield": 0,
+            "reuseTime": 500
+        },
+        "clan": {
+            "clanName": "",
+            "helpRadius": 300
+        },
+        "rewards": {
+            "exp": 0.1,
+            "sp": 10
+        },
+        "traits": {
+            "race": "humanoid",
+            "undead": false
+        }
+    }
+]

@@ -2,6 +2,18 @@ const { spawnSync } = require('child_process');
 const fs = require('fs');
 
 const tests = [
+    'tests/test_c4_import_integration.js',
+    'tests/test_c4_elven_forest_quests.js',
+    'tests/test_c4_beginner_quests.js',
+    'tests/test_c4_bounty_target_quests.js',
+    'tests/test_c4_catacomb_quests.js',
+    'tests/test_c4_declarative_quests.js',
+    'tests/test_c4_dimensional_rift_quest.js',
+    'tests/test_c4_lizardmen_quest.js',
+    'tests/test_c4_music_feast_quests.js',
+    'tests/test_c4_orc_bounty_quests.js',
+    'tests/test_c4_sin_eater_quest.js',
+
     'tests/test_bot_warehouse_craft_chain.js',
     'tests/test_clan_goal_recovery.js',
     'tests/test_market_store_settlement_history.js',

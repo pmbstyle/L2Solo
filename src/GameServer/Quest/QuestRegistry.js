@@ -106,12 +106,29 @@ const entries = [
     [420, "Q420_LittleWing"],
     [421, "Q421_LittleWingsBigAdventure"],
     [501, "Q501_ProofOfClanAlliance"],
+    [257, "Q257_TheGuardIsBusy"],
+    [260, "Q260_OrcHunting"],
+    [265, "Q265_BondsOfSlavery"],
+    [267, "Q267_WrathOfVerdure"],
+    [273, "Q273_InvadersOfTheHolyLand"],
+    [275, "Q275_DarkWingedSpies"],
+    [276, "Q276_TotemOfTheHestui"],
+    [293, "Q293_TheHiddenVeins"],
+    [340, "Q340_SubjugationOfLizardmen"],
+    [363, "Q363_SorrowfulSoundOfFlute"],
+    [364, "Q364_JovialAccordion"],
+    [378, "Q378_GrandFeast"],
+    [385, "Q385_YokeOfThePast"],
+    [422, "Q422_RepentYourSins"],
+    [634, "Q634_InSearchOfFragmentsOfDimension"],
+    [635, "Q635_IntoTheDimensionalRift"],
   ].map(([id, name]) => ({
     id,
     modulePath: `./quests/${name}`,
     status: disabledReasons.has(id) ? "disabled" : "active",
     ...(disabledReasons.has(id) ? { reason: disabledReasons.get(id) } : {}),
   })),
+  ...require("./LowLevelDefinitions").map(d => ({ id: d.id, definitionId: d.id, status: "active" })),
   { modulePath: "./quests/FormalWear", status: "helper" },
   { modulePath: "./quests/PetTicketQuest", status: "helper" },
   { modulePath: "./quests/TravelerRoute", status: "helper" },
@@ -120,7 +137,9 @@ const entries = [
 function activeQuests() {
   return entries
     .filter((entry) => entry.status === "active")
-    .map((entry) => require(entry.modulePath));
+    .map((entry) => entry.definitionId
+      ? require("./DeclarativeQuest").create(require("./LowLevelDefinitions").find(d => d.id === entry.definitionId))
+      : require(entry.modulePath));
 }
 
 module.exports = { entries, activeQuests };

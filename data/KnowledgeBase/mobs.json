@@ -39407,8 +39407,8 @@
   {
     "aiType": "fighter",
     "availability": {
-      "directSpawn": false,
-      "knownReachable": false,
+      "directSpawn": true,
+      "knownReachable": true,
       "raidMinion": false
     },
     "defaultEffectiveStats": {
@@ -39445,7 +39445,9 @@
       "4296:1",
       "4303:1"
     ],
-    "spawnIds": [],
+    "spawnIds": [
+      "spawn-112-5589a904d658"
+    ],
     "spoils": [],
     "template": {
       "base": {
@@ -39513,8 +39515,8 @@
   {
     "aiType": "balanced",
     "availability": {
-      "directSpawn": false,
-      "knownReachable": false,
+      "directSpawn": true,
+      "knownReachable": true,
       "raidMinion": false
     },
     "defaultEffectiveStats": {
@@ -39552,7 +39554,9 @@
       "4296:1",
       "4303:1"
     ],
-    "spawnIds": [],
+    "spawnIds": [
+      "spawn-113-ef87d563aa00"
+    ],
     "spoils": [],
     "template": {
       "base": {
@@ -39620,8 +39624,8 @@
   {
     "aiType": "fighter",
     "availability": {
-      "directSpawn": false,
-      "knownReachable": false,
+      "directSpawn": true,
+      "knownReachable": true,
       "raidMinion": false
     },
     "defaultEffectiveStats": {
@@ -39658,7 +39662,9 @@
       "4296:1",
       "4303:1"
     ],
-    "spawnIds": [],
+    "spawnIds": [
+      "spawn-114-0842c1ea5fe4"
+    ],
     "spoils": [],
     "template": {
       "base": {
@@ -39726,8 +39732,8 @@
   {
     "aiType": "balanced",
     "availability": {
-      "directSpawn": false,
-      "knownReachable": false,
+      "directSpawn": true,
+      "knownReachable": true,
       "raidMinion": false
     },
     "defaultEffectiveStats": {
@@ -39765,7 +39771,9 @@
       "4296:1",
       "4303:1"
     ],
-    "spawnIds": [],
+    "spawnIds": [
+      "spawn-115-8c5f7dee18a8"
+    ],
     "spoils": [],
     "template": {
       "base": {

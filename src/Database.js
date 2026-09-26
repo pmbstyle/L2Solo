@@ -1168,6 +1168,11 @@ function applySchemaMigrations() {
         connection.exec(`UPDATE raid_boss_state SET respawnTime = updatedAt + 18000000
             WHERE respawnTime > 0 AND updatedAt > 0`);
     }]);
+    migrations.push([47, () => {
+        const columns = connection.prepare('PRAGMA table_info(characters)').all().map(column => column.name);
+        if (!columns.includes('newbie')) connection.exec('ALTER TABLE characters ADD COLUMN newbie INTEGER NOT NULL DEFAULT -1');
+        if (!columns.includes('newbieShotsReceived')) connection.exec('ALTER TABLE characters ADD COLUMN newbieShotsReceived INTEGER NOT NULL DEFAULT 0');
+    }]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
@@ -3986,10 +3991,14 @@ const Database = {
         return selectOne('accounts', ['username'], 'username = ? COLLATE NOCASE', [username], 'account:canonical-name')
             .then((accounts) => {
                 if (!accounts[0]) throw new Error('account does not exist');
-                return insert('characters', {
-                    username: accounts[0].username, name: data.name, race: data.race, classId: data.classId,
-                    maxHp: data.maxHp, maxMp: data.maxMp, sex: data.sex, face: data.face,
-                    hair: data.hair, hairColor: data.hairColor, locX: data.locX, locY: data.locY, locZ: data.locZ
+                return inTransaction(() => {
+                    const count = one('SELECT COUNT(*) AS total FROM characters WHERE username = ? COLLATE NOCASE', [accounts[0].username]).total;
+                    const newbie = require('./GameServer/Quest/BeginnerReward').flagForNewCharacter(count);
+                    return write(`INSERT INTO characters(username, name, race, classId, maxHp, maxMp, sex, face, hair, hairColor, locX, locY, locZ, newbie)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+                        accounts[0].username, data.name, data.race, data.classId, data.maxHp, data.maxMp,
+                        data.sex, data.face, data.hair, data.hairColor, data.locX, data.locY, data.locZ, newbie
+                    ]);
                 }, 'character:create');
             });
     },
@@ -4409,6 +4418,67 @@ const Database = {
             write('UPDATE items SET petData = ? WHERE id = ? AND characterId = ?', [JSON.stringify({...state,currentFeed,starvingSince:0}),controlId,characterId]);
             return { currentFeed, remaining:food.amount-1 };
         }, 'pet:mount-food'));
+    },
+    applyQuestStep(characterId, questId, expected, next, takes, gives, experience = null, beginner = null, pk = null) {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            if (!require('./GameServer/Quest/QuestRegistry').entries.some(e => e.id === questId && e.status === 'active')) throw new Error('Unsupported quest');
+            const row = one('SELECT state, variables FROM character_quests WHERE characterId = ? AND questId = ?', [characterId, questId]);
+            const current = row ? JSON.parse(row.variables || '{}') : {};
+            if ((row?.state || 'created') !== expected.state || JSON.stringify(current) !== JSON.stringify(expected.variables)) throw new Error('Quest step changed');
+            const changed = new Set();
+            for (const take of takes) {
+                const items = all('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? AND equipped = 0 ORDER BY id', [characterId, take.selfId]);
+                if (!Number.isSafeInteger(take.amount) || take.amount < 1 || items.reduce((sum, item) => sum + item.amount, 0) < take.amount) throw new Error('Required quest items missing');
+                let remaining = take.amount;
+                for (const item of items) {
+                    const used = Math.min(remaining, item.amount);
+                    if (!used) break;
+                    remaining -= used;
+                    changed.add(item.id);
+                    if (used === item.amount) write('DELETE FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
+                    else write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [item.amount - used, item.id, characterId]);
+                }
+            }
+            for (const give of gives) {
+                if (!Number.isSafeInteger(give.amount) || give.amount < 1 || (!give.stackable && give.amount !== 1)) throw new Error('Invalid quest reward');
+                const item = give.stackable ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, give.selfId]) : null;
+                if (item) { write('UPDATE items SET amount = ? WHERE id = ?', [item.amount + give.amount, item.id]); changed.add(item.id); }
+                else changed.add(Number(write('INSERT INTO items(selfId, name, amount, characterId) VALUES (?, ?, ?, ?)', [give.selfId, give.name, give.amount, characterId]).insertId));
+            }
+            write(UPSERT_CHARACTER_QUEST, [characterId, questId, next.state, JSON.stringify(next.variables)]);
+            const rows = [...changed].map(id => one('SELECT * FROM items WHERE id = ? AND characterId = ?', [id, characterId]) || { id, amount: 0 });
+            if (experience) {
+                if (![experience.exp, experience.sp].every(n => Number.isSafeInteger(n) && n >= 0)) throw new Error('Invalid quest experience');
+                const actor = one('SELECT exp, sp, level FROM characters WHERE id = ?', [characterId]);
+                const cap = require('./GameServer/Progression/ProgressionCap');
+                const award = cap.applyAward(actor.exp, experience.exp);
+                const level = Math.max(actor.level, cap.levelForExperience(award.totalExp, actor.level));
+                const totalSp = actor.sp + experience.sp;
+                write('UPDATE characters SET exp = ?, sp = ?, level = ? WHERE id = ?', [award.totalExp, totalSp, level, characterId]);
+                rows.experience = { totalExp: award.totalExp, totalSp, level, grantedExp: award.accepted, grantedSp: experience.sp };
+            }
+            // A beginner-shot grant and its character-wide receipt commit with the
+            // rest of the hand-in, so shots can never be handed out unrecorded and
+            // the counter can never advance without the shots.
+            if (beginner) {
+                const character = one('SELECT newbieShotsReceived FROM characters WHERE id = ?', [characterId]);
+                if (Number(character.newbieShotsReceived) + 1 !== Number(beginner.received)) {
+                    throw new Error('beginner reward receipt changed');
+                }
+                write('UPDATE characters SET newbieShotsReceived = ? WHERE id = ?',
+                    [Number(beginner.received), characterId]);
+                rows.beginner = { received: Number(beginner.received) };
+            }
+            if (pk) {
+                if (questId !== 422 || !Number.isSafeInteger(pk.expected) || !Number.isSafeInteger(pk.next)
+                    || pk.next < 0 || pk.next >= pk.expected) throw new Error('Invalid quest PK reward');
+                const result = write('UPDATE characters SET pk = ? WHERE id = ? AND pk = ?',
+                    [pk.next, characterId, pk.expected]);
+                if (Number(result.affectedRows) !== 1) throw new Error('Quest PK count changed');
+                rows.pk = pk.next;
+            }
+            return rows;
+        }, 'quest:step'));
     },
     applyPetQuestStep(characterId, questId, expected, next, takes, gives) {
         return withCharacterFlush(characterId, () => inTransaction(() => {
