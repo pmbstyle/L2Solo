@@ -93,10 +93,22 @@ function calculate(member, spots = [], warehouseRows = [], options = {}) {
             // Route economics are part of the rate model. Reconsider the
             // target as well as the dropper so an old cheap-looking raid does
             // not stay locked after roster opportunity cost changes.
+            const targetId = number(existing.target?.selfId);
+            const overBudget = !GearAcquisitionPlanner.withinExpectedKillLimit(
+                existing, plannerOptions.maxExpectedKills
+            );
             return GearAcquisitionPlanner.planFor({
                 ...state,
                 stats: { ...(state.stats || {}), equipmentPlan: undefined }
-            }, plannerOptions);
+            }, {
+                ...plannerOptions,
+                ...(overBudget && targetId ? {
+                    excludedTargetIds: [...new Set([
+                        ...(options.excludedTargetIds || []).map(number).filter(Boolean),
+                        targetId
+                    ])]
+                } : {})
+            });
         }
         if (existing?.status === 'blocked') {
             const targetId = number(existing.target?.selfId);
