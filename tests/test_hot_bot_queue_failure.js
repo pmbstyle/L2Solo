@@ -70,6 +70,7 @@ async function main() {
             enabled: true,
             apiKey: 'queue-failure-test-key',
             model: 'test/queue-failure',
+            strictSchema: false,
             maxConcurrentRequests: 32
         };
         const playerSession = {

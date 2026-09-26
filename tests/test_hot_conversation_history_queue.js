@@ -51,6 +51,7 @@ async function main() {
             enabled: true,
             apiKey: 'hot-history-test-key',
             model: 'test/hot-history',
+            strictSchema: false,
             maxConcurrentRequests: 32
         };
         BotConversationStore.resetMemory();

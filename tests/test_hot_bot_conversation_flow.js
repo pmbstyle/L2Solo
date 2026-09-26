@@ -48,6 +48,7 @@ async function main() {
             enabled: true,
             apiKey: 'conversation-test-key',
             model: 'test/conversation',
+            strictSchema: false,
             maxConcurrentRequests: 32
         };
         const playerSession = { accountId: 'player_flow', actor: actor(301, 'FlowPlayer') };
