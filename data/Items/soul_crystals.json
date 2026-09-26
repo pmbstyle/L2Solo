@@ -1,0 +1,810 @@
+{
+  "source": "https://gitlab.com/TheDnR/l2j-lisvus",
+  "revision": "fdc7e33af5d69067b41a6ee7cc7c07fe7aa35975",
+  "crystals": {
+    "4629": {
+      "color": "red",
+      "stage": 0,
+      "nextId": 4630,
+      "brokenId": 4662
+    },
+    "4630": {
+      "color": "red",
+      "stage": 1,
+      "nextId": 4631,
+      "brokenId": 4662
+    },
+    "4631": {
+      "color": "red",
+      "stage": 2,
+      "nextId": 4632,
+      "brokenId": 4662
+    },
+    "4632": {
+      "color": "red",
+      "stage": 3,
+      "nextId": 4633,
+      "brokenId": 4662
+    },
+    "4633": {
+      "color": "red",
+      "stage": 4,
+      "nextId": 4634,
+      "brokenId": 4662
+    },
+    "4634": {
+      "color": "red",
+      "stage": 5,
+      "nextId": 4635,
+      "brokenId": 4662
+    },
+    "4635": {
+      "color": "red",
+      "stage": 6,
+      "nextId": 4636,
+      "brokenId": 4662
+    },
+    "4636": {
+      "color": "red",
+      "stage": 7,
+      "nextId": 4637,
+      "brokenId": 4662
+    },
+    "4637": {
+      "color": "red",
+      "stage": 8,
+      "nextId": 4638,
+      "brokenId": 4662
+    },
+    "4638": {
+      "color": "red",
+      "stage": 9,
+      "nextId": 4639,
+      "brokenId": 4662
+    },
+    "4639": {
+      "color": "red",
+      "stage": 10,
+      "nextId": 5577,
+      "brokenId": 4662
+    },
+    "5577": {
+      "color": "red",
+      "stage": 11,
+      "nextId": 5580,
+      "brokenId": 4662
+    },
+    "5580": {
+      "color": "red",
+      "stage": 12,
+      "nextId": 5908,
+      "brokenId": 4662
+    },
+    "4640": {
+      "color": "green",
+      "stage": 0,
+      "nextId": 4641,
+      "brokenId": 4663
+    },
+    "4641": {
+      "color": "green",
+      "stage": 1,
+      "nextId": 4642,
+      "brokenId": 4663
+    },
+    "4642": {
+      "color": "green",
+      "stage": 2,
+      "nextId": 4643,
+      "brokenId": 4663
+    },
+    "4643": {
+      "color": "green",
+      "stage": 3,
+      "nextId": 4644,
+      "brokenId": 4663
+    },
+    "4644": {
+      "color": "green",
+      "stage": 4,
+      "nextId": 4645,
+      "brokenId": 4663
+    },
+    "4645": {
+      "color": "green",
+      "stage": 5,
+      "nextId": 4646,
+      "brokenId": 4663
+    },
+    "4646": {
+      "color": "green",
+      "stage": 6,
+      "nextId": 4647,
+      "brokenId": 4663
+    },
+    "4647": {
+      "color": "green",
+      "stage": 7,
+      "nextId": 4648,
+      "brokenId": 4663
+    },
+    "4648": {
+      "color": "green",
+      "stage": 8,
+      "nextId": 4649,
+      "brokenId": 4663
+    },
+    "4649": {
+      "color": "green",
+      "stage": 9,
+      "nextId": 4650,
+      "brokenId": 4663
+    },
+    "4650": {
+      "color": "green",
+      "stage": 10,
+      "nextId": 5578,
+      "brokenId": 4663
+    },
+    "5578": {
+      "color": "green",
+      "stage": 11,
+      "nextId": 5581,
+      "brokenId": 4663
+    },
+    "5581": {
+      "color": "green",
+      "stage": 12,
+      "nextId": 5911,
+      "brokenId": 4663
+    },
+    "4651": {
+      "color": "blue",
+      "stage": 0,
+      "nextId": 4652,
+      "brokenId": 4664
+    },
+    "4652": {
+      "color": "blue",
+      "stage": 1,
+      "nextId": 4653,
+      "brokenId": 4664
+    },
+    "4653": {
+      "color": "blue",
+      "stage": 2,
+      "nextId": 4654,
+      "brokenId": 4664
+    },
+    "4654": {
+      "color": "blue",
+      "stage": 3,
+      "nextId": 4655,
+      "brokenId": 4664
+    },
+    "4655": {
+      "color": "blue",
+      "stage": 4,
+      "nextId": 4656,
+      "brokenId": 4664
+    },
+    "4656": {
+      "color": "blue",
+      "stage": 5,
+      "nextId": 4657,
+      "brokenId": 4664
+    },
+    "4657": {
+      "color": "blue",
+      "stage": 6,
+      "nextId": 4658,
+      "brokenId": 4664
+    },
+    "4658": {
+      "color": "blue",
+      "stage": 7,
+      "nextId": 4659,
+      "brokenId": 4664
+    },
+    "4659": {
+      "color": "blue",
+      "stage": 8,
+      "nextId": 4660,
+      "brokenId": 4664
+    },
+    "4660": {
+      "color": "blue",
+      "stage": 9,
+      "nextId": 4661,
+      "brokenId": 4664
+    },
+    "4661": {
+      "color": "blue",
+      "stage": 10,
+      "nextId": 5579,
+      "brokenId": 4664
+    },
+    "5579": {
+      "color": "blue",
+      "stage": 11,
+      "nextId": 5582,
+      "brokenId": 4664
+    },
+    "5582": {
+      "color": "blue",
+      "stage": 12,
+      "nextId": 5914,
+      "brokenId": 4664
+    },
+    "5908": {
+      "color": "red",
+      "stage": 13,
+      "nextId": null,
+      "brokenId": 4662
+    },
+    "5911": {
+      "color": "green",
+      "stage": 13,
+      "nextId": null,
+      "brokenId": 4663
+    },
+    "5914": {
+      "color": "blue",
+      "stage": 13,
+      "nextId": null,
+      "brokenId": 4664
+    }
+  },
+  "npcs": {
+    "583": {
+      "name": "Timak Orc",
+      "maxStage": 2,
+      "absorbType": "LAST_HIT"
+    },
+    "584": {
+      "name": "Timak Orc Archer",
+      "maxStage": 2,
+      "absorbType": "LAST_HIT"
+    },
+    "585": {
+      "name": "Timak Orc Soldier",
+      "maxStage": 2,
+      "absorbType": "LAST_HIT"
+    },
+    "586": {
+      "name": "Timak Orc Warrior",
+      "maxStage": 2,
+      "absorbType": "LAST_HIT"
+    },
+    "587": {
+      "name": "Timak Orc Shaman",
+      "maxStage": 3,
+      "absorbType": "LAST_HIT"
+    },
+    "588": {
+      "name": "Timak Orc Overlord",
+      "maxStage": 3,
+      "absorbType": "LAST_HIT"
+    },
+    "625": {
+      "name": "Malruk Knight",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "626": {
+      "name": "Malruk Berserker",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "627": {
+      "name": "Malruk Lord",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "628": {
+      "name": "Limal Karinness",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "629": {
+      "name": "Karik",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "636": {
+      "name": "Forrest of Mirrors Ghost",
+      "maxStage": 3,
+      "absorbType": "LAST_HIT"
+    },
+    "637": {
+      "name": "Forrest of Mirrors Ghost",
+      "maxStage": 4,
+      "absorbType": "LAST_HIT"
+    },
+    "638": {
+      "name": "Forrest of Mirrors Ghost",
+      "maxStage": 4,
+      "absorbType": "LAST_HIT"
+    },
+    "639": {
+      "name": "Mirror",
+      "maxStage": 4,
+      "absorbType": "LAST_HIT"
+    },
+    "640": {
+      "name": "Harit Lizardman",
+      "maxStage": 5,
+      "absorbType": "LAST_HIT"
+    },
+    "641": {
+      "name": "Harit Lizardman Grunt",
+      "maxStage": 5,
+      "absorbType": "LAST_HIT"
+    },
+    "642": {
+      "name": "Harit Lizardman Archer",
+      "maxStage": 5,
+      "absorbType": "LAST_HIT"
+    },
+    "646": {
+      "name": "Halingka",
+      "maxStage": 6,
+      "absorbType": "LAST_HIT"
+    },
+    "647": {
+      "name": "Yintzu",
+      "maxStage": 6,
+      "absorbType": "LAST_HIT"
+    },
+    "648": {
+      "name": "Paliote",
+      "maxStage": 7,
+      "absorbType": "LAST_HIT"
+    },
+    "649": {
+      "name": "Hamrut",
+      "maxStage": 7,
+      "absorbType": "LAST_HIT"
+    },
+    "650": {
+      "name": "Kranrot",
+      "maxStage": 8,
+      "absorbType": "LAST_HIT"
+    },
+    "674": {
+      "name": "Doom Knight",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "761": {
+      "name": "Pytan",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "762": {
+      "name": "Pytan Knight",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "767": {
+      "name": "Timak Orc Troop Leader",
+      "maxStage": 3,
+      "absorbType": "LAST_HIT"
+    },
+    "768": {
+      "name": "Timak Orc Troop Shaman",
+      "maxStage": 3,
+      "absorbType": "LAST_HIT"
+    },
+    "769": {
+      "name": "Timak Orc Troop Warrior",
+      "maxStage": 2,
+      "absorbType": "LAST_HIT"
+    },
+    "770": {
+      "name": "Timak Orc Troop Archer",
+      "maxStage": 2,
+      "absorbType": "LAST_HIT"
+    },
+    "793": {
+      "name": "Nos",
+      "maxStage": 2,
+      "absorbType": "LAST_HIT"
+    },
+    "794": {
+      "name": "Blade Stakato",
+      "maxStage": 2,
+      "absorbType": "LAST_HIT"
+    },
+    "795": {
+      "name": "Blade Stakato Worker",
+      "maxStage": 2,
+      "absorbType": "LAST_HIT"
+    },
+    "796": {
+      "name": "Blade Stakato Warrior",
+      "maxStage": 2,
+      "absorbType": "LAST_HIT"
+    },
+    "797": {
+      "name": "Blade Stakato Drone",
+      "maxStage": 3,
+      "absorbType": "LAST_HIT"
+    },
+    "798": {
+      "name": "Water Giant",
+      "maxStage": 3,
+      "absorbType": "LAST_HIT"
+    },
+    "799": {
+      "name": "Queen Undine Lad",
+      "maxStage": 3,
+      "absorbType": "LAST_HIT"
+    },
+    "800": {
+      "name": "Eva's Seeker",
+      "maxStage": 4,
+      "absorbType": "LAST_HIT"
+    },
+    "801": {
+      "name": "Theeder Piker",
+      "maxStage": 4,
+      "absorbType": "LAST_HIT"
+    },
+    "802": {
+      "name": "Theeder Mage",
+      "maxStage": 4,
+      "absorbType": "LAST_HIT"
+    },
+    "803": {
+      "name": "Doll Master",
+      "maxStage": 5,
+      "absorbType": "LAST_HIT"
+    },
+    "821": {
+      "name": "Erin Ediunce",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "823": {
+      "name": "Platinum Tribe Soldier",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "826": {
+      "name": "Platinum Tribe Archer",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "827": {
+      "name": "Platinum Tribe Warrior",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "828": {
+      "name": "Platinum Tribe Shaman",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "829": {
+      "name": "Platinum Tribe Overlord",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "830": {
+      "name": "Guardian Angel",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "831": {
+      "name": "Seal Angel",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "839": {
+      "name": "Unpleasant Humming",
+      "maxStage": 3,
+      "absorbType": "LAST_HIT"
+    },
+    "840": {
+      "name": "Death Flyer",
+      "maxStage": 4,
+      "absorbType": "LAST_HIT"
+    },
+    "841": {
+      "name": "Fiend Archer",
+      "maxStage": 4,
+      "absorbType": "LAST_HIT"
+    },
+    "842": {
+      "name": "Musveren",
+      "maxStage": 4,
+      "absorbType": "LAST_HIT"
+    },
+    "843": {
+      "name": "Zaken's Royal Guard",
+      "maxStage": 5,
+      "absorbType": "LAST_HIT"
+    },
+    "844": {
+      "name": "Kaim Vanul",
+      "maxStage": 5,
+      "absorbType": "LAST_HIT"
+    },
+    "845": {
+      "name": "Pirate's Zombie Captain",
+      "maxStage": 5,
+      "absorbType": "LAST_HIT"
+    },
+    "846": {
+      "name": "Doll Blader",
+      "maxStage": 6,
+      "absorbType": "LAST_HIT"
+    },
+    "847": {
+      "name": "Vale Master",
+      "maxStage": 6,
+      "absorbType": "LAST_HIT"
+    },
+    "848": {
+      "name": "Light Bringer",
+      "maxStage": 3,
+      "absorbType": "LAST_HIT"
+    },
+    "849": {
+      "name": "Light Worm",
+      "maxStage": 2,
+      "absorbType": "LAST_HIT"
+    },
+    "860": {
+      "name": "Seal Angel",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "986": {
+      "name": "Sairon",
+      "maxStage": 6,
+      "absorbType": "LAST_HIT"
+    },
+    "987": {
+      "name": "Sairon's Doll",
+      "maxStage": 6,
+      "absorbType": "LAST_HIT"
+    },
+    "988": {
+      "name": "Sairon's Puppet",
+      "maxStage": 6,
+      "absorbType": "LAST_HIT"
+    },
+    "994": {
+      "name": "Garden Guard Leader",
+      "maxStage": 5,
+      "absorbType": "LAST_HIT"
+    },
+    "995": {
+      "name": "Garden Guard",
+      "maxStage": 4,
+      "absorbType": "LAST_HIT"
+    },
+    "1006": {
+      "name": "Doom Servant",
+      "maxStage": 8,
+      "absorbType": "LAST_HIT"
+    },
+    "1007": {
+      "name": "Doom Guard",
+      "maxStage": 9,
+      "absorbType": "LAST_HIT"
+    },
+    "1008": {
+      "name": "Doom Archer",
+      "maxStage": 9,
+      "absorbType": "LAST_HIT"
+    },
+    "1009": {
+      "name": "Doom Trooper",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "1010": {
+      "name": "Doom Warrior",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "1062": {
+      "name": "Messenger Angel",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "1063": {
+      "name": "Messenger Angel",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "1064": {
+      "name": "Platinum Guardian Archer",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "1065": {
+      "name": "Platinum Guardian Warrior",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "1066": {
+      "name": "Platinum Guardian Shaman",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "1067": {
+      "name": "Guardian Archangel",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "1068": {
+      "name": "Guardian Archangel",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "1069": {
+      "name": "Platinum Guardian Prefect",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "1070": {
+      "name": "Seal Archangel",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "1071": {
+      "name": "Seal Archangel",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "1072": {
+      "name": "Platinum Guardian Chief",
+      "maxStage": 10,
+      "absorbType": "LAST_HIT"
+    },
+    "1611": {
+      "name": "Unpleasant Humming",
+      "maxStage": 3,
+      "absorbType": "LAST_HIT"
+    },
+    "1612": {
+      "name": "Unpleasant Humming",
+      "maxStage": 3,
+      "absorbType": "LAST_HIT"
+    },
+    "1614": {
+      "name": "Death Flyer",
+      "maxStage": 4,
+      "absorbType": "LAST_HIT"
+    },
+    "1615": {
+      "name": "Death Flyer",
+      "maxStage": 4,
+      "absorbType": "LAST_HIT"
+    },
+    "1617": {
+      "name": "Fiend Archer",
+      "maxStage": 4,
+      "absorbType": "LAST_HIT"
+    },
+    "1620": {
+      "name": "Musveren",
+      "maxStage": 4,
+      "absorbType": "LAST_HIT"
+    },
+    "1621": {
+      "name": "Musveren",
+      "maxStage": 4,
+      "absorbType": "LAST_HIT"
+    },
+    "1623": {
+      "name": "Zaken's Guard",
+      "maxStage": 5,
+      "absorbType": "LAST_HIT"
+    },
+    "1624": {
+      "name": "Zaken's Guard",
+      "maxStage": 5,
+      "absorbType": "LAST_HIT"
+    },
+    "1626": {
+      "name": "Kaim Vanul",
+      "maxStage": 5,
+      "absorbType": "LAST_HIT"
+    },
+    "1627": {
+      "name": "Kaim Vanul",
+      "maxStage": 5,
+      "absorbType": "LAST_HIT"
+    },
+    "1629": {
+      "name": "Pirate Zombie Captain",
+      "maxStage": 5,
+      "absorbType": "LAST_HIT"
+    },
+    "1630": {
+      "name": "Pirate Zombie Captain",
+      "maxStage": 5,
+      "absorbType": "LAST_HIT"
+    },
+    "1632": {
+      "name": "Doll Blader",
+      "maxStage": 6,
+      "absorbType": "LAST_HIT"
+    },
+    "1633": {
+      "name": "Doll Blader",
+      "maxStage": 6,
+      "absorbType": "LAST_HIT"
+    },
+    "1635": {
+      "name": "Vale Master",
+      "maxStage": 6,
+      "absorbType": "LAST_HIT"
+    },
+    "1636": {
+      "name": "Vale Master",
+      "maxStage": 6,
+      "absorbType": "LAST_HIT"
+    },
+    "10283": {
+      "name": "Lilith",
+      "maxStage": 12,
+      "absorbType": "FULL_PARTY"
+    },
+    "10286": {
+      "name": "Anakim",
+      "maxStage": 12,
+      "absorbType": "FULL_PARTY"
+    },
+    "10319": {
+      "name": "Ember",
+      "maxStage": 13,
+      "absorbType": "FULL_PARTY"
+    },
+    "10338": {
+      "name": "Anakazel",
+      "maxStage": 13,
+      "absorbType": "FULL_PARTY"
+    },
+    "12211": {
+      "name": "Antharas",
+      "maxStage": 13,
+      "absorbType": "FULL_PARTY"
+    },
+    "12372": {
+      "name": "Baium",
+      "maxStage": 12,
+      "absorbType": "FULL_PARTY"
+    },
+    "12374": {
+      "name": "Zaken",
+      "maxStage": 12,
+      "absorbType": "FULL_PARTY"
+    },
+    "12544": {
+      "name": "Pirate Zombie Captain",
+      "maxStage": 5,
+      "absorbType": "LAST_HIT"
+    },
+    "12566": {
+      "name": "Doom Guard",
+      "maxStage": 9,
+      "absorbType": "LAST_HIT"
+    },
+    "12567": {
+      "name": "Doom Archer",
+      "maxStage": 9,
+      "absorbType": "LAST_HIT"
+    },
+    "12899": {
+      "name": "Valakas",
+      "maxStage": 13,
+      "absorbType": "FULL_PARTY"
+    }
+  }
+}

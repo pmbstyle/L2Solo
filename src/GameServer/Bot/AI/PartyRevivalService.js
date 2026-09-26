@@ -96,6 +96,27 @@ function resurrectionSkill(actor) {
         .sort((a, b) => Number(b.fetchPower?.() || 0) - Number(a.fetchPower?.() || 0))[0] || null;
 }
 
+function combatResurrectionAllowed(leaderSession) {
+    if (!leaderSession?.hotBackgroundPartyId || leaderSession.partyCompanion) return false;
+    const party = invoke('GameServer/Bot/Population/BackgroundPartyState').find(leaderSession.hotBackgroundPartyId);
+    if (party?.status !== 'hot' || party.stats?.raidEncounter?.status === 'failed') return false;
+    if (party.stats?.objective?.sourceKind !== 'raid' && party.stats?.objective?.raidBoss !== true) return false;
+    const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
+    return !partySessions(leaderSession).filter(isAlive).some(s => Threats.context(s).threats.length > 0);
+}
+
+function safeCombatProvider(session, leaderSession, skill) {
+    const actor = session.actor;
+    const role = invoke('GameServer/Bot/AI/BotRoles').inferRole(actor);
+    if (role === 'tank' || actor.fetchHp() / Math.max(1, actor.fetchMaxHp()) < 0.65) return false;
+    if (invoke('GameServer/Bot/AI/PartyAwareness').underDirectNpcAttack(session)) return false;
+    const reserve = role === 'healer' ? 0.35 : 0.10;
+    if ((actor.fetchMp() - Number(skill.fetchConsumedMp?.() || 0)) / Math.max(1, actor.fetchMaxMp()) < reserve) return false;
+    // A healer is a fallback only while nobody needs their immediate care.
+    return role !== 'healer' || !partySessions(leaderSession).filter(isAlive)
+        .some(s => s.actor.fetchHp() / Math.max(1, s.actor.fetchMaxHp()) < 0.7);
+}
+
 function resurrectionScrollSkill() {
     const source = (DataCache.skills || []).find((skill) => Number(skill.selfId) === RESURRECTION_SCROLL_SKILL_ID);
     if (!source) {
@@ -189,7 +210,11 @@ function tick(session, leaderSession, Generics) {
     const combat = background
         ? { active: partyCombatInProgress(leaderSession), reason: 'party_combat' }
         : PartyCombatState.combatState(leaderSession);
-    if (combat.active) return { handled: false, dead, blockedBy: combat.reason, threat: combat.target };
+    const combatRescue = combatResurrectionAllowed(leaderSession);
+    if (combat.active && !combatRescue) return { handled: false, dead, blockedBy: combat.reason, threat: combat.target };
+    // Death classification owns the raid outcome. Never race its async
+    // failure transaction by resurrecting a critical role mid-wipe.
+    const rescueTargets = combat.active ? dead.filter(s => s.hotRaidCasualtyAt) : dead;
 
     const attempt = leaderSession.partyRevivalAttempt;
     if (attempt) return { handled: attempt.providerId === session.actor.fetchId(), waiting: true, targetId: attempt.targetId };
@@ -203,7 +228,7 @@ function tick(session, leaderSession, Generics) {
         // Background parties use learned resurrection. Do not inherit the
         // player-companion fallback that manufactures a scroll cast.
         .filter(s => !background || learnedResurrectionSkills(s.actor).length > 0);
-    const targetSession = dead.filter(target => availableProviders.some(provider => withinReviveApproach(provider.actor, target.actor))).sort((a, b) => (
+    const targetSession = rescueTargets.filter(target => availableProviders.some(provider => withinReviveApproach(provider.actor, target.actor))).sort((a, b) => (
         Number(b === leaderSession) - Number(a === leaderSession) ||
         Number(a.actor.fetchId()) - Number(b.actor.fetchId())
     ))[0];
@@ -215,7 +240,12 @@ function tick(session, leaderSession, Generics) {
     const skilled = providers
         .map((providerSession) => ({ session: providerSession, skill: resurrectionSkill(providerSession.actor) }))
         .filter((entry) => entry.skill)
-        .sort((a, b) => Number(a.session.actor.fetchId()) - Number(b.session.actor.fetchId()))[0] || null;
+        .filter(entry => !combat.active || safeCombatProvider(entry.session, leaderSession, entry.skill))
+        .sort((a, b) => {
+            const Roles = invoke('GameServer/Bot/AI/BotRoles');
+            return Number(Roles.inferRole(a.session.actor) === 'healer') - Number(Roles.inferRole(b.session.actor) === 'healer')
+                || Number(a.session.actor.fetchId()) - Number(b.session.actor.fetchId());
+        })[0] || null;
     const provider = skilled?.session || providers.sort((a, b) => Number(a.actor.fetchId()) - Number(b.actor.fetchId()))[0] || null;
     if (!provider || provider !== session) return { handled: false, dead };
     if (background && !skilled) return { handled: false, dead };
@@ -274,7 +304,7 @@ function shouldTownRespawn(leaderSession, deadSession, now = Date.now()) {
     // fighting. Pause the actual wait budget instead of letting wall-clock
     // time expire behind the fight and forcing an immediate town restart as
     // soon as combat ends.
-    if (partyCombatInProgress(leaderSession)) {
+    if (partyCombatInProgress(leaderSession) && !combatResurrectionAllowed(leaderSession)) {
         if (!deadSession.partyReviveCombatPauseStartedAt) {
             deadSession.partyReviveCombatPauseStartedAt = now;
         }
@@ -312,6 +342,7 @@ module.exports = {
     partySessions,
     deadMembers,
     partyCombatInProgress,
+    combatResurrectionAllowed,
     learnedResurrectionSkills,
     resurrectionSkill,
     playerCanResurrect,

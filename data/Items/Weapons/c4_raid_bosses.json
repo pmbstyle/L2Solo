@@ -14,7 +14,7 @@
       "pAtkRnd": 10,
       "mAtk": 83,
       "atkSpd": 325,
-      "crit": 8,
+      "crit": 80,
       "accur": 0
     },
     "etc": {
@@ -41,7 +41,7 @@
       "pAtkRnd": 20,
       "mAtk": 132,
       "atkSpd": 379,
-      "crit": 4,
+      "crit": 40,
       "accur": 4
     },
     "etc": {
@@ -68,7 +68,7 @@
       "pAtkRnd": 20,
       "mAtk": 132,
       "atkSpd": 325,
-      "crit": 4,
+      "crit": 40,
       "accur": 4
     },
     "etc": {

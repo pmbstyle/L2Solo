@@ -127,7 +127,7 @@ function raidBossCatalog() {
             id: Number(npc.selfId),
             name: npc.template.name || spawn.name || `Raid boss ${npc.selfId}`,
             level: Number(npc.template.level || 0),
-            respawnMs: Math.max(0, Number(spawn.respawn || 0) * 1000),
+            respawnMs: require('../GameServer/RaidBoss/RespawnPolicy').RESPAWN_DELAY_MS,
             spawnLoc: spawn.coords?.[0]
                 ? {
                     locX: Number(spawn.coords[0].locX),
@@ -2225,6 +2225,54 @@ async function actorDetail(kind, characterId) {
     return botDetail(id);
 }
 
+function loopbackRequest(request) {
+    const address = String(request?.socket?.remoteAddress || '');
+    return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+}
+
+function teleportPlayerToRaid(playerName, bossTemplateId) {
+    const name = String(playerName || '').trim().toLowerCase();
+    const templateId = Number(bossTemplateId);
+    if (!name || !Number.isSafeInteger(templateId) || templateId <= 0) {
+        return { ok: false, error: 'invalid_player_or_raid_boss' };
+    }
+    const World = invoke('GameServer/World/World');
+    const session = (World.user?.sessions || []).find((candidate) => (
+        candidate.actor?.fetchIsOnline?.() === true
+        && String(candidate.actor?.fetchName?.() || '').toLowerCase() === name
+    ));
+    if (!session?.actor) return { ok: false, error: 'player_not_online' };
+    const boss = invoke('GameServer/World/RaidEntityIndex').bossByTemplateId(World, templateId);
+    if (!boss || boss.isDead?.() || boss.state?.fetchDead?.()) {
+        return { ok: false, error: 'raid_boss_not_alive' };
+    }
+    const bossLoc = {
+        locX: Number(boss.fetchLocX()),
+        locY: Number(boss.fetchLocY()),
+        locZ: Number(boss.fetchLocZ())
+    };
+    const geodata = invoke('GameServer/Geodata/GeodataEngine');
+    // A large XY offset is unsafe in multilayer dungeons: the same explicit Z
+    // can belong to a corridor one or two floors away. Pick the first nearby
+    // point whose geodata floor matches the boss instead.
+    const offsets = [
+        [700, 250], [350, 0], [-350, 0], [0, 350], [0, -350],
+        [200, 0], [-200, 0], [0, 200], [0, -200],
+        [100, 0], [-100, 0], [0, 100], [0, -100]
+    ];
+    const safe = offsets.map(([dx, dy]) => {
+        const locX = bossLoc.locX + dx;
+        const locY = bossLoc.locY + dy;
+        const locZ = Number(geodata.getHeight(locX, locY, bossLoc.locZ));
+        return { locX, locY, locZ };
+    }).find((point) => Math.abs(point.locZ - bossLoc.locZ) <= 96) || bossLoc;
+    const destination = { ...safe, head: session.actor.fetchHead?.() || 0 };
+    const moved = invoke(global.path.actor).teleportTo(session, session.actor, destination);
+    return moved === false
+        ? { ok: false, error: 'player_cannot_teleport' }
+        : { ok: true, playerName: session.actor.fetchName(), bossTemplateId: templateId, destination };
+}
+
 function sendJson(response, data, statusCode = 200) {
     response.writeHead(statusCode, {
         'Content-Type': 'application/json; charset=utf-8',
@@ -2413,6 +2461,23 @@ function route(request, response) {
         } catch (err) {
             sendJson(response, { error: err.message }, 500);
         }
+        return;
+    }
+
+    if (url.pathname === '/observer/api/control/teleport-player-to-raid') {
+        if (request.method !== 'POST') {
+            response.writeHead(405, { Allow: 'POST' });
+            response.end();
+            return;
+        }
+        if (!loopbackRequest(request)) {
+            sendJson(response, { ok: false, error: 'loopback_only' }, 403);
+            return;
+        }
+        readJsonBody(request)
+            .then((payload) => teleportPlayerToRaid(payload.playerName, payload.bossTemplateId))
+            .then((result) => sendJson(response, result, result.ok ? 200 : 400))
+            .catch((err) => sendJson(response, { ok: false, error: err.message }, err.statusCode || 500));
         return;
     }
 
@@ -2709,6 +2774,8 @@ const WorldObserverServer = {
     knowledgeBaseService,
     classCatalog,
     actorDetail,
+    loopbackRequest,
+    teleportPlayerToRaid,
     raidBossCatalog,
     raidBossSnapshot,
     equipmentValue,

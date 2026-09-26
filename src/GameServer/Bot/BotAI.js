@@ -491,6 +491,12 @@ const BotAI = {
             const wasCompanion = session.partyCompanion === true && !!session.followPlayerSession;
             if (!session.deathTimerStart) {
                 session.deathTimerStart = Date.now();
+                if (session.hotBackgroundPartyId) {
+                    invoke('GameServer/Bot/Population/HotPartyLifecycle')
+                        .failRaidOnDeath(session, session.deathTimerStart)
+                        .catch((error) => utils.infoWarn('RaidBoss', 'hot raid failure handling failed for %s: %s',
+                            session.hotBackgroundPartyId, error?.message || error));
+                }
                 invoke('GameServer/Bot/AI/BotClanChat').onDeath(session, `hot:${session.deathTimerStart}`, session.deathTimerStart);
                 if (wasCompanion) {
                     const deathReaction = PartyRevivalService.noteCompanionDeath(
@@ -523,10 +529,12 @@ const BotAI = {
                 && invoke('GameServer/Clan/ClanAllianceService').awaitingRitualResurrection(session);
             const rescueLeader = wasCompanion ? session.followPlayerSession
                 : session.hotBackgroundPartyId ? invoke('GameServer/Bot/AI/HotBackgroundParty').leader(session) : null;
-            const partyRescuePending = ritualRescuePending || rescueLeader && !PartyRevivalService.shouldTownRespawn(
-                rescueLeader,
-                session
-            );
+            const hotParty = session.hotBackgroundPartyId
+                ? invoke('GameServer/Bot/Population/BackgroundPartyState').find(session.hotBackgroundPartyId)
+                : null;
+            const failedBotClanRaid = hotParty?.stats?.raidEncounter?.status === 'failed';
+            const partyRescuePending = !failedBotClanRaid && (ritualRescuePending
+                || rescueLeader && !PartyRevivalService.shouldTownRespawn(rescueLeader, session));
             // Companions wait for the party's resurrection attempt.  The
             // normal town restart remains the escape hatch for a wipe, an
             // unsupported solo leader, or an unanswered corpse.
@@ -656,7 +664,9 @@ const BotAI = {
         }
         const allowedPlayerPartyRaid = BotRaidSafety.isProtectedRaidEntity(npc) &&
             BotRaidSafety.canEngagePlayerPartyRaid(session, npc, options.playerPartyRaidLeaderSession);
-        if (BotRaidSafety.isProtectedRaidEntity(npc) && !allowedPlayerPartyRaid) {
+        const allowedBotClanRaid = BotRaidSafety.isProtectedRaidEntity(npc)
+            && BotRaidSafety.canEngageBotClanRaid(session, npc);
+        if (BotRaidSafety.isProtectedRaidEntity(npc) && !allowedPlayerPartyRaid && !allowedBotClanRaid) {
             BotRaidSafety.clearTarget(session, bot, npc);
             if (session) {
                 session.lastCombatDecision = {
@@ -742,7 +752,7 @@ const BotAI = {
             ...(typeof options.party === 'boolean' ? { party: options.party } : {}),
             pvp: options.pvp === true,
             avoidAreaDamage: options.avoidAreaDamage === true || (
-                allowedPlayerPartyRaid && BotRaidSafety.hasControlledRaidMinion(npc)
+                (allowedPlayerPartyRaid || allowedBotClanRaid) && BotRaidSafety.hasControlledRaidMinion(npc)
             )
         };
         // Bot casts use the internal SkillExec path and therefore do not pass
@@ -768,7 +778,10 @@ const BotAI = {
         }
         const selfTactic = basicAttackOnly || !canCast ? null
             : invoke('GameServer/Bot/AI/PartyClassTactics').selfAction(bot, {
-                role, activeMobs: Number(options.activeMobs ?? 1)
+                role,
+                activeMobs: Number(options.activeMobs ?? 1),
+                target: npc,
+                raidBoss: allowedBotClanRaid
             });
         if (selfTactic) {
             session.lastCombatDecision = { action:'self_support', role, reason:selfTactic.reason,

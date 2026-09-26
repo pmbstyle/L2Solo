@@ -44,8 +44,14 @@ function planPriority(plan) {
         active: 400,
         blocked: 300
     };
+    const effort = Math.max(0, number(plan?.expectedEffort, number(plan?.expectedKills)));
+    // This is a tie-breaker after actual equipment debt. When two upgrades
+    // matter equally, finish the cheaper one first; the old sign accidentally
+    // rewarded the route that consumed more kills. Keep the bonus below the
+    // 50-point status steps so a cheap active route cannot outrank work that
+    // is already ready to craft.
     return (statusPriority[String(plan?.status || '')] || 0)
-        + Math.min(100, Math.max(0, number(plan?.expectedKills) / 10));
+        + Math.max(0, 40 - Math.min(40, effort / 25));
 }
 
 function rankFor(value) {
@@ -207,6 +213,7 @@ function buildGoal(clan, selection, previousGoal = null, timestamp = Date.now(),
         : ['active', 'ready_to_craft', 'component_ready'].includes(plan.status)
             ? 'executing'
             : 'preparing';
+    const raidFailure = require('./ClanRaidFailurePolicy').carriedFailure(previousGoal, plan, sameTarget);
 
     return {
         type: 'equipment',
@@ -227,6 +234,11 @@ function buildGoal(clan, selection, previousGoal = null, timestamp = Date.now(),
         plan: {
             kind: route,
             sourceId: number(plan.next?.npcId) || null,
+            sourceKind: plan.next?.sourceKind || plan.next?.kind || null,
+            raidBoss: plan.next?.raidBoss === true,
+            raidBossTemplateId: number(plan.next?.raidBossTemplateId) || null,
+            expectedKills: Math.max(0, number(plan.expectedKills)),
+            expectedEffort: Math.max(0, number(plan.expectedEffort, number(plan.expectedKills))),
             beneficiaryId: memberIdValue,
             selectedAt: timestamp,
             reasonCode: `clan_equipment_${route}`
@@ -236,6 +248,7 @@ function buildGoal(clan, selection, previousGoal = null, timestamp = Date.now(),
             : [memberIdValue],
         partyId: null,
         catastrophicFailures: sameTarget ? number(previousGoal.catastrophicFailures) : 0,
+        ...(raidFailure ? { raidFailure } : {}),
         status,
         reasonCodes: [`clan_equipment_${route}`],
         goalKey: goalKey(clan.id, member, plan),

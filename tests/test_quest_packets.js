@@ -6,15 +6,20 @@ const QuestList = invoke("GameServer/Network/Response/QuestList");
 const QuestService = invoke("GameServer/Quest/QuestService");
 
 assert.deepStrictEqual(
-  QuestService.quests().map((quest) => quest.id),
+  QuestService.quests().slice(0, 71).map((quest) => quest.id),
   [
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 34, 36, 42, 43, 44, 45, 46, 47, 48, 49, 101, 102, 103,
     104, 105, 106, 107, 108, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160,
-    161, 162, 163, 164, 165, 166, 167, 168, 169, 170,
+    161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 350,
     401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415,
     416, 417, 418, 419, 420, 421, 501,
   ],
   "early C4 quests register in deterministic order",
+);
+assert.deepStrictEqual(
+  QuestService.quests().slice(71).map(quest => quest.id).sort((a, b) => a - b),
+  [257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 271, 272, 273, 274, 275, 276, 277, 291, 292, 293, 294, 295, 296, 297, 303, 306, 313, 316, 317, 319, 320, 324, 325, 340, 341, 347, 362, 363, 364, 378, 379, 385, 422, 634, 635],
+  "exactly the 46 missing quests are appended without changing existing priority",
 );
 assert.deepStrictEqual(
   QuestService.quests()[0].startNpcs,

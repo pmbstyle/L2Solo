@@ -257,6 +257,11 @@ const SpotService = {
 
     containsLocation(spot, loc) {
         if (!loc || !['locX', 'locY', 'locZ'].every(key => Number.isFinite(Number(loc[key])))) return false;
+        if (spot?.raidBoss === true) {
+            return !!spot.center
+                && distance2d(spot.center, loc) <= 1200
+                && Math.abs(Number(spot.center.locZ) - Number(loc.locZ)) <= 500;
+        }
         // Non-grid profiles are used by callers with their own routing geometry.
         if (!/^(-?\d+)_(-?\d+)(?::.+)?$/.test(String(spot?.id || ''))) return true;
         return spotIdAt(loc).id === spot.id;

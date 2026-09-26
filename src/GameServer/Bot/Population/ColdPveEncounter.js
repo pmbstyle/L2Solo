@@ -6,10 +6,11 @@ function key(members, spot, targetNpcId, partyId = '') {
         members.map(s => [s.characterId, s.loc?.locX, s.loc?.locY, s.loc?.locZ, s.timing?.lastHotAt])
             .sort((a, b) => a[0] - b[0])]);
 }
-function read(record, encounterKey, timestamp) {
+function read(record, encounterKey, timestamp, options = {}) {
+    const maxSlices = Math.max(1, Number(options.maxSlices || MAX_SLICES));
     return record?.version === 1 && record.key === encounterKey && record.hp > 0
         && timestamp >= record.at && timestamp - record.at <= MAX_AGE_MS
-        && record.slices < MAX_SLICES ? record : null;
+        && record.slices < maxSlices ? record : null;
 }
 function save(previous, encounterKey, mob, hp, timestamp, timers) {
     return { version: 1, key: encounterKey, mob, hp: Math.max(0, hp), at: timestamp,

@@ -80,7 +80,7 @@ const Formulas = invoke('GameServer/Formulas');
                 assert(actor.state.fetchHits(), 'arrival at a stationary target must begin the real attack');
                 hits.shift()();
                 assert.deepStrictEqual(damage, [10]);
-                actor.state.setHits(false); hits.length = 0;
+                actor.state.setHits(false); actor.attack.clearTimers(); hits.length = 0;
                 const beforeNear = starts;
                 Request(session, actor, { id: target.fetchId(), ctrl: true });
                 await drain();

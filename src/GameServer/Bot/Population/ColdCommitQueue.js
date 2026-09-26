@@ -288,6 +288,11 @@ class ColdCommitQueue {
                         const afterStartedAt = this.now();
                         try {
                             await this.afterCommit(entry, result);
+                        } catch (error) {
+                            // Persistence already succeeded. A failed journal or
+                            // world notification must never become a rejected ACK.
+                            this.counters.errors += 1;
+                            result.afterCommitError = error?.message || 'after_commit_error';
                         } finally {
                             afterCommitMs += this.now() - afterStartedAt;
                         }
@@ -340,17 +345,35 @@ class ColdCommitQueue {
         if (!proposal) return null;
         this.p2.delete(id);
         this.bytes = Math.max(0, this.bytes - proposal.bytes);
-        const nextState = await this.prepare(proposal);
-        if (!nextState) return { ok: false, characterId: id, reason: 'prepare_rejected' };
-        const results = await this.retryBusy(() => this.commit([{
-            proposal,
-            token: proposal.token,
-            nextState,
-            atomicGroup: proposal.atomicGroup || null,
-            options: proposal.options || {}
-        }]));
+        let nextState;
+        try { nextState = await this.prepare(proposal); }
+        catch (error) {
+            this.onResults([{ ok: false, characterId: id, reason: error?.message || 'prepare_error', proposal }]);
+            throw error;
+        }
+        if (!nextState) {
+            const rejected = { ok: false, characterId: id, reason: 'prepare_rejected', proposal };
+            this.onResults([rejected]);
+            return rejected;
+        }
+        let results;
+        try {
+            results = await this.retryBusy(() => this.commit([{
+                proposal,
+                token: proposal.token,
+                nextState,
+                atomicGroup: proposal.atomicGroup || null,
+                options: proposal.options || {}
+            }]));
+        } catch (error) {
+            this.onResults([{ ok: false, characterId: id, reason: error?.message || 'commit_error', proposal }]);
+            throw error;
+        }
         const result = results?.[0] || { ok: false, characterId: id, reason: 'missing_commit_result' };
-        if (result.ok) await this.afterCommit({ proposal, token: proposal.token, nextState }, result);
+        if (result.ok) {
+            try { await this.afterCommit({ proposal, token: proposal.token, nextState }, result); }
+            catch (error) { this.counters.errors += 1; result.afterCommitError = error?.message || 'after_commit_error'; }
+        }
         this.onResults([{ ...result, proposal, nextState }]);
         return { ...result, proposal, nextState };
     }

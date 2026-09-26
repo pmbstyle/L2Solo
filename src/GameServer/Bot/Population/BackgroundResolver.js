@@ -12,6 +12,7 @@ const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const EncounterReadiness = invoke('GameServer/Bot/AI/BotEncounterReadiness');
+const PartyBuffLoadout = invoke('GameServer/Bot/AI/PartyBuffLoadout');
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -205,13 +206,17 @@ function resolveRest(state, elapsedMs, timestamp, options = {}) {
     const hpReady = vitals.hp / Math.max(1, vitals.maxHp) >= 0.95;
     const requireMana = requiresManaRecovery(state, options);
     const mpReady = !requireMana || vitals.mp / Math.max(1, vitals.maxMp) >= 0.95;
-    // A persisted deadline can come from the old all-roles MP policy. For a
-    // non-mana role, recompute only the remaining HP recovery instead.
-    const scheduledRemainingMs = requireMana
+    const recoveryNeeded = !hpReady || !mpReady;
+    // The deadline is an estimate, not an additional readiness condition.
+    // Regeneration can fill the member slightly before that deadline; keeping
+    // the deadline alive in that case would move it forward on every resolve.
+    const scheduledRemainingMs = recoveryNeeded && requireMana
         ? Math.max(0, Number(state.stats?.restUntil || 0) - timestamp)
         : 0;
-    const remainingMs = Math.max(estimateRestMs(state, vitals, options), scheduledRemainingMs);
-    const resting = !hpReady || !mpReady || scheduledRemainingMs > 0;
+    const remainingMs = recoveryNeeded
+        ? Math.max(estimateRestMs(state, vitals, options), scheduledRemainingMs)
+        : 0;
+    const resting = recoveryNeeded;
     const restUntil = resting ? timestamp + remainingMs : null;
 
     return {
@@ -377,6 +382,60 @@ function chooseChargeSkill(profile, mp, cooldowns, time, charges = 0, context = 
     return ColdClassPolicy.select(profile,{hp:profile.maxHp,mp,cooldowns,time,charges,...context,prepare:true});
 }
 
+function coldRaidControlCapacity(fighters = [], mob = {}) {
+    const minionCount = Math.max(0, Number(mob.raidMinionCount || 0));
+    if (!minionCount) return 0;
+    const controllers = fighters.filter((fighter) => (fighter.profile?.skills || []).some((skill) => {
+        if (skill.passive || Number(skill.mp || 0) > Number(fighter.vitals?.mp || 0)) return false;
+        const semantic = C4SkillRules.resolve(skill);
+        const effect = String(semantic.effect || '').toLowerCase();
+        return semantic.effectType === 'debuff' && /sleep|root|stun/.test(effect);
+    })).length;
+    return Math.min(minionCount, controllers);
+}
+
+function coldRaidMinionPressure(mob = {}, mobHp = 0, controlCapacity = 0) {
+    const count = Math.max(0, Number(mob.raidMinionCount || 0));
+    const minionHp = Math.max(0, Number(mob.raidMinionHp || 0));
+    if (!count || !minionHp) return { activeMinions: 0, uncontrolledMinions: 0, pAtk: 0 };
+    const bossHp = Math.max(0, Number(mob.raidBossMaxHp || (Number(mob.maxHp || 0) - minionHp)));
+    const remainingMinionHp = Math.max(0, Math.min(minionHp, Number(mobHp || 0) - bossHp));
+    const activeMinions = remainingMinionHp > 0
+        ? Math.max(1, Math.ceil(count * remainingMinionHp / minionHp))
+        : 0;
+    const uncontrolledMinions = Math.max(0, activeMinions - Math.max(0, Number(controlCapacity || 0)));
+    return {
+        activeMinions,
+        uncontrolledMinions,
+        pAtk: Math.round(Math.max(0, Number(mob.raidMinionPAtk || 0)) * uncontrolledMinions / Math.max(1, count))
+    };
+}
+
+function coldRaidEncounterProfile(pending, spot = {}, targetNpcId = 0) {
+    const storedMob = pending?.mob;
+    const storedHp = Number(pending?.hp);
+    if (!storedMob || storedMob.raidBossMaxHp != null) {
+        return { mob: storedMob || null, hp: Number.isFinite(storedHp) ? storedHp : null, upgraded: false };
+    }
+    const bossId = Number(storedMob.selfId || targetNpcId || 0);
+    const current = ColdCombatProfile.npcForSpot(spot, () => 1, {
+        preferredNpcId: bossId,
+        allowRaid: true,
+        aggressiveInterruptionChance: 0
+    });
+    if (!current || current.avoided || Number(current.selfId || 0) !== bossId
+        || current.raidBossMaxHp == null) {
+        return { mob: storedMob, hp: Number.isFinite(storedHp) ? storedHp : null, upgraded: false };
+    }
+    const oldMaxHp = Math.max(1, Number(storedMob.maxHp || 1));
+    const hpRatio = Number.isFinite(storedHp) ? clamp(storedHp / oldMaxHp, 0, 1) : 1;
+    return {
+        mob: { ...storedMob, ...current },
+        hp: Number(current.maxHp || oldMaxHp) * hpRatio,
+        upgraded: true
+    };
+}
+
 function activeMusicEffectForSkill(profile, skill, timestamp) {
     const skillId = Number(skill.selfId) || 0;
     const semantic = C4SkillRules.resolve(skill);
@@ -462,13 +521,281 @@ function applyMusicAction(provider, action, timestamp) {
     return action.cost;
 }
 
+function coldBuffSkill(skill) {
+    const semantic = C4SkillRules.resolve(skill || {});
+    const skillType = String(semantic.skillType || '');
+    const durationMs = Math.max(0, Number(semantic.durationMs ?? skill?.buffTime) || 0);
+    return skill && skill.passive !== true
+        && semantic.effectType === 'buff'
+        && ['friendly', 'ally', 'party'].includes(semantic.target)
+        && semantic.isDance !== true
+        && !['hot', 'healHot', 'manaHot'].includes(skillType)
+        && !['kiss_of_eva'].includes(String(semantic.effect || '').toLowerCase())
+        && durationMs >= 60000;
+}
+
+function coldSkillAdapter(record) {
+    const semantic = C4SkillRules.resolve(record || {});
+    return {
+        coldRecord: record,
+        fetchSelfId: () => Number(record?.selfId || 0),
+        fetchLevel: () => Number(record?.level || 1),
+        fetchPassive: () => record?.passive === true,
+        fetchConsumedMp: () => Math.max(0, Number(record?.mp || 0)),
+        fetchBuffTime: () => Math.max(0, Number(semantic.durationMs ?? record?.buffTime) || 0),
+        fetchSemantic: () => semantic,
+        fetchSkillType: () => semantic.skillType,
+        fetchTargetKind: () => semantic.target
+    };
+}
+
+function coldBuffActor(fighter) {
+    const weaponKind = String(fighter.profile?.equipment?.weaponKind || '');
+    const weapon = weaponKind ? {
+        fetchKind: () => weaponKind,
+        fetchName: () => '',
+        fetchPAtk: () => Number(fighter.profile?.equipment?.pAtk || 0),
+        fetchMAtk: () => Number(fighter.profile?.equipment?.mAtk || 0)
+    } : null;
+    return {
+        fighter,
+        classId: fighter.profile.classId,
+        level: fighter.profile.level,
+        fetchId: () => Number(fighter.state.characterId || 0),
+        fetchClassId: () => Number(fighter.profile.classId || 0),
+        fetchLevel: () => Number(fighter.profile.level || 1),
+        fetchHp: () => Number(fighter.vitals.hp || 0),
+        fetchMaxHp: () => Number(fighter.vitals.maxHp || 1),
+        isDead: () => Number(fighter.vitals.hp || 0) <= 0,
+        backpack: {
+            fetchItems: () => [],
+            fetchEquippedWeapon: () => weapon,
+            fetchTotalWeaponKind: () => weaponKind
+        }
+    };
+}
+
+function coldBuffEffect(skill, timestamp) {
+    const record = skill.coldRecord || {};
+    const semantic = skill.fetchSemantic();
+    const skillId = Number(skill.fetchSelfId() || 0);
+    const durationMs = Math.max(60000, Number(semantic.durationMs ?? record.buffTime) || 1200000);
+    const key = PartyBuffLoadout.normalize(semantic.effect || `skill_${skillId}`);
+    return {
+        key,
+        id: skillId,
+        name: semantic.effect || `Skill ${skillId}`,
+        level: Number(skill.fetchLevel() || 1),
+        type: 'buff',
+        durationMs,
+        expiresAt: timestamp + durationMs,
+        stackFamily: semantic.stackFamily || PartyBuffLoadout.family(key),
+        stackOrder: semantic.stackOrder ?? null,
+        stats: { ...(semantic.stats || {}) }
+    };
+}
+
+function replaceColdBuff(effects, nextEffect) {
+    const family = PartyBuffLoadout.family(nextEffect.key);
+    return [
+        ...(effects || []).filter((effect) => (
+            PartyBuffLoadout.family(effect?.key) !== family
+            && (!nextEffect.stackFamily || effect?.stackFamily !== nextEffect.stackFamily)
+        )),
+        nextEffect
+    ];
+}
+
+function raidPreparationFighters(members, timestamp) {
+    return members.map((state) => {
+        const fighterState = mutableCombatState(state);
+        const profile = botCombatStats(fighterState, timestamp);
+        const active = (profile.effects || []).filter((effect) => !effect?.expiresAt || Number(effect.expiresAt) > timestamp);
+        const chargeState = coldChargeState(fighterState, timestamp);
+        const fighter = {
+            state: fighterState,
+            profile,
+            role: combatRoleForState(fighterState),
+            vitals: {
+                hp: Math.min(profile.maxHp, Math.max(0, Number(state.vitals?.hp ?? profile.maxHp))),
+                maxHp: profile.maxHp,
+                mp: Math.min(profile.maxMp, Math.max(0, Number(state.vitals?.mp ?? profile.maxMp))),
+                maxMp: profile.maxMp
+            },
+            cooldowns: { ...(state.stats?.coldCombat?.cooldowns || {}) },
+            readyAt: 0,
+            charges: chargeState.charges,
+            chargeExpiresAt: chargeState.chargeExpiresAt,
+            summonUses: 0,
+            summonActions: 0,
+            summonReadyAt: Number.POSITIVE_INFINITY,
+            potionsUsed: 0,
+            potionHot: null,
+            now: timestamp
+        };
+        refreshFighterProfile(fighter, active, timestamp);
+        return fighter;
+    });
+}
+
+function coldBuffPlan(fighters, timestamp) {
+    const actors = fighters.map(coldBuffActor);
+    const skillCache = new Map();
+    const skills = (actor) => {
+        if (!skillCache.has(actor)) {
+            skillCache.set(actor, (actor.fighter.profile.skills || [])
+                .filter(coldBuffSkill)
+                .map(coldSkillAdapter));
+        }
+        return skillCache.get(actor);
+    };
+    const chosen = PartyBuffLoadout.build(
+        actors.map((actor) => ({ actor })),
+        actors,
+        {},
+        {
+            skills,
+            recipients: (_members, _provider, skill) => (
+                ['party', 'ally'].includes(skill.fetchSemantic().target) ? actors : []
+            ),
+            isAura: (skill) => ['party', 'ally'].includes(skill.fetchSemantic().target),
+            effects: (actor) => (actor.fighter.profile.effects || [])
+                .filter((effect) => !effect?.expiresAt || Number(effect.expiresAt) > timestamp),
+            useful: (actor, skill, _provider, context) => PartyBuffLoadout.useful(actor, skill, context)
+        }
+    ).chosen;
+    return chosen.filter((action) => {
+        const semantic = action.skill.fetchSemantic();
+        const key = PartyBuffLoadout.normalize(semantic.effect);
+        const family = PartyBuffLoadout.family(key);
+        const level = Number(action.skill.fetchLevel() || 1);
+        const durationMs = Math.max(60000, Number(semantic.durationMs ?? action.skill.fetchBuffTime()) || 1200000);
+        const threshold = Math.min(120000, Math.floor(durationMs * 0.25));
+        return action.beneficiaries.some((actor) => !(actor.fighter.profile.effects || []).some((effect) => (
+            (Number(effect?.id || 0) === Number(action.skill.fetchSelfId())
+                || PartyBuffLoadout.family(effect?.key) === family)
+            && Number(effect?.level || 0) >= level
+            && (!effect?.expiresAt || Number(effect.expiresAt) - timestamp > threshold)
+        )));
+    });
+}
+
+function prepareRaidParty(members, timestamp = Date.now()) {
+    const fighters = raidPreparationFighters(members, timestamp);
+    let buffCasts = 0;
+    let musicCasts = 0;
+    let summonCasts = 0;
+    let chargeCasts = 0;
+    let durationMs = 0;
+
+    for (const action of coldBuffPlan(fighters, timestamp)) {
+        const provider = action.provider.fighter;
+        const cost = Math.max(0, Number(action.skill.fetchConsumedMp() || 0));
+        if (provider.vitals.mp < cost) continue;
+        const effect = coldBuffEffect(action.skill, timestamp + durationMs);
+        action.recipients.forEach((actor) => {
+            const target = actor.fighter;
+            refreshFighterProfile(target, replaceColdBuff(target.profile.effects, effect), timestamp + durationMs);
+        });
+        provider.vitals.mp = Math.max(0, provider.vitals.mp - cost);
+        provider.cooldowns[action.skill.fetchSelfId()] = timestamp + durationMs
+            + Math.max(0, Number(action.skill.coldRecord?.reuse || 0));
+        durationMs += actionDelayMs(provider.profile, action.skill.coldRecord);
+        buffCasts += 1;
+    }
+
+    for (const fighter of fighters) {
+        let action = chooseMusicAction(fighter, fighters, timestamp + durationMs);
+        while (action && fighter.vitals.mp >= action.cost && musicCasts < 32) {
+            applyMusicAction(fighter, action, timestamp + durationMs);
+            fighter.vitals.mp = Math.max(0, fighter.vitals.mp - action.cost);
+            fighter.cooldowns[action.skill.selfId] = timestamp + durationMs + Math.max(0, Number(action.skill.reuse || 0));
+            durationMs += actionDelayMs(fighter.profile, action.skill);
+            musicCasts += 1;
+            action = chooseMusicAction(fighter, fighters, timestamp + durationMs);
+        }
+        const beforeSummon = Number(fighter.summonUses || 0);
+        ensureColdSummon(fighter, timestamp + durationMs, fighter.cooldowns);
+        if (Number(fighter.summonUses || 0) > beforeSummon) {
+            summonCasts += 1;
+            durationMs = Math.max(durationMs, Number(fighter.readyAt || 0));
+        }
+        for (let attempts = 0; attempts < 8; attempts += 1) {
+            const charge = chooseChargeSkill(fighter.profile, fighter.vitals.mp, fighter.cooldowns,
+                timestamp + durationMs, fighter.charges, { party: true, summon: fighter.summon });
+            if (!charge || Number(charge.mp || 0) > fighter.vitals.mp) break;
+            const semantic = C4SkillRules.resolve(charge);
+            addCharges(fighter, 1, semantic.maxCharges, timestamp + durationMs);
+            fighter.vitals.mp = Math.max(0, fighter.vitals.mp - Number(charge.mp || 0));
+            fighter.cooldowns[charge.selfId] = timestamp + durationMs + Math.max(0, Number(charge.reuse || 0));
+            durationMs += actionDelayMs(fighter.profile, charge);
+            chargeCasts += 1;
+        }
+    }
+
+    const remainingBuffs = coldBuffPlan(fighters, timestamp + durationMs).length;
+    const remainingMusic = fighters.reduce((count, fighter) => (
+        count + (chooseMusicAction(fighter, fighters, timestamp + durationMs) ? 1 : 0)
+    ), 0);
+    const ready = remainingBuffs === 0 && remainingMusic === 0;
+    const restUntil = ready ? null : timestamp + Math.max(...fighters.map((fighter) => (
+        estimateRestMs(fighter.state, fighter.vitals, { party: true, requireMana: true })
+    )));
+    const casts = buffCasts + musicCasts + summonCasts + chargeCasts;
+    const memberResults = fighters.map((fighter) => ({
+        state: fighter.state,
+        result: {
+            patch: {
+                activity: ready ? 'grouped' : 'resting',
+                vitals: { ...fighter.vitals },
+                stats: {
+                    ...(fighter.state.stats || {}),
+                    restUntil,
+                    coldCombat: {
+                        ...(fighter.state.stats?.coldCombat || {}),
+                        classId: fighter.profile.classId,
+                        skills: fighter.profile.skills,
+                        effects: fighter.profile.effects || [],
+                        cooldowns: fighter.cooldowns,
+                        charges: fighter.charges || 0,
+                        chargeExpiresAt: fighter.chargeExpiresAt || null,
+                        summon: fighter.summon || null
+                    }
+                }
+            },
+            events: [],
+            memoryEvents: [],
+            materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+            nextResolveAt: restUntil || timestamp + Math.max(3000, durationMs),
+            debug: { reason: ready ? 'raid_prepared' : 'raid_preparing', buffCasts, musicCasts, summonCasts, chargeCasts }
+        }
+    }));
+    return {
+        ready,
+        needsRest: !ready,
+        casts,
+        buffCasts,
+        musicCasts,
+        summonCasts,
+        chargeCasts,
+        remainingBuffs,
+        remainingMusic,
+        durationMs,
+        restUntil,
+        memberResults,
+        nextResolveAt: restUntil || timestamp + Math.max(3000, durationMs)
+    };
+}
+
 function mutableCombatState(state = {}) {
     return {
         ...state,
         inventory: Object.fromEntries(Object.entries(state.inventory || {}).map(([key, item]) => [key, { ...item }])),
         stats: {
             ...(state.stats || {}),
-            coldCombat: { ...(state.stats?.coldCombat || {}) }
+            coldCombat: { ...(state.stats?.coldCombat || {}),
+                effects: (state.stats?.coldCombat?.effects || []).map(effect => ({ ...effect,
+                    ...(effect.hot ? { hot: { ...effect.hot } } : {}) })) }
         }
     };
 }
@@ -693,6 +1020,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             break;
         }
         applyColdPotionTicks(soloFighter, time);
+        applyPartyHotTicks(soloFighter, timestamp + time);
         actions += 1;
 
         if (summonActs) {
@@ -905,18 +1233,45 @@ function chooseHeal(profile, allies, mp, cooldowns, time, caster) {
     const skill = (profile.skills || []).filter((candidate) => {
         if (candidate.passive || Number(candidate.mp || 0) > mp || Number(cooldowns[candidate.selfId] || 0) > time) return false;
         const semantic = C4SkillRules.resolve(candidate);
-        return [C4SkillRules.HEAL, C4SkillRules.HEAL_PERCENT].includes(semantic.skillType)
+        return [C4SkillRules.HEAL, C4SkillRules.HEAL_PERCENT, C4SkillRules.HEAL_HOT, C4SkillRules.HOT].includes(semantic.skillType)
             && ['self', 'party', 'ally', 'friendly'].includes(semantic.target)
+            && (semantic.target !== 'ally' || caster === injured || Number(caster?.state.clanId) > 0
+                && Number(caster.state.clanId) === Number(injured.state.clanId))
+            && (!semantic.hot || !(injured.profile.effects || []).some(e => e.key === semantic.effect && Number(e.expiresAt) > time))
             && (semantic.target !== 'self' || caster?.vitals.hp > 0 && caster.vitals.hp < caster.vitals.maxHp * 0.7);
-    }).sort((a, b) => Number(b.power || 0) - Number(a.power || 0))[0];
+    }).sort((a, b) => {
+        const score = skill => {
+            const semantic = C4SkillRules.resolve(skill);
+            return invoke('GameServer/Bot/AI/PartyHealPolicy').score({
+                missingHp: injured.vitals.maxHp - injured.vitals.hp, maxHp: injured.vitals.maxHp,
+                power: semantic.hot?.heal ?? (semantic.skillType === C4SkillRules.HEAL_PERCENT
+                    ? injured.vitals.maxHp * Number(skill.power || 0) / 100 : Formulas.calcHealAmount(skill.power)),
+                cost: Number(skill.mp || 0), castMs: Number(skill.hitTime || 0),
+                periodic: !!semantic.hot, ticks: semantic.hot?.count,
+                recipients: ['party', 'ally'].includes(semantic.target) ? allies.filter(f => f.vitals.hp > 0 && f.vitals.hp < f.vitals.maxHp * 0.7).length : 1
+            });
+        };
+        return score(b) - score(a);
+    })[0];
     return skill ? { skill, target: C4SkillRules.resolve(skill).target === 'self' ? caster : injured } : null;
 }
 
 function applyAllyHeal(caster, allies, heal) {
     const semantic = C4SkillRules.resolve(heal.skill);
-    const targets = semantic.target === 'self' ? [caster] : semantic.target === 'party' ? allies : [heal.target];
+    const targets = semantic.target === 'self' ? [caster] : semantic.target === 'party' ? allies
+        : semantic.target === 'ally' ? allies.filter(f => f === caster || Number(caster.state.clanId) > 0
+            && Number(caster.state.clanId) === Number(f.state.clanId)) : [heal.target];
     const helped = [];
     for (const ally of targets.filter(f => f.vitals.hp > 0)) {
+        if (semantic.hot) {
+            const at = Number(caster.now || Date.now());
+            const effect = { id: heal.skill.selfId, level: heal.skill.level, key: semantic.effect,
+                type: 'buff', casterId: caster.state.characterId, createdAt: at,
+                expiresAt: at + semantic.hot.count * semantic.hot.intervalMs,
+                hot: { ...semantic.hot, nextAt: at + semantic.hot.intervalMs } };
+            ally.profile.effects = replaceMusicEffect(ally.profile.effects, effect);
+            continue;
+        }
         const before = ally.vitals.hp;
         const amount = semantic.skillType === C4SkillRules.HEAL_PERCENT
             ? ally.vitals.maxHp * Number(heal.skill.power || 0) / 100 : Formulas.calcHealAmount(heal.skill.power);
@@ -928,9 +1283,24 @@ function applyAllyHeal(caster, allies, heal) {
     return helped;
 }
 
-function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, timestamp = Date.now(), encounter = null, partyId = '' }) {
-    const encounterKey = PveEncounter.key(members, spot, targetNpcId, partyId);
-    const pending = PveEncounter.read(encounter, encounterKey, timestamp);
+function applyPartyHotTicks(fighter, at) {
+    if (fighter.vitals.hp <= 0) return;
+    for (const effect of fighter.profile.effects || []) {
+        const hot = effect.hot;
+        if (!hot || !Number.isFinite(hot.nextAt) || !(hot.intervalMs > 0)) continue;
+        const ticks = Math.max(0, Math.min(hot.count, Math.floor((Math.min(at, effect.expiresAt) - hot.nextAt) / hot.intervalMs) + 1));
+        fighter.vitals.hp = Math.min(fighter.vitals.maxHp, fighter.vitals.hp + ticks * Number(hot.heal || 0));
+        hot.count -= ticks;
+        hot.nextAt += ticks * hot.intervalMs;
+    }
+}
+
+function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, timestamp = Date.now(), encounter = null,
+    partyId = '', encounterKey: sharedEncounterKey = null, sharedEncounter = false }) {
+    const encounterKey = sharedEncounterKey || PveEncounter.key(members, spot, targetNpcId, partyId);
+    const pending = PveEncounter.read(encounter, encounterKey, timestamp, {
+        maxSlices: sharedEncounter ? 1000 : PveEncounter.MAX_SLICES
+    });
     const fighters = members.map((state) => {
         const fighterState = mutableCombatState(state);
         const profile = botCombatStats(fighterState, timestamp);
@@ -963,18 +1333,26 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
     });
     const matchupProfiles = pending ? [] : fighters.filter(f => f.vitals.hp > 0)
         .flatMap(f => TargetMatchup.coldProfiles(f.profile, f.state, timestamp));
-    const mob = pending?.mob || ColdCombatProfile.npcForSpot(spot, rng, { preferredNpcId: targetNpcId, matchupProfiles }) || {
+    const persistedRaid = sharedEncounter
+        ? coldRaidEncounterProfile(pending, spot, targetNpcId)
+        : { mob: pending?.mob || null, hp: Number(pending?.hp), upgraded: false };
+    const mob = persistedRaid.mob || ColdCombatProfile.npcForSpot(spot, rng, {
+        preferredNpcId: targetNpcId, matchupProfiles, allowRaid: sharedEncounter
+    }) || {
         level: Number(spot.avgLevel || 1), maxHp: Math.max(1, Number(spot.mob?.hp || 1)),
         pAtk: Math.max(1, Number(spot.mob?.damage || 1)), pAtkRnd: 0, pDef: 1, mDef: 1,
         accur: 1, evasion: 0, critical: 0, atkSpd: 253
     };
     if (mob.avoided) return { avoided: true, reason: mob.reason, members: fighters, won: false };
-    let mobHp = pending?.hp ?? mob.maxHp;
+    let mobHp = persistedRaid.mob
+        ? (persistedRaid.hp ?? mob.maxHp)
+        : (pending?.hp ?? mob.maxHp);
     let mobReadyAt = Number(pending?.mobReadyAt || 0);
     let time = 0;
     let actions = 0;
     let overhitContext = null;
     const fightLimitMs = 15000;
+    const raidControlCapacity = coldRaidControlCapacity(fighters, mob);
     const Help = require('../../Social/CombatHelpPolicy');
     const help = new Map();
     let lastVictim = null;
@@ -998,7 +1376,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
         const botActs = !summonActs && next && ownerReadyAt <= mobReadyAt;
         time = summonActs ? summonReadyAt : botActs ? ownerReadyAt : mobReadyAt;
         if (time >= fightLimitMs) { time = fightLimitMs; break; }
-        fighters.forEach((fighter) => applyColdPotionTicks(fighter, time));
+        fighters.forEach((fighter) => { applyColdPotionTicks(fighter, time); applyPartyHotTicks(fighter, timestamp + time); });
         actions += 1;
 
         if (summonActs) {
@@ -1112,16 +1490,33 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             const targets = fighters.filter((fighter) => fighter.vitals.hp > 0);
             const tank = targets.find((fighter) => fighter.role === 'tank');
             const target = tank || targets[Math.floor(rng() * targets.length)];
+            const raidPressure = coldRaidMinionPressure(mob, mobHp, raidControlCapacity);
+            const bossPAtk = Number(mob.raidBossPAtk || mob.pAtk);
             if (target && hitSucceeds(mob.accur, target.profile.evasion, rng)) {
-                const damage = Formulas.calcMeleeDamage(mob.pAtk, mob.pAtkRnd, target.profile.pDef, {
+                const damage = Formulas.calcMeleeDamage(bossPAtk, mob.pAtkRnd, target.profile.pDef, {
                     critical: Formulas.rollCritical(mob.critical, rng)
                 }) * coldNpcWeaponModifier(mob, target.profile, timestamp + time);
                 const before = target.vitals.hp;
                 target.vitals.hp = Math.max(0, before - damage);
                 if (target.vitals.hp < before) lastVictim = { fighter: target, at: time };
             }
+            if (raidPressure.pAtk > 0) {
+                const addTargets = fighters.filter((fighter) => fighter.vitals.hp > 0 && fighter !== tank);
+                const addTarget = addTargets[Math.floor(rng() * addTargets.length)] || target;
+                if (addTarget && hitSucceeds(mob.accur, addTarget.profile.evasion, rng)) {
+                    const damage = Formulas.calcMeleeDamage(raidPressure.pAtk, mob.pAtkRnd, addTarget.profile.pDef, {
+                        critical: Formulas.rollCritical(mob.critical, rng)
+                    }) * coldNpcWeaponModifier(mob, addTarget.profile, timestamp + time);
+                    const before = addTarget.vitals.hp;
+                    addTarget.vitals.hp = Math.max(0, before - damage);
+                    if (addTarget.vitals.hp < before) lastVictim = { fighter: addTarget, at: time };
+                }
+            }
             mobReadyAt += Math.max(250, Formulas.calcMeleeAtkTime(mob.atkSpd));
         }
+        if (sharedEncounter && fighters.filter(f => f.vitals.hp <= 0).some((fighter, index) =>
+            require('./RaidCasualtyPolicy').disposition(fighter.state, { previousDamageCasualties: index,
+                remainingHpRatio: mobHp / Math.max(1, mob.maxHp) }) !== 'continue')) break;
     }
 
     fighters.filter((fighter) => fighter.vitals.hp > 0)
@@ -1130,7 +1525,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
     return {
         won: mobHp <= 0,
         timedOut: mobHp > 0 && fighters.some((fighter) => fighter.vitals.hp > 0),
-        encounter: mobHp > 0 && fighters.every(fighter => fighter.vitals.hp > 0)
+        encounter: mobHp > 0 && (sharedEncounter || fighters.every(fighter => fighter.vitals.hp > 0))
             ? PveEncounter.save(pending, encounterKey, mob, mobHp, timestamp, {
                 mobReadyAt: Math.max(0, mobReadyAt - time),
                 readyAt: Object.fromEntries(fighters.map(f => [f.state.characterId, Math.max(0, f.readyAt - time)]))
@@ -1145,6 +1540,10 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             summonActions: fighters.reduce((sum, fighter) => sum + Number(fighter.summonActions || 0), 0),
             potionsUsed: fighters.reduce((sum, fighter) => sum + Number(fighter.potionsUsed || 0), 0),
             mobSelfId: mob.selfId || null,
+            remainingHp: Math.max(0, mobHp),
+            raidControlCapacity,
+            raidProfileUpgraded: persistedRaid.upgraded,
+            raidMinionPressure: coldRaidMinionPressure(mob, mobHp, raidControlCapacity),
             overhitContext
         }
     };
@@ -1152,13 +1551,15 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
 
 const BackgroundResolver = {
     combat: { chooseSkill, chooseChargeSkill, coldChargeState, expireCharges, addCharges, consumeCharges,
-        chooseHeal, applyAllyHeal, actionDelayMs, hitSucceeds },
+        chooseHeal, applyAllyHeal, applyPartyHotTicks, actionDelayMs, hitSucceeds, coldRaidControlCapacity, coldRaidMinionPressure,
+        coldRaidEncounterProfile },
     resolveDeathRecovery,
     resolveRest,
     resolvePartyFight,
     needsRest,
     estimateRestMs,
     applyStandingRegen,
+    prepareRaidParty,
     effectiveSkillPower,
     resolveSolo({ state, spot, pressure = {}, targetNpcId = 0, elapsedMs = 60000, rng = Math.random, timestamp = Date.now() }) {
         if (!state) {
@@ -1273,6 +1674,16 @@ const BackgroundResolver = {
         }
 
         if (require('./ClanPartyDuty').waiting(state)) return require('./ClanPartyDuty').hold(state, timestamp);
+
+        if (require('./RaidSoloBoundary').blocked(state, spot, targetNpcId)) {
+            const cleared = require('./RaidSoloBoundary').clear(state);
+            return {
+                patch: { activity: 'hunting', spotId: cleared.spotId, stats: cleared.stats },
+                events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                nextResolveAt: timestamp + 30000,
+                debug: { reason: 'solo_raid_forbidden', fights: 0, wins: 0 }
+            };
+        }
 
         if (!spot) {
             return {

@@ -54,6 +54,21 @@ async function main() {
     assert(require('../src/GameServer/Bot/Population/PartyHuntingAssembly').ready(party, assembled, spot),
         'party destinations form a compact group on the correct dungeon floor');
 
+    const raidSpot = { ...spot, id: 'raid:10131', raidBoss: true,
+        arrivalPoints: [{ ...point, locX: point.locX + 650 }] };
+    const remoteRaidParty = { ...party, spotId: raidSpot.id };
+    const remoteRaidMembers = members.map(member => ({ ...member,
+        loc: { ...member.loc, locX: member.loc.locX + 3000 } }));
+    assert.strictEqual(require('../src/GameServer/Bot/Population/PartyHuntingAssembly')
+        .ready(remoteRaidParty, remoteRaidMembers, raidSpot), false,
+        'a raid party cannot fight remotely before reaching the boss');
+    const raidDestinations = service.arrivalPointsForParty(members, raidSpot);
+    const arrivedRaidMembers = members.map(member => ({ ...member,
+        spotId: raidSpot.id, loc: raidDestinations[member.characterId] }));
+    assert(require('../src/GameServer/Bot/Population/PartyHuntingAssembly')
+        .ready(remoteRaidParty, arrivedRaidMembers, raidSpot),
+        'a compact raid party at the boss may begin preparation');
+
     const understaffed = resolve(members, { party: { ...party, stats: { ...party.stats,
         objective: { clanGoalKey: 'clan:1', minPartySize: 3 } } },
         rng: () => { throw Error('understaffed clan party must not fight'); } });

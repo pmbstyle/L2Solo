@@ -131,13 +131,17 @@ function fallbackReply(state, availability, text) {
     return `Hey. I'm ${activity} near ${ChatLocation.forState(state)} right now.`;
 }
 
+function isPlayerJoinRequest(text) {
+    return invoke('GameServer/Bot/AI/PlayerPartyTakeover').isJoinRequest(text);
+}
+
 function schema() {
     return {
         type: 'object',
         properties: {
             action: {
                 type: 'string',
-                enum: ['say', 'none', 'come_to_player']
+                enum: ['say', 'none', 'come_to_player', 'request_player_join_party']
             },
             reply: {
                 type: 'string',
@@ -168,8 +172,9 @@ function systemPrompt() {
         'Keep the reply short, grounded, and in character.',
         'Use action=say for ordinary conversation and action=none when no reply is needed.',
         'Use action=come_to_player only when the player explicitly asks this bot to come, arrive, teleport, or meet them here.',
+        'Use action=request_player_join_party only when the player asks to join this bot existing autonomous party. The server, not you, decides whether the party accepts and transfers the whole roster.',
         'The server will validate availability and perform the arrival. Never claim that the bot arrived or joined a party before the server confirms the action.',
-        'A cold chat never activates the bot by itself unless the validated action is come_to_player.'
+        'A cold chat never activates the bot by itself unless the validated action is come_to_player or request_player_join_party.'
     ].join(' ');
 }
 
@@ -391,6 +396,40 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
             }
         };
 
+        if (state.party?.partyId && isPlayerJoinRequest(text)) {
+            return invoke('GameServer/Bot/AI/PlayerPartyTakeover').request({
+                playerSession,
+                target: state,
+                source: channel || 'cold_chat'
+            }).then((actionResult) => {
+                const reply = {
+                    ok: actionResult.ok,
+                    reply: actionResult.reply,
+                    reason: actionResult.reason,
+                    action: 'request_player_join_party',
+                    actionResult: {
+                        ok: actionResult.ok,
+                        reason: actionResult.reason,
+                        partyId: actionResult.partyId || null,
+                        count: actionResult.count || 0
+                    }
+                };
+                const delivered = deliverReply(playerSession, state, reply.reply);
+                console.info(
+                    'BotParty :: remote join request player=%s speaker=%s party=%s result=%s applied=%s',
+                    playerSession.actor.fetchName?.() || 'unknown',
+                    state.name || state.characterId,
+                    state.party?.partyId || actionResult.partyId || 'none',
+                    actionResult.reason || 'unknown',
+                    actionResult.applied === true
+                );
+                return recordReply(playerSession, state, turn, { ...reply, delivered }, {
+                    deterministic: true,
+                    actionResult: reply.actionResult
+                }).then(() => ({ ...reply, delivered }));
+            });
+        }
+
         const llmReady = OpenRouterGateway.isConfigured(cfg);
         const estimatedPromptTokens = estimatePromptTokens({
             messages: [
@@ -513,6 +552,33 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                     return deliver(failed);
                 }
                 const reply = result || fallback;
+                if (reply.action === 'request_player_join_party') {
+                    const actionResult = await invoke('GameServer/Bot/AI/PlayerPartyTakeover').request({
+                        playerSession,
+                        target: state,
+                        source: channel || 'cold_chat'
+                    });
+                    return deliver({
+                        ...reply,
+                        ok: actionResult.ok,
+                        reply: actionResult.reply,
+                        reason: actionResult.reason,
+                        action: 'request_player_join_party',
+                        actionResult: {
+                            ok: actionResult.ok,
+                            reason: actionResult.reason,
+                            partyId: actionResult.partyId || null,
+                            count: actionResult.count || 0
+                        }
+                    }, {
+                        actionResult: {
+                            ok: actionResult.ok,
+                            reason: actionResult.reason,
+                            partyId: actionResult.partyId || null,
+                            count: actionResult.count || 0
+                        }
+                    });
+                }
                 if (reply.action === 'come_to_player') {
                     const actionResult = await activateNearPlayer(playerSession, state);
                     const confirmed = actionResult.ok;

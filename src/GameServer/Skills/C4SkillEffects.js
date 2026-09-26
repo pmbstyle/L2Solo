@@ -190,7 +190,7 @@ function execute(session, actor, target, skill, context = {}) {
     }
 
     if (semantic.skillType === C4SkillRules.DRAIN_SOUL) {
-        result.absorbedSoul = applyDrainSoul(actor, target);
+        result.absorbedSoul = applyDrainSoul(actor, target, context.soulCrystalItemId);
         clearLoadedShot(context.attack || actor.attack, actor, magicSkill);
         return finish();
     }
@@ -653,12 +653,12 @@ function increaseCharges(session, actor, amount, maxCharges) {
     return ChargeLifecycle.increase(session, actor, amount, maxCharges);
 }
 
-function applyDrainSoul(actor, target) {
+function applyDrainSoul(actor, target, crystalItemId) {
     if (target?.fetchAttackable?.() !== true) return false;
     if (target?.isDead?.() || target?.state?.fetchDead?.() === true) return false;
 
     if (typeof target.addAbsorber === 'function') {
-        target.addAbsorber(actor);
+        target.addAbsorber(actor, crystalItemId);
         return true;
     }
 
@@ -937,7 +937,10 @@ function applyEffect(session, target, skill, semantic, source = session?.actor) 
     EffectTicker.scheduleExpiry(session, target, effect);
     EffectRestrictions.interruptOnApply(target?.session || session, target, effect, source);
     if (effect.stats?.immobile === true) {
-        target.automation?.abortAll?.(target, { notifyClient: false });
+        // Ultimate Defense, Vengeance, Snipe, and similar stationary stances
+        // cancel only locomotion. They must not tear down the actor's attack
+        // target or native hit cycle while the actor remains in range.
+        target.automation?.abortMovement?.(target, { notifyClient: false });
         EffectRestrictions.stopMovement(target?.session || session, target);
     }
     if (hasStats(effect) || effect.removedEffects.some(hasStats)) {

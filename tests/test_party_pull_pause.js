@@ -5,6 +5,9 @@ require('../src/Global');
 const World = invoke('GameServer/World/World');
 const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
 const BotManager = invoke('GameServer/Bot/BotManager');
+const Geo = invoke('GameServer/Geodata/GeodataEngine');
+// Synthetic actors use an open test room; specific cases override its walls.
+Geo.hasLineOfSight = () => true;
 
 function actor(id, classId = 0) {
     return {
@@ -197,6 +200,14 @@ const directFallbackPull = PartyPulling.tickBotPuller(
 assert.strictEqual(directFallbackPull.action, 'approach', 'a clear direct fallback must remain a usable pull route when bounded A* returns no path');
 assert.strictEqual(directFallbackPull.target.fetchId(), directFallbackTarget.fetchId(), 'the puller should keep the direct-fallback target');
 assert.strictEqual(directFallbackMoves, 2, 'a usable preview should be followed by the actual movement command');
+
+leaderSession.partyPullState = {};
+Geo.hasLineOfSight = () => false;
+const hiddenPull = PartyPulling.tickBotPuller(pullerSession, pullerSession.actor,
+    leaderSession, settings, {}, { executeCombat() { assert.fail('cannot pull an unseen mob'); } });
+assert.strictEqual(hiddenPull.idle, true, 'a puller must leave an unseen unengaged monster alone');
+assert.strictEqual(directFallbackMoves, 2, 'an unseen target must not even request a route preview');
+Geo.hasLineOfSight = () => true;
 
 const incomingAdd = {
     ...reachableTarget,

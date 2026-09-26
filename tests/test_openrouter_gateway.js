@@ -17,7 +17,14 @@ const baseConfig = {
     apiKey: 'test-key',
     apiUrl: OpenRouterGateway.OPENROUTER_URL,
     model: 'test/model',
+    temperature: 0.35,
     reasoningEffort: 'low',
+    completionLimitParam: 'max_completion_tokens',
+    strictSchema: false,
+    providerOrder: [],
+    providerSort: '',
+    allowFallbacks: true,
+    requireParameters: true,
     timeoutMs: 1000,
     circuitBreakerFailureThreshold: 3,
     circuitBreakerOpenMs: 5000
@@ -108,6 +115,7 @@ async function main() {
             apiKey: '',
             apiUrl: 'http://127.0.0.1:1234/v1/chat/completions',
             model: 'local-model',
+            completionLimitParam: 'max_tokens',
             reasoningEffort: 'off'
         },
         requestId: 'gateway-local',
@@ -131,8 +139,8 @@ async function main() {
     assert.strictEqual(localBody.provider, undefined);
     assert.strictEqual(localBody.response_format.type, 'json_schema');
 
-    const lunaSchema = {
-        name: 'luna_gateway_test',
+    const configuredSchema = {
+        name: 'configured_gateway_test',
         schema: {
             type: 'object',
             properties: {
@@ -153,9 +161,9 @@ async function main() {
             additionalProperties: false
         }
     };
-    let lunaBody;
+    let configuredBody;
     OpenRouterGateway.setTransport(async (_url, init) => {
-        lunaBody = JSON.parse(init.body);
+        configuredBody = JSON.parse(init.body);
         return response({
             choices: [{
                 message: {
@@ -169,32 +177,42 @@ async function main() {
             }]
         });
     });
-    const luna = await OpenRouterGateway.request({
-        config: { ...baseConfig, model: 'openai/gpt-5.6-luna', reasoningEffort: 'low' },
-        requestId: 'luna-success',
+    const configured = await OpenRouterGateway.request({
+        config: {
+            ...baseConfig,
+            model: 'test/reasoning-model',
+            temperature: null,
+            completionLimitParam: 'max_tokens',
+            strictSchema: true,
+            providerOrder: ['OpenAI'],
+            providerSort: 'price',
+            allowFallbacks: false,
+            reasoningEffort: 'low'
+        },
+        requestId: 'configured-model-success',
         interactive: true,
-        messages: [{ role: 'user', content: 'Привет' }],
-        responseSchema: lunaSchema
+        messages: [{ role: 'user', content: 'Hello' }],
+        responseSchema: configuredSchema
     });
-    assert.strictEqual(luna.ok, true);
-    assert.strictEqual(lunaBody.max_tokens, undefined, 'interactive requests do not carry a completion limit');
-    assert.strictEqual(lunaBody.temperature, undefined, 'Luna does not accept temperature');
-    assert.deepStrictEqual(lunaBody.reasoning, { effort: 'low', exclude: true });
-    assert.deepStrictEqual(lunaBody.provider, {
+    assert.strictEqual(configured.ok, true);
+    assert.strictEqual(configuredBody.max_tokens, undefined, 'interactive requests do not carry a completion limit');
+    assert.strictEqual(configuredBody.temperature, undefined, 'an empty configured temperature must be omitted');
+    assert.deepStrictEqual(configuredBody.reasoning, { effort: 'low', exclude: true });
+    assert.deepStrictEqual(configuredBody.provider, {
         order: ['OpenAI'],
         sort: 'price',
         allow_fallbacks: false,
         require_parameters: true
     });
-    const effectiveSchema = lunaBody.response_format.json_schema.schema;
+    const effectiveSchema = configuredBody.response_format.json_schema.schema;
     assert.deepStrictEqual(effectiveSchema.required, ['action', 'reply', 'tradeItemId', 'context']);
     assert.deepStrictEqual(effectiveSchema.properties.action.type, 'string');
     assert.deepStrictEqual(effectiveSchema.properties.tradeItemId.type, ['number', 'null']);
     assert.deepStrictEqual(effectiveSchema.properties.context.type, ['object', 'null']);
     assert.deepStrictEqual(effectiveSchema.properties.context.required, ['label', 'itemId']);
     assert.deepStrictEqual(effectiveSchema.properties.context.properties.itemId.type, ['number', 'null']);
-    assert.deepStrictEqual(lunaSchema.schema.required, ['action', 'reply'], 'model adaptation must not mutate caller schemas');
-    assert.deepStrictEqual(lunaSchema.schema.properties.tradeItemId.type, 'number');
+    assert.deepStrictEqual(configuredSchema.schema.required, ['action', 'reply'], 'schema adaptation must not mutate caller schemas');
+    assert.deepStrictEqual(configuredSchema.schema.properties.tradeItemId.type, 'number');
 
     OpenRouterGateway.resetCircuit();
     const repairBodies = [];
@@ -228,18 +246,18 @@ async function main() {
     assert.strictEqual(repaired.usage.totalTokens, 24, 'repair usage must include both provider attempts');
 
     OpenRouterGateway.resetCircuit();
-    let lunaSummaryBody;
+    let configuredSummaryBody;
     OpenRouterGateway.setTransport(async (_url, init) => {
-        lunaSummaryBody = JSON.parse(init.body);
+        configuredSummaryBody = JSON.parse(init.body);
         return response({ choices: [{ message: { content: JSON.stringify({ reply: 'summary' }) } }] });
     });
     await OpenRouterGateway.request({
-        config: { ...baseConfig, model: 'openai/gpt-5.6-luna', maxTokens: 220 },
-        requestId: 'luna-summary-limit',
+        config: { ...baseConfig, completionLimitParam: 'max_tokens', maxTokens: 220 },
+        requestId: 'configured-summary-limit',
         messages: [{ role: 'user', content: 'summary' }]
     });
-    assert.strictEqual(lunaSummaryBody.max_tokens, 220, 'Luna summary requests must use OpenAI max_tokens');
-    assert.strictEqual(lunaSummaryBody.max_completion_tokens, undefined);
+    assert.strictEqual(configuredSummaryBody.max_tokens, 220, 'the configured completion limit field must be used');
+    assert.strictEqual(configuredSummaryBody.max_completion_tokens, undefined);
 
     OpenRouterGateway.resetCircuit();
     OpenRouterGateway.setTransport(async () => response({ error: { message: 'unavailable' } }, 503));

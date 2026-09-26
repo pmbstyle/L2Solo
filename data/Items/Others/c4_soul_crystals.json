@@ -1,0 +1,137 @@
+[
+  {
+    "selfId": 5577,
+    "template": {
+      "kind": "Other.Scroll",
+      "name": "Red Soul Crystal - Stage 11",
+      "class1": 4,
+      "class2": 5,
+      "mass": 20,
+      "price": 0
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5580,
+    "template": {
+      "kind": "Other.Scroll",
+      "name": "Red Soul Crystal - Stage 12",
+      "class1": 4,
+      "class2": 5,
+      "mass": 20,
+      "price": 0
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5578,
+    "template": {
+      "kind": "Other.Scroll",
+      "name": "Green Soul Crystal - Stage 11",
+      "class1": 4,
+      "class2": 5,
+      "mass": 20,
+      "price": 0
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5581,
+    "template": {
+      "kind": "Other.Scroll",
+      "name": "Green Soul Crystal - Stage 12",
+      "class1": 4,
+      "class2": 5,
+      "mass": 20,
+      "price": 0
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5579,
+    "template": {
+      "kind": "Other.Scroll",
+      "name": "Blue Soul Crystal - Stage 11",
+      "class1": 4,
+      "class2": 5,
+      "mass": 20,
+      "price": 0
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5582,
+    "template": {
+      "kind": "Other.Scroll",
+      "name": "Blue Soul Crystal - Stage 12",
+      "class1": 4,
+      "class2": 5,
+      "mass": 20,
+      "price": 0
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5908,
+    "template": {
+      "kind": "Other.Scroll",
+      "name": "Red Soul Crystal - Stage 13",
+      "class1": 4,
+      "class2": 5,
+      "mass": 20,
+      "price": 0
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5911,
+    "template": {
+      "kind": "Other.Scroll",
+      "name": "Green Soul Crystal - Stage 13",
+      "class1": 4,
+      "class2": 5,
+      "mass": 20,
+      "price": 0
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5914,
+    "template": {
+      "kind": "Other.Scroll",
+      "name": "Blue Soul Crystal - Stage 13",
+      "class1": 4,
+      "class2": 5,
+      "mass": 20,
+      "price": 0
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  }
+]

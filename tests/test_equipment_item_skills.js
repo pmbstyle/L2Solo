@@ -160,13 +160,10 @@ assert.strictEqual(
 
 const rskFocus = equipmentItem(3, 4727, true);
 const riskActor = actorWithEquipment([rskFocus]);
-riskActor.hp = 61;
-riskActor.maxHp = 100;
 calculateStats({}, riskActor);
+riskActor.hp = riskActor.maxHp * 0.61;
 assert.strictEqual(EffectStats.add(riskActor, 'pCritRateAdd'), 0, 'Rsk. Focus should remain inactive above 60% HP');
-riskActor.hp = 60;
-riskActor.maxHp = 100;
-calculateStats({}, riskActor);
+riskActor.hp = riskActor.maxHp * 0.6;
 assert.strictEqual(EffectStats.add(riskActor, 'pCritRateAdd'), 138.7, 'Rsk. Focus should activate at 60% HP');
 
 const backBlow = equipmentItem(4, 4685, true);

@@ -26,6 +26,7 @@ const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const CompanionTownTransit = invoke('GameServer/Bot/AI/CompanionTownTransit');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const HuntingVisibility = invoke('GameServer/Bot/AI/BotHuntingVisibility');
 
 const FOLLOW_RUN_DISTANCE = 250;
 const FOLLOW_RETARGET_DISTANCE = 900;
@@ -1681,7 +1682,8 @@ module.exports = {
         if (!acted && partyThreat?.actor && !isBusy(bot)) {
             const selfTactic = PartyClassTactics.selfAction(bot, {
                 role,
-                activeMobs: activePartyThreats.length
+                activeMobs: activePartyThreats.length,
+                target: partyThreat.actor
             });
             if (selfTactic) {
                 acted = true;
@@ -1758,18 +1760,11 @@ module.exports = {
                 keepRoleDecision = true;
             } else {
                 const nearbyNpcs = World.fetchNpcsInRadius(player.fetchLocX(), player.fetchLocY(), 900);
-                let targetMonster = null;
-                let closestDist = 900;
-
-                for (const npc of nearbyNpcs) {
-                    if (!BotRaidSafety.isProtectedRaidEntity(npc) && npc.fetchAttackable() && !npc.isDead() && npc.fetchDestId() === undefined) {
-                        const distToBot = point(bot).distance(point(npc));
-                        if (distToBot < closestDist) {
-                            closestDist = distToBot;
-                            targetMonster = npc;
-                        }
-                    }
-                }
+                const candidates = nearbyNpcs.filter(npc => !BotRaidSafety.isProtectedRaidEntity(npc)
+                    && npc.fetchAttackable() && !npc.isDead() && npc.fetchDestId() === undefined
+                    && point(bot).distance(point(npc)) < 900)
+                    .sort((a, b) => point(bot).distance(point(a)) - point(bot).distance(point(b)));
+                const targetMonster = HuntingVisibility.select(session, 'autoPull', bot, candidates).candidate;
 
                 if (targetMonster) {
                     if (!isBusy(bot)) {

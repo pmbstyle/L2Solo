@@ -8,6 +8,7 @@ const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
+const WeaponSA = invoke('GameServer/Items/C4WeaponSA');
 const RaidCurse = invoke('GameServer/RaidBoss/RaidCurse');
 const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 const AttackRange = invoke('GameServer/Actor/AttackRange');
@@ -18,6 +19,8 @@ const { weaponMaskFor } = invoke('GameServer/Skills/WeaponMask');
 class Attack {
     constructor() {
         this.timers = new Set();
+        this.bowReloading = false;
+        this.bowRepeatTarget = null;
         this.resetQueuedEvent();
     }
 
@@ -68,6 +71,8 @@ class Attack {
         this.activeCast = null;
         this.timers.forEach((timer) => clearTimeout(timer));
         this.timers.clear();
+        this.bowReloading = false;
+        this.bowRepeatTarget = null;
     }
 
     abortCast(session, actor) {
@@ -102,7 +107,15 @@ class Attack {
         }
 
         const attackRange = AttackRange.fetchNormalAttackRange(actor);
-        if (!AttackRange.isWithinRange(actor, creature, attackRange)) {
+        const rangedAttack = AttackRange.weaponKind(actor) === 'Weapon.Bow';
+        if (rangedAttack && this.bowReloading) {
+            // Movement and other actions are legal after the arrow is released,
+            // but another arrow must still wait for the weapon reuse phase.
+            this.bowRepeatTarget = creature;
+            return;
+        }
+        if (!AttackRange.isWithinRange(actor, creature, attackRange)
+            || invoke('GameServer/Automation').needsGeodataApproach(session, actor, creature)) {
             actor.state.setHits(false);
             // Auto-attacks and chase arrivals both return here. The target
             // may have moved since the initial attack request or last swing.
@@ -112,7 +125,6 @@ class Attack {
             }
             return;
         }
-        const rangedAttack = AttackRange.weaponKind(actor) === 'Weapon.Bow';
         if (rangedAttack && !invoke('GameServer/Actor/BowResources').consume(session, actor)) return;
 
         // Soulshots are only reloaded after the player enables their hotbar toggle.
@@ -135,7 +147,19 @@ class Attack {
             }, autoSoulshotId);
         }
 
-        const speed = Formulas.calcMeleeAtkTime(actor.fetchCollectiveAtkSpd());
+        const attackSpeed = actor.fetchCollectiveAtkSpd();
+        const weapon = actor.backpack?.fetchEquippedWeapon?.();
+        const timing = rangedAttack
+            ? Formulas.calcBowAttackTimes(attackSpeed, weapon?.fetchAttackReuseDelay?.() ?? 1500,
+                EffectStats.multiplier(actor, 'atkReuseMul'))
+            : { drawMs: Formulas.calcMeleeAtkTime(attackSpeed) * 0.644,
+                cycleMs: Formulas.calcMeleeAtkTime(attackSpeed) };
+        const movementGeneration = Number(session.moveRouteGeneration || 0);
+        if (rangedAttack) {
+            this.bowReloading = true;
+            this.bowRepeatTarget = null;
+        }
+        const attackWeapon = WeaponSA.equipped(actor);
         let secondaryDamageMultiplier = 0.85;
         const hits = this.resolveMeleeTargets(actor, creature).map((target, index) => {
             const hitLanded = Formulas.calcHitChance(actor, target, Math.random, this.positionContext(actor, target));
@@ -153,6 +177,11 @@ class Attack {
         const usedSoulshot = hits.some((entry) => entry.usedSoulshot);
         hits.forEach(({ target }) => invoke('GameServer/Bot/AI/BotMobCompetition').record(actor, target));
 
+        if (rangedAttack && !session.botSession) {
+            ConsoleText.transmit(session, ConsoleText.caption.shootArrow);
+            session.dataSendToMe(ServerResponse.skillDurationBar(Math.round(timing.cycleMs)));
+        }
+
         session.dataSendToMeAndOthers(ServerResponse.attack(actor, creature.fetchId(), {
             ...primary.hit,
             additionalHits: hits.slice(1).map((entry) => ({
@@ -163,7 +192,14 @@ class Attack {
         actor.state.setHits(true);
 
         this.queueTimer(() => {
+            const releaseBowMovement = () => {
+                if (!rangedAttack) return;
+                actor.state.setHits(false);
+                if (this.queue.name) this.dequeueEvent(session);
+            };
+
             if (this.blockedPvpDefense(session, actor, creature) || this.checkParticipants(actor, creature)) {
+                releaseBowMovement();
                 return;
             }
 
@@ -171,6 +207,7 @@ class Attack {
                 if (usedSoulshot) {
                     actor.soulshotLoaded = false;
                 }
+                releaseBowMovement();
                 return;
             }
 
@@ -186,18 +223,32 @@ class Attack {
 
                 if (!entry.hitLanded || entry.hit.damage <= 0) this.recordPlayerAggression(session, actor, target);
                 if (entry.hitLanded) {
+                    const beforeHp = Number(target.fetchHp?.()) || 0;
                     this.hit(session, actor, target, entry.hit.damage);
-                    this.applyDamageAbsorb(session, actor, entry.hit.damage);
+                    const hpDamage = Math.max(0, beforeHp - (Number(target.fetchHp?.()) || 0));
+                    this.applyDamageAbsorb(session, actor, hpDamage);
+                    if (entry.hit.flags & ServerResponse.attack.HITFLAG_CRIT) {
+                        WeaponSA.onCritical(session, actor, target, { weapon: attackWeapon, damage: entry.hit.damage,
+                            hpDamage, anger: entry.hit.anger, attack: this });
+                    }
                 }
                 else if (index === 0) {
                     ConsoleText.transmit(session, ConsoleText.caption.missedHit);
                 }
             });
 
-        }, speed * 0.644); // Until hit point
+            releaseBowMovement();
+
+        }, timing.drawMs); // Until hit point
 
         this.queueTimer(() => {
-            if (this.blockedPvpDefense(session, actor, creature) || this.checkParticipants(actor, creature)) {
+            const repeatTarget = rangedAttack ? this.bowRepeatTarget : null;
+            const nextTarget = repeatTarget || creature;
+            if (rangedAttack) {
+                this.bowReloading = false;
+                this.bowRepeatTarget = null;
+            }
+            if (this.blockedPvpDefense(session, actor, nextTarget) || this.checkParticipants(actor, nextTarget)) {
                 return;
             }
 
@@ -211,9 +262,20 @@ class Attack {
                 return;
             }
 
+            if (rangedAttack && repeatTarget) {
+                this.meleeHit(session, nextTarget);
+                return;
+            }
+
+            if (rangedAttack && (
+                Number(session.moveRouteGeneration || 0) !== movementGeneration
+                || actor.state.inMotion?.()
+                || actor.isBlocked?.()
+            )) return;
+
             this.meleeHit(session, creature);
 
-        }, speed); // Until end of combat move
+        }, timing.cycleMs); // Until end of combat move or bow reload
     }
 
     remoteHit(session, creature, skill) {
@@ -275,6 +337,7 @@ class Attack {
         this.activeCast = { target: creature, skill, landsAt: Date.now() + skill.fetchCalculatedHitTime() };
         HotPartyCastTracker.begin(session, actor, creature, skill);
 
+        const castWeapon = WeaponSA.equipped(actor);
         const castTime = skill.fetchCalculatedHitTime();
         // Lisvus C4 launches the client animation 400 ms before impact for
         // casts longer than its 420 ms gauge threshold. Keep short/static
@@ -413,6 +476,7 @@ class Attack {
                         }]);
                     }
                 }
+                if (!selfEffectOnly) WeaponSA.onCast(session, actor, target, skill, { weapon: castWeapon, outcome, attack: this });
                 if (outcome.spoilOnHit) {
                     outcome.spoiled = invoke('GameServer/Npc/SpoilSweep').trySpoilCrush(session, actor, target, skill);
                 }
@@ -632,7 +696,7 @@ class Attack {
             if (!id || seen.has(id)) continue;
             if (!this.isValidSkillTarget(target, enemySkill, actor)) continue;
             if (Math.abs((Number(target.fetchLocZ?.()) || 0) - (Number(actor.fetchLocZ?.()) || 0)) > 650) continue;
-            if (!AttackRange.isWithinRange(actor, target, attackRange) || !this.isFacing(actor, target, 120)) continue;
+            if (!AttackRange.isWithinRange(actor, target, attackRange) || !this.isFacing(actor, target, WeaponSA.attackAngle(actor))) continue;
 
             seen.add(id);
             targets.push(target);
@@ -865,7 +929,9 @@ class Attack {
         }
 
         const stat = skill.fetchSpell?.() ? 'magicalMpConsumeMul' : 'physicalMpConsumeMul';
-        return Math.max(0, Math.floor(cost * EffectStats.multiplier(actor, stat)));
+        const equipmentStat = skill.fetchSpell?.() ? 'magicalMpConsumeRateMul' : 'physicalMpConsumeRateMul';
+        return Math.max(0, Math.floor(cost * EffectStats.multiplier(actor, stat)
+            * EffectStats.multiplier(actor, equipmentStat) + 1e-9));
     }
 
     rejectSkillUseCondition(session, actor, message) {
@@ -907,7 +973,7 @@ class Attack {
                 power,
                 creature.fetchCollectiveMDef(),
                 { spiritshot: usedSpiritshot, blessedSpiritshot: usedBlessedSpiritshot, magicCritical }
-            ) * vulnModifier);
+            ) * vulnModifier * WeaponSA.pvpMultiplier(actor, creature, 'magic'));
             this.clearLoadedShot(actor, magicSkill);
             return damage;
         }
@@ -952,7 +1018,7 @@ class Attack {
                 criticalDamageAdd: EffectStats.add(actor, 'pCritDamageAdd'),
                 rng
             }
-        ) * weaponModifier * physicalUndeadModifier(actor, creature) * physicalRaceModifier(actor, creature));
+        ) * weaponModifier * physicalUndeadModifier(actor, creature) * physicalRaceModifier(actor, creature) * WeaponSA.pvpMultiplier(actor, creature, 'skill'));
         if (this.rollPhysicalSkillCritical(actor, semantic, rng)) damage *= 2;
         this.clearLoadedShot(actor, magicSkill);
         return damage;
@@ -998,6 +1064,7 @@ class Attack {
         const pDef = creature.fetchCollectivePDef() + (shield === Formulas.SHIELD_DEFENSE_SUCCEED ? shieldPDef : 0);
         const position = this.targetPosition(actor, creature);
         const critical = Formulas.rollCritical(this.fetchSituationalCriticalRate(actor, creature), rng);
+        const anger = critical && shield !== Formulas.SHIELD_DEFENSE_PERFECT_BLOCK ? WeaponSA.criticalAnger(actor) : 0;
         const weaponModifier = incomingWeaponVulnerabilityModifier(creature, {
             bow: this.isBowAttack(actor),
             blunt: this.isBluntAttack(actor)
@@ -1009,8 +1076,8 @@ class Attack {
                 soulshot: usedSoulshot,
                 criticalDamageMultiplier: EffectStats.multiplier(actor, 'pCritDamageMul')
                     * EffectStats.situationalMultiplier(actor, 'pCritDamageMul', position),
-                criticalDamageAdd: EffectStats.add(actor, 'pCritDamageAdd')
-            }) * weaponModifier * physicalUndeadModifier(actor, creature) * physicalRaceModifier(actor, creature));
+                criticalDamageAdd: EffectStats.add(actor, 'pCritDamageAdd') + anger
+            }) * weaponModifier * physicalUndeadModifier(actor, creature) * physicalRaceModifier(actor, creature) * WeaponSA.pvpMultiplier(actor, creature, 'melee'));
         let flags = usedSoulshot ? ServerResponse.attack.soulshotFlags(actor) : 0;
 
         if (critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
@@ -1018,7 +1085,8 @@ class Attack {
 
         return {
             damage,
-            flags
+            flags,
+            anger: !!anger
         };
     }
 
@@ -1142,7 +1210,7 @@ class Attack {
     }
 
     applyDamageAbsorb(session, actor, damage) {
-        if (this.isBowAttack(actor)) return 0;
+        if (this.isBowAttack(actor) || actor.fetchHp?.() <= 0 || actor.state?.fetchDead?.()) return 0;
 
         const absorbPercent = EffectStats.add(actor, 'absorbDam');
         if (absorbPercent <= 0) return 0;

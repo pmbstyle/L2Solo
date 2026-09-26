@@ -13,6 +13,13 @@ function finishRevive(session, actor, helper) {
     session.deathTimerStart = undefined;
     session.partyReviveCombatPauseStartedAt = undefined;
     session.partyReviveCombatPausedMs = undefined;
+    // Only an actual in-place resurrection rejoins an ongoing raid. Town
+    // recovery has no helper and must leave that participant out of combat.
+    if (helper && wasDead) {
+        if (session.hotRaidCasualtyAt) session.hotRaidResurrectionRecovery = true;
+        session.hotRaidCasualtyAt = undefined;
+        session.hotRaidCasualtyRole = undefined;
+    }
     if (session?.accountId?.startsWith?.('bot_') && session.arenaEphemeral !== true) {
         Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
             botId: actor.fetchId(),

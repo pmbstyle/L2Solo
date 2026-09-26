@@ -6,6 +6,7 @@ const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
 const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
+const HuntingVisibility = invoke('GameServer/Bot/AI/BotHuntingVisibility');
 const NpcObjectIndex = require('../../World/NpcObjectIndex');
 
 const PULL_SEARCH_RADIUS = 2200;
@@ -346,10 +347,11 @@ function freeMonsters(bot) {
 
 function nearestFreeMonster(bot, leaderSession) {
     const now = Date.now();
-    return freeMonsters(bot)
+    const ranked = freeMonsters(bot)
         .filter((npc) => rejectedTargetUntil(leaderSession, npc.fetchId()) <= now)
         .map((npc) => scorePullTarget(bot, leaderSession, npc))
-        .sort((a, b) => b.score - a.score || distance(point(bot), point(a.target)) - distance(point(bot), point(b.target)))[0] || null;
+        .sort((a, b) => b.score - a.score || distance(point(bot), point(a.target)) - distance(point(bot), point(b.target)));
+    return HuntingVisibility.select(leaderSession, 'pull', bot, ranked, candidate => candidate.target).candidate;
 }
 
 function incomingMobOnPuller(bot) {
@@ -511,6 +513,14 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI, s
             }
         }
         return { handled: true, puller, paused: pause };
+    }
+
+    if (target && state.phase === 'approach' && !HuntingVisibility.canSee(bot, target)) {
+        bot.automation?.abortAll?.(bot);
+        clearPullMove(state);
+        rejectTarget(leaderSession, target);
+        target = null;
+        state = pullState(leaderSession);
     }
 
     if (!target) {

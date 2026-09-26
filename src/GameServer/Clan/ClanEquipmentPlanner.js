@@ -71,6 +71,7 @@ function calculate(member, spots = [], warehouseRows = [], options = {}) {
         allowedRecipeIds: options.allowedRecipeIds ? new Set(options.allowedRecipeIds) : undefined,
         maxExpectedKills: number(options.maxExpectedKills, Config.equipmentMaxExpectedKills),
         spoilCapable: options.spoilCapable === true,
+        allowRaidSources: options.allowRaidSources === true,
         ...(options.occupancy ? { occupancy: options.occupancy } : {}),
         ...(options.capacityUnits ? { capacityUnits: options.capacityUnits } : {}),
         ...(options.reservationKey ? { reservationKey: options.reservationKey } : {}),
@@ -87,6 +88,27 @@ function calculate(member, spots = [], warehouseRows = [], options = {}) {
                 forceMarketTargetId: existing.strategy === 'market' ? number(existing.target?.selfId) : null
             });
             if (Policy.isAcquisitionPlan(refreshed)) return refreshed;
+        }
+        if (existing?.strategy === 'direct_drop' && !rateProfileCurrent) {
+            // Route economics are part of the rate model. Reconsider the
+            // target as well as the dropper so an old cheap-looking raid does
+            // not stay locked after roster opportunity cost changes.
+            const targetId = number(existing.target?.selfId);
+            const overBudget = !GearAcquisitionPlanner.withinExpectedKillLimit(
+                existing, plannerOptions.maxExpectedKills
+            );
+            return GearAcquisitionPlanner.planFor({
+                ...state,
+                stats: { ...(state.stats || {}), equipmentPlan: undefined }
+            }, {
+                ...plannerOptions,
+                ...(overBudget && targetId ? {
+                    excludedTargetIds: [...new Set([
+                        ...(options.excludedTargetIds || []).map(number).filter(Boolean),
+                        targetId
+                    ])]
+                } : {})
+            });
         }
         if (existing?.status === 'blocked') {
             const targetId = number(existing.target?.selfId);

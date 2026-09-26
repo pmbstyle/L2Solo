@@ -34,7 +34,12 @@ class ActorModel extends CreatureModel {
     }
 
     setHp(data) {
+        const wasLow = this.fetchHp() <= this.fetchMaxHp() * 0.6;
         super.setHp(data);
+        const isLow = this.fetchHp() <= this.fetchMaxHp() * 0.6;
+        if (wasLow !== isLow && invoke('GameServer/Items/C4WeaponSA').hasRisk(this)) {
+            invoke('GameServer/Actor/Generics/CalculateStats').refreshConditionalCombatStats(this);
+        }
         this.refreshVitalsRegeneration();
     }
 
@@ -184,6 +189,12 @@ class ActorModel extends CreatureModel {
     fetchUsername() {
         return this.model.username;
     }
+
+    fetchNewbie() { return this.model.newbie ?? -1; }
+
+    fetchNewbieShotsReceived() { return this.model.newbieShotsReceived ?? 0; }
+
+    setNewbieShotsReceived(value) { this.model.newbieShotsReceived = value; }
 
     fetchClassId() {
         return this.model.classId;

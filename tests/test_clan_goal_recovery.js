@@ -38,6 +38,13 @@ const row = async id => (await query('SELECT * FROM bot_life_state WHERE charact
     const current = { ...ended, stats: { equipmentPlan: { clanGoal: { goalKey: 'production' } } } };
     assert.strictEqual(Policy.reconcileGoals(current, Policy.activeGoalKeys({ goal: goal('active', 1),
         productionGoal: goal('production', 2) })), current);
+    assert.deepEqual([...Policy.activeRaidGoalKeys([{
+        status: 'active', memberIds: [1, 2, 3, 4, 5, 6, 7],
+        stats: {
+            objective: { sourceKind: 'raid', clanGoalKey: 'raid-goal', minPartySize: 7 },
+            raidPreparation: { status: 'ready' }, raidEncounter: { status: 'active' }
+        }
+    }])], ['raid-goal'], 'a viable started raid keeps its clan goal alive during membership repair');
     const original = await row(3);
     assert(await Life.init(), 'startup recovery runs before normal bot hydration');
     assert(!JSON.parse((await row(3)).statsJson).equipmentPlan);

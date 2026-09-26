@@ -65,6 +65,16 @@ function main() {
     assert.strictEqual(social.reply, decision().reply, 'available party policy must preserve the model personality');
     assert.strictEqual(social.reason, 'party_policy:available');
 
+    const autonomousPartyBot = { ...socialSession, hotBackgroundPartyId: 'hot-party-1' };
+    const takeover = BotBrain.applyPartyPolicy(
+        autonomousPartyBot,
+        decision(),
+        { playerSession },
+        'can I join your party?'
+    );
+    assert.strictEqual(takeover.action, 'request_player_join_party', 'player-to-party wording must invoke the takeover tool');
+    assert.strictEqual(takeover.reason, 'party_policy:player_requests_takeover');
+
     const companionSession = {
         ...socialSession,
         partyCompanion: true,

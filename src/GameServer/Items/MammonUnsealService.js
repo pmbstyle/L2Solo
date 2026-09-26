@@ -30,6 +30,7 @@ function menu(session, page = 0, message = '') {
     session.dataSendToMe(Response.npcHtml(npc.fetchId(), `<html><body>Blacksmith of Mammon:<br>
         Unsealing is free. Enchantment is preserved.<br>Unequip an item before unsealing it.<br>${escape(message)}<br>
         ${links || 'You have no unequipped sealed equipment.'}<br>
+        ${invoke('GameServer/Items/C4WeaponSAExchange').links(npc.fetchSelfId())}
         ${page>0?`<a action="bypass -h mammon-unseal page ${page-1}">Previous</a><br>`:''}
         ${page+1<pages?`<a action="bypass -h mammon-unseal page ${page+1}">Next</a>`:''}</body></html>`));
     session.dataSendToMe(Response.actionFailed());

@@ -28,7 +28,9 @@ async function main() {
             enabled: true,
             apiKey: 'party-router-test',
             model: 'test/main',
-            partyRouterModel: 'openai/gpt-oss-120b'
+            partyRouterModel: 'test/router-model',
+            completionLimitParam: 'max_tokens',
+            reasoningEffort: 'low'
         };
         OpenRouterGateway.setTransport(async (_url, init) => {
             captured = JSON.parse(init.body);
@@ -68,10 +70,10 @@ async function main() {
         assert.strictEqual(result.candidate, candidates[1]);
         assert.strictEqual(result.route, 'bot');
         assert.strictEqual(observations[0].name, 'party.router.generation');
-        assert.strictEqual(captured.model, 'openai/gpt-oss-120b');
+        assert.strictEqual(captured.model, 'test/router-model');
         assert.strictEqual(captured.max_tokens, PartyLLMRouter.ROUTER_MAX_TOKENS);
         assert.strictEqual(captured.max_completion_tokens, undefined);
-        assert.strictEqual(captured.temperature, PartyLLMRouter.ROUTER_TEMPERATURE);
+        assert.strictEqual(captured.temperature, undefined, 'router must respect the configured model parameters');
         assert.deepStrictEqual(captured.reasoning, { effort: 'low', exclude: true });
         assert.strictEqual(captured.response_format.type, 'json_schema');
         assert.ok(!JSON.stringify(captured.messages).includes('persona'));

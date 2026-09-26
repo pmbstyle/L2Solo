@@ -60,6 +60,19 @@ const {
 } = PartyRequestPlanner;
 
 const HUNTING_TRAVEL_MS = 25000;
+const activationFailureLogAt = new Map();
+
+function logPartyActivationFailure(state, result, timestamp = Date.now()) {
+    const partyId = state?.party?.partyId;
+    if (!partyId || result?.ok !== false) return;
+    const reason = String(result.reason || 'unknown');
+    const detail = String(result.detail || '');
+    const key = `${partyId}:${reason}:${detail}`;
+    if (timestamp - Number(activationFailureLogAt.get(key) || 0) < 30000) return;
+    activationFailureLogAt.set(key, timestamp);
+    utils.infoWarn('BotPopulation', 'party activation deferred %s reason=%s%s',
+        partyId, reason, detail ? ` detail=${detail}` : '');
+}
 
 function restockColdHealingPotions(state) {
     if (!state || state.activity !== 'shopping' || !state.currentRegion) return Promise.resolve(state);
@@ -404,7 +417,7 @@ function canResumeAffordableMarketPlan(state, timestamp = Date.now()) {
     const targetId = Number(plan?.target?.selfId || 0);
     const targetSlot = Number(plan?.target?.slot || 0);
     const requiredClanPurchase = plan?.clanGoal?.priority === 'required';
-    if (state?.activity !== 'hunting'
+    if (!['hunting', 'party_wait'].includes(state?.activity)
         || plan?.status !== 'active'
         || plan?.strategy !== 'market'
         || (![7, 14].includes(targetSlot) && !requiredClanPurchase)
@@ -884,18 +897,6 @@ function syncPartyLeader(members = [], party, leaderId) {
     ));
     if (!staleMembers.length) return Promise.resolve({ assigned: [], failed: [] });
     return assignPartyMembers(staleMembers, { ...party, leaderId: nextLeaderId });
-}
-
-function activationCandidatesForPlayer(states, playerLevel) {
-    const level = Number(playerLevel || 1);
-    const range = Math.max(0, Number(Config.activationLevelRange || 0));
-    const matching = states.filter((state) => {
-        const stateLevel = Number(state.level || 1);
-        if (Math.abs(stateLevel - level) <= range) return true;
-        return !!state.stats?.newbieAnchor && level <= Config.newbieAnchorMaxLevel + 2;
-    });
-
-    return matching.length > 0 ? matching : states;
 }
 
 function distance2d(a, b) {
@@ -1832,8 +1833,14 @@ const PopulationService = {
                             seenParties.add(partyId);
                             return true;
                         });
-                        const merchants = available.filter((state) => state.activity === 'merchant' && state.stats?.marketStore);
-                        const crafters = available.filter((state) => state.activity === 'crafting' && state.stats?.craftShop);
+                        // A visible cold party is one actor from the activation policy's point of
+                        // view, but represents an entire roster in the client. Give parties first
+                        // refusal so a raid cannot keep resolving invisibly behind solo/service
+                        // activation work.
+                        const parties = available.filter((state) => !!state.party?.partyId);
+                        const standalone = available.filter((state) => !state.party?.partyId);
+                        const merchants = standalone.filter((state) => state.activity === 'merchant' && state.stats?.marketStore);
+                        const crafters = standalone.filter((state) => state.activity === 'crafting' && state.stats?.craftShop);
                         // There is intentionally no local population target
                         // here. The old fixed local target made a player see
                         // only a fixed handful of bots even when hundreds of
@@ -1845,10 +1852,11 @@ const PopulationService = {
                             0,
                             Config.maxActivationsPerScan - ambientActivated.length
                         );
-                        const candidates = [...crafters, ...merchants, ...activationCandidatesForPlayer(
-                            available.filter((state) => state.activity !== 'merchant' && state.activity !== 'crafting'),
-                            actor.fetchLevel()
-                        )].slice(0, crafters.length + ambientRemaining);
+                        const ambient = standalone.filter((state) => (
+                            state.activity !== 'merchant' && state.activity !== 'crafting'
+                        ));
+                        const candidates = [...parties, ...crafters, ...merchants, ...ambient]
+                            .slice(0, parties.length + crafters.length + ambientRemaining);
                         const floorAware = FloorAwareActivationPolicy.filterCandidates(candidates, {
                             playerLoc: loc,
                             reason: 'near_player'
@@ -1868,6 +1876,9 @@ const PopulationService = {
                                     keepStoreLocation: (state.activity === 'merchant' && !!state.stats?.marketStore)
                                         || (state.activity === 'crafting' && !!state.stats?.craftShop),
                                     playerLoc: loc
+                                }).then((result) => {
+                                    logPartyActivationFailure(state, result);
+                                    return result;
                                 });
                             }).then((result) => {
                                 if (result.ok) {
@@ -1887,6 +1898,7 @@ const PopulationService = {
 
     cooldownEligibleHot() {
         const BotManager = invoke('GameServer/Bot/BotManager');
+        const HotPartyLifecycle = invoke('GameServer/Bot/Population/HotPartyLifecycle');
         const now = Date.now();
         const players = this.realPlayerSessions();
         const cooldownRadius = Math.max(Config.cooldownRadius, Config.activationRadius);
@@ -1900,6 +1912,12 @@ const PopulationService = {
                 // continue hunting and washing karma in the cold simulation.
                 if (session.pkProfile || session.plan === 'pk_hunting') return false;
                 if (session.clanAllianceQuest || session.partyCompanion === true || session.followPlayerSession) return false;
+                const failedRaidReady = session.hotBackgroundPartyId
+                    && HotPartyLifecycle.raidFailureReady(
+                        BackgroundPartyState.find(session.hotBackgroundPartyId),
+                        now
+                    );
+                if (failedRaidReady) return true;
                 const lastHotAt = session.populationHotAt || 0;
                 if (lastHotAt && now - lastHotAt < Config.cooldownGraceMs && !session.pvpEncounter) return false;
                 if (players.length === 0) return true;
@@ -1925,10 +1943,21 @@ const PopulationService = {
             .slice(0, Config.cooldownBatchSize);
 
         return candidates.reduce((chain, session) => (
-            chain.then((results) => this.cooldownSession(session, 'policy').then((result) => {
+            chain.then((results) => {
+                const failedRaidReady = session.hotBackgroundPartyId
+                    && HotPartyLifecycle.raidFailureReady(
+                        BackgroundPartyState.find(session.hotBackgroundPartyId),
+                        now
+                    );
+                return this.cooldownSession(
+                    session,
+                    failedRaidReady ? 'raid_failed' : 'policy',
+                    failedRaidReady ? { ignoreVisibility: true } : {}
+                ).then((result) => {
                 if (result.ok) results.push(result);
                 return results;
-            }))
+                });
+            })
         ), Promise.resolve([]));
     },
 
@@ -2370,6 +2399,7 @@ const PopulationService = {
         const refreshMs = Math.max(1000, Number(Config.partyRequirementRefreshMs) || 5 * 60 * 1000);
         const batchSize = Math.max(1, Number(Config.partyRequirementRefreshBatchSize) || 8);
         const refreshable = (parties || [])
+            .filter((party) => !BackgroundPartyLifecycle.raidStarted(party))
             .filter((party) => timestamp - Number(party.stats?.lastRequirementRefreshAt || 0) >= refreshMs)
             .sort((a, b) => Number(a.stats?.lastRequirementRefreshAt || 0) - Number(b.stats?.lastRequirementRefreshAt || 0))
             .slice(0, batchSize);
@@ -3164,10 +3194,12 @@ const PopulationService = {
 
             const elapsedMs = party.stats?.lastResolveAt ? Math.max(1000, Date.now() - party.stats.lastResolveAt) : 60000;
             const targetNpcId = partyTargetNpcId(party, leader);
+            if (spot.raidBoss) return require('./ColdRaidLegacyCommit').resolve({ party, members, spot,
+                pressure: Director.pressureForState(leader), targetNpcId, elapsedMs });
             const result = BackgroundPartyResolver.resolve({
                 party,
                 members,
-                spot,
+                spot: invoke('GameServer/RaidBoss/RaidEncounterScope').decorateSpot(spot),
                 pressure: Director.pressureForState(leader),
                 targetNpcId,
                 elapsedMs
@@ -3178,6 +3210,7 @@ const PopulationService = {
                 chain.then((resolvedMembers) => LifeState.applyResolve(memberResult.state, memberResult.result)
                     .then((updated) => updated ? [...resolvedMembers, updated] : resolvedMembers))
             ), Promise.resolve([])).then((resolvedMembers) => {
+                if (spot.raidBoss && result.partyPatch.stats?.raidEncounter?.status === 'active') return resolvedMembers;
                 const deadMembers = resolvedMembers.filter((member) => member.activity === 'dead');
                 deadMembers.forEach((member) => deadMemberIds.add(Number(member.characterId)));
                 return deadMembers.reduce((chain, member) => (
@@ -3187,7 +3220,8 @@ const PopulationService = {
                 let breakTaken = false;
                 let marketDeparture = null;
                 return resolvedMembers.reduce((chain, member) => (
-                chain.then((activeMembers) => GoalService.review(member, { spot }).then((goalSnapshot) => {
+                chain.then((activeMembers) => (spot.raidBoss ? Promise.resolve(null) : GoalService.review(member, { spot })).then((goalSnapshot) => {
+                    if (spot.raidBoss) return [...activeMembers, member];
                     if (breakTaken || !canTakePartyMarketBreak(party, resolvedMembers, member)) {
                         return [...activeMembers, member];
                     }
@@ -3375,6 +3409,7 @@ const PopulationService = {
         const replanContext = workerPlan
             ? { failure: workerPlan.replanFailure || null }
             : GearAcquisitionPlanner.replanContextFor(state, previousPlan, startedAt);
+        const weaponBridgePlan = GearAcquisitionPlanner.npcEquipmentBridgePlan(state);
         let acquisitionPlan = workerPlan?.acquisitionPlan || null;
         const workerPlanHasSource = acquisitionPlan?.status === 'active'
             && ['direct_drop', 'craft'].includes(acquisitionPlan.strategy)
@@ -3411,20 +3446,21 @@ const PopulationService = {
             const previousAvailabilitySource = previousFarmPlan && !replanContext.failure
                 ? GearAcquisitionPlanner.bestSourceForPlan(state, previousPlan, spots, { occupancy })
                 : null;
-            const reusablePartyRequest = !state.party?.partyId
+            const reusablePartyRequest = !weaponBridgePlan
+                && !state.party?.partyId
                 && previousPlan?.next
                 && (!previousFarmPlan || !!previousAvailabilitySource)
                 && replanContext.routeCurrent
                 && !replanContext.failure
                 && state.stats?.partyRequest?.status === 'open'
                 && Number(state.stats.partyRequest.reviewAt || 0) > startedAt;
-            const upgradedPlan = previousAvailabilitySource
+            const upgradedPlan = weaponBridgePlan || (previousAvailabilitySource
                 ? GearAcquisitionPlanner.retargetPlanSource(state, previousPlan, previousAvailabilitySource)
                 : previousFarmPlan && !GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan)
                     ? GearAcquisitionPlanner.replacementPlanFor(state, previousPlan, spots, { occupancy, ...replanContext })
                     : reusablePartyRequest
                         ? previousPlan
-                        : GearAcquisitionPlanner.planFor(state, { spots, occupancy, ...replanContext });
+                        : GearAcquisitionPlanner.planFor(state, { spots, occupancy, ...replanContext }));
             const previousRefresh = previousPlan?.recipeId && !reusablePartyRequest
                 ? GearAcquisitionPlanner.planFor(state, { spots, occupancy, recipeId: previousPlan.recipeId, ...replanContext })
                 : null;
@@ -3433,7 +3469,9 @@ const PopulationService = {
                 : upgradedPlan;
             const finalizedPlan = reusablePartyRequest
                 ? previousPlan
-                : GearAcquisitionPlanner.finalizePlan(state, previousPlan, rawAcquisitionPlan, replanContext, startedAt);
+                : GearAcquisitionPlanner.finalizePlan(state, previousPlan, rawAcquisitionPlan,
+                    weaponBridgePlan ? { ...replanContext, allowClanGoalReplan: true } : replanContext,
+                    startedAt);
             acquisitionPlan = {
                 ...finalizedPlan,
                 marketFallback: finalizedPlan.status === 'active' && finalizedPlan.strategy === 'craft'

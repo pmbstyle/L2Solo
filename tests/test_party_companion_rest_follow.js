@@ -1790,6 +1790,22 @@ try {
     legacyUltimateDefense.fetchSemantic = undefined;
     const survivalTactic = PartyClassTactics.selfAction(tacticalPaladin, { role: 'tank', activeMobs: 2 });
     assert.strictEqual(survivalTactic?.skill.fetchSelfId(), 110, 'a pressured low-HP Paladin should use Ultimate Defense as a class tactic');
+    const distantRaidBoss = { fetchLocX: () => 500, fetchLocY: () => 0 };
+    assert.strictEqual(
+        PartyClassTactics.selfAction(tacticalPaladin, {
+            role: 'tank', activeMobs: 1, target: distantRaidBoss, raidBoss: true
+        }),
+        null,
+        'a raid tank must not immobilize itself with Ultimate Defense before reaching weapon range'
+    );
+    const closeRaidBoss = { fetchLocX: () => 5, fetchLocY: () => 0 };
+    assert.strictEqual(
+        PartyClassTactics.selfAction(tacticalPaladin, {
+            role: 'tank', activeMobs: 1, target: closeRaidBoss, raidBoss: true
+        })?.skill.fetchSelfId(),
+        110,
+        'a low-HP raid tank should use Ultimate Defense after anchoring in weapon range'
+    );
 
     const tacticalTitan = fakeActor(2000061, { locX: 0, locY: 0, classId: 113, hp: 25, maxHp: 100, mp: 100, maxMp: 100 });
     learnSkill(tacticalTitan, { selfId: 139, name: 'Guts', mp: 20 });
@@ -1873,6 +1889,16 @@ try {
     assert.strictEqual(autoPullSkillCast, false, 'auto pull must not cast Aggression even when it is learned');
     assert.strictEqual(autoPullOptions?.basicAttackOnly, true, 'auto pull should start with a basic attack');
     assert.strictEqual(autoPullTankSession.roleDecision.reason, 'safe_pull', 'low MP should not disable a basic-attack pull');
+
+    const pullGeo = invoke('GameServer/Geodata/GeodataEngine');
+    const savedPullSight = pullGeo.hasLineOfSight;
+    try {
+        pullGeo.hasLineOfSight = () => false;
+        FollowingState.tick(autoPullTankSession, autoPullTank, { skillExec() {} }, {
+            say() {}, executePvPCombat() {},
+            executeCombat() { assert.fail('automatic tank pulling must not select a mob behind a wall'); }
+        });
+    } finally { pullGeo.hasLineOfSight = savedPullSight; }
 
     const scoredPuller = fakeActor(2000099, { locX: 0, locY: 0, level: 40, classId: 5 });
     const scoredLeader = fakeActor(2000100, { locX: 0, locY: 0, level: 40, classId: 0 });

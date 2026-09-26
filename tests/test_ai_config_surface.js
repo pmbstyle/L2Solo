@@ -10,10 +10,10 @@ const originalAI = options.default.AI;
 const originalLangfuse = options.default.Langfuse;
 
 try {
-    assert.strictEqual(OpenRouterGateway.DEFAULTS.model, 'openai/gpt-5.6-luna');
-    assert.strictEqual(OpenRouterGateway.DEFAULTS.reasoningEffort, 'low');
-    assert.strictEqual(OpenRouterGateway.DEFAULTS.temperature, 0.35);
-    assert.strictEqual(OpenRouterGateway.DEFAULTS.partyRouterModel, 'openai/gpt-5.6-luna');
+    assert.strictEqual(OpenRouterGateway.DEFAULTS.model, '');
+    assert.strictEqual(OpenRouterGateway.DEFAULTS.reasoningEffort, 'off');
+    assert.strictEqual(OpenRouterGateway.DEFAULTS.temperature, null);
+    assert.strictEqual(OpenRouterGateway.DEFAULTS.partyRouterModel, '');
     assert.strictEqual(OpenRouterGateway.DEFAULTS.apiUrl, OpenRouterGateway.OPENROUTER_URL);
 
     // Do not let a developer-local [AI] section change the OpenRouter fixture.
@@ -24,6 +24,12 @@ try {
         model: 'test/config-model',
         temperature: 0.7,
         reasoningEffort: 'off',
+        completionLimitParam: 'max_tokens',
+        strictSchema: true,
+        providerOrder: 'OpenAI, Anthropic',
+        providerSort: 'price',
+        allowFallbacks: false,
+        requireParameters: false,
         maxConcurrentRequests: 7,
         debug: true,
 
@@ -39,8 +45,14 @@ try {
     assert.strictEqual(openRouter.model, 'test/config-model');
     assert.strictEqual(openRouter.temperature, 0.7);
     assert.strictEqual(openRouter.reasoningEffort, 'off');
+    assert.strictEqual(openRouter.completionLimitParam, 'max_tokens');
+    assert.strictEqual(openRouter.strictSchema, true);
+    assert.deepStrictEqual(openRouter.providerOrder, ['OpenAI', 'Anthropic']);
+    assert.strictEqual(openRouter.providerSort, 'price');
+    assert.strictEqual(openRouter.allowFallbacks, false);
+    assert.strictEqual(openRouter.requireParameters, false);
     assert.strictEqual(openRouter.maxConcurrentRequests, 7);
-    assert.strictEqual(openRouter.partyRouterModel, 'openai/gpt-5.6-luna', 'party routing uses the configured fast router by default');
+    assert.strictEqual(openRouter.partyRouterModel, 'test/config-model', 'party routing reuses the configured model by default');
     assert.strictEqual(openRouter.maxTokens, 320, 'completion safety belongs to internal policy');
     assert.strictEqual(openRouter.timeoutMs, 3500, 'provider timeout belongs to internal policy');
     assert.strictEqual(openRouter.backgroundInferenceEnabled, undefined);
@@ -57,6 +69,9 @@ try {
     assert.strictEqual(local.provider, 'openai-compatible');
     assert.strictEqual(local.apiUrl, 'http://127.0.0.1:1234/v1/chat/completions');
     assert.strictEqual(local.model, 'local-model');
+    assert.strictEqual(local.temperature, null);
+    assert.strictEqual(local.completionLimitParam, 'max_tokens');
+    assert.strictEqual(local.strictSchema, false);
     assert.strictEqual(local.reasoningEffort, 'off', 'custom providers should disable optional thinking by default');
     assert.strictEqual(local.partyRouterModel, 'local-model', 'a custom provider should reuse its model for party routing by default');
     assert.strictEqual(OpenRouterGateway.isConfigured(local), true, 'local OpenAI-compatible endpoints may omit an API key');

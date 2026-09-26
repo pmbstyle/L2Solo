@@ -189,6 +189,12 @@ function consume(session, data) {
             World.inviteBotByName(session, session.actor, name, undefined, 'chat_invite');
             return;
         }
+        if (/^\.joinparty(?:\s+.*)?$/i.test(String(data.text || '').trim())) {
+            const name = String(data.text || '').trim().replace(/^\.joinparty\s*/i, '').trim();
+            const World = invoke('GameServer/World/World');
+            World.requestJoinBotPartyByName(session, session.actor, name, 'join_party_command');
+            return;
+        }
         if (botCommandText === '.botfriends' || botCommandText.startsWith('.botfriends ')) {
             const BotFriends = invoke('GameServer/World/Generics/NpcBypasses/BotFriends');
             BotFriends.render(session, botCommandText.includes(' add') ? 'add' : 'friends', 0, null, { open: true });

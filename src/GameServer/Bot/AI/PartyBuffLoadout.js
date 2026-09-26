@@ -31,6 +31,12 @@ const situational = {
 function normalize(key) { return String(key || '').replace(/([a-z0-9])([A-Z])/g,'$1_$2').trim().toLowerCase().replace(/\s+/g,'_'); }
 function family(key) { key=normalize(key);return aliases[key] || key; }
 
+// A resurrected damage dealer needs a short combat restart, not the full
+// pre-pull loadout. Native chants count as the same buff families.
+function raidRecoveryFamilies(actor) {
+    return Roles.usesCasterWeaponCombat(actor) ? ['acumen', 'empower'] : ['haste', 'might'];
+}
+
 function useful(actor, skill, context = {}) {
     const key=family(skill.fetchSemantic?.()?.effect);
     if (situational[key] && context[situational[key]] !== true) return false;
@@ -92,9 +98,12 @@ function build(members, providers, context, api) {
     }
     // Within one benefit, retain the stronger learned version. At equal
     // strength prefer casts which avoid occupying unrelated recipients' slots.
+    // Raids instead prefer covering more beneficiaries per cast; every aura
+    // recipient still goes through the same slot budget below.
     candidates.sort((a,b)=>b.priority-a.priority || a.group.localeCompare(b.group)
         || Number(b.skill.fetchSemantic().stackOrder||0)-Number(a.skill.fetchSemantic().stackOrder||0)
         || Number(b.skill.fetchLevel?.()||1)-Number(a.skill.fetchLevel?.()||1)
+        || (api.preferGroupBuffs ? b.beneficiaries.length-a.beneficiaries.length : 0)
         || b.efficiency-a.efficiency
         || b.beneficiaries.length-a.beneficiaries.length
         || Number(a.skill.fetchConsumedMp?.()||0)-Number(b.skill.fetchConsumedMp?.()||0)
@@ -111,4 +120,4 @@ function build(members, providers, context, api) {
     return {chosen,selected,managed,managedByActor};
 }
 
-module.exports={build,useful,family,normalize};
+module.exports={build,useful,family,normalize,raidRecoveryFamilies};

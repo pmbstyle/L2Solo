@@ -72,6 +72,12 @@ class Item extends ItemModel {
         return this.model.attackRange ?? this.model.pAtkRange ?? 0;
     }
 
+    fetchAttackReuseDelay() {
+        if (this.model.reuseDelay !== undefined) return this.model.reuseDelay;
+        if (this.model.attackReuseDelay !== undefined) return this.model.attackReuseDelay;
+        return this.fetchKind() === 'Weapon.Bow' ? 1500 : 0;
+    }
+
     fetchConsumedMp() {
         return this.model.mp ?? 0;
     }

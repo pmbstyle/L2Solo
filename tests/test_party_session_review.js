@@ -64,3 +64,25 @@ assert.strictEqual(missed.party.leaderId, 2);
 const recovered = Lifecycle.review(gainedParty, unequal.map(m => ({ ...m, level: 20 })), at + 30 * minute);
 assert.strictEqual(recovered.leaving.size, 0, 'a roster change restoring XP eligibility clears the concern');
 assert.deepStrictEqual(recovered.party.stats.sessionReview.experience, {});
+const bridgeMembers = members.map(member => member.characterId === 1
+    ? { ...member, activity: 'party_wait' }
+    : member);
+const bridgeReview = Lifecycle.review(party, bridgeMembers, at, {
+    requiresWeaponBridge: member => member.characterId === 1
+});
+assert.deepStrictEqual([...bridgeReview.leaving.keys()], [1],
+    'a member with an incompatible weapon must leave immediately to buy its bridge');
+assert.strictEqual(bridgeReview.decisions[0].reason, 'weapon_bridge');
+assert.strictEqual(bridgeReview.states[0].party.partyId, null);
+assert.strictEqual(bridgeReview.states[0].activity, 'hunting',
+    'weapon bridge release must not preserve a stale party-wait state');
+assert.strictEqual(bridgeReview.states[0].timing.nextResolveAt, at + 1000,
+    'weapon bridge shopping must be scheduled without an ordinary party cooldown');
+const armorBridgeReview = Lifecycle.review(party, bridgeMembers, at, {
+    equipmentBridgeReason: member => member.characterId === 1 ? 'class_armor_bridge' : null
+});
+assert.deepStrictEqual([...armorBridgeReview.leaving.keys()], [1],
+    'an affordable class armor replacement must not remain behind a permanent party goal');
+assert.strictEqual(armorBridgeReview.states[0].activity, 'hunting');
+assert.strictEqual(armorBridgeReview.states[0].stats.partyBreakReason, 'class_armor_bridge');
+assert.strictEqual(armorBridgeReview.states[0].timing.nextResolveAt, at + 1000);

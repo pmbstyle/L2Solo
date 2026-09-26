@@ -2925,6 +2925,15 @@ function statsFor(skillId, level = 1, context = {}) {
 function effectForItem(item, context = {}) {
     const itemSelfId = Number(item?.fetchSelfId?.());
     const itemId = Number(item?.fetchId?.()) || itemSelfId;
+    const WeaponSA = invoke('GameServer/Items/C4WeaponSA');
+    const weaponSA = WeaponSA.definition(item);
+    if (weaponSA) {
+        const passive = weaponSA.passive;
+        const base = passive ? statsFor(passive.skillId, passive.level) : null;
+        const conditions = passive ? (CONDITIONAL_SKILL_STATS[passive.skillId]?.[passive.level] || [])
+            .filter(entry => entry.condition.actorHpPercentAtMost !== undefined) : [];
+        return WeaponSA.effect(item, base?.stats || {}, conditions);
+    }
     const itemSkill = resolveItem(itemSelfId);
     if (!itemSkill) return null;
     const skill = statsFor(itemSkill.skillId, itemSkill.level, context);

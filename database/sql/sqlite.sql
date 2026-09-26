@@ -50,7 +50,10 @@ CREATE TABLE IF NOT EXISTS characters (
     locX INTEGER NOT NULL,
     locY INTEGER NOT NULL,
     locZ INTEGER NOT NULL,
-    head INTEGER NOT NULL DEFAULT 0
+    head INTEGER NOT NULL DEFAULT 0,
+    -- C4 beginner-shot eligibility; -1 means this character predates the flag.
+    newbie INTEGER NOT NULL DEFAULT -1,
+    newbieShotsReceived INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS characters_username ON characters(username);
 CREATE INDEX IF NOT EXISTS characters_clanId ON characters(clanId);

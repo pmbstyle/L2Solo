@@ -26,12 +26,12 @@ const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
 const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
+const HuntingVisibility = invoke('GameServer/Bot/AI/BotHuntingVisibility');
 
 const TARGET_STALL_TICKS = 5;
 const TARGET_RETRY_COOLDOWN_MS = 15000;
 const TARGET_PROGRESS_DISTANCE = 40;
 const TARGET_SPOT_GRID_SIZE = 6000;
-const TARGET_GEODATA_CHECK_LIMIT = 4;
 const EMERGENCY_RETREAT_HP_RATIO = 0.35;
 const EMERGENCY_RETREAT_MP_RATIO = 0.20;
 const EMERGENCY_RETREAT_DISTANCE = 850;
@@ -176,26 +176,16 @@ function findPreferredMonster(session, bot, radius, options = {}) {
         })
         .filter((candidate) => !options.freeOnly || !candidate.claimed);
 
-    const preRanked = BotTargetScorer.rank(candidates);
-    const checkedIds = new Set(preRanked
-        .slice(0, TARGET_GEODATA_CHECK_LIMIT)
-        .map((candidate) => candidate.npc.fetchId()));
-    const ranked = BotTargetScorer.rank(candidates.map((candidate) => {
-        if (!checkedIds.has(candidate.npc.fetchId())) return candidate;
-        const directPath = GeodataEngine.hasLineOfSight(
-            bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ(),
-            candidate.npc.fetchLocX(), candidate.npc.fetchLocY(), candidate.npc.fetchLocZ()
-        );
-        return {
-            ...candidate,
-            evaluation: BotTargetScorer.score({ ...candidate.scoreContext, directPath })
-        };
-    }));
-
-    const selected = (options.readyOnly
-        ? ranked.find((candidate) => candidate.readiness.ready)
-        : ranked[0]) || null;
-    const readinessCandidate = options.readyOnly ? (selected || ranked[0] || null) : null;
+    const ranked = BotTargetScorer.rank(candidates);
+    // Prefer a fight we can finish, but retain a visible unready candidate
+    // so the caller can recover instead of wandering while exhausted.
+    const ordered = options.readyOnly
+        ? [...ranked.filter(candidate => candidate.readiness.ready), ...ranked.filter(candidate => !candidate.readiness.ready)]
+        : ranked;
+    const scan = HuntingVisibility.select(session, 'solo', bot, ordered, candidate => candidate.npc);
+    session.huntTargetScanPending = scan.pending;
+    const readinessCandidate = options.readyOnly ? scan.candidate : null;
+    const selected = options.readyOnly && !scan.candidate?.readiness.ready ? null : scan.candidate;
     session.lastEncounterReadiness = readinessCandidate ? {
         ...readinessCandidate.readiness,
         targetId: readinessCandidate.npc.fetchId(),
@@ -770,6 +760,13 @@ module.exports = {
                         clearTarget(session, bot, targetId);
                     } else {
                         const npcAggroedOnBot = Number(npc.fetchDestId?.() || 0) === Number(bot.fetchId());
+                        if (!npcAggroedOnBot && !bot.state.fetchHits() && !bot.state.fetchCasts()
+                            && !HuntingVisibility.canSee(bot, npc)) {
+                            bot.automation?.abortAll?.(bot);
+                            clearTarget(session, bot, targetId, true);
+                            session.lastDecision = { action: 'abandon_target', reason: 'target_not_visible', targetId };
+                            return;
+                        }
                         if (isSoloHunter(session) && !npcAggroedOnBot &&
                             !bot.state.fetchTowards() && !bot.state.fetchHits() && !bot.state.fetchCasts()) {
                             const readiness = encounterReadiness(bot, npc);
@@ -837,6 +834,7 @@ module.exports = {
                 }
                 BotAI.executeCombat(session, bot, closestMonster, Generics);
             } else {
+                if (session.huntTargetScanPending) return;
                 if (isSoloHunter(session) && session.lastEncounterReadiness?.ready === false) {
                     beginVoluntaryRecovery(session, bot, BotAI, session.lastEncounterReadiness);
                     return;
@@ -885,13 +883,15 @@ module.exports = {
                     const baseCoord = session.initialSpawnCoord;
                     
                     // Wander up to 2500 units away from their initial spawn coordinate to hunt!
-                    const wanderX = baseCoord.locX + utils.oneFromSpan(-2500, 2500);
-                    const wanderY = baseCoord.locY + utils.oneFromSpan(-2500, 2500);
-                    
-                    bot.moveTo({
-                        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-                        to: { locX: wanderX, locY: wanderY, locZ: bot.fetchLocZ() }
-                    });
+                    for (let attempt = 0; attempt < HuntingVisibility.CHECKS_PER_SCAN; attempt++) {
+                        const wanderX = baseCoord.locX + utils.oneFromSpan(-2500, 2500);
+                        const wanderY = baseCoord.locY + utils.oneFromSpan(-2500, 2500);
+                        if (!GeodataEngine.hasLineOfSight(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ(),
+                            wanderX, wanderY, bot.fetchLocZ())) continue;
+                        bot.moveTo({ from: botLocation(bot),
+                            to: { locX: wanderX, locY: wanderY, locZ: bot.fetchLocZ() } });
+                        break;
+                    }
                 }
             }
         }

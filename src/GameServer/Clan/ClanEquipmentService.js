@@ -8,6 +8,8 @@ const Policy = invoke('GameServer/Clan/ClanEquipmentPolicy');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
 const GoalPolicy = invoke('GameServer/Clan/ClanGoalPolicy');
 const ClanPolicy = invoke('GameServer/Clan/ClanSimulationPolicy');
+const ClanRaidPolicy = require('./ClanRaidPolicy');
+const ClanRaidFailurePolicy = require('./ClanRaidFailurePolicy');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const DataCache = invoke('GameServer/DataCache');
 const { planForMember } = require('./ClanEquipmentPlanner');
@@ -147,6 +149,26 @@ function memberId(member) {
     return number(member?.characterId ?? member?.id);
 }
 
+function activeRaidPartyForClan(clanId) {
+    const id = number(clanId);
+    if (!id) return null;
+    const partyPolicy = require('../Bot/Population/ClanEquipmentPartyPolicy');
+    return BackgroundPartyState.active().find((party) => {
+        const objective = party?.stats?.objective;
+        const started = ['preparing', 'ready'].includes(party?.stats?.raidPreparation?.status)
+            || party?.stats?.raidEncounter?.status === 'active';
+        const minPartySize = Math.max(2, number(objective?.minPartySize, ClanRaidPolicy.MIN_MEMBERS));
+        const viableRoster = (party?.memberIds || []).length >= minPartySize;
+        return party?.status !== 'dissolved'
+            && number(objective?.clanId) === id
+            && (objective?.sourceKind === 'raid' || objective?.raidBoss === true)
+            && started
+            && viableRoster
+            && !partyPolicy.abandonedRaid(party)
+            && !['defeated', 'failed'].includes(party?.stats?.raidEncounter?.status);
+    }) || null;
+}
+
 function planningMemberOrder(members = [], previousMemberId = 0, previousFulfilled = false) {
     const eligible = members
         .filter((member) => member?.phase === 'cold'
@@ -166,6 +188,10 @@ function planningMemberOrder(members = [], previousMemberId = 0, previousFulfill
 function equipmentRoster(clan, beneficiary, previousGoal = null, plan = null) {
     const beneficiaryId = memberId(beneficiary);
     if (plan && (!plan.next?.spotId || ['ready_to_craft', 'component_ready'].includes(plan.status))) return [beneficiaryId];
+    if (plan?.next?.sourceKind === 'raid' || plan?.next?.raidBoss === true) {
+        const profile = invoke('GameServer/RaidBoss/RaidBossSourceCatalog').findById(plan.next.spotId);
+        return profile ? ClanRaidPolicy.roster(clan, profile, beneficiary, previousGoal) : [];
+    }
     const safety = require('../Bot/Population/ClanEquipmentPartyPolicy');
     const objective = { ...plan?.next, clanOperation: 'equipment', clanId: clan.id };
     const eligible = (clan?.members || []).filter(member => safety.allowed(member, objective));
@@ -214,7 +240,10 @@ function clanPartyObjective(plan, goal, priority = 'preferred', clanId = 0) {
         : [strategy, plan.next.spotId, npcId, targetItemId].join(':');
     const rosterSize = Math.max(1, (goal?.assignedMemberIds || []).length);
     const maxPartySize = Math.max(2, Math.min(9, rosterSize));
-    const minPartySize = Math.max(2, Math.min(maxPartySize, number(Config.operationMinMembers, 5)));
+    const raid = plan.next?.sourceKind === 'raid' || plan.next?.raidBoss === true;
+    const minPartySize = raid
+        ? Math.max(2, Math.min(maxPartySize, ClanRaidPolicy.MIN_MEMBERS))
+        : Math.max(2, Math.min(maxPartySize, number(Config.operationMinMembers, 5)));
     return {
         status: 'open',
         priority,
@@ -222,7 +251,11 @@ function clanPartyObjective(plan, goal, priority = 'preferred', clanId = 0) {
         reason: 'clan_equipment',
         partyNeedReason: 'clan_equipment',
         strategy,
-        sourceKind: String(plan.next.kind || 'drop'),
+        sourceKind: raid ? 'raid' : String(plan.next.kind || 'drop'),
+        rewardKind: String(plan.next.kind || 'drop'),
+        raidBoss: raid,
+        sharedEncounter: raid,
+        raidBossTemplateId: raid ? number(plan.next.raidBossTemplateId || plan.next.npcId) : null,
         spotId: plan.next.spotId,
         npcId: npcId || null,
         itemId: targetItemId || null,
@@ -484,14 +517,34 @@ async function craftingOptions(clan) {
 }
 
 async function planningForClan(clan, previousGoal = null, options = {}) {
-    const spots = options.spots || (() => {
+    // A planning pass compares the same clan snapshot against many raid bosses.
+    // Readiness only depends on the member snapshot, so calculate it once per
+    // member instead of rebuilding equipped-item projections for every boss.
+    const raidReadinessCache = new Map();
+    const candidateSpots = options.spots || (() => {
         try {
-            return SpotProfiles.ensure();
+            const profiles = SpotProfiles.ensure();
+            const liveRaidIds = invoke('GameServer/RaidBoss/RaidBossSourceCatalog').liveTemplateIds();
+            return profiles.flatMap((profile) => {
+                if (profile.raidBoss !== true) return [profile];
+                if (!liveRaidIds.has(number(profile.raidBossTemplateId))) return [];
+                const assessment = ClanRaidPolicy.assessment(
+                    clan,
+                    profile,
+                    previousGoal,
+                    { readinessCache: raidReadinessCache }
+                );
+                if (!assessment.ready) return [];
+                const raidRosterSize = assessment.eligible.length;
+                return [{ ...profile, raidRosterSize, raidEstimate: assessment.raidEstimate }];
+            });
         } catch (error) {
             recordReason('spot_index_unavailable');
             return [];
         }
     })();
+    const blockedRaidSpots = ClanRaidFailurePolicy.blockedSpotIds(previousGoal);
+    const spots = candidateSpots.filter((profile) => !blockedRaidSpots.has(String(profile.id)));
     const occupancy = options.occupancy || (() => {
         try {
             return SpotProfiles.currentOccupancy(spots) || {};
@@ -547,12 +600,16 @@ async function planningForClan(clan, previousGoal = null, options = {}) {
         const member = members[index];
         const id = number(member.characterId ?? member.id);
         const capacityUnits = equipmentRoster(clan, member, previousGoal).length;
+        const memberSpots = spots.filter((spot) => spot.raidBoss !== true
+            || ClanRaidPolicy.availableMember(member, spot,
+                new Set((previousGoal?.assignedMemberIds || []).map(number).filter(Boolean))));
         const memberOptions = {
             ...craftOptions,
             ignoreExistingPlan: previousFulfilled && id === previousMemberId,
             occupancy,
             capacityUnits,
             spoilCapable,
+            allowRaidSources: memberSpots.some((spot) => spot.raidBoss === true),
             maxExpectedKills: Config.equipmentMaxExpectedKills,
             ...reservationOptions,
             excludedTargetIds: options.excludedTargetIds || []
@@ -560,7 +617,7 @@ async function planningForClan(clan, previousGoal = null, options = {}) {
         let plan;
         if (workerFingerprint) {
             try {
-                plan = await PlanningWorker.plan({ member, spots, warehouseRows, options: memberOptions, context: workerContext, deadlineAt: planningDeadline });
+                plan = await PlanningWorker.plan({ member, spots: memberSpots, warehouseRows, options: memberOptions, context: workerContext, deadlineAt: planningDeadline });
                 if (Date.now() >= planningDeadline) throw planningDeferred('clan planning deadline');
             } catch (error) {
                 recordReason('clan_planning_worker_unavailable');
@@ -569,7 +626,7 @@ async function planningForClan(clan, previousGoal = null, options = {}) {
         } else {
             // Synchronous harnesses use the identical pure planner. Runtime enables
             // the worker at startup and never falls back here after a worker failure.
-            plan = planForMember(member, spots, warehouseRows, memberOptions);
+            plan = planForMember(member, memberSpots, warehouseRows, memberOptions);
         }
         plans.set(id, plan);
         // Equipment planning is CPU-only and may inspect several nearby item
@@ -598,6 +655,73 @@ async function planningForClan(clan, previousGoal = null, options = {}) {
     };
 }
 
+async function recordRaidFailure(party, timestamp = Date.now()) {
+    const objective = party?.stats?.objective;
+    const encounter = party?.stats?.raidEncounter;
+    const clanId = number(objective?.clanId);
+    const goalKey = String(objective?.clanGoalKey || '');
+    if (!clanId || !goalKey || encounter?.status !== 'failed') {
+        return { ok: false, skipped: true, code: 'raid_failure_context_missing' };
+    }
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+        const clan = await invoke('GameServer/Clan/ClanGoalService').clanProjectionById(clanId);
+        const current = clan?.state?.goal;
+        if (!current || String(current.goalKey || '') !== goalKey) {
+            return { ok: true, skipped: true, code: 'raid_goal_changed' };
+        }
+        if (String(current.controlledBy || '') === 'player') {
+            return { ok: true, skipped: true, code: 'player_order_controls_replan' };
+        }
+        if (String(current.raidFailure?.partyId || '') === String(party.partyId)
+            && number(current.raidFailure?.failedAt) === number(encounter.failedAt, timestamp)) {
+            return { ok: true, skipped: true, code: 'raid_failure_already_recorded', goal: current };
+        }
+
+        const failure = ClanRaidFailurePolicy.decision(current.raidFailure, encounter);
+        const next = {
+            ...current,
+            raidFailure: {
+                ...failure,
+                failedAt: number(encounter.failedAt, timestamp),
+                partyId: party.partyId,
+                failureReason: String(encounter.failureReason || 'party_death')
+            },
+            partyId: null,
+            catastrophicFailures: number(current.catastrophicFailures) + 1,
+            status: 'executing',
+            reasonCodes: [...new Set([...(current.reasonCodes || []), failure.reasonCode])],
+            updatedAt: timestamp
+        };
+        const saved = await Database.updateAutonomousClanGoal({
+            clanId,
+            goal: next,
+            expectedUpdatedAt: number(clan.state?.updatedAt) || null,
+            eventType: 'equipment_raid_failed',
+            reasonCode: failure.reasonCode
+        });
+        if (saved.ok) {
+            await Database.enqueueClanAction({
+                clanId,
+                actionKey: `clan:${clanId}:raid-failed:${failure.bossTemplateId}:${number(encounter.failedAt, timestamp)}`,
+                actionType: 'goal_plan',
+                priority: 90,
+                availableAt: timestamp,
+                payload: {
+                    reason: 'equipment_raid_failed',
+                    goalKey,
+                    bossTemplateId: failure.bossTemplateId,
+                    retryAllowed: failure.retryAllowed
+                }
+            });
+            recordReason(failure.reasonCode);
+            return { ...saved, failure };
+        }
+        if (saved.code !== 'ownership_conflict') return { ...saved, failure };
+    }
+    return { ok: false, code: 'ownership_conflict' };
+}
+
 function selectedPlanningTarget(clan, previousGoal, planning, selectedCandidate = null) {
     const memberIdValue = number(selectedCandidate?.memberId);
     const itemId = number(selectedCandidate?.itemId);
@@ -622,10 +746,32 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
     if (!clan || !number(clan.id)) {
         return { ok: true, skipped: true, reason: 'equipment_level_unavailable' };
     }
+    const activeRaidParty = activeRaidPartyForClan(clan.id);
+    if (activeRaidParty) {
+        recordReason('raid_in_progress');
+        return {
+            ok: true,
+            skipped: true,
+            reason: 'raid_in_progress',
+            goal: previousGoal,
+            partyId: activeRaidParty.partyId
+        };
+    }
     const planning = options.planning || await planningForClan(clan, previousGoal, options);
     const { plans, previousFulfilled } = planning;
     const selection = selectedPlanningTarget(clan, previousGoal, planning, options.selectedCandidate);
     await validatePlanning(clan, planning, selection);
+    const raidPartyAfterPlanning = activeRaidPartyForClan(clan.id);
+    if (raidPartyAfterPlanning) {
+        recordReason('raid_in_progress');
+        return {
+            ok: true,
+            skipped: true,
+            reason: 'raid_in_progress',
+            goal: previousGoal,
+            partyId: raidPartyAfterPlanning.partyId
+        };
+    }
     if (!selection) {
         metrics.noDebt += 1;
         recordReason('no_equipment_debt');
@@ -730,6 +876,8 @@ const ClanEquipmentService = {
     planningFingerprint,
     validatePlanning,
     equipmentRoster,
+    activeRaidPartyForClan,
+    recordRaidFailure,
     reserveGoalCapacity,
     releaseConflictingRosterParties,
     metrics() {

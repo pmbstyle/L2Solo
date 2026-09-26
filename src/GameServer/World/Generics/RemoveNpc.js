@@ -29,7 +29,7 @@ function removeNpc(session, npc) {
     // the temporary corpse remaining visible in the world.
     const definition = npc.spawnDefinition;
     if (SpawnNpcs.shouldRespawn(definition?.spawn)) {
-        const delayMs = SpawnNpcs.respawnDelayMs(definition.spawn);
+        const delayMs = SpawnNpcs.respawnDelayForDefinitionMs(definition);
         const periodRevision = Number(this.npc?.periodRevision || 0);
         if (SpawnNpcs.isRaidBossDefinition(definition)) {
             const respawnAt = Date.now() + delayMs;

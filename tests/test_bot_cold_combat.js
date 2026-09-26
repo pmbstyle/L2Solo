@@ -725,6 +725,58 @@ assert.deepStrictEqual(focusedPartyResult.memberResults[0].result.debug.defeated
 assert.strictEqual(focusedPartyResult.memberResults[0].result.debug.populationTelemetryOwner, true, 'one stable party result must contribute the shared encounter to population totals');
 assert.strictEqual(focusedPartyResult.memberResults[1].result.debug.populationTelemetryOwner, false, 'other party members must retain personal telemetry without duplicating encounter totals');
 
+const coldRaidMob = {
+    maxHp: 1300,
+    raidBossMaxHp: 1000,
+    raidMinionHp: 300,
+    raidMinionPAtk: 300,
+    raidMinionCount: 3
+};
+const coldController = {
+    profile: { skills: [{ selfId: 1201, level: 1, passive: false, mp: 20 }] },
+    vitals: { mp: 100 }
+};
+assert.strictEqual(BackgroundResolver.combat.coldRaidControlCapacity([coldController], coldRaidMob), 1,
+    'a cold raid party must recognize one available root/sleep/stun controller');
+assert.deepStrictEqual(
+    BackgroundResolver.combat.coldRaidMinionPressure(coldRaidMob, 1300, 1),
+    { activeMinions: 3, uncontrolledMinions: 2, pAtk: 200 },
+    'cold adds must pressure non-tanks only beyond the party control capacity'
+);
+assert.deepStrictEqual(
+    BackgroundResolver.combat.coldRaidMinionPressure(coldRaidMob, 1100, 1),
+    { activeMinions: 1, uncontrolledMinions: 0, pAtk: 0 },
+    'focused add kills must reduce the active minion count one by one while control holds the remainder'
+);
+assert.deepStrictEqual(
+    BackgroundResolver.combat.coldRaidMinionPressure(coldRaidMob, 1000, 0),
+    { activeMinions: 0, uncontrolledMinions: 0, pAtk: 0 },
+    'minion pressure must disappear before damage proceeds through the boss HP pool'
+);
+
+const originalNpcForSpot = ColdCombatProfile.npcForSpot;
+ColdCombatProfile.npcForSpot = () => ({
+    selfId: 9001,
+    maxHp: 1600,
+    pAtk: 500,
+    raidBossMaxHp: 1000,
+    raidBossPAtk: 300,
+    raidMinionHp: 600,
+    raidMinionPAtk: 200,
+    raidMinionCount: 3
+});
+const upgradedRaid = BackgroundResolver.combat.coldRaidEncounterProfile({
+    mob: { selfId: 9001, maxHp: 1000, pAtk: 300, raidMinionCount: 3 },
+    hp: 750
+}, { raidBoss: true, raidBossTemplateId: 9001 }, 9001);
+ColdCombatProfile.npcForSpot = originalNpcForSpot;
+assert.strictEqual(upgradedRaid.upgraded, true,
+    'persisted raid encounters from before the tactical profile must be upgraded on their next slice');
+assert.strictEqual(upgradedRaid.mob.raidBossMaxHp, 1000,
+    'the upgraded encounter must preserve a separate boss HP pool');
+assert.strictEqual(upgradedRaid.hp, 1200,
+    'the upgrade must preserve encounter progress as a percentage while adding represented minion HP');
+
 const originalMetrics = {
     counters: PopulationMetrics.counters,
     lastSummaryCounters: PopulationMetrics.lastSummaryCounters

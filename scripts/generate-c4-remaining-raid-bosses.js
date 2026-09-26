@@ -338,7 +338,7 @@ const missingWeapons = missingDropItems.filter((id) => sourceItemsById.get(id)?.
         template: { name: source.name, class1: 0, class2: 0, mass: numberSet(source, 'weight'), price: numberSet(source, 'price'), kind: weaponKind(source.sets.get('weapon_type')) },
         stats: {
             pAtk: Number(source.stats.get('pAtk') || 0), pAtkRnd: numberSet(source, 'random_damage'), mAtk: Number(source.stats.get('mAtk') || 0),
-            atkSpd: Number(source.stats.get('pAtkSpd') || 0), crit: Number(source.stats.get('rCrit') || 0), accur: Number(source.stats.get('accCombat') || 0)
+            atkSpd: Number(source.stats.get('pAtkSpd') || 0), crit: Number(source.stats.get('rCrit') || 0) * 10, accur: Number(source.stats.get('accCombat') || 0)
         },
         etc: {
             slot: bodypart === 'lrhand' ? 14 : 7, mp: 0, soulshot: numberSet(source, 'soulshots'), spiritshot: numberSet(source, 'spiritshots'),

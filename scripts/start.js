@@ -26,6 +26,7 @@ const debugFlagNames = [
 ];
 const progressionPresets = new Set(['x1', 'x10', 'x50']);
 const reasoningEfforts = new Set(['off', 'low', 'medium', 'high']);
+const completionLimitParams = new Set(['max_tokens', 'max_completion_tokens']);
 const openRouterUrl = 'https://openrouter.ai/api/v1/chat/completions';
 const llmTestTimeoutMs = 30000;
 
@@ -142,9 +143,16 @@ function bool(value, fallback = false) {
     return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
 }
 
-function number(value, fallback) {
+function optionalNumber(value, fallback = null) {
+    if (value === undefined) return fallback;
+    if (value === null || String(value).trim() === '') return null;
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function completionLimitParam(value, fallback) {
+    const normalized = String(value || '').trim();
+    return completionLimitParams.has(normalized) ? normalized : fallback;
 }
 
 function llmConfig() {
@@ -169,7 +177,7 @@ function llmConfig() {
         optn.model ||
         ''
     ).trim();
-    const reasoningFallback = legacyConfig ? 'low' : 'off';
+    const reasoningFallback = 'off';
     const configuredReasoningEffort = String(optn.reasoningEffort || reasoningFallback)
         .trim()
         .toLowerCase();
@@ -179,6 +187,9 @@ function llmConfig() {
     const provider = apiUrl.replace(/\/+$/, '') === openRouterUrl.replace(/\/+$/, '')
         ? 'openrouter'
         : 'openai-compatible';
+    const completionLimitFallback = provider === 'openrouter'
+        ? 'max_completion_tokens'
+        : 'max_tokens';
 
     return {
         enabled: bool(optn.enabled, false),
@@ -186,7 +197,11 @@ function llmConfig() {
         apiKey,
         model,
         provider,
-        temperature: number(optn.temperature, 0.35),
+        temperature: optionalNumber(optn.temperature),
+        completionLimitParam: completionLimitParam(
+            optn.completionLimitParam,
+            completionLimitFallback
+        ),
         reasoningEffort
     };
 }
@@ -229,6 +244,7 @@ function llmFingerprint(config) {
         config.model,
         config.provider,
         config.temperature,
+        config.completionLimitParam,
         config.reasoningEffort
     ]);
 }
@@ -257,22 +273,14 @@ function llmErrorMessage(payload, fallback) {
     return String(message || 'Unknown provider error.').replace(/\s+/g, ' ').trim().slice(0, 600);
 }
 
-function llmCompletionLimitParam(config) {
-    if (config.provider !== 'openrouter') return 'max_tokens';
-    if (config.model === 'openai/gpt-5.6-luna' || config.model === 'openai/gpt-oss-120b') {
-        return 'max_tokens';
-    }
-    return 'max_completion_tokens';
-}
-
 function llmTestBody(config) {
     const body = {
         model: config.model,
         messages: [{ role: 'user', content: 'Reply with exactly L2SOLO_LLM_OK and nothing else.' }]
     };
-    body[llmCompletionLimitParam(config)] = 128;
+    body[config.completionLimitParam] = 128;
 
-    if (!(config.provider === 'openrouter' && config.model === 'openai/gpt-5.6-luna')) {
+    if (Number.isFinite(config.temperature)) {
         body.temperature = config.temperature;
     }
     if (config.provider === 'openrouter') {

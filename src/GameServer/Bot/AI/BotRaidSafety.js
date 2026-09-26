@@ -46,6 +46,24 @@ function isProtectedRaidEntity(target) {
     return isRaidBoss(target) || isRaidMinion(target);
 }
 
+function botClanRaidObjective(session) {
+    if (!session?.hotBackgroundPartyId || session.partyCompanion === true) return null;
+    const party = invoke('GameServer/Bot/Population/BackgroundPartyState')
+        .find(session.hotBackgroundPartyId);
+    const objective = party?.stats?.objective;
+    return party?.status === 'hot' && party?.stats?.raidEncounter?.status !== 'failed'
+        && objective?.sourceKind === 'raid'
+        && Number(objective.raidBossTemplateId || objective.npcId) > 0
+        ? objective : null;
+}
+
+function canEngageBotClanRaid(session, target) {
+    const objective = botClanRaidObjective(session);
+    if (!objective || !isProtectedRaidEntity(target)) return false;
+    const boss = raidBossFor(target);
+    return Number(templateId(boss)) === Number(objective.raidBossTemplateId || objective.npcId);
+}
+
 function raidBossFor(target) {
     if (!target) return null;
     if (isRaidBoss(target)) return target;
@@ -276,6 +294,37 @@ function hasControlledRaidMinion(target) {
     });
 }
 
+function botClanRaidCombatPlan(ownerSession, target) {
+    const boss = raidBossFor(target);
+    if (!boss || boss.isDead?.()) {
+        if (ownerSession) ownerSession.backgroundRaidTactics = undefined;
+        return null;
+    }
+    const raid = { bossId: objectId(boss), bossTemplateId: templateId(boss) };
+    const EffectStore = invoke('GameServer/Effects/EffectStore');
+    const minions = raidEntities(raid)
+        .filter((npc) => isRaidMinion(npc) && !npc.isDead?.())
+        .sort((left, right) => Number(objectId(left) || 0) - Number(objectId(right) || 0));
+    let state = ownerSession?.backgroundRaidTactics;
+    if (!state || Number(state.bossId || 0) !== Number(raid.bossId || 0)) {
+        state = { bossId: raid.bossId, focusMinionId: null };
+    }
+    const hardControlled = (npc) => EffectStore.impairments(npc).disabled === true;
+    let focusMinion = minions.find((npc) => (
+        Number(objectId(npc)) === Number(state.focusMinionId || 0) && !hardControlled(npc)
+    ));
+    if (!focusMinion) focusMinion = minions.find((npc) => !hardControlled(npc)) || minions[0] || null;
+    state.focusMinionId = objectId(focusMinion);
+    if (ownerSession) ownerSession.backgroundRaidTactics = state;
+    return {
+        boss,
+        minions,
+        focusMinion,
+        controlTargets: minions.filter((npc) => npc !== focusMinion),
+        raid
+    };
+}
+
 function clearTarget(session, bot, target) {
     const targetId = Number(target?.fetchId?.() || 0);
     if (!targetId || Number(session?.currentTargetId || 0) === targetId) {
@@ -286,6 +335,12 @@ function clearTarget(session, bot, target) {
 
 function retreat(session, bot, threat, options = {}) {
     if (!session || !bot || !isProtectedRaidEntity(threat)) return false;
+    // The generic hunting/resting safety net also sees recent raid hits.  An
+    // autonomous clan member must not reinterpret its own authorized boss or
+    // minion as an accidental raid pull and run away a tick after the main
+    // tank opens.  Failed raids no longer pass canEngageBotClanRaid, so their
+    // coordinated retreat still uses this function normally.
+    if (canEngageBotClanRaid(session, threat)) return false;
 
     const wasSeated = bot.state?.fetchSeated?.() === true;
     clearTarget(session, bot, threat);
@@ -332,6 +387,8 @@ module.exports = {
     isRaidBoss,
     isRaidMinion,
     isProtectedRaidEntity,
+    botClanRaidObjective,
+    canEngageBotClanRaid,
     raidBossFor,
     raidBossByObjectId,
     raidEntityByObjectId,
@@ -346,6 +403,7 @@ module.exports = {
     canEngagePlayerPartyRaid,
     isEngagedPlayerPartyRaidTarget,
     hasControlledRaidMinion,
+    botClanRaidCombatPlan,
     clearTarget,
     retreat
 };

@@ -1157,6 +1157,22 @@ function applySchemaMigrations() {
             connection.exec(fs.readFileSync(path.join(__dirname, '../database/sql/market-store-history.sql'), 'utf8'));
         }]
     ];
+    migrations.push([45, () => connection.exec(`CREATE TABLE IF NOT EXISTS bot_raid_encounters (
+        raidKey TEXT PRIMARY KEY, revision INTEGER NOT NULL, snapshotJson TEXT NOT NULL
+    )`)]);
+    migrations.push([46, () => {
+        if (!connection.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='raid_boss_state'").get()) return;
+        // Existing raid rows are written at defeat. Rebase old datapack
+        // windows once, retaining that wall-clock origin across restarts.
+        // Keep this migration's historical five-hour value fixed.
+        connection.exec(`UPDATE raid_boss_state SET respawnTime = updatedAt + 18000000
+            WHERE respawnTime > 0 AND updatedAt > 0`);
+    }]);
+    migrations.push([47, () => {
+        const columns = connection.prepare('PRAGMA table_info(characters)').all().map(column => column.name);
+        if (!columns.includes('newbie')) connection.exec('ALTER TABLE characters ADD COLUMN newbie INTEGER NOT NULL DEFAULT -1');
+        if (!columns.includes('newbieShotsReceived')) connection.exec('ALTER TABLE characters ADD COLUMN newbieShotsReceived INTEGER NOT NULL DEFAULT 0');
+    }]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
@@ -3014,6 +3030,7 @@ const Database = {
             group.push(request);
             atomicGroups.set(groupId, group);
         });
+        const validatedRaidKeys = new Set();
         const validateAtomicGroups = () => atomicGroups.forEach((group, groupId) => {
             const expectedIds = new Set((group[0]?.atomicGroup?.memberIds || []).map(Number).filter(Boolean));
             const presentIds = new Set(group.map((request) => Number(request.characterId)).filter(Boolean));
@@ -3022,6 +3039,16 @@ const Database = {
                 || [...expectedIds].some((id) => !presentIds.has(id));
             let reason = failure ? 'party_group_incomplete' : null;
             const pvpContext = group[0]?.atomicGroup?.pvpContext;
+            const raidCommit = group[0]?.atomicGroup?.raidCommit;
+            if (!failure && raidCommit) {
+                const saved = one('SELECT revision FROM bot_raid_encounters WHERE raidKey = ?', [raidCommit.key]);
+                failure = validatedRaidKeys.has(raidCommit.key) || Number(saved?.revision || 0) !== raidCommit.expectedRevision
+                    || !Number.isSafeInteger(raidCommit.expectedRevision) || raidCommit.expectedRevision < 0
+                    || raidCommit.revision !== raidCommit.expectedRevision + 1
+                    || raidCommit.snapshot?.key !== raidCommit.key
+                    || group[0].atomicGroup.partyChanges?.length !== 1;
+                if (failure) reason = 'raid_revision_changed';
+            }
             if (!failure && pvpContext) {
                 const members = Array.isArray(pvpContext) ? pvpContext.flat() : [];
                 const rows = members.map(m => one('SELECT id, clanId, karma FROM characters WHERE id = ?', [m.id]));
@@ -3074,6 +3101,7 @@ const Database = {
                         || !Number.isSafeInteger(change.updatedAt) || change.updatedAt <= Number(party.updatedAt)
                         || (change.nextResolveAt !== null && (!Number.isSafeInteger(change.nextResolveAt) || change.nextResolveAt < 0))
                         || (change.spotId !== undefined && (typeof change.spotId !== 'string' || !change.spotId.length || change.spotId.length > 256))
+                        || (change.status !== undefined && !['active', 'dissolved'].includes(change.status))
                         || !change.statsJson || typeof JSON.parse(change.statsJson) !== 'object') {
                         failure = true;
                         break;
@@ -3082,6 +3110,7 @@ const Database = {
                 if (failure) reason = 'party_context_changed';
             }
             if (failure) atomicGroupFailures.set(groupId, reason || 'party_group_aborted');
+            else if (raidCommit) validatedRaidKeys.add(raidCommit.key);
         });
         const commitBatch = () => batch.map((request) => {
             const groupId = request.atomicGroup?.id ? String(request.atomicGroup.id) : null;
@@ -3165,10 +3194,30 @@ const Database = {
                     throw new Error('party conflict: incomplete atomic outcome');
                 }
                 for (const change of changes) {
-                    const updated = write(`UPDATE bot_background_parties SET nextResolveAt = ?, statsJson = ?, updatedAt = ?, spotId = COALESCE(?, spotId)
+                    const updated = write(`UPDATE bot_background_parties SET nextResolveAt = ?, statsJson = ?, updatedAt = ?, spotId = COALESCE(?, spotId),
+                        status = COALESCE(?, status), cohesion = COALESCE(?, cohesion), risk = COALESCE(?, risk)
                         WHERE partyId = ? AND status = 'active' AND updatedAt = ?`,
-                    [change.nextResolveAt, change.statsJson, change.updatedAt, change.spotId ?? null, change.partyId, change.expectedUpdatedAt]);
+                    [change.nextResolveAt, change.statsJson, change.updatedAt, change.spotId ?? null,
+                        change.status ?? null, change.cohesion ?? null, change.risk ?? null, change.partyId, change.expectedUpdatedAt]);
                     if (updated.affectedRows !== 1) throw new Error('party conflict: party changed during commit');
+                }
+                const raidCommit = group[0].atomicGroup.raidCommit;
+                if (raidCommit) {
+                    write(`INSERT INTO bot_raid_encounters(raidKey, revision, snapshotJson) VALUES (?, ?, ?)
+                        ON CONFLICT(raidKey) DO UPDATE SET revision=excluded.revision, snapshotJson=excluded.snapshotJson`,
+                    [raidCommit.key, raidCommit.revision, JSON.stringify(raidCommit.snapshot)]);
+                    if (raidCommit.worldDefeat) {
+                        const defeat = raidCommit.worldDefeat;
+                        write(`INSERT INTO raid_boss_state(npcId, respawnTime, hp, mp, updatedAt) VALUES (?, ?, 0, 0, ?)
+                            ON CONFLICT(npcId) DO UPDATE SET respawnTime=excluded.respawnTime, hp=0, mp=0, updatedAt=excluded.updatedAt`,
+                        [defeat.npcId, defeat.respawnTime, now()]);
+                    }
+                    for (const request of group) {
+                        const result = results.find(result => result.characterId === Number(request.characterId));
+                        result.raidRow = one('SELECT * FROM bot_raid_encounters WHERE raidKey = ?', [raidCommit.key]);
+                        result.raidRespawnAt = raidCommit.worldDefeat?.respawnTime || null;
+                        result.raidPartyRow = one('SELECT * FROM bot_background_parties WHERE partyId = ?', [changes[0].partyId]);
+                    }
                 }
             }
             return results;
@@ -3424,6 +3473,188 @@ const Database = {
             return { ok: true, rows: ids.map(coldSimulationRow),
                 party: one('SELECT * FROM bot_background_parties WHERE partyId = ?', [request.partyId]) };
         }, 'bot-life:party-lifecycle');
+    },
+
+    takeOverBackgroundParty(request = {}) {
+        const members = request.members || [];
+        const ids = members.map((member) => Number(member.characterId));
+        const playerId = Number(request.playerId || 0);
+        if (!request.partyId || !Number.isSafeInteger(playerId) || playerId <= 0
+            || ids.length < 2 || ids.length > 8 || new Set(ids).size !== ids.length) {
+            return Promise.resolve({ ok: false, reason: 'invalid_party_takeover' });
+        }
+        return inTransaction(() => {
+            const party = one('SELECT * FROM bot_background_parties WHERE partyId = ?', [request.partyId]);
+            const declared = party ? JSON.parse(party.memberIdsJson || '[]').map(Number) : [];
+            if (!party || party.status !== 'hot' || Number(party.updatedAt) !== Number(request.expectedUpdatedAt)
+                || declared.length !== ids.length || declared.some((id) => !ids.includes(id))) {
+                return { ok: false, reason: 'party_changed' };
+            }
+            const attached = all('SELECT characterId FROM bot_life_state WHERE partyId = ?', [request.partyId])
+                .map((row) => Number(row.characterId));
+            if (attached.length !== ids.length || attached.some((id) => !ids.includes(id))) {
+                return { ok: false, reason: 'party_membership_changed' };
+            }
+            const rows = members.map((member) => coldSimulationRow(member.characterId));
+            for (let index = 0; index < members.length; index += 1) {
+                const member = members[index];
+                const row = rows[index];
+                if (!row || row.phase !== 'hot' || row.partyId !== request.partyId
+                    || Number(row.simulationRevision) !== Number(member.expectedRevision)
+                    || Number(row.updatedAt) !== Number(member.expectedUpdatedAt)
+                    || String(row.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER
+                    || row.simulationLeaseId) {
+                    return { ok: false, reason: 'member_changed' };
+                }
+            }
+
+            const timestamp = Math.max(now(), Number(party.updatedAt) + 1,
+                ...rows.map((row) => Number(row.updatedAt) + 1));
+            for (let index = 0; index < members.length; index += 1) {
+                const member = members[index];
+                const row = rows[index];
+                const stats = parsedObject(row.statsJson) || {};
+                stats.leaderId = playerId;
+                stats.backgroundPartyId = null;
+                stats.partyRequest = null;
+                stats.partyBreakReason = 'player_takeover';
+                stats.playerPartyTakeover = {
+                    partyId: request.partyId,
+                    playerId,
+                    source: String(request.source || 'player_request').slice(0, 64),
+                    at: timestamp
+                };
+                const changed = write(`UPDATE bot_life_state SET
+                    partyId = NULL, activity = 'hunting', activityStartedAt = ?, nextResolveAt = NULL,
+                    lastResolvedAt = ?, statsJson = ?, updatedAt = ?, simulationOwner = ?,
+                    simulationRevision = simulationRevision + 1, simulationLeaseId = NULL, simulationLeaseUntil = 0
+                    WHERE characterId = ? AND partyId = ? AND phase = 'hot' AND simulationRevision = ?`, [
+                    timestamp,
+                    timestamp,
+                    JSON.stringify(stats),
+                    timestamp,
+                    LEGACY_SIMULATION_OWNER,
+                    member.characterId,
+                    request.partyId,
+                    member.expectedRevision
+                ]);
+                if (changed.affectedRows !== 1) throw Error('party takeover CAS failed');
+            }
+
+            const partyStats = parsedObject(party.statsJson) || {};
+            partyStats.hotLifecycle = null;
+            partyStats.partyBreakReason = 'player_takeover';
+            partyStats.playerTakeover = {
+                playerId,
+                source: String(request.source || 'player_request').slice(0, 64),
+                at: timestamp
+            };
+            const changedParty = write(`UPDATE bot_background_parties
+                SET status = 'player_taken_over', nextResolveAt = NULL, statsJson = ?, updatedAt = ?
+                WHERE partyId = ? AND status = 'hot' AND updatedAt = ?`, [
+                JSON.stringify(partyStats), timestamp, request.partyId, request.expectedUpdatedAt
+            ]);
+            if (changedParty.affectedRows !== 1) throw Error('party takeover party CAS failed');
+            return {
+                ok: true,
+                rows: ids.map(coldSimulationRow),
+                party: one('SELECT * FROM bot_background_parties WHERE partyId = ?', [request.partyId])
+            };
+        }, 'bot-life:party-takeover');
+    },
+
+    restoreTakenOverBackgroundParty(request = {}) {
+        const partyId = String(request.partyId || '');
+        const playerId = Number(request.playerId || 0);
+        if (!partyId || !Number.isSafeInteger(playerId) || playerId <= 0) {
+            return Promise.resolve({ ok: false, reason: 'invalid_party_restore' });
+        }
+        return inTransaction(() => {
+            const party = one('SELECT * FROM bot_background_parties WHERE partyId = ?', [partyId]);
+            const partyStats = parsedObject(party?.statsJson) || {};
+            const declared = party ? JSON.parse(party.memberIdsJson || '[]').map(Number) : [];
+            if (!party || party.status !== 'player_taken_over'
+                || Number(partyStats.playerTakeover?.playerId || 0) !== playerId
+                || declared.length < 2 || declared.length > 8 || new Set(declared).size !== declared.length) {
+                return { ok: false, reason: 'party_changed' };
+            }
+
+            const placeholders = declared.map(() => '?').join(', ');
+            const rows = all(`SELECT * FROM bot_life_state WHERE characterId IN (${placeholders})`, declared);
+            if (rows.length !== declared.length) return { ok: false, reason: 'party_membership_changed' };
+            const phases = new Set(rows.map((row) => row.phase));
+            if (phases.size !== 1 || !['hot', 'cold'].includes(rows[0]?.phase)) {
+                return { ok: false, reason: 'member_changed' };
+            }
+            for (const row of rows) {
+                const stats = parsedObject(row.statsJson) || {};
+                if (row.partyId || Number(stats.playerPartyTakeover?.playerId || 0) !== playerId
+                    || stats.playerPartyTakeover?.partyId !== partyId
+                    || String(row.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER
+                    || row.simulationLeaseId) {
+                    return { ok: false, reason: 'member_changed' };
+                }
+            }
+
+            const phase = rows[0].phase;
+            const status = phase === 'hot' ? 'hot' : 'active';
+            const timestamp = Math.max(now(), Number(party.updatedAt) + 1,
+                ...rows.map((row) => Number(row.updatedAt) + 1));
+            const nextResolveAt = phase === 'hot' ? null : timestamp + 1000;
+            for (const row of rows) {
+                const stats = parsedObject(row.statsJson) || {};
+                stats.leaderId = Number(party.leaderId);
+                stats.backgroundPartyId = partyId;
+                stats.partyRequest = null;
+                stats.partyBreakReason = 'player_party_released';
+                delete stats.playerPartyTakeover;
+                const changed = write(`UPDATE bot_life_state SET
+                    partyId = ?, activity = 'grouped', activityStartedAt = ?, nextResolveAt = ?,
+                    lastResolvedAt = ?, statsJson = ?, updatedAt = ?, simulationOwner = ?,
+                    simulationRevision = simulationRevision + 1, simulationLeaseId = NULL, simulationLeaseUntil = 0
+                    WHERE characterId = ? AND partyId IS NULL AND simulationRevision = ?`, [
+                    partyId,
+                    timestamp,
+                    nextResolveAt,
+                    timestamp,
+                    JSON.stringify(stats),
+                    timestamp,
+                    LEGACY_SIMULATION_OWNER,
+                    Number(row.characterId),
+                    Number(row.simulationRevision)
+                ]);
+                if (changed.affectedRows !== 1) throw Error('party restore CAS failed');
+            }
+
+            delete partyStats.playerTakeover;
+            partyStats.partyBreakReason = 'player_party_released';
+            // Time spent under a player leader is not autonomous party-session
+            // age. Start a fresh review window when the bots resume control.
+            partyStats.formedAt = timestamp;
+            partyStats.sessionExpiresAt = null;
+            partyStats.sessionReview = null;
+            partyStats.lastProgressAt = timestamp;
+            partyStats.partySpotRisk = null;
+            partyStats.hotLifecycle = phase === 'hot'
+                ? { startedAt: timestamp, reason: 'player_party_released' }
+                : null;
+            const changedParty = write(`UPDATE bot_background_parties
+                SET status = ?, nextResolveAt = ?, statsJson = ?, updatedAt = ?
+                WHERE partyId = ? AND status = 'player_taken_over' AND updatedAt = ?`, [
+                status,
+                nextResolveAt,
+                JSON.stringify(partyStats),
+                timestamp,
+                partyId,
+                Number(party.updatedAt)
+            ]);
+            if (changedParty.affectedRows !== 1) throw Error('party restore party CAS failed');
+            return {
+                ok: true,
+                rows: declared.map(coldSimulationRow),
+                party: one('SELECT * FROM bot_background_parties WHERE partyId = ?', [partyId])
+            };
+        }, 'bot-life:party-restore');
     },
 
     handoffColdSimulationToMain(request = {}) {
@@ -3760,10 +3991,14 @@ const Database = {
         return selectOne('accounts', ['username'], 'username = ? COLLATE NOCASE', [username], 'account:canonical-name')
             .then((accounts) => {
                 if (!accounts[0]) throw new Error('account does not exist');
-                return insert('characters', {
-                    username: accounts[0].username, name: data.name, race: data.race, classId: data.classId,
-                    maxHp: data.maxHp, maxMp: data.maxMp, sex: data.sex, face: data.face,
-                    hair: data.hair, hairColor: data.hairColor, locX: data.locX, locY: data.locY, locZ: data.locZ
+                return inTransaction(() => {
+                    const count = one('SELECT COUNT(*) AS total FROM characters WHERE username = ? COLLATE NOCASE', [accounts[0].username]).total;
+                    const newbie = require('./GameServer/Quest/BeginnerReward').flagForNewCharacter(count);
+                    return write(`INSERT INTO characters(username, name, race, classId, maxHp, maxMp, sex, face, hair, hairColor, locX, locY, locZ, newbie)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+                        accounts[0].username, data.name, data.race, data.classId, data.maxHp, data.maxMp,
+                        data.sex, data.face, data.hair, data.hairColor, data.locX, data.locY, data.locZ, newbie
+                    ]);
                 }, 'character:create');
             });
     },
@@ -4184,6 +4419,67 @@ const Database = {
             return { currentFeed, remaining:food.amount-1 };
         }, 'pet:mount-food'));
     },
+    applyQuestStep(characterId, questId, expected, next, takes, gives, experience = null, beginner = null, pk = null) {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            if (!require('./GameServer/Quest/QuestRegistry').entries.some(e => e.id === questId && e.status === 'active')) throw new Error('Unsupported quest');
+            const row = one('SELECT state, variables FROM character_quests WHERE characterId = ? AND questId = ?', [characterId, questId]);
+            const current = row ? JSON.parse(row.variables || '{}') : {};
+            if ((row?.state || 'created') !== expected.state || JSON.stringify(current) !== JSON.stringify(expected.variables)) throw new Error('Quest step changed');
+            const changed = new Set();
+            for (const take of takes) {
+                const items = all('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? AND equipped = 0 ORDER BY id', [characterId, take.selfId]);
+                if (!Number.isSafeInteger(take.amount) || take.amount < 1 || items.reduce((sum, item) => sum + item.amount, 0) < take.amount) throw new Error('Required quest items missing');
+                let remaining = take.amount;
+                for (const item of items) {
+                    const used = Math.min(remaining, item.amount);
+                    if (!used) break;
+                    remaining -= used;
+                    changed.add(item.id);
+                    if (used === item.amount) write('DELETE FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
+                    else write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [item.amount - used, item.id, characterId]);
+                }
+            }
+            for (const give of gives) {
+                if (!Number.isSafeInteger(give.amount) || give.amount < 1 || (!give.stackable && give.amount !== 1)) throw new Error('Invalid quest reward');
+                const item = give.stackable ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, give.selfId]) : null;
+                if (item) { write('UPDATE items SET amount = ? WHERE id = ?', [item.amount + give.amount, item.id]); changed.add(item.id); }
+                else changed.add(Number(write('INSERT INTO items(selfId, name, amount, characterId) VALUES (?, ?, ?, ?)', [give.selfId, give.name, give.amount, characterId]).insertId));
+            }
+            write(UPSERT_CHARACTER_QUEST, [characterId, questId, next.state, JSON.stringify(next.variables)]);
+            const rows = [...changed].map(id => one('SELECT * FROM items WHERE id = ? AND characterId = ?', [id, characterId]) || { id, amount: 0 });
+            if (experience) {
+                if (![experience.exp, experience.sp].every(n => Number.isSafeInteger(n) && n >= 0)) throw new Error('Invalid quest experience');
+                const actor = one('SELECT exp, sp, level FROM characters WHERE id = ?', [characterId]);
+                const cap = require('./GameServer/Progression/ProgressionCap');
+                const award = cap.applyAward(actor.exp, experience.exp);
+                const level = Math.max(actor.level, cap.levelForExperience(award.totalExp, actor.level));
+                const totalSp = actor.sp + experience.sp;
+                write('UPDATE characters SET exp = ?, sp = ?, level = ? WHERE id = ?', [award.totalExp, totalSp, level, characterId]);
+                rows.experience = { totalExp: award.totalExp, totalSp, level, grantedExp: award.accepted, grantedSp: experience.sp };
+            }
+            // A beginner-shot grant and its character-wide receipt commit with the
+            // rest of the hand-in, so shots can never be handed out unrecorded and
+            // the counter can never advance without the shots.
+            if (beginner) {
+                const character = one('SELECT newbieShotsReceived FROM characters WHERE id = ?', [characterId]);
+                if (Number(character.newbieShotsReceived) + 1 !== Number(beginner.received)) {
+                    throw new Error('beginner reward receipt changed');
+                }
+                write('UPDATE characters SET newbieShotsReceived = ? WHERE id = ?',
+                    [Number(beginner.received), characterId]);
+                rows.beginner = { received: Number(beginner.received) };
+            }
+            if (pk) {
+                if (questId !== 422 || !Number.isSafeInteger(pk.expected) || !Number.isSafeInteger(pk.next)
+                    || pk.next < 0 || pk.next >= pk.expected) throw new Error('Invalid quest PK reward');
+                const result = write('UPDATE characters SET pk = ? WHERE id = ? AND pk = ?',
+                    [pk.next, characterId, pk.expected]);
+                if (Number(result.affectedRows) !== 1) throw new Error('Quest PK count changed');
+                rows.pk = pk.next;
+            }
+            return rows;
+        }, 'quest:step'));
+    },
     applyPetQuestStep(characterId, questId, expected, next, takes, gives) {
         return withCharacterFlush(characterId, () => inTransaction(() => {
             if (![420, 421].includes(questId)) throw new Error('Unsupported pet quest');
@@ -4232,6 +4528,18 @@ const Database = {
             write("UPDATE character_quests SET state = 'created', variables = '{}' WHERE characterId = ? AND questId = 421", [characterId]);
             return { ...item, selfId: target, petData: state };
         }, 'pet:evolution'));
+    },
+    replaceSoulCrystal(characterId, id, expectedSelfId, selfId, name, crystalIds, isStillValid) {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            if (!isStillValid()) return false;
+            const quest = one('SELECT state FROM character_quests WHERE characterId = ? AND questId = 350', [characterId]);
+            const item = one('SELECT selfId, amount, equipped FROM items WHERE id = ? AND characterId = ?', [id, characterId]);
+            if (quest?.state !== 'started' || !item || item.selfId !== expectedSelfId || item.amount !== 1 || item.equipped) return false;
+            const quantity = one(`SELECT SUM(amount) AS count FROM items WHERE characterId = ? AND amount > 0 AND selfId IN (${crystalIds.map(() => '?').join(',')})`, [characterId, ...crystalIds]);
+            if (quantity.count !== 1) return false;
+            write('UPDATE items SET selfId = ?, name = ? WHERE id = ? AND characterId = ?', [selfId, name, id, characterId]);
+            return true;
+        }, 'item:soul-crystal'));
     },
     exchangePetTicket(characterId, ticketId) {
         return withCharacterFlush(characterId, () => inTransaction(() => {
@@ -4282,6 +4590,40 @@ const Database = {
             write('UPDATE characters SET mp = ? WHERE id = ?', [mp, characterId]);
             return { sources, product: product ? { id: productId, amount: productAmount } : null };
         }, 'craft:self'));
+    },
+
+    exchangeWeaponSA(characterId, { npcId, recipeId, sourceObjectId, expectedSelfId, expectedEnchant, validate }) {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            validate();
+            const catalog = invoke('GameServer/Items/C4WeaponSAExchange');
+            const recipe = catalog.resolve(npcId, recipeId);
+            const target = recipe && invoke('GameServer/DataCache').items.find(item => item.selfId === recipe.productId);
+            const weapon = one('SELECT * FROM items WHERE id = ? AND characterId = ?', [sourceObjectId, characterId]);
+            if (!recipe || !target || !weapon || weapon.selfId !== expectedSelfId || weapon.selfId !== recipe.sourceId
+                || weapon.enchant !== expectedEnchant || weapon.amount !== 1 || weapon.equipped) throw Error('weapon_sa_source_changed');
+            const consumed = [];
+            for (const cost of catalog.costs(recipe)) {
+                const rows = all('SELECT * FROM items WHERE characterId = ? AND selfId = ? AND amount > 0 AND equipped = 0 ORDER BY id', [characterId, cost.selfId]);
+                validate(rows);
+                let remaining = cost.amount;
+                for (const row of rows) {
+                    if (remaining <= 0) break;
+                    const amount = Math.min(remaining, row.amount);
+                    consumed.push({ id: row.id, selfId: row.selfId, remaining: row.amount - amount });
+                    remaining -= amount;
+                }
+                if (remaining) throw Error('weapon_sa_missing_materials');
+            }
+            for (const row of consumed) {
+                if (row.remaining) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [row.remaining, row.id, characterId]);
+                else write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]);
+            }
+            // Enchant is deliberately absent from this UPDATE. Installation and
+            // removal preserve the selected instance rather than creating +0 gear.
+            write('UPDATE items SET selfId = ?, name = ?, slot = ? WHERE id = ? AND characterId = ?',
+                [target.selfId, target.template.name, target.etc.slot, sourceObjectId, characterId]);
+            return { weapon: { ...weapon, selfId: target.selfId, name: target.template.name, slot: target.etc.slot }, consumed };
+        }, 'item:weapon-sa'));
     },
 
     unsealInventoryItem(characterId, sourceId, productId, validate) {

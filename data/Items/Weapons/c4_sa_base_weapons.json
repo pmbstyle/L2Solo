@@ -1,0 +1,58 @@
+[
+  {
+    "selfId": 4233,
+    "template": {
+      "name": "Knuckle Duster",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1490,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 148.0,
+      "mAtk": 68.0,
+      "pAtkRnd": 5,
+      "atkSpd": 325.0,
+      "crit": 40.0,
+      "accur": 4.0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 6368,
+    "template": {
+      "name": "Shining Bow",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1650,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 581.0,
+      "mAtk": 132.0,
+      "pAtkRnd": 5,
+      "atkSpd": 293.0,
+      "crit": 120.0,
+      "accur": -3.0,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 11,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  }
+]

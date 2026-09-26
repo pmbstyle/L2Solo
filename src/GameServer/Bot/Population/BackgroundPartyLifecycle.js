@@ -1,6 +1,15 @@
 const AssemblyRecovery = require('./PartyAssemblyRecovery');
+const RaidSoloBoundary = require('./RaidSoloBoundary');
 const DEFAULT_SESSION_MAX_MS = 20 * 60 * 1000;
 const DEFAULT_SESSION_JITTER_MS = 5 * 60 * 1000;
+
+function raidStarted(party) {
+    const objective = party?.stats?.objective;
+    if (party?.status === 'dissolved' || party?.stats?.raidEncounter?.status === 'failed') return false;
+    return (objective?.sourceKind === 'raid' || objective?.raidBoss === true)
+        && (['preparing', 'ready'].includes(party?.stats?.raidPreparation?.status)
+            || party?.stats?.raidEncounter?.status === 'active');
+}
 
 function rotationExpiry(partyId, startedAt, options = {}) {
     const config = options || {};
@@ -28,6 +37,7 @@ function sessionExpired(party, timestamp = Date.now(), options = {}) {
     if (AssemblyRecovery.expired(party) && !party?.stats?.travel
         && Number(party?.stats?.restUntil || 0) <= timestamp
         && !require('./PartyMarketBreak').pending(party, timestamp).length) return true;
+    if (raidStarted(party)) return false;
     const reviewAt = Number(party?.stats?.sessionReview?.nextAt || 0);
     if (reviewAt > 0) return timestamp >= reviewAt;
     const sessionExpiresAt = Number(party?.stats?.sessionExpiresAt || 0);
@@ -41,17 +51,23 @@ function sessionExpired(party, timestamp = Date.now(), options = {}) {
 function releaseMember(state, timestamp = Date.now(), reason = 'party_session_rotation', objective = null) {
     if (!state?.characterId) return state;
 
+    const raidRelease = RaidSoloBoundary.stale(state, objective);
+    if (raidRelease) state = RaidSoloBoundary.clear(state);
     const partyTravel = state.stats?.travel?.reason === 'party_spot_replan';
-    const releasedFromObjective = [
+    const releasedFromObjective = raidRelease || [
         AssemblyRecovery.REASON, 'party_session_rotation', 'clan_priority',
         'party_min_size', 'clan_party_unsafe',
         'invalid_party_size',
         'party_membership_mismatch',
-        'party_relationship_conflict', 'party_goals_diverged', 'party_no_progress', 'party_no_experience', 'party_review_min_size'
+        'party_relationship_conflict', 'party_goals_diverged', 'party_no_progress', 'party_no_experience',
+        'party_review_min_size', 'weapon_bridge', 'class_armor_bridge', 'raid_failed', 'raid_defeated', 'raid_unavailable'
     ].includes(reason);
-    const nextActivity = releasedFromObjective && (state.activity === 'grouped' || partyTravel)
+    const equipmentBridge = ['weapon_bridge', 'class_armor_bridge'].includes(reason);
+    const nextActivity = equipmentBridge
         ? 'hunting'
-        : state.activity;
+        : releasedFromObjective && (state.activity === 'grouped' || partyTravel)
+            ? 'hunting'
+            : state.activity;
 
     return {
         ...state,
@@ -63,13 +79,14 @@ function releaseMember(state, timestamp = Date.now(), reason = 'party_session_ro
             backgroundPartyId: null,
             partyBreakReason: reason,
             ...(reason === 'clan_party_unsafe' ? { clanPartyObjective: null } : {}),
-            partyRequest: reason === AssemblyRecovery.REASON
+            partyRequest: !raidRelease && reason === AssemblyRecovery.REASON
                 ? { ...(objective || {}), status: 'deferred', deferReason: reason,
                     requestedAt: timestamp, deferredUntil: timestamp + AssemblyRecovery.RETRY_MS }
                 : null
         },
-        timing: releasedFromObjective
-            ? { ...(state.timing || {}), activityStartedAt: timestamp, nextResolveAt: timestamp + 30000 }
+        timing: releasedFromObjective && nextActivity === 'hunting'
+            ? { ...(state.timing || {}), activityStartedAt: timestamp,
+                nextResolveAt: timestamp + (equipmentBridge ? 1000 : 30000) }
             : state.timing,
         updatedAt: timestamp
     };
@@ -102,6 +119,7 @@ function review(party, members, timestamp, options = {}) {
 
 module.exports = {
     rotationExpiry,
+    raidStarted,
     sessionExpired,
     review,
     releaseMember

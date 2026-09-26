@@ -16,6 +16,10 @@ const Placement = invoke('GameServer/Bot/Population/ActivationPlacement');
 const Memory = invoke('GameServer/Social/InteractionMemoryRuntime');
 const Tactics = invoke('GameServer/Bot/AI/BotPvpTactics');
 const Population = invoke('GameServer/Bot/Population/PopulationService');
+const RaidIndex = invoke('GameServer/World/RaidEntityIndex');
+const RaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
+const RaidMinions = invoke('GameServer/World/RaidBossMinionManager');
+const ClanEquipment = invoke('GameServer/Clan/ClanEquipmentService');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-hot-party-'));
 options.default.Database.path = path.join(dir, 'test.sqlite');
 const at = Date.now();
@@ -24,10 +28,11 @@ function replace(object, key, value) { saved.push(() => { object[key] = value; }
 let spawnCount = 0, failAt = 0, hook = null, activeParty;
 const notifications = [];
 
-async function createParty(ids) {
+async function createParty(ids, extraStats = {}) {
     const prepared = Parties.prepareCommit({ partyId: `hot-test-${ids[0]}`, leaderId: ids[0], memberIds: ids,
         spotId: 'test', status: 'active', startedAt: at, nextResolveAt: at + 1000,
-        stats: { objective: { npcId: 10 }, coldCompetition: { conflictUntil: at + 600000 } } });
+        stats: { objective: { npcId: 10, ...(extraStats.objective || {}) },
+            coldCompetition: { conflictUntil: at + 600000 }, ...extraStats } });
     const assigned = ids.map((id, index) => Life.preparePartyAssignment(Life.cachedState(id), prepared.row.partyId,
         index ? 'mage' : 'tank', ids[0], at + 1000));
     assert((await Database.commitBackgroundPartyMembership({ party: prepared.row, members: assigned })).ok);
@@ -37,13 +42,14 @@ async function createParty(ids) {
 }
 
 function fakeSession(state, data) {
+    let hp = 80, mp = 70, dead = false;
     const actor = { fetchId: () => state.characterId, fetchName: () => state.name, fetchLocX: () => data.locX,
-        fetchLocY: () => data.locY, fetchLocZ: () => data.locZ, isDead: () => false, fetchIsOnline: () => true,
-        fetchLevel: () => state.level, fetchHp: () => 80, fetchMaxHp: () => 100,
-        fetchMp: () => 70, fetchMaxMp: () => 100, fetchClanId: () => 0,
-        state: { fetchDead: () => false }, destructor() { this.destroyed = true; },
+        fetchLocY: () => data.locY, fetchLocZ: () => data.locZ, isDead: () => dead, fetchIsOnline: () => true,
+        fetchLevel: () => state.level, fetchHp: () => hp, fetchMaxHp: () => 100, setHp: value => { hp = value; },
+        fetchMp: () => mp, fetchMaxMp: () => 100, setMp: value => { mp = value; }, fetchClanId: () => 0,
+        state: { fetchDead: () => dead, setDead: value => { dead = value; } }, destructor() { this.destroyed = true; },
         automation: { replenishVitals() {}, stopReplenish() {} } };
-    const session = { actor, accountId: state.accountName, coldLifeState: state, populationStaging: true,
+    const session = { actor, accountId: state.accountName, coldLifeState: state, populationStaging: true, spawnData: data,
         plan: 'hunting', dataSendToOthers() {} };
     actor.session = session;
     return session;
@@ -51,7 +57,7 @@ function fakeSession(state, data) {
 
 async function run() {
     Database.init();
-    for (let id = 1; id <= 22; id++) {
+    for (let id = 1; id <= 25; id++) {
         await Database.execute(['INSERT INTO accounts(username,password) VALUES (?,?)', [`bot_hot_${id}`, 'test']]);
         await Database.execute([`INSERT INTO characters(id,username,name,classId,race,maxHp,maxMp,sex,face,hair,hairColor,locX,locY,locZ)
             VALUES (?,?,?,0,0,100,100,0,0,0,0,0,0,0)`, [id, `bot_hot_${id}`, `Hot${id}`]]);
@@ -79,7 +85,7 @@ async function run() {
     replace(Response, 'charInfo', () => Buffer.alloc(0));
     replace(Response, 'relationChanged', () => Buffer.alloc(0));
     replace(Life, 'partySessionSnapshot', (session, state, phase) => ({ ...state, phase,
-        vitals: { hp: 80, maxHp: 100, mp: 70, maxMp: 100 } }));
+        vitals: { hp: session.actor.fetchHp(), maxHp: 100, mp: session.actor.fetchMp(), maxMp: 100 } }));
     replace(Manager, 'loadAndSpawnBot', async (_account, data) => {
         assert(data.prepareOnly && data.coldLifeState.party.partyId, 'staged spawn preserves party identity');
         assert(activeParty.memberIds.every(id => Life.cachedState(id).phase === 'hot'), 'reserve every member before staging');
@@ -170,13 +176,168 @@ async function run() {
     assert(!invalid.ok, 'a stale last member aborts the entire transaction');
     assert((await Database.execute(['SELECT phase FROM bot_life_state WHERE partyId=?', [party.partyId]])).every(r => r.phase === 'hot'));
     assert((await Lifecycle.cooldown(party.partyId, 'test', { ignoreVisibility: true })).ok);
+    const recoveryPartyId = party.partyId;
+
+    party = await createParty([21, 22], {
+        objective: { sourceKind: 'raid', raidBoss: true, raidBossTemplateId: 999999,
+            npcId: 999999, sourceLevel: 10 }
+    });
+    const unsafeRaidActivation = await Lifecycle.activate(party.partyId);
+    assert.strictEqual(unsafeRaidActivation.ok, false);
+    assert.strictEqual(unsafeRaidActivation.reason, 'party_not_ready');
+    assert.match(unsafeRaidActivation.detail, /^member_(21|22)_raid_level$/,
+        'hot activation must reject a synthetic or stale raid roster that would receive Raid Curse');
+    assert([21, 22].every(id => Life.cachedState(id).phase === 'cold'),
+        'rejected overlevel raid members must remain in cold simulation');
+
+    party = await createParty([18, 19, 20], {
+        objective: { sourceKind: 'raid', raidBoss: true, raidBossTemplateId: 10131, npcId: 10131 },
+        raidEncounter: { status: 'active', bossTemplateId: 10131, hp: 400, maxHp: 1000,
+            encounter: { mob: { maxHp: 1000 } }, revision: 1 }
+    });
+    spawnCount = 0;
+    assert((await Lifecycle.activate(party.partyId)).ok, 'raid party can activate');
+    const raidSessions = Manager.sessions.slice();
+    const deadSession = raidSessions[1];
+    raidSessions[0].actor.fetchClassId = () => 4;
+    raidSessions[1].actor.fetchClassId = () => 15;
+    raidSessions[2].actor.fetchClassId = () => 0;
+    let bossHp = 400;
+    let failurePersistedBeforeReset = false;
+    const boss = {
+        fetchId: () => 900001,
+        fetchSelfId: () => 10131,
+        fetchHp: () => bossHp,
+        fetchMaxHp: () => 1000,
+        isDead: () => false,
+        setHp(value) {
+            assert(failurePersistedBeforeReset, 'boss HP resets only after the failed raid is durable');
+            bossHp = value;
+        },
+        statusUpdateVitals() {},
+        abortCombatState() {},
+        state: { fetchDead: () => false }
+    };
+    replace(RaidIndex, 'bossByTemplateId', () => boss);
+    replace(RaidIndex, 'entitiesForRaid', () => [boss]);
+    replace(RaidMinions, 'onBossDeath', () => 0);
+    replace(RaidMinions, 'attachBoss', () => null);
+    const retreating = [];
+    replace(RaidSafety, 'retreat', (session) => {
+        retreating.push(session.actor.fetchId());
+        session.plan = 'fleeing';
+        return true;
+    });
+    const originalTransition = Database.transitionBackgroundParty.bind(Database);
+    replace(Database, 'transitionBackgroundParty', async (request) => {
+        const result = await originalTransition(request);
+        if (result.ok && JSON.parse(request.statsJson || '{}').raidEncounter?.status === 'failed') {
+            failurePersistedBeforeReset = true;
+        }
+        return result;
+    });
+    let recordedFailure = null;
+    replace(ClanEquipment, 'recordRaidFailure', async (failedParty) => { recordedFailure = failedParty.partyId; });
+    assert.strictEqual(Lifecycle.criticalRaidCasualty({ classId: 17 }), true,
+        'a caster buffer death must cancel the raid');
+    assert.strictEqual(Lifecycle.criticalRaidCasualty({ classId: 21 }), false,
+        'a singer death is a damage casualty, not a critical buffer loss');
+    assert.strictEqual(Lifecycle.raidDeathDisposition({ classId: 0 }, {
+        previousDamageCasualties: 0, remainingHpRatio: 0.9
+    }), 'continue', 'the first damage death should not cancel an otherwise viable raid');
+    assert.strictEqual(Lifecycle.raidDeathDisposition({ classId: 0 }, {
+        previousDamageCasualties: 1, remainingHpRatio: 0.4
+    }), 'continue', 'additional damage losses may still try to finish a boss below half HP');
+    assert.strictEqual(Lifecycle.raidDeathDisposition({ classId: 0 }, {
+        previousDamageCasualties: 1, remainingHpRatio: 0.8
+    }), 'fail_attrition', 'repeated early damage losses should end a collapsing raid');
+
+    const damageCasualty = raidSessions[2];
+    damageCasualty.actor.isDead = () => true;
+    damageCasualty.actor.state.fetchDead = () => true;
+    const continuedRaid = await Lifecycle.failRaidOnDeath(damageCasualty, at + 4000);
+    assert(continuedRaid.ok && continuedRaid.continued, JSON.stringify(continuedRaid));
+    assert.strictEqual(continuedRaid.remainingHpRatio, 0.4);
+    assert.strictEqual(Parties.find(party.partyId).stats.raidEncounter.status, 'active');
+    assert.strictEqual(bossHp, 400, 'a damage casualty does not heal or cancel the live raid');
+    assert.strictEqual(damageCasualty.hotRaidCasualtyRole, 'dps');
+    assert.deepStrictEqual(retreating, []);
+    damageCasualty.actor.isDead = () => false;
+    damageCasualty.actor.state.fetchDead = () => false;
+
+    deadSession.actor.isDead = () => true;
+    deadSession.actor.state.fetchDead = () => true;
+
+    const failedRaid = await Lifecycle.failRaidOnDeath(deadSession, at + 5000);
+    assert(failedRaid.ok, JSON.stringify(failedRaid));
+    assert.strictEqual(Parties.find(party.partyId).status, 'hot');
+    assert.strictEqual(Parties.find(party.partyId).stats.raidEncounter.status, 'failed');
+    assert.strictEqual(Parties.find(party.partyId).stats.raidEncounter.remainingHpRatio, 0.4);
+    assert.strictEqual(bossHp, 1000, 'the failed raid restores the boss after persistence');
+    assert.deepStrictEqual(retreating.sort((a, b) => a - b), [18, 20],
+        'every living survivor receives the same raid retreat');
+
+    deadSession.actor.isDead = () => false;
+    deadSession.actor.state.fetchDead = () => false;
+    const failedCooldown = await Lifecycle.cooldown(party.partyId, 'raid_failed', { ignoreVisibility: true });
+    assert(failedCooldown.ok, JSON.stringify(failedCooldown));
+    assert.strictEqual(Parties.find(party.partyId).status, 'dissolved');
+    assert.strictEqual(recordedFailure, party.partyId);
+    assert([18, 19, 20].every(id => !Life.cachedState(id).party.partyId),
+        'failed raid dissolution releases the complete roster');
+
+    party = await createParty([23, 24, 25], {
+        objective: { sourceKind: 'raid', raidBossTemplateId: 10131, npcId: 10131 },
+        raidEncounter: { status: 'active', bossTemplateId: 10131, hp: 400, maxHp: 1000,
+            encounter: { mob: { maxHp: 1000 } }, revision: 1 }
+    });
+    for (const memberId of party.memberIds) {
+        const state = Life.cachedState(memberId);
+        await Life.upsertState({ ...state, activity: memberId === 25 ? 'dead' : 'grouped',
+            vitals: { hp: memberId === 25 ? 0 : 45, maxHp: 100, mp: 30, maxMp: 100 } }, 'test_raid_handoff');
+    }
+    spawnCount = 0;
+    const resumed = await Lifecycle.activate(party.partyId);
+    assert(resumed.ok, JSON.stringify(resumed));
+    assert(Manager.sessions.every(s => s.raidPreparationComplete && !s.spawnData.spawnReady && !s.spawnData.readyOnActivation));
+    assert.deepStrictEqual(Manager.sessions.map(s => s.actor.fetchHp()), [45, 45, 0], 'ongoing raid keeps injuries and corpse');
+    assert(Manager.sessions.every(s => s.actor.fetchMp() === 30), 'activation must not refill raid MP');
+    assert(Manager.sessions[2].actor.isDead() && Manager.sessions[2].hotRaidCasualtyAt,
+        'cold DD casualty stays dead and is not counted as a new hot death');
+
+    const hotBoss = Parties.find(party.partyId).stats.hotRaidBoss;
+    assert.equal(hotBoss.instanceId, invoke('GameServer/RaidBoss/RaidEncounterScope').instanceId(boss));
+    assert.equal(hotBoss.maxHp, 1000);
+    Manager.sessions[2].actor.state.setDead(false);
+    Manager.sessions[2].actor.setHp(50); // survivor revived before the party leaves
+    replace(RaidIndex, 'bossByTemplateId', () => null); // corpse decayed before hot -> cold
+    const victoryCooldown = await Lifecycle.cooldown(party.partyId, 'test_victory', { ignoreVisibility: true });
+    assert(victoryCooldown.ok, JSON.stringify(victoryCooldown));
+    const captured = Parties.find(party.partyId).stats.raidEncounter;
+    assert.equal(captured.status, 'defeated');
+    assert.equal(captured.raidInstanceId, hotBoss.instanceId);
+    assert.equal(captured.maxHp, 1000, 'corpse decay must not reduce the captured boss to 1 HP');
+    const beforeRelease = Life.cachedState(23);
+    const raidMember = await Life.upsertState({ ...beforeRelease, activity: 'grouped', spotId: 'raid:10131',
+        stats: { ...beforeRelease.stats, clanPartyObjective: party.stats.objective,
+            equipmentPlan: { next: { sourceKind: 'raid' } }, pveEncounter: { hp: 1 } } }, 'test_detach');
+    const detached = await Life.leaveParty(raidMember, 'raid_defeated');
+    assert.equal(detached.spotId, null);
+    assert.equal(detached.party.partyId, null);
+    assert.equal(detached.activity, 'hunting');
+    assert.equal(detached.stats.clanPartyObjective, null);
+    assert.equal(detached.stats.equipmentPlan, null);
+    assert.equal(detached.stats.pveEncounter, null);
+    assert.equal(detached.exp, beforeRelease.exp);
+    assert.deepStrictEqual(detached.loc, beforeRelease.loc);
+
     await Database.close(); Database.init();
-    assert.strictEqual((await Database.execute(['SELECT status FROM bot_background_parties WHERE partyId=?', [party.partyId]]))[0].status, 'active');
-    assert.strictEqual((await Database.execute(['SELECT COUNT(*) AS n FROM bot_life_state WHERE partyId=? AND phase=?', [party.partyId, 'cold']]))[0].n, 9);
+    assert.strictEqual((await Database.execute(['SELECT status FROM bot_background_parties WHERE partyId=?', [recoveryPartyId]]))[0].status, 'active');
+    assert.strictEqual((await Database.execute(['SELECT COUNT(*) AS n FROM bot_life_state WHERE partyId=? AND phase=?', [recoveryPartyId, 'cold']]))[0].n, 9);
     // A new process must recover an interrupted hot reservation as the same
     // cold group, even when Life and Parties initialize concurrently.
-    await Database.execute(["UPDATE bot_background_parties SET status='hot' WHERE partyId=?", [party.partyId]]);
-    await Database.execute(["UPDATE bot_life_state SET phase='hot' WHERE partyId=?", [party.partyId]]);
+    await Database.execute(["UPDATE bot_background_parties SET status='hot' WHERE partyId=?", [recoveryPartyId]]);
+    await Database.execute(["UPDATE bot_life_state SET phase='hot' WHERE partyId=?", [recoveryPartyId]]);
     await Database.close();
     require('child_process').execFileSync(process.execPath, ['-e', `
         require('./src/Global');
@@ -188,7 +349,7 @@ async function run() {
             require('assert')(p?.status === 'active' && p.memberIds.length === 9);
             require('assert')(p.memberIds.every(id => L.cachedState(id)?.phase === 'cold' && L.cachedState(id)?.party.partyId === p.partyId));
         }).catch(e => { console.error(e); process.exitCode = 1; }).finally(() => D.close());
-    `, options.default.Database.path, party.partyId], { cwd: path.resolve(__dirname, '..'), stdio: 'pipe' });
+    `, options.default.Database.path, recoveryPartyId], { cwd: path.resolve(__dirname, '..'), stdio: 'pipe' });
     console.log('Hot party lifecycle: atomic activation/cooldown, full roster publication, rollback, CAS, memory, visibility, PvP and reopen passed');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {

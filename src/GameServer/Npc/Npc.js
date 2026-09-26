@@ -6,6 +6,7 @@ const SpeckMath      = invoke('GameServer/SpeckMath');
 const Formulas       = invoke('GameServer/Formulas');
 const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const Attack         = invoke('GameServer/Actor/Attack');
+const AttackRange    = invoke('GameServer/Actor/AttackRange');
 const ManorData      = invoke('GameServer/Manor/ManorData');
 const NpcSkills      = invoke('GameServer/Npc/NpcSkills');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
@@ -875,7 +876,12 @@ class Npc extends NpcModel {
             return;
         }
 
-        const speed = Formulas.calcMeleeAtkTime(src.fetchCollectiveAtkSpd());
+        const rangedAttack = AttackRange.weaponKind(src) === 'Weapon.Bow';
+        const attackSpeed = src.fetchCollectiveAtkSpd();
+        const timing = rangedAttack
+            ? Formulas.calcBowAttackTimes(attackSpeed)
+            : { drawMs: Formulas.calcMeleeAtkTime(attackSpeed) * 0.644,
+                cycleMs: Formulas.calcMeleeAtkTime(attackSpeed) };
         const hitLanded = Formulas.calcHitChance(src, dst, Math.random, AttackHelper.positionContext(src, dst));
         const hit = AttackHelper.prepareNpcMeleeHit(src, dst, hitLanded);
 
@@ -896,14 +902,14 @@ class Npc extends NpcModel {
                 ConsoleText.transmit(session, ConsoleText.caption.missedHit);
             }
 
-        }, speed * 0.644);
+        }, timing.drawMs);
 
         clearTimeout(this.timer.hitEnd);
         this.timer.hitEnd = setTimeout(() => {
             this.timer.hitEnd = undefined;
             this.state.setHits(false);
 
-        }, speed); // Until end of combat move
+        }, timing.cycleMs); // Until end of combat move or bow reload
     }
 
     checkParticipants(session, src, dst) {
@@ -965,7 +971,7 @@ class Npc extends NpcModel {
         this.broadcastVitals();
     }
 
-    addAbsorber(actor) {
+    addAbsorber(actor, crystalItemId) {
         if (!actor?.fetchId) {
             return;
         }
@@ -978,6 +984,7 @@ class Npc extends NpcModel {
         this.soulCrystalAbsorbers.set(absorberId, {
             actor,
             absorberId,
+            crystalItemId,
             absorbedHp: this.fetchHp()
         });
         this.soulCrystalAbsorbed = true;

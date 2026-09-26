@@ -99,6 +99,10 @@ try {
         assert.strictEqual(BotRoles.inferRole(100), 'buffer', 'Sword Muse must retain its buffer role');
         assert.strictEqual(BotRoles.inferRole(107), 'buffer', 'Spectral Dancer must retain its buffer role');
         assert.strictEqual(BotRoles.inferRole(116), 'buffer', 'Doomcryer must retain its buffer role');
+        assert.strictEqual(BotRoles.isPartyMusicFighter(100), true, 'Sword Muse must count as raid damage support');
+        assert.strictEqual(BotRoles.isPartyMusicFighter(107), true, 'Spectral Dancer must count as raid damage support');
+        assert.strictEqual(BotRoles.isHealingBuffer(116), true, 'Doomcryer must count as a healing-capable caster buffer');
+        assert.strictEqual(BotRoles.isHealingBuffer(100), false, 'party music must not satisfy the raid healing requirement');
         assert.strictEqual(BotRoles.className(100), 'Sword Muse', 'list presentation must use a human-readable profession');
         assert.strictEqual(BotRoles.inferRole({ classId: 30 }), 'healer', 'persisted character rows must resolve roles from classId');
         assert.strictEqual(BotRoles.presentation(null).classId, null, 'a missing profession must not be mistaken for Human Fighter');

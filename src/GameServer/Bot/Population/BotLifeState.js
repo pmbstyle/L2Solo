@@ -8,6 +8,7 @@ const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
+const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 
 const TABLE = 'bot_life_state';
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
@@ -888,6 +889,30 @@ function recoverStaleHotStates() {
     });
 }
 
+function removeRetiredStaticMerchantStates() {
+    const configuredNames = Object.keys(MerchantStoreConfigs);
+    const configuredClause = configuredNames.length
+        ? `AND characterName NOT IN (${configuredNames.map(() => '?').join(', ')})`
+        : '';
+
+    return Database.execute([
+        `DELETE FROM ${TABLE}
+        WHERE phase = 'hot'
+        AND activity = 'merchant'
+        AND json_extract(statsJson, '$.marketStore') IS NULL
+        ${configuredClause}
+        -- retired_static_merchant
+        `,
+        configuredNames
+    ]).then((result) => {
+        const removed = Number(result?.affectedRows || 0);
+        if (removed > 0) {
+            utils.infoWarn('BotLife', 'removed %d retired static merchant lifecycle states', removed);
+        }
+        return removed;
+    });
+}
+
 function recoverDissolvedPartyMembers() {
     const timestamp = now();
     return Database.execute([
@@ -1446,7 +1471,7 @@ const BotLifeState = {
                     (SELECT karma FROM characters WHERE id = characterId))
                 WHERE COALESCE(json_extract(statsJson, '$.karma'), 0)
                     <> (SELECT karma FROM characters WHERE id = characterId)`, []]))
-            .then(() => Database.reconcileBotClanGoals?.()).then(() => recoverStaleHotStates()).then(() => recoverDissolvedPartyMembers()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => clearPassivePartyRequests()).then(() => expireStalePartyRequests()).then(() => discardInvalidEquipmentPlans()).then(() => discardFulfilledEquipmentPlans()).then(() => hydrateCache()).then((count) => {
+            .then(() => Database.reconcileBotClanGoals?.()).then(() => removeRetiredStaticMerchantStates()).then(() => recoverStaleHotStates()).then(() => recoverDissolvedPartyMembers()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => clearPassivePartyRequests()).then(() => expireStalePartyRequests()).then(() => discardInvalidEquipmentPlans()).then(() => discardFulfilledEquipmentPlans()).then(() => hydrateCache()).then((count) => {
             const repairs = [...cache.values()]
                 .map(canonicalizeAreaState)
                 .map(recoverOrphanedGiranState)
@@ -2649,7 +2674,8 @@ const BotLifeState = {
                 AND reserved.status = 'active'
             )
             AND spotId IS NOT NULL
-            AND activity IN ('hunting', 'resting', 'party_wait')`,
+            AND activity IN ('hunting', 'resting', 'party_wait')
+            AND COALESCE(json_extract(statsJson, '$.equipmentPlan.strategy'), '') <> 'market'`,
             [],
             { read: true }
         ], 'bot-life:party-candidate-projection').then((rows) => rows.map((row) => {
@@ -2878,6 +2904,7 @@ const BotLifeState = {
 
     leaveParty(state, reason = 'party_break', options = {}) {
         if (!state?.characterId) return Promise.resolve(null);
+        if (require('./RaidSoloBoundary').stale(state)) state = require('./RaidSoloBoundary').clear(state);
         const timestamp = now();
         const partyTravel = state.stats?.travel?.reason === 'party_spot_replan';
         // `grouped` and party-route travel are not valid solo lifecycle

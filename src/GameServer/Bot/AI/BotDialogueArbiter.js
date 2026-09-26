@@ -126,6 +126,50 @@ function deliverFallback(input, turn, reason) {
     });
 }
 
+async function executePartyJoin(input, turn) {
+    const Takeover = invoke('GameServer/Bot/AI/PlayerPartyTakeover');
+    const BotManager = invoke('GameServer/Bot/BotManager');
+    const result = await Takeover.request({
+        playerSession: input.playerSession,
+        target: input.botSession,
+        source: input.source || input.channel || 'hot_dialogue'
+    });
+    const reply = result.reply || 'We cannot change the party right now.';
+    BotManager.botTell(input.botSession, input.playerSession, reply);
+    recordDeliveredReply(input, turn, reply);
+    await BotConversationService.recordBotReply({
+        playerSession: input.playerSession,
+        botSession: input.botSession,
+        turnId: turn.turnId,
+        channel: turn.channel,
+        text: reply,
+        requestId: input.requestId,
+        meta: {
+            deterministic: true,
+            action: 'request_player_join_party',
+            reason: result.reason || null,
+            applied: result.applied === true
+        }
+    });
+    console.info(
+        'BotParty :: chat join request player=%s speaker=%s party=%s result=%s applied=%s',
+        input.playerSession.actor.fetchName?.() || 'unknown',
+        input.botSession.actor.fetchName?.() || 'unknown',
+        input.botSession.hotBackgroundPartyId || result.partyId || 'none',
+        result.reason || 'unknown',
+        result.applied === true
+    );
+    return {
+        ok: result.ok === true,
+        started: false,
+        applied: result.applied === true,
+        reason: result.reason,
+        reply,
+        delivered: true,
+        actionResult: result
+    };
+}
+
 function route(input = {}) {
     if (!BotConversationService.validPair(input.playerSession, input.botSession)) {
         return Promise.resolve({ ok: false, reason: 'invalid_hot_pair' });
@@ -141,6 +185,11 @@ function route(input = {}) {
             'chat',
             input.channel || input.source || 'hot_dialogue'
         )).catch(() => {});
+
+        const Takeover = invoke('GameServer/Bot/AI/PlayerPartyTakeover');
+        if (input.botSession.hotBackgroundPartyId && Takeover.isJoinRequest(turn.playerText)) {
+            return executePartyJoin(input, turn);
+        }
 
         const BotBrain = invoke('GameServer/Bot/AI/BotBrain');
         const BotAI = invoke('GameServer/Bot/BotAI');

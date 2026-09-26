@@ -40,6 +40,7 @@ const ACTIONS = [
     'equip_candidate',
     'optimize_equipment',
     'list_party_candidates',
+    'request_player_join_party',
     'propose_trade',
     'give_resources',
     'offer_resources',
@@ -58,7 +59,7 @@ const PK_LOCKED_ACTIONS = new Set([
     'set_pull_policy', 'assign_puller', 'unassign_puller',
     'stop_pulling_and_return',
     'set_skill_priority', 'clear_skill_priority', 'set_combat_stance',
-    'list_safe_loadouts', 'equip_candidate', 'optimize_equipment', 'list_party_candidates',
+    'list_safe_loadouts', 'equip_candidate', 'optimize_equipment', 'list_party_candidates', 'request_player_join_party',
     'propose_trade', 'give_resources', 'offer_resources', 'update_trade_offer', 'cancel_trade',
     'quote_item', 'counter_offer', 'accept_price', 'decline_price', 'open_negotiated_trade'
 ]);
@@ -387,6 +388,25 @@ function isAuthorizedPartyLeader(context) {
     if (!leader?.actor || !player?.actor || !player.actor.fetchIsOnline?.()) return false;
     if (String(player.accountId || '').startsWith('bot_')) return false;
     return Number(player.actor.fetchId?.()) === Number(leader.actor.fetchId?.());
+}
+
+function isAuthorizedPartyJoinRequester(context) {
+    const player = context?.requestContext?.playerSession;
+    return !!context?.session?.hotBackgroundPartyId && !!player?.actor
+        && player.actor.fetchIsOnline?.() !== false
+        && !String(player.accountId || '').startsWith('bot_');
+}
+
+function requestPlayerJoinParty(context) {
+    const playerSession = context?.requestContext?.playerSession;
+    return invoke('GameServer/Bot/AI/PlayerPartyTakeover').request({
+        playerSession,
+        target: context.session,
+        source: context?.requestContext?.source || 'hot_chat'
+    }).then((result) => ({
+        ...result,
+        playerVisibleReply: result.reply || null
+    }));
 }
 
 function controllerContext(context, policyContext = {}) {
@@ -888,6 +908,7 @@ function registerTools() {
         equip_candidate: 'Equip one validated inventory upgrade through the native backpack persistence path.',
         optimize_equipment: 'Equip all currently safe inventory upgrades through the native backpack path.',
         list_party_candidates: 'List up to five real bot candidates with server-owned availability, level, and distance.',
+        request_player_join_party: 'Ask this autonomous bot party to accept the requesting player and transfer the full roster to that player as leader. The server validates roster, level eligibility, clan membership, relationships, and current activity.',
         propose_trade: 'Open a native trade window with the authorized party leader before offering any resources.',
         give_resources: 'Open native trade and display one validated resource line in the same action; player confirmation is still required.',
         offer_resources: 'Reserve and display safe bot inventory resources in the open native trade window.',
@@ -911,6 +932,7 @@ function registerTools() {
     const economyActions = new Set([
         'quote_item', 'counter_offer', 'accept_price', 'decline_price', 'open_negotiated_trade'
     ]);
+    const partyJoinActions = new Set(['request_player_join_party']);
     const executors = {
         regroup_party: regroupParty,
         stay_party: stayParty,
@@ -926,6 +948,7 @@ function registerTools() {
         equip_candidate: equipCandidate,
         optimize_equipment: optimizeEquipment,
         list_party_candidates: listPartyCandidates,
+        request_player_join_party: requestPlayerJoinParty,
         propose_trade: proposeTrade,
         give_resources: giveResources,
         fetch_resources: fetchResources,
@@ -945,8 +968,8 @@ function registerTools() {
             description: descriptions[name],
             kind: ['list_safe_loadouts', 'list_party_candidates'].includes(name)
                 ? 'read'
-                : controlActions.has(name) ? 'mutation' : 'intent',
-            risk: controlActions.has(name) ? 'medium' : 'low',
+                : controlActions.has(name) || partyJoinActions.has(name) ? 'mutation' : 'intent',
+            risk: controlActions.has(name) || partyJoinActions.has(name) ? 'medium' : 'low',
             mutating: !['none', 'say', 'list_safe_loadouts', 'list_party_candidates'].includes(name),
             available(session) {
                 if (!session) return true;
@@ -958,6 +981,7 @@ function registerTools() {
                 }
                 if (session.plan === 'pk_hunting' && PK_LOCKED_ACTIONS.has(name)) return false;
                 if (name === 'shop' && session.partyCompanion === true && session.followPlayerSession) return false;
+                if (partyJoinActions.has(name) && !session.hotBackgroundPartyId) return false;
                 if (controlActions.has(name) && !(session.partyCompanion === true && session.followPlayerSession)) return false;
                 if (economyActions.has(name) && !economyActionAvailable(session, name)) return false;
                 if (name === 'propose_trade' && session.activeTrade) return false;
@@ -973,7 +997,8 @@ function registerTools() {
             },
             authorize: controlActions.has(name)
                 ? isAuthorizedPartyLeader
-                : economyActions.has(name) ? isAuthorizedNegotiationParticipant : undefined,
+                : economyActions.has(name) ? isAuthorizedNegotiationParticipant
+                    : partyJoinActions.has(name) ? isAuthorizedPartyJoinRequester : undefined,
             execute(context) {
                 if (executors[name]) return executors[name](context);
                 return executeLegacy(context.session, context.decision, context.visiblePlayers || []);
@@ -1046,6 +1071,21 @@ function rejectionReply(result = {}) {
         case 'tool_unavailable': return 'That action is not available to me right now.';
         case 'not_a_party_companion': return 'I can only change hot party policy while I am your companion.';
         case 'party_companion_cannot_shop_now': return 'I need to stay with the party; I cannot leave for town right now.';
+        case 'target_not_in_autonomous_party': return 'I am not in an autonomous party you can join.';
+        case 'player_party_not_empty': return 'You already have a bot party. Make room before taking over ours.';
+        case 'invalid_party_roster':
+        case 'party_roster_changed':
+        case 'party_membership_changed':
+        case 'party_changed':
+        case 'member_changed': return 'Our roster changed while we were deciding. Ask again.';
+        case 'party_member_unavailable': return 'One of us is unavailable, so we cannot hand over the party safely.';
+        case 'party_special_operation':
+        case 'party_busy': return 'We are committed to a special operation and cannot change leaders now.';
+        case 'level_mismatch': return 'The level spread is too wide for everyone to share experience, so we will pass.';
+        case 'relationship_hostile': return 'Someone in the party does not trust you enough to accept.';
+        case 'recently_abandoned': return 'Someone in the party remembers being abandoned. Not this time.';
+        case 'activation_failed': return 'We agreed, but the whole party could not reach you safely.';
+        case 'persistence_failed': return 'We could not transfer party ownership safely. Ask again in a moment.';
         case 'unsupported_supply_item': return 'I cannot identify that item in the server shop catalog.';
         case 'invalid_supply_amount': return 'Tell me a supply amount between 1 and 5,000.';
         case 'non_stackable_supply_amount': return 'That item is not stackable; request one at a time.';

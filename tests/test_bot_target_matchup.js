@@ -85,6 +85,40 @@ try {
     const session = { actor: hunter, plan: 'hunting' };
     assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500), neutralNpc,
         'the native hunt scan must skip the closer arrow-resistant mob');
+
+    const candidate = (id, x, level = hunter.fetchLevel()) => Object.assign(Object.create(neutralNpc), {
+        fetchId: () => id, fetchLocX: () => x, fetchLevel: () => level
+    });
+    const local = candidate(910001, 100, hunter.fetchLevel() - 7);
+    const hidden = candidate(910002, 500);
+    World.fetchNpcsInRadius = () => [local, hidden];
+    Geo.hasLineOfSight = (_x, _y, _z, x) => x === 100;
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500), local,
+        'a preferred level behind a wall must not beat a visible weaker monster');
+
+    const crowded = [1, 2, 3, 4, 5].map(n => candidate(920000 + n, n * 100));
+    World.fetchNpcsInRadius = () => crowded;
+    const checked = [];
+    Geo.hasLineOfSight = (_x, _y, _z, x) => { checked.push(x); return x === 500; };
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500), null,
+        'the unchecked fifth candidate cannot win after the first four fail visibility');
+    assert.deepStrictEqual(checked, [100, 200, 300, 400], 'visibility work stays bounded');
+    assert.strictEqual(session.huntTargetScanPending, true);
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500), crowded[4],
+        'the next scan must reach a visible candidate beyond the blocked prefix');
+    assert.deepStrictEqual(checked, [100, 200, 300, 400, 500]);
+    assert.strictEqual(session.huntTargetScanPending, false);
+    Geo.hasLineOfSight = () => false;
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500), null);
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500), null);
+    assert.strictEqual(session.huntTargetScanPending, false, 'an exhausted hidden-only scan must finish');
+
+    // Changes between batches must not leave a dead cursor or skip the new
+    // room after movement. A replacement list is searched from its start.
+    Hunting.findPreferredMonster(session, hunter, 2500);
+    World.fetchNpcsInRadius = () => [local];
+    Geo.hasLineOfSight = () => true;
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500), local);
 } finally {
     World.fetchNpcsInRadius = savedScan;
     Geo.hasLineOfSight = savedSight;

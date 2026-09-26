@@ -241,6 +241,23 @@ const Formulas = {
         return rate < 2 ? 2700 : 470000 / rate;
     },
 
+    calcBowAttackTimes(atkSpd, reuseDelay = 1500, reuseModifier = 1) {
+        const rate = Number(atkSpd) || 0;
+        if (rate < 2) {
+            return { drawMs: 2700, reuseMs: 2700, cycleMs: 5400 };
+        }
+
+        // C4 bows have a separate draw and weapon-reuse phase. Both phases
+        // scale with physical attack speed using the 345 reference rate.
+        const drawMs = (1500 * 345) / rate;
+        const baseReuse = Math.max(0, Number(reuseDelay) || 0);
+        const modifier = Number.isFinite(Number(reuseModifier))
+            ? Math.max(0, Number(reuseModifier))
+            : 1;
+        const reuseMs = (baseReuse * modifier * 345) / rate;
+        return { drawMs, reuseMs, cycleMs: drawMs + reuseMs };
+    },
+
     calcRemoteAtkTime(time, castSpd) {
         return  (time / castSpd) * 333;
     },

@@ -25,17 +25,24 @@ function actor() {
         },
         attack: {
             timersCleared: false,
+            castAborted: false,
             clearTimers() {
                 this.timersCleared = true;
             },
             resetQueuedEvent() {
                 this.reset = true;
+            },
+            abortCast(_session, target) {
+                this.castAborted = true;
+                target.state.setCasts(false);
+                return true;
             }
         },
         state: {
             hits: true,
             casts: true,
             combats: true,
+            fetchCasts() { return this.casts; },
             setHits(value) { this.hits = value; },
             setCasts(value) { this.casts = value; },
             setCombats(value) { this.combats = value; }
@@ -76,6 +83,11 @@ const silenced = actor();
 EffectStore.apply(silenced, { key: 'silence', id: 1064, type: 'debuff', durationMs: 10000 });
 assert.strictEqual(EffectRestrictions.canCast(silenced), false, 'Silence should block casting');
 assert.strictEqual(EffectRestrictions.canMove(silenced), true, 'Silence should not block movement');
+assert.strictEqual(EffectRestrictions.canAttack(silenced), true, 'Silence should not block physical attacks');
+EffectRestrictions.interruptOnApply(session(), silenced, EffectStore.activeDebuffs(silenced)[0]);
+assert.strictEqual(silenced.attack.castAborted, true, 'Silence should interrupt an in-flight spell cast');
+assert.strictEqual(silenced.state.casts, false, 'Silence must release the cast action slot for a weapon fallback');
+assert.strictEqual(silenced.state.hits, true, 'Silence must preserve an existing physical hit cycle');
 
 const feared = actor();
 EffectStore.apply(feared, { key: 'fear', id: 1092, type: 'debuff', durationMs: 10000 });

@@ -56,6 +56,14 @@ function interruptOnApply(session, actor, effect, source = session?.actor) {
     if (!actor || !effect || effect.type !== 'debuff') return;
     const impairments = EffectStore.impairments(actor);
     const confused = EffectStore.hasDebuff(actor, 'confusion');
+
+    // Silence/magic mute interrupts the spell that is currently being cast,
+    // but it is not a physical action lock. In particular, a Sword Singer or
+    // Bladedancer silenced during party music must leave the cast state and
+    // be free to continue with normal weapon attacks on the next AI tick.
+    if ((impairments.silenced || impairments.magicMuted) && actor.state?.fetchCasts?.()) {
+        actor.attack?.abortCast?.(session, actor);
+    }
     if (!(impairments.disabled || impairments.rooted || confused)) return;
 
     // stopMovement below sends the authoritative StopMove packet.

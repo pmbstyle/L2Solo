@@ -33,7 +33,8 @@ function plan(state, spots, timestamp = Date.now()) {
     }
     const candidates = spots.filter(spot => {
         const point = spot.center;
-        return point && !excludedSpotIds.has(spot.id) && !utils.isInPeaceZone(point.locX, point.locY)
+        return spot.raidBoss !== true && point
+            && !excludedSpotIds.has(spot.id) && !utils.isInPeaceZone(point.locX, point.locY)
             && LevelingRoutes.isSpotAllowedForState(spot, clean, { mode: 'solo' })
             && Number(spot.minLevel || 1) <= Number(state.level || 1)
             && Number(spot.maxLevel || spot.minLevel || 1) >= Math.max(1, Number(state.level || 1) - 8);

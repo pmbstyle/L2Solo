@@ -532,6 +532,10 @@ function isPartyRequest(text) {
     return /\b(?:join|invite|join\s+(?:our|the)\s+(?:party|group|team)|party\s+up|group\s+up|add\s+me|take\s+me|let\s+me\s+join|(?:wanna|want(?:\s+to)?|can\s+i|could\s+i|need)\s+(?:join|party|group|team))\b|пати\s*(?:вступ|присоедин|инвайт)|присоедин/i.test(value);
 }
 
+function isPlayerJoinRequest(text) {
+    return invoke('GameServer/Bot/AI/PlayerPartyTakeover').isJoinRequest(text);
+}
+
 function applyPartyPolicy(session, decision, requestContext, text) {
     if (!requestContext?.playerSession) return decision;
     const value = String(text || '').toLowerCase();
@@ -557,6 +561,15 @@ function applyPartyPolicy(session, decision, requestContext, text) {
         };
     }
     if (!isPartyRequest(text)) return decision;
+    if (isPlayerJoinRequest(text) && session.hotBackgroundPartyId) {
+        return {
+            ...decision,
+            action: 'request_player_join_party',
+            reply: '',
+            reason: 'party_policy:player_requests_takeover',
+            confidence: Math.max(0.95, Number(decision.confidence || 0))
+        };
+    }
     if (session.partyCompanion === true && session.followPlayerSession === requestContext.playerSession) {
         return {
             ...decision,

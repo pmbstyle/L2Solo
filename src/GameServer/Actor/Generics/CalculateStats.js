@@ -187,4 +187,9 @@ function calculateStats(session, actor) {
     setCollectiveTotalRunSpd  (actor);
 }
 
+calculateStats.refreshConditionalCombatStats = (actor) => {
+    setCollectiveTotalEvasion(actor);
+    setCollectiveTotalCritical(actor);
+    setCollectiveTotalAtkSpd(actor);
+};
 module.exports = calculateStats;

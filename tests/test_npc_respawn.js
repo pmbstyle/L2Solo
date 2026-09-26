@@ -11,6 +11,39 @@ assert.strictEqual(SpawnNpcs.shouldRespawn({ respawn: -1 }), false, 'datapack se
 assert.strictEqual(SpawnNpcs.shouldRespawn({ respawn: 0 }), false, 'zero respawn must not schedule an NPC respawn');
 assert.strictEqual(SpawnNpcs.shouldRespawn({ respawn: 60 }), true, 'positive respawn must schedule an NPC respawn');
 
+const fiveHours = 5 * 60 * 60 * 1000;
+for (const respawn of [60, 9000, 86400]) {
+    const definition = { npc: { template: { raidBoss: true } }, spawn: { respawn, bias: 1800 } };
+    for (const roll of [0, 0.5, 1]) {
+        assert.strictEqual(SpawnNpcs.respawnDelayForDefinitionMs(definition, () => roll), fiveHours,
+            'every raid boss uses exactly five real hours, without datapack randomness');
+    }
+}
+assert.strictEqual(SpawnNpcs.respawnDelayForDefinitionMs({ npc: { template: {} },
+    spawn: { respawn: 60, bias: 10 } }, () => 0), 50000, 'ordinary mobs retain their sourced timer');
+
+const State = invoke('GameServer/World/RaidBossState');
+const Decay = invoke('GameServer/World/Generics/NpcDecay');
+const Sweep = invoke('GameServer/Npc/SpoilSweep');
+const originals = [State.markDefeated, SpawnNpcs.scheduleRaidBossRespawn, Decay.schedule, Sweep.corpseTime, Date.now];
+try {
+    const deathAt = 1790434932348;
+    Date.now = () => deathAt;
+    const recorded = [];
+    State.markDefeated = (_npc, at) => { recorded.push(at); return Promise.resolve(true); };
+    SpawnNpcs.scheduleRaidBossRespawn = (_world, _definition, at) => { recorded.push(at); };
+    Decay.schedule = () => {};
+    Sweep.corpseTime = () => 60000;
+    invoke('GameServer/World/Generics/RemoveNpc').call({ npc: {}, npcRewards() {} }, {}, {
+        fetchId: () => 1,
+        spawnDefinition: { npc: { template: { raidBoss: true } }, spawn: { respawn: 86400, bias: 43200 } }
+    });
+    assert.deepStrictEqual(recorded, [deathAt + fiveHours, deathAt + fiveHours],
+        'hot death persists and schedules five wall-clock hours from death, not from corpse decay');
+} finally {
+    [State.markDefeated, SpawnNpcs.scheduleRaidBossRespawn, Decay.schedule, Sweep.corpseTime, Date.now] = originals;
+}
+
 const packets = [];
 const npc = {
     fetchId: () => 1014747,

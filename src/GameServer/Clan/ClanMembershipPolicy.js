@@ -3,7 +3,7 @@ function reconcileState(state, clanId = Number(state?.stats?.clanId || 0)) {
     const current = state.stats || {};
     const plan = current.equipmentPlan;
     const foreignGoal = Number(plan?.clanGoal?.clanId || 0) > 0 && Number(plan.clanGoal.clanId) !== clanId;
-    const personalCraft = clanId > 0 && plan?.strategy === 'craft' && Number(plan.clanGoal?.clanId || 0) !== clanId;
+    const personalCraft = require('./ClanCraftingPolicy').isPersonalCraft({ clanId }, plan);
     const request = current.partyRequest;
     const invalidRequest = (Number(request?.clanId || 0) > 0 && Number(request.clanId) !== clanId)
         || (clanId > 0 && request?.strategy === 'craft' && !request.clanGoalKey);
@@ -36,6 +36,21 @@ function reconcileParty(party, leaderClanId) {
 function activeGoalKeys(clanState = {}) {
     return new Set([clanState.goal, clanState.productionGoal].filter(goal => goal?.goalKey
         && !['completed', 'cancelled', 'failed', 'abandoned'].includes(goal.status)).map(goal => goal.goalKey));
+}
+
+function activeRaidGoalKeys(parties = []) {
+    return new Set((parties || []).filter((party) => {
+        const objective = party?.stats?.objective;
+        const started = (objective?.sourceKind === 'raid' || objective?.raidBoss === true)
+            && (['preparing', 'ready'].includes(party?.stats?.raidPreparation?.status)
+                || party?.stats?.raidEncounter?.status === 'active');
+        const minPartySize = Math.max(2, Number(objective?.minPartySize) || 7);
+        return party?.status !== 'dissolved'
+            && started
+            && !['defeated', 'failed'].includes(party?.stats?.raidEncounter?.status)
+            && (party?.memberIds || []).length >= minPartySize
+            && objective?.clanGoalKey;
+    }).map((party) => party.stats.objective.clanGoalKey));
 }
 
 function reconcileGoals(state, keys) {
@@ -79,4 +94,5 @@ function preserveGoalInvalidation(state, current = {}) {
     return { ...state, stats };
 }
 
-module.exports = { reconcileState, reconcileParty, activeGoalKeys, reconcileGoals, preserveGoalInvalidation };
+module.exports = { reconcileState, reconcileParty, activeGoalKeys, activeRaidGoalKeys,
+    reconcileGoals, preserveGoalInvalidation };

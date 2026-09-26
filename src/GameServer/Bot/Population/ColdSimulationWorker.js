@@ -17,9 +17,21 @@ const stubs = new Map([
             return () => Promise.reject(new Error(`cold worker database call forbidden: ${String(property)}`));
         }
     })],
-    ['GameServer/Effects/EffectStore', { list: () => [] }],
+    ['GameServer/Effects/EffectStore', {
+        BUFF_LIMIT: 20,
+        DEBUFF_RESERVED_SLOTS: 4,
+        includedInBuffCount: (effect) => effect?.type !== 'debuff'
+            && effect?.type !== 'item_passive'
+            && effect?.toggle !== true
+            && !['hp_recover', 'life_force_orc'].includes(effect?.stackFamily),
+        list: () => []
+    }],
     ['GameServer/Skills/ChargeLifecycle', { EXPIRY_MS: 600000 }],
     ['GameServer/Bot/AI/BotRaidSafety', {
+        isRaidBoss: (target) => target?.raidBoss === true
+            || target?.template?.raidBoss === true
+            || String(target?.kind || '').toLowerCase() === 'boss'
+            || String(target?.template?.kind || '').toLowerCase() === 'boss',
         isProtectedRaidEntity: (target) => target?.raidBoss === true
             || target?.template?.raidBoss === true
             || String(target?.kind || '').toLowerCase() === 'boss'
@@ -137,6 +149,13 @@ function startKernel(config = {}) {
             partyMinSize: Config.partyMinSize
         },
         partyMinSize: Config.partyMinSize,
+        equipmentBridgeReason: (state) => {
+            const plan = GearAcquisitionPlanner.npcEquipmentBridgePlan(state, planningNpcCatalog.plannerOptions);
+            if (plan?.weaponBridge) return 'weapon_bridge';
+            return plan?.equipmentBridge && Number(state.adena || 0)
+                >= Number(plan.market?.price || 0) + Number(plan.market?.reserve || 0)
+                ? 'class_armor_bridge' : null;
+        },
         projectResolve: async (state, result, timestamp) => {
             const projected = await LifeStateProjector.prepareResolve(state, result, {
                 persist: false,
@@ -168,17 +187,24 @@ function startKernel(config = {}) {
             const excludedSpotIds = invoke('GameServer/Bot/Population/SpotRiskPolicy')
                 .excludedSpotIdsForStates([state], timestamp);
             const npcPlanningOptions = { ...planningNpcCatalog.plannerOptions, excludedSpotIds };
+            const clanRaidPlan = GearAcquisitionPlanner.isClanOwnedPlan(previousPlan)
+                && previousPlan?.next?.sourceKind === 'raid';
+            if (clanRaidPlan) npcPlanningOptions.allowRaidSources = true;
             const replanContext = GearAcquisitionPlanner.replanContextFor(state, previousPlan, timestamp);
-            const clanGoalLocked = GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan);
+            const weaponBridgePlan = GearAcquisitionPlanner.npcEquipmentBridgePlan(state, npcPlanningOptions);
+            const clanGoalLocked = !weaponBridgePlan
+                && GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan);
             const availabilitySource = !replanContext.failure && previousPlan?.status === 'active'
                 && ['direct_drop', 'craft'].includes(previousPlan.strategy)
-                ? GearAcquisitionPlanner.bestSourceForPlan(state, previousPlan, spots, { occupancy, excludedSpotIds })
+                ? GearAcquisitionPlanner.bestSourceForPlan(state, previousPlan, spots, {
+                    occupancy, excludedSpotIds, allowRaidSources: clanRaidPlan
+                })
                 : null;
             const availabilityRouteChanged = availabilitySource && (
                 String(availabilitySource.spotId || '') !== String(previousPlan?.next?.spotId || '')
                 || Number(availabilitySource.npcId || 0) !== Number(previousPlan?.next?.npcId || 0)
             );
-            const availabilityPlan = previousPlan?.status === 'blocked' && !clanGoalLocked
+            const availabilityPlan = weaponBridgePlan || (previousPlan?.status === 'blocked' && !clanGoalLocked
                 ? GearAcquisitionPlanner.replacementPlanFor(state, previousPlan, spots, {
                     occupancy,
                     ...replanContext,
@@ -194,8 +220,9 @@ function startKernel(config = {}) {
                             ...replanContext,
                             ...npcPlanningOptions
                         })
-                        : null;
-            const reusablePartyRequest = !state.party?.partyId
+                        : null);
+            const reusablePartyRequest = !weaponBridgePlan
+                && !state.party?.partyId
                 && previousPlan?.next
                 && !!availabilitySource
                 && replanContext.routeCurrent
@@ -220,10 +247,13 @@ function startKernel(config = {}) {
                 ? { ...previousRefresh, finishBeforeUpgrade: true }
                 : upgradedPlan;
             const canFinalizeLockedRoute = clanGoalLocked && availabilityRouteChanged;
-            const finalizationContext = canFinalizeLockedRoute
+            const finalizationContext = weaponBridgePlan
+                ? { ...replanContext, allowClanGoalReplan: true }
+                : canFinalizeLockedRoute
                 ? { ...replanContext, allowClanGoalReplan: true }
                 : replanContext;
-            const preservePreviousPlan = reusablePartyRequest || (clanGoalLocked && !canFinalizeLockedRoute);
+            const preservePreviousPlan = !weaponBridgePlan
+                && (reusablePartyRequest || (clanGoalLocked && !canFinalizeLockedRoute));
             const finalizedPlan = preservePreviousPlan
                 ? previousPlan
                 : GearAcquisitionPlanner.finalizePlan(state, previousPlan, rawPlan, finalizationContext, timestamp);
@@ -260,7 +290,8 @@ function startKernel(config = {}) {
             const fallbackLevel = LevelingRoutes.targetLevelForState(fallbackState);
             const genericFallback = partyRouteWaiting && !safePlannedFallback
                 ? LevelingRoutes.bestSpot(spots.filter((spot) => (
-                    Number(spot.minLevel || 1) <= fallbackLevel + 4
+                    spot.raidBoss !== true
+                    && Number(spot.minLevel || 1) <= fallbackLevel + 4
                     && Number(spot.maxLevel || spot.minLevel || 1) >= fallbackLevel - 4
                 )), fallbackState, { occupancy, excludedSpotIds })?.spot || null
                 : null;

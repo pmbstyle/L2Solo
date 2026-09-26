@@ -1,33 +1,22 @@
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 const REASONING_EFFORTS = new Set(['off', 'low', 'medium', 'high']);
-const LUNA_MODEL = 'openai/gpt-5.6-luna';
-const GPT_OSS_120B_MODEL = 'openai/gpt-oss-120b';
-const MODEL_PROFILES = Object.freeze({
-    [LUNA_MODEL]: Object.freeze({
-        supportsTemperature: false,
-        completionLimitParam: 'max_tokens',
-        openAiStrictSchema: true,
-        provider: Object.freeze({
-            order: Object.freeze(['OpenAI']),
-            sort: 'price',
-            allow_fallbacks: false
-        })
-    }),
-    [GPT_OSS_120B_MODEL]: Object.freeze({
-        supportsTemperature: true,
-        completionLimitParam: 'max_tokens'
-    })
-});
+const COMPLETION_LIMIT_PARAMS = new Set(['max_tokens', 'max_completion_tokens']);
 
 const DEFAULTS = Object.freeze({
     enabled: false,
     apiKey: '',
     apiUrl: OPENROUTER_URL,
-    model: LUNA_MODEL,
-    partyRouterModel: LUNA_MODEL,
-    temperature: 0.35,
-    reasoningEffort: 'low',
+    model: '',
+    partyRouterModel: '',
+    temperature: null,
+    reasoningEffort: 'off',
+    completionLimitParam: 'max_completion_tokens',
+    strictSchema: false,
+    providerOrder: Object.freeze([]),
+    providerSort: '',
+    allowFallbacks: true,
+    requireParameters: true,
     maxConcurrentRequests: 32,
     debug: false,
 
@@ -70,6 +59,24 @@ function num(value, fallback) {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function optionalNum(value, fallback = null) {
+    if (value === undefined) return fallback;
+    if (value === null || String(value).trim() === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function completionLimitParam(value, fallback = DEFAULTS.completionLimitParam) {
+    const normalized = String(value || '').trim();
+    return COMPLETION_LIMIT_PARAMS.has(normalized) ? normalized : fallback;
+}
+
+function stringList(value, fallback = []) {
+    if (value === undefined || value === null || value === '') return [...fallback];
+    const values = Array.isArray(value) ? value : String(value).split(',');
+    return values.map((entry) => String(entry).trim()).filter(Boolean);
+}
+
 function reasoningEffort(value, fallback = DEFAULTS.reasoningEffort) {
     const normalized = String(value || fallback).trim().toLowerCase();
     return REASONING_EFFORTS.has(normalized) ? normalized : fallback;
@@ -104,6 +111,9 @@ function config(overrides = {}) {
     const model = (legacyConfig ? process.env.OPENROUTER_MODEL : process.env.L2NODE_AI_MODEL) ||
         optn.model ||
         DEFAULTS.model;
+    const providerCompletionLimitParam = legacyConfig
+        ? DEFAULTS.completionLimitParam
+        : 'max_tokens';
     const source = {
         ...DEFAULTS,
         enabled: bool(optn.enabled, DEFAULTS.enabled),
@@ -113,15 +123,21 @@ function config(overrides = {}) {
         partyRouterModel: (legacyConfig
             ? process.env.OPENROUTER_PARTY_ROUTER_MODEL
             : process.env.L2NODE_AI_PARTY_ROUTER_MODEL) || optn.partyRouterModel ||
-            (legacyConfig ? DEFAULTS.partyRouterModel : model),
-        temperature: num(optn.temperature, DEFAULTS.temperature),
-        // Local OpenAI-compatible servers commonly expose thinking models.
-        // Keep their default request cheap and bounded, while preserving the
-        // existing reasoning default for the legacy OpenRouter profile.
+            model,
+        temperature: optionalNum(optn.temperature, DEFAULTS.temperature),
         reasoningEffort: reasoningEffort(
             optn.reasoningEffort,
-            legacyConfig ? DEFAULTS.reasoningEffort : 'off'
+            DEFAULTS.reasoningEffort
         ),
+        completionLimitParam: completionLimitParam(
+            optn.completionLimitParam,
+            providerCompletionLimitParam
+        ),
+        strictSchema: bool(optn.strictSchema, DEFAULTS.strictSchema),
+        providerOrder: stringList(optn.providerOrder, DEFAULTS.providerOrder),
+        providerSort: String(optn.providerSort || DEFAULTS.providerSort).trim(),
+        allowFallbacks: bool(optn.allowFallbacks, DEFAULTS.allowFallbacks),
+        requireParameters: bool(optn.requireParameters, DEFAULTS.requireParameters),
         maxConcurrentRequests: Math.max(1, Math.floor(num(
             optn.maxConcurrentRequests,
             DEFAULTS.maxConcurrentRequests
@@ -142,8 +158,21 @@ function config(overrides = {}) {
         partyRouterModel: overrides.partyRouterModel !== undefined
             ? String(overrides.partyRouterModel || '')
             : String(source.partyRouterModel || ''),
-        temperature: num(overrides.temperature, source.temperature),
+        temperature: overrides.temperature !== undefined
+            ? optionalNum(overrides.temperature, source.temperature)
+            : source.temperature,
         reasoningEffort: reasoningEffort(overrides.reasoningEffort, source.reasoningEffort),
+        completionLimitParam: completionLimitParam(
+            overrides.completionLimitParam,
+            source.completionLimitParam
+        ),
+        strictSchema: bool(overrides.strictSchema, source.strictSchema),
+        providerOrder: stringList(overrides.providerOrder, source.providerOrder),
+        providerSort: overrides.providerSort !== undefined
+            ? String(overrides.providerSort || '').trim()
+            : source.providerSort,
+        allowFallbacks: bool(overrides.allowFallbacks, source.allowFallbacks),
+        requireParameters: bool(overrides.requireParameters, source.requireParameters),
         maxConcurrentRequests: Math.max(1, Math.floor(num(
             overrides.maxConcurrentRequests,
             source.maxConcurrentRequests
@@ -171,18 +200,8 @@ function sessionId(value) {
     return String(value).slice(0, 256);
 }
 
-function modelProfile(model) {
-    return MODEL_PROFILES[String(model || '').trim()] || null;
-}
-
-function supportsTemperature(model, provider = 'openrouter') {
-    if (provider === 'openai-compatible') return true;
-    return modelProfile(model)?.supportsTemperature !== false;
-}
-
-function completionLimitParam(model, provider = 'openrouter') {
-    if (provider === 'openai-compatible') return 'max_tokens';
-    return modelProfile(model)?.completionLimitParam || 'max_completion_tokens';
+function supportsTemperature(cfg) {
+    return Number.isFinite(cfg.temperature);
 }
 
 function nullableSchema(schema) {
@@ -227,20 +246,21 @@ function openAiStrictSchema(schema) {
     return result;
 }
 
-function responseSchemaForModel(responseSchema, model) {
-    if (!responseSchema?.schema || modelProfile(model)?.openAiStrictSchema !== true) return responseSchema;
+function responseSchemaForConfig(responseSchema, cfg) {
+    if (!responseSchema?.schema || cfg.strictSchema !== true) return responseSchema;
     return {
         ...responseSchema,
         schema: openAiStrictSchema(responseSchema.schema)
     };
 }
 
-function providerOptions(model, extra = {}) {
-    return {
-        ...(modelProfile(model)?.provider || {}),
-        ...extra,
-        require_parameters: true
-    };
+function providerOptions(cfg, extra = {}) {
+    const provider = {};
+    if (cfg.providerOrder.length > 0) provider.order = cfg.providerOrder;
+    if (cfg.providerSort) provider.sort = cfg.providerSort;
+    provider.allow_fallbacks = cfg.allowFallbacks;
+    provider.require_parameters = cfg.requireParameters;
+    return { ...provider, ...(extra || {}) };
 }
 
 function isConfigured(cfg = config()) {
@@ -513,10 +533,12 @@ async function requestUntraced(spec = {}) {
         model: cfg.model,
         messages: Array.isArray(requestData.messages) ? requestData.messages : []
     };
-    if (supportsTemperature(cfg.model, requestProvider)) body.temperature = cfg.temperature;
+    if (supportsTemperature(cfg)) body.temperature = cfg.temperature;
 
     const maxCompletionTokens = completionLimit(cfg, requestData);
-    if (maxCompletionTokens !== null) body[completionLimitParam(cfg.model, requestProvider)] = maxCompletionTokens;
+    if (maxCompletionTokens !== null) {
+        body[cfg.completionLimitParam] = maxCompletionTokens;
+    }
 
     if (requestProvider === 'openrouter') {
         if (cfg.reasoningEffort !== 'off') {
@@ -535,7 +557,7 @@ async function requestUntraced(spec = {}) {
             : cfg.reasoningEffort;
     }
 
-    const effectiveResponseSchema = responseSchemaForModel(requestData.responseSchema, cfg.model);
+    const effectiveResponseSchema = responseSchemaForConfig(requestData.responseSchema, cfg);
     if (effectiveResponseSchema) {
         body.response_format = {
             type: 'json_schema',
@@ -553,7 +575,7 @@ async function requestUntraced(spec = {}) {
     }
 
     if (requestProvider === 'openrouter') {
-        const provider = providerOptions(cfg.model, requestData.provider);
+        const provider = providerOptions(cfg, requestData.provider);
         if (provider) body.provider = provider;
     }
 
@@ -700,11 +722,11 @@ async function request(spec = {}) {
                     interactive: spec.interactive === true
                 });
                 const modelParameters = {};
-                if (supportsTemperature(effectiveConfig.model, effectiveConfig.provider)) {
+                if (supportsTemperature(effectiveConfig)) {
                     modelParameters.temperature = effectiveConfig.temperature;
                 }
                 if (effectiveMaxTokens !== null) {
-                    modelParameters[completionLimitParam(effectiveConfig.model, effectiveConfig.provider)] = effectiveMaxTokens;
+                    modelParameters[effectiveConfig.completionLimitParam] = effectiveMaxTokens;
                 }
                 if (effectiveConfig.provider !== 'openai-compatible') {
                     modelParameters.reasoning = {

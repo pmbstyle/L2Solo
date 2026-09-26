@@ -238,6 +238,10 @@ function state(characterId = 1, overrides = {}) {
         'a finished service must still preserve the clan assembly wait before solo hunting');
     assert.strictEqual(lifecycleKind(state(2, { activity: 'party_wait', stats: { clanPartyObjective: clanDuty } })), 'resolver',
         'actual clan assembly must remain in the pure worker wait path');
+    assert.strictEqual(lifecycleKind(state(2, { activity: 'party_wait', adena: 1000, stats: {
+        clanPartyObjective: clanDuty,
+        equipmentPlan: { strategy: 'market', market: { price: 500, reserve: 100 } }
+    } })), 'command', 'a funded weapon bridge must recover from a stale party-wait state');
     for (const plan of [{ status: 'complete' }, { status: 'deferred', strategy: 'none' },
         { status: 'active', strategy: 'craft' }]) {
         assert.strictEqual(lifecycleKind(state(2, { stats: {

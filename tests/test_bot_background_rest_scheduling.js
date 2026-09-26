@@ -41,6 +41,33 @@ assert.strictEqual(restedParty.nextResolveAt, restUntil, 'a resting party must s
 assert(restedParty.memberResults.every(({ result }) => result.patch.activity === 'resting'), 'ready members must remain seated with their recovering party');
 assert.strictEqual(restedParty.partyPatch.stats.restUntil, restUntil, 'the common party deadline must be persisted');
 
+const fullRaidMembers = [91, 92].map((characterId) => ({
+    ...exhausted,
+    characterId,
+    activity: 'resting',
+    vitals: { hp: 100000, maxHp: 100000, mp: 100000, maxMp: 100000 },
+    stats: { classId: 11, role: 'mage', restUntil: timestamp + 8000 }
+}));
+const recoveredRaid = BackgroundPartyResolver.resolve({
+    party: {
+        partyId: 'raid-rest-recovery',
+        cohesion: 0.7,
+        risk: 0.2,
+        stats: {
+            restUntil: timestamp + 8000,
+            objective: { sourceKind: 'raid', raidBossTemplateId: 999 }
+        }
+    },
+    members: fullRaidMembers,
+    spot: { ...spot, raidBoss: true, raidBossTemplateId: 999 },
+    elapsedMs: 3000,
+    timestamp
+});
+assert(recoveredRaid.memberResults.every(({ result }) => result.patch.activity === 'grouped'),
+    'a fully recovered raid party must resume preparation before its estimated deadline');
+assert.strictEqual(recoveredRaid.partyPatch.stats.restUntil, null,
+    'a fully recovered raid party must clear the shared recovery deadline');
+
 const combatRestParty = BackgroundPartyResolver.resolve({
     party: { partyId: 'combat-rest', cohesion: 0.7, risk: 0.2, roleCoverage: { dps: 2 }, stats: {} },
     members: [

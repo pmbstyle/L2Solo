@@ -21,6 +21,37 @@ function proposal(characterId, priority = 'P2', revision = 1) {
 }
 
 (async () => {
+    for (const single of [false, true]) {
+        const acks = [];
+        const committedQueue = new ColdCommitQueue({
+            prepare: async entry => entry.baseState,
+            commit: async entries => entries.map(entry => ({ ok: true, characterId: entry.nextState.characterId })),
+            afterCommit: async () => { throw new Error('journal unavailable after durable commit'); },
+            onResults: rows => acks.push(...rows)
+        });
+        committedQueue.enqueue(proposal(900));
+        if (single) await committedQueue.flushCharacter(900);
+        else await committedQueue.flushDue(true);
+        assert.strictEqual(acks.length, 1);
+        assert.strictEqual(acks[0].ok, true, 'post-commit failure cannot reject an already durable outcome');
+        assert.match(acks[0].afterCommitError, /journal unavailable/);
+        assert.strictEqual(committedQueue.snapshot().errors, 1);
+    }
+    const rejectedAcks = [];
+    const rejectedQueue = new ColdCommitQueue({ prepare: async () => null, commit: async () => [],
+        onResults: rows => rejectedAcks.push(...rows) });
+    rejectedQueue.enqueue(proposal(901));
+    await rejectedQueue.flushCharacter(901);
+    assert.strictEqual(rejectedAcks[0].proposal.characterId, 901, 'handoff rejection must acknowledge the staged raid member');
+    for (const stage of ['prepare', 'commit']) {
+        const acks = [];
+        const broken = new ColdCommitQueue({ prepare: async entry => entry.baseState, commit: async () => [],
+            [stage]: async () => { throw Error('synthetic handoff failure'); }, onResults: rows => acks.push(...rows) });
+        broken.enqueue(proposal(902));
+        await assert.rejects(broken.flushCharacter(902), /synthetic handoff failure/);
+        assert.strictEqual(acks[0].ok, false);
+        assert.strictEqual(acks[0].proposal.characterId, 902, 'handoff errors also release the raid confirmation fence');
+    }
     let now = 1000;
     let commits = 0;
     const resultBatches = [];

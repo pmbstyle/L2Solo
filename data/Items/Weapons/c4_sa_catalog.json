@@ -1,0 +1,9522 @@
+[
+  {
+    "selfId": 4681,
+    "template": {
+      "name": "Stormbringer - Critical Anger",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1430,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4682,
+    "template": {
+      "name": "Stormbringer - Focus",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1430,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4683,
+    "template": {
+      "name": "Stormbringer - Light",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 430,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4684,
+    "template": {
+      "name": "Shamshir - Guidance",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1420,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 68,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4685,
+    "template": {
+      "name": "Shamshir - Back Blow",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1420,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 68,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4686,
+    "template": {
+      "name": "Shamshir - Rsk. Evasion",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1420,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 68,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4687,
+    "template": {
+      "name": "Katana - Focus",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1420,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 68,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4688,
+    "template": {
+      "name": "Katana - Critical Damage",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1420,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 68,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4689,
+    "template": {
+      "name": "Katana - Haste",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1420,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 68,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4690,
+    "template": {
+      "name": "Spirit Sword - Critical Damage",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1420,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 68,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4691,
+    "template": {
+      "name": "Spirit Sword - Critical Poison",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1420,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 68,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4692,
+    "template": {
+      "name": "Spirit Sword - Haste",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1420,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 68,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4693,
+    "template": {
+      "name": "Raid Sword - Focus",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1420,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 68,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4694,
+    "template": {
+      "name": "Raid Sword - Critical Drain",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1420,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 68,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4695,
+    "template": {
+      "name": "Raid Sword - Critical Poison",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1420,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 68,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4696,
+    "template": {
+      "name": "Caliburs - Guidance",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1400,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4697,
+    "template": {
+      "name": "Caliburs - Focus",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1400,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4698,
+    "template": {
+      "name": "Caliburs - Critical Damage",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1400,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4699,
+    "template": {
+      "name": "Sword of Delusion - Focus",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1400,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4700,
+    "template": {
+      "name": "Sword of Delusion - Health",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1400,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4701,
+    "template": {
+      "name": "Sword of Delusion - Rsk. Haste",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1400,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4702,
+    "template": {
+      "name": "Tsurugi - Focus",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1400,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4703,
+    "template": {
+      "name": "Tsurugi - Critical Damage",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1400,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4704,
+    "template": {
+      "name": "Tsurugi - Haste",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1400,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4705,
+    "template": {
+      "name": "Sword of Nightmare - Health",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1400,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4706,
+    "template": {
+      "name": "Sword of Nightmare - Focus",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1400,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4707,
+    "template": {
+      "name": "Sword of Nightmare - Light",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 420,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4708,
+    "template": {
+      "name": "Samurai Longsword - Focus",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1380,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 156,
+      "mAtk": 83,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4709,
+    "template": {
+      "name": "Samurai Longsword - Critical Damage",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1380,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 156,
+      "mAtk": 83,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4710,
+    "template": {
+      "name": "Samurai Longsword - Haste",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1380,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 156,
+      "mAtk": 83,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4711,
+    "template": {
+      "name": "Flamberge - Critical Damage",
+      "kind": "Weapon.GreatSword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 2010,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 130,
+      "mAtk": 61,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4712,
+    "template": {
+      "name": "Flamberge - Focus",
+      "kind": "Weapon.GreatSword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 2010,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 130,
+      "mAtk": 61,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4713,
+    "template": {
+      "name": "Flamberge - Light",
+      "kind": "Weapon.GreatSword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 600,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 130,
+      "mAtk": 61,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4714,
+    "template": {
+      "name": "Keshanberk - Guidance",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1370,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 175,
+      "mAtk": 91,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4715,
+    "template": {
+      "name": "Keshanberk - Focus",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1370,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 175,
+      "mAtk": 91,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4716,
+    "template": {
+      "name": "Keshanberk - Back Blow",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1370,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 175,
+      "mAtk": 91,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4717,
+    "template": {
+      "name": "Sword of Damascus - Focus",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1350,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 194,
+      "mAtk": 99,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4718,
+    "template": {
+      "name": "Sword of Damascus - Critical Damage",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1350,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 194,
+      "mAtk": 99,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4719,
+    "template": {
+      "name": "Sword of Damascus - Haste",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1350,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 194,
+      "mAtk": 99,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4720,
+    "template": {
+      "name": "Tallum Blade - Health",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1330,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 107,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 4721,
+    "template": {
+      "name": "Tallum Blade - Rsk. Evasion",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1330,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 107,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 4722,
+    "template": {
+      "name": "Tallum Blade - Rsk. Haste",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1330,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 107,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 4723,
+    "template": {
+      "name": "Great Sword - Health",
+      "kind": "Weapon.GreatSword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1930,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 91,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4724,
+    "template": {
+      "name": "Great Sword - Critical Damage",
+      "kind": "Weapon.GreatSword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1930,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 91,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4725,
+    "template": {
+      "name": "Great Sword - Focus",
+      "kind": "Weapon.GreatSword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1930,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 91,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4726,
+    "template": {
+      "name": "Big Hammer - Health",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1710,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4727,
+    "template": {
+      "name": "Big Hammer - Rsk.Focus",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1710,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4728,
+    "template": {
+      "name": "Big Hammer - Haste",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1710,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4729,
+    "template": {
+      "name": "Battle Axe - Anger",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1720,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4730,
+    "template": {
+      "name": "Battle Axe - Rsk.Focus",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1720,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4731,
+    "template": {
+      "name": "Battle Axe - Haste",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1720,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4732,
+    "template": {
+      "name": "Silver Axe - Anger",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1690,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4733,
+    "template": {
+      "name": "Silver Axe - Rsk.Focus",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1690,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4734,
+    "template": {
+      "name": "Silver Axe - Haste",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1690,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4735,
+    "template": {
+      "name": "Skull Graver - Anger",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1640,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4736,
+    "template": {
+      "name": "Skull Graver - Health",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1640,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4737,
+    "template": {
+      "name": "Skull Graver - Rsk.Focus",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1640,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4738,
+    "template": {
+      "name": "Dwarven War Hammer - Anger",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1670,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 68,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4739,
+    "template": {
+      "name": "Dwarven War Hammer - Health",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1670,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 68,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4740,
+    "template": {
+      "name": "Dwarven War Hammer - Haste",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1670,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 68,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4741,
+    "template": {
+      "name": "War Axe - Anger",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1660,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4742,
+    "template": {
+      "name": "War Axe - Health",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1660,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4743,
+    "template": {
+      "name": "War Axe - Haste",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1660,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4744,
+    "template": {
+      "name": "Yaksa Mace - Anger",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1640,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 156,
+      "mAtk": 83,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4745,
+    "template": {
+      "name": "Yaksa Mace - Health",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1640,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 156,
+      "mAtk": 83,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4746,
+    "template": {
+      "name": "Yaksa Mace - Rsk. Focus",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1640,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 156,
+      "mAtk": 83,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4747,
+    "template": {
+      "name": "Heavy War Axe - Anger",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1620,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 175,
+      "mAtk": 91,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4748,
+    "template": {
+      "name": "Heavy War Axe - Health",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1620,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 175,
+      "mAtk": 91,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4749,
+    "template": {
+      "name": "Heavy War Axe - Rsk. Focus",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1620,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 175,
+      "mAtk": 91,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4750,
+    "template": {
+      "name": "Deadman's Glory - Anger",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1600,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 194,
+      "mAtk": 99,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4751,
+    "template": {
+      "name": "Deadman's Glory - Health",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1600,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 194,
+      "mAtk": 99,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4752,
+    "template": {
+      "name": "Deadman's Glory - Haste",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1600,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 194,
+      "mAtk": 99,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4753,
+    "template": {
+      "name": "Art of Battle Axe - Health",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1570,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 194,
+      "mAtk": 99,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4754,
+    "template": {
+      "name": "Art of Battle Axe - Rsk. Focus",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1570,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 194,
+      "mAtk": 99,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4755,
+    "template": {
+      "name": "Art of Battle Axe - Haste",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1570,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 194,
+      "mAtk": 99,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4756,
+    "template": {
+      "name": "Meteor Shower - Health",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1600,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 107,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 4757,
+    "template": {
+      "name": "Meteor Shower - Focus",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1600,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 107,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 4758,
+    "template": {
+      "name": "Meteor Shower - P.Focus",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1600,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 107,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 4759,
+    "template": {
+      "name": "Cursed Dagger - Critical Bleed",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1040,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 94,
+      "mAtk": 61,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4760,
+    "template": {
+      "name": "Cursed Dagger - Critical Poison",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1040,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 94,
+      "mAtk": 61,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4761,
+    "template": {
+      "name": "Cursed Dagger - Rsk. Haste",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1040,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 94,
+      "mAtk": 61,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4762,
+    "template": {
+      "name": "Dark Elven Dagger - Focus",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1050,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 94,
+      "mAtk": 61,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4763,
+    "template": {
+      "name": "Dark Elven Dagger - Back Blow",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1050,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 94,
+      "mAtk": 61,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4764,
+    "template": {
+      "name": "Dark Elven Dagger - Mortal Strike",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1050,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 94,
+      "mAtk": 61,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4765,
+    "template": {
+      "name": "Stiletto - Critical Bleed",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1030,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 68,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4766,
+    "template": {
+      "name": "Stiletto - Critical Poison",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1030,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 68,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4767,
+    "template": {
+      "name": "Stiletto - Mortal Strike",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1030,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 68,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4768,
+    "template": {
+      "name": "Grace Dagger - Evasion",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1020,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 76,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4769,
+    "template": {
+      "name": "Grace Dagger - Focus",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1020,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 76,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4770,
+    "template": {
+      "name": "Grace Dagger - Back Blow",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1020,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 76,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4771,
+    "template": {
+      "name": "Dark Screamer - Evasion",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1010,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 76,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4772,
+    "template": {
+      "name": "Dark Screamer - Focus",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1010,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 76,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4773,
+    "template": {
+      "name": "Dark Screamer - Critical Bleed",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1010,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 76,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4774,
+    "template": {
+      "name": "Crystal Dagger - Critical Bleed",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1000,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 136,
+      "mAtk": 83,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4775,
+    "template": {
+      "name": "Crystal Dagger - Critical Poison",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1000,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 136,
+      "mAtk": 83,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4776,
+    "template": {
+      "name": "Crystal Dagger - Mortal Strike",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1000,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 136,
+      "mAtk": 83,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4777,
+    "template": {
+      "name": "Kris - Evasion",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 980,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 153,
+      "mAtk": 91,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4778,
+    "template": {
+      "name": "Kris - Focus",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 980,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 153,
+      "mAtk": 91,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4779,
+    "template": {
+      "name": "Kris - Back Blow",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 980,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 153,
+      "mAtk": 91,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4780,
+    "template": {
+      "name": "Demon Dagger - Critical Bleed",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 970,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 170,
+      "mAtk": 99,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4781,
+    "template": {
+      "name": "Demon Dagger - Critical Poison",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 970,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 170,
+      "mAtk": 99,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4782,
+    "template": {
+      "name": "Demon Dagger - Mortal Strike",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 970,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 170,
+      "mAtk": 99,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4783,
+    "template": {
+      "name": "Bloody Orchid - Evasion",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 960,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 186,
+      "mAtk": 107,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 4784,
+    "template": {
+      "name": "Bloody Orchid - Focus",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 960,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 186,
+      "mAtk": 107,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 4785,
+    "template": {
+      "name": "Bloody Orchid - Back Blow",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 960,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 186,
+      "mAtk": 107,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 4786,
+    "template": {
+      "name": "Hell Knife - Focus",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 740,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 122,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4787,
+    "template": {
+      "name": "Hell Knife - Back Blow",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 740,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 122,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4788,
+    "template": {
+      "name": "Hell Knife - Mortal Strike",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 740,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 122,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4789,
+    "template": {
+      "name": "Chakram - Critical Drain",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1490,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 130,
+      "mAtk": 61,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4790,
+    "template": {
+      "name": "Chakram - Critical Poison",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1490,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 130,
+      "mAtk": 61,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4791,
+    "template": {
+      "name": "Chakram - Rsk. Haste",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1490,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 130,
+      "mAtk": 61,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4792,
+    "template": {
+      "name": "Fisted Blade - Rsk. Evasion",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1480,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 169,
+      "mAtk": 76,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4793,
+    "template": {
+      "name": "Fisted Blade - Rsk. Haste",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1480,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 169,
+      "mAtk": 76,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4794,
+    "template": {
+      "name": "Fisted Blade - Haste",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1480,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 169,
+      "mAtk": 76,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4795,
+    "template": {
+      "name": "Great Pata - Critical Drain",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1460,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 190,
+      "mAtk": 83,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4796,
+    "template": {
+      "name": "Great Pata - Critical Poison",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1460,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 190,
+      "mAtk": 83,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4797,
+    "template": {
+      "name": "Great Pata - Rsk. Haste",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1460,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 190,
+      "mAtk": 83,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4798,
+    "template": {
+      "name": "Knuckle Duster - Rsk. Evasion",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1490,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 148,
+      "mAtk": 68,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4799,
+    "template": {
+      "name": "Knuckle Duster - Rsk. Haste",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1490,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 148,
+      "mAtk": 68,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4800,
+    "template": {
+      "name": "Knuckle Duster - Haste",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1490,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 148,
+      "mAtk": 68,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4801,
+    "template": {
+      "name": "Arthro Nail - Critical Poison",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1420,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 91,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4802,
+    "template": {
+      "name": "Arthro Nail - Rsk. Evasion",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1420,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 91,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4803,
+    "template": {
+      "name": "Arthro Nail - Rsk. Haste",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1420,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 91,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4804,
+    "template": {
+      "name": "Bellion Cestus - Critical Drain",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1390,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 236,
+      "mAtk": 99,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4805,
+    "template": {
+      "name": "Bellion Cestus - Critical Poison",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1390,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 236,
+      "mAtk": 99,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4806,
+    "template": {
+      "name": "Bellion Cestus - Rsk. Haste",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1390,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 236,
+      "mAtk": 99,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4807,
+    "template": {
+      "name": "Blood Tornado - Critical Drain",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1370,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 259,
+      "mAtk": 107,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 4808,
+    "template": {
+      "name": "Blood Tornado - Rsk. Evasion",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1370,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 259,
+      "mAtk": 107,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 4809,
+    "template": {
+      "name": "Blood Tornado - Haste",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1370,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 259,
+      "mAtk": 107,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 4810,
+    "template": {
+      "name": "Crystallized Ice Bow - Guidance",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1790,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 220,
+      "mAtk": 61,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 6,
+      "soulshot": 8,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4811,
+    "template": {
+      "name": "Crystallized Ice Bow - Evasion",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1790,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 220,
+      "mAtk": 61,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 6,
+      "soulshot": 8,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4812,
+    "template": {
+      "name": "Crystallized Ice Bow - Quick Recovery",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1790,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 220,
+      "mAtk": 61,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 6,
+      "soulshot": 8,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4813,
+    "template": {
+      "name": "Elemental Bow - Guidance",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1770,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 277,
+      "mAtk": 75,
+      "pAtkRnd": 5,
+      "atkSpd": 227,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 7,
+      "soulshot": 8,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4814,
+    "template": {
+      "name": "Elemental Bow - Miser",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1770,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 277,
+      "mAtk": 75,
+      "pAtkRnd": 5,
+      "atkSpd": 227,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 7,
+      "soulshot": 8,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4815,
+    "template": {
+      "name": "Elemental Bow - Quick Recovery",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1770,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 277,
+      "mAtk": 75,
+      "pAtkRnd": 5,
+      "atkSpd": 227,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 7,
+      "soulshot": 8,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4816,
+    "template": {
+      "name": "Elven Bow of Nobility - Evasion",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1760,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 252,
+      "mAtk": 68,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 7,
+      "soulshot": 8,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4817,
+    "template": {
+      "name": "Elven Bow of Nobility - Miser",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1760,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 252,
+      "mAtk": 68,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 7,
+      "soulshot": 8,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4818,
+    "template": {
+      "name": "Elven Bow of Nobility - Cheap Shot",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1760,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 252,
+      "mAtk": 68,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 7,
+      "soulshot": 8,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4819,
+    "template": {
+      "name": "Akat Long Bow - Guidance",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1740,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 316,
+      "mAtk": 84,
+      "pAtkRnd": 5,
+      "atkSpd": 227,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 7,
+      "soulshot": 9,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4820,
+    "template": {
+      "name": "Akat Long Bow - Evasion",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1740,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 316,
+      "mAtk": 84,
+      "pAtkRnd": 5,
+      "atkSpd": 227,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 7,
+      "soulshot": 9,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4821,
+    "template": {
+      "name": "Akat Long Bow - Miser",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1740,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 316,
+      "mAtk": 84,
+      "pAtkRnd": 5,
+      "atkSpd": 227,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 7,
+      "soulshot": 9,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4822,
+    "template": {
+      "name": "Eminence Bow - Guidance",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1720,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 323,
+      "mAtk": 83,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 8,
+      "soulshot": 10,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4823,
+    "template": {
+      "name": "Eminence Bow - Miser",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1720,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 323,
+      "mAtk": 83,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 8,
+      "soulshot": 10,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4824,
+    "template": {
+      "name": "Eminence Bow - Cheap Shot",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1720,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 323,
+      "mAtk": 83,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 8,
+      "soulshot": 10,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4825,
+    "template": {
+      "name": "Dark Elven Long Bow - Evasion",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1720,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 397,
+      "mAtk": 100,
+      "pAtkRnd": 5,
+      "atkSpd": 227,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 8,
+      "soulshot": 3,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4826,
+    "template": {
+      "name": "Dark Elven Long Bow - Critical Bleed",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1720,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 397,
+      "mAtk": 100,
+      "pAtkRnd": 5,
+      "atkSpd": 227,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 8,
+      "soulshot": 3,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4827,
+    "template": {
+      "name": "Dark Elven Long Bow - Miser",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1720,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 397,
+      "mAtk": 100,
+      "pAtkRnd": 5,
+      "atkSpd": 227,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 8,
+      "soulshot": 3,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4828,
+    "template": {
+      "name": "Bow of Peril - Guidance",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1700,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 400,
+      "mAtk": 99,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 9,
+      "soulshot": 3,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4829,
+    "template": {
+      "name": "Bow of Peril - Quick Recovery",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1700,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 400,
+      "mAtk": 99,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 9,
+      "soulshot": 3,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4830,
+    "template": {
+      "name": "Bow of Peril - Cheap Shot",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1700,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 400,
+      "mAtk": 99,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 9,
+      "soulshot": 3,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4831,
+    "template": {
+      "name": "Carnage Bow - Critical Bleed",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1670,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 440,
+      "mAtk": 107,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 9,
+      "soulshot": 2,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 4832,
+    "template": {
+      "name": "Carnage Bow - Mana Up",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1670,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 440,
+      "mAtk": 107,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 9,
+      "soulshot": 2,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 4833,
+    "template": {
+      "name": "Carnage Bow - Quick Recovery",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1670,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 440,
+      "mAtk": 107,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 9,
+      "soulshot": 2,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 4834,
+    "template": {
+      "name": "Scythe - Anger",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 2040,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4835,
+    "template": {
+      "name": "Scythe - Critical Stun",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 2040,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4836,
+    "template": {
+      "name": "Scythe - Light",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 610,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4837,
+    "template": {
+      "name": "Orcish Glaive - Anger",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 2030,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4838,
+    "template": {
+      "name": "Orcish Glaive - Critical Stun",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 2030,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4840,
+    "template": {
+      "name": "Body Slasher - Critical Stun",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 2030,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 61,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4843,
+    "template": {
+      "name": "Bec de Corbin - Critical Stun",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 2020,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 68,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4845,
+    "template": {
+      "name": "Bec de Corbin - Light",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 600,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 68,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4846,
+    "template": {
+      "name": "Scorpion - Anger",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1990,
+      "price": 4780000
+    },
+    "stats": {
+      "pAtk": 144,
+      "mAtk": 78,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1912
+    }
+  },
+  {
+    "selfId": 4847,
+    "template": {
+      "name": "Scorpion - Critical Stun",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1990,
+      "price": 4780000
+    },
+    "stats": {
+      "pAtk": 144,
+      "mAtk": 78,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1912
+    }
+  },
+  {
+    "selfId": 4849,
+    "template": {
+      "name": "Widow Maker - Critical Stun",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1980,
+      "price": 4780000
+    },
+    "stats": {
+      "pAtk": 144,
+      "mAtk": 78,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1912
+    }
+  },
+  {
+    "selfId": 4852,
+    "template": {
+      "name": "Orcish Poleaxe - Critical Stun",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1950,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 156,
+      "mAtk": 83,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4855,
+    "template": {
+      "name": "Great Axe - Anger",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1940,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 175,
+      "mAtk": 91,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4856,
+    "template": {
+      "name": "Great Axe - Critical Stun",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1940,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 175,
+      "mAtk": 91,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4857,
+    "template": {
+      "name": "Great Axe - Light",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 580,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 175,
+      "mAtk": 91,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4858,
+    "template": {
+      "name": "Lance - Anger",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1920,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 194,
+      "mAtk": 99,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4859,
+    "template": {
+      "name": "Lance - Critical Stun",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1920,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 194,
+      "mAtk": 99,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4861,
+    "template": {
+      "name": "Halberd - Critical Stun",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1900,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 107,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 4864,
+    "template": {
+      "name": "Heavy Doom Hammer - Magic Regeneration",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1020,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 103,
+      "mAtk": 81,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4865,
+    "template": {
+      "name": "Heavy Doom Hammer - Mental Shield",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1020,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 103,
+      "mAtk": 81,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4866,
+    "template": {
+      "name": "Heavy Doom Hammer - Magic Hold",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1020,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 103,
+      "mAtk": 81,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4867,
+    "template": {
+      "name": "Crystal Staff - Rsk. Evasion",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1020,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 103,
+      "mAtk": 81,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4868,
+    "template": {
+      "name": "Crystal Staff - Mana Up",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1020,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 103,
+      "mAtk": 81,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4869,
+    "template": {
+      "name": "Crystal Staff - Bodily Blessing",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1020,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 103,
+      "mAtk": 81,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4870,
+    "template": {
+      "name": "Heavy Doom Axe - Magic Poison",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1010,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 103,
+      "mAtk": 81,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4871,
+    "template": {
+      "name": "Heavy Doom Axe - Magic Weakness",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1010,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 103,
+      "mAtk": 81,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4872,
+    "template": {
+      "name": "Heavy Doom Axe - Magic Chaos",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1010,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 103,
+      "mAtk": 81,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 4873,
+    "template": {
+      "name": "Cursed Staff - Magic Hold",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1000,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 119,
+      "mAtk": 91,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4874,
+    "template": {
+      "name": "Cursed Staff - Magic Poison",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1000,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 119,
+      "mAtk": 91,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4875,
+    "template": {
+      "name": "Cursed Staff - Magic Weakness",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1000,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 119,
+      "mAtk": 91,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 4876,
+    "template": {
+      "name": "Paradia Staff - Magic Regeneration",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1010,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 135,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4877,
+    "template": {
+      "name": "Paradia Staff - Mental Shield",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1010,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 135,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4878,
+    "template": {
+      "name": "Paradia Staff - Magic Hold",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1010,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 135,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4879,
+    "template": {
+      "name": "Pa'agrian Hammer - Rsk. Evasion",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1010,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 135,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4880,
+    "template": {
+      "name": "Pa'agrian Hammer - Magic Poison",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1010,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 135,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4881,
+    "template": {
+      "name": "Pa'agrian Hammer - Magic Weakness",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1010,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 135,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4882,
+    "template": {
+      "name": "Sage's Staff - Magic Hold",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1000,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 135,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4883,
+    "template": {
+      "name": "Sage's Staff - Magic Poison",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1000,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 135,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4884,
+    "template": {
+      "name": "Sage's Staff - Magic Weakness",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1000,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 135,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 4885,
+    "template": {
+      "name": "Pa'agrian Axe - Mana Up",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 990,
+      "price": 4780000
+    },
+    "stats": {
+      "pAtk": 141,
+      "mAtk": 104,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1912
+    }
+  },
+  {
+    "selfId": 4886,
+    "template": {
+      "name": "Pa'agrian Axe - Magic Weakness",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 990,
+      "price": 4780000
+    },
+    "stats": {
+      "pAtk": 141,
+      "mAtk": 104,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1912
+    }
+  },
+  {
+    "selfId": 4887,
+    "template": {
+      "name": "Pa'agrian Axe - Magic Chaos",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 990,
+      "price": 4780000
+    },
+    "stats": {
+      "pAtk": 141,
+      "mAtk": 104,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1912
+    }
+  },
+  {
+    "selfId": 4888,
+    "template": {
+      "name": "Deadman's Staff - Magic Regeneration",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1010,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 152,
+      "mAtk": 111,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4889,
+    "template": {
+      "name": "Deadman's Staff - Mental Shield",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1010,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 152,
+      "mAtk": 111,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4890,
+    "template": {
+      "name": "Deadman's Staff - Magic Hold",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1010,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 152,
+      "mAtk": 111,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4891,
+    "template": {
+      "name": "Ghoul's Staff - Rsk. Evasion",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1000,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 152,
+      "mAtk": 111,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4892,
+    "template": {
+      "name": "Ghoul's Staff - Mana Up",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1000,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 152,
+      "mAtk": 111,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4893,
+    "template": {
+      "name": "Ghoul's Staff - Bodily Blessing",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1000,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 152,
+      "mAtk": 111,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4894,
+    "template": {
+      "name": "Demon's Staff - Magic Poison",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 990,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 152,
+      "mAtk": 111,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4895,
+    "template": {
+      "name": "Demon's Staff - Magic Weakness",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 990,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 152,
+      "mAtk": 111,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4896,
+    "template": {
+      "name": "Demon's Staff - Magic Chaos",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 990,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 152,
+      "mAtk": 111,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 4897,
+    "template": {
+      "name": "Sprite's Staff - Magic Regeneration",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 960,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 170,
+      "mAtk": 122,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4898,
+    "template": {
+      "name": "Sprite's Staff - Mental Shield",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 960,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 170,
+      "mAtk": 122,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4899,
+    "template": {
+      "name": "Sprite's Staff - Magic Hold",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 960,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 170,
+      "mAtk": 122,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 4900,
+    "template": {
+      "name": "Staff of Evil Spirits - Magic Focus",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 930,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 189,
+      "mAtk": 132,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4901,
+    "template": {
+      "name": "Staff of Evil Spirits - Bodily Blessing",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 930,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 189,
+      "mAtk": 132,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 4902,
+    "template": {
+      "name": "Staff of Evil Spirits - Magic Poison",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 930,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 189,
+      "mAtk": 132,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 5596,
+    "template": {
+      "name": "Dasparion's Staff - Mana Up",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 920,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 207,
+      "mAtk": 143,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5597,
+    "template": {
+      "name": "Dasparion's Staff - Conversion",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 920,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 207,
+      "mAtk": 143,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5598,
+    "template": {
+      "name": "Dasparion's Staff - Acumen",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 920,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 207,
+      "mAtk": 143,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5599,
+    "template": {
+      "name": "Meteor Shower - Focus",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1600,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 107,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5600,
+    "template": {
+      "name": "Meteor Shower - Critical Bleed",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1600,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 107,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5601,
+    "template": {
+      "name": "Meteor Shower - Rsk. Haste",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1600,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 107,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5602,
+    "template": {
+      "name": "Elysian - Health",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1580,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 232,
+      "mAtk": 114,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5603,
+    "template": {
+      "name": "Elysian - Anger",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1580,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 232,
+      "mAtk": 114,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5604,
+    "template": {
+      "name": "Elysian - Critical Drain",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1580,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 232,
+      "mAtk": 114,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5605,
+    "template": {
+      "name": "Branch of The Mother Tree - Conversion",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 900,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 226,
+      "mAtk": 152,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5606,
+    "template": {
+      "name": "Branch of The Mother Tree - Magic Damage",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 900,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 226,
+      "mAtk": 152,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5607,
+    "template": {
+      "name": "Branch of The Mother Tree - Acumen",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 900,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 226,
+      "mAtk": 152,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5608,
+    "template": {
+      "name": "Carnage Bow - Light",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 500,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 440,
+      "mAtk": 107,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 9,
+      "soulshot": 2,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5609,
+    "template": {
+      "name": "Carnage Bow - Critical Bleed",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1670,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 440,
+      "mAtk": 107,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 9,
+      "soulshot": 2,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5610,
+    "template": {
+      "name": "Carnage Bow - Mana Up",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1670,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 440,
+      "mAtk": 107,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 9,
+      "soulshot": 2,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5611,
+    "template": {
+      "name": "Soul Bow - Cheap Shot",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1660,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 528,
+      "mAtk": 125,
+      "pAtkRnd": 5,
+      "atkSpd": 227,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 10,
+      "soulshot": 2,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5612,
+    "template": {
+      "name": "Soul Bow - Quick Recovery",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1660,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 528,
+      "mAtk": 125,
+      "pAtkRnd": 5,
+      "atkSpd": 227,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 10,
+      "soulshot": 2,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5613,
+    "template": {
+      "name": "Soul Bow - Critical Poison",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1660,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 528,
+      "mAtk": 125,
+      "pAtkRnd": 5,
+      "atkSpd": 227,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 10,
+      "soulshot": 2,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5614,
+    "template": {
+      "name": "Bloody Orchid - Focus",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 960,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 186,
+      "mAtk": 107,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5615,
+    "template": {
+      "name": "Bloody Orchid - Back Blow",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 960,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 186,
+      "mAtk": 107,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5616,
+    "template": {
+      "name": "Bloody Orchid - Critical Bleed",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 960,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 186,
+      "mAtk": 107,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5617,
+    "template": {
+      "name": "Soul Separator - Guidance",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 950,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 203,
+      "mAtk": 114,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5618,
+    "template": {
+      "name": "Soul Separator - Critical Damage",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 950,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 203,
+      "mAtk": 114,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5619,
+    "template": {
+      "name": "Soul Separator - Rsk. Haste",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 950,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 203,
+      "mAtk": 114,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5620,
+    "template": {
+      "name": "Blood Tornado - Haste",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1370,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 259,
+      "mAtk": 107,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5621,
+    "template": {
+      "name": "Blood Tornado - Focus",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1370,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 259,
+      "mAtk": 107,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5622,
+    "template": {
+      "name": "Blood Tornado - Anger",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1370,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 259,
+      "mAtk": 107,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5623,
+    "template": {
+      "name": "Dragon Grinder - Rsk. Evasion",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1350,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 282,
+      "mAtk": 114,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5624,
+    "template": {
+      "name": "Dragon Grinder - Guidance",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1350,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 282,
+      "mAtk": 114,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5625,
+    "template": {
+      "name": "Dragon Grinder - Health",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1350,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 282,
+      "mAtk": 114,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5626,
+    "template": {
+      "name": "Halberd - Haste",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1900,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 107,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5627,
+    "template": {
+      "name": "Halberd - Critical Stun",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1900,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 107,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5628,
+    "template": {
+      "name": "Halberd - Wide Blow",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1900,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 107,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5632,
+    "template": {
+      "name": "Tallum Glaive - Guidance",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1840,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 232,
+      "mAtk": 114,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5633,
+    "template": {
+      "name": "Tallum Glaive - Health",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1840,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 232,
+      "mAtk": 114,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5634,
+    "template": {
+      "name": "Tallum Glaive - Wide Blow",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1840,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 232,
+      "mAtk": 114,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5635,
+    "template": {
+      "name": "Tallum Blade - Critical Poison",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1330,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 107,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5636,
+    "template": {
+      "name": "Tallum Blade - Haste",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1330,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 107,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5637,
+    "template": {
+      "name": "Tallum Blade - Anger",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1330,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 213,
+      "mAtk": 107,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5638,
+    "template": {
+      "name": "Elemental Sword - Magic Power",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 830,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 170,
+      "mAtk": 143,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5639,
+    "template": {
+      "name": "Elemental Sword - Magic Paralyze",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 830,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 170,
+      "mAtk": 143,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5640,
+    "template": {
+      "name": "Elemental Sword - Empower",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 830,
+      "price": 18300000
+    },
+    "stats": {
+      "pAtk": 170,
+      "mAtk": 143,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 1464
+    }
+  },
+  {
+    "selfId": 5641,
+    "template": {
+      "name": "Sword of Miracles - Magic Power",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 840,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 186,
+      "mAtk": 152,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5642,
+    "template": {
+      "name": "Sword of Miracles - Magic Silence",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 840,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 186,
+      "mAtk": 152,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5643,
+    "template": {
+      "name": "Sword of Miracles - Acumen",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 840,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 186,
+      "mAtk": 152,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5644,
+    "template": {
+      "name": "Dragon Slayer - Health",
+      "kind": "Weapon.GreatSword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1840,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 282,
+      "mAtk": 114,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5645,
+    "template": {
+      "name": "Dragon Slayer - Critical Bleed",
+      "kind": "Weapon.GreatSword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1840,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 282,
+      "mAtk": 114,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5646,
+    "template": {
+      "name": "Dragon Slayer - Critical Drain",
+      "kind": "Weapon.GreatSword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1840,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 282,
+      "mAtk": 114,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5647,
+    "template": {
+      "name": "Dark Legion's Edge - Critical Damage",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1320,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 232,
+      "mAtk": 114,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5648,
+    "template": {
+      "name": "Dark Legion's Edge - Health",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1320,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 232,
+      "mAtk": 114,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 5649,
+    "template": {
+      "name": "Dark Legion's Edge - Rsk. Focus",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1320,
+      "price": 27000000
+    },
+    "stats": {
+      "pAtk": 232,
+      "mAtk": 114,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "a",
+      "cristals": 2160
+    }
+  },
+  {
+    "selfId": 6307,
+    "template": {
+      "name": "Sword of Limit - Guidance",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1400,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 6308,
+    "template": {
+      "name": "Sword of Limit - Critical Drain",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1400,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 6309,
+    "template": {
+      "name": "Sword of Limit - Health",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1400,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 6310,
+    "template": {
+      "name": "Sword of Whispering Death - Empower",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 920,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 111,
+      "mAtk": 101,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 6311,
+    "template": {
+      "name": "Sword of Whispering Death - Magic Power",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 920,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 111,
+      "mAtk": 101,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 6312,
+    "template": {
+      "name": "Sword of Whispering Death - Magic Silence",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 920,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 111,
+      "mAtk": 101,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 6313,
+    "template": {
+      "name": "Homunkulus's Sword - Acumen",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 950,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 111,
+      "mAtk": 101,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 6314,
+    "template": {
+      "name": "Homunkulus's Sword - Conversion",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 950,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 111,
+      "mAtk": 101,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 6315,
+    "template": {
+      "name": "Homunkulus's Sword - Magic Paralyze",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 950,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 111,
+      "mAtk": 101,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 6347,
+    "template": {
+      "name": "Berserker Blade - Focus",
+      "kind": "Weapon.GreatSword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1380,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 190,
+      "mAtk": 83,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 6348,
+    "template": {
+      "name": "Berserker Blade - Critical Damage",
+      "kind": "Weapon.GreatSword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1380,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 190,
+      "mAtk": 83,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 6349,
+    "template": {
+      "name": "Berserker Blade - Haste",
+      "kind": "Weapon.GreatSword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1380,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 190,
+      "mAtk": 83,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 6356,
+    "template": {
+      "name": "Dark Elven Dagger - Rsk. Haste",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1050,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 94,
+      "mAtk": 61,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 6357,
+    "template": {
+      "name": "Stiletto - Rsk. Haste",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1030,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 107,
+      "mAtk": 68,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 6358,
+    "template": {
+      "name": "Crystal Dagger - Critical Damage",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1000,
+      "price": 6130000
+    },
+    "stats": {
+      "pAtk": 136,
+      "mAtk": 83,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 2452
+    }
+  },
+  {
+    "selfId": 6359,
+    "template": {
+      "name": "Demon Dagger - Critical Damage",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 970,
+      "price": 13100000
+    },
+    "stats": {
+      "pAtk": 170,
+      "mAtk": 99,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1746
+    }
+  },
+  {
+    "selfId": 6581,
+    "template": {
+      "name": "Forgotten Blade - Haste",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1300,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 281,
+      "mAtk": 132,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6582,
+    "template": {
+      "name": "Forgotten Blade - Health",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1300,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 281,
+      "mAtk": 132,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6583,
+    "template": {
+      "name": "Forgotten Blade - Focus",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1300,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 281,
+      "mAtk": 132,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6584,
+    "template": {
+      "name": "Basalt Battlehammer - HP Drain",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1570,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 281,
+      "mAtk": 132,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6585,
+    "template": {
+      "name": "Basalt Battlehammer - Health",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1570,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 281,
+      "mAtk": 132,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6586,
+    "template": {
+      "name": "Basalt Battlehammer - HP Regeneration",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1570,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 281,
+      "mAtk": 132,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6587,
+    "template": {
+      "name": "Imperial Staff - Empower",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 910,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 274,
+      "mAtk": 175,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6588,
+    "template": {
+      "name": "Imperial Staff - MP Regeneration",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 910,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 274,
+      "mAtk": 175,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6589,
+    "template": {
+      "name": "Imperial Staff - Magic Hold",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 910,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 274,
+      "mAtk": 175,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6590,
+    "template": {
+      "name": "Angel Slayer - Crt. Damage",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 950,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 246,
+      "mAtk": 132,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6591,
+    "template": {
+      "name": "Angel Slayer - HP Drain",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 950,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 246,
+      "mAtk": 132,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6592,
+    "template": {
+      "name": "Angel Slayer - Haste",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 950,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 246,
+      "mAtk": 132,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6593,
+    "template": {
+      "name": "Shining Bow - Cheap Shot",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1650,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 581,
+      "mAtk": 132,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 11,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6594,
+    "template": {
+      "name": "Shining Bow - Focus",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1650,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 581,
+      "mAtk": 132,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 11,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6595,
+    "template": {
+      "name": "Shining Bow - Crt. Slow",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1650,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 581,
+      "mAtk": 132,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 11,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6596,
+    "template": {
+      "name": "Dragon Hunter Axe - HP Regeneration",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1820,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 342,
+      "mAtk": 132,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6597,
+    "template": {
+      "name": "Dragon Hunter Axe - Health",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1820,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 342,
+      "mAtk": 132,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6598,
+    "template": {
+      "name": "Dragon Hunter Axe - HP Drain",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1820,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 342,
+      "mAtk": 132,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6599,
+    "template": {
+      "name": "Saint Spear - Health",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1800,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 281,
+      "mAtk": 132,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6600,
+    "template": {
+      "name": "Saint Spear - Guidance",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1800,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 281,
+      "mAtk": 132,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6601,
+    "template": {
+      "name": "Saint Spear - Haste",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1800,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 281,
+      "mAtk": 132,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6602,
+    "template": {
+      "name": "Demon Splinter - Focus",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1350,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 342,
+      "mAtk": 132,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6603,
+    "template": {
+      "name": "Demon Splinter - Health",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1350,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 342,
+      "mAtk": 132,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6604,
+    "template": {
+      "name": "Demon Splinter - Crt. Stun",
+      "kind": "Weapon.DualFist",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1350,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 342,
+      "mAtk": 132,
+      "pAtkRnd": 5,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6605,
+    "template": {
+      "name": "Heavens Divider - Haste",
+      "kind": "Weapon.GreatSword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1380,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 342,
+      "mAtk": 132,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6606,
+    "template": {
+      "name": "Heavens Divider - Health",
+      "kind": "Weapon.GreatSword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1380,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 342,
+      "mAtk": 132,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6607,
+    "template": {
+      "name": "Heavens Divider - Focus",
+      "kind": "Weapon.GreatSword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1380,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 342,
+      "mAtk": 132,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6608,
+    "template": {
+      "name": "Arcana Mace - Acumen",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1300,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 225,
+      "mAtk": 175,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6609,
+    "template": {
+      "name": "Arcana Mace - MP Regeneration",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1300,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 225,
+      "mAtk": 175,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 6610,
+    "template": {
+      "name": "Arcana Mace - Mana Up",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1300,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 225,
+      "mAtk": 175,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 7576,
+    "template": {
+      "name": "Draconic Bow - Cheap Shot",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1650,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 581,
+      "mAtk": 132,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 11,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 7577,
+    "template": {
+      "name": "Draconic Bow - Focus",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1650,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 581,
+      "mAtk": 132,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 11,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 7578,
+    "template": {
+      "name": "Draconic Bow - Critical Slow",
+      "kind": "Weapon.Bow",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1650,
+      "price": 48800000
+    },
+    "stats": {
+      "pAtk": 581,
+      "mAtk": 132,
+      "pAtkRnd": 5,
+      "atkSpd": 293,
+      "crit": 120,
+      "accur": -3,
+      "reuseDelay": 1500
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 11,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "s",
+      "cristals": 2440
+    }
+  },
+  {
+    "selfId": 7701,
+    "template": {
+      "name": "Stick of Faith - Mana Up",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1160,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 85,
+      "mAtk": 81,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 7702,
+    "template": {
+      "name": "Stick of Faith - Magic Hold",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1160,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 85,
+      "mAtk": 81,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 7703,
+    "template": {
+      "name": "Stick of Faith - Magic Shield",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1160,
+      "price": 2290000
+    },
+    "stats": {
+      "pAtk": 85,
+      "mAtk": 81,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 916
+    }
+  },
+  {
+    "selfId": 7704,
+    "template": {
+      "name": "Stick of Eternity - Empower",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1130,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 111,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 7705,
+    "template": {
+      "name": "Stick of Eternity - Rsk.,Evasion",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1130,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 111,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 7706,
+    "template": {
+      "name": "Stick of Eternity - Blessed Body",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1130,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 111,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 7707,
+    "template": {
+      "name": "Nirvana Axe - Magic Power",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1150,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 111,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 7708,
+    "template": {
+      "name": "Nirvana Axe - Magic Poison",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1150,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 111,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 7709,
+    "template": {
+      "name": "Nirvana Axe - Magic Weakness",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1150,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 111,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 7710,
+    "template": {
+      "name": "Club of Nature - Acumen",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1100,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 111,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 7711,
+    "template": {
+      "name": "Club of Nature - Magic Mental Shield",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1100,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 111,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 7712,
+    "template": {
+      "name": "Club of Nature - Magic Hold",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1100,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 111,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 7713,
+    "template": {
+      "name": "Mace of The Underworld - Mana Up",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1090,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 111,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 7714,
+    "template": {
+      "name": "Mace of The Underworld - Magic Silence",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1090,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 111,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 7715,
+    "template": {
+      "name": "Mace of The Underworld - Conversion",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1090,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 111,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 379,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 7716,
+    "template": {
+      "name": "Inferno Staff - Acumen",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1000,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 135,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 7717,
+    "template": {
+      "name": "Inferno Staff - Magic Silence",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1000,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 135,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 7718,
+    "template": {
+      "name": "Inferno Staff - Magic Paralyze",
+      "kind": "Weapon.Blunt",
+      "class1": 0,
+      "class2": 0,
+      "mass": 1000,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 135,
+      "mAtk": 101,
+      "pAtkRnd": 20,
+      "atkSpd": 325,
+      "crit": 40,
+      "accur": 4,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 7719,
+    "template": {
+      "name": "Poleaxe - Critical Stun",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 2010,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 7720,
+    "template": {
+      "name": "Poleaxe - Towering Blow",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 2010,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 80
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 7721,
+    "template": {
+      "name": "Poleaxe - Wide Blow",
+      "kind": "Weapon.Pole",
+      "class1": 0,
+      "class2": 0,
+      "mass": 2010,
+      "price": 4300000
+    },
+    "stats": {
+      "pAtk": 139,
+      "mAtk": 76,
+      "pAtkRnd": 10,
+      "atkSpd": 325,
+      "crit": 80,
+      "accur": -3,
+      "attackRange": 66
+    },
+    "etc": {
+      "slot": 14,
+      "mp": 0,
+      "soulshot": 3,
+      "spiritshot": 3,
+      "rank": "c",
+      "cristals": 1720
+    }
+  },
+  {
+    "selfId": 7722,
+    "template": {
+      "name": "Sword of Valhalla - Acumen",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 900,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 140,
+      "mAtk": 122,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 7723,
+    "template": {
+      "name": "Sword of Valhalla - Magic Weakness",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 900,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 140,
+      "mAtk": 122,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 7724,
+    "template": {
+      "name": "Sword of Valhalla - Magic Regeneration",
+      "kind": "Weapon.Sword",
+      "class1": 0,
+      "class2": 0,
+      "mass": 900,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 140,
+      "mAtk": 122,
+      "pAtkRnd": 10,
+      "atkSpd": 379,
+      "crit": 80,
+      "accur": 0,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 7810,
+    "template": {
+      "name": "Soulfire Dirk - Mana Up",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 750,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 86,
+      "mAtk": 91,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 7811,
+    "template": {
+      "name": "Soulfire Dirk - Magic Hold",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 750,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 86,
+      "mAtk": 91,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 7812,
+    "template": {
+      "name": "Soulfire Dirk - Magic Silence",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 750,
+      "price": 2870000
+    },
+    "stats": {
+      "pAtk": 86,
+      "mAtk": 91,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 2,
+      "spiritshot": 2,
+      "rank": "c",
+      "cristals": 1148
+    }
+  },
+  {
+    "selfId": 7813,
+    "template": {
+      "name": "Hell Knife - Magic Regeneration",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 740,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 122,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 7814,
+    "template": {
+      "name": "Hell Knife - Mental Shield",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 740,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 122,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  },
+  {
+    "selfId": 7815,
+    "template": {
+      "name": "Hell Knife - Magic Weakness",
+      "kind": "Weapon.Knife",
+      "class1": 0,
+      "class2": 0,
+      "mass": 740,
+      "price": 8680000
+    },
+    "stats": {
+      "pAtk": 122,
+      "mAtk": 122,
+      "pAtkRnd": 5,
+      "atkSpd": 433,
+      "crit": 120,
+      "accur": -3,
+      "attackRange": 40
+    },
+    "etc": {
+      "slot": 7,
+      "mp": 0,
+      "soulshot": 1,
+      "spiritshot": 1,
+      "rank": "b",
+      "cristals": 1157
+    }
+  }
+]

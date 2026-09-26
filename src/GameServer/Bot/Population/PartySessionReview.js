@@ -24,8 +24,13 @@ function assess(party, members, timestamp, options = {}) {
     const assemblyExpired = AssemblyRecovery.expired(party);
     const understaffed = party.stats?.objective?.clanGoalKey
         && members.length < Math.max(2, Number(party.stats.objective.minPartySize) || 3);
-    const assemblyRecovered = assemblyExpired && !understaffed
+    const raidObjective = party.stats?.objective?.sourceKind === 'raid'
+        || party.stats?.objective?.raidBoss === true;
+    const raidRosterIncomplete = raidObjective
+        && !require('../../Clan/ClanRaidPolicy').composition(members).ready;
+    const assemblyRecovered = assemblyExpired && !understaffed && !raidRosterIncomplete
         && require('./PartyHuntingAssembly').ready(party, members, { id: party.spotId });
+    const abandonedRaid = require('./ClanEquipmentPartyPolicy').abandonedRaid(party);
     const target = Number(party.stats?.objective?.npcId || party.stats?.acquisitionGoal?.next?.npcId || 0);
     const concerns = {}, decisions = [], experience = {};
     const eligible = new Set(Rewards.validMemberIndexes(members.map(m => Number(m.level || 1))));
@@ -71,6 +76,9 @@ function assess(party, members, timestamp, options = {}) {
             else if (active && !sameTarget && !sharedClan && !helping
                 && (!profitable || plan.requiresParty || plan.partyNeed === 'required')) reason = 'party_goals_diverged';
         }
+        if (options.requiresWeaponBridge?.(member)) reason = 'weapon_bridge';
+        const equipmentBridgeReason = options.equipmentBridgeReason?.(member);
+        if (equipmentBridgeReason) reason = equipmentBridgeReason;
         // Recovery alone proves nothing, but it must not hide repeated failed
         // fights already observed over the member's patience window.
         if (!marketPaused && noExperience) reason = 'party_no_experience';
@@ -79,6 +87,7 @@ function assess(party, members, timestamp, options = {}) {
         if (!require('./ClanEquipmentPartyPolicy').allowed(member, party.stats?.objective, timestamp)) {
             reason = 'clan_party_unsafe';
         }
+        if (abandonedRaid) reason = 'raid_failed';
         const prior = previous.concerns?.[member.characterId];
         const since = prior?.reason === reason ? Number(prior.since) : timestamp;
         // Suspend a goal/conflict grace period while recovering instead of
@@ -87,7 +96,9 @@ function assess(party, members, timestamp, options = {}) {
             ...prior, since: Number(prior.since) + Math.max(0, timestamp - Number(previous.at || timestamp))
         };
         if (reason) concerns[member.characterId] = { reason, since };
-        const grace = [AssemblyRecovery.REASON, 'party_no_progress', 'party_no_experience', 'clan_party_unsafe'].includes(reason) ? 0 : (2 + commitment * 4) * MINUTE;
+        const grace = [AssemblyRecovery.REASON, 'party_no_progress', 'party_no_experience', 'clan_party_unsafe', 'weapon_bridge', 'class_armor_bridge', 'raid_failed'].includes(reason)
+            ? 0
+            : (2 + commitment * 4) * MINUTE;
         const leave = !!reason && timestamp - since >= grace;
         decisions.push({ characterId: member.characterId, leave,
             reason: reason || (paused ? 'party_recovering_or_travelling' : sameTarget || sharedClan ? 'party_shared_goal'
