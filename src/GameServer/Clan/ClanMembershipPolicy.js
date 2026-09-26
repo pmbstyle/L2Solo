@@ -38,6 +38,21 @@ function activeGoalKeys(clanState = {}) {
         && !['completed', 'cancelled', 'failed', 'abandoned'].includes(goal.status)).map(goal => goal.goalKey));
 }
 
+function activeRaidGoalKeys(parties = []) {
+    return new Set((parties || []).filter((party) => {
+        const objective = party?.stats?.objective;
+        const started = (objective?.sourceKind === 'raid' || objective?.raidBoss === true)
+            && (['preparing', 'ready'].includes(party?.stats?.raidPreparation?.status)
+                || party?.stats?.raidEncounter?.status === 'active');
+        const minPartySize = Math.max(2, Number(objective?.minPartySize) || 7);
+        return party?.status !== 'dissolved'
+            && started
+            && !['defeated', 'failed'].includes(party?.stats?.raidEncounter?.status)
+            && (party?.memberIds || []).length >= minPartySize
+            && objective?.clanGoalKey;
+    }).map((party) => party.stats.objective.clanGoalKey));
+}
+
 function reconcileGoals(state, keys) {
     const current = state.stats || {};
     const stalePlan = current.equipmentPlan?.clanGoal?.goalKey
@@ -79,4 +94,5 @@ function preserveGoalInvalidation(state, current = {}) {
     return { ...state, stats };
 }
 
-module.exports = { reconcileState, reconcileParty, activeGoalKeys, reconcileGoals, preserveGoalInvalidation };
+module.exports = { reconcileState, reconcileParty, activeGoalKeys, activeRaidGoalKeys,
+    reconcileGoals, preserveGoalInvalidation };

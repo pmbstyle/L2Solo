@@ -42,6 +42,15 @@ module.exports = ({ all, write, inTransaction, now }) => {
         const members = [], parties = [];
         for (const clan of clans) {
             const keys = Policy.activeGoalKeys(JSON.parse(clan.stateJson || '{}'));
+            const activeClanParties = all(`SELECT p.* FROM bot_background_parties p
+                JOIN characters c ON c.id = p.leaderId
+                WHERE c.clanId = ? AND p.status IN ('active', 'hot')`, [clan.clanId])
+                .map((row) => ({
+                    status: row.status,
+                    memberIds: JSON.parse(row.memberIdsJson || '[]'),
+                    stats: JSON.parse(row.statsJson || '{}')
+                }));
+            for (const goalKey of Policy.activeRaidGoalKeys(activeClanParties)) keys.add(goalKey);
             const rows = all(`SELECT life.* FROM bot_life_state life JOIN characters c ON c.id = life.characterId
                 WHERE c.clanId = ? AND (json_extract(life.statsJson, '$.equipmentPlan.clanGoal.goalKey') IS NOT NULL
                     OR json_extract(life.statsJson, '$.clanPartyObjective.clanGoalKey') IS NOT NULL
