@@ -158,7 +158,7 @@ See full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 - Complete Lineage 2 C4 experience
 
 <p align="center">
-<img src="https://github.com/user-attachments/assets/d70a064e-909d-4069-9586-6db3aab0a517" />
+<img src="https://github.com/user-attachments/assets/fe2765b5-193b-411b-a208-f466e10ed2e2" />
 </p>
 
 ## 🎮 Wanna play now?
