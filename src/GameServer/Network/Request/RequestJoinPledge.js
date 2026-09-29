@@ -3,6 +3,7 @@ const World = invoke('GameServer/World/World');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const ClanInviteService = invoke('GameServer/Clan/ClanInviteService');
 const ServerResponse = invoke('GameServer/Network/Response');
+const ActionMessage = invoke('GameServer/Clan/ClanActionMessage');
 
 function targetSessionById(id) {
     return (World.user?.sessions || []).find((session) => Number(session.actor?.fetchId?.()) === Number(id));
@@ -26,6 +27,7 @@ function consume(session, data) {
 
     if (!allowed.ok) {
         session.dataSendToMe(ServerResponse.actionFailed());
+        ActionMessage.failure(session, allowed.code);
         return;
     }
 
@@ -34,10 +36,13 @@ function consume(session, data) {
         clanId: allowed.clan.id
     };
 
+    ActionMessage.send(session, `Clan invitation sent to ${target.fetchName()}.`);
+
     if (ClanInviteService.isBotSession(targetSession)) {
         return ClanInviteService.accept(targetSession, { answer: 1, automated: true });
     }
 
+    ActionMessage.send(targetSession, `${session.actor.fetchName()} invited you to join clan ${allowed.clan.name}.`);
     return targetSession.dataSendToMe(ServerResponse.askJoinPledge(session.actor.fetchId(), allowed.clan.name));
 }
 
