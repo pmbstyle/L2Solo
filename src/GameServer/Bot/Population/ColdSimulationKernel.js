@@ -302,8 +302,21 @@ function priorityForResult(state, result) {
     return 'P2';
 }
 
-function proposalPayloadBytes(proposals = []) {
-    return Protocol.byteLength({ proposals });
+// JSON of { proposals: [a, b] } is the empty payload plus each proposal's
+// own JSON and one comma between neighbours, so a batch can be sized from
+// its members' sizes without serialising the growing batch again.
+const EMPTY_PROPOSAL_PAYLOAD_BYTES = Protocol.byteLength({ proposals: [] });
+
+function proposalSizes(proposals = []) {
+    return proposals.map((proposal) => Protocol.byteLength(proposal));
+}
+
+function proposalPayloadBytes(count, itemBytes) {
+    return EMPTY_PROPOSAL_PAYLOAD_BYTES + itemBytes + Math.max(0, count - 1);
+}
+
+function groupPayloadBytes(sizes = []) {
+    return proposalPayloadBytes(sizes.length, sizes.reduce((sum, size) => sum + size, 0));
 }
 
 function compactProposal(proposal = {}, includeInventory = true) {
@@ -1239,6 +1252,7 @@ class ColdSimulationKernel {
                 return rank[a.priority] - rank[b.priority] || a.enqueuedAt - b.enqueuedAt;
             });
         const proposals = [];
+        let itemBytes = 0;
         const oversized = [];
         const visited = new Set();
         for (const proposal of eligible) {
@@ -1248,29 +1262,35 @@ class ColdSimulationKernel {
             if (proposals.length + group.length > limit) break;
             group.forEach(entry => visited.add(entry.characterId));
             let transportGroup = group;
-            if (proposalPayloadBytes(group) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+            let transportSizes = proposalSizes(group);
+            if (groupPayloadBytes(transportSizes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
                 this.stats.proposalOversize += group.length;
                 transportGroup = group.map(entry => compactProposal(entry, true));
-                if (proposalPayloadBytes(transportGroup) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                transportSizes = proposalSizes(transportGroup);
+                if (groupPayloadBytes(transportSizes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
                     transportGroup = group.map(entry => compactProposal(entry, false));
+                    transportSizes = proposalSizes(transportGroup);
                 }
-                if (proposalPayloadBytes(transportGroup) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                if (groupPayloadBytes(transportSizes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
                     transportGroup = transportGroup.map(entry => {
                         const base = this.inFlight.get(Number(entry.characterId))?.state;
                         if (!base || !entry.nextState) return entry;
                         const { nextState, ...transport } = entry;
                         return { ...transport, nextStateDelta: ColdStateDelta.create(base, nextState) };
                     });
+                    transportSizes = proposalSizes(transportGroup);
                 }
-                if (proposalPayloadBytes(transportGroup) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                if (groupPayloadBytes(transportSizes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
                     oversized.push(...group);
                     continue;
                 }
                 this.stats.proposalCompactions += group.length;
             }
-            const candidate = [...proposals, ...transportGroup];
-            if (proposalPayloadBytes(candidate) > PROPOSAL_PAYLOAD_LIMIT_BYTES) break;
+            const candidateItemBytes = transportSizes.reduce((sum, size) => sum + size, itemBytes);
+            const candidateCount = proposals.length + transportGroup.length;
+            if (proposalPayloadBytes(candidateCount, candidateItemBytes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) break;
             proposals.push(...transportGroup);
+            itemBytes = candidateItemBytes;
         }
         oversized.forEach((proposal) => {
             if (proposal.raidStepId) require('./ColdRaidEncounter').abort(proposal.raidStepId);
