@@ -25,6 +25,21 @@ DataCache.npcSpawns = groups;
 const world = { npc: { nextId: 1000000, spawns: [], periodMode: 'day' } };
 SpawnNpcs.call(world);
 assert.strictEqual(world.npc.spawns.length, 182);
+const NpcInfo = invoke('GameServer/Network/Response/NpcInfo');
+const guildDisplayIds = new Map([[8833, 8735], [8834, 8729], [8835, 8733], [8836, 8730],
+    [8837, 8731], [8838, 8738], [8839, 8730], [8840, 8732], [8841, 8734]]);
+for (const npc of world.npc.spawns) {
+    const selfId = npc.fetchSelfId();
+    const packet = NpcInfo(npc);
+    assert.strictEqual(packet.readInt32LE(5), 1000000 + (guildDisplayIds.get(selfId) ?? selfId));
+    assert.strictEqual(npc.fetchSelfId(), selfId);
+}
+for (const selfId of guildDisplayIds.keys()) {
+    const npc = world.npc.spawns.find(npc => npc.fetchSelfId() === selfId);
+    const session = { actor: {}, dataSendToMe: () => {} };
+    NpcTalk(session, npc);
+    assert.strictEqual(session.activeNpcTalk.selfId, selfId);
+}
 for (const [id, coords] of [[8267, [146440, -57500, -2968]], [8311, [43556, -48592, -792]],
     [8698, [38208, -48048, 896]], [8699, [38384, -48064, -1152]]]) {
     const npc = world.npc.spawns.find(npc => npc.fetchSelfId() === id);
