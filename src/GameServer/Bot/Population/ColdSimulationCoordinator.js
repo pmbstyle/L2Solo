@@ -351,7 +351,10 @@ class ColdSimulationCoordinator {
         });
         this.worker = worker;
         this.counters.workersStarted += 1;
-        worker.on('message', (message) => { this.onMessage(message); });
+        // Claim and release requests write SQLite; a busy database must not
+        // become an unhandled rejection. The worker times out a lost claim
+        // acknowledgement and queues the bot again.
+        worker.on('message', (message) => { this.onMessage(message).catch((error) => this.recordError(error)); });
         worker.on('error', (error) => this.onWorkerError(error));
         worker.on('exit', (code) => this.onWorkerExit(code));
     }
