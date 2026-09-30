@@ -1,4 +1,5 @@
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
+const { isAutomaticArenaBuff } = require('./ArenaBuffEligibility');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const World = invoke('GameServer/World/World');
@@ -244,8 +245,7 @@ function menu(session, minLevel = 1, maxLevel = 80, classId = null, nameQuery = 
 function applySelfBuffs(session, actor) {
     const SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
     const skills = actor?.skillset?.fetchSkills?.() || [];
-    skills.filter((skill) => skill.fetchTargetKind?.() === 'self'
-        && skill.fetchSemantic?.().effectType === 'buff')
+    skills.filter(isAutomaticArenaBuff)
         .forEach((skill) => {
             try { SkillEffects.execute(session, actor, actor, skill, { selfEffectOnly: true }); } catch (_) {}
         });
