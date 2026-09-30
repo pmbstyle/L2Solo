@@ -280,6 +280,7 @@ const tests = [
     'tests/test_friend_party_market_withdrawal.js',
     'tests/test_bot_goal_planner.js',
     'tests/test_bot_goal_market_priority.js',
+    'tests/test_market_demand_signal_memo.js',
     'tests/test_bot_market_goal_reconcile.js',
     'tests/test_bot_cold_travel.js',
     'tests/test_bot_cold_travel_without_spot.js',
