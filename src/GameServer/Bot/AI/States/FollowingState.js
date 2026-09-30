@@ -1851,6 +1851,9 @@ module.exports = {
             }
         }
 
+        if (!acted && !partyThreat
+            && invoke('GameServer/Bot/AI/PendingSweep').tick(session, bot, Generics, BotAI)) acted = true;
+
         if (!acted) {
             const playerTargetId = leaderTargetId;
             if (playerTargetId && playerTargetId !== bot.fetchId() && playerTargetId !== player.fetchId() && !supportCanMeleeAssist(bot, role)) {

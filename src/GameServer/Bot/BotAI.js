@@ -161,6 +161,8 @@ function trySweep(session, bot, npc, Generics) {
         || typeof Generics?.skillExec !== 'function') return false;
 
     session.sweepAttemptedTargetId = targetId;
+    const pending = session.pendingSweeps?.get(targetId);
+    if (pending) pending.retryAt = Date.now() + 750;
     session.lastCombatDecision = {
         action: 'cast_sweep',
         role: 'spoiler',
@@ -387,6 +389,7 @@ const BotAI = {
         const bot = session.actor;
         if (!bot) return;
         const tickStartedAt = Date.now();
+        invoke('GameServer/Bot/AI/PendingSweep').prune(session, bot, tickStartedAt);
         let lodContext = { tier: 'preload' };
 
         try {

@@ -505,7 +505,9 @@ function moveTo(session, actor, coords) {
                 (!targetActor || (
                     Number(targetActor.fetchId?.()) === targetId &&
                     targetActor.fetchIsOnline?.() !== false &&
-                    targetActor.isDead?.() !== true &&
+                    (targetActor.isDead?.() !== true || (coords.allowDeadTarget === true
+                        && targetActor.corpseDecayState !== 'removed'
+                        && Number(targetActor.corpseDecayAt || Infinity) > Date.now())) &&
                     sameLoc(locOf(targetActor), targetStart, 128)
                 )) &&
                 !actor.isDead() &&

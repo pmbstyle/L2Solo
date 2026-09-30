@@ -262,7 +262,8 @@ class Automation extends SelectedModel {
                 src.moveTo({
                     from: { locX: src.fetchLocX(), locY: src.fetchLocY(), locZ: src.fetchLocZ() },
                     to: { locX: dst.fetchLocX(), locY: dst.fetchLocY(), locZ: dst.fetchLocZ() },
-                    targetActor: dst
+                    targetActor: dst,
+                    allowDeadTarget: options.allowDeadTarget === true
                 });
             } else this.abortAll(src);
             return false;

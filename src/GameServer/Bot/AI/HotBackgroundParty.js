@@ -395,6 +395,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         session.lastDecision = { action: 'party_buff_approach', targetId: session.pendingSupportCast.targetId, at: now };
         return true;
     }
+    if (!incoming && invoke('GameServer/Bot/AI/PendingSweep').tick(session, bot, Generics, AI, now)) return true;
     const distance = Threats.distance(bot, owner.actor);
     if (!incoming && session !== owner && distance > 700) {
         if (!session.pendingPathRequest && !bot.state.fetchTowards?.() && Restrictions.canMove(bot)) {
