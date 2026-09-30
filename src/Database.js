@@ -1908,6 +1908,26 @@ function coldSimulationRow(characterId) {
     return one('SELECT * FROM bot_life_state WHERE characterId = ?', [Number(characterId)]);
 }
 
+// A claim needs the lease columns and the workflow flags coldSimulationPartition
+// reads, not the whole row with its 9 KB stats. json_extract keeps JavaScript
+// truthiness for them: false, 0, '' and missing values come back as 0, '' or
+// NULL, objects and arrays as their JSON text. Empty stats parse to {} as in
+// parsedObject; malformed stats have no flags and fail as invalid_stats.
+const COLD_CLAIM_FLAGS = ['warehouseWorkflow', 'warehouseErrand', 'marketStore', 'marketReturn',
+    'craftShop', 'craftStationId', 'supplyErrand'];
+const COLD_CLAIM_SQL = `SELECT characterId, phase, activity, partyId,
+        simulationOwner, simulationRevision, simulationLeaseUntil,
+        (statsJson IS NULL OR statsJson = '' OR json_valid(statsJson)) AS statsValid,
+        ${COLD_CLAIM_FLAGS.map((flag) => `CASE WHEN json_valid(statsJson) THEN json_extract(statsJson, '$.${flag}') END AS "${flag}"`).join(',\n        ')}
+    FROM bot_life_state WHERE characterId = ?`;
+
+function coldClaimRow(characterId) {
+    const row = one(COLD_CLAIM_SQL, [Number(characterId)]);
+    if (!row) return { row: null, stats: undefined };
+    const stats = row.statsValid ? Object.fromEntries(COLD_CLAIM_FLAGS.map((flag) => [flag, row[flag]])) : null;
+    return { row, stats };
+}
+
 function coldSimulationConflict(row, request, timestamp) {
     if (!row) return 'missing_state';
     if (Number(row.simulationRevision || 0) !== Number(request.expectedRevision)) return 'stale_revision';
@@ -3205,8 +3225,8 @@ const Database = {
         if (ownerId !== COLD_SIMULATION_OWNER || !leaseId || leaseUntil <= timestamp) return Promise.resolve({ ok: false, reason: 'invalid_lease' });
 
         return inTransaction(() => {
-            const row = coldSimulationRow(characterId);
-            const partition = coldSimulationPartition(row, request);
+            const { row, stats } = coldClaimRow(characterId);
+            const partition = coldSimulationPartition(row, request, stats);
             if (!partition.ok) return partition;
             if (Number(row.simulationRevision || 0) !== expectedRevision) return { ok: false, reason: 'stale_revision' };
             const currentOwner = String(row.simulationOwner || LEGACY_SIMULATION_OWNER);
@@ -3243,8 +3263,8 @@ const Database = {
             if (ownerId !== COLD_SIMULATION_OWNER || !leaseId || leaseUntil <= timestamp) {
                 return { ok: false, characterId, reason: 'invalid_lease' };
             }
-            const row = coldSimulationRow(characterId);
-            const partition = coldSimulationPartition(row, request);
+            const { row, stats } = coldClaimRow(characterId);
+            const partition = coldSimulationPartition(row, request, stats);
             if (!partition.ok) return { ...partition, characterId };
             if (Number(row.simulationRevision || 0) !== expectedRevision) {
                 return {
