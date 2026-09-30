@@ -1159,9 +1159,40 @@ function flatten(listNames) {
     return rows;
 }
 
+// Gear planning asks every seller in every town for one item's price row, and
+// each question rebuilt that seller's whole list. The lists are static and
+// their prices depend only on the progression rate, so each seller's built
+// list is indexed by item once per rate.
+let rowIndexRate = null;
+const rowIndexes = new Map();
+
+function rowIndexForNpc(npcSelfId) {
+    const rate = progressionMultiplier();
+    if (rowIndexRate !== rate) {
+        rowIndexRate = rate;
+        rowIndexes.clear();
+    }
+    const key = String(npcSelfId);
+    if (!rowIndexes.has(key)) {
+        const index = new Map();
+        for (const row of flatten(NPC_LISTS[npcSelfId])) {
+            const selfId = Number(row.selfId);
+            if (!index.has(selfId)) index.set(selfId, row);
+        }
+        rowIndexes.set(key, index);
+    }
+    return rowIndexes.get(key);
+}
+
 module.exports = {
     fetchForNpc(npcSelfId) {
         return flatten(NPC_LISTS[npcSelfId]);
+    },
+
+    // The first row of fetchForNpc(npcSelfId) for this item, or null. The row
+    // is shared: read it, do not modify it.
+    rowForNpc(npcSelfId, selfId) {
+        return rowIndexForNpc(npcSelfId).get(Number(selfId)) || null;
     },
 
     npcIds() {

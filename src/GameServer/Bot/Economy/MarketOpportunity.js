@@ -81,7 +81,7 @@ function npcOffers(selfId, town) {
     const seen = new Set();
     TownNpcCatalog.rowsForTown(town).forEach((seller) => {
         const npcSelfId = Number(seller.npcSelfId);
-        const row = NpcShopBuyLists.fetchForNpc(npcSelfId).find((item) => Number(item.selfId) === Number(selfId));
+        const row = NpcShopBuyLists.rowForNpc(npcSelfId, selfId);
         if (!row) return;
         const price = Number(row.price || 0);
         const key = `${npcSelfId}:${price}:${seller.locX}:${seller.locY}:${seller.locZ}`;
