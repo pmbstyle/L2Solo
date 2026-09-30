@@ -1,4 +1,4 @@
-const { collectionPages, PAGE_BYTES } = require('./ColdMessagePages');
+const { collectionPagesWithBytes, PAGE_BYTES } = require('./ColdMessagePages');
 const path = require('path');
 const { randomUUID } = require('crypto');
 const { Worker } = require('worker_threads');
@@ -369,22 +369,23 @@ class ColdSimulationCoordinator {
         this.counters.invalidReasons[reason] = Number(this.counters.invalidReasons[reason] || 0) + 1;
     }
 
-    post(type, payload = {}, msgId = null) {
+    post(type, payload = {}, msgId = null, bytes = null) {
         if (!this.worker || !this.workerEpoch) return null;
         const message = Protocol.envelope(type, this.workerEpoch, payload, msgId);
-        const valid = Protocol.validateEnvelope(message, 'main', { workerEpoch: this.workerEpoch });
+        const valid = Protocol.validateEnvelope(message, 'main', { workerEpoch: this.workerEpoch, bytes });
         if (!valid.ok) {
             this.recordInvalid(`out_${type}_${valid.reason}`);
             return null;
         }
         this.counters.messagesOut += 1;
         this.counters.bytesOut += valid.bytes;
+        message.bytes = valid.bytes;
         this.worker.postMessage(message);
         return message.msgId;
     }
 
     postCollections(type, collections = {}, msgId = null) {
-        const pages = collectionPages(type, this.workerEpoch, collections, msgId, (value) => {
+        const pages = collectionPagesWithBytes(type, this.workerEpoch, collections, msgId, (value) => {
             this.recordInvalid(`out_${type}_single_item_too_large`);
             return value?.state ? {
                 ...value, state: null, context: {},
@@ -396,12 +397,12 @@ class ColdSimulationCoordinator {
             return this.post(type, Object.fromEntries(Object.keys(collections).map((field) => [field, []])), msgId) ? 1 : 0;
         }
         let sent = 0;
-        for (const page of pages) if (this.post(type, page, msgId)) sent++;
+        for (const page of pages) if (this.post(type, page.payload, msgId, page.bytes)) sent++;
         return sent;
     }
 
     async onMessage(message) {
-        const valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: this.workerEpoch });
+        const valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: this.workerEpoch, bytes: message?.bytes });
         if (!valid.ok) {
             this.recordInvalid(`in_${valid.reason}`);
             return;
@@ -845,7 +846,7 @@ class ColdSimulationCoordinator {
             initial: options.initial === true,
             ...(options.priority ? { priority: options.priority } : {})
         };
-        if (!this.post('snapshot_page', payload)) return false;
+        if (!this.post('snapshot_page', payload, null, options.bytes)) return false;
         this.counters.snapshotsSent += rows.length;
         this.counters.snapshotPages += 1;
         return true;
@@ -865,9 +866,10 @@ class ColdSimulationCoordinator {
         const flush = async () => {
             if (!page.length) return true;
             const rows = page;
+            const bytes = pageBytes;
             page = [];
             pageBytes = baseBytes;
-            if (!await this.sendSnapshotPage(rows, { initial: false, priority })) return false;
+            if (!await this.sendSnapshotPage(rows, { initial: false, priority, bytes })) return false;
             rowsSent += rows.length;
             pagesSent += 1;
             this.counters.snapshotYields += 1;
@@ -906,11 +908,12 @@ class ColdSimulationCoordinator {
         let pageBytes = baseBytes;
         let page = [];
         let pendingPage = null;
+        let pendingBytes = baseBytes;
         let rowsSent = 0;
         let pagesSent = 0;
 
-        const emit = async (rows, done) => {
-            if (!await this.sendSnapshotPage(rows, { done, initial: true })) return false;
+        const emit = async (rows, done, bytes) => {
+            if (!await this.sendSnapshotPage(rows, { done, initial: true, bytes })) return false;
             rowsSent += rows.length;
             pagesSent += 1;
             this.counters.snapshotYields += 1;
@@ -928,8 +931,9 @@ class ColdSimulationCoordinator {
             const rowBytes = Protocol.byteLength([row]) - 2;
             const tooLarge = page.length > 0 && pageBytes + rowBytes + 1 > PAGE_BYTES;
             if (tooLarge || page.length >= pageSize) {
-                if (pendingPage && !await emit(pendingPage, false)) return { ok: false, rowsSent, pagesSent };
+                if (pendingPage && !await emit(pendingPage, false, pendingBytes)) return { ok: false, rowsSent, pagesSent };
                 pendingPage = page;
+                pendingBytes = pageBytes;
                 page = [];
                 pageBytes = baseBytes;
             }
@@ -937,11 +941,12 @@ class ColdSimulationCoordinator {
             page.push(row);
         }
         if (page.length) {
-            if (pendingPage && !await emit(pendingPage, false)) return { ok: false, rowsSent, pagesSent };
+            if (pendingPage && !await emit(pendingPage, false, pendingBytes)) return { ok: false, rowsSent, pagesSent };
             pendingPage = page;
+            pendingBytes = pageBytes;
         }
         if (!pendingPage) pendingPage = [];
-        if (!await emit(pendingPage, true)) return { ok: false, rowsSent, pagesSent };
+        if (!await emit(pendingPage, true, pendingBytes)) return { ok: false, rowsSent, pagesSent };
         return { ok: true, rowsSent, pagesSent };
     }
 
