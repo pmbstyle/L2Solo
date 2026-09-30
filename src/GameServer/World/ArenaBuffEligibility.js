@@ -10,6 +10,10 @@ function isAutomaticArenaBuff(skill) {
     if (![SkillRules.EFFECT, SkillRules.HEAL_PERCENT].includes(semantic.skillType)) return false;
     if (semantic.operateType === 'toggle' || semantic.selfEffect || semantic.condition) return false;
 
+    // Totems and positional dagger Focus are mutually exclusive combat choices,
+    // left to intentional skill use. Ordinary Focus has a different effect key.
+    if (semantic.stackFamily === 'possession' || semantic.effect === 'dagger_focus') return false;
+
     const stats = semantic.stats || {};
     const bonuses = [stats, ...(semantic.conditionalStats || []).map((entry) => entry.stats || {}),
         ...(semantic.situationalStats || []).map((entry) => entry.stats || {})];
