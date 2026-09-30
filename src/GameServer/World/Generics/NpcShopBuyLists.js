@@ -1,3 +1,5 @@
+const NpcShopPriceScale = require('./NpcShopPriceScale');
+
 // Seeded from L2Hub C2 shop pages. Talking Island Lector, Silvia and Katerina
 // are confirmed by NPC sell-list pages; Jackson armor is still a partial
 // location-page seed until his C2 split lists are audited directly.
@@ -1129,19 +1131,25 @@ const SHOT_IDS = new Set([1835, 2509, 3947, 1463, 1464, 1465, 1466, 1467,
     2510, 2511, 2512, 2513, 2514, 3948, 3949, 3950, 3951, 3952]);
 function allowedEntry(entry) { return !SHOT_IDS.has(Number(typeof entry === 'number' ? entry : entry.selfId)); }
 
-function normalizeEntry(entry) {
+// Lists are rebuilt on every lookup, so the rate is read once per build;
+// resolving it for each row made shop lookups dominate bot planning time.
+function progressionMultiplier() {
+    return invoke('GameServer/ProgressionRates').profile().multiplier;
+}
+
+function normalizeEntry(entry, rate) {
     const row = typeof entry === 'number' ? { selfId: entry } : entry;
     if (row.price === undefined) return row;
-    const rate = invoke('GameServer/ProgressionRates').profile().multiplier;
-    return { ...row, price: require('./NpcShopPriceScale').price(row.price, rate) };
+    return { ...row, price: NpcShopPriceScale.price(row.price, rate) };
 }
 
 function flatten(listNames) {
+    const rate = progressionMultiplier();
     const seen = new Set();
     const rows = [];
 
     (listNames || []).forEach((listName) => {
-        (LISTS[listName] || []).filter(allowedEntry).map(normalizeEntry).forEach((entry) => {
+        (LISTS[listName] || []).filter(allowedEntry).map((entry) => normalizeEntry(entry, rate)).forEach((entry) => {
             if (seen.has(entry.selfId)) return;
             seen.add(entry.selfId);
             rows.push(entry);
@@ -1172,6 +1180,8 @@ module.exports = {
         // Keep different prices for the same item; arbitrage checks need the
         // cheapest offer, not the first NPC's price retained by flatten().
         const names = new Set([...Object.values(NPC_LISTS).flat(), ...Object.values(FALLBACKS).flat()]);
-        return [...names].flatMap((name) => (LISTS[name] || []).filter(allowedEntry).map(normalizeEntry));
+        const rate = progressionMultiplier();
+        return [...names].flatMap((name) => (LISTS[name] || []).filter(allowedEntry)
+            .map((entry) => normalizeEntry(entry, rate)));
     }
 };
