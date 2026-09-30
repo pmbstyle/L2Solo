@@ -4,7 +4,10 @@ const Response = invoke('GameServer/Network/Response');
 
 // One compare-and-swap transaction for state, hand-in and reward. The caller
 // must be a server-authored handler that has validated its NPC and conditions.
-async function apply(state, { takes = [], gives = [], variables = state.variables, status = 'started', exp = 0, sp = 0, beginner = null, pk = null }) {
+async function apply(state, { takes: wanted = [], gives = [], variables = state.variables, status = 'started', exp = 0, sp = 0, beginner = null, pk = null }) {
+    // A count of zero means "consume whatever the character holds of this kind";
+    // it is a no-op, not a shortage the database should reject.
+    const takes = wanted.filter(([, amount]) => amount > 0);
     const actor = state.session.actor;
     const next = { state: status, variables: { ...variables, revision: String(state.getInt('revision') + 1) } };
     const rewards = gives.flatMap(([selfId, amount]) => {

@@ -137,6 +137,81 @@ const definitions = [
     collect(319, 'Scent of Death', 11, 7138, 1045, 5, [[15,.2],[20,.2]], {adena:3350,items:[[1060,1]]}),
     collect(320, 'Bones Tell the Future', 10, 7359, 809, 10, [[517,.18],[518,.2]], {adena:8470}, {race:2}),
     collect(324, 'Sweetest Venom', 18, 7351, 1077, 10, [[34,.22],[38,.23],[43,.25]], {adena:5810}),
-    collect(341, 'Hunting for Wild Beasts', 20, 7078, 4259, 20, [[21,.5],[203,.9],[310,.5],[335,.7]], {adena:3710})
+    collect(341, 'Hunting for Wild Beasts', 20, 7078, 4259, 20, [[21,.5],[203,.9],[310,.5],[335,.7]], {adena:3710}),
+    // Officer Poolid hands out the patrol's report; Sergeant Maillos takes it and
+    // sends the adventurer at the Maille lizardmen and their spider mounts. Fifty
+    // shining gems and fifty shining red gems later, he pays 42000 spoils and the
+    // quest closes.
+    {id:298,name:"Lizardmen's Conspiracy",minLevel:25,startNpc:7333,questItems:[7182,7183,7184],
+        startItems:[[7182,1]],
+        stages:[{type:'DELIVER',npc:7344,takes:[[7182,1]]},
+            {type:'KILL_COLLECT',objectives:[[7183,50],[7184,50]],drops:[
+                {npc:922,item:7183,chance:1},{npc:923,item:7183,chance:1},{npc:924,item:7183,chance:1},
+                {npc:925,item:7184,chance:1},{npc:926,item:7184,chance:1}]},
+            {type:'COMPLETE',npc:7344,takes:[[7183,50],[7184,50]]}],
+        reward:{sp:42000}},
+    // Trader Roegadyn only pays once a crate is full: first fifty of each shard,
+    // then two hundred of each for the big purse. The reference rolls its shard
+    // drop on a random party member; here it lands on the killer.
+    {id:369,name:'Collector of Jewels',minLevel:25,startNpc:7376,repeatable:true,questItems:[5882,5883],
+        stages:[
+            {type:'KILL_COLLECT',objectives:[[5882,50],[5883,50]],drops:[
+                {npc:747,item:5883,chance:.85},{npc:619,item:5883,chance:.73},{npc:616,item:5883,chance:.6},
+                {npc:749,item:5882,chance:.85},{npc:612,item:5882,chance:.77},{npc:609,item:5882,chance:.77}]},
+            {type:'CHOICE',choices:[{npc:7376,event:'sell_shards',label:'Hand over the full crates',
+                takes:[[5882,50],[5883,50]],next:3,reward:{adena:12500}}]},
+            {type:'KILL_COLLECT',objectives:[[5882,200],[5883,200]],drops:[
+                {npc:747,item:5883,chance:.85},{npc:619,item:5883,chance:.73},{npc:616,item:5883,chance:.6},
+                {npc:749,item:5882,chance:.85},{npc:612,item:5882,chance:.77},{npc:609,item:5882,chance:.77}]},
+            {type:'COMPLETE',npc:7376,takes:[[5882,200],[5883,200]]}],
+        reward:{adena:63500}},
+    // Crossbreed Badger remnant badges: Tritta the Mahum chief pays per badge on
+    // sight, and a hundred of any mix earns the black lion mark that opens the
+    // Black Lion Hunt.
+    {id:326,name:'Vanquish Remnants',minLevel:21,startNpc:7435,repeatable:true,questItems:[1359,1360,1361],
+        stages:[{type:'COLLECT',npc:7435,prices:[[1359,60],[1360,65],[1361,70]],
+            drops:[
+                {npc:53,item:1359,chance:.25},{npc:437,item:1359,chance:.25},{npc:58,item:1359,chance:.25},
+                {npc:61,item:1360,chance:.25},{npc:63,item:1360,chance:.25},{npc:436,item:1360,chance:.25},
+                {npc:439,item:1360,chance:.25},{npc:438,item:1361,chance:.35},{npc:66,item:1361,chance:.25}],
+            bonuses:[{items:[1359,1360,1361],at:100,give:[[1369,1]],onlyIfMissing:true}]}]},
+    // Trader Mack the Ferryman buys every souvenir of the Gludio marshes: burnt
+    // charcoal and wild gizzard at a fixed rate, glowing beast eyes at two
+    // thousand. There is no completion; the ferry runs forever.
+    {id:328,name:'Sense For Business',minLevel:21,startNpc:7436,repeatable:true,questItems:[1347,1366,1348],
+        stages:[{type:'COLLECT',npc:7436,prices:[[1347,30],[1366,2000],[1348,75]],
+            drops:[
+                {npc:55,chance:1,outcomes:[{item:1347,chance:.5},{item:1366,chance:.01}]},
+                {npc:59,chance:1,outcomes:[{item:1347,chance:.54},{item:1366,chance:.01}]},
+                {npc:67,chance:1,outcomes:[{item:1347,chance:.67},{item:1366,chance:.02}]},
+                {npc:68,chance:1,outcomes:[{item:1347,chance:.72},{item:1366,chance:.02}]},
+                {npc:70,item:1348,chance:.5},{npc:72,item:1348,chance:.53}]}]},
+    // Casian the priest of Ivron's offices wants Vamanes' four chapters sown
+    // again: every cursed orchard yields exactly one of the four, and any single
+    // chapter a hunter already carries blocks the next drop of that kind.
+    {id:370,name:'A Wiseman Sows Seeds',minLevel:28,startNpc:7612,repeatable:false,questItems:[5917,5918,5919,5920],
+        stages:[
+            {type:'KILL_COLLECT',objectives:[[5917,1],[5918,1],[5919,1],[5920,1]],keepDropping:true,drops:[
+                {npc:82,chance:1,outcomes:[{item:5917,chance:.14},{item:5918,chance:.14},{item:5919,chance:.14},{item:5920,chance:.14}]},
+                {npc:84,chance:1,outcomes:[{item:5917,chance:.14},{item:5918,chance:.14},{item:5919,chance:.14},{item:5920,chance:.14}]},
+                {npc:86,chance:1,outcomes:[{item:5917,chance:.14},{item:5918,chance:.14},{item:5919,chance:.14},{item:5920,chance:.14}]},
+                {npc:89,chance:1,outcomes:[{item:5917,chance:.14},{item:5918,chance:.14},{item:5919,chance:.14},{item:5920,chance:.14}]},
+                {npc:90,chance:1,outcomes:[{item:5917,chance:.14},{item:5918,chance:.14},{item:5919,chance:.14},{item:5920,chance:.14}]}]},
+            {type:'DELIVER',npc:7612,takes:[[5917,1],[5918,1],[5919,1],[5920,1]],gives:[[57,3600]]}]},
+    // Cook Rulant needs ritron fruit, moon-face flowers and leech fluids for
+    // Baron Emison's table, and two antidotes to survive the gathering. Each
+    // return visit moves the feast along, until the ritron jelly is rendered and
+    // the recipe either is - or is not - passed on.
+    {id:380,name:'Bring Out the Flavour of Ingredients',minLevel:24,startNpc:7069,repeatable:false,questItems:[5895,5896,5897],
+        stages:[
+            {type:'KILL_COLLECT',objectives:[[5895,4],[5896,20],[5897,10]],drops:[
+                {npc:205,item:5895,chance:.1},{npc:206,item:5896,chance:.5},{npc:225,item:5897,chance:.5}]},
+            {type:'DELIVER',npc:7069,takes:[[5895,4],[5896,20],[5897,10],[1831,2]]},
+            {type:'DELIVER',npc:7069},
+            {type:'DELIVER',npc:7069},
+            {type:'DELIVER',npc:7069,gives:[[5960,1]]},
+            {type:'COMPLETE',npc:7069}],
+        // The reference hands the recipe out on one 55% roll when the quest ends.
+        reward:{choices:[{items:[[5959,1]],weight:55},{items:[],weight:45}]}}
 ];
 module.exports = definitions;

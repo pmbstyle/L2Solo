@@ -97,8 +97,9 @@ function create(definition) {
         if(!paid && !finish) return;
         const total=takes.filter(([id])=>!stage.bonusItems||stage.bonusItems.includes(id)).reduce((n,[,amount])=>n+amount,0);
         let adena=takes.reduce((n,[id,amount])=>n+amount*stage.prices.find(p=>p[0]===id)[1],0)
-            +(paid && total>=stage.bonusAt ? stage.bonusAdena : 0);
+            +(paid && total>=stage.bonusAt ? (stage.bonusAdena || 0) : 0);
         let next=state.getInt('cond');
+        const extraGives=[];
         if(paid) {
             // Authored threshold bonuses. Each names the items it counts, the
             // amount that unlocks it, and optionally a second stack that must
@@ -108,7 +109,14 @@ function create(definition) {
             for(const bonus of stage.bonuses||[]) {
                 if(sold(bonus.items)<bonus.at) continue;
                 if(bonus.and && sold(bonus.and.items)<bonus.and.at) continue;
-                adena+=bonus.adena;
+                // A bonus may pay only in items (Q326's black lion mark) and stay silent on coin.
+                adena+=bonus.adena||0;
+                // A bonus may also hand out an item (Q326's black lion mark), and
+                // an onlyIfMissing bonus stays quiet once the character carries one.
+                for(const [item,amount] of bonus.give||[]) {
+                    if(bonus.onlyIfMissing && count(state,item)) continue;
+                    extraGives.push([item,amount]);
+                }
             }
             for(const bonus of stage.ownedBonuses||[]) if(count(state,bonus.item)>0) adena+=bonus.adena;
             for(const extra of stage.handInExtras||[]) {
@@ -118,6 +126,7 @@ function create(definition) {
         }
         if(finish) takes=cleanup(state);
         const reward=rewards(state,{adena});
+        if(extraGives.length) reward.gives=[...reward.gives,...extraGives];
         const variables={...state.variables};
         const beginner=paid?beginnerGrant(state):null;
         if(beginner) {

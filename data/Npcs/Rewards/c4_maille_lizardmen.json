@@ -1,0 +1,652 @@
+[
+  {
+    "selfId": 922,
+    "template": {
+      "name": "Maille Lizardman Warrior"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 72,
+            "max": 137,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 123,
+            "name": "Saber",
+            "min": 1,
+            "max": 1,
+            "chance": 1.527777777778
+          },
+          {
+            "selfId": 2017,
+            "name": "Saber Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 42.777777777778
+          },
+          {
+            "selfId": 5285,
+            "name": "Heavy Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 1.527777777778
+          },
+          {
+            "selfId": 5531,
+            "name": "Heavy Sword Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 54.166666666667
+          }
+        ],
+        "overall": 0.072
+      },
+      {
+        "items": [
+          {
+            "selfId": 1060,
+            "name": "Lesser Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 80.975227651033
+          },
+          {
+            "selfId": 1874,
+            "name": "Oriharukon Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 2.428277685303
+          },
+          {
+            "selfId": 1878,
+            "name": "Braided Hemp",
+            "min": 1,
+            "max": 1,
+            "chance": 14.575540977186
+          },
+          {
+            "selfId": 2259,
+            "name": "Recipe: Spinebone Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.563987075296
+          },
+          {
+            "selfId": 5220,
+            "name": "Metal Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 1.456966611182
+          }
+        ],
+        "overall": 5.1065
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 16.5778
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1899,
+            "name": "Necklace of Devotion Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 2.5903
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1932,
+            "name": "Bone Helmet Design",
+            "min": 1,
+            "max": 1,
+            "chance": 2.6314
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 923,
+    "template": {
+      "name": "Maille Lizardman Shaman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 102,
+            "max": 201,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 432,
+            "name": "Cursed Tunic",
+            "min": 1,
+            "max": 1,
+            "chance": 38.489208633094
+          },
+          {
+            "selfId": 465,
+            "name": "Cursed Stockings",
+            "min": 1,
+            "max": 1,
+            "chance": 61.510791366906
+          }
+        ],
+        "overall": 0.0556
+      },
+      {
+        "items": [
+          {
+            "selfId": 735,
+            "name": "Potion of Alacrity",
+            "min": 1,
+            "max": 1,
+            "chance": 16.230822873082
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 12.988145048815
+          },
+          {
+            "selfId": 1879,
+            "name": "Cokes",
+            "min": 1,
+            "max": 1,
+            "chance": 32.470362622036
+          },
+          {
+            "selfId": 1885,
+            "name": "High Grade Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 16.230822873082
+          },
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 19.482217573222
+          },
+          {
+            "selfId": 5550,
+            "name": "Durable Metal Plate",
+            "min": 1,
+            "max": 1,
+            "chance": 2.597629009763
+          }
+        ],
+        "overall": 1.1472
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 2019,
+            "name": "Trident Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 0.5139
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2152,
+            "name": "Recipe: Enchanted Necklace",
+            "min": 1,
+            "max": 1,
+            "chance": 4.2069
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2263,
+            "name": "Recipe: Dwarven Trident",
+            "min": 1,
+            "max": 1,
+            "chance": 0.371
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 924,
+    "template": {
+      "name": "Maille Lizardman Matriarch"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 122,
+            "max": 244,
+            "chance": 99.993000489966
+          },
+          {
+            "selfId": 259,
+            "name": "Single-Edged Jamadhr",
+            "min": 1,
+            "max": 1,
+            "chance": 0.006999510034
+          }
+        ],
+        "overall": 70.0049
+      },
+      {
+        "items": [
+          {
+            "selfId": 1876,
+            "name": "Mithril Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 14.353788512604
+          },
+          {
+            "selfId": 1877,
+            "name": "Adamantite Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 2.870030191699
+          },
+          {
+            "selfId": 1880,
+            "name": "Steel",
+            "min": 1,
+            "max": 1,
+            "chance": 7.176894256302
+          },
+          {
+            "selfId": 1881,
+            "name": "Coarse Bone Powder",
+            "min": 1,
+            "max": 1,
+            "chance": 9.566767305664
+          },
+          {
+            "selfId": 1882,
+            "name": "Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 15.947037212179
+          },
+          {
+            "selfId": 2183,
+            "name": "Recipe: Mithril Banded Mail",
+            "min": 1,
+            "max": 1,
+            "chance": 4.721545232985
+          },
+          {
+            "selfId": 2274,
+            "name": "Recipe: Skull Breaker",
+            "min": 1,
+            "max": 1,
+            "chance": 0.509257575206
+          },
+          {
+            "selfId": 6667,
+            "name": "Deluxe Chest Key - Grade 3",
+            "min": 1,
+            "max": 1,
+            "chance": 44.854679713361
+          }
+        ],
+        "overall": 2.7491
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1900,
+            "name": "Enchanted Necklace Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 3.1603
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1937,
+            "name": "Scale Gaiters Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 2.4815
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2250,
+            "name": "Recipe: Bone Arrow",
+            "min": 1,
+            "max": 1,
+            "chance": 7.2213
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 925,
+    "template": {
+      "name": "Giant Araneid"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 69,
+            "max": 128,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 846,
+            "name": "Coral Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 8.707524271845
+          },
+          {
+            "selfId": 878,
+            "name": "Blue Coral Ring",
+            "min": 1,
+            "max": 1,
+            "chance": 13.046116504854
+          },
+          {
+            "selfId": 909,
+            "name": "Blue Diamond Necklace",
+            "min": 1,
+            "max": 1,
+            "chance": 6.553398058252
+          },
+          {
+            "selfId": 1898,
+            "name": "Blue Diamond Necklace Gem",
+            "min": 1,
+            "max": 1,
+            "chance": 71.692961165049
+          }
+        ],
+        "overall": 0.3296
+      },
+      {
+        "items": [
+          {
+            "selfId": 1060,
+            "name": "Lesser Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 43.89879993989
+          },
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 1,
+            "chance": 26.339065284129
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 1,
+            "chance": 26.339065284129
+          },
+          {
+            "selfId": 1881,
+            "name": "Coarse Bone Powder",
+            "min": 1,
+            "max": 1,
+            "chance": 2.633047809193
+          },
+          {
+            "selfId": 5273,
+            "name": "Recipe: Greater Spiritshot (D) Compressed Package(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.79002168266
+          }
+        ],
+        "overall": 9.3162
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1874,
+            "name": "Oriharukon Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 1.0384
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2016,
+            "name": "Composition Bow Shaft",
+            "min": 1,
+            "max": 1,
+            "chance": 0.1825
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2258,
+            "name": "Recipe: Temptation of Abyss",
+            "min": 1,
+            "max": 1,
+            "chance": 0.3808
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 926,
+    "template": {
+      "name": "Poison Araneid"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 79,
+            "max": 147,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 156,
+            "name": "Hand Axe",
+            "min": 1,
+            "max": 1,
+            "chance": 33.333333333333
+          },
+          {
+            "selfId": 167,
+            "name": "Scalpel",
+            "min": 1,
+            "max": 1,
+            "chance": 33.333333333333
+          },
+          {
+            "selfId": 178,
+            "name": "Bone Staff",
+            "min": 1,
+            "max": 1,
+            "chance": 33.333333333333
+          }
+        ],
+        "overall": 0.0048
+      },
+      {
+        "items": [
+          {
+            "selfId": 1831,
+            "name": "Antidote",
+            "min": 1,
+            "max": 1,
+            "chance": 62.081203399212
+          },
+          {
+            "selfId": 1834,
+            "name": "Emergency Dressing",
+            "min": 1,
+            "max": 1,
+            "chance": 25.866896753818
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 1.551460293687
+          },
+          {
+            "selfId": 1879,
+            "name": "Cokes",
+            "min": 1,
+            "max": 1,
+            "chance": 3.879464721779
+          },
+          {
+            "selfId": 2178,
+            "name": "Recipe: Dark Stockings",
+            "min": 1,
+            "max": 1,
+            "chance": 3.724807084948
+          },
+          {
+            "selfId": 5437,
+            "name": "Recipe: Heavy Sword(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.568163318464
+          },
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 2.328004428092
+          }
+        ],
+        "overall": 6.1426
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 17.8367
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 1.1891
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2018,
+            "name": "Assassin Knife Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 0.237
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]

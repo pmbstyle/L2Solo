@@ -1,0 +1,197 @@
+[
+  {
+    "selfId": 5882,
+    "template": {
+      "kind": "Other.Quest",
+      "name": "Flare Shard",
+      "class1": 4,
+      "class2": 3,
+      "mass": 0,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5883,
+    "template": {
+      "kind": "Other.Quest",
+      "name": "Freezing Shard",
+      "class1": 4,
+      "class2": 3,
+      "mass": 0,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5895,
+    "template": {
+      "kind": "Other.Quest",
+      "name": "Ritron's Fruit",
+      "class1": 4,
+      "class2": 3,
+      "mass": 0,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5896,
+    "template": {
+      "kind": "Other.Quest",
+      "name": "Moon Face Flower",
+      "class1": 4,
+      "class2": 3,
+      "mass": 0,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5897,
+    "template": {
+      "kind": "Other.Quest",
+      "name": "Leech Fluids",
+      "class1": 4,
+      "class2": 3,
+      "mass": 0,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5917,
+    "template": {
+      "kind": "Other.Quest",
+      "name": "Kranvel's Spellbook: Chapter of Fire",
+      "class1": 4,
+      "class2": 3,
+      "mass": 0,
+      "price": 100
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5918,
+    "template": {
+      "kind": "Other.Quest",
+      "name": "Kranvel's Spellbook: Chapter of Water",
+      "class1": 4,
+      "class2": 3,
+      "mass": 0,
+      "price": 100
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5919,
+    "template": {
+      "kind": "Other.Quest",
+      "name": "Kranvel's Spellbook: Chapter of Wind",
+      "class1": 4,
+      "class2": 3,
+      "mass": 0,
+      "price": 100
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5920,
+    "template": {
+      "kind": "Other.Quest",
+      "name": "Kranvel's Spellbook: Chapter of Earth",
+      "class1": 4,
+      "class2": 3,
+      "mass": 0,
+      "price": 100
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5960,
+    "template": {
+      "kind": "Other.Quest",
+      "name": "Ritron Jelly",
+      "class1": 4,
+      "class2": 3,
+      "mass": 10,
+      "price": 1920
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7182,
+    "template": {
+      "kind": "Other.Quest",
+      "name": "Patrol's Report",
+      "class1": 4,
+      "class2": 3,
+      "mass": 0,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7183,
+    "template": {
+      "kind": "Other.Quest",
+      "name": "Shining Gem",
+      "class1": 4,
+      "class2": 3,
+      "mass": 0,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7184,
+    "template": {
+      "kind": "Other.Quest",
+      "name": "Shining Red Gem",
+      "class1": 4,
+      "class2": 3,
+      "mass": 0,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  }
+]
