@@ -2248,10 +2248,11 @@ function renderFilteredActorViews({ counts = true } = {}) {
     renderActorFilterState();
 }
 
-function updateLevelFilter(changed) {
+function updateLevelFilter(changed = null) {
     state.minLevel = ActorFilters.normalizeLevel(els.minLevelFilter.value);
     state.maxLevel = ActorFilters.normalizeLevel(els.maxLevelFilter.value);
-    if (state.minLevel !== null && state.maxLevel !== null && state.minLevel > state.maxLevel) {
+    // Reconcile crossed bounds only after editing, not on a partial number.
+    if (changed && state.minLevel !== null && state.maxLevel !== null && state.minLevel > state.maxLevel) {
         if (changed === 'min') {
             state.maxLevel = state.minLevel;
             els.maxLevelFilter.value = state.maxLevel;
@@ -3554,8 +3555,10 @@ els.actorSearch.addEventListener('input', (event) => {
     renderFilteredActorViews();
 });
 
-els.minLevelFilter.addEventListener('input', () => updateLevelFilter('min'));
-els.maxLevelFilter.addEventListener('input', () => updateLevelFilter('max'));
+els.minLevelFilter.addEventListener('input', () => updateLevelFilter());
+els.maxLevelFilter.addEventListener('input', () => updateLevelFilter());
+els.minLevelFilter.addEventListener('change', () => updateLevelFilter('min'));
+els.maxLevelFilter.addEventListener('change', () => updateLevelFilter('max'));
 
 els.classFilter.addEventListener('change', (event) => {
     state.classKey = String(event.target.value || 'all');
