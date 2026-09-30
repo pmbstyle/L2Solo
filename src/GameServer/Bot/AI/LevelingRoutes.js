@@ -227,7 +227,17 @@ function textForSpot(spot = {}) {
     ].join(' ').toLowerCase();
 }
 
+// Tags derive from a spot's static id, name, mob names and level bounds, but
+// route checks ask for them on every candidate of every search.
+const spotTags = new WeakMap();
+
 function tagsForSpot(spot = {}) {
+    if (!spot || typeof spot !== 'object') return deriveTags(spot);
+    if (!spotTags.has(spot)) spotTags.set(spot, deriveTags(spot));
+    return [...spotTags.get(spot)];
+}
+
+function deriveTags(spot) {
     if (spot.tagsAuthoritative === true) return uniq(spot.tags || []);
 
     const text = textForSpot(spot);

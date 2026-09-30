@@ -208,22 +208,40 @@ function stateProfiles(state, options = {}) {
         }, member, options.timestamp));
 }
 
-function spotMatchup(spot, profiles, options = {}) {
-    if (!profiles?.length) return evaluate([], {});
-    const Cold = invoke('GameServer/Bot/Population/ColdCombatProfile');
-    const HuntingPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
-    let total = 0, effective = 0, eligible = false, safe = 0;
-    for (const entry of spot.npcEntries || []) {
-        const npc = npcTemplate(entry.selfId);
-        if (!npc || !HuntingPolicy.canHunt(npc)) continue;
-        const weight = Math.max(1, number(entry.count));
-        const target = Cold.npcCombatStats(npc);
+// A spot search checks hundreds of spots with one profile array, and each mob
+// species appears on several of them. The verdict depends only on the
+// profiles, the species and the safety options, so it is computed once per
+// species for as long as the caller keeps that profile array.
+const npcVerdicts = new WeakMap();
+
+function npcVerdict(profiles, selfId, options) {
+    let verdicts = npcVerdicts.get(profiles);
+    if (!verdicts) npcVerdicts.set(profiles, verdicts = new Map());
+    const key = `${Number(selfId)}:${options.soloSafety ? 1 : 0}:${options.maxTargetLevel || 0}`;
+    if (verdicts.has(key)) return verdicts.get(key);
+    const npc = npcTemplate(selfId);
+    let verdict = null;
+    if (npc && invoke('GameServer/Bot/AI/BotHuntingTargetPolicy').canHunt(npc)) {
+        const target = invoke('GameServer/Bot/Population/ColdCombatProfile').npcCombatStats(npc);
         const match = evaluate(profiles, target);
         const survival = options.soloSafety ? soloSurvival(profiles, target) : { eligible: true };
         const withinRecoveryLevel = !options.maxTargetLevel || Number(npc.template?.level || 0) <= options.maxTargetLevel;
+        verdict = { efficiency: match.efficiency, canHunt: match.eligible && survival.eligible && withinRecoveryLevel };
+    }
+    verdicts.set(key, verdict);
+    return verdict;
+}
+
+function spotMatchup(spot, profiles, options = {}) {
+    if (!profiles?.length) return evaluate([], {});
+    let total = 0, effective = 0, eligible = false, safe = 0;
+    for (const entry of spot.npcEntries || []) {
+        const verdict = npcVerdict(profiles, entry.selfId, options);
+        if (!verdict) continue;
+        const weight = Math.max(1, number(entry.count));
         total += weight;
-        effective += weight * Math.min(1, match.efficiency);
-        const canHunt = match.eligible && survival.eligible && withinRecoveryLevel;
+        effective += weight * Math.min(1, verdict.efficiency);
+        const canHunt = verdict.canHunt;
         eligible ||= canHunt;
         if (canHunt) safe += weight;
     }
