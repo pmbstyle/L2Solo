@@ -665,20 +665,33 @@ class ColdSimulationCoordinator {
                 name: state.currentRegion || null,
                 area: state.area || state.stats?.area || null
             } : currentSpot;
+        // Solo checks and a non-party search all judge this bot, as the only
+        // capacity state, at this timestamp. Its combat profiles depend on the
+        // bot, not the spot: build them once for the decision.
+        let soloProfiles = null;
+        const soloOptions = () => {
+            soloProfiles = soloProfiles || invoke('GameServer/Bot/AI/BotTargetMatchup')
+                .stateProfiles(state, { ...options, mode: 'solo' });
+            return { ...options, mode: 'solo', matchupProfiles: soloProfiles };
+        };
         const unsafeSoloGround = !partyRoute && currentGround
-            && !LevelingRoutes.isSpotAllowedForState(currentGround, state, { ...options, mode: 'solo' });
+            && !LevelingRoutes.isSpotAllowedForState(currentGround, state, soloOptions());
         const sharedSpot = party?.stats?.objective?.spotId;
         let selected = partyRoute && sharedSpot && !excludedSpotIds.has(String(sharedSpot))
             ? index.spots.get(String(sharedSpot)) || null : fallbackSpot;
         try {
-            if (!selected) selected = SpotProfiles.findForState(routeState, options);
+            // A party-mode search of a lone member builds no profiles at all.
+            if (!selected) selected = SpotProfiles.findForState(routeState, !partyRoute
+                && LevelingRoutes.modeForState(routeState, options) !== 'party'
+                ? { ...options, matchupProfiles: soloOptions().matchupProfiles }
+                : options);
         } catch (_) { selected = null; }
         if (unsafeSoloGround && selected) {
             const repeatsCurrentGround = String(selected.id || '') === String(currentId || '');
             const destinationSafeForSolo = LevelingRoutes.isSpotAllowedForState(
                 selected,
                 state,
-                { ...options, mode: 'solo' }
+                soloOptions()
             );
             if (repeatsCurrentGround || !destinationSafeForSolo) selected = null;
         }
@@ -688,7 +701,7 @@ class ColdSimulationCoordinator {
             // blocked dungeon forever. Only for this rare safety evacuation,
             // choose the least-bad allowed field and let admission exceed its
             // soft capacity by one.
-            const emergencyOptions = { ...options, mode: 'solo' };
+            const emergencyOptions = soloOptions();
             const candidatesWithRoom = (index.profiles || [...index.spots.values()])
                 .filter((profile) => profile.raidBoss !== true)
                 .filter((profile) => String(profile.id) !== String(currentId || ''))
@@ -703,13 +716,6 @@ class ColdSimulationCoordinator {
                     index.occupancy,
                     { maxOverflowUnits: 1 }
                 ));
-            // These profiles depend on the bot, not the candidate spot. Keep
-            // them local to this decision so skill/equipment changes remain
-            // visible without rebuilding every skill for the entire catalog.
-            if (candidatesWithRoom.length) {
-                emergencyOptions.matchupProfiles = invoke('GameServer/Bot/AI/BotTargetMatchup')
-                    .stateProfiles(state, emergencyOptions);
-            }
             const emergencyCandidates = candidatesWithRoom.filter((profile) => (
                 LevelingRoutes.isSpotAllowedForState(profile, state, emergencyOptions)
             ));
