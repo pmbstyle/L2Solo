@@ -71,13 +71,25 @@ function flattenItem(item) {
     };
 }
 
+// The item catalog is static after load, but gear planning asks for it once
+// per slot choice; rebuilding it each time dominated bot need evaluation.
+let catalogSource = null;
+let catalogSize = -1;
+let gearCatalog = [];
+
 function allItems() {
-    return (DataCache.items || [])
-        .filter((item) => {
-            const kind = item?.template?.kind || '';
-            return kind.startsWith('Weapon.') || kind.startsWith('Armor.');
-        })
-        .map(flattenItem);
+    const items = DataCache.items || [];
+    if (catalogSource !== items || catalogSize !== items.length) {
+        catalogSource = items;
+        catalogSize = items.length;
+        gearCatalog = Object.freeze(items
+            .filter((item) => {
+                const kind = item?.template?.kind || '';
+                return kind.startsWith('Weapon.') || kind.startsWith('Armor.');
+            })
+            .map((item) => Object.freeze(flattenItem(item))));
+    }
+    return gearCatalog;
 }
 
 function validRank(item, rank) {
