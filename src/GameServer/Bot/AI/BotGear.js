@@ -284,9 +284,31 @@ function buildJewels(rank, level) {
     ].filter(Boolean);
 }
 
+// A plan depends only on class, level and the static catalog, but goal review
+// asks for it for every bot on every pass; each build scans the catalog about
+// a dozen times. Callers get their own copy so the cached plan stays intact.
+let planCatalog = null;
+const plans = new Map();
+
 function planFor(character) {
     const level = Number(character.fetchLevel?.() || character.level || character.stats?.level || 1);
     const classId = Number(BotRoles.classIdOf(character) ?? 0);
+    const catalog = allItems();
+    if (planCatalog !== catalog) {
+        planCatalog = catalog;
+        plans.clear();
+    }
+    const key = `${classId}:${level}`;
+    if (!plans.has(key)) plans.set(key, buildPlan(classId, level));
+    const plan = plans.get(key);
+    return {
+        ...plan,
+        hint: structuredClone(plan.hint),
+        items: plan.items.map((item) => ({ ...item }))
+    };
+}
+
+function buildPlan(classId, level) {
     const role = BotRoles.inferRole(classId);
     const band = gradeForLevel(level);
     const rank = band.rank;
