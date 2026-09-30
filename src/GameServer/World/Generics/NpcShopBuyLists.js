@@ -129,7 +129,9 @@ const ADEN_GROCER_BASE = [
 ];
 
 const D_GROCER_BASE = ADVANCED_GROCER_BASE;
-const C_GROCER_BASE = ADVANCED_GROCER_BASE;
+// Lisvus C4 fdc7e33a, merchant_buylists.sql shop 23 (Helvetia):
+// Gemstone C/B cost 3300/11000 after Giran's 1.1 markup.
+const C_GROCER_BASE = [...ADVANCED_GROCER_BASE, [2131, 3000], [2132, 10000]];
 const B_GROCER_BASE = ADVANCED_GROCER_BASE;
 const A_GROCER_BASE = ADEN_GROCER_BASE;
 const S_GROCER_BASE = ADVANCED_GROCER_BASE;
