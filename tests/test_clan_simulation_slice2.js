@@ -42,6 +42,10 @@ function seedDatabase() {
         }), index);
         if (index <= 5) insertAdena.run(adena, id);
     }
+    // Existing successful-upgrade fixture must fund the leader's player-rule SP cost.
+    const levelSp = invoke('GameServer/Clan/ClanRules').LEVEL_REQUIREMENTS[0].sp;
+    seed.prepare('UPDATE characters SET sp = ?').run(levelSp);
+    seed.prepare('UPDATE bot_life_state SET sp = ?').run(levelSp);
     seed.close();
 }
 

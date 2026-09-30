@@ -4,7 +4,7 @@ const runtimeEpoch = require('crypto').randomUUID();
 
 // All progress and physical quest-item writes share the server's transaction
 // queue. JSON is scoped to one clan; no separate connection can race saves.
-module.exports = function repository({ one, all, write, inTransaction, withCharacterFlushes }) {
+module.exports = function repository({ one, all, write, inTransaction, withCharacterFlushes, ClanLevelSp }) {
     const ensure = () => write(`CREATE TABLE IF NOT EXISTS clan_alliance_quests (
         clanId INTEGER PRIMARY KEY REFERENCES clans(id) ON DELETE CASCADE,
         stateJson TEXT NOT NULL)`);
@@ -74,7 +74,7 @@ module.exports = function repository({ one, all, write, inTransaction, withChara
             }, 'clan-alliance:read');
         },
         resolveBotClanAlliance(clanId, timestamp = Date.now(), epoch = runtimeEpoch) {
-            return inTransaction(() => {
+            return ClanLevelSp.withLeader(clanId, () => inTransaction(() => {
                 ensure();
                 const clan = one(`SELECT c.*, s.mode FROM clans c JOIN clan_simulation_clans s ON s.clanId = c.id WHERE c.id = ?`, [clanId]);
                 const leader = clan && one('SELECT username, level FROM characters WHERE id = ? AND clanId = ?', [clan.leaderId, clanId]);
@@ -98,9 +98,14 @@ module.exports = function repository({ one, all, write, inTransaction, withChara
                     if (state.epoch === epoch) state.elapsedMs += Math.max(0, timestamp - state.lastTick);
                     state.lastTick = timestamp; state.epoch = epoch;
                 }
-                const advanced = state.elapsedMs >= Rules.BOT_GAME_MINUTES * GAME_MINUTE_MS;
+                const trialReady = state.elapsedMs >= Rules.BOT_GAME_MINUTES * GAME_MINUTE_MS;
+                const spBudget = trialReady ? ClanLevelSp.check(clan, 3, 4) : null;
+                const advanced = trialReady && spBudget.ok;
+                let levelSp;
                 if (advanced) {
-                    write('UPDATE clans SET level = 4 WHERE id = ? AND level = 3', [clanId]);
+                    const updated = write('UPDATE clans SET level = 4 WHERE id = ? AND level = 3', [clanId]);
+                    if (updated.affectedRows !== 1) throw new Error('Clan alliance level changed');
+                    levelSp = ClanLevelSp.spend(spBudget);
                     const simulation = one('SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?', [clanId]);
                     const projection = JSON.parse(simulation.stateJson || '{}');
                     projection.level = 4; projection.goal = null; projection.updatedAt = timestamp;
@@ -120,8 +125,8 @@ module.exports = function repository({ one, all, write, inTransaction, withChara
                     write(`INSERT INTO clan_goal_events(clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt)
                         VALUES (?, 'alliance_trial_completed', 'level', 'alliance_trial', 'clan_level_four', ?, ?)`, [clanId, JSON.stringify(state), timestamp]);
                 }
-                return { ok: true, advanced: { ok: advanced }, state };
-            }, 'clan-alliance:bot');
+                return { ok: true, advanced: spBudget && !spBudget.ok ? spBudget : { ok: advanced }, state, levelSp };
+            }, 'clan-alliance:bot'));
         },
         transitionClanAlliance({ clanId, characterId, event, members = [], slot = -1, memberId = 0, bloodId = 0, npcId = 0, roll = 1, chestToken = '', chestTypeId = 0, winningTypes, rewardSp = Rules.SP_REWARD, timestamp = Date.now() }) {
             const ids = [characterId, memberId, ...members].filter(Boolean);

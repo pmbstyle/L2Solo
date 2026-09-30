@@ -7248,11 +7248,13 @@ const Database = {
     } = {}) {
         if (Number(fromLevel) === 3 || Number(toLevel) === 4) return Promise.resolve({ ok: false, code: 'alliance_trial_required' });
         const clan = Number(clanId);
-        return inTransaction(() => {
+        return ClanLevelSp.withLeader(clan, () => inTransaction(() => {
             const simulation = one('SELECT clanId, stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan]);
             const clanRow = one('SELECT id, level, leaderId FROM clans WHERE id = ?', [clan]);
             if (!simulation || !clanRow) return { ok: false, code: 'target_not_autonomous' };
             if (Number(clanRow.level) !== Number(fromLevel)) return { ok: false, code: 'level_already_advanced', level: Number(clanRow.level) };
+            const spBudget = ClanLevelSp.check(clanRow, fromLevel, toLevel);
+            if (!spBudget.ok) return spBudget;
 
             const itemId = Math.max(0, Number(requiredItemId) || 0);
             const required = Math.max(0, Math.floor(Number(itemId ? requiredItemAmount : requiredAmount) || 0));
@@ -7311,6 +7313,7 @@ const Database = {
             return {
                 ok: true,
                 code: itemId > 0 ? 'item_level_up' : 'contribution_level_up',
+                levelSp: ClanLevelSp.spend(spBudget),
                 clanId: clan,
                 fromLevel: Number(fromLevel),
                 toLevel: Number(toLevel),
@@ -7320,7 +7323,7 @@ const Database = {
                 warehouseAmount,
                 warehouseRevision: Number(state.warehouseRevision || 0)
             };
-        }, 'clan-simulation:level-up');
+        }, 'clan-simulation:level-up'));
     },
     fetchAutonomousClanCrests() {
         return run(`SELECT clans.id, clans.level, clans.crestId, crests.data AS crestData
@@ -7567,6 +7570,12 @@ const Database = {
     },
     updateColdCharacterProgression(id, state) {
         return withCharacterFlush(id, () => inTransaction(() => {
+            const life = one('SELECT statsJson FROM bot_life_state WHERE characterId = ?', [id]);
+            if (Number(jsonObject(life?.statsJson).clanLevelSpVersion || 0) > Number(state.stats?.clanLevelSpVersion || 0)) {
+                const error = new Error(`stale SP before clan level-up for ${id}`);
+                error.code = 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT';
+                throw error;
+            }
             write('UPDATE characters SET level = ?, exp = ?, sp = ? WHERE id = ?',
                 [state.level, state.exp, state.sp, id]);
             syncColdDeathExperienceUnsafe(id, state.stats?.deathExperience, Number(state.updatedAt || now()));
@@ -7638,7 +7647,8 @@ const Database = {
     updateCharacterClassId(id, classId) { return withCharacterFlush(id, () => update('characters', { classId }, 'id = ?', [id], 'character:class')); }
 };
 
-Object.assign(Database, require('./GameServer/Clan/ClanAllianceRepository')({ one, all, write, inTransaction, withCharacterFlushes }));
+const ClanLevelSp = require('./GameServer/Clan/ClanLevelSpRepository')({ one, write, run, withCharacterFlushes });
+Object.assign(Database, require('./GameServer/Clan/ClanAllianceRepository')({ one, all, write, inTransaction, withCharacterFlushes, ClanLevelSp }));
 
 Object.assign(Database, require('./GameServer/ClanHall/Repository')({
     one, all, write, inTransaction, withCharacterFlush, updateColdInventorySnapshotUnsafe, syncInventorySummaryUnsafe
