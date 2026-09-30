@@ -46,6 +46,7 @@ const stubs = new Map([
     }],
     // Immutable map boundaries only; no live World, geodata or database access.
     ['GameServer/World/WorldAreaCatalog', { resolve: originalInvoke('GameServer/World/WorldAreaCatalog').resolve }],
+    ['GameServer/World/TownRespawn', { towns: originalInvoke('GameServer/World/TownRespawn').towns }],
     ['GameServer/World/Generics/NpcShopBuyLists', { allEntries: () => [] }]
 ]);
 

@@ -1,3 +1,5 @@
+const NearestOffer = require('../Economy/NearestOffer');
+
 const LOW_TIER_RANKS = new Set(['none', 'd']);
 const EMPTY_OFFERS = Object.freeze([]);
 
@@ -72,7 +74,11 @@ function createLookup(rows = []) {
     });
 
     const offersFor = (target) => offersByItem.get(Number(target?.selfId ?? target)) || EMPTY_OFFERS;
-    const bestOffer = (target) => offersFor(target)[0] || null;
+    // Offers are sorted by price and town name, so an exact tie keeps the
+    // first one; a located buyer takes the nearest of the cheapest.
+    const bestOffer = (target, state) => offersFor(target).reduce((best, offer) => (
+        !best || NearestOffer.compareOffersForBuyer(offer, best, state?.loc) < 0 ? offer : best
+    ), null);
     const plannerOptions = Object.freeze({
         findNpcOffer: bestOffer,
         findMarketOffer: bestOffer

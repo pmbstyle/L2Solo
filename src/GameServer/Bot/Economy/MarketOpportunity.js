@@ -6,6 +6,7 @@ const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const TradeService = invoke('GameServer/Bot/TradeService');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const TownNpcCatalog = require('./TownNpcCatalog');
+const NearestOffer = require('./NearestOffer');
 const buyStoreReservations = new WeakMap();
 const coldStoreIndex = new Map();
 let coldStoreIndexHydrated = false;
@@ -443,7 +444,8 @@ function bestSupplyOffer(selfId, options = {}) {
     return offers
         .filter((offer) => offer.available && Number(offer.price) <= budget &&
             (offer.sourceType === 'npc' || Number(offer.count) >= amount))
-        .sort((a, b) => Number(a.price) - Number(b.price) || Number(a.sourceType !== 'npc') - Number(b.sourceType !== 'npc'))[0] || null;
+        .sort((a, b) => Number(a.price) - Number(b.price) || Number(a.sourceType !== 'npc') - Number(b.sourceType !== 'npc')
+            || NearestOffer.compareDistance(a, b, options.origin))[0] || null;
 }
 
 function resolveSupplyItem(value) {

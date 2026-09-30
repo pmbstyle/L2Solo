@@ -54,7 +54,10 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
         return { ok: false, reason: 'supply_errand_active' };
     }
 
-    const Market = MarketOpportunity.bestSupplyOffer(selfId, { amount });
+    const Market = MarketOpportunity.bestSupplyOffer(selfId, {
+        amount,
+        origin: { locX: bot.fetchLocX(), locY: bot.fetchLocY() }
+    });
     if (!Market) return { ok: false, reason: 'supply_not_available' };
 
     const template = itemTemplate(selfId);
