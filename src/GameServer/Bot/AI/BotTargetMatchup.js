@@ -218,33 +218,109 @@ function stateProfiles(state, options = {}) {
 
 // A spot search checks hundreds of spots with one profile array, and each mob
 // species appears on several of them. The verdict depends only on the
-// profiles, the species and the safety options, so it is computed once per
-// species for as long as the caller keeps that profile array.
+// profiles, the species and the safety options. Searches repeat for the same
+// bot after every commit, and bots of one class, level and kit share combat
+// fields, so verdicts are shared by every profile array with the same fields.
+// Profiles unused for VERDICT_PROFILE_IDLE_MS (level-up, new gear) are dropped.
+const VERDICT_PROFILE_LIMIT = 4096;
+const VERDICT_PROFILE_IDLE_MS = 10 * 60 * 1000;
 const npcVerdicts = new WeakMap();
+const sharedVerdicts = new Map();
+const uniqueVerdicts = new Map();
+let verdictSource, verdictCount = 0;
 
-function npcVerdict(profiles, selfId, options) {
+// Raw values with their type: channels() and soloSurvival() coerce with
+// number(), compare and test truthiness, so only identical inputs share.
+function fingerprintValue(value) {
+    switch (typeof value) {
+    case 'number': return Object.is(value, -0) ? '-0' : String(value);
+    case 'string': return JSON.stringify(value);
+    case 'boolean': return value ? 'T' : 'F';
+    case 'undefined': return 'u';
+    default: if (value === null) return 'n';
+    }
+    throw new TypeError('unshareable matchup value');
+}
+
+// Exactly the fields channels() and soloSurvival() read.
+function profileFingerprint(profile) {
+    const role = profile.role || Roles.combatRoleFor(profile);
+    const parts = [role, profile.equipment?.weaponKind || '', profile.pAtk, profile.atkSpd, profile.mAtk,
+        profile.castSpd, profile.maxMp, profile.weaponMask, profile.maxHp, profile.pDef,
+        profile.survivalKnown === false].map(fingerprintValue);
+    for (const skill of profile.skills || []) {
+        const semantic = skill.semantic || Rules.resolveCached(skill);
+        parts.push('|', ...[skill.passive, skill.spell === true, skill.mp, skill.power, skill.hitTime, skill.reuse,
+            skill.distance, semantic.skillType, semantic.target, semantic.notUsedInC4, semantic.undeadOnly,
+            semantic.requires?.weaponsAllowed, semantic.castRange, semantic.power, semantic.trait]
+            .map(fingerprintValue));
+    }
+    return parts.join(',');
+}
+
+// Verdicts of one profile array: safety options key -> species id -> verdict.
+function verdictsFor(profiles) {
     let verdicts = npcVerdicts.get(profiles);
-    if (!verdicts) npcVerdicts.set(profiles, verdicts = new Map());
-    const key = `${Number(selfId)}:${options.soloSafety ? 1 : 0}:${options.maxTargetLevel || 0}`;
-    if (verdicts.has(key)) return verdicts.get(key);
+    if (verdicts) return verdicts;
+    const source = dataCache().npcs || [];
+    if (verdictSource !== source || verdictCount !== source.length) {
+        verdictSource = source;
+        verdictCount = source.length;
+        sharedVerdicts.clear();
+        uniqueVerdicts.clear();
+    }
+    let fingerprint = null;
+    try { fingerprint = profiles.map(profileFingerprint).join('#'); } catch (_) { /* kept per array */ }
+    const now = Date.now();
+    const shared = fingerprint === null ? null : sharedVerdicts.get(fingerprint);
+    if (shared) {
+        sharedVerdicts.delete(fingerprint);
+        shared.usedAt = now;
+        sharedVerdicts.set(fingerprint, shared);
+        verdicts = shared.verdicts;
+    } else {
+        verdicts = new Map();
+        if (fingerprint !== null) {
+            sharedVerdicts.set(fingerprint, { verdicts, usedAt: now });
+            for (const [key, entry] of sharedVerdicts) {
+                if (sharedVerdicts.size <= VERDICT_PROFILE_LIMIT && now - entry.usedAt < VERDICT_PROFILE_IDLE_MS) break;
+                sharedVerdicts.delete(key);
+            }
+        }
+    }
+    npcVerdicts.set(profiles, verdicts);
+    return verdicts;
+}
+
+function npcVerdict(verdicts, selfId, options) {
+    if (verdicts.has(selfId)) return verdicts.get(selfId);
     const npc = npcTemplate(selfId);
     let verdict = null;
     if (npc && huntingTargetPolicy().canHunt(npc)) {
         const target = coldCombatProfile().npcCombatStats(npc);
-        const match = evaluate(profiles, target);
-        const survival = options.soloSafety ? soloSurvival(profiles, target) : { eligible: true };
+        const match = evaluate(options.profiles, target);
+        const survival = options.soloSafety ? soloSurvival(options.profiles, target) : { eligible: true };
         const withinRecoveryLevel = !options.maxTargetLevel || Number(npc.template?.level || 0) <= options.maxTargetLevel;
-        verdict = { efficiency: match.efficiency, canHunt: match.eligible && survival.eligible && withinRecoveryLevel };
+        const canHunt = match.eligible && survival.eligible && withinRecoveryLevel;
+        // Few distinct values exist; read-only verdicts are shared.
+        const key = `${canHunt ? 1 : 0}:${fingerprintValue(match.efficiency)}`;
+        verdict = uniqueVerdicts.get(key);
+        if (!verdict) uniqueVerdicts.set(key, verdict = Object.freeze({ efficiency: match.efficiency, canHunt }));
     }
-    verdicts.set(key, verdict);
+    verdicts.set(selfId, verdict);
     return verdict;
 }
 
 function spotMatchup(spot, profiles, options = {}) {
     if (!profiles?.length) return evaluate([], {});
     let total = 0, effective = 0, eligible = false, safe = 0;
+    const byOptions = verdictsFor(profiles);
+    const optionsKey = `${options.soloSafety ? 1 : 0}:${options.maxTargetLevel || 0}`;
+    let verdicts = byOptions.get(optionsKey);
+    if (!verdicts) byOptions.set(optionsKey, verdicts = new Map());
+    const verdictOptions = { profiles, soloSafety: options.soloSafety, maxTargetLevel: options.maxTargetLevel };
     for (const entry of spot.npcEntries || []) {
-        const verdict = npcVerdict(profiles, entry.selfId, options);
+        const verdict = npcVerdict(verdicts, Number(entry.selfId), verdictOptions);
         if (!verdict) continue;
         const weight = Math.max(1, number(entry.count));
         total += weight;
@@ -260,5 +336,6 @@ function spotMatchup(spot, profiles, options = {}) {
         penalty: Math.round((1 - efficiency) * 250 + (options.soloSafety ? (1 - safeFraction) * 250 : 0)) };
 }
 
-module.exports = { MIN_EFFICIENCY, actorProfiles, coldProfiles, targetView, skillModifier, profileStats, skillStats,
-    evaluate, soloSurvival, stateProfiles, spotMatchup };
+module.exports = { MIN_EFFICIENCY, VERDICT_PROFILE_LIMIT, actorProfiles, coldProfiles, targetView, skillModifier,
+    profileStats, skillStats, evaluate, soloSurvival, stateProfiles, spotMatchup,
+    sharedVerdictProfiles: () => sharedVerdicts.size };
