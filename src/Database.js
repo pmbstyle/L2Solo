@@ -1647,10 +1647,6 @@ function statsViews(raw) {
     return { loose, plain: Array.isArray(loose) ? {} : loose };
 }
 
-function preserveVersionedAppearanceStats(currentRaw, proposedRaw) {
-    return mergeVersionedAppearance(parsedObject(currentRaw), parsedObject(proposedRaw), proposedRaw);
-}
-
 function mergeVersionedAppearance(current, proposed, proposedRaw) {
     if (!current || !proposed) return proposedRaw;
 

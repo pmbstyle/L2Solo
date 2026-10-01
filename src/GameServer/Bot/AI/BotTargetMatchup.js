@@ -302,10 +302,15 @@ function npcVerdict(verdicts, selfId, options) {
         const survival = options.soloSafety ? soloSurvival(options.profiles, target) : { eligible: true };
         const withinRecoveryLevel = !options.maxTargetLevel || Number(npc.template?.level || 0) <= options.maxTargetLevel;
         const canHunt = match.eligible && survival.eligible && withinRecoveryLevel;
-        // Few distinct values exist; read-only verdicts are shared.
+        // Read-only verdicts are shared. Mixed-attack and party profiles give
+        // continuous efficiencies, so the pool is cleared at a bound; verdicts
+        // already handed out stay valid.
         const key = `${canHunt ? 1 : 0}:${fingerprintValue(match.efficiency)}`;
         verdict = uniqueVerdicts.get(key);
-        if (!verdict) uniqueVerdicts.set(key, verdict = Object.freeze({ efficiency: match.efficiency, canHunt }));
+        if (!verdict) {
+            if (uniqueVerdicts.size >= VERDICT_PROFILE_LIMIT * 4) uniqueVerdicts.clear();
+            uniqueVerdicts.set(key, verdict = Object.freeze({ efficiency: match.efficiency, canHunt }));
+        }
     }
     verdicts.set(selfId, verdict);
     return verdict;
