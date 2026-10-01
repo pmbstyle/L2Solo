@@ -5,7 +5,8 @@ const Spots = invoke('GameServer/Bot/AI/SpotService');
 const Routes = invoke('GameServer/Bot/AI/LevelingRoutes');
 
 // A karma bot washes on spots of its level window (minLevel <= level,
-// maxLevel >= level - 8); the solo matchup check runs only for those spots.
+// maxLevel >= level - 8); the solo matchup check runs only for those spots,
+// with combat profiles built once per plan.
 const originals = [Spots.arrivalPointForState, Routes.bestSpot, Routes.isSpotAllowedForState, utils.isInPeaceZone];
 const spot = (id, minLevel, maxLevel, locX) => ({ id, name: id, minLevel, maxLevel,
     npcEntries: [{ selfId: 204, level: minLevel }], center: { locX, locY: 0, locZ: 0 } });
@@ -23,8 +24,10 @@ try {
     const judged = [];
     Spots.arrivalPointForState = (_state, target) => target.center;
     Routes.bestSpot = (candidates) => ({ spot: candidates[0], candidates });
-    Routes.isSpotAllowedForState = (candidate) => {
+    const profileArrays = new Set();
+    Routes.isSpotAllowedForState = (candidate, _state, options) => {
         judged.push(candidate.id);
+        profileArrays.add(options.matchupProfiles);
         return candidate.id !== 'window-unsafe';
     };
     utils.isInPeaceZone = (x) => x === 0;
@@ -35,6 +38,8 @@ try {
     const planned = Policy.plan(state, spots, 1000);
     assert.deepStrictEqual(judged, ['window-low-edge', 'window', 'window-unsafe'],
         'spots outside the level window and in town must not reach the matchup check');
+    assert.strictEqual(profileArrays.size, 1, 'one plan judges every spot with one profile array');
+    assert(Array.isArray([...profileArrays][0]), 'the plan passes the bot\'s own combat profiles');
     assert.deepStrictEqual(offered, ['window-low-edge', 'window'],
         'candidates stay the level window minus unsafe spots');
     assert.strictEqual(planned.spot.id, 'window-low-edge');
