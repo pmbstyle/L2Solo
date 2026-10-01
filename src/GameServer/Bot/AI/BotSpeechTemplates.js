@@ -481,6 +481,54 @@ const catalog = {
 // Each entry is [preferred voice, complete utterance]. Reply and close pools
 // share a topic, but each turn is chosen using its own speaker's personality.
 const voices = {
+    'party.raid.health': [
+        ['calm', 'Boss is at {hp}%. We are getting there.'],
+        ['driven', '{hp}% left. Keep the pressure on!'],
+        ['social', 'Down to {hp}%! Nice pace, everyone.'],
+        ['careful', 'Still {hp}% to go. Keep it steady.']
+    ],
+    'party.raid.finish': [
+        ['driven', 'Only {hp}% left! A little more!'],
+        ['social', '{hp}%! Come on, we are almost there!'],
+        ['careful', '{hp}% left. Stay sharp until it is down.'],
+        ['calm', 'Almost done. Just {hp}% to go.']
+    ],
+    'party.raid.last-push': [
+        ['driven', 'Just {hp}%! Give it everything!'],
+        ['social', '{hp}%! One last push, everyone!'],
+        ['careful', 'Only {hp}%. No mistakes now.'],
+        ['calm', '{hp}% left. Nearly there.']
+    ],
+    'party.raid.tank': [
+        ['direct', 'I have the boss. Push harder, everyone!'],
+        ['loyal', 'Holding it here. Keep hitting!'],
+        ['calm', 'Boss is on me. Keep going.'],
+        ['social', 'I have its attention. Your turn, folks!']
+    ],
+    'party.raid.mana-ok': [
+        ['warm', 'Mana is looking good. I have the heals.'],
+        ['calm', 'Still plenty of mana. Keep it steady.'],
+        ['careful', 'Enough mana for now. We are doing fine.'],
+        ['social', 'Mana is fine over here. Keep going, everyone!']
+    ],
+    'party.raid.mana-low': [
+        ['careful', 'Mana is getting low. Keep the damage on us down.'],
+        ['direct', 'Running low on mana. Watch your footing.'],
+        ['warm', 'Not much mana left. Be careful, everyone.'],
+        ['calm', 'Mana is low. Making these heals count.']
+    ],
+    'party.raid.victory': [
+        ['social', 'Yes! Boss down! Nice work, everyone!'],
+        ['driven', 'There it goes! We did it!'],
+        ['warm', 'Boss is down. Well fought, everyone!'],
+        ['calm', 'That is the boss down. Good work.']
+    ],
+    'party.raid.victory-reply': [
+        ['social', 'That was a good fight!'],
+        ['warm', 'Nice teamwork. Glad we stuck together.'],
+        ['driven', 'Ha! Worth every hit.'],
+        ['calm', 'Now I can breathe again.']
+    ],
     'trade.sell': [
         ['social', 'WTS {goods}. Come find me in {town}!'],
         ['thrifty', 'WTS {goods}. Have a look in {town}.'],

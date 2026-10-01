@@ -384,6 +384,9 @@ const BotAI = {
     },
 
     tick(session) {
+        // Position changes only when TeleportTo completes. Damage wakeups in
+        // that interval must not restart actions in the previous raid region.
+        if (session.pendingActorTeleport || session.followPlayerSession?.pendingActorTeleport) return;
         invoke('GameServer/Bot/AI/BotClanChat').flush();
         invoke('GameServer/Bot/Economy/BotTradeChat').flush();
         const bot = session.actor;
@@ -650,6 +653,7 @@ const BotAI = {
         if (visibleRealPlayers.length) invoke('GameServer/Bot/AI/BotChatReactions').offerLocal(session, tickStartedAt);
 
         // 3. Dynamic State Machine Routing
+        if (isCompanion) invoke('GameServer/Bot/AI/PlayerPartyRaidChatter').tick(session.followPlayerSession, tickStartedAt);
         if (!defendingPvp && invoke('GameServer/ClanHall/BotVisit').tick(session, bot)) return;
         if (invoke('GameServer/Bot/AI/HotResourceCompetition').tick(session)) return;
         if (session.hotBackgroundPartyId && invoke('GameServer/Bot/AI/HotBackgroundParty').tick(session, bot, Generics, this)) return;
@@ -800,7 +804,7 @@ const BotAI = {
                 role,
                 activeMobs: Number(options.activeMobs ?? 1),
                 target: npc,
-                raidBoss: allowedBotClanRaid
+                raidBoss: allowedBotClanRaid || allowedPlayerPartyRaid
             });
         if (selfTactic) {
             session.lastCombatDecision = { action:'self_support', role, reason:selfTactic.reason,

@@ -143,6 +143,7 @@ module.exports = {
             }
 
             const distance = point(bot).distance(point(player));
+            if (invoke('GameServer/Bot/AI/PlayerPartyRaid').tick(session, bot, Generics, BotAI)) return;
             const partyRaid = BotRaidSafety.syncPlayerPartyRaid(playerSession);
             if (partyRaid?.phase === 'opening') {
                 delete session.explicitRestOrder;
