@@ -221,7 +221,8 @@ function stateProfiles(state, options = {}) {
 // profiles, the species and the safety options. Searches repeat for the same
 // bot after every commit, and bots of one class, level and kit share combat
 // fields, so verdicts are shared by every profile array with the same fields.
-// Profiles unused for VERDICT_PROFILE_IDLE_MS (level-up, new gear) are dropped.
+// Profiles unused for VERDICT_PROFILE_IDLE_MS (level-up, new gear) are dropped
+// when a new profile is added.
 const VERDICT_PROFILE_LIMIT = 4096;
 const VERDICT_PROFILE_IDLE_MS = 10 * 60 * 1000;
 const npcVerdicts = new WeakMap();
@@ -343,4 +344,4 @@ function spotMatchup(spot, profiles, options = {}) {
 
 module.exports = { MIN_EFFICIENCY, VERDICT_PROFILE_LIMIT, actorProfiles, coldProfiles, targetView, skillModifier,
     profileStats, skillStats, evaluate, soloSurvival, stateProfiles, spotMatchup,
-    sharedVerdictProfiles: () => sharedVerdicts.size };
+    sharedVerdictProfiles: () => sharedVerdicts.size, uniqueVerdictCount: () => uniqueVerdicts.size };

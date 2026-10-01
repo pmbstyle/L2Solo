@@ -876,7 +876,7 @@ class ColdSimulationCoordinator {
     async sendIncrementalEntries(entries, index, pageSize, priority = null, deadlineAt = Infinity) {
         await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany(entries.map(entry => Number((entry.state || entry).characterId)));
         // Count each row once instead of serializing every growing page prefix.
-        // post() still validates the complete envelope before worker delivery.
+        // post() checks the counted upper bound of the envelope against the limit.
         const baseBytes = Protocol.byteLength(Protocol.envelope('snapshot_page', this.workerEpoch, {
             rows: [], done: false, initial: false, ...(priority ? { priority } : {})
         })) + 256;

@@ -6,8 +6,8 @@ const PAGE_BYTES = 240 * 1024;
 // final envelope), so the sender need not serialise it again to validate it.
 function collectionPagesWithBytes(type, epoch, collections, msgId, onOversize = () => null) {
     const empty = () => Object.fromEntries(Object.keys(collections).map((field) => [field, []]));
-    // Reserve room for a generated message ID/timestamp. The sender still
-    // validates the complete envelope before postMessage.
+    // Reserve room for a generated message ID/timestamp. The sender checks
+    // this counted upper bound of the envelope against the size limit.
     const baseBytes = Protocol.byteLength(Protocol.envelope(type, epoch, empty(), msgId)) + 256;
     const pages = [];
     let page = empty();
