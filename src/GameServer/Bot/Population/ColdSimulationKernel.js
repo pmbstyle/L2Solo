@@ -242,6 +242,10 @@ function partyTransitionProposals(run, memberStates, party, timestamp, event = n
     });
 }
 
+// Resolved on first use, like the other lazy dependencies of the worker:
+// require() inside lifecycleKind ran per inventory item on every row.
+let C4Unseal, PartyMarketBreak, ClanPartyDuty;
+
 function lifecycleKind(state = {}, context = {}) {
     if (state.phase !== 'cold' || state.activity === 'pk_hunting') return 'inactive';
     if (Number(state.stats?.karma || 0) > 0 && !state.party?.partyId && !state.partyId) return 'resolver';
@@ -257,7 +261,7 @@ function lifecycleKind(state = {}, context = {}) {
     // any, is selected on the next state after the transition is durable.
     if (state.activity === 'traveling' || state.activity === 'dead'
         || (state.activity === 'resting' && Number(stats.restUntil || 0) > 0)) return 'resolver';
-    if (require('./PartyMarketBreak').ready(state)) return 'command';
+    if ((PartyMarketBreak ||= require('./PartyMarketBreak')).ready(state)) return 'command';
     if (stats.partyMarketReturn && ['shopping', 'merchant'].includes(state.activity)) return 'command';
     // Finish town services before waiting for a clan hunt. The pure shopping
     // resolver only advances its deadline and cannot buy, sell or leave town.
@@ -267,7 +271,7 @@ function lifecycleKind(state = {}, context = {}) {
         const reserve = Math.max(0, Number(plan.market?.reserve || 0));
         if (state.activity !== 'hunting' || (price > 0 && Number(state.adena || 0) >= price + reserve)) return 'command';
     }
-    if (require('./ClanPartyDuty').waiting(state)) return 'resolver';
+    if ((ClanPartyDuty ||= require('./ClanPartyDuty')).waiting(state)) return 'resolver';
     if (!SIMPLE_ACTIVITIES.has(String(state.activity || ''))) return 'command';
     // craftReturn is a saved destination, not an outstanding crafting action.
     // Actual crafting is routed by activity, shop/station and plan readiness.
@@ -275,7 +279,7 @@ function lifecycleKind(state = {}, context = {}) {
         || stats.craftShop || stats.craftStationId || stats.supplyErrand) return 'command';
     if (stats.mammonReturn || (Number(stats.mammonRetryAt || 0) <= Date.now()
         && Object.values(state.inventory || {}).some(item => Number(item.amount)>0
-            && invoke('GameServer/Items/C4Unseal').options(item.selfId).length))) return 'command';
+            && (C4Unseal ||= invoke('GameServer/Items/C4Unseal')).options(item.selfId).length))) return 'command';
     if (String(plan.strategy || '') === 'craft') {
         if (state.activity !== 'hunting' || ['component_ready', 'ready_to_craft'].includes(String(plan.status || ''))) return 'command';
     }
@@ -302,8 +306,21 @@ function priorityForResult(state, result) {
     return 'P2';
 }
 
-function proposalPayloadBytes(proposals = []) {
-    return Protocol.byteLength({ proposals });
+// JSON of { proposals: [a, b] } is the empty payload plus each proposal's
+// own JSON and one comma between neighbours, so a batch can be sized from
+// its members' sizes without serialising the growing batch again.
+const EMPTY_PROPOSAL_PAYLOAD_BYTES = Protocol.byteLength({ proposals: [] });
+
+function proposalSizes(proposals = []) {
+    return proposals.map((proposal) => Protocol.byteLength(proposal));
+}
+
+function proposalPayloadBytes(count, itemBytes) {
+    return EMPTY_PROPOSAL_PAYLOAD_BYTES + itemBytes + Math.max(0, count - 1);
+}
+
+function groupPayloadBytes(sizes = []) {
+    return proposalPayloadBytes(sizes.length, sizes.reduce((sum, size) => sum + size, 0));
 }
 
 function compactProposal(proposal = {}, includeInventory = true) {
@@ -1239,6 +1256,8 @@ class ColdSimulationKernel {
                 return rank[a.priority] - rank[b.priority] || a.enqueuedAt - b.enqueuedAt;
             });
         const proposals = [];
+        const proposalBytes = [];
+        let itemBytes = 0;
         const oversized = [];
         const visited = new Set();
         for (const proposal of eligible) {
@@ -1248,29 +1267,36 @@ class ColdSimulationKernel {
             if (proposals.length + group.length > limit) break;
             group.forEach(entry => visited.add(entry.characterId));
             let transportGroup = group;
-            if (proposalPayloadBytes(group) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+            let transportSizes = proposalSizes(group);
+            if (groupPayloadBytes(transportSizes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
                 this.stats.proposalOversize += group.length;
                 transportGroup = group.map(entry => compactProposal(entry, true));
-                if (proposalPayloadBytes(transportGroup) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                transportSizes = proposalSizes(transportGroup);
+                if (groupPayloadBytes(transportSizes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
                     transportGroup = group.map(entry => compactProposal(entry, false));
+                    transportSizes = proposalSizes(transportGroup);
                 }
-                if (proposalPayloadBytes(transportGroup) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                if (groupPayloadBytes(transportSizes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
                     transportGroup = transportGroup.map(entry => {
                         const base = this.inFlight.get(Number(entry.characterId))?.state;
                         if (!base || !entry.nextState) return entry;
                         const { nextState, ...transport } = entry;
                         return { ...transport, nextStateDelta: ColdStateDelta.create(base, nextState) };
                     });
+                    transportSizes = proposalSizes(transportGroup);
                 }
-                if (proposalPayloadBytes(transportGroup) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                if (groupPayloadBytes(transportSizes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
                     oversized.push(...group);
                     continue;
                 }
                 this.stats.proposalCompactions += group.length;
             }
-            const candidate = [...proposals, ...transportGroup];
-            if (proposalPayloadBytes(candidate) > PROPOSAL_PAYLOAD_LIMIT_BYTES) break;
+            const candidateItemBytes = transportSizes.reduce((sum, size) => sum + size, itemBytes);
+            const candidateCount = proposals.length + transportGroup.length;
+            if (proposalPayloadBytes(candidateCount, candidateItemBytes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) break;
             proposals.push(...transportGroup);
+            proposalBytes.push(...transportSizes);
+            itemBytes = candidateItemBytes;
         }
         oversized.forEach((proposal) => {
             if (proposal.raidStepId) require('./ColdRaidEncounter').abort(proposal.raidStepId);
@@ -1294,7 +1320,10 @@ class ColdSimulationKernel {
         // Priority and party flushes can fill that window just like a timer flush.
         const capacityBlocked = this.partyCapacityBlocked === true
             || this.claiming.size + this.inFlight.size + this.commanding.size >= this.maxInFlight;
-        this.emit('proposal_batch', { proposals, capacityBlocked });
+        // Each proposal's measured size travels with it, so the main commit
+        // queue need not serialise it again (the list fits the 16 KiB left
+        // between the payload limit and the message limit).
+        this.emit('proposal_batch', { proposals, proposalBytes, capacityBlocked });
         return proposals.length;
     }
 

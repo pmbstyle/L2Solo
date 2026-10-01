@@ -170,10 +170,10 @@ function inventorySlotCount(state = {}) {
     }, 0);
 }
 
-function liquidationSlotCount(state, predicate) {
+function liquidationSlotCount(state, predicate, candidates = saleCandidates(state, { unlimited: true })) {
     // Share reservations, equipped-copy protection and trade eligibility with
     // the sale path: cleanup must describe work the town visit can execute.
-    return saleCandidates(state, { unlimited: true }).reduce((total, item) => {
+    return candidates.reduce((total, item) => {
         if (!predicate(item)) return total;
         const source = state.inventory?.[item.selfId];
         return total + (source?.stackable === false || Array.isArray(source?.instances)
@@ -181,24 +181,26 @@ function liquidationSlotCount(state, predicate) {
     }, 0);
 }
 
-function npcOnlySlotCount(state = {}) {
-    return liquidationSlotCount(state, isNpcOnlyItem);
+function npcOnlySlotCount(state = {}, candidates) {
+    return liquidationSlotCount(state, isNpcOnlyItem, candidates);
 }
 
-function skillBookSlotCount(state = {}) {
-    return liquidationSlotCount(state, isSkillBookItem);
+function skillBookSlotCount(state = {}, candidates) {
+    return liquidationSlotCount(state, isSkillBookItem, candidates);
 }
 
 function inventoryCleanupNeed(state = {}, options = {}) {
     const timestamp = Number(options.now) || Date.now();
     const slots = inventorySlotCount(state);
-    const npcOnlySlots = npcOnlySlotCount(state);
-    const skillBookSlots = skillBookSlotCount(state);
+    // One sale set serves every count below; it depends only on the state.
+    const candidates = saleCandidates(state, { unlimited: true });
+    const npcOnlySlots = npcOnlySlotCount(state, candidates);
+    const skillBookSlots = skillBookSlotCount(state, candidates);
     const overCapacity = slots > INVENTORY_SLOT_LIMIT;
     const accumulatedNpcOnly = isTradeEligible(state)
         && (skillBookSlots > 0 || npcOnlySlots >= NPC_ONLY_CLEANUP_MIN_SLOTS);
     const surplusGearSlots = isTradeEligible(state) && slots >= NPC_SURPLUS_GEAR_MIN_SLOTS
-        ? saleCandidates(state, { unlimited: true }).reduce((total, item) => {
+        ? candidates.reduce((total, item) => {
             const lowGradeGear = (String(item.kind || '').startsWith('Weapon.')
                 || String(item.kind || '').startsWith('Armor.'))
                 && gradeIndex(item.rank) < gradeIndex('c');

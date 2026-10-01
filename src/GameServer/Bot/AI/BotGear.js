@@ -71,13 +71,25 @@ function flattenItem(item) {
     };
 }
 
+// The item catalog is static after load, but gear planning asks for it once
+// per slot choice; rebuilding it each time dominated bot need evaluation.
+let catalogSource = null;
+let catalogSize = -1;
+let gearCatalog = [];
+
 function allItems() {
-    return (DataCache.items || [])
-        .filter((item) => {
-            const kind = item?.template?.kind || '';
-            return kind.startsWith('Weapon.') || kind.startsWith('Armor.');
-        })
-        .map(flattenItem);
+    const items = DataCache.items || [];
+    if (catalogSource !== items || catalogSize !== items.length) {
+        catalogSource = items;
+        catalogSize = items.length;
+        gearCatalog = Object.freeze(items
+            .filter((item) => {
+                const kind = item?.template?.kind || '';
+                return kind.startsWith('Weapon.') || kind.startsWith('Armor.');
+            })
+            .map((item) => Object.freeze(flattenItem(item))));
+    }
+    return gearCatalog;
 }
 
 function validRank(item, rank) {
@@ -272,9 +284,31 @@ function buildJewels(rank, level) {
     ].filter(Boolean);
 }
 
+// A plan depends only on class, level and the static catalog, but goal review
+// asks for it for every bot on every pass; each build scans the catalog about
+// a dozen times. Callers get their own copy so the cached plan stays intact.
+let planCatalog = null;
+const plans = new Map();
+
 function planFor(character) {
     const level = Number(character.fetchLevel?.() || character.level || character.stats?.level || 1);
     const classId = Number(BotRoles.classIdOf(character) ?? 0);
+    const catalog = allItems();
+    if (planCatalog !== catalog) {
+        planCatalog = catalog;
+        plans.clear();
+    }
+    const key = `${classId}:${level}`;
+    if (!plans.has(key)) plans.set(key, buildPlan(classId, level));
+    const plan = plans.get(key);
+    return {
+        ...plan,
+        hint: structuredClone(plan.hint),
+        items: plan.items.map((item) => ({ ...item }))
+    };
+}
+
+function buildPlan(classId, level) {
     const role = BotRoles.inferRole(classId);
     const band = gradeForLevel(level);
     const rank = band.rank;
