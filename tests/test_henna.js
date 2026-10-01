@@ -193,6 +193,61 @@ async function main() {
             refund.packets.filter((p) => p[0] === 0x64).some((p) => p.readInt32LE(1) === 53),
             'remove must report the dye refund'
         );
+
+        // Slot count follows class ancestry, not character level. Packet/storage
+        // layouts retain three slots, as in C4; existing saved symbols survive.
+        const ClassProgression = invoke('GameServer/ClassProgression');
+        for (const root of Object.keys(ClassProgression.firstProfMap)) {
+            assert.strictEqual(HennaService.availableSlots(buildSession({ classId: Number(root) })), 1);
+        }
+        for (const first of Object.keys(ClassProgression.secondProfMap)) {
+            const firstSession = buildSession({ classId: Number(first) });
+            assert.strictEqual(HennaService.availableSlots(firstSession), 2);
+        }
+        for (const second of Object.values(ClassProgression.secondProfMap).flat()) {
+            assert.strictEqual(HennaService.availableSlots(buildSession({ classId: second })), 3);
+        }
+        for (const third of Object.keys(ClassProgression.thirdClasses)) {
+            assert.strictEqual(HennaService.availableSlots(buildSession({ classId: Number(third) })), 3);
+        }
+        const firstProfession = buildSession({ classId: 4, dyeAmount: 30, adena: 15300 });
+        assert.strictEqual(HennaService.drawSymbol(firstProfession, 1), true);
+        assert.strictEqual(HennaService.drawSymbol(firstProfession, 1), true, 'repeated symbols remain allowed');
+        assert.strictEqual(HennaService.drawSymbol(firstProfession, 1), false, 'first profession must reject a third symbol');
+        assert.strictEqual(firstProfession.actor.backpack.fetchItemFromSelfId(4445).fetchAmount(), 10, 'rejected draw must not consume dyes');
+        assert.strictEqual(firstProfession.actor.backpack.fetchTotalAdena(), 5100, 'rejected draw must not consume adena');
+
+        const capped = buildSession({ classId: 5, dyeAmount: 30, adena: 435000 });
+        capped.actor.backpack.items.find((item) => item.selfId === 4445).selfId = 4613;
+        assert.strictEqual(HennaService.drawSymbol(capped, 169), true);
+        assert.strictEqual(HennaService.drawSymbol(capped, 169), true, 'installation above the effective +5 cap remains allowed');
+        assert.strictEqual(capped.actor.hennaStats.STR, 5, 'two STR+4 symbols must yield +5');
+        assert.strictEqual(capped.actor.hennaStats.CON, -8, 'two CON-4 penalties must yield -8');
+        assert.strictEqual(HennaService.drawSymbol(capped, 169), true, 'second profession supports three repeated symbols');
+        assert.strictEqual(capped.actor.hennaStats.STR, 5);
+        assert.strictEqual(capped.actor.hennaStats.CON, -12);
+        assert.strictEqual(hennaInfo(capped).readInt8(2), 5, 'HennaInfo must expose the capped STR bonus');
+        assert.strictEqual(hennaInfo(capped).readInt8(3), -12, 'HennaInfo must preserve the full CON penalty');
+        Database.fetchCharacterHennas = () => Promise.resolve([1, 2, 3].map((slot) => ({ slot, symbolId: 169 })));
+        const restoredCap = buildSession({ classId: 5, dyeAmount: 0, adena: 0 });
+        await HennaService.restore(restoredCap);
+        assert.deepStrictEqual(restoredCap.hennas, [169, 169, 169], 'restore preserves repeated symbols');
+        assert.strictEqual(restoredCap.actor.hennaStats.STR, 5, 'restore must apply the cap');
+        assert.strictEqual(restoredCap.actor.hennaStats.CON, -12, 'restore must preserve all penalties');
+        assert.strictEqual(HennaService.removeSymbol(restoredCap, 3), true);
+        assert.strictEqual(restoredCap.actor.hennaStats.STR, 5, 'removing one of three leaves a capped bonus');
+        assert.strictEqual(restoredCap.actor.hennaStats.CON, -8);
+        assert.strictEqual(HennaService.removeSymbol(restoredCap, 2), true);
+        assert.strictEqual(restoredCap.actor.hennaStats.STR, 4, 'removing another must recompute below the cap');
+        assert.strictEqual(restoredCap.actor.hennaStats.CON, -4);
+
+        // Every base stat uses the same positive-only aggregate cap.
+        for (const stat of HennaService.STAT_KEYS) {
+            const high = require('../data/Henna/c4-henna.json').symbols.find((symbol) => symbol[stat] === 4);
+            assert(high, `C4 data must include a +4 ${stat} symbol`);
+            restoredCap.hennas = [high.id, high.id, high.id];
+            assert.strictEqual(HennaService.refreshHennaStats(restoredCap)[stat], 5, `${stat} aggregate bonus must be capped`);
+        }
     } finally {
         Generics.calculateStats = originalStats;
         Response.userInfo = originalUserInfo;
@@ -336,8 +391,19 @@ function verifyHennaStatEffects() {
     session.hennas = [strong.id, swift.id, null];
     const stacked = HennaService.refreshHennaStats(session);
     ['INT', 'STR', 'CON', 'MEN', 'DEX', 'WIT'].forEach((stat) => {
-        assert.strictEqual(stacked[stat], strong[stat] + swift[stat], `stacked ${stat} totals must add up`);
+        assert.strictEqual(stacked[stat], Math.min(5, strong[stat] + swift[stat]), `stacked ${stat} totals must respect the positive cap`);
     });
+
+    session.hennas = [169, 169, 169];
+    const cappedStats = HennaService.refreshHennaStats(session);
+    assert.strictEqual(cappedStats.STR, 5);
+    assert.strictEqual(cappedStats.CON, -12);
+    assert.strictEqual(fighter.collectivePAtk, Math.round(Formulas.calcPAtk(20, 45, 120)), 'combat formulas must use capped STR');
+    const normalCon = fighter.fetchCon;
+    fighter.fetchCon = () => 1;
+    HennaService.refreshHennaStats(session);
+    assert.strictEqual(fighter.maxHp, Formulas.calcHp(20, 1, 1), 'final CON must remain at least one despite the full penalty');
+    fighter.fetchCon = normalCon;
 
     session.hennas = [null, null, null];
     HennaService.refreshHennaStats(session);
