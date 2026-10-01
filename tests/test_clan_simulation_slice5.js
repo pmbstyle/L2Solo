@@ -15,6 +15,7 @@ const ClanPartyService = invoke('GameServer/Clan/ClanPartyService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
+const LEVEL_UP_SP = invoke('GameServer/Clan/ClanRules').LEVEL_REQUIREMENTS[2].sp;
 
 function removeDatabaseFiles() {
     [databasePath, `${databasePath}-wal`, `${databasePath}-shm`].forEach((file) => fs.rmSync(file, { force: true }));
@@ -43,6 +44,8 @@ function seedDatabase() {
             partyHistory: { cruma: { runs: 3 } }
         }), index);
     }
+    seed.prepare('UPDATE characters SET sp = ? WHERE id = ?').run(LEVEL_UP_SP, 4500001);
+    seed.prepare('UPDATE bot_life_state SET sp = ? WHERE characterId = ?').run(LEVEL_UP_SP, 4500001);
     seed.close();
 }
 
@@ -193,6 +196,10 @@ async function main() {
         assert.strictEqual(resolved.succeeded, 1, 'second pass must resolve the persistent operation');
         const [clan] = await Database.execute(['SELECT level FROM clans WHERE id = ?', [created.clanId]]);
         assert.strictEqual(Number(clan.level), 3, 'Blood Mark reward must advance the autonomous clan');
+        const [leader] = await Database.execute(['SELECT sp FROM characters WHERE id = ?', [4500001]]);
+        const [leaderLife] = await Database.execute(['SELECT sp FROM bot_life_state WHERE characterId = ?', [4500001]]);
+        assert.strictEqual(Number(leader.sp), 0, 'level-up must spend the leader SP');
+        assert.strictEqual(Number(leaderLife.sp), 0, 'cold leader state must retain the spent SP');
 
         const [operation] = await Database.execute(['SELECT status, wins, deaths FROM clan_operations WHERE id = ?', [activeOperation.id]]);
         assert.strictEqual(operation.status, 'succeeded');
