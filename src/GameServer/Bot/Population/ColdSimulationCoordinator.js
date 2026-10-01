@@ -567,7 +567,13 @@ class ColdSimulationCoordinator {
     contextIndex(options = {}) {
         let profiles = [];
         try { profiles = SpotProfiles.ensure() || []; } catch (_) { profiles = []; }
-        const spots = new Map(profiles.map((spot) => [String(spot.id), spot]));
+        // The spot catalog changes only when SpotProfiles rebuilds its array;
+        // every context of that catalog reads the same id index.
+        if (this.contextSpotSource !== profiles) {
+            this.contextSpotSource = profiles;
+            this.contextSpots = new Map(profiles.map((spot) => [String(spot.id), spot]));
+        }
+        const spots = this.contextSpots;
         const parties = new Map((BackgroundPartyState.active?.() || []).map((party) => [Number(party.leaderId || 0), party]));
         let occupancy = {};
         try { occupancy = SpotProfiles.currentOccupancy(profiles) || {}; } catch (_) { occupancy = {}; }
