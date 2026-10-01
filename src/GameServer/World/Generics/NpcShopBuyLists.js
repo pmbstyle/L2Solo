@@ -1133,8 +1133,9 @@ function allowedEntry(entry) { return !SHOT_IDS.has(Number(typeof entry === 'num
 
 // Lists are rebuilt on every lookup, so the rate is read once per build;
 // resolving it for each row made shop lookups dominate bot planning time.
+let ProgressionRates;
 function progressionMultiplier() {
-    return invoke('GameServer/ProgressionRates').profile().multiplier;
+    return (ProgressionRates ||= invoke('GameServer/ProgressionRates')).profile().multiplier;
 }
 
 function normalizeEntry(entry, rate) {

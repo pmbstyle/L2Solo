@@ -2614,9 +2614,10 @@ const PopulationService = {
                     });
                 }
                 const partyObjective = party.stats?.objective || null;
+                const ClanEquipmentPartyPolicy = require('./ClanEquipmentPartyPolicy');
                 const nearby = candidates.filter((state) => (
                     !claimed.has(Number(state.characterId))
-                    && require('./ClanEquipmentPartyPolicy').allowed(state, partyObjective)
+                    && ClanEquipmentPartyPolicy.allowed(state, partyObjective)
                     && (partyObjective
                         ? (partyObjectiveKeyForState(state) === partyObjectiveGroupingKey(partyObjective)
                             || partyObjectivesShareRoute(partyObjective, partyObjectiveForState(state))

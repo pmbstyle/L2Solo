@@ -542,7 +542,7 @@ function activeMusicEffects(profile = {}, timestamp = Date.now()) {
 function partyMusicSkills(profile = {}) {
     return (profile.skills || []).filter((skill) => {
         if (skill.passive) return false;
-        const semantic = C4SkillRules.resolve(skill);
+        const semantic = C4SkillRules.resolveCached(skill);
         const required = number(semantic.requires?.weaponsAllowed);
         return semantic.isDance === true
             && semantic.target === 'party'
@@ -552,7 +552,7 @@ function partyMusicSkills(profile = {}) {
 }
 
 function partyMusicMpCost(profile, skill, timestamp = Date.now()) {
-    const semantic = C4SkillRules.resolve(skill);
+    const semantic = C4SkillRules.resolveCached(skill);
     let cost = Math.max(0, number(skill.mp));
     if (semantic.isDance === true) {
         cost += activeMusicEffects(profile, timestamp).length * Math.max(0, number(semantic.nextDanceCost));

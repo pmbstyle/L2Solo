@@ -242,6 +242,10 @@ function partyTransitionProposals(run, memberStates, party, timestamp, event = n
     });
 }
 
+// Resolved on first use, like the other lazy dependencies of the worker:
+// require() inside lifecycleKind ran per inventory item on every row.
+let C4Unseal, PartyMarketBreak, ClanPartyDuty;
+
 function lifecycleKind(state = {}, context = {}) {
     if (state.phase !== 'cold' || state.activity === 'pk_hunting') return 'inactive';
     if (Number(state.stats?.karma || 0) > 0 && !state.party?.partyId && !state.partyId) return 'resolver';
@@ -257,7 +261,7 @@ function lifecycleKind(state = {}, context = {}) {
     // any, is selected on the next state after the transition is durable.
     if (state.activity === 'traveling' || state.activity === 'dead'
         || (state.activity === 'resting' && Number(stats.restUntil || 0) > 0)) return 'resolver';
-    if (require('./PartyMarketBreak').ready(state)) return 'command';
+    if ((PartyMarketBreak ||= require('./PartyMarketBreak')).ready(state)) return 'command';
     if (stats.partyMarketReturn && ['shopping', 'merchant'].includes(state.activity)) return 'command';
     // Finish town services before waiting for a clan hunt. The pure shopping
     // resolver only advances its deadline and cannot buy, sell or leave town.
@@ -267,7 +271,7 @@ function lifecycleKind(state = {}, context = {}) {
         const reserve = Math.max(0, Number(plan.market?.reserve || 0));
         if (state.activity !== 'hunting' || (price > 0 && Number(state.adena || 0) >= price + reserve)) return 'command';
     }
-    if (require('./ClanPartyDuty').waiting(state)) return 'resolver';
+    if ((ClanPartyDuty ||= require('./ClanPartyDuty')).waiting(state)) return 'resolver';
     if (!SIMPLE_ACTIVITIES.has(String(state.activity || ''))) return 'command';
     // craftReturn is a saved destination, not an outstanding crafting action.
     // Actual crafting is routed by activity, shop/station and plan readiness.
@@ -275,7 +279,7 @@ function lifecycleKind(state = {}, context = {}) {
         || stats.craftShop || stats.craftStationId || stats.supplyErrand) return 'command';
     if (stats.mammonReturn || (Number(stats.mammonRetryAt || 0) <= Date.now()
         && Object.values(state.inventory || {}).some(item => Number(item.amount)>0
-            && invoke('GameServer/Items/C4Unseal').options(item.selfId).length))) return 'command';
+            && (C4Unseal ||= invoke('GameServer/Items/C4Unseal')).options(item.selfId).length))) return 'command';
     if (String(plan.strategy || '') === 'craft') {
         if (state.activity !== 'hunting' || ['component_ready', 'ready_to_craft'].includes(String(plan.status || ''))) return 'command';
     }

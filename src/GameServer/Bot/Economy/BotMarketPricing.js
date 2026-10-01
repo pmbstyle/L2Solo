@@ -23,11 +23,13 @@ function useNpcOfferSnapshot(offers) {
     snapshotPrices = indexOffers(offers || []);
 }
 
+let ProgressionRates; // resolved on first use; workers price from the offer snapshot
+
 function npcPrice(item) {
     // An enchanted item is not equivalent to the ordinary NPC stock.
     if (item?.npcComparable === false || Number(item?.enchant || 0) > 0) return Infinity;
     if (snapshotPrices) return snapshotPrices.get(Number(item?.selfId)) ?? Infinity;
-    const npcRate = invoke('GameServer/ProgressionRates').profile().multiplier;
+    const npcRate = (ProgressionRates ||= invoke('GameServer/ProgressionRates')).profile().multiplier;
     if (cachedSpawns !== DataCache.npcSpawns || cachedNpcRate !== npcRate) {
         const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
         const TownNpcCatalog = invoke('GameServer/Bot/Economy/TownNpcCatalog');
