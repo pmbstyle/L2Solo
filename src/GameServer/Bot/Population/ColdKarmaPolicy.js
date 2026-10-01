@@ -1,6 +1,7 @@
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
+const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 
 function active(state) {
     return Number(state?.stats?.karma || 0) > 0;
@@ -31,13 +32,18 @@ function plan(state, spots, timestamp = Date.now()) {
         && !excludedSpotIds.has(travel.spotId)) {
         return { targetNpcId: 0, plannedState: clean, spot: spots.find(spot => spot.id === travel.spotId) || null };
     }
+    // The level window is a cheap comparison; the solo matchup behind
+    // isSpotAllowedForState is not, so it only judges spots inside the window,
+    // with the bot's combat profiles built once for the whole search.
+    const routeOptions = { mode: 'solo' };
+    routeOptions.matchupProfiles = TargetMatchup.stateProfiles(clean, routeOptions);
     const candidates = spots.filter(spot => {
         const point = spot.center;
         return spot.raidBoss !== true && point
-            && !excludedSpotIds.has(spot.id) && !utils.isInPeaceZone(point.locX, point.locY)
-            && LevelingRoutes.isSpotAllowedForState(spot, clean, { mode: 'solo' })
             && Number(spot.minLevel || 1) <= Number(state.level || 1)
-            && Number(spot.maxLevel || spot.minLevel || 1) >= Math.max(1, Number(state.level || 1) - 8);
+            && Number(spot.maxLevel || spot.minLevel || 1) >= Math.max(1, Number(state.level || 1) - 8)
+            && !excludedSpotIds.has(spot.id) && !utils.isInPeaceZone(point.locX, point.locY)
+            && LevelingRoutes.isSpotAllowedForState(spot, clean, routeOptions);
     });
     const current = candidates.find(spot => spot.id === state.spotId
         && Math.hypot(Number(spot.center.locX) - Number(state.loc?.locX),

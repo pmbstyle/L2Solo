@@ -3,6 +3,9 @@ const ClassPolicy = invoke('GameServer/Bot/AI/BotClassPolicy');
 const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
 const HuntEfficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
+// Resolved on first use; invoke() re-resolves the path on every call inside spot scans.
+let SpotRiskPolicy;
+const spotRiskPolicy = () => SpotRiskPolicy || (SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy'));
 
 const ECONOMIC_ROLES = {
     54: 'spoiler',
@@ -209,7 +212,7 @@ function targetLevelForState(state = {}, options = {}) {
     const actual = Number(state.fetchLevel?.() || state.level || state.stats?.level || 0);
     if (actual > 0 && ['party', 'duo'].includes(modeForState(state, options))) return actual;
     if (actual > 0) return Math.max(1, actual - Number(
-        invoke('GameServer/Bot/Population/SpotRiskPolicy').recoveryFor(state)?.levelPenalty || 0));
+        spotRiskPolicy().recoveryFor(state)?.levelPenalty || 0));
 
     const parts = String(state.levelBand || '').split('-').map((part) => Number(part));
     if (parts.length >= 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1])) {
@@ -227,7 +230,17 @@ function textForSpot(spot = {}) {
     ].join(' ').toLowerCase();
 }
 
+// Tags derive from a spot's static id, name, mob names and level bounds, but
+// route checks ask for them on every candidate of every search.
+const spotTags = new WeakMap();
+
 function tagsForSpot(spot = {}) {
+    if (!spot || typeof spot !== 'object') return deriveTags(spot);
+    if (!spotTags.has(spot)) spotTags.set(spot, deriveTags(spot));
+    return [...spotTags.get(spot)];
+}
+
+function deriveTags(spot) {
     if (spot.tagsAuthoritative === true) return uniq(spot.tags || []);
 
     const text = textForSpot(spot);
@@ -454,7 +467,7 @@ function isSpotAllowedForState(spot, state = {}, options = {}) {
 
 function safetyOptions(state, options = {}) {
     const soloSafety = !['party', 'duo'].includes(modeForState(state, options));
-    const recovery = soloSafety && invoke('GameServer/Bot/Population/SpotRiskPolicy').recoveryFor(state);
+    const recovery = soloSafety && spotRiskPolicy().recoveryFor(state);
     return { soloSafety, maxTargetLevel: recovery?.levelPenalty > 0 ? targetLevelForState(state) : null };
 }
 

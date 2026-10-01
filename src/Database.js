@@ -1633,9 +1633,21 @@ function parsedObject(raw) {
     }
 }
 
-function preserveVersionedAppearanceStats(currentRaw, proposedRaw) {
-    const current = parsedObject(currentRaw);
-    const proposed = parsedObject(proposedRaw);
+// Both views of one stats string from a single JSON.parse: `loose` as
+// parsedObject returns it (null for bad JSON) and `plain` as jsonObject does.
+function statsViews(raw) {
+    if (typeof raw !== 'string' || !raw) return { loose: parsedObject(raw), plain: jsonObject(raw) };
+    let value;
+    try {
+        value = JSON.parse(raw);
+    } catch (_) {
+        return { loose: null, plain: {} };
+    }
+    const loose = value && typeof value === 'object' ? value : {};
+    return { loose, plain: Array.isArray(loose) ? {} : loose };
+}
+
+function mergeVersionedAppearance(current, proposed, proposedRaw) {
     if (!current || !proposed) return proposedRaw;
 
     const currentVersion = Math.max(0, Number(current.appearanceVersion || 0));
@@ -1648,34 +1660,56 @@ function preserveVersionedAppearanceStats(currentRaw, proposedRaw) {
 }
 
 function preserveColdVersionedStats(row, patch = {}) {
+    return preserveColdVersionedStatsParsed(row, patch).patch;
+}
+
+// Resolved on first use; require() re-resolved the path on every cold commit.
+let ClanMembershipPolicyModule;
+const clanMembershipPolicy = () => ClanMembershipPolicyModule
+    || (ClanMembershipPolicyModule = require('./GameServer/Clan/ClanMembershipPolicy'));
+
+// Parses the current and proposed stats once each. Besides the patch it
+// returns what later cold commit steps would otherwise parse again: the final
+// stats as parsedObject(patch.statsJson) would see them (undefined when the
+// patch carries no stats) and the proposed death-experience record.
+function preserveColdVersionedStatsParsed(row, patch = {}) {
     const next = { ...patch };
-    if (Object.prototype.hasOwnProperty.call(next, 'statsJson')) {
-        next.statsJson = preserveVersionedAppearanceStats(row?.statsJson, next.statsJson);
-        const current = jsonObject(row?.statsJson), incoming = jsonObject(next.statsJson);
-        if (Number(current.nameGeneratorVersion || 0) > Number(incoming.nameGeneratorVersion || 0)) {
-            incoming.nameGeneratorVersion = current.nameGeneratorVersion;
-            next.statsJson = JSON.stringify(incoming);
-        }
-        if (Number(current.nameGeneratorVersion || 0) > 0 && 'characterName' in next) {
-            next.characterName = row.characterName;
-        }
-        if (Number(current.clanMembershipVersion || 0) > Number(incoming.clanMembershipVersion || 0)) {
-            for (const key of ['clanId', 'clanMembershipVersion', 'clanDiscipline', 'clanPartyObjective']) incoming[key] = current[key];
-            if (Number(current.clanDiscipline?.clanId) > 0
-                && incoming.equipmentPlan?.clanGoal?.clanId === current.clanDiscipline.clanId) incoming.equipmentPlan = null;
-            next.statsJson = JSON.stringify(incoming);
-        }
-        const proposed = {
-            activity: next.activity || row?.activity, stats: incoming
-        };
-        const policy = require('./GameServer/Clan/ClanMembershipPolicy');
-        const repaired = policy.reconcileState(policy.preserveGoalInvalidation(proposed, current));
-        if (repaired !== proposed) {
-            next.statsJson = JSON.stringify(repaired.stats);
-            if (repaired.activity !== proposed.activity) next.activity = repaired.activity;
-        }
+    if (!Object.prototype.hasOwnProperty.call(next, 'statsJson')) return { patch: next, stats: undefined, deathExperience: undefined };
+    const proposedRaw = next.statsJson;
+    const currentViews = statsViews(row?.statsJson);
+    const proposedViews = statsViews(proposedRaw);
+    const deathExperience = proposedViews.loose?.deathExperience;
+    let stats = proposedViews.loose;
+    next.statsJson = mergeVersionedAppearance(currentViews.loose, proposedViews.loose, proposedRaw);
+    const current = currentViews.plain;
+    const incoming = next.statsJson === proposedRaw ? proposedViews.plain : jsonObject(next.statsJson);
+    if (next.statsJson !== proposedRaw) stats = incoming;
+    if (Number(current.nameGeneratorVersion || 0) > Number(incoming.nameGeneratorVersion || 0)) {
+        incoming.nameGeneratorVersion = current.nameGeneratorVersion;
+        next.statsJson = JSON.stringify(incoming);
+        stats = incoming;
     }
-    return next;
+    if (Number(current.nameGeneratorVersion || 0) > 0 && 'characterName' in next) {
+        next.characterName = row.characterName;
+    }
+    if (Number(current.clanMembershipVersion || 0) > Number(incoming.clanMembershipVersion || 0)) {
+        for (const key of ['clanId', 'clanMembershipVersion', 'clanDiscipline', 'clanPartyObjective']) incoming[key] = current[key];
+        if (Number(current.clanDiscipline?.clanId) > 0
+            && incoming.equipmentPlan?.clanGoal?.clanId === current.clanDiscipline.clanId) incoming.equipmentPlan = null;
+        next.statsJson = JSON.stringify(incoming);
+        stats = incoming;
+    }
+    const proposed = {
+        activity: next.activity || row?.activity, stats: incoming
+    };
+    const policy = clanMembershipPolicy();
+    const repaired = policy.reconcileState(policy.preserveGoalInvalidation(proposed, current));
+    if (repaired !== proposed) {
+        next.statsJson = JSON.stringify(repaired.stats);
+        stats = repaired.stats;
+        if (repaired.activity !== proposed.activity) next.activity = repaired.activity;
+    }
+    return { patch: next, stats, deathExperience };
 }
 
 function syncInventorySummaryUnsafe(characterId, inventory = {}) {
@@ -1851,14 +1885,15 @@ function applyColdPhysicalStateUnsafe(characterId, physical = {}) {
     }
 }
 
-function coldSimulationPartition(row, options = {}) {
+// `parsedStats`, when given, is parsedObject(row.statsJson) computed earlier.
+function coldSimulationPartition(row, options = {}, parsedStats) {
     if (!row) return { ok: false, reason: 'missing_state' };
     if (row.phase !== 'cold') return { ok: false, reason: 'not_cold' };
     if (!SIMPLE_COLD_ACTIVITIES.has(String(row.activity || '')) && options.allowLifecycle !== true) {
         return { ok: false, reason: 'legacy_activity' };
     }
     if (row.partyId && options.allowParty !== true) return { ok: false, reason: 'background_party' };
-    const stats = parsedObject(row.statsJson);
+    const stats = parsedStats !== undefined ? parsedStats : parsedObject(row.statsJson);
     if (!stats) return { ok: false, reason: 'invalid_stats' };
     if (options.allowLifecycle === true) {
         return { ok: true, reason: row.partyId ? 'background_party_cold' : 'trusted_cold_lifecycle' };
@@ -1872,6 +1907,26 @@ function coldSimulationPartition(row, options = {}) {
 
 function coldSimulationRow(characterId) {
     return one('SELECT * FROM bot_life_state WHERE characterId = ?', [Number(characterId)]);
+}
+
+// A claim needs the lease columns and the workflow flags coldSimulationPartition
+// reads, not the whole row with its 9 KB stats. json_extract keeps JavaScript
+// truthiness for them: false, 0, '' and missing values come back as 0, '' or
+// NULL, objects and arrays as their JSON text. Empty stats parse to {} as in
+// parsedObject; malformed stats have no flags and fail as invalid_stats.
+const COLD_CLAIM_FLAGS = ['warehouseWorkflow', 'warehouseErrand', 'marketStore', 'marketReturn',
+    'craftShop', 'craftStationId', 'supplyErrand'];
+const COLD_CLAIM_SQL = `SELECT characterId, phase, activity, partyId,
+        simulationOwner, simulationRevision, simulationLeaseUntil,
+        (statsJson IS NULL OR statsJson = '' OR json_valid(statsJson)) AS statsValid,
+        ${COLD_CLAIM_FLAGS.map((flag) => `CASE WHEN json_valid(statsJson) THEN json_extract(statsJson, '$.${flag}') END AS "${flag}"`).join(',\n        ')}
+    FROM bot_life_state WHERE characterId = ?`;
+
+function coldClaimRow(characterId) {
+    const row = one(COLD_CLAIM_SQL, [Number(characterId)]);
+    if (!row) return { row: null, stats: undefined };
+    const stats = row.statsValid ? Object.fromEntries(COLD_CLAIM_FLAGS.map((flag) => [flag, row[flag]])) : null;
+    return { row, stats };
 }
 
 function coldSimulationConflict(row, request, timestamp) {
@@ -3171,8 +3226,8 @@ const Database = {
         if (ownerId !== COLD_SIMULATION_OWNER || !leaseId || leaseUntil <= timestamp) return Promise.resolve({ ok: false, reason: 'invalid_lease' });
 
         return inTransaction(() => {
-            const row = coldSimulationRow(characterId);
-            const partition = coldSimulationPartition(row, request);
+            const { row, stats } = coldClaimRow(characterId);
+            const partition = coldSimulationPartition(row, request, stats);
             if (!partition.ok) return partition;
             if (Number(row.simulationRevision || 0) !== expectedRevision) return { ok: false, reason: 'stale_revision' };
             const currentOwner = String(row.simulationOwner || LEGACY_SIMULATION_OWNER);
@@ -3209,8 +3264,8 @@ const Database = {
             if (ownerId !== COLD_SIMULATION_OWNER || !leaseId || leaseUntil <= timestamp) {
                 return { ok: false, characterId, reason: 'invalid_lease' };
             }
-            const row = coldSimulationRow(characterId);
-            const partition = coldSimulationPartition(row, request);
+            const { row, stats } = coldClaimRow(characterId);
+            const partition = coldSimulationPartition(row, request, stats);
             if (!partition.ok) return { ...partition, characterId };
             if (Number(row.simulationRevision || 0) !== expectedRevision) {
                 return {
@@ -3359,9 +3414,9 @@ const Database = {
                         .find((column) => !COLD_SIMULATION_PATCH_COLUMNS.has(column));
                     const row = coldSimulationRow(characterId);
                     const conflict = coldSimulationConflict(row, { expectedRevision, ownerId, leaseId }, timestamp);
-                    const patch = preserveColdVersionedStats(row, requestedPatch);
+                    const { patch, stats } = preserveColdVersionedStatsParsed(row, requestedPatch);
                     const proposed = { ...row, ...patch, phase: patch.phase || row?.phase, activity: patch.activity || row?.activity };
-                    const partition = coldSimulationPartition(proposed, request);
+                    const partition = coldSimulationPartition(proposed, request, stats);
                     if (!Number.isSafeInteger(characterId) || characterId <= 0
                         || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0
                         || ownerId !== COLD_SIMULATION_OWNER || !leaseId
@@ -3424,9 +3479,9 @@ const Database = {
             const row = coldSimulationRow(characterId);
             const conflict = coldSimulationConflict(row, { expectedRevision, ownerId, leaseId }, timestamp);
             if (conflict !== 'cas_failed') return { ok: false, characterId, reason: conflict };
-            const patch = preserveColdVersionedStats(row, requestedPatch);
+            const { patch, stats, deathExperience } = preserveColdVersionedStatsParsed(row, requestedPatch);
             const proposed = { ...row, ...patch, phase: patch.phase || row.phase, activity: patch.activity || row.activity };
-            const partition = coldSimulationPartition(proposed, request);
+            const partition = coldSimulationPartition(proposed, request, stats);
             if (!partition.ok) return { ok: false, characterId, reason: 'partition_rejected', detail: partition.reason };
             const entries = Object.entries({ ...patch, updatedAt: patch.updatedAt ?? timestamp });
             const revision = expectedRevision + 1;
@@ -3455,8 +3510,7 @@ const Database = {
             if (physical) applyColdPhysicalStateUnsafe(characterId, physical);
             // Persist the entitlement under the same lease fence and transaction
             // as EXP. Cold-to-hot resurrection reads this durable record.
-            syncColdDeathExperienceUnsafe(characterId,
-                parsedObject(requestedPatch.statsJson)?.deathExperience, timestamp);
+            syncColdDeathExperienceUnsafe(characterId, deathExperience, timestamp);
             return {
                 ok: true,
                 characterId,

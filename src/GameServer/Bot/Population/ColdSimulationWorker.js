@@ -122,6 +122,7 @@ function send(type, payload = {}, msgId = null) {
         }
         return false;
     }
+    message.bytes = valid.bytes;
     parentPort.postMessage(message);
     return true;
 }
@@ -366,7 +367,7 @@ function startKernel(config = {}) {
 }
 
 async function handle(message) {
-    const valid = Protocol.validateEnvelope(message, 'main', { workerEpoch: epoch });
+    const valid = Protocol.validateEnvelope(message, 'main', { workerEpoch: epoch, bytes: message?.bytes });
     if (!valid.ok) {
         send('fault', { reason: valid.reason, msgId: message?.msgId || null });
         return;
