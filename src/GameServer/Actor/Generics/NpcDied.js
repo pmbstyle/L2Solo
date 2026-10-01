@@ -170,6 +170,12 @@ function npcDied(session, actor, npc) {
     }
 
     World.removeNpc(session, npc);
+    if (typeof actor?.fetchKind === 'function' && actor.fetchIsSummon?.() !== true) {
+        // ConfuseMob's killer is an NPC, not the player whose session relayed
+        // its packets. Preserve corpse/respawn handling without player credit.
+        actor.abortCombatState(session);
+        return;
+    }
     Generics.abortCombatState(session, actor);
 
     if (actor.isDead()) return;
