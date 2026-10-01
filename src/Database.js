@@ -1667,6 +1667,11 @@ function preserveColdVersionedStats(row, patch = {}) {
     return preserveColdVersionedStatsParsed(row, patch).patch;
 }
 
+// Resolved on first use; require() re-resolved the path on every cold commit.
+let ClanMembershipPolicyModule;
+const clanMembershipPolicy = () => ClanMembershipPolicyModule
+    || (ClanMembershipPolicyModule = require('./GameServer/Clan/ClanMembershipPolicy'));
+
 // Parses the current and proposed stats once each. Besides the patch it
 // returns what later cold commit steps would otherwise parse again: the final
 // stats as parsedObject(patch.statsJson) would see them (undefined when the
@@ -1701,7 +1706,7 @@ function preserveColdVersionedStatsParsed(row, patch = {}) {
     const proposed = {
         activity: next.activity || row?.activity, stats: incoming
     };
-    const policy = require('./GameServer/Clan/ClanMembershipPolicy');
+    const policy = clanMembershipPolicy();
     const repaired = policy.reconcileState(policy.preserveGoalInvalidation(proposed, current));
     if (repaired !== proposed) {
         next.statsJson = JSON.stringify(repaired.stats);

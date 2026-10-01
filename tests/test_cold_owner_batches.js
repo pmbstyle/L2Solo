@@ -124,7 +124,20 @@ async function createProbe(index) {
             } : null
         }
     }));
+    // The committed row handed back to the owner is the row as stored:
+    // compare it with a fresh read of every column.
+    const commitLeases = Database.commitAndReleaseColdSimulationLeases;
+    const rawResults = [];
+    Database.commitAndReleaseColdSimulationLeases = async (...args) => {
+        const out = await commitLeases.apply(Database, args); rawResults.push(...out); return out; };
     const results = await Owner.commitAndReleaseBatch(entries, { timestamp: 3000 });
+    Database.commitAndReleaseColdSimulationLeases = commitLeases;
+    const committedRows = rawResults.filter((result) => result.ok);
+    assert(committedRows.length >= 1, 'the batch must commit at least one row');
+    for (const result of committedRows) {
+        const [stored] = await Database.execute(['SELECT * FROM bot_life_state WHERE characterId = ?', [result.characterId]]);
+        assert.deepStrictEqual({ ...result.row }, { ...stored }, `committed row ${result.characterId} equals the stored row`);
+    }
     const byId = new Map(results.map((result) => [Number(result.characterId), result]));
     assert.strictEqual(byId.get(states[0].characterId).ok, true);
     assert.strictEqual(byId.get(states[1].characterId).reason, 'stale_revision', 'one stale row must not roll back valid peers');
