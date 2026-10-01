@@ -40,6 +40,9 @@ function wait(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Longest stretch the initial full snapshot builds rows without yielding.
+const SNAPSHOT_SLICE_MS = 50;
+
 function yieldToLoop() {
     return new Promise((resolve) => setImmediate(resolve));
 }
@@ -537,20 +540,23 @@ class ColdSimulationCoordinator {
             { catalog: 'npc_offers', rows: npcPlanningCatalogRows() }
         ];
         catalogs.forEach(({ catalog, rows }) => {
+            // Count each row once, as sendIncrementalEntries does, instead of
+            // serialising every growing page prefix; post() trusts the count.
+            const baseBytes = Protocol.byteLength(Protocol.envelope('catalog_page', this.workerEpoch, {
+                catalog, rows: [], done: false
+            })) + 256;
             let page = [];
+            let pageBytes = baseBytes;
             const flush = (done = false) => {
                 if (!page.length && !done) return;
-                this.post('catalog_page', { catalog, rows: page, done });
+                this.post('catalog_page', { catalog, rows: page, done }, null, pageBytes);
                 page = [];
+                pageBytes = baseBytes;
             };
             for (const row of rows) {
-                const candidate = [...page, row];
-                const envelope = Protocol.envelope('catalog_page', this.workerEpoch, {
-                    catalog,
-                    rows: candidate,
-                    done: false
-                });
-                if (page.length && Protocol.byteLength(envelope) > 240 * 1024) flush(false);
+                const rowBytes = Protocol.byteLength([row]) - 2;
+                if (page.length && pageBytes + rowBytes + 1 > PAGE_BYTES) flush(false);
+                pageBytes += rowBytes + (page.length ? 1 : 0);
                 page.push(row);
                 if (page.length >= Protocol.MAX_BATCH) flush(false);
             }
@@ -930,7 +936,15 @@ class ColdSimulationCoordinator {
             return true;
         };
 
+        // A page of fresh routes can take most of a second on cold caches;
+        // hand the loop back inside a page too, not only between pages.
+        let sliceStartedAt = Date.now();
         for (let stateIndex = 0; stateIndex < states.length; stateIndex++) {
+            if (Date.now() - sliceStartedAt >= SNAPSHOT_SLICE_MS) {
+                this.counters.snapshotYields += 1;
+                await yieldToLoop();
+                sliceStartedAt = Date.now();
+            }
             if (stateIndex % pageSize === 0) {
                 await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany(
                     states.slice(stateIndex, stateIndex + pageSize).map(state => Number(state.characterId)));
