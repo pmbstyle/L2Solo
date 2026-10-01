@@ -1301,13 +1301,14 @@ class ColdSimulationCoordinator {
     handleProposalBatch(message) {
         if (message.payload.capacityBlocked === true) this.queue.capacityBlocked = true;
         const rejected = [];
-        (message.payload.proposals || []).forEach((proposal) => {
+        const sizes = message.payload.proposalBytes;
+        (message.payload.proposals || []).forEach((proposal, index) => {
             const tokenValid = Protocol.validateToken(proposal.token);
             if (!tokenValid.ok || Number(proposal.characterId) !== Number(proposal.token?.characterId)) {
                 rejected.push({ ok: false, characterId: Number(proposal.characterId || 0), reason: tokenValid.reason || 'token_character', proposal });
                 return;
             }
-            const queued = this.queue.enqueue(proposal);
+            const queued = this.queue.enqueue(proposal, Array.isArray(sizes) ? sizes[index] : null);
             if (!queued.ok) rejected.push({ ok: false, characterId: proposal.characterId, reason: queued.reason, proposal });
             else Metrics.recordColdOwnerResolved();
         });

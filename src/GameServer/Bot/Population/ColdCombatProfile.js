@@ -111,7 +111,7 @@ function statSources(profile, timestamp) {
     const effects = activeEffects(profile.effects, timestamp).map(effectStats);
     const passives = (profile.skills || [])
         .filter((skill) => skill.passive)
-        .map((skill) => C4SkillRules.resolve({ selfId: skill.selfId, level: skill.level }))
+        .map((skill) => C4SkillRules.resolveCached({ selfId: skill.selfId, level: skill.level }))
         .filter((semantic) => passiveRequirementsMatch(profile, semantic.requires))
         .map((semantic) => semantic.stats);
     return [...effects, ...passives];

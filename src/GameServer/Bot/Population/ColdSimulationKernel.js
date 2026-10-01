@@ -1252,6 +1252,7 @@ class ColdSimulationKernel {
                 return rank[a.priority] - rank[b.priority] || a.enqueuedAt - b.enqueuedAt;
             });
         const proposals = [];
+        const proposalBytes = [];
         let itemBytes = 0;
         const oversized = [];
         const visited = new Set();
@@ -1290,6 +1291,7 @@ class ColdSimulationKernel {
             const candidateCount = proposals.length + transportGroup.length;
             if (proposalPayloadBytes(candidateCount, candidateItemBytes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) break;
             proposals.push(...transportGroup);
+            proposalBytes.push(...transportSizes);
             itemBytes = candidateItemBytes;
         }
         oversized.forEach((proposal) => {
@@ -1314,7 +1316,10 @@ class ColdSimulationKernel {
         // Priority and party flushes can fill that window just like a timer flush.
         const capacityBlocked = this.partyCapacityBlocked === true
             || this.claiming.size + this.inFlight.size + this.commanding.size >= this.maxInFlight;
-        this.emit('proposal_batch', { proposals, capacityBlocked });
+        // Each proposal's measured size travels with it, so the main commit
+        // queue need not serialise it again (the list fits the 16 KiB left
+        // between the payload limit and the message limit).
+        this.emit('proposal_batch', { proposals, proposalBytes, capacityBlocked });
         return proposals.length;
     }
 

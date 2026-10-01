@@ -11,9 +11,17 @@ const weaponStat = kind => ({ 'Weapon.Bow': 'bowWpnVuln', 'Weapon.Knife': 'dagge
 const number = (value, fallback = 1) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const positive = value => Math.max(1, number(value));
 let npcSource, npcCount = 0, npcIndex = new Map();
+// Resolved on first use (the cold worker loads this module before them);
+// invoke() re-resolves the path on every call inside spot scans.
+let DataCacheModule, HuntingTargetPolicy, ColdCombatProfile;
+const dataCache = () => DataCacheModule || (DataCacheModule = invoke('GameServer/DataCache'));
+const huntingTargetPolicy = () => HuntingTargetPolicy
+    || (HuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy'));
+const coldCombatProfile = () => ColdCombatProfile
+    || (ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile'));
 
 function npcTemplate(id) {
-    const source = invoke('GameServer/DataCache').npcs || [];
+    const source = dataCache().npcs || [];
     if (npcSource !== source || npcCount !== source.length) {
         npcSource = source;
         npcCount = source.length;
@@ -58,7 +66,7 @@ function actorProfiles(actors) {
 
 function coldProfiles(profile, state = {}, timestamp = Date.now()) {
     const profiles = [{ ...profile, skills: (profile.skills || []).map(skill => ({
-        ...skill, semantic: skill.semantic || Rules.resolve(skill)
+        ...skill, semantic: skill.semantic || Rules.resolveCached(skill)
     })) }];
     const summon = state.stats?.coldCombat?.summon;
     if (summon?.active && number(summon.hp, summon.maxHp) > 0 && summon.expiresAt > timestamp) {
@@ -197,7 +205,7 @@ function stateProfiles(state, options = {}) {
         .filter(member => member.vitals?.hp !== 0 && member.activity !== 'dead');
     // Do not invent the other members of an incomplete party projection.
     if (options.mode === 'party' && states.length === 1) return [];
-    const Cold = invoke('GameServer/Bot/Population/ColdCombatProfile');
+    const Cold = coldCombatProfile();
     return states.flatMap(member => typeof member.fetchHp === 'function'
         ? actorProfiles([member])
         : coldProfiles({ ...Cold.profileFor(member, options.timestamp),
@@ -221,8 +229,8 @@ function npcVerdict(profiles, selfId, options) {
     if (verdicts.has(key)) return verdicts.get(key);
     const npc = npcTemplate(selfId);
     let verdict = null;
-    if (npc && invoke('GameServer/Bot/AI/BotHuntingTargetPolicy').canHunt(npc)) {
-        const target = invoke('GameServer/Bot/Population/ColdCombatProfile').npcCombatStats(npc);
+    if (npc && huntingTargetPolicy().canHunt(npc)) {
+        const target = coldCombatProfile().npcCombatStats(npc);
         const match = evaluate(profiles, target);
         const survival = options.soloSafety ? soloSurvival(profiles, target) : { eligible: true };
         const withinRecoveryLevel = !options.maxTargetLevel || Number(npc.template?.level || 0) <= options.maxTargetLevel;

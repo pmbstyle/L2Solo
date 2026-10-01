@@ -1266,6 +1266,23 @@ function resolve(skill = {}) {
     return semantic;
 }
 
+// resolve() reads only these skill fields and the static rule tables, so one
+// result serves every skill with the same values. Profile builds rebuild a
+// bot's whole skill list per decision; they share these results read-only.
+const RESOLVED_LIMIT = 20000;
+const resolved = new Map();
+
+function resolveCached(skill = {}) {
+    const key = `${skill.selfId}|${skill.level}|${skill.name}|${skill.power}|${skill.buff}|${skill.spell === true}|${skill.distance}`;
+    let semantic = resolved.get(key);
+    if (!semantic) {
+        if (resolved.size >= RESOLVED_LIMIT) resolved.clear();
+        // Through the export, so a replaced resolve() (tests) applies here too.
+        resolved.set(key, semantic = module.exports.resolve(skill));
+    }
+    return semantic;
+}
+
 function stackOrderFromStats(stackFamily, stats = {}, level = 1) {
     switch (stackFamily) {
         case 'possession': return 1;
@@ -1503,6 +1520,7 @@ module.exports = {
     TAKE_CASTLE,
     SIEGE_FLAG,
     resolve,
+    resolveCached,
     normalizeKey,
     sourcedMaxLevel,
     expandSourcedLevels

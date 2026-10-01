@@ -2,6 +2,7 @@ const assert = require('assert');
 
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
 const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
+const { ColdCommitQueue } = require('../src/GameServer/Bot/Population/ColdCommitQueue');
 
 // ColdSimulationKernel PROPOSAL_PAYLOAD_LIMIT_BYTES.
 const LIMIT = 240 * 1024;
@@ -32,7 +33,14 @@ function kernelWith(proposals) {
     const emitted = [];
     const kernel = new ColdSimulationKernel({
         resolveSolo: async () => ({}),
-        emit: (type, payload) => { if (type === 'proposal_batch') emitted.push(payload.proposals); },
+        emit: (type, payload) => {
+            if (type !== 'proposal_batch') return;
+            // The measured sizes travel next to the proposals and match what
+            // the main thread would measure; the whole message still fits.
+            assert.deepStrictEqual(payload.proposalBytes, payload.proposals.map((entry) => Protocol.byteLength(entry)));
+            assert(Protocol.byteLength(Protocol.envelope(type, 'epoch-1', payload)) <= Protocol.MAX_MESSAGE_BYTES);
+            emitted.push(payload.proposals);
+        },
         now: () => 10_000_000,
         maxBatch: MAX_BATCH,
         maxInFlight: 128
@@ -107,6 +115,27 @@ function kernelBatches(proposals) {
             }
         }
         assert.deepStrictEqual(kernelBatches(proposals), referenceBatches(proposals), `round ${round}`);
+    }
+}
+
+// The commit queue trusts a measured size and serialises only a proposal without one.
+{
+    const queue = new ColdCommitQueue({ prepare: async () => null, commit: async () => [] });
+    const entry = proposal(7, 1, 'ж'.repeat(100));
+    const actual = Protocol.byteLength(entry);
+    let serialised = 0;
+    const original = Protocol.byteLength;
+    Protocol.byteLength = (value) => { serialised += 1; return original(value); };
+    try {
+        assert.strictEqual(queue.enqueue(entry, actual).bytes, actual);
+        assert.strictEqual(serialised, 0, 'a measured proposal is not serialised again');
+        for (const missing of [undefined, null, 0, -5, 1.5, 'x', NaN]) {
+            const fresh = new ColdCommitQueue({ prepare: async () => null, commit: async () => [] });
+            assert.strictEqual(fresh.enqueue(entry, missing).bytes, actual, `fallback for ${String(missing)}`);
+        }
+        assert.strictEqual(serialised, 7);
+    } finally {
+        Protocol.byteLength = original;
     }
 }
 
