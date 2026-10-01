@@ -1,0 +1,366 @@
+{
+  "source": "https://l2hub.info",
+  "generatedAt": "2026-09-30T21:24:54.667712+00:00",
+  "items": {
+    "57": {
+      "selfId": 57,
+      "name": "Adena",
+      "category": "materials",
+      "localFile": "etc_adena_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/adena",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_adena_i00.png"
+    },
+    "1463": {
+      "selfId": 1463,
+      "name": "Soulshot: D-grade",
+      "category": "consumables",
+      "localFile": "etc_spirit_bullet_blue_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/soulshot_d",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_spirit_bullet_blue_i00.png"
+    },
+    "1464": {
+      "selfId": 1464,
+      "name": "Soulshot: C-grade",
+      "category": "consumables",
+      "localFile": "etc_spirit_bullet_green_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/soulshot_c",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_spirit_bullet_green_i00.png"
+    },
+    "1465": {
+      "selfId": 1465,
+      "name": "Soulshot: B-grade",
+      "category": "consumables",
+      "localFile": "etc_spirit_bullet_red_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/soulshot_b",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_spirit_bullet_red_i00.png"
+    },
+    "1466": {
+      "selfId": 1466,
+      "name": "Soulshot: A-grade",
+      "category": "consumables",
+      "localFile": "etc_spirit_bullet_silver_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/soulshot_a",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_spirit_bullet_silver_i00.png"
+    },
+    "1467": {
+      "selfId": 1467,
+      "name": "Soulshot: S-grade",
+      "category": "consumables",
+      "localFile": "etc_spirit_bullet_gold_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/soulshot_s",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_spirit_bullet_gold_i00.png"
+    },
+    "1864": {
+      "selfId": 1864,
+      "name": "Stem",
+      "category": "materials",
+      "localFile": "etc_branch_gold_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/stem",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_branch_gold_i00.png"
+    },
+    "1865": {
+      "selfId": 1865,
+      "name": "Varnish",
+      "category": "materials",
+      "localFile": "etc_pouch_yellow_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/varnish",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_pouch_yellow_i00.png"
+    },
+    "1866": {
+      "selfId": 1866,
+      "name": "Suede",
+      "category": "materials",
+      "localFile": "etc_suede_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/suede",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_suede_i00.png"
+    },
+    "1867": {
+      "selfId": 1867,
+      "name": "Animal Skin",
+      "category": "materials",
+      "localFile": "etc_leather_brown_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/animal_skin",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_leather_brown_i00.png"
+    },
+    "1868": {
+      "selfId": 1868,
+      "name": "Thread",
+      "category": "materials",
+      "localFile": "etc_skein_white_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/thread",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_skein_white_i00.png"
+    },
+    "1869": {
+      "selfId": 1869,
+      "name": "Iron Ore",
+      "category": "materials",
+      "localFile": "etc_lump_gray_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/iron_ore",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_lump_gray_i00.png"
+    },
+    "1870": {
+      "selfId": 1870,
+      "name": "Coal",
+      "category": "materials",
+      "localFile": "etc_coal_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/coal",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_coal_i00.png"
+    },
+    "1871": {
+      "selfId": 1871,
+      "name": "Charcoal",
+      "category": "materials",
+      "localFile": "etc_charcoal_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/charcoal",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_charcoal_i00.png"
+    },
+    "1872": {
+      "selfId": 1872,
+      "name": "Animal Bone",
+      "category": "materials",
+      "localFile": "etc_piece_bone_white_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/animal_bone",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_piece_bone_white_i00.png"
+    },
+    "1873": {
+      "selfId": 1873,
+      "name": "Silver Nugget",
+      "category": "materials",
+      "localFile": "etc_silver_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/silver_nugget",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_silver_i00.png"
+    },
+    "1874": {
+      "selfId": 1874,
+      "name": "Oriharukon Ore",
+      "category": "materials",
+      "localFile": "etc_oriharukon_ore_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/oriharukon_ore",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_oriharukon_ore_i00.png"
+    },
+    "1875": {
+      "selfId": 1875,
+      "name": "Stone of Purity",
+      "category": "materials",
+      "localFile": "etc_crystal_ball_white_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/stone_of_purity",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_crystal_ball_white_i00.png"
+    },
+    "1876": {
+      "selfId": 1876,
+      "name": "Mithril Ore",
+      "category": "materials",
+      "localFile": "etc_mithril_ore_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/mithril_ore",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_mithril_ore_i00.png"
+    },
+    "1878": {
+      "selfId": 1878,
+      "name": "Braided Hemp",
+      "category": "materials",
+      "localFile": "etc_braided_hemp_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/braided_hemp",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_braided_hemp_i00.png"
+    },
+    "1879": {
+      "selfId": 1879,
+      "name": "Cokes",
+      "category": "materials",
+      "localFile": "etc_oil_pot_black_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/cokes",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_oil_pot_black_i00.png"
+    },
+    "1880": {
+      "selfId": 1880,
+      "name": "Steel",
+      "category": "materials",
+      "localFile": "etc_lump_black_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/steel",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_lump_black_i00.png"
+    },
+    "1881": {
+      "selfId": 1881,
+      "name": "Coarse Bone Powder",
+      "category": "materials",
+      "localFile": "etc_powder_white_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/coarse_bone_powder",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_powder_white_i00.png"
+    },
+    "1882": {
+      "selfId": 1882,
+      "name": "Leather",
+      "category": "materials",
+      "localFile": "etc_leather_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/leather",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_leather_i00.png"
+    },
+    "1883": {
+      "selfId": 1883,
+      "name": "Steel Mold",
+      "category": "materials",
+      "localFile": "etc_mold_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/steel_mold",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_mold_i00.png"
+    },
+    "1884": {
+      "selfId": 1884,
+      "name": "Cord",
+      "category": "materials",
+      "localFile": "etc_skein_gray_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/cord",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_skein_gray_i00.png"
+    },
+    "1886": {
+      "selfId": 1886,
+      "name": "Silver Mold",
+      "category": "materials",
+      "localFile": "etc_silver_mold_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/silver_mold",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_silver_mold_i00.png"
+    },
+    "1887": {
+      "selfId": 1887,
+      "name": "Varnish of Purity",
+      "category": "materials",
+      "localFile": "etc_potion_clear_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/varnish_of_purity",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_potion_clear_i00.png"
+    },
+    "1889": {
+      "selfId": 1889,
+      "name": "Compound Braid",
+      "category": "materials",
+      "localFile": "etc_compound_braid_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/compound_braid",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_compound_braid_i00.png"
+    },
+    "1893": {
+      "selfId": 1893,
+      "name": "Oriharukon",
+      "category": "materials",
+      "localFile": "etc_oriharukon_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/oriharukon",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_oriharukon_i00.png"
+    },
+    "2510": {
+      "selfId": 2510,
+      "name": "Spiritshot: D-grade",
+      "category": "consumables",
+      "localFile": "etc_spell_shot_blue_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/spiritshot_d",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_spell_shot_blue_i00.png"
+    },
+    "2511": {
+      "selfId": 2511,
+      "name": "Spiritshot: C-grade",
+      "category": "consumables",
+      "localFile": "etc_spell_shot_green_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/spiritshot_c",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_spell_shot_green_i00.png"
+    },
+    "2512": {
+      "selfId": 2512,
+      "name": "Spiritshot: B-grade",
+      "category": "consumables",
+      "localFile": "etc_spell_shot_red_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/spiritshot_b",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_spell_shot_red_i00.png"
+    },
+    "2513": {
+      "selfId": 2513,
+      "name": "Spiritshot: A-grade",
+      "category": "consumables",
+      "localFile": "etc_spell_shot_silver_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/spiritshot_a",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_spell_shot_silver_i00.png"
+    },
+    "2514": {
+      "selfId": 2514,
+      "name": "Spiritshot: S-grade",
+      "category": "consumables",
+      "localFile": "etc_spell_shot_gold_i00.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/spiritshot_s",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_spell_shot_gold_i00.png"
+    },
+    "3948": {
+      "selfId": 3948,
+      "name": "Blessed Spiritshot: D-Grade",
+      "category": "consumables",
+      "localFile": "etc_spell_shot_blue_i01.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/blessed_spiritshot_d",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_spell_shot_blue_i01.png"
+    },
+    "3949": {
+      "selfId": 3949,
+      "name": "Blessed Spiritshot: C-Grade",
+      "category": "consumables",
+      "localFile": "etc_spell_shot_green_i01.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/blessed_spiritshot_c",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_spell_shot_green_i01.png"
+    },
+    "3950": {
+      "selfId": 3950,
+      "name": "Blessed Spiritshot: B-Grade",
+      "category": "consumables",
+      "localFile": "etc_spell_shot_red_i01.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/blessed_spiritshot_b",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_spell_shot_red_i01.png"
+    },
+    "3951": {
+      "selfId": 3951,
+      "name": "Blessed Spiritshot: A-Grade",
+      "category": "consumables",
+      "localFile": "etc_spell_shot_silver_i01.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/blessed_spiritshot_a",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_spell_shot_silver_i01.png"
+    },
+    "3952": {
+      "selfId": 3952,
+      "name": "Blessed Spiritshot: S Grade",
+      "category": "consumables",
+      "localFile": "etc_spell_shot_gold_i01.png",
+      "localSource": "l2hub",
+      "detailUrl": "https://l2hub.info/c4/items/blessed_spiritshot_s",
+      "iconUrl": "https://l2hub.info/s/icons-c4/etc_spell_shot_gold_i01.png"
+    }
+  }
+}

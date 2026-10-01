@@ -396,6 +396,14 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null 
         }));
     }
 
+    function relatedNpcs(relations, idField) {
+        const data = load();
+        return (relations || [])
+            .map((relation) => Number(relation?.[idField] ?? relation))
+            .filter((id) => Number.isSafeInteger(id) && id > 0)
+            .map((id) => npcSummary(data.mobById.get(id) || { id }, data.skillById));
+    }
+
     function npcDetail(id) {
         const data = load();
         const npc = data.mobById.get(Number(id));
@@ -413,8 +421,8 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null 
             collision: npc?.template?.collision || null,
             drops,
             spoils,
-            minions: (npc.minions || []).map((minionId) => npcSummary(data.mobById.get(Number(minionId)) || { id: minionId }, data.skillById)),
-            minionOf: (npc.minionOf || []).map((bossId) => npcSummary(data.mobById.get(Number(bossId)) || { id: bossId }, data.skillById)),
+            minions: relatedNpcs(npc.minions, 'minionId'),
+            minionOf: relatedNpcs(npc.minionOf, 'bossId'),
             skills: (npc.skillIds || []).map((skillId) => {
                 const skill = data.skillById.get(String(skillId));
                 return skill ? {

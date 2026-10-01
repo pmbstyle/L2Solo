@@ -4,8 +4,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Server Database · World Observer</title>
+    <script src="/observer/appearance.js"></script>
     <link rel="icon" type="image/png" href="/observer/world-observer-logo.png">
     <link rel="stylesheet" href="/observer/knowledge-base.css">
+    <link rel="stylesheet" href="/observer/application.css">
 </head>
 <body>
     <header class="kb-topbar">
@@ -41,7 +43,7 @@
             <div class="kb-toolbar">
                 <label class="kb-search">
                     <svg aria-hidden="true"><use href="/observer/ui-icons.svg#search"></use></svg>
-                    <input id="catalogSearch" type="search" placeholder="Search by name or ID…" autocomplete="off">
+                    <input id="catalogSearch" type="search" aria-label="Search items and creatures" placeholder="Search by name or ID…" autocomplete="off">
                     <kbd>/</kbd>
                 </label>
                 <div class="kb-filters" id="npcFilters" hidden>
@@ -87,6 +89,8 @@
     </template>
 
     <script src="/observer/spaRouter.js"></script>
+    <script src="/observer/worldState.js"></script>
+    <script src="/observer/appShell.js"></script>
     <script src="/observer/knowledge-base.js"></script>
 </body>
 </html>

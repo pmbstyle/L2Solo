@@ -1,0 +1,10 @@
+{
+  "source": "https://github.com/npetrovski/l2-world-map",
+  "revision": "0751a218798b1b759ff3555c7b48a025df49e332",
+  "originalDirectory": "Maps",
+  "originalTilePixels": 900,
+  "tilePixels": 600,
+  "format": "webp",
+  "surfaceTiles": 135,
+  "notes": "Detached interior drawings are omitted from the surface atlas. Game coordinates are unchanged."
+}
