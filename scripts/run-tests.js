@@ -432,6 +432,7 @@ const tests = [
     'tests/test_clan_names.js',
     'tests/test_clan_simulation_slice1.js',
     'tests/test_clan_simulation_slice2.js',
+    'tests/test_clan_warehouse_contribution_wallet.js',
     'tests/test_clan_simulation_slice3.js',
     'tests/test_clan_simulation_slice4.js',
     'tests/test_clan_simulation_slice5.js',

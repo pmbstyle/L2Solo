@@ -1565,12 +1565,15 @@ function updateColdInventorySnapshotUnsafe(characterId, selfId, event = null, ex
     if (event) stats.lastClanWarehouseTransfer = { ...event };
     const nextRevision = currentRevision + 1;
     if (allowParty) stats.clanInventoryRevision = nextRevision;
+    // The adena column is the wallet the next cold resolve starts from; it
+    // follows the inventory, as syncAdenaSnapshotUnsafe keeps it.
     const updated = write(`UPDATE bot_life_state
-        SET inventorySummary = ?, statsJson = ?, simulationRevision = ?, updatedAt = ?
+        SET inventorySummary = ?, adena = COALESCE(?, adena), statsJson = ?, simulationRevision = ?, updatedAt = ?
         WHERE characterId = ? AND phase = 'cold'
           AND simulationOwner = ? AND simulationRevision = ?
           AND (? = 1 OR partyId IS NULL OR partyId = '')`, [
         JSON.stringify(inventory),
+        itemId === 57 ? physical : null,
         JSON.stringify(stats),
         nextRevision,
         now(),
