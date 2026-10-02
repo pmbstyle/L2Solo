@@ -157,13 +157,14 @@ function giveAdena(actor, amount) {
     });
 }
 
+// Resolves with the item the amount went to: the stack, or the new row.
 function giveItem(actor, selfId, amount) {
     return new Promise((resolve, reject) => {
         actor.backpack.stackableExists(selfId).then((item) => {
             const total = item.fetchAmount() + amount;
             Database.updateItemAmount(actor.fetchId(), item.fetchId(), total).then(() => {
                 actor.backpack.updateAmount(item.fetchId(), total);
-                resolve();
+                resolve(item);
             }).catch(reject);
         }).catch(() => {
             const itemDetails = itemTemplate(selfId);
@@ -180,7 +181,7 @@ function giveItem(actor, selfId, amount) {
                 slot: itemDetails.etc?.slot ?? 0
             }).then((packet) => {
                 actor.backpack.insertItem(Number(packet.insertId), selfId, { amount });
-                resolve();
+                resolve(actor.backpack.items.find((entry) => Number(entry.fetchId()) === Number(packet.insertId)) || null);
             }).catch(reject);
         });
     });
@@ -386,13 +387,14 @@ async function sellToStore(actor, store, selfId, qty, options = {}) {
             let sellerItemTaken = false;
             let buyerAdenaDeducted = false;
             let buyerItemGiven = false;
+            let buyerItem = null;
             try {
                 await takeItem(actor, selfId, sellQty, actorItem);
                 sellerItemTaken = true;
                 if (budgetBacked) {
                     await deductAdena(buyerActor, totalEarn);
                     buyerAdenaDeducted = true;
-                    await giveItem(buyerActor, selfId, sellQty);
+                    buyerItem = await giveItem(buyerActor, selfId, sellQty);
                     buyerItemGiven = true;
                 }
                 await giveAdena(actor, totalEarn);
@@ -402,8 +404,8 @@ async function sellToStore(actor, store, selfId, qty, options = {}) {
                     store.items.splice(Math.max(0, Math.min(originalIndex, store.items.length)), 0, storeItem);
                 }
                 try {
-                    // Take back the copy just given, never one the buyer wears.
-                    if (buyerItemGiven) await takeItem(buyerActor, selfId, sellQty, sellableCopy(buyerActor, selfId));
+                    // Take back the copy just given, never another one the buyer holds or wears.
+                    if (buyerItemGiven) await takeItem(buyerActor, selfId, sellQty, buyerItem || undefined);
                     if (buyerAdenaDeducted) await giveAdena(buyerActor, totalEarn);
                     if (sellerItemTaken) await giveItem(actor, selfId, sellQty);
                 } catch (rollbackError) {

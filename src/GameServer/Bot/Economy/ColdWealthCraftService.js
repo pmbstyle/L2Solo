@@ -71,7 +71,7 @@ function chooseOpportunity(state, knownRecipes) {
     const gearPlan = state.stats?.equipmentPlan;
     const budgetState = { ...state, adena: gearPlan?.status === 'active' && gearPlan.strategy === 'market'
         ? PurchaseFunding.surplus(state, gearPlan.market?.price, gearPlan.market?.reserve)
-        : Math.max(0, Number(state.adena || 0)) };
+        : PurchaseFunding.budget(state) };
     const offerCache = new Map();
     const ownStock = new Map(ItemDisposition.saleCandidates(state, { unlimited: true })
         .map((item) => [Number(item.selfId), item]));

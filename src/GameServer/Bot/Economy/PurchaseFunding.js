@@ -18,8 +18,8 @@ function shortfall(state = {}, price = 0, reserve = 0, escrow = 0) {
 }
 
 // Adena left over once a purchase at `price` and its `reserve` are covered.
-function surplus(state = {}, price = 0, reserve = 0, escrow = 0) {
-    return Math.max(0, budget(state, escrow) - Number(price || 0) - Number(reserve || 0));
+function surplus(state = {}, price = 0, reserve = 0) {
+    return Math.max(0, budget(state) - Number(price || 0) - Number(reserve || 0));
 }
 
 // What the bot may spend on a purchase now.

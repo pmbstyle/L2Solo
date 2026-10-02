@@ -8,13 +8,15 @@ const Item = invoke('GameServer/Item/Item');
 
 const RING = 881;
 
+const ARROW = 17;
+
 function item(id, selfId, amount, equipped, name) {
     return new Item(id, {
         selfId,
         name,
-        kind: selfId === 57 ? 'Other.Currency' : 'Armor.Jewel',
+        kind: selfId === 57 ? 'Other.Currency' : selfId === ARROW ? 'Other.Arrow' : 'Armor.Jewel',
         amount,
-        stackable: selfId === 57,
+        stackable: selfId === 57 || selfId === ARROW,
         equipped,
         slot: selfId === 57 ? 0 : 4
     });
@@ -29,7 +31,7 @@ function seller(items, id = 9001) {
             fetchItems() { return this.items; },
             fetchItemFromSelfId(selfId) { return this.items.find((entry) => Number(entry.fetchSelfId()) === Number(selfId)); },
             stackableExists(selfId) {
-                const found = Number(selfId) === 57 ? this.fetchItemFromSelfId(selfId) : null;
+                const found = this.items.find((entry) => Number(entry.fetchSelfId()) === Number(selfId) && entry.fetchStackable());
                 return found ? Promise.resolve(found) : Promise.reject(new Error('missing_stack'));
             },
             updateAmount(id, amount) {
@@ -46,7 +48,8 @@ async function main() {
     try {
         DataCache.items = [
             { selfId: RING, template: { name: 'Elven Ring' }, etc: { stackable: false } },
-            { selfId: 57, template: { name: 'Adena' }, etc: { stackable: true } }
+            { selfId: 57, template: { name: 'Adena' }, etc: { stackable: true } },
+            { selfId: ARROW, template: { name: 'Wooden Arrow' }, etc: { stackable: true } }
         ];
         Database.updateItemAmount = async () => {};
         Database.deleteItem = async (characterId, objectId) => { deleted.push(Number(objectId)); };
@@ -88,24 +91,36 @@ async function main() {
         // A budget-backed sale that fails after the buyer got the item takes
         // back that copy, not the ring the buyer wears.
         deleted.length = 0;
-        const buyer = seller([item(401, RING, 1, true, 'Elven Ring'), item(402, 57, 5000, false, 'Adena')], 9002);
+        const buyer = seller([item(401, RING, 1, true, 'Elven Ring'), item(403, RING, 1, false, 'Elven Ring'),
+            item(402, 57, 5000, false, 'Adena')], 9002);
         const failing = seller([item(501, RING, 1, false, 'Elven Ring'), item(502, 57, 10, false, 'Adena')]);
         const setItem = Database.setItem;
         Database.setItem = async () => ({ insertId: 499 + deleted.length });
         Database.updateItemAmount = async (characterId, objectId) => {
             if (Number(characterId) === 9001 && Number(objectId) === 502) throw new Error('seller_adena_write_failed');
         };
+        // The given amount went onto a stack the buyer wears (arrows): it comes back from that stack.
+        const archer = seller([item(601, ARROW, 10, true, 'Wooden Arrow'), item(602, 57, 5000, false, 'Adena')], 9002);
+        const fletcher = seller([item(701, ARROW, 5, false, 'Wooden Arrow'), item(502, 57, 10, false, 'Adena')]);
         try {
             await assert.rejects(TradeService.sellToStore(failing,
                 { storeType: 3, budgetBacked: true, items: [{ selfId: RING, price: 100, count: 1 }] }, RING, 1,
                 { buyerActor: buyer }), /seller_adena_write_failed/);
+            await assert.rejects(TradeService.sellToStore(fletcher,
+                { storeType: 3, budgetBacked: true, items: [{ selfId: ARROW, price: 100, count: 5 }] }, ARROW, 5,
+                { buyerActor: archer }), /seller_adena_write_failed/);
         } finally {
             Database.setItem = setItem;
         }
         assert.deepStrictEqual(buyer.backpack.items.filter((entry) => entry.fetchSelfId() === RING)
-            .map((entry) => [entry.fetchId(), entry.fetchEquipped()]), [[401, true]], 'the buyer keeps the ring it wears');
+            .map((entry) => [entry.fetchId(), entry.fetchEquipped()]), [[401, true], [403, false]],
+            'the buyer keeps the ring it wears and the spare it held; only the given copy goes back');
         assert.strictEqual(buyer.backpack.fetchItemFromSelfId(57).fetchAmount(), 5000, 'and gets its Adena back');
         assert.strictEqual(failing.backpack.items.filter((entry) => entry.fetchSelfId() === RING).length, 1, 'the seller gets its ring back');
+        assert.strictEqual(archer.backpack.fetchItemFromSelfId(ARROW).fetchAmount(), 10, 'the worn stack is back at its amount');
+        assert.strictEqual(archer.backpack.fetchItemFromSelfId(57).fetchAmount(), 5000, 'and the buyer is refunded');
+        assert.strictEqual(fletcher.backpack.items.filter((entry) => entry.fetchSelfId() === ARROW)
+            .reduce((sum, entry) => sum + entry.fetchAmount(), 0), 5, 'the seller gets its arrows back');
     } finally {
         DataCache.items = originalItems;
         Object.assign(Database, originals);

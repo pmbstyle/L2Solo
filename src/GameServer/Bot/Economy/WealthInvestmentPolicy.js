@@ -19,10 +19,10 @@ function spotDeathPressure(state = {}) {
     return SpotRiskPolicy.deathPressure(state);
 }
 
-// The investment is affordable when the purchase is funded by the shared rule
-// (PurchaseFunding: wallet plus the bot's own buy-order escrow, the plan's
-// reserve kept) and the investment's own cushion (20% of the cost) is left too.
-function investmentOpportunity(state = {}, estimatedCost = 0, funding = {}) {
+// The investment is affordable when the shared rule funds the purchase
+// (PurchaseFunding: wallet plus the bot's own buy-order escrow) with the larger
+// of the plan's reserve and the investment's own cushion (20% of the cost) kept.
+function investmentOpportunity(state = {}, estimatedCost = 0, planReserve = 0, escrow = 0) {
     if (personaFor(state)?.primaryDrive !== 'wealth') return null;
     const pressure = spotDeathPressure(state);
     if (!pressure) return null;
@@ -31,8 +31,7 @@ function investmentOpportunity(state = {}, estimatedCost = 0, funding = {}) {
     return {
         pressure,
         reserve,
-        affordable: PurchaseFunding.shortfall(state, cost, funding.reserve, funding.escrow) === 0
-            && PurchaseFunding.budget(state, funding.escrow) >= cost + reserve,
+        affordable: PurchaseFunding.shortfall(state, cost, Math.max(Number(planReserve || 0), reserve), escrow) === 0,
         reason: 'reduce_deaths_at_profitable_spot'
     };
 }

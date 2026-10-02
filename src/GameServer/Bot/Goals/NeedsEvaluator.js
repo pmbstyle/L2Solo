@@ -189,7 +189,7 @@ function evaluate(state = {}, options = {}) {
         const fundedMarketOffer = requiredAdena === 0 && gear.priceSource === 'offer' && gear.marketTown;
         const weaponUpgrade = [7, 14].includes(gear.slot);
         const wealthInvestment = WealthInvestmentPolicy.investmentOpportunity(state, gear.desiredItem.price,
-            { reserve: gear.reserve, escrow });
+            gear.reserve, escrow);
         const npcPurchasePriority = requiredAdena === 0 ? affordableNpcGearPriority(gear) : null;
         const clanPurchasePriority = requiredAdena === 0 && gear.clanRequired ? 89 : null;
         // A compatible weapon bridge is itself recovery: the current weapon
