@@ -820,6 +820,9 @@ class ColdSimulationCoordinator {
             interactionMemory: invoke('GameServer/Social/InteractionMemoryRuntime').snapshot(Number(state.characterId)),
             clanHallServices: invoke('GameServer/ClanHall/ColdVisit').needed(state),
             pressure,
+            // The worker cannot see AFK shops: hand it the Adena the bot's own
+            // buy order holds, which still counts as purchase budget.
+            buyOrderEscrow: invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId),
             targetNpcId: party ? require('./PartyHuntingTarget').npcId(party, state)
                 : directDropTargetNpcId(state.stats?.equipmentPlan),
             isPartyLeader: !!party,

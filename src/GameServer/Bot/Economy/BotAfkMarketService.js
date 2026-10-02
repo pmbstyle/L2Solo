@@ -11,6 +11,7 @@ const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const LotPolicy = require('./MarketLotPolicy');
 const { marketStoreTitle, marketBuyStoreTitle } = invoke('GameServer/Bot/Economy/MarketStoreTitle');
 
@@ -33,16 +34,26 @@ function desiredSide(goal) {
     return 0;
 }
 
+// Adena held by the bot's own open buy order. It is still the bot's money for
+// any purchase: a new order replaces the old one and refunds it.
+function buyOrderEscrow(characterId) {
+    const shop = AfkTrade.findOwnerProjection(characterId)?.shop;
+    return Number(shop?.storeType) === AfkTrade.BUY ? Math.max(0, Number(shop.escrowAdena || 0)) : 0;
+}
+
 function canTradeRemotely(state, goal) {
     const side = desiredSide(goal);
     if (!state || state.phase !== 'cold' || state.stats?.marketStore
         || !(state.stats?.generatedCold === true || String(state.accountName || '').startsWith('bot_'))
         || !side) return false;
     if (side === AfkTrade.BUY) {
+        // A purchase planned at an NPC shop is made there, never through a
+        // WTB (NeedsEvaluator keeps NG/D gear on that plan); in town the bot
+        // still takes a cheaper listing if one is there.
+        if (goal.plan?.sourceType === 'npc') return false;
         const existing = AfkTrade.findOwnerProjection(state.characterId)?.actor?.fetchPrivateStore?.();
-        const reserved = existing?.botOwned && Number(existing.storeType) === AfkTrade.BUY
-            ? Number(AfkTrade.findOwnerProjection(state.characterId)?.shop?.escrowAdena || 0) : 0;
-        const budgetState = { ...state, adena: Number(state.adena || 0) + reserved };
+        const reserved = existing?.botOwned ? buyOrderEscrow(state.characterId) : 0;
+        const budgetState = { ...state, adena: PurchaseFunding.budget(state, reserved) };
         const offer = MarketOpportunity.bestOffer(goal.target?.itemId, {
             town: goal.plan?.marketTown || null,
             budget: budgetState.adena,
@@ -53,6 +64,21 @@ function canTradeRemotely(state, goal) {
         return !!BuyStoreService.bidFor(budgetState, goal);
     }
     return true;
+}
+
+// A buy order stands through a goal without a trade side, such as a rest,
+// while the needs evaluation still asks to buy one of its items: a sell shop
+// already persists the same way. `candidates` is that evaluation when the
+// caller has just made it (a goal review). Near death the evaluation only
+// asks to recover and judges nothing else, so the order waits like a rest.
+function standingBuyNeed(state, lines, candidates) {
+    const items = new Set(lines.filter((line) => Number(line.count) > 0).map((line) => Number(line.selfId)));
+    if (!items.size) return false;
+    const needs = candidates || invoke('GameServer/Bot/Goals/NeedsEvaluator').evaluate(state);
+    if (needs.length === 1 && needs[0].target?.condition === 'alive_and_recovered') return true;
+    // A purchase planned at an NPC shop never holds a WTB, rest or not.
+    return needs.some((need) => desiredSide(need) === AfkTrade.BUY && need.plan?.sourceType !== 'npc'
+        && items.has(Number(need.target?.itemId)));
 }
 
 function stockSignature(state) {
@@ -236,7 +262,7 @@ function sameSellOrder(stock, lines) {
         && Number(line.enchant || 0) === Number(lines[index].enchant || 0));
 }
 
-async function reconcileOne(state, goal) {
+async function reconcileOne(state, goal, candidates) {
     const ownerId = Number(state.characterId);
     const projection = AfkTrade.findOwnerProjection(ownerId);
     let stock = projection?.shop || null;
@@ -247,6 +273,8 @@ async function reconcileOne(state, goal) {
     const persistentSellGoal = Number(stock?.storeType) === AfkTrade.SELL && !desiredSide(goal)
         ? { type: 'sell_inventory', status: 'active', plan: { expectedBenefit: 'market_sale_inventory' } }
         : goal;
+    if (Number(stock?.storeType) === AfkTrade.BUY && !desiredSide(goal)
+        && standingBuyNeed(state, stock.lines || [], candidates)) return { state, changed: false };
     const side = desiredSide(persistentSellGoal);
     if (!canTradeRemotely(state, persistentSellGoal)) {
         if (state.phase === 'cold' && projection?.actor?.fetchPrivateStore?.()?.botOwned
@@ -275,8 +303,7 @@ async function reconcileOne(state, goal) {
     if (!row || !String(row.username || '').startsWith('bot_')) return { state, changed: false };
     const lines = side === AfkTrade.SELL
         ? sellLines(state, stock, inventory)
-        : buyLines({ ...state, adena: Number(state.adena || 0)
-            + (Number(stock?.storeType) === AfkTrade.BUY ? Number(stock.escrowAdena || 0) : 0) }, goal);
+        : buyLines({ ...state, adena: PurchaseFunding.budget(state, buyOrderEscrow(ownerId)) }, goal);
     const town = MarketTownPolicy.targetTownForItems(state, lines);
     if (!lines.length && side === AfkTrade.SELL && Number(stock?.storeType) === AfkTrade.SELL) {
         await AfkTrade.stop(ownerId);
@@ -371,11 +398,11 @@ async function migrateRestoredShops() {
     return { moved, skipped, pruned, closed };
 }
 
-function reconcile(state, goal) {
+function reconcile(state, goal, candidates = null) {
     const ownerId = Number(state?.characterId || 0);
     if (!ownerId) return Promise.resolve({ state, changed: false });
     const previous = pending.get(ownerId) || Promise.resolve();
-    const next = previous.catch(() => null).then(() => reconcileOne(LifeState.snapshot(ownerId) || state, goal));
+    const next = previous.catch(() => null).then(() => reconcileOne(LifeState.snapshot(ownerId) || state, goal, candidates));
     const tracked = next.then(() => null, () => null);
     tracked.then(() => {
         if (pending.get(ownerId) === tracked) pending.delete(ownerId);
@@ -418,6 +445,6 @@ async function reviewNextPersistentShop() {
     }
 }
 
-module.exports = { canTradeRemotely, desiredSide, migrateRestoredShops, minimumResourceLotValue,
+module.exports = { buyOrderEscrow, canTradeRemotely, desiredSide, migrateRestoredShops, minimumResourceLotValue,
     pruneResourceLots, reconcile, rememberInventory, reviewNextPersistentShop, viableSellLine, withdraw,
     _resetForTests() { reviewedInventory.clear(); pending.clear(); reviewOwners = []; reviewCursor = 0; reviewRunning = false; } };
