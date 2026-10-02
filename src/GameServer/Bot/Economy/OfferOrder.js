@@ -24,4 +24,18 @@ function compareDistance(left, right, origin) {
     return leftDistance < rightDistance ? -1 : 1;
 }
 
-module.exports = { compareDistance, townDistance };
+function fromPlayer(offer) {
+    return offer.playerPriority === true || offer.sellerKind === 'player';
+}
+
+// Cheaper first; at the same price a player before a bot, an NPC last, then
+// the town nearest the buyer. Offers equal in all of these keep their
+// listing order.
+function compareOffers(left, right, origin) {
+    return Number(left.price) - Number(right.price)
+        || Number(fromPlayer(right)) - Number(fromPlayer(left))
+        || Number(left.sourceType === 'npc') - Number(right.sourceType === 'npc')
+        || compareDistance(left, right, origin);
+}
+
+module.exports = { compareDistance, compareOffers };

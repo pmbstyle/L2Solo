@@ -696,8 +696,7 @@ function marketOfferForTarget(target, state = {}, options = {}) {
             buyerCharacterId: state.characterId
         }))
         .filter(usable)
-        .sort((left, right) => Number(left.price) - Number(right.price)
-            || OfferOrder.compareDistance(left, right, state.loc))[0] || null;
+        .sort((left, right) => OfferOrder.compareOffers(left, right, state.loc))[0] || null;
 }
 
 function expectedAdenaPerKill(state = {}) {
@@ -757,8 +756,7 @@ function npcOfferForTarget(target, state = {}, options = {}) {
     }
     return (MarketOpportunity.npcOffersAll(target.selfId) || [])
         .filter((offer) => offer.available !== false)
-        .sort((left, right) => Number(left.price) - Number(right.price)
-            || OfferOrder.compareDistance(left, right, state.loc)
+        .sort((left, right) => OfferOrder.compareOffers(left, right, state.loc)
             || String(left.town || '').localeCompare(String(right.town || '')))[0] || null;
 }
 
