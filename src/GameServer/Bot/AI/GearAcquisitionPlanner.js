@@ -824,11 +824,16 @@ function npcCandidatesForSlot(state = {}, desiredSlot, maxRank, options = {}) {
             || itemScore(right.item, role, classId) - itemScore(left.item, role, classId));
 }
 
+// What a bot may spend on NPC gear: its Adena above the operating reserve.
+function npcPurchaseBudget(state = {}) {
+    const reserve = operationalAdenaReserve(state);
+    return { reserve, spendable: Math.max(0, Number(state.adena || state.inventory?.[57]?.amount || 0) - reserve) };
+}
+
 function staticNpcUpgradePlan(state = {}, options = {}) {
     if (!GearLifecycle.isGearFocusActive(state)) return null;
     const targetRank = npcTargetRank(state);
-    const reserve = operationalAdenaReserve(state);
-    const spendable = Math.max(0, Number(state.adena || state.inventory?.[57]?.amount || 0) - reserve);
+    const { reserve, spendable } = npcPurchaseBudget(state);
     const excludedSlots = new Set((options.excludedSlots || []).map(Number));
     const classId = classIdFor(state);
     const baseline = BotGear.planFor({ classId, level: npcAdequacyLevel(state) });
@@ -844,7 +849,7 @@ function staticNpcUpgradePlan(state = {}, options = {}) {
     // cheapest compatible item at the highest ordinary NPC grade. An unfunded
     // weapon must not block affordable armour; retain the first target for
     // saving only when none of these basic purchases fits the budget.
-    let savingTarget = null;
+    let saving = null;
     for (const slot of slots) {
         const current = equippedItemAtSlot(state, slot);
         if (current && rankIndex(current.etc?.rank) >= rankIndex(targetRank)
@@ -852,10 +857,10 @@ function staticNpcUpgradePlan(state = {}, options = {}) {
         const candidate = npcCandidatesForSlot(state, slot, targetRank, options)[0];
         if (!candidate) continue;
         const purchase = { ...candidate, slot };
-        savingTarget = savingTarget || purchase;
         if (Number(candidate.offer.price) <= spendable) return planForCandidate(purchase);
+        saving = saving || planForCandidate(purchase);
     }
-    if (savingTarget) return planForCandidate(savingTarget);
+    if (saving) return saving;
 
     // Within no-grade/D, spare money can improve an already complete kit.
     // At C+ an adequate D kit is only a bridge; crafting/drop/exchange
@@ -928,17 +933,38 @@ function staticNpcKitAdequate(state = {}, options = {}) {
 // higher-grade farm or clan objective is still active.  Establish a usable
 // NPC-bought bridge before continuing that longer route; otherwise archers
 // can spend thousands of fights carrying the dagger from their former class.
+// The weapon comes before armour here, and is chosen by the same rule as the
+// dual-sword bridge, so an unaffordable kit weapon cannot keep the bot unarmed.
 function npcWeaponBridgePlan(state = {}, options = {}) {
     if (combatReadiness(state).hasWeapon) return null;
     const optimizedInventory = equipInventoryUpgrades(state, state.inventory || {});
     if (combatReadiness({ ...state, inventory: optimizedInventory }).hasWeapon) return null;
-    const plan = staticNpcUpgradePlan(state, options);
-    if (plan?.status === 'active'
-        && plan.strategy === 'market'
-        && WEAPON_SLOTS.has(Number(plan.target?.slot || 0))) {
-        return { ...plan, weaponBridge: true, partyNeedReason: 'weapon_bridge' };
-    }
-    return dualSwordBridgePlan(state, options);
+    if (missingRequiredDualSword(state)) return dualSwordBridgePlan(state, options);
+    const slot = desiredNpcSlots(state).find((entry) => WEAPON_SLOTS.has(entry));
+    if (!slot) return null;
+    const role = roleFor(state);
+    const classId = classIdFor(state);
+    const targetRank = npcTargetRank(state);
+    const candidates = npcCandidatesForSlot(state, slot, targetRank, options)
+        .map((candidate) => ({ ...candidate, cost: Number(candidate.offer.price) }))
+        .sort((left, right) => left.cost - right.cost
+            || itemScore(right.item, role, classId) - itemScore(left.item, role, classId));
+    const { reserve, spendable } = npcPurchaseBudget(state);
+    const choice = chooseBridge(candidates, spendable, rankIndex(targetRank));
+    if (!choice) return null;
+    return { ...marketPlan(state, choice.item, choice.offer, { targetSlot: slot, reason: 'npc_progression', reserve }),
+        weaponBridge: true, partyNeedReason: 'weapon_bridge' };
+}
+
+// Bridge choice over candidates sorted by cost: keep the bridge already
+// started, else the cheapest affordable at the bridge grade, else the cheapest
+// affordable, else the cheapest one to save for.
+function chooseBridge(candidates, spendable, bridgeRank, keepId = 0) {
+    return candidates.find((entry) => keepId && Number(entry.item.selfId) === keepId)
+        || candidates.find((entry) => rankIndex(entry.item.etc?.rank) >= bridgeRank && entry.cost <= spendable)
+        || candidates.find((entry) => entry.cost <= spendable)
+        || candidates[0]
+        || null;
 }
 
 function npcEquipmentBridgePlan(state = {}, options = {}) {
@@ -1898,13 +1924,10 @@ function dualSwordBridgePlan(state, options = {}) {
     }).sort((left, right) => left.cost - right.cost
         || itemScore(right.item, role, classIdFor(state)) - itemScore(left.item, role, classIdFor(state))
         || Number(left.item.selfId) - Number(right.item.selfId));
+    // A started combination is kept: its first blade may already be owned.
     const previousId = Number(state.stats?.equipmentPlan?.weaponBridge && state.stats.equipmentPlan.combine?.resultId);
-    const spendable = Math.max(0, Number(state.adena || state.inventory?.[57]?.amount || 0) - operationalAdenaReserve(state));
-    const bridgeRank = Math.min(maxRank, rankIndex('c'));
-    const target = candidates.find(entry => Number(entry.item.selfId) === previousId)
-        || candidates.find(entry => rankIndex(entry.item.etc.rank) >= bridgeRank && entry.cost <= spendable)
-        || candidates.find(entry => entry.cost <= spendable)
-        || candidates[0];
+    const { spendable } = npcPurchaseBudget(state);
+    const target = chooseBridge(candidates, spendable, Math.min(maxRank, rankIndex('c')), previousId);
     if (!target) return null;
     const common = { weaponBridge: true, partyNeedReason: 'weapon_bridge',
         grade: target.item.etc.rank, combine: combinationMetadata(target.recipe) };
