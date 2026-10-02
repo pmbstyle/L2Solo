@@ -506,6 +506,26 @@ module.exports = function ({
                 return { ok: true, goal };
             }, 'plan');
         },
+        // The clan pays a member from its free money (a clan purchase share, a
+        // compensation for gear given to the clan). The payment is the clan's money,
+        // not earnings: the member's dues mark rises with it.
+        payClanMember({ clanId, characterId, amount, kind, timestamp = Date.now() }) {
+            const pay = Math.floor(Number(amount) || 0);
+            return withCharacterFlush(Number(characterId), () =>
+                tx(() => {
+                    const c = clan(Number(clanId)),
+                        id = Number(characterId);
+                    if (!c || c.mode !== 'autonomous' || pay <= 0) return { ok: false, code: 'clan_payment_invalid' };
+                    if (spendable(c) < pay) return { ok: false, code: 'clan_funds_short' };
+                    const member = memberWallet(id, timestamp);
+                    if (!member) return { ok: false, code: 'member_busy' };
+                    money(c.id, -pay, 0, kind, timestamp, id);
+                    changeWallet(member, pay, c.id, timestamp);
+                    write('UPDATE clan_hall_earnings SET highWater=highWater+? WHERE clanId=? AND characterId=?', [pay, c.id, id]);
+                    return { ok: true, amount: pay, row: one('SELECT * FROM bot_life_state WHERE characterId=?', [id]) };
+                }, 'clan-payment')
+            );
+        },
         // The clan's dues, one settlement per member (ClanHall/Runtime runs it hourly for
         // every bot clan): a share of what the member earned since its last settlement
         // above its highest mark (wallet + contributed), never of its savings; plus an
