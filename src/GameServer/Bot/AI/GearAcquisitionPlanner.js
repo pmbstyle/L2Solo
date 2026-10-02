@@ -215,7 +215,7 @@ function rankIndex(rank) {
 // (partyNeedAssessmentForSource per drop source, per material source), and
 // its readiness depends only on the bot. Like ClanRaidPolicy's per-pass
 // readiness cache, it is computed once per bot object for the duration of
-// one external call into this module (see readinessScoped below). Within a
+// one planner decision (see readinessScoped below). Within a
 // call the planner changes equipment only on copied states/inventories.
 let readinessScope = null;
 
@@ -2184,7 +2184,7 @@ function sameObjective(left, right) {
     );
 }
 
-// Each external call is one planner decision: the outermost one opens the
+// Each such external call is one planner decision: the outermost one opens the
 // readiness scope and closes it on return, so no result outlives the call.
 function readinessScoped(fn) {
     return function scopedPlannerCall(...args) {
@@ -2200,6 +2200,10 @@ function readinessScoped(fn) {
 
 module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, fundedMarketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, npcWeaponBridgePlan, npcEquipmentBridgePlan, equipmentBridgeReason, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, sourceEffort, sourceWithinVoluntaryHuntBand, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, withMaterialFarmEffort, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isPlanSourceEligible, isPlanSourceViableForState, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
 
-for (const [name, value] of Object.entries(module.exports)) {
-    if (typeof value === 'function') module.exports[name] = readinessScoped(value);
+// Only the exports that judge a bot against several sources share readiness.
+for (const name of ['preferredTarget', 'preferredDropTarget', 'preferredNoGradeTarget', 'staticNpcUpgradePlan',
+    'staticNpcKitAdequate', 'npcWeaponBridgePlan', 'npcEquipmentBridgePlan', 'sourceEffort', 'bestSourceForState',
+    'bestSourceForPlan', 'safeFallbackForPlan', 'retargetPlanSource', 'replacementPlanFor', 'sourceForItem',
+    'farmSourceForMaterial', 'withMaterialFarmEffort', 'planFor']) {
+    module.exports[name] = readinessScoped(module.exports[name]);
 }

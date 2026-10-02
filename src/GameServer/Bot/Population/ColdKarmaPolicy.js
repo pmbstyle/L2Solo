@@ -34,16 +34,19 @@ function plan(state, spots, timestamp = Date.now()) {
     }
     // The level window is a cheap comparison; the solo matchup behind
     // isSpotAllowedForState is not, so it only judges spots inside the window,
-    // with the bot's combat profiles built once for the whole search.
+    // with the bot's combat profiles built once, by the first spot judged.
     const routeOptions = { mode: 'solo' };
-    routeOptions.matchupProfiles = TargetMatchup.stateProfiles(clean, routeOptions);
+    const allowed = (spot) => {
+        if (!routeOptions.matchupProfiles) routeOptions.matchupProfiles = TargetMatchup.stateProfiles(clean, routeOptions);
+        return LevelingRoutes.isSpotAllowedForState(spot, clean, routeOptions);
+    };
     const candidates = spots.filter(spot => {
         const point = spot.center;
         return spot.raidBoss !== true && point
             && Number(spot.minLevel || 1) <= Number(state.level || 1)
             && Number(spot.maxLevel || spot.minLevel || 1) >= Math.max(1, Number(state.level || 1) - 8)
             && !excludedSpotIds.has(spot.id) && !utils.isInPeaceZone(point.locX, point.locY)
-            && LevelingRoutes.isSpotAllowedForState(spot, clean, routeOptions);
+            && allowed(spot);
     });
     const current = candidates.find(spot => spot.id === state.spotId
         && Math.hypot(Number(spot.center.locX) - Number(state.loc?.locX),

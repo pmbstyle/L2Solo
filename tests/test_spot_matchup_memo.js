@@ -31,6 +31,20 @@ for (const profiles of [strong, weak]) {
         }
     }
 }
+// The repeated search reuses the verdicts: no species is judged again.
+{
+    const Cold = invoke('GameServer/Bot/Population/ColdCombatProfile');
+    const npcCombatStats = Cold.npcCombatStats;
+    let judged = 0;
+    Cold.npcCombatStats = (...args) => { judged += 1; return npcCombatStats(...args); };
+    try {
+        Matchup.spotMatchup(spot, strong, { soloSafety: true });
+        Matchup.spotMatchup(spot, strong.map((profile) => ({ ...profile })), { soloSafety: true });
+    } finally {
+        Cold.npcCombatStats = npcCombatStats;
+    }
+    assert.strictEqual(judged, 0, 'a known profile must not judge a species again');
+}
 const strongSafe = Matchup.spotMatchup(spot, strong, { soloSafety: true });
 const weakSafe = Matchup.spotMatchup(spot, weak, { soloSafety: true });
 assert.notDeepStrictEqual(strongSafe, weakSafe, 'different profile arrays keep separate verdicts');
