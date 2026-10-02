@@ -140,6 +140,91 @@ try {
         assert(Effects.list(outsider.actor).some(e=>e.key==='invigor'),'clan aura recipients outside the party retain ownership of their buffs');
     } finally {Attack.prototype.resolveSkillTargets=resolve;}
 
+    // Native songs/dances also land on party summons. Their existing aura
+    // effects must not turn into protected outsiders' buffs on the next tick.
+    const musicLeader=member(6),musicSinger=member(21,[skill(267)]),musicDancer=member(34,[skill(274)]),
+        warlock=member(14),necromancer=member(13),shieldProvider=member(17,[skill(1040)]);
+    const musicRows=[musicLeader,musicSinger,musicDancer,warlock,necromancer,shieldProvider];
+    musicLeader.leader=true;
+    musicRows.slice(1).forEach(r=>Object.assign(r.session,{partyCompanion:true,followPlayerSession:musicLeader.session}));
+    const summons=[warlock,necromancer].map((owner,index)=>{
+        const summon=member(0).actor;
+        delete summon.session;
+        summon.fetchOwnerId=()=>owner.actor.fetchId();
+        owner.actor[index===0?'summon':'pet']=summon;
+        Effects.apply(summon,{key:'shield',id:1040,level:1,type:'buff',durationMs:1200000});
+        return summon;
+    });
+    const originalUsers=World.user,originalBots=Bots.sessions,musicClock=Date.now;
+    let musicNow=musicClock();
+    const musicActors=[...musicRows.map(r=>r.actor),...summons],musicProviders=musicRows.map(r=>r.actor);
+    const NativeEffects=invoke('GameServer/Skills/C4SkillEffects'),attack=new Attack();
+    const castNative=action=>{
+        const targets=action.skill.fetchTargetKind()==='party'
+            ? attack.resolveSkillTargets(action.provider.session,action.provider,action.target,action.skill)
+            : [action.target];
+        if(action.skill.fetchTargetKind()==='party') {
+            assert(summons.every(s=>targets.includes(s)),'native music reaches both a summon and a pet');
+        }
+        for(const target of targets) {
+            assert(NativeEffects.execute(action.provider.session,action.provider,target,action.skill,{magicSkill:false}).effect,
+                'the native cast must create a real effect');
+        }
+    };
+    try {
+        Date.now=()=>musicNow;
+        World.user={sessions:musicRows.map(r=>r.session)};Bots.sessions=musicRows.slice(1).map(r=>r.session);
+        const initial=Planner.desiredLoadout(musicRows,musicProviders,{});
+        for(const provider of [musicSinger.actor,musicDancer.actor]) {
+            const musicSkill=provider.skillset.fetchSkills()[0];
+            castNative({provider,target:musicLeader.actor,skill:musicSkill});
+        }
+        musicNow+=1100;
+        const afterCast=Planner.desiredLoadout(musicRows,musicProviders,{});
+        for(const actor of musicActors) {
+            assert.deepStrictEqual([...afterCast.selected.get(actor)].sort(),[...initial.selected.get(actor)].sort(),
+                'landing music on a summon must not change the desired party loadout');
+        }
+        assert.deepStrictEqual(Planner.reconcileLoadout(musicRows,musicProviders),[],
+            'the next maintenance tick must retain freshly cast music on every recipient');
+        for(const actor of musicActors) {
+            assert(Effects.packetEffects(actor).some(e=>e.id===267 && e.duration===119));
+            assert(Effects.packetEffects(actor).some(e=>e.id===274 && e.duration===119));
+            const packets=[{buffer:invoke('GameServer/Network/Response/PartySpelled').fromActor(actor),offset:13,countOffset:9}];
+            if(!summons.includes(actor))packets.push({buffer:invoke('GameServer/Network/Response/AbnormalStatusUpdate').fromActor(actor),offset:3,countOffset:1});
+            for(const {buffer,offset,countOffset} of packets) {
+                const count=countOffset===1?buffer.readUInt16LE(countOffset):buffer.readInt32LE(countOffset);
+                const entries=Array.from({length:count},(_,i)=>({id:buffer.readInt32LE(offset+i*10),duration:buffer.readInt32LE(offset+i*10+6)}));
+                assert(entries.some(e=>e.id===267 && e.duration===119),'the native client packet retains the song');
+                assert(entries.some(e=>e.id===274 && e.duration===119),'the native client packet retains the dance');
+            }
+        }
+        for(const summon of summons) {
+            assert(!afterCast.managedByActor.get(summon).has('shield'),'single-target buffs on a pet stay protected');
+            assert(Effects.list(summon).some(e=>e.key==='shield'),'maintenance preserves the pet owner\'s ordinary buff');
+        }
+        for(let i=0;i<10;i++) {
+            const action=Planner.nextPartyAction(musicRows,musicProviders);if(!action)break;
+            castNative(action);
+        }
+        assert.strictEqual(Planner.hasPendingAction(musicRows,musicProviders),false,'buffing with summons converges');
+        musicNow+=90000;
+        let musicRefreshes=0;
+        for(;musicRefreshes<10;musicRefreshes++) {
+            const action=Planner.nextPartyAction(musicRows,musicProviders);if(!action)break;
+            assert(action.skill.fetchSemantic().isDance,'only music is due before its two-minute expiry');
+            castNative(action);
+            musicNow+=1000;
+            assert.deepStrictEqual(Planner.reconcileLoadout(musicRows,musicProviders),[],
+                'rebuffing must retain music on people, summons and pets');
+        }
+        assert.strictEqual(musicRefreshes,2,'each song/dance refreshes once without an eviction loop');
+        assert(musicActors.every(actor=>Effects.packetEffects(actor).some(e=>e.id===267 && e.duration>110)));
+    } finally {
+        musicActors.forEach(actor=>Ticker.clearAll(actor));
+        Date.now=musicClock;World.user=originalUsers;Bots.sessions=originalBots;
+    }
+
     // Read the native NPC combat-skill list, and retain context across short
     // gaps between pulls instead of removing/recasting resistance each kill.
     const realNow=Date.now,oldNpc=World.npc,oldRadius=World.fetchNpcsInRadius;
@@ -201,5 +286,38 @@ try {
             'loadout maintenance must not strip the selected raid chant');
         console.log(`Raid group-buff preparation converged in ${raidCasts} casts (${healerCasts} unique healer casts)`);
     } finally {Parties.find=findParty;}
+    // Native family replacement and the desired loadout must agree, otherwise
+    // Avatar/Body or Prophecy/CoV keep evicting one another on every bot tick.
+    const familyTank=member(6),familyProphet=member(17,[skill(1036,2),skill(1045,6),skill(1356)]),
+        familyOrc=member(52,[skill(1006,3),skill(1311,6),skill(1363)]),
+        familyHealer=member(43,[skill(1355)]);
+    const familyRows=[familyTank,familyProphet,familyOrc,familyHealer];
+    const familyProviders=familyRows.slice(1).map(row=>row.actor);
+    const familyClock=Date.now;
+    let familyNow=Date.now(),familyCasts=0;
+    try {
+        Date.now=()=>familyNow;
+        for(;familyCasts<40;familyCasts++) {
+            const action=Planner.nextPartyAction(familyRows,familyProviders);
+            if(!action)break;
+            const semantic=action.skill.fetchSemantic();
+            const recipients=action.skill.fetchTargetKind()==='party'?familyRows.map(row=>row.actor):[action.target];
+            for(const recipient of recipients)Effects.apply(recipient,{...semantic,key:semantic.effect,
+                id:action.skill.fetchSelfId(),level:action.skill.fetchLevel(),type:'buff',durationMs:action.skill.fetchBuffTime()});
+            familyNow+=1000;
+            Planner.reconcileLoadout(familyRows,familyProviders);
+        }
+        assert(familyCasts>0 && familyCasts<40,'shared native families must converge');
+        assert.strictEqual(Planner.hasPendingAction(familyRows,familyProviders),false);
+        for(const {actor} of familyRows) {
+            for(const family of ['MagicDefUp','MaxHPUp','CoV']) {
+                assert.strictEqual(Effects.list(actor).filter(effect=>effect.stackFamily===family).length,1,
+                    `one ${family} effect per recipient`);
+            }
+        }
+        familyNow+=1000;
+        assert.deepStrictEqual(Planner.reconcileLoadout(familyRows,familyProviders),[],'stable families survive maintenance');
+        assert.strictEqual(Planner.nextPartyAction(familyRows,familyProviders),null,'no immediate family rebuff loop');
+    } finally {Date.now=familyClock;}
     console.log(`Party buff loadout: mixed roles, equipment, encounter protection, stable allocation, passive slots and ${casts} casts converged`);
 } finally {Ticker.refreshEffects=originalRefresh;}

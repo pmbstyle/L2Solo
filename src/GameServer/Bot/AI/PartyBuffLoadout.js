@@ -9,7 +9,17 @@ const aliases = {
     chant_of_predator:'focus', chant_of_evasion:'agility', soul_of_paagrio:'blessed_soul',
     wisdom_of_paagrio:'acumen', eye_of_paagrio:'guidance',
     blessing_of_paagrio:'shield', glory_of_paagrio:'magic_barrier', tact_of_paagrio:'agility',
-    rage_of_paagrio:'berserker_spirit'
+    rage_of_paagrio:'berserker_spirit', body_of_avatar:'blessed_body',
+    prophecy_of_water:'prophecy', prophecy_of_fire:'prophecy', prophecy_of_wind:'prophecy',
+    chant_of_victory:'prophecy', warrior_servitor:'prophecy', wizard_servitor:'prophecy',
+    assassin_servitor:'prophecy', final_servitor:'prophecy'
+};
+// Budget the same native stack slot that EffectStore will replace. Keep the
+// familiar benefit keys for priorities, role policy and legacy saved effects.
+const stackFamilies = {
+    pAtk:'might', pDef:'shield', SpeedUp:'wind_walk', pAtkSpeedUp:'haste',
+    mAtkSpeedUp:'acumen', mAtk:'empower', MagicDefUp:'magic_barrier',
+    MaxHPUp:'blessed_body', CoV:'prophecy'
 };
 const priorities = {
     wind_walk:100, shield:95, magic_barrier:90, blessed_body:90,
@@ -29,7 +39,10 @@ const situational = {
     elemental_protection:'elemental', resist_shock:'stun'
 };
 function normalize(key) { return String(key || '').replace(/([a-z0-9])([A-Z])/g,'$1_$2').trim().toLowerCase().replace(/\s+/g,'_'); }
-function family(key) { key=normalize(key);return aliases[key] || key; }
+function family(key, stackFamily = null) {
+    if(stackFamily)return stackFamilies[stackFamily] || `stack:${stackFamily}`;
+    key=normalize(key);return aliases[key] || key;
+}
 
 // A resurrected damage dealer needs a short combat restart, not the full
 // pre-pull loadout. Native chants count as the same buff families.
@@ -60,31 +73,39 @@ function useful(actor, skill, context = {}) {
 // cooldown must not change the desired set, so MP/busy state is excluded here.
 function build(members, providers, context, api) {
     const actors=members.map(m=>m.actor).filter(a=>a && !a.isDead?.() && !a.state?.fetchDead?.());
+    const partyActors=new Set(actors),SummonControl=invoke('GameServer/Npc/SummonControl');
+    for(const actor of actors) {
+        const summon=SummonControl.activeSummon(actor);
+        if(summon)partyActors.add(summon);
+    }
     const skills=providers.filter(p=>p && !p.isDead?.() && !p.state?.fetchDead?.())
         .flatMap(provider=>api.skills(provider).map(skill=>({provider,skill,
             aura:api.recipients(members,provider,skill)})));
-    const managed=new Set(skills.map(({skill})=>family(skill.fetchSemantic().effect)));
+    const skillFamily=skill=>family(skill.fetchSemantic().effect,skill.fetchSemantic().stackFamily);
+    const effectFamily=effect=>family(effect.key,effect.stackFamily);
+    const managed=new Set(skills.map(({skill})=>skillFamily(skill)));
     const used=new Map(), limits=new Map(), selected=new Map(), selectedFamilies=new Map(), managedByActor=new Map();
     const init=actor=>{
         if(used.has(actor))return;
-        // Clan auras can reach actors outside this party. Count their slots,
-        // but never treat their effects as ours to remove or replace.
-        const actorManaged=new Set(actors.includes(actor) ? skills
-            .filter(({skill,aura})=>!api.isAura(skill) || aura.includes(actor))
-            .map(({skill})=>family(skill.fetchSemantic().effect)) : []);
+        // Party summons share the aura loadout, but keep ownership of their
+        // single-target buffs. Clan recipients outside the party only reserve
+        // slots; their effects are never ours to remove or replace.
+        const actorManaged=new Set(partyActors.has(actor) ? skills
+            .filter(({skill,aura})=>api.isAura(skill) ? aura.includes(actor) : actors.includes(actor))
+            .map(({skill})=>skillFamily(skill)) : []);
         managedByActor.set(actor,actorManaged);
         const effects=api.effects(actor);
         const protectedEffects=effects.filter(e=>Effects.includedInBuffCount(e)
-            && (!actorManaged.has(family(e.key)) || e.dispellable===false || e.type!=='buff'));
+            && (!actorManaged.has(effectFamily(e)) || e.dispellable===false || e.type!=='buff'));
         used.set(actor,protectedEffects.length);
         limits.set(actor,Math.max(0,Effects.BUFF_LIMIT-Math.max(0,effects.filter(e=>e.type==='debuff').length-Effects.DEBUFF_RESERVED_SLOTS)));
         selected.set(actor,new Set(protectedEffects.map(e=>normalize(e.key))));
-        selectedFamilies.set(actor,new Set(protectedEffects.map(e=>family(e.key))));
+        selectedFamilies.set(actor,new Set(protectedEffects.map(effectFamily)));
     };
     actors.forEach(init);
     const candidates=[];
     for(const {provider,skill,aura} of skills) {
-        const key=normalize(skill.fetchSemantic().effect),group=family(key);
+        const key=normalize(skill.fetchSemantic().effect),group=skillFamily(skill);
         if(api.isAura(skill) && !aura.length)continue;
         const groups=aura.length?[aura]:actors.map(a=>[a]);
         for(const recipients of groups) {

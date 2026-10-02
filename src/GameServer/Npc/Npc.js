@@ -699,8 +699,14 @@ class Npc extends NpcModel {
             if (skill.fetchTargetKind() !== 'self') return false;
             const semantic = skill.fetchSemantic?.() || {};
             if (semantic.effectType !== 'buff' || !semantic.effect) return false;
+            if (skill.fetchSkillType?.() === 'hot') {
+                const targets = this.attack.resolveSkillTargets(null,this,this,skill);
+                if (!targets.some(target => Number(target.fetchHp?.()) < Number(target.fetchMaxHp?.()))) return false;
+            }
             return !EffectStore.list(this).some((effect) => (
                 Number(effect.id) === Number(skill.fetchSelfId()) || effect.key === semantic.effect
+                || semantic.stackFamily && effect.stackFamily === semantic.stackFamily
+                    && Number(effect.stackOrder || 0) >= Number(semantic.stackOrder || 0)
             ));
         });
         if (selfBuff) return selfBuff;

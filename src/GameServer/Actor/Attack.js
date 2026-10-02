@@ -546,6 +546,25 @@ class Attack {
         const radius = Math.max(0, Number(semantic.radius) || 0);
         const targetKind = skill.fetchTargetKind?.();
 
+        if (sourceTarget === 'clan' && this.isNpcCombatant(actor)) {
+            const World = invoke('GameServer/World/World');
+            const RaidEntityIndex = invoke('GameServer/World/RaidEntityIndex');
+            // Lisvus TARGET_CLAN on a minion reaches its leader and the
+            // leader's minions. Other NPCs reach nearby faction members.
+            const boss = Number(actor.minionBossObjectId) > 0 ? RaidEntityIndex.bossFor(World, actor) : null;
+            const faction = actor.fetchClanName?.();
+            const range = Math.max(0, Number(skill.fetchDistance?.()) || 0);
+            const targets = boss ? RaidEntityIndex.entitiesForRaid(World, {
+                bossId: boss.fetchId(), bossTemplateId: boss.fetchSelfId()
+            }) : [actor, ...(faction ? (World.npc?.spawns || []).filter(target => (
+                this.isNpcCombatant(target) && target !== actor
+                && target.fetchClanName?.() === faction && this.distance2d(actor,target) <= range
+            )) : [])];
+            return this.uniqueSkillTargets(targets.filter(target => (
+                this.isValidSkillTarget(target,skill,actor) && target.isDead?.() !== true
+            )));
+        }
+
         if (targetKind === 'party') {
             const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
             const SummonControl = invoke('GameServer/Npc/SummonControl');

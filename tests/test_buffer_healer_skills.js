@@ -152,6 +152,38 @@ function targetActor(id, x, clanId, dead = false) {
     };
 }
 
+// Execute the materialized skill, rather than supplying a test-only duration:
+// zero-duration definitions consumed MP while creating no persistent buff.
+const EffectStore = invoke('GameServer/Effects/EffectStore');
+const EffectTicker = invoke('GameServer/Effects/EffectTicker');
+const SupportPlanner = invoke('GameServer/Bot/AI/BotSupportPlanner');
+const AbnormalStatusUpdate = invoke('GameServer/Network/Response/AbnormalStatusUpdate');
+for (const [selfId, multipliers, stat] of [[1303, [3, 4], 'mCritRateMul'], [1304, [1.6, 1.8, 2], 'sDefMul']]) {
+    multipliers.forEach((multiplier, index) => {
+        const skill = cachedSkill(selfId, index + 1);
+        const caster = targetActor(2004001, 0, 0), target = targetActor(2004002, 100, 0);
+        const clock = Date.now, castAt = clock();
+        try {
+            Date.now = () => castAt;
+            assert.strictEqual(SupportPlanner.needsSkill(target, skill), true);
+            const outcome = C4SkillEffects.execute({ actor: caster }, caster, target, skill);
+            assert(outcome.effect, `${skill.fetchName()} level ${index + 1} must actually land`);
+            assert.strictEqual(outcome.effect.expiresAt - castAt, 1200000, 'the sourced C4 buff lasts twenty minutes');
+            assert.strictEqual(EffectStats.multiplier(target, stat), multiplier);
+            Date.now = () => castAt + 1000;
+            assert.strictEqual(SupportPlanner.needsSkill(target, skill), false, 'a successful cast must stop rebuff requests');
+            const packet = AbnormalStatusUpdate.fromActor(target);
+            assert.strictEqual(packet.readUInt16LE(1), 1);
+            assert.strictEqual(packet.readInt32LE(3), selfId);
+            assert.strictEqual(packet.readInt32LE(9), 1199, 'the client receives the remaining buff duration');
+            assert.strictEqual(EffectStore.list(target).length, 1);
+        } finally {
+            Date.now = clock;
+            EffectTicker.clearAll(target);
+        }
+    });
+}
+
 const originalUsers = World.user;
 const ClanService = invoke('GameServer/Clan/ClanService');
 const originalFindClan = ClanService.findById;

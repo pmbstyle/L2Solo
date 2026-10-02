@@ -115,7 +115,7 @@
   "sha256": {
     "items.json": "1dfd8fa16c360ff0221b8513c9f8b074f4152fed5c949e67d0bdc7c41db17908",
     "mobs.json": "afd172463472aef90e1f399a42aa4cb7f11a158f694ed4bd2adefaf7619fe046",
-    "skills.json": "5a4879c95cc0973e6525d2aeeb95fab868e29b8047329e6dda8627bb959c79ce",
+    "skills.json": "243d8eb763110daf7722a071da08d35707dfe1a30056dd5cedab1f6368830fa5",
     "spawns.json": "200ab186c65f8896d337f9a7e79e74eeb9fca00c923b701e244bc9f9c8f62318"
   }
 }

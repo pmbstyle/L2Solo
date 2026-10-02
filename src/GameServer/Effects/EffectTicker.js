@@ -158,7 +158,9 @@ function applyHot(session, source, target, effect) {
     const timers = ensureTimers(target);
     clear(target, effect.key);
     timers[effect.key] = setInterval(() => {
-        if (target.state?.fetchDead?.() || (effect.expiresAt && effect.expiresAt <= Date.now())) {
+        // The expiry timer owns the cutoff. The final periodic heal is due at
+        // expiresAt itself, just like the final DoT/MP tick.
+        if (target.state?.fetchDead?.()) {
             clearRuntime(target, effect.key);
             return;
         }
