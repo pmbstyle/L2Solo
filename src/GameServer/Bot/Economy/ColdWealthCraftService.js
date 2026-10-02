@@ -66,14 +66,12 @@ function chooseOpportunity(state, knownRecipes) {
     let best = null;
     const craftLevel = CraftShopService.craftLevelFor(state);
     // An active market gear plan keeps what its purchase needs (price and
-    // reserve, the bot's own buy-order escrow counted): inputs are bought only
-    // with the rest of the wallet.
+    // reserve): inputs are bought only with the rest of the wallet. A bot
+    // with its own buy order does not craft at all (eligible), so no escrow.
     const gearPlan = state.stats?.equipmentPlan;
-    const wallet = Math.max(0, Number(state.adena || 0));
     const budgetState = { ...state, adena: gearPlan?.status === 'active' && gearPlan.strategy === 'market'
-        ? Math.min(wallet, PurchaseFunding.surplus(state, gearPlan.market?.price, gearPlan.market?.reserve,
-            invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId)))
-        : wallet };
+        ? PurchaseFunding.surplus(state, gearPlan.market?.price, gearPlan.market?.reserve)
+        : Math.max(0, Number(state.adena || 0)) };
     const offerCache = new Map();
     const ownStock = new Map(ItemDisposition.saleCandidates(state, { unlimited: true })
         .map((item) => [Number(item.selfId), item]));

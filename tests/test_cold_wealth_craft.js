@@ -90,7 +90,7 @@ async function run() {
     assert.strictEqual(Service.eligible(state, 1000000), true,
         'ordinary generated dwarves must not be mistaken for fixed crafting stations');
     // A crafter with a market gear plan keeps the plan's price and reserve out
-    // of its input budget; its own buy-order escrow counts toward that purchase.
+    // of its input budget.
     const planning = (adena) => ({ ...state, adena, stats: { ...state.stats, equipmentPlan: {
         status: 'active', strategy: 'market', target: { selfId: 100, name: 'Planned Gear', slot: 7 },
         market: { town: 'Giran', price: 370000, sourceType: 'npc', reserve: 10000 } } } });
@@ -100,15 +100,6 @@ async function run() {
         'a crafter saving for market gear keeps its price and reserve out of the input budget');
     assert(Service.chooseOpportunity(planning(state.adena + 380000), [{ recipeId: recipe.recipeId }]),
         'with the purchase covered the rest of the wallet buys inputs');
-    const AfkTradeService = invoke('GameServer/AfkTrade/AfkTradeService');
-    const findOwnerProjection = AfkTradeService.findOwnerProjection;
-    AfkTradeService.findOwnerProjection = () => ({ shop: { storeType: AfkTradeService.BUY, escrowAdena: 380000 } });
-    try {
-        assert(Service.chooseOpportunity(planning(state.adena), [{ recipeId: recipe.recipeId }]),
-            'money already held by the bot\'s own buy order covers the purchase too');
-    } finally {
-        AfkTradeService.findOwnerProjection = findOwnerProjection;
-    }
     const result = await Service.tryCraft(state, 1000000);
     assert(result.crafted && result.sold);
     assert(crafted && sold);
