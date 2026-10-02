@@ -77,12 +77,11 @@ module.exports = function ({
         );
     }
     function protectedAmount(c) {
-        if (c?.mode !== 'autonomous') return 0;
-        const goal = json(c.stateJson).goal;
-        return Policy.progressionReserve(c, goal);
+        return Policy.protectedReserve(c, c?.mode, json(c?.stateJson).goal);
     }
     function spendable(c) {
-        return Math.max(0, available(c.id) - protectedAmount(c));
+        const rows = all('SELECT selfId,amount,reservedAmount FROM clan_warehouse_items WHERE clanId=? AND selfId=57', [c.id]);
+        return Policy.freeAdena(rows, c, c?.mode, json(c?.stateJson).goal);
     }
     function money(id, delta, hallId, kind, timestamp, characterId = null) {
         if (!delta) return true;

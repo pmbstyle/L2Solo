@@ -12,7 +12,7 @@ const ClanRaidPolicy = require('./ClanRaidPolicy');
 const ClanRaidFailurePolicy = require('./ClanRaidFailurePolicy');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const DataCache = invoke('GameServer/DataCache');
-const { planForMember } = require('./ClanEquipmentPlanner');
+const { planForMember, memberFunds } = require('./ClanEquipmentPlanner');
 const PlanningWorker = require('./ClanPlanningCoordinator');
 const MAX_CAPACITY_TARGET_RETRIES = 5;
 let craftingCatalog = null;
@@ -387,6 +387,27 @@ async function handoffWarehouseMaterials(current, plan, clan, goal) {
     return { state, results };
 }
 
+// The clan's share of a market goal: what the member lacks for the price above
+// its own funds, handed over from the clan warehouse at assignment like the
+// craft materials (once per goal: the withdrawal is keyed by the goal).
+async function handoffMissingAdena(current, plan, clan, goal) {
+    const missing = plan?.strategy === 'market' ? Math.ceil(number(plan.market?.price) - memberFunds(current)) : 0;
+    if (missing <= 0) return { ok: true, state: current };
+    const result = await LifeState.applyClanMaterialTransfer({
+        clanId: clan.id,
+        characterId: current.characterId,
+        selfId: 57,
+        amount: missing,
+        goalKey: `${goal.goalKey}:funding`,
+        expectedSimulationRevision: number(current.simulation?.revision ?? current.simulationRevision)
+    }, true);
+    if (!result.ok && result.code !== 'warehouse_withdraw_already_applied') {
+        recordReason(result.code || 'clan_funding_failed');
+        return { ok: false, code: result.code };
+    }
+    return { ok: true, state: result.state || await LifeState.findByCharacterId(current.characterId) };
+}
+
 async function assignPartyObjective(member, clan, goal, plan, priority = 'preferred') {
     const id = number(member.characterId ?? member.id);
     const objective = clanPartyObjective(plan, goal, priority, clan.id);
@@ -435,8 +456,11 @@ async function assignPlan(member, plan, clan, goal) {
     if (!current) return { ok: false, code: 'member_state_missing', memberId: id };
 
     const handoff = await handoffWarehouseMaterials(current, plan, clan, goal);
-    const currentState = handoff.state || current;
+    let currentState = handoff.state || current;
     if (handoff.results.some(result => !result.ok)) return { ok: false, code: 'warehouse_handoff_deferred', handoff };
+    const funding = await handoffMissingAdena(currentState, plan, clan, goal);
+    if (!funding.ok) return { ok: false, code: 'clan_funding_deferred', handoff, funding };
+    currentState = funding.state || currentState;
     plan = { ...plan, clanMaterialDemand: Object.fromEntries(Crafting.requirements(Crafting.resolveRecipe(plan.recipeId), {}, null, 1, plan.craftProviders, plan.componentRecipes)) };
 
     const currentPlan = currentState.stats?.equipmentPlan;
@@ -567,6 +591,11 @@ async function planningForClan(clan, previousGoal = null, options = {}) {
     const craftOptions = await craftingOptions(clan);
     const previousMemberId = number(previousGoal?.target?.memberId);
     const reservationOptions = reservationOptionsForClan(clan);
+    // The clan pays what a member lacks for its goal, at most this share of the
+    // clan's free money (above the clan hall's protected reserve).
+    const clanShare = Math.floor(invoke('GameServer/ClanHall/Policy')
+        .freeAdena(warehouseRows, clan, clan.state?.mode, clan.state?.goal)
+        * Math.max(0, Math.min(1, number(Config.contributionMaxFraction))));
     const previousAssigned = new Set((previousGoal?.assignedMemberIds || []).map(number).filter(Boolean));
     const spoilCapable = (clan.members || []).some((member) => (
         member?.phase === 'cold'
@@ -611,6 +640,7 @@ async function planningForClan(clan, previousGoal = null, options = {}) {
             spoilCapable,
             allowRaidSources: memberSpots.some((spot) => spot.raidBoss === true),
             maxExpectedKills: Config.equipmentMaxExpectedKills,
+            clanShare,
             ...reservationOptions,
             excludedTargetIds: options.excludedTargetIds || []
         };

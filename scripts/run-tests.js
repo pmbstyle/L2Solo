@@ -43,6 +43,7 @@ const tests = [
     'tests/test_clan_presence.js',
     'tests/test_clan_party_capacity.js',
     'tests/test_clan_equipment_component_progress.js',
+    'tests/test_clan_goal_funding.js',
     'tests/test_clan_cold_progress.js',
     'tests/test_inventory_weight.js',
     'tests/test_mammon_unseal.js',

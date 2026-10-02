@@ -360,6 +360,13 @@ async function execute(action, options = {}) {
     try {
         switch (actionType) {
             case ACTION_TYPES.PLAN:
+                // The beneficiary got its item (BotLifeState.enqueueEquipmentGoalAdvance):
+                // below level 3 the equipment goal is the production goal, so pick the
+                // next one now instead of at the next 15-min production review.
+                if (String(payload.reason || '') === 'equipment_goal_completed' && number(clan.level) < 3) {
+                    result = await resolveProduction(clan);
+                    break;
+                }
                 result = String(clan.state?.mode || '') === 'player_managed'
                     && String(clan.state?.goal?.controlledBy || '') === 'player'
                     && clan.state?.goal?.status !== 'completed'
