@@ -6,8 +6,8 @@ const { DatabaseSync } = require('node:sqlite');
 require('../src/Global');
 
 // A bot clan's level-up spends its Adena like the player's level-up
-// (NpcBypasses/Clan), from the clan warehouse where the dues went. A payment
-// that is not there keeps the clan at its level.
+// (NpcBypasses/Clan), from the clan warehouse where the dues went, and the
+// leader's SP. A payment that is not there keeps the clan at its level.
 const rootDir = path.resolve(__dirname, '..');
 const databasePath = path.join(rootDir, 'tmp', 'test-clan-level-up-cost.sqlite');
 const Database = invoke('Database');
@@ -17,11 +17,14 @@ function seedDatabase() {
     const seed = new DatabaseSync(databasePath);
     seed.exec(fs.readFileSync(path.join(rootDir, 'database', 'sql', 'sqlite.sql'), 'utf8'));
     seed.prepare('INSERT INTO accounts(username, password) VALUES (?, ?)').run('bot_pop_levelcost', 'test-only');
-    for (const [clanId, leaderId, level] of [[71, 4500001, 0], [72, 4500002, 1], [73, 4500003, 0]]) {
+    const levelSp = (level) => invoke('GameServer/Clan/ClanRules').LEVEL_REQUIREMENTS[level].sp;
+    // Clan 74 has the Adena but its leader lacks the SP.
+    for (const [clanId, leaderId, level, sp] of [[71, 4500001, 0, levelSp(0) + 5], [72, 4500002, 1, levelSp(1)],
+        [73, 4500003, 0, levelSp(0)], [74, 4500004, 0, levelSp(0) - 1]]) {
         seed.prepare(`INSERT INTO characters(id, username, name, classId, race, level, maxHp, maxMp, sex, face, hair, hairColor,
-            locX, locY, locZ, clanId) VALUES (?, 'bot_pop_levelcost', ?, 0, 0, 30, 500, 250, 0, 0, 0, 0, 0, 0, 0, ?)`).run(leaderId, `Lead${leaderId}`, clanId);
+            locX, locY, locZ, clanId, sp) VALUES (?, 'bot_pop_levelcost', ?, 0, 0, 30, 500, 250, 0, 0, 0, 0, 0, 0, 0, ?, ?)`).run(leaderId, `Lead${leaderId}`, clanId, sp);
         seed.prepare(`INSERT INTO bot_life_state(characterId, accountName, characterName, level, adena, activity, phase,
-            inventorySummary, statsJson, updatedAt) VALUES (?, 'bot_pop_levelcost', ?, 30, 0, 'hunting', 'cold', '{}', '{}', 1)`).run(leaderId, `Lead${leaderId}`);
+            inventorySummary, statsJson, updatedAt, sp) VALUES (?, 'bot_pop_levelcost', ?, 30, 0, 'hunting', 'cold', '{}', '{}', 1, ?)`).run(leaderId, `Lead${leaderId}`, sp);
         seed.prepare('INSERT INTO clans(id, name, level, leaderId) VALUES (?, ?, ?, ?)').run(clanId, `Cost${clanId}`, level, leaderId);
         seed.prepare(`INSERT INTO clan_simulation_clans(clanId, mode, stateJson, createdAt, updatedAt)
             VALUES (?, 'autonomous', '{"mode":"autonomous","warehouseRevision":0}', 0, 0)`).run(clanId);
@@ -33,6 +36,7 @@ function seedDatabase() {
     fund.run(71, 700000);
     fund.run(72, 2600000);
     fund.run(73, 100000);
+    fund.run(74, 700000);
     seed.prepare(`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES (57, 'Adena', 900000, 0, 0, 0, 4500001)`).run();
     seed.close();
 }
@@ -42,6 +46,7 @@ async function main() {
     options.default.Database.path = path.relative(rootDir, databasePath);
     Database.init();
     const level = async (clanId) => Number((await Database.execute(['SELECT level FROM clans WHERE id = ?', [clanId]]))[0].level);
+    const sp = async (id) => Number((await Database.execute(['SELECT sp FROM characters WHERE id = ?', [id]]))[0].sp);
     const wallet = async (id) => Number((await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM items WHERE characterId = ? AND selfId = 57', [id]]))[0].n);
     try {
         const warehouse = async (clanId) => Number((await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM clan_warehouse_items WHERE clanId = ? AND selfId = 57', [clanId]]))[0].n);
@@ -49,6 +54,7 @@ async function main() {
         assert.strictEqual(first.ok, true, JSON.stringify(first));
         assert.strictEqual(await warehouse(71), 50000, 'level 1 is paid from the clan warehouse');
         assert.strictEqual(await wallet(4500001), 900000, 'the leader\'s wallet is not touched');
+        assert.strictEqual(await sp(4500001), 5, 'the leader pays the level\'s SP');
 
         const second = await Database.advanceAutonomousClanLevel({ clanId: 72, fromLevel: 1, toLevel: 2, requiredAmount: 2500000 });
         assert.strictEqual(second.ok, true, JSON.stringify(second));
@@ -59,6 +65,12 @@ async function main() {
         assert.strictEqual(short.code, 'warehouse_item_not_ready');
         assert.strictEqual(await level(73), 0, 'an unpaid level-up keeps the level');
         assert.strictEqual(await warehouse(73), 100000);
+        assert.strictEqual(await sp(4500003), 30000, 'an unpaid level-up spends no SP');
+
+        const noSp = await Database.advanceAutonomousClanLevel({ clanId: 74, fromLevel: 0, toLevel: 1, requiredAmount: 650000 });
+        assert.strictEqual(noSp.code, 'not_enough_sp');
+        assert.strictEqual(await level(74), 0, 'a leader short of SP keeps the level');
+        assert.strictEqual(await warehouse(74), 700000, 'and the clan keeps its Adena');
         console.log('Clan level-up cost checks passed');
     } finally {
         await Database.close();
