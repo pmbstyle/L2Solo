@@ -21,7 +21,8 @@ module.exports = function(session) {
     const sales = ItemDisposition.unreservedActorItems(session.coldLifeState, items)
         .filter(item => NpcSellRules.canSell(item)
             && !ShotStock.SHOT_IDS.includes(Number(item.fetchSelfId()))
-            && (!bot || !ItemDisposition.isKeptFromNpcJunk(item, crafter))
+            && (!bot || !ItemDisposition.isKeptFromNpcJunk(item, crafter,
+                (recipeId) => !!backpack.hasRecipe?.(session.actor, recipeId)))
             && (!protectPendingWarehouseItems || !ItemDisposition.isWarehouseCandidate(item)))
         .map((item) => {
             let amount = item.fetchAmount();

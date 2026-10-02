@@ -42,12 +42,13 @@ function item(id, selfId, amount) {
 const actor = (backpack, crafter = { classId: 0, level: 30 }) => ({ fetchId: () => 77, fetchLevel: () => crafter.level,
     fetchClassId: () => crafter.classId, backpack });
 
-async function sellJunk(accountId, crafter) {
+async function sellJunk(accountId, crafter, knownRecipeIds = []) {
     const adena = { ...item(1, 57, 0) };
     const backpack = {
         items: [item(2, D_RECIPE, 1), item(3, CRYSTAL_D, 40), item(4, ANIMAL_BONE, 5),
             item(5, HEALING_POTION, 30), item(6, MATERIAL_RECIPE, 1), adena],
         stackableExists: () => Promise.resolve(adena),
+        hasRecipe: (_actor, recipeId) => knownRecipeIds.includes(Number(recipeId)),
         fetchItems() { return this.items; }
     };
     const session = { accountId, actor: actor(backpack, crafter), dataSendToMe() {} };
@@ -80,6 +81,10 @@ async function run() {
     const crafterSale = await sellJunk('bot_hot_crafter', ARTISAN);
     assert(crafterSale.left.some(([selfId]) => selfId === MATERIAL_RECIPE),
         'a hot crafter keeps the material recipe it learns when cold');
+    const knownId = Number(ItemDisposition.recipeInfo({ selfId: MATERIAL_RECIPE }).recipe.recipeId);
+    const knowingSale = await sellJunk('bot_hot_crafter', ARTISAN, [knownId]);
+    assert(!knowingSale.left.some(([selfId]) => selfId === MATERIAL_RECIPE),
+        'a spare copy of a recipe the crafter already knows is junk, as when cold');
 
     const playerSale = await sellJunk('player_account');
     assert.deepStrictEqual(playerSale.left.map(([selfId]) => selfId), [57],
