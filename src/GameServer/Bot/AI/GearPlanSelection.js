@@ -5,10 +5,10 @@
 // differ (`planningOptions`: the worker's NPC catalogue, live offers on the
 // main thread).
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 
 function selectAcquisitionPlan(state, previousPlan, { spots = [], occupancy, timestamp = Date.now(), planningOptions = {} } = {}) {
-    const excludedSpotIds = invoke('GameServer/Bot/Population/SpotRiskPolicy')
-        .excludedSpotIdsForStates([state], timestamp);
+    const excludedSpotIds = SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp);
     const planOptions = { ...planningOptions, excludedSpotIds };
     const clanRaidPlan = GearAcquisitionPlanner.isClanOwnedPlan(previousPlan)
         && previousPlan?.next?.sourceKind === 'raid';
@@ -87,7 +87,7 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], occupancy, tim
         marketFallback: finalizedPlan.status === 'active' && finalizedPlan.strategy === 'craft'
             && Number(finalizedPlan.acquisitionProgress?.at || finalizedPlan.startedAt || timestamp) + 20 * 60 * 1000 <= timestamp
     };
-    return { acquisitionPlan, replanContext, weaponBridgePlan, reusablePartyRequest, excludedSpotIds };
+    return { acquisitionPlan, replanContext, reusablePartyRequest, excludedSpotIds };
 }
 
 module.exports = { selectAcquisitionPlan };
