@@ -2343,6 +2343,11 @@ const BotLifeState = {
                 ? { deathExperience: progressionState.stats.deathExperience }
                 : {})
         };
+        // Every writer of stats.travel also makes the bot `traveling`, and
+        // arrival clears it. A trip on a bot that neither was nor stays
+        // traveling is a leftover; routeFor would skip the bot forever.
+        if (patchedStats.travel && state.activity !== 'traveling'
+            && (result.patch?.activity || state.activity) !== 'traveling') patchedStats.travel = null;
         const stats = {
             ...patchedStats,
             karma: Math.max(0, Number(state.stats?.karma || 0) - Math.floor(

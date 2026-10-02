@@ -39,7 +39,7 @@ function buildShopHtml(session, bot) {
         const template = ItemTemplateIndex.findStrict(DataCache.items, item.selfId);
         const iname = template?.template?.name ?? 'Unknown';
         const icat = template?.template?.kind ?? '';
-        const playerItem = session.actor.backpack.fetchItemFromSelfId(item.selfId);
+        const playerItem = TradeService.sellableCopy(session.actor, item.selfId);
         const playerCount = playerItem ? playerItem.fetchAmount() : 0;
         const maxSell = Math.min(item.count, playerCount);
 
@@ -95,7 +95,7 @@ module.exports = async function(session, parts) {
         return;
     }
 
-    const playerItem = session.actor.backpack.fetchItemFromSelfId(selfId);
+    const playerItem = TradeService.sellableCopy(session.actor, selfId);
     const playerCount = playerItem ? playerItem.fetchAmount() : 0;
     const sellQty = Math.min(qty, playerCount, storeItem.count);
     if (sellQty <= 0) {

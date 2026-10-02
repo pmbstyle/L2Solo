@@ -8,7 +8,7 @@ const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 
 function merchantSellRows(actor, store) {
     return actor.backpack.fetchItems()
-        .filter((item) => !item.fetchPetLocked?.() && !item.fetchEquipped() && item.fetchSelfId() !== 57)
+        .filter(TradeService.isSellableInventoryItem)
         .map((item) => {
             const wanted = store.items.find((storeItem) => storeItem.selfId === item.fetchSelfId() && storeItem.count > 0);
             if (!wanted) return null;
@@ -60,11 +60,11 @@ async function consumeMerchant(session, list, { native = false } = {}) {
         const sold = [];
         const objectIds = new Set();
         const requested = list.map((line) => {
-            const item = session.actor.backpack.fetchItems().find((ob) => ob.fetchId() === line.objectId);
+            const item = line.objectId ? TradeService.sellableCopy(session.actor, line.selfId, line.objectId) : null;
             const wanted = store.items.find((storeItem) => storeItem.selfId === line.selfId && storeItem.count > 0);
             const amount = Number(line.amount);
             const matchesPrice = line.price === undefined || Number(line.price) === Number(wanted?.price);
-            if (!item || !wanted || item.fetchPetLocked?.() || item.fetchEquipped() || item.fetchSelfId() === 57 || item.fetchSelfId() !== line.selfId ||
+            if (!item || !wanted ||
                 !Number.isSafeInteger(amount) || amount < 1 || amount > item.fetchAmount() || amount > wanted.count || !matchesPrice ||
                 objectIds.has(item.fetchId())) return null;
             objectIds.add(item.fetchId());
@@ -77,6 +77,7 @@ async function consumeMerchant(session, list, { native = false } = {}) {
 
         for (const line of requested) {
             const result = await TradeService.sellToStore(session.actor, store, line.item.fetchSelfId(), line.amount, {
+                objectId: line.item.fetchId(),
                 buyerActor: trade.merchant,
                 afterTrade: store.budgetBacked === true && trade.merchant?.session?.coldMarketState
                     ? () => invoke('GameServer/Bot/Population/BotLifeState').syncMarketSession(trade.merchant.session, 'hot_market_buy_fill')

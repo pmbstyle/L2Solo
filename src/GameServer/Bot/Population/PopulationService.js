@@ -619,6 +619,14 @@ function inventoryCleanupGoal(state, timestamp = Date.now()) {
     };
 }
 
+// A forced cleanup decided over a resolve outranks a trip that resolve
+// started (route, karma), as it did when it was decided before the fight;
+// the fight's outcome is kept.
+function withoutStartedTrip(before, resolved) {
+    if (before.activity === 'traveling' || resolved.activity !== 'traveling') return resolved;
+    return { ...resolved, activity: before.activity, stats: { ...(resolved.stats || {}), travel: null } };
+}
+
 function inventoryCleanupTravelState(state, timestamp = Date.now(), simulation = null) {
     const cleanupGoal = inventoryCleanupGoal(state, timestamp);
     if (!cleanupGoal) return null;
@@ -3379,7 +3387,10 @@ const PopulationService = {
             Metrics.recordSkippedResolve('joined_party_before_resolve');
             return Promise.resolve({ ok: false, reason: 'joined_party', state });
         }
-        const cleanupState = inventoryCleanupTravelState(state, startedAt);
+        // With a worker result the fight already happened: the transition
+        // branch below applies it first and then starts the cleanup trip.
+        const cleanupAfterFight = !!precomputedResult && !!inventoryCleanupGoal(state, startedAt);
+        const cleanupState = precomputedResult ? null : inventoryCleanupTravelState(state, startedAt);
         if (cleanupState) {
             const { cleanup, ...travelState } = cleanupState;
             return LifeState.upsertState(travelState, 'inventory_cleanup_market_travel')
@@ -3402,7 +3413,8 @@ const PopulationService = {
         const elapsedMs = state.timing?.lastResolvedAt ? Math.max(1000, startedAt - state.timing.lastResolvedAt) : 60000;
         // These transitions have no planning, market search, or inventory work
         // between their persisted deadline and the next state change.
-        if (state.activity === 'traveling' || (state.activity === 'resting' && Number(state.stats?.restUntil || 0) > 0)) {
+        if (cleanupAfterFight || state.activity === 'traveling'
+            || (state.activity === 'resting' && Number(state.stats?.restUntil || 0) > 0)) {
             const requestLifecycleState = expirePartyRequestForState(state, startedAt);
             const result = precomputedResult || BackgroundResolver.resolveSolo({
                 state: requestLifecycleState,
@@ -3425,7 +3437,13 @@ const PopulationService = {
                 const recoveredForMarket = state.activity === 'resting'
                     && (canResumeAffordableMarketPlan(updatedState)
                         || canResumeWarehouseMarketSale(updatedState));
-                const marketHandoff = recoveredForMarket
+                const cleanupTrip = cleanupAfterFight
+                    ? inventoryCleanupTravelState(withoutStartedTrip(state, updatedState), startedAt)
+                    : null;
+                if (cleanupTrip) delete cleanupTrip.cleanup;
+                const marketHandoff = cleanupTrip
+                    ? LifeState.upsertState(cleanupTrip, 'inventory_cleanup_market_travel').then((saved) => saved || updatedState)
+                    : recoveredForMarket
                     ? GoalService.review(updatedState).then((goalSnapshot) => {
                         const timestamp = Date.now();
                         const travelState = GoalExecutor.beginMarketTravel(updatedState, goalSnapshot?.current, timestamp);
@@ -3688,7 +3706,10 @@ const PopulationService = {
                 excludedSpotIds,
                 timestamp: startedAt
             });
-        const huntingTravelState = selectedSpot && !passiveActivity
+        // A worker result is a fight at the worker's spot; applied over a trip
+        // it would restore `hunting` there and strand stats.travel. The worker
+        // is routed by routeFor from the state this command writes.
+        const huntingTravelState = selectedSpot && !passiveActivity && !precomputedResult
             ? beginHuntingTravel(travellingState, selectedSpot, startedAt, { currentSpotId })
             : null;
         const effectiveState = huntingTravelState || travellingState;
@@ -3845,8 +3866,8 @@ const PopulationService = {
         return this.resolveColdState(state, request);
     },
 
-    prepareInventoryCleanupProposal(state, timestamp = Date.now(), simulation = null) {
-        return inventoryCleanupTravelState(state, timestamp, simulation);
+    prepareInventoryCleanupProposal(state, timestamp = Date.now(), simulation = null, before = state) {
+        return inventoryCleanupTravelState(withoutStartedTrip(before, state), timestamp, simulation);
     },
 
     reserveCompetitionPartySlot() {

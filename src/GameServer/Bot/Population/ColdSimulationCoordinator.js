@@ -1362,43 +1362,43 @@ class ColdSimulationCoordinator {
             }
         };
         const timestamp = Number(proposal.enqueuedAt || Date.now());
+        // The worker's fight has already happened: a forced cleanup trip
+        // starts from the state after it, so its exp, adena and loot stay.
+        const resolvedState = proposal?.nextState || (proposal.result
+            ? await LifeState.prepareResolve(claimedState, proposal.result, { persist: false, timestamp })
+            : null);
+        if (!resolvedState) return null;
+        // An atomic group commits all members or none: as before, its cleanup
+        // is decided on the claimed state, so a member its party releases in
+        // this commit does not fail the whole group.
         const cleanupState = this.population?.prepareInventoryCleanupProposal?.(
-            claimedState,
+            proposal.atomicGroup ? claimedState : resolvedState,
             timestamp,
-            claimedState.simulation
+            claimedState.simulation,
+            claimedState
         );
         if (cleanupState) {
             if (proposal.atomicGroup) return null;
             proposal.inventoryCleanupForced = true;
-            proposal.result = {
-                events: [],
-                debug: { inventoryCleanup: true }
-            };
             delete cleanupState.cleanup;
             return cleanupState;
         }
-        if (proposal?.nextState) {
-            let profiles = [];
-            let occupancy = {};
-            try {
-                profiles = SpotProfiles.ensure() || [];
-                occupancy = SpotProfiles.currentOccupancy(profiles) || {};
-            } catch (_) { profiles = []; occupancy = {}; }
-            const admission = admitSoloRouteTravelState(
-                proposal.nextState,
-                state,
-                profiles,
-                occupancy,
-                Date.now()
-            );
-            if (admission.checked && !admission.admitted) this.counters.routeCapacityRejects += 1;
-            return admission.state;
-        }
-        if (!proposal.result) return null;
-        return LifeState.prepareResolve(claimedState, proposal.result, {
-            persist: false,
-            timestamp
-        });
+        if (!proposal?.nextState) return resolvedState;
+        let profiles = [];
+        let occupancy = {};
+        try {
+            profiles = SpotProfiles.ensure() || [];
+            occupancy = SpotProfiles.currentOccupancy(profiles) || {};
+        } catch (_) { profiles = []; occupancy = {}; }
+        const admission = admitSoloRouteTravelState(
+            proposal.nextState,
+            state,
+            profiles,
+            occupancy,
+            Date.now()
+        );
+        if (admission.checked && !admission.admitted) this.counters.routeCapacityRejects += 1;
+        return admission.state;
     }
 
     async afterCommit(entry, committed = {}) {
