@@ -4,7 +4,7 @@ const DEFAULTS = {
     founderQuorum: 5,
     maxBotClans: 40,
     maxBotMemberShare: 0.70,
-    // Founders are this top share of founder character within each primary drive.
+    // Founders are this top share of leaders (leadership + sociability) within each primary drive.
     founderTopShare: 0.05,
     founderMinPartyHistory: 1,
     existingClanSuitabilityThreshold: 0.55,

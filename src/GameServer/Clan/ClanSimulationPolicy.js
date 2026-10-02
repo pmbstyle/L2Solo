@@ -96,27 +96,31 @@ function desiredMemberCount(level, options = {}) {
     return Math.min(hardLimit, Math.max(1, Math.floor(number(configured, hardLimit))));
 }
 
-// How much a bot's character suits founding and leading a clan.
-function founderTraitScore(candidate = {}) {
-    return trait(candidate, 'ambition') * 0.26
+function founderScore(candidate = {}) {
+    const weighted = (
+        trait(candidate, 'ambition') * 0.26
         + trait(candidate, 'assertiveness') * 0.20
         + trait(candidate, 'resilience') * 0.20
         + trait(candidate, 'sociability') * 0.18
-        + trait(candidate, 'commitment') * 0.16;
+        + trait(candidate, 'commitment') * 0.16
+    );
+    return clamp(weighted + (rosterRole(candidate) === 'tank' ? 0.03 : 0));
 }
 
-function founderScore(candidate = {}) {
-    return clamp(founderTraitScore(candidate) + (rosterRole(candidate) === 'tank' ? 0.03 : 0));
+// A clan leader needs leadership (shown as "leadership" for assertiveness in the
+// bot status) and social traits.
+function leaderScore(candidate = {}) {
+    return trait(candidate, 'assertiveness') * 0.6 + trait(candidate, 'sociability') * 0.4;
 }
 
-// The lowest founderTraitScore of the top share within each primary drive, so
-// that progression, social and wealth bots each bring their own founders.
+// The lowest leaderScore of the top share within each primary drive, so that
+// progression, social and wealth bots each bring their own leaders.
 function founderThresholds(personas = [], share = Contracts.config.founderTopShare) {
     const byDrive = new Map();
     personas.forEach((persona) => {
         const drive = String(persona?.primaryDrive || '');
         if (!byDrive.has(drive)) byDrive.set(drive, []);
-        byDrive.get(drive).push(founderTraitScore(persona));
+        byDrive.get(drive).push(leaderScore(persona));
     });
     return Object.fromEntries([...byDrive].map(([drive, scores]) => {
         scores.sort((left, right) => right - left);
@@ -141,7 +145,7 @@ function founderEligibility(candidate = {}, options = {}) {
 
     // Without a threshold table (no personas loaded) nobody founds.
     const minimum = options.founderThresholds?.[String(candidate.persona?.primaryDrive || '')];
-    if (!(founderTraitScore(candidate) >= minimum)) reasons.push(Contracts.REASON_CODES.FOUNDER_TRAITS);
+    if (!(leaderScore(candidate) >= minimum)) reasons.push(Contracts.REASON_CODES.FOUNDER_TRAITS);
     if (partyHistoryRuns(candidate) < number(config.founderMinPartyHistory)) {
         reasons.push(Contracts.REASON_CODES.FOUNDER_PARTY_HISTORY);
     }
@@ -169,20 +173,6 @@ function socialAffinity(candidate = {}, memberIds = []) {
     ), 0) / (values.length * 3));
 }
 
-const STYLE_TRAITS = ['sociability', 'commitment', 'caution', 'ambition', 'assertiveness', 'empathy', 'resilience'];
-
-// How alike the candidate is to the clan: 1 - the mean distance of its traits
-// to the members' average traits (members without a known persona are skipped).
-function styleSimilarity(candidate = {}, members = []) {
-    const known = members.filter((member) => Object.keys(traitsFor(member)).length);
-    if (!known.length) return 0;
-    const distance = STYLE_TRAITS.reduce((sum, name) => {
-        const mean = known.reduce((total, member) => total + trait(member, name), 0) / known.length;
-        return sum + Math.abs(trait(candidate, name) - mean);
-    }, 0) / STYLE_TRAITS.length;
-    return clamp(1 - distance);
-}
-
 function clanSuitability(candidate = {}, clan = {}, options = {}) {
     if (isStaticService(candidate)) {
         return {
@@ -203,8 +193,6 @@ function clanSuitability(candidate = {}, clan = {}, options = {}) {
     const growthNeed = memberGap > 0;
     const historyScore = clamp(partyHistoryRuns(candidate) / 4);
     const affinityScore = socialAffinity(candidate, memberIds);
-    // A reserved bot looks for people like itself; a sociable one joins anyone.
-    const styleScore = styleSimilarity(candidate, members) * (1 - trait(candidate, 'sociability'));
     const fullness = ClanRules.memberLimit(number(clan.level)) > 0
         ? 1 - members.length / ClanRules.memberLimit(number(clan.level))
         : 0;
@@ -214,7 +202,6 @@ function clanSuitability(candidate = {}, clan = {}, options = {}) {
         roleNeed * 0.34 * weight
         + historyScore * 0.22
         + affinityScore * 0.20
-        + styleScore * 0.20
         + clamp(fullness) * 0.14
         + commitment * 0.10
         + (growthNeed ? 0.24 : 0)
@@ -266,7 +253,6 @@ function canReserve({ population, currentMembers, requested = 1, share }) {
 }
 
 module.exports = {
-    styleSimilarity,
     founderThresholds,
     BASE_CLASS_IDS,
     FIRST_PROFESSION_CLASS_IDS,

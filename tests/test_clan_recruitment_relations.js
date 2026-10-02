@@ -7,8 +7,7 @@ require('../src/Global');
 
 // Who joins which clan: the author's suitability weighs friendship with the
 // clan's members (socialAffinity, 0.20), which needs the candidate's remembered
-// relations; a reserved bot also looks for people like itself, a sociable one
-// joins anyone (style similarity x (1 - sociability), 0.20).
+// relations.
 const rootDir = path.resolve(__dirname, '..');
 const databasePath = path.join(rootDir, 'tmp', 'test-clan-recruitment-relations.sqlite');
 const Database = invoke('Database');
@@ -47,17 +46,6 @@ async function main() {
         const withStrangers = Policy.clanSuitability(candidate, strangerClan, { threshold: 0 }).score;
         assert(withFriend > withStrangers, `a friend's clan scores higher (${withFriend} vs ${withStrangers})`);
 
-        // Style: a clan of reserved crafters vs a clan of party regulars.
-        const traits = (sociability, empathy, caution) => ({ sociability, commitment: 0.6, caution, ambition: 0.6, assertiveness: 0.4, empathy, resilience: 0.7 });
-        const quiet = [1, 2, 3].map((i) => ({ ...member(4700300 + i), persona: { traits: traits(0.35, 0.6, 0.75) } }));
-        const loud = [1, 2, 3].map((i) => ({ ...member(4700400 + i), persona: { traits: traits(0.85, 0.7, 0.45) } }));
-        const reserved = { ...member(4700501), persona: { traits: traits(0.30, 0.6, 0.75) } };
-        const sociable = { ...member(4700502), persona: { traits: traits(0.95, 0.6, 0.75) } };
-        const gap = (bot) => Policy.clanSuitability(bot, { id: 3, level: 1, members: quiet }, { threshold: 0 }).score
-            - Policy.clanSuitability(bot, { id: 4, level: 1, members: loud }, { threshold: 0 }).score;
-        assert(gap(reserved) > 0, `a reserved bot prefers people like itself (${gap(reserved)})`);
-        assert(Math.abs(gap(sociable)) < gap(reserved) / 5, `a sociable bot hardly cares (${gap(sociable)})`);
-        assert.strictEqual(Policy.styleSimilarity(reserved, []), 0, 'no known members, no style signal');
         console.log('Clan recruitment relation checks passed');
     } finally {
         await Database.close();

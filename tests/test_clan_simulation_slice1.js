@@ -83,7 +83,7 @@ async function main() {
         assert.strictEqual(eligibility.ok, true, `founder should pass: ${eligibility.reasons.join(',')}`);
         assert.strictEqual(Policy.founderEligibility({
             ...founderCandidate(),
-            persona: { primaryDrive: 'progression', traits: { ...founderCandidate().persona.traits, ambition: 0.2 } }
+            persona: { primaryDrive: 'progression', traits: { ...founderCandidate().persona.traits, assertiveness: 0.2 } }
         }, { quorumCandidates: [1, 2, 3, 4, 5], founderThresholds: thresholds }).ok, false);
         assert.strictEqual(Policy.isStaticService({ stats: { craftStationId: 1 } }), true);
 

@@ -135,12 +135,10 @@ async function autonomousClanProjection() {
             SELECT simulated.clanId, simulated.stateJson,
                    clans.name, clans.level, clans.leaderId,
                    members.id AS characterId, members.name AS memberName,
-                   members.classId, members.level AS memberLevel, members.clanId AS memberClanId,
-                   persona.traitsJson
+                   members.classId, members.level AS memberLevel, members.clanId AS memberClanId
             FROM clan_simulation_clans simulated
             JOIN clans ON clans.id = simulated.clanId
             LEFT JOIN characters members ON members.clanId = simulated.clanId
-            LEFT JOIN bot_personas persona ON persona.characterId = members.id
             WHERE simulated.mode = 'autonomous'
             ORDER BY simulated.clanId ASC, members.id ASC
         `, []], 'clan-simulation:clan-projection');
@@ -164,8 +162,7 @@ async function autonomousClanProjection() {
                     name: String(row.memberName || ''),
                     classId: number(row.classId, -1),
                     level: number(row.memberLevel),
-                    clanId: number(row.memberClanId),
-                    persona: row.traitsJson ? { traits: parseJson(row.traitsJson, {}) } : null
+                    clanId: number(row.memberClanId)
                 });
             }
         });
