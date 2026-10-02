@@ -1,5 +1,6 @@
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 
 function number(value, fallback = 0) {
     const parsed = Number(value);
@@ -65,8 +66,8 @@ function memberRate(clanRate, traits = {}, state = null, config = Config) {
 function ownGearPurchase(state = null) {
     const plan = state?.stats?.equipmentPlan;
     if (plan?.strategy !== 'market' || !(number(plan.market?.price) > 0)) return null;
-    const spendable = number(state?.adena) - invoke('GameServer/Bot/AI/GearAcquisitionPlanner').operationalAdenaReserve(state || {});
-    return number(plan.market.price) <= spendable ? 'funded' : 'short';
+    const reserve = PurchaseFunding.operatingReserve(state || {});
+    return PurchaseFunding.shortfall(state || {}, plan.market.price, reserve) === 0 ? 'funded' : 'short';
 }
 
 // Share of its free savings a member puts once into the clan's current target:

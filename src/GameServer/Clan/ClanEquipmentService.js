@@ -2,6 +2,7 @@ const Crafting = require('./ClanCraftingPolicy');
 const CraftShops = invoke('GameServer/Bot/Economy/CraftShopService');
 const Database = invoke('Database');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const Policy = invoke('GameServer/Clan/ClanEquipmentPolicy');
@@ -12,7 +13,7 @@ const ClanRaidPolicy = require('./ClanRaidPolicy');
 const ClanRaidFailurePolicy = require('./ClanRaidFailurePolicy');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const DataCache = invoke('GameServer/DataCache');
-const { planForMember, memberFunds } = require('./ClanEquipmentPlanner');
+const { planForMember } = require('./ClanEquipmentPlanner');
 const PlanningWorker = require('./ClanPlanningCoordinator');
 const MAX_CAPACITY_TARGET_RETRIES = 5;
 let craftingCatalog = null;
@@ -407,7 +408,7 @@ async function buyGoalItem(memberId, plan, clan) {
     offer.equipSlot = number(plan.target?.slot) || undefined;
     const blocker = LifeState.marketPurchaseBlocker(state, offer, 1);
     if (blocker) return { ok: false, code: blocker };
-    const clanPart = Math.max(0, Math.ceil(number(offer.price)) - memberFunds(state));
+    const clanPart = Math.max(0, Math.ceil(number(offer.price)) - PurchaseFunding.spendable(state));
     if (clanPart > 0) {
         const paid = await Database.payClanMember({ clanId: clan.id, characterId: memberId, amount: clanPart, kind: 'clan_goal_purchase', moveMark: false });
         if (!paid.ok) return paid;

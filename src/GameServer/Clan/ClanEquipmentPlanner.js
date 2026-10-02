@@ -1,5 +1,6 @@
 // Pure equipment calculation shared by the main-thread harnesses and the worker.
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const DataCache = invoke('GameServer/DataCache');
 const Policy = require('./ClanEquipmentPolicy');
 const Config = require('./ClanSimulationConfig');
@@ -19,15 +20,10 @@ function plannerState(member) {
     };
 }
 
-// What a member can pay now: its adena above the operating reserve.
-function memberFunds(state) {
-    return Math.max(0, number(state.adena) - GearAcquisitionPlanner.operationalAdenaReserve(state));
-}
-
-// The clan's purchase budget for a member: the member's own funds plus the
-// clan's free money (options.clanShare).
+// The clan's purchase budget for a member: what the member can pay itself
+// plus the clan's free money (options.clanShare).
 function clanBudget(state, options = {}) {
-    return memberFunds(state) + Math.max(0, number(options.clanShare));
+    return PurchaseFunding.spendable(state) + Math.max(0, number(options.clanShare));
 }
 
 function existingPlanFor(member) {
@@ -263,4 +259,4 @@ function planForMember(member, spots = [], warehouseRows = [], options = {}) {
         ...(Object.keys(providers).length ? { craftProviders: providers } : {}) };
 }
 
-module.exports = { planForMember, memberFunds };
+module.exports = { planForMember };
