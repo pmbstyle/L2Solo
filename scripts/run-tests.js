@@ -291,6 +291,7 @@ const tests = [
     'tests/test_bot_market_goal_reconcile.js',
     'tests/test_bot_cold_travel.js',
     'tests/test_bot_cold_travel_without_spot.js',
+    'tests/test_cold_command_hunting_travel.js',
     'tests/test_bot_craft_service_idle.js',
     'tests/test_bot_cold_component_chain.js',
     'tests/test_bot_craft_wait_recovery.js',

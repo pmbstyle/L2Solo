@@ -3688,7 +3688,10 @@ const PopulationService = {
                 excludedSpotIds,
                 timestamp: startedAt
             });
-        const huntingTravelState = selectedSpot && !passiveActivity
+        // A worker result is a fight at the worker's spot; applied over a trip
+        // it would restore `hunting` there and strand stats.travel. The worker
+        // is routed by routeFor from the state this command writes.
+        const huntingTravelState = selectedSpot && !passiveActivity && !precomputedResult
             ? beginHuntingTravel(travellingState, selectedSpot, startedAt, { currentSpotId })
             : null;
         const effectiveState = huntingTravelState || travellingState;
