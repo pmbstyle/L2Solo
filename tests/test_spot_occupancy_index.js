@@ -5,7 +5,7 @@ require('../src/Global');
 // full rebuild over the same states, after any sequence of writes, deletes,
 // expiring capacity backoffs, reservations and catalog changes.
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
-const { SpotOccupancyIndex } = require('../src/GameServer/Bot/Population/SpotOccupancyIndex');
+const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 const LifeStateCache = require('../src/GameServer/Bot/Population/LifeStateCache');
 
 const realNow = Date.now;
@@ -46,24 +46,22 @@ function assertSame(actual, expected, message) {
     assert.deepStrictEqual(actual, expected, message);
 }
 
-// Worker form: a bare index and the list of its states.
-const index = new SpotOccupancyIndex();
-const states = new Map();
+// Worker form: the cold kernel keeps the index in upsert/remove.
+const kernel = new ColdSimulationKernel({ resolveSolo: () => null, now: () => clock, emit: () => {} });
+const workerStates = () => [...kernel.states.values()].map((entry) => entry.state);
 for (let step = 0; step < 4000; step++) {
     clock += Math.floor(random() * 400);
     const id = 1 + Math.floor(random() * 60);
-    if (random() < 0.08) {
-        if (states.has(id)) index.remove(String(id));
-        states.delete(id);
-    } else {
+    if (random() < 0.08) kernel.remove(id);
+    else {
         const state = randomState(id);
-        states.set(id, state);
-        index.update(state);
+        state.simulation = { revision: step };
+        kernel.upsert({ state, context: {} });
     }
     if (step % 50 === 0) profiles = catalog(pick([['a', 'b', 'c', 'd', 'e', 'f'], ['a', 'b', 'c'], ['b', 'd', 'f', 'h']]));
     if (step % 7 === 0) {
-        const snapshot = SpotProfiles.indexedOccupancy(index, profiles, clock);
-        assertSame(snapshot, SpotProfiles.occupancySnapshot(profiles, [...states.values()]), `worker form, step ${step}`);
+        const snapshot = SpotProfiles.indexedOccupancy(kernel.occupancy, profiles);
+        assertSame(snapshot, SpotProfiles.occupancySnapshot(profiles, workerStates()), `worker form, step ${step}`);
         // A reservation changes only the snapshot it was made in.
         const spot = profiles[0];
         SpotProfiles.reserveCapacity(snapshot, spot, [{ characterId: 999 }], { maxOverflowUnits: 1000 });
@@ -80,14 +78,27 @@ for (let step = 0; step < 4000; step++) {
     if (random() < 0.08) cache.delete(id);
     else cache.set(id, randomState(id));
     if (step % 7 === 0) {
+        if (random() < 0.3) profiles = catalog(pick([['a', 'b', 'c', 'd', 'e', 'f'], ['a', 'b', 'c'], ['b', 'd', 'f', 'h']]));
         const limit = 1 + Math.floor(random() * 60);
         const excluded = new Set(cache.beyondRecent(limit).map((state) => String(state.characterId)));
-        assertSame(SpotProfiles.indexedOccupancy(cache.occupancy, profiles, clock, excluded),
+        assertSame(SpotProfiles.indexedOccupancy(cache.occupancy, profiles, excluded),
             SpotProfiles.occupancySnapshot(profiles, cache.recent(limit)), `main form, step ${step}, limit ${limit}`);
     }
 }
+// A cached state changed in place (not written) is picked up through refreshOccupancy.
+const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const travelling = LifeState.acceptLifecycleRow({ characterId: 7, phase: 'cold', activity: 'traveling', spotId: 'b',
+    level: 15, updatedAt: clock, statsJson: JSON.stringify({ travel: { spotId: 'a' } }) });
+const lifeOccupancy = () => SpotProfiles.indexedOccupancy(LifeState.occupancyIndex(), profiles);
+profiles = catalog(['a', 'b', 'c']);
+assert(lifeOccupancy().a.reservedKeys.has('7'), 'counted at its destination while travelling');
+travelling.stats.travel = null;
+travelling.activity = 'hunting';
+LifeState.refreshOccupancy(travelling);
+assertSame(lifeOccupancy(), SpotProfiles.occupancySnapshot(profiles, LifeState.allStates(2000)), 'in-place change');
+assert(!lifeOccupancy().a, 'no longer counted at the old destination');
 cache.clear();
-assertSame(SpotProfiles.indexedOccupancy(cache.occupancy, profiles, clock, new Set()), {}, 'cleared');
+assertSame(SpotProfiles.indexedOccupancy(cache.occupancy, profiles), {}, 'cleared');
 
 Date.now = realNow;
 console.log('Spot occupancy index matches the full rebuild');

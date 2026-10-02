@@ -3748,6 +3748,11 @@ const BotLifeState = {
         return cache.occupancy;
     },
 
+    // For a caller that changed the cached state object in place, not through a write.
+    refreshOccupancy(state) {
+        if (state && cache.get(Number(state.characterId)) === state) cache.occupancy.update(state);
+    },
+
     populationSeedStates() {
         // A hard population cap must see every identity, including old states
         // outside the bounded, recent-state views used by UI and planners.

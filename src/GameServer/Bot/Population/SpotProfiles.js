@@ -314,20 +314,18 @@ function spotsNearLevel(profiles, targetLevel) {
 }
 
 // occupancySnapshot of the states a SpotOccupancyIndex holds, minus
-// excludedKeys, recomputing only the spots whose members changed since the
-// previous call. Every call returns fresh entries: callers reserve places in
-// the snapshot they were given (reserveCapacity).
+// excludedKeys. A spot is recomputed only when its members changed or the
+// caller's catalog has another profile for it; other spots reuse their entry.
+// Every call hands out copies: callers reserve places in the snapshot they
+// were given (reserveCapacity), and that must not reach the next snapshot.
 const indexedViews = new WeakMap();
+const profilesById = new WeakMap();
 
-function indexedOccupancy(index, profiles, timestamp = Date.now(), excludedKeys = new Set()) {
-    index.refreshBackoffs(timestamp);
+function indexedOccupancy(index, profiles, excludedKeys = new Set()) {
+    // occupancySnapshot judges capacity backoffs at wall-clock time.
+    index.refreshBackoffs(Date.now());
     let view = indexedViews.get(index);
-    if (!view || view.profiles !== profiles) {
-        view = { profiles, byId: new Map((profiles || []).map((profile) => [profile.id, profile])),
-            entries: new Map(), excludedKeys: new Set() };
-        indexedViews.set(index, view);
-        for (const spotId of [...index.physical.keys(), ...index.reserved.keys()]) index.dirty.add(spotId);
-    }
+    if (!view) indexedViews.set(index, view = { entries: new Map(), excludedKeys: new Set() });
     const markPlace = (key) => {
         const place = index.places.get(key);
         if (place?.spotId) index.dirty.add(place.spotId);
@@ -336,28 +334,39 @@ function indexedOccupancy(index, profiles, timestamp = Date.now(), excludedKeys 
     for (const key of excludedKeys) if (!view.excludedKeys.has(key)) markPlace(key);
     for (const key of view.excludedKeys) if (!excludedKeys.has(key)) markPlace(key);
     view.excludedKeys = new Set(excludedKeys);
+    const catalog = profiles || [];
+    let byId = profilesById.get(catalog);
+    if (!byId) profilesById.set(catalog, byId = new Map(catalog.map((profile) => [profile.id, profile])));
     const counted = (members) => [...(members || [])]
         .filter(([key]) => !view.excludedKeys.has(key))
         .map(([, state]) => state);
-    for (const spotId of index.dirty) {
-        const spotMembers = counted(index.physical.get(spotId));
-        const claimers = counted(index.reserved.get(spotId));
-        if (!view.byId.has(spotId) || (!spotMembers.length && !claimers.length)) {
+    const snapshot = {};
+    for (const spotId of new Set([...index.physical.keys(), ...index.reserved.keys()])) {
+        if (!byId.has(spotId)) {
             view.entries.delete(spotId);
             continue;
         }
         const key = String(spotId);
-        view.entries.set(spotId, occupancyEntry(key, view.byId.get(key), spotMembers, claimers));
+        const profile = byId.get(key);
+        let cached = view.entries.get(spotId);
+        if (!cached || cached.profile !== profile || index.dirty.has(spotId)) {
+            const spotMembers = counted(index.physical.get(spotId));
+            const claimers = counted(index.reserved.get(spotId));
+            cached = { profile, entry: spotMembers.length || claimers.length
+                ? occupancyEntry(key, profile, spotMembers, claimers) : null };
+            view.entries.set(spotId, cached);
+        }
+        if (!cached.entry) continue;
+        snapshot[spotId] = { ...cached.entry,
+            retained: new Set(cached.entry.retained),
+            reservedKeys: new Set(cached.entry.reservedKeys),
+            reservationKeys: new Set(cached.entry.reservationKeys),
+            retainedReservationKeys: new Set(cached.entry.retainedReservationKeys) };
+    }
+    for (const spotId of view.entries.keys()) {
+        if (!index.physical.has(spotId) && !index.reserved.has(spotId)) view.entries.delete(spotId);
     }
     index.dirty.clear();
-    const snapshot = {};
-    for (const [spotId, entry] of view.entries) {
-        snapshot[spotId] = { ...entry,
-            retained: new Set(entry.retained),
-            reservedKeys: new Set(entry.reservedKeys),
-            reservationKeys: new Set(entry.reservationKeys),
-            retainedReservationKeys: new Set(entry.retainedReservationKeys) };
-    }
     return snapshot;
 }
 
@@ -367,7 +376,7 @@ function currentOccupancy(profiles, maxAgeMs = 1000) {
     // The same states as occupancySnapshot's default list: the most recently
     // updated maxPlayingPopulation of them.
     const excludedKeys = new Set(BotLifeState.statesBeyondRecent(PopulationConfig.maxPlayingPopulation).map(stateKey));
-    occupancyCache = indexedOccupancy(BotLifeState.occupancyIndex(), profiles, timestamp, excludedKeys);
+    occupancyCache = indexedOccupancy(BotLifeState.occupancyIndex(), profiles, excludedKeys);
     occupancyCachedAt = timestamp;
     return occupancyCache;
 }

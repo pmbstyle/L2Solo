@@ -103,7 +103,7 @@ function currentPlanningOccupancy(timestamp = Date.now()) {
         return planningOccupancyCache;
     }
     planningOccupancyCache = kernel
-        ? SpotProfiles.indexedOccupancy(kernel.occupancy, planningSpots, timestamp)
+        ? SpotProfiles.indexedOccupancy(kernel.occupancy, planningSpots)
         : SpotProfiles.occupancySnapshot(planningSpots, []);
     planningOccupancyCachedAt = timestamp;
     return planningOccupancyCache;

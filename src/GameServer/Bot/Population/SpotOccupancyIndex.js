@@ -30,12 +30,14 @@ function farmIntentCandidate(state = {}) {
     return null;
 }
 
+function capacityBackedOff(state, spotId, timestamp) {
+    return (state.stats?.capacityBackoffs || []).some(entry => String(entry.spotId) === String(spotId)
+        && Number(entry.until) > timestamp);
+}
+
 function farmIntentSpotId(state = {}, timestamp = Date.now()) {
     const spotId = farmIntentCandidate(state);
-    if (!spotId) return null;
-    if ((state.stats?.capacityBackoffs || []).some(entry => String(entry.spotId) === String(spotId)
-        && Number(entry.until) > timestamp)) return null;
-    return spotId;
+    return spotId && !capacityBackedOff(state, spotId, timestamp) ? spotId : null;
 }
 
 function addMember(membersBySpot, spotId, key, state) {
@@ -67,9 +69,10 @@ class SpotOccupancyIndex {
         this.remove(key);
         const spotId = occupiedSpotId(state);
         const candidate = farmIntentCandidate(state);
-        const intentSpotId = farmIntentSpotId(state, timestamp);
+        const backedOff = !!candidate && capacityBackedOff(state, candidate, timestamp);
+        const intentSpotId = backedOff ? null : candidate;
         this.places.set(key, { state, spotId, intentSpotId });
-        if (candidate && !intentSpotId) this.backedOff.set(key, state);
+        if (backedOff) this.backedOff.set(key, state);
         addMember(this.physical, spotId, key, state);
         addMember(this.reserved, spotId, key, state);
         addMember(this.reserved, intentSpotId, key, state);
