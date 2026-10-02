@@ -420,13 +420,16 @@ function joinedBackgroundParty(state) {
 // A trip to buy at a shop is paid from the wallet. When the bot's own buy
 // order still holds Adena, the trip withdraws it first (its goal keeps no
 // WTB, or beginMarketTravel would refuse) and starts from the refunded
-// state. If the order cannot be withdrawn, the bot does not leave.
+// state. If the order cannot be withdrawn, the bot does not leave; a caller
+// that holds the pre-refund state must not apply it after a refund.
 async function marketTravelWithRefund(state, goal, timestamp = Date.now()) {
     const travel = GoalExecutor.beginMarketTravel(state, goal, timestamp);
     if (!travel || BotAfkMarketService.desiredSide(goal) !== AfkTrade.BUY
         || BotAfkMarketService.buyOrderEscrow(state.characterId) <= 0) return travel;
     const remote = await BotAfkMarketService.reconcile(state, goal).catch(() => null);
-    return remote?.withdrawn ? GoalExecutor.beginMarketTravel(remote.state || state, goal, timestamp) : null;
+    const refunded = remote?.withdrawn ? remote.state || state : null;
+    if (!refunded || refunded.phase !== 'cold' || joinedBackgroundParty(refunded)) return null;
+    return GoalExecutor.beginMarketTravel(refunded, goal, timestamp);
 }
 
 function canResumeAffordableMarketPlan(state, timestamp = Date.now()) {
@@ -3447,7 +3450,7 @@ const PopulationService = {
                         const travelState = await marketTravelWithRefund(updatedState, goalSnapshot?.current);
                         return travelState
                             ? LifeState.upsertState(travelState, 'goal_market_travel_after_recovery').then((saved) => saved || travelState)
-                            : updatedState;
+                            : LifeState.cachedState(updatedState.characterId) || updatedState;
                     }).catch((err) => {
                         utils.infoWarn('BotGoals', 'post-recovery market handoff failed for %s: %s', state.name, err.message);
                         return updatedState;
@@ -3857,6 +3860,8 @@ const PopulationService = {
                 return { ok: false, reason: 'state_changed', state: current };
             }
             const travel = await marketTravelWithRefund(current, goal?.current);
+            const latest = LifeState.cachedState(state.characterId) || current;
+            if (!travel && latest !== current) return { ok: false, reason: 'state_changed', state: latest };
             if (travel) {
                 const saved = await LifeState.upsertState(travel, 'goal_market_travel_before_combat');
                 return { ok: !!saved, state: saved || state,

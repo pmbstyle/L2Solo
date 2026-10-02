@@ -75,6 +75,20 @@ const saved = {
             assert.deepStrictEqual(calls, ['travel:700000', 'reconcile'], 'no trip while the money stays in the order');
             assert.strictEqual(result.reason, 'resolved', 'the bot goes on with its fight');
         }
+        // Withdrawn, but the refunded bot may not leave (here: it joined a
+        // party meanwhile): the pre-refund state is not applied.
+        calls.length = 0;
+        const joined = { ...refunded, party: { partyId: 'p1' } };
+        reconcileResult = () => Promise.resolve({ changed: true, withdrawn: true, state: joined });
+        let cache = base;
+        LifeState.cachedState = () => cache;
+        BotAfkMarketService.reconcile = () => { calls.push('reconcile'); cache = joined; return reconcileResult(); };
+        result = await command();
+        assert.deepStrictEqual(calls, ['travel:700000', 'reconcile'], 'no trip for a bot that joined a party');
+        assert.strictEqual(result.reason, 'state_changed', 'the fight result of the old state is not applied');
+        assert.strictEqual(result.state, joined);
+        BotAfkMarketService.reconcile = () => { calls.push('reconcile'); return reconcileResult(); };
+        LifeState.cachedState = () => base;
         PopulationService.resolveColdState = fallback;
 
         // 2. The handoff right after a rest.
