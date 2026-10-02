@@ -78,7 +78,7 @@ module.exports = function ({
     function protectedAmount(c) {
         if (c?.mode !== 'autonomous') return 0;
         const goal = json(c.stateJson).goal;
-        return Policy.progressionReserve(c, goal, invoke('GameServer/Clan/ClanSimulationConfig').bloodMarkMaxPrice);
+        return Policy.progressionReserve(c, goal);
     }
     function spendable(c) {
         return Math.max(0, available(c.id) - protectedAmount(c));

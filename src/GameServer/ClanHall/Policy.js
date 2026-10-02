@@ -65,7 +65,10 @@ function inside(hall, actor) {
     return x >= b.minX && x <= b.maxX && y >= b.minY && y <= b.maxY && z >= b.minZ && z <= b.maxZ;
 }
 // Separate from clan.state.goal: a residence never changes assignments or level quests.
-function progressionReserve(clan, goal, configuredBloodPrice = 2500000) {
+// Below level 2 all clan money is the next level's fund. From level 2 only a
+// planned progression purchase is protected: the Blood Mark is hunted, not
+// bought, so no fixed price is held for it.
+function progressionReserve(clan, goal) {
     if (Number(clan.level) < 2) return Infinity;
     const progression = goal?.type === 'level' || goal?.type === 'item';
     const planned =
@@ -77,7 +80,7 @@ function progressionReserve(clan, goal, configuredBloodPrice = 2500000) {
                   integer(goal.plan?.market?.price)
               )
             : 0;
-    return Math.max(Number(clan.level) === 2 ? configuredBloodPrice : 0, planned);
+    return planned;
 }
 function desired(hall, members) {
     const magic = members.some((m) =>

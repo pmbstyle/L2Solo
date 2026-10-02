@@ -30,7 +30,8 @@ async function main() {
             ).run(
                 JSON.stringify({
                     mode: 'autonomous',
-                    goal: { type: 'level', status: 'executing', target: { level: 3 } },
+                    // A planned 2.5M progression purchase is the protected money below.
+                    goal: { type: 'level', status: 'executing', target: { level: 3 }, plan: { maxPrice: 2500000 } },
                     warehouseRevision: 0
                 })
             );
