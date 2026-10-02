@@ -25,7 +25,7 @@ function memberFunds(state) {
 }
 
 // The clan's purchase budget for a member: the member's own funds plus the
-// clan's share for one goal (options.clanShare, at most 35% of its free money).
+// clan's free money (options.clanShare).
 function clanBudget(state, options = {}) {
     return memberFunds(state) + Math.max(0, number(options.clanShare));
 }

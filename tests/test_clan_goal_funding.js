@@ -81,20 +81,31 @@ async function main() {
         assert(price > 10000, `the goal needs the clan (${price})`);
         assert.strictEqual(memberPaid, 10000, 'the member pays all it has above its reserve');
         assert.strictEqual(clanPaid, price - 10000, 'the clan pays the rest');
+        const after = await LifeState.findByCharacterId(POOR);
+        assert.strictEqual(after.activity, 'hunting', 'the member keeps hunting where it is');
+        assert.strictEqual(after.currentRegion, 'Giran');
 
         // A purchase that fails gives the clan its part back.
         const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
-        const tryPurchase = Market.tryPurchase;
-        Market.tryPurchase = async (state) => ({ state, purchased: false, reason: 'test_sold_out' });
+        const buyOffer = Market.buyOffer;
+        Market.buyOffer = async () => ({ purchased: false, reason: 'test_sold_out' });
         try {
             await Equipment.resolveClan(await Goals.clanProjectionById(92), null);
         } finally {
-            Market.tryPurchase = tryPurchase;
+            Market.buyOffer = buyOffer;
         }
         const [kept] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM clan_warehouse_items WHERE clanId = 92 AND selfId = 57']);
         const [own] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM items WHERE characterId = ? AND selfId = 57', [POOR + 10]]);
         assert.strictEqual(Number(kept.n), 3000000, 'the clan gets its part back');
         assert.strictEqual(Number(own.n), 20000, 'the member keeps its own money');
+        assert.strictEqual(Number((await LifeState.findByCharacterId(POOR + 10)).adena), 20000, 'and its cached state agrees');
+
+        // A member the cold worker owns is not bought for (its next review is).
+        await Database.execute(["UPDATE bot_life_state SET simulationOwner = 'cold_simulation_owner' WHERE characterId = ?", [POOR + 10]]);
+        LifeState.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId = ?', [POOR + 10]]))[0]);
+        await Equipment.resolveClan(await Goals.clanProjectionById(92), null);
+        const [untouched] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM clan_warehouse_items WHERE clanId = 92 AND selfId = 57']);
+        assert.strictEqual(Number(untouched.n), 3000000, 'no money moves for a worker-owned member');
 
         // The goal is done: the completion event picks the next goal at once.
         await Database.execute([`UPDATE clan_simulation_clans SET stateJson = json_set(stateJson, '$.productionGoal', json(?)) WHERE clanId = 91`,

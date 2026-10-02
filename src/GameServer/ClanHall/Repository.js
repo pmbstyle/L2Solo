@@ -508,9 +508,10 @@ module.exports = function ({
         },
         // Clan money to a member (amount > 0: a share of a clan purchase, a gear
         // compensation, from the clan's free money) or back to the clan (amount < 0:
-        // a purchase that failed). Clan money is not earnings: the member's dues mark
-        // moves with it.
-        payClanMember({ clanId, characterId, amount, kind, timestamp = Date.now() }) {
+        // a purchase that failed). Money the member keeps is not earnings: its dues
+        // mark moves with it (moveMark); money spent at once on a clan purchase does
+        // not move it.
+        payClanMember({ clanId, characterId, amount, kind, moveMark = true, timestamp = Date.now() }) {
             const pay = Math.trunc(Number(amount) || 0);
             return withCharacterFlush(Number(characterId), () =>
                 tx(() => {
@@ -523,7 +524,7 @@ module.exports = function ({
                     if (pay < 0 && member.amount < -pay) return { ok: false, code: 'member_funds_short' };
                     money(c.id, -pay, 0, kind, timestamp, id);
                     changeWallet(member, pay, c.id, timestamp);
-                    write('UPDATE clan_hall_earnings SET highWater=MAX(0, highWater+?) WHERE clanId=? AND characterId=?', [pay, c.id, id]);
+                    if (moveMark) write('UPDATE clan_hall_earnings SET highWater=MAX(0, highWater+?) WHERE clanId=? AND characterId=?', [pay, c.id, id]);
                     return { ok: true, amount: pay, row: one('SELECT * FROM bot_life_state WHERE characterId=?', [id]) };
                 }, 'clan-payment')
             );

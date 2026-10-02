@@ -39,7 +39,7 @@ function seed(clans) {
             const giving = id === giver;
             db.prepare(`INSERT INTO characters(id, username, name, classId, race, level, maxHp, maxMp, sex, face, hair, hairColor,
                 locX, locY, locZ, clanId) VALUES (?, 'bot_pop_gear', ?, 0, 0, 30, 500, 250, 0, 0, 0, 0, 0, 0, 0, ?)`).run(id, `Gear${id}`, clanId);
-            const inventory = giving ? { [EARRING]: { selfId: EARRING, amount: 2, equippedCount: 1, name: 'Red Crescent Earring' } } : {};
+            const inventory = giving ? { [EARRING]: { selfId: EARRING, amount: 1, equippedCount: 1, name: 'Red Crescent Earring' } } : {};
             db.prepare(`INSERT INTO bot_life_state(characterId, accountName, characterName, level, adena, activity, phase,
                 simulationOwner, inventorySummary, statsJson, updatedAt) VALUES (?, 'bot_pop_gear', ?, 30, 0, 'hunting', 'cold', ?, ?, '{"classId":0}', 1)`)
                 .run(id, `Gear${id}`, giving && worker ? 'cold_simulation_owner' : 'legacy_main', JSON.stringify(inventory));
@@ -47,7 +47,6 @@ function seed(clans) {
                 VALUES (?, 1, 1, 'social', 'party_regular', ?, '', 0, 0)`).run(id, JSON.stringify(giving ? traits : generous));
             if (giving) {
                 db.prepare(`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES (?, 'Red Crescent Earring', 1, 0, 1, 1, ?)`).run(EARRING, id);
-                db.prepare(`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES (?, 'Red Crescent Earring', 1, 0, 0, 0, ?)`).run(EARRING, id);
             }
         }
     }
@@ -78,6 +77,17 @@ async function main() {
     const adena = async (clanId) => Number((await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM clan_warehouse_items WHERE clanId = ? AND selfId = 57', [clanId]]))[0].n);
     const wallet = async (id) => Number((await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM items WHERE characterId = ? AND selfId = 57', [id]]))[0].n);
     try {
+        // First pass: the members' spare gear is recorded, nothing is offered.
+        for (const { clanId } of clans) await Warehouse.resolveClan(await Goals.clanProjectionById(clanId));
+        assert.strictEqual(await stored(81), 0);
+        // Then each giver loots a second earring.
+        for (const { giver } of clans) {
+            await Database.execute([`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId)
+                VALUES (?, 'Red Crescent Earring', 1, 0, 0, 0, ?)`, [EARRING, giver]]);
+            await Database.execute([`UPDATE bot_life_state SET inventorySummary = json_set(inventorySummary, '$."${EARRING}".amount', 2),
+                simulationRevision = simulationRevision + 1 WHERE characterId = ?`, [giver]]);
+            LifeState.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId = ?', [giver]]))[0]);
+        }
         const priceOf = async (clanId, giver) => {
             const member = (await Goals.clanProjectionById(clanId)).members.find((entry) => entry.characterId === giver);
             return ItemDisposition.saleCandidates(member, { unlimited: true }).find((item) => item.selfId === EARRING).price;
