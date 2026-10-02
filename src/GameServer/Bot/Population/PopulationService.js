@@ -24,6 +24,7 @@ const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const BotAfkMarketService = invoke('GameServer/Bot/Economy/BotAfkMarketService');
+const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const ColdMarketTradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
 const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
@@ -416,6 +417,18 @@ function joinedBackgroundParty(state) {
     return !!current?.party?.partyId;
 }
 
+// A trip to buy at a shop is paid from the wallet. When the bot's own buy
+// order still holds Adena, the trip withdraws it first (its goal keeps no
+// WTB, or beginMarketTravel would refuse) and starts from the refunded
+// state. If the order cannot be withdrawn, the bot does not leave.
+async function marketTravelWithRefund(state, goal, timestamp = Date.now()) {
+    const travel = GoalExecutor.beginMarketTravel(state, goal, timestamp);
+    if (!travel || BotAfkMarketService.desiredSide(goal) !== AfkTrade.BUY
+        || BotAfkMarketService.buyOrderEscrow(state.characterId) <= 0) return travel;
+    const remote = await BotAfkMarketService.reconcile(state, goal).catch(() => null);
+    return remote?.withdrawn ? GoalExecutor.beginMarketTravel(remote.state || state, goal, timestamp) : null;
+}
+
 function canResumeAffordableMarketPlan(state, timestamp = Date.now()) {
     const plan = state?.stats?.equipmentPlan;
     const targetId = Number(plan?.target?.selfId || 0);
@@ -431,7 +444,7 @@ function canResumeAffordableMarketPlan(state, timestamp = Date.now()) {
     const price = Number(plan.market?.price || 0);
     const reserve = Math.max(0, Number(plan.market?.reserve || 0));
     if (price <= 0 || PurchaseFunding.shortfall(state, price, reserve,
-        BotAfkMarketService.buyOrderEscrow(state.characterId)) > 0) return false;
+        PurchaseFunding.tripEscrow(plan, BotAfkMarketService.buyOrderEscrow(state.characterId))) > 0) return false;
 
     const combinationRequirement = (plan.combine?.requirements || [])
         .find((entry) => Number(entry.selfId) === targetId);
@@ -3431,14 +3444,7 @@ const PopulationService = {
                         || canResumeWarehouseMarketSale(updatedState));
                 const marketHandoff = recoveredForMarket
                     ? GoalService.review(updatedState).then(async (goalSnapshot) => {
-                        // As in the reconciled market travel: a buy order the goal
-                        // does not keep is withdrawn first, so its escrow is in
-                        // the wallet when the bot reaches the shop.
-                        const remote = await BotAfkMarketService.reconcile(updatedState, goalSnapshot?.current,
-                            goalSnapshot?.candidates);
-                        if (remote.changed) return remote.state || updatedState;
-                        const timestamp = Date.now();
-                        const travelState = GoalExecutor.beginMarketTravel(updatedState, goalSnapshot?.current, timestamp);
+                        const travelState = await marketTravelWithRefund(updatedState, goalSnapshot?.current);
                         return travelState
                             ? LifeState.upsertState(travelState, 'goal_market_travel_after_recovery').then((saved) => saved || travelState)
                             : updatedState;
@@ -3850,9 +3856,7 @@ const PopulationService = {
             if (current !== state || joinedBackgroundParty(current) || current.phase !== 'cold') {
                 return { ok: false, reason: 'state_changed', state: current };
             }
-            const remote = await BotAfkMarketService.reconcile(current, goal?.current, goal?.candidates);
-            if (remote.changed) return { ok: true, state: remote.state || current, reason: 'goal_market_reconciled' };
-            const travel = GoalExecutor.beginMarketTravel(current, goal?.current);
+            const travel = await marketTravelWithRefund(current, goal?.current);
             if (travel) {
                 const saved = await LifeState.upsertState(travel, 'goal_market_travel_before_combat');
                 return { ok: !!saved, state: saved || state,

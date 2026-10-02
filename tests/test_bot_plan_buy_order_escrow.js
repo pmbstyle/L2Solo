@@ -66,6 +66,11 @@ const weaponState = { ...walletAfterBid, stats: { ...state.stats, equipmentPlan:
 const { lifecycleKind } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 assert.notStrictEqual(lifecycleKind(weaponState), 'command');
 assert.strictEqual(lifecycleKind(weaponState, { buyOrderEscrow: price }), 'command', 'the worker routing counts the escrow');
+// A plan buying from another bot keeps its WTB (it buys remotely): its escrow
+// does not send the bot to town.
+const botPlanState = { ...weaponState, stats: { ...weaponState.stats, equipmentPlan: { ...weaponState.stats.equipmentPlan,
+    market: { ...posting.market, sourceType: 'afk_bot_store' } } } };
+assert.notStrictEqual(lifecycleKind(botPlanState, { buyOrderEscrow: price }), 'command', 'a kept order is no trip');
 const PopulationServiceForResume = invoke('GameServer/Bot/Population/PopulationService');
 const savedProjection = AfkTrade.findOwnerProjection;
 try {
@@ -73,6 +78,8 @@ try {
     AfkTrade.findOwnerProjection = () => ({ shop: { storeType: AfkTrade.BUY, escrowAdena: price } });
     assert.strictEqual(PopulationServiceForResume.canResumeAffordableMarketPlan(weaponState), true,
         'the resume after a rest counts the escrow');
+    assert.strictEqual(PopulationServiceForResume.canResumeAffordableMarketPlan(botPlanState), false,
+        'a kept order is no reason to leave for town');
 } finally {
     AfkTrade.findOwnerProjection = savedProjection;
 }

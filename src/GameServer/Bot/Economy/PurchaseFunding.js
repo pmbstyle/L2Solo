@@ -22,4 +22,11 @@ function spendable(state = {}, escrow = 0) {
     return Math.max(0, budget(state, escrow) - operatingReserve(state, escrow));
 }
 
-module.exports = { budget, operatingReserve, shortfall, spendable };
+// The escrow a trip to a shop can spend. The trip withdraws the order only
+// for a purchase planned at an NPC shop (that plan never keeps a WTB); any
+// other plan keeps its order, which buys remotely, so the trip gains nothing.
+function tripEscrow(plan, escrow = 0) {
+    return plan?.market?.sourceType === 'npc' ? escrow : 0;
+}
+
+module.exports = { budget, operatingReserve, shortfall, spendable, tripEscrow };

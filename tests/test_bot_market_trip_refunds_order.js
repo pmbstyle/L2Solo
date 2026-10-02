@@ -43,41 +43,60 @@ const saved = {
         assert.strictEqual(PopulationService.canResumeAffordableMarketPlan(base), true, 'fixture: funded with the escrow');
         const calls = [];
         GoalService.review = () => Promise.resolve({ current: goal, candidates: [] });
+        let reconcileResult = () => Promise.resolve({ changed: true, withdrawn: true, state: refunded });
         BotAfkMarketService.reconcile = (state, current) => {
             calls.push('reconcile');
             assert.strictEqual(current, goal);
-            return Promise.resolve({ changed: true, withdrawn: true, state: refunded });
+            return reconcileResult();
         };
-        GoalExecutor.beginMarketTravel = (state) => { calls.push('travel'); return { ...state, activity: 'traveling' }; };
+        GoalExecutor.beginMarketTravel = (state) => { calls.push(`travel:${state.adena}`); return { ...state, activity: 'traveling' }; };
         LifeState.upsertState = (value) => Promise.resolve(value);
         LifeEvents.recordMany = () => Promise.resolve(null);
         SpotProfiles.ensure = () => [];
         SpotProfiles.findForState = () => null;
-
-        // 1. The worker's lifecycle command before another fight.
-        LifeState.cachedState = () => base;
-        const command = await PopulationService.executeWorkerLifecycleCommand(base,
+        const fallback = PopulationService.resolveColdState;
+        const command = () => PopulationService.executeWorkerLifecycleCommand(base,
             { precomputedResult: { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] } } });
-        assert.deepStrictEqual(calls, ['reconcile'], 'the order is withdrawn before any trip');
-        assert.strictEqual(command.state, refunded, 'the bot keeps the refunded state; the trip starts next time');
+
+        // 1. The worker's lifecycle command before another fight: the order is
+        // withdrawn and the trip starts from the refunded wallet in one pass.
+        LifeState.cachedState = () => base;
+        let result = await command();
+        assert.deepStrictEqual(calls, ['travel:700000', 'reconcile', 'travel:1500000'], 'withdraw, then leave with the money');
+        assert.strictEqual(result.state.activity, 'traveling');
+        assert.strictEqual(result.state.adena, 1500000);
+
+        // The order cannot be withdrawn (an error, or the goal keeps it): no trip.
+        PopulationService.resolveColdState = () => Promise.resolve({ ok: true, reason: 'resolved' });
+        for (const failure of [() => Promise.reject(new Error('db')), () => Promise.resolve({ changed: false, state: base })]) {
+            calls.length = 0;
+            reconcileResult = failure;
+            result = await command();
+            assert.deepStrictEqual(calls, ['travel:700000', 'reconcile'], 'no trip while the money stays in the order');
+            assert.strictEqual(result.reason, 'resolved', 'the bot goes on with its fight');
+        }
+        PopulationService.resolveColdState = fallback;
 
         // 2. The handoff right after a rest.
         calls.length = 0;
+        reconcileResult = () => Promise.resolve({ changed: true, withdrawn: true, state: refunded });
         LifeState.cachedState = () => null;
         BackgroundResolver.resolveSolo = () => ({ patch: { activity: 'hunting' }, events: [],
             materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: Date.now() + 30000, debug: { activity: 'recovered' } });
         LifeState.applyResolve = () => Promise.resolve(base);
         const rested = await PopulationService.resolveColdState({ ...base, activity: 'resting',
             stats: { ...base.stats, restUntil: Date.now() - 1 } });
-        assert.deepStrictEqual(calls, ['reconcile'], 'after a rest the order is withdrawn before any trip');
-        assert.strictEqual(rested.state, refunded);
+        assert.deepStrictEqual(calls, ['travel:700000', 'reconcile', 'travel:1500000'], 'after a rest too');
+        assert.strictEqual(rested.state.activity, 'traveling');
 
-        // Nothing to withdraw: the trip starts at once, as before.
+        // No money in an order: the trip starts at once, nothing to withdraw.
         calls.length = 0;
-        BotAfkMarketService.reconcile = () => { calls.push('reconcile'); return Promise.resolve({ changed: false, state: base }); };
-        const trip = await PopulationService.resolveColdState({ ...base, activity: 'resting',
-            stats: { ...base.stats, restUntil: Date.now() - 1 } });
-        assert.deepStrictEqual(calls, ['reconcile', 'travel']);
+        AfkTrade.findOwnerProjection = () => null;
+        const rich = { ...base, adena: 2_000_000 };
+        LifeState.applyResolve = () => Promise.resolve(rich);
+        const trip = await PopulationService.resolveColdState({ ...rich, activity: 'resting',
+            stats: { ...rich.stats, restUntil: Date.now() - 1 } });
+        assert.deepStrictEqual(calls, ['travel:2000000']);
         assert.strictEqual(trip.state.activity, 'traveling');
     } finally {
         Object.assign(AfkTrade, { findOwnerProjection: saved.findOwnerProjection });
