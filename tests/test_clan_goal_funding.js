@@ -116,8 +116,9 @@ async function main() {
         const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
         const buyOffer = Market.buyOffer;
         Market.buyOffer = async () => ({ purchased: false, reason: 'test_sold_out' });
+        let failed;
         try {
-            await Equipment.resolveClan(await Goals.clanProjectionById(92), null);
+            failed = await Equipment.resolveClan(await Goals.clanProjectionById(92), null);
         } finally {
             Market.buyOffer = buyOffer;
         }
@@ -126,6 +127,28 @@ async function main() {
         assert.strictEqual(Number(kept.n), 3000000, 'the clan gets its part back');
         assert.strictEqual(Number(own.n), 20000, 'the member keeps its own money');
         assert.strictEqual(Number((await LifeState.findByCharacterId(POOR + 10)).adena), 20000, 'and its cached state agrees');
+
+        // An unchanged goal is not written again when only the plan's reserve
+        // moved (the reserve follows the member's level and wallet).
+        await Database.execute(['UPDATE characters SET level = 44 WHERE id = ?', [POOR + 10]]);
+        await Database.execute(['UPDATE bot_life_state SET level = 44 WHERE characterId = ?', [POOR + 10]]);
+        LifeState.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId = ?', [POOR + 10]]))[0]);
+        const reserveBefore = Number((await LifeState.findByCharacterId(POOR + 10)).stats.equipmentPlan.market.reserve);
+        const upsertState = LifeState.upsertState;
+        let goalWrites = 0;
+        LifeState.upsertState = (state, reason, ...rest) => {
+            if (reason === 'clan_equipment_goal') goalWrites += 1;
+            return upsertState.call(LifeState, state, reason, ...rest);
+        };
+        Market.buyOffer = async () => ({ purchased: false, reason: 'test_sold_out' });
+        try {
+            const again = await Equipment.resolveClan(await Goals.clanProjectionById(92), failed.goal);
+            assert.notStrictEqual(Number(again.selection.plan.market.reserve), reserveBefore, 'fixture: the reserve moved with the level');
+        } finally {
+            Market.buyOffer = buyOffer;
+            LifeState.upsertState = upsertState;
+        }
+        assert.strictEqual(goalWrites, 0, 'the same goal is not rewritten for a moved reserve');
 
         // A member the cold worker owns is not bought for (its next review is).
         await Database.execute(["UPDATE bot_life_state SET simulationOwner = 'cold_simulation_owner' WHERE characterId = ?", [POOR + 10]]);

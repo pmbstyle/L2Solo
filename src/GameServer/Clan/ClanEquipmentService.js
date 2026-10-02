@@ -386,6 +386,12 @@ async function handoffWarehouseMaterials(current, plan, clan, goal) {
     return { state, results };
 }
 
+// Where and at what price a plan buys. The reserve moves with the member's
+// wallet and does not make a goal a different one.
+function marketWithoutReserve(plan) {
+    return plan?.market ? { ...plan.market, reserve: undefined } : plan?.market;
+}
+
 // A clan goal purchase that did not happen, with its reason counted.
 function goalPurchaseFailed(code, result = {}) {
     recordReason(`clan_goal_${code}`);
@@ -491,9 +497,10 @@ async function assignPlan(member, plan, clan, goal) {
         && number(currentPlan.clanGoal?.clanId) === number(clan.id)
         && String(currentPlan.clanGoal?.goalKey || '') === String(goal.goalKey)
         && samePlanRoute(currentPlan, plan)
-        && ['status', 'strategy', 'recipeId', 'materials', 'craftProviders', 'componentRecipes', 'next', 'market'].every(key => (
+        && ['status', 'strategy', 'recipeId', 'materials', 'craftProviders', 'componentRecipes', 'next'].every(key => (
             JSON.stringify(currentPlan[key]) === JSON.stringify(plan[key])
-        ))) {
+        ))
+        && JSON.stringify(marketWithoutReserve(currentPlan)) === JSON.stringify(marketWithoutReserve(plan))) {
         const purchase = plan.strategy === 'market' ? await buyGoalItem(id, plan, clan) : null;
         return { ok: true, changed: false, memberId: id, handoff, purchase };
     }
