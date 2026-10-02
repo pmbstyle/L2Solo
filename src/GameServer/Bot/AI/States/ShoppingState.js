@@ -69,6 +69,24 @@ function formatAdena(value) {
     return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
+// A cold bot's review withdraws a buy order once its target is owned
+// ("an owned gear target must not reopen a persistent buy order"), but a hot
+// bot is not reviewed: an order left open after the bot bought the item in
+// town could still fill and deliver a second copy.
+async function withdrawBuyOrderFor(bot, selfId) {
+    const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+    const order = AfkTrade.findOwnerProjection(bot.fetchId())?.shop;
+    if (Number(order?.storeType) !== AfkTrade.BUY) return;
+    if (!(order.lines || []).some((line) => Number(line.selfId) === Number(selfId))) return;
+    try {
+        // Before the new item is equipped: the withdrawal reloads the backpack
+        // from the database to return the escrow.
+        await invoke('GameServer/Bot/Economy/BotAfkMarketService').withdraw(bot.fetchId());
+    } catch (error) {
+        utils.infoWarn('Shopping', 'buy order withdrawal failed for %s: %s', bot.fetchName(), error.message);
+    }
+}
+
 function clearCompletedMarketPlan(session, bot, purchase) {
     const state = session.coldLifeState;
     if (!state) return;
@@ -593,6 +611,7 @@ module.exports = {
                     ? { qty: bought.amount, name: storeItem?.name || companionErrand.itemName, totalAdena: bought.totalPrice }
                     : bought;
                 if (bought.coldState) session.coldLifeState = bought.coldState;
+                await withdrawBuyOrderFor(bot, companionErrand.itemId);
                 BotEquipmentUpgrade.applyBestUpgrades(session, { force: true });
                 session.companionEquipmentRetryAt = undefined;
                 clearCompletedMarketPlan(session, bot, {
@@ -641,6 +660,7 @@ module.exports = {
                 const bought = await TradeService.buyFromStore(bot, store, companionErrand.itemId, 1, {
                     expectedUnitPrice: companionErrand.price
                 });
+                await withdrawBuyOrderFor(bot, companionErrand.itemId);
                 BotEquipmentUpgrade.applyBestUpgrades(session, { force: true });
                 session.companionEquipmentRetryAt = undefined;
                 clearCompletedMarketPlan(session, bot, {
