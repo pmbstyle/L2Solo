@@ -512,6 +512,9 @@ module.exports = function ({
         // optional one-off investment from savings toward the clan's current target.
         // Level 0 pays the leader's wallet, level 1+ the clan warehouse (level 0-1 also
         // in the contribution ledger that the level-up checks).
+        // Wallet helpers for other clan writes in a transaction (the bot clan level-up).
+        memberWalletUnsafe: memberWallet,
+        changeWalletUnsafe: changeWallet,
         settleClanDues({ clanId, characterId, rate = 0, investFraction = 0, timestamp = Date.now() }) {
             const before = clan(Number(clanId));
             const leaderId = n(before?.level) === 0 ? n(before.leaderId) : 0;
@@ -564,7 +567,8 @@ module.exports = function ({
                         amount,
                         dues,
                         investment,
-                        row: amount ? one('SELECT * FROM bot_life_state WHERE characterId=?', [id]) : null
+                        row: amount ? one('SELECT * FROM bot_life_state WHERE characterId=?', [id]) : null,
+                        leaderRow: amount && leader ? one('SELECT * FROM bot_life_state WHERE characterId=?', [leader.id]) : null
                     };
                 }, 'dues')
             ));

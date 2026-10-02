@@ -17,7 +17,7 @@ function seedDatabase() {
     const seed = new DatabaseSync(databasePath);
     seed.exec(fs.readFileSync(path.join(rootDir, 'database', 'sql', 'sqlite.sql'), 'utf8'));
     seed.prepare('INSERT INTO accounts(username, password) VALUES (?, ?)').run('bot_pop_levelcost', 'test-only');
-    for (const [clanId, leaderId, level] of [[71, 4500001, 0], [72, 4500002, 1], [73, 4500003, 0]]) {
+    for (const [clanId, leaderId, level] of [[71, 4500001, 0], [72, 4500002, 1], [73, 4500003, 0], [74, 4500004, 0], [75, 4500005, 0]]) {
         seed.prepare(`INSERT INTO characters(id, username, name, classId, race, level, maxHp, maxMp, sex, face, hair, hairColor,
             locX, locY, locZ, clanId) VALUES (?, 'bot_pop_levelcost', ?, 0, 0, 30, 500, 250, 0, 0, 0, 0, 0, 0, 0, ?)`).run(leaderId, `Lead${leaderId}`, clanId);
         seed.prepare(`INSERT INTO bot_life_state(characterId, accountName, characterName, level, adena, activity, phase,
@@ -31,6 +31,13 @@ function seedDatabase() {
     const adena = seed.prepare(`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES (57, 'Adena', ?, 0, 0, 0, ?)`);
     adena.run(900000, 4500001);
     adena.run(100000, 4500003);
+    adena.run(900000, 4500004);
+    adena.run(900000, 4500005);
+    // Leader 4500004 is in a party; leader 4500005's row is owned by the cold worker
+    // with a virtual wallet of 1M.
+    seed.prepare("UPDATE bot_life_state SET partyId = 'party-1' WHERE characterId = 4500004").run();
+    seed.prepare(`UPDATE bot_life_state SET simulationOwner = 'cold_simulation_owner', adena = 1000000,
+        inventorySummary = '{"57":{"selfId":57,"name":"Adena","amount":1000000}}' WHERE characterId = 4500005`).run();
     seed.prepare(`INSERT INTO clan_warehouse_items(clanId, selfId, name, kind, amount, enchant, reservedAmount)
         VALUES (72, 57, 'Adena', 'Other.Adena', 2600000, 0, 0)`).run();
     seed.close();
@@ -60,6 +67,18 @@ async function main() {
         assert.strictEqual(short.code, 'leader_adena_not_ready');
         assert.strictEqual(await level(73), 0, 'an unpaid level-up rolls back');
         assert.strictEqual(await wallet(4500003), 100000);
+        // A leader held by a party pays later; nothing changes now.
+        const busy = await Database.advanceAutonomousClanLevel({ clanId: 74, fromLevel: 0, toLevel: 1, requiredAmount: 650000 });
+        assert.strictEqual(busy.code, 'leader_busy');
+        assert.strictEqual(await level(74), 0);
+
+        // A worker-owned leader pays from its virtual wallet and its revision moves,
+        // so an older worker proposal cannot write the old wallet back.
+        const [before] = await Database.execute(['SELECT simulationRevision FROM bot_life_state WHERE characterId = 4500005']);
+        const worker = await Database.advanceAutonomousClanLevel({ clanId: 75, fromLevel: 0, toLevel: 1, requiredAmount: 650000 });
+        assert.strictEqual(worker.ok, true, JSON.stringify(worker));
+        assert.strictEqual(Number(worker.leaderRow.adena), 350000, 'paid from the virtual wallet');
+        assert.strictEqual(Number(worker.leaderRow.simulationRevision), Number(before.simulationRevision) + 1, 'the revision moves');
         console.log('Clan level-up cost checks passed');
     } finally {
         await Database.close();

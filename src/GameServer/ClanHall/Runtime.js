@@ -50,40 +50,38 @@ function refresh(rows) {
 // One dues settlement per member and hour (ClanHall/Repository.settleClanDues),
 // at most 4 members per tick. Rates follow the members' personas
 // (ClanContributionPolicy); a busy member pays at the next pass.
-async function settleDues(db, id, level) {
+async function settleDues(db, id, level, leaderId) {
     const pass = duesPasses.get(id) || { nextAt: 0, offset: 0 };
     if (Date.now() < pass.nextAt) return;
     const members = await db.execute(
         [
-            `SELECT c.id FROM characters c JOIN bot_life_state l ON l.characterId=c.id
+            `SELECT c.id, p.traitsJson FROM characters c JOIN bot_life_state l ON l.characterId=c.id
+        LEFT JOIN bot_personas p ON p.characterId=c.id
         WHERE c.clanId=? AND l.phase='cold' AND c.username NOT LIKE 'bot_craft_%' ORDER BY c.id`,
             [id]
         ],
         'clan-hall:contributors'
     );
-    const Personas = invoke('GameServer/Bot/AI/BotPersona');
     const DuesPolicy = invoke('GameServer/Clan/ClanContributionPolicy');
     const life = invoke('GameServer/Bot/Population/BotLifeState');
-    const traits = (characterId) => Personas.snapshot(characterId)?.traits || {};
-    const clanRate = DuesPolicy.duesRate(members.map((m) => traits(m.id)));
+    const traitsOf = (member) => {
+        try { return JSON.parse(member.traitsJson || '{}'); } catch (_) { return {}; }
+    };
+    const clanRate = DuesPolicy.duesRate(members.map(traitsOf));
     const end = Math.min(members.length, pass.offset + 4);
     for (let i = pass.offset; i < end; i++) {
         const characterId = members[i].id;
-        await life.settleWrites([characterId]);
+        const traits = traitsOf(members[i]);
+        await life.settleWrites(level === 0 ? [characterId, leaderId] : [characterId]);
         const state = life.cachedState(characterId);
         const result = await db.settleClanDues({
             clanId: id,
             characterId,
-            rate: DuesPolicy.memberRate(clanRate, traits(characterId), state),
-            investFraction: DuesPolicy.investFraction(traits(characterId))
+            rate: DuesPolicy.memberRate(clanRate, traits, state),
+            investFraction: DuesPolicy.investFraction(traits)
         });
-        const current = life.cachedState(characterId);
-        if (
-            result.row &&
-            (!current ||
-                (current.phase === 'cold' && Number(current.simulation?.revision || 0) <= result.row.simulationRevision))
-        )
-            life.acceptLifecycleRow(result.row);
+        life.acceptNewerLifecycleRow(result.row);
+        life.acceptNewerLifecycleRow(result.leaderRow);
     }
     if (end < members.length) {
         duesPasses.set(id, { nextAt: 0, offset: end });
@@ -109,7 +107,7 @@ async function tick() {
         if (!invoke('GameServer/Clan/ClanSimulationConfig').enabled) return;
         const clans = await db.execute(
             [
-                `SELECT c.id, c.level FROM clans c JOIN clan_simulation_clans s ON s.clanId=c.id
+                `SELECT c.id, c.level, c.leaderId FROM clans c JOIN clan_simulation_clans s ON s.clanId=c.id
             WHERE s.mode='autonomous' ORDER BY c.id`,
                 []
             ],
@@ -118,11 +116,11 @@ async function tick() {
         const deadline = Date.now() + 40;
         let count = 0;
         while (clans.length && count < clans.length && Date.now() < deadline) {
-            const { id, level } = clans[clanOffset % clans.length];
+            const { id, level, leaderId } = clans[clanOffset % clans.length];
             clanOffset++;
             count++;
             if (Number(level) >= 2) await db.planClanHallFinance(id);
-            await settleDues(db, id, Number(level));
+            await settleDues(db, id, Number(level), Number(leaderId));
         }
         refresh(await db.fetchClanHallAuctions());
     } finally {

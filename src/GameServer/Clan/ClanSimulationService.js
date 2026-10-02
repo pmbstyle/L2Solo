@@ -135,10 +135,12 @@ async function autonomousClanProjection() {
             SELECT simulated.clanId, simulated.stateJson,
                    clans.name, clans.level, clans.leaderId,
                    members.id AS characterId, members.name AS memberName,
-                   members.classId, members.level AS memberLevel, members.clanId AS memberClanId
+                   members.classId, members.level AS memberLevel, members.clanId AS memberClanId,
+                   persona.traitsJson
             FROM clan_simulation_clans simulated
             JOIN clans ON clans.id = simulated.clanId
             LEFT JOIN characters members ON members.clanId = simulated.clanId
+            LEFT JOIN bot_personas persona ON persona.characterId = members.id
             WHERE simulated.mode = 'autonomous'
             ORDER BY simulated.clanId ASC, members.id ASC
         `, []], 'clan-simulation:clan-projection');
@@ -163,7 +165,7 @@ async function autonomousClanProjection() {
                     classId: number(row.classId, -1),
                     level: number(row.memberLevel),
                     clanId: number(row.memberClanId),
-                    persona: BotPersona.snapshot(row.characterId)
+                    persona: row.traitsJson ? { traits: parseJson(row.traitsJson, {}) } : null
                 });
             }
         });
@@ -174,16 +176,18 @@ async function autonomousClanProjection() {
 }
 
 // Founder thresholds per primary drive (Policy.founderThresholds) over all stored
-// personas: read once per process; the persona distribution is stable.
-let founderThresholdTable = null;
+// personas, rebuilt only when the number of personas changes (new bots).
+let founderThresholdTable = { count: -1, table: {} };
 async function founderThresholds() {
-    if (founderThresholdTable) return founderThresholdTable;
+    const [{ count }] = await Database.execute(['SELECT COUNT(*) AS count FROM bot_personas', []], 'clan-simulation:persona-count');
+    if (Number(count) === founderThresholdTable.count) return founderThresholdTable.table;
     const rows = await Database.execute(['SELECT primaryDrive, traitsJson FROM bot_personas', []], 'clan-simulation:founder-thresholds');
-    founderThresholdTable = Policy.founderThresholds(
-        rows.map((row) => ({ primaryDrive: row.primaryDrive, traits: parseJson(row.traitsJson, {}) })),
-        Config.founderTopShare
-    );
-    return founderThresholdTable;
+    founderThresholdTable = {
+        count: Number(count),
+        table: Policy.founderThresholds(rows.map((row) => ({ primaryDrive: row.primaryDrive, traits: parseJson(row.traitsJson, {}) })),
+            Config.founderTopShare)
+    };
+    return founderThresholdTable.table;
 }
 
 function recruitmentScore(founder, candidate, members) {

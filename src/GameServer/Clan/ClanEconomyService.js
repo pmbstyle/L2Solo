@@ -110,6 +110,7 @@ async function resolveClan(clan, options = {}) {
         });
         if (advanced.ok) {
             metrics.levelUps += 1;
+            invoke('GameServer/Bot/Population/BotLifeState').acceptNewerLifecycleRow(advanced.leaderRow);
             await ClanCrestService.ensureAutonomousCrest(clan.id);
             recordReason(Contracts.REASON_CODES.CONTRIBUTION_LEVEL_UP);
         } else {

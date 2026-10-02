@@ -7074,43 +7074,39 @@ const Database = {
             const required = Math.max(0, Math.floor(Number(itemId ? requiredItemAmount : requiredAmount) || 0));
             let contributed = 0;
             let warehouseAmount = 0;
-            if (itemId > 0) {
-                warehouseAmount = Number(one(`SELECT COALESCE(SUM(MAX(0, amount - reservedAmount)), 0) AS amount
-                    FROM clan_warehouse_items WHERE clanId = ? AND selfId = ?`, [clan, itemId]).amount || 0);
-                if (warehouseAmount < required) {
-                    return { ok: false, code: 'warehouse_item_not_ready', warehouseAmount, requiredAmount: required, itemId };
-                }
-            } else {
+            if (itemId === 0) {
                 contributed = Number(one(`SELECT COALESCE(SUM(amount), 0) AS amount
                     FROM clan_contributions WHERE clanId = ? AND targetLevel = ?`, [clan, Number(fromLevel)]).amount || 0);
                 if (contributed < required) {
                     return { ok: false, code: 'contribution_level_ready', contributed, requiredAmount: required };
                 }
             }
+            // The level is paid like the player's level-up (NpcBypasses/Clan): the
+            // item or the Adena is spent, from the leader's wallet at level 0, else
+            // from the clan warehouse.
+            const timestamp = now();
+            const leaderWallet = Number(fromLevel) === 0 && required > 0 ? Database.memberWalletUnsafe(Number(clanRow.leaderId), timestamp) : null;
+            if (Number(fromLevel) === 0 && required > 0) {
+                if (!leaderWallet) return { ok: false, code: 'leader_busy' };
+                if (leaderWallet.amount < required) return { ok: false, code: 'leader_adena_not_ready', wallet: leaderWallet.amount };
+            }
+            const consumedId = Number(fromLevel) === 0 ? 0 : itemId || 57;
+            if (consumedId && required > 0) {
+                warehouseAmount = Number(one(`SELECT COALESCE(SUM(MAX(0, amount - reservedAmount)), 0) AS amount
+                    FROM clan_warehouse_items WHERE clanId = ? AND selfId = ?`, [clan, consumedId]).amount || 0);
+                if (warehouseAmount < required) {
+                    return { ok: false, code: 'warehouse_item_not_ready', warehouseAmount, requiredAmount: required, itemId: consumedId };
+                }
+            }
 
             const updated = write('UPDATE clans SET level = ? WHERE id = ? AND level = ?', [Number(toLevel), clan, Number(fromLevel)]);
             if (updated.affectedRows !== 1) return { ok: false, code: 'level_already_advanced' };
             const previousState = jsonObject(simulation.stateJson);
-            const timestamp = now();
-            // The level is paid like the player's level-up (NpcBypasses/Clan): the
-            // item or the adena is spent, not only checked against the ledger.
-            if (required > 0 && Number(fromLevel) === 0) {
-                const leader = Number(clanRow.leaderId);
-                const rows = all('SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 ORDER BY id', [leader]);
-                const wallet = rows.reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0);
-                if (wallet < required) throw Object.assign(new Error('leader adena not ready'), { code: 'leader_adena_not_ready', wallet });
-                let remaining = required;
-                rows.forEach((row) => {
-                    if (remaining <= 0) return;
-                    const deduction = Math.min(Math.max(0, Number(row.amount) || 0), remaining);
-                    const next = Number(row.amount) - deduction;
-                    if (next <= 0) write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, leader]);
-                    else write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [next, row.id, leader]);
-                    remaining -= deduction;
-                });
-                syncAdenaSnapshotUnsafe(leader, wallet - required);
-            } else if (required > 0) {
-                const consumedId = itemId || 57;
+            let leaderRow = null;
+            if (leaderWallet) {
+                Database.changeWalletUnsafe(leaderWallet, -required, clan, timestamp);
+                leaderRow = one('SELECT * FROM bot_life_state WHERE characterId = ?', [leaderWallet.id]);
+            } else if (consumedId && required > 0) {
                 let remaining = required;
                 const rows = all(`SELECT id, amount, reservedAmount FROM clan_warehouse_items
                     WHERE clanId = ? AND selfId = ? AND amount > reservedAmount ORDER BY id`, [clan, consumedId]);
@@ -7123,7 +7119,7 @@ const Database = {
                     else write(`UPDATE clan_warehouse_items SET amount = ?, updatedAt = ? WHERE id = ? AND clanId = ?`, [nextAmount, timestamp, row.id, clan]);
                     remaining -= consumed;
                 });
-                if (remaining > 0) throw Object.assign(new Error('clan level-up warehouse not ready'), { code: 'warehouse_item_not_ready' });
+                if (remaining > 0) throw new Error('clan level-up warehouse changed');
                 const nextWarehouseRevision = Math.max(0, Number(previousState.warehouseRevision) || 0) + 1;
                 write(`INSERT INTO clan_warehouse_ledger
                     (clanId, characterId, selfId, amount, operation, resolveKey, warehouseRevision, createdAt)
@@ -7152,14 +7148,11 @@ const Database = {
                 requiredAmount: required,
                 requiredItemId: itemId,
                 warehouseAmount,
+                leaderRow,
                 warehouseRevision: Number(state.warehouseRevision || 0)
             };
         }, 'clan-simulation:level-up');
-        // A payment that is not ready rolls the level change back.
-        return (leaderId ? withCharacterFlush(leaderId, levelUp) : levelUp()).catch((error) => {
-            if (error.code === 'leader_adena_not_ready' || error.code === 'warehouse_item_not_ready') return { ok: false, code: error.code };
-            throw error;
-        });
+        return leaderId ? withCharacterFlush(leaderId, levelUp) : levelUp();
     },
     fetchAutonomousClanCrests() {
         return run(`SELECT clans.id, clans.level, clans.crestId, crests.data AS crestData

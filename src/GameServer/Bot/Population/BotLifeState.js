@@ -1488,6 +1488,15 @@ const BotLifeState = {
         await Promise.all(ids.map(id => pendingWrites.get(Number(id)) || Promise.resolve()));
     },
 
+    // Accept a row another transaction wrote for this bot, unless the cache already
+    // holds a newer cold revision of it.
+    acceptNewerLifecycleRow(row) {
+        if (!row) return null;
+        const current = cache.get(Number(row.characterId));
+        if (current && (current.phase !== 'cold' || Number(current.simulation?.revision || 0) > Number(row.simulationRevision))) return null;
+        return this.acceptLifecycleRow(row);
+    },
+
     acceptLifecycleRow(row) {
         const snapshot = normalize(row);
         cache.set(snapshot.characterId, snapshot);
