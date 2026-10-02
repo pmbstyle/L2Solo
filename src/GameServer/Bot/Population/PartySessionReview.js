@@ -3,6 +3,21 @@ const MINUTE = 60000;
 const clamp = n => Math.max(0, Math.min(1, Number(n) || 0));
 const Rewards = require('../../Actor/PartyRewardMath');
 
+// A shared target born from spot competition (cold: `reason`,
+// HotCompetitionParty: `kind`) ends otherwise only when the party objectives
+// are rebuilt, which happens while some bot waits for a required party. The
+// party agrees it is done once every mob of that ground is below the leader's
+// hunt band; it then routes like any other party. `spot` is the party's
+// current ground.
+function sharedTargetOutgrown(party, members, spot) {
+    const objective = party.stats?.objective;
+    if (objective?.reason !== 'shared_target' && objective?.kind !== 'shared_target') return false;
+    if (!spot || String(spot.id) !== String(objective.spotId)) return false;
+    const leader = members.find(m => m.characterId === party.leaderId) || members[0];
+    if (!leader) return false;
+    return Number(spot.maxLevel) < require('../AI/SpotService').huntBand(Number(leader.level)).min;
+}
+
 // A timer schedules a conversation, not a forced disband. No random rolls:
 // rereading the same persisted evidence produces the same individual decisions.
 function assess(party, members, timestamp, options = {}) {
@@ -104,7 +119,8 @@ function assess(party, members, timestamp, options = {}) {
             reason: reason || (paused ? 'party_recovering_or_travelling' : sameTarget || sharedClan ? 'party_shared_goal'
                 : friendly ? 'party_friends' : 'party_observing_progress'), memoryReady });
     }
-    return { decisions, assemblyRecovered, review: { at: timestamp, nextAt, wins, fights, attemptsSinceProgress,
+    const objectiveDone = sharedTargetOutgrown(party, members, options.spot);
+    return { decisions, assemblyRecovered, objectiveDone, review: { at: timestamp, nextAt, wins, fights, attemptsSinceProgress,
         noProgressSince, concerns, experience,
         decisions } };
 }
