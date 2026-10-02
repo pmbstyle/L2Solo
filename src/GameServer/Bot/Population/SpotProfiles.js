@@ -316,6 +316,23 @@ function capacityFingerprint(occupancy = {}, maxUnits = 9, options = {}) {
     return fingerprint;
 }
 
+// Level bounds are cheap and independent of the detailed route policy:
+// out-of-range spots are rejected before deriving their tags. The window of
+// one target level is the same for every search of one catalog.
+const spotsNearLevelByCatalog = new WeakMap();
+
+function spotsNearLevel(profiles, targetLevel) {
+    let byLevel = spotsNearLevelByCatalog.get(profiles);
+    if (!byLevel) spotsNearLevelByCatalog.set(profiles, byLevel = new Map());
+    let spots = byLevel.get(targetLevel);
+    if (!spots) {
+        spots = profiles.filter((profile) => profile.raidBoss !== true
+            && profile.minLevel <= targetLevel + 4 && profile.maxLevel >= targetLevel - 4);
+        byLevel.set(targetLevel, spots);
+    }
+    return spots;
+}
+
 function currentOccupancy(profiles, maxAgeMs = 1000) {
     const timestamp = Date.now();
     if (occupancyCache && timestamp - occupancyCachedAt < maxAgeMs) return occupancyCache;
@@ -453,12 +470,8 @@ const SpotProfiles = {
             return LevelingRoutes.decorateSpot(currentSpot, currentMatch);
         }
 
-        const candidates = profiles
-            .filter((profile) => profile.raidBoss !== true)
+        const candidates = spotsNearLevel(profiles, targetLevel)
             .filter((profile) => !excludedSpotIds.has(String(profile.id)))
-            // Level bounds are cheap and independent of the detailed route
-            // policy. Reject out-of-range spots before deriving their tags.
-            .filter((profile) => profile.minLevel <= targetLevel + 4 && profile.maxLevel >= targetLevel - 4)
             .filter((profile) => LevelingRoutes.isSpotAllowedForState(profile, state, routeOptions));
         const relocationCandidates = mustRelocate
             ? candidates.filter((profile) => profile.id !== currentSpot.id)

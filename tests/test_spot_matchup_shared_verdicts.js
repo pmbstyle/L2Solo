@@ -109,4 +109,21 @@ assert(Matchup.sharedVerdictProfiles() <= Matchup.VERDICT_PROFILE_LIMIT, 'the sh
 assert.deepStrictEqual(Matchup.spotMatchup(spot, [fighter()], { soloSafety: true }),
     referenceMatchup(spot, [fighter()], { soloSafety: true }), 'an evicted profile is recomputed');
 
+// The spot result is shared too: per spot object, never by id, and the shared
+// result is read-only. A rebuilt catalog brings new spot objects.
+const sameIdOtherMobs = { id: spot.id, npcEntries: species.slice(0, 3).map((npc) => ({ selfId: npc.selfId, count: 1 })) };
+for (let pass = 0; pass < 2; pass++) {
+    for (const options of optionSets) {
+        for (const candidate of [spot, sameIdOtherMobs]) {
+            assert.deepStrictEqual(Matchup.spotMatchup(candidate, [fighter()], options),
+                referenceMatchup(candidate, [fighter()], options), `spot object ${candidate === spot ? 1 : 2} ${JSON.stringify(options)}`);
+        }
+    }
+}
+assert.notDeepStrictEqual(referenceMatchup(spot, [fighter()], { soloSafety: true }),
+    referenceMatchup(sameIdOtherMobs, [fighter()], { soloSafety: true }), 'the two spots must differ, or the check above proves nothing');
+const shared = Matchup.spotMatchup(spot, [fighter()], { soloSafety: true });
+assert.strictEqual(Matchup.spotMatchup(spot, [fighter()], { soloSafety: true }), shared, 'the same profile fields share one result');
+assert(Object.isFrozen(shared), 'a shared spot result is read-only');
+
 console.log('shared spot matchup verdict tests passed');
