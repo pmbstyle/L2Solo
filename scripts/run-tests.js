@@ -527,6 +527,7 @@ const tests = [
     'tests/test_clan_player_warehouse.js',
     'tests/test_clan_warehouse_equipment_exchange.js',
     'tests/test_clan_warehouse_gear_shots.js',
+    'tests/test_clan_spare_gear_offer.js',
     'tests/test_clan_equipment_plan_lock.js',
     'tests/test_clan_gear_stall_and_spoil.js',
     'tests/test_clan_planning_worker.js',

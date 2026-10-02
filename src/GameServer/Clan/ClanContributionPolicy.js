@@ -56,11 +56,17 @@ function duesRate(memberTraits = []) {
 // generosity, the top-up only while the member is not about to buy its own gear;
 // at most contributionMaxFraction (35%).
 function memberRate(clanRate, traits = {}, state = null, config = Config) {
-    const plan = state?.stats?.equipmentPlan;
-    const adena = number(state?.adena);
-    const buying = plan?.strategy === 'market' && number(plan.market?.price, Infinity)
-        <= adena - invoke('GameServer/Bot/AI/GearAcquisitionPlanner').operationalAdenaReserve(state || {});
+    const buying = ownGearPurchase(state) === 'funded';
     return Math.min(number(config.contributionMaxFraction, 0.35), clanRate + (buying ? 0 : 0.15 * giveFactor(traits)));
+}
+
+// The member's own pending gear purchase: 'funded' (its money covers the price
+// above the operating reserve), 'short' (saving for it) or null.
+function ownGearPurchase(state = null) {
+    const plan = state?.stats?.equipmentPlan;
+    if (plan?.strategy !== 'market' || !(number(plan.market?.price) > 0)) return null;
+    const spendable = number(state?.adena) - invoke('GameServer/Bot/AI/GearAcquisitionPlanner').operationalAdenaReserve(state || {});
+    return number(plan.market.price) <= spendable ? 'funded' : 'short';
 }
 
 // Share of its free savings a member puts once into the clan's current target:
@@ -77,5 +83,6 @@ module.exports = {
     askedShare,
     duesRate,
     memberRate,
+    ownGearPurchase,
     investFraction
 };
