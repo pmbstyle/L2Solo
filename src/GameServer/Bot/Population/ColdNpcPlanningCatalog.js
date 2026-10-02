@@ -76,12 +76,12 @@ function createLookup(rows = []) {
     const offersFor = (target) => offersByItem.get(Number(target?.selfId ?? target)) || EMPTY_OFFERS;
     // Offers are sorted by price, so only the cheapest run competes on
     // distance to the buyer.
-    const bestOffer = (target, state) => {
+    const bestOffer = (target, state, origin) => {
         const offers = offersFor(target);
         let best = offers[0] || null;
         for (const offer of offers) {
             if (offer.price !== best.price) break;
-            if (OfferOrder.compareDistance(offer, best, state?.loc) < 0) best = offer;
+            if (OfferOrder.compareDistance(offer, best, origin) < 0) best = offer;
         }
         return best;
     };

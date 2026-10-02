@@ -675,13 +675,20 @@ function preferredNoGradeTarget(state = {}, options = {}) {
     return candidates.find((item) => targetHasAvailableRoute(item, state, options)) || null;
 }
 
+// Where the bot buys from: a caller that has no spot list passes the origin
+// it computed from its own (OfferOrder.farmingOrigin).
+function offerOrigin(state, options) {
+    return options.origin || OfferOrder.farmingOrigin(state, (spotId) => OfferOrder.spotInList(options.spots, spotId));
+}
+
 function marketOfferForTarget(target, state = {}, options = {}) {
     if (!target) return null;
     const maxPrice = options.maxMarketPrice === undefined ? Infinity : Math.max(0, Number(options.maxMarketPrice) || 0);
     const usable = (offer) => offer && offer.available !== false
         && Number(offer.count ?? 1) > 0 && Number(offer.price) > 0 && Number(offer.price) <= maxPrice;
+    const origin = offerOrigin(state, options);
     if (typeof options.findMarketOffer === 'function') {
-        const offer = options.findMarketOffer(target, state);
+        const offer = options.findMarketOffer(target, state, origin);
         return usable(offer) ? offer : null;
     }
     const towns = [...new Set([
@@ -696,7 +703,7 @@ function marketOfferForTarget(target, state = {}, options = {}) {
             buyerCharacterId: state.characterId
         }))
         .filter(usable)
-        .sort((left, right) => OfferOrder.compareOffers(left, right, state.loc))[0] || null;
+        .sort((left, right) => OfferOrder.compareOffers(left, right, origin))[0] || null;
 }
 
 function expectedAdenaPerKill(state = {}) {
@@ -746,17 +753,18 @@ function marketPlan(state = {}, target, offer, options = {}) {
 
 function npcOfferForTarget(target, state = {}, options = {}) {
     if (!target) return null;
+    const origin = offerOrigin(state, options);
     if (typeof options.findNpcOffer === 'function') {
-        const offer = options.findNpcOffer(target, state);
+        const offer = options.findNpcOffer(target, state, origin);
         return offer?.sourceType === 'npc' ? offer : null;
     }
     if (typeof options.findMarketOffer === 'function') {
-        const offer = options.findMarketOffer(target, state);
+        const offer = options.findMarketOffer(target, state, origin);
         return offer?.sourceType === 'npc' ? offer : null;
     }
     return (MarketOpportunity.npcOffersAll(target.selfId) || [])
         .filter((offer) => offer.available !== false)
-        .sort((left, right) => OfferOrder.compareOffers(left, right, state.loc)
+        .sort((left, right) => OfferOrder.compareOffers(left, right, origin)
             || String(left.town || '').localeCompare(String(right.town || '')))[0] || null;
 }
 
@@ -1628,7 +1636,8 @@ function replacementPlanFor(state = {}, previousPlan = {}, spots = [], options =
     const recovery = options.levelingRecovery || levelingRecoveryFor(state, previousPlan, options.timestamp);
     if (recovery) return levelingRecoveryPlan(state, recovery, previousPlan);
     if (ClanCrafting.isPersonalCraft(state, previousPlan) && !options.clanCrafting) return planFor(state, { ...options, spots });
-    const weaponBridge = npcEquipmentBridgePlan(state, options);
+    const offerOptions = { ...options, origin: offerOrigin(state, { ...options, spots }) };
+    const weaponBridge = npcEquipmentBridgePlan(state, offerOptions);
     if (weaponBridge) return weaponBridge;
     const targetId = Number(previousPlan?.target?.selfId || 0);
     const excluded = new Set((options.excludedTargetIds || []).map(Number).filter(Boolean));
@@ -1641,7 +1650,7 @@ function replacementPlanFor(state = {}, previousPlan = {}, spots = [], options =
         // the next resolve, without waiting for that route to fail first.
         if (['direct_drop', 'craft'].includes(previousPlan.strategy)
             && previousPlan.status === 'active') {
-            const market = fundedMarketPlanForTarget(state, targetId, options);
+            const market = fundedMarketPlanForTarget(state, targetId, offerOptions);
             if (market) return market;
         }
         const source = bestSourceForPlan(state, previousPlan, spots, options);

@@ -14,6 +14,30 @@ function townDistance(offer, origin) {
     return Math.hypot(town.locX - x, town.locY - y);
 }
 
+// A bot's farming place: the centre of the spot it hunts on (the spot it
+// left, for a bot listed at the market), else its departure point or its
+// position. The position wanders across the spot while the bot hunts, so a
+// choice made from it would flip between two near towns.
+function farmingOrigin(state, findSpot) {
+    const spotId = state?.stats?.marketReturn?.spotId || state?.spotId;
+    const center = spotId ? findSpot(spotId)?.center : null;
+    return center || state?.stats?.marketReturn?.loc || state?.loc;
+}
+
+const spotIndexes = new WeakMap();
+
+// A spot of a planning spot list by id, through one lookup table per list.
+function spotInList(spots, spotId) {
+    if (!Array.isArray(spots)) return null;
+    let index = spotIndexes.get(spots);
+    // A list filled in place (the cold worker's) gets a new table.
+    if (!index || index.size !== spots.length) {
+        index = new Map(spots.map((spot) => [String(spot.id), spot]));
+        spotIndexes.set(spots, index);
+    }
+    return index.get(String(spotId)) || null;
+}
+
 // Towns with the same tax sell an NPC item at the same price. Such a tie
 // goes to the town nearest the buyer; equal distances, or a buyer without a
 // location, keep the caller's order.
@@ -47,4 +71,4 @@ function compareSupplyOffers(left, right, origin) {
         || compareDistance(left, right, origin);
 }
 
-module.exports = { compareDistance, compareOffers, compareSupplyOffers };
+module.exports = { compareDistance, compareOffers, compareSupplyOffers, farmingOrigin, spotInList };

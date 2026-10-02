@@ -61,6 +61,20 @@ function mainThreadPlanning() {
     }
 }
 
+function plannedFromHuntingSpot() {
+    // A cold bot plans from the centre of its hunting spot, not from its
+    // position, which wanders across the spot.
+    const catalog = ColdNpcPlanningCatalog.createLookup(npcPlanningCatalogRows());
+    const spots = [{ id: 'island_spot', center: { ...townCenters['Talking Island'] } }];
+    const atElven = { ...npcKitState(townCenters['Elven Village']), spotId: 'island_spot' };
+    assert.strictEqual(Planner.npcEquipmentBridgePlan(atElven, { ...catalog.plannerOptions, spots })?.market?.town,
+        'Talking Island', 'the hunting spot centre decides an equal-price tie');
+    assert.strictEqual(Planner.npcEquipmentBridgePlan(atElven, catalog.plannerOptions)?.market?.town,
+        'Elven Village', 'without the spot list the position decides');
+    assert.strictEqual(Planner.replacementPlanFor(atElven, {}, spots, catalog.plannerOptions)?.market?.town,
+        'Talking Island', 'a replacement plan buys from the hunting spot too');
+}
+
 function coldWorkerPlanning() {
     const catalog = ColdNpcPlanningCatalog.createLookup(npcPlanningCatalogRows());
     Object.entries(townCenters).forEach(([town, loc]) => {
@@ -122,6 +136,7 @@ function clanPlanKeepsTown() {
     mainThreadPlanning();
     clanPlanKeepsTown();
     coldWorkerPlanning();
+    plannedFromHuntingSpot();
     companionSupplyErrand();
     await clanWorkerPlanning();
     console.log('Bot market nearest town checks passed');

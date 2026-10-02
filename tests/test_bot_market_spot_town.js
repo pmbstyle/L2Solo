@@ -57,6 +57,9 @@ try {
         { id: 'test_dark_elven_spot', center: { ...nearDarkElven } }
     ];
 
+    // A state without any location keeps the author's fallback.
+    assert.strictEqual(MarketTownPolicy.targetTownForItems({ characterId: 1001 }, [SHORT_GLOVES]), 'Giran');
+
     // Graded stock is unchanged: D follows the stable Gludio/Dion split, C+ Giran.
     const graded = bot(nearDarkElven, 'test_elven_spot');
     assert.strictEqual(town(graded, [dItem]), MarketTownPolicy.dGradeMarketFor(graded));

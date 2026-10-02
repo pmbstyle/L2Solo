@@ -32,6 +32,7 @@ const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const PartyRecruitmentChat = invoke('GameServer/Bot/Population/ColdPartyRecruitmentChat');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const OfferOrder = invoke('GameServer/Bot/Economy/OfferOrder');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const ColdWealthCraftService = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
@@ -3480,7 +3481,8 @@ const PopulationService = {
         const replanContext = workerPlan
             ? { failure: workerPlan.replanFailure || null }
             : GearAcquisitionPlanner.replanContextFor(state, previousPlan, startedAt);
-        const weaponBridgePlan = GearAcquisitionPlanner.npcEquipmentBridgePlan(state);
+        const offerOptions = { origin: OfferOrder.farmingOrigin(state, (spotId) => OfferOrder.spotInList(spots, spotId)) };
+        const weaponBridgePlan = GearAcquisitionPlanner.npcEquipmentBridgePlan(state, offerOptions);
         let acquisitionPlan = workerPlan?.acquisitionPlan || null;
         const workerPlanHasSource = acquisitionPlan?.status === 'active'
             && ['direct_drop', 'craft'].includes(acquisitionPlan.strategy)
@@ -3525,7 +3527,7 @@ const PopulationService = {
                 && !replanContext.failure
                 && state.stats?.partyRequest?.status === 'open'
                 && Number(state.stats.partyRequest.reviewAt || 0) > startedAt
-                && !GearAcquisitionPlanner.fundedMarketPlanForTarget(state, previousPlan.target?.selfId);
+                && !GearAcquisitionPlanner.fundedMarketPlanForTarget(state, previousPlan.target?.selfId, offerOptions);
             const upgradedPlan = weaponBridgePlan || (previousFarmPlan
                 && !GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan)
                     ? GearAcquisitionPlanner.replacementPlanFor(state, previousPlan, spots, { occupancy, ...replanContext })

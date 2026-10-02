@@ -73,6 +73,7 @@ const RequiredPartyFormation = require('./RequiredPartyFormation');
 const { ColdCompetitionMonitor, INTERVAL_MS: COMPETITION_INTERVAL_MS } = require('./ColdCompetitionMonitor');
 const { ColdSimulationKernel, beginRouteTravelState } = require('./ColdSimulationKernel');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
+const OfferOrder = require('../Economy/OfferOrder');
 const forbiddenLoaded = Object.keys(require.cache).filter((filename) => (
     /[\\/]src[\\/]Database\.js$/i.test(filename)
     || /[\\/]GameServer[\\/]World[\\/]World\.js$/i.test(filename)
@@ -187,7 +188,8 @@ function startKernel(config = {}) {
             const occupancy = currentPlanningOccupancy(timestamp);
             const excludedSpotIds = invoke('GameServer/Bot/Population/SpotRiskPolicy')
                 .excludedSpotIdsForStates([state], timestamp);
-            const npcPlanningOptions = { ...planningNpcCatalog.plannerOptions, excludedSpotIds };
+            const origin = OfferOrder.farmingOrigin(state, (spotId) => OfferOrder.spotInList(spots, spotId));
+            const npcPlanningOptions = { ...planningNpcCatalog.plannerOptions, excludedSpotIds, origin };
             const clanRaidPlan = GearAcquisitionPlanner.isClanOwnedPlan(previousPlan)
                 && previousPlan?.next?.sourceKind === 'raid';
             if (clanRaidPlan) npcPlanningOptions.allowRaidSources = true;
