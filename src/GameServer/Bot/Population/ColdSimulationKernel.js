@@ -5,6 +5,7 @@ const BackgroundPartyLifecycle = require('./BackgroundPartyLifecycle');
 const Protocol = require('./ColdSimulationProtocol');
 const ColdStateDelta = require('./ColdStateDelta');
 const SpotRiskPolicy = require('./SpotRiskPolicy');
+const { SpotOccupancyIndex, stateKey } = require('./SpotOccupancyIndex');
 
 class DueHeap {
     constructor() {
@@ -373,6 +374,7 @@ class ColdSimulationKernel {
             Math.min(this.maxBatch, Number(options.maxAtomicPartySize) || 5)
         );
         this.states = new Map();
+        this.occupancy = new SpotOccupancyIndex();
         this.interactionMemory = new (require('../../Social/InteractionMemory'))();
         this.interactionMemory.clanSocial = new (require('../../Clan/ClanSocialView'))();
         this.versions = new Map();
@@ -457,6 +459,7 @@ class ColdSimulationKernel {
                 state,
                 context: entry.context || {}
             });
+            this.occupancy.update(state);
             this.stats.snapshots += 1;
             this.ensureScheduled(characterId);
             return true;
@@ -464,6 +467,7 @@ class ColdSimulationKernel {
         const version = Number(this.versions.get(characterId) || 0) + 1;
         this.versions.set(characterId, version);
         this.states.set(characterId, { state, context: entry.context || {}, version });
+        this.occupancy.update(state);
         this.stats.snapshots += 1;
         this.ensureScheduled(characterId);
         return true;
@@ -476,6 +480,8 @@ class ColdSimulationKernel {
 
     remove(characterId) {
         const id = Number(characterId);
+        const current = this.states.get(id);
+        if (current?.state) this.occupancy.remove(stateKey(current.state));
         this.states.delete(id);
         this.interactionMemory.forget(id);
         this.versions.set(id, Number(this.versions.get(id) || 0) + 1);

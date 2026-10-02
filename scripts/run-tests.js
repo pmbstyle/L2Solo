@@ -140,6 +140,7 @@ const tests = [
     'tests/test_cold_message_pages.js',
     'tests/test_cold_message_bytes.js',
     'tests/test_life_state_cache.js',
+    'tests/test_spot_occupancy_index.js',
     'tests/test_population_event_loop.js',
     'tests/test_population_selection_indexes.js',
     'tests/test_admin_tools.js',

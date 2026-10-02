@@ -1,4 +1,5 @@
 'use strict';
+const { SpotOccupancyIndex, stateKey } = require('./SpotOccupancyIndex');
 const CELL_SIZE = 6000;
 
 class LifeStateCache extends Map {
@@ -13,6 +14,7 @@ class LifeStateCache extends Map {
         this.ordered = [];
         this.orderEntries = new Map();
         this.nextSequence = 0;
+        this.occupancy = new SpotOccupancyIndex();
     }
 
     orderIndex(at, sequence) {
@@ -54,8 +56,11 @@ class LifeStateCache extends Map {
         this.removeCell(id);
         const sequence = this.orderEntries.get(id)?.sequence ?? this.nextSequence++;
         this.removeOrder(id);
+        const previous = super.get(id);
+        if (previous && stateKey(previous) !== stateKey(state)) this.occupancy.remove(stateKey(previous));
         super.set(id, state);
         this.insertOrder(id, state, sequence);
+        this.occupancy.update(state);
         if (state.phase === 'cold' && state.activity !== 'pk_hunting') {
             const x = Number(state.loc?.locX || 0), y = Number(state.loc?.locY || 0);
             if (Number.isFinite(x) && Number.isFinite(y)) {
@@ -72,6 +77,7 @@ class LifeStateCache extends Map {
     delete(id) {
         this.removeCell(id);
         this.removeOrder(id);
+        if (super.has(id)) this.occupancy.remove(stateKey(super.get(id)));
         const removed = super.delete(id);
         if (removed) this.revision++;
         return removed;
@@ -79,12 +85,16 @@ class LifeStateCache extends Map {
 
     clear() {
         super.clear(); this.cells.clear(); this.cellById.clear();
-        this.ordered = []; this.orderEntries.clear();
+        this.ordered = []; this.orderEntries.clear(); this.occupancy.clear();
         this.revision++;
     }
 
     recent(limit) {
         return this.ordered.slice(0, limit).map((entry) => entry.state);
+    }
+
+    beyondRecent(limit) {
+        return this.ordered.slice(limit).map((entry) => entry.state);
     }
 
     near(loc, radius, limit) {

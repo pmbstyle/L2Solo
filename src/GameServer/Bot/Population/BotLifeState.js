@@ -22,6 +22,10 @@ const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
 const cache = new LifeStateCache();
+
+function recentLimit(limit) {
+    return Math.max(1, Math.min(2000, Number(limit) || 500));
+}
 const pendingWrites = new Map();
 const changeListeners = new Set();
 let initialized = false;
@@ -3731,8 +3735,17 @@ const BotLifeState = {
     },
 
     allStates(limit = 500) {
-        const safeLimit = Math.max(1, Math.min(2000, Number(limit) || 500));
-        return cache.recent(safeLimit);
+        return cache.recent(recentLimit(limit));
+    },
+
+    // The states a bounded allStates(limit) view leaves out (oldest updatedAt).
+    statesBeyondRecent(limit = 500) {
+        return cache.beyondRecent(recentLimit(limit));
+    },
+
+    // Spot occupancy kept up to date at every state write (SpotProfiles.currentOccupancy).
+    occupancyIndex() {
+        return cache.occupancy;
     },
 
     populationSeedStates() {

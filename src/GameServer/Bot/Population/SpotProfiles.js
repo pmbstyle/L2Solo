@@ -4,6 +4,7 @@ const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner'
 const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
+const { stateKey, occupiedSpotId, farmIntentSpotId } = require('./SpotOccupancyIndex');
 
 let occupancyCache = null;
 let occupancyCachedAt = 0;
@@ -74,10 +75,6 @@ function physicalSpotForState(state, profiles) {
     return state?.spotId ? profiles.find((profile) => profile.id === state.spotId) || null : null;
 }
 
-function stateKey(state = {}) {
-    return String(state.characterId || state.name || state.stats?.generatedIndex || '');
-}
-
 function partyIdForState(state = {}) {
     const physicalPartyId = state.party?.partyId || state.partyId || null;
     if (physicalPartyId) return physicalPartyId;
@@ -105,30 +102,6 @@ function explicitClanRaidSpot(state = {}, profile = null) {
     return plan?.next?.sourceKind === 'raid'
         && GearAcquisitionPlanner.isClanOwnedPlan(plan)
         && String(plan.next?.spotId || '') === spotId;
-}
-
-function occupiedSpotId(state = {}) {
-    if (state.activity === 'traveling' && state.stats?.travel?.spotId) return state.stats.travel.spotId;
-    if (['merchant', 'shopping', 'crafting', 'traveling'].includes(state.activity)) return null;
-    return state.spotId || null;
-}
-
-function farmIntentSpotId(state = {}, timestamp = Date.now()) {
-    if (['merchant', 'shopping', 'crafting', 'dead'].includes(state.activity)) return null;
-    const clanObjective = state.stats?.clanPartyObjective;
-    const request = state.stats?.partyRequest;
-    const plan = state.stats?.equipmentPlan;
-    let spotId = null;
-    if (clanObjective?.spotId && ['open', 'deferred'].includes(String(clanObjective.status || ''))) {
-        spotId = clanObjective.spotId;
-    } else if (request?.spotId && ['open', 'deferred'].includes(String(request.status || ''))) {
-        spotId = request.spotId;
-    } else if (plan?.status === 'active' && ['direct_drop', 'craft'].includes(plan.strategy) && plan.next?.spotId) {
-        spotId = plan.next.spotId;
-    }
-    if ((state.stats?.capacityBackoffs || []).some(entry => String(entry.spotId) === String(spotId)
-        && Number(entry.until) > timestamp)) return null;
-    return spotId;
 }
 
 function allocationGroups(states = [], physicalKeys = new Set()) {
@@ -174,51 +147,58 @@ function occupancySnapshot(profiles, states = BotLifeState.allStates(PopulationC
     });
 
     const spotIds = new Set([...Object.keys(physicalMembers), ...Object.keys(reservedMembers)]);
-    return Object.fromEntries([...spotIds].map((spotId) => {
-        const spotMembers = [...(physicalMembers[spotId]?.values() || [])];
-        const claimers = [...(reservedMembers[spotId]?.values() || [])];
-        const capacity = LevelingRoutes.capacityForSpot(byId.get(spotId));
-        const physicalKeys = new Set(spotMembers.map(stateKey));
-        const clanReservationGroups = claimers.reduce((groupsByClan, state) => {
-            const key = clanEquipmentReservationKey(state, spotId);
-            if (!key) return groupsByClan;
-            if (!groupsByClan.has(key)) groupsByClan.set(key, []);
-            groupsByClan.get(key).push(state);
-            return groupsByClan;
-        }, new Map());
-        const rankedClanReservationKeys = [...clanReservationGroups.entries()]
-            .sort((left, right) => (
-                Number(!left[1].some((state) => physicalKeys.has(stateKey(state))))
-                - Number(!right[1].some((state) => physicalKeys.has(stateKey(state))))
-                || left[0].localeCompare(right[0])
-            ))
-            .map(([key]) => key);
-        const retainedReservationKeys = new Set(
-            rankedClanReservationKeys.slice(0, MAX_CLAN_EQUIPMENT_RESERVATIONS_PER_SPOT)
-        );
-        const admittedClaimers = claimers.filter((state) => {
-            const key = clanEquipmentReservationKey(state, spotId);
-            return !key || retainedReservationKeys.has(key);
-        });
-        const groups = allocationGroups(admittedClaimers, physicalKeys);
-        const retained = new Set();
-        let remaining = capacity;
-        groups.parties.forEach(([, partyMembers]) => {
-            if (partyMembers.length > remaining) return;
-            partyMembers.forEach((state) => retained.add(stateKey(state)));
-            remaining -= partyMembers.length;
-        });
-        groups.solo.slice(0, Math.max(0, remaining)).forEach((state) => retained.add(stateKey(state)));
-        return [spotId, {
-            count: spotMembers.length,
-            reservedCount: claimers.length,
-            capacity,
-            retained,
-            reservedKeys: new Set(claimers.map(stateKey)),
-            reservationKeys: new Set(rankedClanReservationKeys),
-            retainedReservationKeys
-        }];
-    }));
+    return Object.fromEntries([...spotIds].map((spotId) => [spotId, occupancyEntry(
+        spotId,
+        byId.get(spotId),
+        [...(physicalMembers[spotId]?.values() || [])],
+        [...(reservedMembers[spotId]?.values() || [])]
+    )]));
+}
+
+// One spot of an occupancy snapshot: who counts, who keeps a place when the
+// spot is over capacity, and which clan equipment groups hold a reservation.
+function occupancyEntry(spotId, profile, spotMembers, claimers) {
+    const capacity = LevelingRoutes.capacityForSpot(profile);
+    const physicalKeys = new Set(spotMembers.map(stateKey));
+    const clanReservationGroups = claimers.reduce((groupsByClan, state) => {
+        const key = clanEquipmentReservationKey(state, spotId);
+        if (!key) return groupsByClan;
+        if (!groupsByClan.has(key)) groupsByClan.set(key, []);
+        groupsByClan.get(key).push(state);
+        return groupsByClan;
+    }, new Map());
+    const rankedClanReservationKeys = [...clanReservationGroups.entries()]
+        .sort((left, right) => (
+            Number(!left[1].some((state) => physicalKeys.has(stateKey(state))))
+            - Number(!right[1].some((state) => physicalKeys.has(stateKey(state))))
+            || left[0].localeCompare(right[0])
+        ))
+        .map(([key]) => key);
+    const retainedReservationKeys = new Set(
+        rankedClanReservationKeys.slice(0, MAX_CLAN_EQUIPMENT_RESERVATIONS_PER_SPOT)
+    );
+    const admittedClaimers = claimers.filter((state) => {
+        const key = clanEquipmentReservationKey(state, spotId);
+        return !key || retainedReservationKeys.has(key);
+    });
+    const groups = allocationGroups(admittedClaimers, physicalKeys);
+    const retained = new Set();
+    let remaining = capacity;
+    groups.parties.forEach(([, partyMembers]) => {
+        if (partyMembers.length > remaining) return;
+        partyMembers.forEach((state) => retained.add(stateKey(state)));
+        remaining -= partyMembers.length;
+    });
+    groups.solo.slice(0, Math.max(0, remaining)).forEach((state) => retained.add(stateKey(state)));
+    return {
+        count: spotMembers.length,
+        reservedCount: claimers.length,
+        capacity,
+        retained,
+        reservedKeys: new Set(claimers.map(stateKey)),
+        reservationKeys: new Set(rankedClanReservationKeys),
+        retainedReservationKeys
+    };
 }
 
 function capacityCount(entry) {
@@ -333,10 +313,61 @@ function spotsNearLevel(profiles, targetLevel) {
     return spots;
 }
 
+// occupancySnapshot of the states a SpotOccupancyIndex holds, minus
+// excludedKeys, recomputing only the spots whose members changed since the
+// previous call. Every call returns fresh entries: callers reserve places in
+// the snapshot they were given (reserveCapacity).
+const indexedViews = new WeakMap();
+
+function indexedOccupancy(index, profiles, timestamp = Date.now(), excludedKeys = new Set()) {
+    index.refreshBackoffs(timestamp);
+    let view = indexedViews.get(index);
+    if (!view || view.profiles !== profiles) {
+        view = { profiles, byId: new Map((profiles || []).map((profile) => [profile.id, profile])),
+            entries: new Map(), excludedKeys: new Set() };
+        indexedViews.set(index, view);
+        for (const spotId of [...index.physical.keys(), ...index.reserved.keys()]) index.dirty.add(spotId);
+    }
+    const markPlace = (key) => {
+        const place = index.places.get(key);
+        if (place?.spotId) index.dirty.add(place.spotId);
+        if (place?.intentSpotId) index.dirty.add(place.intentSpotId);
+    };
+    for (const key of excludedKeys) if (!view.excludedKeys.has(key)) markPlace(key);
+    for (const key of view.excludedKeys) if (!excludedKeys.has(key)) markPlace(key);
+    view.excludedKeys = new Set(excludedKeys);
+    const counted = (members) => [...(members || [])]
+        .filter(([key]) => !view.excludedKeys.has(key))
+        .map(([, state]) => state);
+    for (const spotId of index.dirty) {
+        const spotMembers = counted(index.physical.get(spotId));
+        const claimers = counted(index.reserved.get(spotId));
+        if (!view.byId.has(spotId) || (!spotMembers.length && !claimers.length)) {
+            view.entries.delete(spotId);
+            continue;
+        }
+        const key = String(spotId);
+        view.entries.set(spotId, occupancyEntry(key, view.byId.get(key), spotMembers, claimers));
+    }
+    index.dirty.clear();
+    const snapshot = {};
+    for (const [spotId, entry] of view.entries) {
+        snapshot[spotId] = { ...entry,
+            retained: new Set(entry.retained),
+            reservedKeys: new Set(entry.reservedKeys),
+            reservationKeys: new Set(entry.reservationKeys),
+            retainedReservationKeys: new Set(entry.retainedReservationKeys) };
+    }
+    return snapshot;
+}
+
 function currentOccupancy(profiles, maxAgeMs = 1000) {
     const timestamp = Date.now();
     if (occupancyCache && timestamp - occupancyCachedAt < maxAgeMs) return occupancyCache;
-    occupancyCache = occupancySnapshot(profiles);
+    // The same states as occupancySnapshot's default list: the most recently
+    // updated maxPlayingPopulation of them.
+    const excludedKeys = new Set(BotLifeState.statesBeyondRecent(PopulationConfig.maxPlayingPopulation).map(stateKey));
+    occupancyCache = indexedOccupancy(BotLifeState.occupancyIndex(), profiles, timestamp, excludedKeys);
     occupancyCachedAt = timestamp;
     return occupancyCache;
 }
@@ -509,6 +540,7 @@ const SpotProfiles = {
 
 SpotProfiles.occupancySnapshot = occupancySnapshot;
 SpotProfiles.currentOccupancy = currentOccupancy;
+SpotProfiles.indexedOccupancy = indexedOccupancy;
 SpotProfiles.shouldLeaveOverCapacity = shouldLeaveOverCapacity;
 SpotProfiles.farmIntentSpotId = farmIntentSpotId;
 SpotProfiles.hasCapacityForStates = hasCapacityForStates;
