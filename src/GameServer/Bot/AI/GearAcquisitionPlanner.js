@@ -2019,8 +2019,12 @@ function rawPlanFor(state = {}, options = {}) {
         const buy = offer && marketEffort(offer, state) <= directEffort;
         const sourceAssessment = source ? partyNeedAssessmentForSource(state, source) : null;
         return target && buy ? {
-            ...marketPlan(state, target, offer, { buyOrderEscrow: planningOptions.buyOrderEscrow }),
-            grade: 'none'
+            status: 'active', phase: GearLifecycle.phaseFor(state), grade: 'none', role: roleFor(state), strategy: 'market', soloSafe: true, requiresParty: false,
+            rateModelVersion: RATE_MODEL_VERSION,
+            expectedKills: Math.ceil(marketEffort(offer, state)),
+            target: { selfId: Number(target.selfId), name: target.template?.name || `Item ${target.selfId}`, slot: Number(target.etc?.slot || 0) },
+            market: marketTerms(state, offer, { buyOrderEscrow: planningOptions.buyOrderEscrow }),
+            recipeId: null, materials: [], next: null
         } : source ? {
             status: 'active', grade: 'none', role: roleFor(state), strategy: 'direct_drop', soloSafe: sourceAssessment.need === 'solo_ok',
             partyNeed: sourceAssessment.need,

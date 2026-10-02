@@ -77,6 +77,21 @@ try {
     AfkTrade.findOwnerProjection = savedProjection;
 }
 
+// A dual-sword plan buying its missing blade keeps the same reserve once its
+// bid sits in escrow (the blade route reads the escrow from the plan options).
+const DualSwords = invoke('GameServer/Items/C4DualSwordCombinations');
+const saberRevolution = DualSwords.resolveByProductId(2523);
+const dualState = (adena) => ({ characterId: 42, name: 'DualProbe', phase: 'cold', level: 40, adena,
+    activity: 'hunting', currentRegion: 'Giran', loc: { locX: 83000, locY: 148000, locZ: -3400 },
+    inventory: { 123: { selfId: 123, name: 'Saber', amount: 1, equipped: true, equippedCount: 1, equippedSlots: [7], slot: 7, rank: 'd', kind: 'Weapon.Sword' } },
+    stats: { classId: 2, role: 'dps', forcedRecipeId: saberRevolution.recipeId } });
+const bladeOptions = { recipeId: saberRevolution.recipeId, spots: [],
+    findMarketOffer: (item) => Number(item.selfId) === 129 ? { selfId: 129, price: 100000, town: 'Giran', sourceType: 'npc' } : null };
+const bladeBefore = GearAcquisitionPlanner.planFor(dualState(5000000), bladeOptions);
+const bladeAfter = GearAcquisitionPlanner.planFor(dualState(4000000), { ...bladeOptions, buyOrderEscrow: 1000000 });
+assert.strictEqual(bladeBefore?.target?.selfId, 129, 'fixture: the plan buys the missing blade');
+assert.strictEqual(bladeAfter.market.reserve, bladeBefore.market.reserve, 'the blade plan keeps its reserve after posting');
+
 // Background party members replan on the main thread with the member's
 // escrow (the worker's party review is checked in test_cold_worker_buy_order_escrow).
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
