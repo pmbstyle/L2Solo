@@ -318,6 +318,7 @@ const tests = [
     'tests/test_buff_service.js',
     'tests/test_bot_cold_combat.js',
     'tests/test_party_member_drop_route_failure.js',
+    'tests/test_party_requirement_refresh_plan_context.js',
     'tests/test_cold_raid_encounter.js',
     'tests/test_raid_completion.js',
     'tests/test_cold_raid_commit.js',
