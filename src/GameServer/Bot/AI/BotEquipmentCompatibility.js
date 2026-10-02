@@ -14,8 +14,12 @@ const CLASS_PROFILES = {
         shield: true,
         weaponHint: 'one_handed_blunt'
     },
+    // Gladiator and Bladedancer need a dual sword, which NPCs do not sell.
+    // Until they hold one they keep fighting with the Warrior's / Palus
+    // Knight's weapons; the dual sword stays their weapon target.
     2: {
         weaponKinds: ['Weapon.Dual'],
+        interimWeaponKinds: ['Weapon.Sword', 'Weapon.Blunt'],
         preferredWeaponKinds: ['Weapon.Dual'],
         armorStyle: 'heavy',
         twoHandedWeaponKinds: ['Weapon.Dual'],
@@ -38,6 +42,7 @@ const CLASS_PROFILES = {
     },
     34: {
         weaponKinds: ['Weapon.Dual'],
+        interimWeaponKinds: ['Weapon.Sword', 'Weapon.Blunt'],
         armorStyle: 'heavy',
         twoHandedWeaponKinds: ['Weapon.Dual'],
         shield: false,
@@ -195,6 +200,7 @@ function profileFor(role, classId) {
         baseClassId: baseClassId(classId),
         weaponKinds,
         preferredWeaponKinds: [...(profile.preferredWeaponKinds || weaponKinds)],
+        interimWeaponKinds: [...(profile.interimWeaponKinds || [])],
         armorStyle: profile.armorStyle,
         twoHandedWeaponKinds: [...profile.twoHandedWeaponKinds],
         shield: profile.shield,
@@ -204,6 +210,10 @@ function profileFor(role, classId) {
 
 function weaponKindsFor(role, classId) {
     return profileFor(role, classId).weaponKinds;
+}
+
+function interimWeaponKindsFor(role, classId) {
+    return profileFor(role, classId).interimWeaponKinds;
 }
 
 function preferredWeaponKindsFor(role, classId) {
@@ -238,6 +248,7 @@ module.exports = {
     armorStyleFor,
     allowsTwoHandedWeapon,
     baseClassId,
+    interimWeaponKindsFor,
     isCasterRole,
     preferredWeaponKindsFor,
     profileFor,

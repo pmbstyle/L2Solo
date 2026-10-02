@@ -226,8 +226,9 @@ function combatReadiness(state = {}) {
 function computeCombatReadiness(state = {}) {
     const role = roleFor(state);
     const equipped = equippedInventoryItems(state.inventory);
+    const interimKinds = BotEquipmentCompatibility.interimWeaponKindsFor(role, classIdFor(state));
     const weapon = equipped.find((item) => WEAPON_SLOTS.has(Number(item.etc?.slot || 0))
-        && suitable(item, state, role, item.etc?.rank));
+        && (suitable(item, state, role, item.etc?.rank) || interimKinds.includes(item.template?.kind)));
     const armor = equipped.filter((item) => ARMOR_SLOTS.has(Number(item.etc?.slot || 0))
         && suitable(item,state,role,item.etc?.rank));
     const weaponRank = rankIndex(weapon?.etc?.rank);
@@ -855,6 +856,15 @@ function staticNpcUpgradePlan(state = {}, options = {}) {
         if (current && rankIndex(current.etc?.rank) >= rankIndex(targetRank)
             && !(requiredDual && slot === 14)) continue;
         const candidate = npcCandidatesForSlot(state, slot, targetRank, options)[0];
+        if (!candidate && requiredDual && slot === 14) {
+            // NPCs sell no dual swords: the dual-sword bridge combines two
+            // blades. It is this class's kit weapon under the same rule.
+            const dual = dualSwordBridgePlan(state, options);
+            if (!dual) continue;
+            if (dualSwordFunded(dual, state)) return dual;
+            saving = saving || dual;
+            continue;
+        }
         if (!candidate) continue;
         const purchase = { ...candidate, slot };
         if (Number(candidate.offer.price) <= spendable) return planForCandidate(purchase);
@@ -936,10 +946,15 @@ function staticNpcKitAdequate(state = {}, options = {}) {
 // The weapon comes before armour here, and is chosen by the same rule as the
 // dual-sword bridge, so an unaffordable kit weapon cannot keep the bot unarmed.
 function npcWeaponBridgePlan(state = {}, options = {}) {
-    if (combatReadiness(state).hasWeapon) return null;
-    const optimizedInventory = equipInventoryUpgrades(state, state.inventory || {});
-    if (combatReadiness({ ...state, inventory: optimizedInventory }).hasWeapon) return null;
-    if (missingRequiredDualSword(state)) return dualSwordBridgePlan(state, options);
+    const armed = combatReadiness(state).hasWeapon
+        || combatReadiness({ ...state, inventory: equipInventoryUpgrades(state, state.inventory || {}) }).hasWeapon;
+    if (missingRequiredDualSword(state)) {
+        // An interim weapon leaves an unfunded dual sword in the kit order
+        // instead of a bridge that would hold back every other purchase.
+        const dual = dualSwordBridgePlan(state, options);
+        return dual && (!armed || dualSwordFunded(dual, state)) ? dual : null;
+    }
+    if (armed) return null;
     const slot = desiredNpcSlots(state).find((entry) => WEAPON_SLOTS.has(entry));
     if (!slot) return null;
     const role = roleFor(state);
@@ -954,6 +969,10 @@ function npcWeaponBridgePlan(state = {}, options = {}) {
     if (!choice) return null;
     return { ...marketPlan(state, choice.item, choice.offer, { targetSlot: slot, reason: 'npc_progression', reserve }),
         weaponBridge: true, partyNeedReason: 'weapon_bridge' };
+}
+
+function dualSwordFunded(plan, state) {
+    return plan.status === 'ready_to_craft' || Number(plan.market?.price) <= npcPurchaseBudget(state).spendable;
 }
 
 // Bridge choice over candidates sorted by cost: keep the bridge already
