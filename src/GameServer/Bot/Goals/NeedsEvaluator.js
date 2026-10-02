@@ -182,6 +182,7 @@ function evaluate(state = {}, options = {}) {
 
     // Loaded on use, like the AFK trade service below.
     const escrow = invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId);
+    let fundedPurchasePriority = null;
     const gear = equipmentNeed(state, escrow);
     if (gear) {
         const requiredAdena = PurchaseFunding.shortfall(state, gear.desiredItem.price, gear.reserve, escrow);
@@ -196,6 +197,11 @@ function evaluate(state = {}, options = {}) {
         // genuinely dead states still return from evaluate() above.
         const weaponBridgePriority = requiredAdena === 0
             && state.stats?.equipmentPlan?.weaponBridge ? 91 : null;
+        const gearPriority = weaponBridgePriority
+            || clanPurchasePriority
+            || npcPurchasePriority
+            || (wealthInvestment?.affordable ? 81 : requiredAdena > 0 ? 72 : 58);
+        if (requiredAdena === 0) fundedPurchasePriority = gearPriority;
         candidates.push({
             type: 'upgrade_gear',
             // An affordable static-shop upgrade must outrank inventory sales,
@@ -205,10 +211,7 @@ function evaluate(state = {}, options = {}) {
             // weapon/core-armour priorities while still beating a normal sale.
             // A funded clan assignment is stronger than a voluntary wealth
             // sale, but recovery and forced inventory cleanup still win.
-            priority: weaponBridgePriority
-                || clanPurchasePriority
-                || npcPurchasePriority
-                || (wealthInvestment?.affordable ? 81 : requiredAdena > 0 ? 72 : 58),
+            priority: gearPriority,
             target: {
                 equipmentSlot: gear.slotName,
                 requiredRank: gear.desiredRank,
@@ -358,7 +361,12 @@ function evaluate(state = {}, options = {}) {
             // adena. Recovery and death still win, but an equipped bot with
             // useful surplus should reach the market before another generic
             // earn-adena / upgrade-funding loop.
-            priority: 74 + Number(wealthSale?.priorityBonus || 0),
+            // A voluntary sale waits for a purchase the bot can already pay
+            // for (the upgrade rule above), also for a wealth persona: its
+            // wealth is gear value plus Adena (the author, 2026-10-02).
+            priority: fundedPurchasePriority
+                ? Math.min(74 + Number(wealthSale?.priorityBonus || 0), fundedPurchasePriority - 1)
+                : 74 + Number(wealthSale?.priorityBonus || 0),
             target: {
                 itemCount: sale.itemCount,
                 marketValue: sale.marketValue,
