@@ -2,6 +2,7 @@ const Crafting = require('./ClanCraftingPolicy');
 const CraftShops = invoke('GameServer/Bot/Economy/CraftShopService');
 const Database = invoke('Database');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const ComponentProgress = invoke('GameServer/Bot/AI/EquipmentAcquisitionProgress');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
@@ -404,7 +405,7 @@ function goalPurchaseFailed(code, result = {}) {
 // its free money; a purchase that fails returns the clan's part. Only a free cold
 // member the main thread owns (not in a party, hunting or resting); others wait
 // for the next review.
-async function buyGoalItem(memberId, plan, clan) {
+async function buyGoalCopy(memberId, plan, clan) {
     let state = await LifeState.findByCharacterId(memberId);
     if (!state || state.phase !== 'cold' || state.partyId || state.party?.partyId
         || String(state.simulation?.ownerId || 'legacy_main') !== 'legacy_main'
@@ -433,6 +434,19 @@ async function buyGoalItem(memberId, plan, clan) {
         else recordReason(`clan_goal_refund_${back.code}`);
     }
     return { ok: false, code: bought.reason || 'clan_goal_purchase_failed' };
+}
+
+// A goal combined from several copies of one item (the blades of a dual sword)
+// is bought whole in one review: the clan funded the whole combination, and a
+// first blade worn in the weapon slot already reads as a fulfilled goal.
+async function buyGoalItem(memberId, plan, clan) {
+    const copies = ComponentProgress.componentRequirement(plan)?.amount || 1;
+    let result = await buyGoalCopy(memberId, plan, clan);
+    for (let bought = 1; result.ok && bought < copies; bought++) {
+        if (ComponentProgress.componentAcquired(await LifeState.findByCharacterId(memberId), plan)) break;
+        result = await buyGoalCopy(memberId, plan, clan);
+    }
+    return result;
 }
 
 async function assignPartyObjective(member, clan, goal, plan, priority = 'preferred') {

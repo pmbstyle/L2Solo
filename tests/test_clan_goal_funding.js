@@ -71,13 +71,15 @@ async function main() {
             if (id === leaderId) seed.prepare(`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES (?, 'Weapon', 1, 0, 1, 7, ?)`).run(helped.target.selfId, id);
         }
     }
-    // Clan 93: its only free member is the Gladiator holding one sword.
+    // Clan 93: a Gladiator holding one sword, and another member in gear debt
+    // the goal would rotate to after one blade.
     seed.prepare("INSERT INTO clans(id, name, level, leaderId) VALUES (93, 'Funding93', 2, ?)").run(LEADER + 20);
     seed.prepare(`INSERT INTO clan_simulation_clans(clanId, mode, stateJson, createdAt, updatedAt)
         VALUES (93, 'autonomous', '{"mode":"autonomous","warehouseRevision":0,"updatedAt":1}', 0, 0)`).run();
     seed.prepare(`INSERT INTO clan_warehouse_items(clanId, selfId, name, kind, amount, enchant, reservedAmount)
         VALUES (93, 57, 'Adena', 'Other.Currency', 3000000, 0, 0)`).run();
-    for (const [id, classId, level, partyId, weapon] of [[LEADER + 20, 1, 40, 'party-busy', helped.target.selfId], [GLADIATOR, 2, 42, null, held.selfId]]) {
+    for (const [id, classId, level, partyId, weapon] of [[LEADER + 20, 1, 40, 'party-busy', helped.target.selfId], [GLADIATOR, 2, 42, null, held.selfId],
+        [GLADIATOR + 1, 1, 40, null, helped.target.selfId]]) {
         seed.prepare(`INSERT INTO characters(id, username, name, classId, race, level, maxHp, maxMp, sex, face, hair, hairColor,
             locX, locY, locZ, clanId) VALUES (?, 'bot_pop_funding', ?, ?, 0, ?, 500, 250, 0, 0, 0, 0, 82000, 148000, -3400, 93)`).run(id, `Fund${id}`, classId, level);
         seed.prepare(`INSERT INTO bot_life_state(characterId, accountName, characterName, level, adena, activity, phase,
@@ -164,15 +166,13 @@ async function main() {
         const [untouched] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM clan_warehouse_items WHERE clanId = 92 AND selfId = 57']);
         assert.strictEqual(Number(untouched.n), 3000000, 'no money moves for a worker-owned member');
 
-        // The clan buys both blades of a dual sword, one per review.
+        // The clan buys both blades of a dual sword in one review.
         const bladeId = Number(dual.target.selfId);
         const blades = async () => Number((await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM items WHERE characterId = ? AND selfId = ?',
             [GLADIATOR, bladeId]]))[0].n);
-        const first = await Equipment.resolveClan(await Goals.clanProjectionById(93), null);
+        const first = await Equipment.resolveClan(await Goals.clanProjectionById(93), null, { selectedCandidate: { memberId: GLADIATOR } });
         assert.strictEqual(first.goal?.target?.memberId, GLADIATOR, JSON.stringify(first.reason || first.code));
-        assert.strictEqual(await blades(), 1, 'the clan bought the first blade');
-        await Equipment.resolveClan(await Goals.clanProjectionById(93), first.goal);
-        assert.strictEqual(await blades(), 2, 'and the second blade at the next review');
+        assert.strictEqual(await blades(), 2, 'the clan bought both blades at once');
 
         // The goal is done: the completion event picks the next goal at once.
         await Database.execute([`UPDATE clan_simulation_clans SET stateJson = json_set(stateJson, '$.productionGoal', json(?)) WHERE clanId = 91`,
