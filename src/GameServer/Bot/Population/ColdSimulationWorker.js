@@ -150,13 +150,8 @@ function startKernel(config = {}) {
             partyMinSize: Config.partyMinSize
         },
         partyMinSize: Config.partyMinSize,
-        equipmentBridgeReason: (state) => {
-            const plan = GearAcquisitionPlanner.npcEquipmentBridgePlan(state, planningNpcCatalog.plannerOptions);
-            if (plan?.weaponBridge) return 'weapon_bridge';
-            return plan?.equipmentBridge && Number(state.adena || 0)
-                >= Number(plan.market?.price || 0) + Number(plan.market?.reserve || 0)
-                ? 'class_armor_bridge' : null;
-        },
+        equipmentBridgeReason: (state) => GearAcquisitionPlanner.equipmentBridgeReason(state,
+            planningNpcCatalog.plannerOptions),
         projectResolve: async (state, result, timestamp) => {
             const projected = await LifeStateProjector.prepareResolve(state, result, {
                 persist: false,

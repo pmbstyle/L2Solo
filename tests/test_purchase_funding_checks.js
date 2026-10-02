@@ -63,6 +63,28 @@ for (const adena of [price, Math.floor(fair) + reserve - 5000]) {
     assert.strictEqual(bid?.price, Math.floor(Math.min(fair, price, spendable)), `bid at ${adena}`);
 }
 
+// 6. Party review: a member in the wrong armour class leaves to buy its NPC
+// replacement only when it can pay for it (was a closure in the cold worker).
+const BotGear = invoke('GameServer/Bot/AI/BotGear');
+const weapon = BotGear.planFor({ classId: 1, level: 30 }).items.find((item) => Number(item.slot) === 7);
+const ROBE = 391; // Puma Skin Shirt: D-grade light armour, wrong for this build
+const wrongArmour = (adena) => ({ ...base, adena, inventory: {
+    [weapon.selfId]: { selfId: Number(weapon.selfId), amount: 1, equippedCount: 1, equipped: 1 },
+    [ROBE]: { selfId: ROBE, amount: 1, equippedCount: 1, equipped: 1 } } });
+const bridge = GearAcquisitionPlanner.npcEquipmentBridgePlan(wrongArmour(150000));
+assert(bridge?.equipmentBridge, 'the fixture must need a class armour bridge');
+// The plan picks the first slot it can afford, so check the rule at several
+// wallets: the reason holds exactly when the wallet covers price + reserve.
+const seen = new Set();
+for (let adena = 20000; adena <= 200000; adena += 1000) {
+    const plan = GearAcquisitionPlanner.npcEquipmentBridgePlan(wrongArmour(adena));
+    const funded = !!plan?.equipmentBridge && adena >= Number(plan.market.price) + Number(plan.market.reserve);
+    const reason = GearAcquisitionPlanner.equipmentBridgeReason(wrongArmour(adena));
+    assert.strictEqual(reason, funded ? 'class_armor_bridge' : null, `bridge at ${adena}`);
+    seen.add(reason);
+}
+assert(seen.has('class_armor_bridge') && seen.has(null), 'the wallets cover both outcomes');
+
 // Decided differences (user, 2026-10-02), pinned here as they are today:
 // a plan to buy from another bot stores reserve 0, and so does a goal with no plan.
 const botOffer = { selfId: plan.target.selfId, price, town: 'Giran', sourceType: 'afk_bot_store' };

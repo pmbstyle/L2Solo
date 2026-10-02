@@ -13,6 +13,7 @@ const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementM
 const MAX_RESOLVED_SOURCE_CACHE = 512;
 let sourceIndexCache = { spots: null, rewards: null, byItemId: new Map(), resolved: new Map() };
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
@@ -329,9 +330,8 @@ function candidateEffort(candidate, state, options = {}) {
     if (!item) return Infinity;
     const spots = options.spots || [];
     const offer = marketOfferForTarget(item, state, options);
-    const availableAdena = Number(state.adena || state.inventory?.[57]?.amount || 0);
     const marketEffortValue = offer
-        ? (availableAdena >= Number(offer.price || 0)
+        ? (PurchaseFunding.budget(state) >= Number(offer.price || 0)
             ? 4
             : marketEffort(offer, state))
         : Infinity;
@@ -347,7 +347,7 @@ function candidateEffort(candidate, state, options = {}) {
     // drop sources have become too low-level for the buyer.
     const blades = combinationPurchase(candidate.recipe, state, options);
     const bladeEffort = blades
-        ? 8 + (blades.cost <= availableAdena - operationalAdenaReserve(state)
+        ? 8 + (blades.cost <= PurchaseFunding.spendable(state)
             ? 4 : blades.cost / expectedAdenaPerKill(state))
         : Infinity;
 
@@ -706,10 +706,7 @@ function marketEffort(offer, state) {
     return offer ? Number(offer.price || Infinity) / expectedAdenaPerKill(state) : Infinity;
 }
 
-function operationalAdenaReserve(state = {}) {
-    const adena = Math.max(0, Number(state.adena || state.inventory?.[57]?.amount || 0));
-    return Math.max(500, Number(state.level || 1) * 250, Math.ceil(adena * 0.10));
-}
+const operationalAdenaReserve = PurchaseFunding.operatingReserve;
 
 function marketPlan(state = {}, target, offer, options = {}) {
     const role = roleFor(state);
@@ -834,7 +831,7 @@ function staticNpcUpgradePlan(state = {}, options = {}) {
     if (!GearLifecycle.isGearFocusActive(state)) return null;
     const targetRank = npcTargetRank(state);
     const reserve = operationalAdenaReserve(state);
-    const spendable = Math.max(0, Number(state.adena || state.inventory?.[57]?.amount || 0) - reserve);
+    const spendable = PurchaseFunding.spendable(state);
     const excludedSlots = new Set((options.excludedSlots || []).map(Number));
     const classId = classIdFor(state);
     const baseline = BotGear.planFor({ classId, level: npcAdequacyLevel(state) });
@@ -961,6 +958,16 @@ function npcEquipmentBridgePlan(state = {}, options = {}) {
         ? { ...plan, equipmentBridge: true, partyNeedReason: 'class_armor_bridge' } : null;
 }
 
+// Why a party member leaves its party to fix its kit: it has no usable
+// weapon, or it wears body armour of the wrong class and can pay for the
+// NPC replacement now.
+function equipmentBridgeReason(state = {}, options = {}) {
+    const plan = npcEquipmentBridgePlan(state, options);
+    if (plan?.weaponBridge) return 'weapon_bridge';
+    return plan?.equipmentBridge && PurchaseFunding.shortfall(state, plan.market?.price, plan.market?.reserve) === 0
+        ? 'class_armor_bridge' : null;
+}
+
 function marketPlanForTarget(state = {}, targetId, options = {}) {
     const target = ItemTemplateIndex.find(DataCache.items, targetId);
     const role = roleFor(state);
@@ -973,8 +980,8 @@ function marketPlanForTarget(state = {}, targetId, options = {}) {
 
 function fundedMarketPlanForTarget(state = {}, targetId, options = {}) {
     const market = marketPlanForTarget(state, targetId, options);
-    return market && Number(state.adena || state.inventory?.[57]?.amount || 0)
-        >= Number(market.market.price || Infinity) + operationalAdenaReserve(state)
+    return market && Number(market.market.price) > 0
+        && PurchaseFunding.shortfall(state, market.market.price, operationalAdenaReserve(state)) === 0
         ? market : null;
 }
 
@@ -1904,7 +1911,7 @@ function dualSwordBridgePlan(state, options = {}) {
         || itemScore(right.item, role, classIdFor(state)) - itemScore(left.item, role, classIdFor(state))
         || Number(left.item.selfId) - Number(right.item.selfId));
     const previousId = Number(state.stats?.equipmentPlan?.weaponBridge && state.stats.equipmentPlan.combine?.resultId);
-    const spendable = Math.max(0, Number(state.adena || state.inventory?.[57]?.amount || 0) - operationalAdenaReserve(state));
+    const spendable = PurchaseFunding.spendable(state);
     const bridgeRank = Math.min(maxRank, rankIndex('c'));
     const target = candidates.find(entry => Number(entry.item.selfId) === previousId)
         || candidates.find(entry => rankIndex(entry.item.etc.rank) >= bridgeRank && entry.cost <= spendable)
@@ -2170,7 +2177,7 @@ function readinessScoped(fn) {
     };
 }
 
-module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, fundedMarketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, npcWeaponBridgePlan, npcEquipmentBridgePlan, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, sourceEffort, sourceWithinVoluntaryHuntBand, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, withMaterialFarmEffort, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isPlanSourceEligible, isPlanSourceViableForState, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
+module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, fundedMarketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, npcWeaponBridgePlan, npcEquipmentBridgePlan, equipmentBridgeReason, itemDropChance, itemDropYield, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, sourceEffort, sourceWithinVoluntaryHuntBand, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, withMaterialFarmEffort, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isPlanSourceEligible, isPlanSourceViableForState, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
 
 for (const [name, value] of Object.entries(module.exports)) {
     if (typeof value === 'function') module.exports[name] = readinessScoped(value);

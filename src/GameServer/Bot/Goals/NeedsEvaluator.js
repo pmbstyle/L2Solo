@@ -7,6 +7,7 @@ const PersonaEconomicPolicy = invoke('GameServer/Bot/Economy/PersonaEconomicPoli
 const WealthInvestmentPolicy = invoke('GameServer/Bot/Economy/WealthInvestmentPolicy');
 const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 
 const RANK_ORDER = ['none', 'd', 'c', 'b', 'a', 's'];
 const NPC_GEAR_PRIORITY = {
@@ -179,7 +180,7 @@ function evaluate(state = {}, options = {}) {
 
     const gear = equipmentNeed(state);
     if (gear) {
-        const requiredAdena = Math.max(0, gear.desiredItem.price + gear.reserve - Number(state.adena || 0));
+        const requiredAdena = PurchaseFunding.shortfall(state, gear.desiredItem.price, gear.reserve);
         const fundedMarketOffer = requiredAdena === 0 && gear.priceSource === 'offer' && gear.marketTown;
         const weaponUpgrade = [7, 14].includes(gear.slot);
         const wealthInvestment = WealthInvestmentPolicy.investmentOpportunity(state, gear.desiredItem.price);
@@ -270,9 +271,7 @@ function evaluate(state = {}, options = {}) {
         ? (() => {
             const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
             const reserved = Number(AfkTrade.findOwnerProjection(state.characterId)?.shop?.escrowAdena || 0);
-            const adena = Number(state.adena || 0) + reserved;
-            const spendable = Math.max(0, adena
-                - Math.max(500, Number(state.level || 1) * 250, Math.ceil(adena * 0.1)));
+            const spendable = PurchaseFunding.spendable(state, reserved);
             const adenaPerKill = Math.max(20, Number(state.level || 1) * 25)
                 * ProgressionRates.profile().adena;
             // Clan beneficiaries can spend a modest premium to finish a shared
