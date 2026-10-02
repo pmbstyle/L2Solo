@@ -205,6 +205,7 @@ const tests = [
     'tests/test_afk_trade_bot_matching.js',
     'tests/test_bot_afk_market_state.js',
     'tests/test_trade_store_atomicity.js',
+    'tests/test_trade_store_sale_copy.js',
     'tests/test_supply_trade_lifecycle.js',
     'tests/test_llm_skill_priority_tools.js',
     'tests/test_llm_equipment_tools.js',

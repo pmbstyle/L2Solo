@@ -179,9 +179,18 @@ function giveItem(actor, selfId, amount) {
     });
 }
 
-function takeItem(actor, selfId, amount) {
+// The copy a buy store takes: the offered one (objectId), else the first
+// sellable copy. Never a worn or pet-locked one.
+function sellableCopy(actor, selfId, objectId = null) {
+    return actor.backpack.fetchItems().find((item) => (
+        Number(item.fetchSelfId()) === Number(selfId)
+        && (!objectId || Number(item.fetchId()) === Number(objectId))
+        && isSellableInventoryItem(item)
+    )) || null;
+}
+
+function takeItem(actor, selfId, amount, item = actor.backpack.fetchItemFromSelfId(selfId)) {
     return new Promise((resolve, reject) => {
-        const item = actor.backpack.fetchItemFromSelfId(selfId);
         if (!item || item.fetchAmount() < amount) {
             return reject("Not enough items.");
         }
@@ -222,6 +231,7 @@ function previewSaleToStore(actor, store, options = {}) {
             totalAdena += payout;
             itemCount += qty;
             lines.push({
+                objectId: inventoryItem.fetchId(),
                 selfId: inventoryItem.fetchSelfId(),
                 name: inventoryItem.fetchName(),
                 qty,
@@ -329,7 +339,7 @@ async function sellToStore(actor, store, selfId, qty, options = {}) {
             if (!Number.isSafeInteger(requestedQty) || requestedQty <= 0) {
                 throw new Error("Invalid quantity.");
             }
-            const actorItem = actor.backpack.fetchItemFromSelfId(selfId);
+            const actorItem = sellableCopy(actor, selfId, options.objectId);
             const actorCount = actorItem ? actorItem.fetchAmount() : 0;
             const sellQty = Math.min(requestedQty, Number(actorCount), Number(storeItem.count));
             if (!Number.isSafeInteger(sellQty) || sellQty <= 0) {
@@ -351,7 +361,7 @@ async function sellToStore(actor, store, selfId, qty, options = {}) {
             let buyerAdenaDeducted = false;
             let buyerItemGiven = false;
             try {
-                await takeItem(actor, selfId, sellQty);
+                await takeItem(actor, selfId, sellQty, actorItem);
                 sellerItemTaken = true;
                 if (budgetBacked) {
                     await deductAdena(buyerActor, totalEarn);
@@ -389,7 +399,7 @@ async function sellInventoryToStore(actor, store, options = {}) {
     const sold = [];
 
     for (const line of preview.lines) {
-        const result = await sellToStore(actor, store, line.selfId, line.qty, options);
+        const result = await sellToStore(actor, store, line.selfId, line.qty, { ...options, objectId: line.objectId });
         sold.push(result);
     }
 
@@ -437,10 +447,12 @@ module.exports = {
     describeStoreItems,
     findBestBuyerForActor,
     itemBasePrice,
+    isSellableInventoryItem,
     itemName,
     normalizeStoreItems,
     previewSaleToStore,
     ratedPrice,
     sellInventoryToStore,
-    sellToStore
+    sellToStore,
+    sellableCopy
 };
