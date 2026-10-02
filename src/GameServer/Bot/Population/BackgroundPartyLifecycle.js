@@ -112,6 +112,7 @@ function review(party, members, timestamp, options = {}) {
         memberIds: retained.map(s => s.characterId), leaderId, nextResolveAt: dissolved ? null : nextResolveAt,
         roleCoverage: options.roleCoverage?.(retained) || party.roleCoverage,
         stats: { ...party.stats, ...(result.assemblyRecovered ? { assemblyWait: null } : {}),
+            ...(result.objectiveDone ? { objective: null } : {}),
             sessionReview: result.review, memberNames: retained.map(s => s.name),
             ...(dissolved ? { dissolvedAt: timestamp, partyBreakReason: 'party_review_min_size' } : {}) } };
     return { party: nextParty, states, leaving, decisions: result.decisions };

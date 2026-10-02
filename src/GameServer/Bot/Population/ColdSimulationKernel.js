@@ -960,7 +960,8 @@ class ColdSimulationKernel {
                     roleCoverage: states => typeof invoke === 'function' ? invoke('GameServer/Bot/Population/BackgroundPartyComposition').roleCoverage(states) : run.party.roleCoverage,
                     personaFor: state => typeof invoke === 'function' ? invoke('GameServer/Bot/AI/BotPersona').generate(state) : state.persona,
                     requiresWeaponBridge: this.requiresWeaponBridge,
-                    equipmentBridgeReason: this.equipmentBridgeReason
+                    equipmentBridgeReason: this.equipmentBridgeReason,
+                    spot: run.spot
                 });
                 const proposals = partyTransitionProposals(run, review.states, review.party, startedAt, {
                     type: 'party_session_review', summary: `Party ${run.party.partyId} reviewed its shared hunt`, weight: 1,
