@@ -223,6 +223,7 @@ const tests = [
     'tests/test_bot_trade_database.js',
     'tests/test_bot_availability.js',
     'tests/test_clan_invite_priority.js',
+    'tests/test_clan_recruitment_relations.js',
     'tests/test_bot_party_menu.js',
     'tests/test_bot_command_aliases.js',
     'tests/test_bot_chat_commands.js',

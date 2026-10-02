@@ -52,6 +52,14 @@ function recordReasons(codes = []) {
     codes.forEach(recordReason);
 }
 
+// The bot's remembered relations to other characters (Social/InteractionMemory,
+// decayed to now), as Policy.socialAffinity reads them; empty while not loaded.
+function socialRelations(characterId, now = Date.now()) {
+    const view = invoke('GameServer/Social/InteractionMemoryRuntime').views.get(characterId);
+    if (!view?.ready) return {};
+    return Object.fromEntries(view.characterIds.map((id) => [id, view.relation('character', id, now)]));
+}
+
 function normalizeCandidate(row = {}) {
     const stats = parseJson(row.statsJson, {});
     const generatedPersona = BotPersona.generate({
@@ -78,7 +86,7 @@ function normalizeCandidate(row = {}) {
         stats,
         partyHistory: stats.partyHistory || {},
         persona: storedPersona,
-        socialRelations: parseJson(row.socialRelations, {})
+        socialRelations: socialRelations(number(row.characterId))
     };
 }
 
@@ -153,7 +161,8 @@ async function autonomousClanProjection() {
                     name: String(row.memberName || ''),
                     classId: number(row.classId, -1),
                     level: number(row.memberLevel),
-                    clanId: number(row.memberClanId)
+                    clanId: number(row.memberClanId),
+                    persona: BotPersona.snapshot(row.characterId)
                 });
             }
         });
