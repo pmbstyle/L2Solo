@@ -198,7 +198,6 @@ module.exports = function ({
             Number(w.life.simulationRevision || 0)
         );
         if (!updated.ok) throw Error('Clan dues snapshot changed');
-        write('UPDATE bot_life_state SET adena=? WHERE characterId=?', [next, w.id]);
     }
     // What a one-off investment is for: the next level's fund below level 2, then
     // the clan hall the clan is saving for.

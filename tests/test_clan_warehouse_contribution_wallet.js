@@ -48,6 +48,7 @@ async function main() {
     seedDatabase();
     options.default.Database.path = path.relative(rootDir, databasePath);
     Database.init();
+    await Database.initClanHalls(); // creates the dues cursor table, as the server start does
     try {
         const created = await Database.createAutonomousClan({
             name: 'WalletClan', leaderId: ids[0], memberIds: ids, founderQuorum: 5,
@@ -55,24 +56,15 @@ async function main() {
         });
         assert.strictEqual(created.ok, true);
         await Database.execute(['UPDATE clans SET level = 1 WHERE id = ?', [created.clanId]]);
-        const [simulation] = await Database.execute(['SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?', [created.clanId]]);
-        const [life] = await Database.execute(['SELECT simulationRevision FROM bot_life_state WHERE characterId = ?', [ids[1]]]);
-
-        const result = await Database.transferClanAdenaToWarehouse({
-            clanId: created.clanId,
-            characterId: ids[1],
-            targetLevel: 1,
-            amount: 100000,
-            reserve: 100000,
-            maxContributionFraction: 0.35,
-            resolveKey: 'wallet-level-one',
-            expectedWarehouseRevision: Number(JSON.parse(simulation.stateJson).warehouseRevision || 0),
-            expectedSimulationRevision: Number(life.simulationRevision || 0)
-        });
+        // The hourly dues of a level-one clan: a one-off investment from the
+        // member's savings into the clan warehouse.
+        const result = await Database.settleClanDues({ clanId: created.clanId, characterId: ids[1], rate: 0.2, investFraction: 0.5 });
         assert.strictEqual(result.ok, true, result.code);
+        assert(result.amount > 0, 'the member pays into the level fund');
         const [warehouse] = await Database.execute(['SELECT amount FROM clan_warehouse_items WHERE clanId = ? AND selfId = 57', [created.clanId]]);
-        assert.strictEqual(Number(warehouse.amount), 100000);
-        assert.deepStrictEqual(await wallet(ids[1]), { column: 900000, summary: 900000, items: 900000 },
+        assert.strictEqual(Number(warehouse.amount), result.amount);
+        const left = 1000000 - result.amount;
+        assert.deepStrictEqual(await wallet(ids[1]), { column: left, summary: left, items: left },
             'a level-one contribution must leave the payer\'s wallet column, summary and items equal');
         assert.deepStrictEqual(await wallet(ids[2]), { column: 1000000, summary: 1000000, items: 1000000 },
             'other members are untouched');
