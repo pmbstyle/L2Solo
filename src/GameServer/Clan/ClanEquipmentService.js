@@ -387,25 +387,39 @@ async function handoffWarehouseMaterials(current, plan, clan, goal) {
     return { state, results };
 }
 
-// The clan's share of a market goal: what the member lacks for the price above
-// its own funds, handed over from the clan warehouse at assignment like the
-// craft materials (once per goal: the withdrawal is keyed by the goal).
-async function handoffMissingAdena(current, plan, clan, goal) {
-    const missing = plan?.strategy === 'market' ? Math.ceil(number(plan.market?.price) - memberFunds(current)) : 0;
-    if (missing <= 0) return { ok: true, state: current };
-    const result = await LifeState.applyClanMaterialTransfer({
-        clanId: clan.id,
-        characterId: current.characterId,
-        selfId: 57,
-        amount: missing,
-        goalKey: `${goal.goalKey}:funding`,
-        expectedSimulationRevision: number(current.simulation?.revision ?? current.simulationRevision)
-    }, true);
-    if (!result.ok && result.code !== 'warehouse_withdraw_already_applied') {
-        recordReason(result.code || 'clan_funding_failed');
-        return { ok: false, code: result.code };
+// The clan buys a market goal item for its beneficiary at once, the way
+// ClanMarketService buys for the clan (ColdMarketService.tryPurchase in the
+// offer's town): the member pays its funds above its reserve, the clan the rest
+// from its free money; a purchase that fails returns the clan's part.
+async function buyGoalItem(memberId, plan, clan) {
+    let state = await LifeState.findByCharacterId(memberId);
+    const itemId = number(plan?.target?.selfId);
+    if (!state || state.phase !== 'cold' || state.partyId || state.party?.partyId || number(state.inventory?.[itemId]?.amount) > 0) return { ok: false, code: 'member_busy' };
+    const offer = invoke('GameServer/Bot/Economy/MarketOpportunity').bestOffer(itemId, {
+        town: state.currentRegion || 'Giran',
+        budget: Infinity,
+        buyerCharacterId: memberId
+    });
+    if (!offer) return { ok: false, code: 'market_no_offer' };
+    const clanPart = Math.max(0, Math.ceil(number(offer.price)) - memberFunds(state));
+    if (clanPart > 0) {
+        const paid = await Database.payClanMember({ clanId: clan.id, characterId: memberId, amount: clanPart, kind: 'clan_goal_purchase' });
+        if (!paid.ok) return paid;
+        state = LifeState.acceptNewerLifecycleRow(paid.row) || await LifeState.findByCharacterId(memberId);
     }
-    return { ok: true, state: result.state || await LifeState.findByCharacterId(current.characterId) };
+    const purchase = await invoke('GameServer/Bot/Economy/ColdMarketService').tryPurchase(
+        { ...state, activity: 'shopping', currentRegion: offer.town || state.currentRegion || 'Giran' },
+        {
+            type: 'upgrade_gear',
+            status: 'active',
+            target: { itemId, itemName: plan.target?.name, itemSlot: number(plan.target?.slot) },
+            plan: { expectedBenefit: 'market_search_for_gear', marketTown: offer.town || state.currentRegion || 'Giran' }
+        }
+    );
+    if (purchase?.purchased) return { ok: true, purchase };
+    if (clanPart > 0) await Database.payClanMember({ clanId: clan.id, characterId: memberId, amount: -clanPart, kind: 'clan_goal_purchase_refund' });
+    recordReason(purchase?.reason || 'clan_goal_purchase_failed');
+    return { ok: false, code: purchase?.reason || 'clan_goal_purchase_failed' };
 }
 
 async function assignPartyObjective(member, clan, goal, plan, priority = 'preferred') {
@@ -456,11 +470,8 @@ async function assignPlan(member, plan, clan, goal) {
     if (!current) return { ok: false, code: 'member_state_missing', memberId: id };
 
     const handoff = await handoffWarehouseMaterials(current, plan, clan, goal);
-    let currentState = handoff.state || current;
+    const currentState = handoff.state || current;
     if (handoff.results.some(result => !result.ok)) return { ok: false, code: 'warehouse_handoff_deferred', handoff };
-    const funding = await handoffMissingAdena(currentState, plan, clan, goal);
-    if (!funding.ok) return { ok: false, code: 'clan_funding_deferred', handoff, funding };
-    currentState = funding.state || currentState;
     plan = { ...plan, clanMaterialDemand: Object.fromEntries(Crafting.requirements(Crafting.resolveRecipe(plan.recipeId), {}, null, 1, plan.craftProviders, plan.componentRecipes)) };
 
     const currentPlan = currentState.stats?.equipmentPlan;
@@ -476,7 +487,8 @@ async function assignPlan(member, plan, clan, goal) {
         && ['status', 'strategy', 'recipeId', 'materials', 'craftProviders', 'componentRecipes', 'next', 'market'].every(key => (
             JSON.stringify(currentPlan[key]) === JSON.stringify(plan[key])
         ))) {
-        return { ok: true, changed: false, memberId: id, handoff };
+        const purchase = plan.strategy === 'market' ? await buyGoalItem(id, plan, clan) : null;
+        return { ok: true, changed: false, memberId: id, handoff, purchase };
     }
 
     const nextState = {
@@ -494,7 +506,8 @@ async function assignPlan(member, plan, clan, goal) {
     const saved = await LifeState.upsertState(nextState, 'clan_equipment_goal');
     if (!saved) return { ok: false, code: 'member_state_write_failed', memberId: id, handoff };
     metrics.assignments += 1;
-    return { ok: true, changed: true, memberId: id, handoff };
+    const purchase = plan.strategy === 'market' ? await buyGoalItem(id, plan, clan) : null;
+    return { ok: true, changed: true, memberId: id, handoff, purchase };
 }
 
 async function craftingOptions(clan) {
@@ -591,11 +604,9 @@ async function planningForClan(clan, previousGoal = null, options = {}) {
     const craftOptions = await craftingOptions(clan);
     const previousMemberId = number(previousGoal?.target?.memberId);
     const reservationOptions = reservationOptionsForClan(clan);
-    // The clan pays what a member lacks for its goal, at most this share of the
-    // clan's free money (above the clan hall's protected reserve).
-    const clanShare = Math.floor(invoke('GameServer/ClanHall/Policy')
-        .freeAdena(warehouseRows, clan, clan.state?.mode, clan.state?.goal)
-        * Math.max(0, Math.min(1, number(Config.contributionMaxFraction))));
+    // The clan pays what a member lacks for its goal from its free money (above
+    // the clan hall's protected reserve).
+    const clanShare = invoke('GameServer/ClanHall/Policy').freeAdena(warehouseRows, clan, clan.state?.mode, clan.state?.goal);
     const previousAssigned = new Set((previousGoal?.assignedMemberIds || []).map(number).filter(Boolean));
     const spoilCapable = (clan.members || []).some((member) => (
         member?.phase === 'cold'

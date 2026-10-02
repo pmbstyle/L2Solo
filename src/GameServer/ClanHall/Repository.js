@@ -506,22 +506,24 @@ module.exports = function ({
                 return { ok: true, goal };
             }, 'plan');
         },
-        // The clan pays a member from its free money (a clan purchase share, a
-        // compensation for gear given to the clan). The payment is the clan's money,
-        // not earnings: the member's dues mark rises with it.
+        // Clan money to a member (amount > 0: a share of a clan purchase, a gear
+        // compensation, from the clan's free money) or back to the clan (amount < 0:
+        // a purchase that failed). Clan money is not earnings: the member's dues mark
+        // moves with it.
         payClanMember({ clanId, characterId, amount, kind, timestamp = Date.now() }) {
-            const pay = Math.floor(Number(amount) || 0);
+            const pay = Math.trunc(Number(amount) || 0);
             return withCharacterFlush(Number(characterId), () =>
                 tx(() => {
                     const c = clan(Number(clanId)),
                         id = Number(characterId);
-                    if (!c || c.mode !== 'autonomous' || pay <= 0) return { ok: false, code: 'clan_payment_invalid' };
-                    if (spendable(c) < pay) return { ok: false, code: 'clan_funds_short' };
+                    if (!c || c.mode !== 'autonomous' || !pay) return { ok: false, code: 'clan_payment_invalid' };
+                    if (pay > 0 && spendable(c) < pay) return { ok: false, code: 'clan_funds_short' };
                     const member = memberWallet(id, timestamp);
                     if (!member) return { ok: false, code: 'member_busy' };
+                    if (pay < 0 && member.amount < -pay) return { ok: false, code: 'member_funds_short' };
                     money(c.id, -pay, 0, kind, timestamp, id);
                     changeWallet(member, pay, c.id, timestamp);
-                    write('UPDATE clan_hall_earnings SET highWater=highWater+? WHERE clanId=? AND characterId=?', [pay, c.id, id]);
+                    write('UPDATE clan_hall_earnings SET highWater=MAX(0, highWater+?) WHERE clanId=? AND characterId=?', [pay, c.id, id]);
                     return { ok: true, amount: pay, row: one('SELECT * FROM bot_life_state WHERE characterId=?', [id]) };
                 }, 'clan-payment')
             );

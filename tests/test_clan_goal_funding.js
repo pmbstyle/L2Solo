@@ -6,10 +6,10 @@ const { DatabaseSync } = require('node:sqlite');
 require('../src/Global');
 
 // A clan production goal is a purchase the member and the clan can pay now:
-// the member's funds above its reserve plus the clan's share (at most 35% of
-// its free money). The clan hands the missing Adena over at assignment. An
-// unaffordable NPC weapon (the planner's saving target) is no clan route, so the
-// goal does not lock on it. A finished goal picks the next one at once.
+// the member's funds above its reserve plus the clan's free money. The clan buys
+// the item for the member at once; the member pays what it can, the clan the
+// rest. An unaffordable NPC weapon (the planner's saving target) is no clan
+// route, so the goal does not lock on it. A finished goal picks the next one at once.
 const rootDir = path.resolve(__dirname, '..');
 const databasePath = path.join(rootDir, 'tmp', 'test-clan-goal-funding.sqlite');
 const Database = invoke('Database');
@@ -42,20 +42,23 @@ async function main() {
     const seed = new DatabaseSync(databasePath);
     seed.exec(fs.readFileSync(path.join(rootDir, 'database', 'sql', 'sqlite.sql'), 'utf8'));
     seed.prepare('INSERT INTO accounts(username, password) VALUES (?, ?)').run('bot_pop_funding', 'test-only');
-    seed.prepare("INSERT INTO clans(id, name, level, leaderId) VALUES (91, 'Funding', 2, ?)").run(LEADER);
-    seed.prepare(`INSERT INTO clan_simulation_clans(clanId, mode, stateJson, createdAt, updatedAt)
-        VALUES (91, 'autonomous', '{"mode":"autonomous","warehouseRevision":0,"updatedAt":1}', 0, 0)`).run();
-    seed.prepare(`INSERT INTO clan_warehouse_items(clanId, selfId, name, kind, amount, enchant, reservedAmount)
-        VALUES (91, 57, 'Adena', 'Other.Currency', 3000000, 0, 0)`).run();
-    for (const [id, adena] of [[LEADER, 5000000], [POOR, 10000]]) {
-        seed.prepare(`INSERT INTO characters(id, username, name, classId, race, level, maxHp, maxMp, sex, face, hair, hairColor,
-            locX, locY, locZ, clanId) VALUES (?, 'bot_pop_funding', ?, 1, 0, 40, 500, 250, 0, 0, 0, 0, 82000, 148000, -3400, 91)`).run(id, `Fund${id}`);
-        seed.prepare(`INSERT INTO bot_life_state(characterId, accountName, characterName, level, adena, activity, phase,
-            currentRegion, partyId, inventorySummary, statsJson, updatedAt) VALUES (?, 'bot_pop_funding', ?, 40, ?, 'hunting', 'cold', 'Giran', ?, ?, ?, 1)`)
-            .run(id, `Fund${id}`, adena, id === LEADER ? 'party-busy' : null, JSON.stringify({ 57: { selfId: 57, name: 'Adena', amount: adena } }), JSON.stringify({ classId: 1 }));
-        seed.prepare(`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES (57, 'Adena', ?, 0, 0, 0, ?)`).run(adena, id);
-        // The leader is busy in a party and already armed; the poor member has no weapon.
-        if (id === LEADER) seed.prepare(`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES (?, 'Weapon', 1, 0, 1, 7, ?)`).run(helped.target.selfId, id);
+    for (const [clanId, leaderId, poorId] of [[91, LEADER, POOR], [92, LEADER + 10, POOR + 10]]) {
+        seed.prepare("INSERT INTO clans(id, name, level, leaderId) VALUES (?, ?, 2, ?)").run(clanId, `Funding${clanId}`, leaderId);
+        seed.prepare(`INSERT INTO clan_simulation_clans(clanId, mode, stateJson, createdAt, updatedAt)
+            VALUES (?, 'autonomous', '{"mode":"autonomous","warehouseRevision":0,"updatedAt":1}', 0, 0)`).run(clanId);
+        seed.prepare(`INSERT INTO clan_warehouse_items(clanId, selfId, name, kind, amount, enchant, reservedAmount)
+            VALUES (?, 57, 'Adena', 'Other.Currency', 3000000, 0, 0)`).run(clanId);
+        // The member's 20k leave 10k above its 10k operating reserve: not enough alone.
+        for (const [id, adena] of [[leaderId, 5000000], [poorId, 20000]]) {
+            seed.prepare(`INSERT INTO characters(id, username, name, classId, race, level, maxHp, maxMp, sex, face, hair, hairColor,
+                locX, locY, locZ, clanId) VALUES (?, 'bot_pop_funding', ?, 1, 0, 40, 500, 250, 0, 0, 0, 0, 82000, 148000, -3400, ?)`).run(id, `Fund${id}`, clanId);
+            seed.prepare(`INSERT INTO bot_life_state(characterId, accountName, characterName, level, adena, activity, phase,
+                currentRegion, partyId, inventorySummary, statsJson, updatedAt) VALUES (?, 'bot_pop_funding', ?, 40, ?, 'hunting', 'cold', 'Giran', ?, ?, ?, 1)`)
+                .run(id, `Fund${id}`, adena, id === leaderId ? 'party-busy' : null, JSON.stringify({ 57: { selfId: 57, name: 'Adena', amount: adena } }), JSON.stringify({ classId: 1 }));
+            seed.prepare(`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES (57, 'Adena', ?, 0, 0, 0, ?)`).run(adena, id);
+            // The leader is busy in a party and already armed; the poor member has no weapon.
+            if (id === leaderId) seed.prepare(`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES (?, 'Weapon', 1, 0, 1, 7, ?)`).run(helped.target.selfId, id);
+        }
     }
     seed.close();
     options.default.Database.path = path.relative(rootDir, databasePath);
@@ -68,12 +71,30 @@ async function main() {
         assert.strictEqual(result.ok, true, JSON.stringify(result.reason || result.code));
         assert.strictEqual(result.goal.target.memberId, POOR, 'the clan equips the member without a weapon');
         const price = Number(result.selection.plan.market.price);
+        const weaponId = Number(result.selection.plan.target.selfId);
+        const [owned] = await Database.execute(['SELECT COUNT(*) AS n FROM items WHERE characterId = ? AND selfId = ?', [POOR, weaponId]]);
+        assert.strictEqual(Number(owned.n), 1, 'the clan bought the weapon for the member');
+        const [left] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM clan_warehouse_items WHERE clanId = 91 AND selfId = 57']);
         const [poor] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM items WHERE characterId = ? AND selfId = 57', [POOR]]);
-        const [left] = await Database.execute(['SELECT amount FROM clan_warehouse_items WHERE clanId = 91 AND selfId = 57']);
-        const given = 3000000 - Number(left.amount);
-        assert(given > 0 && given <= 1050000, `the clan gives at most 35% of its free money (${given})`);
-        assert.strictEqual(Number(poor.n), 10000 + given);
-        assert(Number(poor.n) >= price, 'the member can now pay its goal');
+        const clanPaid = 3000000 - Number(left.n);
+        const memberPaid = 20000 - Number(poor.n);
+        assert(price > 10000, `the goal needs the clan (${price})`);
+        assert.strictEqual(memberPaid, 10000, 'the member pays all it has above its reserve');
+        assert.strictEqual(clanPaid, price - 10000, 'the clan pays the rest');
+
+        // A purchase that fails gives the clan its part back.
+        const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
+        const tryPurchase = Market.tryPurchase;
+        Market.tryPurchase = async (state) => ({ state, purchased: false, reason: 'test_sold_out' });
+        try {
+            await Equipment.resolveClan(await Goals.clanProjectionById(92), null);
+        } finally {
+            Market.tryPurchase = tryPurchase;
+        }
+        const [kept] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM clan_warehouse_items WHERE clanId = 92 AND selfId = 57']);
+        const [own] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM items WHERE characterId = ? AND selfId = 57', [POOR + 10]]);
+        assert.strictEqual(Number(kept.n), 3000000, 'the clan gets its part back');
+        assert.strictEqual(Number(own.n), 20000, 'the member keeps its own money');
 
         // The goal is done: the completion event picks the next goal at once.
         await Database.execute([`UPDATE clan_simulation_clans SET stateJson = json_set(stateJson, '$.productionGoal', json(?)) WHERE clanId = 91`,
