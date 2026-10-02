@@ -5,13 +5,15 @@
 const tables = new WeakMap();
 
 function tableFor(spots) {
-    let table = tables.get(spots);
-    // A list filled in place (the cold worker's) gets a new table.
-    if (!table || table.size !== spots.length) {
-        table = new Map(spots.map((spot) => [String(spot.id), spot]));
-        tables.set(spots, table);
+    let built = tables.get(spots);
+    // A list filled in place (the cold worker's) gets a new table. The list's
+    // length is compared, not the table's size: a repeated id must not make
+    // every lookup rebuild the table.
+    if (!built || built.length !== spots.length) {
+        built = { length: spots.length, table: new Map(spots.map((spot) => [String(spot.id), spot])) };
+        tables.set(spots, built);
     }
-    return table;
+    return built.table;
 }
 
 function spotById(spots, spotId) {

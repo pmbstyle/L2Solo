@@ -338,9 +338,10 @@ function indexedOccupancy(index, profiles, excludedKeys = new Set()) {
         .filter(([key]) => !view.excludedKeys.has(key))
         .map(([, state]) => state);
     const snapshot = {};
+    const byId = SpotIndex.tableFor(catalog);
     for (const spotId of new Set([...index.physical.keys(), ...index.reserved.keys()])) {
         const key = String(spotId);
-        const profile = SpotIndex.spotById(catalog, key);
+        const profile = byId.get(key);
         if (!profile) {
             view.entries.delete(spotId);
             continue;

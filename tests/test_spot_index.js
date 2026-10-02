@@ -18,4 +18,9 @@ spots.push({ id: 42, name: 'c' });
 assert.strictEqual(SpotIndex.spotById(spots, '42'), spots[2], 'a list grown in place gets a new table');
 assert.strictEqual(SpotIndex.spotById(spots, 42), spots[2], 'ids are compared as strings');
 
+// A repeated id keeps the last spot and does not rebuild the table per lookup.
+spots.push({ id: '7_18', name: 'again' });
+assert.strictEqual(SpotIndex.spotById(spots, '7_18'), spots[3]);
+assert.strictEqual(SpotIndex.tableFor(spots), SpotIndex.tableFor(spots), 'a repeated id does not rebuild the table');
+
 console.log('spot index tests passed');
