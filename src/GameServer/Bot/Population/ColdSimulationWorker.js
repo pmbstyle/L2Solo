@@ -150,8 +150,10 @@ function startKernel(config = {}) {
             partyMinSize: Config.partyMinSize
         },
         partyMinSize: Config.partyMinSize,
-        equipmentBridgeReason: (state) => GearAcquisitionPlanner.equipmentBridgeReason(state,
-            planningNpcCatalog.plannerOptions),
+        equipmentBridgeReason: (state) => GearAcquisitionPlanner.equipmentBridgeReason(state, {
+            ...planningNpcCatalog.plannerOptions,
+            buyOrderEscrow: kernel.states.get(Number(state.characterId))?.context?.buyOrderEscrow
+        }),
         projectResolve: async (state, result, timestamp) => {
             const projected = await LifeStateProjector.prepareResolve(state, result, {
                 persist: false,
@@ -182,7 +184,8 @@ function startKernel(config = {}) {
             const occupancy = currentPlanningOccupancy(timestamp);
             const excludedSpotIds = invoke('GameServer/Bot/Population/SpotRiskPolicy')
                 .excludedSpotIdsForStates([state], timestamp);
-            const npcPlanningOptions = { ...planningNpcCatalog.plannerOptions, excludedSpotIds };
+            const npcPlanningOptions = { ...planningNpcCatalog.plannerOptions, excludedSpotIds,
+                buyOrderEscrow: context?.buyOrderEscrow };
             const clanRaidPlan = GearAcquisitionPlanner.isClanOwnedPlan(previousPlan)
                 && previousPlan?.next?.sourceKind === 'raid';
             if (clanRaidPlan) npcPlanningOptions.allowRaidSources = true;

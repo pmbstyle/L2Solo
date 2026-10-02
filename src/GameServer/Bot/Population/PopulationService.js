@@ -430,7 +430,8 @@ function canResumeAffordableMarketPlan(state, timestamp = Date.now()) {
 
     const price = Number(plan.market?.price || 0);
     const reserve = Math.max(0, Number(plan.market?.reserve || 0));
-    if (price <= 0 || PurchaseFunding.shortfall(state, price, reserve) > 0) return false;
+    if (price <= 0 || PurchaseFunding.shortfall(state, price, reserve,
+        BotAfkMarketService.buyOrderEscrow(state.characterId)) > 0) return false;
 
     const combinationRequirement = (plan.combine?.requirements || [])
         .find((entry) => Number(entry.selfId) === targetId);
@@ -2501,9 +2502,10 @@ const PopulationService = {
                         || (previousPlan?.status === 'active'
                             && ['direct_drop', 'craft'].includes(previousPlan.strategy)
                             && previousPlan.next?.spotId);
+                    const buyOrderEscrow = BotAfkMarketService.buyOrderEscrow(member.characterId);
                     nextPlan = replacePreviousPlan
-                        ? GearAcquisitionPlanner.replacementPlanFor(member, previousPlan, spots, { occupancy })
-                        : GearAcquisitionPlanner.planFor(member, { spots, occupancy });
+                        ? GearAcquisitionPlanner.replacementPlanFor(member, previousPlan, spots, { occupancy, buyOrderEscrow })
+                        : GearAcquisitionPlanner.planFor(member, { spots, occupancy, buyOrderEscrow });
                 } catch (err) {
                     utils.infoWarn('BotPopulation', 'party requirement refresh failed for %s: %s', member.name, err.message);
                     continue;
@@ -3478,10 +3480,14 @@ const PopulationService = {
         // in-progress craft route into `blocked` on its first travel tick.
         const spots = SpotProfiles.ensure();
         const occupancy = SpotProfiles.currentOccupancy(spots);
-        const replanContext = workerPlan
-            ? { failure: workerPlan.replanFailure || null }
-            : GearAcquisitionPlanner.replanContextFor(state, previousPlan, startedAt);
-        const weaponBridgePlan = GearAcquisitionPlanner.npcEquipmentBridgePlan(state);
+        const replanContext = {
+            ...(workerPlan
+                ? { failure: workerPlan.replanFailure || null }
+                : GearAcquisitionPlanner.replanContextFor(state, previousPlan, startedAt)),
+            buyOrderEscrow: BotAfkMarketService.buyOrderEscrow(state.characterId)
+        };
+        const weaponBridgePlan = GearAcquisitionPlanner.npcEquipmentBridgePlan(state,
+            { buyOrderEscrow: replanContext.buyOrderEscrow });
         let acquisitionPlan = workerPlan?.acquisitionPlan || null;
         const workerPlanHasSource = acquisitionPlan?.status === 'active'
             && ['direct_drop', 'craft'].includes(acquisitionPlan.strategy)
@@ -3526,7 +3532,8 @@ const PopulationService = {
                 && !replanContext.failure
                 && state.stats?.partyRequest?.status === 'open'
                 && Number(state.stats.partyRequest.reviewAt || 0) > startedAt
-                && !GearAcquisitionPlanner.fundedMarketPlanForTarget(state, previousPlan.target?.selfId);
+                && !GearAcquisitionPlanner.fundedMarketPlanForTarget(state, previousPlan.target?.selfId,
+                    { buyOrderEscrow: replanContext.buyOrderEscrow });
             const upgradedPlan = weaponBridgePlan || (previousFarmPlan
                 && !GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan)
                     ? GearAcquisitionPlanner.replacementPlanFor(state, previousPlan, spots, { occupancy, ...replanContext })

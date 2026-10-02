@@ -33,6 +33,13 @@ function desiredSide(goal) {
     return 0;
 }
 
+// Adena held by the bot's own open buy order. It is still the bot's money for
+// any purchase: a new order replaces the old one and refunds it.
+function buyOrderEscrow(characterId) {
+    const shop = AfkTrade.findOwnerProjection(characterId)?.shop;
+    return Number(shop?.storeType) === AfkTrade.BUY ? Math.max(0, Number(shop.escrowAdena || 0)) : 0;
+}
+
 function canTradeRemotely(state, goal) {
     const side = desiredSide(goal);
     if (!state || state.phase !== 'cold' || state.stats?.marketStore
@@ -40,8 +47,7 @@ function canTradeRemotely(state, goal) {
         || !side) return false;
     if (side === AfkTrade.BUY) {
         const existing = AfkTrade.findOwnerProjection(state.characterId)?.actor?.fetchPrivateStore?.();
-        const reserved = existing?.botOwned && Number(existing.storeType) === AfkTrade.BUY
-            ? Number(AfkTrade.findOwnerProjection(state.characterId)?.shop?.escrowAdena || 0) : 0;
+        const reserved = existing?.botOwned ? buyOrderEscrow(state.characterId) : 0;
         const budgetState = { ...state, adena: Number(state.adena || 0) + reserved };
         const offer = MarketOpportunity.bestOffer(goal.target?.itemId, {
             town: goal.plan?.marketTown || null,
@@ -279,8 +285,7 @@ async function reconcileOne(state, goal) {
     if (!row || !String(row.username || '').startsWith('bot_')) return { state, changed: false };
     const lines = side === AfkTrade.SELL
         ? sellLines(state, stock, inventory)
-        : buyLines({ ...state, adena: Number(state.adena || 0)
-            + (Number(stock?.storeType) === AfkTrade.BUY ? Number(stock.escrowAdena || 0) : 0) }, goal);
+        : buyLines({ ...state, adena: Number(state.adena || 0) + buyOrderEscrow(ownerId) }, goal);
     const town = MarketTownPolicy.targetTownForItems(state, lines);
     if (!lines.length && side === AfkTrade.SELL && Number(stock?.storeType) === AfkTrade.SELL) {
         await AfkTrade.stop(ownerId);
@@ -422,6 +427,6 @@ async function reviewNextPersistentShop() {
     }
 }
 
-module.exports = { canTradeRemotely, desiredSide, migrateRestoredShops, minimumResourceLotValue,
+module.exports = { buyOrderEscrow, canTradeRemotely, desiredSide, migrateRestoredShops, minimumResourceLotValue,
     pruneResourceLots, reconcile, rememberInventory, reviewNextPersistentShop, viableSellLine, withdraw,
     _resetForTests() { reviewedInventory.clear(); pending.clear(); reviewOwners = []; reviewCursor = 0; reviewRunning = false; } };

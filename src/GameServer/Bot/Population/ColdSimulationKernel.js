@@ -270,7 +270,8 @@ function lifecycleKind(state = {}, context = {}) {
     if (String(plan.strategy || '') === 'market') {
         const price = Math.max(0, Number(plan.market?.price || 0));
         const reserve = Math.max(0, Number(plan.market?.reserve || 0));
-        if (state.activity !== 'hunting' || (price > 0 && PurchaseFunding.shortfall(state, price, reserve) === 0)) return 'command';
+        if (state.activity !== 'hunting'
+            || (price > 0 && PurchaseFunding.shortfall(state, price, reserve, context.buyOrderEscrow) === 0)) return 'command';
     }
     if ((ClanPartyDuty ||= require('./ClanPartyDuty')).waiting(state)) return 'resolver';
     if (!SIMPLE_ACTIVITIES.has(String(state.activity || ''))) return 'command';

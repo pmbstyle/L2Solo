@@ -331,7 +331,7 @@ function candidateEffort(candidate, state, options = {}) {
     const spots = options.spots || [];
     const offer = marketOfferForTarget(item, state, options);
     const marketEffortValue = offer
-        ? (PurchaseFunding.budget(state) >= Number(offer.price || 0)
+        ? (PurchaseFunding.budget(state, options.buyOrderEscrow) >= Number(offer.price || 0)
             ? 4
             : marketEffort(offer, state))
         : Infinity;
@@ -347,7 +347,7 @@ function candidateEffort(candidate, state, options = {}) {
     // drop sources have become too low-level for the buyer.
     const blades = combinationPurchase(candidate.recipe, state, options);
     const bladeEffort = blades
-        ? 8 + (blades.cost <= PurchaseFunding.spendable(state)
+        ? 8 + (blades.cost <= PurchaseFunding.spendable(state, options.buyOrderEscrow)
             ? 4 : blades.cost / expectedAdenaPerKill(state))
         : Infinity;
 
@@ -706,6 +706,8 @@ function marketEffort(offer, state) {
     return offer ? Number(offer.price || Infinity) / expectedAdenaPerKill(state) : Infinity;
 }
 
+// Callers pass the bot's own buy-order escrow as options.buyOrderEscrow: the
+// worker cannot see AFK shops, so the main thread hands it over.
 const operationalAdenaReserve = PurchaseFunding.operatingReserve;
 
 function marketPlan(state = {}, target, offer, options = {}) {
@@ -713,7 +715,7 @@ function marketPlan(state = {}, target, offer, options = {}) {
     const targetSlot = Number(options.targetSlot || target.etc?.slot || 0);
     const reserve = options.reserve === undefined && offer?.sourceType === 'npc'
         && rankIndex(target.etc?.rank) <= rankIndex(NPC_GEAR_MAX_RANK)
-        ? operationalAdenaReserve(state)
+        ? operationalAdenaReserve(state, options.buyOrderEscrow)
         : Number(options.reserve || 0);
     return {
         status: 'active',
@@ -830,8 +832,8 @@ function npcCandidatesForSlot(state = {}, desiredSlot, maxRank, options = {}) {
 function staticNpcUpgradePlan(state = {}, options = {}) {
     if (!GearLifecycle.isGearFocusActive(state)) return null;
     const targetRank = npcTargetRank(state);
-    const reserve = operationalAdenaReserve(state);
-    const spendable = PurchaseFunding.spendable(state);
+    const reserve = operationalAdenaReserve(state, options.buyOrderEscrow);
+    const spendable = PurchaseFunding.spendable(state, options.buyOrderEscrow);
     const excludedSlots = new Set((options.excludedSlots || []).map(Number));
     const classId = classIdFor(state);
     const baseline = BotGear.planFor({ classId, level: npcAdequacyLevel(state) });
@@ -964,7 +966,8 @@ function npcEquipmentBridgePlan(state = {}, options = {}) {
 function equipmentBridgeReason(state = {}, options = {}) {
     const plan = npcEquipmentBridgePlan(state, options);
     if (plan?.weaponBridge) return 'weapon_bridge';
-    return plan?.equipmentBridge && PurchaseFunding.shortfall(state, plan.market?.price, plan.market?.reserve) === 0
+    return plan?.equipmentBridge
+        && PurchaseFunding.shortfall(state, plan.market?.price, plan.market?.reserve, options.buyOrderEscrow) === 0
         ? 'class_armor_bridge' : null;
 }
 
@@ -975,13 +978,14 @@ function marketPlanForTarget(state = {}, targetId, options = {}) {
     if (!target || !suitable(target, state, role, gradeForLevel(state.level))) return null;
     if (!isSlotUpgrade(target, ownedItems, role, classIdFor(state))) return null;
     const offer = marketOfferForTarget(target, state, options);
-    return offer ? marketPlan(state, target, offer) : null;
+    return offer ? marketPlan(state, target, offer, { buyOrderEscrow: options.buyOrderEscrow }) : null;
 }
 
 function fundedMarketPlanForTarget(state = {}, targetId, options = {}) {
     const market = marketPlanForTarget(state, targetId, options);
     return market && Number(market.market.price) > 0
-        && PurchaseFunding.shortfall(state, market.market.price, operationalAdenaReserve(state)) === 0
+        && PurchaseFunding.shortfall(state, market.market.price,
+            operationalAdenaReserve(state, options.buyOrderEscrow), options.buyOrderEscrow) === 0
         ? market : null;
 }
 
@@ -1017,7 +1021,9 @@ function marketRecoveryPlanForTarget(state = {}, targetId, options = {}) {
         .filter((candidate) => candidate.offer)
         .sort((left, right) => Number(left.offer.price) - Number(right.offer.price)
             || itemScore(right.item, role, classId) - itemScore(left.item, role, classId));
-    return alternatives[0] ? marketPlan(state, alternatives[0].item, alternatives[0].offer) : null;
+    return alternatives[0]
+        ? marketPlan(state, alternatives[0].item, alternatives[0].offer, { buyOrderEscrow: options.buyOrderEscrow })
+        : null;
 }
 
 function targetCombatCounter(state = {}, npcId) {
@@ -1911,7 +1917,7 @@ function dualSwordBridgePlan(state, options = {}) {
         || itemScore(right.item, role, classIdFor(state)) - itemScore(left.item, role, classIdFor(state))
         || Number(left.item.selfId) - Number(right.item.selfId));
     const previousId = Number(state.stats?.equipmentPlan?.weaponBridge && state.stats.equipmentPlan.combine?.resultId);
-    const spendable = PurchaseFunding.spendable(state);
+    const spendable = PurchaseFunding.spendable(state, options.buyOrderEscrow);
     const bridgeRank = Math.min(maxRank, rankIndex('c'));
     const target = candidates.find(entry => Number(entry.item.selfId) === previousId)
         || candidates.find(entry => rankIndex(entry.item.etc.rank) >= bridgeRank && entry.cost <= spendable)
@@ -1922,7 +1928,8 @@ function dualSwordBridgePlan(state, options = {}) {
         grade: target.item.etc.rank, combine: combinationMetadata(target.recipe) };
     if (target.purchases.length) {
         const { item, offer } = target.purchases[0];
-        return { ...marketPlan(state, item, offer), materials: target.materials, ...common };
+        return { ...marketPlan(state, item, offer, { buyOrderEscrow: options.buyOrderEscrow }),
+            materials: target.materials, ...common };
     }
     return { status: 'ready_to_craft', strategy: 'craft', role, phase: GearLifecycle.phaseFor(state),
         target: { selfId: Number(target.item.selfId), name: target.item.template.name, slot: Number(target.item.etc.slot) },
@@ -1947,7 +1954,7 @@ function combinationBladeMarketPlan(target, materials, state, planningOptions) {
     return {
         ...marketPlan(state, selected.item, selected.offer, {
             reason: 'dual_sword_blade',
-            reserve: operationalAdenaReserve(state)
+            reserve: operationalAdenaReserve(state, planningOptions.buyOrderEscrow)
         }),
         grade: String(target.item.etc?.rank || gradeForLevel(state.level)).toLowerCase(),
         materials,

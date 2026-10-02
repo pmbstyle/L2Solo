@@ -178,9 +178,11 @@ function evaluate(state = {}, options = {}) {
         return candidates;
     }
 
+    // Loaded on use, like the AFK trade service below.
+    const escrow = invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId);
     const gear = equipmentNeed(state);
     if (gear) {
-        const requiredAdena = PurchaseFunding.shortfall(state, gear.desiredItem.price, gear.reserve);
+        const requiredAdena = PurchaseFunding.shortfall(state, gear.desiredItem.price, gear.reserve, escrow);
         const fundedMarketOffer = requiredAdena === 0 && gear.priceSource === 'offer' && gear.marketTown;
         const weaponUpgrade = [7, 14].includes(gear.slot);
         const wealthInvestment = WealthInvestmentPolicy.investmentOpportunity(state, gear.desiredItem.price);
@@ -270,8 +272,7 @@ function evaluate(state = {}, options = {}) {
         && Number(state.stats?.marketRetryAfter || 0) <= timestamp
         ? (() => {
             const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
-            const reserved = Number(AfkTrade.findOwnerProjection(state.characterId)?.shop?.escrowAdena || 0);
-            const spendable = PurchaseFunding.spendable(state, reserved);
+            const spendable = PurchaseFunding.spendable(state, escrow);
             const adenaPerKill = Math.max(20, Number(state.level || 1) * 25)
                 * ProgressionRates.profile().adena;
             // Clan beneficiaries can spend a modest premium to finish a shared
