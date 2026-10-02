@@ -107,6 +107,27 @@ function founderScore(candidate = {}) {
     return clamp(weighted + (rosterRole(candidate) === 'tank' ? 0.03 : 0));
 }
 
+// A clan leader needs leadership (shown as "leadership" for assertiveness in the
+// bot status) and social traits.
+function leaderScore(candidate = {}) {
+    return trait(candidate, 'assertiveness') * 0.6 + trait(candidate, 'sociability') * 0.4;
+}
+
+// The lowest leaderScore of the top share within each primary drive, so that
+// progression, social and wealth bots each bring their own leaders.
+function founderThresholds(personas = [], share = Contracts.config.founderTopShare) {
+    const byDrive = new Map();
+    personas.forEach((persona) => {
+        const drive = String(persona?.primaryDrive || '');
+        if (!byDrive.has(drive)) byDrive.set(drive, []);
+        byDrive.get(drive).push(leaderScore(persona));
+    });
+    return Object.fromEntries([...byDrive].map(([drive, scores]) => {
+        scores.sort((left, right) => right - left);
+        return [drive, scores[Math.max(0, Math.ceil(scores.length * share) - 1)]];
+    }));
+}
+
 function founderEligibility(candidate = {}, options = {}) {
     const config = options.config || Contracts.config;
     const reasons = [];
@@ -122,16 +143,9 @@ function founderEligibility(candidate = {}, options = {}) {
     if (clanId !== 0) reasons.push(Contracts.REASON_CODES.FOUNDER_ALREADY_IN_CLAN);
     if (!hasFirstProfession(candidate)) reasons.push(Contracts.REASON_CODES.FOUNDER_NO_FIRST_PROFESSION);
 
-    const thresholds = [
-        ['ambition', config.founderAmbitionMin],
-        ['assertiveness', config.founderAssertivenessMin],
-        ['resilience', config.founderResilienceMin],
-        ['sociability', config.founderSociabilityMin],
-        ['commitment', config.founderCommitmentMin]
-    ];
-    if (thresholds.some(([name, minimum]) => trait(candidate, name) < number(minimum))) {
-        reasons.push(Contracts.REASON_CODES.FOUNDER_TRAITS);
-    }
+    // Without a threshold table (no personas loaded) nobody founds.
+    const minimum = options.founderThresholds?.[String(candidate.persona?.primaryDrive || '')];
+    if (!(leaderScore(candidate) >= minimum)) reasons.push(Contracts.REASON_CODES.FOUNDER_TRAITS);
     if (partyHistoryRuns(candidate) < number(config.founderMinPartyHistory)) {
         reasons.push(Contracts.REASON_CODES.FOUNDER_PARTY_HISTORY);
     }
@@ -239,6 +253,7 @@ function canReserve({ population, currentMembers, requested = 1, share }) {
 }
 
 module.exports = {
+    founderThresholds,
     BASE_CLASS_IDS,
     FIRST_PROFESSION_CLASS_IDS,
     ROSTER_ROLES,

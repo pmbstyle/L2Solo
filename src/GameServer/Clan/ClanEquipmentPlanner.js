@@ -19,6 +19,17 @@ function plannerState(member) {
     };
 }
 
+// What a member can pay now: its adena above the operating reserve.
+function memberFunds(state) {
+    return Math.max(0, number(state.adena) - GearAcquisitionPlanner.operationalAdenaReserve(state));
+}
+
+// The clan's purchase budget for a member: the member's own funds plus the
+// clan's free money (options.clanShare).
+function clanBudget(state, options = {}) {
+    return memberFunds(state) + Math.max(0, number(options.clanShare));
+}
+
 function existingPlanFor(member) {
     const plan = member?.stats?.equipmentPlan;
     return Policy.isAcquisitionPlan(plan) ? plan : null;
@@ -56,14 +67,14 @@ function overlayWarehouseMaterials(state, plan, warehouseRows = []) {
     };
 }
 
-function calculate(member, spots = [], warehouseRows = [], options = {}) {
+function calculateRoute(member, spots = [], warehouseRows = [], options = {}) {
     const planningMember = options.ignoreExistingPlan ? {
         ...member,
         stats: { ...(member?.stats || {}), equipmentPlan: undefined }
     } : member;
     const existing = existingPlanFor(planningMember);
     const state = plannerState(planningMember);
-    const marketBudget = Math.max(0, state.adena - GearAcquisitionPlanner.operationalAdenaReserve(state));
+    const marketBudget = clanBudget(state, options);
     const plannerOptions = {
         spots,
         clanCrafting: true,
@@ -200,6 +211,17 @@ function calculate(member, spots = [], warehouseRows = [], options = {}) {
     }
 }
 
+// The clan routes only purchases the member and the clan share can pay now. The
+// planner's NPC bridge still returns an unaffordable item as the saving target
+// of a bot's own plan; for the clan that is no route, or a replan returns the
+// same target and the goal stays locked on it.
+function calculate(member, spots = [], warehouseRows = [], options = {}) {
+    const plan = calculateRoute(member, spots, warehouseRows, options);
+    if (plan?.strategy !== 'market') return plan;
+    if (!(number(plan.market?.price) > clanBudget(plannerState(member), options))) return plan;
+    return { status: 'blocked', reason: 'clan_market_unfunded', strategy: 'none', target: null };
+}
+
 function planForMember(member, spots = [], warehouseRows = [], options = {}) {
     const inventory = member.inventory || {};
     const pooled = Crafting.stockInventory(inventory, warehouseRows);
@@ -232,4 +254,4 @@ function planForMember(member, spots = [], warehouseRows = [], options = {}) {
         ...(Object.keys(providers).length ? { craftProviders: providers } : {}) };
 }
 
-module.exports = { planForMember };
+module.exports = { planForMember, memberFunds };

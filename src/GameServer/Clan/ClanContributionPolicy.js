@@ -22,16 +22,6 @@ function personalReserve(state = {}, config = Config) {
     return Math.ceil(baseline * Math.max(0, number(config.personalAdenaReserveMultiplier, 1)));
 }
 
-function disposableAdena(state = {}, config = Config) {
-    const adena = walletAdena(state);
-    const reserve = personalReserve(state, config);
-    return {
-        adena,
-        reserve,
-        disposable: Math.max(0, adena - reserve)
-    };
-}
-
 function scaledAdenaRequirement(level = 0, rates = ProgressionRates.profile(), config = Config) {
     const base = Number(level) <= 0 ? config.levelOneAdenaBase : config.levelTwoAdenaBase;
     const rate = Math.max(0.01, number(rates?.adena, 1));
@@ -39,82 +29,60 @@ function scaledAdenaRequirement(level = 0, rates = ProgressionRates.profile(), c
     return Math.max(1, Math.ceil(Math.max(0, number(base)) * Math.pow(rate, exponent)));
 }
 
-function contributionCap(state, config = Config) {
-    const wallet = disposableAdena(state, config);
-    const fraction = Math.max(0, Math.min(1, number(config.contributionMaxFraction, 0.35)));
-    return {
-        ...wallet,
-        maxContribution: Math.floor(wallet.disposable * fraction)
-    };
+const clamp01 = (value) => Math.max(0, Math.min(1, number(value, 0)));
+const trait = (traits, name) => clamp01(traits?.[name] ?? 0.5);
+
+// How readily a member gives to the clan: empathy, commitment and sociability.
+// 0 at a generosity of 0.4 or less, 1 at 0.7 or more.
+function giveFactor(traits = {}) {
+    const generosity = (trait(traits, 'empathy') + trait(traits, 'commitment') + trait(traits, 'sociability')) / 3;
+    return clamp01((generosity - 0.4) / 0.3);
 }
 
-function planContributions(members = [], {
-    leaderId,
-    requiredAmount,
-    contributedAmount = 0,
-    config = Config
-} = {}) {
-    const shortfall = Math.max(0, Math.floor(number(requiredAmount) - number(contributedAmount)));
-    if (shortfall <= 0) return { shortfall: 0, totalCapacity: 0, contributions: [] };
+// Share of the market price a member asks the clan for a spare item (0 = a gift).
+function askedShare(traits = {}) {
+    return 1 - giveFactor(traits);
+}
 
-    const candidates = members
-        .filter((member) => number(member.characterId ?? member.id) > 0)
-        .filter((member) => number(member.characterId ?? member.id) !== number(leaderId))
-        .map((member) => ({
-            member,
-            characterId: number(member.characterId ?? member.id),
-            cap: contributionCap(member.state || member, config)
-        }))
-        .filter((entry) => entry.cap.maxContribution > 0)
-        .sort((left, right) => right.cap.maxContribution - left.cap.maxContribution
-            || left.characterId - right.characterId);
+// The clan's dues on new earnings: 10%, plus up to 20% by its members' mean ambition.
+function duesRate(memberTraits = []) {
+    const ambition = memberTraits.length
+        ? memberTraits.reduce((sum, traits) => sum + trait(traits, 'ambition'), 0) / memberTraits.length
+        : 0.5;
+    return 0.10 + 0.20 * clamp01((ambition - 0.55) / 0.30);
+}
 
-    const totalCapacity = candidates.reduce((sum, entry) => sum + entry.cap.maxContribution, 0);
-    if (totalCapacity <= 0) return { shortfall, totalCapacity: 0, contributions: [] };
+// A member's rate: the clan's dues plus a voluntary top-up of up to 15% by its
+// generosity, the top-up only while the member is not about to buy its own gear;
+// at most contributionMaxFraction (35%).
+function memberRate(clanRate, traits = {}, state = null, config = Config) {
+    const buying = ownGearPurchase(state) === 'funded';
+    return Math.min(number(config.contributionMaxFraction, 0.35), clanRate + (buying ? 0 : 0.15 * giveFactor(traits)));
+}
 
-    let remaining = shortfall;
-    const contributions = candidates.map((entry) => {
-        const amount = Math.min(entry.cap.maxContribution, Math.floor(shortfall * entry.cap.maxContribution / totalCapacity));
-        remaining -= amount;
-        return {
-            characterId: entry.characterId,
-            amount,
-            reserve: entry.cap.reserve,
-            disposable: entry.cap.disposable,
-            maxContribution: entry.cap.maxContribution
-        };
-    });
+// The member's own pending gear purchase: 'funded' (its money covers the price
+// above the operating reserve), 'short' (saving for it) or null.
+function ownGearPurchase(state = null) {
+    const plan = state?.stats?.equipmentPlan;
+    if (plan?.strategy !== 'market' || !(number(plan.market?.price) > 0)) return null;
+    const spendable = number(state?.adena) - invoke('GameServer/Bot/AI/GearAcquisitionPlanner').operationalAdenaReserve(state || {});
+    return number(plan.market.price) <= spendable ? 'funded' : 'short';
+}
 
-    // Integer rounding must not strand a small shortfall when a contributor
-    // still has capacity. The order is deterministic so retries produce the
-    // same ledger shape.
-    while (remaining > 0) {
-        let progressed = false;
-        for (const entry of contributions) {
-            const room = Math.max(0, entry.maxContribution - entry.amount);
-            if (room <= 0) continue;
-            const increment = Math.min(room, remaining);
-            entry.amount += increment;
-            remaining -= increment;
-            progressed = true;
-            if (remaining <= 0) break;
-        }
-        if (!progressed) break;
-    }
-
-    return {
-        shortfall,
-        totalCapacity,
-        plannedAmount: contributions.reduce((sum, entry) => sum + entry.amount, 0),
-        contributions: contributions.filter((entry) => entry.amount > 0)
-    };
+// Share of its free savings a member puts once into the clan's current target:
+// up to contributionMaxFraction, by commitment and ambition.
+function investFraction(traits = {}, config = Config) {
+    return number(config.contributionMaxFraction, 0.35) * (trait(traits, 'commitment') + trait(traits, 'ambition')) / 2;
 }
 
 module.exports = {
     walletAdena,
     personalReserve,
-    disposableAdena,
     scaledAdenaRequirement,
-    contributionCap,
-    planContributions
+    giveFactor,
+    askedShare,
+    duesRate,
+    memberRate,
+    ownGearPurchase,
+    investFraction
 };

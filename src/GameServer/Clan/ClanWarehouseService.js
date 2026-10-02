@@ -5,6 +5,18 @@ const Database = invoke('Database');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
 const Policy = invoke('GameServer/Clan/ClanWarehousePolicy');
 const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
+const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+const DuesPolicy = invoke('GameServer/Clan/ClanContributionPolicy');
+const ExchangePolicy = invoke('GameServer/Clan/ClanWarehouseEquipmentPolicy');
+const HallPolicy = invoke('GameServer/ClanHall/Policy');
+const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
+const DataCache = invoke('GameServer/DataCache');
+
+const HOUR = 60 * 60 * 1000;
+// Needs cache per clan: what each member wears, refreshed hourly.
+const clanWorn = new Map();
+// Spare wearable items each member already had at the previous supplies pass.
+const seenSpare = new Map();
 
 const metrics = {
     resolves: 0,
@@ -14,6 +26,7 @@ const metrics = {
     recipes: 0,
     progressionItems: 0,
     reservationConflicts: 0,
+    gearOffered: 0,
     budgetStops: 0,
     reasonCounts: new Map()
 };
@@ -51,6 +64,118 @@ async function depositHot(member, clan, rows, demand, limit, goalKey) {
     }
     session.dataSendToMe?.(invoke('GameServer/Network/Response').itemsList(actor.backpack.fetchItems()));
     return candidates;
+}
+
+async function wornByClan(clan) {
+    const cached = clanWorn.get(number(clan.id));
+    if (cached && Date.now() - cached.at < HOUR) return cached.rows;
+    const rows = new Map();
+    for (const member of clan.members || []) {
+        if (member.phase === 'cold') rows.set(number(member.characterId), await Database.fetchItems(member.characterId));
+    }
+    clanWorn.set(number(clan.id), { at: Date.now(), rows });
+    if (clanWorn.size > 128) clanWorn.delete(clanWorn.keys().next().value);
+    return rows;
+}
+
+// Spare wearable items in a member's inventory summary: more than it wears.
+function spareWearableIds(member) {
+    return Object.values(member.inventory || {})
+        .filter((item) => number(item.amount) > number(item.equippedCount ?? (item.equipped ? 1 : 0))
+            && number(ItemTemplateIndex.find(DataCache.items, item.selfId)?.etc?.slot) > 0)
+        .map((item) => number(item.selfId));
+}
+
+// Spare gear goes to a clanmate first: a member's wearable items that newly
+// became spare since the last pass (fresh drops, replaced gear) go into the clan
+// warehouse when a clanmate would wear them (the warehouse exchange's own test,
+// on the clan's needs cache), never toward an enemy, free to a friend. The clan
+// compensates 0-25% of the price by the giver's generosity (25% while it saves
+// for its own purchase) from its free money, else it is a gift; the giver is paid
+// before it gives, so a busy giver keeps the item for the next pass. The warehouse
+// exchange then hands the item out. Hot members are skipped; the first look at a
+// member only records its spare items.
+async function offerSpareGear(clan, member, warehouseRows, warehouseRevision) {
+    const id = number(member.characterId);
+    // A party holds the member's data: it offers once it is free.
+    if (member.partyId || member.party?.partyId) return { deposited: 0, warehouseRevision };
+    const spare = spareWearableIds(member);
+    const seen = seenSpare.get(id);
+    const freshIds = seen ? spare.filter((selfId) => !seen.has(selfId)) : [];
+    const handled = new Set(spare.filter((selfId) => !freshIds.includes(selfId)));
+    const remember = () => {
+        seenSpare.set(id, handled);
+        if (seenSpare.size > 4096) seenSpare.delete(seenSpare.keys().next().value);
+    };
+    if (!freshIds.length) { remember(); return { deposited: 0, warehouseRevision }; }
+    const fresh = ItemDisposition.saleCandidates(member, { unlimited: true }).filter((item) => freshIds.includes(item.selfId));
+    freshIds.filter((selfId) => !fresh.some((item) => item.selfId === selfId)).forEach((selfId) => handled.add(selfId));
+
+    const worn = await wornByClan(clan);
+    const memory = invoke('GameServer/Social/InteractionMemoryRuntime');
+    const mates = (clan.members || []).filter((mate) => number(mate.characterId) !== id && worn.has(number(mate.characterId)))
+        .map((mate) => ({ mate, stance: memory.assess({ id }, { id: number(mate.characterId) }, {}, Date.now()).disposition }))
+        .filter((entry) => entry.stance !== 'hostile');
+    const [persona] = await Database.execute(['SELECT traitsJson FROM bot_personas WHERE characterId = ?', [id]]);
+    let traits = {};
+    try { traits = JSON.parse(persona?.traitsJson || '{}'); } catch (_) { traits = {}; }
+    const saving = DuesPolicy.ownGearPurchase(member) === 'short';
+    if (Database.materializeClanSupplies && !await Database.materializeClanSupplies(id, member.simulationRevision, freshIds)) {
+        remember();
+        return { deposited: 0, warehouseRevision };
+    }
+    const rows = await Database.fetchItems(id);
+    let deposited = 0;
+    for (const offer of fresh) {
+        let best = null;
+        for (const entry of mates) {
+            const fit = ExchangePolicy.plan(entry.mate, worn.get(number(entry.mate.characterId)), { selfId: offer.selfId, amount: 1, enchant: 0, reservedAmount: 0 });
+            if (fit && (!best || fit.score > best.score)) best = { ...fit, stance: entry.stance, mateId: number(entry.mate.characterId) };
+        }
+        const row = best && rows.find((item) => number(item.selfId) === offer.selfId && !item.equipped);
+        if (!row) { handled.add(offer.selfId); continue; }
+        const share = best.stance === 'friendly' ? 0 : saving ? 0.25 : 0.25 * DuesPolicy.askedShare(traits);
+        let price = Math.floor(number(offer.price) * share);
+        if (price > 0 && HallPolicy.freeAdena(warehouseRows, clan, clan.state?.mode, clan.state?.goal) < price) price = 0;
+        if (price > 0) {
+            const paid = await Database.payClanMember({ clanId: clan.id, characterId: id, amount: price, kind: 'clan_gear_compensation' });
+            if (!paid.ok) { recordReason(paid.code); continue; }
+            LifeState.acceptNewerLifecycleRow(paid.row);
+            member.simulationRevision = number(paid.row?.simulationRevision, member.simulationRevision);
+            const [state] = await Database.execute(['SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan.id]]);
+            warehouseRevision = number(JSON.parse(state?.stateJson || '{}').warehouseRevision, warehouseRevision);
+        }
+        const moved = await LifeState.applyClanMaterialTransfer({
+            clanId: clan.id, characterId: id, item: row, amount: 1,
+            expectedWarehouseRevision: warehouseRevision, expectedSimulationRevision: member.simulationRevision,
+            resolveKey: `${clan.id}:gear-offer:${id}:${row.id}`
+        });
+        if (!moved.ok) {
+            recordReason(moved.code);
+            if (price > 0) {
+                const back = await Database.payClanMember({ clanId: clan.id, characterId: id, amount: -price, kind: 'clan_gear_compensation_refund' });
+                if (back.ok) {
+                    LifeState.acceptNewerLifecycleRow(back.row);
+                    const [state] = await Database.execute(['SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan.id]]);
+                    warehouseRevision = number(JSON.parse(state?.stateJson || '{}').warehouseRevision, warehouseRevision);
+                } else {
+                    // Paid but neither given nor refunded: never pay for it twice.
+                    recordReason(`clan_gear_refund_${back.code}`);
+                    handled.add(offer.selfId);
+                }
+            }
+            continue;
+        }
+        warehouseRevision = number(moved.warehouseRevision, warehouseRevision);
+        member.simulationRevision = number(moved.simulationRevision, member.simulationRevision);
+        handled.add(offer.selfId);
+        deposited += 1;
+        metrics.gearOffered += 1;
+        // The need is met for this hour: the cache sees the item as worn.
+        worn.get(best.mateId).push({ id: -row.id, selfId: offer.selfId, amount: 1, enchant: 0, equipped: true, slot: best.slot });
+    }
+    remember();
+    return { deposited, warehouseRevision };
 }
 
 async function resolveClan(clan, options = {}) {
@@ -104,6 +229,9 @@ async function resolveClan(clan, options = {}) {
             } catch (error) { blocked++; recordReason('hot_supplies_deferred'); }
             continue;
         }
+        const gear = await offerSpareGear(clan, member, warehouseRows, warehouseRevision);
+        deposited += gear.deposited;
+        warehouseRevision = gear.warehouseRevision;
         const supplyIds = Object.values(member.inventory || {})
             .filter(item => Policy.isClanWarehouseCandidate(item, { ...Config, demand }))
             .map(item => Number(item.selfId));

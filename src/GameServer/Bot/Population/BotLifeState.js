@@ -1497,6 +1497,15 @@ const BotLifeState = {
         await Promise.all(ids.map(id => pendingWrites.get(Number(id)) || Promise.resolve()));
     },
 
+    // Accept a row another transaction wrote for this bot, unless the cache already
+    // holds a newer cold revision of it.
+    acceptNewerLifecycleRow(row) {
+        if (!row) return null;
+        const current = cache.get(Number(row.characterId));
+        if (current && (current.phase !== 'cold' || Number(current.simulation?.revision || 0) > Number(row.simulationRevision))) return null;
+        return this.acceptLifecycleRow(row);
+    },
+
     acceptLifecycleRow(row) {
         const snapshot = normalize(row);
         const current = cache.get(snapshot.characterId);
@@ -3055,7 +3064,7 @@ const BotLifeState = {
         });
     },
 
-    applyMarketPurchase(state, offer, qty = 1) {
+    applyMarketPurchase(state, offer, qty = 1, options = {}) {
         const selfId = Number(offer?.selfId || 0);
         const price = Number(offer?.price || 0);
         const count = Number(qty);
@@ -3123,7 +3132,9 @@ const BotLifeState = {
         const purchasedState = {
             ...state,
             adena: Number(state.adena) - totalPrice,
-            activity: 'shopping',
+            // A bot in town is shopping; a purchase made for it where it hunts
+            // (the clan's goal purchase) leaves its activity alone.
+            activity: options.keepActivity ? state.activity : 'shopping',
             inventory,
             stats: {
                 ...purchaseStats,

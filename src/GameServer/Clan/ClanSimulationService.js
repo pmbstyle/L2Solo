@@ -52,6 +52,14 @@ function recordReasons(codes = []) {
     codes.forEach(recordReason);
 }
 
+// The bot's remembered relations to other characters (Social/InteractionMemory,
+// decayed to now), as Policy.socialAffinity reads them; empty while not loaded.
+function socialRelations(characterId, now = Date.now()) {
+    const view = invoke('GameServer/Social/InteractionMemoryRuntime').views.get(characterId);
+    if (!view?.ready) return {};
+    return Object.fromEntries(view.characterIds.map((id) => [id, view.relation('character', id, now)]));
+}
+
 function normalizeCandidate(row = {}) {
     const stats = parseJson(row.statsJson, {});
     const generatedPersona = BotPersona.generate({
@@ -61,6 +69,7 @@ function normalizeCandidate(row = {}) {
     const storedPersona = row.traitsJson
         ? {
             characterId: Number(row.characterId),
+            primaryDrive: String(row.primaryDrive || generatedPersona?.primaryDrive || ''),
             traits: parseJson(row.traitsJson, generatedPersona?.traits || {})
         }
         : generatedPersona;
@@ -78,7 +87,7 @@ function normalizeCandidate(row = {}) {
         stats,
         partyHistory: stats.partyHistory || {},
         persona: storedPersona,
-        socialRelations: parseJson(row.socialRelations, {})
+        socialRelations: socialRelations(number(row.characterId))
     };
 }
 
@@ -105,7 +114,7 @@ async function candidateProjection(limit = 512, offset = 0) {
         const rows = await Database.execute([`
             SELECT c.id AS characterId, c.name, c.username, c.classId, c.level, c.clanId,
                    life.accountName, life.activity, life.phase, life.statsJson,
-                   persona.traitsJson
+                   persona.traitsJson, persona.primaryDrive
             FROM characters c
             LEFT JOIN bot_life_state life ON life.characterId = c.id
             LEFT JOIN bot_personas persona ON persona.characterId = c.id
@@ -161,6 +170,21 @@ async function autonomousClanProjection() {
     } finally {
         StageMetrics.record(metrics.stages, 'clan_projection', Date.now() - startedAt);
     }
+}
+
+// Founder thresholds per primary drive (Policy.founderThresholds) over all stored
+// personas, rebuilt only when the number of personas changes (new bots).
+let founderThresholdTable = { count: -1, table: {} };
+async function founderThresholds() {
+    const [{ count }] = await Database.execute(['SELECT COUNT(*) AS count FROM bot_personas', []], 'clan-simulation:persona-count');
+    if (Number(count) === founderThresholdTable.count) return founderThresholdTable.table;
+    const rows = await Database.execute(['SELECT primaryDrive, traitsJson FROM bot_personas', []], 'clan-simulation:founder-thresholds');
+    founderThresholdTable = {
+        count: Number(count),
+        table: Policy.founderThresholds(rows.map((row) => ({ primaryDrive: row.primaryDrive, traits: parseJson(row.traitsJson, {}) })),
+            Config.founderTopShare)
+    };
+    return founderThresholdTable.table;
 }
 
 function recruitmentScore(founder, candidate, members) {
@@ -219,7 +243,8 @@ async function resolveCandidate(candidate, options = {}) {
         const pool = options.pool || await candidateProjection();
         const recruits = selectRecruitment(candidate, pool, Config.founderQuorum - 1);
         const eligibility = Policy.founderEligibility(candidate, {
-            quorumCandidates: [candidate, ...recruits]
+            quorumCandidates: [candidate, ...recruits],
+            founderThresholds: await founderThresholds()
         });
         metrics.founderEvaluations += 1;
         recordReasons(eligibility.reasons);
@@ -268,14 +293,14 @@ const ClanSimulationService = {
     candidateProjection,
     autonomousClanProjection,
     founderCandidates(limit = 512) {
-        return candidateProjection(limit).then((candidates) => {
+        return Promise.all([candidateProjection(limit), founderThresholds()]).then(([candidates, thresholds]) => {
             const clansPromise = autonomousClanProjection();
             return clansPromise.then((clans) => candidates.map((candidate) => {
                 const existing = Policy.selectExistingClan(candidate, clans, {
                     threshold: Config.existingClanSuitabilityThreshold
                 });
                 const recruits = selectRecruitment(candidate, candidates, Config.founderQuorum - 1);
-                const eligibility = Policy.founderEligibility(candidate, { quorumCandidates: [candidate, ...recruits] });
+                const eligibility = Policy.founderEligibility(candidate, { quorumCandidates: [candidate, ...recruits], founderThresholds: thresholds });
                 return { candidate, existingClan: existing, recruits, eligibility };
             }));
         }).then((evaluations) => {
