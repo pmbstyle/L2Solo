@@ -15,8 +15,6 @@ const DataCache = invoke('GameServer/DataCache');
 const { planForMember } = require('./ClanEquipmentPlanner');
 const PlanningWorker = require('./ClanPlanningCoordinator');
 const MAX_CAPACITY_TARGET_RETRIES = 5;
-let craftingCatalog = null;
-let craftingCatalogItems = null;
 
 const metrics = {
     resolves: 0,
@@ -474,14 +472,8 @@ async function assignPlan(member, plan, clan, goal) {
 }
 
 async function craftingOptions(clan) {
-    const service = { level: 70, stats: { classId: 57 } };
-    if (!craftingCatalog || craftingCatalogItems !== DataCache.items) {
-        const all = CraftShops.availableRecipes(service);
-        craftingCatalog = { all, published: CraftShops.CraftStations.flatMap(station => CraftShops.stationRecipes(station, all)) };
-        craftingCatalogItems = DataCache.items;
-    }
-    const all = craftingCatalog.all;
-    const published = new Map(craftingCatalog.published.map(recipe => [Number(recipe.recipeId), recipe]));
+    const all = CraftShops.availableRecipes({ level: 70, stats: { classId: 57 } });
+    const published = new Map(CraftShops.publishedStationRecipes().recipes.map(recipe => [Number(recipe.recipeId), recipe]));
     const providers = {};
     const crafters = (clan.members || []).filter(member => member.phase === 'cold'
         && (!member.partyId || Number(member.stats?.clanPartyObjective?.clanId) === Number(clan.id))

@@ -40,7 +40,11 @@ const stubs = new Map([
     ['GameServer/Bot/Economy/CraftShopService', {
         CraftStations: [{}],
         availableRecipes: () => context.recipes || [],
-        stationRecipes: (_station, recipes) => recipes
+        stationRecipes: (_station, recipes) => recipes,
+        publishedStationRecipes: () => {
+            const recipes = context.recipes || [];
+            return { recipes, ids: new Set(recipes.map((recipe) => Number(recipe.recipeId))), stationByRecipeId: new Map() };
+        }
     }],
     ['GameServer/World/Generics/NpcShopBuyLists', { allEntries: () => context.shopEntries || [] }]
 ]);

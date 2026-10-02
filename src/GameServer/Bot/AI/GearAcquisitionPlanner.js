@@ -10,7 +10,6 @@ const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatib
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
-const MAX_RESOLVED_SOURCE_CACHE = 512;
 let sourceIndexCache = { spots: null, rewards: null, byItemId: new Map(), resolved: new Map() };
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
@@ -551,14 +550,9 @@ function preferredTarget(state = {}, options = {}) {
     const missingDualSword = missingRequiredDualSword(state, role, classId);
     const owned = inventoryMap(state.inventory);
     const ownedItems = inventoryItems(state.inventory);
-    const stationService = { level: 70, stats: { classId: 57 } };
-    const availableToStations = CraftShopService.availableRecipes(stationService);
-    const publishedRecipeIds = new Set(CraftShopService.CraftStations.flatMap((station) => (
-        CraftShopService.stationRecipes(station, availableToStations).map((recipe) => Number(recipe.recipeId))
-    )));
-    const craftRecipes = (options.craftRecipes || Object.values(C4RecipeItems.loadRecipeItems() || {})).filter((recipe) => (
-        recipe.type === 'dwarven' && (options.craftRecipes || publishedRecipeIds.has(Number(recipe.recipeId)))
-    ));
+    const craftRecipes = options.craftRecipes
+        ? options.craftRecipes.filter((recipe) => recipe.type === 'dwarven')
+        : CraftShopService.publishedStationRecipes().recipes;
     const recipes = ClanCrafting.clanIdFor(state) && !options.clanCrafting
         ? [] : [...craftRecipes, ...C4DualSwordCombinations.loadRecipes()];
     const recipeRank = options.recipeId
@@ -1777,20 +1771,16 @@ function sourceForItem(itemId, spots = [], state = {}, options = {}) {
         };
     }).filter(Boolean).sort((a, b) => sourceEffort(a, state, options) - sourceEffort(b, state, options)
         || b.expectedYield - a.expectedYield);
-    if (sourceIndexCache.resolved.size >= MAX_RESOLVED_SOURCE_CACHE) {
-        sourceIndexCache.resolved.delete(sourceIndexCache.resolved.keys().next().value);
-    }
+    // Kept for the lifetime of the spot atlas: one entry per item, bot level and
+    // rate profile (about a thousand for the live population). A bounded cache
+    // was evicted continuously once craft routes evaluate their materials.
     sourceIndexCache.resolved.set(resolvedKey, sources);
     sourceCache?.set(cacheKey, sources);
     return sources;
 }
 
 function stationRecipeIds() {
-    const service = { level: 70, stats: { classId: 57 } };
-    const allowed = CraftShopService.availableRecipes(service);
-    return new Set(CraftShopService.CraftStations.flatMap((station) => (
-        CraftShopService.stationRecipes(station, allowed).map((recipe) => Number(recipe.recipeId))
-    )));
+    return CraftShopService.publishedStationRecipes().ids;
 }
 
 function farmSourceForMaterial(itemId, state, spots, allowedRecipeIds, requiredAmount = 1, visited = new Set(), options = {}) {

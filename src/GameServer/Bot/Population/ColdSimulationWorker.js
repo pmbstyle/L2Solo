@@ -38,9 +38,6 @@ const stubs = new Map([
             || String(target?.template?.kind || '').toLowerCase() === 'boss'
             || Number(target?.minionBossObjectId || target?.minionBossTemplateId || 0) > 0
     }],
-    ['GameServer/Bot/Economy/CraftShopService', {
-        CraftStations: [], availableRecipes: () => [], stationRecipes: () => []
-    }],
     ['GameServer/Bot/Economy/MarketOpportunity', {
         TOWN_NPC_SELLERS: {}, bestOffer: () => null, npcOffersAll: () => []
     }],

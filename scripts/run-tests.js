@@ -374,6 +374,8 @@ const tests = [
     'tests/test_cold_startup_snapshot_paging.js',
     'tests/test_cold_context_spot_index.js',
     'tests/test_cold_worker_routing.js',
+    'tests/test_cold_worker_craft_routes.js',
+    'tests/test_craft_station_catalog.js',
     'tests/test_cold_worker_message_rejection.js',
     'tests/test_cold_commit_queue.js',
     'tests/test_cold_worker_isolation.js',
