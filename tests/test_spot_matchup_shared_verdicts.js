@@ -142,5 +142,8 @@ assert.notDeepStrictEqual(referenceMatchup(spot, [fighter()], { soloSafety: true
 const shared = Matchup.spotMatchup(spot, [fighter()], { soloSafety: true });
 assert.strictEqual(Matchup.spotMatchup(spot, [fighter()], { soloSafety: true }), shared, 'the same profile fields share one result');
 assert(Object.isFrozen(shared), 'a shared spot result is read-only');
+// Equal results of different spots are one object.
+const twin = { id: 'twin', npcEntries: spot.npcEntries.map((entry) => ({ ...entry })) };
+assert.strictEqual(Matchup.spotMatchup(twin, [fighter()], { soloSafety: true }), shared, 'equal results are stored once');
 
 console.log('shared spot matchup verdict tests passed');

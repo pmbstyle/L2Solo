@@ -321,6 +321,9 @@ function npcVerdict(verdicts, selfId, options) {
 // fingerprint and safety options, so it is shared the same way: a spot search
 // after every commit checks hundreds of spots against the same verdicts.
 const spotMatchups = new WeakMap();
+// Equal results are one object: most fingerprints get the same few values on
+// most spots. Bounded like the verdict pool; results already handed out stay valid.
+const uniqueSpotResults = new Map();
 
 function spotMatchup(spot, profiles, options = {}) {
     if (!profiles?.length) return evaluate([], {});
@@ -346,9 +349,14 @@ function spotMatchup(spot, profiles, options = {}) {
     }
     const efficiency = total ? effective / total : 1;
     const safeFraction = total ? safe / total : 1;
-    const result = Object.freeze({ efficiency, safeFraction,
-        eligible: !total || (eligible && (!options.soloSafety || safeFraction >= 0.6)),
-        penalty: Math.round((1 - efficiency) * 250 + (options.soloSafety ? (1 - safeFraction) * 250 : 0)) });
+    const spotEligible = !total || (eligible && (!options.soloSafety || safeFraction >= 0.6));
+    const penalty = Math.round((1 - efficiency) * 250 + (options.soloSafety ? (1 - safeFraction) * 250 : 0));
+    const key = `${efficiency}:${safeFraction}:${spotEligible ? 1 : 0}:${penalty}`;
+    let result = uniqueSpotResults.get(key);
+    if (!result) {
+        if (uniqueSpotResults.size >= VERDICT_PROFILE_LIMIT * 4) uniqueSpotResults.clear();
+        uniqueSpotResults.set(key, result = Object.freeze({ efficiency, safeFraction, eligible: spotEligible, penalty }));
+    }
     bySpot.set(spot, result);
     return result;
 }
