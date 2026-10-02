@@ -1014,7 +1014,12 @@ function marketRecoveryPlanForTarget(state = {}, targetId, options = {}) {
 }
 
 function targetCombatCounter(state = {}, npcId) {
-    const counter = state.stats?.targetCombat?.populationTargets?.[String(Number(npcId))] || {};
+    // Population totals count a shared party encounter only on its telemetry
+    // owner; the bot's own counter of its current target covers every member.
+    const telemetry = state.stats?.targetCombat || {};
+    const counter = Number(telemetry.targetNpcId || 0) === Number(npcId)
+        ? telemetry
+        : telemetry.populationTargets?.[String(Number(npcId))] || {};
     return {
         npcId: Number(npcId || 0),
         resolves: Number(counter.resolves || 0),
