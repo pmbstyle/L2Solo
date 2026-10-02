@@ -400,11 +400,9 @@ function goalPurchaseFailed(code, result = {}) {
 // for the next review.
 async function buyGoalItem(memberId, plan, clan) {
     let state = await LifeState.findByCharacterId(memberId);
-    const itemId = number(plan?.target?.selfId);
     if (!state || state.phase !== 'cold' || state.partyId || state.party?.partyId
         || String(state.simulation?.ownerId || 'legacy_main') !== 'legacy_main'
-        || !['hunting', 'resting'].includes(state.activity)
-        || number(state.inventory?.[itemId]?.amount) > 0) return { ok: false, code: 'member_busy' };
+        || !['hunting', 'resting'].includes(state.activity)) return { ok: false, code: 'member_busy' };
     // The offer the plan was priced on: the planner's own search over every
     // town (a hunting member's region is its hunting ground, not a town), at
     // no more than the planned price.

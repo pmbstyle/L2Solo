@@ -21,7 +21,7 @@ const Goals = invoke('GameServer/Clan/ClanGoalService');
 const Actions = invoke('GameServer/Clan/ClanActionService');
 const { planForMember } = require('../src/GameServer/Clan/ClanEquipmentPlanner');
 
-const LEADER = 4900001, POOR = 4900002;
+const LEADER = 4900001, POOR = 4900002, GLADIATOR = 4900022;
 
 async function main() {
     DataCache.init();
@@ -37,6 +37,17 @@ async function main() {
     const helped = planForMember(member(POOR, 10000), [], [], { ...planOptions, clanShare: 1000000 });
     assert.strictEqual(helped.strategy, 'market');
     assert(Policy.isAcquisitionPlan(helped), 'the clan share funds the purchase');
+
+    // A dual sword is two bought blades: the clan funds the whole combination or none of it.
+    const broadsword = DataCache.items.find((item) => item.template?.name === 'Broadsword');
+    const held = { selfId: Number(broadsword.selfId), name: 'Broadsword', amount: 1, equipped: true, equippedCount: 1, equippedSlots: [7], slot: 7 };
+    const gladiator = { characterId: GLADIATOR, id: GLADIATOR, classId: 2, level: 42, phase: 'cold', currentRegion: 'Ant fields',
+        inventory: { [held.selfId]: held }, adena: 20000, stats: { classId: 2, role: 'dps' } };
+    const dual = planForMember(gladiator, [], [], { ...planOptions, clanShare: 3000000 });
+    assert(dual.combine && Number(dual.bridgeCost) === 2 * Number(dual.market.price),
+        `fixture: a dual sword of two bought blades, got ${dual.strategy} ${dual.target?.name}`);
+    const oneBlade = planForMember(gladiator, [], [], { ...planOptions, clanShare: Number(dual.market.price) });
+    assert(!(Policy.isAcquisitionPlan(oneBlade) && oneBlade.combine), 'money for one blade is no clan route to a dual sword');
 
     [databasePath, `${databasePath}-wal`, `${databasePath}-shm`].forEach((file) => fs.rmSync(file, { force: true }));
     const seed = new DatabaseSync(databasePath);
@@ -59,6 +70,22 @@ async function main() {
             // The leader is busy in a party and already armed; the poor member has no weapon.
             if (id === leaderId) seed.prepare(`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES (?, 'Weapon', 1, 0, 1, 7, ?)`).run(helped.target.selfId, id);
         }
+    }
+    // Clan 93: its only free member is the Gladiator holding one sword.
+    seed.prepare("INSERT INTO clans(id, name, level, leaderId) VALUES (93, 'Funding93', 2, ?)").run(LEADER + 20);
+    seed.prepare(`INSERT INTO clan_simulation_clans(clanId, mode, stateJson, createdAt, updatedAt)
+        VALUES (93, 'autonomous', '{"mode":"autonomous","warehouseRevision":0,"updatedAt":1}', 0, 0)`).run();
+    seed.prepare(`INSERT INTO clan_warehouse_items(clanId, selfId, name, kind, amount, enchant, reservedAmount)
+        VALUES (93, 57, 'Adena', 'Other.Currency', 3000000, 0, 0)`).run();
+    for (const [id, classId, level, partyId, weapon] of [[LEADER + 20, 1, 40, 'party-busy', helped.target.selfId], [GLADIATOR, 2, 42, null, held.selfId]]) {
+        seed.prepare(`INSERT INTO characters(id, username, name, classId, race, level, maxHp, maxMp, sex, face, hair, hairColor,
+            locX, locY, locZ, clanId) VALUES (?, 'bot_pop_funding', ?, ?, 0, ?, 500, 250, 0, 0, 0, 0, 82000, 148000, -3400, 93)`).run(id, `Fund${id}`, classId, level);
+        seed.prepare(`INSERT INTO bot_life_state(characterId, accountName, characterName, level, adena, activity, phase,
+            currentRegion, partyId, inventorySummary, statsJson, updatedAt) VALUES (?, 'bot_pop_funding', ?, ?, 20000, 'hunting', 'cold', 'Ant fields', ?, ?, ?, 1)`)
+            .run(id, `Fund${id}`, level, partyId, JSON.stringify({ 57: { selfId: 57, name: 'Adena', amount: 20000 }, [weapon]: { ...held, selfId: Number(weapon) } }),
+                JSON.stringify({ classId, role: 'dps' }));
+        seed.prepare(`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES (57, 'Adena', 20000, 0, 0, 0, ?)`).run(id);
+        seed.prepare(`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES (?, 'Weapon', 1, 0, 1, 7, ?)`).run(weapon, id);
     }
     seed.close();
     options.default.Database.path = path.relative(rootDir, databasePath);
@@ -113,6 +140,16 @@ async function main() {
         assert.strictEqual(buys, 0, 'no purchase is tried for a worker-owned member');
         const [untouched] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM clan_warehouse_items WHERE clanId = 92 AND selfId = 57']);
         assert.strictEqual(Number(untouched.n), 3000000, 'no money moves for a worker-owned member');
+
+        // The clan buys both blades of a dual sword, one per review.
+        const bladeId = Number(dual.target.selfId);
+        const blades = async () => Number((await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM items WHERE characterId = ? AND selfId = ?',
+            [GLADIATOR, bladeId]]))[0].n);
+        const first = await Equipment.resolveClan(await Goals.clanProjectionById(93), null);
+        assert.strictEqual(first.goal?.target?.memberId, GLADIATOR, JSON.stringify(first.reason || first.code));
+        assert.strictEqual(await blades(), 1, 'the clan bought the first blade');
+        await Equipment.resolveClan(await Goals.clanProjectionById(93), first.goal);
+        assert.strictEqual(await blades(), 2, 'and the second blade at the next review');
 
         // The goal is done: the completion event picks the next goal at once.
         await Database.execute([`UPDATE clan_simulation_clans SET stateJson = json_set(stateJson, '$.productionGoal', json(?)) WHERE clanId = 91`,

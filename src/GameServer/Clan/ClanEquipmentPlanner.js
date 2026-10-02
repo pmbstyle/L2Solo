@@ -223,7 +223,9 @@ function calculateRoute(member, spots = [], warehouseRows = [], options = {}) {
 function calculate(member, spots = [], warehouseRows = [], options = {}) {
     const plan = calculateRoute(member, spots, warehouseRows, options);
     if (plan?.strategy !== 'market') return plan;
-    if (!(number(plan.market?.price) > clanBudget(plannerState(member), options))) return plan;
+    // A dual sword is funded by its whole combination (bridgeCost), not one blade.
+    const cost = number(plan.bridgeCost ?? plan.market?.price);
+    if (!(cost > clanBudget(plannerState(member), options))) return plan;
     return { status: 'blocked', reason: 'clan_market_unfunded', strategy: 'none', target: null };
 }
 
