@@ -1138,10 +1138,19 @@ function progressionMultiplier() {
     return (ProgressionRates ||= invoke('GameServer/ProgressionRates')).profile().multiplier;
 }
 
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
+let DataCache;
+function templatePrice(selfId) {
+    DataCache ||= invoke('GameServer/DataCache');
+    return Number(ItemTemplateIndex.find(DataCache.items, selfId)?.template?.price || 0);
+}
+
+// A row without its own price sells at the item's template price. Both are
+// scaled by the rate here, so the buy window and the bots read one price.
 function normalizeEntry(entry, rate) {
     const row = typeof entry === 'number' ? { selfId: entry } : entry;
-    if (row.price === undefined) return row;
-    return { ...row, price: NpcShopPriceScale.price(row.price, rate) };
+    const price = row.price !== undefined ? row.price : templatePrice(row.selfId);
+    return { ...row, price: NpcShopPriceScale.price(price, rate) };
 }
 
 function flatten(listNames) {
