@@ -440,8 +440,7 @@ function bestSupplyOffer(selfId, options = {}) {
     return offers
         .filter((offer) => offer.available && Number(offer.price) <= budget &&
             (offer.sourceType === 'npc' || Number(offer.count) >= amount))
-        .sort((a, b) => Number(a.price) - Number(b.price) || Number(a.sourceType !== 'npc') - Number(b.sourceType !== 'npc')
-            || OfferOrder.compareDistance(a, b, options.origin))[0] || null;
+        .sort((a, b) => OfferOrder.compareSupplyOffers(a, b, options.origin))[0] || null;
 }
 
 function resolveSupplyItem(value) {
@@ -466,7 +465,7 @@ function resolveSupplyItem(value) {
     return matches.length === 1 ? matches[0] : null;
 }
 
-function supplyCatalog(limit = 96) {
+function supplyCatalog(limit = 96, origin = null) {
     const ids = [...new Set([
         ...(NpcShopBuyLists.allEntries?.() || []).map((entry) => Number(entry.selfId)),
         ...Object.values(MerchantStoreConfigs)
@@ -476,7 +475,7 @@ function supplyCatalog(limit = 96) {
     return ids
         .map((selfId) => {
             const offer = [...npcOffersAll(selfId), ...configuredStoreOffers(selfId)]
-                .sort((a, b) => Number(a.price) - Number(b.price) || Number(a.sourceType !== 'npc') - Number(b.sourceType !== 'npc'))[0];
+                .sort((a, b) => OfferOrder.compareSupplyOffers(a, b, origin))[0];
             return offer ? {
                 selfId,
                 name: offer.itemName,

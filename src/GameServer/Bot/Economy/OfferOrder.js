@@ -38,4 +38,13 @@ function compareOffers(left, right, origin) {
         || compareDistance(left, right, origin);
 }
 
-module.exports = { compareDistance, compareOffers };
+// A companion's supply errand: cheaper first; at the same price an NPC
+// before a configured store, since NPC stock never runs out; then the town
+// nearest the buyer.
+function compareSupplyOffers(left, right, origin) {
+    return Number(left.price) - Number(right.price)
+        || Number(left.sourceType !== 'npc') - Number(right.sourceType !== 'npc')
+        || compareDistance(left, right, origin);
+}
+
+module.exports = { compareDistance, compareOffers, compareSupplyOffers };

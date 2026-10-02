@@ -78,6 +78,9 @@ function companionSupplyErrand() {
         'a companion in Giran buys arrows in Giran');
     assert.strictEqual(supplyTown(townCenters['Talking Island']), 'Talking Island');
     assert.strictEqual(supplyTown(undefined), 'Aden', 'without an origin the catalog order is kept');
+    const catalogTown = (origin) => MarketOpportunity.supplyCatalog(10000, origin).find((entry) => entry.selfId === 17)?.town;
+    assert.strictEqual(catalogTown({ locX: 82000, locY: 148000 }), 'Giran',
+        'the supply catalog a companion is shown names the town its errand goes to');
 }
 
 async function clanWorkerPlanning() {
