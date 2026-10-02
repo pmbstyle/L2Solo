@@ -10,7 +10,10 @@ const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatib
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
-let sourceIndexCache = { spots: null, rewards: null, byItemId: new Map(), resolved: new Map() };
+// Each entry holds every source of an item for one bot level (hundreds for a
+// common material); 128 entries keep the cold worker inside its heap limit.
+const MAX_RESOLVED_SOURCE_CACHE = 128;
+let sourceIndexCache = { spots: null, rewards: null, byItemId: new Map(), resolved: new Map(), yields: new Map() };
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
@@ -1765,7 +1768,7 @@ function sourceIndexFor(spots = []) {
         }));
     });
 
-    sourceIndexCache = { spots, rewards, byItemId, resolved: new Map() };
+    sourceIndexCache = { spots, rewards, byItemId, resolved: new Map(), yields: new Map() };
     return byItemId;
 }
 
@@ -1777,7 +1780,8 @@ function sourceForItem(itemId, spots = [], state = {}, options = {}) {
     if (sourceCache?.has(cacheKey)) return sourceCache.get(cacheKey);
     const sourceIndex = sourceIndexFor(spots);
     const rates = ProgressionRates.profile();
-    const resolvedKey = `${cacheKey}:${rates.drop}:${rates.spoil}:${rates.adena}`;
+    const ratesKey = `${rates.drop}:${rates.spoil}:${rates.adena}`;
+    const resolvedKey = `${cacheKey}:${ratesKey}`;
     if (sourceIndexCache.resolved.has(resolvedKey)) {
         const cached = sourceIndexCache.resolved.get(resolvedKey);
         sourceCache?.set(cacheKey, cached);
@@ -1788,10 +1792,7 @@ function sourceForItem(itemId, spots = [], state = {}, options = {}) {
         && (spot?.raidBoss !== true || allowRaidSources)
     )).map(({ reward, spot, kind, npcLevel }) => {
         const sourceLevel = Number(npcLevel || spot?.avgLevel || 1);
-        const { chance, expectedYield } = itemDropYield(reward, itemId, kind, {
-            npcLevel: sourceLevel,
-            killerLevel: Number(state.level || 0)
-        });
+        const { chance, expectedYield } = dropYieldFor(reward, itemId, kind, sourceLevel, Number(state.level || 0), ratesKey);
         if (!chance) return null;
         return {
             npcId: Number(reward.selfId),
@@ -1814,14 +1815,33 @@ function sourceForItem(itemId, spots = [], state = {}, options = {}) {
                 ? Number(spot.raidBossTemplateId || reward.selfId)
                 : null
         };
-    }).filter(Boolean).sort((a, b) => sourceEffort(a, state, options) - sourceEffort(b, state, options)
-        || b.expectedYield - a.expectedYield);
-    // Kept for the lifetime of the spot atlas: one entry per item, bot level and
-    // rate profile (about a thousand for the live population). A bounded cache
-    // was evicted continuously once craft routes evaluate their materials.
+    }).filter(Boolean)
+        // Effort once per source, not once per comparison.
+        .map((source) => ({ source, effort: sourceEffort(source, state, options) }))
+        .sort((a, b) => a.effort - b.effort || b.source.expectedYield - a.source.expectedYield)
+        .map((entry) => entry.source);
+    if (sourceIndexCache.resolved.size >= MAX_RESOLVED_SOURCE_CACHE) {
+        sourceIndexCache.resolved.delete(sourceIndexCache.resolved.keys().next().value);
+    }
     sourceIndexCache.resolved.set(resolvedKey, sources);
     sourceCache?.set(cacheKey, sources);
     return sources;
+}
+
+// A drop yield depends only on the reward, the item and the deep-blue level
+// penalty: keep it as a number pair per rate profile. Craft routes evaluate
+// many materials, so the bounded source lists above are rebuilt often; this
+// keeps a rebuild from recomputing every reward roll.
+function dropYieldFor(reward, itemId, kind, npcLevel, killerLevel, ratesKey) {
+    const rule = ProgressionRates.deepBlueRule({ npcLevel, killerLevel });
+    const penalty = rule.active ? Math.min(100, rule.penaltyPercent) : 0;
+    const key = `${ratesKey}:${reward.selfId}:${itemId}:${kind}:${penalty}`;
+    let value = sourceIndexCache.yields.get(key);
+    if (!value) {
+        value = itemDropYield(reward, itemId, kind, { npcLevel, killerLevel });
+        sourceIndexCache.yields.set(key, value);
+    }
+    return value;
 }
 
 function stationRecipeIds() {
