@@ -80,6 +80,7 @@ const tests = [
     'tests/test_pvp_encounter_extension.js',
     'tests/test_pvp_encounter_expiry.js',
     'tests/test_clan_social.js',
+    'tests/test_clan_competition_clanmates.js',
     'tests/test_native_pvp_responsibility.js',
     'tests/test_revenge_policy.js',
     'tests/test_revenge_handoff.js',

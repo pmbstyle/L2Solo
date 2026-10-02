@@ -7,11 +7,19 @@ function traits(persona = {}) {
     return Object.fromEntries(['sociability', 'commitment', 'caution', 'ambition', 'assertiveness', 'empathy', 'resilience']
         .map(key => [key, clamp(t[key] ?? 0.5)]));
 }
+// A clanmate is met at least as the 'friendly' stance of InteractionMemoryPolicy
+// (trust >= 5): clanmates share a crowded spot instead of disputing it.
+const CLANMATE_WARMTH = (5 * 2) / 30;
+function sameClan(relation) {
+    return Number(relation?.sourceClanId) > 0 && Number(relation.sourceClanId) === Number(relation.targetClanId);
+}
 function feeling(relation) {
-    if (!relation?.ready || !(relation.effective || relation.personal)) return { warmth: 0, hostility: 0, fear: 0 };
-    const p = relation.effective || relation.personal;
-    return { warmth: clamp((p.affinity + p.trust * 2) / 30, -1, 1),
-        hostility: clamp(p.hostility / 30), fear: clamp(p.fear / 30) };
+    const p = relation?.ready ? (relation.effective || relation.personal) : null;
+    const result = p
+        ? { warmth: clamp((p.affinity + p.trust * 2) / 30, -1, 1), hostility: clamp(p.hostility / 30), fear: clamp(p.fear / 30) }
+        : { warmth: 0, hostility: 0, fear: 0 };
+    if (sameClan(relation)) result.warmth = Math.max(result.warmth, CLANMATE_WARMTH);
+    return result;
 }
 function disciplineRestraint(persona, relation) {
     const stage = relation?.clanSocial?.selfDiscipline?.stage;
