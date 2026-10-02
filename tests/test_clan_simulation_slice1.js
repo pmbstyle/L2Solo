@@ -30,6 +30,8 @@ function seedDatabase() {
         characterId, accountName, characterName, level, activity, phase,
         inventorySummary, statsJson, updatedAt
     ) VALUES (?, ?, ?, 20, 'hunting', 'cold', '{}', ?, ?)`);
+    const insertPersona = seed.prepare(`INSERT INTO bot_personas(characterId, version, seed, primaryDrive, archetype, traitsJson,
+        textCard, createdAt, updatedAt) VALUES (?, 1, 1, 'progression', 'steady_achiever', ?, '', 0, 0)`);
     for (let index = 1; index <= 10; index += 1) {
         const id = 4100000 + index;
         const classId = index === 1 ? 4 : index === 2 ? 15 : index === 3 ? 21 : index === 4 ? 11 : index === 5 ? 54 : 1;
@@ -41,6 +43,11 @@ function seedDatabase() {
             classId,
             partyHistory: index === 1 ? { 4100002: { runs: 2, lastGroupedAt: 1 } } : {}
         }), index);
+        // Stored personas: the founder has the strongest founder character of
+        // its drive (the founder threshold table is read from this table).
+        const strength = index === 1 ? 1 : 0.6;
+        insertPersona.run(id, JSON.stringify({ ambition: 0.9 * strength, assertiveness: 0.8 * strength, resilience: 0.8 * strength,
+            sociability: 0.7 * strength, commitment: 0.6 * strength, caution: 0.5, empathy: 0.5 }));
     }
     seed.close();
 }
@@ -51,7 +58,7 @@ function founderCandidate() {
         classId: 4,
         level: 20,
         clanId: 0,
-        persona: { traits: {
+        persona: { primaryDrive: 'progression', traits: {
             ambition: 0.9,
             assertiveness: 0.8,
             resilience: 0.8,
@@ -70,12 +77,14 @@ async function main() {
     try {
         assert.strictEqual(Policy.hasFirstProfession({ classId: 0 }), false);
         assert.strictEqual(Policy.hasFirstProfession({ classId: 4 }), true);
-        const eligibility = Policy.founderEligibility(founderCandidate(), { quorumCandidates: [1, 2, 3, 4, 5] });
+        // Founders: the top share of founder character within their primary drive.
+        const thresholds = { progression: 0.7 };
+        const eligibility = Policy.founderEligibility(founderCandidate(), { quorumCandidates: [1, 2, 3, 4, 5], founderThresholds: thresholds });
         assert.strictEqual(eligibility.ok, true, `founder should pass: ${eligibility.reasons.join(',')}`);
         assert.strictEqual(Policy.founderEligibility({
             ...founderCandidate(),
-            persona: { traits: { ...founderCandidate().persona.traits, ambition: 0.2 } }
-        }, { quorumCandidates: [1, 2, 3, 4, 5] }).ok, false);
+            persona: { primaryDrive: 'progression', traits: { ...founderCandidate().persona.traits, ambition: 0.2 } }
+        }, { quorumCandidates: [1, 2, 3, 4, 5], founderThresholds: thresholds }).ok, false);
         assert.strictEqual(Policy.isStaticService({ stats: { craftStationId: 1 } }), true);
 
         const existing = Policy.selectExistingClan({
@@ -128,7 +137,7 @@ async function main() {
         const projectedFounder = projection.find((candidate) => candidate.characterId === 4100001);
         const created = await ClanSimulationService.resolveCandidate({
             ...projectedFounder,
-            persona: { traits: {
+            persona: { primaryDrive: 'progression', traits: {
                 ambition: 0.9,
                 assertiveness: 0.8,
                 resilience: 0.8,

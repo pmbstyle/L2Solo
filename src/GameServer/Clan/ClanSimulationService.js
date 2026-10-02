@@ -69,6 +69,7 @@ function normalizeCandidate(row = {}) {
     const storedPersona = row.traitsJson
         ? {
             characterId: Number(row.characterId),
+            primaryDrive: String(row.primaryDrive || generatedPersona?.primaryDrive || ''),
             traits: parseJson(row.traitsJson, generatedPersona?.traits || {})
         }
         : generatedPersona;
@@ -113,7 +114,7 @@ async function candidateProjection(limit = 512, offset = 0) {
         const rows = await Database.execute([`
             SELECT c.id AS characterId, c.name, c.username, c.classId, c.level, c.clanId,
                    life.accountName, life.activity, life.phase, life.statsJson,
-                   persona.traitsJson
+                   persona.traitsJson, persona.primaryDrive
             FROM characters c
             LEFT JOIN bot_life_state life ON life.characterId = c.id
             LEFT JOIN bot_personas persona ON persona.characterId = c.id
@@ -172,6 +173,19 @@ async function autonomousClanProjection() {
     }
 }
 
+// Founder thresholds per primary drive (Policy.founderThresholds) over all stored
+// personas: read once per process; the persona distribution is stable.
+let founderThresholdTable = null;
+async function founderThresholds() {
+    if (founderThresholdTable) return founderThresholdTable;
+    const rows = await Database.execute(['SELECT primaryDrive, traitsJson FROM bot_personas', []], 'clan-simulation:founder-thresholds');
+    founderThresholdTable = Policy.founderThresholds(
+        rows.map((row) => ({ primaryDrive: row.primaryDrive, traits: parseJson(row.traitsJson, {}) })),
+        Config.founderTopShare
+    );
+    return founderThresholdTable;
+}
+
 function recruitmentScore(founder, candidate, members) {
     const suitability = Policy.clanSuitability(candidate, { level: 0, members }, { threshold: 0 });
     const rolePriority = suitability.roleNeed ? 1 : 0;
@@ -228,7 +242,8 @@ async function resolveCandidate(candidate, options = {}) {
         const pool = options.pool || await candidateProjection();
         const recruits = selectRecruitment(candidate, pool, Config.founderQuorum - 1);
         const eligibility = Policy.founderEligibility(candidate, {
-            quorumCandidates: [candidate, ...recruits]
+            quorumCandidates: [candidate, ...recruits],
+            founderThresholds: await founderThresholds()
         });
         metrics.founderEvaluations += 1;
         recordReasons(eligibility.reasons);
@@ -277,14 +292,14 @@ const ClanSimulationService = {
     candidateProjection,
     autonomousClanProjection,
     founderCandidates(limit = 512) {
-        return candidateProjection(limit).then((candidates) => {
+        return Promise.all([candidateProjection(limit), founderThresholds()]).then(([candidates, thresholds]) => {
             const clansPromise = autonomousClanProjection();
             return clansPromise.then((clans) => candidates.map((candidate) => {
                 const existing = Policy.selectExistingClan(candidate, clans, {
                     threshold: Config.existingClanSuitabilityThreshold
                 });
                 const recruits = selectRecruitment(candidate, candidates, Config.founderQuorum - 1);
-                const eligibility = Policy.founderEligibility(candidate, { quorumCandidates: [candidate, ...recruits] });
+                const eligibility = Policy.founderEligibility(candidate, { quorumCandidates: [candidate, ...recruits], founderThresholds: thresholds });
                 return { candidate, existingClan: existing, recruits, eligibility };
             }));
         }).then((evaluations) => {

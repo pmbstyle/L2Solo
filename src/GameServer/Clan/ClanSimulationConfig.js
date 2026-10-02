@@ -4,11 +4,8 @@ const DEFAULTS = {
     founderQuorum: 5,
     maxBotClans: 40,
     maxBotMemberShare: 0.70,
-    founderAmbitionMin: 0.80,
-    founderAssertivenessMin: 0.70,
-    founderResilienceMin: 0.65,
-    founderSociabilityMin: 0.55,
-    founderCommitmentMin: 0.45,
+    // Founders are this top share of founder character within each primary drive.
+    founderTopShare: 0.05,
     founderMinPartyHistory: 1,
     existingClanSuitabilityThreshold: 0.55,
     levelOneAdenaBase: 650000,
@@ -49,11 +46,7 @@ const ENV_KEYS = {
     founderQuorum: 'CLAN_SIMULATION_FOUNDER_QUORUM',
     maxBotClans: 'CLAN_SIMULATION_MAX_BOT_CLANS',
     maxBotMemberShare: 'CLAN_SIMULATION_MAX_BOT_MEMBER_SHARE',
-    founderAmbitionMin: 'CLAN_SIMULATION_FOUNDER_AMBITION_MIN',
-    founderAssertivenessMin: 'CLAN_SIMULATION_FOUNDER_ASSERTIVENESS_MIN',
-    founderResilienceMin: 'CLAN_SIMULATION_FOUNDER_RESILIENCE_MIN',
-    founderSociabilityMin: 'CLAN_SIMULATION_FOUNDER_SOCIABILITY_MIN',
-    founderCommitmentMin: 'CLAN_SIMULATION_FOUNDER_COMMITMENT_MIN',
+    founderTopShare: 'CLAN_SIMULATION_FOUNDER_TOP_SHARE',
     founderMinPartyHistory: 'CLAN_SIMULATION_FOUNDER_MIN_PARTY_HISTORY',
     existingClanSuitabilityThreshold: 'CLAN_SIMULATION_EXISTING_CLAN_THRESHOLD',
     levelOneAdenaBase: 'CLAN_SIMULATION_LEVEL_ONE_ADENA',
@@ -128,6 +121,7 @@ const config = applyOverrides(
 
 config.founderMinLevel = Math.max(1, Math.floor(config.founderMinLevel));
 config.founderQuorum = Math.max(5, Math.floor(config.founderQuorum));
+config.founderTopShare = Math.max(0.001, Math.min(1, Number(config.founderTopShare) || 0.05));
 config.maxBotClans = Math.max(0, Math.floor(config.maxBotClans));
 config.maxBotMemberShare = Math.max(0, Math.min(1, config.maxBotMemberShare));
 config.existingClanSuitabilityThreshold = Math.max(0, Math.min(1, config.existingClanSuitabilityThreshold));
