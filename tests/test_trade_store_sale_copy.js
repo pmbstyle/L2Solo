@@ -20,15 +20,16 @@ function item(id, selfId, amount, equipped, name) {
     });
 }
 
-function seller(items) {
+function seller(items, id = 9001) {
     return {
-        fetchId: () => 9001,
+        fetchId: () => id,
         backpack: {
             items,
+            insertItem(objectId, selfId, { amount }) { this.items.push(item(objectId, selfId, amount, false, 'Elven Ring')); },
             fetchItems() { return this.items; },
             fetchItemFromSelfId(selfId) { return this.items.find((entry) => Number(entry.fetchSelfId()) === Number(selfId)); },
             stackableExists(selfId) {
-                const found = this.fetchItemFromSelfId(selfId);
+                const found = Number(selfId) === 57 ? this.fetchItemFromSelfId(selfId) : null;
                 return found ? Promise.resolve(found) : Promise.reject(new Error('missing_stack'));
             },
             updateAmount(id, amount) {
@@ -83,6 +84,28 @@ async function main() {
         await assert.rejects(TradeService.sellToStore(wornOnly,
             { storeType: 3, items: [{ selfId: RING, price: 100, count: 1 }] }, RING, 1), /No items to sell/);
         assert.strictEqual(wornOnly.backpack.items.length, 2);
+
+        // A budget-backed sale that fails after the buyer got the item takes
+        // back that copy, not the ring the buyer wears.
+        deleted.length = 0;
+        const buyer = seller([item(401, RING, 1, true, 'Elven Ring'), item(402, 57, 5000, false, 'Adena')], 9002);
+        const failing = seller([item(501, RING, 1, false, 'Elven Ring'), item(502, 57, 10, false, 'Adena')]);
+        const setItem = Database.setItem;
+        Database.setItem = async () => ({ insertId: 499 + deleted.length });
+        Database.updateItemAmount = async (characterId, objectId) => {
+            if (Number(characterId) === 9001 && Number(objectId) === 502) throw new Error('seller_adena_write_failed');
+        };
+        try {
+            await assert.rejects(TradeService.sellToStore(failing,
+                { storeType: 3, budgetBacked: true, items: [{ selfId: RING, price: 100, count: 1 }] }, RING, 1,
+                { buyerActor: buyer }), /seller_adena_write_failed/);
+        } finally {
+            Database.setItem = setItem;
+        }
+        assert.deepStrictEqual(buyer.backpack.items.filter((entry) => entry.fetchSelfId() === RING)
+            .map((entry) => [entry.fetchId(), entry.fetchEquipped()]), [[401, true]], 'the buyer keeps the ring it wears');
+        assert.strictEqual(buyer.backpack.fetchItemFromSelfId(57).fetchAmount(), 5000, 'and gets its Adena back');
+        assert.strictEqual(failing.backpack.items.filter((entry) => entry.fetchSelfId() === RING).length, 1, 'the seller gets its ring back');
     } finally {
         DataCache.items = originalItems;
         Object.assign(Database, originals);

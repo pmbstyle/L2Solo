@@ -402,7 +402,8 @@ async function sellToStore(actor, store, selfId, qty, options = {}) {
                     store.items.splice(Math.max(0, Math.min(originalIndex, store.items.length)), 0, storeItem);
                 }
                 try {
-                    if (buyerItemGiven) await takeItem(buyerActor, selfId, sellQty);
+                    // Take back the copy just given, never one the buyer wears.
+                    if (buyerItemGiven) await takeItem(buyerActor, selfId, sellQty, sellableCopy(buyerActor, selfId));
                     if (buyerAdenaDeducted) await giveAdena(buyerActor, totalEarn);
                     if (sellerItemTaken) await giveItem(actor, selfId, sellQty);
                 } catch (rollbackError) {
