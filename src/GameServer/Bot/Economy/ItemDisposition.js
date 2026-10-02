@@ -139,12 +139,17 @@ function isNpcOnlyItem(item, template = templateFor(item?.selfId)) {
         || isSkillBookItem(item, template);
 }
 
+// A hot actor passes its learned skill level; a cold state uses the skill tree.
+function craftLevelFor(state) {
+    return Number(state?.craftLevel ?? state?.stats?.dwarvenCraftLevel
+        ?? CraftShopService.craftLevelFor(state) ?? 0);
+}
+
 function canLearnRecipe(state, item) {
     const info = recipeInfo(item);
     if (!info || info.recipe.type !== 'dwarven'
         || gradeIndex(recipeProductRank(item)) < gradeIndex('d')) return false;
-    const craftLevel = Number(state?.craftLevel ?? state?.stats?.dwarvenCraftLevel
-        ?? CraftShopService.craftLevelFor(state) ?? 0);
+    const craftLevel = craftLevelFor(state);
     if (craftLevel <= 0) return false;
     return craftLevel >= Number(info.recipe.level || 0);
 }
@@ -509,8 +514,7 @@ module.exports = {
     WAREHOUSE_GEAR_MIN_BASE_PRICE,
     basePrice,
     canLearnRecipe,
-    craftLevelFor: (state) => Number(state?.craftLevel ?? state?.stats?.dwarvenCraftLevel
-        ?? CraftShopService.craftLevelFor(state) ?? 0),
+    craftLevelFor,
     gradeIndex,
     isTradeEligible,
     isBelowCGrade,

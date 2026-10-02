@@ -486,7 +486,7 @@ async function craftingOptions(clan) {
     const crafters = (clan.members || []).filter(member => member.phase === 'cold'
         && (!member.partyId || Number(member.stats?.clanPartyObjective?.clanId) === Number(clan.id))
         && !['dead', 'respawning'].includes(member.activity)
-        && CraftShops.craftLevelFor(member) > 0);
+        && CraftShops.isServiceCrafter(member));
     if (!crafters.length) return { craftRecipes: [...published.values()], allowedRecipeIds: [...published.keys()], craftProviders: providers };
     const rows = await Database.execute([`SELECT recipes.characterId, recipes.recipeId FROM character_recipes recipes
         JOIN characters members ON members.id = recipes.characterId WHERE members.clanId = ?`, [clan.id]], 'clan-craft:recipes');
@@ -497,7 +497,7 @@ async function craftingOptions(clan) {
         knownByMember.get(id).add(Number(row.recipeId));
     }
     for (const recipe of all) {
-        const eligible = crafters.filter(member => CraftShops.craftLevelFor(member) >= Number(recipe.level));
+        const eligible = crafters.filter(member => CraftShops.canCraft(member, recipe));
         const crafter = eligible.find(member => knownByMember.get(memberId(member))?.has(Number(recipe.recipeId))) || eligible[0];
         if (!crafter) continue;
         const known = knownByMember.get(memberId(crafter))?.has(Number(recipe.recipeId)) || false;

@@ -24,6 +24,39 @@ async function run() {
     assert.strictEqual(BotRoles.inferRole(57), 'crafter', 'Warsmith must no longer be treated as generic DPS');
     assert.strictEqual(CraftShopService.isServiceCrafter(artisan), true);
     assert.strictEqual(CraftShopService.craftLevelFor(artisan), 3, 'Artisan craft level must match the C4 Create Item tree');
+    // The skill tree lists only the levels a class adds; a class keeps what its parents learned.
+    const classLine = { 53: [53], 56: [53, 56], 57: [53, 56, 57] };
+    const treeLevel = (classId, level) => classLine[classId]
+        .flatMap((id) => DataCache.skillTree.find((entry) => entry.classId === id)?.skills || [])
+        .filter((skill) => skill.selfId === 172)
+        .flatMap((skill) => skill.levels)
+        .filter((entry) => entry.pLevel <= level)
+        .reduce((best, entry) => Math.max(best, entry.level), 0);
+    [[53, 1], [56, 20], [57, 40]].forEach(([classId, firstLevel]) => {
+        for (let level = firstLevel; level <= 80; level += 1) {
+            assert.strictEqual(
+                CraftShopService.craftLevelFor({ level, stats: { classId } }),
+                treeLevel(classId, level),
+                `class ${classId} at level ${level} must keep every Create Item level of its class line`
+            );
+        }
+    });
+    assert.strictEqual(CraftShopService.craftLevelFor({ level: 41, stats: { classId: 57 } }), 4,
+        'a Warsmith keeps the Artisan craft level 4 until it learns level 5 at 43');
+    assert.strictEqual(CraftShopService.craftLevelFor({ level: 60, stats: { classId: 0 } }), 0,
+        'a class without Create Item has no craft level');
+    const levelOneRecipe = { level: 1 };
+    assert.strictEqual(CraftShopService.canCraft({ level: 40, stats: { classId: 55 } }, levelOneRecipe), false,
+        'a Bounty Hunter has Create Item 1 but only crafter classes craft');
+    assert.strictEqual(CraftShopService.canCraft({ level: 36, stats: { classId: 56 } }, { level: 4 }), true);
+    assert.strictEqual(CraftShopService.canCraft({ level: 36, stats: { classId: 56 } }, { level: 5 }), false,
+        'a crafter needs the recipe level');
+    assert.strictEqual(CraftShopService.canCraft({ level: 41, stats: { classId: 57 } }, { level: 4 }), true);
+    const loadedTree = DataCache.skillTree;
+    DataCache.skillTree = loadedTree.filter((entry) => entry.classId !== 56);
+    assert.strictEqual(CraftShopService.craftLevelFor({ level: 41, stats: { classId: 57 } }), 1,
+        'kept craft levels must follow a reloaded skill tree');
+    DataCache.skillTree = loadedTree;
 
     const profile = CraftShopService.profileFor(artisan);
     assert.strictEqual(profile.type, 'dwarven');

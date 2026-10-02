@@ -297,7 +297,7 @@ async function craft(state, random = Math.random) {
         if (Number(membership?.clanId) !== clanId || (crafterState.partyId || crafterState.party?.partyId)
             || Number(crafterState.vitals?.hp) <= 0 || ['dead', 'respawning'].includes(crafterState.activity)
             || String(crafterState.simulation?.ownerId || crafterState.simulationOwner || 'legacy_main') !== 'legacy_main'
-            || CraftShopService.craftLevelFor(crafterState) < Number(recipe.level)) {
+            || !CraftShopService.canCraft(crafterState, recipe)) {
             return { state, crafted: false, reason: 'clan_crafter_unavailable' };
         }
         if (Math.hypot(Number(state.loc?.locX) - Number(crafterState.loc?.locX),

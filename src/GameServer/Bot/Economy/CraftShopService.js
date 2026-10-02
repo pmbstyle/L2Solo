@@ -98,23 +98,35 @@ function isServiceCrafter(state = {}) {
     return classId === 56 || classId === 57;
 }
 
+// Craft level = the Create Item level the class line has learned by this
+// character level, read from the skill tree like a hot character's skills: a
+// Warsmith keeps the levels it learned as an Artisan. Kept per class, indexed
+// by character level.
+const CREATE_ITEM_SKILL_ID = 172;
+const craftLevelRows = new Map();
+let craftLevelsTree = null;
+let ColdCombatProfile = null;
+
 function craftLevelFor(state = {}) {
     const classId = Number(state.classId || state.stats?.classId || 0);
     const level = Number(state.level || 1);
-    if (classId === 57) {
-        if (level >= 70) return 9;
-        if (level >= 62) return 8;
-        if (level >= 55) return 7;
-        if (level >= 49) return 6;
-        if (level >= 43) return 5;
-        return 0;
+    if (craftLevelsTree !== DataCache.skillTree) {
+        craftLevelRows.clear();
+        craftLevelsTree = DataCache.skillTree;
     }
-    if (classId === 56) {
-        if (level >= 36) return 4;
-        if (level >= 28) return 3;
-        if (level >= 20) return 2;
+    let row = craftLevelRows.get(classId);
+    if (!row) craftLevelRows.set(classId, row = []);
+    if (row[level] === undefined) {
+        ColdCombatProfile ||= invoke('GameServer/Bot/Population/ColdCombatProfile');
+        row[level] = ColdCombatProfile.treeSkillLevel(classId, level, CREATE_ITEM_SKILL_ID);
     }
-    return 0;
+    return row[level];
+}
+
+// Whether this character crafts the recipe: only crafter classes craft, even
+// when another dwarf has Create Item from its class line.
+function canCraft(state = {}, recipe = {}) {
+    return isServiceCrafter(state) && craftLevelFor(state) >= Number(recipe.level || 0);
 }
 
 function stationForSlot(slot) {
@@ -271,6 +283,7 @@ module.exports = {
     CraftStations,
     isServiceCrafter,
     craftLevelFor,
+    canCraft,
     stationForSlot,
     stationFor,
     locationFor,
