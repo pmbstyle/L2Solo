@@ -25,7 +25,7 @@ const LEADER = 4900001, POOR = 4900002;
 
 async function main() {
     DataCache.init();
-    const member = (id, adena) => ({ characterId: id, id, classId: 1, level: 40, phase: 'cold', currentRegion: 'Giran',
+    const member = (id, adena) => ({ characterId: id, id, classId: 1, level: 40, phase: 'cold', currentRegion: 'Ant fields',
         inventory: {}, adena, stats: { classId: 1 } });
     const planOptions = { maxExpectedKills: 1500 };
 
@@ -53,7 +53,7 @@ async function main() {
             seed.prepare(`INSERT INTO characters(id, username, name, classId, race, level, maxHp, maxMp, sex, face, hair, hairColor,
                 locX, locY, locZ, clanId) VALUES (?, 'bot_pop_funding', ?, 1, 0, 40, 500, 250, 0, 0, 0, 0, 82000, 148000, -3400, ?)`).run(id, `Fund${id}`, clanId);
             seed.prepare(`INSERT INTO bot_life_state(characterId, accountName, characterName, level, adena, activity, phase,
-                currentRegion, partyId, inventorySummary, statsJson, updatedAt) VALUES (?, 'bot_pop_funding', ?, 40, ?, 'hunting', 'cold', 'Giran', ?, ?, ?, 1)`)
+                currentRegion, partyId, inventorySummary, statsJson, updatedAt) VALUES (?, 'bot_pop_funding', ?, 40, ?, 'hunting', 'cold', 'Ant fields', ?, ?, ?, 1)`)
                 .run(id, `Fund${id}`, adena, id === leaderId ? 'party-busy' : null, JSON.stringify({ 57: { selfId: 57, name: 'Adena', amount: adena } }), JSON.stringify({ classId: 1 }));
             seed.prepare(`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES (57, 'Adena', ?, 0, 0, 0, ?)`).run(adena, id);
             // The leader is busy in a party and already armed; the poor member has no weapon.
@@ -83,7 +83,7 @@ async function main() {
         assert.strictEqual(clanPaid, price - 10000, 'the clan pays the rest');
         const after = await LifeState.findByCharacterId(POOR);
         assert.strictEqual(after.activity, 'hunting', 'the member keeps hunting where it is');
-        assert.strictEqual(after.currentRegion, 'Giran');
+        assert.strictEqual(after.currentRegion, 'Ant fields');
 
         // A purchase that fails gives the clan its part back.
         const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
