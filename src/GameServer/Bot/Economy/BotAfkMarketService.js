@@ -281,14 +281,39 @@ function sameBuyOrder(stock, lines) {
         && Number(line.count) === Number(lines[index].count));
 }
 
-function sameSellOrder(stock, lines) {
+// The shop offers the same items, counts and enchants; prices may differ.
+function sameSellLines(stock, lines) {
     if (Number(stock?.storeType) !== AfkTrade.SELL) return false;
     const current = stock.lines.filter((line) => Number(line.count) > 0);
     return current.length === lines.length && current.every((line, index) =>
         Number(line.selfId) === Number(lines[index].selfId)
         && Number(line.count) === Number(lines[index].count)
-        && Number(line.price) === Number(lines[index].price)
         && Number(line.enchant || 0) === Number(lines[index].enchant || 0));
+}
+
+function sameSellOrder(stock, lines) {
+    return sameSellLines(stock, lines) && stock.lines.filter((line) => Number(line.count) > 0)
+        .every((line, index) => Number(line.price) === Number(lines[index].price));
+}
+
+// Only prices changed: update those lines in place with the author's
+// repriceBot (as an agreed deal does) instead of replacing the whole shop.
+// A trade or a deal that changed the shop meanwhile wins: the remaining
+// lines wait for the next review.
+async function repriceSellLines(ownerId, stock, lines) {
+    const current = stock.lines.filter((line) => Number(line.count) > 0);
+    let shop = stock;
+    for (let index = 0; index < lines.length; index++) {
+        if (Number(current[index].price) === Number(lines[index].price)) continue;
+        try {
+            shop = await AfkTrade.repriceBot(ownerId, current[index].id, lines[index].price, shop.revision, null, { match: false });
+        } catch (error) {
+            if (error.message !== 'afk_trade_shop_changed') throw error;
+            return AfkTrade.findOwnerProjection(ownerId)?.shop || null;
+        }
+        if (!shop) return null;
+    }
+    return shop;
 }
 
 async function reconcileOne(state, goal) {
@@ -368,6 +393,9 @@ async function reconcileOne(state, goal) {
         return { state, changed: pricingSaved };
     }
     if (side === AfkTrade.BUY) listingSince.delete(ownerId);
+    if (side === AfkTrade.SELL && stock?.town === town && sameSellLines(stock, lines)) {
+        return finishPublish(ownerId, state, await repriceSellLines(ownerId, stock, lines));
+    }
 
     const loc = stock?.town === town
         ? { locX: stock.locX, locY: stock.locY, locZ: stock.locZ }
@@ -385,6 +413,10 @@ async function reconcileOne(state, goal) {
         appearance: appearance(row, inventory),
         lines
     });
+    return finishPublish(ownerId, state, shop);
+}
+
+async function finishPublish(ownerId, state, shop) {
     try {
         await AfkTrade.matchAfkOrders(ownerId);
         await BuyStoreService.matchAfkPlayerShop(ownerId);

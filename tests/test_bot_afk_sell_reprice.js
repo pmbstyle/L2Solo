@@ -70,11 +70,25 @@ async function run() {
     policy(100);
     assert.strictEqual((await review(ownerId)).changed, false, 'an unchanged price must not republish the shop');
 
+    const lineId = Number(AfkTrade.findOwnerProjection(ownerId).shop.lines[0].id);
     policy(88, 90);
     const undercut = await review(ownerId);
     assert.strictEqual(undercut.changed, true);
+    assert.strictEqual(Number(undercut.shop.lines[0].id), lineId, 'a price change updates the line in place');
     assert.strictEqual(linePrice(ownerId), 88, 'a cheaper competitor pulls the ask to 2% under it');
     assert.strictEqual(undercut.shop.lines[0].count, 25);
+
+    // A trade or a deal that changed the shop during the review wins.
+    const originalReprice = AfkTrade.repriceBot;
+    AfkTrade.repriceBot = async () => { throw new Error('afk_trade_shop_changed'); };
+    try {
+        policy(80, 82);
+        const raced = await review(ownerId);
+        assert.strictEqual(linePrice(ownerId), 88, 'a changed shop keeps its price until the next review');
+        assert.strictEqual(raced.changed, true);
+    } finally {
+        AfkTrade.repriceBot = originalReprice;
+    }
 
     policy(95);
     assert.strictEqual((await review(ownerId)).changed, false, 'the ask is not raised when the competitor is gone');
