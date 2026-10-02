@@ -24,6 +24,13 @@ assert.strictEqual(investment.affordable, true, 'wealth bot with a reserve shoul
 assert.strictEqual(investment.reason, 'reduce_deaths_at_profitable_spot');
 assert.strictEqual(Policy.investmentOpportunity({ ...state, adena: 9000 }, 9000).affordable, false, 'the purchase must leave operating capital');
 assert.strictEqual(Policy.investmentOpportunity({ ...state, persona: { primaryDrive: 'progression', traits: {} } }, 9000), null, 'other drives retain normal gear priority');
+// The bot's own buy order holds part of the money: the investment stays affordable.
+assert.strictEqual(Policy.investmentOpportunity({ ...state, adena: 3000 }, 9000).affordable, false);
+assert.strictEqual(Policy.investmentOpportunity({ ...state, adena: 3000 }, 9000, { escrow: 9000 }).affordable, true,
+    'Adena in the bot\'s own buy order counts toward the investment');
+// The purchase must also be funded by the shared rule: its reserve is kept.
+assert.strictEqual(Policy.investmentOpportunity(state, 9000, { reserve: 5000 }).affordable, false,
+    'an investment the shared funding check refuses is not affordable');
 assert.strictEqual(Policy.spotDeathPressure({ ...state, spotId: 'other_spot' }), null, 'historic deaths cannot bleed into a new spot');
 
 const backoff = SpotRiskPolicy.backoffForStates([state], state.spotId, 1000);
