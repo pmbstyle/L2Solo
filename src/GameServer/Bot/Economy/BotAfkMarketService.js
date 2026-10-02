@@ -157,13 +157,24 @@ function sellLines(state, stock, inventory) {
             || String(item.kind || '').startsWith('Other.Shot'))
         .map((item) => Number(item.selfId)));
     const remaining = new Map(listings.map((item) => [Number(item.selfId), Number(item.count)]));
+    const listed = new Map((classified.decisions || [])
+        .filter((decision) => decision.action === 'list')
+        .map((decision) => [Number(decision.item.selfId), decision]));
     const next = [];
+    // A kept line is re-priced as a physical store's review re-prices its
+    // stall (ColdMarketListingService.revalidatedItems): its own price is the
+    // preferred price, so only a cheaper competitor lowers it.
+    const keptPrice = (line) => {
+        const decision = listed.get(line.selfId);
+        if (!decision) return line.price;
+        return ListingPolicy.listingPrice({ ...decision.item, price: line.price }, decision);
+    };
     const keepExisting = (line) => {
         if (next.length >= MAX_LINES) return;
         const available = Math.max(0, Number(remaining.get(line.selfId) || 0));
         if (!available) return;
         const count = Math.min(line.count, available);
-        next.push({ ...line, count });
+        next.push({ ...line, count, price: keptPrice(line) });
         remaining.set(line.selfId, available - count);
     };
     const appendListing = (listing) => {

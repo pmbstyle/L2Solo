@@ -307,6 +307,7 @@ const tests = [
     'tests/test_bot_market_spot_town.js',
     'tests/test_bot_market_nearest_town.js',
     'tests/test_bot_market_offer_order.js',
+    'tests/test_bot_afk_sell_reprice.js',
     'tests/test_bot_giran_starter_recovery.js',
     'tests/test_bot_craft_shop.js',
     'tests/test_bot_warehouse.js',
