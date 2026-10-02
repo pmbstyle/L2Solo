@@ -131,9 +131,7 @@ function actionTypeFor(clan, goal) {
 
 function workDone(actionType, result = {}) {
     if (actionType === ACTION_TYPES.CONTRIBUTION) {
-        return (result.results || []).some((entry) => entry?.ok)
-            || result.advanced?.ok === true
-            || number(result.warehouse?.deposited) > 0;
+        return result.advanced?.ok === true || number(result.warehouse?.deposited) > 0;
     }
     if (actionType === ACTION_TYPES.WAREHOUSE) return number(result.deposited) > 0;
     if (actionType === ACTION_TYPES.MARKET) return result.purchased === true || result.advanced?.ok === true;
@@ -374,12 +372,7 @@ async function execute(action, options = {}) {
                     : await GoalService.resolveClan(clan, { actionId: Number(action.id) });
                 break;
             case ACTION_TYPES.CONTRIBUTION:
-                result = await EconomyService.resolveClan(clan, {
-                    batchSize: 1,
-                    deadlineAt,
-                    actionId: Number(action.id),
-                    goalUpdatedAt: Number(payload.goalUpdatedAt) || null
-                });
+                result = await EconomyService.resolveClan(clan, { deadlineAt });
                 break;
             case ACTION_TYPES.PRODUCTION:
                 result = await resolveProduction(clan);

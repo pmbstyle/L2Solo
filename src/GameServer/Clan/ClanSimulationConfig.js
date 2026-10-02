@@ -16,7 +16,6 @@ const DEFAULTS = {
     adenaRateExponent: 0.59,
     personalAdenaReserveMultiplier: 1,
     contributionMaxFraction: 0.35,
-    contributionBatchSize: 8,
     warehouseDepositBatchSize: 8,
     bloodMarkMaxPrice: 2500000,
     marketDemandTimeoutMs: 300000,
@@ -62,7 +61,6 @@ const ENV_KEYS = {
     adenaRateExponent: 'CLAN_SIMULATION_ADENA_RATE_EXPONENT',
     personalAdenaReserveMultiplier: 'CLAN_SIMULATION_PERSONAL_ADENA_RESERVE_MULTIPLIER',
     contributionMaxFraction: 'CLAN_SIMULATION_CONTRIBUTION_MAX_FRACTION',
-    contributionBatchSize: 'CLAN_SIMULATION_CONTRIBUTION_BATCH_SIZE',
     warehouseDepositBatchSize: 'CLAN_SIMULATION_WAREHOUSE_DEPOSIT_BATCH_SIZE',
     bloodMarkMaxPrice: 'CLAN_SIMULATION_BLOOD_MARK_MAX_PRICE',
     marketDemandTimeoutMs: 'CLAN_SIMULATION_MARKET_DEMAND_TIMEOUT_MS',
@@ -135,7 +133,6 @@ config.maxBotMemberShare = Math.max(0, Math.min(1, config.maxBotMemberShare));
 config.existingClanSuitabilityThreshold = Math.max(0, Math.min(1, config.existingClanSuitabilityThreshold));
 config.personalAdenaReserveMultiplier = Math.max(0, config.personalAdenaReserveMultiplier);
 config.contributionMaxFraction = Math.max(0, Math.min(1, config.contributionMaxFraction));
-config.contributionBatchSize = Math.max(1, Math.floor(config.contributionBatchSize));
 config.warehouseDepositBatchSize = Math.max(1, Math.floor(config.warehouseDepositBatchSize));
 config.bloodMarkMaxPrice = Math.max(1, Math.floor(config.bloodMarkMaxPrice));
 config.marketDemandTimeoutMs = Math.max(1000, Math.floor(config.marketDemandTimeoutMs));

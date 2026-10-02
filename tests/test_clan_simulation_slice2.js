@@ -49,6 +49,7 @@ async function main() {
     seedDatabase();
     options.default.Database.path = path.relative(rootDir, databasePath);
     Database.init();
+    await Database.initClanHalls(); // creates the dues cursor table, as the server start does
 
     try {
         const x1 = Policy.scaledAdenaRequirement(0);
@@ -60,10 +61,7 @@ async function main() {
         assert.strictEqual(x1, 650000);
         assert(x10 > x1, 'level-one clan Adena requirement must scale with progression rate');
 
-        const wallet = Policy.disposableAdena({ level: 20, adena: 10000 });
-        assert.strictEqual(wallet.reserve, 5000);
-        assert.strictEqual(wallet.disposable, 5000);
-        assert.strictEqual(Policy.contributionCap({ level: 20, adena: 10000 }).maxContribution, 1750);
+        assert.strictEqual(Policy.personalReserve({ level: 20, adena: 10000 }), 5000);
 
         const created = await Database.createAutonomousClan({
             name: 'SliceTwoClan',
@@ -76,52 +74,36 @@ async function main() {
         });
         assert.strictEqual(created.ok, true);
 
-        const manual = await Database.transferClanAdena({
-            clanId: created.clanId,
-            characterId: 4200002,
-            leaderId: 4200001,
-            targetLevel: 0,
-            amount: 10000,
-            reserve: 5000,
-            maxContributionFraction: 0.35,
-            resolveKey: 'slice2-idempotency'
-        });
-        assert.strictEqual(manual.ok, true);
-        const duplicate = await Database.transferClanAdena({
-            clanId: created.clanId,
-            characterId: 4200002,
-            leaderId: 4200001,
-            targetLevel: 0,
-            amount: 10000,
-            reserve: 5000,
-            maxContributionFraction: 0.35,
-            resolveKey: 'slice2-idempotency'
-        });
-        assert.strictEqual(duplicate.ok, false);
-        assert.strictEqual(duplicate.code, 'contribution_already_applied');
+        // Level 0 dues: a share of new earnings, paid into the leader's wallet.
+        const settle = (characterId, rate, timestamp) => Database.settleClanDues({ clanId: created.clanId, characterId, rate, timestamp });
+        assert.strictEqual((await settle(4200002, 0.35, 1)).amount, 0, 'the first settlement only marks the wallet');
+        await Database.execute(['UPDATE items SET amount = amount + 2000000 WHERE characterId = ? AND selfId = 57', [4200002]]);
+        const paid = await settle(4200002, 0.35, 2);
+        assert.strictEqual(paid.amount, 700000, '35% of the 2M earned');
+        assert.strictEqual((await settle(4200002, 0.35, 3)).amount, 0, 'the same earnings cannot be collected twice');
+        assert.strictEqual((await settle(4200001, 0.35, 4)).code, 'leader_pays_itself');
 
         const resolved = await ClanEconomyService.resolveBatch(8, { budgetMs: 1000 });
         assert.strictEqual(resolved.levelUps, 1, 'level 0 should advance after the real contribution ledger reaches 650k');
-        assert.strictEqual(resolved.contributions > 0, true);
 
         const [clan] = await Database.execute(['SELECT level FROM clans WHERE id = ?', [created.clanId]]);
         assert.strictEqual(Number(clan.level), 1);
         const [ledger] = await Database.execute(['SELECT COUNT(*) AS entries, SUM(amount) AS amount FROM clan_contributions WHERE clanId = ?', [created.clanId]]);
-        assert.strictEqual(Number(ledger.amount), 650000);
-        assert(Number(ledger.entries) >= 2);
+        assert.strictEqual(Number(ledger.amount), 700000);
+        assert.strictEqual(Number(ledger.entries), 1);
 
         const [source] = await Database.execute(['SELECT amount FROM items WHERE characterId = ? AND selfId = 57', [4200002]]);
         const [leader] = await Database.execute(['SELECT amount FROM items WHERE characterId = ? AND selfId = 57', [4200001]]);
-        assert(Number(source.amount) >= 5000, 'the contributor must retain the configured personal reserve');
-        // The leader received the 650k as real Adena, and the level-up spent it
-        // like the player's level-up does.
-        assert.strictEqual(Number(leader.amount), 1000000, 'the leader pays the level from the received Adena');
+        assert.strictEqual(Number(source.amount), 2300000);
+        // The leader received the 700k as real Adena, and the level-up spent 650k
+        // of it like the player's level-up does.
+        assert.strictEqual(Number(leader.amount), 1050000, 'the leader pays the level from the received Adena');
 
         const [sourceState] = await Database.execute(['SELECT adena, inventorySummary FROM bot_life_state WHERE characterId = ?', [4200002]]);
         const [leaderState] = await Database.execute(['SELECT adena, inventorySummary FROM bot_life_state WHERE characterId = ?', [4200001]]);
-        assert(Number(sourceState.adena) >= 5000);
-        assert.strictEqual(Number(leaderState.adena), 1000000);
-        assert.strictEqual(JSON.parse(leaderState.inventorySummary)['57'].amount, 1000000);
+        assert.strictEqual(Number(sourceState.adena), 2300000);
+        assert.strictEqual(Number(leaderState.adena), 1050000);
+        assert.strictEqual(JSON.parse(leaderState.inventorySummary)['57'].amount, 1050000);
 
         console.log('Clan simulation Slice 2 checks passed');
     } finally {
