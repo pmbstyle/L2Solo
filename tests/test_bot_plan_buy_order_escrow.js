@@ -13,8 +13,11 @@ DataCache.init();
 // WTB for it and the bid moves into the order's escrow. The next plan saw
 // only the wallet, dropped the target, the order was withdrawn with its
 // escrow refunded, and the same target came back: one order every ~6 min.
+// The bot holds a usable weapon: an unarmed bot would bridge a weapon first.
+const weapon = invoke('GameServer/Bot/AI/BotGear').planFor({ classId: 1, level: 30 }).items.find((item) => Number(item.slot) === 7);
 const state = {
-    characterId: 7, phase: 'cold', level: 30, activity: 'hunting', inventory: {},
+    characterId: 7, phase: 'cold', level: 30, activity: 'hunting',
+    inventory: { [weapon.selfId]: { selfId: Number(weapon.selfId), amount: 1, equippedCount: 1, equipped: 1 } },
     stats: { classId: 1, build: { grade: 'd', classId: 1, level: 30 }, equipment: [] }
 };
 const posting = GearAcquisitionPlanner.staticNpcUpgradePlan({ ...state, adena: 120000 });
@@ -119,7 +122,8 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
         cachedState: LifeState.cachedState,
         npcEquipmentBridgePlan: GearAcquisitionPlanner.npcEquipmentBridgePlan,
         replanContextFor: GearAcquisitionPlanner.replanContextFor,
-        fundedMarketPlanForTarget: GearAcquisitionPlanner.fundedMarketPlanForTarget
+        fundedMarketPlanForTarget: GearAcquisitionPlanner.fundedMarketPlanForTarget,
+        bestSourceForPlan: GearAcquisitionPlanner.bestSourceForPlan
     };
     try {
         const plannedWith = [];
@@ -158,8 +162,11 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
         GearAcquisitionPlanner.fundedMarketPlanForTarget = (_state, _target, options) => {
             soloOptions.push(['funded', options?.buyOrderEscrow]); throw sentinel;
         };
+        // The plan selection keeps an open party request only for a route
+        // whose source is still available.
+        GearAcquisitionPlanner.bestSourceForPlan = () => ({ spotId: 'x', npcId: 1 });
         const waiting = { ...afterPosting, name: 'Solo7', stats: { ...afterPosting.stats,
-            equipmentPlan: { ...posting, next: { spotId: 'x' } },
+            equipmentPlan: { ...posting, strategy: 'direct_drop', next: { spotId: 'x', npcId: 1 } },
             partyRequest: { status: 'open', reviewAt: Date.now() + 600000 } } };
         await assert.rejects(async () => PopulationService.resolveColdState(waiting), (error) => error === sentinel);
         assert.deepStrictEqual(soloOptions, [['bridge', price], ['funded', price]],
@@ -177,6 +184,7 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
         GearAcquisitionPlanner.npcEquipmentBridgePlan = saved.npcEquipmentBridgePlan;
         GearAcquisitionPlanner.replanContextFor = saved.replanContextFor;
         GearAcquisitionPlanner.fundedMarketPlanForTarget = saved.fundedMarketPlanForTarget;
+        GearAcquisitionPlanner.bestSourceForPlan = saved.bestSourceForPlan;
     }
 
     console.log('Bot plan buy-order escrow checks passed');

@@ -21,9 +21,12 @@ DataCache.init();
 const catalogRows = npcPlanningCatalogRows();
 const plannerOptions = ColdNpcPlanningCatalog.createLookup(catalogRows).plannerOptions;
 const point = { locX: 145224, locY: 120001, locZ: -4500 };
+// The bot holds a usable weapon: an unarmed bot would bridge a weapon first.
+const weapon = BotGear.planFor({ classId: 1, level: 30 }).items.find((item) => Number(item.slot) === 7);
 const base = (characterId, adena) => ({
     characterId, name: `Buyer${characterId}`, accountName: `bot_${characterId}`, level: 30,
-    phase: 'cold', activity: 'hunting', loc: { ...point }, inventory: {}, adena,
+    phase: 'cold', activity: 'hunting', loc: { ...point },
+    inventory: { [weapon.selfId]: { selfId: Number(weapon.selfId), amount: 1, equippedCount: 1, equipped: 1 } }, adena,
     vitals: { hp: 2000, maxHp: 2000, mp: 1000, maxMp: 1000 },
     stats: { generatedCold: true, classId: 1, role: 'dps', build: { grade: 'd', classId: 1, level: 30 }, equipment: [] }
 });
@@ -85,7 +88,6 @@ assert.notStrictEqual(GearAcquisitionPlanner.planFor(base(7, afterPosting), { sp
         // and its order's escrow is part of that budget.
         const spot = { id: 'escrow-field', name: 'Escrow field', center: point, avgLevel: 30, minLevel: 28, maxLevel: 32,
             density: 3, npcSelfIds: [], mob: { hp: 1, damage: 1 }, rewards: { exp: 100, sp: 10, adenaMin: 1, adenaMax: 1 } };
-        const weapon = BotGear.planFor({ classId: 1, level: 30 }).items.find((item) => Number(item.slot) === 7);
         const robe = 391; // Puma Skin Shirt: D-grade light armour, wrong for this build
         const bridgeWallet = 150000;
         const partyRows = (partyId, leaderId, wallet, escrow) => {
