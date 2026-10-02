@@ -65,6 +65,19 @@ function canTradeRemotely(state, goal) {
     return true;
 }
 
+// A buy order stands through a goal without a trade side, such as a rest,
+// while the needs evaluation still asks to buy one of its items: a sell shop
+// already persists the same way. `candidates` is that evaluation when the
+// caller has just made it (a goal review). Near death the evaluation only
+// asks to recover and judges nothing else, so the order waits like a rest.
+function standingBuyNeed(state, lines, candidates) {
+    const items = new Set(lines.filter((line) => Number(line.count) > 0).map((line) => Number(line.selfId)));
+    if (!items.size) return false;
+    const needs = candidates || invoke('GameServer/Bot/Goals/NeedsEvaluator').evaluate(state);
+    if (needs.length === 1 && needs[0].target?.condition === 'alive_and_recovered') return true;
+    return needs.some((need) => desiredSide(need) === AfkTrade.BUY && items.has(Number(need.target?.itemId)));
+}
+
 function stockSignature(state) {
     return Object.values(state?.inventory || {})
         .filter((item) => Number(item.selfId) !== 57 && Number(item.amount || 0) > 0)
@@ -246,7 +259,7 @@ function sameSellOrder(stock, lines) {
         && Number(line.enchant || 0) === Number(lines[index].enchant || 0));
 }
 
-async function reconcileOne(state, goal) {
+async function reconcileOne(state, goal, candidates) {
     const ownerId = Number(state.characterId);
     const projection = AfkTrade.findOwnerProjection(ownerId);
     let stock = projection?.shop || null;
@@ -257,6 +270,8 @@ async function reconcileOne(state, goal) {
     const persistentSellGoal = Number(stock?.storeType) === AfkTrade.SELL && !desiredSide(goal)
         ? { type: 'sell_inventory', status: 'active', plan: { expectedBenefit: 'market_sale_inventory' } }
         : goal;
+    if (Number(stock?.storeType) === AfkTrade.BUY && !desiredSide(goal)
+        && standingBuyNeed(state, stock.lines || [], candidates)) return { state, changed: false };
     const side = desiredSide(persistentSellGoal);
     if (!canTradeRemotely(state, persistentSellGoal)) {
         if (state.phase === 'cold' && projection?.actor?.fetchPrivateStore?.()?.botOwned
@@ -380,11 +395,11 @@ async function migrateRestoredShops() {
     return { moved, skipped, pruned, closed };
 }
 
-function reconcile(state, goal) {
+function reconcile(state, goal, candidates = null) {
     const ownerId = Number(state?.characterId || 0);
     if (!ownerId) return Promise.resolve({ state, changed: false });
     const previous = pending.get(ownerId) || Promise.resolve();
-    const next = previous.catch(() => null).then(() => reconcileOne(LifeState.snapshot(ownerId) || state, goal));
+    const next = previous.catch(() => null).then(() => reconcileOne(LifeState.snapshot(ownerId) || state, goal, candidates));
     const tracked = next.then(() => null, () => null);
     tracked.then(() => {
         if (pending.get(ownerId) === tracked) pending.delete(ownerId);

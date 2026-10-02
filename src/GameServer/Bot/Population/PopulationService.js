@@ -529,7 +529,7 @@ async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
             ? await GoalService.review(current, { spot, now: timestamp })
             : cachedGoal;
         if (due || cleanupNeeded) reviewed += 1;
-        await BotAfkMarketService.reconcile(current, goalSnapshot?.current);
+        await BotAfkMarketService.reconcile(current, goalSnapshot?.current, goalSnapshot?.candidates);
         if (departed || !canTakePartyMarketBreak(party, members, current, timestamp)) continue;
 
         // Goal review can overlap the next worker claim. Re-read the reflected
@@ -3088,7 +3088,7 @@ const PopulationService = {
                 // inventory, ownership or a player activation.
                 const current = this.refreshGoalCandidate(state, true);
                 if (!current || current !== state) return null;
-                const remote = await BotAfkMarketService.reconcile(current, snapshot?.current);
+                const remote = await BotAfkMarketService.reconcile(current, snapshot?.current, snapshot?.candidates);
                 if (remote.changed) return remote.state;
                 const travel = GoalExecutor.beginMarketTravel(current, snapshot?.current);
                 if (!travel) return null;
@@ -3293,7 +3293,8 @@ const PopulationService = {
                 let marketDeparture = null;
                 return resolvedMembers.reduce((chain, member) => (
                 chain.then((activeMembers) => (spot.raidBoss ? Promise.resolve(null) : GoalService.review(member, { spot })).then(async (goalSnapshot) => {
-                    const remote = spot.raidBoss ? null : await BotAfkMarketService.reconcile(member, goalSnapshot?.current);
+                    const remote = spot.raidBoss ? null
+                        : await BotAfkMarketService.reconcile(member, goalSnapshot?.current, goalSnapshot?.candidates);
                     const currentMember = remote?.state || member;
                     if (spot.raidBoss) return [...activeMembers, currentMember];
                     if (breakTaken || !canTakePartyMarketBreak(party, resolvedMembers, currentMember)) {
@@ -3806,7 +3807,7 @@ const PopulationService = {
                         utils.infoWarn('BotGoals', 'goal review failed for %s: %s', marketState.name, err.message);
                         return null;
                     }).then(async (goalSnapshot) => {
-                        const remote = await BotAfkMarketService.reconcile(marketState, goalSnapshot?.current);
+                        const remote = await BotAfkMarketService.reconcile(marketState, goalSnapshot?.current, goalSnapshot?.candidates);
                         const current = remote.state || marketState;
                         const travelState = GoalExecutor.beginMarketTravel(current, goalSnapshot?.current);
                         return travelState ? LifeState.upsertState(travelState, 'goal_market_travel') : current;
