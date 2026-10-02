@@ -3430,7 +3430,13 @@ const PopulationService = {
                     && (canResumeAffordableMarketPlan(updatedState)
                         || canResumeWarehouseMarketSale(updatedState));
                 const marketHandoff = recoveredForMarket
-                    ? GoalService.review(updatedState).then((goalSnapshot) => {
+                    ? GoalService.review(updatedState).then(async (goalSnapshot) => {
+                        // As in the reconciled market travel: a buy order the goal
+                        // does not keep is withdrawn first, so its escrow is in
+                        // the wallet when the bot reaches the shop.
+                        const remote = await BotAfkMarketService.reconcile(updatedState, goalSnapshot?.current,
+                            goalSnapshot?.candidates);
+                        if (remote.changed) return remote.state || updatedState;
                         const timestamp = Date.now();
                         const travelState = GoalExecutor.beginMarketTravel(updatedState, goalSnapshot?.current, timestamp);
                         return travelState
@@ -3844,6 +3850,8 @@ const PopulationService = {
             if (current !== state || joinedBackgroundParty(current) || current.phase !== 'cold') {
                 return { ok: false, reason: 'state_changed', state: current };
             }
+            const remote = await BotAfkMarketService.reconcile(current, goal?.current, goal?.candidates);
+            if (remote.changed) return { ok: true, state: remote.state || current, reason: 'goal_market_reconciled' };
             const travel = GoalExecutor.beginMarketTravel(current, goal?.current);
             if (travel) {
                 const saved = await LifeState.upsertState(travel, 'goal_market_travel_before_combat');

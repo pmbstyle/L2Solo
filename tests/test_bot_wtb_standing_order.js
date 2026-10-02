@@ -26,12 +26,14 @@ const order = { id: 95726, ownerId: 7, storeType: AfkTrade.BUY, escrowAdena: 372
     lines: [{ id: 1, selfId: PIECE_BONE_GAITERS, name: 'Piece Bone Gaiters', count: 1, price: 37213 }] };
 const projection = { shop: order, actor: { fetchPrivateStore: () => ({ botOwned: true, storeType: AfkTrade.BUY,
     shopId: order.id, items: order.lines }) } };
-const resting = (planTarget) => ({
-    characterId: 7, phase: 'cold', activity: 'resting', level: 25, adena: 20000, accountName: 'bot_pop_7',
+// A level 40 bot planning to buy from another bot (an NPC-shop plan never
+// holds a WTB; checked at the end).
+const resting = (planTarget, sourceType = 'afk_bot_store', level = 40) => ({
+    characterId: 7, phase: 'cold', activity: 'resting', level, adena: 20000, accountName: 'bot_pop_7',
     vitals: { hp: 300, maxHp: 1000, mp: 100, maxMp: 500 },
-    stats: { generatedCold: true, classId: 0, build: { grade: 'd', classId: 0, level: 25 }, equipment: [],
+    stats: { generatedCold: true, classId: 0, build: { grade: level >= 40 ? 'c' : 'd', classId: 0, level }, equipment: [],
         equipmentPlan: { status: 'active', strategy: 'market', target: { selfId: planTarget, slot: 11 },
-            market: { town: 'Gludio', price: 37213, reserve: 6250, sourceType: 'npc' } } },
+            market: { town: 'Gludio', price: 37213, reserve: 6250, sourceType } } },
     inventory: {}
 });
 const recover = { type: 'recover', status: 'active', priority: 90, target: { hpPct: 0.8, mpPct: 0.65 },
@@ -142,19 +144,33 @@ try {
     result = await BotAfkMarket.reconcile(state, recover);
     assert.strictEqual(stops.length, 0, 'a build-driven gear order survives a rest');
     assert.strictEqual(result.changed, false);
+    // An order for an NPC-shop plan is withdrawn even during a rest: that
+    // purchase is made at the NPC (E4).
+    order.lines = [{ id: 1, selfId: PIECE_BONE_GAITERS, name: 'Piece Bone Gaiters', count: 1, price: 37213 }];
+    stops.length = 0;
+    state = resting(PIECE_BONE_GAITERS, 'npc', 25);
+    LifeState.snapshot = () => state;
+    await BotAfkMarket.reconcile(state, recover);
+    assert.deepStrictEqual(stops, [7], 'an NPC-shop plan holds no WTB through a rest');
+    stops.length = 0;
+
     // A goal review returns the needs it evaluated, for the reconcile after it.
     const GoalService = invoke('GameServer/Bot/Goals/GoalService');
     const GoalState = invoke('GameServer/Bot/Goals/GoalState');
-    const savedGoalState = { snapshot: GoalState.snapshot, set: GoalState.set };
+    const savedGoalState = { snapshot: GoalState.snapshot, set: GoalState.set, setBatch: GoalState.setBatch };
     try {
         GoalState.snapshot = () => ({ characterId: 7, current: { ...recover, nextReviewAt: Date.now() + 60000 } });
         GoalState.set = (characterId, goal) => Promise.resolve({ characterId, current: goal });
+        GoalState.setBatch = (rows) => Promise.resolve(rows.map((row) => ({ characterId: row.characterId, current: row.goal })));
         const snapshot = await GoalService.review(resting(PIECE_BONE_GAITERS));
         assert(Array.isArray(snapshot?.candidates) && snapshot.candidates.length > 0, 'the review hands back its needs');
         assert(snapshot.current?.type, 'and the chosen goal');
+        const [batched] = await GoalService.reviewBatch([resting(PIECE_BONE_GAITERS)]);
+        assert(Array.isArray(batched?.candidates) && batched.candidates.length > 0, 'a batch review hands back its needs too');
     } finally {
         GoalState.snapshot = savedGoalState.snapshot;
         GoalState.set = savedGoalState.set;
+        GoalState.setBatch = savedGoalState.setBatch;
     }
 } finally {
     LifeState.snapshot = original.snapshot;

@@ -11,6 +11,7 @@ const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const LotPolicy = require('./MarketLotPolicy');
 const { marketStoreTitle, marketBuyStoreTitle } = invoke('GameServer/Bot/Economy/MarketStoreTitle');
 
@@ -46,19 +47,19 @@ function canTradeRemotely(state, goal) {
         || !(state.stats?.generatedCold === true || String(state.accountName || '').startsWith('bot_'))
         || !side) return false;
     if (side === AfkTrade.BUY) {
+        // A purchase planned at an NPC shop is made there, never through a
+        // WTB (NeedsEvaluator keeps NG/D gear on that plan); in town the bot
+        // still takes a cheaper listing if one is there.
+        if (goal.plan?.sourceType === 'npc') return false;
         const existing = AfkTrade.findOwnerProjection(state.characterId)?.actor?.fetchPrivateStore?.();
         const reserved = existing?.botOwned ? buyOrderEscrow(state.characterId) : 0;
-        const budgetState = { ...state, adena: Number(state.adena || 0) + reserved };
+        const budgetState = { ...state, adena: PurchaseFunding.budget(state, reserved) };
         const offer = MarketOpportunity.bestOffer(goal.target?.itemId, {
             town: goal.plan?.marketTown || null,
             budget: budgetState.adena,
             buyerCharacterId: state.characterId
         });
-        // An NPC-sold item is bought at the NPC, not through a WTB, unless the
-        // goal is quoted from another seller: a quote from the bot's own NPC
-        // shop plan still means the NPC (NeedsEvaluator keeps NG/D gear there).
-        if (offer?.sourceType === 'npc'
-            && (goal.plan?.priceSource !== 'offer' || goal.plan?.sourceType === 'npc')) return false;
+        if (offer?.sourceType === 'npc' && goal.plan?.priceSource !== 'offer') return false;
         if (reserved && existing.items.some((line) => Number(line.selfId) === Number(goal.target?.itemId))) return true;
         return !!BuyStoreService.bidFor(budgetState, goal);
     }
@@ -75,7 +76,9 @@ function standingBuyNeed(state, lines, candidates) {
     if (!items.size) return false;
     const needs = candidates || invoke('GameServer/Bot/Goals/NeedsEvaluator').evaluate(state);
     if (needs.length === 1 && needs[0].target?.condition === 'alive_and_recovered') return true;
-    return needs.some((need) => desiredSide(need) === AfkTrade.BUY && items.has(Number(need.target?.itemId)));
+    // A purchase planned at an NPC shop never holds a WTB, rest or not.
+    return needs.some((need) => desiredSide(need) === AfkTrade.BUY && need.plan?.sourceType !== 'npc'
+        && items.has(Number(need.target?.itemId)));
 }
 
 function stockSignature(state) {
@@ -300,7 +303,7 @@ async function reconcileOne(state, goal, candidates) {
     if (!row || !String(row.username || '').startsWith('bot_')) return { state, changed: false };
     const lines = side === AfkTrade.SELL
         ? sellLines(state, stock, inventory)
-        : buyLines({ ...state, adena: Number(state.adena || 0) + buyOrderEscrow(ownerId) }, goal);
+        : buyLines({ ...state, adena: PurchaseFunding.budget(state, buyOrderEscrow(ownerId)) }, goal);
     const town = MarketTownPolicy.targetTownForItems(state, lines);
     if (!lines.length && side === AfkTrade.SELL && Number(stock?.storeType) === AfkTrade.SELL) {
         await AfkTrade.stop(ownerId);

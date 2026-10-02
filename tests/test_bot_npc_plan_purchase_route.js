@@ -33,6 +33,18 @@ assert(goal.plan.expectedBenefit.startsWith('market_search_for_'), 'the fixture 
 const activeGoal = { ...goal, status: 'active' };
 assert.strictEqual(BotAfkMarket.canTradeRemotely(state, activeGoal), false,
     'an NPC-shop plan is not bought through a remote WTB');
+// Also when another bot lists the item cheaper than the NPC: the bot still
+// goes to the shop town (and buys that listing there if it is cheaper).
+const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const bestOffer = MarketOpportunity.bestOffer;
+try {
+    MarketOpportunity.bestOffer = () => ({ sourceType: 'afk_bot_store', price: Math.floor(plan.market.price * 0.95),
+        town: plan.market.town, available: true });
+    assert.strictEqual(BotAfkMarket.canTradeRemotely(state, activeGoal), false,
+        'a cheaper bot listing does not turn an NPC-shop plan into a WTB');
+} finally {
+    MarketOpportunity.bestOffer = bestOffer;
+}
 const travel = GoalExecutor.beginMarketTravel(state, activeGoal, Date.now());
 assert.strictEqual(travel?.activity, 'traveling', 'the bot travels to the NPC instead');
 assert.strictEqual(travel.stats.travel.townName, plan.market.town, 'to the town of the planned NPC');
