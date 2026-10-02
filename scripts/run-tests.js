@@ -308,6 +308,7 @@ const tests = [
     'tests/test_bot_market_nearest_town.js',
     'tests/test_bot_market_offer_order.js',
     'tests/test_bot_afk_sell_reprice.js',
+    'tests/test_bot_afk_listing_failure.js',
     'tests/test_npc_shop_unpriced_rows.js',
     'tests/test_npc_shop_fallback_list.js',
     'tests/test_hot_afk_sale_reservations.js',

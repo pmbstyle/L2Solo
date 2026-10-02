@@ -1219,6 +1219,7 @@ module.exports = {
     DWARVEN_VILLAGE_STALL_MIN_DISTANCE,
     marketStoreTitle,
     marketLocation,
+    pricingAfterReview,
     staticMerchantStalls,
     targetMarketTownName,
     legacyMarketTownCandidates,
