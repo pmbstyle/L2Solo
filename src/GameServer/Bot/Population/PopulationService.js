@@ -34,7 +34,6 @@ const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const PartyRecruitmentChat = invoke('GameServer/Bot/Population/ColdPartyRecruitmentChat');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
-const OfferOrder = invoke('GameServer/Bot/Economy/OfferOrder');
 const GearPlanSelection = invoke('GameServer/Bot/AI/GearPlanSelection');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
@@ -3562,11 +3561,7 @@ const PopulationService = {
         }
         if (!acquisitionPlan) {
             const selection = GearPlanSelection.selectAcquisitionPlan(state, previousPlan, {
-                spots, occupancy, timestamp: startedAt,
-                planningOptions: {
-                    origin: OfferOrder.farmingOrigin(state, (spotId) => OfferOrder.spotInList(spots, spotId)),
-                    buyOrderEscrow
-                }
+                spots, occupancy, timestamp: startedAt, planningOptions: { buyOrderEscrow }
             });
             acquisitionPlan = selection.acquisitionPlan;
             replanContext = selection.replanContext;

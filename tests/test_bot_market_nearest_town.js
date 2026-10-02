@@ -132,8 +132,20 @@ function clanPlanKeepsTown() {
     }
 }
 
+// The shared plan selection (worker, resolve, party refresh) ranks equal-price
+// towns from the bot's hunting ground itself: its callers pass no origin.
+function selectionPlansFromHuntingSpot() {
+    const { selectAcquisitionPlan } = invoke('GameServer/Bot/AI/GearPlanSelection');
+    const spots = [{ id: 'origin-spot', center: townCenters['Orc Village'] }];
+    const wanderer = { ...npcKitState(townCenters['Dwarven Village']), spotId: 'origin-spot', phase: 'cold', activity: 'hunting' };
+    const plan = selectAcquisitionPlan(wanderer, null, { spots, occupancy: {} }).acquisitionPlan;
+    assert.strictEqual(plan?.market?.town, 'Orc Village',
+        `the selection must buy near the hunting ground, got ${plan?.strategy} ${plan?.market?.town}`);
+}
+
 (async () => {
     mainThreadPlanning();
+    selectionPlansFromHuntingSpot();
     clanPlanKeepsTown();
     coldWorkerPlanning();
     plannedFromHuntingSpot();

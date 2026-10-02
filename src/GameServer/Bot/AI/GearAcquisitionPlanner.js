@@ -1726,7 +1726,7 @@ function replacementPlanFor(state = {}, previousPlan = {}, spots = [], options =
         const source = bestSourceForPlan(state, previousPlan, spots, options);
         if (source) return retargetPlanSource(state, previousPlan, source);
     }
-    const market = targetId ? marketPlanForTarget(state, targetId, options) : null;
+    const market = targetId ? marketPlanForTarget(state, targetId, offerOptions) : null;
     if (market) return market;
     if (targetId) excluded.add(targetId);
     const planner = module.exports.planFor || planFor;

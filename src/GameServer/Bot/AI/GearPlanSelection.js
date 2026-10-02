@@ -1,15 +1,18 @@
 // One re-plan of a bot's gear plan: failure check and cooldowns, weapon or
 // armour bridge, source availability, replacement or a fresh plan, the craft
 // that is nearly ready, then finalization. The cold worker, the main-thread
-// resolve and the party requirement refresh all use it; only the offers
-// differ (`planningOptions`: the worker's NPC catalogue, live offers on the
-// main thread).
+// resolve and the party requirement refresh all use it; `planningOptions`
+// carries what differs between them: the offers (the worker's NPC catalogue,
+// live offers on the main thread) and the bot's own buy-order escrow.
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const OfferOrder = invoke('GameServer/Bot/Economy/OfferOrder');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 
 function selectAcquisitionPlan(state, previousPlan, { spots = [], occupancy, timestamp = Date.now(), planningOptions = {} } = {}) {
     const excludedSpotIds = SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp);
-    const planOptions = { ...planningOptions, excludedSpotIds };
+    // Equal-price towns are ranked from the bot's hunting ground, for every caller.
+    const origin = OfferOrder.farmingOrigin(state, (spotId) => OfferOrder.spotInList(spots, spotId));
+    const planOptions = { ...planningOptions, excludedSpotIds, origin };
     const clanRaidPlan = GearAcquisitionPlanner.isClanOwnedPlan(previousPlan)
         && previousPlan?.next?.sourceKind === 'raid';
     if (clanRaidPlan) planOptions.allowRaidSources = true;

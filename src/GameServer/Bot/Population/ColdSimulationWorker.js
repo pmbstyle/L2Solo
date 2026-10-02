@@ -71,7 +71,6 @@ const RequiredPartyFormation = require('./RequiredPartyFormation');
 const { ColdCompetitionMonitor, INTERVAL_MS: COMPETITION_INTERVAL_MS } = require('./ColdCompetitionMonitor');
 const { ColdSimulationKernel, beginRouteTravelState } = require('./ColdSimulationKernel');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
-const OfferOrder = require('../Economy/OfferOrder');
 const forbiddenLoaded = Object.keys(require.cache).filter((filename) => (
     /[\\/]src[\\/]Database\.js$/i.test(filename)
     || /[\\/]GameServer[\\/]World[\\/]World\.js$/i.test(filename)
@@ -180,11 +179,10 @@ function startKernel(config = {}) {
             const previousPlan = state.stats?.equipmentPlan || null;
             const spots = planningSpots;
             const occupancy = currentPlanningOccupancy(timestamp);
-            const origin = OfferOrder.farmingOrigin(state, (spotId) => OfferOrder.spotInList(spots, spotId));
             const { acquisitionPlan, replanContext, reusablePartyRequest, excludedSpotIds } = GearPlanSelection
                 .selectAcquisitionPlan(state, previousPlan, {
                     spots, occupancy, timestamp,
-                    planningOptions: { ...planningNpcCatalog.plannerOptions, origin, buyOrderEscrow: context?.buyOrderEscrow }
+                    planningOptions: { ...planningNpcCatalog.plannerOptions, buyOrderEscrow: context?.buyOrderEscrow }
                 });
             const reservedSpot = acquisitionPlan?.next?.spotId
                 ? spots.find((spot) => String(spot.id) === String(acquisitionPlan.next.spotId))
