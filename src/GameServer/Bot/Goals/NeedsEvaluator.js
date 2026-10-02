@@ -139,6 +139,7 @@ function equipmentNeed(state) {
         },
         marketTown: plannedMarket?.town || null,
         priceSource: quotedPrice > 0 ? 'offer' : 'reference',
+        sourceType: plannedMarket?.sourceType || null,
         reserve: Number(plannedMarket?.reserve || 0),
         clanRequired: acquisitionPlan?.clanGoal?.priority === 'required',
         npcProgression: plannedMarket?.sourceType === 'npc'
@@ -219,6 +220,7 @@ function evaluate(state = {}, options = {}) {
                     : weaponUpgrade ? 'market_search_for_weapon' : 'market_search_for_gear',
                 estimatedCost: gear.desiredItem.price,
                 priceSource: gear.priceSource,
+                sourceType: gear.sourceType,
                 reserve: gear.reserve,
                 requiredAdena,
                 marketTown: gear.marketTown,

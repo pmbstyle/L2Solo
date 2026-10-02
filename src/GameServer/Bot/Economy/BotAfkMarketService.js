@@ -48,7 +48,11 @@ function canTradeRemotely(state, goal) {
             budget: budgetState.adena,
             buyerCharacterId: state.characterId
         });
-        if (offer?.sourceType === 'npc' && goal.plan?.priceSource !== 'offer') return false;
+        // An NPC-sold item is bought at the NPC, not through a WTB, unless the
+        // goal is quoted from another seller: a quote from the bot's own NPC
+        // shop plan still means the NPC (NeedsEvaluator keeps NG/D gear there).
+        if (offer?.sourceType === 'npc'
+            && (goal.plan?.priceSource !== 'offer' || goal.plan?.sourceType === 'npc')) return false;
         if (reserved && existing.items.some((line) => Number(line.selfId) === Number(goal.target?.itemId))) return true;
         return !!BuyStoreService.bidFor(budgetState, goal);
     }
