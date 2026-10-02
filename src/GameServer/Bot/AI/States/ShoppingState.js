@@ -30,32 +30,14 @@ function findStoreSession(actorId) {
         || null;
 }
 
-function findAfkBuyer(bot, town) {
-    let best = null;
-    (bot.backpack?.fetchItems?.() || []).forEach((item) => {
-        if (item.fetchEquipped?.() || Number(item.fetchSelfId?.()) === 57) return;
-        const offer = MarketOpportunity.findBuyOffers(item.fetchSelfId(), {
-            town: town?.name,
-            sellerCharacterId: bot.fetchId()
-        }).find((candidate) => ['afk_player_buy_store', 'afk_bot_buy_store'].includes(candidate.sourceType));
-        if (!offer) return;
-        const qty = Math.min(Number(item.fetchAmount?.() || 0), Number(offer.count || 0));
-        if (qty <= 0) return;
-        const score = qty * Number(offer.price || 0);
-        if (!best || score > best.score) best = { offer, score };
-    });
-    return best;
-}
-
 async function sellInventoryToAfk(bot, store, coldState = null) {
     const sold = [];
     let state = coldState;
-    const candidates = (bot.backpack?.fetchItems?.() || []).map((item) => ({
+    const candidates = TradeService.sellableActorItems(bot, coldState).map((item) => ({
         objectId: Number(item.fetchId?.()),
         selfId: Number(item.fetchSelfId?.()),
-        amount: Number(item.fetchAmount?.()),
-        equipped: item.fetchEquipped?.() === true
-    })).filter((item) => !item.equipped && item.selfId !== 57 && item.amount > 0);
+        amount: Number(item.fetchAmount?.())
+    })).filter((item) => item.amount > 0);
     for (const item of candidates) {
         const projection = invoke('GameServer/AfkTrade/AfkTradeService').findProjection(
             PROJECTION_ID_FOR_STORE(store)
@@ -296,7 +278,7 @@ module.exports = {
                 town: closestTown,
                 state: session.coldLifeState
             });
-            const afkBuyer = findAfkBuyer(bot, closestTown);
+            const afkBuyer = TradeService.findAfkBuyerForActor(bot, closestTown, session.coldLifeState);
 
             if (afkBuyer && (!buyer || Number(afkBuyer.score) >= Number(buyer.preview?.totalAdena || 0))) {
                 const offer = afkBuyer.offer;
