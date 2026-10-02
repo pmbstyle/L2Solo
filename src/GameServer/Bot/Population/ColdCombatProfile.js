@@ -326,9 +326,20 @@ function skillTreeEntries(classId) {
     return [...entries.values()];
 }
 
+// The highest level row of a tree entry that a character of `level` has learned.
+function learnedTreeRow(entry, level) {
+    return (entry.levels || []).filter((row) => number(row.pLevel) <= level).at(-1);
+}
+
+// The level of one skill a class line knows at a character level, 0 if none.
+function treeSkillLevel(classId, level, skillId) {
+    const entry = skillTreeEntries(classId).find((candidate) => number(candidate.selfId) === number(skillId));
+    return entry ? number(learnedTreeRow(entry, number(level))?.level) : 0;
+}
+
 function skillsFromTree(classId, level) {
     return skillTreeEntries(classId).map((entry) => {
-        const learned = (entry.levels || []).filter((row) => number(row.pLevel) <= level).at(-1);
+        const learned = learnedTreeRow(entry, level);
         if (!learned) return null;
         const skill = (DataCache.skills || []).find((candidate) => Number(candidate.selfId) === Number(entry.selfId));
         const definition = skillDefinition(entry.selfId, learned.level) || {};
@@ -380,7 +391,7 @@ function legacySnapshot(state = {}, records = [], timestamp = Date.now()) {
 
 function skillRecordsFromTree(classId, level) {
     return skillTreeEntries(classId).map((entry) => {
-        const learned = (entry.levels || []).filter((row) => number(row.pLevel) <= level).at(-1);
+        const learned = learnedTreeRow(entry, level);
         if (!learned) return null;
         const skill = (DataCache.skills || []).find((candidate) => Number(candidate.selfId) === Number(entry.selfId));
         const definition = (skill?.levels || []).find((row) => number(row.level) === number(learned.level))
@@ -724,6 +735,6 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
 module.exports = {
     PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor,
     offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect,
-    npcForSpot, npcCombatStats, skillSnapshotsFromRecords, skillRecordsFromTree,
+    npcForSpot, npcCombatStats, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
     statMultiplier: multiplier, statAdd: add
 };

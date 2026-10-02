@@ -12,6 +12,9 @@ const StaticMerchantPricing = invoke('GameServer/Bot/Economy/StaticMerchantPrici
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const Service = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
 
+// Craft levels come from the skill tree.
+DataCache.init();
+
 const originals = {
     items: DataCache.items,
     fetchCharacterRecipes: Database.fetchCharacterRecipes,

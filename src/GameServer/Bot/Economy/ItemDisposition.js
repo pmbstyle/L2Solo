@@ -151,14 +151,18 @@ function isNpcOnlyItem(item, template = templateFor(item?.selfId)) {
         || isSkillBookItem(item, template);
 }
 
+// Materials feed every craft: a dwarf learns their recipes although the
+// products are no-grade. Other no-grade recipes stay NPC junk.
+function isMaterialRecipe(info) {
+    return String(info?.product?.template?.kind || '').startsWith('Other.Material');
+}
+
+// A bot learns a recipe it can craft (crafter class, craft level).
 function canLearnRecipe(state, item) {
     const info = recipeInfo(item);
-    if (!info || info.recipe.type !== 'dwarven'
-        || gradeIndex(recipeProductRank(item)) < gradeIndex('d')) return false;
-    const craftLevel = Number(state?.craftLevel ?? state?.stats?.dwarvenCraftLevel
-        ?? CraftShopService.craftLevelFor(state) ?? 0);
-    if (craftLevel <= 0) return false;
-    return craftLevel >= Number(info.recipe.level || 0);
+    if (!info || info.recipe.type !== 'dwarven') return false;
+    if (gradeIndex(recipeProductRank(item)) < gradeIndex('d') && !isMaterialRecipe(info)) return false;
+    return CraftShopService.canCraft(state, info.recipe);
 }
 
 function recipeDisposition(state, item, knownRecipeIds = []) {
@@ -168,7 +172,9 @@ function recipeDisposition(state, item, knownRecipeIds = []) {
     if (!canLearnRecipe(state, item)) return isMarketRecipeItem(item)
         ? { action: 'market', reason: 'recipe_not_learnable' }
         : { action: 'npc', reason: 'recipe_not_learnable' };
-    if (known.has(Number(info.recipe.recipeId))) return { action: 'market', reason: 'recipe_already_known' };
+    if (known.has(Number(info.recipe.recipeId))) return isMarketRecipeItem(item)
+        ? { action: 'market', reason: 'recipe_already_known' }
+        : { action: 'npc', reason: 'recipe_already_known' };
     return { action: 'learn', reason: 'recipe_book', recipe: info.recipe };
 }
 
@@ -521,8 +527,7 @@ module.exports = {
     WAREHOUSE_GEAR_MIN_BASE_PRICE,
     basePrice,
     canLearnRecipe,
-    craftLevelFor: (state) => Number(state?.craftLevel ?? state?.stats?.dwarvenCraftLevel
-        ?? CraftShopService.craftLevelFor(state) ?? 0),
+    craftLevelFor: CraftShopService.craftLevelFor,
     gradeIndex,
     isTradeEligible,
     isBelowCGrade,

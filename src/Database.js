@@ -5227,7 +5227,7 @@ const Database = {
                 }
                 if (!recipe || Number(clanCrafter.hp) <= 0 || Number(customer.hp) <= 0
                     || ['dead', 'respawning'].includes(clanCrafter.activity)
-                    || craftRules.craftLevelFor({ classId: clanCrafter.classId, level: clanCrafter.characterLevel }) < recipe.level
+                    || !craftRules.canCraft({ classId: clanCrafter.classId, level: clanCrafter.characterLevel }, recipe)
                     || Number(clanCrafter.mp) < Number(clanCraft.mpCost)
                     || Math.hypot(Number(customer.locX) - Number(clanCrafter.locX), Number(customer.locY) - Number(clanCrafter.locY)) > 1200) {
                     throw new Error('clan crafter unavailable');

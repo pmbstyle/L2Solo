@@ -205,4 +205,25 @@ const staleWanted = {
 assert.strictEqual(MarketDemandIndex.demandFor(targetId, { states: [staleWanted], now }).bots, 0, 'expired WTB memory must not count as demand');
 assert.strictEqual(MarketDemandIndex.timestampForWanted(null), 0, 'a fulfilled WTB clears demand with null and must remain safe to index');
 
+const recipeTemplate = DataCache.items.find((item) => Number(item.selfId) === 1804);
+const heldRecipe = saleItem(recipeTemplate, 3, 40000);
+assert(ItemDisposition.isMarketRecipeItem(heldRecipe), 'Recipe: Soulshot: D-Grade must be a market recipe');
+const otherRecipeSeller = new Map([[1804, [{ characterId: 11, town: 'Dion', count: 1, price: 40000 }]]]);
+[
+    ['no demand', []],
+    ['unfunded demand', [{ characterId: 12, currentRegion: 'Dion', stats: { shotRecipeDemand: { itemId: 1804, amount: 1, maxSpend: 1, at: now } } }]]
+].forEach(([label, states]) => {
+    const decision = MarketListingPolicy.classify(seller, heldRecipe, { states, supplyByItem: otherRecipeSeller, now });
+    // The warehouse does not take recipes, so "warehouse" would do nothing.
+    assert.strictEqual(decision.action, 'keep', `${label}: an unlisted market recipe stays in the bag for crafters' recipe requests`);
+});
+assert.strictEqual(MarketListingPolicy.classify(seller, heldRecipe, { states: [], supplyByItem: new Map(), now }).action, 'list',
+    'a recipe nobody offers still gets one scarce listing');
+const fundedRecipeBuyer = { characterId: 13, currentRegion: 'Dion', adena: 1000000,
+    stats: { shotRecipeDemand: { itemId: 1804, amount: 3, maxSpend: 100000, at: now } } };
+const underFloor = MarketListingPolicy.classify(seller, heldRecipe, { states: [fundedRecipeBuyer],
+    supplyByItem: new Map([[1804, [{ characterId: 11, town: 'Dion', count: 1, price: 1 }]]]), now });
+assert.deepStrictEqual([underFloor.action, underFloor.reason], ['keep', 'non_competitive_floor'],
+    'a recipe that cannot be listed above its floor stays in the bag');
+
 console.log('Bot market listing policy checks passed');
