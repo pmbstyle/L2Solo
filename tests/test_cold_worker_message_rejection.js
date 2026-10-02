@@ -50,6 +50,14 @@ process.on('unhandledRejection', (error) => unhandled.push(error));
         assert.strictEqual(recorded.length, 1, 'the failure is recorded as a cold worker error');
         assert.strictEqual(recorded[0].message, 'database is locked');
         assert.strictEqual(coordinator.counters.messagesIn, 1);
+
+        // Only the claim is tolerated: a failed full snapshot after a worker
+        // restart still surfaces instead of leaving cold bots waiting.
+        coordinator.sendSnapshots = () => Promise.reject(new Error('snapshot failed'));
+        coordinator.worker.emit('message', Protocol.envelope('ready', coordinator.workerEpoch, { phase: 'running' }));
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        assert.strictEqual(recorded.length, 1, 'other message failures are not swallowed');
+        assert.deepStrictEqual(unhandled.map((error) => error.message), ['snapshot failed']);
     } finally {
         Owner.claimBatch = originalClaimBatch;
     }
