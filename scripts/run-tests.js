@@ -282,6 +282,7 @@ const tests = [
     'tests/test_spot_stay_unsuitable.js',
     'tests/test_spot_matchup_memo.js',
     'tests/test_spot_matchup_shared_verdicts.js',
+    'tests/test_spot_index.js',
     'tests/test_bot_hunting_ground_rules.js',
     'tests/test_population_starter_party_grouping.js',
     'tests/test_bot_goal_state.js',

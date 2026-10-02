@@ -71,6 +71,7 @@ const RequiredPartyFormation = require('./RequiredPartyFormation');
 const { ColdCompetitionMonitor, INTERVAL_MS: COMPETITION_INTERVAL_MS } = require('./ColdCompetitionMonitor');
 const { ColdSimulationKernel, beginRouteTravelState } = require('./ColdSimulationKernel');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
+const SpotIndex = require('../AI/SpotIndex');
 const forbiddenLoaded = Object.keys(require.cache).filter((filename) => (
     /[\\/]src[\\/]Database\.js$/i.test(filename)
     || /[\\/]GameServer[\\/]World[\\/]World\.js$/i.test(filename)
@@ -185,7 +186,7 @@ function startKernel(config = {}) {
                     planningOptions: { ...planningNpcCatalog.plannerOptions, buyOrderEscrow: context?.buyOrderEscrow }
                 });
             const reservedSpot = acquisitionPlan?.next?.spotId
-                ? spots.find((spot) => String(spot.id) === String(acquisitionPlan.next.spotId))
+                ? SpotIndex.spotById(spots, acquisitionPlan.next.spotId)
                 : null;
             if (reservedSpot) SpotProfiles.reserveCapacity(occupancy, reservedSpot, [state]);
             const partyRequest = PartyRequestPlanner.partyRequestForPlan(state, acquisitionPlan, timestamp);
@@ -197,7 +198,7 @@ function startKernel(config = {}) {
                 ? GearAcquisitionPlanner.safeFallbackForPlan(state, acquisitionPlan, spots, { occupancy, excludedSpotIds })
                 : null;
             const plannedFallbackSpot = plannedPartyFallback
-                ? spots.find((spot) => String(spot.id) === String(plannedPartyFallback.spotId)) || null
+                ? SpotIndex.spotById(spots, plannedPartyFallback.spotId)
                 : null;
             const safePlannedFallback = plannedFallbackSpot
                 && LevelingRoutes.isSpotAllowedForState(plannedFallbackSpot, state)

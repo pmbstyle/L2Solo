@@ -3,6 +3,7 @@ const DEFAULT_LEVEL_RANGE = 3;
 const DEFAULT_MIN_HUNT_LEVEL_GAP = -7;
 const DEFAULT_MAX_HUNT_LEVEL_GAP = 3;
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
+const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
@@ -247,13 +248,7 @@ const SpotService = {
     },
 
     findById(id) {
-        const spots = this.ensureIndexed();
-        // One lookup table per spot list; a replaced list gets a new one.
-        if (this.spotsByIdSource !== spots) {
-            this.spotsByIdSource = spots;
-            this.spotsById = new Map(spots.map((spot) => [spot.id, spot]));
-        }
-        return this.spotsById.get(id) || null;
+        return SpotIndex.spotById(this.ensureIndexed(), id);
     },
 
     findCurrentSpot(loc) {

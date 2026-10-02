@@ -19,6 +19,7 @@ const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const OfferOrder = require('../Economy/OfferOrder');
+const SpotIndex = require('./SpotIndex');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
@@ -680,7 +681,7 @@ function preferredNoGradeTarget(state = {}, options = {}) {
 // Where the bot buys from: a caller that has no spot list passes the origin
 // it computed from its own (OfferOrder.farmingOrigin).
 function offerOrigin(state, options) {
-    return options.origin || OfferOrder.farmingOrigin(state, (spotId) => OfferOrder.spotInList(options.spots, spotId));
+    return options.origin || OfferOrder.farmingOrigin(state, (spotId) => SpotIndex.spotById(options.spots, spotId));
 }
 
 function marketOfferForTarget(target, state = {}, options = {}) {

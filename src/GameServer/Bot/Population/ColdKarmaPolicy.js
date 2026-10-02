@@ -1,4 +1,5 @@
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
+const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
@@ -30,7 +31,7 @@ function plan(state, spots, timestamp = Date.now()) {
     const excludedSpotIds = SpotRiskPolicy.excludedSpotIdsForStates([clean], timestamp);
     if (state.activity === 'traveling' && travel?.reason === 'karma_washing'
         && !excludedSpotIds.has(travel.spotId)) {
-        return { targetNpcId: 0, plannedState: clean, spot: spots.find(spot => spot.id === travel.spotId) || null };
+        return { targetNpcId: 0, plannedState: clean, spot: SpotIndex.spotById(spots, travel.spotId) };
     }
     // The level window is a cheap comparison; the solo matchup behind
     // isSpotAllowedForState is not, so it only judges spots inside the window,

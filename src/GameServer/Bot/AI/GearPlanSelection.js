@@ -6,12 +6,13 @@
 // live offers on the main thread) and the bot's own buy-order escrow.
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const OfferOrder = invoke('GameServer/Bot/Economy/OfferOrder');
+const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 
 function selectAcquisitionPlan(state, previousPlan, { spots = [], occupancy, timestamp = Date.now(), planningOptions = {} } = {}) {
     const excludedSpotIds = SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp);
     // Equal-price towns are ranked from the bot's hunting ground, for every caller.
-    const origin = OfferOrder.farmingOrigin(state, (spotId) => OfferOrder.spotInList(spots, spotId));
+    const origin = OfferOrder.farmingOrigin(state, (spotId) => SpotIndex.spotById(spots, spotId));
     const planOptions = { ...planningOptions, excludedSpotIds, origin };
     const clanRaidPlan = GearAcquisitionPlanner.isClanOwnedPlan(previousPlan)
         && previousPlan?.next?.sourceKind === 'raid';

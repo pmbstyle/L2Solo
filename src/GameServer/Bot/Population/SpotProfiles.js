@@ -1,5 +1,6 @@
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
+const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
@@ -70,9 +71,9 @@ function physicalSpotForState(state, profiles) {
     const loc = state?.loc;
     if (loc && Number.isFinite(Number(loc.locX)) && Number.isFinite(Number(loc.locY))) {
         const physical = SpotService.findCurrentSpot(loc);
-        if (physical) return profiles.find((profile) => profile.id === physical.id) || physical;
+        if (physical) return SpotIndex.spotById(profiles, physical.id) || physical;
     }
-    return state?.spotId ? profiles.find((profile) => profile.id === state.spotId) || null : null;
+    return state?.spotId ? SpotIndex.spotById(profiles, state.spotId) : null;
 }
 
 function partyIdForState(state = {}) {
@@ -319,8 +320,6 @@ function spotsNearLevel(profiles, targetLevel) {
 // Every call hands out copies: callers reserve places in the snapshot they
 // were given (reserveCapacity), and that must not reach the next snapshot.
 const indexedViews = new WeakMap();
-const profilesById = new WeakMap();
-
 function indexedOccupancy(index, profiles, excludedKeys = new Set()) {
     // occupancySnapshot judges capacity backoffs at wall-clock time.
     index.refreshBackoffs(Date.now());
@@ -335,19 +334,17 @@ function indexedOccupancy(index, profiles, excludedKeys = new Set()) {
     for (const key of view.excludedKeys) if (!excludedKeys.has(key)) markPlace(key);
     view.excludedKeys = new Set(excludedKeys);
     const catalog = profiles || [];
-    let byId = profilesById.get(catalog);
-    if (!byId) profilesById.set(catalog, byId = new Map(catalog.map((profile) => [profile.id, profile])));
     const counted = (members) => [...(members || [])]
         .filter(([key]) => !view.excludedKeys.has(key))
         .map(([, state]) => state);
     const snapshot = {};
     for (const spotId of new Set([...index.physical.keys(), ...index.reserved.keys()])) {
-        if (!byId.has(spotId)) {
+        const key = String(spotId);
+        const profile = SpotIndex.spotById(catalog, key);
+        if (!profile) {
             view.entries.delete(spotId);
             continue;
         }
-        const key = String(spotId);
-        const profile = byId.get(key);
         let cached = view.entries.get(spotId);
         if (!cached || cached.profile !== profile || index.dirty.has(spotId)) {
             const spotMembers = counted(index.physical.get(spotId));
@@ -421,7 +418,7 @@ const SpotProfiles = {
     },
 
     findById(id) {
-        return this.ensure().find((profile) => profile.id === id) || null;
+        return SpotIndex.spotById(this.ensure(), id);
     },
 
     findForState(state, options = {}) {

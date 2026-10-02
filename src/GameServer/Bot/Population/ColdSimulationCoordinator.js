@@ -6,6 +6,7 @@ const { Worker } = require('worker_threads');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const DataCache = invoke('GameServer/DataCache');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
@@ -60,7 +61,7 @@ function admitSoloRouteTravelState(nextState, baseState, profiles, occupancy, ti
         || !travel?.spotId) {
         return { state: nextState, admitted: true, checked: false };
     }
-    const spot = (profiles || []).find((profile) => String(profile.id) === String(travel.spotId));
+    const spot = SpotIndex.spotById(profiles, travel.spotId);
     if (!spot) return { state: nextState, admitted: true, checked: false };
     // Leaving party-only content is a safety transition, not an optional
     // farming reservation. A full destination may be exceeded by one bot so
@@ -568,13 +569,8 @@ class ColdSimulationCoordinator {
     contextIndex(options = {}) {
         let profiles = [];
         try { profiles = SpotProfiles.ensure() || []; } catch (_) { profiles = []; }
-        // The spot catalog changes only when SpotProfiles rebuilds its array;
-        // every context of that catalog reads the same id index.
-        if (this.contextSpotSource !== profiles) {
-            this.contextSpotSource = profiles;
-            this.contextSpots = new Map(profiles.map((spot) => [String(spot.id), spot]));
-        }
-        const spots = this.contextSpots;
+        // Every context of one spot catalog reads the same id table.
+        const spots = SpotIndex.tableFor(profiles);
         const parties = new Map((BackgroundPartyState.active?.() || []).map((party) => [Number(party.leaderId || 0), party]));
         let occupancy = {};
         try { occupancy = SpotProfiles.currentOccupancy(profiles) || {}; } catch (_) { occupancy = {}; }
