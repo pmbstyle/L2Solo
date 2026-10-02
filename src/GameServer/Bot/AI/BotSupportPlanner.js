@@ -329,13 +329,17 @@ function matchesSkillEffect(effect, skill, keys) {
     const exactIdentity = Number(effect?.id || 0) === skillId ||
         normalizedEffect(effect?.key) === effectKey ||
         normalizedEffect(effect?.category) === effectKey;
+    if (exactIdentity) return true;
+    if (semantic.stackFamily && effect?.stackFamily) {
+        return semantic.stackFamily === effect.stackFamily;
+    }
 
     // Songs and dances are separate party effects even when another buff
     // happens to expose the same stat (for example Chant of Rage and Dance
     // of Fire both use pCritDamageMul). Stat overlap remains a compatibility
     // fallback for ordinary legacy buffs, but must not suppress party music.
     const effectMusic = /^(song|dance)_/.test(normalizedEffect(effect?.key));
-    return exactIdentity || (!isPartyMusic(skill) && !effectMusic && effect?.type !== 'item_passive' && overlaps(effect, keys));
+    return !isPartyMusic(skill) && !effectMusic && effect?.type !== 'item_passive' && overlaps(effect, keys);
 }
 
 function refreshThresholdMs(skill) {
@@ -479,6 +483,7 @@ function canPlanSupportAction(target, provider, skill, members, planning = null)
 function needsSkill(target, skill, planning = null) {
     const keys = statKeys(skill);
     const level = Number(skill.fetchLevel?.() || 1);
+    const semantic = skill.fetchSemantic?.() || {};
     const current = planningEffects(target, planning)
         .filter((effect) => effect.type !== 'debuff')
         // The effect id is the authoritative identity for a completed cast.
@@ -490,9 +495,17 @@ function needsSkill(target, skill, planning = null) {
     // `activeBuffs` is retained for packet/UI compatibility only. It can outlive
     // an effect after death, dispel, or an interrupted cast, so support decisions
     // must be based exclusively on the target's structured effect state.
-    if (current.some((effect) => Number(effect.level || 0) > level)) return false;
     const thresholdMs = refreshThresholdMs(skill);
-    if (current.some((effect) => Number(effect.level || 0) === level && EffectStore.remainingMs(target, effect.key) > thresholdMs)) {
+    // Levels from different skills are not comparable (Barrier 2 and Chant 3
+    // have the same strength). Use the native order for sourced stack slots.
+    const sameStack = effect => !!semantic.stackFamily && effect.stackFamily === semantic.stackFamily;
+    const order = Number(semantic.stackOrder) || 0;
+    if (current.some(effect => sameStack(effect) && Number(effect.stackOrder || 0) > order)) return false;
+    if (current.some(effect => sameStack(effect) && Number(effect.stackOrder || 0) === order
+        && EffectStore.remainingMs(target, effect.key) > thresholdMs)) return false;
+    const legacy = current.filter(effect => !sameStack(effect));
+    if (legacy.some((effect) => Number(effect.level || 0) > level)) return false;
+    if (legacy.some((effect) => Number(effect.level || 0) === level && EffectStore.remainingMs(target, effect.key) > thresholdMs)) {
         return false;
     }
     return true;
@@ -637,7 +650,7 @@ function reconcileLoadout(members,providers) {
     const loadout=desiredLoadout(members,providers),removed=[];
     for(const [actor,wanted] of loadout.selected) {
         const discarded=EffectStore.list(actor).filter(e=>e.type==='buff' && e.dispellable!==false && !e.toggle
-            && loadout.managedByActor.get(actor).has(BuffLoadout.family(e.key)) && !wanted.has(BuffLoadout.normalize(e.key)));
+            && loadout.managedByActor.get(actor).has(BuffLoadout.family(e.key,e.stackFamily)) && !wanted.has(BuffLoadout.normalize(e.key)));
         for(const effect of discarded) if(EffectStore.remove(actor,effect.key)) removed.push({actorId:actor.fetchId(),effect:effect.key});
         if(discarded.length) invoke('GameServer/Effects/EffectTicker').refreshEffects(actor.session,actor);
     }

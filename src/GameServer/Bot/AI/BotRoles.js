@@ -157,11 +157,10 @@ function shouldRestForMana(value) {
     );
 }
 
-// Sitting and receiving Recharge are deliberately separate policies. A tank
-// must stay on its feet with the melee line, but an empty MP bar prevents it
-// from using Aggression/Hate Aura and therefore threatens the whole party.
+// Sitting and receiving Recharge are separate policies. Tanks and music
+// fighters stay with the melee line, but still need MP for taunts and rebuffs.
 function needsPartyManaRecovery(value) {
-    return shouldRestForMana(value) || inferRole(value) === 'tank';
+    return shouldRestForMana(value) || isPartyMusicFighter(value) || inferRole(value) === 'tank';
 }
 
 function isRanged(roleOrActor) {

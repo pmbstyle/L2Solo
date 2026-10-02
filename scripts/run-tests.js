@@ -450,6 +450,7 @@ const tests = [
     'tests/test_effect_restrictions.js',
     'tests/test_effect_store_c4_slots.js',
     'tests/test_effect_ticker.js',
+    'tests/test_c4_effect_lifetimes.js',
     'tests/test_npc_effect_panels.js',
     'tests/test_automation_regeneration.js',
     'tests/test_equipment_item_skills.js',

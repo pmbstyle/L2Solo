@@ -1446,9 +1446,22 @@ try {
     FollowingState.tick(rechargeHealerSession, rechargeHealer, {
         skillExec(_session, _bot, data) { rechargeCasts.push(data); }
     }, { say() {}, executeCombat() {}, executePvPCombat() {} });
-    assert.deepStrictEqual(rechargeCasts, [{ id: lowManaArcher.fetchId(), selfId: 1013, ctrl: false }], 'Recharge should skip a lower-MP melee fighter and restore a ranged party member instead');
-    assert.strictEqual(BotRoles.needsPartyManaRecovery(lowManaSinger), false, 'Sword Singer is a melee buffer and must not recover MP as a caster');
-    assert.strictEqual(BotRoles.needsPartyManaRecovery(lowManaDancer), false, 'Bladedancer is a melee buffer and must not recover MP as a caster');
+    assert.deepStrictEqual(rechargeCasts, [{ id: lowManaSinger.fetchId(), selfId: 1013, ctrl: false }], 'Recharge should restore a low-MP Sword Singer before the archer');
+    assert.strictEqual(BotRoles.needsPartyManaRecovery(lowManaSinger), true, 'Sword Singer needs Recharge to maintain party songs');
+    assert.strictEqual(BotRoles.needsPartyManaRecovery(lowManaDancer), true, 'Bladedancer needs Recharge to maintain party dances');
+    for (const [recovered, expected] of [[lowManaSinger, lowManaDancer], [lowManaDancer, lowManaArcher]]) {
+        recovered.setMp(70);
+        rechargeCasts.length = 0;
+        manaLeaderSession.partyRecoveryCast = undefined;
+        rechargeHealerSession.currentTargetId = undefined;
+        rechargeHealer.unselect();
+        FollowingState.tick(rechargeHealerSession, rechargeHealer, {
+            skillExec(_session, _bot, data) { rechargeCasts.push(data); }
+        }, { say() {}, executeCombat() {}, executePvPCombat() {} });
+        assert.deepStrictEqual(rechargeCasts, [{ id: expected.fetchId(), selfId: 1013, ctrl: false }], 'Recharge moves on after the previous music provider recovers');
+    }
+    lowManaSinger.setMp(1);
+    lowManaDancer.setMp(1);
     assert.strictEqual(BotRoles.needsPartyManaRecovery(fakeActor(2000111, { classId: 17 })), true, 'Prophet remains a caster buffer and should recover MP');
     const lowManaPaladin = fakeActor(2000112, { classId: 5 });
     assert.strictEqual(BotRoles.shouldRestForMana(lowManaPaladin), false, 'a Paladin must stay standing with the melee line when MP is low');
