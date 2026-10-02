@@ -304,6 +304,7 @@ const tests = [
     'tests/test_bot_cold_market_listing.js',
     'tests/test_bot_recipe_disposition.js',
     'tests/test_bot_inventory_cleanup_goal.js',
+    'tests/test_cold_cleanup_keeps_resolve.js',
     'tests/test_cold_safe_enchant.js',
     'tests/test_bot_static_buyer_sale.js',
     'tests/test_bot_market_town_routing.js',
