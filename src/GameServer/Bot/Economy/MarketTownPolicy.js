@@ -3,6 +3,7 @@ const DataCache = invoke('GameServer/DataCache');
 const StaticBuyerService = invoke('GameServer/Bot/Economy/StaticBuyerService');
 const DynamicBuyerService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
+const SpotService = invoke('GameServer/Bot/AI/SpotService');
 
 const GLUDIO_D_GRADE_SHARE_PERCENT = 15;
 let rankIndexSource = null;
@@ -37,6 +38,14 @@ function nearestNoGradeMarket(loc = {}) {
     return NO_GRADE_MARKETS
         .map((market) => ({ ...market, distance: Math.hypot(x - market.locX, y - market.locY) }))
         .sort((a, b) => a.distance - b.distance)[0] || null;
+}
+
+// The bot's farming place: the centre of the spot it hunts on. A bot listed
+// at the market keeps the spot it left, as it keeps its departure point.
+function huntingSpotCenter(state) {
+    const spotId = state?.stats?.marketReturn?.spotId || state?.spotId;
+    if (!spotId) return null;
+    return SpotService.findById(spotId)?.center || null;
 }
 
 function rankOf(item) {
@@ -84,13 +93,15 @@ function targetTownForItems(state, items = []) {
     // A listed bot now stands at the market, so use its saved departure point
     // to preserve local no-grade routing during legacy-store migrations.
     const saleOrigin = state?.stats?.marketReturn?.loc || state?.loc;
-    const localTown = nearestNoGradeMarket(saleOrigin)?.name || null;
 
     // No-grade stock belongs to the starter village nearest the bot's actual
     // farming location. Early hunting routes legitimately extend beyond a
     // village's immediate square, so a small-radius check funnels Elven,
     // Dark Elven, and Talking Island sellers into Giran incorrectly.
-    if (onlyNoGrade) return localTown || 'Giran';
+    // The farming location is the centre of the hunting spot: the bot's own
+    // position wanders across village areas while it hunts, and following it
+    // moved a listed shop between villages on nearly every review.
+    if (onlyNoGrade) return nearestNoGradeMarket(huntingSpotCenter(state) || saleOrigin)?.name || 'Giran';
     if (!hasHigherGrade && hasDGrade) return dGradeMarketFor(state);
     return 'Giran';
 }
