@@ -225,7 +225,7 @@ function inventorySnapshot(actor, text = '') {
         // every NPC-listed item by exact name, even when it is not in this
         // compact view.
         supplyCatalog: wantsItems
-            ? MarketOpportunity.supplyCatalog(48).map((entry) => [entry.selfId, entry.name, entry.price, entry.town])
+            ? MarketOpportunity.supplyCatalog(48, { locX: actor.fetchLocX?.(), locY: actor.fetchLocY?.() }).map((entry) => [entry.selfId, entry.name, entry.price, entry.town])
             : null,
         notable,
         truncated: notable.length < items.length

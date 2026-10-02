@@ -85,6 +85,13 @@ function isSellableInventoryItem(item) {
     return item && !item.fetchPetLocked?.() && !item.fetchEquipped() && item.fetchSelfId() !== 57;
 }
 
+// The copies a sale to a buy store may take: not reserved by the bot's
+// plans, not equipped, not pet-locked, not Adena.
+function sellableActorItems(actor, state) {
+    return ItemDisposition.unreservedActorItems(state, actor.backpack.fetchItems())
+        .filter(isSellableInventoryItem);
+}
+
 function normalizeStoreItems(storeCfg, { staticStore = false } = {}) {
     let fakeObjectIdSeq = 600000000 + utils.randomNumber(100000000);
     const pricing = staticStore ? invoke('GameServer/Bot/Economy/StaticMerchantPricing') : null;
@@ -210,6 +217,25 @@ function takeItem(actor, selfId, amount, item = actor.backpack.fetchItemFromSelf
     });
 }
 
+// The AFK buy order in this town that pays most for the actor's sellable
+// items, as { offer, score }, or null.
+function findAfkBuyerForActor(actor, town, state = null) {
+    const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+    let best = null;
+    sellableActorItems(actor, state).forEach((item) => {
+        const offer = MarketOpportunity.findBuyOffers(item.fetchSelfId(), {
+            town: town?.name,
+            sellerCharacterId: actor.fetchId()
+        }).find((candidate) => ['afk_player_buy_store', 'afk_bot_buy_store'].includes(candidate.sourceType));
+        if (!offer) return;
+        const qty = Math.min(Number(item.fetchAmount?.() || 0), Number(offer.count || 0));
+        if (qty <= 0) return;
+        const score = qty * Number(offer.price || 0);
+        if (!best || score > best.score) best = { offer, score };
+    });
+    return best;
+}
+
 function previewSaleToStore(actor, store, options = {}) {
     if (!store || store.storeType !== 3) {
         return { totalAdena: 0, itemCount: 0, lines: [] };
@@ -219,8 +245,8 @@ function previewSaleToStore(actor, store, options = {}) {
     let itemCount = 0;
     const lines = [];
 
-    ItemDisposition.unreservedActorItems(options.state, actor.backpack.fetchItems())
-        .filter(isSellableInventoryItem).forEach((inventoryItem) => {
+    sellableActorItems(actor, options.state)
+        .forEach((inventoryItem) => {
             const storeItem = store.items.find((item) => item.selfId === inventoryItem.fetchSelfId() && item.count > 0);
             if (!storeItem) return;
 
@@ -445,6 +471,7 @@ function findBestBuyerForActor(actor, merchantSessions, options = {}) {
 module.exports = {
     buyFromStore,
     describeStoreItems,
+    findAfkBuyerForActor,
     findBestBuyerForActor,
     itemBasePrice,
     isSellableInventoryItem,
@@ -452,6 +479,7 @@ module.exports = {
     normalizeStoreItems,
     previewSaleToStore,
     ratedPrice,
+    sellableActorItems,
     sellInventoryToStore,
     sellToStore,
     sellableCopy

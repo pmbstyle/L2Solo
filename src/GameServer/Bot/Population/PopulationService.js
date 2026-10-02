@@ -34,6 +34,7 @@ const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const PartyRecruitmentChat = invoke('GameServer/Bot/Population/ColdPartyRecruitmentChat');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const OfferOrder = invoke('GameServer/Bot/Economy/OfferOrder');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const ColdWealthCraftService = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
@@ -3520,8 +3521,9 @@ const PopulationService = {
                 : GearAcquisitionPlanner.replanContextFor(state, previousPlan, startedAt)),
             buyOrderEscrow: BotAfkMarketService.buyOrderEscrow(state.characterId)
         };
-        const weaponBridgePlan = GearAcquisitionPlanner.npcEquipmentBridgePlan(state,
-            { buyOrderEscrow: replanContext.buyOrderEscrow });
+        const offerOptions = { origin: OfferOrder.farmingOrigin(state, (spotId) => OfferOrder.spotInList(spots, spotId)),
+            buyOrderEscrow: replanContext.buyOrderEscrow };
+        const weaponBridgePlan = GearAcquisitionPlanner.npcEquipmentBridgePlan(state, offerOptions);
         let acquisitionPlan = workerPlan?.acquisitionPlan || null;
         const workerPlanHasSource = acquisitionPlan?.status === 'active'
             && ['direct_drop', 'craft'].includes(acquisitionPlan.strategy)
@@ -3566,8 +3568,7 @@ const PopulationService = {
                 && !replanContext.failure
                 && state.stats?.partyRequest?.status === 'open'
                 && Number(state.stats.partyRequest.reviewAt || 0) > startedAt
-                && !GearAcquisitionPlanner.fundedMarketPlanForTarget(state, previousPlan.target?.selfId,
-                    { buyOrderEscrow: replanContext.buyOrderEscrow });
+                && !GearAcquisitionPlanner.fundedMarketPlanForTarget(state, previousPlan.target?.selfId, offerOptions);
             const upgradedPlan = weaponBridgePlan || (previousFarmPlan
                 && !GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan)
                     ? GearAcquisitionPlanner.replacementPlanFor(state, previousPlan, spots, { occupancy, ...replanContext })

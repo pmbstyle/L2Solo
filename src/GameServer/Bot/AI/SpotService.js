@@ -247,7 +247,13 @@ const SpotService = {
     },
 
     findById(id) {
-        return this.ensureIndexed().find((spot) => spot.id === id) || null;
+        const spots = this.ensureIndexed();
+        // One lookup table per spot list; a replaced list gets a new one.
+        if (this.spotsByIdSource !== spots) {
+            this.spotsByIdSource = spots;
+            this.spotsById = new Map(spots.map((spot) => [spot.id, spot]));
+        }
+        return this.spotsById.get(id) || null;
     },
 
     findCurrentSpot(loc) {

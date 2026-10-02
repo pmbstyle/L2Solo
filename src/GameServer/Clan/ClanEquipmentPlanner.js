@@ -67,6 +67,15 @@ function overlayWarehouseMaterials(state, plan, warehouseRows = []) {
     };
 }
 
+// Towns that sell an NPC item at the same price are ranked by distance to
+// the member. A member walking past the midpoint between two of them keeps
+// its planned town, so the clan plan is not rewritten for the same purchase.
+function keepPlannedTown(planned, current) {
+    if (!planned?.town || current.sourceType !== 'npc' || planned.sourceType !== 'npc'
+        || Number(planned.price) !== Number(current.price)) return current;
+    return { ...current, town: planned.town };
+}
+
 function calculateRoute(member, spots = [], warehouseRows = [], options = {}) {
     const planningMember = options.ignoreExistingPlan ? {
         ...member,
@@ -100,7 +109,7 @@ function calculateRoute(member, spots = [], warehouseRows = [], options = {}) {
             );
             if (current) return {
                 ...existing,
-                market: current.market,
+                market: keepPlannedTown(existing.market, current.market),
                 expectedKills: current.expectedKills,
                 expectedEffort: current.expectedEffort ?? current.expectedKills,
                 rateModelVersion: GearAcquisitionPlanner.RATE_MODEL_VERSION,

@@ -6,6 +6,7 @@ const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const TradeService = invoke('GameServer/Bot/TradeService');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const TownNpcCatalog = require('./TownNpcCatalog');
+const OfferOrder = require('./OfferOrder');
 const buyStoreReservations = new WeakMap();
 const coldStoreIndex = new Map();
 let coldStoreIndexHydrated = false;
@@ -308,9 +309,7 @@ function sellOfferCandidates(selfId, options = {}) {
 
 function findOffers(selfId, options = {}) {
     return sellOfferCandidates(selfId, options)
-        .sort((a, b) => a.price - b.price
-            || Number(b.playerPriority === true || b.sellerKind === 'player') - Number(a.playerPriority === true || a.sellerKind === 'player')
-            || (a.sourceType === 'npc' ? 1 : -1));
+        .sort((a, b) => OfferOrder.compareOffers(a, b));
 }
 
 function hotOffers(selfId, options = {}) {
@@ -320,9 +319,7 @@ function hotOffers(selfId, options = {}) {
         ...privateOffers(selfId, town),
         ...(town ? npcOffers(selfId, town) : [])
     ].filter((offer) => offer.available)
-        .sort((left, right) => left.price - right.price
-            || Number(right.playerPriority === true || right.sellerKind === 'player') - Number(left.playerPriority === true || left.sellerKind === 'player')
-            || (left.sourceType === 'npc' ? 1 : -1));
+        .sort((left, right) => OfferOrder.compareOffers(left, right));
 }
 
 function bestOffer(selfId, options = {}) {
@@ -443,7 +440,7 @@ function bestSupplyOffer(selfId, options = {}) {
     return offers
         .filter((offer) => offer.available && Number(offer.price) <= budget &&
             (offer.sourceType === 'npc' || Number(offer.count) >= amount))
-        .sort((a, b) => Number(a.price) - Number(b.price) || Number(a.sourceType !== 'npc') - Number(b.sourceType !== 'npc'))[0] || null;
+        .sort((a, b) => OfferOrder.compareSupplyOffers(a, b, options.origin))[0] || null;
 }
 
 function resolveSupplyItem(value) {
@@ -468,7 +465,7 @@ function resolveSupplyItem(value) {
     return matches.length === 1 ? matches[0] : null;
 }
 
-function supplyCatalog(limit = 96) {
+function supplyCatalog(limit = 96, origin = null) {
     const ids = [...new Set([
         ...(NpcShopBuyLists.allEntries?.() || []).map((entry) => Number(entry.selfId)),
         ...Object.values(MerchantStoreConfigs)
@@ -478,7 +475,7 @@ function supplyCatalog(limit = 96) {
     return ids
         .map((selfId) => {
             const offer = [...npcOffersAll(selfId), ...configuredStoreOffers(selfId)]
-                .sort((a, b) => Number(a.price) - Number(b.price) || Number(a.sourceType !== 'npc') - Number(b.sourceType !== 'npc'))[0];
+                .sort((a, b) => OfferOrder.compareSupplyOffers(a, b, origin))[0];
             return offer ? {
                 selfId,
                 name: offer.itemName,

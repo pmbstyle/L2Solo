@@ -18,6 +18,7 @@ const { marketStoreTitle, marketBuyStoreTitle } = invoke('GameServer/Bot/Economy
 const MAX_LINES = 3;
 const SHOP_REVIEW_MS = 5 * 60 * 1000;
 const reviewedInventory = new Map();
+const listingSince = new Map();
 const pending = new Map();
 let reviewOwners = [];
 let reviewCursor = 0;
@@ -95,6 +96,46 @@ function rememberInventory(ownerId, state) {
     });
 }
 
+// A physical stall lives for a fixed period and, when it ends unsold, the
+// bot remembers the failure (ColdMarketListingService.pricingAfterReview):
+// the next price is 5% lower and a speculative line is not tried again. An
+// AFK shop has no lifetime, so its review measures each line against the
+// same periods, counted from when the line was first listed.
+function expiredSellLines(ownerId, stock, now) {
+    const since = listingSince.get(ownerId);
+    if (!since) return [];
+    const expired = [];
+    for (const line of stock.lines || []) {
+        const listed = since.get(Number(line.selfId));
+        if (!listed || Number(line.count) <= 0) continue;
+        const period = listed.speculative ? ListingService.SPECULATIVE_LISTING_MS : ListingService.DEFAULT_LISTING_MS;
+        if (now - listed.at < period) continue;
+        expired.push({ selfId: Number(line.selfId), count: Number(line.count), price: Number(line.price),
+            marketReason: listed.speculative ? 'speculative_demand' : null });
+    }
+    return expired;
+}
+
+function rememberListings(ownerId, stock, lines, listed, expiredIds, now) {
+    const previous = listingSince.get(ownerId);
+    // A period continues only for an item the shop still offered before this
+    // review; an item listed again after a sell-out or a prune starts anew.
+    const offered = new Set((Number(stock?.storeType) === AfkTrade.SELL ? stock.lines : [])
+        .filter((line) => Number(line.count) > 0)
+        .map((line) => Number(line.selfId)));
+    const next = new Map();
+    for (const line of lines) {
+        const selfId = Number(line.selfId);
+        const speculative = listed.get(selfId)?.reason === 'speculative_demand';
+        const kept = offered.has(selfId) ? previous?.get(selfId) : null;
+        // As a stall's line, a line that turns speculative gets a fresh short try.
+        const fresh = !kept || expiredIds.has(selfId) || (speculative && !kept.speculative);
+        next.set(selfId, { at: fresh ? now : kept.at, speculative });
+    }
+    if (next.size) listingSince.set(ownerId, next);
+    else listingSince.delete(ownerId);
+}
+
 function appearance(row, items) {
     const classInfo = (DataCache.classTemplates || [])
         .find((entry) => Number(entry.classId) === Number(row.classId));
@@ -161,7 +202,7 @@ function stateWithEscrow(state, stock) {
     return { ...state, inventory: combined };
 }
 
-function sellLines(state, stock, inventory) {
+function sellLines(state, stock, inventory, expiredIds = new Set()) {
     const existing = stock?.storeType === AfkTrade.SELL
         ? stock.lines.filter((line) => Number(line.count) > 0).map((line) => ({
             objectId: Number(line.sourceObjectId || 0),
@@ -183,13 +224,27 @@ function sellLines(state, stock, inventory) {
             || String(item.kind || '').startsWith('Other.Shot'))
         .map((item) => Number(item.selfId)));
     const remaining = new Map(listings.map((item) => [Number(item.selfId), Number(item.count)]));
+    const listed = new Map((classified.decisions || [])
+        .filter((decision) => decision.action === 'list')
+        .map((decision) => [Number(decision.item.selfId), decision]));
     const next = [];
+    // A kept line is re-priced as a physical store's review re-prices its
+    // stall (ColdMarketListingService.revalidatedItems): its own price is the
+    // preferred price, so only a cheaper competitor lowers it. A line that
+    // outlived its period is offered again at the fresh, lower price.
+    const keptPrice = (line) => {
+        const decision = listed.get(line.selfId);
+        if (!decision) return line.price;
+        const preferred = expiredIds.has(line.selfId)
+            ? Math.min(line.price, Number(decision.item.price)) : line.price;
+        return ListingPolicy.listingPrice({ ...decision.item, price: preferred }, decision);
+    };
     const keepExisting = (line) => {
         if (next.length >= MAX_LINES) return;
         const available = Math.max(0, Number(remaining.get(line.selfId) || 0));
         if (!available) return;
         const count = Math.min(line.count, available);
-        next.push({ ...line, count });
+        next.push({ ...line, count, price: keptPrice(line) });
         remaining.set(line.selfId, available - count);
     };
     const appendListing = (listing) => {
@@ -227,7 +282,7 @@ function sellLines(state, stock, inventory) {
     listings.filter((item) => priorityMarketItems.has(Number(item.selfId))).forEach(appendListing);
     existing.filter((line) => !priorityMarketItems.has(line.selfId)).forEach(keepExisting);
     listings.filter((item) => !priorityMarketItems.has(Number(item.selfId))).forEach(appendListing);
-    return next.filter(viableSellLine).slice(0, MAX_LINES);
+    return { lines: next.filter(viableSellLine).slice(0, MAX_LINES), listed };
 }
 
 function buyLines(state, goal) {
@@ -252,14 +307,39 @@ function sameBuyOrder(stock, lines) {
         && Number(line.count) === Number(lines[index].count));
 }
 
-function sameSellOrder(stock, lines) {
+// The shop offers the same items, counts and enchants; prices may differ.
+function sameSellLines(stock, lines) {
     if (Number(stock?.storeType) !== AfkTrade.SELL) return false;
     const current = stock.lines.filter((line) => Number(line.count) > 0);
     return current.length === lines.length && current.every((line, index) =>
         Number(line.selfId) === Number(lines[index].selfId)
         && Number(line.count) === Number(lines[index].count)
-        && Number(line.price) === Number(lines[index].price)
         && Number(line.enchant || 0) === Number(lines[index].enchant || 0));
+}
+
+function sameSellOrder(stock, lines) {
+    return sameSellLines(stock, lines) && stock.lines.filter((line) => Number(line.count) > 0)
+        .every((line, index) => Number(line.price) === Number(lines[index].price));
+}
+
+// Only prices changed: update those lines in place with the author's
+// repriceBot (as an agreed deal does) instead of replacing the whole shop.
+// A trade or a deal that changed the shop meanwhile wins: the remaining
+// lines wait for the next review.
+async function repriceSellLines(ownerId, stock, lines) {
+    const current = stock.lines.filter((line) => Number(line.count) > 0);
+    let shop = stock;
+    for (let index = 0; index < lines.length; index++) {
+        if (Number(current[index].price) === Number(lines[index].price)) continue;
+        try {
+            shop = await AfkTrade.repriceBot(ownerId, current[index].id, lines[index].price, shop.revision, null, { match: false });
+        } catch (error) {
+            if (error.message !== 'afk_trade_shop_changed') throw error;
+            return AfkTrade.findOwnerProjection(ownerId)?.shop || null;
+        }
+        if (!shop) return null;
+    }
+    return shop;
 }
 
 async function reconcileOne(state, goal, candidates) {
@@ -295,25 +375,53 @@ async function reconcileOne(state, goal, candidates) {
         && review.buyerRevision === MarketBuyerActivity.revision() && stock.town === existingTown
         && stock.lines.every(viableSellLine)) return { state, changed: false };
     if (side === AfkTrade.SELL) await MarketBuyerActivity.refresh();
+    const now = Date.now();
+    const expired = side === AfkTrade.SELL && Number(stock?.storeType) === AfkTrade.SELL
+        ? expiredSellLines(ownerId, stock, now) : [];
+    let expiredIds = new Set();
+    let pricingSaved = false;
+    if (expired.length) {
+        state = LifeState.snapshot(ownerId) || state;
+        const before = state.stats?.marketPricing || {};
+        const pricing = ListingService.pricingAfterReview(state, { items: expired }, now, true);
+        // At the 50% minimum a failure changes nothing but its time: restart
+        // the period without writing the state.
+        const remembered = expired.some((line) => Number(before[line.selfId]?.percent ?? 100) !== pricing[line.selfId].percent
+            || before[line.selfId]?.speculativeFailedAt !== pricing[line.selfId].speculativeFailedAt);
+        const saved = remembered ? await LifeState.upsertState({ ...state,
+            stats: { ...(state.stats || {}), marketPricing: pricing } }, 'afk_market_listing_expired') : state;
+        if (saved) {
+            state = saved;
+            pricingSaved = remembered;
+            expiredIds = new Set(expired.map((line) => line.selfId));
+        }
+    }
     const [characters, inventory] = await Promise.all([
         Database.execute(['SELECT * FROM characters WHERE id = ? LIMIT 1', [ownerId]], 'bot-afk:owner'),
         Database.fetchItems(ownerId)
     ]);
     const row = characters[0];
     if (!row || !String(row.username || '').startsWith('bot_')) return { state, changed: false };
-    const lines = side === AfkTrade.SELL
-        ? sellLines(state, stock, inventory)
+    const sale = side === AfkTrade.SELL ? sellLines(state, stock, inventory, expiredIds) : null;
+    const lines = sale ? sale.lines
         : buyLines({ ...state, adena: PurchaseFunding.budget(state, buyOrderEscrow(ownerId)) }, goal);
     const town = MarketTownPolicy.targetTownForItems(state, lines);
     if (!lines.length && side === AfkTrade.SELL && Number(stock?.storeType) === AfkTrade.SELL) {
         await AfkTrade.stop(ownerId);
+        listingSince.delete(ownerId);
         rememberInventory(ownerId, LifeState.snapshot(ownerId) || state);
         return { state: LifeState.snapshot(ownerId) || state, changed: true, withdrawn: true };
     }
+    if (sale) rememberListings(ownerId, stock, lines, sale.listed, expiredIds, now);
     if (!lines.length || (stock?.town === town && side === AfkTrade.SELL && sameSellOrder(stock, lines))
         || (stock?.town === town && side === AfkTrade.BUY && sameBuyOrder(stock, lines))) {
         if (side === AfkTrade.SELL) rememberInventory(ownerId, state);
-        return { state, changed: false };
+        // A remembered failure changed the saved state even when the lines did not.
+        return { state, changed: pricingSaved };
+    }
+    if (side === AfkTrade.BUY) listingSince.delete(ownerId);
+    if (side === AfkTrade.SELL && stock?.town === town && sameSellLines(stock, lines)) {
+        return finishPublish(ownerId, state, await repriceSellLines(ownerId, stock, lines));
     }
 
     const loc = stock?.town === town
@@ -332,6 +440,10 @@ async function reconcileOne(state, goal, candidates) {
         appearance: appearance(row, inventory),
         lines
     });
+    return finishPublish(ownerId, state, shop);
+}
+
+async function finishPublish(ownerId, state, shop) {
     try {
         await AfkTrade.matchAfkOrders(ownerId);
         await BuyStoreService.matchAfkPlayerShop(ownerId);
@@ -417,6 +529,7 @@ async function withdraw(ownerId) {
     if (!shop || !String(shop.ownerAccount || '').startsWith('bot_')) return { stopped: false };
     const result = await AfkTrade.stop(id);
     reviewedInventory.delete(id);
+    listingSince.delete(id);
     return result;
 }
 
@@ -447,4 +560,4 @@ async function reviewNextPersistentShop() {
 
 module.exports = { buyOrderEscrow, canTradeRemotely, desiredSide, migrateRestoredShops, minimumResourceLotValue,
     pruneResourceLots, reconcile, rememberInventory, reviewNextPersistentShop, viableSellLine, withdraw,
-    _resetForTests() { reviewedInventory.clear(); pending.clear(); reviewOwners = []; reviewCursor = 0; reviewRunning = false; } };
+    _resetForTests() { reviewedInventory.clear(); listingSince.clear(); pending.clear(); reviewOwners = []; reviewCursor = 0; reviewRunning = false; } };

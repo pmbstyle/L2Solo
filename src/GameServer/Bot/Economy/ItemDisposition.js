@@ -3,6 +3,7 @@ const DataCache = invoke('GameServer/DataCache');
 const BotMarketPricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const C4EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
+const { CRYSTAL_IDS } = invoke('GameServer/Items/C4EnchantRules');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const ClanSimulationConfig = invoke('GameServer/Clan/ClanSimulationConfig');
 
@@ -124,6 +125,17 @@ function isMarketRecipeItem(item) {
     const info = recipeInfo(item);
     return !!info && info.recipe.type === 'dwarven' && isRecipeItem(item)
         && gradeIndex(recipeProductRank(item)) >= gradeIndex('d');
+}
+
+const CRYSTALS = new Set(Object.values(CRYSTAL_IDS));
+
+// A bot's NPC junk sale keeps what the cold disposition never sells to the
+// NPC for a crafter: a D-grade or higher dwarven recipe is listed or held in
+// the bag for a crafter who can learn it, and crystals are the shot
+// crafters' input (ColdShotEconomyService).
+function isKeptFromNpcJunk(item) {
+    const selfId = Number(actorItemValue(item, 'selfId', 'fetchSelfId') || 0);
+    return CRYSTALS.has(selfId) || isMarketRecipeItem({ selfId });
 }
 
 function isNpcOnlyItem(item, template = templateFor(item?.selfId)) {
@@ -536,6 +548,7 @@ module.exports = {
     reservedEquipmentAmounts,
     saleCandidates,
     saleSummary,
+    isKeptFromNpcJunk,
     unreservedActorItems,
     warehouseCandidates
 };
