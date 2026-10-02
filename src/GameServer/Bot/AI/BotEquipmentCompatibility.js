@@ -15,11 +15,11 @@ const CLASS_PROFILES = {
         weaponHint: 'one_handed_blunt'
     },
     // Gladiator and Bladedancer need a dual sword, which NPCs do not sell.
-    // Until they hold one they keep fighting with the Warrior's / Palus
-    // Knight's weapons; the dual sword stays their weapon target.
+    // Until they hold one they keep fighting with the weapons of their
+    // previous profession (interimClassId); the dual sword stays their target.
     2: {
         weaponKinds: ['Weapon.Dual'],
-        interimWeaponKinds: ['Weapon.Sword', 'Weapon.Blunt'],
+        interimClassId: 1,
         preferredWeaponKinds: ['Weapon.Dual'],
         armorStyle: 'heavy',
         twoHandedWeaponKinds: ['Weapon.Dual'],
@@ -42,7 +42,7 @@ const CLASS_PROFILES = {
     },
     34: {
         weaponKinds: ['Weapon.Dual'],
-        interimWeaponKinds: ['Weapon.Sword', 'Weapon.Blunt'],
+        interimClassId: 32,
         armorStyle: 'heavy',
         twoHandedWeaponKinds: ['Weapon.Dual'],
         shield: false,
@@ -200,7 +200,6 @@ function profileFor(role, classId) {
         baseClassId: baseClassId(classId),
         weaponKinds,
         preferredWeaponKinds: [...(profile.preferredWeaponKinds || weaponKinds)],
-        interimWeaponKinds: [...(profile.interimWeaponKinds || [])],
         armorStyle: profile.armorStyle,
         twoHandedWeaponKinds: [...profile.twoHandedWeaponKinds],
         shield: profile.shield,
@@ -212,8 +211,8 @@ function weaponKindsFor(role, classId) {
     return profileFor(role, classId).weaponKinds;
 }
 
-function interimWeaponKindsFor(role, classId) {
-    return profileFor(role, classId).interimWeaponKinds;
+function interimClassIdFor(classId) {
+    return Number(CLASS_PROFILES[baseClassId(classId)]?.interimClassId || 0);
 }
 
 function preferredWeaponKindsFor(role, classId) {
@@ -248,7 +247,7 @@ module.exports = {
     armorStyleFor,
     allowsTwoHandedWeapon,
     baseClassId,
-    interimWeaponKindsFor,
+    interimClassIdFor,
     isCasterRole,
     preferredWeaponKindsFor,
     profileFor,

@@ -229,9 +229,13 @@ function combatReadiness(state = {}) {
 function computeCombatReadiness(state = {}) {
     const role = roleFor(state);
     const equipped = equippedInventoryItems(state.inventory);
-    const interimKinds = BotEquipmentCompatibility.interimWeaponKindsFor(role, classIdFor(state));
+    const interimClassId = BotEquipmentCompatibility.interimClassIdFor(classIdFor(state));
+    const interimState = interimClassId
+        ? { ...state, party: null, stats: { ...(state.stats || {}), classId: interimClassId, role: undefined } }
+        : null;
     const weapon = equipped.find((item) => WEAPON_SLOTS.has(Number(item.etc?.slot || 0))
-        && (suitable(item, state, role, item.etc?.rank) || interimKinds.includes(item.template?.kind)));
+        && (suitable(item, state, role, item.etc?.rank)
+            || (interimState && suitable(item, interimState, roleFor(interimState), item.etc?.rank))));
     const armor = equipped.filter((item) => ARMOR_SLOTS.has(Number(item.etc?.slot || 0))
         && suitable(item,state,role,item.etc?.rank));
     const weaponRank = rankIndex(weapon?.etc?.rank);
@@ -974,8 +978,9 @@ function npcWeaponBridgePlan(state = {}, options = {}) {
         weaponBridge: true, partyNeedReason: 'weapon_bridge' };
 }
 
+// Funded = the bot can pay for every blade the combination still needs.
 function dualSwordFunded(plan, state) {
-    return plan.status === 'ready_to_craft' || Number(plan.market?.price) <= npcPurchaseBudget(state).spendable;
+    return Number(plan.bridgeCost || 0) <= npcPurchaseBudget(state).spendable;
 }
 
 // Bridge choice over candidates sorted by cost: keep the bridge already
@@ -1968,7 +1973,7 @@ function dualSwordBridgePlan(state, options = {}) {
     const { spendable } = npcPurchaseBudget(state);
     const target = chooseBridge(candidates, spendable, Math.min(maxRank, rankIndex('c')), previousId);
     if (!target) return null;
-    const common = { weaponBridge: true, partyNeedReason: 'weapon_bridge',
+    const common = { weaponBridge: true, partyNeedReason: 'weapon_bridge', bridgeCost: target.cost,
         grade: target.item.etc.rank, combine: combinationMetadata(target.recipe) };
     if (target.purchases.length) {
         const { item, offer } = target.purchases[0];
