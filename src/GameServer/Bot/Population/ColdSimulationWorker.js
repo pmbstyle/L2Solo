@@ -103,10 +103,9 @@ function currentPlanningOccupancy(timestamp = Date.now()) {
     if (planningOccupancyCache && timestamp - planningOccupancyCachedAt < 1000) {
         return planningOccupancyCache;
     }
-    const states = kernel
-        ? [...kernel.states.values()].map((entry) => entry?.state).filter(Boolean)
-        : [];
-    planningOccupancyCache = SpotProfiles.occupancySnapshot(planningSpots, states);
+    planningOccupancyCache = kernel
+        ? SpotProfiles.indexedOccupancy(kernel.occupancy, planningSpots)
+        : SpotProfiles.occupancySnapshot(planningSpots, []);
     planningOccupancyCachedAt = timestamp;
     return planningOccupancyCache;
 }

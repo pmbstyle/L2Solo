@@ -317,6 +317,11 @@ function npcVerdict(verdicts, selfId, options) {
     return verdict;
 }
 
+// A spot's matchup reads only its mob list and the verdicts of one profile
+// fingerprint and safety options, so it is shared the same way: a spot search
+// after every commit checks hundreds of spots against the same verdicts.
+const spotMatchups = new WeakMap();
+
 function spotMatchup(spot, profiles, options = {}) {
     if (!profiles?.length) return evaluate([], {});
     let total = 0, effective = 0, eligible = false, safe = 0;
@@ -324,6 +329,10 @@ function spotMatchup(spot, profiles, options = {}) {
     const optionsKey = `${options.soloSafety ? 1 : 0}:${options.maxTargetLevel || 0}`;
     let verdicts = byOptions.get(optionsKey);
     if (!verdicts) byOptions.set(optionsKey, verdicts = new Map());
+    let bySpot = spotMatchups.get(verdicts);
+    if (!bySpot) spotMatchups.set(verdicts, bySpot = new WeakMap());
+    const known = bySpot.get(spot);
+    if (known) return known;
     const verdictOptions = { profiles, soloSafety: options.soloSafety, maxTargetLevel: options.maxTargetLevel };
     for (const entry of spot.npcEntries || []) {
         const verdict = npcVerdict(verdicts, Number(entry.selfId), verdictOptions);
@@ -337,9 +346,11 @@ function spotMatchup(spot, profiles, options = {}) {
     }
     const efficiency = total ? effective / total : 1;
     const safeFraction = total ? safe / total : 1;
-    return { efficiency, safeFraction,
+    const result = Object.freeze({ efficiency, safeFraction,
         eligible: !total || (eligible && (!options.soloSafety || safeFraction >= 0.6)),
-        penalty: Math.round((1 - efficiency) * 250 + (options.soloSafety ? (1 - safeFraction) * 250 : 0)) };
+        penalty: Math.round((1 - efficiency) * 250 + (options.soloSafety ? (1 - safeFraction) * 250 : 0)) });
+    bySpot.set(spot, result);
+    return result;
 }
 
 module.exports = { MIN_EFFICIENCY, VERDICT_PROFILE_LIMIT, actorProfiles, coldProfiles, targetView, skillModifier,

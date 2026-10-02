@@ -52,6 +52,8 @@ function finish(session, actor, retryAt) {
         session.coldLifeState.stats.clanHallVisit = null;
         session.coldLifeState.stats.clanHallRetryAt = retryAt;
         session.coldLifeState.stats.travel = null;
+        // The session may hold the cached state itself: its trip ended in place.
+        invoke('GameServer/Bot/Population/BotLifeState').refreshOccupancy(session.coldLifeState);
     }
     Approach.reset(session);
     Navigation.clear(session);
