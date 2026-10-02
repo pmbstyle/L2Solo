@@ -15,6 +15,7 @@ let sourceIndexCache = { spots: null, rewards: null, byItemId: new Map(), resolv
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const OfferOrder = require('../Economy/OfferOrder');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
@@ -695,7 +696,8 @@ function marketOfferForTarget(target, state = {}, options = {}) {
             buyerCharacterId: state.characterId
         }))
         .filter(usable)
-        .sort((left, right) => Number(left.price) - Number(right.price))[0] || null;
+        .sort((left, right) => Number(left.price) - Number(right.price)
+            || OfferOrder.compareDistance(left, right, state.loc))[0] || null;
 }
 
 function expectedAdenaPerKill(state = {}) {
@@ -756,6 +758,7 @@ function npcOfferForTarget(target, state = {}, options = {}) {
     return (MarketOpportunity.npcOffersAll(target.selfId) || [])
         .filter((offer) => offer.available !== false)
         .sort((left, right) => Number(left.price) - Number(right.price)
+            || OfferOrder.compareDistance(left, right, state.loc)
             || String(left.town || '').localeCompare(String(right.town || '')))[0] || null;
 }
 
