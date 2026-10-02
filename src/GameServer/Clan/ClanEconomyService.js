@@ -161,6 +161,8 @@ async function resolveClan(clan, options = {}) {
                 });
                 if (advanced.ok) {
                     metrics.levelUps += 1;
+                    // Spending the level's Adena moved the warehouse revision.
+                    warehouseRevision = number(advanced.warehouseRevision, warehouseRevision);
                     await ClanCrestService.ensureAutonomousCrest(clan.id);
                     recordReason(Contracts.REASON_CODES.CONTRIBUTION_LEVEL_UP);
                 }

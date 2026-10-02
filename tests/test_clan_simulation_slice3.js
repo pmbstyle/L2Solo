@@ -86,7 +86,11 @@ async function main() {
         const adena = warehouse.find((item) => Number(item.selfId) === 57);
         const stems = warehouse.find((item) => Number(item.selfId) === 1864);
         const recipe = warehouse.find((item) => Number(item.selfId) === 5339);
-        assert.strictEqual(Number(adena.amount), 2500000, 'level 1 Adena must live in the clan warehouse');
+        // Level 1 Adena was collected in the clan warehouse; the level-up spent it.
+        assert.strictEqual(adena, undefined, 'the level-up spends the collected Adena');
+        const [spent] = await Database.execute([`SELECT amount FROM clan_warehouse_ledger
+            WHERE clanId = ? AND selfId = 57 AND operation = 'level_up_consume'`, [created.clanId]]);
+        assert.strictEqual(Number(spent.amount), 2500000);
         assert.strictEqual(Number(stems.amount), 15, 'free material surplus must be deposited atomically');
         assert.strictEqual(Number(recipe.amount), 1, 'the clan warehouse keeps one recipe instance');
 

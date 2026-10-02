@@ -113,13 +113,15 @@ async function main() {
         const [source] = await Database.execute(['SELECT amount FROM items WHERE characterId = ? AND selfId = 57', [4200002]]);
         const [leader] = await Database.execute(['SELECT amount FROM items WHERE characterId = ? AND selfId = 57', [4200001]]);
         assert(Number(source.amount) >= 5000, 'the contributor must retain the configured personal reserve');
-        assert.strictEqual(Number(leader.amount), 1650000, 'the leader must receive real Adena in inventory');
+        // The leader received the 650k as real Adena, and the level-up spent it
+        // like the player's level-up does.
+        assert.strictEqual(Number(leader.amount), 1000000, 'the leader pays the level from the received Adena');
 
         const [sourceState] = await Database.execute(['SELECT adena, inventorySummary FROM bot_life_state WHERE characterId = ?', [4200002]]);
         const [leaderState] = await Database.execute(['SELECT adena, inventorySummary FROM bot_life_state WHERE characterId = ?', [4200001]]);
         assert(Number(sourceState.adena) >= 5000);
-        assert.strictEqual(Number(leaderState.adena), 1650000);
-        assert.strictEqual(JSON.parse(leaderState.inventorySummary)['57'].amount, 1650000);
+        assert.strictEqual(Number(leaderState.adena), 1000000);
+        assert.strictEqual(JSON.parse(leaderState.inventorySummary)['57'].amount, 1000000);
 
         console.log('Clan simulation Slice 2 checks passed');
     } finally {
