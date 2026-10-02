@@ -108,6 +108,9 @@ let craftLevelsTree = null;
 let ColdCombatProfile = null;
 
 function craftLevelFor(state = {}) {
+    // A hot actor passes the level of the skill it has learned.
+    const learned = state.craftLevel ?? state.stats?.dwarvenCraftLevel;
+    if (learned !== undefined && learned !== null) return Number(learned) || 0;
     const classId = Number(state.classId || state.stats?.classId || 0);
     const level = Number(state.level || 1);
     if (craftLevelsTree !== DataCache.skillTree) {
