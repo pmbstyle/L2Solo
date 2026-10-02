@@ -50,7 +50,7 @@ function refresh(rows) {
 // One dues settlement per member and hour (ClanHall/Repository.settleClanDues),
 // at most 4 members per tick. Rates follow the members' personas
 // (ClanContributionPolicy); a busy member pays at the next pass.
-async function settleDues(db, id, level, leaderId) {
+async function settleDues(db, id, level) {
     const pass = duesPasses.get(id) || { nextAt: 0, offset: 0 };
     if (Date.now() < pass.nextAt) return;
     const members = await db.execute(
@@ -72,7 +72,7 @@ async function settleDues(db, id, level, leaderId) {
     for (let i = pass.offset; i < end; i++) {
         const characterId = members[i].id;
         const traits = traitsOf(members[i]);
-        await life.settleWrites(level === 0 ? [characterId, leaderId] : [characterId]);
+        await life.settleWrites([characterId]);
         const state = life.cachedState(characterId);
         const result = await db.settleClanDues({
             clanId: id,
@@ -81,7 +81,6 @@ async function settleDues(db, id, level, leaderId) {
             investFraction: DuesPolicy.investFraction(traits)
         });
         life.acceptNewerLifecycleRow(result.row);
-        life.acceptNewerLifecycleRow(result.leaderRow);
     }
     if (end < members.length) {
         duesPasses.set(id, { nextAt: 0, offset: end });
@@ -107,7 +106,7 @@ async function tick() {
         if (!invoke('GameServer/Clan/ClanSimulationConfig').enabled) return;
         const clans = await db.execute(
             [
-                `SELECT c.id, c.level, c.leaderId FROM clans c JOIN clan_simulation_clans s ON s.clanId=c.id
+                `SELECT c.id, c.level FROM clans c JOIN clan_simulation_clans s ON s.clanId=c.id
             WHERE s.mode='autonomous' ORDER BY c.id`,
                 []
             ],
@@ -116,11 +115,11 @@ async function tick() {
         const deadline = Date.now() + 40;
         let count = 0;
         while (clans.length && count < clans.length && Date.now() < deadline) {
-            const { id, level, leaderId } = clans[clanOffset % clans.length];
+            const { id, level } = clans[clanOffset % clans.length];
             clanOffset++;
             count++;
             if (Number(level) >= 2) await db.planClanHallFinance(id);
-            await settleDues(db, id, Number(level), Number(leaderId));
+            await settleDues(db, id, Number(level));
         }
         refresh(await db.fetchClanHallAuctions());
     } finally {

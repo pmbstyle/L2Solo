@@ -74,14 +74,13 @@ async function main() {
         });
         assert.strictEqual(created.ok, true);
 
-        // Level 0 dues: a share of new earnings, paid into the leader's wallet.
+        // Level 0 dues: a share of new earnings, paid into the clan warehouse.
         const settle = (characterId, rate, timestamp) => Database.settleClanDues({ clanId: created.clanId, characterId, rate, timestamp });
         assert.strictEqual((await settle(4200002, 0.35, 1)).amount, 0, 'the first settlement only marks the wallet');
         await Database.execute(['UPDATE items SET amount = amount + 2000000 WHERE characterId = ? AND selfId = 57', [4200002]]);
         const paid = await settle(4200002, 0.35, 2);
         assert.strictEqual(paid.amount, 700000, '35% of the 2M earned');
         assert.strictEqual((await settle(4200002, 0.35, 3)).amount, 0, 'the same earnings cannot be collected twice');
-        assert.strictEqual((await settle(4200001, 0.35, 4)).code, 'leader_pays_itself');
 
         const resolved = await ClanEconomyService.resolveBatch(8, { budgetMs: 1000 });
         assert.strictEqual(resolved.levelUps, 1, 'level 0 should advance after the real contribution ledger reaches 650k');
@@ -95,15 +94,14 @@ async function main() {
         const [source] = await Database.execute(['SELECT amount FROM items WHERE characterId = ? AND selfId = 57', [4200002]]);
         const [leader] = await Database.execute(['SELECT amount FROM items WHERE characterId = ? AND selfId = 57', [4200001]]);
         assert.strictEqual(Number(source.amount), 2300000);
-        // The leader received the 700k as real Adena, and the level-up spent 650k
-        // of it like the player's level-up does.
-        assert.strictEqual(Number(leader.amount), 1050000, 'the leader pays the level from the received Adena');
+        assert.strictEqual(Number(leader.amount), 1000000, 'the leader\'s own wallet is not the clan fund');
+        // The level-up spent 650k of the 700k in the warehouse, like the player's level-up.
+        const [fund] = await Database.execute(['SELECT amount FROM clan_warehouse_items WHERE clanId = ? AND selfId = 57', [created.clanId]]);
+        assert.strictEqual(Number(fund.amount), 50000);
 
         const [sourceState] = await Database.execute(['SELECT adena, inventorySummary FROM bot_life_state WHERE characterId = ?', [4200002]]);
-        const [leaderState] = await Database.execute(['SELECT adena, inventorySummary FROM bot_life_state WHERE characterId = ?', [4200001]]);
         assert.strictEqual(Number(sourceState.adena), 2300000);
-        assert.strictEqual(Number(leaderState.adena), 1050000);
-        assert.strictEqual(JSON.parse(leaderState.inventorySummary)['57'].amount, 1050000);
+        assert.strictEqual(JSON.parse(sourceState.inventorySummary)['57'].amount, 2300000);
 
         console.log('Clan simulation Slice 2 checks passed');
     } finally {

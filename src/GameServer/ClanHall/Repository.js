@@ -510,26 +510,18 @@ module.exports = function ({
         // every bot clan): a share of what the member earned since its last settlement
         // above its highest mark (wallet + contributed), never of its savings; plus an
         // optional one-off investment from savings toward the clan's current target.
-        // Level 0 pays the leader's wallet, level 1+ the clan warehouse (level 0-1 also
-        // in the contribution ledger that the level-up checks).
-        // Wallet helpers for other clan writes in a transaction (the bot clan level-up).
-        memberWalletUnsafe: memberWallet,
-        changeWalletUnsafe: changeWallet,
+        // Every level pays the clan warehouse; levels 0-1 also write the contribution
+        // ledger that the level-up checks.
         settleClanDues({ clanId, characterId, rate = 0, investFraction = 0, timestamp = Date.now() }) {
-            const before = clan(Number(clanId));
-            const leaderId = n(before?.level) === 0 ? n(before.leaderId) : 0;
-            return withCharacterFlush(Number(characterId), () => withCharacterFlush(leaderId, () =>
+            return withCharacterFlush(Number(characterId), () =>
                 tx(() => {
                     const c = clan(Number(clanId)),
                         id = Number(characterId),
                         m = one('SELECT clanId,level FROM characters WHERE id=?', [id]);
                     if (!c || c.mode !== 'autonomous' || m?.clanId !== c.id) return { ok: false, code: 'member_busy' };
                     const level = n(c.level);
-                    if (level === 0 && id === n(c.leaderId)) return { ok: false, code: 'leader_pays_itself' };
                     const payer = memberWallet(id, timestamp);
                     if (!payer) return { ok: false, code: 'member_busy' };
-                    const leader = level === 0 ? memberWallet(n(c.leaderId), timestamp) : null;
-                    if (level === 0 && !leader) return { ok: false, code: 'leader_busy' };
                     const cursor = one('SELECT * FROM clan_hall_earnings WHERE clanId=? AND characterId=?', [c.id, id]);
                     const wealth = payer.amount + n(cursor?.contributed),
                         earned = cursor ? Math.max(0, wealth - cursor.highWater) : 0;
@@ -545,8 +537,7 @@ module.exports = function ({
                     const amount = dues + investment;
                     if (amount) {
                         changeWallet(payer, -amount, c.id, timestamp);
-                        if (level === 0) changeWallet(leader, amount, c.id, timestamp);
-                        else money(c.id, amount, 0, 'clan_dues', timestamp, id);
+                        money(c.id, amount, 0, 'clan_dues', timestamp, id);
                         if (level <= 1) {
                             const ledger = write(`INSERT INTO clan_contributions
                                 (clanId, characterId, targetLevel, amount, source, resolveKey, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -567,11 +558,10 @@ module.exports = function ({
                         amount,
                         dues,
                         investment,
-                        row: amount ? one('SELECT * FROM bot_life_state WHERE characterId=?', [id]) : null,
-                        leaderRow: amount && leader ? one('SELECT * FROM bot_life_state WHERE characterId=?', [leader.id]) : null
+                        row: amount ? one('SELECT * FROM bot_life_state WHERE characterId=?', [id]) : null
                     };
                 }, 'dues')
-            ));
+            );
         },
         clanHallBlocksDissolution(clanId) {
             return tx(
