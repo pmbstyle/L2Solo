@@ -62,10 +62,11 @@ function finishBlockedPurchase(state, goal, reason) {
     ));
 }
 
-// Buys one unit of a found offer for a cold bot where it stands: an AFK store
-// through AfkTradeService, otherwise the market snapshot (NPC, cold store).
-// Changes nothing else of the bot (no activity, goal or travel).
-function buyOffer(state, offer) {
+// Buys one unit of a found offer for a cold bot: an AFK store through
+// AfkTradeService, otherwise the market snapshot (NPC, cold store). No goal or
+// travel change; a snapshot purchase records the bot as shopping unless
+// options.keepActivity (a purchase made for it where it hunts).
+function buyOffer(state, offer, options = {}) {
     const blocker = LifeState.marketPurchaseBlocker(state, offer, 1);
     if (blocker) return Promise.resolve({ purchased: false, blocked: true, reason: blocker });
     if (['afk_player_store', 'afk_bot_store'].includes(offer.sourceType)) {
@@ -89,7 +90,7 @@ function buyOffer(state, offer) {
         });
     }
     if (!MarketOpportunity.reserve(offer, 1)) return Promise.resolve({ purchased: false, reason: 'offer_changed' });
-    return LifeState.applyMarketPurchase(state, offer).then((updated) => {
+    return LifeState.applyMarketPurchase(state, offer, 1, options).then((updated) => {
         if (!updated) {
             MarketOpportunity.release(offer, 1);
             return { purchased: false, reason: 'persist_failed' };

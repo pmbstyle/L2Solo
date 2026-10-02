@@ -103,7 +103,14 @@ async function main() {
         // A member the cold worker owns is not bought for (its next review is).
         await Database.execute(["UPDATE bot_life_state SET simulationOwner = 'cold_simulation_owner' WHERE characterId = ?", [POOR + 10]]);
         LifeState.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId = ?', [POOR + 10]]))[0]);
-        await Equipment.resolveClan(await Goals.clanProjectionById(92), null);
+        let buys = 0;
+        Market.buyOffer = async (...args) => { buys += 1; return buyOffer(...args); };
+        try {
+            await Equipment.resolveClan(await Goals.clanProjectionById(92), null);
+        } finally {
+            Market.buyOffer = buyOffer;
+        }
+        assert.strictEqual(buys, 0, 'no purchase is tried for a worker-owned member');
         const [untouched] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM clan_warehouse_items WHERE clanId = 92 AND selfId = 57']);
         assert.strictEqual(Number(untouched.n), 3000000, 'no money moves for a worker-owned member');
 

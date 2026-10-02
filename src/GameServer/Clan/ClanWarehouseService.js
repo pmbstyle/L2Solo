@@ -97,6 +97,8 @@ function spareWearableIds(member) {
 // member only records its spare items.
 async function offerSpareGear(clan, member, warehouseRows, warehouseRevision) {
     const id = number(member.characterId);
+    // A party holds the member's data: it offers once it is free.
+    if (member.partyId || member.party?.partyId) return { deposited: 0, warehouseRevision };
     const spare = spareWearableIds(member);
     const seen = seenSpare.get(id);
     const freshIds = seen ? spare.filter((selfId) => !seen.has(selfId)) : [];
@@ -152,8 +154,15 @@ async function offerSpareGear(clan, member, warehouseRows, warehouseRevision) {
             recordReason(moved.code);
             if (price > 0) {
                 const back = await Database.payClanMember({ clanId: clan.id, characterId: id, amount: -price, kind: 'clan_gear_compensation_refund' });
-                if (back.ok) LifeState.acceptNewerLifecycleRow(back.row);
-                else recordReason(`clan_gear_refund_${back.code}`);
+                if (back.ok) {
+                    LifeState.acceptNewerLifecycleRow(back.row);
+                    const [state] = await Database.execute(['SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan.id]]);
+                    warehouseRevision = number(JSON.parse(state?.stateJson || '{}').warehouseRevision, warehouseRevision);
+                } else {
+                    // Paid but neither given nor refunded: never pay for it twice.
+                    recordReason(`clan_gear_refund_${back.code}`);
+                    handled.add(offer.selfId);
+                }
             }
             continue;
         }

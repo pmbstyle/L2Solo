@@ -388,8 +388,8 @@ async function handoffWarehouseMaterials(current, plan, clan, goal) {
 }
 
 // The clan buys a market goal item for its beneficiary at once, where the
-// beneficiary stands (ColdMarketService.buyOffer: no trip or goal change; the
-// bot keeps its activity): the member pays its funds above its reserve, the clan the rest from
+// beneficiary stands (ColdMarketService.buyOffer with keepActivity: no trip,
+// goal or activity change): the member pays its funds above its reserve, the clan the rest from
 // its free money; a purchase that fails returns the clan's part. Only a free cold
 // member the main thread owns (not in a party, hunting or resting); others wait
 // for the next review.
@@ -397,7 +397,7 @@ async function buyGoalItem(memberId, plan, clan) {
     let state = await LifeState.findByCharacterId(memberId);
     const itemId = number(plan?.target?.selfId);
     if (!state || state.phase !== 'cold' || state.partyId || state.party?.partyId
-        || String(state.simulationOwner || 'legacy_main') !== 'legacy_main'
+        || String(state.simulation?.ownerId || 'legacy_main') !== 'legacy_main'
         || !['hunting', 'resting'].includes(state.activity)
         || number(state.inventory?.[itemId]?.amount) > 0) return { ok: false, code: 'member_busy' };
     const Market = invoke('GameServer/Bot/Economy/MarketOpportunity');
@@ -405,20 +405,16 @@ async function buyGoalItem(memberId, plan, clan) {
     if (!offer) return { ok: false, code: 'market_no_offer' };
     offer.buyerCharacterId = memberId;
     offer.equipSlot = number(plan.target?.slot) || undefined;
+    const blocker = LifeState.marketPurchaseBlocker(state, offer, 1);
+    if (blocker) return { ok: false, code: blocker };
     const clanPart = Math.max(0, Math.ceil(number(offer.price)) - memberFunds(state));
     if (clanPart > 0) {
         const paid = await Database.payClanMember({ clanId: clan.id, characterId: memberId, amount: clanPart, kind: 'clan_goal_purchase', moveMark: false });
         if (!paid.ok) return paid;
         state = LifeState.acceptNewerLifecycleRow(paid.row) || await LifeState.findByCharacterId(memberId);
     }
-    const activity = state.activity;
-    const bought = await invoke('GameServer/Bot/Economy/ColdMarketService').buyOffer(state, offer);
-    if (bought.purchased) {
-        // A market purchase records the bot as shopping in town; the clan bought
-        // for it where it hunts, so it goes on as before.
-        if (bought.state?.activity !== activity) await LifeState.upsertState({ ...bought.state, activity }, 'clan_goal_purchase');
-        return { ok: true, purchase: bought };
-    }
+    const bought = await invoke('GameServer/Bot/Economy/ColdMarketService').buyOffer(state, offer, { keepActivity: true });
+    if (bought.purchased) return { ok: true, purchase: bought };
     recordReason(bought.reason || 'clan_goal_purchase_failed');
     if (clanPart > 0) {
         const back = await Database.payClanMember({ clanId: clan.id, characterId: memberId, amount: -clanPart, kind: 'clan_goal_purchase_refund', moveMark: false });

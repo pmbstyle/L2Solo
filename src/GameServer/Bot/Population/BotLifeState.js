@@ -3048,7 +3048,7 @@ const BotLifeState = {
         });
     },
 
-    applyMarketPurchase(state, offer, qty = 1) {
+    applyMarketPurchase(state, offer, qty = 1, options = {}) {
         const selfId = Number(offer?.selfId || 0);
         const price = Number(offer?.price || 0);
         const count = Number(qty);
@@ -3116,7 +3116,9 @@ const BotLifeState = {
         const purchasedState = {
             ...state,
             adena: Number(state.adena) - totalPrice,
-            activity: 'shopping',
+            // A bot in town is shopping; a purchase made for it where it hunts
+            // (the clan's goal purchase) leaves its activity alone.
+            activity: options.keepActivity ? state.activity : 'shopping',
             inventory,
             stats: {
                 ...purchaseStats,
