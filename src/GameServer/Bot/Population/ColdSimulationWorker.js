@@ -38,9 +38,6 @@ const stubs = new Map([
             || String(target?.template?.kind || '').toLowerCase() === 'boss'
             || Number(target?.minionBossObjectId || target?.minionBossTemplateId || 0) > 0
     }],
-    ['GameServer/Bot/Economy/CraftShopService', {
-        CraftStations: [], availableRecipes: () => [], stationRecipes: () => []
-    }],
     ['GameServer/Bot/Economy/MarketOpportunity', {
         TOWN_NPC_SELLERS: {}, bestOffer: () => null, npcOffersAll: () => []
     }],
@@ -63,6 +60,7 @@ const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver'
 const BackgroundPartyResolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const GearPlanSelection = invoke('GameServer/Bot/AI/GearPlanSelection');
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const LifeStateProjector = invoke('GameServer/Bot/Population/BotLifeState');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
@@ -182,88 +180,12 @@ function startKernel(config = {}) {
             const previousPlan = state.stats?.equipmentPlan || null;
             const spots = planningSpots;
             const occupancy = currentPlanningOccupancy(timestamp);
-            const excludedSpotIds = invoke('GameServer/Bot/Population/SpotRiskPolicy')
-                .excludedSpotIdsForStates([state], timestamp);
             const origin = OfferOrder.farmingOrigin(state, (spotId) => OfferOrder.spotInList(spots, spotId));
-            const npcPlanningOptions = { ...planningNpcCatalog.plannerOptions, excludedSpotIds, origin,
-                buyOrderEscrow: context?.buyOrderEscrow };
-            const clanRaidPlan = GearAcquisitionPlanner.isClanOwnedPlan(previousPlan)
-                && previousPlan?.next?.sourceKind === 'raid';
-            if (clanRaidPlan) npcPlanningOptions.allowRaidSources = true;
-            const replanContext = GearAcquisitionPlanner.replanContextFor(state, previousPlan, timestamp);
-            const weaponBridgePlan = GearAcquisitionPlanner.npcEquipmentBridgePlan(state, npcPlanningOptions);
-            const clanGoalLocked = !weaponBridgePlan
-                && GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan);
-            const availabilitySource = !replanContext.failure && previousPlan?.status === 'active'
-                && ['direct_drop', 'craft'].includes(previousPlan.strategy)
-                ? GearAcquisitionPlanner.bestSourceForPlan(state, previousPlan, spots, {
-                    occupancy, excludedSpotIds, allowRaidSources: clanRaidPlan
-                })
-                : null;
-            const availabilityRouteChanged = availabilitySource && (
-                String(availabilitySource.spotId || '') !== String(previousPlan?.next?.spotId || '')
-                || Number(availabilitySource.npcId || 0) !== Number(previousPlan?.next?.npcId || 0)
-            );
-            const availabilityPlan = weaponBridgePlan || (previousPlan?.status === 'blocked' && !clanGoalLocked
-                ? GearAcquisitionPlanner.replacementPlanFor(state, previousPlan, spots, {
-                    occupancy,
-                    ...replanContext,
-                    ...npcPlanningOptions
-                })
-                : availabilityRouteChanged
-                    ? GearAcquisitionPlanner.retargetPlanSource(state, previousPlan, availabilitySource)
-                    : previousPlan?.status === 'active'
-                    && ['direct_drop', 'craft'].includes(previousPlan.strategy)
-                    && !clanGoalLocked
-                        ? GearAcquisitionPlanner.replacementPlanFor(state, previousPlan, spots, {
-                            occupancy,
-                            ...replanContext,
-                            ...npcPlanningOptions
-                        })
-                        : null);
-            const reusablePartyRequest = !weaponBridgePlan
-                && !state.party?.partyId
-                && previousPlan?.next
-                && !!availabilitySource
-                && replanContext.routeCurrent
-                && !replanContext.failure
-                && state.stats?.partyRequest?.status === 'open'
-                && Number(state.stats.partyRequest.reviewAt || 0) > timestamp
-                && !GearAcquisitionPlanner.fundedMarketPlanForTarget(state, previousPlan.target?.selfId, npcPlanningOptions);
-            const upgradedPlan = availabilityPlan || (
-                reusablePartyRequest || clanGoalLocked
-                    ? previousPlan
-                    : GearAcquisitionPlanner.planFor(state, { spots, occupancy, ...replanContext, ...npcPlanningOptions })
-            );
-            const previousRefresh = previousPlan?.recipeId && !reusablePartyRequest && !clanGoalLocked
-                ? GearAcquisitionPlanner.planFor(state, {
-                    spots,
-                    occupancy,
-                    recipeId: previousPlan.recipeId,
-                    ...replanContext,
-                    ...npcPlanningOptions
-                })
-                : null;
-            const rawPlan = GearAcquisitionPlanner.shouldFinishPreviousPlan(previousPlan, previousRefresh)
-                ? { ...previousRefresh, finishBeforeUpgrade: true }
-                : upgradedPlan;
-            const canFinalizeLockedRoute = clanGoalLocked && availabilityRouteChanged;
-            const finalizationContext = weaponBridgePlan
-                ? { ...replanContext, allowClanGoalReplan: true }
-                : canFinalizeLockedRoute
-                ? { ...replanContext, allowClanGoalReplan: true }
-                : replanContext;
-            const preservePreviousPlan = !weaponBridgePlan
-                && (reusablePartyRequest || (clanGoalLocked && !canFinalizeLockedRoute));
-            const finalizedPlan = preservePreviousPlan
-                ? previousPlan
-                : GearAcquisitionPlanner.finalizePlan(state, previousPlan, rawPlan, finalizationContext, timestamp);
-            const costedPlan = GearAcquisitionPlanner.withMaterialFarmEffort(finalizedPlan, state, spots, { occupancy });
-            const acquisitionPlan = {
-                ...costedPlan,
-                marketFallback: finalizedPlan.status === 'active' && finalizedPlan.strategy === 'craft'
-                    && Number(finalizedPlan.acquisitionProgress?.at || finalizedPlan.startedAt || timestamp) + 20 * 60 * 1000 <= timestamp
-            };
+            const { acquisitionPlan, replanContext, reusablePartyRequest, excludedSpotIds } = GearPlanSelection
+                .selectAcquisitionPlan(state, previousPlan, {
+                    spots, occupancy, timestamp,
+                    planningOptions: { ...planningNpcCatalog.plannerOptions, origin, buyOrderEscrow: context?.buyOrderEscrow }
+                });
             const reservedSpot = acquisitionPlan?.next?.spotId
                 ? spots.find((spot) => String(spot.id) === String(acquisitionPlan.next.spotId))
                 : null;

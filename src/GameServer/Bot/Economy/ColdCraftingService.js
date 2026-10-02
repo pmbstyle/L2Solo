@@ -9,7 +9,6 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 
-const STATION_CRAFTER_LEVEL = 70;
 const NATIVE_TRAVEL_MS = 25000;
 
 function isStationService(state = {}) {
@@ -25,11 +24,7 @@ function stationForRecipe(recipeId, state = null) {
     };
     const combination = C4DualSwordCombinations.resolveByRecipeId(recipeId);
     if (combination) return combination.station;
-    const service = { level: STATION_CRAFTER_LEVEL, stats: { classId: 57 } };
-    const recipes = CraftShopService.availableRecipes(service);
-    return CraftShopService.CraftStations.find((station) => (
-        CraftShopService.stationRecipes(station, recipes).some((recipe) => Number(recipe.recipeId) === Number(recipeId))
-    )) || null;
+    return CraftShopService.publishedStationRecipes().stationByRecipeId.get(Number(recipeId)) || null;
 }
 
 function crafterAccount(station) {

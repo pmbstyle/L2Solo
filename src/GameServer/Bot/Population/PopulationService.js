@@ -35,6 +35,7 @@ const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyCompos
 const PartyRecruitmentChat = invoke('GameServer/Bot/Population/ColdPartyRecruitmentChat');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const OfferOrder = invoke('GameServer/Bot/Economy/OfferOrder');
+const GearPlanSelection = invoke('GameServer/Bot/AI/GearPlanSelection');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const ColdWealthCraftService = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
@@ -319,6 +320,22 @@ function partyCapacityLimit() {
 
 function occupiedPartySlots() {
     return Math.max(0, Number(BackgroundPartyState.counts().active || 0)) + partyAdmission.pending;
+}
+
+function acquisitionFallbackEvent(state, previousPlan, failure, nextPlan) {
+    return {
+        type: 'gear_acquisition_fallback',
+        summary: `${state.name} abandoned an unproductive ${previousPlan?.target?.name || `item ${failure.targetId}`} drop route`,
+        weight: 3,
+        meta: {
+            reason: failure.reason,
+            targetId: failure.targetId,
+            npcId: failure.npcId,
+            resolves: failure.resolves,
+            targetKills: failure.targetKills,
+            nextStrategy: nextPlan?.strategy
+        }
+    };
 }
 
 function acquisitionRequirementKey(plan) {
@@ -2517,24 +2534,17 @@ const PopulationService = {
             for (const member of members) {
                 if (budgetReached()) return refreshed;
                 const previousPlan = member.stats?.equipmentPlan;
-                if (GearAcquisitionPlanner.clanGoalPlanLocked(member, previousPlan)) {
-                    refreshedPlans.set(Number(member.characterId), previousPlan);
-                    continue;
-                }
-                let nextPlan;
+                let selection;
                 try {
-                    const replacePreviousPlan = previousPlan?.status === 'blocked'
-                        || (previousPlan?.status === 'active'
-                            && ['direct_drop', 'craft'].includes(previousPlan.strategy)
-                            && previousPlan.next?.spotId);
-                    const buyOrderEscrow = BotAfkMarketService.buyOrderEscrow(member.characterId);
-                    nextPlan = replacePreviousPlan
-                        ? GearAcquisitionPlanner.replacementPlanFor(member, previousPlan, spots, { occupancy, buyOrderEscrow })
-                        : GearAcquisitionPlanner.planFor(member, { spots, occupancy, buyOrderEscrow });
+                    selection = GearPlanSelection.selectAcquisitionPlan(member, previousPlan, {
+                        spots, occupancy, timestamp,
+                        planningOptions: { buyOrderEscrow: BotAfkMarketService.buyOrderEscrow(member.characterId) }
+                    });
                 } catch (err) {
                     utils.infoWarn('BotPopulation', 'party requirement refresh failed for %s: %s', member.name, err.message);
                     continue;
                 }
+                const nextPlan = selection.acquisitionPlan;
                 refreshedPlans.set(Number(member.characterId), nextPlan);
                 if (acquisitionRequirementKey(previousPlan) === acquisitionRequirementKey(nextPlan)) continue;
                 const nextState = {
@@ -2542,6 +2552,10 @@ const PopulationService = {
                     stats: { ...(member.stats || {}), equipmentPlan: nextPlan }
                 };
                 const saved = await LifeState.upsertState(nextState, 'party_requirement_refresh');
+                if (saved && selection.replanContext.failure) {
+                    await LifeEvents.recordMany(member.characterId,
+                        [acquisitionFallbackEvent(member, previousPlan, selection.replanContext.failure, nextPlan)]);
+                }
                 changed = changed || !!saved;
             }
             const refreshedMembers = members.map((member) => {
@@ -3515,15 +3529,8 @@ const PopulationService = {
         // in-progress craft route into `blocked` on its first travel tick.
         const spots = SpotProfiles.ensure();
         const occupancy = SpotProfiles.currentOccupancy(spots);
-        const replanContext = {
-            ...(workerPlan
-                ? { failure: workerPlan.replanFailure || null }
-                : GearAcquisitionPlanner.replanContextFor(state, previousPlan, startedAt)),
-            buyOrderEscrow: BotAfkMarketService.buyOrderEscrow(state.characterId)
-        };
-        const offerOptions = { origin: OfferOrder.farmingOrigin(state, (spotId) => OfferOrder.spotInList(spots, spotId)),
-            buyOrderEscrow: replanContext.buyOrderEscrow };
-        const weaponBridgePlan = GearAcquisitionPlanner.npcEquipmentBridgePlan(state, offerOptions);
+        const buyOrderEscrow = BotAfkMarketService.buyOrderEscrow(state.characterId);
+        let replanContext = { failure: workerPlan?.replanFailure || null, buyOrderEscrow };
         let acquisitionPlan = workerPlan?.acquisitionPlan || null;
         const workerPlanHasSource = acquisitionPlan?.status === 'active'
             && ['direct_drop', 'craft'].includes(acquisitionPlan.strategy)
@@ -3554,46 +3561,15 @@ const PopulationService = {
             }
         }
         if (!acquisitionPlan) {
-            const previousFarmPlan = previousPlan?.status === 'active'
-                && ['direct_drop', 'craft'].includes(previousPlan.strategy)
-                && previousPlan.next?.spotId;
-            const previousAvailabilitySource = previousFarmPlan && !replanContext.failure
-                ? GearAcquisitionPlanner.bestSourceForPlan(state, previousPlan, spots, { occupancy })
-                : null;
-            const reusablePartyRequest = !weaponBridgePlan
-                && !state.party?.partyId
-                && previousPlan?.next
-                && (!previousFarmPlan || !!previousAvailabilitySource)
-                && replanContext.routeCurrent
-                && !replanContext.failure
-                && state.stats?.partyRequest?.status === 'open'
-                && Number(state.stats.partyRequest.reviewAt || 0) > startedAt
-                && !GearAcquisitionPlanner.fundedMarketPlanForTarget(state, previousPlan.target?.selfId, offerOptions);
-            const upgradedPlan = weaponBridgePlan || (previousFarmPlan
-                && !GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan)
-                    ? GearAcquisitionPlanner.replacementPlanFor(state, previousPlan, spots, { occupancy, ...replanContext })
-                : previousAvailabilitySource
-                    ? GearAcquisitionPlanner.retargetPlanSource(state, previousPlan, previousAvailabilitySource)
-                    : reusablePartyRequest
-                        ? previousPlan
-                        : GearAcquisitionPlanner.planFor(state, { spots, occupancy, ...replanContext }));
-            const previousRefresh = previousPlan?.recipeId && !reusablePartyRequest
-                ? GearAcquisitionPlanner.planFor(state, { spots, occupancy, recipeId: previousPlan.recipeId, ...replanContext })
-                : null;
-            const rawAcquisitionPlan = GearAcquisitionPlanner.shouldFinishPreviousPlan(previousPlan, previousRefresh)
-                ? { ...previousRefresh, finishBeforeUpgrade: true }
-                : upgradedPlan;
-            const finalizedPlan = reusablePartyRequest
-                ? previousPlan
-                : GearAcquisitionPlanner.finalizePlan(state, previousPlan, rawAcquisitionPlan,
-                    weaponBridgePlan ? { ...replanContext, allowClanGoalReplan: true } : replanContext,
-                    startedAt);
-            const costedPlan = GearAcquisitionPlanner.withMaterialFarmEffort(finalizedPlan, state, spots, { occupancy });
-            acquisitionPlan = {
-                ...costedPlan,
-                marketFallback: finalizedPlan.status === 'active' && finalizedPlan.strategy === 'craft'
-                    && Number(finalizedPlan.acquisitionProgress?.at || finalizedPlan.startedAt || startedAt) + 20 * 60 * 1000 <= Date.now()
-            };
+            const selection = GearPlanSelection.selectAcquisitionPlan(state, previousPlan, {
+                spots, occupancy, timestamp: startedAt,
+                planningOptions: {
+                    origin: OfferOrder.farmingOrigin(state, (spotId) => OfferOrder.spotInList(spots, spotId)),
+                    buyOrderEscrow
+                }
+            });
+            acquisitionPlan = selection.acquisitionPlan;
+            replanContext = selection.replanContext;
         }
         const partyRequest = partyRequestForPlan(state, acquisitionPlan, startedAt);
         const plannedStats = { ...(state.stats || {}), equipmentPlan: acquisitionPlan };
@@ -3605,19 +3581,7 @@ const PopulationService = {
         };
         const planEvents = CraftTelemetry.planEvents(state, previousPlan, acquisitionPlan);
         if (replanContext.failure) {
-            planEvents.push({
-                type: 'gear_acquisition_fallback',
-                summary: `${state.name} abandoned an unproductive ${previousPlan.target?.name || `item ${replanContext.failure.targetId}`} drop route`,
-                weight: 3,
-                meta: {
-                    reason: replanContext.failure.reason,
-                    targetId: replanContext.failure.targetId,
-                    npcId: replanContext.failure.npcId,
-                    resolves: replanContext.failure.resolves,
-                    targetKills: replanContext.failure.targetKills,
-                    nextStrategy: acquisitionPlan.strategy
-                }
-            });
+            planEvents.push(acquisitionFallbackEvent(state, previousPlan, replanContext.failure, acquisitionPlan));
         }
         if (plannedState.activity === 'crafting') {
             return ColdCraftingService.craft(plannedState).then((craft) => {

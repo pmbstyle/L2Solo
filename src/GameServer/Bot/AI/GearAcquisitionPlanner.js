@@ -10,8 +10,10 @@ const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatib
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
-const MAX_RESOLVED_SOURCE_CACHE = 512;
-let sourceIndexCache = { spots: null, rewards: null, byItemId: new Map(), resolved: new Map() };
+// Each entry holds every source of an item for one bot level (hundreds for a
+// common material); 128 entries keep the cold worker inside its heap limit.
+const MAX_RESOLVED_SOURCE_CACHE = 128;
+let sourceIndexCache = { spots: null, rewards: null, byItemId: new Map(), resolved: new Map(), yields: new Map() };
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
@@ -229,8 +231,13 @@ function combatReadiness(state = {}) {
 function computeCombatReadiness(state = {}) {
     const role = roleFor(state);
     const equipped = equippedInventoryItems(state.inventory);
+    const interimClassId = BotEquipmentCompatibility.interimClassIdFor(classIdFor(state));
+    const interimState = interimClassId
+        ? { ...state, party: null, stats: { ...(state.stats || {}), classId: interimClassId, role: undefined } }
+        : null;
     const weapon = equipped.find((item) => WEAPON_SLOTS.has(Number(item.etc?.slot || 0))
-        && suitable(item, state, role, item.etc?.rank));
+        && (suitable(item, state, role, item.etc?.rank)
+            || (interimState && suitable(item, interimState, roleFor(interimState), item.etc?.rank))));
     const armor = equipped.filter((item) => ARMOR_SLOTS.has(Number(item.etc?.slot || 0))
         && suitable(item,state,role,item.etc?.rank));
     const weaponRank = rankIndex(weapon?.etc?.rank);
@@ -552,14 +559,9 @@ function preferredTarget(state = {}, options = {}) {
     const missingDualSword = missingRequiredDualSword(state, role, classId);
     const owned = inventoryMap(state.inventory);
     const ownedItems = inventoryItems(state.inventory);
-    const stationService = { level: 70, stats: { classId: 57 } };
-    const availableToStations = CraftShopService.availableRecipes(stationService);
-    const publishedRecipeIds = new Set(CraftShopService.CraftStations.flatMap((station) => (
-        CraftShopService.stationRecipes(station, availableToStations).map((recipe) => Number(recipe.recipeId))
-    )));
-    const craftRecipes = (options.craftRecipes || Object.values(C4RecipeItems.loadRecipeItems() || {})).filter((recipe) => (
-        recipe.type === 'dwarven' && (options.craftRecipes || publishedRecipeIds.has(Number(recipe.recipeId)))
-    ));
+    const craftRecipes = options.craftRecipes
+        ? options.craftRecipes.filter((recipe) => recipe.type === 'dwarven')
+        : CraftShopService.publishedStationRecipes().recipes;
     const recipes = ClanCrafting.clanIdFor(state) && !options.clanCrafting
         ? [] : [...craftRecipes, ...C4DualSwordCombinations.loadRecipes()];
     const recipeRank = options.recipeId
@@ -842,11 +844,17 @@ function npcCandidatesForSlot(state = {}, desiredSlot, maxRank, options = {}) {
             || itemScore(right.item, role, classId) - itemScore(left.item, role, classId));
 }
 
+// What a bot may spend on NPC gear: its purchase budget (wallet plus its own
+// buy-order escrow) above the operating reserve.
+function npcPurchaseBudget(state = {}, options = {}) {
+    return { reserve: operationalAdenaReserve(state, options.buyOrderEscrow),
+        spendable: PurchaseFunding.spendable(state, options.buyOrderEscrow) };
+}
+
 function staticNpcUpgradePlan(state = {}, options = {}) {
     if (!GearLifecycle.isGearFocusActive(state)) return null;
     const targetRank = npcTargetRank(state);
-    const reserve = operationalAdenaReserve(state, options.buyOrderEscrow);
-    const spendable = PurchaseFunding.spendable(state, options.buyOrderEscrow);
+    const { reserve, spendable } = npcPurchaseBudget(state, options);
     const excludedSlots = new Set((options.excludedSlots || []).map(Number));
     const classId = classIdFor(state);
     const baseline = BotGear.planFor({ classId, level: npcAdequacyLevel(state) });
@@ -862,18 +870,27 @@ function staticNpcUpgradePlan(state = {}, options = {}) {
     // cheapest compatible item at the highest ordinary NPC grade. An unfunded
     // weapon must not block affordable armour; retain the first target for
     // saving only when none of these basic purchases fits the budget.
-    let savingTarget = null;
+    let saving = null;
     for (const slot of slots) {
         const current = equippedItemAtSlot(state, slot);
         if (current && rankIndex(current.etc?.rank) >= rankIndex(targetRank)
             && !(requiredDual && slot === 14)) continue;
         const candidate = npcCandidatesForSlot(state, slot, targetRank, options)[0];
+        if (!candidate && requiredDual && slot === 14) {
+            // NPCs sell no dual swords: the dual-sword bridge combines two
+            // blades. It is this class's kit weapon under the same rule.
+            const dual = dualSwordBridgePlan(state, options);
+            if (!dual) continue;
+            if (dualSwordFunded(dual, state, options)) return dual;
+            saving = saving || dual;
+            continue;
+        }
         if (!candidate) continue;
         const purchase = { ...candidate, slot };
-        savingTarget = savingTarget || purchase;
         if (Number(candidate.offer.price) <= spendable) return planForCandidate(purchase);
+        saving = saving || planForCandidate(purchase);
     }
-    if (savingTarget) return planForCandidate(savingTarget);
+    if (saving) return saving;
 
     // Within no-grade/D, spare money can improve an already complete kit.
     // At C+ an adequate D kit is only a bridge; crafting/drop/exchange
@@ -946,17 +963,48 @@ function staticNpcKitAdequate(state = {}, options = {}) {
 // higher-grade farm or clan objective is still active.  Establish a usable
 // NPC-bought bridge before continuing that longer route; otherwise archers
 // can spend thousands of fights carrying the dagger from their former class.
+// The weapon comes before armour here, and is chosen by the same rule as the
+// dual-sword bridge, so an unaffordable kit weapon cannot keep the bot unarmed.
 function npcWeaponBridgePlan(state = {}, options = {}) {
-    if (combatReadiness(state).hasWeapon) return null;
-    const optimizedInventory = equipInventoryUpgrades(state, state.inventory || {});
-    if (combatReadiness({ ...state, inventory: optimizedInventory }).hasWeapon) return null;
-    const plan = staticNpcUpgradePlan(state, options);
-    if (plan?.status === 'active'
-        && plan.strategy === 'market'
-        && WEAPON_SLOTS.has(Number(plan.target?.slot || 0))) {
-        return { ...plan, weaponBridge: true, partyNeedReason: 'weapon_bridge' };
+    const armed = combatReadiness(state).hasWeapon
+        || combatReadiness({ ...state, inventory: equipInventoryUpgrades(state, state.inventory || {}) }).hasWeapon;
+    if (missingRequiredDualSword(state)) {
+        // An interim weapon leaves an unfunded dual sword in the kit order
+        // instead of a bridge that would hold back every other purchase.
+        const dual = dualSwordBridgePlan(state, options);
+        return dual && (!armed || dualSwordFunded(dual, state, options)) ? dual : null;
     }
-    return dualSwordBridgePlan(state, options);
+    if (armed || !GearLifecycle.isGearFocusActive(state)) return null;
+    const slot = desiredNpcSlots(state).find((entry) => WEAPON_SLOTS.has(entry));
+    if (!slot) return null;
+    const role = roleFor(state);
+    const classId = classIdFor(state);
+    const targetRank = npcTargetRank(state);
+    const candidates = npcCandidatesForSlot(state, slot, targetRank, options)
+        .map((candidate) => ({ ...candidate, cost: Number(candidate.offer.price) }))
+        .sort((left, right) => left.cost - right.cost
+            || itemScore(right.item, role, classId) - itemScore(left.item, role, classId));
+    const { reserve, spendable } = npcPurchaseBudget(state, options);
+    const choice = chooseBridge(candidates, spendable, rankIndex(targetRank));
+    if (!choice) return null;
+    return { ...marketPlan(state, choice.item, choice.offer, { targetSlot: slot, reason: 'npc_progression', reserve }),
+        weaponBridge: true, partyNeedReason: 'weapon_bridge' };
+}
+
+// Funded = the bot can pay for every blade the combination still needs.
+function dualSwordFunded(plan, state, options = {}) {
+    return Number(plan.bridgeCost || 0) <= npcPurchaseBudget(state, options).spendable;
+}
+
+// Bridge choice over candidates sorted by cost: keep the bridge already
+// started, else the cheapest affordable at the bridge grade, else the cheapest
+// affordable, else the cheapest one to save for.
+function chooseBridge(candidates, spendable, bridgeRank, keepId = 0) {
+    return candidates.find((entry) => keepId && Number(entry.item.selfId) === keepId)
+        || candidates.find((entry) => rankIndex(entry.item.etc?.rank) >= bridgeRank && entry.cost <= spendable)
+        || candidates.find((entry) => entry.cost <= spendable)
+        || candidates[0]
+        || null;
 }
 
 function npcEquipmentBridgePlan(state = {}, options = {}) {
@@ -1040,7 +1088,12 @@ function marketRecoveryPlanForTarget(state = {}, targetId, options = {}) {
 }
 
 function targetCombatCounter(state = {}, npcId) {
-    const counter = state.stats?.targetCombat?.populationTargets?.[String(Number(npcId))] || {};
+    // Population totals count a shared party encounter only on its telemetry
+    // owner; the bot's own counter of its current target covers every member.
+    const telemetry = state.stats?.targetCombat || {};
+    const counter = Number(telemetry.targetNpcId || 0) === Number(npcId)
+        ? telemetry
+        : telemetry.populationTargets?.[String(Number(npcId))] || {};
     return {
         npcId: Number(npcId || 0),
         resolves: Number(counter.resolves || 0),
@@ -1748,7 +1801,7 @@ function sourceIndexFor(spots = []) {
         }));
     });
 
-    sourceIndexCache = { spots, rewards, byItemId, resolved: new Map() };
+    sourceIndexCache = { spots, rewards, byItemId, resolved: new Map(), yields: new Map() };
     return byItemId;
 }
 
@@ -1760,7 +1813,8 @@ function sourceForItem(itemId, spots = [], state = {}, options = {}) {
     if (sourceCache?.has(cacheKey)) return sourceCache.get(cacheKey);
     const sourceIndex = sourceIndexFor(spots);
     const rates = ProgressionRates.profile();
-    const resolvedKey = `${cacheKey}:${rates.drop}:${rates.spoil}:${rates.adena}`;
+    const ratesKey = `${rates.drop}:${rates.spoil}:${rates.adena}`;
+    const resolvedKey = `${cacheKey}:${ratesKey}`;
     if (sourceIndexCache.resolved.has(resolvedKey)) {
         const cached = sourceIndexCache.resolved.get(resolvedKey);
         sourceCache?.set(cacheKey, cached);
@@ -1771,10 +1825,7 @@ function sourceForItem(itemId, spots = [], state = {}, options = {}) {
         && (spot?.raidBoss !== true || allowRaidSources)
     )).map(({ reward, spot, kind, npcLevel }) => {
         const sourceLevel = Number(npcLevel || spot?.avgLevel || 1);
-        const { chance, expectedYield } = itemDropYield(reward, itemId, kind, {
-            npcLevel: sourceLevel,
-            killerLevel: Number(state.level || 0)
-        });
+        const { chance, expectedYield } = dropYieldFor(reward, itemId, kind, sourceLevel, Number(state.level || 0), ratesKey);
         if (!chance) return null;
         return {
             npcId: Number(reward.selfId),
@@ -1797,8 +1848,11 @@ function sourceForItem(itemId, spots = [], state = {}, options = {}) {
                 ? Number(spot.raidBossTemplateId || reward.selfId)
                 : null
         };
-    }).filter(Boolean).sort((a, b) => sourceEffort(a, state, options) - sourceEffort(b, state, options)
-        || b.expectedYield - a.expectedYield);
+    }).filter(Boolean)
+        // Effort once per source, not once per comparison.
+        .map((source) => ({ source, effort: sourceEffort(source, state, options) }))
+        .sort((a, b) => a.effort - b.effort || b.source.expectedYield - a.source.expectedYield)
+        .map((entry) => entry.source);
     if (sourceIndexCache.resolved.size >= MAX_RESOLVED_SOURCE_CACHE) {
         sourceIndexCache.resolved.delete(sourceIndexCache.resolved.keys().next().value);
     }
@@ -1807,12 +1861,24 @@ function sourceForItem(itemId, spots = [], state = {}, options = {}) {
     return sources;
 }
 
+// A drop yield depends only on the reward, the item and the deep-blue level
+// penalty: keep it as a number pair per rate profile. Craft routes evaluate
+// many materials, so the bounded source lists above are rebuilt often; this
+// keeps a rebuild from recomputing every reward roll.
+function dropYieldFor(reward, itemId, kind, npcLevel, killerLevel, ratesKey) {
+    const rule = ProgressionRates.deepBlueRule({ npcLevel, killerLevel });
+    const penalty = rule.active ? Math.min(100, rule.penaltyPercent) : 0;
+    const key = `${ratesKey}:${reward.selfId}:${itemId}:${kind}:${penalty}`;
+    let value = sourceIndexCache.yields.get(key);
+    if (!value) {
+        value = itemDropYield(reward, itemId, kind, { npcLevel, killerLevel });
+        sourceIndexCache.yields.set(key, value);
+    }
+    return value;
+}
+
 function stationRecipeIds() {
-    const service = { level: 70, stats: { classId: 57 } };
-    const allowed = CraftShopService.availableRecipes(service);
-    return new Set(CraftShopService.CraftStations.flatMap((station) => (
-        CraftShopService.stationRecipes(station, allowed).map((recipe) => Number(recipe.recipeId))
-    )));
+    return CraftShopService.publishedStationRecipes().ids;
 }
 
 function farmSourceForMaterial(itemId, state, spots, allowedRecipeIds, requiredAmount = 1, visited = new Set(), options = {}) {
@@ -1930,15 +1996,12 @@ function dualSwordBridgePlan(state, options = {}) {
     }).sort((left, right) => left.cost - right.cost
         || itemScore(right.item, role, classIdFor(state)) - itemScore(left.item, role, classIdFor(state))
         || Number(left.item.selfId) - Number(right.item.selfId));
+    // A started combination is kept: its first blade may already be owned.
     const previousId = Number(state.stats?.equipmentPlan?.weaponBridge && state.stats.equipmentPlan.combine?.resultId);
-    const spendable = PurchaseFunding.spendable(state, options.buyOrderEscrow);
-    const bridgeRank = Math.min(maxRank, rankIndex('c'));
-    const target = candidates.find(entry => Number(entry.item.selfId) === previousId)
-        || candidates.find(entry => rankIndex(entry.item.etc.rank) >= bridgeRank && entry.cost <= spendable)
-        || candidates.find(entry => entry.cost <= spendable)
-        || candidates[0];
+    const { spendable } = npcPurchaseBudget(state, options);
+    const target = chooseBridge(candidates, spendable, Math.min(maxRank, rankIndex('c')), previousId);
     if (!target) return null;
-    const common = { weaponBridge: true, partyNeedReason: 'weapon_bridge',
+    const common = { weaponBridge: true, partyNeedReason: 'weapon_bridge', bridgeCost: target.cost,
         grade: target.item.etc.rank, combine: combinationMetadata(target.recipe) };
     if (target.purchases.length) {
         const { item, offer } = target.purchases[0];

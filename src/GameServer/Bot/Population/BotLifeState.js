@@ -409,8 +409,11 @@ function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
     const limitTargets = (values) => Object.fromEntries(Object.entries(values)
         .sort(([, left], [, right]) => Number(right.lastResolvedAt || 0) - Number(left.lastResolvedAt || 0))
         .slice(0, 24));
-    const current = add(previous.populationTargets?.[targetKey]
-        || (Number(previous.targetNpcId) === targetNpcId ? previous : {}));
+    // The bot's own counter continues itself: the population map stops growing
+    // for a party member that is not the population telemetry owner.
+    const current = add(Number(previous.targetNpcId) === targetNpcId
+        ? previous
+        : previous.populationTargets?.[targetKey] || {});
     const populationTargets = { ...(previous.populationTargets || {}) };
     if (!debug.aggregate || debug.populationTelemetryOwner === true) {
         populationTargets[targetKey] = add(populationTargets[targetKey]);
