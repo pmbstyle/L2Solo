@@ -131,11 +131,13 @@ const CRYSTALS = new Set(Object.values(CRYSTAL_IDS));
 
 // A bot's NPC junk sale keeps what the cold disposition never sells to the
 // NPC for a crafter: a D-grade or higher dwarven recipe is listed or held in
-// the bag for a crafter who can learn it, and crystals are the shot
-// crafters' input (ColdShotEconomyService).
-function isKeptFromNpcJunk(item) {
+// the bag for a crafter who can learn it, crystals are the shot crafters'
+// input (ColdShotEconomyService), and the bot keeps a recipe it can learn
+// itself (`state`: its class and level).
+function isKeptFromNpcJunk(item, state = null) {
     const selfId = Number(actorItemValue(item, 'selfId', 'fetchSelfId') || 0);
-    return CRYSTALS.has(selfId) || isMarketRecipeItem({ selfId });
+    return CRYSTALS.has(selfId) || isMarketRecipeItem({ selfId })
+        || (!!state && canLearnRecipe(state, { selfId }));
 }
 
 function isNpcOnlyItem(item, template = templateFor(item?.selfId)) {

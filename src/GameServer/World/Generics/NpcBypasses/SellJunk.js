@@ -12,6 +12,7 @@ module.exports = function(session) {
         && session.shoppingWarehouseDone !== true;
 
     const bot = String(session.accountId || '').startsWith('bot_');
+    const crafter = bot ? { classId: Number(session.actor.fetchClassId()), level: Number(session.actor.fetchLevel()) } : null;
     // A bot keeps the healing potions its restock would buy back right after
     // this sale (HealingPotionStock.restockPlan), and sells only the surplus.
     const potion = bot ? HealingPotionStock.purchasePotionFor(session.actor) : null;
@@ -20,7 +21,7 @@ module.exports = function(session) {
     const sales = ItemDisposition.unreservedActorItems(session.coldLifeState, items)
         .filter(item => NpcSellRules.canSell(item)
             && !ShotStock.SHOT_IDS.includes(Number(item.fetchSelfId()))
-            && (!bot || !ItemDisposition.isKeptFromNpcJunk(item))
+            && (!bot || !ItemDisposition.isKeptFromNpcJunk(item, crafter))
             && (!protectPendingWarehouseItems || !ItemDisposition.isWarehouseCandidate(item)))
         .map((item) => {
             let amount = item.fetchAmount();
