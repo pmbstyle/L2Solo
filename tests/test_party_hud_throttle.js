@@ -118,7 +118,10 @@ try {
     joiningBot.isDead = () => false;
     joiningBot.clearDestId = () => {};
     BotManager.sessions = [companionSession, joiningSession];
+    assert(PartyCompanionService.syncClientDistribution(leaderSession, 0));
     assert.strictEqual(PartyCompanionService.attach(leaderSession, joiningSession), true, 'the invited bot should join the party');
+    assert.strictEqual(packets.filter((packet) => packet[0] === 0x4e).at(-1).readInt32LE(5), 0,
+        'joining companions inherit the client-reported mode instead of the legacy Random default');
     assert.strictEqual(abortedCasts, 1, 'joining should abort an old cast before changing the bot to party follow');
     assert.strictEqual(clearedAttackTimers, 1, 'joining should clear old attack callbacks before a distant catch-up');
     assert.strictEqual(resetAttackQueues, 1, 'joining should discard queued actions from the bot previous combat');

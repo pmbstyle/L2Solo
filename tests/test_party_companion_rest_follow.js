@@ -2747,7 +2747,13 @@ try {
     const companionHtml = lastNpcHtml(partyHudLeaderSession);
     assert(companionHtml.includes('2 active'), 'party control panel should show active companion count');
     assert(!companionHtml.includes('Loot:'), 'party control panel should leave loot distribution to the native client setting');
-    assert(!companionHtml.includes('companion-control loot'), 'party control panel should not offer a separate loot-distribution bypass');
+    assert(companionHtml.includes('companion-control loot on') && companionHtml.includes('companion-control loot off'),
+        'party control should expose bot pickup independently of native loot distribution');
+    const panelDistribution = PartyCompanionService.distributionForLeader(partyHudLeaderSession);
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'loot', 'off']);
+    assert.strictEqual(PartyCompanionService.getSettings(partyHudLeaderSession).lootPickupEnabled, false);
+    assert.strictEqual(PartyCompanionService.distributionForLeader(partyHudLeaderSession), panelDistribution);
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'loot', 'on']);
     assert(companionHtml.includes('<a action='), 'party control panel should use compact links for controls');
     assert(!companionHtml.includes('<button'), 'party control panel should avoid legacy buttons because they break this client layout');
     assert(!companionHtml.includes('['), 'active party control items should use color only, not bracket labels');

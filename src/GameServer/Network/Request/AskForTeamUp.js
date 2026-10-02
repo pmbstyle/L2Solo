@@ -15,6 +15,7 @@ function askForTeamUp(session, buffer) {
 }
 
 function consume(session, data) {
+    if (!invoke('GameServer/Bot/AI/PartyCompanionService').syncClientDistribution(session, data.distribution)) return;
     World.askForTeamUp(session, session.actor, data);
 }
 

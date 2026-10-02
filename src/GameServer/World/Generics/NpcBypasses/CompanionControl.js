@@ -266,6 +266,11 @@ function renderModePanel(settings, count) {
             { label: 'Player', active: settings.pullMode === 'leader', command: 'companion-control pull leader' },
             { label: 'Off', active: settings.pullMode === 'off', command: 'companion-control pull off' }
         ], { columns: 3 }),
+        Html.font('Loot', Html.COLOR.muted),
+        actionRow([
+            { label: 'On', active: settings.lootPickupEnabled !== false, command: 'companion-control loot on' },
+            { label: 'Off', active: settings.lootPickupEnabled === false, command: 'companion-control loot off' }
+        ]),
         '<br1>'
     ].join('');
 }
@@ -303,7 +308,7 @@ function companionView(companionSession, settings) {
     const canPull = ['tank', 'dagger', 'dps'].includes(role);
     return {
         id: bot.fetchId(), name: bot.fetchName(), level: bot.fetchLevel(),
-        className: profession.className || 'Unknown profession', role, stance,
+        classId: profession.classId, className: profession.className || 'Unknown profession', role, stance,
         order: roleDecision, note, canPull, isPuller, stayActive, noteColor
     };
 }
@@ -360,6 +365,8 @@ function companionControl(session, parts) {
         setCombatMode(session, value);
     } else if (subCommand === 'pull') {
         setPullMode(session, value);
+    } else if (subCommand === 'loot' && ['on', 'off'].includes(value)) {
+        PartyCompanionService.updateSettings(session, { lootPickupEnabled: value === 'on' });
     } else if (subCommand === 'member-pull') {
         const targetSession = findCompanion(session, parts[3]);
         if (value === 'on' && targetSession) {
@@ -386,11 +393,13 @@ function renderCompanionPanel(session, requestedPage = 0, options = {}) {
     const myCompanions = orderedCompanionSessions(session);
     const settings = PartyCompanionService.getSettings(session);
 
-    if (session.nativePartyUiVersion === 1) {
+    if ([1, 2, 3].includes(session.nativePartyUiVersion)) {
         if (options.open === true) session.nativePartyUiOpen = true;
         if (!session.nativePartyUiOpen) return;
         const Protocol = invoke('GameServer/World/Generics/NativePartyProtocol');
-        const payload = Protocol.encode(settings, myCompanions.map((member) => companionView(member, settings)), options);
+        const payload = Protocol.encode(settings, myCompanions.map((member) => companionView(member, settings)), {
+            ...options, version: session.nativePartyUiVersion
+        });
         session.dataSendToMe(ServerResponse.npcHtml(actor.fetchId(), payload));
         return;
     }

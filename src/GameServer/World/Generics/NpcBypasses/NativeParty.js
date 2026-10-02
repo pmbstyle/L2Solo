@@ -4,13 +4,19 @@ module.exports = function nativeParty(session, parts) {
     if (!session?.actor) return;
     const CompanionControl = invoke('GameServer/World/Generics/NpcBypasses/CompanionControl');
     const operation = parts[1];
+    // The native client reports its setting even with every companion UI closed.
+    if (operation === 'distribution') {
+        if (parts.length !== 3 || !/^[0-4]$/.test(parts[2] || '')) return;
+        invoke('GameServer/Bot/AI/PartyCompanionService').syncClientDistribution(session, Number(parts[2]));
+        return;
+    }
     if (operation === 'open') {
-        session.nativePartyUiVersion = parts[2] === '1' ? 1 : 0;
-        session.nativePartyUiOpen = session.nativePartyUiVersion === 1;
+        session.nativePartyUiVersion = ['1', '2', '3'].includes(parts[2]) ? Number(parts[2]) : 0;
+        session.nativePartyUiOpen = session.nativePartyUiVersion > 0;
         CompanionControl.render(session, 0, { open: true });
         return;
     }
-    if (session.nativePartyUiVersion !== 1) return;
+    if (![1, 2, 3].includes(session.nativePartyUiVersion)) return;
     if (operation === 'close') {
         session.nativePartyUiOpen = false;
         return;
@@ -26,7 +32,8 @@ module.exports = function nativeParty(session, parts) {
         const allowed = {
             combat: ['assist', 'protect', 'passive'],
             movement: ['follow', 'hold'],
-            pull: ['auto', 'leader', 'off']
+            pull: ['auto', 'leader', 'off'],
+            loot: ['on', 'off']
         };
         if (command === 'regroup' || (Object.hasOwn(allowed, command) && allowed[command].includes(value))) {
             CompanionControl(session, ['companion-control', command, value]);

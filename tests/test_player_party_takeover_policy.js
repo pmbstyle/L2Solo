@@ -144,6 +144,13 @@ async function run() {
     assert.deepStrictEqual(commitRequest.members.map((member) => member.expectedRevision), [4, 7]);
     assert.strictEqual(attached.roster.length, 2);
     assert.strictEqual(attached.options.expectedBackgroundPartyId, party.partyId);
+    for (let distribution = 0; distribution <= 4; distribution++) {
+        const leader = player(20);
+        assert(Companion.syncClientDistribution(leader, distribution));
+        result = await Takeover.request({ playerSession: leader, target: sessions[0], source: 'test_loot_setting' });
+        assert(result.ok, JSON.stringify(result));
+        assert.strictEqual(attached.options.distribution, distribution, 'taking over a party must not force Random');
+    }
 }
 
 run().then(() => {

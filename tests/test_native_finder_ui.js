@@ -6,6 +6,7 @@ const Protocol = invoke('GameServer/World/Generics/NativeFinderProtocol');
 const Availability = invoke('GameServer/Bot/AI/BotAvailability');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const World = invoke('GameServer/World/World');
+const Party = invoke('GameServer/Bot/AI/PartyCompanionService');
 const restores = [];
 function replace(object, key, value) { const old = object[key]; restores.push(() => { object[key] = old; }); object[key] = value; }
 const packets = [];
@@ -59,8 +60,11 @@ const command = (value) => Native(session, ['native-finder', ...value.split(' ')
         replace(World, 'inviteBotByName', (target, actor, name, distribution, source) => {
             assert.strictEqual(target, session); assert.strictEqual(actor, session.actor);
             assert.strictEqual(name, session.nativeFinderVisible[0]); assert.strictEqual(source, 'botparty');
+            assert.strictEqual(distribution, undefined);
+            assert.strictEqual(Party.distributionForLeader(target), 0, 'Finder Invite inherits the client-reported setting');
             inviteCount++; return new Promise((resolve) => { resolveInvite = resolve; });
         });
+        invoke('GameServer/World/Generics/NpcTalkResponse')(session, { link: 'native-party distribution 0' });
         const beforeInvite = packets.length;
         const promise = command(`invite ${session.nativeFinderVisible[0]}`);
         await Promise.resolve();
