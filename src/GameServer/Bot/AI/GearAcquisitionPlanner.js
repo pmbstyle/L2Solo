@@ -961,7 +961,7 @@ function npcWeaponBridgePlan(state = {}, options = {}) {
         const dual = dualSwordBridgePlan(state, options);
         return dual && (!armed || dualSwordFunded(dual, state)) ? dual : null;
     }
-    if (armed) return null;
+    if (armed || !GearLifecycle.isGearFocusActive(state)) return null;
     const slot = desiredNpcSlots(state).find((entry) => WEAPON_SLOTS.has(entry));
     if (!slot) return null;
     const role = roleFor(state);
