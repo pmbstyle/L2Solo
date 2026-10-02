@@ -6,9 +6,9 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 
 const DEFAULT_BUY_STORE_MS = 20 * 60 * 1000;
-const WALLET_RESERVE_PERCENT = 10;
 
 function templateFor(selfId) {
     return ItemTemplateIndex.find(DataCache.items, selfId) || null;
@@ -33,7 +33,8 @@ function bidFor(state, goal) {
     if (goal.type === 'upgrade_gear' && Number(template.etc?.slot || 0) > 0
         && Number(state?.inventory?.[String(selfId)]?.amount || 0) > 0) return null;
 
-    const reserve = Math.max(100, Number(goal.plan?.reserve || 0), Math.floor(adena * WALLET_RESERVE_PERCENT / 100));
+    // `state.adena` already holds the order's escrow (callers add it).
+    const reserve = Math.max(Number(goal.plan?.reserve || 0), PurchaseFunding.operatingReserve(state));
     const spendable = Math.max(0, adena - reserve);
     const pricingItem = { selfId, basePrice };
     const fairPrice = BotMarketPricing.priceAt(pricingItem, 0.85);
@@ -516,7 +517,6 @@ function bestTownFor(state) {
 
 module.exports = {
     DEFAULT_BUY_STORE_MS,
-    WALLET_RESERVE_PERCENT,
     bestTownFor,
     bidFor,
     matchAfkPlayerShop,

@@ -67,7 +67,7 @@ function affordableNpcGearPriority(gear = {}) {
     return NPC_GEAR_PRIORITY.other;
 }
 
-function equipmentNeed(state) {
+function equipmentNeed(state, escrow = 0) {
     if (!GearLifecycle.isGearFocusActive(state)) return null;
     const equipment = state.stats?.equipment;
     if (!Array.isArray(equipment)) return null;
@@ -141,7 +141,9 @@ function equipmentNeed(state) {
         marketTown: plannedMarket?.town || null,
         priceSource: quotedPrice > 0 ? 'offer' : 'reference',
         sourceType: plannedMarket?.sourceType || null,
-        reserve: Number(plannedMarket?.reserve || 0),
+        // A plan made before every purchase kept a reserve, or no plan at all
+        // (a class-build goal at 40+), still keeps the operating reserve.
+        reserve: Number(plannedMarket?.reserve || 0) || PurchaseFunding.operatingReserve(state, escrow),
         clanRequired: acquisitionPlan?.clanGoal?.priority === 'required',
         npcProgression: plannedMarket?.sourceType === 'npc'
             || acquisitionPlan?.partyNeedReason === 'npc_progression'
@@ -180,7 +182,7 @@ function evaluate(state = {}, options = {}) {
 
     // Loaded on use, like the AFK trade service below.
     const escrow = invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId);
-    const gear = equipmentNeed(state);
+    const gear = equipmentNeed(state, escrow);
     if (gear) {
         const requiredAdena = PurchaseFunding.shortfall(state, gear.desiredItem.price, gear.reserve, escrow);
         const fundedMarketOffer = requiredAdena === 0 && gear.priceSource === 'offer' && gear.marketTown;

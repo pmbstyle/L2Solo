@@ -51,7 +51,8 @@ while (minimum < price + Math.max(500, 30 * 250, Math.ceil(minimum * 0.1))) mini
 assert(fundedAt(minimum), 'planner: funded at the computed minimum');
 assert.strictEqual(fundedAt(minimum - 1), null, 'planner: one short');
 
-// 5. WTB bid: spendable = wallet - max(100, plan reserve, 10% of the wallet).
+// 5. WTB bid: spendable = wallet - max(plan reserve, operating reserve).
+// (Before 2026-10-02: max(100, plan reserve, 10% of the wallet).)
 const BotMarketPricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
 const template = DataCache.items.find((item) => Number(item.selfId) === Number(plan.target.selfId));
 const fair = BotMarketPricing.priceAt({ selfId: plan.target.selfId, basePrice: Number(template.template.price) }, 0.85);
@@ -59,7 +60,7 @@ const bidGoal = { type: 'upgrade_gear', target: { itemId: plan.target.selfId, ad
     plan: { priceSource: 'offer', estimatedCost: price, reserve } };
 for (const adena of [price, Math.floor(fair) + reserve - 5000]) {
     const bid = BuyStoreService.bidFor({ ...base, adena }, bidGoal);
-    const spendable = adena - Math.max(100, reserve, Math.floor(adena * 0.1));
+    const spendable = adena - Math.max(reserve, 500, 30 * 250, Math.ceil(adena * 0.1));
     assert.strictEqual(bid?.price, Math.floor(Math.min(fair, price, spendable)), `bid at ${adena}`);
 }
 
@@ -85,21 +86,21 @@ for (let adena = 20000; adena <= 200000; adena += 1000) {
 }
 assert(seen.has('class_armor_bridge') && seen.has(null), 'the wallets cover both outcomes');
 
-// Decided differences (user, 2026-10-02), pinned here as they are today:
-// a plan to buy from another bot stores reserve 0, and so does a goal with no plan.
+// Decided by the user (2026-10-02): every purchase keeps the operating
+// reserve. Before, a plan to buy from another bot stored none, a class-build
+// goal without a plan used 0, and a material bid kept only max(100, 10%).
 const botOffer = { selfId: plan.target.selfId, price, town: 'Giran', sourceType: 'afk_bot_store' };
 const botPlan = GearAcquisitionPlanner.planFor({ ...base, adena: 300000 }, {
     spots: [], findMarketOffer: () => botOffer, findNpcOffer: () => null
 });
 assert.strictEqual(botPlan?.market?.sourceType, 'afk_bot_store', 'the fixture must plan a purchase from a bot');
-assert.strictEqual(Number(botPlan.market.reserve || 0), 0, 'today: a plan to buy from a bot stores no reserve');
+assert.strictEqual(botPlan.market.reserve, 30000, 'a plan to buy from a bot keeps the operating reserve');
 const noPlanGoal = gearGoal({ ...base, level: 40, adena: 5000000,
     stats: { ...base.stats, build: { grade: 'c', classId: 1, level: 40 } } });
-assert.strictEqual(noPlanGoal?.plan?.reserve, 0, 'today: a class-build goal without a plan has reserve 0');
+assert.strictEqual(noPlanGoal?.plan?.reserve, 500000, 'a class-build goal without a plan keeps the operating reserve');
 const materialBid = BuyStoreService.bidFor({ ...base, adena: 10000 }, { type: 'buy_craft_material',
     target: { itemId: 1864, amount: 1000 }, plan: { expectedBenefit: 'market_buy_craft_material' } });
-assert.strictEqual(materialBid.price * materialBid.count <= 10000 - 1000, true, 'today: a material bid keeps 10% (1,000 of 10,000)');
-assert(materialBid.price * materialBid.count > 10000 - 7500, 'today: a material bid does not keep the level 30 operating reserve');
+assert(materialBid.price * materialBid.count <= 10000 - 7500, 'a material bid keeps the level 30 operating reserve');
 
 console.log('Purchase funding checks passed');
 process.exit(0);

@@ -710,13 +710,22 @@ function marketEffort(offer, state) {
 // worker cannot see AFK shops, so the main thread hands it over.
 const operationalAdenaReserve = PurchaseFunding.operatingReserve;
 
+// Where, at what price and from whom a plan buys, and the reserve it keeps:
+// every purchase keeps the operating reserve, whoever sells the item.
+function marketTerms(state, offer, options = {}) {
+    return {
+        town: offer.town || 'Giran',
+        price: Number(offer.price),
+        sourceType: offer.sourceType,
+        reserve: options.reserve === undefined
+            ? operationalAdenaReserve(state, options.buyOrderEscrow)
+            : Number(options.reserve || 0)
+    };
+}
+
 function marketPlan(state = {}, target, offer, options = {}) {
     const role = roleFor(state);
     const targetSlot = Number(options.targetSlot || target.etc?.slot || 0);
-    const reserve = options.reserve === undefined && offer?.sourceType === 'npc'
-        && rankIndex(target.etc?.rank) <= rankIndex(NPC_GEAR_MAX_RANK)
-        ? operationalAdenaReserve(state, options.buyOrderEscrow)
-        : Number(options.reserve || 0);
     return {
         status: 'active',
         phase: GearLifecycle.phaseFor(state),
@@ -730,12 +739,7 @@ function marketPlan(state = {}, target, offer, options = {}) {
         rateModelVersion: RATE_MODEL_VERSION,
         expectedKills: Math.ceil(marketEffort(offer, state)),
         target: { selfId: Number(target.selfId), name: target.template?.name || `Item ${target.selfId}`, slot: targetSlot },
-        market: {
-            town: offer.town || 'Giran',
-            price: Number(offer.price),
-            sourceType: offer.sourceType,
-            reserve
-        },
+        market: marketTerms(state, offer, options),
         recipeId: null,
         materials: [],
         next: null
@@ -2015,12 +2019,8 @@ function rawPlanFor(state = {}, options = {}) {
         const buy = offer && marketEffort(offer, state) <= directEffort;
         const sourceAssessment = source ? partyNeedAssessmentForSource(state, source) : null;
         return target && buy ? {
-            status: 'active', phase: GearLifecycle.phaseFor(state), grade: 'none', role: roleFor(state), strategy: 'market', soloSafe: true, requiresParty: false,
-            rateModelVersion: RATE_MODEL_VERSION,
-            expectedKills: Math.ceil(marketEffort(offer, state)),
-            target: { selfId: Number(target.selfId), name: target.template?.name || `Item ${target.selfId}`, slot: Number(target.etc?.slot || 0) },
-            market: { town: offer.town || 'Giran', price: Number(offer.price), sourceType: offer.sourceType },
-            recipeId: null, materials: [], next: null
+            ...marketPlan(state, target, offer, { buyOrderEscrow: planningOptions.buyOrderEscrow }),
+            grade: 'none'
         } : source ? {
             status: 'active', grade: 'none', role: roleFor(state), strategy: 'direct_drop', soloSafe: sourceAssessment.need === 'solo_ok',
             partyNeed: sourceAssessment.need,
@@ -2102,7 +2102,7 @@ function rawPlanFor(state = {}, options = {}) {
         requiresParty,
         expectedKills: next ? Math.ceil(strategy === 'direct_drop' ? directKills : craftKills) : 0,
         expectedEffort: next ? Math.ceil(strategy === 'direct_drop' ? directEffort : craftKills) : 0,
-        market: buy ? { town: offer.town || 'Giran', price: Number(offer.price), sourceType: offer.sourceType } : null,
+        market: buy ? marketTerms(state, offer, { buyOrderEscrow: planningOptions.buyOrderEscrow }) : null,
         materials: materialPlans.map(({ source, ...material }) => ({
             ...material,
             sourceSpotId: source?.spotId || null,
