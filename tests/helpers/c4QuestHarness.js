@@ -92,7 +92,10 @@ class World {
             skillset: { skills: [], fetchSkills() { return this.skills; }, awardSkills: async () => [] },
             backpack: new Backpack({ items: carried, paperdoll })
         };
-        const session = { actor, packets: [], dataSendToMe(packet) { this.packets.push(packet); } };
+        const session = { actor, packets: [],
+            dataSendToMe(packet) { this.packets.push(packet); },
+            // Npc.destructor talks to the whole client set during a despawn.
+            dataSendToMeAndOthers(packet) { this.packets.push(packet); } };
         await Service.ensureLoaded(session);
         this.sessions.set(id, session);
         return session;

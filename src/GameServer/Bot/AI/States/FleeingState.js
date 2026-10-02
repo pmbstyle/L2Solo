@@ -40,6 +40,8 @@ function activePursuer(session, bot) {
 
 module.exports = {
     tick(session, bot, Generics, BotAI) {
+        if (session.followPlayerSession?.partyRaidEngagement?.phase === 'retreat'
+            && invoke('GameServer/Bot/AI/PlayerPartyRaid').tick(session, bot, Generics, BotAI)) return;
         if (!session.fleeStart) {
             session.fleeStart = Date.now();
         }

@@ -1,0 +1,307 @@
+[
+  {
+    "selfId": 922,
+    "template": {
+      "kind": "Monster",
+      "name": "Maille Lizardman Warrior",
+      "title": "",
+      "level": 26,
+      "hostile": false
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 96,
+      "pAtkRnd": 30,
+      "pDef": 120,
+      "mAtk": 41,
+      "mDef": 98,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 57,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 770,
+      "maxMp": 303,
+      "revHp": 2.77,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 16,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "lizardman_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.406804733728,
+      "sp": 48
+    }
+  },
+  {
+    "selfId": 923,
+    "template": {
+      "kind": "Monster",
+      "name": "Maille Lizardman Shaman",
+      "title": "",
+      "level": 28,
+      "hostile": false
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 113,
+      "pAtkRnd": 30,
+      "pDef": 130,
+      "mAtk": 49,
+      "mDef": 106,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 47,
+      "run": 132
+    },
+    "vitals": {
+      "maxHp": 859,
+      "maxMp": 334,
+      "revHp": 2.77,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 29
+    },
+    "equipment": {
+      "weapon": 7,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "lizardman_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.775510204082,
+      "sp": 74
+    }
+  },
+  {
+    "selfId": 924,
+    "template": {
+      "kind": "Monster",
+      "name": "Maille Lizardman Matriarch",
+      "title": "",
+      "level": 30,
+      "hostile": true
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 132,
+      "pAtkRnd": 30,
+      "pDef": 140,
+      "mAtk": 58,
+      "mDef": 114,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 61,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 954,
+      "maxMp": 365,
+      "revHp": 2.77,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 37
+    },
+    "equipment": {
+      "weapon": 69,
+      "shield": 627,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "lizardman_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.897777777778,
+      "sp": 94
+    }
+  },
+  {
+    "selfId": 925,
+    "template": {
+      "kind": "Monster",
+      "name": "Giant Araneid",
+      "title": "",
+      "level": 24,
+      "hostile": false
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 81,
+      "pAtkRnd": 30,
+      "pDef": 94,
+      "mAtk": 34,
+      "mDef": 90,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 79,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 687,
+      "maxMp": 272,
+      "revHp": 2.77,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 26,
+      "size": 25.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "lizardman_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.519097222222,
+      "sp": 44
+    }
+  },
+  {
+    "selfId": 926,
+    "template": {
+      "kind": "Monster",
+      "name": "Poison Araneid",
+      "title": "",
+      "level": 25,
+      "hostile": false
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 88,
+      "pAtkRnd": 30,
+      "pDef": 98,
+      "mAtk": 37,
+      "mDef": 94,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 154
+    },
+    "vitals": {
+      "maxHp": 728,
+      "maxMp": 287,
+      "revHp": 2.77,
+      "revMp": 1.53,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 27,
+      "size": 25.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "lizardman_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.6192,
+      "sp": 50
+    }
+  }
+]

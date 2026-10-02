@@ -336,6 +336,11 @@ try {
     focusMinion.destId = damage.fetchId();
     tick(sessions[2], 45000);
     assert.equal(damage.seated, false, 'a healer immediately stands when an add attacks');
+    assert.equal(attacks.length, 0, 'an attacked healer must not switch to the damage algorithm');
+    damage.fetchMp = () => 100;
+    tick(sessions[2], 46000);
+    assert.equal(sessions[2].lastDecision.action, 'raid_healer_ready');
+    assert.equal(attacks.length, 0, 'an autonomous raid healer also waits with full mana');
     attacks.length = 0;
     delete focusMinion.destId;
     damage.role = 'dps';
@@ -424,6 +429,25 @@ try {
     tick(sessions[0], 12501);
     assert.equal(owner.raidPreparationComplete, true,
         'the raid may open only after the support plan stays empty for the settle window');
+
+    // The servitor has its own native attack loop, even while its owner casts.
+    const SummonControl = invoke('GameServer/Npc/SummonControl');
+    const servitor = {
+        controlMode: 'attack', attackTargetId: controlledMinion.fetchId(),
+        fetchOwnerId: () => damage.fetchId(), isDead: () => false,
+        automation: { scheduleAction() {} }
+    };
+    patch(SummonControl, 'stop', (_session, pet) => { pet.attackTargetId = null; });
+    patch(SummonControl, 'startFollowOwner', (_session, _owner, pet) => { pet.controlMode = 'follow'; });
+    damage.summon = servitor;
+    damage.casting = true;
+    delete sessions[2].hotRaidCasualtyAt;
+    controlledMinion.impairments = { disabled: true };
+    tick(sessions[2], 12502);
+    assert.equal(servitor.controlMode, 'follow',
+        'a casting owner must still stop its servitor from breaking control on a non-final add');
+    assert.equal(servitor.attackTargetId, null);
+    assert.equal(damage.casting, true, 'servitor cleanup must preserve the owner native cast');
 
     console.log('Hot bot-clan raid tank, focus, control and debuff tactics passed');
 } finally {

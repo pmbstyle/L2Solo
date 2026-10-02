@@ -3,6 +3,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const SystemMessage = invoke('GameServer/Network/Response/SystemMessage');
 const DataCache = invoke('GameServer/DataCache');
 const World = invoke('GameServer/World/World');
+const ClassProgression = invoke('GameServer/ClassProgression');
 
 const hennaData = require('../../../data/Henna/c4-henna.json');
 const hennaTreeData = require('../../../data/Henna/c4-henna-trees.json');
@@ -35,11 +36,18 @@ function fetchDye(session, dyeSelfId) {
     return session.actor.backpack.fetchItemFromSelfId(dyeSelfId) || null;
 }
 
+function availableSlots(session) {
+    // Lisvus: 1 + ClassId.level(), with three physical storage slots.
+    return Math.min(SLOT_COUNT, ClassProgression.lineage(session.actor.fetchClassId?.()).length);
+}
+
 function refreshHennaStats(session) {
     const totals = {};
     STAT_KEYS.forEach((stat) => {
         totals[stat] = fetchSlots(session)
             .reduce((total, symbolId) => total + ((symbolId && SYMBOLS.get(symbolId)?.[stat]) || 0), 0);
+        // The aggregate bonus is capped; negative penalties remain additive.
+        totals[stat] = Math.min(5, totals[stat]);
     });
     session.actor.hennaStats = totals;
     invoke(path.actor).calculateStats(session, session.actor);
@@ -87,7 +95,7 @@ function canDraw(session, symbol) {
     const dye = fetchDye(session, symbol.dyeSelfId);
     if (!dye || dye.fetchAmount() < symbol.dyeAmount) return 'missing-dye';
     if (session.actor.backpack.fetchTotalAdena() < symbol.price) return 'missing-adena';
-    if (fetchSlots(session).some((symbolId) => !symbolId) === false) return 'no-slot';
+    if (fetchSlots(session).filter(Boolean).length >= availableSlots(session)) return 'no-slot';
     return null;
 }
 
@@ -160,7 +168,8 @@ const HennaService = {
     drawSymbol,
     fetchRemoveList,
     removeSymbol,
-    refreshHennaStats
+    refreshHennaStats,
+    availableSlots
 };
 
 module.exports = HennaService;

@@ -1,0 +1,317 @@
+[
+  {
+    "selfId": 4907,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Solar Flare",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 900
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4909,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Shadow Flare",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 900
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4912,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Benediction",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 8200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4913,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Word of Fear",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 3850
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4914,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Serenade of Eva",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 3850
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4917,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Aura Bolt",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 900
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4918,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Summon Kai the Cat",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 3200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4919,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Summon Merrow the Unicorn",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 3200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4920,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Summon Soulless",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 3200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4922,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Summon Binding Cubic",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 3200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4923,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Summon Aqua Cubic",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 3200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4924,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Summon Spark Cubic",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 3200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4926,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Amulet: Soul Guard",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 3850
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4928,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Seed of Fire",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 7200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4929,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Seed of Water",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 7200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4930,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Seed of Wind",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 7200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4931,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Aura Symphony",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 7200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4932,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Inferno",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 7200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4933,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Blizzard",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 7200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4934,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Demon Wind",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 7200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5013,
+    "template": {
+      "kind": "Other.Spellbook",
+      "name": "Spellbook: Elemental Assault",
+      "class1": 4,
+      "class2": 5,
+      "mass": 120,
+      "price": 7200
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  }
+]

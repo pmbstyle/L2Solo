@@ -614,6 +614,7 @@ module.exports = {
             ? PartyAwareness.npcThreateningActor(session)
             : PartyAwareness.recentIncomingNpc(session);
         if (incomingMonster) {
+            invoke('GameServer/Bot/AI/PendingSweep').yieldToDefense(session, bot);
             if (session.spotRelocation) BotSpotTravel.cancel(session, bot, 'incoming_threat');
             if (BotRaidSafety.retreat(session, bot, incomingMonster, { distance: EMERGENCY_RETREAT_DISTANCE })) {
                 return;
@@ -717,6 +718,8 @@ module.exports = {
                 return;
             }
         }
+
+        if (invoke('GameServer/Bot/AI/PendingSweep').tick(session, bot, Generics, BotAI)) return;
 
         if (isSoloHunter(session) && Math.random() < 0.005) { // ~0.5% chance per tick (~10 minutes)
             const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());

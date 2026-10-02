@@ -82,6 +82,26 @@ try {
     const blackWolf = shortSword.sources.drops.find((npc) => npc.id === 317);
     assert.strictEqual(blackWolf.chancePercent, 0.6187);
 
+    const mobs = require('../data/KnowledgeBase/mobs.json');
+    const mobById = new Map(mobs.map(npc => [npc.id, npc]));
+    let checkedRelations = 0;
+    for (const npc of mobs.filter(npc => npc.minions?.length || npc.minionOf?.length)) {
+        const detail = service.npcDetail(npc.id);
+        for (const [field, idField] of [['minions', 'minionId'], ['minionOf', 'bossId']]) {
+            const relations = npc[field] || [];
+            assert.strictEqual(detail[field].length, relations.length);
+            relations.forEach((relation, index) => {
+                const expected = mobById.get(Number(relation[idField] ?? relation));
+                assert.ok(expected, 'raid relations must reference a real NPC');
+                assert.strictEqual(detail[field][index].id, expected.id);
+                assert.strictEqual(detail[field][index].name, expected.name);
+                assert.strictEqual(detail[field][index].level, expected.level);
+                checkedRelations++;
+            });
+        }
+    }
+    assert.ok(checkedRelations > 0, 'exercise both minion and parent raid links from the generated catalog');
+
     const gremlinX1 = service.npcDetail(1);
     assert.strictEqual(gremlinX1.drops[1].items[0].chancePercent, 6.99759273);
     assert.ok(gremlinX1.spawns.flatMap((spawn) => spawn.mapPoints).length > 0);

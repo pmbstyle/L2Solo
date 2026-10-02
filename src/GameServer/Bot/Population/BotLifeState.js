@@ -506,6 +506,7 @@ function recordFromSession(session, phase, reason = '') {
         pvpIncidents: invoke('GameServer/Social/PvpResponsibility').snapshot(actor, timestamp),
         revengeUntil: Math.max(Number(session.nextRevengeAt || 0), Number(cache.get(characterId)?.stats?.revengeUntil || 0)),
         clanGearExchangeRevision: Number(cache.get(characterId)?.stats?.clanGearExchangeRevision || 0),
+        clanLevelSpVersion: Number(cache.get(characterId)?.stats?.clanLevelSpVersion || 0),
         clanInventoryRevision: Number(cache.get(characterId)?.stats?.clanInventoryRevision || 0),
         clanMembershipVersion: Number(cache.get(characterId)?.stats?.clanMembershipVersion || 0),
         classId: actor.fetchClassId ? Number(actor.fetchClassId()) : null,
@@ -659,6 +660,12 @@ function save(row) {
         error.code = 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT';
         return Promise.reject(error);
     }
+    const spVersion = Number(cache.get(Number(row.characterId))?.stats?.clanLevelSpVersion || 0);
+    if (spVersion > Number(reconciled.stats.clanLevelSpVersion || 0)) {
+        const error = new Error(`stale SP before clan level-up for ${row.characterId}`);
+        error.code = 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT';
+        return Promise.reject(error);
+    }
     preserveVersionedAppearanceForSave(row);
     const current = cache.get(Number(row.characterId));
     const incomingStats = parseJson(row.statsJson, {});
@@ -706,6 +713,8 @@ function save(row) {
         WHERE ${TABLE}.simulationOwner = 'legacy_main'
           AND COALESCE(json_extract(${TABLE}.statsJson, '$.clanInventoryRevision'), 0)
               <= COALESCE(json_extract(excluded.statsJson, '$.clanInventoryRevision'), 0)
+          AND COALESCE(json_extract(${TABLE}.statsJson, '$.clanLevelSpVersion'), 0)
+              <= COALESCE(json_extract(excluded.statsJson, '$.clanLevelSpVersion'), 0)
           AND COALESCE(json_extract(${TABLE}.statsJson, '$.clanMembershipVersion'), 0)
               <= COALESCE(json_extract(excluded.statsJson, '$.clanMembershipVersion'), 0)`,
         [
@@ -1490,6 +1499,8 @@ const BotLifeState = {
 
     acceptLifecycleRow(row) {
         const snapshot = normalize(row);
+        const current = cache.get(snapshot.characterId);
+        if (Number(current?.stats?.clanLevelSpVersion || 0) > Number(snapshot.stats?.clanLevelSpVersion || 0)) return current;
         cache.set(snapshot.characterId, snapshot);
         invoke('GameServer/Clan/ClanService').syncColdMember(snapshot);
         return snapshot;
@@ -2575,17 +2586,17 @@ const BotLifeState = {
     },
 
     applyResolve(state, result) {
-        return this.prepareResolve(state, result, { persist: true });
+        return this.serializeClanLevelUp(state.characterId, () => this.prepareResolve(state, result, { persist: true }));
     },
 
     syncResolvedState(state) {
         if (!state?.characterId) return Promise.resolve(null);
         const row = rowFromState(state);
-        return Database.updateColdCharacterProgression(row.characterId, state)
+        return this.serializeClanLevelUp(row.characterId, () => Database.updateColdCharacterProgression(row.characterId, state)
             .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
             .then(() => syncInventorySummary(row.characterId, state.inventory || {}))
             .then(() => enqueueEquipmentGoalAdvance(row.equipmentAdvance))
-            .then(() => state);
+            .then(() => state));
     },
 
     enqueueEquipmentGoalAdvanceForState,
@@ -3327,6 +3338,24 @@ const BotLifeState = {
         return tracked;
     },
 
+    serializeClanLevelUp(characterId, work) {
+        const id = Number(characterId);
+        const previous = pendingWrites.get(id) || Promise.resolve();
+        const next = previous.then(work);
+        const tracked = next.catch(() => {}).finally(() => {
+            if (pendingWrites.get(id) === tracked) pendingWrites.delete(id);
+        });
+        pendingWrites.set(id, tracked);
+        return next;
+    },
+
+    acceptClanLevelSpState(row) {
+        const snapshot = normalize(row);
+        cache.set(snapshot.characterId, snapshot);
+        notifyColdSnapshot(snapshot, 'clan_level_sp', { critical: true });
+        return snapshot;
+    },
+
     acceptClanMembershipState(row) {
         const snapshot = normalize(row);
         cache.set(snapshot.characterId, snapshot);
@@ -3680,6 +3709,7 @@ const BotLifeState = {
         const id = Number(characterId);
         const current = cache.get(id);
         if (!current && !committedState) return null;
+        if (committedState && Number(current?.stats?.clanLevelSpVersion || 0) > Number(committedState.stats?.clanLevelSpVersion || 0)) return current;
         const next = {
             ...(current || {}),
             ...(committedState || {}),

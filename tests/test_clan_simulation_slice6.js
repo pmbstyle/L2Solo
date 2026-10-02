@@ -18,6 +18,7 @@ const ClanMarketService = invoke('GameServer/Clan/ClanMarketService');
 const ClanPartyService = invoke('GameServer/Clan/ClanPartyService');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
+const LEVEL_UP_SP = invoke('GameServer/Clan/ClanRules').LEVEL_REQUIREMENTS[2].sp;
 
 function removeDatabaseFiles() {
     [databasePath, `${databasePath}-wal`, `${databasePath}-shm`].forEach((file) => fs.rmSync(file, { force: true }));
@@ -79,6 +80,8 @@ function seedDatabase() {
     insertAdena.run(sellerId);
     seed.prepare(`INSERT INTO items(selfId, name, amount, equipped, slot, characterId)
         VALUES (1419, 'Blood Mark', 1, 0, 0, ?)`).run(sellerId);
+    seed.prepare('UPDATE characters SET sp = ? WHERE username = ?').run(LEVEL_UP_SP, 'bot_pop_slice6');
+    seed.prepare('UPDATE bot_life_state SET sp = ? WHERE accountName = ?').run(LEVEL_UP_SP, 'bot_pop_slice6');
     seed.close();
 }
 
@@ -138,6 +141,11 @@ async function main() {
         assert.strictEqual(partyResolved.succeeded, 1, 'the Blood Mark farming operation must resolve');
         const [advanced] = await Database.execute(['SELECT level FROM clans WHERE id = ?', [clanId]]);
         assert.strictEqual(Number(advanced.level), 3);
+        const [leader] = await Database.execute([`SELECT c.sp, life.sp AS coldSp
+            FROM clans clan JOIN characters c ON c.id = clan.leaderId
+            JOIN bot_life_state life ON life.characterId = c.id WHERE clan.id = ?`, [clanId]]);
+        assert.strictEqual(Number(leader.sp), 0, 'level-up must spend the elected leader SP');
+        assert.strictEqual(Number(leader.coldSp), 0, 'cold leader state must retain the spent SP');
         const [seller] = await Database.execute(['SELECT amount FROM items WHERE characterId = ? AND selfId = ?', [4600061, Config.bloodMarkItemId]]);
         assert.strictEqual(Number(seller?.amount || 0), 1, 'the unrelated seller offer must remain untouched');
         const [partyLedger] = await Database.execute(["SELECT COUNT(*) AS count FROM clan_warehouse_ledger WHERE clanId = ? AND operation = 'party_reward'", [clanId]]);

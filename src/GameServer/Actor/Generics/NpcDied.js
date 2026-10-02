@@ -6,6 +6,7 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const NpcObjectIndex = require('../../World/NpcObjectIndex');
 
 const PARTY_REWARD_RADIUS = 2500;
+const PendingSweep = invoke('GameServer/Bot/AI/PendingSweep');
 const SWEEP_RETRY_DELAY_MS = 250;
 const SWEEP_RETRY_WINDOW_MS = 25000;
 
@@ -105,6 +106,7 @@ function autoSweepSpoiledCorpse(npc, Generics) {
 
     const npcId = Number(npc.fetchId?.() || 0);
     if (!npcId) return false;
+    PendingSweep.enqueue(spoilerSession, npc);
     if (!(spoilerSession.sweepRetriesByNpcId instanceof Map)) {
         spoilerSession.sweepRetriesByNpcId = new Map();
     }
@@ -138,6 +140,7 @@ function autoSweepSpoiledCorpse(npc, Generics) {
     const retry = retries.get(npcId);
     if (retry?.timer) clearTimeout(retry.timer);
     clearSweepRetry(spoilerSession, retries, npcId);
+    if (!PendingSweep.canStart(spoilerSession, spoiler)) return false;
     return invoke('GameServer/Bot/BotAI').trySweep(spoilerSession, spoiler, npc, Generics);
 }
 
@@ -167,6 +170,12 @@ function npcDied(session, actor, npc) {
     }
 
     World.removeNpc(session, npc);
+    if (typeof actor?.fetchKind === 'function' && actor.fetchIsSummon?.() !== true) {
+        // ConfuseMob's killer is an NPC, not the player whose session relayed
+        // its packets. Preserve corpse/respawn handling without player credit.
+        actor.abortCombatState(session);
+        return;
+    }
     Generics.abortCombatState(session, actor);
 
     if (actor.isDead()) return;

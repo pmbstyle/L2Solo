@@ -47,6 +47,10 @@ function seedDatabase() {
         if (index === 3) insertItem.run(1864, 'Stem', 5, id);
         if (index === 4) insertItem.run(5339, 'Recipe: Sealed Majestic Leather Armor(100%)', 2, id);
     }
+    // Existing successful-upgrade fixture must fund the leader's player-rule SP cost.
+    const levelSp = invoke('GameServer/Clan/ClanRules').LEVEL_REQUIREMENTS[1].sp;
+    seed.prepare('UPDATE characters SET sp = ?').run(levelSp);
+    seed.prepare('UPDATE bot_life_state SET sp = ?').run(levelSp);
     seed.close();
 }
 

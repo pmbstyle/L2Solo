@@ -192,7 +192,6 @@ function select(session, actor, data) {
         if (selectionOnly && Number(actor.fetchDestId()) === Number(npc.fetchId())) return;
         if (npc.fetchId() !== actor.fetchDestId()) { // First click on a Creature
             actor.setDestId(npc.fetchId());
-            npc.setLocZ(actor.fetchLocZ()); // TODO: Remove, uber hack...
             session.dataSendToMe(ServerResponse.destSelected(actor.fetchDestId(), actor.fetchLevel() - npc.fetchLevel()));
             actor.statusUpdateVitals(npc);
         }

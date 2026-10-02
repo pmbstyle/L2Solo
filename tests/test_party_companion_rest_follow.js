@@ -590,7 +590,8 @@ try {
     assert.strictEqual(raidOpeners[0].target, raidBoss, 'the opener must attack the player-selected boss directly');
     assert.strictEqual(raidOpeners[0].options.playerPartyRaidLeaderSession, leaderSession,
         'the raid combat exception must remain scoped to this real-player party');
-    assert.deepStrictEqual(leaderSession.partyPullState || {}, {}, 'player raid designation must not create a bot pull');
+    assert.strictEqual(leaderSession.partyPullState?.type, 'raid', 'raid opening must use a distinct pull mode');
+    assert.strictEqual(leaderSession.partyPullState?.pullerId, raidTank.fetchId(), 'the raid pull belongs to its tank');
 
     const raidMinion = {
         minionBossObjectId: raidBoss.fetchId(),
@@ -618,8 +619,12 @@ try {
         'live combat with the matching boss must keep the player party raid in combat');
     assert.strictEqual(raidDpsSession.plan, 'following',
         'a matching engaged raid boss must not make the companion flee');
-    assert.strictEqual(raidOpeners[0]?.target, raidBoss,
-        'a matching engaged raid boss must flow through normal party assist');
+    assert.strictEqual(raidOpeners.length, 0,
+        'a non-tank player opening early must not release damage before the bot tank holds the boss');
+    raidBoss.destId = raidTank.fetchId();
+    FollowingState.tick(raidDpsSession, raidDps, {}, raidBotAI);
+    assert.strictEqual(raidOpeners[0]?.target, raidMinion,
+        'damage focuses the minion once the designated tank holds the boss');
 
     raidBoss.destId = undefined;
     raidOpeners.length = 0;
@@ -644,8 +649,14 @@ try {
         'a fresh player aggro must preserve the selected minion as the party target');
     assert.strictEqual(raidDpsSession.plan, 'following',
         'a companion must not flee when the player opens the raid through a minion');
-    assert.strictEqual(raidOpeners[0]?.target, raidMinion,
-        'a fresh player-led minion aggro must send the companion into that minion');
+    assert.strictEqual(raidOpeners.length, 0,
+        'fresh player-led minion aggro must still wait for boss ownership');
+    FollowingState.tick(raidTankSession, raidTank, {}, raidBotAI);
+    assert.strictEqual(raidOpeners[0]?.target, raidBoss, 'the main tank attacks the boss rather than the selected minion');
+    raidBoss.destId = raidTank.fetchId();
+    raidOpeners.length = 0;
+    FollowingState.tick(raidDpsSession, raidDps, {}, raidBotAI);
+    assert.strictEqual(raidOpeners[0]?.target, raidMinion, 'the damage slot finishes the last minion');
 
     const unrelatedRaidBoss = {
         ...staleRaidBoss,

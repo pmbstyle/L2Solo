@@ -887,6 +887,7 @@ module.exports = {
         }
 
         const player = playerSession.actor;
+        if (invoke('GameServer/Bot/AI/PlayerPartyRaid').tick(session, bot, Generics, BotAI)) return;
         if (player.isDead?.()) {
             // Do this before the provider is selected: a solo healer can be
             // the first and only companion tick after the leader dies.
@@ -940,82 +941,6 @@ module.exports = {
             BotRaidSafety.syncPlayerPartyRaid(playerSession)
         ));
         if (partyRaid) PartyPulling.cancel(playerSession);
-        if (partyRaid?.phase === 'opening') {
-            const raidBoss = BotRaidSafety.raidBossByObjectId(partyRaid.bossId);
-            const raidTarget = BotRaidSafety.raidEntityByObjectId(partyRaid.targetId) || raidBoss;
-            const isOpener = Number(bot.fetchId()) === Number(partyRaid.openerId || 0);
-            const openerSession = PartyAwareness.partySessions(playerSession).find((memberSession) => (
-                Number(memberSession.actor?.fetchId?.()) === Number(partyRaid.openerId || 0)
-            ));
-            const opener = openerSession?.actor;
-            const openerReady = BotRaidSafety.isRaidOpenerReady(opener);
-            if (!openerReady) {
-                if (role === 'healer' && opener && !isBusy(bot)) {
-                    if (standUp(session, bot)) {
-                        recordRoleDecision(session, bot, 'prepare_raid', 'stand_to_heal_opener', {
-                            targetId: opener.fetchId(),
-                            openerId: partyRaid.openerId
-                        });
-                        return;
-                    }
-                    const impairments = EffectStore.impairments(bot);
-                    const healSkill = BotSkillCapabilities.selectHealSkill(bot, {
-                        emergency: ratio(opener.fetchHp(), opener.fetchMaxHp()) < 0.45
-                    });
-                    const canHeal = healSkill && !impairments.silenced &&
-                        bot.canUseSkill?.(healSkill) !== false &&
-                        bot.fetchMp() >= Number(healSkill.fetchConsumedMp?.() || 0);
-                    if (canHeal) {
-                        const result = queueSupportSkillOn(
-                            session,
-                            bot,
-                            Generics,
-                            opener,
-                            healSkill,
-                            false,
-                            'raid_opener_recovery'
-                        );
-                        recordRoleDecision(session, bot, result === 'cast' ? 'heal_party' : 'move_for_support', 'prepare_raid_opener', {
-                            targetId: opener.fetchId(),
-                            openerId: partyRaid.openerId
-                        });
-                        return;
-                    }
-                }
-                recordRoleDecision(session, bot, 'hold_for_raid_opener', 'opener_recovering', {
-                    targetId: partyRaid.bossId,
-                    openerId: partyRaid.openerId || null
-                });
-                return;
-            }
-            if (isOpener && raidTarget && !isBusy(bot)) {
-                if (standUp(session, bot)) {
-                    recordRoleDecision(session, bot, 'prepare_raid', 'stand_before_opening', {
-                        targetId: raidTarget.fetchId(),
-                        openerId: partyRaid.openerId
-                    });
-                    return;
-                }
-                session.currentTargetId = raidTarget.fetchId();
-                bot.select({ id: raidTarget.fetchId() });
-                recordRoleDecision(session, bot, 'open_raid', 'player_designated_raid_target', {
-                    targetId: raidTarget.fetchId()
-                });
-                BotAI.executeCombat(session, bot, raidTarget, Generics, {
-                    playerPartyRaidLeaderSession: playerSession
-                });
-            } else {
-                if (session.currentTargetId === Number(partyRaid.targetId || partyRaid.bossId)) {
-                    session.currentTargetId = undefined;
-                    bot.unselect();
-                }
-                recordRoleDecision(session, bot, 'hold_for_raid_opener', isOpener ? 'opener_busy' : 'tank_opens_first', {
-                    targetId: partyRaid.targetId || partyRaid.bossId,
-                    openerId: partyRaid.openerId || null
-                });
-            }
-            return;
-        }
         const selectedLeaderTargetId = PartyAwareness.leaderCombatTargetId(playerSession);
         // A player-designated pull is intentional even when the ordinary
         // combat posture is Protect or Passive.  Those modes should not make
@@ -1850,6 +1775,9 @@ module.exports = {
                 }
             }
         }
+
+        if (!acted && !partyThreat
+            && invoke('GameServer/Bot/AI/PendingSweep').tick(session, bot, Generics, BotAI)) acted = true;
 
         if (!acted) {
             const playerTargetId = leaderTargetId;

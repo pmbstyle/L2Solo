@@ -6,6 +6,9 @@ const Router = window.WorldObserverSpaRouter;
 const UiLanguage = window.WorldObserverUiLanguage;
 const Relationships = window.WorldObserverRelationships;
 
+let playerPages = null;
+let mapControls = null;
+
 const state = {
     snapshot: null,
     refreshing: false,
@@ -80,7 +83,12 @@ const state = {
     knowledgeNpcLoading: false,
     knowledgeNpcRequest: 0,
     applyingRoute: false,
-    pendingRoute: null
+    pendingRoute: null,
+    profileTab: 'overview',
+    showMapLabels: true,
+    showMapRaids: false,
+    followCharacter: false,
+    destinationSignature: null
 };
 
 function commitRoute(route, { replace = false } = {}) {
@@ -88,7 +96,39 @@ function commitRoute(route, { replace = false } = {}) {
     const href = Router.href(route);
     if (`${window.location.pathname}${window.location.search}` === href) return;
     window.history[replace ? 'replaceState' : 'pushState']({}, '', href);
+    const mapSelection = document.body.dataset.view === 'world'
+        && (route.name === 'actor' || (route.name === 'raid-bosses' && route.id));
+    window.WorldObserverShell?.update(mapSelection ? { name: 'world' } : route);
 }
+
+function setApplicationView(route) {
+    const key = Router.href(route);
+    if (state.applicationRoute !== key) { state.applicationRoute = key; window.scrollTo(0, 0); }
+    document.body.dataset.view = route.name === 'actor' ? 'profile' : route.name;
+    playerPages?.show(route);
+    window.WorldObserverShell?.update(route);
+    const names = { overview: 'Overview', characters: 'Characters', parties: 'Parties', dungeon: 'Dungeon', actor: 'Character', world: 'World map', clans: 'Clans', rankings: 'Rankings', 'raid-bosses': 'Raid bosses' };
+    document.title = `${names[route.name] || 'World'} · World Observer`;
+    if (route.name === 'world' || route.name === 'actor') requestAnimationFrame(() => { renderSelected(); renderLabels(); renderPoints(); });
+}
+
+function updateProfileTabs() {
+    const profile = document.body.dataset.view === 'profile';
+    els.selectedInspector.querySelectorAll('[data-profile-panel]').forEach((panel) => {
+        panel.hidden = profile && panel.dataset.profilePanel !== state.profileTab;
+        if (!profile) { panel.removeAttribute('role'); panel.removeAttribute('aria-labelledby'); }
+    });
+    els.selectedInspector.querySelectorAll('[data-profile-tab]').forEach((tab) => {
+        const selected = tab.dataset.profileTab === state.profileTab;
+        tab.setAttribute('aria-selected', String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+    });
+}
+
+function saveMapPreferences() { mapControls?.save(); }
+function renderMapDestinations() { mapControls?.renderDestinations(); }
+function focusMapDestination(value) { return mapControls?.focus(value); }
+function focusSelectedCharacter() { mapControls?.focusSelected(); }
 
 function clearActorSelection() {
     resetRelationships();
@@ -105,9 +145,16 @@ function applyRoute(route = Router.parse(`${window.location.pathname}${window.lo
         window.history.replaceState({}, '', Router.href({ name: 'world' }));
         route = { name: 'world' };
     }
+    setApplicationView(route);
     state.applyingRoute = true;
     state.pendingRoute = null;
     try {
+        if (['overview', 'characters', 'parties', 'dungeon'].includes(route.name)) {
+            closeRankings({ updateRoute: false });
+            closeRaidBosses({ updateRoute: false });
+            closeClans({ updateRoute: false });
+            return;
+        }
         if (route.name === 'world') {
             document.title = 'World Observer';
             const clanId = Number(route.clanId) || null;
@@ -131,6 +178,10 @@ function applyRoute(route = Router.parse(`${window.location.pathname}${window.lo
                 state.pendingRoute = route;
             }
             if (npcId) loadKnowledgeNpcFocus(npcId);
+            if (route.areaId) {
+                if (state.snapshot) focusMapDestination(`area:${route.areaId}`);
+                else state.pendingRoute = route;
+            }
             return;
         }
         if (route.name === 'rankings') {
@@ -150,7 +201,10 @@ function applyRoute(route = Router.parse(`${window.location.pathname}${window.lo
         }
         if (route.name === 'actor') {
             if (!state.snapshot) state.pendingRoute = route;
-            else selectActor(route.id, route.kind, true, false);
+            else {
+                closeRankings({ updateRoute: false }); closeRaidBosses({ updateRoute: false }); closeClans({ updateRoute: false });
+                selectActor(route.id, route.kind, false, false);
+            }
         }
     } finally {
         state.applyingRoute = false;
@@ -182,8 +236,8 @@ const COLORS = {
 
 const PHASE_LABELS = Object.freeze({
     hot: 'Active',
-    warm: 'Background',
-    cold: 'Simulated',
+    warm: 'Elsewhere',
+    cold: 'Elsewhere',
     player: 'Player',
     players: 'Players',
     raidbosses: 'Raid bosses'
@@ -203,8 +257,8 @@ const ROLE_LABELS = Object.freeze({
 });
 
 const ACTIVITY_LABELS = Object.freeze({
-    background_active: 'Active in background',
-    background_resolve: 'Simulating',
+    background_active: 'Adventuring',
+    background_resolve: 'Adventuring',
     buy: 'Buying',
     complete_errand: 'Finishing an errand',
     crafting: 'Crafting',
@@ -310,23 +364,7 @@ const els = {
     clanDetail: document.querySelector('#clanDetail')
 };
 
-const DEFAULT_TILES = {
-    rawBaseUrl: 'https://raw.githubusercontent.com/npetrovski/l2-world-map/main/Maps',
-    blockSize: 32768,
-    blockPx: 900,
-    x: { min: 16, max: 26, mid: 20 },
-    y: { min: 10, max: 25, mid: 18 },
-    missingTiles: [
-        '17_14',
-        '18_13',
-        '26_13',
-        '26_15',
-        '26_16',
-        '26_17',
-        '26_18',
-        '26_19'
-    ]
-};
+const DEFAULT_TILES = window.WorldObserverMapAtlas.metadata;
 
 const RAID_BOSS_STATUS_LABELS = Object.freeze({
     alive: 'In world',
@@ -398,7 +436,7 @@ function clamp(value, min, max) {
 }
 
 function mapMeta() {
-    const tiles = state.snapshot?.mapTiles || DEFAULT_TILES;
+    const tiles = DEFAULT_TILES;
     const width = (tiles.x.max - tiles.x.min + 1) * tiles.blockPx;
     const height = (tiles.y.max - tiles.y.min + 1) * tiles.blockPx;
     return { ...tiles, width, height };
@@ -451,11 +489,20 @@ function setViewBox() {
 
 function setSvgViewBox() {
     const tiles = mapMeta();
-    els.worldMap.querySelector('.sea').setAttribute('width', tiles.width);
-    els.worldMap.querySelector('.sea').setAttribute('height', tiles.height);
+    // Extend the ocean through the SVG's aspect-ratio gutters as well as the atlas.
+    for (const backdrop of els.worldMap.querySelectorAll('.sea, .ocean-texture')) {
+        backdrop.setAttribute('x', -tiles.width);
+        backdrop.setAttribute('y', -tiles.height);
+        backdrop.setAttribute('width', tiles.width * 3);
+        backdrop.setAttribute('height', tiles.height * 3);
+    }
 
     if (!state.viewport) {
-        state.viewport = { x: 0, y: 0, width: tiles.width, height: tiles.height };
+        const rect = els.worldMap.getBoundingClientRect();
+        const aspect = rect.width > 0 && rect.height > 0 ? rect.width / rect.height : 1.35;
+        const center = worldToMap({ locX: 30000, locY: 90000 });
+        const width = 8000, height = Math.min(tiles.height, width / aspect);
+        state.viewport = clampViewport({ x: center.x - width / 2, y: center.y - height / 2, width, height });
     }
 
     if (!state.fit || !state.snapshot) {
@@ -517,6 +564,8 @@ function applyViewport(viewport) {
     setViewBox();
     renderLabels();
     renderPoints();
+    saveMapPreferences();
+    mapControls?.renderMarker();
 }
 
 function phaseColor(item) {
@@ -711,8 +760,8 @@ function renderRaidBosses() {
                     : 'Not found';
             return `<button class="raid-boss-row ${escapeHtml(boss.status)}${clickable ? '' : ' is-missing'}" type="button" data-raid-boss-id="${escapeHtml(boss.id)}" ${clickable ? '' : 'disabled'}>
                 <i class="raid-boss-dot ${escapeHtml(boss.status)}"></i>
-                <span class="raid-boss-identity"><strong>${text(boss.name)}</strong><span>Lv ${number(boss.level, '?')} · NPC ${number(boss.id)}</span></span>
-                <span class="raid-boss-location"><strong>${text(boss.location?.name, 'Unknown location')}</strong><span>${text(raidBossCoordinates(boss.loc), 'Coordinates unavailable')}</span></span>
+                <span class="raid-boss-identity"><strong>${text(boss.name)}</strong><span>Lv ${number(boss.level, '?')}</span></span>
+                <span class="raid-boss-location"><strong>${text(boss.location?.name, 'Unknown location')}</strong><span>${boss.location?.area?.mapAnchor ? 'Dungeon entrance on map' : 'Surface location'}</span></span>
                 <span class="raid-boss-timer"><strong>${text(timer)}</strong><span>${text(raidBossStatusLabel(boss.status))}</span></span>
                 <span>${clickable ? '<span class="raid-boss-map-button">Show on map</span>' : ''}</span>
             </button>`;
@@ -796,6 +845,7 @@ function renderRankings() {
 }
 
 function openRankings({ updateRoute = true } = {}) {
+    setApplicationView({ name: 'rankings' });
     if (state.clanMapScope) clearClanMapScope({ updateRoute: false });
     if (state.raidBossOpen) closeRaidBosses({ updateRoute: false });
     if (state.clanOpen) closeClans({ updateRoute: false });
@@ -815,10 +865,11 @@ function closeRankings({ updateRoute = true } = {}) {
     if (!state.raidBossOpen && !state.clanOpen) document.body.classList.remove('rankings-open');
     state.rankingFocusReturn?.focus?.();
     state.rankingFocusReturn = null;
-    if (updateRoute) commitRoute({ name: 'world' });
+    if (updateRoute) { commitRoute({ name: 'world' }); setApplicationView({ name: 'world' }); }
 }
 
 function openRaidBosses({ updateRoute = true } = {}) {
+    setApplicationView({ name: 'raid-bosses' });
     if (state.clanMapScope) clearClanMapScope({ updateRoute: false });
     if (state.rankingOpen) closeRankings({ updateRoute: false });
     if (state.clanOpen) closeClans({ updateRoute: false });
@@ -838,7 +889,7 @@ function closeRaidBosses({ updateRoute = true } = {}) {
     if (!state.rankingOpen && !state.clanOpen) document.body.classList.remove('rankings-open');
     state.raidBossFocusReturn?.focus?.();
     state.raidBossFocusReturn = null;
-    if (updateRoute) commitRoute({ name: 'world' });
+    if (updateRoute) { commitRoute({ name: 'world' }); setApplicationView({ name: 'world' }); }
 }
 
 function clanItems() {
@@ -1103,7 +1154,7 @@ function clanOrderMarkup(clan) {
         <section class="clan-order-control" aria-label="Clan order">
             <div class="clan-management-heading">
                 <div><span class="section-kicker">Clan control</span><strong>${order ? 'Active order' : 'Set an order'}</strong></div>
-                <p>Give the clan one durable objective. The server keeps executing it after this page is closed.</p>
+                <p>Set a shared clan goal. Members will keep working toward it after you leave this page.</p>
             </div>
             <div class="clan-order-main">
                 ${order ? `
@@ -1263,13 +1314,13 @@ function renderClanDetail() {
     state.clanDetailDeferredRender = false;
     const detail = state.clanDetail;
     if (state.clanDetailLoading && !detail) {
-        els.clanDetail.innerHTML = '<div class="inspector-empty"><span class="loading-orbit"></span><strong>Loading clan</strong><p>Reading members and durable clan state.</p></div>';
+        els.clanDetail.innerHTML = '<div class="inspector-empty"><span class="loading-orbit"></span><strong>Loading clan</strong><p>Loading members and clan activity.</p></div>';
         return;
     }
     if (!detail?.clan) {
         els.clanDetail.innerHTML = state.clanError
             ? `<div class="inspector-empty"><span class="empty-glyph">!</span><strong>Clan unavailable</strong><p>${text(state.clanError)}</p></div>`
-            : '<div class="inspector-empty"><span class="empty-glyph">♘</span><strong>Select a clan</strong><p>Open a clan to inspect its bots, goal, warehouse, and operation history.</p></div>';
+            : '<div class="inspector-empty"><span class="empty-glyph">♘</span><strong>Select a clan</strong><p>Choose a clan to meet its members and explore its goals, warehouse and activity.</p></div>';
         return;
     }
     const clan = detail.clan;
@@ -1322,7 +1373,7 @@ function renderClanDetail() {
             <section class="clan-members-section">
                 <div class="clan-member-toolbar">
                     <strong>${uiIcon('users')}Members</strong>
-                    <span>${number(members.length)} total · open a member on the map</span>
+                    <span>${number(members.length)} total · open a member profile</span>
                 </div>
                 <div class="clan-member-list" role="list">
                     ${members.length ? members.map((member) => `
@@ -1627,6 +1678,7 @@ async function loadClanDirectory({ force = false, selectFirst = false } = {}) {
         const selectedExists = clanItems().some((clan) => Number(clan.id) === Number(state.selectedClanId));
         if ((selectFirst || !selectedExists) && clanItems().length) state.selectedClanId = Number(clanItems()[0].id);
         renderClans({ renderDetail: !state.clanDetail });
+        playerPages?.render();
         const detailClanId = Number(state.clanDetail?.clan?.id || 0);
         const selectedOverview = clanItems().find((clan) => Number(clan.id) === Number(state.selectedClanId));
         const selectedSignature = clanOverviewSignature(selectedOverview);
@@ -1641,6 +1693,7 @@ async function loadClanDirectory({ force = false, selectFirst = false } = {}) {
 }
 
 function openClans(clanId = null, { updateRoute = true } = {}) {
+    setApplicationView({ name: 'clans', id: Number(clanId) || null });
     if (state.clanMapScope) clearClanMapScope({ updateRoute: false });
     if (state.rankingOpen) closeRankings({ updateRoute: false });
     if (state.raidBossOpen) closeRaidBosses({ updateRoute: false });
@@ -1673,14 +1726,14 @@ function closeClans({ updateRoute = true } = {}) {
     els.observerShell?.removeAttribute('aria-hidden');
     if (els.observerShell) els.observerShell.inert = false;
     if (!state.rankingOpen && !state.raidBossOpen) document.body.classList.remove('rankings-open');
-    document.title = 'World Observer';
+    if (updateRoute) document.title = 'World Observer';
     state.clanFocusReturn?.focus?.();
     state.clanFocusReturn = null;
     state.clanManagerOpen = false;
     state.clanCrestMessage = null;
     resetClanCrestDraft();
     resetClanOrderDraft();
-    if (updateRoute) commitRoute({ name: 'world' });
+    if (updateRoute) { commitRoute({ name: 'world' }); setApplicationView({ name: 'world' }); }
 }
 
 function eligibleActors() {
@@ -1709,7 +1762,8 @@ function actorSearchText(actor) {
 }
 
 function isVisible(actor) {
-    if (state.phase !== 'all' && state.phase !== 'players' && actor.phase !== state.phase) return false;
+    if (state.phase === 'cold' && !['cold', 'warm'].includes(actor.phase)) return false;
+    if (!['all', 'players', 'cold'].includes(state.phase) && actor.phase !== state.phase) return false;
     if (state.phase === 'players' && actor.kind !== 'player') return false;
     if (state.search && !actorSearchText(actor).includes(state.search)) return false;
     return ActorFilters.matches(actor, state);
@@ -1771,15 +1825,28 @@ function renderTiles() {
     if (state.renderedTileKey === tileKey) return;
 
     els.tileLayer.innerHTML = '';
+    const coverage = els.worldMap.querySelector('#atlasCoverage');
+    coverage.replaceChildren();
+    for (const element of els.worldMap.querySelectorAll('#atlasMask, #atlasEdgeFeather')) {
+        element.setAttribute('x', -tiles.blockPx);
+        element.setAttribute('y', -tiles.blockPx);
+        element.setAttribute('width', tiles.width + tiles.blockPx * 2);
+        element.setAttribute('height', tiles.height + tiles.blockPx * 2);
+    }
     for (let x = tiles.x.min; x <= tiles.x.max; x += 1) {
         for (let y = tiles.y.min; y <= tiles.y.max; y += 1) {
-            const hidden = (tiles.hiddenRanges || []).some((range) => (
-                x >= range.x1 && x <= range.x2 && y >= range.y1 && y <= range.y2
-            ));
+            const hidden = window.WorldObserverMapAtlas.hidden(x, y);
             if (hidden || missingTiles.has(`${x}_${y}`)) continue;
 
+            // Feather the union of all surface tiles, leaving shared edges opaque.
+            coverage.appendChild(svgEl('rect', {
+                x: (x - tiles.x.min) * tiles.blockPx,
+                y: (y - tiles.y.min) * tiles.blockPx,
+                width: tiles.blockPx,
+                height: tiles.blockPx
+            }));
             els.tileLayer.appendChild(svgEl('image', {
-                href: `${tiles.rawBaseUrl}/${x}_${y}.jpg`,
+                href: `${tiles.rawBaseUrl}/${x}_${y}.${tiles.extension || 'jpg'}`,
                 x: (x - tiles.x.min) * tiles.blockPx,
                 y: (y - tiles.y.min) * tiles.blockPx,
                 width: tiles.blockPx,
@@ -1794,10 +1861,10 @@ function renderTiles() {
 function renderLabels() {
     const snap = state.snapshot;
     els.regionLabels.innerHTML = '';
-    if (!snap) return;
+    if (!snap || !state.showMapLabels) return;
 
     const viewportWidth = state.viewport?.width || mapMeta().width;
-    const showLabels = viewportWidth < 7600;
+    const showLabels = viewportWidth < 10000;
     const labelSize = clamp(viewportWidth / 55, 44, 135);
     snap.labels.forEach((label) => {
         const point = project(label);
@@ -1901,7 +1968,7 @@ function renderSinglePoint(cluster) {
     group.appendChild(svgEl('circle', { class: 'point-ring', r: radius + screenUnits(3.5), stroke: color, 'vector-effect': 'non-scaling-stroke' }));
     group.appendChild(svgEl('circle', { class: 'point-core', r: radius, fill: color, 'vector-effect': 'non-scaling-stroke' }));
 
-    const showName = actor.kind === 'player' || actor.phase === 'hot' || (state.viewport?.width || 99999) < 4200;
+    const showName = actor.kind === 'player' || actor.phase === 'hot' || (state.viewport?.width || 99999) < 2000;
     if (showName) {
         const label = svgEl('text', {
             class: 'point-label',
@@ -1975,21 +2042,22 @@ function renderPoints() {
 }
 
 function renderRaidBossPoints() {
+    if (!state.showMapRaids && state.phase !== 'raidbosses' && !state.selectedRaidBossId) { els.raidBossLayer.innerHTML = ''; return; }
     if (!els.raidBossLayer) return;
     els.raidBossLayer.innerHTML = '';
-    if (state.phase !== 'raidbosses' && !state.selectedRaidBossId) return;
+    if (!state.showMapRaids && state.phase !== 'raidbosses' && !state.selectedRaidBossId) return;
     const viewportWidth = state.viewport?.width || 99999;
     const bosses = raidBossItems()
         .filter((boss) => boss.status === 'alive' && boss.loc && (
-            state.phase === 'raidbosses' || String(boss.id) === String(state.selectedRaidBossId)
+            state.showMapRaids || state.phase === 'raidbosses' || String(boss.id) === String(state.selectedRaidBossId)
         ));
-    const clusters = state.phase === 'raidbosses'
-        ? MapClusters.clusterProjected(bosses.map((boss) => ({ boss, point: project(boss.loc) })), {
+    const clusters = state.showMapRaids || state.phase === 'raidbosses'
+        ? MapClusters.clusterProjected(bosses.map((boss) => ({ boss, point: project(boss.location?.area?.mapAnchor || boss.loc) })), {
             cellSize: screenUnits(48),
             viewport: state.viewport,
             margin: screenUnits(64)
         })
-        : bosses.map((boss) => ({ members: [{ boss, point: project(boss.loc) }], point: project(boss.loc), size: 1 }));
+        : bosses.map((boss) => ({ members: [{ boss, point: project(boss.location?.area?.mapAnchor || boss.loc) }], point: project(boss.location?.area?.mapAnchor || boss.loc), size: 1 }));
 
     clusters.forEach((cluster) => {
         if (cluster.size > 1) {
@@ -2015,7 +2083,7 @@ function renderRaidBossPoints() {
             d: `M 0 ${-radius} L ${radius} 0 L 0 ${radius} L ${-radius} 0 Z`,
             'vector-effect': 'non-scaling-stroke'
         }));
-        if (selected || viewportWidth < 4200) {
+        if (selected || viewportWidth < 2000) {
             const label = svgEl('text', {
                 class: 'raid-boss-label',
                 x: radius + screenUnits(8),
@@ -2092,7 +2160,7 @@ function clearKnowledgeNpcFocus({ render = true, updateRoute = false } = {}) {
     state.knowledgeNpcLoading = false;
     state.knowledgeNpcRequest += 1;
     if (render) renderKnowledgeNpcPoints();
-    if (updateRoute) commitRoute({ name: 'world' });
+    if (updateRoute) { commitRoute({ name: 'world' }); setApplicationView({ name: 'world' }); }
 }
 
 async function loadKnowledgeNpcFocus(id) {
@@ -2155,7 +2223,8 @@ function renderRaidBossCluster(cluster) {
 
 function focusRaidBoss(id) {
     const boss = raidBossItems().find((item) => String(item.id) === String(id));
-    if (!boss || boss.status !== 'alive' || !boss.loc) return;
+    if (!boss || boss.status !== 'alive' || !boss.loc) { openRaidBosses({ updateRoute: false }); return; }
+    setApplicationView({ name: 'world' });
     state.selectedRaidBossId = boss.id;
     state.selectedId = null;
     state.clusterScope = null;
@@ -2163,7 +2232,7 @@ function focusRaidBoss(id) {
     state.detailRequest += 1;
     closeRaidBosses({ updateRoute: false });
     const viewport = state.viewport || { x: 0, y: 0, width: mapMeta().width, height: mapMeta().height };
-    const point = worldToMap(boss.loc);
+    const point = worldToMap(boss.location?.area?.mapAnchor || boss.loc);
     applyViewport({
         x: point.x - viewport.width * 0.5,
         y: point.y - viewport.height * 0.5,
@@ -2205,7 +2274,7 @@ function renderFilterCounts() {
         all: items.length,
         hot: items.filter((actor) => actor.phase === 'hot').length,
         warm: items.filter((actor) => actor.phase === 'warm').length,
-        cold: items.filter((actor) => actor.phase === 'cold').length,
+        cold: items.filter((actor) => ['cold', 'warm'].includes(actor.phase)).length,
         players: items.filter((actor) => actor.kind === 'player').length,
         raidbosses: state.clanMapScope ? 0 : Number(state.snapshot?.raidBosses?.counts?.alive || 0)
     };
@@ -2248,10 +2317,11 @@ function renderFilteredActorViews({ counts = true } = {}) {
     renderActorFilterState();
 }
 
-function updateLevelFilter(changed) {
+function updateLevelFilter(changed = null) {
     state.minLevel = ActorFilters.normalizeLevel(els.minLevelFilter.value);
     state.maxLevel = ActorFilters.normalizeLevel(els.maxLevelFilter.value);
-    if (state.minLevel !== null && state.maxLevel !== null && state.minLevel > state.maxLevel) {
+    // Reconcile crossed bounds only after editing, not on a partial number.
+    if (changed && state.minLevel !== null && state.maxLevel !== null && state.minLevel > state.maxLevel) {
         if (changed === 'min') {
             state.maxLevel = state.minLevel;
             els.maxLevelFilter.value = state.maxLevel;
@@ -2276,14 +2346,13 @@ function renderPopulation() {
     const { active, services } = populationDisplayCounts(population);
     els.botsTotal.textContent = total.toLocaleString();
     els.playersTotal.textContent = (snap.players?.length || 0).toLocaleString();
-    els.populationSubline.textContent = `${number(active)} active on field · ${number(services)} services · ${number(population.persisted || total)} persisted · ${number(population.parties || 0)} background parties`;
+    els.populationSubline.textContent = `${number(active)} active on field · ${number(services)} services · ${number(population.parties || 0)} adventuring parties`;
     els.lastRefresh.textContent = formatTime(snap.generatedAt);
 
     const phases = [
         { key: 'active', label: 'Active', className: 'hot', count: active },
         { key: 'services', label: 'Services', className: 'services', count: services },
-        { key: 'warm', label: phaseLabel('warm'), className: 'warm', count: Number(population.warm || 0) },
-        { key: 'cold', label: phaseLabel('cold'), className: 'cold', count: Number(population.cold || 0) }
+        { key: 'cold', label: phaseLabel('cold'), className: 'cold', count: Number(population.cold || 0) + Number(population.warm || 0) }
     ];
     const phaseTotal = Math.max(1, phases.reduce((sum, phase) => sum + phase.count, 0));
     els.phaseBars.innerHTML = phases.map((phase) => {
@@ -2374,10 +2443,10 @@ function renderRoster() {
     const phaseRank = { hot: 0, warm: 1, cold: 2, player: 3 };
     const roster = filteredActors()
         .sort((a, b) => (phaseRank[a.phase] ?? 9) - (phaseRank[b.phase] ?? 9) || Number(b.level || 0) - Number(a.level || 0) || String(a.name).localeCompare(String(b.name)));
-    const list = roster.slice(0, 90);
+    const list = roster.slice(0, 30);
     els.visibleCount.textContent = list.length < roster.length
-        ? `${list.length.toLocaleString()} of ${roster.length.toLocaleString()} listed`
-        : `${roster.length.toLocaleString()} listed`;
+        ? `${list.length.toLocaleString()} of ${roster.length.toLocaleString()} adventurers`
+        : `${roster.length.toLocaleString()} adventurers`;
     els.actorList.innerHTML = list.length ? list.map((actor) => `
         <button class="actor-row${ActorFilters.matchesSelection(actor, state.selectedId) ? ' is-selected' : ''}" type="button" data-roster-id="${escapeHtml(actor.id)}" data-roster-kind="${actor.kind}">
             <span class="phase-dot" style="background:${phaseColor(actor)}"></span>
@@ -2404,6 +2473,7 @@ function selectedActor() {
 
 function reconcileSelectedActor() {
     if (!state.selectedId || !state.snapshot) return;
+    if (document.body.dataset.view === 'profile' && (state.detailLoading || state.detailError)) return;
 
     const id = String(state.selectedId.id);
     const currentKind = state.selectedId.kind === 'player' ? 'player' : 'bot';
@@ -2559,7 +2629,7 @@ function actorClanLink(actor) {
 }
 
 function statCell(label, value) {
-    return `<div class="stat-cell"><span>${text(label)}</span><strong>${number(value)}</strong></div>`;
+    return `<div class="stat-cell"><span>${text(label)}</span><strong title="${number(value)}">${number(value)}</strong></div>`;
 }
 
 function renderProgress(actor) {
@@ -2569,7 +2639,6 @@ function renderProgress(actor) {
         actor.adena !== undefined ? ['Adena', actor.adena] : null,
         actor.equipmentValue !== undefined ? ['Gear value', actor.equipmentValue] : null,
         actor.counters ? ['Wins', actor.counters.fightsWon ?? 0] : null,
-        actor.counters ? ['Resolves', actor.counters.fightsResolved ?? 0] : null,
         actor.counters ? ['Deaths', actor.counters.deaths ?? 0] : null,
         actor.pvp !== undefined ? ['PvP', actor.pvp] : null,
         actor.pk !== undefined ? ['PK', actor.pk] : null,
@@ -2577,8 +2646,8 @@ function renderProgress(actor) {
     ].filter(Boolean);
     if (!stats.length) return '';
     return `<section class="inspector-block compact-block">
-        <div class="inspector-block-title"><h3>Progress & wealth</h3><span>${text(Leaderboards.raceName(actor) || formatRelative(actor.updatedAt))}</span></div>
-        <div class="combat-stats">${stats.map(([label, value]) => statCell(label, value)).join('')}</div>
+        <div class="inspector-block-title"><h3>Progress & wealth</h3><span>Lifetime totals</span></div>
+        <div class="combat-stats progress-stats">${stats.map(([label, value]) => statCell(label, value)).join('')}</div>
     </section>`;
 }
 
@@ -2670,7 +2739,7 @@ function renderEquipment(equipment, combat) {
     const totals = equipment.totals || combat || {};
     const used = new Set();
     return `<section class="inspector-block">
-        <div class="inspector-block-title"><h3>Paperdoll</h3><span>${items.length} items · hover for stats · click for details</span></div>
+        <div class="inspector-block-title"><h3>Equipment</h3><span>${items.length} items · hover for stats · click for details</span></div>
         <div class="paperdoll" aria-label="Equipped items">
             <div class="paperdoll-center" aria-hidden="true"><span>W</span><small>C4</small></div>
             ${PAPERDOLL_SLOTS.map((slot) => renderPaperdollSlot(slot, paperdollItem(items, slot.slotIds, used))).join('')}
@@ -2877,7 +2946,19 @@ function renderRelationships(actor) {
 }
 
 function renderInspector() {
+    const focusedTab = document.activeElement?.dataset?.profileTab;
+    if (document.body.dataset.view === 'profile' && !state.snapshot) {
+        els.selectedInspector.innerHTML = '<div class="inspector-empty"><strong>Loading character</strong><p>Connecting to the world…</p></div>';
+        return;
+    }
     const actor = selectedActor();
+    if (!actor && state.selectedId) {
+        els.inspectorFreshness.textContent = state.detailLoading ? 'loading' : '';
+        els.selectedInspector.innerHTML = state.detailError
+            ? '<div class="inspector-empty"><strong>Character unavailable</strong><p>This character could not be loaded. Try again or return to the directory.</p><button class="app-button" type="button" data-retry-detail>Try again</button><a class="app-button" href="/observer/characters" data-app-route>Characters →</a></div>'
+            : '<div class="inspector-empty"><span class="loading-orbit"></span><strong>Loading character</strong><p>Loading equipment and current activity.</p></div>';
+        return;
+    }
     if (!actor) {
         els.inspectorFreshness.textContent = 'live';
         if (state.clusterScope) {
@@ -2900,13 +2981,13 @@ function renderInspector() {
             `;
             return;
         }
-        els.selectedInspector.innerHTML = `<div class="inspector-empty"><span class="empty-glyph">◎</span><strong>Nothing selected</strong><p>Click any actor on the map to see its current action and runtime status.</p></div>`;
+        els.selectedInspector.innerHTML = `<div class="inspector-empty"><span class="empty-glyph">◎</span><strong>Nothing selected</strong><p>Select a character to see their equipment, party and current activity.</p></div>`;
         return;
     }
 
     if (state.detailLoading && !state.detail) {
         els.inspectorFreshness.textContent = 'loading';
-        els.selectedInspector.innerHTML = '<div class="inspector-empty"><span class="loading-orbit"></span><strong>Loading actor info</strong><p>Reading the live status and persisted equipment snapshot.</p></div>';
+        els.selectedInspector.innerHTML = '<div class="inspector-empty"><span class="loading-orbit"></span><strong>Loading character</strong><p>Loading equipment and current activity.</p></div>';
         return;
     }
 
@@ -2914,13 +2995,14 @@ function renderInspector() {
         els.inspectorFreshness.textContent = 'error';
         els.selectedInspector.innerHTML = `<div class="inspector-empty detail-failure">
             <span class="empty-glyph">!</span>
-            <strong>Actor info unavailable</strong>
-            <p>${text(state.detailError)} · the compact map snapshot may be incomplete.</p>
+            <strong>Character unavailable</strong>
+            <p>Please try again in a moment.</p>
             <button class="selection-clear" type="button" data-retry-detail>Retry</button>
         </div>`;
         return;
     }
 
+    if (document.body.dataset.view === 'profile') document.title = `${actor.name} · World Observer`;
     const build = actor.build;
     const family = actorClassName(actor);
     const location = actor.loc ? `${Math.round(actor.loc.locX)}, ${Math.round(actor.loc.locY)}, ${Math.round(actor.loc.locZ || 0)}` : 'Unknown';
@@ -2934,11 +3016,14 @@ function renderInspector() {
     </div>` : '';
     els.selectedInspector.innerHTML = `
         ${detailWarning}
+        ${document.body.dataset.view === 'profile' ? `<div class="profile-toolbar"><a class="app-button" href="/observer/characters" data-app-route>← Characters</a><button class="app-button" type="button" data-profile-map>Show on map ↗</button></div>` : ''}
         <div class="inspector-hero">
             <div class="inspector-avatar" style="--avatar-color:${phaseColor(actor)}">${text(String(actor.name || '?').slice(0, 1).toUpperCase())}</div>
             <div class="inspector-name"><strong>${text(actor.isPk ? `PK ${actor.name}` : actor.name)}</strong><span>Lv ${number(actor.level, '?')} · ${text(family)} · ${text(roleLabel(actor.role || '—'))}</span></div>
-            <span class="phase-badge ${text(actor.phase || 'cold')}">${text(phaseLabel(actor.phase || 'bot'))}</span>
+            <span class="phase-badge ${text(actor.phase || 'cold')}">${text(displayActivity(actor))}</span>
         </div>
+        ${document.body.dataset.view === 'profile' ? `<div class="profile-tabs" role="tablist" aria-label="Profile sections">${['overview', 'equipment', 'relationships', 'progress'].filter((tab) => tab !== 'relationships' || state.selectedId?.kind === 'bot').map((tab) => `<button type="button" role="tab" id="profile-tab-${tab}" aria-controls="profile-panel-${tab}" aria-selected="${state.profileTab === tab}" data-profile-tab="${tab}">${tab[0].toUpperCase() + tab.slice(1)}</button>`).join('')}</div>` : `<a class="app-button profile-quick-link" href="${Router.href({ name: 'actor', kind: state.selectedId.kind, id: state.selectedId.id })}" data-app-route>Open profile ↗</a>`}
+        <div data-profile-panel="overview" id="profile-panel-overview" role="tabpanel" aria-labelledby="profile-tab-overview">
         <div class="inspector-vitals">
             ${vitalBar('HP', actor.vitals, '#63d37b')}
             ${vitalBar('MP', actor.vitals, '#57c7e8')}
@@ -2950,19 +3035,21 @@ function renderInspector() {
             <div><span>Region</span><strong>${text(readablePlace(actor.region || actor.home?.region))}</strong></div>
             <div><span>Clan</span><strong>${clan}</strong></div>
             <div><span>Party</span><strong>${party}</strong></div>
-            <div><span>Position</span><strong>${text(location)}</strong></div>
-            <div><span>Blockers</span><strong>${text(actor.blockers?.length ? actor.blockers.map(activityLabel).join(' · ') : 'None')}</strong></div>
+            ${actor.area?.mapLayer === 'dungeon' ? `<div><span>Dungeon</span><strong><a class="inspector-link" href="/observer/dungeons/${text(actor.area.id)}" data-app-route>${text(actor.area.name)}</a></strong></div>` : ''}
         </div>
         ${renderSignals(actor)}
-        ${actor.equipment || actor.combat ? renderEquipment(actor.equipment, actor.combat) : ''}
-        ${renderRelationships(actor)}
         ${renderBuild(build)}
-        ${renderDecisions(actor)}
-        ${renderProgress(actor)}
+        </div>
+        <div data-profile-panel="equipment" id="profile-panel-equipment" role="tabpanel" aria-labelledby="profile-tab-equipment">${actor.equipment || actor.combat ? renderEquipment(actor.equipment, actor.combat) : '<p class="muted-copy">Equipment information is unavailable.</p>'}</div>
+        <div data-profile-panel="relationships" id="profile-panel-relationships" role="tabpanel" aria-labelledby="profile-tab-relationships">${renderRelationships(actor)}</div>
+        <div data-profile-panel="progress" id="profile-panel-progress" role="tabpanel" aria-labelledby="profile-tab-progress">${renderProgress(actor)}</div>
     `;
+    updateProfileTabs();
+    if (focusedTab) els.selectedInspector.querySelector(`[data-profile-tab="${focusedTab}"]`)?.focus({ preventScroll: true });
 }
 
 function renderSelected() {
+    mapControls?.syncSelection();
     renderSelectedCard();
     renderInspector();
 }
@@ -2973,7 +3060,7 @@ function renderSnapshot() {
 
     const population = snap.population || {};
     const { active, services } = populationDisplayCounts(population);
-    els.serverLine.textContent = `${number(population.total || snap.bots.length)} bots in simulation · ${number(active)} active · ${number(services)} services · uptime ${formatDuration(snap.uptimeMs)}`;
+    els.serverLine.textContent = `${number(population.total || snap.bots.length)} bots in the world · ${number(active)} active · ${number(services)} services`;
     setSvgViewBox();
     renderTiles();
     renderGrid();
@@ -2986,11 +3073,15 @@ function renderSnapshot() {
     renderRaidBosses();
     renderRoster();
     renderSelected();
+    renderMapDestinations();
+    playerPages?.render();
 }
 
 function renderActorUpdates({ mapChanged = true } = {}) {
+    playerPages?.render();
     if (!state.snapshot) return;
     renderFilterCounts();
+    mapControls?.updateFollow();
     if (mapChanged) {
         setSvgViewBox();
         renderPoints();
@@ -3036,6 +3127,7 @@ function selectActor(id, kind = 'bot', focus = false, updateRoute = true) {
     state.detail = null;
     state.detailError = null;
     state.detailLoading = false;
+    state.profileTab = 'overview';
     if (focus) {
         const actor = actorById(id, actorKind);
         const loc = actor ? mapLocation(actor) : null;
@@ -3134,18 +3226,20 @@ async function loadWorldStatus(force = false) {
         state.snapshot = { ...state.snapshot, ...status };
         const population = state.snapshot.population || {};
         const { active, services } = populationDisplayCounts(population);
-        els.serverLine.textContent = `${number(population.total || state.snapshot.bots.length)} bots in simulation · ${number(active)} active · ${number(services)} services · uptime ${formatDuration(state.snapshot.uptimeMs)}`;
+        els.serverLine.textContent = `${number(population.total || state.snapshot.bots.length)} bots in the world · ${number(active)} active · ${number(services)} services`;
         renderFilterCounts();
         renderPopulation();
         renderMarket();
         renderRaidBosses();
+        playerPages?.render();
         if (state.phase === 'raidbosses' || state.selectedRaidBossId) {
             renderRaidBossPoints();
             renderRoster();
             renderSelected();
         }
     } catch (error) {
-        els.serverLine.textContent = `Observer status failed: ${error.message}`;
+        els.serverLine.textContent = 'The world could not refresh. Reconnecting…';
+        window.WorldObserverShell?.connection(false);
     } finally {
         state.worldStatusLoading = false;
     }
@@ -3167,11 +3261,13 @@ async function refresh() {
             reconcileSelectedActor();
             renderSnapshot();
             loadClanDirectory();
+            window.WorldObserverShell?.connection(true);
             if (state.pendingRoute) applyRoute(state.pendingRoute);
             return;
         }
         const response = await fetch(`/observer/api/world/changes?since=${encodeURIComponent(state.worldRevision)}`, { cache: 'no-store' });
         if (response.status === 204) {
+            window.WorldObserverShell?.connection(true);
             const epoch = response.headers.get('X-Observer-Epoch');
             if (worldEpochChanged(epoch)) {
                 restartWorldBootstrap(epoch);
@@ -3182,6 +3278,7 @@ async function refresh() {
             return;
         }
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        window.WorldObserverShell?.connection(true);
         const changes = await response.json();
         if (worldEpochChanged(changes.epoch)) {
             restartWorldBootstrap(changes.epoch);
@@ -3198,7 +3295,8 @@ async function refresh() {
         loadClanDirectory();
         loadWorldStatus();
     } catch (error) {
-        els.serverLine.textContent = `Observer snapshot failed: ${error.message}`;
+        els.serverLine.textContent = 'The world could not refresh. Reconnecting…';
+        window.WorldObserverShell?.connection(false);
     } finally {
         state.refreshing = false;
     }
@@ -3214,8 +3312,9 @@ els.closeClans?.addEventListener('click', closeClans);
 els.rankingsModal?.addEventListener('click', (event) => {
     const actor = event.target.closest('[data-ranking-id]');
     if (actor) {
-        selectActor(actor.dataset.rankingId, actor.dataset.rankingKind, true);
-        closeRankings({ updateRoute: false });
+        const route = { name: 'actor', kind: actor.dataset.rankingKind, id: Number(actor.dataset.rankingId) };
+        commitRoute(route);
+        applyRoute(route);
         return;
     }
     if (event.target === els.rankingsModal) closeRankings();
@@ -3299,8 +3398,9 @@ els.clansModal?.addEventListener('click', (event) => {
     }
     const member = event.target.closest('[data-clan-member-id]');
     if (member) {
-        selectActor(member.dataset.clanMemberId, member.dataset.clanMemberKind || 'bot', true);
-        closeClans({ updateRoute: false });
+        const route = { name: 'actor', kind: member.dataset.clanMemberKind || 'bot', id: Number(member.dataset.clanMemberId) };
+        commitRoute(route);
+        applyRoute(route);
         return;
     }
     const clan = event.target.closest('[data-clan-id]');
@@ -3448,6 +3548,7 @@ els.liveToggle.addEventListener('click', () => {
     els.liveToggle.classList.toggle('is-live', state.live);
     els.liveToggle.title = state.live ? 'Pause live refresh' : 'Resume live refresh';
     els.liveLabel.textContent = state.live ? 'Live' : 'Paused';
+    els.liveToggle.setAttribute('aria-label', els.liveToggle.title);
     if (state.live) refresh();
 });
 
@@ -3496,6 +3597,22 @@ document.addEventListener('click', (event) => {
         renderRelationshipPanel(); return;
     }
     if (event.target.closest('[data-retry-relationships]')) { loadRelationships(true); return; }
+    const profileTab = event.target.closest('[data-profile-tab]');
+    if (profileTab) { state.profileTab = profileTab.dataset.profileTab; updateProfileTabs(); return; }
+    if (event.target.closest('[data-profile-map]')) {
+        const selected = state.selectedId;
+        setApplicationView({ name: 'world' });
+        commitRoute({ name: 'world' });
+        if (selected) focusSelectedCharacter();
+        return;
+    }
+    const appLink = event.target.closest('[data-app-route]');
+    if (appLink) {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        const route = Router.parse(appLink.getAttribute('href'));
+        commitRoute(route); applyRoute(route); return;
+    }
     const worldLink = event.target.closest('[data-spa-route="world"]');
     if (worldLink) {
         event.preventDefault();
@@ -3554,8 +3671,10 @@ els.actorSearch.addEventListener('input', (event) => {
     renderFilteredActorViews();
 });
 
-els.minLevelFilter.addEventListener('input', () => updateLevelFilter('min'));
-els.maxLevelFilter.addEventListener('input', () => updateLevelFilter('max'));
+els.minLevelFilter.addEventListener('input', () => updateLevelFilter());
+els.maxLevelFilter.addEventListener('input', () => updateLevelFilter());
+els.minLevelFilter.addEventListener('change', () => updateLevelFilter('min'));
+els.maxLevelFilter.addEventListener('change', () => updateLevelFilter('max'));
 
 els.classFilter.addEventListener('change', (event) => {
     state.classKey = String(event.target.value || 'all');
@@ -3625,6 +3744,15 @@ els.worldMap.addEventListener('pointerup', finishDrag);
 els.worldMap.addEventListener('pointercancel', finishDrag);
 
 document.addEventListener('keydown', (event) => {
+    const tab = event.target.closest('[data-profile-tab]');
+    if (tab && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+        event.preventDefault();
+        const tabs = [...els.selectedInspector.querySelectorAll('[data-profile-tab]')];
+        const index = tabs.indexOf(tab);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+        state.profileTab = tabs[next].dataset.profileTab; updateProfileTabs(); tabs[next].focus(); return;
+    }
+    if (document.querySelector('dialog[open]')) return;
     if (event.key === 'Escape' && state.raidBossOpen) {
         event.preventDefault();
         closeRaidBosses();
@@ -3648,55 +3776,8 @@ document.addEventListener('keydown', (event) => {
         closeClans();
         return;
     }
-    if (state.rankingOpen) {
-        if (event.key === 'Tab') {
-            const focusable = [...els.rankingsModal.querySelectorAll('button:not([disabled]), select:not([disabled])')]
-                .filter((element) => !element.hidden && element.offsetParent !== null);
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            if (event.shiftKey && document.activeElement === first) {
-                event.preventDefault();
-                last?.focus();
-            } else if (!event.shiftKey && document.activeElement === last) {
-                event.preventDefault();
-                first?.focus();
-            }
-        }
-        return;
-    }
-    if (state.raidBossOpen) {
-        if (event.key === 'Tab') {
-            const focusable = [...els.raidBossesModal.querySelectorAll('button:not([disabled]), input:not([disabled])')]
-                .filter((element) => !element.hidden && element.offsetParent !== null);
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            if (event.shiftKey && document.activeElement === first) {
-                event.preventDefault();
-                last?.focus();
-            } else if (!event.shiftKey && document.activeElement === last) {
-                event.preventDefault();
-                first?.focus();
-            }
-        }
-        return;
-    }
-    if (state.clanOpen) {
-        if (event.key === 'Tab') {
-            const focusable = [...els.clansModal.querySelectorAll('button:not([disabled]), input:not([disabled])')]
-                .filter((element) => !element.hidden && element.offsetParent !== null);
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            if (event.shiftKey && document.activeElement === first) {
-                event.preventDefault();
-                last?.focus();
-            } else if (!event.shiftKey && document.activeElement === last) {
-                event.preventDefault();
-                first?.focus();
-            }
-        }
-        return;
-    }
-    if (event.key === '/' && document.activeElement !== els.actorSearch) {
+    if (state.rankingOpen || state.raidBossOpen || state.clanOpen) return;
+    if (event.key === '/' && document.body.dataset.view === 'world' && !event.target.closest('input, textarea, select')) {
         event.preventDefault();
         els.actorSearch.focus();
     }
@@ -3710,6 +3791,15 @@ document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && state.clusterScope) clearClusterScope(true);
 });
 
+window.WorldObserverShell.getActors = actors;
+playerPages = window.WorldObserverPlayerPages.create({ getSnapshot: () => state.snapshot, getActors: actors, getClans: clanItems, rememberRoute: (route) => commitRoute(route, { replace: true }),
+    navigate: (route) => { commitRoute(route); applyRoute(route); }, activityLabel, roleLabel });
+mapControls = window.WorldObserverMapControls.create({ state, getMeta: mapMeta, project: worldToMap, applyViewport, renderLabels, renderPoints, renderRaids: renderRaidBossPoints,
+    getActors: actors, getSelected: selectedActor, navigate: (route) => { commitRoute(route); if (route.name !== 'world') applyRoute(route); } });
+window.addEventListener('observer:navigate', (event) => {
+    if (event.detail.name === 'not-found' || event.detail.name === 'market' || event.detail.name.startsWith('knowledge-')) return;
+    event.preventDefault(); commitRoute(event.detail); applyRoute(event.detail);
+});
 window.addEventListener('popstate', () => applyRoute());
 applyRoute();
 refresh();

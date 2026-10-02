@@ -8,6 +8,8 @@ const SkillModel = invoke('GameServer/Model/Skill');
 const Formulas = invoke('GameServer/Formulas');
 const ConsoleText = invoke('GameServer/ConsoleText');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
+const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
+const World = invoke('GameServer/World/World');
 
 function npcWithRange(atkRadius, selfId = 900000) {
     return new Npc(900000, {
@@ -263,6 +265,57 @@ assert.strictEqual(
     100,
     'a cross-NPC target should be discarded instead of being processed as a player'
 );
+
+// Exercise the real NPC combat entry and damage paths, not a retargeting stub.
+const confusedNpc = npcWithRange(40, 900003);
+confusedNpc.setId(900003);
+crossNpcTarget.setId(900002);
+const bystanderNpc = npcWithRange(40, 900004);
+bystanderNpc.setId(900004);
+const savedWorldNpcs = World.npc;
+const savedRemoveNpc = World.removeNpc;
+let removedCorpse = null;
+try {
+    World.npc = { spawns: [confusedNpc, crossNpcTarget] };
+    const confusion = EffectStore.apply(confusedNpc, {
+        key: 'confusion', id: 1163, type: 'debuff', durationMs: 30000, confusionMobOnly: true
+    });
+    EffectRestrictions.startConfusion(session, confusedNpc, confusion);
+    assert.strictEqual(confusedNpc.state.fetchCombats(), true, 'Curse Discord must start real NPC combat');
+    assert.strictEqual(confusedNpc.fetchCombatTarget(), crossNpcTarget, 'ConfuseMob selects the nearby attackable NPC');
+    assert.strictEqual(confusedNpc.isValidAggroTarget(bystanderNpc), false, 'Confusion must not allow arbitrary cross-NPC targets');
+    confusedNpc.addDamageHate(session, target, 0, 1000);
+    assert.strictEqual(confusedNpc.fetchCombatTarget(), crossNpcTarget, 'Player hate must not override the confusion target');
+    confusedNpc.hit(session, crossNpcTarget, 20);
+    assert.strictEqual(crossNpcTarget.fetchHp(), 80, 'Curse Discord must cause real damage to its selected NPC');
+    confusion.expiresAt = Date.now() - 1;
+    assert.strictEqual(confusedNpc.isValidAggroTarget(crossNpcTarget), false, 'Expired confusion must revoke cross-NPC combat');
+    confusedNpc.hit(session, crossNpcTarget, 20);
+    assert.strictEqual(crossNpcTarget.fetchHp(), 80, 'Expired confusion must not deal another NPC hit');
+    EffectRestrictions.stopConfusion(confusedNpc);
+    assert.strictEqual(confusedNpc.confusionTarget, undefined, 'Stopping confusion clears its selected target');
+
+    const reapplied = EffectStore.apply(confusedNpc, {
+        key: 'confusion', id: 1163, type: 'debuff', durationMs: 30000, confusionMobOnly: true
+    });
+    EffectRestrictions.startConfusion(session, confusedNpc, reapplied);
+    World.removeNpc = (transport, corpse) => {
+        assert.strictEqual(transport.actor, undefined, 'A confusion kill must not inherit the original caster');
+        removedCorpse = corpse;
+    };
+    assert.doesNotThrow(() => confusedNpc.hit(session, crossNpcTarget, 999999), 'Lethal confusion damage must use NPC death handling');
+    assert.strictEqual(crossNpcTarget.state.fetchDead(), true, 'The confused NPC can kill its selected monster');
+    assert.strictEqual(removedCorpse, crossNpcTarget, 'Confusion kills preserve corpse/respawn handling');
+    assert.strictEqual(confusedNpc.confusionTarget, undefined, 'A kill ends the selected combat target');
+    assert.strictEqual(confusedNpc.state.fetchCombats(), false, 'A confusion kill stops the completed combat loop');
+} finally {
+    EffectRestrictions.stopConfusion(confusedNpc);
+    EffectStore.remove(confusedNpc, 'confusion');
+    AttackHelperCleanup(confusedNpc);
+    AttackHelperCleanup(crossNpcTarget);
+    World.npc = savedWorldNpcs;
+    World.removeNpc = savedRemoveNpc;
+}
 
 const sameTarget = actorAt(100, 2000003, 30);
 const sameTargetSession = new BotSession(sameTarget);

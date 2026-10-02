@@ -4,10 +4,13 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>World Observer</title>
+    <script src="/observer/appearance.js"></script>
     <link rel="icon" type="image/png" href="/observer/world-observer-logo.png">
     <link rel="stylesheet" href="/observer/styles.css">
+    <link rel="stylesheet" href="/observer/application.css">
 </head>
-<body>
+<body data-view="world">
+    <main class="app-content" id="playerPage" hidden></main>
     <main class="observer-shell">
         <section class="map-panel" aria-label="World map">
             <header class="topbar">
@@ -15,7 +18,7 @@
                     <img class="brand-logo" src="/observer/world-observer-logo.png" alt="" width="35" height="35" aria-hidden="true">
                     <div>
                         <h1>World Observer</h1>
-                        <p id="serverLine">Waiting for server snapshot</p>
+                        <p id="serverLine">Loading the world…</p>
                     </div>
                 </a>
                 <div class="topbar-actions">
@@ -27,11 +30,11 @@
                         <svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#search"></use></svg>
                         Database
                     </a>
-                    <button class="rankings-button" id="openRankings" type="button" aria-haspopup="dialog" aria-controls="rankingsModal">
+                    <button class="rankings-button" id="openRankings" type="button" aria-controls="rankingsModal">
                         <svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#trophy"></use></svg>
                         Rankings
                     </button>
-                    <button class="rankings-button raid-boss-button" id="openRaidBosses" type="button" aria-haspopup="dialog" aria-controls="raidBossesModal">
+                    <button class="rankings-button raid-boss-button" id="openRaidBosses" type="button" aria-controls="raidBossesModal">
                         <svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#skull"></use></svg>
                         Raid bosses <b id="raidBossAliveCount">0</b>
                     </button>
@@ -48,10 +51,10 @@
 
             <div class="map-toolbar" aria-label="Map controls">
                 <div class="filter-strip" id="filterStrip">
-                    <button class="filter is-active" data-phase="all">All <span class="filter-count" data-count-for="all">0</span></button>
+                    <button class="filter is-active" data-phase="all">Adventurers <span class="filter-count" data-count-for="all">0</span></button>
                     <button class="filter" data-phase="hot">Active <span class="filter-count" data-count-for="hot">0</span></button>
                     <button class="filter" data-phase="warm">Background <span class="filter-count" data-count-for="warm">0</span></button>
-                    <button class="filter" data-phase="cold">Simulated <span class="filter-count" data-count-for="cold">0</span></button>
+                    <button class="filter" data-phase="cold">Elsewhere <span class="filter-count" data-count-for="cold">0</span></button>
                     <button class="filter" data-phase="players">Players <span class="filter-count" data-count-for="players">0</span></button>
                     <button class="filter raid-boss-filter" data-phase="raidbosses"><i class="legend-dot raid-boss"></i>Raid bosses <span class="filter-count" data-count-for="raidbosses">0</span></button>
                 </div>
@@ -83,14 +86,31 @@
                 </div>
                 <label class="search-field">
                     <svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#search"></use></svg>
-                    <input id="actorSearch" type="search" placeholder="Find a bot, role, town…" autocomplete="off">
+                    <input id="actorSearch" type="search" aria-label="Find an adventurer or location" placeholder="Find an adventurer or location…" autocomplete="off">
                     <kbd>/</kbd>
                 </label>
             </div>
 
+            <div class="map-tools" aria-label="Explore the map">
+                <label>Go to<select id="mapDestination" aria-label="Map destination"><option value="">Choose a town or dungeon</option></select></label>
+                <button class="app-button" id="wholeWorldButton" type="button">Whole world</button>
+                <button class="app-button map-layer-button" id="mapLabelsToggle" type="button" aria-pressed="true">Places</button>
+                <button class="app-button map-layer-button" id="mapRaidsToggle" type="button" aria-pressed="false">Raids</button>
+                <button class="app-button map-follow" id="mapFollowButton" type="button" aria-pressed="false">Follow character</button>
+            </div>
             <div class="map-stage">
                 <svg id="worldMap" viewBox="0 0 1200 760" role="img" aria-label="Lineage II C4 world observer map">
                     <defs>
+                        <pattern id="oceanTexture" patternUnits="userSpaceOnUse" width="900" height="900">
+                            <image href="/observer/map-tiles/16_18.webp" width="900" height="900" preserveAspectRatio="none"></image>
+                        </pattern>
+                        <filter id="atlasEdgeFeather" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+                            <feMorphology operator="erode" radius="110"></feMorphology>
+                            <feGaussianBlur stdDeviation="65"></feGaussianBlur>
+                        </filter>
+                        <mask id="atlasMask" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" style="mask-type: alpha">
+                            <g id="atlasCoverage" fill="white" filter="url(#atlasEdgeFeather)"></g>
+                        </mask>
                         <radialGradient id="seaGlow" cx="50%" cy="45%" r="70%">
                             <stop offset="0%" stop-color="#172d31"></stop>
                             <stop offset="100%" stop-color="#081114"></stop>
@@ -104,7 +124,8 @@
                         </filter>
                     </defs>
                     <rect class="sea" x="0" y="0" width="1200" height="760"></rect>
-                    <g class="tile-layer" id="tileLayer"></g>
+                    <rect class="ocean-texture" x="0" y="0" width="1200" height="760" fill="url(#oceanTexture)"></rect>
+                    <g class="tile-layer" id="tileLayer" mask="url(#atlasMask)"></g>
                     <g class="grid-lines" id="gridLines"></g>
                     <g class="region-labels" id="regionLabels"></g>
                     <g class="points" id="pointsLayer"></g>
@@ -120,7 +141,7 @@
                 <div class="map-legend" aria-label="Map legend">
                     <span><i class="legend-dot hot"></i>active</span>
                     <span><i class="legend-dot warm"></i>background</span>
-                    <span><i class="legend-dot cold"></i>simulated</span>
+                    <span><i class="legend-dot cold"></i>elsewhere</span>
                     <span><i class="legend-dot player"></i>player</span>
                     <span><i class="legend-dot pk"></i>PK</span>
                     <span><i class="legend-dot raid-boss"></i>raid boss</span>
@@ -139,7 +160,7 @@
                 <div class="section-kicker">Server population</div>
                 <div class="population-headline">
                     <strong id="botsTotal">0</strong>
-                    <span>bots in simulation</span>
+                    <span>bots in the world</span>
                 </div>
                 <p class="population-subline" id="populationSubline">Waiting for population data</p>
                 <div class="population-bars" id="phaseBars"></div>
@@ -176,29 +197,29 @@
 
             <section class="panel-section inspector-section">
                 <div class="section-title">
-                    <h2 class="title-with-icon"><svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#crosshair"></use></svg>Selected actor</h2>
+                    <h2 class="title-with-icon"><svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#crosshair"></use></svg>Character</h2>
                     <span id="inspectorFreshness">live</span>
                 </div>
                 <div id="selectedInspector" class="selected-inspector">
                     <div class="inspector-empty">
                         <span class="empty-glyph">◎</span>
                         <strong>Nothing selected</strong>
-                        <p>Click any actor on the map to see its current action and runtime status.</p>
+                        <p>Select a character to see their equipment, party and current activity.</p>
                     </div>
                 </div>
             </section>
 
             <section class="panel-section roster-section">
                 <div class="section-title">
-                    <h2 class="title-with-icon"><svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#users"></use></svg>Roster</h2>
+                    <h2 class="title-with-icon"><svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#users"></use></svg>Adventurers</h2>
                     <span id="visibleCount">0 shown</span>
                 </div>
-                <div class="actor-list" id="actorList"></div>
+                <p class="map-count-note">Adventurers only. Traders and crafters are in Characters.</p><div class="actor-list" id="actorList"></div><a class="app-button" href="/observer/characters" data-app-route>View all characters →</a>
             </section>
         </aside>
     </main>
 
-    <div class="rankings-backdrop" id="rankingsModal" role="dialog" aria-modal="true" aria-labelledby="rankingsTitle" hidden>
+    <div class="rankings-backdrop" id="rankingsModal" role="region" aria-labelledby="rankingsTitle" hidden>
         <section class="rankings-modal">
             <header class="rankings-header">
                 <div>
@@ -240,7 +261,7 @@
         </section>
     </div>
 
-    <div class="rankings-backdrop" id="raidBossesModal" role="dialog" aria-modal="true" aria-labelledby="raidBossesTitle" hidden>
+    <div class="rankings-backdrop" id="raidBossesModal" role="region" aria-labelledby="raidBossesTitle" hidden>
         <section class="rankings-modal raid-bosses-modal">
             <header class="rankings-header">
                 <div>
@@ -311,7 +332,7 @@
                     <div class="inspector-empty">
                         <svg class="empty-glyph ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#shield"></use></svg>
                         <strong>Select a clan</strong>
-                        <p>Inspect its goal, members, resources, and recent decisions.</p>
+                        <p>Explore its goals, members, resources and recent activity.</p>
                     </div>
                 </section>
             </div>
@@ -325,6 +346,10 @@
     <script src="/observer/spaRouter.js"></script>
     <script src="/observer/uiLanguage.js"></script>
     <script src="/observer/relationships.js"></script>
+    <script src="/observer/mapAtlas.js"></script>
+    <script src="/observer/appShell.js"></script>
+    <script src="/observer/playerPages.js"></script>
+    <script src="/observer/mapControls.js"></script>
     <script src="/observer/app.js"></script>
 </body>
 </html>

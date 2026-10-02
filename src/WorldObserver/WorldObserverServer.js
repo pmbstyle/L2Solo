@@ -6,6 +6,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const ITEM_ICON_CATALOG_DIR = path.join(PUBLIC_DIR, 'item-icons');
 const ITEM_ICON_MANIFEST_PATH = path.join(ITEM_ICON_CATALOG_DIR, 'index.json');
 const KNOWLEDGE_BASE_DIR = path.join(__dirname, '..', '..', 'data', 'KnowledgeBase');
+const { searchPlayers } = require('./CharacterSearch');
 const { createKnowledgeBaseService } = require('./KnowledgeBaseService');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
@@ -32,7 +33,8 @@ const MIME_TYPES = {
     '.svg': 'image/svg+xml; charset=utf-8',
     '.png': 'image/png',
     '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg'
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp'
 };
 const OBSERVER_IDLE_CACHE_MS = 2000;
 const WORLD_EPOCH = `${process.pid}-${Date.now().toString(36)}`;
@@ -60,36 +62,7 @@ const WORLD_BOUNDS = {
     maxY: 262144
 };
 
-const MAP_TILES = {
-    source: 'https://github.com/npetrovski/l2-world-map',
-    rawBaseUrl: 'https://raw.githubusercontent.com/npetrovski/l2-world-map/main/Maps',
-    blockSize: 32768,
-    blockPx: 900,
-    x: { min: 16, max: 26, mid: 20 },
-    y: { min: 10, max: 25, mid: 18 },
-    missingTiles: [
-        '17_14',
-        '18_13',
-        '26_13',
-        '26_15',
-        '26_16',
-        '26_17',
-        '26_18',
-        '26_19'
-    ],
-    alternatives: [
-        {
-            name: 'L2J C4 common map',
-            url: 'https://l2j.ru/img/maps/c4_all.jpg',
-            note: 'large C4 poster map; needs manual coordinate calibration'
-        },
-        {
-            name: 'PMfun Aden World Map C4 (big)',
-            url: 'https://lineage.pmfun.com/data/maps/world/Aden%20World%20Map%20C4%20%28big%29.jpg',
-            note: 'large C4 poster map; useful as a visual reference'
-        }
-    ]
-};
+const MAP_TILES = require('./public/mapAtlas').metadata;
 
 const REGION_LABELS = [
     { name: 'Talking Island', locX: -84318, locY: 244579, kind: 'town' },
@@ -311,6 +284,8 @@ function compactPlayer(session) {
     const race = raceMetadata(actor.fetchRace?.(), classId);
     const loc = actorLoc(actor);
     const area = WorldAreaCatalog.publicArea(WorldAreaCatalog.resolve(loc));
+    const sessions = invoke('GameServer/World/World').user?.sessions || [];
+    const hasCompanions = sessions.some((member) => member.partyCompanion === true && member.followPlayerSession === session);
     return {
         id: actor.fetchId(),
         name: actor.fetchName(),
@@ -323,6 +298,12 @@ function compactPlayer(session) {
         equipmentValue: liveEquipmentValue(actor),
         loc,
         area,
+        party: hasCompanions ? {
+            id: `player_${actor.fetchId()}`,
+            leaderId: actor.fetchId(),
+            leader: { id: actor.fetchId(), name: actor.fetchName(), kind: 'player' },
+            role: 'player'
+        } : null,
         vitals: actorVitals(actor),
         online: !!actor.fetchIsOnline(),
         isPk: isPkActor(actor)
@@ -365,7 +346,8 @@ function compactHotBot(status, pkIds = new Set(), session = null) {
             distance: status.target.distance ? Math.round(status.target.distance) : null
         } : null,
         party: status.party ? {
-            id: status.party.id || null,
+            id: status.party.id || (session?.partyCompanion && session.followPlayerSession?.actor
+                ? `player_${session.followPlayerSession.actor.fetchId()}` : null),
             leader: compactPartyLeader(status.party.leader),
             leaderId: Number(status.party.leader?.id || 0) || null,
             stance: status.party.stance,
@@ -476,7 +458,7 @@ const projectionRuntime = {
 const PROJECTION_FIELDS = Object.freeze([
     'id', 'name', 'phase', 'mode', 'intent', 'role', 'level', 'classId', 'className',
     'raceId', 'exp', 'adena', 'equipmentValue', 'loc', 'area', 'region', 'online',
-    'staticService', 'isPk', 'blockers', 'updatedAt'
+    'staticService', 'isPk', 'blockers', 'updatedAt', 'party'
 ]);
 
 function equipmentSlot(slot) {
@@ -1164,7 +1146,8 @@ function loadItemIconCatalog() {
 
     try {
         const manifest = JSON.parse(fs.readFileSync(ITEM_ICON_MANIFEST_PATH, 'utf8'));
-        const entries = Object.values(manifest.items || {})
+        const supplemental = JSON.parse(fs.readFileSync(path.join(ITEM_ICON_CATALOG_DIR, 'supplemental.json'), 'utf8'));
+        const entries = Object.values({ ...manifest.items, ...supplemental.items })
             .filter((entry) => entry && entry.localFile);
         const bySelfId = new Map();
         const byNameAndCategory = new Map();
@@ -1895,6 +1878,7 @@ function projectionActor(actor, kind) {
         area: actor.area || null,
         region: actor.region || null,
         online: kind === 'player' ? !!actor.online : undefined,
+        party: actor.party || null,
         staticService: kind === 'bot' ? !!actor.staticService : undefined,
         isPk: !!actor.isPk,
         blockers: actor.blockers?.includes('dead') ? ['dead'] : [],
@@ -2003,6 +1987,7 @@ async function worldBootstrap() {
         bounds: WORLD_BOUNDS,
         mapTiles: MAP_TILES,
         labels: REGION_LABELS,
+        areas: WorldAreaCatalog.AREAS.map(WorldAreaCatalog.publicArea),
         classes: classCatalog(),
         actorFormat: 'row-v1',
         actorFields: PROJECTION_FIELDS,
@@ -2068,7 +2053,8 @@ async function marketSnapshot() {
             ...market.transactions,
             recent: market.transactions.recent.map((trade) => ({
                 ...trade,
-                itemName: itemById.get(Number(trade.selfId))?.name || trade.itemName
+                itemName: itemById.get(Number(trade.selfId))?.name || trade.itemName,
+                iconUrl: itemById.get(Number(trade.selfId))?.iconUrl || knowledgeBaseService().itemDetail(Number(trade.selfId))?.iconUrl || null
             }))
         }
     };
@@ -2116,6 +2102,7 @@ async function snapshot() {
         bounds: WORLD_BOUNDS,
         mapTiles: MAP_TILES,
         labels: REGION_LABELS,
+        areas: WorldAreaCatalog.AREAS.map(WorldAreaCatalog.publicArea),
         classes: classCatalog(),
         raidBosses: raidBossSnapshot(),
         population: PopulationStatus.counts(),
@@ -2450,6 +2437,16 @@ function route(request, response) {
         return;
     }
 
+    if (url.pathname === '/observer/api/characters/search') {
+        if (request.method !== 'GET') { response.writeHead(405, { Allow: 'GET' }); response.end(); return; }
+        searchPlayers({ execute: (query) => Database.execute(query, 'observer:character-search'),
+            query: url.searchParams.get('q'), limit: url.searchParams.get('limit'), classes: classCatalog(),
+            onlineIds: realPlayerSessions().map((session) => session.actor.fetchId()) })
+            .then((characters) => sendJson(response, { characters }))
+            .catch((err) => sendJson(response, { error: err.message }, 500));
+        return;
+    }
+
     if (url.pathname === '/observer/api/clans/social') {
         if (request.method !== 'GET') { response.writeHead(405, { Allow: 'GET' }); response.end(); return; }
         sendJson(response, invoke('GameServer/Clan/ClanSocialRuntime').inspect());
@@ -2696,6 +2693,10 @@ function route(request, response) {
         return;
     }
 
+    if (url.pathname === '/observer/item-icons/supplemental.json') {
+        sendFile(request, response, path.join(ITEM_ICON_CATALOG_DIR, 'supplemental.json')); return;
+    }
+
     const itemIconMatch = url.pathname.match(/^\/observer\/item-icons\/([^/]+)$/);
     if (itemIconMatch) {
         let fileName = null;
@@ -2724,7 +2725,7 @@ function route(request, response) {
         return;
     }
 
-    if (/^\/observer\/(?:world|rankings|raid-bosses(?:\/\d+)?|clans(?:\/\d+)?(?:\/map)?|actors\/(?:bot|player)\/\d+)\/?$/.test(url.pathname)) {
+    if (/^\/observer\/(?:world|overview|characters|parties|dungeons\/[a-z0-9_-]+|rankings|raid-bosses(?:\/\d+)?|clans(?:\/\d+)?(?:\/map)?|actors\/(?:bot|player)\/\d+)\/?$/.test(url.pathname)) {
         sendFile(request, response, path.join(PUBLIC_DIR, 'index.html'));
         return;
     }
@@ -2748,6 +2749,7 @@ function route(request, response) {
 
 const WorldObserverServer = {
     server: null,
+    route,
     compactPlayer,
     compactPlayerDetail,
     compactHotBot,

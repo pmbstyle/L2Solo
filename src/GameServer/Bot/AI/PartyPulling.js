@@ -147,6 +147,19 @@ function beginTarget(leaderSession, puller, target, source, selection = null) {
     return leaderSession.partyPullState;
 }
 
+function beginRaid(leaderSession, raid) {
+    if (leaderSession.partyPullState?.raidBossId === raid.bossId) {
+        leaderSession.partyPullState.phase = raid.phase;
+        leaderSession.partyPullState.pullerId = raid.mainTankId;
+        return;
+    }
+    cancel(leaderSession);
+    leaderSession.partyPullState = { raidBossId: raid.bossId, targetId: raid.bossId,
+        pullerId: raid.mainTankId, type: 'raid', phase: raid.phase,
+        origin: raid.pullOrigin, startedAt: raid.selectedAt };
+    traceEncounter(leaderSession, 'raid_pull');
+}
+
 function observeLeaderTarget(leaderSession, settings, targetId) {
     const puller = resolvePuller(leaderSession, settings);
     if (!puller || puller.kind !== 'leader' || !targetId) return null;
@@ -640,6 +653,12 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI, s
 }
 
 function current(leaderSession, settings) {
+    // Raid combat owns this state. Ordinary pull inspection must neither
+    // discard its protected target nor recreate the encounter on every tick.
+    if (leaderSession?.partyPullState?.type === 'raid'
+        && Number(leaderSession.partyRaidEngagement?.bossId) === Number(leaderSession.partyPullState.raidBossId)) {
+        return { enabled: false, puller: null, target: null, paused: null };
+    }
     const puller = resolvePuller(leaderSession, settings);
     if (!puller) return { enabled: false, puller: null, target: null, paused: null };
     const target = clearFinishedTarget(leaderSession);
@@ -670,6 +689,7 @@ function current(leaderSession, settings) {
 }
 
 module.exports = {
+    beginRaid,
     enabled,
     resolvePuller,
     supportMembers,

@@ -154,7 +154,7 @@ class NpcModel extends CreatureModel {
     // Abstract
 
     fetchDispSelfId() {
-        return this.fetchSelfId() + 1000000;
+        return (this.model.displayId ?? this.fetchSelfId()) + 1000000;
     }
 
     fetchAttackable() {

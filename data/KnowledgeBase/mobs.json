@@ -282247,6 +282247,2135 @@
     }
   },
   {
+    "aiType": "fighter",
+    "availability": {
+      "directSpawn": true,
+      "knownReachable": true,
+      "raidMinion": false
+    },
+    "defaultEffectiveStats": {
+      "accuracy": 63.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
+      "evasion": 58.86335345031,
+      "mAtk": 41,
+      "mDef": 98,
+      "maxHp": 770,
+      "maxMp": 303,
+      "pAtk": 96,
+      "pDef": 120,
+      "runSpeed": 143,
+      "walkSpeed": 57
+    },
+    "drops": [
+      {
+        "groupIndex": 0,
+        "items": [
+          {
+            "baseChancePercent": 70,
+            "itemId": 57,
+            "maxAmount": 137,
+            "minAmount": 72,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 70,
+                "expectedAmountPerKill": 73.15
+              },
+              "x10": {
+                "chancePercent": 100,
+                "expectedAmountPerKill": 731.5
+              },
+              "x50": {
+                "chancePercent": 100,
+                "expectedAmountPerKill": 3657.5
+              }
+            },
+            "selectionWeightPercent": 100,
+            "sourceName": "Adena"
+          }
+        ],
+        "overallChancePercent": 70
+      },
+      {
+        "groupIndex": 1,
+        "items": [
+          {
+            "baseChancePercent": 0.0011,
+            "itemId": 123,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0011,
+                "expectedAmountPerKill": 0.000011
+              },
+              "x10": {
+                "chancePercent": 0.011,
+                "expectedAmountPerKill": 0.00011
+              },
+              "x50": {
+                "chancePercent": 0.055,
+                "expectedAmountPerKill": 0.00055
+              }
+            },
+            "selectionWeightPercent": 1.527777777778,
+            "sourceName": "Saber"
+          },
+          {
+            "baseChancePercent": 0.0308,
+            "itemId": 2017,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0308,
+                "expectedAmountPerKill": 0.000308
+              },
+              "x10": {
+                "chancePercent": 0.308,
+                "expectedAmountPerKill": 0.00308
+              },
+              "x50": {
+                "chancePercent": 1.54,
+                "expectedAmountPerKill": 0.0154
+              }
+            },
+            "selectionWeightPercent": 42.777777777778,
+            "sourceName": "Saber Blade"
+          },
+          {
+            "baseChancePercent": 0.0011,
+            "itemId": 5285,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0011,
+                "expectedAmountPerKill": 0.000011
+              },
+              "x10": {
+                "chancePercent": 0.011,
+                "expectedAmountPerKill": 0.00011
+              },
+              "x50": {
+                "chancePercent": 0.055,
+                "expectedAmountPerKill": 0.00055
+              }
+            },
+            "selectionWeightPercent": 1.527777777778,
+            "sourceName": "Heavy Sword"
+          },
+          {
+            "baseChancePercent": 0.039,
+            "itemId": 5531,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.039,
+                "expectedAmountPerKill": 0.00039
+              },
+              "x10": {
+                "chancePercent": 0.39,
+                "expectedAmountPerKill": 0.0039
+              },
+              "x50": {
+                "chancePercent": 1.95,
+                "expectedAmountPerKill": 0.0195
+              }
+            },
+            "selectionWeightPercent": 54.166666666667,
+            "sourceName": "Heavy Sword Edge"
+          }
+        ],
+        "overallChancePercent": 0.072
+      },
+      {
+        "groupIndex": 2,
+        "items": [
+          {
+            "baseChancePercent": 4.135,
+            "itemId": 1060,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 4.135,
+                "expectedAmountPerKill": 0.04135
+              },
+              "x10": {
+                "chancePercent": 41.35,
+                "expectedAmountPerKill": 0.4135
+              },
+              "x50": {
+                "chancePercent": 67.306074373212,
+                "expectedAmountPerKill": 1.391553087666
+              }
+            },
+            "selectionWeightPercent": 80.975227651033,
+            "sourceName": "Lesser Healing Potion"
+          },
+          {
+            "baseChancePercent": 0.124,
+            "itemId": 1874,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.124,
+                "expectedAmountPerKill": 0.00124
+              },
+              "x10": {
+                "chancePercent": 1.24,
+                "expectedAmountPerKill": 0.0124
+              },
+              "x50": {
+                "chancePercent": 4.172976611139,
+                "expectedAmountPerKill": 0.041729766111
+              }
+            },
+            "selectionWeightPercent": 2.428277685303,
+            "sourceName": "Oriharukon Ore"
+          },
+          {
+            "baseChancePercent": 0.7443,
+            "itemId": 1878,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.7443,
+                "expectedAmountPerKill": 0.007443
+              },
+              "x10": {
+                "chancePercent": 7.443,
+                "expectedAmountPerKill": 0.07443
+              },
+              "x50": {
+                "chancePercent": 25.047955577991,
+                "expectedAmountPerKill": 0.25047955578
+              }
+            },
+            "selectionWeightPercent": 14.575540977186,
+            "sourceName": "Braided Hemp"
+          },
+          {
+            "baseChancePercent": 0.0288,
+            "itemId": 2259,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0288,
+                "expectedAmountPerKill": 0.000288
+              },
+              "x10": {
+                "chancePercent": 0.288,
+                "expectedAmountPerKill": 0.00288
+              },
+              "x50": {
+                "chancePercent": 0.969207470974,
+                "expectedAmountPerKill": 0.00969207471
+              }
+            },
+            "selectionWeightPercent": 0.563987075296,
+            "sourceName": "Recipe: Spinebone Sword"
+          },
+          {
+            "baseChancePercent": 0.0744,
+            "itemId": 5220,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0744,
+                "expectedAmountPerKill": 0.000744
+              },
+              "x10": {
+                "chancePercent": 0.744,
+                "expectedAmountPerKill": 0.00744
+              },
+              "x50": {
+                "chancePercent": 2.503785966684,
+                "expectedAmountPerKill": 0.025037859667
+              }
+            },
+            "selectionWeightPercent": 1.456966611182,
+            "sourceName": "Metal Hardener"
+          }
+        ],
+        "overallChancePercent": 5.1065
+      }
+    ],
+    "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
+    "id": 922,
+    "kind": "Monster",
+    "level": 26,
+    "minionOf": [],
+    "minions": [],
+    "name": "Maille Lizardman Warrior",
+    "progression": {
+      "baseExp": 951.000000000128,
+      "baseSp": 48,
+      "expModifier": 1.406804733728
+    },
+    "raidBoss": false,
+    "skillIds": [],
+    "spawnIds": [
+      "spawn-922-e1a755e2bf9d"
+    ],
+    "spoils": [
+      {
+        "groupIndex": 0,
+        "items": [
+          {
+            "baseChancePercent": 16.5778,
+            "itemId": 1870,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 16.5778,
+                "expectedAmountPerKill": 0.165778
+              },
+              "x10": {
+                "chancePercent": 16.5778,
+                "expectedAmountPerKill": 1.65778
+              },
+              "x50": {
+                "chancePercent": 16.5778,
+                "expectedAmountPerKill": 8.2889
+              }
+            },
+            "selectionWeightPercent": 16.5778,
+            "sourceName": "Coal"
+          }
+        ],
+        "overallChancePercent": 100
+      },
+      {
+        "groupIndex": 1,
+        "items": [
+          {
+            "baseChancePercent": 2.5903,
+            "itemId": 1899,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 2.5903,
+                "expectedAmountPerKill": 0.025903
+              },
+              "x10": {
+                "chancePercent": 2.5903,
+                "expectedAmountPerKill": 0.25903
+              },
+              "x50": {
+                "chancePercent": 2.5903,
+                "expectedAmountPerKill": 1.29515
+              }
+            },
+            "selectionWeightPercent": 2.5903,
+            "sourceName": "Necklace of Devotion Chain"
+          }
+        ],
+        "overallChancePercent": 100
+      },
+      {
+        "groupIndex": 2,
+        "items": [
+          {
+            "baseChancePercent": 2.6314,
+            "itemId": 1932,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 2.6314,
+                "expectedAmountPerKill": 0.026314
+              },
+              "x10": {
+                "chancePercent": 2.6314,
+                "expectedAmountPerKill": 0.26314
+              },
+              "x50": {
+                "chancePercent": 2.6314,
+                "expectedAmountPerKill": 1.3157
+              }
+            },
+            "selectionWeightPercent": 2.6314,
+            "sourceName": "Bone Helmet Design"
+          }
+        ],
+        "overallChancePercent": 100
+      }
+    ],
+    "template": {
+      "base": {
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "men": 10,
+        "str": 40,
+        "wit": 20
+      },
+      "clan": {
+        "clanName": "lizardman_clan",
+        "helpRadius": 300
+      },
+      "collision": {
+        "radius": 12,
+        "size": 30
+      },
+      "equipment": {
+        "reuseTime": 0,
+        "shield": 0,
+        "weapon": 16
+      },
+      "rewards": {
+        "exp": 1.406804733728,
+        "sp": 48
+      },
+      "selfId": 922,
+      "speed": {
+        "run": 143,
+        "walk": 57
+      },
+      "stats": {
+        "accur": 4.75,
+        "atkRadius": 40,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 41,
+        "mDef": 98,
+        "pAtk": 96,
+        "pAtkRnd": 30,
+        "pDef": 120
+      },
+      "template": {
+        "ai": "FIGHTER",
+        "hostile": false,
+        "kind": "Monster",
+        "level": 26,
+        "name": "Maille Lizardman Warrior",
+        "title": ""
+      },
+      "traits": {
+        "race": "humanoid",
+        "undead": false
+      },
+      "vitals": {
+        "corpseTime": 7000,
+        "maxHp": 770,
+        "maxMp": 303,
+        "revHp": 2.77,
+        "revMp": 1.53
+      }
+    }
+  },
+  {
+    "aiType": "balanced",
+    "availability": {
+      "directSpawn": true,
+      "knownReachable": true,
+      "raidMinion": false
+    },
+    "defaultEffectiveStats": {
+      "accuracy": 65.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
+      "evasion": 60.86335345031,
+      "mAtk": 49,
+      "mDef": 106,
+      "maxHp": 859,
+      "maxMp": 334,
+      "pAtk": 113,
+      "pDef": 130,
+      "runSpeed": 132,
+      "walkSpeed": 47
+    },
+    "drops": [
+      {
+        "groupIndex": 0,
+        "items": [
+          {
+            "baseChancePercent": 70,
+            "itemId": 57,
+            "maxAmount": 201,
+            "minAmount": 102,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 70,
+                "expectedAmountPerKill": 106.05
+              },
+              "x10": {
+                "chancePercent": 100,
+                "expectedAmountPerKill": 1060.5
+              },
+              "x50": {
+                "chancePercent": 100,
+                "expectedAmountPerKill": 5302.5
+              }
+            },
+            "selectionWeightPercent": 100,
+            "sourceName": "Adena"
+          }
+        ],
+        "overallChancePercent": 70
+      },
+      {
+        "groupIndex": 1,
+        "items": [
+          {
+            "baseChancePercent": 0.0214,
+            "itemId": 432,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0214,
+                "expectedAmountPerKill": 0.000214
+              },
+              "x10": {
+                "chancePercent": 0.214,
+                "expectedAmountPerKill": 0.00214
+              },
+              "x50": {
+                "chancePercent": 1.07,
+                "expectedAmountPerKill": 0.0107
+              }
+            },
+            "selectionWeightPercent": 38.489208633094,
+            "sourceName": "Cursed Tunic"
+          },
+          {
+            "baseChancePercent": 0.0342,
+            "itemId": 465,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0342,
+                "expectedAmountPerKill": 0.000342
+              },
+              "x10": {
+                "chancePercent": 0.342,
+                "expectedAmountPerKill": 0.00342
+              },
+              "x50": {
+                "chancePercent": 1.71,
+                "expectedAmountPerKill": 0.0171
+              }
+            },
+            "selectionWeightPercent": 61.510791366906,
+            "sourceName": "Cursed Stockings"
+          }
+        ],
+        "overallChancePercent": 0.0556
+      },
+      {
+        "groupIndex": 2,
+        "items": [
+          {
+            "baseChancePercent": 0.1862,
+            "itemId": 735,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.1862,
+                "expectedAmountPerKill": 0.001862
+              },
+              "x10": {
+                "chancePercent": 1.862,
+                "expectedAmountPerKill": 0.01862
+              },
+              "x50": {
+                "chancePercent": 9.31,
+                "expectedAmountPerKill": 0.0931
+              }
+            },
+            "selectionWeightPercent": 16.230822873082,
+            "sourceName": "Potion of Alacrity"
+          },
+          {
+            "baseChancePercent": 0.149,
+            "itemId": 1875,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.149,
+                "expectedAmountPerKill": 0.00149
+              },
+              "x10": {
+                "chancePercent": 1.49,
+                "expectedAmountPerKill": 0.0149
+              },
+              "x50": {
+                "chancePercent": 7.45,
+                "expectedAmountPerKill": 0.0745
+              }
+            },
+            "selectionWeightPercent": 12.988145048815,
+            "sourceName": "Stone of Purity"
+          },
+          {
+            "baseChancePercent": 0.3725,
+            "itemId": 1879,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.3725,
+                "expectedAmountPerKill": 0.003725
+              },
+              "x10": {
+                "chancePercent": 3.725,
+                "expectedAmountPerKill": 0.03725
+              },
+              "x50": {
+                "chancePercent": 18.625,
+                "expectedAmountPerKill": 0.18625
+              }
+            },
+            "selectionWeightPercent": 32.470362622036,
+            "sourceName": "Cokes"
+          },
+          {
+            "baseChancePercent": 0.1862,
+            "itemId": 1885,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.1862,
+                "expectedAmountPerKill": 0.001862
+              },
+              "x10": {
+                "chancePercent": 1.862,
+                "expectedAmountPerKill": 0.01862
+              },
+              "x50": {
+                "chancePercent": 9.31,
+                "expectedAmountPerKill": 0.0931
+              }
+            },
+            "selectionWeightPercent": 16.230822873082,
+            "sourceName": "High Grade Suede"
+          },
+          {
+            "baseChancePercent": 0.2235,
+            "itemId": 5549,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.2235,
+                "expectedAmountPerKill": 0.002235
+              },
+              "x10": {
+                "chancePercent": 2.235,
+                "expectedAmountPerKill": 0.02235
+              },
+              "x50": {
+                "chancePercent": 11.175,
+                "expectedAmountPerKill": 0.11175
+              }
+            },
+            "selectionWeightPercent": 19.482217573222,
+            "sourceName": "Metallic Thread"
+          },
+          {
+            "baseChancePercent": 0.0298,
+            "itemId": 5550,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0298,
+                "expectedAmountPerKill": 0.000298
+              },
+              "x10": {
+                "chancePercent": 0.298,
+                "expectedAmountPerKill": 0.00298
+              },
+              "x50": {
+                "chancePercent": 1.49,
+                "expectedAmountPerKill": 0.0149
+              }
+            },
+            "selectionWeightPercent": 2.597629009763,
+            "sourceName": "Durable Metal Plate"
+          }
+        ],
+        "overallChancePercent": 1.1472
+      }
+    ],
+    "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
+    "id": 923,
+    "kind": "Monster",
+    "level": 28,
+    "minionOf": [],
+    "minions": [],
+    "name": "Maille Lizardman Shaman",
+    "progression": {
+      "baseExp": 1392.000000000288,
+      "baseSp": 74,
+      "expModifier": 1.775510204082
+    },
+    "raidBoss": false,
+    "skillIds": [],
+    "spawnIds": [
+      "spawn-923-81607296feb9"
+    ],
+    "spoils": [
+      {
+        "groupIndex": 0,
+        "items": [
+          {
+            "baseChancePercent": 0.5139,
+            "itemId": 2019,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.5139,
+                "expectedAmountPerKill": 0.005139
+              },
+              "x10": {
+                "chancePercent": 0.5139,
+                "expectedAmountPerKill": 0.05139
+              },
+              "x50": {
+                "chancePercent": 0.5139,
+                "expectedAmountPerKill": 0.25695
+              }
+            },
+            "selectionWeightPercent": 0.5139,
+            "sourceName": "Trident Edge"
+          }
+        ],
+        "overallChancePercent": 100
+      },
+      {
+        "groupIndex": 1,
+        "items": [
+          {
+            "baseChancePercent": 4.2069,
+            "itemId": 2152,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 4.2069,
+                "expectedAmountPerKill": 0.042069
+              },
+              "x10": {
+                "chancePercent": 4.2069,
+                "expectedAmountPerKill": 0.42069
+              },
+              "x50": {
+                "chancePercent": 4.2069,
+                "expectedAmountPerKill": 2.10345
+              }
+            },
+            "selectionWeightPercent": 4.2069,
+            "sourceName": "Recipe: Enchanted Necklace"
+          }
+        ],
+        "overallChancePercent": 100
+      },
+      {
+        "groupIndex": 2,
+        "items": [
+          {
+            "baseChancePercent": 0.371,
+            "itemId": 2263,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.371,
+                "expectedAmountPerKill": 0.00371
+              },
+              "x10": {
+                "chancePercent": 0.371,
+                "expectedAmountPerKill": 0.0371
+              },
+              "x50": {
+                "chancePercent": 0.371,
+                "expectedAmountPerKill": 0.1855
+              }
+            },
+            "selectionWeightPercent": 0.371,
+            "sourceName": "Recipe: Dwarven Trident"
+          }
+        ],
+        "overallChancePercent": 100
+      }
+    ],
+    "template": {
+      "base": {
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "men": 10,
+        "str": 40,
+        "wit": 20
+      },
+      "clan": {
+        "clanName": "lizardman_clan",
+        "helpRadius": 300
+      },
+      "collision": {
+        "radius": 10,
+        "size": 29
+      },
+      "equipment": {
+        "reuseTime": 0,
+        "shield": 0,
+        "weapon": 7
+      },
+      "rewards": {
+        "exp": 1.775510204082,
+        "sp": 74
+      },
+      "selfId": 923,
+      "speed": {
+        "run": 132,
+        "walk": 47
+      },
+      "stats": {
+        "accur": 4.75,
+        "atkRadius": 40,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 49,
+        "mDef": 106,
+        "pAtk": 113,
+        "pAtkRnd": 30,
+        "pDef": 130
+      },
+      "template": {
+        "ai": "BALANCED",
+        "hostile": false,
+        "kind": "Monster",
+        "level": 28,
+        "name": "Maille Lizardman Shaman",
+        "title": ""
+      },
+      "traits": {
+        "race": "humanoid",
+        "undead": false
+      },
+      "vitals": {
+        "corpseTime": 7000,
+        "maxHp": 859,
+        "maxMp": 334,
+        "revHp": 2.77,
+        "revMp": 1.53
+      }
+    }
+  },
+  {
+    "aiType": "fighter",
+    "availability": {
+      "directSpawn": true,
+      "knownReachable": true,
+      "raidMinion": false
+    },
+    "defaultEffectiveStats": {
+      "accuracy": 67.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
+      "evasion": 62.86335345031,
+      "mAtk": 58,
+      "mDef": 114,
+      "maxHp": 954,
+      "maxMp": 365,
+      "pAtk": 132,
+      "pDef": 140,
+      "runSpeed": 143,
+      "walkSpeed": 61
+    },
+    "drops": [
+      {
+        "groupIndex": 0,
+        "items": [
+          {
+            "baseChancePercent": 70,
+            "itemId": 57,
+            "maxAmount": 244,
+            "minAmount": 122,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 70,
+                "expectedAmountPerKill": 128.1
+              },
+              "x10": {
+                "chancePercent": 99.951023998243,
+                "expectedAmountPerKill": 1280.372617417496
+              },
+              "x50": {
+                "chancePercent": 99.755598782992,
+                "expectedAmountPerKill": 6389.34610205066
+              }
+            },
+            "selectionWeightPercent": 99.993000489966,
+            "sourceName": "Adena"
+          },
+          {
+            "baseChancePercent": 0.0049,
+            "itemId": 259,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0049,
+                "expectedAmountPerKill": 0.000049
+              },
+              "x10": {
+                "chancePercent": 0.048976001757,
+                "expectedAmountPerKill": 0.000489760018
+              },
+              "x50": {
+                "chancePercent": 0.244401217008,
+                "expectedAmountPerKill": 0.00244401217
+              }
+            },
+            "selectionWeightPercent": 0.006999510034,
+            "sourceName": "Single-Edged Jamadhr"
+          }
+        ],
+        "overallChancePercent": 70.0049
+      },
+      {
+        "groupIndex": 1,
+        "items": [
+          {
+            "baseChancePercent": 0.3946,
+            "itemId": 1876,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.3946,
+                "expectedAmountPerKill": 0.003946
+              },
+              "x10": {
+                "chancePercent": 3.946,
+                "expectedAmountPerKill": 0.03946
+              },
+              "x50": {
+                "chancePercent": 14.353788512604,
+                "expectedAmountPerKill": 0.143537885126
+              }
+            },
+            "selectionWeightPercent": 14.353788512604,
+            "sourceName": "Mithril Ore"
+          },
+          {
+            "baseChancePercent": 0.0789,
+            "itemId": 1877,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0789,
+                "expectedAmountPerKill": 0.000789
+              },
+              "x10": {
+                "chancePercent": 0.789,
+                "expectedAmountPerKill": 0.00789
+              },
+              "x50": {
+                "chancePercent": 2.870030191699,
+                "expectedAmountPerKill": 0.028700301917
+              }
+            },
+            "selectionWeightPercent": 2.870030191699,
+            "sourceName": "Adamantite Nugget"
+          },
+          {
+            "baseChancePercent": 0.1973,
+            "itemId": 1880,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.1973,
+                "expectedAmountPerKill": 0.001973
+              },
+              "x10": {
+                "chancePercent": 1.973,
+                "expectedAmountPerKill": 0.01973
+              },
+              "x50": {
+                "chancePercent": 7.176894256302,
+                "expectedAmountPerKill": 0.071768942563
+              }
+            },
+            "selectionWeightPercent": 7.176894256302,
+            "sourceName": "Steel"
+          },
+          {
+            "baseChancePercent": 0.263,
+            "itemId": 1881,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.263,
+                "expectedAmountPerKill": 0.00263
+              },
+              "x10": {
+                "chancePercent": 2.63,
+                "expectedAmountPerKill": 0.0263
+              },
+              "x50": {
+                "chancePercent": 9.566767305664,
+                "expectedAmountPerKill": 0.095667673057
+              }
+            },
+            "selectionWeightPercent": 9.566767305664,
+            "sourceName": "Coarse Bone Powder"
+          },
+          {
+            "baseChancePercent": 0.4384,
+            "itemId": 1882,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.4384,
+                "expectedAmountPerKill": 0.004384
+              },
+              "x10": {
+                "chancePercent": 4.384,
+                "expectedAmountPerKill": 0.04384
+              },
+              "x50": {
+                "chancePercent": 15.947037212179,
+                "expectedAmountPerKill": 0.159470372122
+              }
+            },
+            "selectionWeightPercent": 15.947037212179,
+            "sourceName": "Leather"
+          },
+          {
+            "baseChancePercent": 0.1298,
+            "itemId": 2183,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.1298,
+                "expectedAmountPerKill": 0.001298
+              },
+              "x10": {
+                "chancePercent": 1.298,
+                "expectedAmountPerKill": 0.01298
+              },
+              "x50": {
+                "chancePercent": 4.721545232985,
+                "expectedAmountPerKill": 0.04721545233
+              }
+            },
+            "selectionWeightPercent": 4.721545232985,
+            "sourceName": "Recipe: Mithril Banded Mail"
+          },
+          {
+            "baseChancePercent": 0.014,
+            "itemId": 2274,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.014,
+                "expectedAmountPerKill": 0.00014
+              },
+              "x10": {
+                "chancePercent": 0.14,
+                "expectedAmountPerKill": 0.0014
+              },
+              "x50": {
+                "chancePercent": 0.509257575206,
+                "expectedAmountPerKill": 0.005092575752
+              }
+            },
+            "selectionWeightPercent": 0.509257575206,
+            "sourceName": "Recipe: Skull Breaker"
+          },
+          {
+            "baseChancePercent": 1.2331,
+            "itemId": 6667,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 1.2331,
+                "expectedAmountPerKill": 0.012331
+              },
+              "x10": {
+                "chancePercent": 12.331,
+                "expectedAmountPerKill": 0.12331
+              },
+              "x50": {
+                "chancePercent": 44.854679713361,
+                "expectedAmountPerKill": 0.448546797134
+              }
+            },
+            "selectionWeightPercent": 44.854679713361,
+            "sourceName": "Deluxe Chest Key - Grade 3"
+          }
+        ],
+        "overallChancePercent": 2.7491
+      }
+    ],
+    "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
+    "id": 924,
+    "kind": "Monster",
+    "level": 30,
+    "minionOf": [],
+    "minions": [],
+    "name": "Maille Lizardman Matriarch",
+    "progression": {
+      "baseExp": 1708.0000000002,
+      "baseSp": 94,
+      "expModifier": 1.897777777778
+    },
+    "raidBoss": false,
+    "skillIds": [],
+    "spawnIds": [
+      "spawn-924-6284078dd456"
+    ],
+    "spoils": [
+      {
+        "groupIndex": 0,
+        "items": [
+          {
+            "baseChancePercent": 3.1603,
+            "itemId": 1900,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 3.1603,
+                "expectedAmountPerKill": 0.031603
+              },
+              "x10": {
+                "chancePercent": 3.1603,
+                "expectedAmountPerKill": 0.31603
+              },
+              "x50": {
+                "chancePercent": 3.1603,
+                "expectedAmountPerKill": 1.58015
+              }
+            },
+            "selectionWeightPercent": 3.1603,
+            "sourceName": "Enchanted Necklace Chain"
+          }
+        ],
+        "overallChancePercent": 100
+      },
+      {
+        "groupIndex": 1,
+        "items": [
+          {
+            "baseChancePercent": 2.4815,
+            "itemId": 1937,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 2.4815,
+                "expectedAmountPerKill": 0.024815
+              },
+              "x10": {
+                "chancePercent": 2.4815,
+                "expectedAmountPerKill": 0.24815
+              },
+              "x50": {
+                "chancePercent": 2.4815,
+                "expectedAmountPerKill": 1.24075
+              }
+            },
+            "selectionWeightPercent": 2.4815,
+            "sourceName": "Scale Gaiters Fragment"
+          }
+        ],
+        "overallChancePercent": 100
+      },
+      {
+        "groupIndex": 2,
+        "items": [
+          {
+            "baseChancePercent": 7.2213,
+            "itemId": 2250,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 7.2213,
+                "expectedAmountPerKill": 0.072213
+              },
+              "x10": {
+                "chancePercent": 7.2213,
+                "expectedAmountPerKill": 0.72213
+              },
+              "x50": {
+                "chancePercent": 7.2213,
+                "expectedAmountPerKill": 3.61065
+              }
+            },
+            "selectionWeightPercent": 7.2213,
+            "sourceName": "Recipe: Bone Arrow"
+          }
+        ],
+        "overallChancePercent": 100
+      }
+    ],
+    "template": {
+      "base": {
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "men": 10,
+        "str": 40,
+        "wit": 20
+      },
+      "clan": {
+        "clanName": "lizardman_clan",
+        "helpRadius": 300
+      },
+      "collision": {
+        "radius": 13,
+        "size": 37
+      },
+      "equipment": {
+        "reuseTime": 0,
+        "shield": 627,
+        "weapon": 69
+      },
+      "rewards": {
+        "exp": 1.897777777778,
+        "sp": 94
+      },
+      "selfId": 924,
+      "speed": {
+        "run": 143,
+        "walk": 61
+      },
+      "stats": {
+        "accur": 4.75,
+        "atkRadius": 40,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 58,
+        "mDef": 114,
+        "pAtk": 132,
+        "pAtkRnd": 30,
+        "pDef": 140
+      },
+      "template": {
+        "ai": "FIGHTER",
+        "hostile": true,
+        "kind": "Monster",
+        "level": 30,
+        "name": "Maille Lizardman Matriarch",
+        "title": ""
+      },
+      "traits": {
+        "race": "humanoid",
+        "undead": false
+      },
+      "vitals": {
+        "corpseTime": 7000,
+        "maxHp": 954,
+        "maxMp": 365,
+        "revHp": 2.77,
+        "revMp": 1.53
+      }
+    }
+  },
+  {
+    "aiType": "fighter",
+    "availability": {
+      "directSpawn": true,
+      "knownReachable": true,
+      "raidMinion": false
+    },
+    "defaultEffectiveStats": {
+      "accuracy": 61.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
+      "evasion": 56.86335345031,
+      "mAtk": 34,
+      "mDef": 90,
+      "maxHp": 687,
+      "maxMp": 272,
+      "pAtk": 81,
+      "pDef": 94,
+      "runSpeed": 143,
+      "walkSpeed": 79
+    },
+    "drops": [
+      {
+        "groupIndex": 0,
+        "items": [
+          {
+            "baseChancePercent": 70,
+            "itemId": 57,
+            "maxAmount": 128,
+            "minAmount": 69,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 70,
+                "expectedAmountPerKill": 68.95
+              },
+              "x10": {
+                "chancePercent": 100,
+                "expectedAmountPerKill": 689.5
+              },
+              "x50": {
+                "chancePercent": 100,
+                "expectedAmountPerKill": 3447.5
+              }
+            },
+            "selectionWeightPercent": 100,
+            "sourceName": "Adena"
+          }
+        ],
+        "overallChancePercent": 70
+      },
+      {
+        "groupIndex": 1,
+        "items": [
+          {
+            "baseChancePercent": 0.0287,
+            "itemId": 846,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0287,
+                "expectedAmountPerKill": 0.000287
+              },
+              "x10": {
+                "chancePercent": 0.287,
+                "expectedAmountPerKill": 0.00287
+              },
+              "x50": {
+                "chancePercent": 1.435,
+                "expectedAmountPerKill": 0.01435
+              }
+            },
+            "selectionWeightPercent": 8.707524271845,
+            "sourceName": "Coral Earring"
+          },
+          {
+            "baseChancePercent": 0.043,
+            "itemId": 878,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.043,
+                "expectedAmountPerKill": 0.00043
+              },
+              "x10": {
+                "chancePercent": 0.43,
+                "expectedAmountPerKill": 0.0043
+              },
+              "x50": {
+                "chancePercent": 2.15,
+                "expectedAmountPerKill": 0.0215
+              }
+            },
+            "selectionWeightPercent": 13.046116504854,
+            "sourceName": "Blue Coral Ring"
+          },
+          {
+            "baseChancePercent": 0.0216,
+            "itemId": 909,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0216,
+                "expectedAmountPerKill": 0.000216
+              },
+              "x10": {
+                "chancePercent": 0.216,
+                "expectedAmountPerKill": 0.00216
+              },
+              "x50": {
+                "chancePercent": 1.08,
+                "expectedAmountPerKill": 0.0108
+              }
+            },
+            "selectionWeightPercent": 6.553398058252,
+            "sourceName": "Blue Diamond Necklace"
+          },
+          {
+            "baseChancePercent": 0.2363,
+            "itemId": 1898,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.2363,
+                "expectedAmountPerKill": 0.002363
+              },
+              "x10": {
+                "chancePercent": 2.363,
+                "expectedAmountPerKill": 0.02363
+              },
+              "x50": {
+                "chancePercent": 11.815,
+                "expectedAmountPerKill": 0.11815
+              }
+            },
+            "selectionWeightPercent": 71.692961165049,
+            "sourceName": "Blue Diamond Necklace Gem"
+          }
+        ],
+        "overallChancePercent": 0.3296
+      },
+      {
+        "groupIndex": 2,
+        "items": [
+          {
+            "baseChancePercent": 4.0897,
+            "itemId": 1060,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 4.0897,
+                "expectedAmountPerKill": 0.040897
+              },
+              "x10": {
+                "chancePercent": 40.897,
+                "expectedAmountPerKill": 0.40897
+              },
+              "x50": {
+                "chancePercent": 31.6510785105,
+                "expectedAmountPerKill": 0.647217078922
+              }
+            },
+            "selectionWeightPercent": 43.89879993989,
+            "sourceName": "Lesser Healing Potion"
+          },
+          {
+            "baseChancePercent": 2.4538,
+            "itemId": 1867,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 2.4538,
+                "expectedAmountPerKill": 0.024538
+              },
+              "x10": {
+                "chancePercent": 24.538,
+                "expectedAmountPerKill": 0.24538
+              },
+              "x50": {
+                "chancePercent": 31.6510785105,
+                "expectedAmountPerKill": 0.388327082245
+              }
+            },
+            "selectionWeightPercent": 26.339065284129,
+            "sourceName": "Animal Skin"
+          },
+          {
+            "baseChancePercent": 2.4538,
+            "itemId": 1872,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 2.4538,
+                "expectedAmountPerKill": 0.024538
+              },
+              "x10": {
+                "chancePercent": 24.538,
+                "expectedAmountPerKill": 0.24538
+              },
+              "x50": {
+                "chancePercent": 31.6510785105,
+                "expectedAmountPerKill": 0.388327082245
+              }
+            },
+            "selectionWeightPercent": 26.339065284129,
+            "sourceName": "Animal Bone"
+          },
+          {
+            "baseChancePercent": 0.2453,
+            "itemId": 1881,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.2453,
+                "expectedAmountPerKill": 0.002453
+              },
+              "x10": {
+                "chancePercent": 2.453,
+                "expectedAmountPerKill": 0.02453
+              },
+              "x50": {
+                "chancePercent": 3.882004779313,
+                "expectedAmountPerKill": 0.038820047793
+              }
+            },
+            "selectionWeightPercent": 2.633047809193,
+            "sourceName": "Coarse Bone Powder"
+          },
+          {
+            "baseChancePercent": 0.0736,
+            "itemId": 5273,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0736,
+                "expectedAmountPerKill": 0.000736
+              },
+              "x10": {
+                "chancePercent": 0.736,
+                "expectedAmountPerKill": 0.00736
+              },
+              "x50": {
+                "chancePercent": 1.164759689186,
+                "expectedAmountPerKill": 0.011647596892
+              }
+            },
+            "selectionWeightPercent": 0.79002168266,
+            "sourceName": "Recipe: Greater Spiritshot (D) Compressed Package(100%)"
+          }
+        ],
+        "overallChancePercent": 9.3162
+      }
+    ],
+    "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
+    "id": 925,
+    "kind": "Monster",
+    "level": 24,
+    "minionOf": [],
+    "minions": [],
+    "name": "Giant Araneid",
+    "progression": {
+      "baseExp": 874.999999999872,
+      "baseSp": 44,
+      "expModifier": 1.519097222222
+    },
+    "raidBoss": false,
+    "skillIds": [],
+    "spawnIds": [
+      "spawn-925-d39166ea5a2b"
+    ],
+    "spoils": [
+      {
+        "groupIndex": 0,
+        "items": [
+          {
+            "baseChancePercent": 1.0384,
+            "itemId": 1874,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 1.0384,
+                "expectedAmountPerKill": 0.010384
+              },
+              "x10": {
+                "chancePercent": 1.0384,
+                "expectedAmountPerKill": 0.10384
+              },
+              "x50": {
+                "chancePercent": 1.0384,
+                "expectedAmountPerKill": 0.5192
+              }
+            },
+            "selectionWeightPercent": 1.0384,
+            "sourceName": "Oriharukon Ore"
+          }
+        ],
+        "overallChancePercent": 100
+      },
+      {
+        "groupIndex": 1,
+        "items": [
+          {
+            "baseChancePercent": 0.1825,
+            "itemId": 2016,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.1825,
+                "expectedAmountPerKill": 0.001825
+              },
+              "x10": {
+                "chancePercent": 0.1825,
+                "expectedAmountPerKill": 0.01825
+              },
+              "x50": {
+                "chancePercent": 0.1825,
+                "expectedAmountPerKill": 0.09125
+              }
+            },
+            "selectionWeightPercent": 0.1825,
+            "sourceName": "Composition Bow Shaft"
+          }
+        ],
+        "overallChancePercent": 100
+      },
+      {
+        "groupIndex": 2,
+        "items": [
+          {
+            "baseChancePercent": 0.3808,
+            "itemId": 2258,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.3808,
+                "expectedAmountPerKill": 0.003808
+              },
+              "x10": {
+                "chancePercent": 0.3808,
+                "expectedAmountPerKill": 0.03808
+              },
+              "x50": {
+                "chancePercent": 0.3808,
+                "expectedAmountPerKill": 0.1904
+              }
+            },
+            "selectionWeightPercent": 0.3808,
+            "sourceName": "Recipe: Temptation of Abyss"
+          }
+        ],
+        "overallChancePercent": 100
+      }
+    ],
+    "template": {
+      "base": {
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "men": 10,
+        "str": 40,
+        "wit": 20
+      },
+      "clan": {
+        "clanName": "lizardman_clan",
+        "helpRadius": 300
+      },
+      "collision": {
+        "radius": 26,
+        "size": 25.5
+      },
+      "equipment": {
+        "reuseTime": 0,
+        "shield": 0,
+        "weapon": 0
+      },
+      "rewards": {
+        "exp": 1.519097222222,
+        "sp": 44
+      },
+      "selfId": 925,
+      "speed": {
+        "run": 143,
+        "walk": 79
+      },
+      "stats": {
+        "accur": 4.75,
+        "atkRadius": 40,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 34,
+        "mDef": 90,
+        "pAtk": 81,
+        "pAtkRnd": 30,
+        "pDef": 94
+      },
+      "template": {
+        "ai": "FIGHTER",
+        "hostile": false,
+        "kind": "Monster",
+        "level": 24,
+        "name": "Giant Araneid",
+        "title": ""
+      },
+      "traits": {
+        "race": "insect",
+        "undead": false
+      },
+      "vitals": {
+        "corpseTime": 7000,
+        "maxHp": 687,
+        "maxMp": 272,
+        "revHp": 2.77,
+        "revMp": 1.53
+      }
+    }
+  },
+  {
+    "aiType": "balanced",
+    "availability": {
+      "directSpawn": true,
+      "knownReachable": true,
+      "raidMinion": false
+    },
+    "defaultEffectiveStats": {
+      "accuracy": 62.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
+      "evasion": 57.86335345031,
+      "mAtk": 37,
+      "mDef": 94,
+      "maxHp": 728,
+      "maxMp": 287,
+      "pAtk": 88,
+      "pDef": 98,
+      "runSpeed": 154,
+      "walkSpeed": 66
+    },
+    "drops": [
+      {
+        "groupIndex": 0,
+        "items": [
+          {
+            "baseChancePercent": 70,
+            "itemId": 57,
+            "maxAmount": 147,
+            "minAmount": 79,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 70,
+                "expectedAmountPerKill": 79.1
+              },
+              "x10": {
+                "chancePercent": 100,
+                "expectedAmountPerKill": 791
+              },
+              "x50": {
+                "chancePercent": 100,
+                "expectedAmountPerKill": 3955
+              }
+            },
+            "selectionWeightPercent": 100,
+            "sourceName": "Adena"
+          }
+        ],
+        "overallChancePercent": 70
+      },
+      {
+        "groupIndex": 1,
+        "items": [
+          {
+            "baseChancePercent": 0.0016,
+            "itemId": 156,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0016,
+                "expectedAmountPerKill": 0.000016
+              },
+              "x10": {
+                "chancePercent": 0.016,
+                "expectedAmountPerKill": 0.00016
+              },
+              "x50": {
+                "chancePercent": 0.08,
+                "expectedAmountPerKill": 0.0008
+              }
+            },
+            "selectionWeightPercent": 33.333333333333,
+            "sourceName": "Hand Axe"
+          },
+          {
+            "baseChancePercent": 0.0016,
+            "itemId": 167,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0016,
+                "expectedAmountPerKill": 0.000016
+              },
+              "x10": {
+                "chancePercent": 0.016,
+                "expectedAmountPerKill": 0.00016
+              },
+              "x50": {
+                "chancePercent": 0.08,
+                "expectedAmountPerKill": 0.0008
+              }
+            },
+            "selectionWeightPercent": 33.333333333333,
+            "sourceName": "Scalpel"
+          },
+          {
+            "baseChancePercent": 0.0016,
+            "itemId": 178,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0016,
+                "expectedAmountPerKill": 0.000016
+              },
+              "x10": {
+                "chancePercent": 0.016,
+                "expectedAmountPerKill": 0.00016
+              },
+              "x50": {
+                "chancePercent": 0.08,
+                "expectedAmountPerKill": 0.0008
+              }
+            },
+            "selectionWeightPercent": 33.333333333333,
+            "sourceName": "Bone Staff"
+          }
+        ],
+        "overallChancePercent": 0.0048
+      },
+      {
+        "groupIndex": 2,
+        "items": [
+          {
+            "baseChancePercent": 3.8134,
+            "itemId": 1831,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 3.8134,
+                "expectedAmountPerKill": 0.038134
+              },
+              "x10": {
+                "chancePercent": 38.134,
+                "expectedAmountPerKill": 0.38134
+              },
+              "x50": {
+                "chancePercent": 46.197911854384,
+                "expectedAmountPerKill": 0.880855585328
+              }
+            },
+            "selectionWeightPercent": 62.081203399212,
+            "sourceName": "Antidote"
+          },
+          {
+            "baseChancePercent": 1.5889,
+            "itemId": 1834,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 1.5889,
+                "expectedAmountPerKill": 0.015889
+              },
+              "x10": {
+                "chancePercent": 15.889,
+                "expectedAmountPerKill": 0.15889
+              },
+              "x50": {
+                "chancePercent": 36.701931072716,
+                "expectedAmountPerKill": 0.367019310727
+              }
+            },
+            "selectionWeightPercent": 25.866896753818,
+            "sourceName": "Emergency Dressing"
+          },
+          {
+            "baseChancePercent": 0.0953,
+            "itemId": 1875,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0953,
+                "expectedAmountPerKill": 0.000953
+              },
+              "x10": {
+                "chancePercent": 0.953,
+                "expectedAmountPerKill": 0.00953
+              },
+              "x50": {
+                "chancePercent": 2.201330499862,
+                "expectedAmountPerKill": 0.022013304999
+              }
+            },
+            "selectionWeightPercent": 1.551460293687,
+            "sourceName": "Stone of Purity"
+          },
+          {
+            "baseChancePercent": 0.2383,
+            "itemId": 1879,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.2383,
+                "expectedAmountPerKill": 0.002383
+              },
+              "x10": {
+                "chancePercent": 2.383,
+                "expectedAmountPerKill": 0.02383
+              },
+              "x50": {
+                "chancePercent": 5.50448119745,
+                "expectedAmountPerKill": 0.055044811974
+              }
+            },
+            "selectionWeightPercent": 3.879464721779,
+            "sourceName": "Cokes"
+          },
+          {
+            "baseChancePercent": 0.2288,
+            "itemId": 2178,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.2288,
+                "expectedAmountPerKill": 0.002288
+              },
+              "x10": {
+                "chancePercent": 2.288,
+                "expectedAmountPerKill": 0.02288
+              },
+              "x50": {
+                "chancePercent": 5.285041116142,
+                "expectedAmountPerKill": 0.052850411161
+              }
+            },
+            "selectionWeightPercent": 3.724807084948,
+            "sourceName": "Recipe: Dark Stockings"
+          },
+          {
+            "baseChancePercent": 0.0349,
+            "itemId": 5437,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.0349,
+                "expectedAmountPerKill": 0.000349
+              },
+              "x10": {
+                "chancePercent": 0.349,
+                "expectedAmountPerKill": 0.00349
+              },
+              "x50": {
+                "chancePercent": 0.806153561858,
+                "expectedAmountPerKill": 0.008061535619
+              }
+            },
+            "selectionWeightPercent": 0.568163318464,
+            "sourceName": "Recipe: Heavy Sword(100%)"
+          },
+          {
+            "baseChancePercent": 0.143,
+            "itemId": 5549,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.143,
+                "expectedAmountPerKill": 0.00143
+              },
+              "x10": {
+                "chancePercent": 1.43,
+                "expectedAmountPerKill": 0.0143
+              },
+              "x50": {
+                "chancePercent": 3.303150697588,
+                "expectedAmountPerKill": 0.033031506976
+              }
+            },
+            "selectionWeightPercent": 2.328004428092,
+            "sourceName": "Metallic Thread"
+          }
+        ],
+        "overallChancePercent": 6.1426
+      }
+    ],
+    "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
+    "id": 926,
+    "kind": "Monster",
+    "level": 25,
+    "minionOf": [],
+    "minions": [],
+    "name": "Poison Araneid",
+    "progression": {
+      "baseExp": 1012,
+      "baseSp": 50,
+      "expModifier": 1.6192
+    },
+    "raidBoss": false,
+    "skillIds": [],
+    "spawnIds": [
+      "spawn-926-8753c842e09d"
+    ],
+    "spoils": [
+      {
+        "groupIndex": 0,
+        "items": [
+          {
+            "baseChancePercent": 17.8367,
+            "itemId": 1869,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 17.8367,
+                "expectedAmountPerKill": 0.178367
+              },
+              "x10": {
+                "chancePercent": 17.8367,
+                "expectedAmountPerKill": 1.78367
+              },
+              "x50": {
+                "chancePercent": 17.8367,
+                "expectedAmountPerKill": 8.91835
+              }
+            },
+            "selectionWeightPercent": 17.8367,
+            "sourceName": "Iron Ore"
+          }
+        ],
+        "overallChancePercent": 100
+      },
+      {
+        "groupIndex": 1,
+        "items": [
+          {
+            "baseChancePercent": 1.1891,
+            "itemId": 1875,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 1.1891,
+                "expectedAmountPerKill": 0.011891
+              },
+              "x10": {
+                "chancePercent": 1.1891,
+                "expectedAmountPerKill": 0.11891
+              },
+              "x50": {
+                "chancePercent": 1.1891,
+                "expectedAmountPerKill": 0.59455
+              }
+            },
+            "selectionWeightPercent": 1.1891,
+            "sourceName": "Stone of Purity"
+          }
+        ],
+        "overallChancePercent": 100
+      },
+      {
+        "groupIndex": 2,
+        "items": [
+          {
+            "baseChancePercent": 0.237,
+            "itemId": 2018,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 0.237,
+                "expectedAmountPerKill": 0.00237
+              },
+              "x10": {
+                "chancePercent": 0.237,
+                "expectedAmountPerKill": 0.0237
+              },
+              "x50": {
+                "chancePercent": 0.237,
+                "expectedAmountPerKill": 0.1185
+              }
+            },
+            "selectionWeightPercent": 0.237,
+            "sourceName": "Assassin Knife Edge"
+          }
+        ],
+        "overallChancePercent": 100
+      }
+    ],
+    "template": {
+      "base": {
+        "con": 43,
+        "dex": 30,
+        "int": 21,
+        "men": 10,
+        "str": 40,
+        "wit": 20
+      },
+      "clan": {
+        "clanName": "lizardman_clan",
+        "helpRadius": 300
+      },
+      "collision": {
+        "radius": 27,
+        "size": 25.5
+      },
+      "equipment": {
+        "reuseTime": 0,
+        "shield": 0,
+        "weapon": 0
+      },
+      "rewards": {
+        "exp": 1.6192,
+        "sp": 50
+      },
+      "selfId": 926,
+      "speed": {
+        "run": 154,
+        "walk": 66
+      },
+      "stats": {
+        "accur": 4.75,
+        "atkRadius": 40,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 37,
+        "mDef": 94,
+        "pAtk": 88,
+        "pAtkRnd": 30,
+        "pDef": 98
+      },
+      "template": {
+        "ai": "BALANCED",
+        "hostile": false,
+        "kind": "Monster",
+        "level": 25,
+        "name": "Poison Araneid",
+        "title": ""
+      },
+      "traits": {
+        "race": "insect",
+        "undead": false
+      },
+      "vitals": {
+        "corpseTime": 7000,
+        "maxHp": 728,
+        "maxMp": 287,
+        "revHp": 2.77,
+        "revMp": 1.53
+      }
+    }
+  },
+  {
     "aiType": "balanced",
     "availability": {
       "directSpawn": true,

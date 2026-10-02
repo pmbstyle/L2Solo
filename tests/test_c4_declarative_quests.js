@@ -43,7 +43,7 @@ async function main() {
         s.activeNpcTalk={selfId:d.startNpc,objectId:1};
         s.actor.level=d.minLevel-1;
         assert.equal(await Service.onEvent(s,{questId:d.id,name:'start'}),false,`Q${d.id} level gate`);
-        s.actor.level=20;
+        s.actor.level=Math.max(20,d.minLevel);
         if(d.race!==undefined) {
             s.actor.race=(d.race+1)%5;
             assert.equal(await Service.onEvent(s,{questId:d.id,name:'start'}),false,`Q${d.id} race gate`);
@@ -55,7 +55,15 @@ async function main() {
         }
         await Service.onEvent(s,{questId:d.id,name:'start'});
         let state=s.questStates.get(d.id);
-        assert.equal(state.state,'started');
+        assert.equal(state.state,'started',`Q${d.id} starts open`);
+        // 298/326/328/369/370/380 are payment tables and gated chains; the
+        // generic talk-chain driver below cannot walk them. They are driven
+        // end to end in tests/test_c4_middle_quests.js instead, but the
+        // start NPC really has to stand in the world for every definition.
+        if([298,326,328,369,370,380].includes(d.id)) {
+            assert(npcIsSpawned(d.startNpc), `Q${d.id} start NPC is spawned`);
+            continue;
+        }
         const objective=d.stages[0];
         const random=Math.random;
         if(d.id===325) {
