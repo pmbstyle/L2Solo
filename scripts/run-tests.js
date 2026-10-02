@@ -201,6 +201,7 @@ const tests = [
     'tests/test_market_trade_history.js',
     'tests/test_observer_market_model.js',
     'tests/test_afk_trade_service.js',
+    'tests/test_afk_trade_hot_counterparty.js',
     'tests/test_afk_trade_bot_matching.js',
     'tests/test_bot_afk_market_state.js',
     'tests/test_trade_store_atomicity.js',
