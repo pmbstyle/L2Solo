@@ -7,7 +7,38 @@ class LifeStateCache extends Map {
         this.cells = new Map();
         this.cellById = new Map();
         this.revision = 0;
-        this.ordered = null;
+        // Newest updatedAt first; equal times keep Map order (first insertion),
+        // as a stable sort of values() would. Kept in place on every write:
+        // a commit moves one entry instead of re-sorting the whole population.
+        this.ordered = [];
+        this.orderEntries = new Map();
+        this.nextSequence = 0;
+    }
+
+    orderIndex(at, sequence) {
+        let low = 0, high = this.ordered.length;
+        while (low < high) {
+            const middle = (low + high) >> 1;
+            const entry = this.ordered[middle];
+            if (entry.at > at || (entry.at === at && entry.sequence < sequence)) low = middle + 1;
+            else high = middle;
+        }
+        return low;
+    }
+
+    removeOrder(id) {
+        const entry = this.orderEntries.get(id);
+        if (!entry) return;
+        let index = this.orderIndex(entry.at, entry.sequence);
+        if (this.ordered[index] !== entry) index = this.ordered.indexOf(entry);
+        this.ordered.splice(index, 1);
+        this.orderEntries.delete(id);
+    }
+
+    insertOrder(id, state, sequence) {
+        const entry = { at: Number(state.updatedAt || 0), sequence, state };
+        this.ordered.splice(this.orderIndex(entry.at, sequence), 0, entry);
+        this.orderEntries.set(id, entry);
     }
 
     removeCell(id) {
@@ -21,7 +52,10 @@ class LifeStateCache extends Map {
 
     set(id, state) {
         this.removeCell(id);
+        const sequence = this.orderEntries.get(id)?.sequence ?? this.nextSequence++;
+        this.removeOrder(id);
         super.set(id, state);
+        this.insertOrder(id, state, sequence);
         if (state.phase === 'cold' && state.activity !== 'pk_hunting') {
             const x = Number(state.loc?.locX || 0), y = Number(state.loc?.locY || 0);
             if (Number.isFinite(x) && Number.isFinite(y)) {
@@ -32,25 +66,25 @@ class LifeStateCache extends Map {
             }
         }
         this.revision++;
-        this.ordered = null;
         return this;
     }
 
     delete(id) {
         this.removeCell(id);
+        this.removeOrder(id);
         const removed = super.delete(id);
-        if (removed) { this.revision++; this.ordered = null; }
+        if (removed) this.revision++;
         return removed;
     }
 
     clear() {
         super.clear(); this.cells.clear(); this.cellById.clear();
-        this.revision++; this.ordered = null;
+        this.ordered = []; this.orderEntries.clear();
+        this.revision++;
     }
 
     recent(limit) {
-        this.ordered ||= [...this.values()].sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
-        return this.ordered.slice(0, limit);
+        return this.ordered.slice(0, limit).map((entry) => entry.state);
     }
 
     near(loc, radius, limit) {
