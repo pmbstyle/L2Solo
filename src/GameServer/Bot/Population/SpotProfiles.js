@@ -336,6 +336,13 @@ function shouldLeaveOverCapacity(state, spot, occupancy) {
     return true;
 }
 
+// A solo fallback search must not become a travel loop between comparable
+// camps: the bot keeps its current camp when it is one of the candidates.
+function currentSpotAmong(candidates, currentSpot, mustRelocate) {
+    if (!currentSpot || mustRelocate) return false;
+    return candidates.some((profile) => profile.id === currentSpot.id);
+}
+
 const SpotProfiles = {
     cache: null,
 
@@ -389,8 +396,9 @@ const SpotProfiles = {
             maxReservationGroups: MAX_CLAN_EQUIPMENT_RESERVATIONS_PER_SPOT
         } : {};
         const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
+        const mode = LevelingRoutes.modeForState(state, options);
         const routeOptions = { ...options, occupancy, excludedSpotIds, capacityUnits, ...reservationOptions,
-            matchupProfiles: TargetMatchup.stateProfiles(state, { ...options, mode: LevelingRoutes.modeForState(state, options) }) };
+            matchupProfiles: TargetMatchup.stateProfiles(state, { ...options, mode }) };
         const currentMatch = currentSpot ? LevelingRoutes.scoreSpot(currentSpot, state, routeOptions) : null;
         // Staying on the leader's ground still admits any teammates reserved
         // elsewhere. Check them before either current-spot shortcut, while
@@ -465,10 +473,17 @@ const SpotProfiles = {
             : candidates;
         let routeCandidates = (relocationCandidates.length ? relocationCandidates : candidates)
             .filter((profile) => hasCapacityForStates(profile, capacityStates, occupancy, reservationOptions));
+        let suitable = routeCandidates.filter((profile) => SpotService.isSuitable(profile, targetLevel, options));
+        const soloSearch = !['party', 'duo'].includes(mode);
+        // Without a suitable camp a solo bot hunts allowed ground near its
+        // level: like the easier-ground fallback below, it keeps its current camp.
+        if (soloSearch && !suitable.length && currentSpotAmong(routeCandidates, currentSpot, mustRelocate)) {
+            return LevelingRoutes.decorateSpot(currentSpot, currentMatch);
+        }
         // A weak kit can make every camp near the character's level unsafe.
         // Search easier ground using the same combat and capacity checks;
         // otherwise a perfectly healthy bot repeats missing_spot forever.
-        if (!routeCandidates.length && !['party', 'duo'].includes(LevelingRoutes.modeForState(state, options))) {
+        if (!routeCandidates.length && soloSearch) {
             const recoveryState = { ...state, stats: { ...state.stats, equipmentPlan: null } };
             routeCandidates = profiles.filter(profile => profile.raidBoss !== true
                 && profile.maxLevel >= targetLevel - 16
@@ -476,11 +491,11 @@ const SpotProfiles = {
                 && !excludedSpotIds.has(String(profile.id))
                 && hasCapacityForStates(profile, capacityStates, occupancy, reservationOptions)
                 && LevelingRoutes.isSpotAllowedForState(profile, recoveryState, routeOptions));
-            if (currentSpot && !mustRelocate && routeCandidates.some(profile => profile.id === currentSpot.id)) {
+            if (currentSpotAmong(routeCandidates, currentSpot, mustRelocate)) {
                 return LevelingRoutes.decorateSpot(currentSpot, currentMatch);
             }
+            suitable = routeCandidates.filter((profile) => SpotService.isSuitable(profile, targetLevel, options));
         }
-        const suitable = routeCandidates.filter((profile) => SpotService.isSuitable(profile, targetLevel, options));
         const guided = LevelingRoutes.bestSpot(suitable.length ? suitable : routeCandidates, state, routeOptions);
 
         if (guided?.spot) return guided.spot;

@@ -267,6 +267,7 @@ const tests = [
     'tests/test_bot_name_migration.js',
     'tests/test_population_seed_planner.js',
     'tests/test_spot_profile_state_priority.js',
+    'tests/test_spot_stay_unsuitable.js',
     'tests/test_spot_matchup_memo.js',
     'tests/test_spot_matchup_shared_verdicts.js',
     'tests/test_bot_hunting_ground_rules.js',
