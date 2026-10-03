@@ -19,6 +19,10 @@ const INVENTORY_SLOT_LIMIT = 80;
 // minutes (live test 2026-10-03: ~9,800 forced trips in 15.7 world hours).
 const NPC_ONLY_CLEANUP_MIN_SLOTS = 20;
 const NPC_SURPLUS_GEAR_MIN_SLOTS = 20;
+// A half-full bag sends the bot to sell, as a player would: on the cold path the forced
+// trip is the only thing that takes a hunting bot to town, and the thresholds above
+// alone stopped every sale for hours (live, 2026-10-03: 2,513 -> 21 static sales in 2 h).
+const HALF_FULL_CLEANUP_SLOTS = 40;
 const CLAN_PROGRESSION_ITEM_IDS = new Set([1419]);
 const GRADE_ORDER = Object.freeze({ none: 0, d: 1, c: 2, b: 3, a: 4, s: 5 });
 const SHOT_PRODUCT_RANK = Object.freeze({
@@ -235,6 +239,7 @@ function inventoryCleanupNeed(state = {}, options = {}) {
                 && item.basePrice <= 50000 ? Number(item.count || 0) : 0);
         }, 0) : 0;
     const accumulatedSurplus = surplusGearSlots >= NPC_SURPLUS_GEAR_MIN_SLOTS;
+    const halfFull = isTradeEligible(state) && slots >= HALF_FULL_CLEANUP_SLOTS;
     // A normal market retry cooldown prevents pointless town loops. Residual
     // NPC-only books/recipes become deterministic cleanup work once a
     // generated character reaches its trading phase. Before that point they
@@ -243,13 +248,14 @@ function inventoryCleanupNeed(state = {}, options = {}) {
     if (Number(state.stats?.marketSellRetryAfter || 0) > timestamp
         && !overCapacity
         && !accumulatedNpcOnly) return null;
-    if (!overCapacity && !accumulatedNpcOnly && !accumulatedSurplus) return null;
+    if (!overCapacity && !accumulatedNpcOnly && !accumulatedSurplus && !halfFull) return null;
     return {
         reason: overCapacity ? 'inventory_capacity'
-            : accumulatedNpcOnly ? 'npc_only_inventory' : 'market_surplus_inventory',
+            : accumulatedNpcOnly ? 'npc_only_inventory'
+            : halfFull ? 'inventory_half_full' : 'market_surplus_inventory',
         slots,
         npcOnlySlots,
-        ...(overCapacity || accumulatedNpcOnly ? {} : { surplusGearSlots }),
+        ...(overCapacity || accumulatedNpcOnly || halfFull ? {} : { surplusGearSlots }),
         limit: INVENTORY_SLOT_LIMIT
     };
 }

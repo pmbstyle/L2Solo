@@ -99,6 +99,20 @@ assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventor
     { reason: 'npc_only_inventory', slots: 20, npcOnlySlots: 20, limit: ItemDisposition.INVENTORY_SLOT_LIMIT },
 'twenty NPC-only slots form one NPC cleanup trip');
 
+// A half-full bag (40 of 80 slots) sends the bot to sell whatever it carries (user, 2026-10-03).
+const mixedBag = (slots) => Object.fromEntries(Array.from({ length: slots }, (_, index) => {
+    const selfId = 1864 + index;
+    return [selfId, { selfId, name: `Material ${selfId}`, kind: 'Other.Material', stackable: true, amount: 1 }];
+}));
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: mixedBag(39) }, { now }), null,
+'a bag below half must not interrupt farming');
+assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: mixedBag(40) }, { now }),
+    { reason: 'inventory_half_full', slots: 40, npcOnlySlots: 0, limit: ItemDisposition.INVENTORY_SLOT_LIMIT },
+'a half-full bag forms one market trip');
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: mixedBag(40),
+    stats: { marketSellRetryAfter: now + 60 * 60 * 1000 } }, { now }), null,
+'the half-full trip respects the market retry cooldown');
+
 const boneHelmet = DataCache.items.find((item) => Number(item.selfId) === 45);
 const surplusInventory = (amount) => ({
     [boneHelmet.selfId]: {
