@@ -26,6 +26,9 @@ function pickupItem(session, actor, item) {
     const allocations = selfId === 57
         ? PartyCompanionService.adenaAllocations(session, amount, canonicalItem)
         : [{ session: PartyCompanionService.resolveLootSession(session, selfId, canonicalItem), amount }];
+
+    const partySessions = PartyCompanionService.adenaAllocations(session, 100, canonicalItem).map((a) => a.session);
+
     // Validate every recipient before claiming the drop, so a stale session
     // cannot crash the award or consume loot without receiving it.
     if (!allocations.length || allocations.some((entry) => !entry.session?.actor?.backpack ||
@@ -51,6 +54,21 @@ function pickupItem(session, actor, item) {
     const recipientSession = allocations[0].session;
     this.purchaseItem(recipientSession, selfId, amount, claimedItem.fetchPetData?.() ? { petData: claimedItem.fetchPetData() } : {});
     transmitPickup(recipientSession, selfId, amount);
+
+    if (partySessions.length > 1) {
+        try {
+            const actorName = recipientSession?.actor?.fetchName?.() || recipientSession?.actor?.name || 'Party Member';
+            const textPlayer = { kind: ConsoleText.kind.text, value: String(actorName) };
+            const textItem   = { kind: ConsoleText.kind.item, value: Number(selfId) };
+            const textAmount = { kind: ConsoleText.kind.number, value: Number(amount) };
+            const caption = amount > 1 ? 300 : 299;
+            const params  = amount > 1 ? [textPlayer, textItem, textAmount] : [textPlayer, textItem];
+            partySessions.forEach((p) => {
+                if (p && p !== recipientSession && typeof p.dataSendToMe === 'function') ConsoleText.transmit(p, caption, params);
+            });
+        } catch (e) {}
+    }
+
     return true;
 }
 
