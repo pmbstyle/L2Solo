@@ -37,10 +37,14 @@ async function run() {
         loc: { locX: 1, locY: 2, locZ: 3 }, vitals: {}, timing: {} };
     await BotLifeState.upsertState(buyerState, 'hot_activation');
     let storeType = 3;
+    const broadcasts = [];
+    const ServerResponse = invoke('GameServer/Network/Response');
+    ServerResponse.charInfo = () => Buffer.from('charInfo');
     const session = { coldMarketState: { ...buyerState }, actor: {
         fetchPrivateStore: () => buyLive,
         setPrivateStoreType: (type) => { storeType = type; },
         setPrivateStore: () => {},
+        session: { dataSendToOthers: (packet) => broadcasts.push(String(packet)) },
         backpack: { fetchItems: () => [] }
     } };
     AfkTrade.findOwnerProjection = (ownerId) => (Number(ownerId) === SELLER
@@ -59,6 +63,7 @@ async function run() {
     assert.strictEqual(result.trades.length, 1);
     assert.deepStrictEqual(buyLive.items, [], 'the bought line leaves the live buy store');
     assert.strictEqual(storeType, 0, 'a sold-out hot buy store closes, as after a player\'s sale');
+    assert.deepStrictEqual(broadcasts, ['charInfo'], 'and nearby players see it closed');
     assert.strictEqual(BotLifeState.snapshot(BUYER).phase, 'hot', 'the buyer row stays hot');
 
     // A cold buy order whose owner was activated while the trade ran: the offer

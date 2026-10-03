@@ -206,9 +206,10 @@ function closeSoldOutStore(actor, store) {
 function syncLiveBuyerSession(offer, buyer) {
     if (!offer?.session) return;
     offer.session.coldMarketState = buyer;
-    const liveStore = offer.session.actor?.fetchPrivateStore?.();
+    const actor = offer.session.actor;
+    const liveStore = actor?.fetchPrivateStore?.();
     if (liveStore) liveStore.items = (buyer.stats?.marketStore?.items || []).map((item) => ({ ...item }));
-    if (!buyer.stats?.marketStore) offer.session.actor?.setPrivateStoreType?.(0);
+    if (!buyer.stats?.marketStore && actor) closeSoldOutStore(actor, liveStore || {});
 }
 
 async function syncSellerStoreAfterSale(sellerState, selfId, qty, session = null) {
@@ -347,12 +348,7 @@ async function settleLine(sellerState, line, town, options = {}) {
     } catch (error) {
         utils.infoWarn('BotMarket', 'dynamic WTB finalization failed after committed trade for %s: %s', buyerState.name, error?.message || String(error));
     }
-    if (offer.session) {
-        offer.session.coldMarketState = buyer;
-        const liveStore = offer.session.actor?.fetchPrivateStore?.();
-        if (liveStore) liveStore.items = (buyer.stats?.marketStore?.items || []).map((item) => ({ ...item }));
-        if (!buyer.stats?.marketStore) offer.session.actor?.setPrivateStoreType?.(0);
-    }
+    syncLiveBuyerSession(offer, buyer);
     MarketTelemetry.dynamicBuyerSale?.(offer, qty, {
         sellerCharacterId: seller.characterId,
         sellerName: seller.name,
