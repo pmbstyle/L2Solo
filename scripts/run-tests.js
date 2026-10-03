@@ -320,6 +320,7 @@ const tests = [
     'tests/test_bot_craft_wait_recovery.js',
     'tests/test_bot_craft_telemetry.js',
     'tests/test_bot_cold_market_purchase.js',
+    'tests/test_cold_purchase_failure_hot_bot.js',
     'tests/test_cold_inventory_jewelry.js',
     'tests/test_cold_inventory_instance_sync.js',
     'tests/test_bot_cold_market_listing.js',

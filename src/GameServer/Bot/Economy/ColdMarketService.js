@@ -9,6 +9,17 @@ const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 
 const RETRY_DELAY_MS = 15 * 60 * 1000;
 
+// A failed purchase writes the bot's pre-trade state back as cold. While the
+// job awaited the trade the bot may have been activated: its row is hot and
+// belongs to the actor in the world (the AFK sync's own guard,
+// AfkTradeService.syncColdCharacter), and a cold write here would roll its
+// wallet back although the items moved. The hot row stays as it is.
+function persistUnlessHot(state, reason) {
+    const current = LifeState.snapshot(state.characterId);
+    if (current?.phase === 'hot') return Promise.resolve(current);
+    return LifeState.upsertState(state, reason);
+}
+
 function retryAfterFailedPurchase(state, goal, reason) {
     if (reason === 'no_affordable_offer') MarketTelemetry.noOffer();
     else if (reason === 'offer_changed') MarketTelemetry.offerChanged();
@@ -30,7 +41,7 @@ function retryAfterFailedPurchase(state, goal, reason) {
     };
     const wanted = TradeChat.maybeAnnounceWanted(retryState, goal);
     const returnState = GoalExecutor.finishMarketVisit(wanted.state) || wanted.state;
-    return LifeState.upsertState(returnState, 'market_no_offer_return').then((saved) => ({
+    return persistUnlessHot(returnState, 'market_no_offer_return').then((saved) => ({
         state: saved || returnState,
         purchased: false,
         reason,
@@ -52,7 +63,7 @@ function finishBlockedPurchase(state, goal, reason) {
     }
     const completedState = { ...state, stats, timing: { ...(state.timing || {}), nextResolveAt: Date.now() } };
     const returning = GoalExecutor.finishMarketVisit(completedState) || completedState;
-    return LifeState.upsertState(returning, `market_purchase_${reason}`).then((saved) => (
+    return persistUnlessHot(returning, `market_purchase_${reason}`).then((saved) => (
         GoalState.clear(state.characterId, 'completed').then(() => ({
             state: saved || returning,
             purchased: false,
