@@ -21,7 +21,7 @@ Support, updates, and communication. Join the Discord to stay up to date with de
 ⚔️ [Game client](https://drive.google.com/file/d/1u0nW3m9c6Hql8sR9POQAcvglxIno23lv/view?usp=sharing)
 Clean C4 client protocol 656
 
-🧩 [L2Solo client mod](https://drive.google.com/file/d/1kDHcZubwtFvI4h8C93YDpE9Ctasll56Z/view?usp=sharing)
+🧩 [L2Solo client mod](https://drive.google.com/file/d/1u7zzKEUqDHQCBojFr3MeyYzDfWt4vkeY/view?usp=sharing)
 Optional but recommended for a better experience
 
 
@@ -35,6 +35,7 @@ Optional but recommended for a better experience
 
 
 ## Latest updates
+- **2026-10-03** Bot and performance fixes, player-led raids, better observer, quests and more
 - **2026-09-29** Market, recipes, bot shoulshots craft, paid buffs, fixes and improvements
 - **2026-09-26** Bot raid boss farm, player bot party join, SA, fixes and updates
 - **2026-09-22** Bot progression, clan party, craft, trading fixes; realistic bot and clan names
@@ -158,7 +159,7 @@ See full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 - Complete Lineage 2 C4 experience
 
 <p align="center">
-<img src="https://github.com/user-attachments/assets/fe2765b5-193b-411b-a208-f466e10ed2e2" />
+<img src="https://github.com/user-attachments/assets/99695c45-80e8-4300-afa6-cada58ccd3bd" />
 </p>
 
 ## 🎮 Wanna play now?
@@ -195,7 +196,7 @@ Custom mirrors and external geodata directories can be configured with `L2NODE_G
 
 Committed defaults live in `config/default.ini`.
 
-Private local overrides go in ignored `config/local.ini`. This is where API keys and a machine-specific SQLite path belong.
+Private local overrides go in `config/local.ini`. This is where API keys and a machine-specific SQLite path belong.
 
 Example:
 
