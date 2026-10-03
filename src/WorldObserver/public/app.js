@@ -2,12 +2,23 @@ const ActorFilters = window.WorldObserverActorFilters;
 const Leaderboards = window.WorldObserverLeaderboards;
 const WorldState = window.WorldObserverWorldState;
 const MapClusters = window.WorldObserverMapClusters;
+const MapViewport = window.WorldObserverMapViewport;
 const Router = window.WorldObserverSpaRouter;
 const UiLanguage = window.WorldObserverUiLanguage;
 const Relationships = window.WorldObserverRelationships;
 
 let playerPages = null;
 let mapControls = null;
+let activeMapMetrics = null;
+const scheduleMapViewportRender = MapViewport.frameRenderer(() => {
+    setViewBox();
+    withMapMetrics(() => {
+        renderLabels();
+        renderPoints();
+        mapControls?.renderMarker();
+    });
+    saveMapPreferences();
+}, (render) => requestAnimationFrame(render));
 
 const state = {
     snapshot: null,
@@ -551,27 +562,25 @@ function clientToMapPoint(clientX, clientY) {
 }
 
 function mapViewportMetrics(viewport = state.viewport || { x: 0, y: 0, width: mapMeta().width, height: mapMeta().height }) {
-    const rect = els.worldMap.getBoundingClientRect();
-    const scale = Math.max(0.0001, Math.min(rect.width / viewport.width, rect.height / viewport.height));
-    const renderedWidth = viewport.width * scale;
-    const renderedHeight = viewport.height * scale;
-    return {
-        rect,
-        scale,
-        left: rect.left + (rect.width - renderedWidth) / 2,
-        top: rect.top + (rect.height - renderedHeight) / 2
-    };
+    return MapViewport.metrics(viewport, els.worldMap.getBoundingClientRect());
+}
+
+function withMapMetrics(render) {
+    if (activeMapMetrics) return render();
+    activeMapMetrics = mapViewportMetrics();
+    try { return render(); }
+    finally { activeMapMetrics = null; }
+}
+
+function visibleMapViewport() {
+    return (activeMapMetrics || mapViewportMetrics()).visible;
 }
 
 function applyViewport(viewport) {
     state.fit = false;
     els.fitButton.classList.remove('is-live');
     state.viewport = clampViewport(viewport);
-    setViewBox();
-    renderLabels();
-    renderPoints();
-    saveMapPreferences();
-    mapControls?.renderMarker();
+    scheduleMapViewportRender();
 }
 
 function phaseColor(item) {
@@ -2096,7 +2105,7 @@ function clusterCellSize() {
 }
 
 function screenUnits(pixels) {
-    return pixels / mapViewportMetrics().scale;
+    return pixels / (activeMapMetrics || mapViewportMetrics()).scale;
 }
 
 function pointHitElement(screenSize = 30) {
@@ -2118,7 +2127,7 @@ function clusterActors(items) {
     }).filter(Boolean);
     const groups = MapClusters.clusterProjected(projected, {
         cellSize: clusterCellSize(),
-        viewport: state.viewport,
+        viewport: visibleMapViewport(),
         margin: screenUnits(72)
     });
 
@@ -2238,6 +2247,10 @@ function renderCluster(cluster) {
 }
 
 function renderPoints() {
+    return withMapMetrics(renderMapPoints);
+}
+
+function renderMapPoints() {
     els.pointsLayer.innerHTML = '';
     if (!state.snapshot) {
         renderRaidBossPoints();
@@ -2253,6 +2266,10 @@ function renderPoints() {
 }
 
 function renderRaidBossPoints() {
+    return withMapMetrics(renderRaidBossMapPoints);
+}
+
+function renderRaidBossMapPoints() {
     if (!state.showMapRaids && state.phase !== 'raidbosses' && !state.selectedRaidBossId) { els.raidBossLayer.innerHTML = ''; return; }
     if (!els.raidBossLayer) return;
     els.raidBossLayer.innerHTML = '';
@@ -2265,7 +2282,7 @@ function renderRaidBossPoints() {
     const clusters = state.showMapRaids || state.phase === 'raidbosses'
         ? MapClusters.clusterProjected(bosses.map((boss) => ({ boss, point: project(boss.location?.area?.mapAnchor || boss.loc) })), {
             cellSize: screenUnits(48),
-            viewport: state.viewport,
+            viewport: visibleMapViewport(),
             margin: screenUnits(64)
         })
         : bosses.map((boss) => ({ members: [{ boss, point: project(boss.location?.area?.mapAnchor || boss.loc) }], point: project(boss.location?.area?.mapAnchor || boss.loc), size: 1 }));
@@ -2322,6 +2339,10 @@ function renderKnowledgeNpcScope() {
 }
 
 function renderKnowledgeNpcPoints() {
+    return withMapMetrics(renderKnowledgeNpcMapPoints);
+}
+
+function renderKnowledgeNpcMapPoints() {
     if (!els.npcSpawnLayer) return;
     els.npcSpawnLayer.innerHTML = '';
     renderKnowledgeNpcScope();
@@ -2331,7 +2352,7 @@ function renderKnowledgeNpcPoints() {
     const projected = locations.map((location) => ({ location, point: project(location) }));
     const clusters = MapClusters.clusterProjected(projected, {
         cellSize: screenUnits(42),
-        viewport: state.viewport,
+        viewport: visibleMapViewport(),
         margin: screenUnits(54)
     });
     const viewportWidth = state.viewport?.width || 99999;
@@ -3968,9 +3989,11 @@ els.actorList.addEventListener('click', (event) => {
 
 els.worldMap.addEventListener('wheel', (event) => {
     event.preventDefault();
+    if (!event.deltaY) return;
     const viewport = state.viewport || { x: 0, y: 0, width: mapMeta().width, height: mapMeta().height };
     const focus = clientToMapPoint(event.clientX, event.clientY);
-    const zoomFactor = event.deltaY < 0 ? 0.82 : 1.22;
+    const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? els.worldMap.clientHeight : 1);
+    const zoomFactor = Math.exp(clamp(delta, -100, 100) * 0.002);
     const nextWidth = viewport.width * zoomFactor;
     const nextHeight = viewport.height * zoomFactor;
     const focusRatioX = (focus.x - viewport.x) / viewport.width;
@@ -4060,7 +4083,8 @@ document.addEventListener('keydown', (event) => {
 window.WorldObserverShell.getActors = actors;
 playerPages = window.WorldObserverPlayerPages.create({ getSnapshot: () => state.snapshot, getActors: actors, getClans: clanItems, rememberRoute: (route) => commitRoute(route, { replace: true }),
     navigate: (route) => { commitRoute(route); applyRoute(route); }, activityLabel, roleLabel });
-mapControls = window.WorldObserverMapControls.create({ state, getMeta: mapMeta, project: worldToMap, applyViewport, renderLabels, renderPoints, renderRaids: renderRaidBossPoints,
+mapControls = window.WorldObserverMapControls.create({ state, getMeta: mapMeta, getMetrics: () => activeMapMetrics || mapViewportMetrics(), project: worldToMap,
+    applyViewport, renderViewport: scheduleMapViewportRender, renderLabels, renderRaids: renderRaidBossPoints,
     getActors: actors, getSelected: selectedActor, navigate: (route) => { commitRoute(route); if (route.name !== 'world') applyRoute(route); } });
 window.addEventListener('observer:navigate', (event) => {
     if (event.detail.name === 'not-found' || event.detail.name === 'market' || event.detail.name.startsWith('knowledge-')) return;

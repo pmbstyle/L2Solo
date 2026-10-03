@@ -614,6 +614,7 @@ const tests = [
     'tests/test_world_observer_filters.js',
       'tests/test_world_observer_leaderboards.js',
       'tests/test_world_observer_map_clusters.js',
+      'tests/test_world_observer_map_viewport.js',
       'tests/test_world_observer_raid_bosses.js',
     'tests/test_world_observer_cache.js',
       'tests/test_world_observer_projection.js',

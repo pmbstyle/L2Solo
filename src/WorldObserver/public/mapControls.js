@@ -1,6 +1,6 @@
 (function exposeMapControls(root) {
     function create(options) {
-        const { state, getMeta, project, applyViewport, renderLabels, renderPoints, renderRaids, getActors, getSelected, navigate } = options;
+        const { state, getMeta, getMetrics, project, applyViewport, renderViewport, renderLabels, renderRaids, getActors, getSelected, navigate } = options;
         const destination = document.getElementById('mapDestination');
         const followButton = document.getElementById('mapFollowButton');
         let destinationSignature = '', preferences = null, destinationPlace = null;
@@ -12,9 +12,7 @@
             marker.replaceChildren();
             if (!destinationPlace) return;
             const point = project(destinationPlace.loc);
-            const view = state.viewport || getMeta();
-            const rect = svg.getBoundingClientRect();
-            const units = Math.max(view.width / Math.max(1, rect.width), view.height / Math.max(1, rect.height));
+            const units = 1 / getMetrics().scale;
             const circle = document.createElementNS(svg.namespaceURI, 'circle');
             circle.setAttribute('cx', point.x); circle.setAttribute('cy', point.y); circle.setAttribute('r', units * 10);
             circle.setAttribute('stroke-width', units * 3);
@@ -79,7 +77,7 @@
             const aspect = Math.max(.5, rect.width / Math.max(1, rect.height));
             const height = 2800, width = height * aspect;
             applyViewport({ x: point.x - width / 2, y: point.y - height / 2, width, height });
-            destination.value = value; renderMarker();
+            destination.value = value;
             const old = document.getElementById('destinationGuide'); old?.remove();
             if (place.kind === 'Dungeon') {
                 const guide = document.createElement('a'); guide.id = 'destinationGuide'; guide.className = 'app-button'; guide.dataset.appRoute = '';
@@ -123,7 +121,7 @@
         document.querySelector('.map-toolbar').addEventListener('click', save);
         document.getElementById('worldMap').addEventListener('pointerdown', () => { state.followCharacter = false; followButton.setAttribute('aria-pressed', 'false'); });
         window.addEventListener('pagehide', save);
-        const observer = new ResizeObserver(() => { if (document.body.dataset.view === 'world') { renderLabels(); renderPoints(); renderRaids(); renderMarker(); } });
+        const observer = new ResizeObserver(() => { if (document.body.dataset.view === 'world') renderViewport(); });
         observer.observe(document.getElementById('worldMap'));
         return { save, syncSelection, renderDestinations, renderMarker, focus, focusSelected, updateFollow() { if (state.followCharacter && document.body.dataset.view === 'world') focusSelected(); } };
     }
