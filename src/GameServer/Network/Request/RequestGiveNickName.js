@@ -2,6 +2,7 @@ const ReceivePacket = invoke('Packet/Receive');
 const World = invoke('GameServer/World/World');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const ServerResponse = invoke('GameServer/Network/Response');
+const ActionMessage = invoke('GameServer/Clan/ClanActionMessage');
 
 function onlineSessionByName(name) {
     const lookup = String(name || '').toLowerCase();
@@ -25,22 +26,27 @@ function consume(session, data) {
 
     if (!member || !targetSession?.actor) {
         session.dataSendToMe(ServerResponse.actionFailed());
+        ActionMessage.failure(session, member ? 'target_offline' : 'not_member');
         return Promise.resolve({ ok: false, code: member ? 'target_offline' : 'not_member' });
     }
 
     return ClanService.setMemberTitle(session.actor, targetSession.actor, data.title).then((result) => {
         if (!result.ok) {
             session.dataSendToMe(ServerResponse.actionFailed());
+            ActionMessage.failure(session, result.code);
             return result;
         }
 
         targetSession.dataSendToMe(ServerResponse.userInfo(targetSession.actor));
         targetSession.dataSendToOthers?.(ServerResponse.charInfo(targetSession.actor), targetSession.actor);
         targetSession.dataSendToOthers?.(ServerResponse.relationChanged(targetSession.actor), targetSession.actor);
+        ActionMessage.send(session, `Clan title updated for ${targetSession.actor.fetchName()}.`);
+        ActionMessage.send(targetSession, `Your clan title was updated by ${session.actor.fetchName()}.`);
         return result;
     }).catch((err) => {
         utils.infoWarn('Clan', 'set clan member title failed: %s', err.message);
         session.dataSendToMe(ServerResponse.actionFailed());
+        ActionMessage.failure(session, 'title_failed');
         return { ok: false, code: 'title_failed' };
     });
 }

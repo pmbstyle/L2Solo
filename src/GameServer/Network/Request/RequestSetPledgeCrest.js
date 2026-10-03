@@ -1,6 +1,7 @@
 const ReceivePacket = invoke('Packet/Receive');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const ServerResponse = invoke('GameServer/Network/Response');
+const ActionMessage = invoke('GameServer/Clan/ClanActionMessage');
 
 function requestSetPledgeCrest(session, buffer) {
     const actorName = session?.actor?.fetchName?.() || session?.accountId || 'unknown';
@@ -8,6 +9,7 @@ function requestSetPledgeCrest(session, buffer) {
         utils.infoWarn('ClanCrest', 'upload rejected actor=%s reason=truncated_header packetBytes=%d',
             actorName, buffer?.length || 0);
         session.dataSendToMe(ServerResponse.actionFailed());
+        ActionMessage.failure(session, 'truncated_header');
         return Promise.resolve({ ok: false, code: 'truncated_header' });
     }
 
@@ -19,12 +21,14 @@ function requestSetPledgeCrest(session, buffer) {
         utils.infoWarn('ClanCrest', 'upload rejected actor=%s reason=invalid_size bytes=%d packetBytes=%d',
             actorName, length, buffer.length);
         session.dataSendToMe(ServerResponse.actionFailed());
+        ActionMessage.failure(session, 'invalid_size');
         return Promise.resolve({ ok: false, code: 'invalid_size' });
     }
     if (buffer.length < 5 + length) {
         utils.infoWarn('ClanCrest', 'upload rejected actor=%s reason=truncated_data bytes=%d packetBytes=%d',
             actorName, length, buffer.length);
         session.dataSendToMe(ServerResponse.actionFailed());
+        ActionMessage.failure(session, 'truncated_data');
         return Promise.resolve({ ok: false, code: 'truncated_data' });
     }
 
@@ -37,6 +41,7 @@ function requestSetPledgeCrest(session, buffer) {
             utils.infoWarn('ClanCrest', 'upload rejected actor=%s reason=%s bytes=%d',
                 actorName, result.code || 'not_allowed', length);
             session.dataSendToMe(ServerResponse.actionFailed());
+            ActionMessage.failure(session, result.code);
             return result;
         }
 
@@ -44,10 +49,12 @@ function requestSetPledgeCrest(session, buffer) {
             actorName, result.clan.id, result.crestId || 0, length, result.deleted ? 'yes' : 'no');
         session.dataSendToMe(ServerResponse.pledgeShowInfoUpdate(result.clan));
         ClanService.broadcastAppearance(result.clan);
+        ActionMessage.send(session, result.deleted ? 'Clan crest removed.' : 'Clan crest updated.');
         return result;
     }).catch((error) => {
         utils.infoWarn('ClanCrest', 'upload failed actor=%s bytes=%d: %s', actorName, length, error.message);
         session.dataSendToMe(ServerResponse.actionFailed());
+        ActionMessage.failure(session, 'upload_failed');
         return { ok: false, code: 'upload_failed' };
     });
 }
