@@ -329,11 +329,14 @@ class Automation extends SelectedModel {
             this.stopMoveInterpolation();
             src.state.setTowards(false);
             this.clearDestId();
-            // A player's last ValidatePosition may describe an intermediate
-            // point. C4 need not acknowledge the final MoveToPawn position,
-            // so complete the server-owned approach for players as well.
-            // Movement cancellation already clears this arrival timer.
-            src.setLocXYZ(approach ? approach.stopCoords : stopCoords);
+            // C4 need not acknowledge the final MoveToPawn point, so complete
+            // the horizontal approach. A target's Z may belong to another
+            // floor: borrowing it makes the next player report look like a
+            // fall. Keep the player's latest accepted height at arrival.
+            const arrivalCoords = approach ? approach.stopCoords : stopCoords;
+            src.setLocXYZ(movingSelf && !movingBot
+                ? { ...arrivalCoords, locZ: src.fetchLocZ() }
+                : arrivalCoords);
             if (movingSelf) {
                 if (session.moveTimer) {
                     clearInterval(session.moveTimer);
