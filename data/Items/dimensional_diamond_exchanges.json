@@ -1,0 +1,97 @@
+{
+  "source": "Lisvus C4 fdc7e33a, multisell/002.xml and html/teleporter",
+  "npcs": [
+    7006,
+    7059,
+    7080,
+    7134,
+    7146,
+    7177,
+    7233,
+    7237,
+    7256,
+    7320,
+    7540,
+    7576,
+    7836,
+    7848,
+    7878,
+    7899,
+    8275,
+    8320
+  ],
+  "recipes": [
+    {
+      "itemId": 7117,
+      "cost": 5
+    },
+    {
+      "itemId": 7118,
+      "cost": 5
+    },
+    {
+      "itemId": 7119,
+      "cost": 5
+    },
+    {
+      "itemId": 7120,
+      "cost": 5
+    },
+    {
+      "itemId": 7121,
+      "cost": 5
+    },
+    {
+      "itemId": 7122,
+      "cost": 8
+    },
+    {
+      "itemId": 7123,
+      "cost": 8
+    },
+    {
+      "itemId": 7124,
+      "cost": 8
+    },
+    {
+      "itemId": 7125,
+      "cost": 8
+    },
+    {
+      "itemId": 7126,
+      "cost": 8
+    },
+    {
+      "itemId": 7127,
+      "cost": 8
+    },
+    {
+      "itemId": 7128,
+      "cost": 8
+    },
+    {
+      "itemId": 7129,
+      "cost": 8
+    },
+    {
+      "itemId": 7130,
+      "cost": 8
+    },
+    {
+      "itemId": 7131,
+      "cost": 8
+    },
+    {
+      "itemId": 7132,
+      "cost": 8
+    },
+    {
+      "itemId": 7133,
+      "cost": 8
+    },
+    {
+      "itemId": 7134,
+      "cost": 8
+    }
+  ]
+}

@@ -4782,6 +4782,50 @@ const Database = {
             return { currentFeed, remaining:food.amount-1 };
         }, 'pet:mount-food'));
     },
+    exchangeDimensionalDiamond(characterId, itemId) {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const recipe = require('../data/Items/dimensional_diamond_exchanges.json').recipes.find(row => row.itemId === itemId);
+            if (!recipe) throw new Error('Invalid dimensional diamond exchange');
+            const diamonds = all('SELECT id, amount FROM items WHERE characterId = ? AND selfId = 7562 AND equipped = 0 ORDER BY id', [characterId]);
+            if (diamonds.reduce((sum, item) => sum + item.amount, 0) < recipe.cost) throw new Error('Not enough dimensional diamonds');
+            const template = require('./GameServer/DataCache').items.find(item => item.selfId === itemId);
+            if (!template?.etc.stackable) throw new Error('Missing teleport scroll template');
+            const changed = new Set();
+            let remaining = recipe.cost;
+            for (const item of diamonds) {
+                const used = Math.min(remaining, item.amount);
+                if (!used) break;
+                remaining -= used;
+                changed.add(item.id);
+                if (used === item.amount) write('DELETE FROM items WHERE id = ?', [item.id]);
+                else write('UPDATE items SET amount = ? WHERE id = ?', [item.amount - used, item.id]);
+            }
+            const scroll = one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? AND equipped = 0 ORDER BY id LIMIT 1', [characterId, itemId]);
+            if (scroll) { write('UPDATE items SET amount = amount + 1 WHERE id = ?', [scroll.id]); changed.add(scroll.id); }
+            else changed.add(Number(write('INSERT INTO items(selfId, name, amount, characterId) VALUES (?, ?, 1, ?)', [itemId, template.template.name, characterId]).insertId));
+            return [...changed].map(id => one('SELECT * FROM items WHERE id = ? AND characterId = ?', [id, characterId]) || { id, amount: 0 });
+        }, 'quest:diamond-exchange'));
+    },
+    completeSecondProfession(characterId, expectedClassId, targetClassId) {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const route = require('../data/Templates/second_profession_trials.json').find(row => row.classId === targetClassId);
+            const character = one('SELECT classId, level, race FROM characters WHERE id = ?', [characterId]);
+            if (!route || character?.classId !== expectedClassId || character.level < 40 || character.race !== route.race
+                || !require('./GameServer/ClassProgression').secondProfMap[expectedClassId]?.includes(targetClassId)) {
+                throw new Error('Second profession is not available');
+            }
+            const changed = [];
+            for (const selfId of route.marks) {
+                const mark = one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? AND equipped = 0 AND amount >= 1 ORDER BY id LIMIT 1', [characterId, selfId]);
+                if (!mark) throw new Error('Required profession marks missing');
+                if (mark.amount === 1) write('DELETE FROM items WHERE id = ? AND characterId = ?', [mark.id, characterId]);
+                else write('UPDATE items SET amount = amount - 1 WHERE id = ? AND characterId = ?', [mark.id, characterId]);
+                changed.push({ id: mark.id, amount: mark.amount - 1 });
+            }
+            write('UPDATE characters SET classId = ? WHERE id = ? AND classId = ?', [targetClassId, characterId, expectedClassId]);
+            return changed;
+        }, 'quest:second-profession'));
+    },
     applyQuestStep(characterId, questId, expected, next, takes, gives, experience = null, beginner = null, pk = null) {
         return withCharacterFlush(characterId, () => inTransaction(() => {
             if (!require('./GameServer/Quest/QuestRegistry').entries.some(e => e.id === questId && e.status === 'active')) throw new Error('Unsupported quest');

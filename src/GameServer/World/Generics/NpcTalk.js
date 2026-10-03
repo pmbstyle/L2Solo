@@ -104,6 +104,7 @@ function showDefaultTalk(session, npc, options = {}) {
     const path = 'data/Html/';
     const filename = path + npc.fetchSelfId() + '.html';
     const title = npc.fetchTitle?.() || '';
+    const secondProfession = invoke('GameServer/SecondProfession').handles(npc.fetchSelfId());
     if (/^Warehouse (Keeper|Chief|Freightman)$/i.test(title)) {
         const clan = session.actor.fetchClan?.();
         const clanLinks = clan && Number(clan.level) >= 1 ? [
@@ -116,6 +117,9 @@ function showDefaultTalk(session, npc, options = {}) {
             '<a action="bypass -h warehouse deposit">Deposit item</a><br>',
             '<a action="bypass -h warehouse withdraw">Withdraw item</a>',
             ...clanLinks,
+            ...(secondProfession
+                ? ['<br><a action="bypass -h second-profession">Second profession trials</a><br>'] : []),
+            ...(options.questLink ? [`<a action="bypass -h html ${npc.fetchSelfId()}-quest">Quest</a><br>`] : []),
             '</center></body></html>'
         ].join('')));
         session.dataSendToMe(ServerResponse.actionFailed());
@@ -124,10 +128,14 @@ function showDefaultTalk(session, npc, options = {}) {
 
     const weaponServices = invoke('GameServer/Items/C4WeaponSAExchange');
     let html = utils.fileExists(filename) ? utils.parseRawFile(filename)
+        : secondProfession ? '<html><body>I can help you advance to your second profession. Bring the three trial marks when you reach level 40.<br></body></html>'
         : weaponServices.station(npc.fetchSelfId())
             ? '<html><body>I can help you with weapon special abilities.<br></body></html>'
             : utils.parseRawFile(path + 'noquest.html');
     if (options.questLink) html = withQuestLink(html, npc.fetchSelfId());
+    if (secondProfession) {
+        html = html.replace(/<\/body>/i, '<br><a action="bypass -h second-profession">Second profession trials</a><br></body>');
+    }
     html = html.replace(/<\/body>/i, weaponServices.links(npc.fetchSelfId()) + '</body>');
     if (invoke('GameServer/Pets/PetExchangeData').managers.has(npc.fetchSelfId())) {
         html = html.replace(/<\/body>/i, '<br><a action="bypass -h pet-exchange">Exchange a Pet Ticket</a><br></body>');

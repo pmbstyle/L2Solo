@@ -59,7 +59,9 @@ function menu(npcId, hasQuest) {
     const quest = hasQuest
         ? '<a action="bypass -h gatekeeper-quest">Quest</a><br1>'
         : '';
-    return `<html><body>How can I help you?<br><br><a action="bypass -h gatekeeper-teleport">Teleport</a><br1>${quest}</body></html>`;
+    const diamonds = require('../../../data/Items/dimensional_diamond_exchanges.json').npcs.includes(Number(npcId))
+        ? '<a action="bypass -h diamond-exchange">Exchange Dimensional Diamonds</a><br1>' : '';
+    return `<html><body>How can I help you?<br><br><a action="bypass -h gatekeeper-teleport">Teleport</a><br1>${diamonds}${quest}</body></html>`;
 }
 
 module.exports = { destination, html, menu, lists: LISTS };

@@ -574802,6 +574802,231 @@
   },
   {
     "grade": "none",
+    "id": 7117,
+    "kind": "Other.Scroll",
+    "name": "Scroll of Escape: Talking Island",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": true
+      },
+      "selfId": 7117,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.Scroll",
+        "mass": 30,
+        "name": "Scroll of Escape: Talking Island",
+        "price": 35000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7118,
+    "kind": "Other.Scroll",
+    "name": "Scroll of Escape: Elven Village",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": true
+      },
+      "selfId": 7118,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.Scroll",
+        "mass": 30,
+        "name": "Scroll of Escape: Elven Village",
+        "price": 35000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7119,
+    "kind": "Other.Scroll",
+    "name": "Scroll of Escape: Dark Elf Village",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": true
+      },
+      "selfId": 7119,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.Scroll",
+        "mass": 30,
+        "name": "Scroll of Escape: Dark Elf Village",
+        "price": 35000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7120,
+    "kind": "Other.Scroll",
+    "name": "Scroll of Escape: Orc Village",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": true
+      },
+      "selfId": 7120,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.Scroll",
+        "mass": 30,
+        "name": "Scroll of Escape: Orc Village",
+        "price": 35000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7121,
+    "kind": "Other.Scroll",
+    "name": "Scroll of Escape: Dwarven Village",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": true
+      },
+      "selfId": 7121,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.Scroll",
+        "mass": 30,
+        "name": "Scroll of Escape: Dwarven Village",
+        "price": 35000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7122,
+    "kind": "Other.Scroll",
+    "name": "Scroll of Escape: Gludin Village",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": true
+      },
+      "selfId": 7122,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.Scroll",
+        "mass": 30,
+        "name": "Scroll of Escape: Gludin Village",
+        "price": 35000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7123,
+    "kind": "Other.Scroll",
+    "name": "Scroll of Escape: the Town of Gludio",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": true
+      },
+      "selfId": 7123,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.Scroll",
+        "mass": 30,
+        "name": "Scroll of Escape: the Town of Gludio",
+        "price": 35000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7124,
+    "kind": "Other.Scroll",
+    "name": "Scroll of Escape: the Town of Dion",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": true
+      },
+      "selfId": 7124,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.Scroll",
+        "mass": 30,
+        "name": "Scroll of Escape: the Town of Dion",
+        "price": 35000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7125,
+    "kind": "Other.Scroll",
+    "name": "Scroll of Escape: Floran",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": true
+      },
+      "selfId": 7125,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.Scroll",
+        "mass": 30,
+        "name": "Scroll of Escape: Floran",
+        "price": 35000
+      }
+    }
+  },
+  {
+    "grade": "none",
     "id": 7126,
     "kind": "Other.Scroll",
     "name": "Scroll of Escape: Giran Castle Town",
@@ -574821,6 +575046,206 @@
         "kind": "Other.Scroll",
         "mass": 30,
         "name": "Scroll of Escape: Giran Castle Town",
+        "price": 35000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7127,
+    "kind": "Other.Scroll",
+    "name": "Scroll of Escape: Hardin's Private Academy",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": true
+      },
+      "selfId": 7127,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.Scroll",
+        "mass": 30,
+        "name": "Scroll of Escape: Hardin's Private Academy",
+        "price": 35000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7128,
+    "kind": "Other.Scroll",
+    "name": "Scroll of Escape: Heine",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": true
+      },
+      "selfId": 7128,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.Scroll",
+        "mass": 30,
+        "name": "Scroll of Escape: Heine",
+        "price": 35000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7129,
+    "kind": "Other.Scroll",
+    "name": "Scroll of Escape: the Town of Oren",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": true
+      },
+      "selfId": 7129,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.Scroll",
+        "mass": 30,
+        "name": "Scroll of Escape: the Town of Oren",
+        "price": 35000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7130,
+    "kind": "Other.Scroll",
+    "name": "Scroll of Escape: Ivory Tower",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": true
+      },
+      "selfId": 7130,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.Scroll",
+        "mass": 30,
+        "name": "Scroll of Escape: Ivory Tower",
+        "price": 35000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7131,
+    "kind": "Other.Scroll",
+    "name": "Scroll of Escape: Hunters Village",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": true
+      },
+      "selfId": 7131,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.Scroll",
+        "mass": 30,
+        "name": "Scroll of Escape: Hunters Village",
+        "price": 35000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7132,
+    "kind": "Other.Scroll",
+    "name": "Scroll of Escape: Aden Castle Town",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": true
+      },
+      "selfId": 7132,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.Scroll",
+        "mass": 30,
+        "name": "Scroll of Escape: Aden Castle Town",
+        "price": 35000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7133,
+    "kind": "Other.Scroll",
+    "name": "Scroll of Escape: the Town of Goddard",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": true
+      },
+      "selfId": 7133,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.Scroll",
+        "mass": 30,
+        "name": "Scroll of Escape: the Town of Goddard",
+        "price": 35000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7134,
+    "kind": "Other.Scroll",
+    "name": "Scroll of Escape: the Rune Township",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": true,
+        "stackable": true
+      },
+      "selfId": 7134,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.Scroll",
+        "mass": 30,
+        "name": "Scroll of Escape: the Rune Township",
         "price": 35000
       }
     }
@@ -575197,6 +575622,31 @@
         "mass": 0,
         "name": "Scroll of Escape: Giran Castle Town",
         "price": 400
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7562,
+    "kind": "Other.None",
+    "name": "Dimensional Diamond",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7562,
+      "template": {
+        "class1": 4,
+        "class2": 5,
+        "kind": "Other.None",
+        "mass": 0,
+        "name": "Dimensional Diamond",
+        "price": 0
       }
     }
   },

@@ -58,9 +58,9 @@ function stateFor(session, quest) {
   return state;
 }
 
-function questForNpc(npc, session) {
+function talkQuests(npc, session) {
   const npcId = Number(npc.fetchSelfId());
-  const candidates = quests.filter((quest) => {
+  return quests.filter((quest) => {
     if (!quest.npcs.includes(npcId)) return false;
     const state = stateFor(session, quest);
     if (
@@ -71,21 +71,14 @@ function questForNpc(npc, session) {
       return false;
     return !quest.canTalk || quest.canTalk(state, npc);
   });
+}
+
+function questForNpc(npc, session) {
+  const candidates = talkQuests(npc, session);
   return (
     candidates.find((quest) => stateFor(session, quest).isStarted()) ||
     candidates.find((quest) => !stateFor(session, quest).isCompleted()) ||
     candidates[0]
-  );
-}
-
-function availableStartQuests(npc, session) {
-  const npcId = Number(npc.fetchSelfId());
-  return quests.filter(
-    (quest) =>
-      (quest.startNpcs || []).includes(npcId) &&
-      !stateFor(session, quest).isStarted() &&
-      !stateFor(session, quest).isCompleted() &&
-      (!quest.canTalk || quest.canTalk(stateFor(session, quest), npc)),
   );
 }
 
@@ -103,6 +96,12 @@ async function hasTalk(session, npc) {
 }
 
 function render(session, npc, html) {
+  // Some village masters lead directly with an existing quest (e.g. Jurek's
+  // Soul Crystal quest). Add the transfer branch without replacing that page.
+  const npcId = npc.fetchSelfId?.() ?? session.activeNpcTalk?.selfId;
+  if (invoke('GameServer/SecondProfession').handles(npcId) && !html.includes('bypass -h second-profession')) {
+    html = html.replace(/<\/body>/i, '<br><a action="bypass -h second-profession">Second profession trials</a><br></body>');
+  }
   session.dataSendToMe(ServerResponse.npcHtml(npc.fetchId(), html));
   session.dataSendToMe(ServerResponse.actionFailed());
 }
@@ -145,15 +144,18 @@ async function onTalk(session, npc) {
     const quest = questForNpc(npc, session);
     if (!quest) return false;
     const state = stateFor(session, quest);
-    const choices = availableStartQuests(npc, session);
+    const choices = talkQuests(npc, session).filter(quest => !stateFor(session, quest).isCompleted());
     if (!state.isStarted() && choices.length > 1) {
-      const html = `<html><body>Available quests:<br><br>${choices.map((quest) => `<a action="bypass -h quest ${quest.id} start">${quest.name}</a><br>`).join("")}</body></html>`;
+      const html = `<html><body>Available quests:<br><br>${choices.map((quest) => `<a action="bypass -h quest ${quest.id} ${stateFor(session, quest).isStarted() ? 'show_quest' : 'start'}">${quest.name}</a><br>`).join("")}</body></html>`;
       render(session, npc, html);
       return true;
     }
     const before = activeQuestSnapshot(session);
-    const html = await quest.onTalk(state, npc);
+    let html = await quest.onTalk(state, npc);
     if (!html) return false;
+    const alternatives = choices.filter(choice => choice !== quest);
+    if (alternatives.length) html = html.replace(/<\/body>/i, '<br>Other quests:<br>'
+      + alternatives.map(choice => `<a action="bypass -h quest ${choice.id} show_quest">${choice.name}</a><br>`).join('') + '</body>');
     if (before !== activeQuestSnapshot(session)) syncActiveQuests(session);
     render(session, npc, html);
     return true;
@@ -168,6 +170,20 @@ async function onEvent(session, event) {
     const eventName = String(event.name);
     if (!quest || !npc || !quest.npcs.includes(Number(npc.selfId)))
       return false;
+    const target = { fetchSelfId: () => Number(npc.selfId), fetchId: () => Number(npc.objectId) };
+    const actual = invoke('GameServer/World/NpcObjectIndex').find(World, target.fetchId());
+    if (actual?.questSpawn && (actual.questSpawn.ownerId !== session.actor.fetchId()
+        || actual.questSpawn.questId !== quest.id)) return false;
+    if (quest.personalNpcs?.includes(target.fetchSelfId()) && !quest.canTalk(stateFor(session, quest), target)) return false;
+    if (eventName === 'show_quest') {
+      if (!talkQuests(target, session).includes(quest)) return false;
+      const before = activeQuestSnapshot(session);
+      const html = await quest.onTalk(stateFor(session, quest), target);
+      if (!html) return false;
+      if (before !== activeQuestSnapshot(session)) syncActiveQuests(session);
+      render(session, target, html);
+      return true;
+    }
     const eventNpcs = quest.eventNpc?.(eventName);
     const permitted = Array.isArray(eventNpcs)
       ? eventNpcs.includes(Number(npc.selfId)) : eventNpcs === Number(npc.selfId);
