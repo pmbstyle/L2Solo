@@ -55,9 +55,9 @@ const Update = invoke('GameServer/Actor/Generics/UpdatePosition');
             return { actor, session, target, actions: () => actions };
         }
 
-        function report(e, z, x = e.actor.x) {
+        function report(e, z, x = e.actor.x, y = e.actor.y) {
             const packet = Buffer.alloc(21);
-            [x, e.actor.y, z, 0, 0].forEach((value, index) => packet.writeInt32LE(value, 1 + index * 4));
+            [x, y, z, 0, 0].forEach((value, index) => packet.writeInt32LE(value, 1 + index * 4));
             return Validate(e.session, packet);
         }
 
@@ -111,6 +111,62 @@ const Update = invoke('GameServer/Actor/Generics/UpdatePosition');
         assert.equal(spell.actor.z, -4000, 'Spell arrival must not borrow the target height');
         assert.equal(report(spell, -4000), true);
         assert.equal(spell.actor.hp, 1000);
+
+        // pmb / Monster Eye Gazer: the live spawn is 565 units above
+        // the player's floor. Walking distance and melee range are planar;
+        // the unrelated spawn Z must not add seconds to the first attack.
+        const gazer = encounter(-2996);
+        gazer.actor.setLocXYZ({ locX: 42141, locY: 132330, locZ: -3561 });
+        gazer.actor.fetchCollectiveRunSpd = () => 135;
+        gazer.target.fetchLocX = () => 42016.727625727915;
+        gazer.target.fetchLocY = () => 132275.09420545356;
+        gazer.target.fetchRadius = () => 21;
+        await approach(gazer);
+        const gazeArrival = gazer.actor.automation.timer.action.timer;
+        assert(gazeArrival.due - now < 750, 'Spawn height must not turn a short approach into a four-second wait');
+        const gazeStop = gazer.actor.automation.playerAttackApproach.stopCoords;
+        const gazeGap = Math.hypot(gazeStop.locX - gazer.target.fetchLocX(), gazeStop.locY - gazer.target.fetchLocY());
+        assert(Math.abs(gazeGap - 60) < 1, 'Player approach must stop at the horizontal collision margin');
+        now += 16;
+        assert.equal(report(gazer, -3561, 42100), true);
+        assert(gazer.actor.automation.timer.action.timer.due < gazeArrival.due,
+            'Accepted progress must shorten the horizontal deadline even when the spawn Z differs');
+        arrive(gazer);
+        assert.equal(gazer.actions(), 1);
+        assert.equal(gazer.actor.z, -3561);
+        assert.equal(report(gazer, -3561), true);
+        assert.equal(gazer.actor.hp, 1000);
+
+        // Recorded click: the old timer lasted 7.77 seconds and ignored
+        // accepted progress, while C4 reached melee range in about two.
+        const delayed = encounter(-2468);
+        delayed.actor.setLocXYZ({ locX: 41834, locY: 132900, locZ: -3516 });
+        delayed.actor.fetchCollectiveRunSpd = () => 135;
+        delayed.target.fetchLocX = () => 41967.11116708096;
+        delayed.target.fetchLocY = () => 133191.15722183837;
+        delayed.target.fetchRadius = () => 21;
+        await approach(delayed);
+        const delayedArrival = delayed.actor.automation.timer.action.timer;
+        assert(delayedArrival.due - now < 2100, 'The recorded approach must finish after walking, not after a synthetic climb');
+        now += 1730;
+        assert.equal(report(delayed, -3472, 41924, 133096), true);
+        arrive(delayed);
+        assert.equal(delayed.actions(), 1);
+        assert.equal(delayed.actor.z, -3472);
+        assert.equal(delayed.actor.hp, 1000);
+
+        const near = encounter(-2468);
+        near.actor.setLocXYZ({ locX: 41942, locY: 133136, locZ: -3459 });
+        near.target.fetchLocX = () => 41967.11116708096;
+        near.target.fetchLocY = () => 133191.15722183837;
+        near.target.fetchRadius = () => 21;
+        Select(near.session, near.actor, { id: near.target.fetchId() });
+        await new Promise(setImmediate);
+        Select(near.session, near.actor, { id: near.target.fetchId() });
+        await new Promise(setImmediate);
+        assert.equal(near.actions(), 1, 'An already reachable target must be attacked immediately despite its spawn Z');
+        assert.equal(near.actor.automation.timer.action.timer, undefined, 'A nearby attack needs no arrival timer');
+        assert.equal(near.actor.z, -3459);
 
         const fall = encounter(-3400);
         await approach(fall);
