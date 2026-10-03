@@ -51,6 +51,10 @@ async function main() {
     const bridge = { adena: 2300, level: 30, stats: { equipmentPlan: { strategy: 'market', weaponBridge: true, market: { price: 1766, reserve: 500 } } } };
     near(Policy.memberRate(0.10, generous, bridge), 0.10, 'the plan\'s stored reserve counts: a member about to buy its bridge weapon gets no top-up');
     near(Policy.investFraction({ commitment: 0.6, ambition: 0.8 }), 0.245, 'investment share');
+    near(Policy.investFraction({ commitment: 0.6, ambition: 0.8 }, buying), 0,
+        'no investment while the member is about to buy its gear (K10)');
+    const saving = { adena: 100000, level: 30, stats: { equipmentPlan: { strategy: 'market', market: { price: 500000 } } } };
+    near(Policy.investFraction({ commitment: 0.6, ambition: 0.8 }, saving), 0.245, 'a member still saving invests as before');
 
     seedDatabase();
     options.default.Database.path = path.relative(rootDir, databasePath);

@@ -72,8 +72,11 @@ function ownGearPurchase(state = null) {
 }
 
 // Share of its free savings a member puts once into the clan's current target:
-// up to contributionMaxFraction, by commitment and ambition.
-function investFraction(traits = {}, config = Config) {
+// up to contributionMaxFraction, by commitment and ambition. Like the top-up, it
+// waits while the member is about to buy its own gear: the target stays open for
+// it, so it invests at the first settlement after the purchase.
+function investFraction(traits = {}, state = null, config = Config) {
+    if (ownGearPurchase(state) === 'funded') return 0;
     return number(config.contributionMaxFraction, 0.35) * (trait(traits, 'commitment') + trait(traits, 'ambition')) / 2;
 }
 

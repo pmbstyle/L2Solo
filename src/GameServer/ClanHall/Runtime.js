@@ -78,7 +78,7 @@ async function settleDues(db, id, level) {
             clanId: id,
             characterId,
             rate: DuesPolicy.memberRate(clanRate, traits, state),
-            investFraction: DuesPolicy.investFraction(traits)
+            investFraction: DuesPolicy.investFraction(traits, state)
         });
         life.acceptNewerLifecycleRow(result.row);
     }
