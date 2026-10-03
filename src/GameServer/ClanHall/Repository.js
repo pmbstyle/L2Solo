@@ -530,7 +530,9 @@ module.exports = function ({
         },
         // The clan's dues, one settlement per member (ClanHall/Runtime runs it hourly for
         // every bot clan): a share of what the member earned since its last settlement
-        // above its highest mark (wallet + contributed), never of its savings; plus an
+        // (the mark follows its wealth, wallet + contributed, up and down: a purchase
+        // exempts the hour it happened in, not the hours until the old peak returns),
+        // never of its savings; plus an
         // optional one-off investment from savings toward the clan's current target.
         // Every level pays the clan warehouse; levels 0-1 also write the contribution
         // ledger that the level-up checks.
@@ -573,7 +575,7 @@ module.exports = function ({
                     }
                     write(
                         `INSERT INTO clan_hall_earnings(clanId,characterId,highWater,contributed) VALUES (?,?,?,?) ON CONFLICT(clanId,characterId) DO UPDATE SET highWater=excluded.highWater,contributed=excluded.contributed`,
-                        [c.id, id, Math.max(wealth, n(cursor?.highWater)), n(cursor?.contributed) + amount]
+                        [c.id, id, wealth, n(cursor?.contributed) + amount]
                     );
                     return {
                         ok: true,

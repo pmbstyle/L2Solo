@@ -6,7 +6,7 @@ const { DatabaseSync } = require('node:sqlite');
 require('../src/Global');
 
 // The clan's dues (one mechanism for all levels): once per member and hour a
-// share of what it earned since its highest mark, never of its savings; a busy
+// share of what it earned since its last settlement, never of its savings; a busy
 // member (party, live actor, leased worker row) pays at the next pass; a one-off
 // investment from savings toward the clan's current target; rates follow the
 // members' personas.
@@ -75,14 +75,15 @@ async function main() {
         const second = await settle(SAVER, { investFraction: 0.25, timestamp: 11 });
         assert.strictEqual(second.investment, 0, 'one investment per target');
 
-        // Only new earnings above the highest mark are due.
+        // Only what was earned since the last settlement is due: the mark follows the wealth down after a
+        // purchase, so spending exempts its own hour, not the hours until the old peak returns (user, 2026-10-03).
         await settle(PAYER, { timestamp: 12 });
         await Database.execute(['UPDATE items SET amount = amount - 500000 WHERE characterId = ? AND selfId = 57', [PAYER]]);
         await Database.execute(['UPDATE bot_life_state SET adena = 500000 WHERE characterId = ?', [PAYER]]);
         await Database.execute(['UPDATE items SET amount = amount + 300000 WHERE characterId = ? AND selfId = 57', [PAYER]]);
-        assert.strictEqual((await settle(PAYER, { timestamp: 13 })).dues, 0, 'spending on gear exempts until the old peak returns');
+        assert.strictEqual((await settle(PAYER, { timestamp: 13 })).dues, 0, 'the hour of the purchase: nothing earned above the mark');
         await Database.execute(['UPDATE items SET amount = amount + 400000 WHERE characterId = ? AND selfId = 57', [PAYER]]);
-        assert.strictEqual((await settle(PAYER, { timestamp: 14 })).dues, 40000, '20% of the 200k above the old peak');
+        assert.strictEqual((await settle(PAYER, { timestamp: 14 })).dues, 80000, '20% of the 400k earned since the last settlement, the old peak forgotten');
 
         // The hourly pass (ClanHall/Runtime) settles every member once and then
         // refreshes the stored level goal from the ledger (K11).
