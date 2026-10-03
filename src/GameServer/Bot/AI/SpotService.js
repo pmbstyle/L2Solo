@@ -412,9 +412,15 @@ const SpotService = {
         const result = {};
         for (const member of members) {
             const point = this.arrivalPointForState(member, shared);
-            if (!point || Math.hypot(point.locX - anchor.locX, point.locY - anchor.locY) > 400
-                || Math.abs(point.locZ - anchor.locZ) > 100) return null;
-            result[String(member.characterId)] = point;
+            // The spread keeps the group on the anchor's dungeon floor: a
+            // point more than 100 above or below it would be another floor.
+            // Open hilly ground fails the same test on a slope, and the
+            // offset is hashed from the member's identity, so the party would
+            // never get destinations. Such a member stands on the anchor
+            // itself, which is on the right floor by construction.
+            const compact = point && Math.hypot(point.locX - anchor.locX, point.locY - anchor.locY) <= 400
+                && Math.abs(point.locZ - anchor.locZ) <= 100;
+            result[String(member.characterId)] = compact ? point : { ...anchor };
         }
         return result;
     },
