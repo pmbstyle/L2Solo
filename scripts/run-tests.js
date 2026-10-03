@@ -689,7 +689,20 @@ const tests = [
     'tests/test_npc_object_index.js',
     'tests/test_toggle_skills.js',
     'tests/test_toggle_skill_matrix.js',
-    'tests/test_ui_test_window.js'
+    'tests/test_ui_test_window.js',
+    // In tests/ but missing from this list: they pass and now run with the suite.
+    'tests/test_afk_trade_notifications.js',
+    'tests/test_bot_spoil_retry.js',
+    'tests/test_bot_sweep_retry.js',
+    'tests/test_clan_equipment_goal.js',
+    'tests/test_clan_equipment_warehouse.js',
+    'tests/test_clan_order_crafting.js',
+    'tests/test_cold_snapshot_queue.js',
+    'tests/test_cold_solo_combat_budget.js',
+    'tests/test_cold_worker_pressure.js',
+    'tests/test_private_store_limits.js',
+    'tests/test_update_environment_visibility.js',
+    'tests/test_world_visible_users.js',
 ];
 
 // Real map loading and worker pathfinding are kept in an explicit integration run.
