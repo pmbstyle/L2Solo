@@ -486,6 +486,7 @@ const tests = [
     'tests/test_clan_llm_goal_management.js',
     'tests/test_clan_llm_titles.js',
       'tests/test_clan_simulation_scan.js',
+      'tests/test_clan_founder_budget.js',
       'tests/test_clan_action_queue.js',
       'tests/test_clan_scheduler_admission.js',
       'tests/test_clan_crest_assets.js',

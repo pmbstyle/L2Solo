@@ -314,7 +314,11 @@ const ClanSimulationService = {
     async resolveBatch(limit = Config.resolveBatchSize, options = {}) {
         if (!Config.enabled) return { attempted: 0, created: 0, joined: 0, blocked: 0, budgetStopped: false };
         const startedAt = Date.now();
-        const deadlineAt = startedAt + Math.max(1, number(options.budgetMs, Config.founderResolveBudgetMs));
+        const budgetMs = Math.max(1, number(options.budgetMs, Config.founderResolveBudgetMs));
+        // The budget bounds the pass's own work (the candidate loop below). The reads before it wait in the
+        // database queue behind other statements; that wait keeps nothing else from running, so it is not
+        // counted: on a busy world it alone exceeded the budget and no candidate was ever evaluated.
+        let deadlineAt = startedAt + budgetMs;
         const safeLimit = Math.max(1, Math.min(2000, Math.floor(number(limit, Config.resolveBatchSize))));
         const scanOffset = founderScanOffset;
         const summary = { attempted: 0, created: 0, joined: 0, blocked: 0, budgetStopped: false };
@@ -325,24 +329,13 @@ const ClanSimulationService = {
         };
         try {
             let candidates = await candidateProjection(safeLimit, scanOffset);
-            if (Date.now() >= deadlineAt) {
-                stopForBudget();
-                return summary;
-            }
             if (!candidates.length && scanOffset > 0) {
                 founderScanOffset = 0;
                 candidates = await candidateProjection(safeLimit, 0);
             }
-            if (Date.now() >= deadlineAt) {
-                stopForBudget();
-                return summary;
-            }
             if (!candidates.length) return summary;
             const clans = await autonomousClanProjection();
-            if (Date.now() >= deadlineAt) {
-                stopForBudget();
-                return summary;
-            }
+            deadlineAt = Date.now() + budgetMs;
             const pool = candidates;
             const scanStartedAt = Date.now();
             const reservedIds = new Set();
