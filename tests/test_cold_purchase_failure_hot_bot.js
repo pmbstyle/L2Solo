@@ -57,7 +57,8 @@ async function run() {
     Database.updateCharacterVitals = async () => {};
     Database.reconcileBotClanMembership = async () => ({ repairedMembers: 0, repairedParties: 0 });
     Database.reconcileBotClanGoals = async () => ({ repairedMembers: 0, repairedParties: 0 });
-    GoalState.clear = () => Promise.resolve(null);
+    const goalClears = [];
+    GoalState.clear = (characterId) => { goalClears.push(characterId); return Promise.resolve(null); };
     MarketOpportunity.bestOffer = () => ({ ...afkOffer });
     MarketOpportunity.reserve = () => true;
     // The trade finds the bot hot: the AFK sync returns no cold state (H1).
@@ -88,6 +89,8 @@ async function run() {
         target: { itemId: 626, itemName: 'Bronze Shield', itemSlot: 8 }, plan: { expectedBenefit: 'market_search_for_gear', marketTown: 'Giran' } });
     assert.strictEqual(blocked.reason, 'incompatible_loadout', 'fixture: the shield is blocked');
     assert.strictEqual(BotLifeState.snapshot(86).phase, 'hot', 'a blocked purchase must not write a cold row over a hot bot');
+    assert(!goalClears.includes(86), 'the hot bot\'s goal is left to the cold side, as its plan is');
+    assert.strictEqual(failed.wanted, false, 'no trade-chat wish for a hot bot');
 
     // A cold bot's failed purchase is written as before: it returns to its field.
     MarketOpportunity.bestOffer = () => ({ ...afkOffer });

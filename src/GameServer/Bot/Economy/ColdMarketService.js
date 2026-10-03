@@ -11,16 +11,17 @@ const RETRY_DELAY_MS = 15 * 60 * 1000;
 
 // A failed purchase writes the bot's pre-trade state back as cold. While the
 // job awaited the trade the bot may have been activated: its row is hot and
-// belongs to the actor in the world (the AFK sync's own guard,
-// AfkTradeService.syncColdCharacter), and a cold write here would roll its
-// wallet back although the items moved. The hot row stays as it is.
-function persistUnlessHot(state, reason) {
-    const current = LifeState.snapshot(state.characterId);
-    if (current?.phase === 'hot') return Promise.resolve(current);
-    return LifeState.upsertState(state, reason);
+// belongs to the actor in the world (LifeState.hotRow, the AFK sync's rule);
+// a cold write here would roll its wallet back although the items moved. The
+// hot row is handed back unchanged and the cold side redoes the goal later.
+function hotResult(state, reason) {
+    const hot = LifeState.hotRow(state.characterId);
+    return hot ? { state: hot, purchased: false, reason, wanted: false, remoteOffer: null } : null;
 }
 
 function retryAfterFailedPurchase(state, goal, reason) {
+    const hot = hotResult(state, reason);
+    if (hot) return Promise.resolve(hot);
     if (reason === 'no_affordable_offer') MarketTelemetry.noOffer();
     else if (reason === 'offer_changed') MarketTelemetry.offerChanged();
     else if (reason === 'purchase_failed' || reason === 'persist_failed') MarketTelemetry.purchaseFailed();
@@ -41,7 +42,7 @@ function retryAfterFailedPurchase(state, goal, reason) {
     };
     const wanted = TradeChat.maybeAnnounceWanted(retryState, goal);
     const returnState = GoalExecutor.finishMarketVisit(wanted.state) || wanted.state;
-    return persistUnlessHot(returnState, 'market_no_offer_return').then((saved) => ({
+    return LifeState.upsertState(returnState, 'market_no_offer_return').then((saved) => ({
         state: saved || returnState,
         purchased: false,
         reason,
@@ -51,6 +52,8 @@ function retryAfterFailedPurchase(state, goal, reason) {
 }
 
 function finishBlockedPurchase(state, goal, reason) {
+    const hot = hotResult(state, reason);
+    if (hot) return Promise.resolve(hot);
     const stats = {
         ...(state.stats || {}),
         marketRetryAfter: null,
@@ -63,7 +66,7 @@ function finishBlockedPurchase(state, goal, reason) {
     }
     const completedState = { ...state, stats, timing: { ...(state.timing || {}), nextResolveAt: Date.now() } };
     const returning = GoalExecutor.finishMarketVisit(completedState) || completedState;
-    return persistUnlessHot(returning, `market_purchase_${reason}`).then((saved) => (
+    return LifeState.upsertState(returning, `market_purchase_${reason}`).then((saved) => (
         GoalState.clear(state.characterId, 'completed').then(() => ({
             state: saved || returning,
             purchased: false,

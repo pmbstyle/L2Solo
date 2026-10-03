@@ -3760,6 +3760,9 @@ const PopulationService = {
                         .then((marketResult) => ({ marketLifecycle, marketResult, goal: goalSnapshot?.current || null }))))
                 .then(({ marketLifecycle, marketResult, goal }) => {
                     const purchasedState = marketResult.state || marketLifecycle.state || updatedState;
+                    // The bot was activated while the purchase ran: its row is the actor's now
+                    // (ColdMarketService hands it back unchanged); nothing cold is written over it.
+                    if (purchasedState.phase === 'hot') return purchasedState;
                     if (marketResult.purchased) {
                         const batchState = {
                             ...purchasedState,

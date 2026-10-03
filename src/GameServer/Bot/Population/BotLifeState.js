@@ -1705,6 +1705,14 @@ const BotLifeState = {
         return cache.get(Number(characterId)) || null;
     },
 
+    // The row of a bot that is in the world as an actor, else null. A hot row
+    // belongs to the actor: the AFK sync and the cold market jobs never write
+    // a cold state over it (markCold writes the next cold state).
+    hotRow(characterId) {
+        const current = cache.get(Number(characterId));
+        return current?.phase === 'hot' ? current : null;
+    },
+
     findByCharacterId(characterId) {
         const id = Number(characterId);
         if (!Number.isSafeInteger(id) || id <= 0) return Promise.resolve(null);
