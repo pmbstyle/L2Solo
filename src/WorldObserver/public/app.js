@@ -66,6 +66,8 @@ const state = {
     clanLastLoadedAt: 0,
     clanFocusReturn: null,
     clanManagerOpen: false,
+    clanManagerTab: 'goal',
+    clanCraftPreviewRequest: 0,
     clanCrestFit: 'cover',
     clanCrestSource: null,
     clanCrestDraft: null,
@@ -77,6 +79,8 @@ const state = {
     clanOrderSearchError: null,
     clanOrderSearchRequest: 0,
     clanOrderSearchTimer: null,
+    clanOrderCancelPending: false,
+    clanOrderConflict: false,
     clanOrderSaving: false,
     clanOrderMessage: null,
     knowledgeNpcFocus: null,
@@ -361,6 +365,8 @@ const els = {
     clanSearch: document.querySelector('#clanSearch'),
     clanScope: document.querySelector('#clanScope'),
     clanList: document.querySelector('#clanList'),
+    clanManagerDialog: document.querySelector('#clanManagerDialog'),
+    clanManagerContent: document.querySelector('#clanManagerContent'),
     clanDetail: document.querySelector('#clanDetail')
 };
 
@@ -993,20 +999,36 @@ function clanGoalSummary(goal, clan = null) {
         ? { title: 'No active goal', progress: 'Waiting', percent: 0, meta: 'Waiting for the next clan decision' }
         : { title: 'No active goal', progress: 'Player directed', percent: 0, meta: 'No clan objective has been selected' };
     const target = goal.target?.itemName || goal.target?.npcName || goal.plan?.label || uiLabel('type', goal.type, 'Operation');
-    const progressValue = number(goal.progress);
-    const required = number(goal.required);
-    const progress = required > 0 ? `${progressValue}/${required}` : 'Ready';
+    const progressValue = Number(goal.progress || 0);
+    const required = Number(goal.required || 0);
+    const progress = required > 0 ? `${number(progressValue)}/${number(required)}` : 'Waiting';
     const status = uiLabel('status', goal.status || 'active');
     const plan = uiLabel('plan', goal.plan?.kind, null);
     const reason = uiLabel('reason', goal.plan?.reasonCode, null);
     return {
         title: target,
         progress,
-        percent: required > 0 ? Math.max(0, Math.min(100, Math.round((progressValue / required) * 100))) : 100,
+        percent: required > 0 ? Math.max(0, Math.min(100, Math.round((progressValue / required) * 100))) : 0,
         itemId: Number(goal.target?.itemId || 0) || null,
         iconUrl: goal.target?.iconUrl || null,
         meta: [status, reason || plan].filter(Boolean).join(' · ')
     };
+}
+
+function clanAutomaticGoalMarkup(goal, clan, label = 'Automatic goal') {
+    const summary = clanGoalSummary(goal, clan);
+    const recipient = goal?.target?.memberName;
+    const status = goal ? clanOrderStatusLabel(goal.status) : 'Waiting';
+    const route = uiLabel('plan', goal?.plan?.kind, null);
+    return `<section class="clan-automatic-goal" aria-label="${text(label)}">
+        <div class="clan-order-current">
+            <span class="clan-order-current-icon">${summary.iconUrl ? `<img src="${text(summary.iconUrl)}" alt="${text(summary.title)}">` : uiIcon(goal?.type === 'adena' ? 'coins' : 'target')}</span>
+            <div class="clan-order-current-copy"><span>${text(label)}${route ? ` · ${text(route)}` : ''}</span><strong>${text(summary.title)}</strong><small>${recipient ? `For ${text(recipient)}` : goal?.target?.itemId ? 'Delivery: Clan warehouse' : 'Clan progression'}</small></div>
+            <b class="clan-goal-status" data-status="${text(goal?.status || 'idle')}">${text(status)}</b>
+        </div>
+        ${goal?.required > 0 ? `<div class="clan-order-progress" role="progressbar" aria-label="${text(label)} progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${summary.percent}"><i style="width:${summary.percent}%"></i></div><div class="clan-automatic-progress"><span>Progress</span><strong>${text(summary.progress)}</strong></div>` : ''}
+        <p class="clan-goal-explanation">${text(summary.meta)}</p>
+    </section>`;
 }
 
 function resetClanCrestDraft() {
@@ -1026,6 +1048,8 @@ function resetClanOrderDraft() {
     state.clanOrderSearchError = null;
     state.clanOrderSaving = false;
     state.clanOrderMessage = null;
+    state.clanOrderConflict = false;
+    state.clanOrderCancelPending = false;
 }
 
 function clanOrderDraft() {
@@ -1041,6 +1065,67 @@ function clanOrderDraft() {
         };
     }
     return state.clanOrderDraft;
+}
+
+function clanOrderSettings(order) {
+    return {
+        itemId: Number(order.itemId), amount: Number(order.amount), strategy: order.strategy,
+        maxUnitPrice: Number(order.maxUnitPrice), budget: Number(order.budget),
+        memberIds: [...order.memberIds].map(Number).sort((left, right) => left - right),
+        paused: order.status === 'paused'
+    };
+}
+
+function startClanOrderEditor(mode) {
+    resetClanOrderDraft();
+    state.clanManagerOpen = true;
+    state.clanManagerTab = 'goal';
+    const order = mode === 'edit' ? state.clanDetail?.order : null;
+    const draft = clanOrderDraft();
+    draft.mode = order ? 'edit' : 'new';
+    if (order) {
+        Object.assign(draft, {
+            orderId: order.id,
+            revision: order.revision,
+            expectedSettings: clanOrderSettings(order),
+            item: { id: order.itemId, name: order.itemName, iconUrl: order.iconUrl },
+            query: order.itemName,
+            amount: order.amount,
+            strategy: order.strategy,
+            maxUnitPrice: order.maxUnitPrice || '',
+            budget: order.budget || '',
+            memberIds: order.memberIds.length ? [...order.memberIds] : null
+        });
+    }
+    renderClanDetail();
+    if (draft.strategy === 'craft') loadClanCraftPreview();
+    requestAnimationFrame(() => els.clansModal?.querySelector(order ? '[data-clan-order-amount]' : '[data-clan-order-search]')?.focus());
+}
+
+function clanGoalExplanation(clan, order = null) {
+    const goal = clan.goal;
+    if (order) {
+        const delivery = order.plan?.delivery;
+        const destination = delivery?.kind === 'best_upgrade'
+            ? `Equipment is issued to compatible bots who benefit most. Progress counts issued items; ${number(delivery.warehouseAmount || 0)} waiting in the warehouse.`
+            : 'Progress counts the target item currently held in the shared clan warehouse, including existing stock.';
+        const work = order.status !== 'paused' && order.strategy === 'craft' ? clanCraftReason(order.plan?.reasonCode) : order.status === 'paused' ? 'Work is paused until you resume this goal.'
+            : order.plan?.reasonCode === 'no_equipment_beneficiary' ? 'Waiting for a clan bot who can use this item as an upgrade.'
+                : order.plan?.reasonCode === 'item_source_unavailable' ? 'No suitable drop source found. Try buying from the market or choose another item.'
+                    : order.plan?.reasonCode === 'warehouse_delivery_pending' ? 'Items are collected; waiting for a recipient to become available.'
+                        : order.plan?.kind === 'farm' ? `Farming ${clan.goal?.target?.npcName || order.plan?.sourceName || 'a known drop source'}.`
+                            : order.plan?.kind === 'market' ? 'Looking for market offers within your price and budget limits.' : 'Preparing the next step.';
+        return { mode: 'Manual goal', work, destination };
+    }
+    const work = !goal ? 'The clan will choose its next goal when it is ready.'
+        : goal.type === 'adena' ? 'Members contribute Adena toward clan progression.'
+            : goal.type === 'equipment' ? `The clan is improving its members’ gear${goal.target?.memberName ? ` for ${goal.target.memberName}` : ''}.`
+                : `The clan is working on ${goal.target?.itemName || goal.target?.npcName || 'its current objective'}.`;
+    return {
+        mode: clan.automated ? 'Automatic goal' : 'Player directed',
+        work,
+        destination: clan.automated ? 'The clan chooses its own goals. A manual goal takes priority; completing or cancelling it restores automatic planning.' : 'Add bot members to enable shared clan goals.'
+    };
 }
 
 function clanCrestPixelsBase64(bytes) {
@@ -1085,7 +1170,7 @@ function clanOrderStatusLabel(status) {
 }
 
 function clanOrderStrategyLabel(strategy) {
-    return ({ auto: 'Auto', farm: 'Farm', market: 'Market' })[strategy] || readableToken(strategy);
+    return ({ auto: 'Auto', farm: 'Farm', market: 'Market', craft: 'Craft' })[strategy] || readableToken(strategy);
 }
 
 function clanOrderDelivery(order = null, item = null) {
@@ -1124,7 +1209,7 @@ function clanOrderItemResultsMarkup(draft = clanOrderDraft()) {
         <button type="button" class="clan-order-item-result" data-clan-order-item="${escapeHtml(item.id)}">
             <span class="clan-order-item-icon">${item.iconUrl ? `<img src="${text(item.iconUrl)}" alt="" loading="lazy">` : uiIcon('target')}</span>
             <span><strong>${text(item.name)}</strong><small>#${number(item.id)} · ${text(readableToken(item.kind), 'Item')}</small></span>
-            <b>${item.price ? `${compactNumber(item.price)} A` : '—'}</b>
+            <b>${item.craftable ? 'Craftable · ' : ''}${item.price ? `${compactNumber(item.price)} A` : '—'}</b>
         </button>
     `).join('');
 }
@@ -1140,21 +1225,24 @@ function renderClanOrderSearchResults() {
 function clanOrderMarkup(clan) {
     const detail = state.clanDetail || {};
     const order = detail.order;
-    const draft = clanOrderDraft();
+    const draft = state.clanOrderDraft;
+    const editing = draft?.mode === 'edit';
     const members = (detail.members || []).filter((member) => member.kind === 'bot');
-    const assigned = new Set(draft.memberIds === null ? members.map((member) => Number(member.id)) : draft.memberIds);
-    const rosterReady = draft.strategy === 'market' ? assigned.size >= 1 : assigned.size >= 3;
+    const assigned = new Set((draft?.memberIds ?? members.map((member) => Number(member.id))).filter((id) => members.some((member) => Number(member.id) === Number(id))));
+    const rosterReady = ['market', 'craft'].includes(draft?.strategy) ? assigned.size >= 1 : assigned.size >= 3;
     const goal = clanGoalSummary(clan.goal, clan);
-    const progress = order ? `${number(clan.goal?.progress)}/${number(order.amount)}` : null;
+    const explanation = clanGoalExplanation(clan, order);
     const message = state.clanOrderMessage;
-    const itemResults = clanOrderItemResultsMarkup(draft);
+    const itemResults = draft ? clanOrderItemResultsMarkup(draft) : '';
     const activeDelivery = clanOrderDelivery(order);
-    const draftDelivery = clanOrderDelivery(null, draft.item);
+    const draftDelivery = editing ? activeDelivery : clanOrderDelivery(null, draft?.item);
+    const paused = order?.status === 'paused';
     return `
-        <section class="clan-order-control" aria-label="Clan order">
+        <section class="clan-order-control" aria-label="Clan goal management">
             <div class="clan-management-heading">
-                <div><span class="section-kicker">Clan control</span><strong>${order ? 'Active order' : 'Set an order'}</strong></div>
-                <p>Set a shared clan goal. Members will keep working toward it after you leave this page.</p>
+                <div><span class="section-kicker">${text(explanation.mode)}</span><strong>${order ? 'Your clan goal' : 'Clan runs automatically'}</strong></div>
+                <p>${text(explanation.destination)}</p>
+                <details class="clan-goal-help"><summary>How clan goals work</summary><p>Choose an item and a total quantity. Bot members gather, buy or craft it. Equipment goes to suitable bot members; resources stay in the warehouse. Work continues when you leave Observer. Pause holds the goal; cancel returns the clan to automatic planning.</p></details>
             </div>
             <div class="clan-order-main">
                 ${order ? `
@@ -1163,54 +1251,40 @@ function clanOrderMarkup(clan) {
                         <div class="clan-order-current-copy">
                             <span>${text(clanOrderStatusLabel(order.status))} · ${text(clanOrderStrategyLabel(order.strategy))}</span>
                             <strong>${text(order.itemName)}</strong>
-                            <small>${text(goal.meta)} · Delivery: ${text(activeDelivery.title)} · ${compactNumber(order.spent)}${order.budget ? ` / ${compactNumber(order.budget)}` : ''} A spent</small>
+                            <small>Delivery: ${text(activeDelivery.title)}</small>
                         </div>
-                        <b>${text(progress)}</b>
+                        <b>${number(clan.goal?.progress || 0)} / ${number(order.amount)}</b>
                     </div>
-                    <div class="clan-order-progress"><i style="width:${number(goal.percent)}%"></i></div>
+                    <div class="clan-order-progress" role="progressbar" aria-label="Goal progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${goal.percent}"><i style="width:${goal.percent}%"></i></div>
+                    <p class="clan-goal-explanation">${text(explanation.work)}</p>
                     <div class="clan-order-actions">
-                        ${order.status === 'paused'
-                            ? `<button type="button" data-clan-order-transition="resume">${uiIcon('target')}Resume</button>`
-                            : `<button type="button" data-clan-order-transition="pause">Pause</button>`}
-                        <button type="button" data-clan-order-transition="replan">${uiIcon('crosshair')}Replan</button>
-                        <button class="is-danger" type="button" data-clan-order-transition="cancel">${uiIcon('trash')}Cancel</button>
+                        <button type="button" data-clan-order-editor="edit" ${state.clanOrderSaving ? 'disabled' : ''}>Edit goal</button>
+                        <button type="button" data-clan-order-transition="${paused ? 'resume' : 'pause'}" ${state.clanOrderSaving ? 'disabled' : ''}>${paused ? 'Resume' : 'Pause'}</button>
+                        <button type="button" data-clan-order-transition="replan" title="Recalculate how to reach this goal; keep the item and quantity" ${state.clanOrderSaving || paused ? 'disabled' : ''}>Try another plan</button>
+                        <button class="is-danger" type="button" data-clan-order-transition="cancel" ${state.clanOrderSaving ? 'disabled' : ''}>Cancel goal</button>
                     </div>
-                ` : '<div class="clan-order-empty"><span>No active order</span><strong>Choose an item below to put the clan to work.</strong></div>'}
-                <div class="clan-order-editor">
-                    <div class="clan-order-editor-title"><span>${order ? 'Replace order' : 'New order'}</span><small>Gather item</small></div>
-                    <label class="clan-order-search-field">
-                        <span>Item</span>
-                        <div>${uiIcon('search')}<input type="search" data-clan-order-search value="${escapeHtml(draft.query)}" placeholder="Search by item name or ID" autocomplete="off"></div>
-                    </label>
-                    <div class="clan-order-item-results" data-clan-order-results ${itemResults ? '' : 'hidden'}>${itemResults}</div>
-                    ${draft.item ? `<div class="clan-order-selected"><span>${draft.item.iconUrl ? `<img src="${text(draft.item.iconUrl)}" alt="">` : uiIcon('target')}</span><div><small>Selected item</small><strong>${text(draft.item.name)}</strong></div><b>#${number(draft.item.id)}</b></div>` : ''}
-                    <div class="clan-order-delivery ${draftDelivery.member ? 'is-member' : ''}"><span>${uiIcon(draftDelivery.member ? 'users' : 'warehouse')}</span><div><small>Delivery</small><strong>${text(draftDelivery.title)}</strong><p>${text(draftDelivery.description)}</p></div></div>
-                    <div class="clan-order-fields">
-                        <label><span>Quantity</span><input type="number" min="1" max="1000000" step="1" data-clan-order-amount value="${escapeHtml(draft.amount)}"></label>
-                        <label><span>Max unit price</span><input type="number" min="1" step="1" data-clan-order-price value="${escapeHtml(draft.maxUnitPrice)}" placeholder="Auto"></label>
-                        <label><span>Total budget</span><input type="number" min="0" step="1" data-clan-order-budget value="${escapeHtml(draft.budget)}" placeholder="Unlimited"></label>
-                    </div>
-                    <div class="clan-order-policy">
-                        <span>Execution policy</span>
-                        <div role="group" aria-label="Execution policy">
-                            ${['auto', 'farm', 'market'].map((strategy) => `<button type="button" class="${draft.strategy === strategy ? 'is-active' : ''}" data-clan-order-strategy="${strategy}" aria-pressed="${draft.strategy === strategy}">${clanOrderStrategyLabel(strategy)}</button>`).join('')}
-                        </div>
-                        <small>${draft.strategy === 'auto' ? 'Use a suitable market offer, then fall back to farming.' : draft.strategy === 'farm' ? 'Farm a known drop source with the selected bots.' : 'Wait for and buy a suitable player offer.'}</small>
-                    </div>
-                    <fieldset class="clan-order-members">
-                        <legend>Executors <small>${assigned.size || members.length} selected</small></legend>
-                        <div>${members.map((member) => `
-                            <label><input type="checkbox" data-clan-order-member="${escapeHtml(member.id)}" ${assigned.has(Number(member.id)) ? 'checked' : ''}><span><strong>${text(member.name)}</strong><small>${text(roleLabel(member.role || 'member'))} · Lv ${number(member.level, '?')}</small></span></label>
-                        `).join('') || '<p>No bot members available.</p>'}</div>
-                    </fieldset>
-                    <div class="clan-order-submit">
-                        <span class="${message?.kind === 'error' || !rosterReady ? 'is-error' : ''}">${text(message?.text || (!rosterReady ? 'Auto and Farm need at least 3 executors' : draft.item ? `${draft.item.name} ready` : 'Select an item to continue'))}</span>
-                        <button type="button" data-create-clan-order ${draft.item && rosterReady && !state.clanOrderSaving ? '' : 'disabled'}>${state.clanOrderSaving ? 'Saving…' : order ? 'Replace order' : 'Start order'}</button>
-                    </div>
-                </div>
+                    ${order.strategy === 'craft' ? draft ? '' : clanCraftPreviewMarkup(order.plan) : `<div class="clan-order-facts"><span><small>Spent</small><strong>${number(order.spent)} A</strong></span><span><small>Budget remaining</small><strong>${order.budget ? `${number(Math.max(0, order.budget - order.spent))} A` : 'No limit'}</strong></span><span><small>Unit price limit</small><strong>${number(order.maxUnitPrice)} A</strong></span></div>`}
+                ` : `${clanAutomaticGoalMarkup(clan.goal, clan)}<p class="clan-goal-explanation">${text(explanation.work)}</p>${detail.automaticCraft ? clanCraftPreviewMarkup(detail.automaticCraft) : ''}${clan.productionGoal && !['complete', 'completed', 'cancelled'].includes(clan.productionGoal.status) ? `${clanAutomaticGoalMarkup(clan.productionGoal, clan, 'Automatic equipment')}${detail.productionCraft ? clanCraftPreviewMarkup(detail.productionCraft) : ''}` : ''}`}
+                ${state.clanOrderCancelPending ? `<div class="clan-order-confirm" role="alert"><strong>Cancel this goal?</strong><p>Queued work stops. Collected items stay with the clan and automatic planning resumes.</p><div class="clan-order-actions"><button type="button" data-clan-order-confirm-cancel>Yes, cancel goal</button><button type="button" data-clan-order-keep>Keep goal</button></div></div>` : ''}
+                ${!draft ? `<div class="clan-order-actions"><button type="button" data-clan-order-editor="new">${order ? 'Choose a different goal' : 'Set a manual goal'}</button></div>` : `
+                <form class="clan-order-editor" data-clan-order-form>
+                    <div class="clan-order-editor-title"><span>${editing ? 'Edit goal' : order ? 'Choose a different goal' : 'New manual goal'}</span><button type="button" data-clan-order-discard>Close editor</button></div>
+                    <p class="clan-goal-explanation">${editing ? 'Update the total quantity, approach or limits. Progress and spending stay with this goal. The plan is recalculated; paused work stays paused.' : order ? 'Starting this goal replaces the current one and stops its queued work.' : 'This goal takes priority over the clan’s automatic plans.'}</p>
+                    ${editing ? '' : `<label class="clan-order-search-field"><span>1. Choose an item</span><div>${uiIcon('search')}<input type="search" data-clan-order-search value="${escapeHtml(draft.query)}" placeholder="Search by item name or ID" autocomplete="off"></div></label>
+                    <div class="clan-order-item-results" data-clan-order-results ${itemResults ? '' : 'hidden'}>${itemResults}</div>`}
+                    ${draft.item ? `<div class="clan-order-selected"><span>${draft.item.iconUrl ? `<img src="${text(draft.item.iconUrl)}" alt="">` : uiIcon('target')}</span><div><small>${editing ? 'Current target' : 'Selected item'}</small><strong>${text(draft.item.name)}</strong></div><b>#${Number(draft.item.id)}</b></div>` : ''}
+                    ${draft.item ? `<div class="clan-order-delivery ${draftDelivery.member ? 'is-member' : ''}"><span>${uiIcon(draftDelivery.member ? 'users' : 'warehouse')}</span><div><small>Where it goes</small><strong>${text(draftDelivery.title)}</strong><p>${text(draftDelivery.description)}</p></div></div>` : ''}
+                    <div class="clan-order-fields clan-order-quantity"><label><span>Total quantity</span><input required aria-label="Total quantity" type="number" min="1" max="1000000" step="1" data-clan-order-amount value="${escapeHtml(draft.amount)}"><small>Total target, including items already counted.</small></label></div>
+                    <div class="clan-order-policy"><span>${editing ? 'Approach' : '2. Choose how to get it'}</span><div role="group" aria-label="Approach">${['auto', 'farm', 'market', 'craft'].map((strategy) => `<button type="button" class="${draft.strategy === strategy ? 'is-active' : ''}" data-clan-order-strategy="${strategy}" aria-pressed="${draft.strategy === strategy}">${clanOrderStrategyLabel(strategy)}</button>`).join('')}</div><small>${draft.strategy === 'auto' ? 'Buy a suitable offer when available; otherwise farm a known drop source.' : draft.strategy === 'farm' ? 'Farm a known drop source. No market purchases.' : draft.strategy === 'craft' ? 'Selected clan dwarves craft the item. Gather missing materials, craft components, then deliver the result.' : 'Buy suitable market offers with clan Adena.'}</small></div>
+                    ${draft.strategy === 'craft' ? clanCraftPreviewMarkup(draft.craftPreview, draft.craftPreviewLoading, draft.craftPreviewError) : ''}
+                    <details class="clan-order-options" data-clan-order-option="limits" ${['farm', 'craft'].includes(draft.strategy) ? 'hidden' : ''}><summary>Purchase limits <span>${draft.budget ? `${number(draft.budget)} A budget` : 'No total budget limit'}</span></summary><div class="clan-order-fields"><label><span>Max unit price (Adena)</span><input aria-label="Max unit price (Adena)" type="number" min="1" step="1" data-clan-order-price value="${escapeHtml(draft.maxUnitPrice)}" placeholder="Auto"><small>Auto uses twice the item’s base price.</small></label><label><span>Total budget (Adena)</span><input aria-label="Total budget (Adena)" type="number" min="0" step="1" data-clan-order-budget value="${escapeHtml(draft.budget)}" placeholder="No limit"><small>Includes Adena already spent. Empty or 0 means no limit.</small></label></div></details>
+                    <details class="clan-order-options" data-clan-order-option="roster"><summary>Bot executors <span>${assigned.size} of ${members.length} selected</span></summary><p>These bots do the work. Equipment recipients are chosen from all clan bots. ${draft.strategy === 'market' ? 'Select at least one executor.' : draft.strategy === 'craft' ? 'Include at least one dwarf. Gathering missing materials needs three available bots.' : 'Gathering materials needs at least three. Include a dwarf who can craft the recipe; party composition is checked when work starts.'}</p><div class="clan-order-actions"><button type="button" data-clan-order-roster="all">Select all</button><button type="button" data-clan-order-roster="none">Clear selection</button></div><fieldset class="clan-order-members"><legend>Executors</legend><div>${members.map((member) => `<label><input type="checkbox" data-clan-order-member="${escapeHtml(member.id)}" ${assigned.has(Number(member.id)) ? 'checked' : ''}><span><strong>${text(member.name)}</strong><small>${text(roleLabel(member.role || 'member'))} · Lv ${number(member.level, '?')}</small></span></label>`).join('') || '<p>No bot members available.</p>'}</div></fieldset></details>
+                    <div class="clan-order-submit"><span class="${!rosterReady ? 'is-error' : ''}">${text(!rosterReady ? ['market', 'craft'].includes(draft.strategy) ? 'Select at least one bot executor' : 'Select at least 3 bot executors' : !draft.item ? 'Select an item to continue' : editing ? 'Ready to save changes' : 'Ready to start')}</span><button type="submit" data-create-clan-order ${draft.item && rosterReady && !state.clanOrderSaving ? '' : 'disabled'}>${state.clanOrderSaving ? 'Saving…' : editing ? 'Save changes' : order ? 'Replace goal' : 'Start goal'}</button></div>
+                    ${draft.confirmReplacement ? `<div class="clan-order-confirm" role="alert"><strong>Replace ${text(order?.itemName)} with ${text(draft.item?.name)}?</strong><p>The current goal’s queued work stops. Collected items stay with the clan. The new goal starts a separate spending record.</p><div class="clan-order-actions"><button type="button" data-clan-order-confirm-replace>Yes, replace goal</button><button type="button" data-clan-order-keep>Keep current goal</button></div></div>` : ''}
+                </form>`}
+                ${message ? `<p class="clan-order-message ${message.kind === 'error' ? 'is-error' : ''}" role="${message.kind === 'error' ? 'alert' : 'status'}">${text(message.text)}${state.clanOrderConflict ? ' <button type="button" data-clan-order-reload>Reload current goal</button>' : ''}</p>` : ''}
             </div>
-        </section>
-    `;
+        </section>`;
 }
 
 function clanManagementMarkup(clan) {
@@ -1220,8 +1294,8 @@ function clanManagementMarkup(clan) {
     const crestAvailable = Number(clan.level || 0) >= 3;
     return `
         <div class="clan-management" aria-label="Clan management">
-            ${clanOrderMarkup(clan)}
-            <section class="clan-identity-control">
+            ${state.clanManagerTab === 'goal' ? clanOrderMarkup(clan) : ''}
+            <section class="clan-appearance" ${state.clanManagerTab === 'appearance' ? '' : 'hidden'}><section class="clan-identity-control">
             <div class="clan-management-heading">
                 <div><span class="section-kicker">Appearance</span><strong>Identity</strong></div>
                 <p>${crestAvailable ? 'Upload a normal image. Observer prepares the 16 × 12 crest required by the C4 client.' : 'Clan crests unlock at clan level 3.'}</p>
@@ -1255,9 +1329,102 @@ function clanManagementMarkup(clan) {
                 <div><strong>Clan crest locked</strong><span>Reach clan level 3 to choose and upload a crest.</span></div>
                 <b>L${number(clan.level, 0)} / L3</b>
             </div>`}
-            </section>
+            </section></section>
         </div>
     `;
+}
+
+function clanCraftReason(code) {
+    return ({ no_equipment_beneficiary: 'Waiting for a clan bot who can use this item as an upgrade.',
+        clan_craft_plan_pending: 'The clan is preparing this crafting route. Recipe and material details will appear when a carrier is assigned.',
+        clan_craft_traveling: 'Taking materials to the crafter.',
+        clan_craft_in_progress: 'The carrier is at the crafter.',
+        clan_craft_party_resources: 'The carrier is gathering resources with its party.',
+        clan_craft_route_blocked: 'This crafting route is blocked. The clan is reviewing how to continue.',
+        warehouse_delivery_pending: 'Crafted items are in the warehouse; waiting for an available recipient.',
+        goal_completed: 'The target quantity has been delivered.',
+        clan_craft_recipe_unavailable: 'This item has no dwarf crafting recipe.',
+        clan_craft_crafter_unavailable: 'Select a living clan dwarf with enough crafting skill.',
+        clan_craft_customer_unavailable: 'Waiting for an available bot to carry the materials.',
+        clan_craft_material_source_unavailable: 'No suitable drop source for the missing inputs. Add them to the clan warehouse, then replan.',
+        clan_craft_collecting_materials: 'Gathering missing materials.',
+        clan_craft_ready: 'Materials are ready for the final craft.',
+        clan_craft_component_ready: 'Crafting an intermediate component first.' })[code] || readableToken(code);
+}
+
+function clanCraftPreviewMarkup(plan, loading = false, error = null) {
+    if (loading) return '<section class="clan-craft-preview" data-clan-craft-preview role="status">Checking recipe, selected dwarves and shared materials…</section>';
+    if (error) return `<section class="clan-craft-preview is-error" data-clan-craft-preview role="alert">${text(error)}</section>`;
+    if (!plan) return '<section class="clan-craft-preview" data-clan-craft-preview>Select an item to check its recipe and resources.</section>';
+    const craft = plan.craft;
+    if (!craft) return `<section class="clan-craft-preview" data-clan-craft-preview>${text(clanCraftReason(plan.reasonCode))}</section>`;
+    const stage = ({ resources: 0, components: 1, crafting: 1, delivery: 2, blocked: -1 })[craft.stage] ?? -1;
+    return `<section class="clan-craft-preview" data-clan-craft-preview aria-label="Crafting plan">
+        <div class="clan-craft-title"><strong>Crafting plan</strong><span>${number(craft.successRate)}% success · ${number(craft.productCount)} per batch</span></div>
+        <ol class="clan-craft-stages">${['Gather resources', 'Craft', 'Deliver'].map((label, index) => `<li class="${index === stage ? 'is-current' : index < stage ? 'is-done' : ''}"><span>${index + 1}</span>${label}</li>`).join('')}</ol>
+        <p>${text(clanCraftReason(plan.reasonCode))}${craft.nextItemName ? ` Next: ${text(craft.nextItemName)}.` : ''}</p>
+        ${craft.customerName ? `<p>Material carrier: ${text(craft.customerName)}${craft.activity ? ` · ${text(activityLabel(craft.activity))}` : ''}${craft.sourceName ? `<br>Current source: ${text(craft.sourceName)}${craft.sourceKind === 'spoil' ? ' · Spoil' : ''}` : ''}</p>` : ''}
+        <div class="clan-craft-meta"><span><small>Recipe skill</small><strong>Level ${number(craft.level)}</strong></span><span><small>Crafter</small><strong>${text(craft.crafterName || 'Unavailable')}</strong></span><span><small>Recipe knowledge</small><strong>${craft.learned ? 'Learned' : craft.materials.some(material => material.selfId === craft.recipeItemId && !material.missing) ? 'Ready to learn' : 'Recipe scroll needed'}</strong></span></div>
+        ${craft.materials.length ? `<details class="clan-craft-materials" open><summary>Inputs for the next batch <span>Shared stock + carrier’s inventory</span></summary><div class="clan-manager-table-wrap"><table><thead><tr><th>Material</th><th>Needed</th><th>Available</th><th>Missing</th></tr></thead><tbody>${craft.materials.map(material => `<tr><td>${text(material.name)}${material.component ? '<small>Craftable component; its missing inputs are listed below</small>' : ''}</td><td>${number(material.required)}</td><td>${number(material.available)}</td><td class="${material.missing ? 'is-missing' : 'is-stocked'}">${material.missing ? number(material.missing) : 'Ready'}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
+        <small>Crafting repeats until the total goal is met. Failed attempts consume inputs. Crystals and gemstones are supplied automatically.</small>
+    </section>`;
+}
+
+async function loadClanCraftPreview() {
+    const draft = state.clanOrderDraft;
+    const request = ++state.clanCraftPreviewRequest;
+    if (!draft || draft.strategy !== 'craft' || !draft.item) return;
+    draft.craftPreviewLoading = true;
+    draft.craftPreviewError = null;
+    const memberIds = draft.memberIds ?? (state.clanDetail.members || []).filter(member => member.kind === 'bot').map(member => Number(member.id));
+    try {
+        const response = await fetch(`/observer/api/clan/${state.selectedClanId}/craft-preview`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ itemId: Number(draft.item.id), amount: Number(draft.amount), orderId: draft.orderId, memberIds })
+        });
+        const result = await clanOrderResponse(response);
+        if (!response.ok || !result.ok) throw new Error(clanOrderErrorMessage(result.code, result.error));
+        if (request === state.clanCraftPreviewRequest && draft === state.clanOrderDraft) draft.craftPreview = result.plan;
+    } catch (error) {
+        if (request === state.clanCraftPreviewRequest && draft === state.clanOrderDraft) draft.craftPreviewError = error.message;
+    } finally {
+        if (request === state.clanCraftPreviewRequest && draft === state.clanOrderDraft) {
+            draft.craftPreviewLoading = false;
+            const preview = els.clansModal.querySelector('[data-clan-order-form] [data-clan-craft-preview]');
+            if (preview) preview.outerHTML = clanCraftPreviewMarkup(draft.craftPreview, false, draft.craftPreviewError);
+        }
+    }
+}
+
+function closeClanManager() {
+    if (state.clanOrderSaving || state.clanCrestSaving) return;
+    state.clanManagerOpen = false;
+    els.clanManagerDialog?.close();
+    const trigger = els.clanDetail?.querySelector('[data-clan-manage]');
+    trigger?.setAttribute('aria-expanded', 'false');
+    trigger?.classList.remove('is-active');
+    trigger?.focus();
+}
+
+function renderClanManager() {
+    const dialog = els.clanManagerDialog;
+    const detail = state.clanDetail;
+    if (!dialog) return;
+    if (!state.clanManagerOpen || !detail?.clan?.playerManaged || !state.clanOpen) { dialog.close(); return; }
+    const clan = detail.clan;
+    const tab = state.clanManagerTab || 'goal';
+    const content = els.clanManagerContent;
+    const previousScroll = content.querySelector('.clan-manager-body')?.scrollTop || 0;
+    const currentGoal = clanGoalSummary(clan.goal, clan);
+    content.innerHTML = `<header class="clan-manager-header"><div class="clan-manager-heading"><span class="section-kicker">Clan management</span><h2 id="clanManagerTitle">${clanCrestMarkup(clan, 'large')}${text(clan.name)}</h2><p>Level ${number(clan.level)} · ${number(clan.memberCount)} members · ${number(clan.warehouse?.adena)} Adena in warehouse</p><div class="clan-manager-current-status" aria-label="Current clan goal">${currentGoal.iconUrl ? `<img src="${text(currentGoal.iconUrl)}" alt="">` : uiIcon(clan.goal?.type === 'adena' ? 'coins' : 'target')}<span>${detail.order ? 'Manual' : 'Automatic'} · ${text(currentGoal.title)}</span><b class="clan-goal-status" data-status="${text(clan.goal?.status || 'idle')}">${text(clan.goal ? clanOrderStatusLabel(clan.goal.status) : 'Waiting')}</b></div></div><button class="clan-manager-close" type="button" data-clan-manager-close aria-label="Close clan management" title="Close clan management">${uiIcon('close')}</button></header>
+        <nav class="clan-manager-tabs" aria-label="Clan management sections">${[['goal', 'target', 'Goal'], ['members', 'users', 'Members'], ['warehouse', 'warehouse', 'Warehouse'], ['activity', 'history', 'Activity'], ['appearance', 'shield', 'Appearance']].map(([id, icon, label]) => `<button type="button" data-clan-manager-tab="${id}" aria-current="${tab === id ? 'page' : 'false'}">${uiIcon(icon)}${label}${id === 'members' ? `<span>${number(detail.members.length)}</span>` : ''}</button>`).join('')}</nav>
+        <div class="clan-manager-body">${clanManagementMarkup(clan)}
+        ${tab === 'members' ? `<section><div class="clan-manager-section-heading"><h3>Clan members</h3><p>Open a profile to inspect equipment and current activity. Goal executors are chosen in the Goal tab.</p></div><div class="clan-member-list">${detail.members.map(member => `<button type="button" class="clan-member-row" data-clan-member-id="${member.id}" data-clan-member-kind="${text(member.kind)}"><span class="clan-member-main"><strong>${text(member.name)}</strong><span>${text(member.className)} · Lv ${number(member.level)}</span></span><span class="clan-member-state"><strong>${text(activityLabel(member.activity || member.phase))}</strong><span>${text(member.region)}</span></span></button>`).join('')}</div></section>` : ''}
+        ${tab === 'warehouse' ? `<section><div class="clan-manager-section-heading"><h3>Shared warehouse</h3><p>Available stock is used by clan goals. Reserved quantities are held for ongoing work.</p></div><div class="clan-manager-table-wrap"><table><thead><tr><th>Item</th><th>Total</th><th>Reserved</th><th>Available</th></tr></thead><tbody>${(detail.warehouse || []).map(item => `<tr><td>${text(item.name)}${item.enchant ? ` +${number(item.enchant)}` : ''}</td><td>${number(item.amount)}</td><td>${number(item.reservedAmount)}</td><td>${number(Math.max(0, item.amount - item.reservedAmount))}</td></tr>`).join('') || '<tr><td colspan="4">The warehouse is empty.</td></tr>'}</tbody></table></div>${clanHallMarkup(detail.clanHall)}</section>` : ''}
+        ${tab === 'activity' ? `<section class="clan-manager-activity"><div class="clan-manager-section-heading"><h3>Recent activity</h3><p>Goal changes, gathering, crafting and delivery.</p></div>${(detail.events || []).map(event => `<div class="clan-event-row"><strong>${text(uiLabel('event', event.eventType, 'Clan update'))}</strong><span>${text(uiLabel('reason', event.reasonCode, null) || readableToken(event.reasonCode))}</span><time>${text(formatTime(event.occurredAt))}</time></div>`).join('') || '<p>No activity yet.</p>'}</section>` : ''}
+        </div><footer class="clan-manager-footer"><span>${state.clanOrderDraft || state.clanCrestDraft ? 'Unsaved edits stay here when you close this window.' : 'Saved goals keep running when you leave Observer.'}</span><button type="button" data-clan-manager-close>Done</button></footer>`;
+    content.querySelector('.clan-manager-body').scrollTop = previousScroll;
+    if (!dialog.open) dialog.showModal();
 }
 
 function clanHallMarkup(finance) {
@@ -1311,6 +1478,8 @@ function clanHallMarkup(finance) {
 
 function renderClanDetail() {
     if (!els.clanDetail) return;
+    const scrollTop = els.clanDetail.scrollTop;
+    const expandedSettings = [...els.clansModal.querySelectorAll('[data-clan-order-option][open]')].map((element) => element.dataset.clanOrderOption);
     state.clanDetailDeferredRender = false;
     const detail = state.clanDetail;
     if (state.clanDetailLoading && !detail) {
@@ -1343,17 +1512,9 @@ function renderClanDetail() {
                 <span class="clan-level-badge">L${number(clan.level, 0)}</span>
             </div>
         </div>
-        ${clanManagementMarkup(clan)}
-        ${clanHallMarkup(detail.clanHall)}
-        <div class="clan-metric-grid">
-            <div><span>Members</span><strong>${number(clan.memberCount)}</strong><small>${number(clan.botMembers)} bots</small></div>
-            <div><span>Average level</span><strong>${number(clan.averageLevel)}</strong><small>range ${number(clan.lowestLevel)}–${number(clan.highestLevel)}</small></div>
-            <div><span>Warehouse</span><strong>${compactNumber(warehouse.adena)} A</strong><small>${number(warehouse.bloodMarks)} Blood Marks</small></div>
-            <div><span>Operation</span><strong>${operation ? text(uiLabel('status', operation.status, 'Active')) : 'Idle'}</strong><small>${operation ? text(uiLabel('plan', operation.type, 'Operation')) : 'No active party'}</small></div>
-        </div>
         <div class="clan-briefing">
             <section class="clan-goal-brief">
-                <div class="clan-block-title"><span>${uiIcon('target')}Current goal</span><b>${text(goal.progress)}</b></div>
+                <div class="clan-block-title"><span>${uiIcon('target')}${text(clanGoalExplanation(clan, detail.order).mode)}</span><b>${text(goal.progress)}</b></div>
                 <div class="clan-goal-primary">
                     ${goal.iconUrl ? `<span class="clan-goal-icon"><img src="${text(goal.iconUrl)}" alt="${text(goal.title)}" loading="lazy" decoding="async"></span>` : ''}
                     <div>
@@ -1362,12 +1523,22 @@ function renderClanDetail() {
                     </div>
                 </div>
                 <div class="clan-goal-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${number(goal.percent)}"><i style="width:${number(goal.percent)}%"></i></div>
+                <p class="clan-goal-explanation">${text(clanGoalExplanation(clan, detail.order).work)}</p><p class="clan-goal-explanation">${text(clanGoalExplanation(clan, detail.order).destination)}</p>
+                ${clan.playerManaged ? `<div class="clan-order-actions"><button type="button" data-clan-order-editor="${detail.order ? 'edit' : 'new'}">${detail.order ? 'Edit goal' : 'Set a manual goal'}</button></div>` : ''}
             </section>
             <div class="clan-briefing-facts">
                 <div><span>Market demand</span><strong>${number(clan.market?.openDemands)} open</strong><small>${number(clan.market?.requestedUnits)} units requested</small></div>
                 <div><span>Action queue</span><strong>${actionCount || 'Clear'}</strong><small>${number(clan.actions?.running)} running · ${number(clan.actions?.pending)} pending</small></div>
                 <div><span>Progression</span><strong>${number(clan.contributions?.length || 0)} levels funded</strong><small>${(clan.contributions || []).length ? clan.contributions.map((entry) => `L${number(entry.targetLevel)} · ${compactNumber(entry.amount)} A`).join(' · ') : 'No ledger entries'}</small></div>
             </div>
+        </div>
+
+        ${clanHallMarkup(detail.clanHall)}
+        <div class="clan-metric-grid">
+            <div><span>Members</span><strong>${number(clan.memberCount)}</strong><small>${number(clan.botMembers)} bots</small></div>
+            <div><span>Average level</span><strong>${number(clan.averageLevel)}</strong><small>range ${number(clan.lowestLevel)}–${number(clan.highestLevel)}</small></div>
+            <div><span>Warehouse</span><strong>${compactNumber(warehouse.adena)} A</strong><small>${number(warehouse.bloodMarks)} Blood Marks</small></div>
+            <div><span>Operation</span><strong>${operation ? text(uiLabel('status', operation.status, 'Active')) : 'Idle'}</strong><small>${operation ? text(uiLabel('plan', operation.type, 'Operation')) : 'No active party'}</small></div>
         </div>
         <div class="clan-roster-layout">
             <section class="clan-members-section">
@@ -1390,6 +1561,9 @@ function renderClanDetail() {
             </aside>
         </div>
     `;
+    renderClanManager();
+    for (const option of expandedSettings) els.clansModal.querySelector(`[data-clan-order-option="${option}"]`)?.setAttribute('open', '');
+    els.clanDetail.scrollTop = scrollTop;
 }
 
 async function loadClanDetail(id, { updateRoute = true } = {}) {
@@ -1427,7 +1601,7 @@ async function loadClanDetail(id, { updateRoute = true } = {}) {
         if (requestId === state.clanRequest) {
             state.clanDetailLoading = false;
             const editor = els.clansModal?.querySelector('.clan-order-editor');
-            if (editor?.contains(document.activeElement)) state.clanDetailDeferredRender = true;
+            if (state.clanOrderDraft || editor?.contains(document.activeElement)) state.clanDetailDeferredRender = true;
             else renderClans();
         }
     }
@@ -1451,12 +1625,27 @@ function clanOrderErrorMessage(code, fallback = 'Could not update the clan order
         invalid_clan_order: 'The clan order is invalid',
         invalid_clan_order_item: 'Choose a valid item',
         invalid_clan_order_amount: 'Quantity must be between 1 and 1,000,000',
+        clan_craft_recipe_unavailable: 'This item has no dwarf crafting recipe. Choose another item or approach.',
         invalid_clan_order_strategy: 'Choose a valid execution policy',
+        invalid_clan_order_edit: 'Choose a different goal to change the target item',
+        invalid_clan_order_price: 'Use whole Adena amounts: a positive unit price and a budget of 0 or more',
+        clan_order_budget_below_spent: 'The total budget cannot be less than Adena already spent',
         invalid_clan_order_members: 'One or more selected bots no longer belong to this clan',
         clan_order_not_active: 'This order is no longer active',
-        clan_order_revision_conflict: 'The order changed on the server. Refresh and try again'
+        clan_order_revision_conflict: 'The goal changed while you were editing. Reload the current goal and apply your changes again'
     };
     return messages[code] || fallback;
+}
+
+async function clanOrderResponse(response) {
+    if (response.status === 404) {
+        throw new Error('Clan controls are unavailable on the running server. Restart the server to load the update, then try again. Your edits are kept.');
+    }
+    try {
+        return await response.json();
+    } catch (_) {
+        throw new Error(`The server could not return clan data${response.status ? ` (HTTP ${response.status})` : ''}. Try again. Your edits are kept.`);
+    }
 }
 
 async function searchClanOrderItems(query = clanOrderDraft().query, { showLoading = true } = {}) {
@@ -1474,7 +1663,7 @@ async function searchClanOrderItems(query = clanOrderDraft().query, { showLoadin
     if (showLoading) renderClanOrderSearchResults();
     try {
         const response = await fetch(`/observer/api/clan-order-items?q=${encodeURIComponent(needle)}&limit=40`, { cache: 'no-store' });
-        const result = await response.json();
+        const result = await clanOrderResponse(response);
         if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
         if (requestId !== state.clanOrderSearchRequest) return;
         state.clanOrderItems = Array.isArray(result.items) ? result.items : [];
@@ -1497,45 +1686,66 @@ async function createClanOrder() {
     const memberIds = draft.memberIds === null
         ? (state.clanDetail?.members || []).filter((member) => member.kind === 'bot').map((member) => Number(member.id))
         : draft.memberIds;
-    if (!memberIds.length) {
-        state.clanOrderMessage = { kind: 'error', text: 'Select at least one bot executor' };
+    const minimumExecutors = ['market', 'craft'].includes(draft.strategy) ? 1 : 3;
+    if (memberIds.length < minimumExecutors) {
+        state.clanOrderMessage = { kind: 'error', text: `Select at least ${minimumExecutors} bot executors` };
         renderClanDetail();
         return;
     }
-    if (state.clanDetail?.order && !window.confirm('Replace the active clan order? Its queued work will be cancelled.')) return;
+    const editing = draft.mode === 'edit';
+    const form = els.clansModal?.querySelector('[data-clan-order-form]');
+    if (form && !form.reportValidity()) return;
+    if (!editing && state.clanDetail?.order && !draft.replaceConfirmed) {
+        draft.confirmReplacement = true;
+        renderClanDetail();
+        return;
+    }
     state.clanOrderSaving = true;
     state.clanOrderMessage = null;
     renderClanDetail();
     try {
-        const response = await fetch(`/observer/api/clan/${encodeURIComponent(clanId)}/orders`, {
-            method: 'POST',
+        const response = await fetch(`/observer/api/clan/${encodeURIComponent(clanId)}/orders${editing ? `/${encodeURIComponent(draft.orderId)}` : ''}`, {
+            method: editing ? 'PATCH' : 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                revision: editing ? draft.revision : undefined,
+                expectedSettings: editing ? draft.expectedSettings : undefined,
                 itemId: Number(draft.item.id),
                 amount: Number(draft.amount),
                 strategy: draft.strategy,
-                maxUnitPrice: draft.maxUnitPrice === '' ? undefined : Number(draft.maxUnitPrice),
-                budget: draft.budget === '' ? undefined : Number(draft.budget),
+                maxUnitPrice: draft.maxUnitPrice === '' ? editing ? null : undefined : Number(draft.maxUnitPrice),
+                budget: draft.budget === '' ? 0 : Number(draft.budget),
                 memberIds
             })
         });
-        const result = await response.json();
-        if (!response.ok || !result.ok) throw new Error(clanOrderErrorMessage(result.code, result.error));
+        const result = await clanOrderResponse(response);
+        if (Number(state.selectedClanId) !== clanId) return;
+        if (!response.ok || !result.ok) {
+            state.clanOrderConflict = result.code === 'clan_order_revision_conflict' || result.code === 'clan_order_not_active';
+            throw new Error(clanOrderErrorMessage(result.code, result.error));
+        }
         resetClanOrderDraft();
-        state.clanOrderMessage = { kind: 'success', text: 'Clan order started' };
+        state.clanOrderMessage = { kind: 'success', text: editing ? 'Goal updated. Progress and spending preserved.' : 'Manual goal started' };
         await refreshManagedClan(clanId);
     } catch (error) {
+        if (Number(state.selectedClanId) !== clanId) return;
         state.clanOrderSaving = false;
-        state.clanOrderMessage = { kind: 'error', text: error.message || 'Could not start the clan order' };
+        draft.replaceConfirmed = false;
+        state.clanOrderMessage = { kind: 'error', text: error.message || 'Could not save the clan goal' };
         renderClanDetail();
     }
 }
 
-async function transitionClanOrder(transition) {
+async function transitionClanOrder(transition, { confirmed = false } = {}) {
     const clanId = Number(state.clanDetail?.clan?.id || 0);
     const order = state.clanDetail?.order;
     if (!clanId || !order || state.clanOrderSaving) return;
-    if (transition === 'cancel' && !window.confirm('Cancel this clan order? Its queued work will stop.')) return;
+    if (transition === 'cancel' && !confirmed) {
+        state.clanOrderCancelPending = true;
+        renderClanDetail();
+        return;
+    }
+    state.clanOrderCancelPending = false;
     state.clanOrderSaving = true;
     state.clanOrderMessage = null;
     renderClanDetail();
@@ -1545,7 +1755,7 @@ async function transitionClanOrder(transition) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ revision: order.revision })
         });
-        const result = await response.json();
+        const result = await clanOrderResponse(response);
         if (!response.ok || !result.ok) throw new Error(clanOrderErrorMessage(result.code, result.error));
         state.clanOrderSaving = false;
         state.clanOrderMessage = { kind: 'success', text: `${transition === 'cancel' ? 'Order cancelled' : transition === 'pause' ? 'Order paused' : transition === 'resume' ? 'Order resumed' : 'New plan queued'}` };
@@ -1722,6 +1932,7 @@ function openClans(clanId = null, { updateRoute = true } = {}) {
 function closeClans({ updateRoute = true } = {}) {
     if (!state.clanOpen) return;
     state.clanOpen = false;
+    els.clanManagerDialog?.close();
     els.clansModal.hidden = true;
     els.observerShell?.removeAttribute('aria-hidden');
     if (els.observerShell) els.observerShell.inert = false;
@@ -3330,6 +3541,14 @@ els.raidBossesModal?.addEventListener('click', (event) => {
 });
 
 els.clansModal?.addEventListener('click', (event) => {
+    if (event.target.closest('[data-clan-manager-close]')) { closeClanManager(); return; }
+    const managerTab = event.target.closest('[data-clan-manager-tab]');
+    if (managerTab) {
+        state.clanManagerTab = managerTab.dataset.clanManagerTab;
+        renderClanManager();
+        els.clanManagerContent.querySelector(`[data-clan-manager-tab="${state.clanManagerTab}"]`)?.focus();
+        return;
+    }
     const mapLink = event.target.closest('[data-clan-map-id]');
     if (mapLink) {
         event.preventDefault();
@@ -3338,14 +3557,40 @@ els.clansModal?.addEventListener('click', (event) => {
     }
     const manage = event.target.closest('[data-clan-manage]');
     if (manage) {
+        if (state.clanOrderSaving) return;
         state.clanManagerOpen = !state.clanManagerOpen;
         state.clanCrestMessage = null;
         state.clanOrderMessage = null;
-        if (!state.clanManagerOpen) {
-            resetClanCrestDraft();
-            resetClanOrderDraft();
-        }
         renderClanDetail();
+        return;
+    }
+    if (state.clanOrderSaving && event.target.closest('.clan-order-control')) return;
+    if (event.target.closest('[data-clan-order-confirm-replace]')) {
+        clanOrderDraft().replaceConfirmed = true;
+        createClanOrder();
+        return;
+    }
+    if (event.target.closest('[data-clan-order-confirm-cancel]')) { transitionClanOrder('cancel', { confirmed: true }); return; }
+    if (event.target.closest('[data-clan-order-keep]')) { resetClanOrderDraft(); renderClanDetail(); return; }
+    const editorMode = event.target.closest('[data-clan-order-editor]');
+    if (editorMode) { startClanOrderEditor(editorMode.dataset.clanOrderEditor); return; }
+    if (event.target.closest('[data-clan-order-discard]')) { resetClanOrderDraft(); renderClanDetail(); return; }
+    if (event.target.closest('[data-clan-order-reload]')) {
+        const clanId = state.clanDetail?.clan?.id;
+        resetClanOrderDraft();
+        loadClanDetail(clanId, { updateRoute: false }).then(() => {
+            if (Number(state.selectedClanId) === Number(clanId)) startClanOrderEditor('edit');
+        });
+        return;
+    }
+    const roster = event.target.closest('[data-clan-order-roster]');
+    if (roster) {
+        const expanded = els.clansModal.querySelector('[data-clan-order-roster]')?.closest('details')?.open;
+        clanOrderDraft().memberIds = roster.dataset.clanOrderRoster === 'all'
+            ? (state.clanDetail?.members || []).filter((member) => member.kind === 'bot').map((member) => Number(member.id)) : [];
+        renderClanDetail();
+        loadClanCraftPreview();
+        if (expanded) els.clansModal.querySelector('[data-clan-order-roster]')?.closest('details')?.setAttribute('open', '');
         return;
     }
     const item = event.target.closest('[data-clan-order-item]');
@@ -3362,20 +3607,19 @@ els.clansModal?.addEventListener('click', (event) => {
             state.clanOrderSearchError = null;
             state.clanOrderMessage = null;
             renderClanDetail();
+            loadClanCraftPreview();
         }
         return;
     }
     const strategy = event.target.closest('[data-clan-order-strategy]');
     if (strategy) {
         clanOrderDraft().strategy = strategy.dataset.clanOrderStrategy || 'auto';
+        loadClanCraftPreview();
         state.clanOrderMessage = null;
         renderClanDetail();
         return;
     }
-    if (event.target.closest('[data-create-clan-order]')) {
-        createClanOrder();
-        return;
-    }
+    if (event.target.closest('[data-create-clan-order]')) return;
     const transition = event.target.closest('[data-clan-order-transition]');
     if (transition) {
         transitionClanOrder(transition.dataset.clanOrderTransition);
@@ -3398,6 +3642,7 @@ els.clansModal?.addEventListener('click', (event) => {
     }
     const member = event.target.closest('[data-clan-member-id]');
     if (member) {
+        closeClanManager();
         const route = { name: 'actor', kind: member.dataset.clanMemberKind || 'bot', id: Number(member.dataset.clanMemberId) };
         commitRoute(route);
         applyRoute(route);
@@ -3411,6 +3656,12 @@ els.clansModal?.addEventListener('click', (event) => {
     if (event.target === els.clansModal) closeClans();
 });
 
+els.clansModal?.addEventListener('submit', (event) => {
+    if (!event.target.matches('[data-clan-order-form]')) return;
+    event.preventDefault();
+    createClanOrder();
+});
+
 els.clansModal?.addEventListener('change', (event) => {
     const input = event.target.closest('[data-clan-crest-file]');
     if (input) loadClanCrestFile(input.files?.[0]);
@@ -3420,13 +3671,21 @@ els.clansModal?.addEventListener('change', (event) => {
             .map((entry) => Number(entry.dataset.clanOrderMember))
             .filter(Boolean);
         state.clanOrderMessage = null;
-        renderClanDetail();
+        loadClanCraftPreview();
+        const selected = state.clanOrderDraft.memberIds.length;
+        const minimum = ['market', 'craft'].includes(state.clanOrderDraft.strategy) ? 1 : 3;
+        const submit = els.clansModal.querySelector('[data-create-clan-order]');
+        if (submit) submit.disabled = !state.clanOrderDraft.item || selected < minimum || state.clanOrderSaving;
+        const summary = member.closest('details')?.querySelector('summary span');
+        if (summary) summary.textContent = `${selected} selected`;
+        const status = els.clansModal.querySelector('.clan-order-submit span');
+        if (status) { status.textContent = selected < minimum ? `Select at least ${minimum} bot executors` : 'Ready to save'; status.classList.toggle('is-error', selected < minimum); }
     }
 });
 
 els.clansModal?.addEventListener('focusout', () => {
     requestAnimationFrame(() => {
-        if (!state.clanDetailDeferredRender) return;
+        if (!state.clanDetailDeferredRender || state.clanOrderDraft) return;
         const editor = els.clansModal?.querySelector('.clan-order-editor');
         if (editor?.contains(document.activeElement)) return;
         renderClanDetail();
@@ -3434,6 +3693,7 @@ els.clansModal?.addEventListener('focusout', () => {
 });
 
 els.clansModal?.addEventListener('input', (event) => {
+    if (state.clanOrderDraft) state.clanOrderDraft.replaceConfirmed = false;
     const search = event.target.closest('[data-clan-order-search]');
     if (search) {
         const draft = clanOrderDraft();
@@ -3454,11 +3714,20 @@ els.clansModal?.addEventListener('input', (event) => {
         return;
     }
     const amount = event.target.closest('[data-clan-order-amount]');
-    if (amount) clanOrderDraft().amount = amount.value;
+    if (amount) {
+        clanOrderDraft().amount = amount.value;
+        window.clearTimeout(state.clanCraftPreviewTimer);
+        state.clanCraftPreviewTimer = window.setTimeout(loadClanCraftPreview, 200);
+    }
     const price = event.target.closest('[data-clan-order-price]');
     if (price) clanOrderDraft().maxUnitPrice = price.value;
     const budget = event.target.closest('[data-clan-order-budget]');
     if (budget) clanOrderDraft().budget = budget.value;
+});
+
+els.clanManagerDialog?.addEventListener('cancel', event => {
+    event.preventDefault();
+    closeClanManager();
 });
 
 els.clansModal?.addEventListener('dragover', (event) => {
@@ -3765,10 +4034,7 @@ document.addEventListener('keydown', (event) => {
     }
     if (event.key === 'Escape' && state.clanOpen && state.clanManagerOpen) {
         event.preventDefault();
-        state.clanManagerOpen = false;
-        state.clanCrestMessage = null;
-        resetClanCrestDraft();
-        renderClanDetail();
+        closeClanManager();
         return;
     }
     if (event.key === 'Escape' && state.clanOpen) {

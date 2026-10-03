@@ -48,6 +48,36 @@ const itemGoal = Observer.compactClanGoal({
 assert.strictEqual(itemGoal.target.iconUrl, '/observer/item-icons/armor_t59_ul_i00.png',
     'item goals must reuse the local Observer item-icon catalog');
 
+const craftRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByProductId(1879);
+const automaticCraftGoal = { type: 'equipment', status: 'executing', goalKey: 'clan-equipment:7:43:1879',
+    target: { itemId: 1879, memberId: 43 }, plan: { kind: 'craft' } };
+const craftCarrier = { id: 43, name: 'Carrier', activity: 'resting', inventorySummary: JSON.stringify({
+    1871: { selfId: 1871, amount: 2 } }), statsJson: JSON.stringify({ equipmentPlan: {
+        strategy: 'craft', status: 'active', target: { selfId: 1879 }, recipeId: craftRecipe.recipeId,
+        clanGoal: { clanId: 7, goalKey: automaticCraftGoal.goalKey },
+        craftProviders: { [craftRecipe.recipeId]: { characterId: 42, known: false } }, componentRecipes: {}
+    } }) };
+const craftMembers = [craftCarrier, { id: 42, name: 'ClanDwarf' }];
+const craftStock = [{ selfId: 1870, amount: 7, reservedAmount: 2 }, { selfId: 1871, amount: 1 },
+    { selfId: craftRecipe.recipeItemId, amount: 1 }];
+const automaticCraft = Observer.compactClanCraftPlan(automaticCraftGoal, craftMembers, craftStock);
+assert.strictEqual(automaticCraft.craft.crafterName, 'ClanDwarf');
+assert.strictEqual(automaticCraft.craft.customerName, 'Carrier');
+assert.strictEqual(automaticCraft.craft.stage, 'crafting');
+assert.strictEqual(Observer.compactClanCraftPlan(automaticCraftGoal, [{ ...craftCarrier, activity: 'grouped' }, craftMembers[1]], craftStock).craft.stage, 'resources',
+    'a carrier working in a party must not be presented as already crafting at the station');
+assert.strictEqual(automaticCraft.craft.materials.find(row => row.selfId === 1870).available, 5,
+    'automatic previews must exclude reserved warehouse stock');
+assert.strictEqual(automaticCraft.craft.materials.find(row => row.selfId === 1871).available, 3,
+    'automatic previews must combine warehouse and assigned carrier inventory');
+assert.strictEqual(Observer.compactClanCraftPlan(automaticCraftGoal, craftMembers, craftStock,
+    [{ characterId: 42, recipeId: craftRecipe.recipeId }]).craft.learned, true,
+    'recipe knowledge must reflect persisted recipes even when the saved plan is older');
+assert.strictEqual(Observer.compactClanCraftPlan({ ...automaticCraftGoal, goalKey: 'another-goal' }, craftMembers, craftStock).craft, null,
+    'an old carrier plan must not appear as details of the current goal');
+assert.strictEqual(Observer.compactClanCraftPlan({ ...automaticCraftGoal, controlledBy: 'player' }, craftMembers, craftStock), null);
+assert(!automaticCraft.craft.nativePlan, 'automatic details must expose bounded player-facing facts only');
+
 const compactOrder = Observer.compactClanOrder({
     id: 4,
     revision: 2,
@@ -79,7 +109,9 @@ const overview = Observer.compactClanOverview({
     simulationVersion: 1,
     simulationCreatedAt: 100,
     simulationUpdatedAt: 200,
-    stateJson: JSON.stringify({ updatedAt: 200, goal: { status: 'active', type: 'adena', progress: 10, required: 100 } }),
+    stateJson: JSON.stringify({ updatedAt: 200, goal: { status: 'active', type: 'adena', progress: 10, required: 100 },
+        productionGoal: { status: 'executing', type: 'equipment', required: 1, progress: 0,
+            target: { itemId: 2406, itemName: 'Avadon Robe', memberId: 42, memberName: 'Aster' }, plan: { kind: 'craft' } } }),
     memberCount: 5,
     botMembers: 5,
     playerMembers: 0,
@@ -101,6 +133,9 @@ assert.strictEqual(overview.memberCount, 5);
 assert.strictEqual(overview.botMembers, 5);
 assert.strictEqual(overview.warehouse.bloodMarks, 1);
 assert.strictEqual(overview.goal.status, 'active');
+assert.strictEqual(overview.productionGoal.target.iconUrl, '/observer/item-icons/armor_t59_ul_i00.png',
+    'parallel automatic production must remain visible while a low-level clan saves for progression');
+assert.strictEqual(overview.productionGoal.status, 'executing');
 assert.strictEqual(overview.operations.active, 1);
 assert.strictEqual(overview.crestUrl, null, 'clans below level 3 must not expose a crest');
 
@@ -113,6 +148,7 @@ const crestOverview = Observer.compactClanOverview({
     botMembers: 1
 });
 assert.strictEqual(crestOverview.crestUrl, '/observer/api/clan/8/crest?v=18', 'eligible assigned clan crests must expose a versioned observer URL');
+assert.strictEqual(crestOverview.productionGoal, null, 'old low-level production must not appear as active work after level 3');
 
 const playerManagedOverview = Observer.compactClanOverview({
     id: 9,
@@ -319,7 +355,129 @@ async function databaseBackedChecks() {
     }
 }
 
+async function clanOrderUiChecks() {
+    const vm = require('vm');
+    const context = vm.createContext({
+        state: { selectedClanId: 7, clanOrderSearchRequest: 0, clanDetail: {
+            clan: { id: 7, automated: true, goal: { progress: 1500, required: 3000 } },
+            order: { id: 12, revision: 4, itemId: 1419, itemName: 'Blood Mark', amount: 3000,
+                strategy: 'market', status: 'paused', maxUnitPrice: 500000, budget: 1500000,
+                spent: 120000, memberIds: [2], plan: {} },
+            members: [{ id: 1, kind: 'player' }, { id: 2, kind: 'bot', name: 'Worker' }, { id: 3, kind: 'bot', name: 'Other' }]
+        } },
+        window: { clearTimeout() {}, confirm() { throw new Error('Editing must not ask to replace the goal'); } },
+        els: { clansModal: { querySelector: () => null } },
+        requestAnimationFrame() {}, renderClanDetail() {}, async refreshManagedClan() {},
+        uiIcon: (name) => `<svg data-icon="${name}"></svg>`, roleLabel: (role) => role, uiLabel: (kind, label) => label,
+        activityLabel: value => value,
+        readableToken: (value) => value || '', compactNumber: (value) => String(value),
+        fetch: null
+    });
+    for (const name of ['escapeHtml', 'text', 'number', 'clanGoalSummary', 'clanAutomaticGoalMarkup', 'resetClanOrderDraft', 'clanOrderDraft',
+        'clanOrderSettings', 'startClanOrderEditor', 'clanGoalExplanation', 'clanOrderStatusLabel', 'clanOrderStrategyLabel',
+        'clanOrderDelivery', 'clanCraftReason', 'clanCraftPreviewMarkup', 'clanOrderItemResultsMarkup', 'clanOrderMarkup', 'clanOrderErrorMessage', 'clanOrderResponse', 'loadClanCraftPreview', 'createClanOrder', 'transitionClanOrder']) {
+        const declaration = new RegExp(`^(?:async )?function ${name}\\(`, 'm').exec(observerApp);
+        assert(declaration, `UI function ${name} must be available`);
+        const start = declaration.index;
+        const next = /^(?:async )?function /m.exec(observerApp.slice(start + declaration[0].length));
+        const end = next ? start + declaration[0].length + next.index : observerApp.length;
+        vm.runInContext(observerApp.slice(start, end), context);
+    }
+    const summary = context.clanGoalSummary({ progress: 1500, required: 3000 });
+    assert.strictEqual(summary.percent, 50, 'formatted thousands must not break the progress calculation');
+    assert.strictEqual(context.clanGoalSummary({ progress: 0, required: 0 }).percent, 0);
+    await assert.rejects(context.clanOrderResponse({ status: 404, json() { throw new Error('Not found is not JSON'); } }), /Restart the server/,
+        'an outdated backend must produce an actionable message rather than a JSON syntax error');
+    await assert.rejects(context.clanOrderResponse({ status: 502, json: async () => { throw new SyntaxError('Unexpected token'); } }), /HTTP 502/,
+        'plain-text proxy errors must not leak parser exceptions into the UI');
+    const automaticClan = { automated: true, goal: itemGoal };
+    const manualOrder = context.state.clanDetail.order;
+    context.state.clanDetail.order = null;
+    context.state.clanDetail.automaticCraft = automaticCraft;
+    const automaticMarkup = context.clanOrderMarkup(automaticClan);
+    context.state.clanDetail.automaticCraft = null;
+    context.state.clanDetail.order = manualOrder;
+    assert(automaticMarkup.includes('/observer/item-icons/armor_t59_ul_i00.png'), 'automatic goals must show their target item icon');
+    assert(automaticMarkup.includes('data-status="executing"'), 'automatic goals must show an explicit execution status');
+    assert(automaticMarkup.includes('aria-label="Automatic goal progress"'), 'automatic goals must expose progress just like manual goals');
+    assert(automaticMarkup.includes('ClanDwarf') && automaticMarkup.includes('Inputs for the next batch'),
+        'the automatic goal screen itself must show the assigned crafter and material table');
+    assert(automaticMarkup.includes('Material carrier: Carrier'));
+    const adenaMarkup = context.clanAutomaticGoalMarkup(overview.goal, automaticClan);
+    assert(adenaMarkup.includes('data-icon="coins"'), 'currency goals must have an icon even without an item thumbnail');
+    assert(adenaMarkup.includes('10/100'), 'automatic progress must use the current goal totals');
+    assert(context.clanAutomaticGoalMarkup(null, automaticClan).includes('Waiting'), 'idle clans must show a waiting status');
+    assert(!context.clanOrderMarkup(context.state.clanDetail.clan).includes('data-clan-order-form'),
+        'management must start with a summary, not a replacement form');
+    context.startClanOrderEditor('edit');
+    assert.strictEqual(context.state.clanOrderDraft.amount, 3000);
+    assert.strictEqual(context.state.clanOrderDraft.maxUnitPrice, 500000);
+    assert.strictEqual(context.state.clanOrderDraft.budget, 1500000);
+    assert.deepStrictEqual(Array.from(context.state.clanOrderDraft.memberIds), [2], 'editing must retain the selected executors');
+    assert(!context.clanOrderMarkup(context.state.clanDetail.clan).includes('data-clan-order-search'),
+        'changing the item must be an explicit new goal');
+    context.state.clanOrderDraft.amount = 4000;
+    context.fetch = async (url, options) => {
+        assert.strictEqual(url, '/observer/api/clan/7/orders/12');
+        assert.strictEqual(options.method, 'PATCH');
+        const payload = JSON.parse(options.body);
+        assert.strictEqual(payload.revision, 4);
+        assert.strictEqual(payload.amount, 4000);
+        assert.deepStrictEqual(payload.memberIds, [2]);
+        return { ok: false, json: async () => ({ ok: false, code: 'clan_order_revision_conflict' }) };
+    };
+    await context.createClanOrder();
+    assert.strictEqual(context.state.clanOrderDraft.amount, 4000, 'a rejected edit must preserve the draft');
+    assert.strictEqual(context.state.clanOrderConflict, true);
+    context.fetch = async () => ({ ok: true, json: async () => ({ ok: true }) });
+    await context.createClanOrder();
+    assert.strictEqual(context.state.clanOrderDraft, null, 'a saved edit must close the editor');
+    assert.match(context.state.clanOrderMessage.text, /preserved/);
+    context.startClanOrderEditor('new');
+    context.state.clanOrderDraft.item = { id: 439, name: 'Karmian Tunic', kind: 'Armor.fabric' };
+    context.state.clanOrderDraft.strategy = 'market';
+    context.fetch = async () => { throw new Error('Replacement must wait for inline confirmation'); };
+    await context.createClanOrder();
+    assert.strictEqual(context.state.clanOrderDraft.confirmReplacement, true);
+    assert(context.clanOrderMarkup(context.state.clanDetail.clan).includes('data-clan-order-confirm-replace'));
+    context.state.clanOrderDraft.strategy = 'craft';
+    context.state.clanOrderDraft.craftPreview = { reasonCode: 'clan_craft_crafter_unavailable', craft: null };
+    context.state.clanCraftPreviewRequest = 0;
+    context.fetch = async () => ({ status: 404, ok: false });
+    const craftDraft = context.state.clanOrderDraft;
+    await context.loadClanCraftPreview();
+    assert.strictEqual(context.state.clanOrderDraft, craftDraft, 'a missing preview endpoint must keep the selected item and quantity');
+    assert.strictEqual(craftDraft.craftPreviewLoading, false);
+    assert.match(craftDraft.craftPreviewError, /Restart the server/);
+    craftDraft.craftPreviewError = null;
+    const craftMarkup = context.clanOrderMarkup(context.state.clanDetail.clan);
+    assert(craftMarkup.includes('data-clan-order-strategy="craft"'));
+    assert(craftMarkup.includes('Select a living clan dwarf'));
+    context.state.clanOrderDraft.strategy = 'market';
+    context.state.clanOrderDraft.replaceConfirmed = true;
+    context.fetch = async (url, options) => {
+        assert.strictEqual(url, '/observer/api/clan/7/orders');
+        assert.strictEqual(options.method, 'POST');
+        assert.strictEqual(JSON.parse(options.body).itemId, 439);
+        return { ok: true, json: async () => ({ ok: true }) };
+    };
+    await context.createClanOrder();
+    assert.strictEqual(context.state.clanOrderDraft, null);
+    context.fetch = async () => { throw new Error('Cancellation must wait for inline confirmation'); };
+    await context.transitionClanOrder('cancel');
+    assert.strictEqual(context.state.clanOrderCancelPending, true);
+    context.fetch = async (url, options) => {
+        assert.strictEqual(url, '/observer/api/clan/7/orders/12/cancel');
+        assert.strictEqual(options.method, 'POST');
+        return { ok: true, json: async () => ({ ok: true }) };
+    };
+    await context.transitionClanOrder('cancel', { confirmed: true });
+    assert.strictEqual(context.state.clanOrderCancelPending, false);
+
+}
+
 databaseBackedChecks()
+    .then(clanOrderUiChecks)
     .then(() => console.log('World observer clan directory checks passed'))
     .catch((error) => {
         console.error(error);

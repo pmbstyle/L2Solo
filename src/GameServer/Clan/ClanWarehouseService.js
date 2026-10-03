@@ -65,10 +65,13 @@ async function resolveClan(clan, options = {}) {
         && !BotServiceIdentity.isStaticService(member)
         && number(member.characterId) > 0
     ));
-    const goal = clan.state?.goal?.type === 'equipment' ? clan.state.goal : clan.state?.productionGoal || clan.state?.goal;
+    const goal = clan.state?.goal?.type === 'equipment' || clan.state?.goal?.policy?.strategy === 'craft'
+        ? clan.state.goal : clan.state?.productionGoal || clan.state?.goal;
     const beneficiary = (clan.members || []).find(member => number(member.characterId) === number(goal?.target?.memberId));
     const plan = beneficiary?.stats?.equipmentPlan;
-    const demand = plan?.strategy === 'craft' && plan.clanGoal?.goalKey === goal?.goalKey
+    const demand = goal?.policy?.strategy === 'craft'
+        ? Object.fromEntries((goal.plan?.craft?.materials || []).map(material => [material.selfId, material.required]))
+        : plan?.strategy === 'craft' && plan.clanGoal?.goalKey === goal?.goalKey
         ? Object.fromEntries([...Crafting.requirements(Crafting.resolveRecipe(plan.recipeId), beneficiary.inventory, null, 1, plan.craftProviders, plan.componentRecipes)]
             .map(([id, amount]) => [id, Math.max(0, amount - number(beneficiary.inventory?.[id]?.amount))])) : {};
     const cursor = cursors.get(number(clan.id)) || 0;

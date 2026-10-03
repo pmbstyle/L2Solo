@@ -128,7 +128,8 @@ function clanPlan(plan, clan, goal) {
             beneficiaryId: number(goal.target.memberId),
             priority: 'required',
             partyNeed,
-            partyPreference: 'clan_first'
+            partyPreference: 'clan_first',
+            ...(goal.orderId ? { orderId: goal.orderId, orderSettings: goal.orderSettings } : {})
         }
     };
 }
@@ -364,6 +365,7 @@ async function handoffWarehouseMaterials(current, plan, clan, goal) {
             selfId: material.selfId,
             amount: material.amount,
             goalKey: `${goal.goalKey}:warehouse:${material.selfId}:${number(state.simulation?.revision ?? state.simulationRevision)}`,
+            ...(goal.orderId ? { clanOrder: { orderId: goal.orderId, settings: goal.orderSettings } } : {}),
             expectedSimulationRevision: number(state.simulation?.revision ?? state.simulationRevision)
         });
         results.push(result);
@@ -869,6 +871,7 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
 }
 
 const ClanEquipmentService = {
+    assignPlan,
     resolveClan,
     planningForClan,
     craftingOptions,
