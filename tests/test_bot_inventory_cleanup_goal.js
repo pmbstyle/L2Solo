@@ -112,6 +112,14 @@ assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventor
 assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: mixedBag(40),
     stats: { marketSellRetryAfter: now + 60 * 60 * 1000 } }, { now }), null,
 'the half-full trip respects the market retry cooldown');
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: mixedBag(40), party: { partyId: 5 } }, { now }), null,
+'a party member sells from the field: no half-full trip');
+const unsellableBag = (slots) => Object.fromEntries(Array.from({ length: slots }, (_, index) => {
+    const selfId = 990000 + index;
+    return [selfId, { selfId, name: `Potion ${selfId}`, kind: 'Other.Potion', stackable: true, amount: 1 }];
+}));
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: unsellableBag(40) }, { now }), null,
+'a half-full bag with nothing to sell makes no trip');
 
 const boneHelmet = DataCache.items.find((item) => Number(item.selfId) === 45);
 const surplusInventory = (amount) => ({

@@ -239,7 +239,11 @@ function inventoryCleanupNeed(state = {}, options = {}) {
                 && item.basePrice <= 50000 ? Number(item.count || 0) : 0);
         }, 0) : 0;
     const accumulatedSurplus = surplusGearSlots >= NPC_SURPLUS_GEAR_MIN_SLOTS;
-    const halfFull = isTradeEligible(state) && slots >= HALF_FULL_CLEANUP_SLOTS;
+    // Solo bots only: a party member sells from the field (AFK listing) and leaves its
+    // party for the market only with a full bag (PartyMarketBreak); and only with
+    // something to sell, else the trip would repeat every retry period.
+    const halfFull = isTradeEligible(state) && !(state.party?.partyId || state.partyId)
+        && slots >= HALF_FULL_CLEANUP_SLOTS && candidates.length > 0;
     // A normal market retry cooldown prevents pointless town loops. Residual
     // NPC-only books/recipes become deterministic cleanup work once a
     // generated character reaches its trading phase. Before that point they
