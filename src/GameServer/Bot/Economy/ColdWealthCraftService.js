@@ -169,9 +169,12 @@ async function execute(state, opportunity) {
         for (const purchase of opportunity.basket.purchases) {
             const trade = await AfkTrade.buyFromShop(current.characterId, purchase.offer.store,
                 purchase.selfId, purchase.count, { expectedPrice: purchase.price, coldState: current });
-            if (!trade.coldState) throw new Error('cold_inventory_sync_failed');
-            current = trade.coldState;
+            const done = AfkTrade.committedTrade(trade, current.characterId);
+            if (!done.committed) throw new Error('cold_inventory_sync_failed');
             spent += purchase.price * purchase.count;
+            // The bot went hot: the actor holds the materials; the craft stops here.
+            if (done.hot) return { state: current, crafted: false, reason: 'bot_went_hot', spent };
+            current = done.state;
         }
     } catch (error) {
         const failed = withOutcome(current, opportunity, 'purchase_failed',
@@ -267,9 +270,14 @@ async function execute(state, opportunity) {
             try {
                 const trade = await AfkTrade.sellToShop(current.characterId, offer.store, recipe.productId,
                     Number(recipe.productCount), { objectId: Number(productRow.id), expectedPrice: Number(offer.price), coldState: current });
-                const payout = Number(trade.coldState?.adena || 0) - Number(current.adena || 0);
-                if (trade.coldState && payout >= Number(offer.price) * Number(recipe.productCount)) {
-                    current = trade.coldState;
+                const done = AfkTrade.committedTrade(trade, current.characterId);
+                const payout = Number(done.state?.adena || 0) - Number(current.adena || 0);
+                if (done.hot) {
+                    // The actor holds the payout; the settlement below is not written for a hot bot.
+                    sold = true;
+                    revenue = Number(offer.price) * Number(recipe.productCount);
+                } else if (done.state && payout >= Number(offer.price) * Number(recipe.productCount)) {
+                    current = done.state;
                     sold = true;
                     revenue = payout;
                 }
