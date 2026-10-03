@@ -46,6 +46,8 @@ function isCompatibleWeapon(kind, role, classId) {
 
 function isSuitableWeapon(kind, name, pAtk, mAtk, role, classId) {
     if (!isCompatibleWeapon(kind, role, classId)) return false;
+    // The class's retail starter weapon is usable as it is (a caster's gloves).
+    if (BotEquipmentCompatibility.isStarterWeaponKind(kind, classId)) return true;
     if (isCasterRole(role, classId)) return isCasterWeapon(kind, name, pAtk, mAtk);
     return !isCasterWeapon(kind, name, pAtk, mAtk);
 }

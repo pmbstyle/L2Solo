@@ -297,6 +297,11 @@ function ownedItemFitsBuild(item, role, classId) {
     // graded body armor must match the profession's chosen armor profile.
     if ([10, 11, 15].includes(Number(item.etc?.slot))
         && item.etc?.rank === 'none' && Number(classId) !== 50) return true;
+    // A retail starter weapon the class profile does not list (a caster's gloves)
+    // is good enough to fight with (combatReadiness), not to keep: the kit buys
+    // the class's own weapon first.
+    if (WEAPON_SLOTS.has(Number(item.etc?.slot || 0))
+        && BotEquipmentCompatibility.isStarterWeaponKind(item.template?.kind || '', classId)) return false;
     return suitable(item, { classId }, role, item.etc?.rank);
 }
 
