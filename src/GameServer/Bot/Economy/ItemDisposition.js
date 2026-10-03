@@ -13,8 +13,12 @@ const NPC_LIQUIDATION_MAX_UNIT_PRICE = 1000;
 const WAREHOUSE_GEAR_MIN_BASE_PRICE = 1000;
 const TRADE_MIN_LEVEL = 10;
 const INVENTORY_SLOT_LIMIT = 80;
-const NPC_ONLY_CLEANUP_MIN_SLOTS = 3;
-const NPC_SURPLUS_GEAR_MIN_SLOTS = 6;
+// A forced trip to town starts at 20 slots of either kind (the author: 3 junk, 6
+// gear): a gear replacement or a purchase leaves the old piece in the bag, and
+// on a young world the author's thresholds sent every bot to town every 40-60
+// minutes (live test 2026-10-03: ~9,800 forced trips in 15.7 world hours).
+const NPC_ONLY_CLEANUP_MIN_SLOTS = 20;
+const NPC_SURPLUS_GEAR_MIN_SLOTS = 20;
 const CLAN_PROGRESSION_ITEM_IDS = new Set([1419]);
 const GRADE_ORDER = Object.freeze({ none: 0, d: 1, c: 2, b: 3, a: 4, s: 5 });
 const SHOT_PRODUCT_RANK = Object.freeze({

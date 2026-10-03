@@ -97,15 +97,17 @@ const surplusInventory = (amount) => ({
         }))
     }
 });
+// A forced trip starts at 20 surplus pieces (user, 2026-10-03; the author's 6
+// sent a young world's bots to town every 40-60 minutes).
 assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state,
-    inventory: surplusInventory(5) }, { now }), null,
-'a few surplus drops must not interrupt farming');
+    inventory: surplusInventory(19) }, { now }), null,
+'surplus drops below the threshold must not interrupt farming');
 assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state,
-    inventory: surplusInventory(6) }, { now }), null,
+    inventory: surplusInventory(20) }, { now }), null,
 'the first useful helmet stays available for equipment');
 assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state,
-    inventory: surplusInventory(7) }, { now })?.reason, 'market_surplus_inventory',
-'six surplus pieces should form one NPC cleanup trip');
+    inventory: surplusInventory(21) }, { now })?.reason, 'market_surplus_inventory',
+'twenty surplus pieces should form one NPC cleanup trip');
 
 const stagedArmor = {
     ...state, level: 47, adena: 1000000,
