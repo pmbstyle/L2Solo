@@ -326,6 +326,9 @@ function evaluate(state = {}, options = {}) {
             blockers: [],
             nextReviewAt: timestamp + 10 * 60 * 1000
         });
+        // A material the bot can already pay for is a funded purchase like the
+        // gear above: the voluntary sale below waits for it (E9, 2026-10-03).
+        if (marketMaterial) fundedPurchasePriority = Math.max(fundedPurchasePriority || 0, 82);
     }
 
     const inventoryCleanup = ItemDisposition.inventoryCleanupNeed(state, { now: timestamp });

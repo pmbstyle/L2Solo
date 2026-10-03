@@ -57,5 +57,34 @@ assert.strictEqual(bought?.plan?.requiredAdena, 0, 'fixture: the purchase from a
 assert.strictEqual(bought.priority, 58, 'the author\'s funded market priority stays');
 assert(of(ordinaryNeeds, 'sell_inventory').priority < 58, 'a normal sale waits for a funded purchase from a bot');
 
+// E9: a craft material the bot can already pay for (an offer within its
+// spendable adena and cheaper than farming it) is a funded purchase too; the
+// wealth sale (86) waited for nothing and outranked the material buy (82).
+const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+const MATERIAL = 1864; // in the bag: 60 of the 100 the recipe needs
+const craftPlan = { status: 'active', strategy: 'craft', recipeId: 192, target: { selfId: 89, slot: 7 },
+    materials: [{ selfId: MATERIAL, amount: 100, owned: 60, missing: 40, farmEffort: 5000 }] };
+const offers = AfkTrade.offers;
+AfkTrade.offers = (selfId) => Number(selfId) === MATERIAL
+    ? [{ selfId: MATERIAL, count: 40, price: 1000, town: 'Giran', sourceType: 'afk_bot_store', characterId: 9 }] : [];
+try {
+    const craftNeeds = needs(bot(wealth, craftPlan));
+    const material = of(craftNeeds, 'buy_craft_material');
+    assert.strictEqual(material?.priority, 82, 'fixture: the material is on offer and the author\'s priority stays');
+    assert.strictEqual(material.plan.priceSource, 'offer');
+    const craftSale = of(craftNeeds, 'sell_inventory');
+    assert(craftSale?.plan?.personaDrive === 'wealth', 'fixture: a wealth sale is on offer');
+    assert(craftSale.priority < material.priority, 'a wealth sale waits for a funded material purchase');
+    assert.strictEqual(GoalPlanner.plan(craftNeeds, Date.now()).type, 'buy_craft_material', 'the bot buys the material first');
+
+    // No offer the bot can take: no funded purchase, the sale keeps 86.
+    AfkTrade.offers = () => [];
+    const noOfferNeeds = needs(bot(wealth, craftPlan));
+    assert.strictEqual(of(noOfferNeeds, 'buy_craft_material'), undefined, 'fixture: nothing to buy');
+    assert.strictEqual(of(noOfferNeeds, 'sell_inventory').priority, 86, 'without a funded purchase the wealth sale keeps 86');
+} finally {
+    AfkTrade.offers = offers;
+}
+
 console.log('Funded purchase before sale checks passed');
 process.exit(0);
