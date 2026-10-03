@@ -167,24 +167,6 @@ function isSpareConsumable(item, template = templateFor(item?.selfId)) {
     return basePrice(item, template) > 0;
 }
 
-// The healing potions a bot keeps: its restock target (HealingPotionStock),
-// strongest first, as the cold fight drinks any of them.
-let healingPotionsStrongestFirst = null;
-
-function healingStockAmounts(state = {}) {
-    const Potions = invoke('GameServer/Bot/AI/HealingPotionStock');
-    healingPotionsStrongestFirst ||= [...Potions.POTIONS].sort((a, b) => b.heal - a.heal);
-    let left = Potions.targetAmountFor(state);
-    const kept = {};
-    for (const potion of healingPotionsStrongestFirst) {
-        if (left <= 0) break;
-        const amount = Math.min(left, Number(state?.inventory?.[String(potion.selfId)]?.amount || 0));
-        if (amount > 0) kept[potion.selfId] = amount;
-        left -= amount;
-    }
-    return kept;
-}
-
 function isNpcOnlyItem(item, template = templateFor(item?.selfId)) {
     if (isEquipmentItem(item, template)) return false;
     if (isMarketRecipeItem(item)) return false;
@@ -441,7 +423,7 @@ function saleCandidates(state, options = {}) {
         ? Number.MAX_SAFE_INTEGER
         : Math.max(1, Math.min(20, Number(options.limit) || 8));
     const reserved = { ...reservedEquipmentAmounts(state), ...(options.reserved || {}) };
-    for (const [selfId, amount] of Object.entries(healingStockAmounts(state))) {
+    for (const [selfId, amount] of Object.entries(invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state))) {
         reserved[selfId] = Math.max(Number(reserved[selfId] || 0), amount);
     }
     const ownShot = invoke('GameServer/Inventory/ShotStock').planForRows(
@@ -610,7 +592,6 @@ module.exports = {
     saleCandidates,
     saleSummary,
     isSpareConsumable,
-    healingStockAmounts,
     unreservedActorItems,
     warehouseCandidates
 };

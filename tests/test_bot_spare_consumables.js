@@ -25,8 +25,24 @@ const state = {
 };
 
 const target = HealingPotionStock.targetAmountFor(state);
-assert.deepStrictEqual(ItemDisposition.healingStockAmounts(state), { 1061: target },
+assert.deepStrictEqual(HealingPotionStock.stockAmounts(state), { 1061: target },
     'the healing stock is kept strongest first up to the restock target');
+// One stock for the sale and the restock: potions at least as strong as the
+// one the bot buys at its level (Healing Potion at 30); weaker ones are junk.
+const weakStock = { ...state, adena: 100000, inventory: { 57: line(57, 100000), 1060: line(1060, target) } };
+assert.deepStrictEqual(HealingPotionStock.stockAmounts(weakStock), {}, 'a weaker potion is no stock at level 30');
+assert.strictEqual(HealingPotionStock.restockPlan(weakStock).amount, target, 'the restock buys a full stock of its potion');
+const mixed = { ...state, adena: 100000, inventory: { 57: line(57, 100000), 1060: line(1060, 2), 1061: line(1061, 1), 1539: line(1539, 2) } };
+assert.deepStrictEqual(HealingPotionStock.stockAmounts(mixed), { 1539: 2, 1061: 1 }, 'stronger potions from loot count, strongest first');
+const mixedPlan = HealingPotionStock.restockPlan(mixed);
+assert.strictEqual(mixedPlan.amount, target - 3, 'the restock buys what is missing from the stock');
+assert.strictEqual(mixedPlan.currentAmount, 1, 'the purchased potion\'s own row is what the purchase writes');
+const quick = { ...state, inventory: { 57: line(57, 100000), 1540: line(1540, 20) } };
+assert.deepStrictEqual(HealingPotionStock.stockAmounts(quick), {}, 'Quick Healing Potions (drunk only near death) are no restock stock');
+assert.strictEqual(new Map(MarketListingPolicy.evaluate(quick, { unlimited: true, states: [] }).npc
+    .map((entry) => [entry.selfId, entry.count])).get(1540), undefined, 'but the bot keeps them: it drinks them when nearly dead');
+const young = { ...state, level: 15, adena: 100000, inventory: { 57: line(57, 100000), 1060: line(1060, 3) } };
+assert.deepStrictEqual(HealingPotionStock.stockAmounts(young), { 1060: 3 }, 'below 20 the Lesser Healing Potion is the stock');
 for (const selfId of [17, 736, 1661, 1831, 1060]) {
     assert(ItemDisposition.isSpareConsumable({ selfId }), `${selfId} is a consumable no bot keeps`);
 }
