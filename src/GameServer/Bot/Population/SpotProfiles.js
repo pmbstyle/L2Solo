@@ -461,7 +461,20 @@ const SpotProfiles = {
         const currentNeedsRoom = currentSpot
             && capacityUnitsFor(capacityStates, occupancy[currentSpot.id]) > 0
             && !hasCapacityForStates(currentSpot, capacityStates, occupancy, reservationOptions);
-        const mustRelocate = currentSpot && (currentMatch.localityPenalty > 0
+        // A starter field outside the bot's region (locality penalty) asks
+        // for a move only when a field without that penalty can take the bot:
+        // allowed, with room, near its level. A kit that survives no home
+        // field yet (an orc mystic on fists before its first spell) would
+        // otherwise be sent to another penalised field on every resolve and
+        // never hunt. Checked only for the few young bots on foreign ground.
+        const localityRelocate = currentSpot && currentMatch.localityPenalty > 0
+            && spotsNearLevel(profiles, targetLevel).some((profile) => profile.id !== currentSpot.id
+                && !excludedSpotIds.has(String(profile.id))
+                && LevelingRoutes.localityPenaltyForSpot(profile, state, { level: targetLevel },
+                    LevelingRoutes.tagsForSpot(profile)) === 0
+                && hasCapacityForStates(profile, capacityStates, occupancy, reservationOptions)
+                && LevelingRoutes.isSpotAllowedForState(profile, state, routeOptions));
+        const mustRelocate = currentSpot && (localityRelocate
             || (currentSpot.raidBoss === true && !explicitClanRaidSpot(state, currentSpot))
             || currentMatch.targetMatchup?.eligible === false
             || currentMatch.huntingGround?.allowed === false
