@@ -113,6 +113,7 @@ async function refreshQueueStats() {
 
 function actionTypeFor(clan, goal) {
     if (!clan || !goal || goal.status === 'completed') return null;
+    if (goal.controlledBy === 'player') return OrderService.actionTypeForGoal(goal);
     // The bots execute an equipment route through their normal lifecycle, but
     // the clan re-evaluates the weakest/highest-priority beneficiary on the
     // bounded retry cadence. This also repairs a lost durable plan binding
@@ -183,6 +184,7 @@ function deferredRetryDelay(actionType, result = {}) {
 
 async function scheduleProduction(clan) {
     if (number(clan.level) >= 3) return;
+    if (clan.state?.goal?.controlledBy === 'player' && clan.state.goal.status !== 'completed') return;
     const [active] = await Database.execute([`SELECT id FROM clan_actions WHERE clanId = ?
         AND actionType = 'production' AND status IN ('pending', 'running') LIMIT 1`, [clan.id]]);
     if (active) return;
@@ -192,6 +194,9 @@ async function scheduleProduction(clan) {
 }
 
 async function resolveProduction(clan) {
+    if (clan.state?.goal?.controlledBy === 'player' && clan.state.goal.status !== 'completed') {
+        return { ok: true, skipped: true, reason: 'player_order_active' };
+    }
     if (number(clan.level) >= 3) return { ok: true, skipped: true };
     const service = invoke('GameServer/Clan/ClanEquipmentService');
     let result;

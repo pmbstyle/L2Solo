@@ -1377,9 +1377,27 @@ function playerManagedOrderRow(row) {
     };
 }
 
+function playerClanCraftOrderUnsafe(clanId, orderId, settings = {}) {
+    const order = one('SELECT * FROM clan_orders WHERE id = ? AND clanId = ?', [orderId, clanId]);
+    const members = values => [...values].map(Number).sort((a, b) => a - b);
+    if (!order || order.status !== 'active' || order.strategy !== 'craft' || settings.strategy !== 'craft'
+        || ['itemId', 'amount', 'maxUnitPrice', 'budget'].some(key => Number(order[key]) !== Number(settings[key]))
+        || JSON.stringify(members(jsonArray(order.memberIdsJson))) !== JSON.stringify(members(settings.memberIds || []))) return null;
+    return order;
+}
+
 function cancelPlayerManagedClanWorkUnsafe(clanId, reasonCode, timestamp = now()) {
     const clan = Number(clanId);
     const reason = String(reasonCode || 'player_order_replaced');
+    // Invalidate travelling/crafting customers in the same transaction as the
+    // order change. A stale cold tick must not consume the old order's inputs.
+    write(`UPDATE bot_life_state SET statsJson = json_set(json_remove(statsJson,
+            '$.equipmentPlan', '$.clanMaterialDemand', '$.craftReturn', '$.travel'),
+            '$.clanInventoryRevision', simulationRevision + 1),
+            activity = CASE WHEN activity IN ('crafting', 'traveling') THEN 'hunting' ELSE activity END,
+            simulationRevision = simulationRevision + 1, updatedAt = ?
+        WHERE characterId IN (SELECT id FROM characters WHERE clanId = ?)
+          AND json_extract(statsJson, '$.equipmentPlan.clanGoal.orderId') IS NOT NULL`, [timestamp, clan]);
     write(`UPDATE clan_actions
         SET status = 'cancelled', leaseUntil = NULL, reasonCode = ?, updatedAt = ?, resolvedAt = ?
         WHERE clanId = ? AND status IN ('pending', 'running')`, [reason, timestamp, timestamp, clan]);
@@ -5205,9 +5223,26 @@ const Database = {
         }, 'item:cold-safe-enchant'));
     },
 
-    craftForCustomer(crafterId, customerId, { materials, product, crafterMp, price, adena, clanCraft = null }) {
+    craftForCustomer(crafterId, customerId, { materials, product, crafterMp, price, adena, clanCraft = null, clanOrder = null }) {
         return withCharacterFlushes([crafterId, customerId], () => inTransaction(() => {
             let clanCrafter = null;
+            let manualOrder = null;
+            if (clanOrder) {
+                manualOrder = playerClanCraftOrderUnsafe(clanCraft?.clanId, clanOrder.orderId, clanOrder.settings);
+                if (!clanCraft || !manualOrder) {
+                    throw new Error('clan craft order changed');
+                }
+                const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(clanCraft.recipeId);
+                if (clanOrder.final && Number(recipe?.productId) !== Number(manualOrder.itemId)) throw new Error('clan craft target changed');
+                if (clanOrder.final) {
+                    const stock = Number(one('SELECT COALESCE(SUM(amount), 0) AS amount FROM clan_warehouse_items WHERE clanId = ? AND selfId = ?',
+                        [manualOrder.clanId, manualOrder.itemId]).amount);
+                    const delivered = Number(one(`SELECT COALESCE(SUM(amount), 0) AS amount FROM clan_warehouse_ledger
+                        WHERE clanId = ? AND selfId = ? AND operation = 'withdraw' AND resolveKey LIKE ?`,
+                    [manualOrder.clanId, manualOrder.itemId, `player-order:${manualOrder.id}:delivery:%`]).amount);
+                    if (stock + delivered >= Number(manualOrder.amount)) throw new Error('clan craft quantity already reached');
+                }
+            }
             if (clanCraft) {
                 const recipes = invoke('GameServer/Items/C4RecipeItems');
                 const recipe = recipes.resolveByRecipeId(clanCraft.recipeId);
@@ -5250,12 +5285,45 @@ const Database = {
             const customerAdena = fee > 0 ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 ORDER BY id LIMIT 1', [customerId]) : null;
             if (fee > 0 && (!customerAdena || Number(customerAdena.amount) < fee)) throw new Error('customer adena changed');
             let crafterAdena = fee > 0 ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 ORDER BY id LIMIT 1', [crafterId]) : null;
-            const target = product?.stackable ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [customerId, product.selfId]) : null;
+            const warehouseOutput = !!manualOrder && clanOrder.final === true;
+            const target = product?.stackable ? warehouseOutput
+                ? one('SELECT id, amount FROM clan_warehouse_items WHERE clanId = ? AND selfId = ? AND enchant = 0 ORDER BY id LIMIT 1', [manualOrder.clanId, product.selfId])
+                : one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [customerId, product.selfId]) : null;
             let productId = Number(target?.id || 0);
             const productAmount = Number(target?.amount || 0) + Number(product?.amount || 0);
             sources.forEach((source) => source.amount <= 0 ? write('DELETE FROM items WHERE id = ? AND characterId = ?', [source.id, customerId]) : write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [source.amount, source.id, customerId]));
-            if (target) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [productAmount, productId, customerId]);
+            if (warehouseOutput && product) {
+                if (target) write('UPDATE clan_warehouse_items SET amount = ?, updatedAt = ? WHERE id = ? AND clanId = ?', [productAmount, now(), productId, manualOrder.clanId]);
+                else productId = write(`INSERT INTO clan_warehouse_items
+                    (clanId, selfId, name, kind, amount, enchant, reservedAmount, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?)`, [manualOrder.clanId, product.selfId, product.name, product.kind || '', product.amount, now(), now()]).insertId;
+                const simulation = one('SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?', [manualOrder.clanId]);
+                const state = jsonObject(simulation?.stateJson);
+                state.warehouseRevision = Number(state.warehouseRevision || 0) + 1;
+                state.updatedAt = now();
+                write('UPDATE clan_simulation_clans SET stateJson = ?, updatedAt = ? WHERE clanId = ?', [JSON.stringify(state), state.updatedAt, manualOrder.clanId]);
+            } else if (target) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [productAmount, productId, customerId]);
             else if (product) productId = write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, 0, ?, ?)', [product.selfId, product.name || '', product.amount, product.slot || 0, customerId]).insertId;
+            if (manualOrder) {
+                const event = write(`INSERT INTO clan_goal_events
+                    (clanId, eventType, plan, reasonCode, payloadJson, occurredAt)
+                    VALUES (?, ?, 'craft', ?, ?, ?)`, [manualOrder.clanId,
+                    product ? 'player_order_crafted' : 'player_order_craft_failed', product ? 'clan_craft_success' : 'clan_craft_failure',
+                    JSON.stringify({ orderId: manualOrder.id, recipeId: clanCraft.recipeId, crafterId, customerId,
+                        final: clanOrder.final, amount: Number(product?.amount || 0) }), now()]);
+                // A real craft supersedes the delayed review of the same
+                // manual goal; keep one execution chain rather than adding a
+                // polling chain for every component in the recipe tree.
+                write(`UPDATE clan_actions SET status = 'cancelled', reasonCode = 'clan_craft_progress',
+                    updatedAt = ?, resolvedAt = ? WHERE clanId = ? AND actionType = 'goal_plan' AND status = 'pending'`,
+                [now(), now(), manualOrder.clanId]);
+                write(`INSERT INTO clan_actions
+                    (clanId, actionKey, actionType, priority, status, attempt, availableAt,
+                     payloadJson, resultJson, reasonCode, createdAt, updatedAt)
+                    VALUES (?, ?, 'goal_plan', 100, 'pending', 0, ?, ?, '{}', 'clan_craft_progress', ?, ?)`,
+                [manualOrder.clanId, `clan:${manualOrder.clanId}:order:${manualOrder.id}:craft:${event.insertId}`, now(),
+                    JSON.stringify({ orderId: manualOrder.id, reason: 'clan_craft_progress' }), now(), now()]);
+            }
             let nextCrafterAdena = null;
             if (fee > 0) {
                 write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [Number(customerAdena.amount) - fee, customerAdena.id, customerId]);
@@ -5472,12 +5540,13 @@ const Database = {
             ]);
             const orderId = Number(inserted.insertId);
             const previousState = jsonObject(simulation.stateJson);
-            const nextGoal = goal ? { ...goal, orderId, orderRevision: revision, controlledBy: 'player', updatedAt: timestamp } : null;
+            const nextGoal = goal ? { ...goal, orderId, orderRevision: revision, controlledBy: 'player', updatedAt: timestamp,
+                ...(strategy === 'craft' ? { goalKey: `player-order:${orderId}:craft` } : {}) } : null;
             const state = simulationState(previousState, clan, simulation.leaderId, previousState.memberIds || [], timestamp);
             state.goal = nextGoal;
             state.updatedAt = timestamp;
             write('UPDATE clan_simulation_clans SET updatedAt = ?, stateJson = ? WHERE clanId = ?', [timestamp, JSON.stringify(state), clan]);
-            if (actionType && orderStatus === 'active') {
+            if (actionType && (orderStatus === 'active' || orderStatus === 'blocked' && strategy === 'craft')) {
                 write(`INSERT INTO clan_actions
                     (clanId, actionKey, actionType, priority, status, attempt, availableAt,
                      payloadJson, resultJson, reasonCode, createdAt, updatedAt)
@@ -5515,12 +5584,13 @@ const Database = {
         transition,
         goal = null,
         actionType = null,
-        reasonCode = ''
+        reasonCode = '',
+        changes = null
     } = {}) {
         const clan = Number(clanId);
         const id = Number(orderId);
         const action = String(transition || '');
-        if (!clan || !id || !['pause', 'resume', 'replan', 'cancel'].includes(action)) {
+        if (!clan || !id || !['pause', 'resume', 'replan', 'cancel', 'edit'].includes(action)) {
             return Promise.resolve({ ok: false, code: 'invalid_clan_order_transition' });
         }
         return inTransaction(() => {
@@ -5537,6 +5607,23 @@ const Database = {
             if (action === 'pause' && String(order.status) === 'paused') {
                 return { ok: true, idempotent: true, order: playerManagedOrderRow(order) };
             }
+            if (action === 'edit') {
+                if (expectedRevision === null || !changes || Number(changes.itemId) !== Number(order.itemId)) {
+                    return { ok: false, code: 'invalid_clan_order_edit' };
+                }
+                const members = [...new Set((changes.memberIds || []).map(Number))];
+                if (!members.length) return { ok: false, code: 'invalid_clan_order_members' };
+                const placeholders = members.map(() => '?').join(', ');
+                const rows = all(`SELECT c.id, c.clanId, c.username, life.accountName, life.statsJson
+                    FROM characters c LEFT JOIN bot_life_state life ON life.characterId = c.id
+                    WHERE c.id IN (${placeholders})`, members);
+                if (rows.length !== members.length || rows.some((member) => Number(member.clanId) !== clan || !generatedBotRow(member))) {
+                    return { ok: false, code: 'invalid_clan_order_members' };
+                }
+                if (Number(changes.budget) > 0 && Number(changes.budget) < Number(order.spent)) {
+                    return { ok: false, code: 'clan_order_budget_below_spent' };
+                }
+            }
             const timestamp = now();
             cancelPlayerManagedClanWorkUnsafe(clan, `player_order_${action}`, timestamp);
             const revision = Number(order.revision) + 1;
@@ -5552,7 +5639,17 @@ const Database = {
                 nextGoal = { ...(previousState.goal || goal || {}), status: 'paused', orderId: id, orderRevision: revision, updatedAt: timestamp };
             } else {
                 nextGoal = { ...(goal || previousState.goal || {}), orderId: id, orderRevision: revision, controlledBy: 'player', updatedAt: timestamp };
-                status = nextGoal.status === 'completed' ? 'completed' : nextGoal.status === 'blocked' ? 'blocked' : 'active';
+                status = nextGoal.status === 'completed' ? 'completed'
+                    : action === 'edit' && order.status === 'paused' ? 'paused'
+                        : nextGoal.status === 'blocked' ? 'blocked' : 'active';
+                if (status === 'paused') nextGoal.status = 'paused';
+            }
+            if (action === 'edit') {
+                write(`UPDATE clan_orders SET amount = ?, strategy = ?, maxUnitPrice = ?, budget = ?, memberIdsJson = ?
+                    WHERE id = ? AND clanId = ?`, [
+                    changes.amount, changes.strategy, changes.maxUnitPrice, changes.budget,
+                    JSON.stringify(changes.memberIds), id, clan
+                ]);
             }
             state.goal = nextGoal;
             state.updatedAt = timestamp;
@@ -5562,7 +5659,7 @@ const Database = {
                 revision, status, JSON.stringify(nextGoal?.plan || {}), String(reasonCode || nextGoal?.plan?.reasonCode || ''),
                 timestamp, ['completed', 'cancelled'].includes(status) ? timestamp : null, id, clan
             ]);
-            if (actionType && status === 'active') {
+            if (actionType && (status === 'active' || status === 'blocked' && nextGoal?.policy?.strategy === 'craft')) {
                 write(`INSERT INTO clan_actions
                     (clanId, actionKey, actionType, priority, status, attempt, availableAt,
                      payloadJson, resultJson, reasonCode, createdAt, updatedAt)
@@ -5571,14 +5668,14 @@ const Database = {
                     JSON.stringify({ orderId: id, orderRevision: revision, reason: `player_order_${action}` }),
                     `player_order_${action}`, timestamp, timestamp
                 ]);
-            } else if (action === 'cancel') {
+            } else if (action === 'cancel' || status === 'completed') {
                 write(`INSERT INTO clan_actions
                     (clanId, actionKey, actionType, priority, status, attempt, availableAt,
                      payloadJson, resultJson, reasonCode, createdAt, updatedAt)
-                    VALUES (?, ?, 'goal_plan', 100, 'pending', 0, ?, ?, '{}', 'player_order_cancelled', ?, ?)`, [
+                    VALUES (?, ?, 'goal_plan', 100, 'pending', 0, ?, ?, '{}', ?, ?, ?)`, [
                     clan, `clan:${clan}:order:${id}:r${revision}:automatic`, timestamp,
-                    JSON.stringify({ orderId: id, orderRevision: revision, reason: 'player_order_cancelled', control: 'automatic' }),
-                    timestamp, timestamp
+                    JSON.stringify({ orderId: id, orderRevision: revision, reason: status === 'completed' ? 'player_order_completed' : 'player_order_cancelled', control: 'automatic' }),
+                    status === 'completed' ? 'player_order_completed' : 'player_order_cancelled', timestamp, timestamp
                 ]);
             }
             write(`INSERT INTO clan_goal_events
@@ -5590,7 +5687,7 @@ const Database = {
             return { ok: true, order: playerManagedOrderRow(one('SELECT * FROM clan_orders WHERE id = ?', [id])), goal: nextGoal };
         }, `clan-order:${action}`);
     },
-    updatePlayerManagedClanOrderProgress({ clanId, orderId, goal, spentDelta = 0, reasonCode = '' } = {}) {
+    updatePlayerManagedClanOrderProgress({ clanId, orderId, expectedRevision = null, goal, spentDelta = 0, reasonCode = '' } = {}) {
         const clan = Number(clanId);
         const id = Number(orderId);
         if (!clan || !id || !goal) return Promise.resolve({ ok: false, code: 'invalid_clan_order' });
@@ -5602,6 +5699,9 @@ const Database = {
             const order = one('SELECT * FROM clan_orders WHERE id = ? AND clanId = ?', [id, clan]);
             if (!simulation || String(simulation.mode) !== 'player_managed') return { ok: false, code: 'target_not_player_managed' };
             if (!order || !['active', 'blocked'].includes(String(order.status))) return { ok: false, code: 'clan_order_not_active' };
+            if (expectedRevision !== null && Number(order.revision) !== Number(expectedRevision)) {
+                return { ok: false, code: 'clan_order_revision_conflict', revision: Number(order.revision) };
+            }
             const timestamp = now();
             const revision = Number(order.revision) + 1;
             const nextGoal = { ...goal, orderId: id, orderRevision: revision, controlledBy: 'player', updatedAt: timestamp };
@@ -6911,7 +7011,8 @@ const Database = {
         goalKey,
         expectedWarehouseRevision = null,
         expectedSimulationRevision = null,
-        allowParty = false
+        allowParty = false,
+        clanOrder = null
     } = {}) {
         const clan = Number(clanId);
         const beneficiary = Number(characterId);
@@ -6923,6 +7024,9 @@ const Database = {
         }
 
         return withCharacterFlush(beneficiary, () => inTransaction(() => {
+            if (clanOrder && !playerClanCraftOrderUnsafe(clan, clanOrder.orderId, clanOrder.settings)) {
+                return { ok: false, code: 'clan_order_revision_conflict' };
+            }
             const simulation = one('SELECT clanId, stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan]);
             const member = one('SELECT id, clanId FROM characters WHERE id = ?', [beneficiary]);
             const life = one(`SELECT phase, simulationOwner, simulationRevision, partyId

@@ -151,7 +151,89 @@ button { cursor: pointer; }
 .has-app-shell .clan-identity span, .has-app-shell .clan-row-side span { font-size: 10px; }
 .has-app-shell .clan-row:hover { color: var(--text); }
 .has-app-shell .clan-management-heading p, .has-app-shell .clan-member-identity span { font-size: 11px; }
-.has-app-shell .clan-hall-card, .has-app-shell .clan-order-panel { background: var(--surface); }
+.has-app-shell .clan-hall-card, .has-app-shell .clan-order-panel, .has-app-shell .clan-metric-grid > div { background: var(--surface); }
+.has-app-shell .clan-order-item-results, .has-app-shell .clan-order-policy > div { background: var(--surface-strong); }
+.has-app-shell .clan-order-policy button.is-active { color: var(--bg); }
+.has-app-shell .clan-order-submit button { color: var(--bg); }
+/* A focused workspace above the clan directory, with its own scroll and focus. */
+.clan-manager-dialog { width: min(1080px, calc(100vw - 48px)); max-width: none; height: min(860px, calc(100dvh - 48px)); max-height: none; margin: auto; padding: 0; border: 1px solid var(--line); border-radius: 18px; color: var(--text); background: var(--surface); box-shadow: 0 28px 100px #0006; overflow: hidden; }
+.clan-manager-dialog::backdrop { background: #071411aa; backdrop-filter: blur(6px); }
+#clanManagerContent { height: 100%; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; }
+.clan-manager-header { display: grid; grid-template-columns: minmax(0, 1fr) 38px; gap: 20px; align-items: start; padding: 24px 28px 20px; background: var(--surface); }
+.clan-manager-heading { min-width: 0; }
+.clan-manager-heading h2 { overflow-wrap: anywhere; }
+.clan-manager-header h2 { display: flex; align-items: center; gap: 12px; font-size: 28px; margin: 8px 0; letter-spacing: -.035em; }
+.clan-manager-header p { font-size: 12px; color: var(--muted); }
+.clan-manager-header button, .clan-manager-footer button { display: inline-flex; align-items: center; gap: 7px; padding: 9px 14px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--surface-strong); font-size: 12px; }
+.clan-manager-header .clan-manager-close { width: 38px; height: 38px; padding: 0; justify-content: center; align-self: start; }
+.clan-manager-close:hover { border-color: var(--gold); }
+.clan-manager-current-status { display: flex; align-items: center; gap: 8px; margin-top: 14px; color: var(--muted); font-size: 12px; }
+.clan-manager-current-status img { width: 24px; height: 24px; object-fit: contain; image-rendering: pixelated; flex: 0 0 auto; }
+.clan-manager-current-status > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clan-goal-status { flex: 0 0 auto; justify-self: start; padding: 4px 8px; border-radius: 5px; color: var(--green); background: var(--surface-strong); font-size: 11px; font-weight: 650; white-space: nowrap; }
+.clan-order-current > .clan-goal-status { color: var(--green); }
+.clan-goal-status[data-status="blocked"], .clan-goal-status[data-status="failed"], .clan-order-current > .clan-goal-status[data-status="blocked"], .clan-order-current > .clan-goal-status[data-status="failed"] { color: var(--red); }
+.clan-goal-status[data-status="paused"], .clan-goal-status[data-status="idle"], .clan-order-current > .clan-goal-status[data-status="paused"], .clan-order-current > .clan-goal-status[data-status="idle"] { color: var(--muted); }
+.clan-automatic-progress { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 11px; }
+.clan-automatic-goal + .clan-goal-explanation { margin-bottom: 24px; }
+.clan-manager-tabs { display: flex; gap: 4px; padding: 0 28px; overflow-x: auto; border-bottom: 1px solid var(--line); }
+.clan-manager-tabs button { display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding: 15px 14px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-size: 13px; }
+.clan-manager-tabs button[aria-current="page"] { color: var(--gold); border-bottom-color: var(--gold); }
+.clan-manager-tabs button > span { padding: 2px 6px; border-radius: 5px; color: var(--muted); background: var(--surface-strong); font-size: 10px; }
+.clan-manager-body { overflow: auto; min-width: 0; padding: 28px 32px; background: var(--bg); }
+.clan-manager-body .clan-management { margin: 0; }
+.clan-manager-body .clan-order-control { grid-template-columns: 210px minmax(0, 1fr); gap: 30px; padding: 0; border: 0; background: transparent; }
+.clan-manager-body .clan-order-current { padding: 16px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--surface); }
+.clan-manager-body .clan-order-current strong { font-size: 20px; }
+.clan-manager-body .clan-order-editor { padding: 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.clan-manager-body .clan-identity-control { padding: 0; border: 0; background: transparent; }
+.clan-manager-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 32px; border-top: 1px solid var(--line); }
+.clan-manager-footer span { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.clan-manager-section-heading { margin-bottom: 22px; }
+.clan-manager-section-heading h3 { font-size: 21px; margin: 0 0 8px; }
+.clan-manager-section-heading p { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.clan-manager-table-wrap { overflow-x: auto; }
+.clan-manager-dialog table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.clan-manager-dialog th, .clan-manager-dialog td { padding: 12px; border-bottom: 1px solid var(--line-soft); text-align: right; font-variant-numeric: tabular-nums; }
+.clan-manager-dialog th { color: var(--faint); font-size: 11px; font-weight: 550; }
+.clan-manager-dialog th:first-child, .clan-manager-dialog td:first-child { text-align: left; }
+.clan-manager-dialog td small { display: block; max-width: 260px; margin-top: 4px; color: var(--faint); font-size: 10px; line-height: 1.5; }
+.clan-manager-activity .clan-event-row { padding: 14px 0; }
+.clan-craft-preview { margin: 18px 0; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-strong); font-size: 12px; }
+.clan-craft-title { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.clan-craft-title strong { font-size: 15px; }
+.clan-craft-title > span, .clan-craft-preview > small { color: var(--muted); font-size: 11px; line-height: 1.6; }
+.clan-craft-preview > small { display: block; margin-top: 14px; }
+.clan-craft-preview p { margin: 14px 0; color: var(--muted); line-height: 1.6; }
+.clan-craft-stages { display: flex; gap: 10px; list-style: none; padding: 0; margin: 18px 0; }
+.clan-craft-stages li { flex: 1; display: flex; align-items: center; gap: 7px; padding-bottom: 12px; border-bottom: 2px solid var(--line); color: var(--faint); font-size: 11px; }
+.clan-craft-stages li span { display: grid; place-items: center; width: 21px; height: 21px; flex-shrink: 0; border-radius: 50%; background: var(--bg); }
+.clan-craft-stages .is-current { border-color: var(--gold); color: var(--gold); }
+.clan-craft-stages .is-done { border-color: var(--green); color: var(--green); }
+.clan-craft-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+.clan-craft-meta small, .clan-craft-meta strong { display: block; }
+.clan-craft-meta small { color: var(--faint); margin-bottom: 6px; font-size: 10px; }
+.clan-craft-meta strong { font-size: 12px; }
+.clan-craft-materials summary { cursor: pointer; padding: 12px 0; border-top: 1px solid var(--line); font-weight: 600; }
+.clan-craft-materials summary span { display: block; margin: 5px 0 0 16px; color: var(--faint); font-size: 10px; font-weight: 400; }
+.clan-craft-preview .is-missing { color: var(--amber); }
+.clan-craft-preview .is-stocked { color: var(--green); }
+@media (max-width: 760px) {
+    .clan-manager-dialog { width: calc(100vw - 16px); height: calc(100dvh - 16px); border-radius: 12px; }
+    .clan-manager-header { padding: 20px; }
+    .clan-manager-header h2 { font-size: 22px; }
+    .clan-manager-tabs { padding: 0 10px; }
+    .clan-manager-tabs button { padding: 12px 10px; }
+    .clan-manager-body { padding: 20px; }
+    .clan-manager-body .clan-order-control { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+    .clan-manager-body .clan-order-editor { padding: 14px; }
+    .clan-manager-footer { padding: 12px 20px; }
+    .clan-craft-preview { padding: 12px; }
+    .clan-craft-title { flex-direction: column; gap: 5px; }
+    .clan-craft-meta { grid-template-columns: minmax(0, 1fr); }
+    .clan-craft-stages { gap: 6px; }
+    .clan-manager-dialog td, .clan-manager-dialog th { padding: 10px 6px; }
+}
 .app-content { padding: 28px; }
 .page-intro { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
 .page-intro .section-kicker { color: var(--gold); font-size: 10px; letter-spacing: .1em; }

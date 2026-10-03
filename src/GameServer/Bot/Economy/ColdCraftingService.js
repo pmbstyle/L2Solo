@@ -352,6 +352,7 @@ async function craft(state, random = Math.random) {
             product: success ? {
                 selfId: Number(recipe.productId),
                 name: template.template?.name || '',
+                kind: template.template?.kind || '',
                 amount: Number(recipe.productCount || 1) * batchCount,
                 stackable: !!template.etc?.stackable,
                 slot: Number(template.etc?.slot || 0)
@@ -361,6 +362,8 @@ async function craft(state, random = Math.random) {
             crafterMp: stationService ? crafterMp : crafterMp - Number(recipe.mpCost || 0),
             price,
             adena: { name: 'Adena' },
+            ...(plan.clanGoal?.orderId ? { clanOrder: { orderId: plan.clanGoal.orderId,
+                settings: plan.clanGoal.orderSettings, final: !componentCraft } } : {}),
             ...(station.clan ? { clanCraft: { clanId: Number(plan.clanGoal.clanId), recipeId: recipe.recipeId,
                 learning, crafterRevision: crafterState.simulation?.revision ?? crafterState.simulationRevision ?? 0,
                 customerRevision: state.simulation?.revision ?? state.simulationRevision ?? 0,

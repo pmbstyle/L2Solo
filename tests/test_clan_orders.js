@@ -1,5 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
+const http = require('http');
+const { once } = require('events');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 
@@ -163,8 +165,82 @@ async function main() {
             memberIds: [5300002]
         }, { offer: null });
         assert.strictEqual(replacement.ok, true);
+        const Observer = invoke('WorldObserver/WorldObserverServer');
+        const server = http.createServer(Observer.route);
+        server.listen(0, '127.0.0.1');
+        await once(server, 'listening');
+        const editUrl = `http://127.0.0.1:${server.address().port}/observer/api/clan/6300001/orders/${replacement.order.id}`;
+        try {
+            const progress = await OrderService.syncProgress(await projection(), 120000, 'market_purchase');
+            assert.strictEqual(progress.goal.progress, 3);
+            const pausedForEdit = await OrderService.transition(await projection(), 'pause', { revision: progress.order.revision });
+            const response = await fetch(editUrl, {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ revision: pausedForEdit.order.revision, amount: 5,
+                    strategy: 'farm', maxUnitPrice: 600000, budget: 2000000,
+                    memberIds: [5300002, 5300003, 5300004] })
+            });
+            assert.strictEqual(response.status, 200);
+            const edited = await response.json();
+            assert.strictEqual(edited.order.id, replacement.order.id, 'editing must retain the order identity');
+            assert.strictEqual(edited.order.createdAt, replacement.order.createdAt);
+            assert.strictEqual(edited.order.spent, 120000, 'editing must preserve actual spending');
+            assert.strictEqual(edited.order.status, 'paused', 'editing must not resume paused work');
+            assert.strictEqual(edited.goal.progress, 3);
+            assert.strictEqual(edited.goal.required, 5);
+            assert.deepStrictEqual(edited.order.memberIds, [5300002, 5300003, 5300004]);
+            const openDemands = await Database.execute(["SELECT id FROM clan_market_demands WHERE clanId = 6300001 AND status = 'open'", []]);
+            assert.strictEqual(openDemands.length, 0, 'paused edits must not reopen market demand');
+            const staleProgress = await Database.updatePlayerManagedClanOrderProgress({
+                clanId: 6300001, orderId: edited.order.id, expectedRevision: progress.order.revision,
+                goal: progress.goal
+            });
+            assert.strictEqual(staleProgress.code, 'clan_order_not_active', 'paused work cannot restore an older goal');
+            const stale = await fetch(editUrl, {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ revision: pausedForEdit.order.revision, amount: 100 })
+            });
+            assert.strictEqual(stale.status, 409);
+            assert.strictEqual((await stale.json()).code, 'clan_order_revision_conflict');
+            const invalidItem = await OrderService.edit(await projection(), edited.order.id, {
+                revision: edited.order.revision, itemId: 439
+            });
+            assert.strictEqual(invalidItem.code, 'invalid_clan_order_edit');
+            const invalidBudget = await OrderService.edit(await projection(), edited.order.id, {
+                revision: edited.order.revision, budget: 100000
+            });
+            assert.strictEqual(invalidBudget.code, 'clan_order_budget_below_spent');
+            const invalidRoster = await OrderService.edit(await projection(), edited.order.id, {
+                revision: edited.order.revision, memberIds: []
+            });
+            assert.strictEqual(invalidRoster.code, 'invalid_clan_order_members');
+            const stillPaused = await OrderService.current(6300001);
+            assert.strictEqual(stillPaused.revision, edited.order.revision, 'rejected edits must leave state untouched');
+            const resumedEdit = await OrderService.transition(await projection(), 'resume', { revision: stillPaused.revision });
+            const backgroundProgress = await OrderService.syncProgress(await projection(), 0, 'warehouse_progress');
+            assert(backgroundProgress.order.revision > resumedEdit.order.revision);
+            const activeEdit = await OrderService.edit(await projection(), stillPaused.id, {
+                revision: resumedEdit.order.revision, expectedSettings: OrderService.orderSettings(resumedEdit.order),
+                strategy: 'market', amount: 4, maxUnitPrice: 700000
+            }, { offer: null });
+            assert.strictEqual(activeEdit.ok, true, 'ordinary progress refreshes must not invalidate an edit of unchanged settings');
+            assert.strictEqual(activeEdit.order.status, 'active');
+            assert.strictEqual(activeEdit.order.spent, 120000);
+            const outdatedWork = await Database.updatePlayerManagedClanOrderProgress({
+                clanId: 6300001, orderId: activeEdit.order.id, expectedRevision: resumedEdit.order.revision,
+                goal: resumedEdit.goal
+            });
+            assert.strictEqual(outdatedWork.code, 'clan_order_revision_conflict', 'an in-flight worker must not overwrite edited settings');
+            assert.strictEqual((await projection()).state.goal.required, 4);
+            const [updatedDemand] = await Database.execute([
+                "SELECT amount, maxPrice FROM clan_market_demands WHERE clanId = 6300001 AND status = 'open' ORDER BY id DESC LIMIT 1", []
+            ]);
+            assert.deepStrictEqual(updatedDemand, { amount: 1, maxPrice: 700000 }, 'remaining demand must follow the edited quantity and price');
+        } finally {
+            await new Promise((resolve) => server.close(resolve));
+        }
         const cancelled = await OrderService.transition(await projection(), 'cancel', {
-            revision: replacement.order.revision
+            revision: (await OrderService.current(6300001)).revision
         });
         assert.strictEqual(cancelled.ok, true);
         assert.strictEqual(cancelled.order.status, 'cancelled');
@@ -198,7 +274,7 @@ async function main() {
         ], 'test:legacy-clan-party');
         const farmOrder = await OrderService.create(await projection(), {
             itemId: 439,
-            amount: 1,
+            amount: 2,
             strategy: 'farm',
             memberIds: farmMembers
         }, {
@@ -228,8 +304,20 @@ async function main() {
 
         const delivered = await OrderService.syncProgress(await projection(), 0, 'party_reward_applied');
         assert.strictEqual(delivered.ok, true);
-        assert.strictEqual(delivered.order.status, 'completed');
-        assert.strictEqual(delivered.goal.status, 'completed');
+        assert.strictEqual(delivered.goal.progress, 1);
+        assert(['active', 'blocked'].includes(delivered.order.status), 'a partially delivered order stays current');
+        const finishedByEdit = await OrderService.edit(await projection(), delivered.order.id, {
+            revision: delivered.order.revision, amount: 1
+        });
+        assert.strictEqual(finishedByEdit.ok, true);
+        assert.strictEqual(finishedByEdit.order.id, farmOrder.order.id);
+        assert.strictEqual(finishedByEdit.order.status, 'completed');
+        assert.strictEqual(finishedByEdit.goal.progress, 1, 'editing must retain equipment deliveries for the same order');
+        const [automaticAfterEdit] = await Database.execute([
+            "SELECT actionType, reasonCode FROM clan_actions WHERE clanId = 6300001 AND status = 'pending' ORDER BY id DESC LIMIT 1", []
+        ]);
+        assert.deepStrictEqual(automaticAfterEdit, { actionType: 'goal_plan', reasonCode: 'player_order_completed' });
+        assert.strictEqual(finishedByEdit.goal.status, 'completed');
         assert.strictEqual(delivered.goal.progress, 1);
         assert.strictEqual(delivered.goal.plan.delivery.kind, 'best_upgrade');
         assert.strictEqual(delivered.goal.plan.delivery.deliveredAmount, 1);
