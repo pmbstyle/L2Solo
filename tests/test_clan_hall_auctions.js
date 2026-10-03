@@ -30,7 +30,8 @@ async function main() {
             ).run(
                 JSON.stringify({
                     mode: 'autonomous',
-                    goal: { type: 'level', status: 'executing', target: { level: 3 } },
+                    // A planned 2.5M progression purchase is the protected money below.
+                    goal: { type: 'level', status: 'executing', target: { level: 3 }, plan: { maxPrice: 2500000 } },
                     warehouseRevision: 0
                 })
             );
@@ -179,17 +180,17 @@ async function main() {
         const initialGoal = (await exec('SELECT stateJson FROM clan_simulation_clans WHERE clanId=3'))[0].stateJson;
         assert.equal(JSON.parse(initialGoal).goal.target.level, 3);
         assert.equal(
-            (await Database.contributeClanHall({ clanId: 3, characterId: 3, timestamp: start })).amount,
+            (await Database.settleClanDues({ clanId: 3, characterId: 3, rate: 0.15, timestamp: start })).amount,
             0,
             'existing wallet is not repeatedly taxed'
         );
         await exec('UPDATE items SET amount=amount+100000 WHERE characterId=3 AND selfId=57');
         assert.equal(
-            (await Database.contributeClanHall({ clanId: 3, characterId: 3, timestamp: start + 1 })).amount,
+            (await Database.settleClanDues({ clanId: 3, characterId: 3, rate: 0.15, timestamp: start + 1 })).amount,
             15000
         );
         assert.equal(
-            (await Database.contributeClanHall({ clanId: 3, characterId: 3, timestamp: start + 2 })).amount,
+            (await Database.settleClanDues({ clanId: 3, characterId: 3, rate: 0.15, timestamp: start + 2 })).amount,
             0,
             'same earnings cannot be collected twice'
         );
@@ -199,7 +200,7 @@ async function main() {
                 .target.level,
             3
         );
-        // Only the hall contribution ledger changes, never the level contribution total.
+        // Level 2+ dues go to the warehouse only, never to the level contribution total.
         assert.equal(Number((await exec('SELECT COUNT(*) AS n FROM clan_contributions WHERE clanId=3'))[0].n), 0);
         // A worker-owned balance may exceed the physical inventory. Active leases
         // are untouched; an unleased debit must fence old worker proposals.
@@ -209,15 +210,16 @@ async function main() {
             [start + 1000, JSON.stringify({ 57: { selfId: 57, name: 'Adena', amount: 1200000 } })]
         );
         assert.equal(
-            (await Database.contributeClanHall({ clanId: 3, characterId: 3, timestamp: start + 3 })).code,
+            (await Database.settleClanDues({ clanId: 3, characterId: 3, rate: 0.15, timestamp: start + 3 })).code,
             'member_busy'
         );
         const revision = Number(
             (await exec('SELECT simulationRevision FROM bot_life_state WHERE characterId=3'))[0].simulationRevision
         );
-        const workerContribution = await Database.contributeClanHall({
+        const workerContribution = await Database.settleClanDues({
             clanId: 3,
             characterId: 3,
+            rate: 0.15,
             timestamp: start + 1001
         });
         assert.equal(workerContribution.amount, 17250);
@@ -229,7 +231,7 @@ async function main() {
             1182750
         );
         assert.equal(
-            (await Database.contributeClanHall({ clanId: 3, characterId: 3, timestamp: start + 1002 })).amount,
+            (await Database.settleClanDues({ clanId: 3, characterId: 3, rate: 0.15, timestamp: start + 1002 })).amount,
             0
         );
         // Manual bids cannot spend the protected progression money either.

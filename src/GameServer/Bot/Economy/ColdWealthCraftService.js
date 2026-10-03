@@ -11,6 +11,7 @@ const StaticBuyerService = invoke('GameServer/Bot/Economy/StaticBuyerService');
 const StaticMerchantPricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
 const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 
@@ -64,10 +65,13 @@ function exitsFor(state, recipe, template) {
 function chooseOpportunity(state, knownRecipes) {
     let best = null;
     const craftLevel = CraftShopService.craftLevelFor(state);
+    // An active market gear plan keeps what its purchase needs (price and
+    // reserve): inputs are bought only with the rest of the wallet. A bot
+    // with its own buy order does not craft at all (eligible), so no escrow.
     const gearPlan = state.stats?.equipmentPlan;
-    const gearReserve = gearPlan?.status === 'active' && gearPlan.strategy === 'market'
-        ? Math.max(0, Number(gearPlan.target?.price || 0)) : 0;
-    const budgetState = { ...state, adena: Math.max(0, Number(state.adena || 0) - gearReserve) };
+    const budgetState = { ...state, adena: gearPlan?.status === 'active' && gearPlan.strategy === 'market'
+        ? PurchaseFunding.surplus(state, gearPlan.market?.price, gearPlan.market?.reserve)
+        : PurchaseFunding.budget(state) };
     const offerCache = new Map();
     const ownStock = new Map(ItemDisposition.saleCandidates(state, { unlimited: true })
         .map((item) => [Number(item.selfId), item]));

@@ -6,6 +6,7 @@ const { Worker } = require('worker_threads');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const DataCache = invoke('GameServer/DataCache');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
@@ -60,7 +61,7 @@ function admitSoloRouteTravelState(nextState, baseState, profiles, occupancy, ti
         || !travel?.spotId) {
         return { state: nextState, admitted: true, checked: false };
     }
-    const spot = (profiles || []).find((profile) => String(profile.id) === String(travel.spotId));
+    const spot = SpotIndex.spotById(profiles, travel.spotId);
     if (!spot) return { state: nextState, admitted: true, checked: false };
     // Leaving party-only content is a safety transition, not an optional
     // farming reservation. A full destination may be exceeded by one bot so
@@ -354,10 +355,7 @@ class ColdSimulationCoordinator {
         });
         this.worker = worker;
         this.counters.workersStarted += 1;
-        // Claim and release requests write SQLite; a busy database must not
-        // become an unhandled rejection. The worker times out a lost claim
-        // acknowledgement and queues the bot again.
-        worker.on('message', (message) => { this.onMessage(message).catch((error) => this.recordError(error)); });
+        worker.on('message', (message) => { this.onMessage(message); });
         worker.on('error', (error) => this.onWorkerError(error));
         worker.on('exit', (code) => this.onWorkerExit(code));
     }
@@ -443,7 +441,11 @@ class ColdSimulationCoordinator {
             }
             break;
         case 'claim_request':
-            await this.handleClaimRequest(message);
+            // A claim writes SQLite; a busy database must not become an
+            // unhandled rejection, which ends the process. Release already
+            // tolerates it. The worker times out a lost claim acknowledgement
+            // and queues the bot again.
+            await this.handleClaimRequest(message).catch((error) => this.recordError(error));
             break;
         case 'proposal_batch':
             this.handleProposalBatch(message);
@@ -567,13 +569,8 @@ class ColdSimulationCoordinator {
     contextIndex(options = {}) {
         let profiles = [];
         try { profiles = SpotProfiles.ensure() || []; } catch (_) { profiles = []; }
-        // The spot catalog changes only when SpotProfiles rebuilds its array;
-        // every context of that catalog reads the same id index.
-        if (this.contextSpotSource !== profiles) {
-            this.contextSpotSource = profiles;
-            this.contextSpots = new Map(profiles.map((spot) => [String(spot.id), spot]));
-        }
-        const spots = this.contextSpots;
+        // Every context of one spot catalog reads the same id table.
+        const spots = SpotIndex.tableFor(profiles);
         const parties = new Map((BackgroundPartyState.active?.() || []).map((party) => [Number(party.leaderId || 0), party]));
         let occupancy = {};
         try { occupancy = SpotProfiles.currentOccupancy(profiles) || {}; } catch (_) { occupancy = {}; }
@@ -820,6 +817,9 @@ class ColdSimulationCoordinator {
             interactionMemory: invoke('GameServer/Social/InteractionMemoryRuntime').snapshot(Number(state.characterId)),
             clanHallServices: invoke('GameServer/ClanHall/ColdVisit').needed(state),
             pressure,
+            // The worker cannot see AFK shops: hand it the Adena the bot's own
+            // buy order holds, which still counts as purchase budget.
+            buyOrderEscrow: invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId),
             targetNpcId: party ? require('./PartyHuntingTarget').npcId(party, state)
                 : directDropTargetNpcId(state.stats?.equipmentPlan),
             isPartyLeader: !!party,
@@ -876,7 +876,7 @@ class ColdSimulationCoordinator {
     async sendIncrementalEntries(entries, index, pageSize, priority = null, deadlineAt = Infinity) {
         await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany(entries.map(entry => Number((entry.state || entry).characterId)));
         // Count each row once instead of serializing every growing page prefix.
-        // post() still validates the complete envelope before worker delivery.
+        // post() checks the counted upper bound of the envelope against the limit.
         const baseBytes = Protocol.byteLength(Protocol.envelope('snapshot_page', this.workerEpoch, {
             rows: [], done: false, initial: false, ...(priority ? { priority } : {})
         })) + 256;
@@ -1362,43 +1362,43 @@ class ColdSimulationCoordinator {
             }
         };
         const timestamp = Number(proposal.enqueuedAt || Date.now());
+        // The worker's fight has already happened: a forced cleanup trip
+        // starts from the state after it, so its exp, adena and loot stay.
+        const resolvedState = proposal?.nextState || (proposal.result
+            ? await LifeState.prepareResolve(claimedState, proposal.result, { persist: false, timestamp })
+            : null);
+        if (!resolvedState) return null;
+        // An atomic group commits all members or none: as before, its cleanup
+        // is decided on the claimed state, so a member its party releases in
+        // this commit does not fail the whole group.
         const cleanupState = this.population?.prepareInventoryCleanupProposal?.(
-            claimedState,
+            proposal.atomicGroup ? claimedState : resolvedState,
             timestamp,
-            claimedState.simulation
+            claimedState.simulation,
+            claimedState
         );
         if (cleanupState) {
             if (proposal.atomicGroup) return null;
             proposal.inventoryCleanupForced = true;
-            proposal.result = {
-                events: [],
-                debug: { inventoryCleanup: true }
-            };
             delete cleanupState.cleanup;
             return cleanupState;
         }
-        if (proposal?.nextState) {
-            let profiles = [];
-            let occupancy = {};
-            try {
-                profiles = SpotProfiles.ensure() || [];
-                occupancy = SpotProfiles.currentOccupancy(profiles) || {};
-            } catch (_) { profiles = []; occupancy = {}; }
-            const admission = admitSoloRouteTravelState(
-                proposal.nextState,
-                state,
-                profiles,
-                occupancy,
-                Date.now()
-            );
-            if (admission.checked && !admission.admitted) this.counters.routeCapacityRejects += 1;
-            return admission.state;
-        }
-        if (!proposal.result) return null;
-        return LifeState.prepareResolve(claimedState, proposal.result, {
-            persist: false,
-            timestamp
-        });
+        if (!proposal?.nextState) return resolvedState;
+        let profiles = [];
+        let occupancy = {};
+        try {
+            profiles = SpotProfiles.ensure() || [];
+            occupancy = SpotProfiles.currentOccupancy(profiles) || {};
+        } catch (_) { profiles = []; occupancy = {}; }
+        const admission = admitSoloRouteTravelState(
+            proposal.nextState,
+            state,
+            profiles,
+            occupancy,
+            Date.now()
+        );
+        if (admission.checked && !admission.admitted) this.counters.routeCapacityRejects += 1;
+        return admission.state;
     }
 
     async afterCommit(entry, committed = {}) {

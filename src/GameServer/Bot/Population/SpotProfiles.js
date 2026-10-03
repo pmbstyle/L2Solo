@@ -1,9 +1,11 @@
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
+const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
+const { stateKey, occupiedSpotId, farmIntentSpotId } = require('./SpotOccupancyIndex');
 
 let occupancyCache = null;
 let occupancyCachedAt = 0;
@@ -69,13 +71,9 @@ function physicalSpotForState(state, profiles) {
     const loc = state?.loc;
     if (loc && Number.isFinite(Number(loc.locX)) && Number.isFinite(Number(loc.locY))) {
         const physical = SpotService.findCurrentSpot(loc);
-        if (physical) return profiles.find((profile) => profile.id === physical.id) || physical;
+        if (physical) return SpotIndex.spotById(profiles, physical.id) || physical;
     }
-    return state?.spotId ? profiles.find((profile) => profile.id === state.spotId) || null : null;
-}
-
-function stateKey(state = {}) {
-    return String(state.characterId || state.name || state.stats?.generatedIndex || '');
+    return state?.spotId ? SpotIndex.spotById(profiles, state.spotId) : null;
 }
 
 function partyIdForState(state = {}) {
@@ -105,30 +103,6 @@ function explicitClanRaidSpot(state = {}, profile = null) {
     return plan?.next?.sourceKind === 'raid'
         && GearAcquisitionPlanner.isClanOwnedPlan(plan)
         && String(plan.next?.spotId || '') === spotId;
-}
-
-function occupiedSpotId(state = {}) {
-    if (state.activity === 'traveling' && state.stats?.travel?.spotId) return state.stats.travel.spotId;
-    if (['merchant', 'shopping', 'crafting', 'traveling'].includes(state.activity)) return null;
-    return state.spotId || null;
-}
-
-function farmIntentSpotId(state = {}, timestamp = Date.now()) {
-    if (['merchant', 'shopping', 'crafting', 'dead'].includes(state.activity)) return null;
-    const clanObjective = state.stats?.clanPartyObjective;
-    const request = state.stats?.partyRequest;
-    const plan = state.stats?.equipmentPlan;
-    let spotId = null;
-    if (clanObjective?.spotId && ['open', 'deferred'].includes(String(clanObjective.status || ''))) {
-        spotId = clanObjective.spotId;
-    } else if (request?.spotId && ['open', 'deferred'].includes(String(request.status || ''))) {
-        spotId = request.spotId;
-    } else if (plan?.status === 'active' && ['direct_drop', 'craft'].includes(plan.strategy) && plan.next?.spotId) {
-        spotId = plan.next.spotId;
-    }
-    if ((state.stats?.capacityBackoffs || []).some(entry => String(entry.spotId) === String(spotId)
-        && Number(entry.until) > timestamp)) return null;
-    return spotId;
 }
 
 function allocationGroups(states = [], physicalKeys = new Set()) {
@@ -174,51 +148,58 @@ function occupancySnapshot(profiles, states = BotLifeState.allStates(PopulationC
     });
 
     const spotIds = new Set([...Object.keys(physicalMembers), ...Object.keys(reservedMembers)]);
-    return Object.fromEntries([...spotIds].map((spotId) => {
-        const spotMembers = [...(physicalMembers[spotId]?.values() || [])];
-        const claimers = [...(reservedMembers[spotId]?.values() || [])];
-        const capacity = LevelingRoutes.capacityForSpot(byId.get(spotId));
-        const physicalKeys = new Set(spotMembers.map(stateKey));
-        const clanReservationGroups = claimers.reduce((groupsByClan, state) => {
-            const key = clanEquipmentReservationKey(state, spotId);
-            if (!key) return groupsByClan;
-            if (!groupsByClan.has(key)) groupsByClan.set(key, []);
-            groupsByClan.get(key).push(state);
-            return groupsByClan;
-        }, new Map());
-        const rankedClanReservationKeys = [...clanReservationGroups.entries()]
-            .sort((left, right) => (
-                Number(!left[1].some((state) => physicalKeys.has(stateKey(state))))
-                - Number(!right[1].some((state) => physicalKeys.has(stateKey(state))))
-                || left[0].localeCompare(right[0])
-            ))
-            .map(([key]) => key);
-        const retainedReservationKeys = new Set(
-            rankedClanReservationKeys.slice(0, MAX_CLAN_EQUIPMENT_RESERVATIONS_PER_SPOT)
-        );
-        const admittedClaimers = claimers.filter((state) => {
-            const key = clanEquipmentReservationKey(state, spotId);
-            return !key || retainedReservationKeys.has(key);
-        });
-        const groups = allocationGroups(admittedClaimers, physicalKeys);
-        const retained = new Set();
-        let remaining = capacity;
-        groups.parties.forEach(([, partyMembers]) => {
-            if (partyMembers.length > remaining) return;
-            partyMembers.forEach((state) => retained.add(stateKey(state)));
-            remaining -= partyMembers.length;
-        });
-        groups.solo.slice(0, Math.max(0, remaining)).forEach((state) => retained.add(stateKey(state)));
-        return [spotId, {
-            count: spotMembers.length,
-            reservedCount: claimers.length,
-            capacity,
-            retained,
-            reservedKeys: new Set(claimers.map(stateKey)),
-            reservationKeys: new Set(rankedClanReservationKeys),
-            retainedReservationKeys
-        }];
-    }));
+    return Object.fromEntries([...spotIds].map((spotId) => [spotId, occupancyEntry(
+        spotId,
+        byId.get(spotId),
+        [...(physicalMembers[spotId]?.values() || [])],
+        [...(reservedMembers[spotId]?.values() || [])]
+    )]));
+}
+
+// One spot of an occupancy snapshot: who counts, who keeps a place when the
+// spot is over capacity, and which clan equipment groups hold a reservation.
+function occupancyEntry(spotId, profile, spotMembers, claimers) {
+    const capacity = LevelingRoutes.capacityForSpot(profile);
+    const physicalKeys = new Set(spotMembers.map(stateKey));
+    const clanReservationGroups = claimers.reduce((groupsByClan, state) => {
+        const key = clanEquipmentReservationKey(state, spotId);
+        if (!key) return groupsByClan;
+        if (!groupsByClan.has(key)) groupsByClan.set(key, []);
+        groupsByClan.get(key).push(state);
+        return groupsByClan;
+    }, new Map());
+    const rankedClanReservationKeys = [...clanReservationGroups.entries()]
+        .sort((left, right) => (
+            Number(!left[1].some((state) => physicalKeys.has(stateKey(state))))
+            - Number(!right[1].some((state) => physicalKeys.has(stateKey(state))))
+            || left[0].localeCompare(right[0])
+        ))
+        .map(([key]) => key);
+    const retainedReservationKeys = new Set(
+        rankedClanReservationKeys.slice(0, MAX_CLAN_EQUIPMENT_RESERVATIONS_PER_SPOT)
+    );
+    const admittedClaimers = claimers.filter((state) => {
+        const key = clanEquipmentReservationKey(state, spotId);
+        return !key || retainedReservationKeys.has(key);
+    });
+    const groups = allocationGroups(admittedClaimers, physicalKeys);
+    const retained = new Set();
+    let remaining = capacity;
+    groups.parties.forEach(([, partyMembers]) => {
+        if (partyMembers.length > remaining) return;
+        partyMembers.forEach((state) => retained.add(stateKey(state)));
+        remaining -= partyMembers.length;
+    });
+    groups.solo.slice(0, Math.max(0, remaining)).forEach((state) => retained.add(stateKey(state)));
+    return {
+        count: spotMembers.length,
+        reservedCount: claimers.length,
+        capacity,
+        retained,
+        reservedKeys: new Set(claimers.map(stateKey)),
+        reservationKeys: new Set(rankedClanReservationKeys),
+        retainedReservationKeys
+    };
 }
 
 function capacityCount(entry) {
@@ -316,10 +297,84 @@ function capacityFingerprint(occupancy = {}, maxUnits = 9, options = {}) {
     return fingerprint;
 }
 
+// Level bounds are cheap and independent of the detailed route policy:
+// out-of-range spots are rejected before deriving their tags. The window of
+// one target level is the same for every search of one catalog.
+const spotsNearLevelByCatalog = new WeakMap();
+
+function spotsNearLevel(profiles, targetLevel) {
+    let byLevel = spotsNearLevelByCatalog.get(profiles);
+    if (!byLevel) spotsNearLevelByCatalog.set(profiles, byLevel = new Map());
+    let spots = byLevel.get(targetLevel);
+    if (!spots) {
+        spots = profiles.filter((profile) => profile.raidBoss !== true
+            && profile.minLevel <= targetLevel + 4 && profile.maxLevel >= targetLevel - 4);
+        byLevel.set(targetLevel, spots);
+    }
+    return spots;
+}
+
+// occupancySnapshot of the states a SpotOccupancyIndex holds, minus
+// excludedKeys. A spot is recomputed only when its members changed or the
+// caller's catalog has another profile for it; other spots reuse their entry.
+// Every call hands out copies: callers reserve places in the snapshot they
+// were given (reserveCapacity), and that must not reach the next snapshot.
+const indexedViews = new WeakMap();
+function indexedOccupancy(index, profiles, excludedKeys = new Set()) {
+    // occupancySnapshot judges capacity backoffs at wall-clock time.
+    index.refreshBackoffs(Date.now());
+    let view = indexedViews.get(index);
+    if (!view) indexedViews.set(index, view = { entries: new Map(), excludedKeys: new Set() });
+    const markPlace = (key) => {
+        const place = index.places.get(key);
+        if (place?.spotId) index.dirty.add(place.spotId);
+        if (place?.intentSpotId) index.dirty.add(place.intentSpotId);
+    };
+    for (const key of excludedKeys) if (!view.excludedKeys.has(key)) markPlace(key);
+    for (const key of view.excludedKeys) if (!excludedKeys.has(key)) markPlace(key);
+    view.excludedKeys = new Set(excludedKeys);
+    const catalog = profiles || [];
+    const counted = (members) => [...(members || [])]
+        .filter(([key]) => !view.excludedKeys.has(key))
+        .map(([, state]) => state);
+    const snapshot = {};
+    const byId = SpotIndex.tableFor(catalog);
+    for (const spotId of new Set([...index.physical.keys(), ...index.reserved.keys()])) {
+        const key = String(spotId);
+        const profile = byId.get(key);
+        if (!profile) {
+            view.entries.delete(spotId);
+            continue;
+        }
+        let cached = view.entries.get(spotId);
+        if (!cached || cached.profile !== profile || index.dirty.has(spotId)) {
+            const spotMembers = counted(index.physical.get(spotId));
+            const claimers = counted(index.reserved.get(spotId));
+            cached = { profile, entry: spotMembers.length || claimers.length
+                ? occupancyEntry(key, profile, spotMembers, claimers) : null };
+            view.entries.set(spotId, cached);
+        }
+        if (!cached.entry) continue;
+        snapshot[spotId] = { ...cached.entry,
+            retained: new Set(cached.entry.retained),
+            reservedKeys: new Set(cached.entry.reservedKeys),
+            reservationKeys: new Set(cached.entry.reservationKeys),
+            retainedReservationKeys: new Set(cached.entry.retainedReservationKeys) };
+    }
+    for (const spotId of view.entries.keys()) {
+        if (!index.physical.has(spotId) && !index.reserved.has(spotId)) view.entries.delete(spotId);
+    }
+    index.dirty.clear();
+    return snapshot;
+}
+
 function currentOccupancy(profiles, maxAgeMs = 1000) {
     const timestamp = Date.now();
     if (occupancyCache && timestamp - occupancyCachedAt < maxAgeMs) return occupancyCache;
-    occupancyCache = occupancySnapshot(profiles);
+    // The same states as occupancySnapshot's default list: the most recently
+    // updated maxPlayingPopulation of them.
+    const excludedKeys = new Set(BotLifeState.statesBeyondRecent(PopulationConfig.maxPlayingPopulation).map(stateKey));
+    occupancyCache = indexedOccupancy(BotLifeState.occupancyIndex(), profiles, excludedKeys);
     occupancyCachedAt = timestamp;
     return occupancyCache;
 }
@@ -334,6 +389,13 @@ function shouldLeaveOverCapacity(state, spot, occupancy) {
     if (!spot || count <= capacity) return false;
     if (entry?.retained instanceof Set) return !entry.retained.has(stateKey(state));
     return true;
+}
+
+// A solo fallback search must not become a travel loop between comparable
+// camps: the bot keeps its current camp when it is one of the candidates.
+function currentSpotAmong(candidates, currentSpot, mustRelocate) {
+    if (!currentSpot || mustRelocate) return false;
+    return candidates.some((profile) => profile.id === currentSpot.id);
 }
 
 const SpotProfiles = {
@@ -357,7 +419,7 @@ const SpotProfiles = {
     },
 
     findById(id) {
-        return this.ensure().find((profile) => profile.id === id) || null;
+        return SpotIndex.spotById(this.ensure(), id);
     },
 
     findForState(state, options = {}) {
@@ -389,8 +451,9 @@ const SpotProfiles = {
             maxReservationGroups: MAX_CLAN_EQUIPMENT_RESERVATIONS_PER_SPOT
         } : {};
         const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
+        const mode = LevelingRoutes.modeForState(state, options);
         const routeOptions = { ...options, occupancy, excludedSpotIds, capacityUnits, ...reservationOptions,
-            matchupProfiles: TargetMatchup.stateProfiles(state, { ...options, mode: LevelingRoutes.modeForState(state, options) }) };
+            matchupProfiles: TargetMatchup.stateProfiles(state, { ...options, mode }) };
         const currentMatch = currentSpot ? LevelingRoutes.scoreSpot(currentSpot, state, routeOptions) : null;
         // Staying on the leader's ground still admits any teammates reserved
         // elsewhere. Check them before either current-spot shortcut, while
@@ -398,7 +461,20 @@ const SpotProfiles = {
         const currentNeedsRoom = currentSpot
             && capacityUnitsFor(capacityStates, occupancy[currentSpot.id]) > 0
             && !hasCapacityForStates(currentSpot, capacityStates, occupancy, reservationOptions);
-        const mustRelocate = currentSpot && (currentMatch.localityPenalty > 0
+        // A starter field outside the bot's region (locality penalty) asks
+        // for a move only when a field without that penalty can take the bot:
+        // allowed, with room, near its level. A kit that survives no home
+        // field yet (an orc mystic on fists before its first spell) would
+        // otherwise be sent to another penalised field on every resolve and
+        // never hunt. Checked only for the few young bots on foreign ground.
+        const localityRelocate = currentSpot && currentMatch.localityPenalty > 0
+            && spotsNearLevel(profiles, targetLevel).some((profile) => profile.id !== currentSpot.id
+                && !excludedSpotIds.has(String(profile.id))
+                && LevelingRoutes.localityPenaltyForSpot(profile, state, { level: targetLevel },
+                    LevelingRoutes.tagsForSpot(profile)) === 0
+                && hasCapacityForStates(profile, capacityStates, occupancy, reservationOptions)
+                && LevelingRoutes.isSpotAllowedForState(profile, state, routeOptions));
+        const mustRelocate = currentSpot && (localityRelocate
             || (currentSpot.raidBoss === true && !explicitClanRaidSpot(state, currentSpot))
             || currentMatch.targetMatchup?.eligible === false
             || currentMatch.huntingGround?.allowed === false
@@ -453,22 +529,25 @@ const SpotProfiles = {
             return LevelingRoutes.decorateSpot(currentSpot, currentMatch);
         }
 
-        const candidates = profiles
-            .filter((profile) => profile.raidBoss !== true)
+        const candidates = spotsNearLevel(profiles, targetLevel)
             .filter((profile) => !excludedSpotIds.has(String(profile.id)))
-            // Level bounds are cheap and independent of the detailed route
-            // policy. Reject out-of-range spots before deriving their tags.
-            .filter((profile) => profile.minLevel <= targetLevel + 4 && profile.maxLevel >= targetLevel - 4)
             .filter((profile) => LevelingRoutes.isSpotAllowedForState(profile, state, routeOptions));
         const relocationCandidates = mustRelocate
             ? candidates.filter((profile) => profile.id !== currentSpot.id)
             : candidates;
         let routeCandidates = (relocationCandidates.length ? relocationCandidates : candidates)
             .filter((profile) => hasCapacityForStates(profile, capacityStates, occupancy, reservationOptions));
+        let suitable = routeCandidates.filter((profile) => SpotService.isSuitable(profile, targetLevel, options));
+        const soloSearch = !['party', 'duo'].includes(mode);
+        // Without a suitable camp a solo bot hunts allowed ground near its
+        // level: like the easier-ground fallback below, it keeps its current camp.
+        if (soloSearch && !suitable.length && currentSpotAmong(routeCandidates, currentSpot, mustRelocate)) {
+            return LevelingRoutes.decorateSpot(currentSpot, currentMatch);
+        }
         // A weak kit can make every camp near the character's level unsafe.
         // Search easier ground using the same combat and capacity checks;
         // otherwise a perfectly healthy bot repeats missing_spot forever.
-        if (!routeCandidates.length && !['party', 'duo'].includes(LevelingRoutes.modeForState(state, options))) {
+        if (!routeCandidates.length && soloSearch) {
             const recoveryState = { ...state, stats: { ...state.stats, equipmentPlan: null } };
             routeCandidates = profiles.filter(profile => profile.raidBoss !== true
                 && profile.maxLevel >= targetLevel - 16
@@ -476,11 +555,11 @@ const SpotProfiles = {
                 && !excludedSpotIds.has(String(profile.id))
                 && hasCapacityForStates(profile, capacityStates, occupancy, reservationOptions)
                 && LevelingRoutes.isSpotAllowedForState(profile, recoveryState, routeOptions));
-            if (currentSpot && !mustRelocate && routeCandidates.some(profile => profile.id === currentSpot.id)) {
+            if (currentSpotAmong(routeCandidates, currentSpot, mustRelocate)) {
                 return LevelingRoutes.decorateSpot(currentSpot, currentMatch);
             }
+            suitable = routeCandidates.filter((profile) => SpotService.isSuitable(profile, targetLevel, options));
         }
-        const suitable = routeCandidates.filter((profile) => SpotService.isSuitable(profile, targetLevel, options));
         const guided = LevelingRoutes.bestSpot(suitable.length ? suitable : routeCandidates, state, routeOptions);
 
         if (guided?.spot) return guided.spot;
@@ -496,6 +575,7 @@ const SpotProfiles = {
 
 SpotProfiles.occupancySnapshot = occupancySnapshot;
 SpotProfiles.currentOccupancy = currentOccupancy;
+SpotProfiles.indexedOccupancy = indexedOccupancy;
 SpotProfiles.shouldLeaveOverCapacity = shouldLeaveOverCapacity;
 SpotProfiles.farmIntentSpotId = farmIntentSpotId;
 SpotProfiles.hasCapacityForStates = hasCapacityForStates;

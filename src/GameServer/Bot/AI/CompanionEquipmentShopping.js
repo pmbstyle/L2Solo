@@ -1,6 +1,7 @@
 const World = invoke('GameServer/World/World');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const TownNpcCatalog = invoke('GameServer/Bot/Economy/TownNpcCatalog');
 
@@ -42,8 +43,7 @@ function liveMerchantOffer(offer) {
 }
 
 function affordableOffers(target, state, town) {
-    const reserve = GearAcquisitionPlanner.operationalAdenaReserve(state);
-    const budget = Math.max(0, Number(state.adena || 0) - reserve);
+    const budget = PurchaseFunding.spendable(state);
     return MarketOpportunity.hotOffers(target.selfId, {
         town: town.name,
         buyerCharacterId: state.characterId
@@ -166,8 +166,7 @@ function planErrand(session, bot, town, purchaseCount = 0, excludedSlots = []) {
 function alternateNpcErrand(session, bot, town, errand) {
     if (errand?.kind !== 'npc_equipment_purchase' || !town?.name) return null;
     const state = currentState(session, bot, town);
-    const reserve = GearAcquisitionPlanner.operationalAdenaReserve(state);
-    const budget = Math.max(0, Number(state.adena || 0) - reserve);
+    const budget = PurchaseFunding.spendable(state);
     const failedSourceIds = new Set([
         ...(errand.failedSourceIds || []).map(Number),
         Number(errand.sourceId || 0)

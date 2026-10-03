@@ -15,7 +15,8 @@ module.exports = function ({
     inTransaction,
     withCharacterFlush,
     updateColdInventorySnapshotUnsafe,
-    syncInventorySummaryUnsafe
+    syncInventorySummaryUnsafe,
+    rememberClanContributionUnsafe
 }) {
     function ensure(timestamp) {
         write(`CREATE TABLE IF NOT EXISTS clan_halls (id INTEGER PRIMARY KEY, ownerId INTEGER NOT NULL DEFAULT 0,
@@ -76,12 +77,11 @@ module.exports = function ({
         );
     }
     function protectedAmount(c) {
-        if (c?.mode !== 'autonomous') return 0;
-        const goal = json(c.stateJson).goal;
-        return Policy.progressionReserve(c, goal, invoke('GameServer/Clan/ClanSimulationConfig').bloodMarkMaxPrice);
+        return Policy.protectedReserve(c, c?.mode, json(c?.stateJson).goal);
     }
     function spendable(c) {
-        return Math.max(0, available(c.id) - protectedAmount(c));
+        const rows = all('SELECT selfId,amount,reservedAmount FROM clan_warehouse_items WHERE clanId=? AND selfId=57', [c.id]);
+        return Policy.freeAdena(rows, c, c?.mode, json(c?.stateJson).goal);
     }
     function money(id, delta, hallId, kind, timestamp, characterId = null) {
         if (!delta) return true;
@@ -143,6 +143,73 @@ module.exports = function ({
             [id, characterId || clan(id).leaderId, Math.abs(delta), kind, `hall:${e.insertId}`, revision, timestamp]
         );
         return true;
+    }
+    // A member's wallet as the dues read it, or null while another owner holds the
+    // member (a party, a live actor or a leased worker snapshot): it pays next time.
+    function memberWallet(id, timestamp) {
+        const life = one('SELECT * FROM bot_life_state WHERE characterId=?', [id]);
+        if (
+            !life ||
+            life.phase !== 'cold' ||
+            life.partyId ||
+            !['legacy_main', 'cold_simulation_owner'].includes(life.simulationOwner || 'legacy_main') ||
+            Number(life.simulationLeaseUntil) > timestamp
+        )
+            return null;
+        const rows = all('SELECT id,amount FROM items WHERE characterId=? AND selfId=57 ORDER BY id', [id]);
+        const workerOwned = life.simulationOwner === 'cold_simulation_owner';
+        const virtual = json(life.inventorySummary);
+        const amount = workerOwned ? n(virtual['57']?.amount ?? life.adena) : rows.reduce((s, r) => s + n(r.amount), 0);
+        return { id, life, rows, workerOwned, virtual, amount };
+    }
+    // Pays (delta < 0) or credits (delta > 0) a wallet read by memberWallet.
+    function changeWallet(w, delta, clanId, timestamp) {
+        const next = w.amount + delta;
+        if (w.workerOwned) {
+            // Only an unleased persisted worker snapshot can change. Advance its revision
+            // in the same transaction; a proposal based on the old snapshot cannot commit.
+            w.virtual['57'] = { ...(w.virtual['57'] || {}), selfId: 57, name: 'Adena', amount: next };
+            const stats = json(w.life.statsJson);
+            stats.lastClanWarehouseTransfer = { clanId, selfId: 57, amount: delta, at: timestamp };
+            const changed = write(
+                `UPDATE bot_life_state SET inventorySummary=?,adena=?,statsJson=?,simulationRevision=simulationRevision+1,
+                simulationLeaseId=NULL,simulationLeaseUntil=0,updatedAt=? WHERE characterId=? AND phase='cold'
+                AND simulationOwner='cold_simulation_owner' AND simulationRevision=? AND simulationLeaseUntil<=?`,
+                [JSON.stringify(w.virtual), next, JSON.stringify(stats), timestamp, w.id, w.life.simulationRevision, timestamp]
+            );
+            if (changed.affectedRows !== 1) throw Error('Clan dues owner changed');
+            syncInventorySummaryUnsafe(w.id, { 57: w.virtual['57'] });
+            return;
+        }
+        if (delta > 0 && w.rows.length) write('UPDATE items SET amount=amount+? WHERE id=?', [delta, w.rows[0].id]);
+        else if (delta > 0)
+            write(`INSERT INTO items(selfId,name,amount,enchant,equipped,slot,characterId) VALUES (57,'Adena',?,0,0,0,?)`, [delta, w.id]);
+        let left = -delta;
+        for (const r of w.rows) {
+            if (left <= 0) break;
+            const take = Math.min(left, n(r.amount));
+            write('UPDATE items SET amount=amount-? WHERE id=?', [take, r.id]);
+            left -= take;
+        }
+        const updated = updateColdInventorySnapshotUnsafe(
+            w.id,
+            57,
+            { clanId, selfId: 57, amount: delta, at: timestamp },
+            Number(w.life.simulationRevision || 0)
+        );
+        if (!updated.ok) throw Error('Clan dues snapshot changed');
+    }
+    // What a one-off investment is for: the next level's fund below level 2, then
+    // the clan hall the clan is saving for.
+    function duesTarget(c, level) {
+        if (level <= 1) {
+            const required = invoke('GameServer/Clan/ClanContributionPolicy').scaledAdenaRequirement(level);
+            const paid = n(one('SELECT COALESCE(SUM(amount),0) AS v FROM clan_contributions WHERE clanId=? AND targetLevel=?', [c.id, level])?.v);
+            return required > paid ? { key: `level:${level}`, shortfall: required - paid } : null;
+        }
+        const g = json(one('SELECT stateJson FROM clan_hall_finances WHERE clanId=?', [c.id])?.stateJson);
+        const shortfall = g.status === 'saving' ? n(g.target) - spendable(c) : 0;
+        return shortfall > 0 ? { key: `hall:${n(g.hallId)}:${n(g.round)}`, shortfall } : null;
     }
     function snapshot(id) {
         const c = clan(id);
@@ -438,104 +505,86 @@ module.exports = function ({
                 return { ok: true, goal };
             }, 'plan');
         },
-        contributeClanHall({ clanId, characterId, timestamp = Date.now() }) {
+        // Clan money to a member (amount > 0: a share of a clan purchase, a gear
+        // compensation, from the clan's free money) or back to the clan (amount < 0:
+        // a purchase that failed). Money the member keeps is not earnings: its dues
+        // mark moves with it (moveMark); money spent at once on a clan purchase does
+        // not move it.
+        payClanMember({ clanId, characterId, amount, kind, moveMark = true, timestamp = Date.now() }) {
+            const pay = Math.trunc(Number(amount) || 0);
+            return withCharacterFlush(Number(characterId), () =>
+                tx(() => {
+                    const c = clan(Number(clanId)),
+                        id = Number(characterId);
+                    if (!c || c.mode !== 'autonomous' || !pay) return { ok: false, code: 'clan_payment_invalid' };
+                    if (pay > 0 && spendable(c) < pay) return { ok: false, code: 'clan_funds_short' };
+                    const member = memberWallet(id, timestamp);
+                    if (!member) return { ok: false, code: 'member_busy' };
+                    if (pay < 0 && member.amount < -pay) return { ok: false, code: 'member_funds_short' };
+                    money(c.id, -pay, 0, kind, timestamp, id);
+                    changeWallet(member, pay, c.id, timestamp);
+                    if (moveMark) write('UPDATE clan_hall_earnings SET highWater=MAX(0, highWater+?) WHERE clanId=? AND characterId=?', [pay, c.id, id]);
+                    return { ok: true, amount: pay, row: one('SELECT * FROM bot_life_state WHERE characterId=?', [id]) };
+                }, 'clan-payment')
+            );
+        },
+        // The clan's dues, one settlement per member (ClanHall/Runtime runs it hourly for
+        // every bot clan): a share of what the member earned since its last settlement
+        // (the mark follows its wealth, wallet + contributed, up and down: a purchase
+        // exempts the hour it happened in, not the hours until the old peak returns),
+        // never of its savings; plus an
+        // optional one-off investment from savings toward the clan's current target.
+        // Every level pays the clan warehouse; levels 0-1 also write the contribution
+        // ledger that the level-up checks.
+        settleClanDues({ clanId, characterId, rate = 0, investFraction = 0, timestamp = Date.now() }) {
             return withCharacterFlush(Number(characterId), () =>
                 tx(() => {
                     const c = clan(Number(clanId)),
                         id = Number(characterId),
-                        m = one('SELECT clanId,level FROM characters WHERE id=?', [id]),
-                        life = one('SELECT * FROM bot_life_state WHERE characterId=?', [id]);
-                    if (
-                        !c ||
-                        c.mode !== 'autonomous' ||
-                        c.level < 2 ||
-                        m?.clanId !== c.id ||
-                        !life ||
-                        life.phase !== 'cold' ||
-                        life.partyId ||
-                        !['legacy_main', 'cold_simulation_owner'].includes(life.simulationOwner || 'legacy_main') ||
-                        Number(life.simulationLeaseUntil) > timestamp
-                    )
-                        return { ok: false, code: 'member_busy' };
-                    const rows = all('SELECT id,amount FROM items WHERE characterId=? AND selfId=57 ORDER BY id', [id]);
-                    const workerOwned = life.simulationOwner === 'cold_simulation_owner';
-                    const virtual = json(life.inventorySummary);
-                    const wallet = workerOwned
-                            ? n(virtual['57']?.amount ?? life.adena)
-                            : rows.reduce((s, r) => s + n(r.amount), 0),
-                        cursor = one('SELECT * FROM clan_hall_earnings WHERE clanId=? AND characterId=?', [c.id, id]);
-                    const wealth = wallet + n(cursor?.contributed),
+                        m = one('SELECT clanId,level FROM characters WHERE id=?', [id]);
+                    if (!c || c.mode !== 'autonomous' || m?.clanId !== c.id) return { ok: false, code: 'member_busy' };
+                    const level = n(c.level);
+                    const payer = memberWallet(id, timestamp);
+                    if (!payer) return { ok: false, code: 'member_busy' };
+                    const cursor = one('SELECT * FROM clan_hall_earnings WHERE clanId=? AND characterId=?', [c.id, id]);
+                    const wealth = payer.amount + n(cursor?.contributed),
                         earned = cursor ? Math.max(0, wealth - cursor.highWater) : 0;
-                    const g = json(one('SELECT stateJson FROM clan_hall_finances WHERE clanId=?', [c.id])?.stateJson);
-                    const shortfall = Math.max(0, n(g.target) - spendable(c));
-                    const reserve = invoke('GameServer/Clan/ClanContributionPolicy').personalReserve({
-                        level: m.level,
-                        adena: wallet
-                    });
-                    const amount = Math.min(shortfall, Math.floor(earned * 0.15), Math.max(0, wallet - reserve));
+                    const reserve = invoke('GameServer/Clan/ClanContributionPolicy').personalReserve({ level: m.level, adena: payer.amount });
+                    const free = Math.max(0, payer.amount - reserve);
+                    const dues = Math.min(free, Math.floor(earned * Math.max(0, Math.min(1, rate))));
+                    const target = duesTarget(c, level);
+                    const state = json(c.stateJson);
+                    const invested = target && state.duesInvested?.key === target.key ? state.duesInvested.ids || [] : [];
+                    const investment = target && investFraction > 0 && !invested.includes(id)
+                        ? Math.min(target.shortfall, Math.floor((free - dues) * Math.min(1, investFraction)))
+                        : 0;
+                    const amount = dues + investment;
                     if (amount) {
-                        if (workerOwned) {
-                            // Only an unleased persisted worker snapshot can fund a contribution.
-                            // Advance its revision in the same transaction as the warehouse credit;
-                            // an in-flight proposal based on the old snapshot cannot commit afterwards.
-                            virtual['57'] = {
-                                ...(virtual['57'] || {}),
-                                selfId: 57,
-                                name: 'Adena',
-                                amount: wallet - amount
-                            };
-                            const stats = json(life.statsJson);
-                            stats.lastClanWarehouseTransfer = {
-                                clanId: c.id,
-                                selfId: 57,
-                                amount: -amount,
-                                at: timestamp
-                            };
-                            const changed = write(
-                                `UPDATE bot_life_state SET inventorySummary=?,adena=?,statsJson=?,simulationRevision=simulationRevision+1,
-                        simulationLeaseId=NULL,simulationLeaseUntil=0,updatedAt=? WHERE characterId=? AND phase='cold'
-                        AND simulationOwner='cold_simulation_owner' AND simulationRevision=? AND simulationLeaseUntil<=?`,
-                                [
-                                    JSON.stringify(virtual),
-                                    wallet - amount,
-                                    JSON.stringify(stats),
-                                    timestamp,
-                                    id,
-                                    life.simulationRevision,
-                                    timestamp
-                                ]
-                            );
-                            if (changed.affectedRows !== 1) throw Error('Hall contribution owner changed');
-                            syncInventorySummaryUnsafe(id, { 57: virtual['57'] });
-                        } else {
-                            let left = amount;
-                            for (const r of rows) {
-                                const take = Math.min(left, n(r.amount));
-                                write('UPDATE items SET amount=amount-? WHERE id=?', [take, r.id]);
-                                left -= take;
-                                if (!left) break;
-                            }
-                            const updated = updateColdInventorySnapshotUnsafe(
-                                id,
-                                57,
-                                { clanId: c.id, selfId: 57, amount: -amount, at: timestamp },
-                                Number(life.simulationRevision || 0)
-                            );
-                            if (!updated.ok) throw Error('Hall contribution snapshot changed');
-                            write('UPDATE bot_life_state SET adena=? WHERE characterId=?', [wallet - amount, id]);
+                        changeWallet(payer, -amount, c.id, timestamp);
+                        money(c.id, amount, 0, 'clan_dues', timestamp, id);
+                        if (level <= 1) {
+                            const ledger = write(`INSERT INTO clan_contributions
+                                (clanId, characterId, targetLevel, amount, source, resolveKey, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                            [c.id, id, level, amount, investment ? 'investment' : 'dues', `clan:${c.id}:dues:${id}:${timestamp}`, timestamp]);
+                            rememberClanContributionUnsafe(c.id, id, n(c.leaderId), ledger.insertId, amount, payer.amount, timestamp);
                         }
-                        money(c.id, amount, n(g.hallId), 'hall_contribution', timestamp, id);
+                    }
+                    if (investment) {
+                        write(`UPDATE clan_simulation_clans SET stateJson=json_set(stateJson, '$.duesInvested', json(?)) WHERE clanId=?`,
+                            [JSON.stringify({ key: target.key, ids: [...invested, id] }), c.id]);
                     }
                     write(
                         `INSERT INTO clan_hall_earnings(clanId,characterId,highWater,contributed) VALUES (?,?,?,?) ON CONFLICT(clanId,characterId) DO UPDATE SET highWater=excluded.highWater,contributed=excluded.contributed`,
-                        [c.id, id, Math.max(wealth, n(cursor?.highWater)), n(cursor?.contributed) + amount]
+                        [c.id, id, wealth, n(cursor?.contributed) + amount]
                     );
                     return {
                         ok: true,
                         amount,
+                        dues,
+                        investment,
                         row: amount ? one('SELECT * FROM bot_life_state WHERE characterId=?', [id]) : null
                     };
-                }, 'contribute')
+                }, 'dues')
             );
         },
         clanHallBlocksDissolution(clanId) {

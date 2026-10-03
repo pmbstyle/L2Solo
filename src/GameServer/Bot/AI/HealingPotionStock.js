@@ -1,6 +1,7 @@
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const C4ItemSkills = invoke('GameServer/Items/C4ItemSkills');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
@@ -60,10 +61,11 @@ function purchasePotionFor(value) {
     };
 }
 
+// The shared operating reserve, read from a cold state or a hot actor.
 function operationalReserve(value) {
     const adena = Math.max(0, Number(value?.adena ?? value?.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() ?? 0));
     const level = Math.max(1, Number(value?.fetchLevel?.() ?? value?.level ?? 1) || 1);
-    return Math.max(500, level * 250, Math.ceil(adena * 0.10));
+    return PurchaseFunding.operatingReserve({ adena, level });
 }
 
 function inventoryRows(inventory = {}) {

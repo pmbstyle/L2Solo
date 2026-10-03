@@ -3,6 +3,7 @@ const DataCache = invoke('GameServer/DataCache');
 const BotMarketPricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const C4EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
+const { CRYSTAL_IDS } = invoke('GameServer/Items/C4EnchantRules');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const ClanSimulationConfig = invoke('GameServer/Clan/ClanSimulationConfig');
 
@@ -12,8 +13,16 @@ const NPC_LIQUIDATION_MAX_UNIT_PRICE = 1000;
 const WAREHOUSE_GEAR_MIN_BASE_PRICE = 1000;
 const TRADE_MIN_LEVEL = 10;
 const INVENTORY_SLOT_LIMIT = 80;
-const NPC_ONLY_CLEANUP_MIN_SLOTS = 3;
-const NPC_SURPLUS_GEAR_MIN_SLOTS = 6;
+// A forced trip to town starts at 20 slots of either kind (the author: 3 junk, 6
+// gear): a gear replacement or a purchase leaves the old piece in the bag, and
+// on a young world the author's thresholds sent every bot to town every 40-60
+// minutes (live test 2026-10-03: ~9,800 forced trips in 15.7 world hours).
+const NPC_ONLY_CLEANUP_MIN_SLOTS = 20;
+const NPC_SURPLUS_GEAR_MIN_SLOTS = 20;
+// A half-full bag sends the bot to sell, as a player would: on the cold path the forced
+// trip is the only thing that takes a hunting bot to town, and the thresholds above
+// alone stopped every sale for hours (live, 2026-10-03: 2,513 -> 21 static sales in 2 h).
+const HALF_FULL_CLEANUP_SLOTS = 40;
 const CLAN_PROGRESSION_ITEM_IDS = new Set([1419]);
 const GRADE_ORDER = Object.freeze({ none: 0, d: 1, c: 2, b: 3, a: 4, s: 5 });
 const SHOT_PRODUCT_RANK = Object.freeze({
@@ -126,6 +135,22 @@ function isMarketRecipeItem(item) {
         && gradeIndex(recipeProductRank(item)) >= gradeIndex('d');
 }
 
+const CRYSTALS = new Set(Object.values(CRYSTAL_IDS));
+
+// A bot's NPC junk sale keeps what the cold disposition never sells to the
+// NPC for a crafter: a D-grade or higher dwarven recipe is listed or held in
+// the bag for a crafter who can learn it, crystals are the shot crafters'
+// input (ColdShotEconomyService), and the bot keeps a recipe it will learn
+// itself (`state`: its class and level; `knowsRecipe`: what it has learned),
+// by the same rule as the cold disposition.
+function isKeptFromNpcJunk(item, state = null, knowsRecipe = () => false) {
+    const selfId = Number(actorItemValue(item, 'selfId', 'fetchSelfId') || 0);
+    if (CRYSTALS.has(selfId) || isMarketRecipeItem({ selfId })) return true;
+    const recipeId = state ? recipeInfo({ selfId })?.recipe.recipeId : null;
+    return !!recipeId
+        && recipeDisposition(state, { selfId }, knowsRecipe(recipeId) ? [recipeId] : [])?.action === 'learn';
+}
+
 function isNpcOnlyItem(item, template = templateFor(item?.selfId)) {
     if (isEquipmentItem(item, template)) return false;
     if (isMarketRecipeItem(item)) return false;
@@ -139,14 +164,18 @@ function isNpcOnlyItem(item, template = templateFor(item?.selfId)) {
         || isSkillBookItem(item, template);
 }
 
+// Materials feed every craft: a dwarf learns their recipes although the
+// products are no-grade. Other no-grade recipes stay NPC junk.
+function isMaterialRecipe(info) {
+    return String(info?.product?.template?.kind || '').startsWith('Other.Material');
+}
+
+// A bot learns a recipe it can craft (crafter class, craft level).
 function canLearnRecipe(state, item) {
     const info = recipeInfo(item);
-    if (!info || info.recipe.type !== 'dwarven'
-        || gradeIndex(recipeProductRank(item)) < gradeIndex('d')) return false;
-    const craftLevel = Number(state?.craftLevel ?? state?.stats?.dwarvenCraftLevel
-        ?? CraftShopService.craftLevelFor(state) ?? 0);
-    if (craftLevel <= 0) return false;
-    return craftLevel >= Number(info.recipe.level || 0);
+    if (!info || info.recipe.type !== 'dwarven') return false;
+    if (gradeIndex(recipeProductRank(item)) < gradeIndex('d') && !isMaterialRecipe(info)) return false;
+    return CraftShopService.canCraft(state, info.recipe);
 }
 
 function recipeDisposition(state, item, knownRecipeIds = []) {
@@ -156,7 +185,9 @@ function recipeDisposition(state, item, knownRecipeIds = []) {
     if (!canLearnRecipe(state, item)) return isMarketRecipeItem(item)
         ? { action: 'market', reason: 'recipe_not_learnable' }
         : { action: 'npc', reason: 'recipe_not_learnable' };
-    if (known.has(Number(info.recipe.recipeId))) return { action: 'market', reason: 'recipe_already_known' };
+    if (known.has(Number(info.recipe.recipeId))) return isMarketRecipeItem(item)
+        ? { action: 'market', reason: 'recipe_already_known' }
+        : { action: 'npc', reason: 'recipe_already_known' };
     return { action: 'learn', reason: 'recipe_book', recipe: info.recipe };
 }
 
@@ -208,6 +239,11 @@ function inventoryCleanupNeed(state = {}, options = {}) {
                 && item.basePrice <= 50000 ? Number(item.count || 0) : 0);
         }, 0) : 0;
     const accumulatedSurplus = surplusGearSlots >= NPC_SURPLUS_GEAR_MIN_SLOTS;
+    // Solo bots only: a party member sells from the field (AFK listing) and leaves its
+    // party for the market only with a full bag (PartyMarketBreak); and only with
+    // something to sell, else the trip would repeat every retry period.
+    const halfFull = isTradeEligible(state) && !(state.party?.partyId || state.partyId)
+        && slots >= HALF_FULL_CLEANUP_SLOTS && candidates.length > 0;
     // A normal market retry cooldown prevents pointless town loops. Residual
     // NPC-only books/recipes become deterministic cleanup work once a
     // generated character reaches its trading phase. Before that point they
@@ -216,13 +252,14 @@ function inventoryCleanupNeed(state = {}, options = {}) {
     if (Number(state.stats?.marketSellRetryAfter || 0) > timestamp
         && !overCapacity
         && !accumulatedNpcOnly) return null;
-    if (!overCapacity && !accumulatedNpcOnly && !accumulatedSurplus) return null;
+    if (!overCapacity && !accumulatedNpcOnly && !accumulatedSurplus && !halfFull) return null;
     return {
         reason: overCapacity ? 'inventory_capacity'
-            : accumulatedNpcOnly ? 'npc_only_inventory' : 'market_surplus_inventory',
+            : accumulatedNpcOnly ? 'npc_only_inventory'
+            : halfFull ? 'inventory_half_full' : 'market_surplus_inventory',
         slots,
         npcOnlySlots,
-        ...(overCapacity || accumulatedNpcOnly ? {} : { surplusGearSlots }),
+        ...(overCapacity || accumulatedNpcOnly || halfFull ? {} : { surplusGearSlots }),
         limit: INVENTORY_SLOT_LIMIT
     };
 }
@@ -509,8 +546,7 @@ module.exports = {
     WAREHOUSE_GEAR_MIN_BASE_PRICE,
     basePrice,
     canLearnRecipe,
-    craftLevelFor: (state) => Number(state?.craftLevel ?? state?.stats?.dwarvenCraftLevel
-        ?? CraftShopService.craftLevelFor(state) ?? 0),
+    craftLevelFor: CraftShopService.craftLevelFor,
     gradeIndex,
     isTradeEligible,
     isBelowCGrade,
@@ -536,6 +572,7 @@ module.exports = {
     reservedEquipmentAmounts,
     saleCandidates,
     saleSummary,
+    isKeptFromNpcJunk,
     unreservedActorItems,
     warehouseCandidates
 };

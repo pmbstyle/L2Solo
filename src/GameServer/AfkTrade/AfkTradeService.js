@@ -403,6 +403,11 @@ async function notifyCommitted(result, kind) {
 
 async function syncColdCharacter(characterId, previousState, reason, rows = [], options = {}) {
     if (!previousState) return null;
+    // A hot row belongs to the actor in the world: syncOnlineInventory has
+    // refreshed its backpack and markCold or syncMarketSession writes the
+    // row. A cold snapshot written here would flip it to cold and roll back
+    // the experience and location earned while hot.
+    if (invoke('GameServer/Bot/Population/BotLifeState').hotRow(characterId)) return null;
     try {
         const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
         const synced = await LifeState.syncExternalInventory(

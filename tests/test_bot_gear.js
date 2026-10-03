@@ -206,8 +206,13 @@ const missingDualPlan = GearAcquisitionPlanner.planFor({
         [promotionSword.selfId]: { selfId: promotionSword.selfId, amount: 1, equipped: true, slot: 7 }
     }
 }, { spots: [], findMarketOffer: fakeMarketOffer });
-assert.strictEqual(itemTemplate(missingDualPlan.target?.selfId)?.template?.kind, 'Weapon.Dual',
+// The dual-sword bridge buys the combination blade by blade: the plan's target is
+// the next blade, `combine` names the dual sword it builds.
+assert.strictEqual(missingDualPlan.combine?.type, 'dual_sword',
     'a newly promoted Bladedancer without duals must immediately receive a dual-sword acquisition target');
+assert.strictEqual(itemTemplate(missingDualPlan.combine?.resultId)?.template?.kind, 'Weapon.Dual');
+assert(missingDualPlan.combine.requirements.some((entry) => Number(entry.selfId) === Number(missingDualPlan.target?.selfId)),
+    'the plan buys one blade of that combination next');
 const overCapDualPlan = GearAcquisitionPlanner.planFor({
     level: 40,
     adena: 1000000,

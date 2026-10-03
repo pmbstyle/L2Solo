@@ -41,9 +41,7 @@ function publish(session, result) {
     const response = invoke('GameServer/Network/Response');
     session.dataSendToMe?.(response.itemsList(backpack.fetchItems()));
     session.dataSendToOthers?.(response.charInfo(actor), actor);
-    const shots = invoke('GameServer/Inventory/ShotStock');
-    shots.ensureActorStock(actor).then(() => shots.enableAutoShot(actor))
-        .catch((error) => utils.infoWarn('ClanGear', 'shot refresh failed: %s', error.message));
+    invoke('GameServer/Inventory/ShotStock').restockAfterWeaponChange(actor, [result.slot], 'ClanGear');
 }
 
 function coldAvailable(characterId) {

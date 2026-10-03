@@ -52,6 +52,14 @@ function recordReasons(codes = []) {
     codes.forEach(recordReason);
 }
 
+// The bot's remembered relations to other characters (Social/InteractionMemory,
+// decayed to now), as Policy.socialAffinity reads them; empty while not loaded.
+function socialRelations(characterId, now = Date.now()) {
+    const view = invoke('GameServer/Social/InteractionMemoryRuntime').views.get(characterId);
+    if (!view?.ready) return {};
+    return Object.fromEntries(view.characterIds.map((id) => [id, view.relation('character', id, now)]));
+}
+
 function normalizeCandidate(row = {}) {
     const stats = parseJson(row.statsJson, {});
     const generatedPersona = BotPersona.generate({
@@ -61,6 +69,7 @@ function normalizeCandidate(row = {}) {
     const storedPersona = row.traitsJson
         ? {
             characterId: Number(row.characterId),
+            primaryDrive: String(row.primaryDrive || generatedPersona?.primaryDrive || ''),
             traits: parseJson(row.traitsJson, generatedPersona?.traits || {})
         }
         : generatedPersona;
@@ -78,7 +87,7 @@ function normalizeCandidate(row = {}) {
         stats,
         partyHistory: stats.partyHistory || {},
         persona: storedPersona,
-        socialRelations: parseJson(row.socialRelations, {})
+        socialRelations: socialRelations(number(row.characterId))
     };
 }
 
@@ -105,7 +114,7 @@ async function candidateProjection(limit = 512, offset = 0) {
         const rows = await Database.execute([`
             SELECT c.id AS characterId, c.name, c.username, c.classId, c.level, c.clanId,
                    life.accountName, life.activity, life.phase, life.statsJson,
-                   persona.traitsJson
+                   persona.traitsJson, persona.primaryDrive
             FROM characters c
             LEFT JOIN bot_life_state life ON life.characterId = c.id
             LEFT JOIN bot_personas persona ON persona.characterId = c.id
@@ -161,6 +170,21 @@ async function autonomousClanProjection() {
     } finally {
         StageMetrics.record(metrics.stages, 'clan_projection', Date.now() - startedAt);
     }
+}
+
+// Founder thresholds per primary drive (Policy.founderThresholds) over all stored
+// personas, rebuilt only when the number of personas changes (new bots).
+let founderThresholdTable = { count: -1, table: {} };
+async function founderThresholds() {
+    const [{ count }] = await Database.execute(['SELECT COUNT(*) AS count FROM bot_personas', []], 'clan-simulation:persona-count');
+    if (Number(count) === founderThresholdTable.count) return founderThresholdTable.table;
+    const rows = await Database.execute(['SELECT primaryDrive, traitsJson FROM bot_personas', []], 'clan-simulation:founder-thresholds');
+    founderThresholdTable = {
+        count: Number(count),
+        table: Policy.founderThresholds(rows.map((row) => ({ primaryDrive: row.primaryDrive, traits: parseJson(row.traitsJson, {}) })),
+            Config.founderTopShare)
+    };
+    return founderThresholdTable.table;
 }
 
 function recruitmentScore(founder, candidate, members) {
@@ -219,7 +243,8 @@ async function resolveCandidate(candidate, options = {}) {
         const pool = options.pool || await candidateProjection();
         const recruits = selectRecruitment(candidate, pool, Config.founderQuorum - 1);
         const eligibility = Policy.founderEligibility(candidate, {
-            quorumCandidates: [candidate, ...recruits]
+            quorumCandidates: [candidate, ...recruits],
+            founderThresholds: options.founderThresholds || await founderThresholds()
         });
         metrics.founderEvaluations += 1;
         recordReasons(eligibility.reasons);
@@ -268,14 +293,14 @@ const ClanSimulationService = {
     candidateProjection,
     autonomousClanProjection,
     founderCandidates(limit = 512) {
-        return candidateProjection(limit).then((candidates) => {
+        return Promise.all([candidateProjection(limit), founderThresholds()]).then(([candidates, thresholds]) => {
             const clansPromise = autonomousClanProjection();
             return clansPromise.then((clans) => candidates.map((candidate) => {
                 const existing = Policy.selectExistingClan(candidate, clans, {
                     threshold: Config.existingClanSuitabilityThreshold
                 });
                 const recruits = selectRecruitment(candidate, candidates, Config.founderQuorum - 1);
-                const eligibility = Policy.founderEligibility(candidate, { quorumCandidates: [candidate, ...recruits] });
+                const eligibility = Policy.founderEligibility(candidate, { quorumCandidates: [candidate, ...recruits], founderThresholds: thresholds });
                 return { candidate, existingClan: existing, recruits, eligibility };
             }));
         }).then((evaluations) => {
@@ -289,7 +314,11 @@ const ClanSimulationService = {
     async resolveBatch(limit = Config.resolveBatchSize, options = {}) {
         if (!Config.enabled) return { attempted: 0, created: 0, joined: 0, blocked: 0, budgetStopped: false };
         const startedAt = Date.now();
-        const deadlineAt = startedAt + Math.max(1, number(options.budgetMs, Config.founderResolveBudgetMs));
+        const budgetMs = Math.max(1, number(options.budgetMs, Config.founderResolveBudgetMs));
+        // The budget bounds the pass's own work (the candidate loop below). The reads before it wait in the
+        // database queue behind other statements; that wait keeps nothing else from running, so it is not
+        // counted: on a busy world it alone exceeded the budget and no candidate was ever evaluated.
+        let deadlineAt = startedAt + budgetMs;
         const safeLimit = Math.max(1, Math.min(2000, Math.floor(number(limit, Config.resolveBatchSize))));
         const scanOffset = founderScanOffset;
         const summary = { attempted: 0, created: 0, joined: 0, blocked: 0, budgetStopped: false };
@@ -300,24 +329,16 @@ const ClanSimulationService = {
         };
         try {
             let candidates = await candidateProjection(safeLimit, scanOffset);
-            if (Date.now() >= deadlineAt) {
-                stopForBudget();
-                return summary;
-            }
             if (!candidates.length && scanOffset > 0) {
                 founderScanOffset = 0;
                 candidates = await candidateProjection(safeLimit, 0);
             }
-            if (Date.now() >= deadlineAt) {
-                stopForBudget();
-                return summary;
-            }
+            // The clans and the thresholds are read once per batch, so a blocked candidate costs the loop no
+            // database wait (like founderCandidates below).
+            const clans = candidates.length ? await autonomousClanProjection() : [];
+            const thresholds = candidates.length ? await founderThresholds() : {};
+            deadlineAt = Date.now() + budgetMs;
             if (!candidates.length) return summary;
-            const clans = await autonomousClanProjection();
-            if (Date.now() >= deadlineAt) {
-                stopForBudget();
-                return summary;
-            }
             const pool = candidates;
             const scanStartedAt = Date.now();
             const reservedIds = new Set();
@@ -330,7 +351,7 @@ const ClanSimulationService = {
                 processed += 1;
                 if (reservedIds.has(candidate.characterId)) continue;
                 const availablePool = pool.filter((entry) => !reservedIds.has(entry.characterId));
-                const result = await resolveCandidate(candidate, { clans, pool: availablePool });
+                const result = await resolveCandidate(candidate, { clans, pool: availablePool, founderThresholds: thresholds });
                 summary.attempted += 1;
                 if (result.ok && result.clanId && result.characterId) {
                     summary.joined += 1;

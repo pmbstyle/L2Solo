@@ -316,6 +316,17 @@ async function purchaseActorRestock(actor, options = {}) {
         .then((result) => ({ ok: true, ...result, cost: marketCost + cost, adena: nextAdena }));
 }
 
+// A weapon change can switch the shot grade and kind: buy the restock with the
+// bot's own adena and re-enable auto shots. Other slots leave the shots alone.
+function restockAfterWeaponChange(actor, slots = [], logTag = 'BotGear') {
+    if (!slots.some((slot) => WEAPON_SLOTS.has(Number(slot)))) return Promise.resolve(null);
+    // Through the module object, as the callers did before: tests replace these.
+    const shots = module.exports;
+    return shots.purchaseActorRestock(actor, { targetAmount: DEFAULT_TARGET_AMOUNT })
+        .then(() => shots.enableAutoShot(actor))
+        .catch((error) => utils.infoWarn(logTag, 'failed to refresh shots for %s: %s', actor.fetchName?.(), error.message));
+}
+
 function needsActorRestock(actor, threshold = 0) {
     return shotAmount(actor) <= Number(threshold || 0);
 }
@@ -360,6 +371,7 @@ module.exports = {
     ensureActorStock,
     ensureCharacterStock,
     purchaseActorRestock,
+    restockAfterWeaponChange,
     needsActorRestock,
     describe
 };

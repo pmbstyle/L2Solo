@@ -25,7 +25,6 @@ const TownServiceCatalog = invoke('GameServer/Bot/Economy/TownServiceCatalog');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const CompanionTownTransit = invoke('GameServer/Bot/AI/CompanionTownTransit');
-const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const HuntingVisibility = invoke('GameServer/Bot/AI/BotHuntingVisibility');
 
 const FOLLOW_RUN_DISTANCE = 250;
@@ -214,18 +213,7 @@ function companionTownErrand(session, bot, player, BotAI) {
         town,
         state: session.coldLifeState
     });
-    const afkBuyer = (bot.backpack?.fetchItems?.() || []).flatMap((item) => {
-        if (item.fetchEquipped?.() || Number(item.fetchSelfId?.()) === 57) return [];
-        const offer = MarketOpportunity.findBuyOffers(item.fetchSelfId(), {
-            town: town.name,
-            sellerCharacterId: bot.fetchId()
-        }).find((candidate) => ['afk_player_buy_store', 'afk_bot_buy_store'].includes(candidate.sourceType));
-        if (!offer) return [];
-        return [{
-            offer,
-            score: Math.min(Number(item.fetchAmount?.() || 0), Number(offer.count || 0)) * Number(offer.price || 0)
-        }];
-    }).sort((left, right) => right.score - left.score)[0] || null;
+    const afkBuyer = TradeService.findAfkBuyerForActor(bot, town, session.coldLifeState);
     if (afkBuyer && (!buyer || Number(afkBuyer.score) >= Number(buyer.preview?.totalAdena || 0))) {
         const offer = afkBuyer.offer;
         return {

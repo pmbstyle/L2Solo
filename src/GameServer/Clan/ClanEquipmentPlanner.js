@@ -1,5 +1,6 @@
 // Pure equipment calculation shared by the main-thread harnesses and the worker.
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const DataCache = invoke('GameServer/DataCache');
 const Policy = require('./ClanEquipmentPolicy');
 const Config = require('./ClanSimulationConfig');
@@ -17,6 +18,12 @@ function plannerState(member) {
         currentRegion: member.currentRegion || null,
         party: { partyId: member.partyId || null }
     };
+}
+
+// The clan's purchase budget for a member: what the member can pay itself
+// plus the clan's free money (options.clanShare).
+function clanBudget(state, options = {}) {
+    return PurchaseFunding.spendable(state) + Math.max(0, number(options.clanShare));
 }
 
 function existingPlanFor(member) {
@@ -56,14 +63,23 @@ function overlayWarehouseMaterials(state, plan, warehouseRows = []) {
     };
 }
 
-function calculate(member, spots = [], warehouseRows = [], options = {}) {
+// Towns that sell an NPC item at the same price are ranked by distance to
+// the member. A member walking past the midpoint between two of them keeps
+// its planned town, so the clan plan is not rewritten for the same purchase.
+function keepPlannedTown(planned, current) {
+    if (!planned?.town || current.sourceType !== 'npc' || planned.sourceType !== 'npc'
+        || Number(planned.price) !== Number(current.price)) return current;
+    return { ...current, town: planned.town };
+}
+
+function calculateRoute(member, spots = [], warehouseRows = [], options = {}) {
     const planningMember = options.ignoreExistingPlan ? {
         ...member,
         stats: { ...(member?.stats || {}), equipmentPlan: undefined }
     } : member;
     const existing = existingPlanFor(planningMember);
     const state = plannerState(planningMember);
-    const marketBudget = Math.max(0, state.adena - GearAcquisitionPlanner.operationalAdenaReserve(state));
+    const marketBudget = clanBudget(state, options);
     const plannerOptions = {
         spots,
         clanCrafting: true,
@@ -89,7 +105,7 @@ function calculate(member, spots = [], warehouseRows = [], options = {}) {
             );
             if (current) return {
                 ...existing,
-                market: current.market,
+                market: keepPlannedTown(existing.market, current.market),
                 expectedKills: current.expectedKills,
                 expectedEffort: current.expectedEffort ?? current.expectedKills,
                 rateModelVersion: GearAcquisitionPlanner.RATE_MODEL_VERSION,
@@ -198,6 +214,19 @@ function calculate(member, spots = [], warehouseRows = [], options = {}) {
         if (options.throwOnError) throw error;
         return { status: 'blocked', reason: 'gear_planner_unavailable', strategy: 'none', target: null };
     }
+}
+
+// The clan routes only purchases the member and the clan share can pay now. The
+// planner's NPC bridge still returns an unaffordable item as the saving target
+// of a bot's own plan; for the clan that is no route, or a replan returns the
+// same target and the goal stays locked on it.
+function calculate(member, spots = [], warehouseRows = [], options = {}) {
+    const plan = calculateRoute(member, spots, warehouseRows, options);
+    if (plan?.strategy !== 'market') return plan;
+    // A dual sword is funded by its whole combination (bridgeCost), not one blade.
+    const cost = number(plan.bridgeCost ?? plan.market?.price);
+    if (!(cost > clanBudget(plannerState(member), options))) return plan;
+    return { status: 'blocked', reason: 'clan_market_unfunded', strategy: 'none', target: null };
 }
 
 function planForMember(member, spots = [], warehouseRows = [], options = {}) {

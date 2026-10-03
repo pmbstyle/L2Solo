@@ -1583,12 +1583,15 @@ function updateColdInventorySnapshotUnsafe(characterId, selfId, event = null, ex
     if (event) stats.lastClanWarehouseTransfer = { ...event };
     const nextRevision = currentRevision + 1;
     if (allowParty) stats.clanInventoryRevision = nextRevision;
+    // The adena column is the wallet the next cold resolve starts from; it
+    // follows the inventory, as syncAdenaSnapshotUnsafe keeps it.
     const updated = write(`UPDATE bot_life_state
-        SET inventorySummary = ?, statsJson = ?, simulationRevision = ?, updatedAt = ?
+        SET inventorySummary = ?, adena = COALESCE(?, adena), statsJson = ?, simulationRevision = ?, updatedAt = ?
         WHERE characterId = ? AND phase = 'cold'
           AND simulationOwner = ? AND simulationRevision = ?
           AND (? = 1 OR partyId IS NULL OR partyId = '')`, [
         JSON.stringify(inventory),
+        itemId === 57 ? physical : null,
         JSON.stringify(stats),
         nextRevision,
         now(),
@@ -5259,7 +5262,7 @@ const Database = {
                 }
                 if (!recipe || Number(clanCrafter.hp) <= 0 || Number(customer.hp) <= 0
                     || ['dead', 'respawning'].includes(clanCrafter.activity)
-                    || craftRules.craftLevelFor({ classId: clanCrafter.classId, level: clanCrafter.characterLevel }) < recipe.level
+                    || !craftRules.canCraft({ classId: clanCrafter.classId, level: clanCrafter.characterLevel }, recipe)
                     || Number(clanCrafter.mp) < Number(clanCraft.mpCost)
                     || Math.hypot(Number(customer.locX) - Number(clanCrafter.locX), Number(customer.locY) - Number(clanCrafter.locY)) > 1200) {
                     throw new Error('clan crafter unavailable');
@@ -6244,110 +6247,6 @@ const Database = {
                 amount: Number(row.amount)
             })));
     },
-    transferClanAdena({
-        clanId,
-        characterId,
-        leaderId,
-        targetLevel = 0,
-        amount,
-        reserve = 0,
-        maxContributionFraction = 0.35,
-        resolveKey,
-        source = 'adena'
-    } = {}) {
-        const clan = Number(clanId);
-        const contributor = Number(characterId);
-        const leader = Number(leaderId);
-        const requested = Math.floor(Number(amount) || 0);
-        const key = String(resolveKey || '').trim();
-        if (!clan || !contributor || !leader || contributor === leader || requested <= 0 || !key) {
-            return Promise.resolve({ ok: false, code: 'contribution_no_disposable_adena' });
-        }
-
-        return withCharacterFlushes([contributor, leader], () => inTransaction(() => {
-            const simulation = one('SELECT clanId FROM clan_simulation_clans WHERE clanId = ?', [clan]);
-            if (!simulation) return { ok: false, code: 'target_not_autonomous' };
-            const clanRow = one('SELECT id, level, leaderId FROM clans WHERE id = ?', [clan]);
-            if (!clanRow || Number(clanRow.level) !== Number(targetLevel) || Number(clanRow.leaderId) !== leader) {
-                return { ok: false, code: 'stale_snapshot' };
-            }
-            const members = all(`SELECT id, clanId FROM characters WHERE id IN (?, ?)`, [contributor, leader]);
-            if (members.length !== 2 || members.some((member) => Number(member.clanId) !== clan)) {
-                return { ok: false, code: 'stale_snapshot' };
-            }
-
-            const existing = one(`SELECT id, amount FROM clan_contributions
-                WHERE clanId = ? AND characterId = ? AND targetLevel = ? AND resolveKey = ?`,
-            [clan, contributor, Number(targetLevel), key]);
-            if (existing) {
-                return {
-                    ok: false,
-                    code: 'contribution_already_applied',
-                    amount: Number(existing.amount),
-                    ledgerId: Number(existing.id)
-                };
-            }
-
-            const sourceRows = all(`SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 ORDER BY id`, [contributor]);
-            const sourceBefore = sourceRows.reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0);
-            const disposable = Math.max(0, sourceBefore - Math.max(0, Math.floor(Number(reserve) || 0)));
-            if (disposable <= 0) return { ok: false, code: 'contribution_no_disposable_adena', sourceBefore, disposable };
-            const fraction = Math.max(0, Math.min(1, Number(maxContributionFraction) || 0));
-            const maxAllowed = Math.min(disposable, Math.floor(disposable * fraction));
-            if (requested > maxAllowed) {
-                return { ok: false, code: 'contribution_reserved', sourceBefore, disposable, maxAllowed };
-            }
-
-            let remaining = requested;
-            sourceRows.forEach((row) => {
-                if (remaining <= 0) return;
-                const current = Math.max(0, Number(row.amount) || 0);
-                const deduction = Math.min(current, remaining);
-                const next = current - deduction;
-                if (next <= 0) write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, contributor]);
-                else write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [next, row.id, contributor]);
-                remaining -= deduction;
-            });
-            if (remaining > 0) throw new Error('clan contribution source changed');
-
-            const leaderRows = all(`SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 ORDER BY id`, [leader]);
-            const leaderBefore = leaderRows.reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0);
-            const leaderAfter = leaderBefore + requested;
-            if (leaderRows.length) {
-                write('UPDATE items SET name = ?, amount = ? WHERE id = ? AND characterId = ?', ['Adena', leaderAfter, leaderRows[0].id, leader]);
-                leaderRows.slice(1).forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, leader]));
-            } else {
-                write(`INSERT INTO items (selfId, name, amount, enchant, equipped, slot, characterId)
-                    VALUES (57, 'Adena', ?, 0, 0, 0, ?)`, [leaderAfter, leader]);
-            }
-
-            const timestamp = now();
-            const ledger = write(`INSERT INTO clan_contributions
-                (clanId, characterId, targetLevel, amount, source, resolveKey, createdAt)
-                VALUES (?, ?, ?, ?, ?, ?, ?)`, [clan, contributor, Number(targetLevel), requested, String(source), key, timestamp]);
-            rememberClanContributionUnsafe(clan, contributor, leader, ledger.insertId, requested, sourceBefore, timestamp);
-            syncAdenaSnapshotUnsafe(contributor, sourceBefore - requested, {
-                clanId: clan, targetLevel: Number(targetLevel), amount: -requested, at: timestamp
-            });
-            syncAdenaSnapshotUnsafe(leader, leaderAfter, {
-                clanId: clan, targetLevel: Number(targetLevel), amount: requested, at: timestamp
-            });
-            return {
-                ok: true,
-                code: 'contribution_applied',
-                clanId: clan,
-                characterId: contributor,
-                leaderId: leader,
-                targetLevel: Number(targetLevel),
-                amount: requested,
-                sourceBefore,
-                sourceAfter: sourceBefore - requested,
-                leaderBefore,
-                leaderAfter,
-                ledgerId: Number(ledger.insertId)
-            };
-        }, 'clan-simulation:contribution'));
-    },
     fetchClanWarehouseItems(clanId) {
         return select('clan_warehouse_items', ['*'], 'clanId = ? AND amount > 0', [Number(clanId)], 'clan-warehouse:list');
     },
@@ -7185,142 +7084,6 @@ const Database = {
             };
         }, 'clan-warehouse:withdraw'));
     },
-    transferClanAdenaToWarehouse({
-        clanId,
-        characterId,
-        targetLevel = 1,
-        amount,
-        reserve = 0,
-        maxContributionFraction = 0.35,
-        resolveKey,
-        expectedWarehouseRevision = null,
-        expectedSimulationRevision = null,
-        source = 'adena'
-    } = {}) {
-        const clan = Number(clanId);
-        const contributor = Number(characterId);
-        const requested = Math.floor(Number(amount) || 0);
-        const key = String(resolveKey || '').trim();
-        if (!clan || !contributor || requested <= 0 || !key) {
-            return Promise.resolve({ ok: false, code: 'contribution_no_disposable_adena' });
-        }
-
-        return withCharacterFlush(contributor, () => inTransaction(() => {
-            const simulation = one('SELECT clanId, stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan]);
-            const clanRow = one('SELECT id, level, leaderId FROM clans WHERE id = ?', [clan]);
-            const member = one('SELECT id, clanId FROM characters WHERE id = ?', [contributor]);
-            const life = one(`SELECT phase, simulationOwner, simulationRevision, partyId
-                FROM bot_life_state WHERE characterId = ?`, [contributor]);
-            if (!simulation || !clanRow || Number(clanRow.level) !== Number(targetLevel)
-                || !member || Number(member.clanId) !== clan || !life) {
-                return { ok: false, code: 'stale_snapshot' };
-            }
-            if (String(life.phase || '') !== 'cold'
-                || String(life.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER
-                || String(life.partyId || '') !== '') return { ok: false, code: 'stale_snapshot' };
-            if (expectedSimulationRevision !== null
-                && Number(life.simulationRevision || 0) !== Number(expectedSimulationRevision)) {
-                return { ok: false, code: 'stale_snapshot', simulationRevision: Number(life.simulationRevision || 0) };
-            }
-
-            const previousState = jsonObject(simulation.stateJson);
-            const currentWarehouseRevision = Math.max(0, Number(previousState.warehouseRevision) || 0);
-            if (expectedWarehouseRevision !== null
-                && currentWarehouseRevision !== Number(expectedWarehouseRevision)) {
-                return { ok: false, code: 'ownership_conflict', warehouseRevision: currentWarehouseRevision };
-            }
-            const existingLedger = one(`SELECT id, amount, warehouseRevision
-                FROM clan_warehouse_ledger
-                WHERE clanId = ? AND characterId = ? AND selfId = 57
-                  AND operation = 'adena_contribution' AND resolveKey = ?`, [clan, contributor, key]);
-            if (existingLedger) {
-                return {
-                    ok: false,
-                    code: 'contribution_already_applied',
-                    amount: Number(existingLedger.amount),
-                    ledgerId: Number(existingLedger.id),
-                    warehouseRevision: Number(existingLedger.warehouseRevision)
-                };
-            }
-
-            const sourceRows = all(`SELECT id, amount FROM items
-                WHERE characterId = ? AND selfId = 57 ORDER BY id`, [contributor]);
-            const sourceBefore = sourceRows.reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0);
-            const disposable = Math.max(0, sourceBefore - Math.max(0, Math.floor(Number(reserve) || 0)));
-            if (disposable <= 0) return { ok: false, code: 'contribution_no_disposable_adena', sourceBefore, disposable };
-            const fraction = Math.max(0, Math.min(1, Number(maxContributionFraction) || 0));
-            const maxAllowed = Math.min(disposable, Math.floor(disposable * fraction));
-            if (requested > maxAllowed) {
-                return { ok: false, code: 'contribution_reserved', sourceBefore, disposable, maxAllowed };
-            }
-
-            let remaining = requested;
-            sourceRows.forEach((row) => {
-                if (remaining <= 0) return;
-                const current = Math.max(0, Number(row.amount) || 0);
-                const deduction = Math.min(current, remaining);
-                const next = current - deduction;
-                if (next <= 0) write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, contributor]);
-                else write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [next, row.id, contributor]);
-                remaining -= deduction;
-            });
-            if (remaining > 0) throw new Error('clan warehouse contribution source changed');
-
-            const warehouse = one(`SELECT id, amount, reservedAmount FROM clan_warehouse_items
-                WHERE clanId = ? AND selfId = 57 AND enchant = 0 LIMIT 1`, [clan]);
-            const timestamp = now();
-            const warehouseAmount = Number(warehouse?.amount || 0) + requested;
-            const warehouseId = warehouse
-                ? Number(warehouse.id)
-                : Number(write(`INSERT INTO clan_warehouse_items
-                    (clanId, selfId, name, kind, amount, enchant, createdAt, updatedAt)
-                    VALUES (?, 57, 'Adena', 'Other.Currency', ?, 0, ?, ?)`, [clan, requested, timestamp, timestamp]).insertId);
-            if (warehouse) write(`UPDATE clan_warehouse_items SET amount = ?, updatedAt = ?
-                WHERE id = ? AND clanId = ?`, [warehouseAmount, timestamp, warehouseId, clan]);
-
-            const lifeUpdate = updateColdInventorySnapshotUnsafe(contributor, 57, {
-                clanId: clan,
-                selfId: 57,
-                amount: -requested,
-                warehouseId,
-                at: timestamp
-            }, expectedSimulationRevision === null ? Number(life.simulationRevision || 0) : Number(expectedSimulationRevision));
-            if (!lifeUpdate.ok) return lifeUpdate;
-
-            const nextWarehouseRevision = currentWarehouseRevision + 1;
-            const state = simulationState(simulation.stateJson, clan, previousState.leaderId, previousState.memberIds || [], timestamp);
-            state.warehouseRevision = nextWarehouseRevision;
-            write(`UPDATE clan_simulation_clans SET updatedAt = ?, stateJson = ?
-                WHERE clanId = ? AND json_extract(stateJson, '$.warehouseRevision') = ?`, [
-                timestamp, JSON.stringify(state), clan, currentWarehouseRevision
-            ]);
-            const contribution = write(`INSERT INTO clan_contributions
-                (clanId, characterId, targetLevel, amount, source, resolveKey, createdAt)
-                VALUES (?, ?, ?, ?, ?, ?, ?)`, [clan, contributor, Number(targetLevel), requested, source, key, timestamp]);
-            rememberClanContributionUnsafe(clan, contributor, Number(previousState.leaderId), contribution.insertId, requested, sourceBefore, timestamp);
-            const ledger = write(`INSERT INTO clan_warehouse_ledger
-                (clanId, characterId, selfId, amount, operation, resolveKey, warehouseRevision, createdAt)
-                VALUES (?, ?, 57, ?, 'adena_contribution', ?, ?, ?)`, [
-                clan, contributor, requested, key, nextWarehouseRevision, timestamp
-            ]);
-            return {
-                ok: true,
-                code: 'contribution_applied',
-                clanId: clan,
-                characterId: contributor,
-                targetLevel: Number(targetLevel),
-                amount: requested,
-                sourceBefore,
-                sourceAfter: sourceBefore - requested,
-                warehouseId,
-                warehouseAmount,
-                warehouseRevision: nextWarehouseRevision,
-                simulationRevision: lifeUpdate.simulationRevision,
-                contributionId: Number(contribution.insertId),
-                ledgerId: Number(ledger.insertId)
-            };
-        }, 'clan-warehouse:adena-contribution'));
-    },
     reserveClanWarehouseItem({
         clanId,
         selfId,
@@ -7418,28 +7181,32 @@ const Database = {
             const required = Math.max(0, Math.floor(Number(itemId ? requiredItemAmount : requiredAmount) || 0));
             let contributed = 0;
             let warehouseAmount = 0;
-            if (itemId > 0) {
-                warehouseAmount = Number(one(`SELECT COALESCE(SUM(MAX(0, amount - reservedAmount)), 0) AS amount
-                    FROM clan_warehouse_items WHERE clanId = ? AND selfId = ?`, [clan, itemId]).amount || 0);
-                if (warehouseAmount < required) {
-                    return { ok: false, code: 'warehouse_item_not_ready', warehouseAmount, requiredAmount: required, itemId };
-                }
-            } else {
+            if (itemId === 0) {
                 contributed = Number(one(`SELECT COALESCE(SUM(amount), 0) AS amount
                     FROM clan_contributions WHERE clanId = ? AND targetLevel = ?`, [clan, Number(fromLevel)]).amount || 0);
                 if (contributed < required) {
                     return { ok: false, code: 'contribution_level_ready', contributed, requiredAmount: required };
                 }
             }
+            // The level is paid like the player's level-up (NpcBypasses/Clan): the
+            // item or the Adena is spent, from the clan warehouse where the dues went.
+            const timestamp = now();
+            const consumedId = itemId || 57;
+            if (required > 0) {
+                warehouseAmount = Number(one(`SELECT COALESCE(SUM(MAX(0, amount - reservedAmount)), 0) AS amount
+                    FROM clan_warehouse_items WHERE clanId = ? AND selfId = ?`, [clan, consumedId]).amount || 0);
+                if (warehouseAmount < required) {
+                    return { ok: false, code: 'warehouse_item_not_ready', warehouseAmount, requiredAmount: required, itemId: consumedId };
+                }
+            }
 
             const updated = write('UPDATE clans SET level = ? WHERE id = ? AND level = ?', [Number(toLevel), clan, Number(fromLevel)]);
             if (updated.affectedRows !== 1) return { ok: false, code: 'level_already_advanced' };
             const previousState = jsonObject(simulation.stateJson);
-            const timestamp = now();
-            if (itemId > 0 && required > 0) {
+            if (required > 0) {
                 let remaining = required;
                 const rows = all(`SELECT id, amount, reservedAmount FROM clan_warehouse_items
-                    WHERE clanId = ? AND selfId = ? AND amount > reservedAmount ORDER BY id`, [clan, itemId]);
+                    WHERE clanId = ? AND selfId = ? AND amount > reservedAmount ORDER BY id`, [clan, consumedId]);
                 rows.forEach((row) => {
                     if (remaining <= 0) return;
                     const available = Math.max(0, Number(row.amount) - Number(row.reservedAmount || 0));
@@ -7456,9 +7223,9 @@ const Database = {
                     VALUES (?, ?, ?, ?, 'level_up_consume', ?, ?, ?)`, [
                     clan,
                     Number(clanRow.leaderId),
-                    itemId,
+                    consumedId,
                     required,
-                    `clan:${clan}:level:${Number(fromLevel)}:${Number(toLevel)}:${itemId}`,
+                    `clan:${clan}:level:${Number(fromLevel)}:${Number(toLevel)}:${consumedId}`,
                     nextWarehouseRevision,
                     timestamp
                 ]);
@@ -7809,7 +7576,8 @@ const ClanLevelSp = require('./GameServer/Clan/ClanLevelSpRepository')({ one, wr
 Object.assign(Database, require('./GameServer/Clan/ClanAllianceRepository')({ one, all, write, inTransaction, withCharacterFlushes, ClanLevelSp }));
 
 Object.assign(Database, require('./GameServer/ClanHall/Repository')({
-    one, all, write, inTransaction, withCharacterFlush, updateColdInventorySnapshotUnsafe, syncInventorySummaryUnsafe
+    one, all, write, inTransaction, withCharacterFlush, updateColdInventorySnapshotUnsafe, syncInventorySummaryUnsafe,
+    rememberClanContributionUnsafe
 }));
 
 module.exports = Database;

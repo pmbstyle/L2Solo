@@ -221,7 +221,8 @@ function stateProfiles(state, options = {}) {
 // profiles, the species and the safety options. Searches repeat for the same
 // bot after every commit, and bots of one class, level and kit share combat
 // fields, so verdicts are shared by every profile array with the same fields.
-// Profiles unused for VERDICT_PROFILE_IDLE_MS (level-up, new gear) are dropped.
+// Profiles unused for VERDICT_PROFILE_IDLE_MS (level-up, new gear) are dropped
+// when a new profile is added.
 const VERDICT_PROFILE_LIMIT = 4096;
 const VERDICT_PROFILE_IDLE_MS = 10 * 60 * 1000;
 const npcVerdicts = new WeakMap();
@@ -316,6 +317,14 @@ function npcVerdict(verdicts, selfId, options) {
     return verdict;
 }
 
+// A spot's matchup reads only its mob list and the verdicts of one profile
+// fingerprint and safety options, so it is shared the same way: a spot search
+// after every commit checks hundreds of spots against the same verdicts.
+const spotMatchups = new WeakMap();
+// Equal results are one object: most fingerprints get the same few values on
+// most spots. Bounded like the verdict pool; results already handed out stay valid.
+const uniqueSpotResults = new Map();
+
 function spotMatchup(spot, profiles, options = {}) {
     if (!profiles?.length) return evaluate([], {});
     let total = 0, effective = 0, eligible = false, safe = 0;
@@ -323,6 +332,10 @@ function spotMatchup(spot, profiles, options = {}) {
     const optionsKey = `${options.soloSafety ? 1 : 0}:${options.maxTargetLevel || 0}`;
     let verdicts = byOptions.get(optionsKey);
     if (!verdicts) byOptions.set(optionsKey, verdicts = new Map());
+    let bySpot = spotMatchups.get(verdicts);
+    if (!bySpot) spotMatchups.set(verdicts, bySpot = new WeakMap());
+    const known = bySpot.get(spot);
+    if (known) return known;
     const verdictOptions = { profiles, soloSafety: options.soloSafety, maxTargetLevel: options.maxTargetLevel };
     for (const entry of spot.npcEntries || []) {
         const verdict = npcVerdict(verdicts, Number(entry.selfId), verdictOptions);
@@ -336,11 +349,18 @@ function spotMatchup(spot, profiles, options = {}) {
     }
     const efficiency = total ? effective / total : 1;
     const safeFraction = total ? safe / total : 1;
-    return { efficiency, safeFraction,
-        eligible: !total || (eligible && (!options.soloSafety || safeFraction >= 0.6)),
-        penalty: Math.round((1 - efficiency) * 250 + (options.soloSafety ? (1 - safeFraction) * 250 : 0)) };
+    const spotEligible = !total || (eligible && (!options.soloSafety || safeFraction >= 0.6));
+    const penalty = Math.round((1 - efficiency) * 250 + (options.soloSafety ? (1 - safeFraction) * 250 : 0));
+    const key = `${efficiency}:${safeFraction}:${spotEligible ? 1 : 0}:${penalty}`;
+    let result = uniqueSpotResults.get(key);
+    if (!result) {
+        if (uniqueSpotResults.size >= VERDICT_PROFILE_LIMIT * 4) uniqueSpotResults.clear();
+        uniqueSpotResults.set(key, result = Object.freeze({ efficiency, safeFraction, eligible: spotEligible, penalty }));
+    }
+    bySpot.set(spot, result);
+    return result;
 }
 
 module.exports = { MIN_EFFICIENCY, VERDICT_PROFILE_LIMIT, actorProfiles, coldProfiles, targetView, skillModifier,
     profileStats, skillStats, evaluate, soloSurvival, stateProfiles, spotMatchup,
-    sharedVerdictProfiles: () => sharedVerdicts.size };
+    sharedVerdictProfiles: () => sharedVerdicts.size, uniqueVerdictCount: () => uniqueVerdicts.size };

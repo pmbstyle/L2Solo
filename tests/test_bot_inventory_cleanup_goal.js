@@ -86,6 +86,41 @@ assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed(capacityOnlyState, {
     limit: ItemDisposition.INVENTORY_SLOT_LIMIT
 }, 'an over-capacity inventory must bypass the market retry cooldown even without NPC-only items');
 
+// NPC-only junk (a recipe no bot lists or learns) forces a trip at 20 slots (user, 2026-10-03; the author's 3).
+const junkRecipes = (amount) => ({
+    999001: {
+        selfId: 999001, name: 'Recipe: Junk', kind: 'Other.Recipe', stackable: false, amount,
+        instances: Array.from({ length: amount }, (_, index) => ({ id: 9400000 + index, amount: 1, equipped: false, slot: 0 }))
+    }
+});
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: junkRecipes(19) }, { now }), null,
+'NPC-only junk below the threshold must not interrupt farming');
+assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: junkRecipes(20) }, { now }),
+    { reason: 'npc_only_inventory', slots: 20, npcOnlySlots: 20, limit: ItemDisposition.INVENTORY_SLOT_LIMIT },
+'twenty NPC-only slots form one NPC cleanup trip');
+
+// A half-full bag (40 of 80 slots) sends the bot to sell whatever it carries (user, 2026-10-03).
+const mixedBag = (slots) => Object.fromEntries(Array.from({ length: slots }, (_, index) => {
+    const selfId = 1864 + index;
+    return [selfId, { selfId, name: `Material ${selfId}`, kind: 'Other.Material', stackable: true, amount: 1 }];
+}));
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: mixedBag(39) }, { now }), null,
+'a bag below half must not interrupt farming');
+assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: mixedBag(40) }, { now }),
+    { reason: 'inventory_half_full', slots: 40, npcOnlySlots: 0, limit: ItemDisposition.INVENTORY_SLOT_LIMIT },
+'a half-full bag forms one market trip');
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: mixedBag(40),
+    stats: { marketSellRetryAfter: now + 60 * 60 * 1000 } }, { now }), null,
+'the half-full trip respects the market retry cooldown');
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: mixedBag(40), party: { partyId: 5 } }, { now }), null,
+'a party member sells from the field: no half-full trip');
+const unsellableBag = (slots) => Object.fromEntries(Array.from({ length: slots }, (_, index) => {
+    const selfId = 990000 + index;
+    return [selfId, { selfId, name: `Potion ${selfId}`, kind: 'Other.Potion', stackable: true, amount: 1 }];
+}));
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: unsellableBag(40) }, { now }), null,
+'a half-full bag with nothing to sell makes no trip');
+
 const boneHelmet = DataCache.items.find((item) => Number(item.selfId) === 45);
 const surplusInventory = (amount) => ({
     [boneHelmet.selfId]: {
@@ -97,15 +132,17 @@ const surplusInventory = (amount) => ({
         }))
     }
 });
+// A forced trip starts at 20 surplus pieces (user, 2026-10-03; the author's 6
+// sent a young world's bots to town every 40-60 minutes).
 assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state,
-    inventory: surplusInventory(5) }, { now }), null,
-'a few surplus drops must not interrupt farming');
+    inventory: surplusInventory(19) }, { now }), null,
+'surplus drops below the threshold must not interrupt farming');
 assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state,
-    inventory: surplusInventory(6) }, { now }), null,
+    inventory: surplusInventory(20) }, { now }), null,
 'the first useful helmet stays available for equipment');
 assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state,
-    inventory: surplusInventory(7) }, { now })?.reason, 'market_surplus_inventory',
-'six surplus pieces should form one NPC cleanup trip');
+    inventory: surplusInventory(21) }, { now })?.reason, 'market_surplus_inventory',
+'twenty surplus pieces should form one NPC cleanup trip');
 
 const stagedArmor = {
     ...state, level: 47, adena: 1000000,

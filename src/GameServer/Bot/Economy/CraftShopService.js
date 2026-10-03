@@ -98,23 +98,38 @@ function isServiceCrafter(state = {}) {
     return classId === 56 || classId === 57;
 }
 
+// Craft level = the Create Item level the class line has learned by this
+// character level, read from the skill tree like a hot character's skills: a
+// Warsmith keeps the levels it learned as an Artisan. Kept per class, indexed
+// by character level.
+const CREATE_ITEM_SKILL_ID = 172;
+const craftLevelRows = new Map();
+let craftLevelsTree = null;
+let ColdCombatProfile = null;
+
 function craftLevelFor(state = {}) {
+    // A hot actor passes the level of the skill it has learned.
+    const learned = state.craftLevel ?? state.stats?.dwarvenCraftLevel;
+    if (learned !== undefined && learned !== null) return Number(learned) || 0;
     const classId = Number(state.classId || state.stats?.classId || 0);
     const level = Number(state.level || 1);
-    if (classId === 57) {
-        if (level >= 70) return 9;
-        if (level >= 62) return 8;
-        if (level >= 55) return 7;
-        if (level >= 49) return 6;
-        if (level >= 43) return 5;
-        return 0;
+    if (craftLevelsTree !== DataCache.skillTree) {
+        craftLevelRows.clear();
+        craftLevelsTree = DataCache.skillTree;
     }
-    if (classId === 56) {
-        if (level >= 36) return 4;
-        if (level >= 28) return 3;
-        if (level >= 20) return 2;
+    let row = craftLevelRows.get(classId);
+    if (!row) craftLevelRows.set(classId, row = []);
+    if (row[level] === undefined) {
+        ColdCombatProfile ||= invoke('GameServer/Bot/Population/ColdCombatProfile');
+        row[level] = ColdCombatProfile.treeSkillLevel(classId, level, CREATE_ITEM_SKILL_ID);
     }
-    return 0;
+    return row[level];
+}
+
+// Whether this character crafts the recipe: only crafter classes craft, even
+// when another dwarf has Create Item from its class line.
+function canCraft(state = {}, recipe = {}) {
+    return isServiceCrafter(state) && craftLevelFor(state) >= Number(recipe.level || 0);
 }
 
 function stationForSlot(slot) {
@@ -171,16 +186,34 @@ function productPrice(recipe) {
     return Math.max(100, Math.min(1000000, BotEconomyPricing.scalePrice(Math.round(value * 0.03) + Number(recipe.mpCost || 0) * 10)));
 }
 
+// Recipes and items are datapack data: the dwarven recipe lists and what the
+// Giran stations publish are built once per item catalogue.
+const STATION_SERVICE = Object.freeze({ level: 70, stats: Object.freeze({ classId: 57 }) });
+let catalog = null;
+
+function recipeCatalog() {
+    if (catalog?.items === DataCache.items) return catalog;
+    const itemIds = new Set((DataCache.items || []).map((item) => Number(item.selfId)));
+    const unique = new Map();
+    Object.values(C4RecipeItems.loadRecipeItems() || {}).forEach((recipe) => {
+        if (recipe?.type !== 'dwarven' || !itemIds.has(Number(recipe.productId))) return;
+        unique.set(Number(recipe.recipeId), recipe);
+    });
+    const dwarven = [...unique.values()].sort((a, b) => Number(a.recipeId) - Number(b.recipeId));
+    catalog = { items: DataCache.items, dwarven, byCraftLevel: new Map(), published: null };
+    return catalog;
+}
+
 function availableRecipes(state) {
     const craftLevel = craftLevelFor(state);
     if (!isServiceCrafter(state) || craftLevel <= 0) return [];
-    const unique = new Map();
-    Object.values(C4RecipeItems.loadRecipeItems() || {}).forEach((recipe) => {
-        if (recipe?.type !== 'dwarven' || Number(recipe.level || 0) > craftLevel) return;
-        if (!(DataCache.items || []).some((item) => Number(item.selfId) === Number(recipe.productId))) return;
-        unique.set(Number(recipe.recipeId), recipe);
-    });
-    return [...unique.values()].sort((a, b) => Number(a.recipeId) - Number(b.recipeId));
+    const current = recipeCatalog();
+    if (!current.byCraftLevel.has(craftLevel)) {
+        current.byCraftLevel.set(craftLevel, Object.freeze(
+            current.dwarven.filter((recipe) => Number(recipe.level || 0) <= craftLevel)
+        ));
+    }
+    return current.byCraftLevel.get(craftLevel);
 }
 
 function compareScores(left, right) {
@@ -214,6 +247,30 @@ function stationRecipes(station, allowedRecipes) {
         return station.recipeIds.map((recipeId) => allowedById.get(Number(recipeId))).filter(Boolean);
     }
     return station.category === 'weapons' ? topWeaponRecipes(station.grade, allowedRecipes) : [];
+}
+
+// What the Giran stations publish for a top station crafter: each recipe once,
+// with the first station (in station order) that publishes it.
+function publishedStationRecipes() {
+    const current = recipeCatalog();
+    if (current.published) return current.published;
+    const allowed = availableRecipes(STATION_SERVICE);
+    const stationByRecipeId = new Map();
+    const recipes = [];
+    for (const station of CraftStations) {
+        for (const recipe of stationRecipes(station, allowed)) {
+            const recipeId = Number(recipe.recipeId);
+            if (stationByRecipeId.has(recipeId)) continue;
+            stationByRecipeId.set(recipeId, station);
+            recipes.push(recipe);
+        }
+    }
+    current.published = Object.freeze({
+        recipes: Object.freeze(recipes),
+        ids: new Set(stationByRecipeId.keys()),
+        stationByRecipeId
+    });
+    return current.published;
 }
 
 function generatedEntries(state) {
@@ -271,11 +328,13 @@ module.exports = {
     CraftStations,
     isServiceCrafter,
     craftLevelFor,
+    canCraft,
     stationForSlot,
     stationFor,
     locationFor,
     availableRecipes,
     stationRecipes,
+    publishedStationRecipes,
     profileFor,
     ensureRecipes
 };

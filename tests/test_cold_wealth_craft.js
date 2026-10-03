@@ -12,6 +12,9 @@ const StaticMerchantPricing = invoke('GameServer/Bot/Economy/StaticMerchantPrici
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const Service = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
 
+// Craft levels come from the skill tree.
+DataCache.init();
+
 const originals = {
     items: DataCache.items,
     fetchCharacterRecipes: Database.fetchCharacterRecipes,
@@ -86,6 +89,17 @@ async function run() {
         stats: { classId: 57, generatedIndex: 1787947094937 }, persona: { primaryDrive: 'wealth' } };
     assert.strictEqual(Service.eligible(state, 1000000), true,
         'ordinary generated dwarves must not be mistaken for fixed crafting stations');
+    // A crafter with a market gear plan keeps the plan's price and reserve out
+    // of its input budget.
+    const planning = (adena) => ({ ...state, adena, stats: { ...state.stats, equipmentPlan: {
+        status: 'active', strategy: 'market', target: { selfId: 100, name: 'Planned Gear', slot: 7 },
+        market: { town: 'Giran', price: 370000, sourceType: 'npc', reserve: 10000 } } } });
+    assert(Service.chooseOpportunity(state, [{ recipeId: recipe.recipeId }]),
+        'fixture: without a market plan the crafter can afford the inputs');
+    assert.strictEqual(Service.chooseOpportunity(planning(state.adena), [{ recipeId: recipe.recipeId }]), null,
+        'a crafter saving for market gear keeps its price and reserve out of the input budget');
+    assert(Service.chooseOpportunity(planning(state.adena + 380000), [{ recipeId: recipe.recipeId }]),
+        'with the purchase covered the rest of the wallet buys inputs');
     const result = await Service.tryCraft(state, 1000000);
     assert(result.crafted && result.sold);
     assert(crafted && sold);

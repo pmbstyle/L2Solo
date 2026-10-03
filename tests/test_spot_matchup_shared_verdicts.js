@@ -109,4 +109,41 @@ assert(Matchup.sharedVerdictProfiles() <= Matchup.VERDICT_PROFILE_LIMIT, 'the sh
 assert.deepStrictEqual(Matchup.spotMatchup(spot, [fighter()], { soloSafety: true }),
     referenceMatchup(spot, [fighter()], { soloSafety: true }), 'an evicted profile is recomputed');
 
+// The pool of deduplicated verdicts is bounded too: parties give continuous
+// efficiencies, so every new pair adds values until the pool is cleared.
+const mage = fighter({ role: 'mage', mAtk: 300, skills: [{ ...strike, spell: true, power: 40,
+    semantic: { ...strike.semantic, trait: 'fire' } }] });
+let largest = 0, cleared = false;
+for (let i = 0; i < 4 * Matchup.VERDICT_PROFILE_LIMIT && !cleared; i++) {
+    const before = Matchup.uniqueVerdictCount();
+    Matchup.spotMatchup(spot, [fighter({ pAtk: 2000 + i }), mage], { soloSafety: false });
+    largest = Math.max(largest, Matchup.uniqueVerdictCount());
+    cleared = Matchup.uniqueVerdictCount() < before;
+}
+assert(cleared, `the verdict pool must be cleared at its bound (largest ${largest})`);
+assert(largest <= 4 * Matchup.VERDICT_PROFILE_LIMIT, `the verdict pool stays bounded (largest ${largest})`);
+const party = [fighter({ pAtk: 2000 }), mage];
+assert.deepStrictEqual(Matchup.spotMatchup(spot, party, { soloSafety: false }),
+    referenceMatchup(spot, party, { soloSafety: false }), 'verdicts handed out before the clear stay valid');
+
+// The spot result is shared too: per spot object, never by id, and the shared
+// result is read-only. A rebuilt catalog brings new spot objects.
+const sameIdOtherMobs = { id: spot.id, npcEntries: species.slice(0, 3).map((npc) => ({ selfId: npc.selfId, count: 1 })) };
+for (let pass = 0; pass < 2; pass++) {
+    for (const options of optionSets) {
+        for (const candidate of [spot, sameIdOtherMobs]) {
+            assert.deepStrictEqual(Matchup.spotMatchup(candidate, [fighter()], options),
+                referenceMatchup(candidate, [fighter()], options), `spot object ${candidate === spot ? 1 : 2} ${JSON.stringify(options)}`);
+        }
+    }
+}
+assert.notDeepStrictEqual(referenceMatchup(spot, [fighter()], { soloSafety: true }),
+    referenceMatchup(sameIdOtherMobs, [fighter()], { soloSafety: true }), 'the two spots must differ, or the check above proves nothing');
+const shared = Matchup.spotMatchup(spot, [fighter()], { soloSafety: true });
+assert.strictEqual(Matchup.spotMatchup(spot, [fighter()], { soloSafety: true }), shared, 'the same profile fields share one result');
+assert(Object.isFrozen(shared), 'a shared spot result is read-only');
+// Equal results of different spots are one object.
+const twin = { id: 'twin', npcEntries: spot.npcEntries.map((entry) => ({ ...entry })) };
+assert.strictEqual(Matchup.spotMatchup(twin, [fighter()], { soloSafety: true }), shared, 'equal results are stored once');
+
 console.log('shared spot matchup verdict tests passed');

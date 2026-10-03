@@ -32,7 +32,9 @@ async function run() {
         characterId: 501,
         accountName: 'buyer',
         name: 'BudgetBuyer',
-        level: 20,
+        // Level 2: the operating reserve every purchase keeps (PurchaseFunding:
+        // 500, 250 per level or 10%) leaves 500 of the 1,000 adena spendable.
+        level: 2,
         adena: 1000,
         phase: 'cold',
         activity: 'shopping',
@@ -46,7 +48,7 @@ async function run() {
     const goal = { type: 'buy_craft_material', target: { itemId: 1864, itemName: 'Stem', amount: 5 }, plan: {} };
     const bid = BuyStoreService.bidFor(buyerSeed, goal);
     assert(bid && bid.count > 0);
-    assert(bid.price * bid.count <= 900, 'a dynamic WTB must preserve its wallet reserve');
+    assert(bid.price * bid.count <= 500, 'a dynamic WTB must preserve its operating reserve');
 
     const opened = await BuyStoreService.open(buyerSeed, goal, { now: 1000, durationMs: 60000 });
     assert.strictEqual(opened.opened, true);

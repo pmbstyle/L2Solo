@@ -14,8 +14,12 @@ const CLASS_PROFILES = {
         shield: true,
         weaponHint: 'one_handed_blunt'
     },
+    // Gladiator and Bladedancer need a dual sword, which NPCs do not sell.
+    // Until they hold one they keep fighting with the weapons of their
+    // previous profession (interimClassId); the dual sword stays their target.
     2: {
         weaponKinds: ['Weapon.Dual'],
+        interimClassId: 1,
         preferredWeaponKinds: ['Weapon.Dual'],
         armorStyle: 'heavy',
         twoHandedWeaponKinds: ['Weapon.Dual'],
@@ -38,6 +42,7 @@ const CLASS_PROFILES = {
     },
     34: {
         weaponKinds: ['Weapon.Dual'],
+        interimClassId: 32,
         armorStyle: 'heavy',
         twoHandedWeaponKinds: ['Weapon.Dual'],
         shield: false,
@@ -186,17 +191,26 @@ function roleProfile(role, classId) {
     };
 }
 
+// Retail starter weapons a class profile does not list: usable until the bot
+// buys a preferred one, never preferred. An Orc Mystic is created with Training
+// Gloves (Weapon.DualFist); judged unarmed, it could only wait for a rod it
+// could not pay for (live 2026-10-03: 25 of 165 stood at level 6 for 18 hours).
+const STARTER_WEAPON_KINDS = {
+    49: ['Weapon.Fist', 'Weapon.DualFist']
+};
+
 function profileFor(role, classId) {
     const explicit = CLASS_PROFILES[baseClassId(classId)];
     const profile = explicit || roleProfile(role, classId);
-    const weaponKinds = [...profile.weaponKinds];
+    const starterKinds = STARTER_WEAPON_KINDS[baseClassId(classId)] || [];
+    const weaponKinds = [...profile.weaponKinds, ...starterKinds];
 
     return {
         baseClassId: baseClassId(classId),
         weaponKinds,
-        preferredWeaponKinds: [...(profile.preferredWeaponKinds || weaponKinds)],
+        preferredWeaponKinds: [...(profile.preferredWeaponKinds || profile.weaponKinds)],
         armorStyle: profile.armorStyle,
-        twoHandedWeaponKinds: [...profile.twoHandedWeaponKinds],
+        twoHandedWeaponKinds: [...profile.twoHandedWeaponKinds, ...starterKinds.filter((kind) => kind === 'Weapon.DualFist')],
         shield: profile.shield,
         weaponHint: profile.weaponHint
     };
@@ -204,6 +218,15 @@ function profileFor(role, classId) {
 
 function weaponKindsFor(role, classId) {
     return profileFor(role, classId).weaponKinds;
+}
+
+// A retail starter weapon the class profile does not list (STARTER_WEAPON_KINDS).
+function isStarterWeaponKind(kind, classId) {
+    return (STARTER_WEAPON_KINDS[baseClassId(classId)] || []).includes(kind);
+}
+
+function interimClassIdFor(classId) {
+    return Number(CLASS_PROFILES[baseClassId(classId)]?.interimClassId || 0);
 }
 
 function preferredWeaponKindsFor(role, classId) {
@@ -238,7 +261,9 @@ module.exports = {
     armorStyleFor,
     allowsTwoHandedWeapon,
     baseClassId,
+    interimClassIdFor,
     isCasterRole,
+    isStarterWeaponKind,
     preferredWeaponKindsFor,
     profileFor,
     usesShield,

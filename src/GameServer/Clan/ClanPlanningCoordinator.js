@@ -152,9 +152,7 @@ async function context() {
         offers.push(...market.sellOfferCandidates(items[i].selfId).map(offerRow));
         if (i % 8 === 7) await yieldLoop();
     }
-    const allowed = craft.availableRecipes({ level: 70, stats: { classId: 57 } });
-    const recipes = [...new Map(craft.CraftStations.flatMap((station) => craft.stationRecipes(station, allowed))
-        .map((recipe) => [Number(recipe.recipeId), recipe])).values()];
+    const recipes = [...craft.publishedStationRecipes().recipes];
     const general = {};
     for (const key of ['progressionPreset', 'expRate', 'spRate', 'adenaRate', 'dropChanceRate', 'spoilRate']) {
         general[key] = global.options.default.General?.[key];

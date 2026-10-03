@@ -22,6 +22,10 @@ const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
 const cache = new LifeStateCache();
+
+function recentLimit(limit) {
+    return Math.max(1, Math.min(2000, Number(limit) || 500));
+}
 const pendingWrites = new Map();
 const changeListeners = new Set();
 let initialized = false;
@@ -405,8 +409,11 @@ function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
     const limitTargets = (values) => Object.fromEntries(Object.entries(values)
         .sort(([, left], [, right]) => Number(right.lastResolvedAt || 0) - Number(left.lastResolvedAt || 0))
         .slice(0, 24));
-    const current = add(previous.populationTargets?.[targetKey]
-        || (Number(previous.targetNpcId) === targetNpcId ? previous : {}));
+    // The bot's own counter continues itself: the population map stops growing
+    // for a party member that is not the population telemetry owner.
+    const current = add(Number(previous.targetNpcId) === targetNpcId
+        ? previous
+        : previous.populationTargets?.[targetKey] || {});
     const populationTargets = { ...(previous.populationTargets || {}) };
     if (!debug.aggregate || debug.populationTelemetryOwner === true) {
         populationTargets[targetKey] = add(populationTargets[targetKey]);
@@ -1497,6 +1504,15 @@ const BotLifeState = {
         await Promise.all(ids.map(id => pendingWrites.get(Number(id)) || Promise.resolve()));
     },
 
+    // Accept a row another transaction wrote for this bot, unless the cache already
+    // holds a newer cold revision of it.
+    acceptNewerLifecycleRow(row) {
+        if (!row) return null;
+        const current = cache.get(Number(row.characterId));
+        if (current && (current.phase !== 'cold' || Number(current.simulation?.revision || 0) > Number(row.simulationRevision))) return null;
+        return this.acceptLifecycleRow(row);
+    },
+
     acceptLifecycleRow(row) {
         const snapshot = normalize(row);
         const current = cache.get(snapshot.characterId);
@@ -1687,6 +1703,14 @@ const BotLifeState = {
 
     snapshot(characterId) {
         return cache.get(Number(characterId)) || null;
+    },
+
+    // The row of a bot that is in the world as an actor, else null. A hot row
+    // belongs to the actor: the AFK sync and the cold market jobs never write
+    // a cold state over it (markCold writes the next cold state).
+    hotRow(characterId) {
+        const current = cache.get(Number(characterId));
+        return current?.phase === 'hot' ? current : null;
     },
 
     findByCharacterId(characterId) {
@@ -2343,6 +2367,11 @@ const BotLifeState = {
                 ? { deathExperience: progressionState.stats.deathExperience }
                 : {})
         };
+        // Every writer of stats.travel also makes the bot `traveling`, and
+        // arrival clears it. A trip on a bot that neither was nor stays
+        // traveling is a leftover; routeFor would skip the bot forever.
+        if (patchedStats.travel && state.activity !== 'traveling'
+            && (result.patch?.activity || state.activity) !== 'traveling') patchedStats.travel = null;
         const stats = {
             ...patchedStats,
             karma: Math.max(0, Number(state.stats?.karma || 0) - Math.floor(
@@ -3050,7 +3079,7 @@ const BotLifeState = {
         });
     },
 
-    applyMarketPurchase(state, offer, qty = 1) {
+    applyMarketPurchase(state, offer, qty = 1, options = {}) {
         const selfId = Number(offer?.selfId || 0);
         const price = Number(offer?.price || 0);
         const count = Number(qty);
@@ -3118,7 +3147,9 @@ const BotLifeState = {
         const purchasedState = {
             ...state,
             adena: Number(state.adena) - totalPrice,
-            activity: 'shopping',
+            // A bot in town is shopping; a purchase made for it where it hunts
+            // (the clan's goal purchase) leaves its activity alone.
+            activity: options.keepActivity ? state.activity : 'shopping',
             inventory,
             stats: {
                 ...purchaseStats,
@@ -3731,8 +3762,22 @@ const BotLifeState = {
     },
 
     allStates(limit = 500) {
-        const safeLimit = Math.max(1, Math.min(2000, Number(limit) || 500));
-        return cache.recent(safeLimit);
+        return cache.recent(recentLimit(limit));
+    },
+
+    // The states a bounded allStates(limit) view leaves out (oldest updatedAt).
+    statesBeyondRecent(limit = 500) {
+        return cache.beyondRecent(recentLimit(limit));
+    },
+
+    // Spot occupancy kept up to date at every state write (SpotProfiles.currentOccupancy).
+    occupancyIndex() {
+        return cache.occupancy;
+    },
+
+    // For a caller that changed the cached state object in place, not through a write.
+    refreshOccupancy(state) {
+        if (state && cache.get(Number(state.characterId)) === state) cache.occupancy.update(state);
     },
 
     populationSeedStates() {

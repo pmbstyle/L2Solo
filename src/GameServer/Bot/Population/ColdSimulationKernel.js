@@ -5,6 +5,8 @@ const BackgroundPartyLifecycle = require('./BackgroundPartyLifecycle');
 const Protocol = require('./ColdSimulationProtocol');
 const ColdStateDelta = require('./ColdStateDelta');
 const SpotRiskPolicy = require('./SpotRiskPolicy');
+const PurchaseFunding = require('../Economy/PurchaseFunding');
+const { SpotOccupancyIndex, stateKey } = require('./SpotOccupancyIndex');
 
 class DueHeap {
     constructor() {
@@ -269,7 +271,9 @@ function lifecycleKind(state = {}, context = {}) {
     if (String(plan.strategy || '') === 'market') {
         const price = Math.max(0, Number(plan.market?.price || 0));
         const reserve = Math.max(0, Number(plan.market?.reserve || 0));
-        if (state.activity !== 'hunting' || (price > 0 && Number(state.adena || 0) >= price + reserve)) return 'command';
+        if (state.activity !== 'hunting'
+            || (price > 0 && PurchaseFunding.shortfall(state, price, reserve,
+                PurchaseFunding.tripEscrow(plan, context.buyOrderEscrow)) === 0)) return 'command';
     }
     if ((ClanPartyDuty ||= require('./ClanPartyDuty')).waiting(state)) return 'resolver';
     if (!SIMPLE_ACTIVITIES.has(String(state.activity || ''))) return 'command';
@@ -373,6 +377,7 @@ class ColdSimulationKernel {
             Math.min(this.maxBatch, Number(options.maxAtomicPartySize) || 5)
         );
         this.states = new Map();
+        this.occupancy = new SpotOccupancyIndex();
         this.interactionMemory = new (require('../../Social/InteractionMemory'))();
         this.interactionMemory.clanSocial = new (require('../../Clan/ClanSocialView'))();
         this.versions = new Map();
@@ -457,6 +462,7 @@ class ColdSimulationKernel {
                 state,
                 context: entry.context || {}
             });
+            this.occupancy.update(state);
             this.stats.snapshots += 1;
             this.ensureScheduled(characterId);
             return true;
@@ -464,6 +470,7 @@ class ColdSimulationKernel {
         const version = Number(this.versions.get(characterId) || 0) + 1;
         this.versions.set(characterId, version);
         this.states.set(characterId, { state, context: entry.context || {}, version });
+        this.occupancy.update(state);
         this.stats.snapshots += 1;
         this.ensureScheduled(characterId);
         return true;
@@ -476,6 +483,8 @@ class ColdSimulationKernel {
 
     remove(characterId) {
         const id = Number(characterId);
+        const current = this.states.get(id);
+        if (current?.state) this.occupancy.remove(stateKey(current.state));
         this.states.delete(id);
         this.interactionMemory.forget(id);
         this.versions.set(id, Number(this.versions.get(id) || 0) + 1);
@@ -960,7 +969,8 @@ class ColdSimulationKernel {
                     roleCoverage: states => typeof invoke === 'function' ? invoke('GameServer/Bot/Population/BackgroundPartyComposition').roleCoverage(states) : run.party.roleCoverage,
                     personaFor: state => typeof invoke === 'function' ? invoke('GameServer/Bot/AI/BotPersona').generate(state) : state.persona,
                     requiresWeaponBridge: this.requiresWeaponBridge,
-                    equipmentBridgeReason: this.equipmentBridgeReason
+                    equipmentBridgeReason: this.equipmentBridgeReason,
+                    spot: run.spot
                 });
                 const proposals = partyTransitionProposals(run, review.states, review.party, startedAt, {
                     type: 'party_session_review', summary: `Party ${run.party.partyId} reviewed its shared hunt`, weight: 1,

@@ -58,6 +58,33 @@ function identityFor(spot = {}) {
         .join(' ');
 }
 
+// What a spot's names say never changes for one spot object, and a spot
+// search asks it for every candidate after every commit (like tagsForSpot).
+// The readiness facts are needed only for dangerous ground, so they are
+// derived on the first such question.
+const nameFactsBySpot = new WeakMap();
+
+function nameFacts(spot = {}) {
+    let facts = nameFactsBySpot.get(spot);
+    if (facts) return facts;
+    const identity = identityFor(spot);
+    facts = {
+        identity,
+        dangerous: /\b(catacomb|necropolis|cruma(?: tower)?|tower of insolence|antharas(?:'s|')? lair|lair of antharas)\b/i.test(identity)
+    };
+    nameFactsBySpot.set(spot, facts);
+    return facts;
+}
+
+function readinessNameFacts(spot = {}) {
+    const facts = nameFacts(spot);
+    if (!('configuredGrade' in facts)) {
+        facts.configuredGrade = zoneSoloGrade(facts.identity);
+        facts.deepParty = /\b(catacomb|necropolis|tower of insolence|antharas(?:'s|')? lair|lair of antharas)\b/i.test(facts.identity);
+    }
+    return facts;
+}
+
 function zoneSoloGrade(identity = '') {
     if (/\bcruma(?: tower)?\b/i.test(identity)) return gradeRank('c');
     if (/\btower of insolence\b/i.test(identity)) return gradeRank('b');
@@ -70,10 +97,9 @@ function hasExceptionalSoloReadiness(spot = {}, state = {}, options = {}) {
     const maxLevel = Math.max(1, number(spot.maxLevel ?? spot.avgLevel ?? spot.minLevel, level));
     const equipped = equipmentRows(state, options).map(normalizeEquipment).filter((item) => item.equipped);
     const tags = tagsFor(spot, options).map((tag) => String(tag));
-    const identity = identityFor(spot);
-    const configuredGrade = zoneSoloGrade(identity);
-    const deepParty = tags.includes('catacomb') || tags.includes('deep_party')
-        || /\b(catacomb|necropolis|tower of insolence|antharas(?:'s|')? lair|lair of antharas)\b/i.test(identity);
+    const names = readinessNameFacts(spot);
+    const configuredGrade = names.configuredGrade;
+    const deepParty = tags.includes('catacomb') || tags.includes('deep_party') || names.deepParty;
     // These three progression zones have explicit solo entry kits. The normal
     // level-fit and target-power filters still decide which floor and mob are
     // appropriate; this gate only prevents under-equipped solo entry.
@@ -105,8 +131,7 @@ function isDangerousSoloGround(spot = {}, options = {}) {
     // Older persisted/current spot projections may predate canonical tags.
     // The names and area ids remain stable, so keep the hard safety gate
     // effective while those bots are being routed out after a restart.
-    const identity = identityFor(spot);
-    return /\b(catacomb|necropolis|cruma(?: tower)?|tower of insolence|antharas(?:'s|')? lair|lair of antharas)\b/i.test(identity);
+    return nameFacts(spot).dangerous;
 }
 
 function isParty(state = {}, options = {}) {

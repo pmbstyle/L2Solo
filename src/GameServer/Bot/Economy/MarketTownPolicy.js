@@ -3,6 +3,8 @@ const DataCache = invoke('GameServer/DataCache');
 const StaticBuyerService = invoke('GameServer/Bot/Economy/StaticBuyerService');
 const DynamicBuyerService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
+const SpotService = invoke('GameServer/Bot/AI/SpotService');
+const OfferOrder = require('./OfferOrder');
 
 const GLUDIO_D_GRADE_SHARE_PERCENT = 15;
 let rankIndexSource = null;
@@ -81,16 +83,17 @@ function targetTownForItems(state, items = []) {
     const hasHigherGrade = ranks.some((rank) => ['c', 'b', 'a', 's'].includes(rank));
     const hasDGrade = ranks.includes('d');
     const onlyNoGrade = ranks.length > 0 && ranks.every((rank) => rank === 'none');
-    // A listed bot now stands at the market, so use its saved departure point
-    // to preserve local no-grade routing during legacy-store migrations.
-    const saleOrigin = state?.stats?.marketReturn?.loc || state?.loc;
-    const localTown = nearestNoGradeMarket(saleOrigin)?.name || null;
-
     // No-grade stock belongs to the starter village nearest the bot's actual
     // farming location. Early hunting routes legitimately extend beyond a
     // village's immediate square, so a small-radius check funnels Elven,
     // Dark Elven, and Talking Island sellers into Giran incorrectly.
-    if (onlyNoGrade) return localTown || 'Giran';
+    // The farming location is the centre of the hunting spot: the bot's own
+    // position wanders across village areas while it hunts, and following it
+    // moved a listed shop between villages on nearly every review.
+    if (onlyNoGrade) {
+        const origin = OfferOrder.farmingOrigin(state, (spotId) => SpotService.findById(spotId));
+        return nearestNoGradeMarket(origin)?.name || 'Giran';
+    }
     if (!hasHigherGrade && hasDGrade) return dGradeMarketFor(state);
     return 'Giran';
 }

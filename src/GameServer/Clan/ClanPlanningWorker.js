@@ -1,5 +1,6 @@
 const { parentPort } = require('node:worker_threads');
 require('../../Global');
+const OfferOrder = require('../Bot/Economy/OfferOrder');
 
 // Only immutable catalogs and per-request snapshots enter this process.
 const catalogs = { items: [], npcs: [], npcRewards: [] };
@@ -29,9 +30,7 @@ const market = {
                 && (!['cold_store', 'afk_player_store', 'afk_bot_store'].includes(offer.sourceType)
                     || Number(offer.sourceId) !== Number(options.buyerCharacterId)))
             .map((offer) => offer.town ? offer : { ...offer, town: options.town || null })
-            .sort((a, b) => a.price - b.price
-                || Number(b.playerPriority === true || b.sellerKind === 'player') - Number(a.playerPriority === true || a.sellerKind === 'player')
-                || (a.sourceType === 'npc' ? 1 : -1))[0] || null;
+            .sort((a, b) => OfferOrder.compareOffers(a, b))[0] || null;
     }
 };
 const stubs = new Map([
@@ -40,7 +39,11 @@ const stubs = new Map([
     ['GameServer/Bot/Economy/CraftShopService', {
         CraftStations: [{}],
         availableRecipes: () => context.recipes || [],
-        stationRecipes: (_station, recipes) => recipes
+        stationRecipes: (_station, recipes) => recipes,
+        publishedStationRecipes: () => {
+            const recipes = context.recipes || [];
+            return { recipes, ids: new Set(recipes.map((recipe) => Number(recipe.recipeId))), stationByRecipeId: new Map() };
+        }
     }],
     ['GameServer/World/Generics/NpcShopBuyLists', { allEntries: () => context.shopEntries || [] }]
 ]);

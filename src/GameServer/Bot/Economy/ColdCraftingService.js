@@ -9,7 +9,6 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 
-const STATION_CRAFTER_LEVEL = 70;
 const NATIVE_TRAVEL_MS = 25000;
 
 function isStationService(state = {}) {
@@ -25,11 +24,7 @@ function stationForRecipe(recipeId, state = null) {
     };
     const combination = C4DualSwordCombinations.resolveByRecipeId(recipeId);
     if (combination) return combination.station;
-    const service = { level: STATION_CRAFTER_LEVEL, stats: { classId: 57 } };
-    const recipes = CraftShopService.availableRecipes(service);
-    return CraftShopService.CraftStations.find((station) => (
-        CraftShopService.stationRecipes(station, recipes).some((recipe) => Number(recipe.recipeId) === Number(recipeId))
-    )) || null;
+    return CraftShopService.publishedStationRecipes().stationByRecipeId.get(Number(recipeId)) || null;
 }
 
 function crafterAccount(station) {
@@ -297,7 +292,7 @@ async function craft(state, random = Math.random) {
         if (Number(membership?.clanId) !== clanId || (crafterState.partyId || crafterState.party?.partyId)
             || Number(crafterState.vitals?.hp) <= 0 || ['dead', 'respawning'].includes(crafterState.activity)
             || String(crafterState.simulation?.ownerId || crafterState.simulationOwner || 'legacy_main') !== 'legacy_main'
-            || CraftShopService.craftLevelFor(crafterState) < Number(recipe.level)) {
+            || !CraftShopService.canCraft(crafterState, recipe)) {
             return { state, crafted: false, reason: 'clan_crafter_unavailable' };
         }
         if (Math.hypot(Number(state.loc?.locX) - Number(crafterState.loc?.locX),
