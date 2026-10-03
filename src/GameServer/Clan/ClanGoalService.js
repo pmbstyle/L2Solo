@@ -300,7 +300,7 @@ async function resolveClanInternal(clan, options = {}) {
             planning: candidateSnapshot.planning,
             selectedCandidate: brain?.candidate || null
         });
-        if (equipment.skipped) {
+        if (equipment.skipped && !equipment.completed) {
             return {
                 ok: true,
                 clanId: clan.id,
@@ -320,6 +320,7 @@ async function resolveClanInternal(clan, options = {}) {
         let persisted = { ok: true, goal: previous };
         if (changed) {
             const eventType = !previous ? 'equipment_goal_created'
+                : equipment.completed ? 'equipment_goal_completed'
                 : equipment.previousFulfilled ? 'equipment_goal_advanced'
                     : 'equipment_goal_updated';
             persisted = await Database.updateAutonomousClanGoal({

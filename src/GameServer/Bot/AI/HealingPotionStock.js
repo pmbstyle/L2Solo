@@ -81,23 +81,71 @@ function actorAmount(actor, selfId) {
     return Math.max(0, Number(actor?.backpack?.fetchItemFromSelfId?.(selfId)?.fetchAmount?.() || 0));
 }
 
+let potionsStrongestFirst = null;
+const EMERGENCY_POTIONS = POTIONS.filter((potion) => !potion.hot);
+
+// How many of a potion the bot holds: from its inventory (keyed or rows) or its actor.
+function heldAmount(value, inventory, selfId) {
+    if (!inventory) return actorAmount(value, selfId);
+    return Array.isArray(inventory) ? amountInInventory(inventory, selfId)
+        : Math.max(0, Number(inventory[String(selfId)]?.amount || 0));
+}
+
+// The healing potions a bot keeps, by selfId: potions at least as strong as
+// the one it buys at its level (stronger ones from loot count too), strongest
+// first, up to its restock target; a weaker potion is junk, as for a player who
+// moved on to better potions. One definition for the sale (it keeps these) and
+// the restock (it buys only what is missing).
+function stockAmounts(value, options = {}) {
+    // Only the potions a bot drinks in an ordinary fight (Quick Healing is kept for near death).
+    potionsStrongestFirst ||= POTIONS.filter((potion) => potion.hot).sort((a, b) => b.heal - a.heal);
+    const inventory = options.inventory || value?.inventory;
+    const minimumHeal = Number(detailsFor(purchasePotionFor(value).selfId)?.heal || 0);
+    let left = Math.max(0, Number(options.targetAmount ?? targetAmountFor(value)) || 0);
+    const kept = {};
+    for (const potion of potionsStrongestFirst) {
+        if (potion.heal < minimumHeal) break;
+        if (left <= 0) break;
+        const amount = Math.min(left, heldAmount(value, inventory, potion.selfId));
+        if (amount > 0) kept[potion.selfId] = amount;
+        left -= amount;
+    }
+    return kept;
+}
+
+// What a bot keeps of its healing potions: the stock above, plus every potion
+// it drinks only when nearly dead (Quick Healing, selectPotion): the sale reserve.
+function keptAmounts(value, options = {}) {
+    const kept = stockAmounts(value, options);
+    const inventory = options.inventory || value?.inventory;
+    for (const potion of EMERGENCY_POTIONS) {
+        const held = heldAmount(value, inventory, potion.selfId);
+        if (held > 0) kept[potion.selfId] = held;
+    }
+    return kept;
+}
+
 function restockPlan(value, options = {}) {
     const potion = options.potion || purchasePotionFor(value);
     const targetAmount = Math.max(0, Number(options.targetAmount ?? targetAmountFor(value)) || 0);
+    // The purchased potion's own row (written by the purchase) and the whole stock (what is missing).
     const currentAmount = options.inventory
         ? amountInInventory(options.inventory, potion.selfId)
         : value?.inventory ? amountInInventory(value.inventory, potion.selfId) : actorAmount(value, potion.selfId);
+    const stockAmount = Object.values(stockAmounts(value, { inventory: options.inventory, targetAmount }))
+        .reduce((sum, amount) => sum + amount, 0);
     const adena = Math.max(0, Number(options.adena ?? value?.adena
         ?? value?.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() ?? 0));
     const unitPrice = Math.max(0, Number(options.unitPrice ?? potion.price) || 0);
     const reserve = Math.max(0, Number(options.reserve ?? operationalReserve(value)) || 0);
-    const desired = Math.max(0, targetAmount - currentAmount);
+    const desired = Math.max(0, targetAmount - stockAmount);
     const affordable = unitPrice > 0 ? Math.floor(Math.max(0, adena - reserve) / unitPrice) : 0;
     const amount = Math.min(desired, affordable);
     return {
         potion,
         targetAmount,
         currentAmount,
+        stockAmount,
         amount,
         unitPrice,
         cost: amount * unitPrice,
@@ -310,6 +358,8 @@ module.exports = {
     purchaseActorRestock,
     purchasePotionFor,
     restockPlan,
+    stockAmounts,
+    keptAmounts,
     selectPotion,
     targetAmountFor,
     tryUseInCombat,

@@ -11,14 +11,22 @@ const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const ServerResponse = invoke('GameServer/Network/Response');
 const SellJunk = invoke('GameServer/World/Generics/NpcBypasses/SellJunk');
 
-// A bot's "Sell Unequipped Junk" keeps what the cold disposition never dumps
-// at the NPC for crafters (a D-grade dwarven recipe, crystals) and the
-// healing potions its restock would buy back; it sells the surplus. A
-// player's junk sale is unchanged.
+// A bot's "Sell Unequipped Junk" sells what the cold town visit sells to the
+// NPC (one rule for hot and cold bots, MarketListingPolicy.npcSaleForActor):
+// it keeps what its class uses (a D-grade dwarven recipe for the market,
+// crystals, materials for the warehouse, an enchant scroll, its healing stock
+// up to the restock target) and sells the consumables no bot uses (arrows,
+// escape scrolls, keys, antidotes) and the potion surplus. A crafter learns a
+// recipe it can learn before the sale. A player's junk sale is unchanged.
 const D_RECIPE = 3032;
 const CRYSTAL_D = 1458;
 const ANIMAL_BONE = 1872;
 const HEALING_POTION = 1061;
+const WOODEN_ARROW = 17;
+const ESCAPE_SCROLL = 736;
+const THIEF_KEY = 1661;
+const ANTIDOTE = 1831;
+const ENCHANT_ARMOR_D = 956;
 assert(ItemDisposition.isMarketRecipeItem({ selfId: D_RECIPE }), 'the fixture must be a market recipe');
 // A no-grade material recipe: junk for a fighter, learnable for an Artisan.
 const ARTISAN = { classId: 56, level: 45 };
@@ -27,6 +35,7 @@ const MATERIAL_RECIPE = Number(DataCache.items.find((entry) => !ItemDisposition.
 assert(MATERIAL_RECIPE > 0, 'the fixture needs a material recipe an Artisan learns');
 
 function item(id, selfId, amount) {
+    const template = DataCache.items.find((entry) => Number(entry.selfId) === selfId);
     return {
         fetchId: () => id,
         fetchSelfId: () => selfId,
@@ -34,27 +43,37 @@ function item(id, selfId, amount) {
         setAmount: (value) => { amount = value; },
         fetchPrice: () => 100,
         fetchName: () => `Item ${selfId}`,
+        fetchKind: () => template?.template?.kind || '',
+        fetchStackable: () => true,
         fetchEquipped: () => false,
         fetchClass2: () => 0
     };
 }
 
 const actor = (backpack, crafter = { classId: 0, level: 30 }) => ({ fetchId: () => 77, fetchLevel: () => crafter.level,
-    fetchClassId: () => crafter.classId, backpack });
+    fetchClassId: () => crafter.classId, fetchName: () => 'HotBot', backpack });
 
 async function sellJunk(accountId, crafter, knownRecipeIds = []) {
     const adena = { ...item(1, 57, 0) };
+    const learned = [];
     const backpack = {
         items: [item(2, D_RECIPE, 1), item(3, CRYSTAL_D, 40), item(4, ANIMAL_BONE, 5),
-            item(5, HEALING_POTION, 30), item(6, MATERIAL_RECIPE, 1), adena],
+            item(5, HEALING_POTION, 30), item(6, MATERIAL_RECIPE, 1), item(7, WOODEN_ARROW, 500),
+            item(8, ESCAPE_SCROLL, 3), item(9, THIEF_KEY, 2), item(10, ANTIDOTE, 4), item(11, ENCHANT_ARMOR_D, 1), adena],
         stackableExists: () => Promise.resolve(adena),
-        hasRecipe: (_actor, recipeId) => knownRecipeIds.includes(Number(recipeId)),
+        hasRecipe: (_actor, recipeId) => knownRecipeIds.includes(Number(recipeId)) || learned.includes(Number(recipeId)),
+        fetchDwarvenCraftLevel: () => (crafter?.classId === ARTISAN.classId ? 4 : 0),
+        registerRecipe: (_actor, recipe) => learned.push(Number(recipe.recipeId)),
+        deleteItem(_session, objectId, amount, done) {
+            this.items = this.items.filter((entry) => entry.fetchId() !== objectId);
+            done();
+        },
         fetchItems() { return this.items; }
     };
     const session = { accountId, actor: actor(backpack, crafter), dataSendToMe() {} };
-    SellJunk(session, ['sell-junk']);
+    await SellJunk(session, ['sell-junk']);
     await new Promise((resolve) => setImmediate(resolve));
-    return { left: backpack.items.map((entry) => [entry.fetchSelfId(), entry.fetchAmount()]), actor: session.actor };
+    return { left: backpack.items.map((entry) => [entry.fetchSelfId(), entry.fetchAmount()]), actor: session.actor, learned };
 }
 
 const originals = {
@@ -71,18 +90,17 @@ async function run() {
     ServerResponse.itemsList = ServerResponse.userInfo = ServerResponse.speak = () => Buffer.alloc(0);
 
     const botSale = await sellJunk('bot_hot_hunter');
-    const keep = HealingPotionStock.targetAmountFor(botSale.actor);
-    assert.strictEqual(HealingPotionStock.purchasePotionFor(botSale.actor).selfId, HEALING_POTION);
+    const keep = HealingPotionStock.targetAmountFor({ level: 30, stats: { classId: 0 } });
     assert(keep > 0 && keep < 30, `the potion stock must be part of the stack: ${keep}`);
     assert.deepStrictEqual(botSale.left.filter(([selfId]) => selfId !== 57),
-        [[D_RECIPE, 1], [CRYSTAL_D, 40], [HEALING_POTION, keep]],
-        'a hot bot keeps its D-grade recipe, crystals and potion stock, and sells the rest');
+        [[D_RECIPE, 1], [CRYSTAL_D, 40], [ANIMAL_BONE, 5], [HEALING_POTION, keep], [ENCHANT_ARMOR_D, 1]],
+        'a hot bot keeps what its class uses and sells what no bot uses, as when cold');
 
     const crafterSale = await sellJunk('bot_hot_crafter', ARTISAN);
-    assert(crafterSale.left.some(([selfId]) => selfId === MATERIAL_RECIPE),
-        'a hot crafter keeps the material recipe it learns when cold');
-    const knownId = Number(ItemDisposition.recipeInfo({ selfId: MATERIAL_RECIPE }).recipe.recipeId);
-    const knowingSale = await sellJunk('bot_hot_crafter', ARTISAN, [knownId]);
+    const recipeId = Number(ItemDisposition.recipeInfo({ selfId: MATERIAL_RECIPE }).recipe.recipeId);
+    assert(crafterSale.learned.includes(recipeId), 'a hot crafter learns the material recipe before the sale');
+    assert(!crafterSale.left.some(([selfId]) => selfId === MATERIAL_RECIPE), 'the learned recipe is not sold');
+    const knowingSale = await sellJunk('bot_hot_crafter', ARTISAN, [recipeId]);
     assert(!knowingSale.left.some(([selfId]) => selfId === MATERIAL_RECIPE),
         'a spare copy of a recipe the crafter already knows is junk, as when cold');
 

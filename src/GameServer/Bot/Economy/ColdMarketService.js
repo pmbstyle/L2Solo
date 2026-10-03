@@ -84,20 +84,24 @@ function buyOffer(state, offer, options = {}) {
     const blocker = LifeState.marketPurchaseBlocker(state, offer, 1);
     if (blocker) return Promise.resolve({ purchased: false, blocked: true, reason: blocker });
     if (['afk_player_store', 'afk_bot_store'].includes(offer.sourceType)) {
-        return invoke('GameServer/AfkTrade/AfkTradeService').buyFromShop(
+        const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+        return AfkTrade.buyFromShop(
             state.characterId,
             offer.store,
             offer.selfId,
             1,
             { expectedPrice: offer.price, coldState: state }
         ).then((trade) => {
-            if (!trade.coldState) throw new Error('cold_state_sync_failed');
+            const done = AfkTrade.committedTrade(trade, state.characterId);
+            if (!done.committed) throw new Error('cold_state_sync_failed');
+            // A buyer that went hot keeps its row: the job goes on with its own state.
+            const buyer = done.state || state;
             MarketTelemetry.purchase(offer, 1, {
-                buyerCharacterId: trade.coldState.characterId,
-                buyerName: trade.coldState.name,
-                town: trade.coldState.currentRegion
+                buyerCharacterId: buyer.characterId,
+                buyerName: buyer.name,
+                town: buyer.currentRegion
             });
-            return { state: trade.coldState, purchased: true, offer, sellerState: null };
+            return { state: buyer, purchased: true, offer, sellerState: null };
         }).catch((error) => {
             utils.infoWarn('BotMarket', 'AFK market purchase failed for %s: %s', state.name, error.message);
             return { purchased: false, reason: 'offer_changed' };

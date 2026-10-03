@@ -108,9 +108,7 @@ async function consumeMerchant(session, list, { native = false } = {}) {
         session.dataSendToMe(ServerResponse.itemsList(session.actor.backpack.fetchItems()));
         const soldOut = !store.items.some((item) => Number(item.count || 0) > 0);
         if (soldOut) {
-            trade.merchant.setPrivateStoreType(0);
-            trade.merchant.setPrivateStore({ ...store, items: [] });
-            trade.merchant.session?.dataSendToOthers?.(ServerResponse.charInfo(trade.merchant), trade.merchant);
+            invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService').closeSoldOutStore(trade.merchant, store);
             session.activeMerchantTrade = null;
             session.dataSendToMe(ServerResponse.actionFailed());
             return;

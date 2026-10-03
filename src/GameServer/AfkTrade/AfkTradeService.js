@@ -439,6 +439,19 @@ async function syncColdCharacter(characterId, previousState, reason, rows = [], 
     }
 }
 
+// What a cold job continues with after a committed AFK trade. The trade is
+// done either way. When the bot went hot while the job awaited it, the actor
+// holds the result (syncOnlineInventory) and no cold state is synced: the job
+// counts the trade, keeps its own state and writes nothing more for the bot
+// (LifeState.save rejects a cold row over a hot one).
+function committedTrade(trade, characterId) {
+    // Hot first: a bot activated after the sync's own check gets a made-up
+    // pending state whose write is rejected; the job must stop all the same.
+    if (invoke('GameServer/Bot/Population/BotLifeState').hotRow(characterId)) return { committed: true, hot: true, state: null };
+    if (trade?.coldState) return { committed: true, hot: false, state: trade.coldState };
+    return { committed: false, hot: false, state: null };
+}
+
 async function finalizeTrade(result, kind, counterpartyId, previousState = null, options = {}) {
     syncOnlineInventory(result.shop.ownerId, result.ownerInventory);
     syncOnlineInventory(counterpartyId, result.counterpartyInventory);
@@ -843,6 +856,7 @@ module.exports = {
     activate,
     begin,
     buyFromShop,
+    committedTrade,
     deliverNotifications,
     findOwnerProjection,
     findProjection,
