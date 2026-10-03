@@ -3760,9 +3760,10 @@ const PopulationService = {
                         .then((marketResult) => ({ marketLifecycle, marketResult, goal: goalSnapshot?.current || null }))))
                 .then(({ marketLifecycle, marketResult, goal }) => {
                     const purchasedState = marketResult.state || marketLifecycle.state || updatedState;
-                    // The bot was activated while the purchase ran: its row is the actor's now
-                    // (ColdMarketService hands it back unchanged); nothing cold is written over it.
-                    if (purchasedState.phase === 'hot') return purchasedState;
+                    // The bot was activated while the market step ran (the activation fence waits
+                    // 500 ms at most): its row is the actor's now; nothing cold is written over it.
+                    const hotRow = LifeState.hotRow(purchasedState.characterId);
+                    if (hotRow) return hotRow;
                     if (marketResult.purchased) {
                         const batchState = {
                             ...purchasedState,
@@ -3817,7 +3818,8 @@ const PopulationService = {
                         .then(() => finalState);
                 })
                 .then((finalState) => {
-                    GlobalChat.maybeAnnounce(finalState, result.events);
+                    // A bot that went hot meanwhile speaks through its own AI.
+                    if (finalState.phase !== 'hot') GlobalChat.maybeAnnounce(finalState, result.events);
                     return {
                         ok: true,
                         state: finalState,
