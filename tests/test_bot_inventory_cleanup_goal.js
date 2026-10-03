@@ -116,7 +116,8 @@ assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: m
 'a party member sells from the field: no half-full trip');
 const unsellableBag = (slots) => Object.fromEntries(Array.from({ length: slots }, (_, index) => {
     const selfId = 990000 + index;
-    return [selfId, { selfId, name: `Potion ${selfId}`, kind: 'Other.Potion', stackable: true, amount: 1 }];
+    // Quest items: no sale rule takes them (potions are NPC junk for a bot since H12).
+    return [selfId, { selfId, name: `Quest item ${selfId}`, kind: 'Other.Quest', stackable: true, amount: 1 }];
 }));
 assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: unsellableBag(40) }, { now }), null,
 'a half-full bag with nothing to sell makes no trip');
@@ -245,6 +246,9 @@ assert.strictEqual(ItemDisposition.isWarehouseCandidate(scrollState.inventory[dE
     'valuable scrolls without demand must be removable from the backpack into the warehouse');
 assert.strictEqual(MarketListingPolicy.evaluate(scrollState).warehouse[0]?.selfId, dEnchantScroll.selfId,
     'scroll cleanup must choose warehouse retention when no buyer demand exists');
+// No bot spends these scrolls: the town escape and the party revival are casts
+// without an item (BotTownTravel.beginEscape, PartyRevivalService). They are NPC
+// junk for a bot (user, 2026-10-03: sold until bots use consumables, H13).
 for (const consumable of [escapeScroll, resurrectionScroll]) {
     const consumableItem = {
         selfId: consumable.selfId,
@@ -254,8 +258,8 @@ for (const consumable of [escapeScroll, resurrectionScroll]) {
         amount: 10
     };
     const consumableState = { ...state, inventory: { [consumable.selfId]: consumableItem } };
-    assert.strictEqual(ItemDisposition.saleCandidates(consumableState).length, 0,
-        `${consumable.template.name} must remain available to bot runtime instead of entering market cleanup`);
+    assert.deepStrictEqual(MarketListingPolicy.evaluate(consumableState, { states: [] }).npc.map((item) => item.selfId),
+        [consumable.selfId], `${consumable.template.name} is sold to the NPC: no bot spends it`);
     assert.strictEqual(ItemDisposition.isWarehouseCandidate(consumableItem), false,
         `${consumable.template.name} must not be parked in the warehouse`);
 }

@@ -344,6 +344,7 @@ const tests = [
     'tests/test_npc_shop_fallback_list.js',
     'tests/test_hot_afk_sale_reservations.js',
     'tests/test_hot_sell_junk_market_stock.js',
+    'tests/test_bot_spare_consumables.js',
     'tests/test_hot_purchase_buy_order.js',
     'tests/test_bot_giran_starter_recovery.js',
     'tests/test_bot_craft_shop.js',

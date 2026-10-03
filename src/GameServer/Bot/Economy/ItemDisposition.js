@@ -137,18 +137,52 @@ function isMarketRecipeItem(item) {
 
 const CRYSTALS = new Set(Object.values(CRYSTAL_IDS));
 
-// A bot's NPC junk sale keeps what the cold disposition never sells to the
-// NPC for a crafter: a D-grade or higher dwarven recipe is listed or held in
-// the bag for a crafter who can learn it, crystals are the shot crafters'
-// input (ColdShotEconomyService), and the bot keeps a recipe it will learn
-// itself (`state`: its class and level; `knowsRecipe`: what it has learned),
-// by the same rule as the cold disposition.
-function isKeptFromNpcJunk(item, state = null, knowsRecipe = () => false) {
+// Consumables a bot sells to the NPC beyond what its class keeps: arrows (a
+// bot's bow spends none, Actor/BowResources), scrolls other than enchant
+// scrolls (no bot code reads a scroll of escape or resurrection; a party
+// revival casts without an item), potions (the healing stock is reserved up to
+// its restock target in saleCandidates), keys, seal stones and the like.
+// Not spare: Adena, crystals (the shot crafters' input), clan items, any
+// recipe material (a crafter's input, e.g. Rope of Magic), and an item the NPC
+// pays nothing for (soul crystals, Ancient Adena): those are not bot junk.
+const CONSUMABLE_KINDS = new Set(['Other', 'Other.None', 'Other.Arrow', 'Other.Potion', 'Other.Scroll']);
+let recipeMaterialSource = null;
+let recipeMaterialIds = new Set();
+
+function recipeMaterials() {
+    const source = C4RecipeItems.loadRecipeItems();
+    if (recipeMaterialSource !== source) {
+        recipeMaterialSource = source;
+        recipeMaterialIds = new Set(Object.values(source || {})
+            .flatMap((recipe) => (recipe.materials || []).map((material) => Number(material.selfId))));
+    }
+    return recipeMaterialIds;
+}
+
+function isSpareConsumable(item, template = templateFor(item?.selfId)) {
     const selfId = Number(actorItemValue(item, 'selfId', 'fetchSelfId') || 0);
-    if (CRYSTALS.has(selfId) || isMarketRecipeItem({ selfId })) return true;
-    const recipeId = state ? recipeInfo({ selfId })?.recipe.recipeId : null;
-    return !!recipeId
-        && recipeDisposition(state, { selfId }, knowsRecipe(recipeId) ? [recipeId] : [])?.action === 'learn';
+    if (!selfId || selfId === 57 || CRYSTALS.has(selfId) || isEnchantScroll({ selfId })
+        || CLAN_PROGRESSION_ITEM_IDS.has(selfId) || recipeMaterials().has(selfId)) return false;
+    if (!CONSUMABLE_KINDS.has(kindFor(item, template))) return false;
+    return basePrice(item, template) > 0;
+}
+
+// The healing potions a bot keeps: its restock target (HealingPotionStock),
+// strongest first, as the cold fight drinks any of them.
+let healingPotionsStrongestFirst = null;
+
+function healingStockAmounts(state = {}) {
+    const Potions = invoke('GameServer/Bot/AI/HealingPotionStock');
+    healingPotionsStrongestFirst ||= [...Potions.POTIONS].sort((a, b) => b.heal - a.heal);
+    let left = Potions.targetAmountFor(state);
+    const kept = {};
+    for (const potion of healingPotionsStrongestFirst) {
+        if (left <= 0) break;
+        const amount = Math.min(left, Number(state?.inventory?.[String(potion.selfId)]?.amount || 0));
+        if (amount > 0) kept[potion.selfId] = amount;
+        left -= amount;
+    }
+    return kept;
 }
 
 function isNpcOnlyItem(item, template = templateFor(item?.selfId)) {
@@ -156,6 +190,7 @@ function isNpcOnlyItem(item, template = templateFor(item?.selfId)) {
     if (isMarketRecipeItem(item)) return false;
     const kind = kindFor(item, template);
     return NPC_ONLY_KINDS.some((prefix) => kind.startsWith(prefix))
+        || isSpareConsumable(item, template)
         || isRecipeItem(item, template)
         // Some later C4 skill books lost their canonical Other.Spellbook
         // kind in the source datapack. Orc skill books are named Amulet.
@@ -406,6 +441,9 @@ function saleCandidates(state, options = {}) {
         ? Number.MAX_SAFE_INTEGER
         : Math.max(1, Math.min(20, Number(options.limit) || 8));
     const reserved = { ...reservedEquipmentAmounts(state), ...(options.reserved || {}) };
+    for (const [selfId, amount] of Object.entries(healingStockAmounts(state))) {
+        reserved[selfId] = Math.max(Number(reserved[selfId] || 0), amount);
+    }
     const ownShot = invoke('GameServer/Inventory/ShotStock').planForRows(
         Object.values(state?.inventory || {}).map((item) => ({ ...item,
             equipped: item.equipped === true || Number(item.equippedCount || 0) > 0
@@ -507,8 +545,7 @@ function isWarehouseCandidate(item, template = templateFor(item?.selfId)) {
     // Many C4 enchant scrolls are intentionally non-stackable. Preserve
     // valuable surplus in the warehouse so it cannot permanently consume
     // backpack capacity while the peer market has no ready buyer. Other
-    // scrolls remain in inventory because bots consume them for travel and
-    // party resurrection.
+    // scrolls are no bot's consumables: the NPC buys them (isSpareConsumable).
     if (isEnchantScroll(item)) return true;
     return (kind.startsWith('Weapon.') || kind.startsWith('Armor.'))
         && basePrice(item, template) > WAREHOUSE_GEAR_MIN_BASE_PRICE;
@@ -572,7 +609,8 @@ module.exports = {
     reservedEquipmentAmounts,
     saleCandidates,
     saleSummary,
-    isKeptFromNpcJunk,
+    isSpareConsumable,
+    healingStockAmounts,
     unreservedActorItems,
     warehouseCandidates
 };
