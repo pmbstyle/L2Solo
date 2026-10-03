@@ -848,8 +848,9 @@ function npcCandidatesForSlot(state = {}, desiredSlot, maxRank, options = {}) {
 // What a bot may spend on NPC gear: its purchase budget (wallet plus its own
 // buy-order escrow) above the operating reserve.
 function npcPurchaseBudget(state = {}, options = {}) {
-    return { reserve: operationalAdenaReserve(state, options.buyOrderEscrow),
-        spendable: PurchaseFunding.spendable(state, options.buyOrderEscrow) };
+    const reserveOptions = { weaponBridge: !!options.weaponBridge };
+    return { reserve: operationalAdenaReserve(state, options.buyOrderEscrow, reserveOptions),
+        spendable: PurchaseFunding.spendable(state, options.buyOrderEscrow, reserveOptions) };
 }
 
 function staticNpcUpgradePlan(state = {}, options = {}) {
@@ -985,7 +986,8 @@ function npcWeaponBridgePlan(state = {}, options = {}) {
         .map((candidate) => ({ ...candidate, cost: Number(candidate.offer.price) }))
         .sort((left, right) => left.cost - right.cost
             || itemScore(right.item, role, classId) - itemScore(left.item, role, classId));
-    const { reserve, spendable } = npcPurchaseBudget(state, options);
+    // The bridge weapon keeps no level reserve (PurchaseFunding.operatingReserve).
+    const { reserve, spendable } = npcPurchaseBudget(state, { ...options, weaponBridge: true });
     const choice = chooseBridge(candidates, spendable, rankIndex(targetRank));
     if (!choice) return null;
     return { ...marketPlan(state, choice.item, choice.offer, { targetSlot: slot, reason: 'npc_progression', reserve }),

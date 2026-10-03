@@ -8,8 +8,11 @@ function budget(state = {}, escrow = 0) {
         + Math.max(0, Number(escrow || 0));
 }
 
-function operatingReserve(state = {}, escrow = 0) {
-    return Math.max(500, Number(state.level || 1) * 250, Math.ceil(budget(state, escrow) * 0.10));
+// The weapon a class cannot fight without (the planner's weapon bridge) keeps
+// only the minimum and the 10% share: the level term is a consumables cushion
+// for a bot that earns, and without a weapon it earns nothing (user, 2026-10-03).
+function operatingReserve(state = {}, escrow = 0, { weaponBridge = false } = {}) {
+    return Math.max(500, weaponBridge ? 0 : Number(state.level || 1) * 250, Math.ceil(budget(state, escrow) * 0.10));
 }
 
 // Adena still missing to buy at `price` while keeping `reserve`; 0 = funded.
@@ -23,8 +26,8 @@ function surplus(state = {}, price = 0, reserve = 0) {
 }
 
 // What the bot may spend on a purchase now.
-function spendable(state = {}, escrow = 0) {
-    return Math.max(0, budget(state, escrow) - operatingReserve(state, escrow));
+function spendable(state = {}, escrow = 0, options = {}) {
+    return Math.max(0, budget(state, escrow) - operatingReserve(state, escrow, options));
 }
 
 // The escrow a trip to a shop can spend. The trip withdraws the order only

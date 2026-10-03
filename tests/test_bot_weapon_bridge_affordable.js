@@ -66,4 +66,17 @@ assert(armourBridge?.weaponBridge && WEAPON_SLOTS.has(Number(armourBridge.target
     'a bot without a usable weapon buys a weapon before armour');
 assert(Number(armourBridge.market.price) <= spendable(armour), 'the weapon it buys first is affordable');
 
+// The bridge keeps no level reserve: the level term (250 per level) is a
+// consumables cushion for a bot that earns, and an unarmed bot earns nothing
+// (live test 2026-10-03: 104 bots at 30+ saving for a 1,766 weapon with ~1,000
+// adena and no income). With 2,300 adena the cheapest usable weapon is funded.
+const nearlyBroke = archer(2300);
+assert(Gear.operationalAdenaReserve(nearlyBroke) > nearlyBroke.adena, 'fixture: the ordinary reserve (7,500 at level 30) exceeds the wallet');
+const cheapBridge = Gear.npcWeaponBridgePlan(nearlyBroke);
+assert.strictEqual(cheapBridge?.weaponBridge, true);
+assert.strictEqual(Number(cheapBridge.market.reserve), 500, 'the bridge keeps the minimum reserve only');
+assert(Number(cheapBridge.market.price) + Number(cheapBridge.market.reserve) <= nearlyBroke.adena,
+    'a bot with a little more than the cheapest usable weapon costs buys it now');
+assert.strictEqual(Gear.combatReadiness(armed(nearlyBroke, cheapBridge.target.selfId)).hasWeapon, true);
+
 console.log('Affordable weapon bridge checks passed');
