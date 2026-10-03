@@ -45,6 +45,10 @@ function seedDatabase() {
         addBot(4601001 + index, classId, `FullClan${index + 1}`, 100 + index);
     }
     addBot(4601101, 15, 'GuestHealer', 200);
+    // Existing successful-upgrade fixture must fund the leader's player-rule SP cost.
+    const levelSp = invoke('GameServer/Clan/ClanRules').LEVEL_REQUIREMENTS[2].sp;
+    seed.prepare('UPDATE characters SET sp = ?').run(levelSp);
+    seed.prepare('UPDATE bot_life_state SET sp = ?').run(levelSp);
     seed.close();
 }
 

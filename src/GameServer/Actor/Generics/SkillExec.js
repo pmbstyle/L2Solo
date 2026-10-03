@@ -77,7 +77,8 @@ function skillExec(session, actor, data) {
             else if (skill.fetchTargetKind() === 'enemy' && canTargetEnemyNpc(npc, data)) {
                 actor.attack.remoteHit(session, npc, skill);
             }
-        });
+        }, { allowDeadTarget: SpoilSweep.isSweepSkill(data.selfId)
+            && String(session?.accountId || '').startsWith('bot_') });
     }).catch(() => {
         World.fetchUser(data.id).then((user) => {
             actor.automation.scheduleAction(session, actor, user, skill.fetchDistance(), () => {

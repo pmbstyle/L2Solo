@@ -590,7 +590,8 @@ try {
     assert.strictEqual(raidOpeners[0].target, raidBoss, 'the opener must attack the player-selected boss directly');
     assert.strictEqual(raidOpeners[0].options.playerPartyRaidLeaderSession, leaderSession,
         'the raid combat exception must remain scoped to this real-player party');
-    assert.deepStrictEqual(leaderSession.partyPullState || {}, {}, 'player raid designation must not create a bot pull');
+    assert.strictEqual(leaderSession.partyPullState?.type, 'raid', 'raid opening must use a distinct pull mode');
+    assert.strictEqual(leaderSession.partyPullState?.pullerId, raidTank.fetchId(), 'the raid pull belongs to its tank');
 
     const raidMinion = {
         minionBossObjectId: raidBoss.fetchId(),
@@ -618,8 +619,12 @@ try {
         'live combat with the matching boss must keep the player party raid in combat');
     assert.strictEqual(raidDpsSession.plan, 'following',
         'a matching engaged raid boss must not make the companion flee');
-    assert.strictEqual(raidOpeners[0]?.target, raidBoss,
-        'a matching engaged raid boss must flow through normal party assist');
+    assert.strictEqual(raidOpeners.length, 0,
+        'a non-tank player opening early must not release damage before the bot tank holds the boss');
+    raidBoss.destId = raidTank.fetchId();
+    FollowingState.tick(raidDpsSession, raidDps, {}, raidBotAI);
+    assert.strictEqual(raidOpeners[0]?.target, raidMinion,
+        'damage focuses the minion once the designated tank holds the boss');
 
     raidBoss.destId = undefined;
     raidOpeners.length = 0;
@@ -644,8 +649,14 @@ try {
         'a fresh player aggro must preserve the selected minion as the party target');
     assert.strictEqual(raidDpsSession.plan, 'following',
         'a companion must not flee when the player opens the raid through a minion');
-    assert.strictEqual(raidOpeners[0]?.target, raidMinion,
-        'a fresh player-led minion aggro must send the companion into that minion');
+    assert.strictEqual(raidOpeners.length, 0,
+        'fresh player-led minion aggro must still wait for boss ownership');
+    FollowingState.tick(raidTankSession, raidTank, {}, raidBotAI);
+    assert.strictEqual(raidOpeners[0]?.target, raidBoss, 'the main tank attacks the boss rather than the selected minion');
+    raidBoss.destId = raidTank.fetchId();
+    raidOpeners.length = 0;
+    FollowingState.tick(raidDpsSession, raidDps, {}, raidBotAI);
+    assert.strictEqual(raidOpeners[0]?.target, raidMinion, 'the damage slot finishes the last minion');
 
     const unrelatedRaidBoss = {
         ...staleRaidBoss,
@@ -1435,9 +1446,22 @@ try {
     FollowingState.tick(rechargeHealerSession, rechargeHealer, {
         skillExec(_session, _bot, data) { rechargeCasts.push(data); }
     }, { say() {}, executeCombat() {}, executePvPCombat() {} });
-    assert.deepStrictEqual(rechargeCasts, [{ id: lowManaArcher.fetchId(), selfId: 1013, ctrl: false }], 'Recharge should skip a lower-MP melee fighter and restore a ranged party member instead');
-    assert.strictEqual(BotRoles.needsPartyManaRecovery(lowManaSinger), false, 'Sword Singer is a melee buffer and must not recover MP as a caster');
-    assert.strictEqual(BotRoles.needsPartyManaRecovery(lowManaDancer), false, 'Bladedancer is a melee buffer and must not recover MP as a caster');
+    assert.deepStrictEqual(rechargeCasts, [{ id: lowManaSinger.fetchId(), selfId: 1013, ctrl: false }], 'Recharge should restore a low-MP Sword Singer before the archer');
+    assert.strictEqual(BotRoles.needsPartyManaRecovery(lowManaSinger), true, 'Sword Singer needs Recharge to maintain party songs');
+    assert.strictEqual(BotRoles.needsPartyManaRecovery(lowManaDancer), true, 'Bladedancer needs Recharge to maintain party dances');
+    for (const [recovered, expected] of [[lowManaSinger, lowManaDancer], [lowManaDancer, lowManaArcher]]) {
+        recovered.setMp(70);
+        rechargeCasts.length = 0;
+        manaLeaderSession.partyRecoveryCast = undefined;
+        rechargeHealerSession.currentTargetId = undefined;
+        rechargeHealer.unselect();
+        FollowingState.tick(rechargeHealerSession, rechargeHealer, {
+            skillExec(_session, _bot, data) { rechargeCasts.push(data); }
+        }, { say() {}, executeCombat() {}, executePvPCombat() {} });
+        assert.deepStrictEqual(rechargeCasts, [{ id: expected.fetchId(), selfId: 1013, ctrl: false }], 'Recharge moves on after the previous music provider recovers');
+    }
+    lowManaSinger.setMp(1);
+    lowManaDancer.setMp(1);
     assert.strictEqual(BotRoles.needsPartyManaRecovery(fakeActor(2000111, { classId: 17 })), true, 'Prophet remains a caster buffer and should recover MP');
     const lowManaPaladin = fakeActor(2000112, { classId: 5 });
     assert.strictEqual(BotRoles.shouldRestForMana(lowManaPaladin), false, 'a Paladin must stay standing with the melee line when MP is low');
@@ -2723,7 +2747,13 @@ try {
     const companionHtml = lastNpcHtml(partyHudLeaderSession);
     assert(companionHtml.includes('2 active'), 'party control panel should show active companion count');
     assert(!companionHtml.includes('Loot:'), 'party control panel should leave loot distribution to the native client setting');
-    assert(!companionHtml.includes('companion-control loot'), 'party control panel should not offer a separate loot-distribution bypass');
+    assert(companionHtml.includes('companion-control loot on') && companionHtml.includes('companion-control loot off'),
+        'party control should expose bot pickup independently of native loot distribution');
+    const panelDistribution = PartyCompanionService.distributionForLeader(partyHudLeaderSession);
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'loot', 'off']);
+    assert.strictEqual(PartyCompanionService.getSettings(partyHudLeaderSession).lootPickupEnabled, false);
+    assert.strictEqual(PartyCompanionService.distributionForLeader(partyHudLeaderSession), panelDistribution);
+    CompanionControl(partyHudLeaderSession, ['companion-control', 'loot', 'on']);
     assert(companionHtml.includes('<a action='), 'party control panel should use compact links for controls');
     assert(!companionHtml.includes('<button'), 'party control panel should avoid legacy buttons because they break this client layout');
     assert(!companionHtml.includes('['), 'active party control items should use color only, not bracket labels');

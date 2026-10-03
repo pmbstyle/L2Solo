@@ -1,9 +1,11 @@
+let ClanCraftingPolicy;
+
 // Membership is authoritative; an old solo plan must not survive joining a clan.
 function reconcileState(state, clanId = Number(state?.stats?.clanId || 0)) {
     const current = state.stats || {};
     const plan = current.equipmentPlan;
     const foreignGoal = Number(plan?.clanGoal?.clanId || 0) > 0 && Number(plan.clanGoal.clanId) !== clanId;
-    const personalCraft = require('./ClanCraftingPolicy').isPersonalCraft({ clanId }, plan);
+    const personalCraft = (ClanCraftingPolicy ||= require('./ClanCraftingPolicy')).isPersonalCraft({ clanId }, plan);
     const request = current.partyRequest;
     const invalidRequest = (Number(request?.clanId || 0) > 0 && Number(request.clanId) !== clanId)
         || (clanId > 0 && request?.strategy === 'craft' && !request.clanGoalKey);

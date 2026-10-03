@@ -89,12 +89,13 @@ try {
             playerPartyTakeover: { partyId, playerId: 9001, source: 'test' }
         }
     }));
+    assert(Companion.syncClientDistribution(leader, 0));
     const result = Companion.attachRoster(leader, roster, {
         expectedBackgroundPartyId: partyId,
-        lifeStates: states,
-        distribution: 1
+        lifeStates: states
     });
     assert(result.ok);
+    assert.strictEqual(Companion.distributionForLeader(leader), 0, 'whole-roster attachment inherits Finder Keepers');
     assert.strictEqual(result.count, 2);
     assert(roster.every((session) => session.partyCompanion === true
         && session.followPlayerSession === leader

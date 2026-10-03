@@ -68,6 +68,16 @@ const STACK_FAMILY_BY_SKILL_ID = Object.freeze({
     76: 'possession', 83: 'possession', 109: 'possession',
     282: 'possession', 292: 'possession', 298: 'possession',
     77: 'pAtk', 91: 'pDef',
+    72: 'MagicDefUp', 123: 'MagicDefUp', 1006: 'MagicDefUp', 1008: 'MagicDefUp',
+    1036: 'MagicDefUp', 1139: 'MagicDefUp', 4349: 'MagicDefUp', 4396: 'MagicDefUp', 4627: 'MagicDefUp',
+    1311: 'MaxHPUp', 4324: 'MaxHPUp', 4347: 'MaxHPUp', 4394: 'MaxHPUp',
+    1104: 'pAtkSpdDown', 1206: 'pAtkSpdDown', 4055: 'pAtkSpdDown', 4070: 'pAtkSpdDown',
+    1339: 'multiple_debuff', 1340: 'multiple_debuff', 1341: 'multiple_debuff',
+    1342: 'multiple_debuff', 1343: 'multiple_debuff',
+    1346: 'CoV', 1347: 'CoV', 1348: 'CoV', 1349: 'CoV',
+    86: 'DmgShield', 1232: 'DmgShield', 1238: 'DmgShield', 1284: 'DmgShield',
+    4163: 'DmgShield', 4176: 'DmgShield', 4214: 'DmgShield', 4378: 'DmgShield',
+    4028: 'pAtk', 4030: 'pAtk', 4029: 'pDef', 4031: 'pDef', 4211: 'pAtk', 4212: 'pDef',
     230: 'SpeedUp',
     1002: 'mAtkSpeedUp', 1003: 'pAtk', 1004: 'mAtkSpeedUp', 1005: 'pDef',
     1007: 'pAtk', 1009: 'pDef', 1010: 'pDef', 1040: 'pDef', 1059: 'mAtk',
@@ -91,6 +101,10 @@ const STACK_FAMILY_BY_SKILL_ID = Object.freeze({
 const STACK_ORDER_BY_SKILL_ID = Object.freeze({
     361: 2,
     362: 2,
+    1339: 1, 1340: 1, 1341: 1, 1342: 1, 1343: 1,
+    1346: 1, 1347: 1, 1348: 1, 1349: 1,
+    4055: 0.77, 4070: 0.77,
+    4176: 99, 4211: 99, 4212: 99, 4214: 99,
     1358: 10,
     1359: 99,
     1360: 10,
@@ -118,6 +132,26 @@ const CONTROL_STACK_FAMILY_BY_EFFECT = Object.freeze({
 });
 
 const RULES = {
+    // Lisvus effect time is one period; lifetime is count * time. NPC support
+    // skills also need their periodic payload/stat bonuses, not name inference.
+    4028: {skillType: EFFECT,trait: 'buff',effect: 'enhance_p_atk',effectType: 'buff',target: 'self',isMagic: false,ssBoost: 0,baseLandRate: 100,durationMs: 1200000,mpConsumeByLevel: [10,18,33],hitTime: 1800,reuseTime: 8000,stackFamily: 'pAtk',stackOrderByLevel: [1.08,1.12,1.15],statsByLevel: {pAtkMul: [1.08,1.12,1.15]}},
+    4029: {skillType: EFFECT,trait: 'buff',effect: 'enhance_p_def',effectType: 'buff',target: 'self',isMagic: false,ssBoost: 0,baseLandRate: 100,durationMs: 1200000,mpConsumeByLevel: [10,18,33],hitTime: 1800,reuseTime: 8000,stackFamily: 'pDef',stackOrderByLevel: [1.08,1.12,1.15],statsByLevel: {pDefMul: [1.08,1.12,1.15]}},
+    4030: {skillType: EFFECT,trait: 'buff',effect: 'enhance_p_atk',effectType: 'buff',target: 'self',isMagic: true,ssBoost: 0,baseLandRate: 100,durationMs: 1200000,mpConsumeByLevel: [10,18,33],hitTime: 2500,reuseTime: 8000,castRange: 400,effectRange: 900,stackFamily: 'pAtk',stackOrderByLevel: [1.08,1.12,1.15],statsByLevel: {pAtkMul: [1.08,1.12,1.15]}},
+    4031: {skillType: EFFECT,trait: 'buff',effect: 'enhance_p_def',effectType: 'buff',target: 'self',isMagic: true,ssBoost: 0,baseLandRate: 100,durationMs: 1200000,mpConsumeByLevel: [10,18,33],hitTime: 2500,reuseTime: 8000,castRange: 400,effectRange: 900,stackFamily: 'pDef',stackOrderByLevel: [1.08,1.12,1.15],statsByLevel: {pDefMul: [1.08,1.12,1.15]}},
+    4176: {skillType: EFFECT,trait: 'buff',effect: 'boss_reflect_damage',effectType: 'buff',target: 'self',isMagic: false,ssBoost: 0,baseLandRate: 100,durationMs: 60000,mpConsumeByLevel: [8,11,15,20,25,30,34,36,38,38,39,40],magicLevelByLevel: [14,24,34,44,54,64,74,79,84,89,94,99],levelDepend: 1,hitTime: 1500,castRange: 700,effectRange: 1200,stackFamily: 'DmgShield',stackOrder: 99,stats: {reflectDam: 20}},
+    4182: {skillType: EFFECT,trait: 'poison',effect: 'poison',effectType: 'debuff',target: 'enemy',isMagic: true,ssBoost: 0,durationMs: 30000,sourceTarget: 'aura',radius: 200,baseLandRateByLevel: [2,3,4,5,6,7,8,8,9,9,10,10],mpConsumeByLevel: [17,29,39,53,67,83,97,103,108,112,115,116],magicLevelByLevel: [14,24,34,44,54,64,74,79,84,89,94,99],levelDepend: 1,hitTime: 3300,dot: {count: 10,intervalMs: 3000,damageByLevel: [12,18,24,31,38,44,48,48,49,49,48,48]}},
+    4188: {skillType: EFFECT,trait: 'bleed',effect: 'bleed',effectType: 'debuff',target: 'enemy',isMagic: false,ssBoost: 0,durationMs: 20000,sourceTarget: 'aura',radius: 200,baseLandRateByLevel: [2,3,4,5,6,7,8,8,9,9,10,10],mpConsumeByLevel: [17,29,39,53,67,83,97,103,108,112,115,116],magicLevelByLevel: [14,24,34,44,54,64,74,79,84,89,94,99],levelDepend: 1,hitTime: 3300,dot: {count: 10,intervalMs: 2000,damageByLevel: [9,13,17,22,27,31,34,34,35,35,34,34]}},
+    4198: {skillType: EFFECT,trait: 'poison',effect: 'poison',effectType: 'debuff',target: 'enemy',isMagic: false,ssBoost: 0,durationMs: 30000,baseLandRateByLevel: [2,3,4,5,6,7,8,8,9,9,10,10],mpConsumeByLevel: [17,29,39,53,67,83,97,103,108,112,115,116],magicLevelByLevel: [14,24,34,44,54,64,74,79,84,89,94,99],levelDepend: 1,hitTime: 2500,castRange: 750,effectRange: 1250,dot: {count: 10,intervalMs: 3000,damageByLevel: [12,18,24,31,38,44,48,48,49,49,48,48]}},
+    4204: {skillType: EFFECT,trait: 'bleed',effect: 'bleed',effectType: 'debuff',target: 'enemy',isMagic: false,ssBoost: 0,durationMs: 20000,baseLandRateByLevel: [2,3,4,5,6,7,8,8,9,9,10,10],mpConsumeByLevel: [17,29,39,53,67,83,97,103,108,112,115,116],magicLevelByLevel: [14,24,34,44,54,64,74,79,84,89,94,99],levelDepend: 1,hitTime: 2500,castRange: 750,effectRange: 1250,dot: {count: 10,intervalMs: 2000,damageByLevel: [9,13,17,22,27,31,34,34,35,35,34,34]}},
+    4210: {skillType: HOT,trait: 'heal',effect: 'life_chant',effectType: 'buff',target: 'self',isMagic: false,ssBoost: 0,baseLandRate: 100,durationMs: 15000,sourceTarget: 'clan',mpConsumeByLevel: [43,49,99,134,173,207,139,250,258,262,262,263],magicLevelByLevel: [14,24,34,44,54,64,74,79,84,89,94,99],levelDepend: 1,hitTime: 2000,stackFamily: 'life_force_others',stackOrderByLevel: [11,12,13,14,15,16,17,17,18,18,19,19],hot: {count: 15,intervalMs: 1000,healByLevel: [127,217,345,508,697,860,942,965,974,968,951,940]}},
+    4211: {skillType: EFFECT,trait: 'buff',effect: 'boss_might',effectType: 'buff',target: 'self',isMagic: false,ssBoost: 0,baseLandRate: 100,durationMs: 60000,sourceTarget: 'clan',mpConsumeByLevel: [6,10,13,18,23,28,33,35,36,38,39,39],magicLevelByLevel: [14,24,34,44,54,64,74,79,84,89,94,99],levelDepend: 1,hitTime: 1500,stackFamily: 'pAtk',stackOrder: 99,stats: {pAtkMul: 1.5}},
+    4212: {skillType: EFFECT,trait: 'buff',effect: 'boss_shield',effectType: 'buff',target: 'self',isMagic: false,ssBoost: 0,baseLandRate: 100,durationMs: 60000,sourceTarget: 'clan',mpConsumeByLevel: [6,10,13,18,23,28,33,35,36,38,39,39],magicLevelByLevel: [14,24,34,44,54,64,74,79,84,89,94,99],levelDepend: 1,hitTime: 1500,stackFamily: 'pDef',stackOrder: 99,stats: {pDefMul: 1.5}},
+    4213: {skillType: EFFECT,trait: 'buff',effect: 'boss_haste',effectType: 'buff',target: 'self',isMagic: false,ssBoost: 0,baseLandRate: 100,durationMs: 60000,sourceTarget: 'clan',mpConsumeByLevel: [6,10,13,18,23,28,33,35,36,38,39,39],magicLevelByLevel: [14,24,34,44,54,64,74,79,84,89,94,99],levelDepend: 1,hitTime: 1500,stackFamily: 'pAtkSpeedUp',stackOrder: 99,stats: {pAtkSpdMul: 1.5}},
+    4214: {skillType: EFFECT,trait: 'buff',effect: 'boss_reflect_damage',effectType: 'buff',target: 'self',isMagic: false,ssBoost: 0,baseLandRate: 100,durationMs: 60000,sourceTarget: 'clan',mpConsumeByLevel: [6,10,13,18,23,28,33,35,36,38,39,39],magicLevelByLevel: [14,24,34,44,54,64,74,79,84,89,94,99],levelDepend: 1,hitTime: 1500,stackFamily: 'DmgShield',stackOrder: 99,stats: {reflectDam: 20}},
+    4784: {skillType: HOT,trait: 'heal',effect: 'boss_chant_of_life',effectType: 'buff',target: 'self',isMagic: true,ssBoost: 0,baseLandRate: 100,durationMs: 15000,sourceTarget: 'clan',mpConsumeByLevel: [43,69,99,134,173,207,239,250,258,262,262,263],magicLevelByLevel: [14,24,34,44,54,64,75,79,84,89,94,99],hitTime: 2000,stackFamily: 'life_force_others',stackOrderByLevel: [11,12,13,14,15,16,17,17,18,18,19,19],hot: {count: 15,intervalMs: 1000,healByLevel: [118,202,322,473,667,833,919,958,974,968,951,940]}},
+    4785: {skillType: HOT,trait: 'heal',effect: 'boss_chant_of_life',effectType: 'buff',target: 'self',isMagic: true,ssBoost: 0,baseLandRate: 100,durationMs: 15000,sourceTarget: 'clan',mpConsumeByLevel: [43,69,99,134,173,207,239,250,258,262,262,263],magicLevelByLevel: [14,24,34,44,54,64,75,79,84,89,94,99],hitTime: 2000,stackFamily: 'life_force_others',stackOrderByLevel: [11,12,13,14,15,16,17,17,18,18,19,19],hot: {count: 15,intervalMs: 1000,healByLevel: [99,171,272,400,563,703,776,809,826,833,832,827]}},
+    4786: {skillType: HOT,trait: 'heal',effect: 'boss_chant_of_life',effectType: 'buff',target: 'self',isMagic: true,ssBoost: 0,baseLandRate: 100,durationMs: 15000,sourceTarget: 'clan',mpConsumeByLevel: [43,69,99,134,173,207,239,250,258,262,262,263],magicLevelByLevel: [14,24,34,44,54,64,75,79,84,89,94,99],hitTime: 2000,stackFamily: 'life_force_others',stackOrderByLevel: [11,12,13,14,15,16,17,17,18,18,19,19],hot: {count: 15,intervalMs: 1000,healByLevel: [53,91,145,214,301,375,414,431,439,444,443,440]}},
+    4788: {skillType: HOT,trait: 'heal',effect: 'boss_chant_of_life',effectType: 'buff',target: 'self',isMagic: true,ssBoost: 0,baseLandRate: 100,durationMs: 15000,sourceTarget: 'clan',mpConsumeByLevel: [43,69,99,134,173,207,239,250,258,262,262,263],magicLevelByLevel: [14,24,34,44,54,64,75,79,84,89,94,99],hitTime: 2000,stackFamily: 'life_force_others',stackOrderByLevel: [11,12,13,14,15,16,17,17,18,18,19,19],hot: {count: 15,intervalMs: 1000,healByLevel: [47,80,127,187,263,329,363,379,387,390,389,388]}},
     // Offensive NPC skills previously misclassified as self buffs by name inference.
     // Source: L2J Lisvus datapack/data/stats/skills, matched by skill ID.
     4034: {skillType: DAMAGE_EFFECT, target: 'enemy', trait: 'water', isMagic: true, ssBoost: 1, effect: 'slow', effectType: 'debuff', effectTrait: 'slow', baseLandRate: 60, durationMs: 120000, powerByLevel: [11, 16, 23, 31, 41, 51, 61, 66, 70, 73, 76, 78], mpConsumeByLevel: [13, 20, 27, 35, 45, 55, 65, 69, 73, 75, 77, 78], magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], levelDepend: 1, hitTime: 3100, reuseTime: 8000, castRange: 600, effectRange: 1100, stats: {runSpdMul: 0.7}, stackFamily: 'RunSpeedDown', stackOrder: 0.7},
@@ -450,12 +484,12 @@ const RULES = {
     354: { skillType: DAMAGE_EFFECT, trait: 'slow', effect: 'hamstring_shot', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 80, magicLevel: 77, requires: { weaponsAllowed: 32 }, castRange: 900, effectRange: 1400, stats: { runSpdMul: 0.5 } },
     1336: { skillType: EFFECT, trait: 'mute', effect: 'curse_of_doom', effectType: 'debuff', target: 'enemy', baseLandRate: 80, magicLevel: 77, castRange: 600, effectRange: 1100, stats: { magicMute: true, physicalMute: true } },
     1337: { skillType: EFFECT, trait: 'debuff', effect: 'curse_of_abyss', effectType: 'debuff', target: 'enemy', baseLandRate: 80, magicLevel: 78, castRange: 600, effectRange: 1100, stats: { runSpdMul: 0.9, pEvasionRateAdd: -6, pDefMul: 0.7, mAtkMul: 0.7, castSpdMul: 0.8, mCritRateMul: 0.7 } },
-    1338: { skillType: EFFECT, trait: 'debuff', effect: 'arcane_chaos', effectType: 'debuff', target: 'enemy', baseLandRate: 40, magicLevel: 78, castRange: 600, effectRange: 1100, manaDot: { count: 6, intervalMs: 5000, damage: 24 }, stats: { cancelVuln: 1.3, magicalMpConsumeMul: 1.3, physicalMpConsumeMul: 1.1, debuffVuln: 1.3 } },
-    1339: { skillType: DAMAGE_EFFECT, trait: 'fire', effect: 'fire_vortex', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 80, magicLevel: 77, castRange: 900, effectRange: 1400, manaDot: { count: 5, intervalMs: 2000, damage: 40 }, stats: { runSpdMul: 0.9, pAtkSpdMul: 0.7, castSpdMul: 0.9, fireVuln: 1.2 } },
-    1340: { skillType: DAMAGE_EFFECT, trait: 'water', effect: 'ice_vortex', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 80, magicLevel: 77, castRange: 900, effectRange: 1400, manaDot: { count: 5, intervalMs: 2000, damage: 40 }, stats: { runSpdMul: 0.7, pAtkSpdMul: 0.9, castSpdMul: 0.9, waterVuln: 1.2 } },
-    1341: { skillType: DAMAGE_EFFECT, trait: 'wind', effect: 'wind_vortex', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 80, magicLevel: 77, castRange: 900, effectRange: 1400, manaDot: { count: 5, intervalMs: 2000, damage: 40 }, stats: { runSpdMul: 0.9, pAtkSpdMul: 0.9, castSpdMul: 0.7, windVuln: 1.2 } },
-    1342: { skillType: DAMAGE_EFFECT, trait: 'holy', effect: 'light_vortex', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 80, magicLevel: 76, castRange: 900, effectRange: 1400, manaDot: { count: 5, intervalMs: 2000, damage: 40 }, stats: { pAccuracyCombatAdd: -6, holyVuln: 1.3 } },
-    1343: { skillType: DRAIN, trait: 'dark', effect: 'dark_vortex', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 80, magicLevel: 76, castRange: 900, effectRange: 1400, absorbPart: 0.7, manaDot: { count: 5, intervalMs: 2000, damage: 40 }, stats: { darkVuln: 1.3 } },
+    1338: { skillType: EFFECT, trait: 'debuff', effect: 'arcane_chaos', effectType: 'debuff', target: 'enemy', durationMs: 30000, baseLandRate: 40, magicLevel: 78, castRange: 600, effectRange: 1100, manaDot: { count: 6, intervalMs: 5000, damage: 24 }, stats: { cancelVuln: 1.3, magicalMpConsumeMul: 1.3, physicalMpConsumeMul: 1.1, debuffVuln: 1.3 } },
+    1339: { skillType: DAMAGE_EFFECT, trait: 'fire', effect: 'fire_vortex', effectType: 'debuff', target: 'enemy', durationMs: 10000, ssBoost: 1, baseLandRate: 80, magicLevel: 77, castRange: 900, effectRange: 1400, manaDot: { count: 5, intervalMs: 2000, damage: 40 }, stats: { runSpdMul: 0.9, pAtkSpdMul: 0.7, castSpdMul: 0.9, fireVuln: 1.2 } },
+    1340: { skillType: DAMAGE_EFFECT, trait: 'water', effect: 'ice_vortex', effectType: 'debuff', target: 'enemy', durationMs: 10000, ssBoost: 1, baseLandRate: 80, magicLevel: 77, castRange: 900, effectRange: 1400, manaDot: { count: 5, intervalMs: 2000, damage: 40 }, stats: { runSpdMul: 0.7, pAtkSpdMul: 0.9, castSpdMul: 0.9, waterVuln: 1.2 } },
+    1341: { skillType: DAMAGE_EFFECT, trait: 'wind', effect: 'wind_vortex', effectType: 'debuff', target: 'enemy', durationMs: 10000, ssBoost: 1, baseLandRate: 80, magicLevel: 77, castRange: 900, effectRange: 1400, manaDot: { count: 5, intervalMs: 2000, damage: 40 }, stats: { runSpdMul: 0.9, pAtkSpdMul: 0.9, castSpdMul: 0.7, windVuln: 1.2 } },
+    1342: { skillType: DAMAGE_EFFECT, trait: 'holy', effect: 'light_vortex', effectType: 'debuff', target: 'enemy', durationMs: 10000, ssBoost: 1, baseLandRate: 80, magicLevel: 76, castRange: 900, effectRange: 1400, manaDot: { count: 5, intervalMs: 2000, damage: 40 }, stats: { pAccuracyCombatAdd: -6, holyVuln: 1.3 } },
+    1343: { skillType: DRAIN, trait: 'dark', effect: 'dark_vortex', effectType: 'debuff', target: 'enemy', durationMs: 10000, ssBoost: 1, baseLandRate: 80, magicLevel: 76, castRange: 900, effectRange: 1400, absorbPart: 0.7, manaDot: { count: 5, intervalMs: 2000, damage: 40 }, stats: { darkVuln: 1.3 } },
     1335: { skillType: BALANCE_LIFE, trait: 'heal', target: 'party', radius: 1000, ssBoost: 0 },
     1344: { skillType: BANE, trait: 'warrior_bane', target: 'enemy', sourceTarget: 'aura', radius: 300, baseLandRate: 40, magicLevel: 77, baneStackFamilies: ['SpeedUp', 'pAtkSpeedUp'] },
     1345: { skillType: BANE, trait: 'mage_bane', target: 'enemy', sourceTarget: 'aura', radius: 300, baseLandRate: 40, magicLevel: 78, baneStackFamilies: ['mAtk', 'mAtkSpeedUp'] },
@@ -481,7 +515,7 @@ const RULES = {
     1365: { skillType: EFFECT, trait: 'buff', effect: 'soul_of_paagrio', effectType: 'buff', target: 'ally', radius: 400, baseLandRate: 100, stats: { mAtkMul: 1.75 } },
     323: { skillType: CREATE_ITEM, trait: 'craft', target: 'self', ssBoost: 0, itemConsumeId: 1461, itemConsumeCount: 1, createItemId: 1344, createItemCount: 450 },
     324: { skillType: CREATE_ITEM, trait: 'craft', target: 'self', ssBoost: 0, itemConsumeId: 1462, itemConsumeCount: 1, createItemId: 1345, createItemCount: 650 },
-    321: { skillType: BLOW, trait: 'dagger', target: 'enemy', isMagic: false, ssBoost: 1, blowChance: 50, requires: { weaponsAllowed: 16, condition: 16 }, selfEffect: { effect: 'blinding_blow_speed', effectType: 'buff', trait: 'buff', stats: { runSpdAdd: 40 } } },
+    321: { skillType: BLOW, trait: 'dagger', target: 'enemy', isMagic: false, ssBoost: 1, blowChance: 50, requires: { weaponsAllowed: 16, condition: 16 }, selfEffect: { durationMs: 15000, stackFamily: 'speed_up_special', stackOrder: 1, effect: 'blinding_blow_speed', effectType: 'buff', trait: 'buff', stats: { runSpdAdd: 40 } } },
     320: { skillType: COMBAT_POINT_DAMAGE, trait: 'physical', target: 'enemy', sourceTarget: 'area', radius: 80, ssBoost: 0, requires: { weaponsAllowed: 64 }, cpDamagePercentByLevel: [7, 10, 12, 15, 17, 20, 22, 25, 27, 30] },
     319: { skillType: PASSIVE, trait: 'passive', target: 'self', maxLevel: 2, requires: { armorKind: 'Armor.Light' }, statsByLevel: { runSpdAdd: [5, 10], pAccuracyCombatAdd: [2, 3] } },
     1010: { skillType: EFFECT, trait: 'buff', effect: 'soul_shield', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { pDefMul: [1.08, 1.12, 1.15] } },
@@ -567,7 +601,7 @@ const RULES = {
     1100: { skillType: EFFECT, trait: 'fire', effect: 'chill_flame', effectType: 'debuff', target: 'enemy', baseLandRate: 70, dot: { count: 15, intervalMs: 1000, damageByLevel: [20, 30] } },
     1101: { skillType: EFFECT, trait: 'fire', effect: 'blaze_quake', effectType: 'debuff', target: 'enemy', sourceTarget: 'aura', radius: 200, baseLandRate: 35, magicLevelByLevel: [25, 35], dot: { count: 15, intervalMs: 1000, damageByLevel: [44, 60] } },
     1102: { skillType: EFFECT, trait: 'mana', effect: 'aura_sink', effectType: 'debuff', target: 'enemy', baseLandRateByLevel: [16, 22, 29, 36, 46, 51], manaDot: { count: 10, intervalMs: 3000, damageByLevel: [4, 5, 7, 8, 10, 11] } },
-    1104: { skillType: EFFECT, trait: 'debuff', effect: 'seal_of_winter', effectType: 'debuff', target: 'enemy', sourceTarget: 'aura', radius: 200, baseLandRate: 40, magicLevelByLevel: [40, 44, 48, 52, 56, 58, 60, 62, 64, 66, 68, 70, 72, 74], stats: { pAtkSpdMul: 0.77 } },
+    1104: { skillType: EFFECT, trait: 'debuff', effect: 'seal_of_winter', effectType: 'debuff', target: 'enemy', sourceTarget: 'aura', radius: 200, baseLandRate: 40, magicLevelByLevel: [40, 44, 48, 52, 56, 58, 60, 62, 64, 66, 68, 70, 72, 74], stackOrder: 0.77, stats: { pAtkSpdMul: 0.77 } },
     1105: { skillType: EFFECT, trait: 'confusion', effect: 'confusion', effectType: 'debuff', target: 'enemy', mobOnly: true },
     1107: { skillType: EFFECT, trait: 'fire', effect: 'frost_flame', effectType: 'debuff', target: 'enemy', baseLandRate: 70, dot: { count: 15, intervalMs: 1000, damageByLevel: [44, 60] } },
     1108: { skillType: EFFECT, trait: 'fire', effect: 'seal_of_flame', effectType: 'debuff', target: 'enemy', sourceTarget: 'aura', radius: 200, baseLandRate: 35, magicLevelByLevel: [48, 56, 68, 74], dot: { count: 15, intervalMs: 1000, damageByLevel: [77, 94, 108, 118] } },
@@ -615,7 +649,7 @@ const RULES = {
     1191: { skillType: EFFECT, trait: 'buff', effect: 'resist_fire', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { fireVuln: [0.85, 0.77, 0.7] } },
     1201: { skillType: EFFECT, trait: 'root', effect: 'root', effectType: 'debuff', target: 'enemy', maxLevel: 33, baseLandRate: 80 },
     1204: { skillType: EFFECT, trait: 'buff', effect: 'windWalk', effectType: 'buff', target: 'friendly', baseLandRate: 100, statsByLevel: { runSpdAdd: [20, 33] } },
-    1206: { skillType: EFFECT, trait: 'debuff', effect: 'wind_shackle', effectType: 'debuff', target: 'enemy', maxLevel: 19, baseLandRate: 80, statsByLevel: { pAtkSpdMul: [0.83, 0.80, 0.80, 0.80, 0.80, 0.77] } },
+    1206: { skillType: EFFECT, trait: 'debuff', effect: 'wind_shackle', effectType: 'debuff', target: 'enemy', durationMs: 15000, maxLevel: 19, baseLandRate: 80, stackOrderByLevel: [0.83, 0.8, 0.8, 0.8, 0.8, 0.77], statsByLevel: { pAtkSpdMul: [0.83, 0.80, 0.80, 0.80, 0.80, 0.77] } },
     1208: { skillType: EFFECT, trait: 'root', effect: 'root', effectType: 'debuff', target: 'enemy', sourceTarget: 'aura', radius: 200, baseLandRate: 40, magicLevelByLevel: [25, 30, 35, 40, 44, 48, 52, 56, 58, 60, 62, 64, 66, 68, 70, 72, 74] },
     1209: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', target: 'enemy', sourceTarget: 'aura', radius: 200, baseLandRateByLevel: [3, 4, 5, 6, 7, 8], magicLevelByLevel: [20, 30, 40, 52, 62, 70], dot: { count: 10, intervalMs: 3000, damageByLevel: [18, 24, 31, 38, 44, 48] } },
     1210: { skillType: EFFECT, trait: 'debuff', effect: 'seal_of_gloom', effectType: 'debuff', target: 'enemy', sourceTarget: 'aura', radius: 200, baseLandRateByLevel: [29, 36, 46, 53], magicLevelByLevel: [44, 52, 64, 72], manaDot: { count: 15, intervalMs: 1000, damageByLevel: [7, 8, 10, 12] } },
@@ -844,8 +878,8 @@ const RULES = {
     2232: { skillType: EFFECT, trait: 'buff', effect: 'slay_valakas', effectType: 'buff', target: 'self', ssBoost: 0, hitTime: 1000, staticHitTime: true, baseLandRate: 100, stats: { valakasPhysDmg: 1.11 } },
     2233: { skillType: CLEANSE, trait: 'valakas_flames', target: 'self', ssBoost: 0, hitTime: 1000, staticHitTime: true, magicLevel: 75, cleanse: [{ skillId: 4683 }, { skillId: 4684 }], negateId: [4683, 4684] },
     3005: { skillType: EFFECT, trait: 'bleed', effect: 'bleed', effectType: 'debuff', target: 'enemy', ssBoost: 0, baseLandRate: 5, levelDepend: 1, dot: { count: 7, intervalMs: 3000, damage: 66 } },
-    4035: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', target: 'enemy', ssBoost: 0, baseLandRateByLevel: [2, 3, 4, 5, 6, 7, 8, 8, 9, 9, 10, 10], levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 600, effectRange: 1100, dot: { count: 10, intervalMs: 3000, damageByLevel: [12, 18, 24, 31, 38, 44, 48, 48, 50, 50, 51, 51] } },
-    4036: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', target: 'enemy', sourceTarget: 'area', radius: 200, ssBoost: 0, baseLandRateByLevel: [2, 3, 4, 5, 6, 7, 8, 8, 9, 9, 10, 10], levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 500, effectRange: 1000, dot: { count: 10, intervalMs: 3000, damageByLevel: [12, 18, 24, 31, 38, 44, 48, 48, 50, 50, 51, 51] } },
+    4035: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', target: 'enemy', durationMs: 30000, ssBoost: 0, baseLandRateByLevel: [2, 3, 4, 5, 6, 7, 8, 8, 9, 9, 10, 10], levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 600, effectRange: 1100, dot: { count: 10, intervalMs: 3000, damageByLevel: [12, 18, 24, 31, 38, 44, 48, 48, 50, 50, 51, 51] } },
+    4036: { skillType: EFFECT, trait: 'poison', effect: 'poison', effectType: 'debuff', target: 'enemy', durationMs: 30000, sourceTarget: 'area', radius: 200, ssBoost: 0, baseLandRateByLevel: [2, 3, 4, 5, 6, 7, 8, 8, 9, 9, 10, 10], levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 500, effectRange: 1000, dot: { count: 10, intervalMs: 3000, damageByLevel: [12, 18, 24, 31, 38, 44, 48, 48, 50, 50, 51, 51] } },
     4045: { skillType: PASSIVE, trait: 'passive', target: 'self', stats: { rootVuln: 0.1, sleepVuln: 0.1, stunVuln: 0.1, confusionVuln: 0, paralyzeVuln: 0.1, derangementVuln: 0 } },
     4047: { skillType: EFFECT, trait: 'root', effect: 'root', effectType: 'debuff', target: 'enemy', isMagic: true, ssBoost: 0, baseLandRate: 80, levelDepend: 2, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], maxLevel: 12, power: 80, mpConsumeByLevel: [13, 20, 27, 35, 45, 55, 65, 69, 73, 75, 77, 78], hitTime: 2500, reuseTime: 8000, durationMs: 30000, castRange: 600, effectRange: 1100 },
     4049: { skillType: DRAIN, trait: 'dark', target: 'enemy', ssBoost: 0, absorbPart: 0.2, levelDepend: 1, magicLevelByLevel: [40, 46, 52, 58, 62, 66, 70, 74] },
@@ -1092,7 +1126,7 @@ const RULES = {
     } },
     1262: { skillType: EFFECT, trait: 'buff', effect: 'transfer_pain', effectType: 'buff', target: 'self', baseLandRate: 100, operateType: 'toggle', mpInitialConsumeByLevel: [7, 9, 11, 12, 13], toggleMpPerLevel: true, toggleMpConsume: 0.2, toggleIntervalMs: 3000, statsByLevel: { transDam: [10, 20, 30, 40, 50] } },
     1283: { skillType: EFFECT, trait: 'buff', effect: 'soul_guard', effectType: 'buff', target: 'self', baseLandRate: 100, operateType: 'toggle', mpInitialConsumeByLevel: [8, 9, 10, 11, 11, 11, 12, 12, 13, 13, 13, 14, 14], toggleMpConsumeByLevel: [5, 6, 6, 7, 8, 8, 8, 8, 9, 9, 9, 10, 10], toggleIntervalMs: 1000, statsByLevel: { pDefAdd: [293.3, 333.2, 375.9, 421.4, 445.5, 469.7, 494.9, 520.1, 546, 571.9, 598.5, 625.8, 653.1] } },
-    1263: { skillType: DAMAGE_EFFECT, trait: 'unholy', effect: 'curse_gloom', effectType: 'debuff', target: 'enemy', baseLandRate: 80, stats: { mDefMul: 0.85 } },
+    1263: { skillType: EFFECT, trait: 'debuff', effect: 'curse_gloom', effectType: 'debuff', target: 'enemy', baseLandRate: 80, levelDepend: 2, magicLevelByLevel: [44, 48, 52, 56, 58, 60, 62, 64, 66, 68, 70, 72, 74], durationMs: 120000, castRange: 900, effectRange: 1400, stats: { mDefMul: 0.77 } },
     1272: { skillType: EFFECT, trait: 'fear', effect: 'fear', effectType: 'debuff', target: 'enemy', sourceTarget: 'aura', radius: 200, baseLandRate: 80, levelDepend: 1, magicLevelByLevel: [44, 48, 52, 56, 58, 60, 62, 64, 66, 68, 70, 72, 74] },
     1264: { skillType: DAMAGE, trait: 'holy', target: 'enemy', ssBoost: 1, overHit: true, baseLandRate: 92, magicLevelByLevel: [25, 30, 35], castRange: 750, effectRange: 1250 },
     1265: { skillType: DAMAGE, trait: 'holy', target: 'enemy', ssBoost: 1, overHit: true, baseLandRate: 92, magicLevelByLevel: [40, 44, 48, 52, 56, 58, 60, 62, 64, 66, 68, 70, 72, 74], castRange: 900, effectRange: 1400 },
@@ -1125,7 +1159,7 @@ const RULES = {
     1309: { skillType: EFFECT, trait: 'buff', effect: 'chant_of_eagle', effectType: 'buff', target: 'party', radius: 1000, baseLandRate: 100, statsByLevel: { pAccuracyCombatAdd: [2, 3, 4] } },
     1310: { skillType: EFFECT, trait: 'buff', effect: 'chant_of_vampire', effectType: 'buff', target: 'party', radius: 1000, baseLandRate: 100, statsByLevel: { absorbDam: [6, 7, 8, 9] } },
     1306: { skillType: COMBAT_POINT_HEAL, trait: 'heal', target: 'friendly', ssBoost: 0, healPowerByLevel: [745, 767, 789, 811, 834, 858], castRange: 600, effectRange: 1100 },
-    1289: { skillType: DAMAGE_EFFECT, trait: 'fire', effect: 'inferno', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 92, magicLevel: 70, castRange: 900, effectRange: 1400, condition: { elementalSeeds: { fire: 2 } }, dot: { count: 20, intervalMs: 1000, damage: 118 } },
+    1289: { skillType: DAMAGE_EFFECT, trait: 'fire', effect: 'inferno', effectType: 'debuff', target: 'enemy', durationMs: 20000, ssBoost: 1, baseLandRate: 92, magicLevel: 70, castRange: 900, effectRange: 1400, condition: { elementalSeeds: { fire: 2 } }, dot: { count: 20, intervalMs: 1000, damage: 118 } },
     1290: { skillType: DAMAGE_EFFECT, trait: 'water', effect: 'blizzard', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 92, magicLevel: 70, castRange: 900, effectRange: 1400, durationMs: 120000, condition: { elementalSeeds: { water: 2 } }, stats: { runSpdMul: 0.5 } },
     1298: { skillType: EFFECT, trait: 'slow', effect: 'mass_slow', effectType: 'debuff', target: 'enemy', sourceTarget: 'area', radius: 200, baseLandRate: 40, levelDepend: 1, magicLevelByLevel: [61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74], castRange: 500, effectRange: 1000, stats: { runSpdMul: 0.5 } },
     1297: { skillType: PASSIVE, trait: 'passive', target: 'self', maxLevel: 6, conditionalStats: [
@@ -1266,6 +1300,23 @@ function resolve(skill = {}) {
     return semantic;
 }
 
+// resolve() reads only these skill fields and the static rule tables, so one
+// result serves every skill with the same values. Profile builds rebuild a
+// bot's whole skill list per decision; they share these results read-only.
+const RESOLVED_LIMIT = 20000;
+const resolved = new Map();
+
+function resolveCached(skill = {}) {
+    const key = `${skill.selfId}|${skill.level}|${skill.name}|${skill.power}|${skill.buff}|${skill.spell === true}|${skill.distance}`;
+    let semantic = resolved.get(key);
+    if (!semantic) {
+        if (resolved.size >= RESOLVED_LIMIT) resolved.clear();
+        // Through the export, so a replaced resolve() (tests) applies here too.
+        resolved.set(key, semantic = module.exports.resolve(skill));
+    }
+    return semantic;
+}
+
 function stackOrderFromStats(stackFamily, stats = {}, level = 1) {
     switch (stackFamily) {
         case 'possession': return 1;
@@ -1275,6 +1326,9 @@ function stackOrderFromStats(stackFamily, stats = {}, level = 1) {
         case 'pAtkSpeedUp': return Number(stats.pAtkSpdMul) || Number(level) || 1;
         case 'mAtkSpeedUp': return Number(stats.castSpdMul) || Number(level) || 1;
         case 'mAtk': return Number(stats.mAtkMul) || Number(level) || 1;
+        case 'MagicDefUp': return Number(stats.mDefMul) || Number(level) || 1;
+        case 'MaxHPUp': return Number(stats.maxHpMul) || Number(level) || 1;
+        case 'DmgShield': return Number(stats.reflectDam) || Number(level) || 1;
         default: return null;
     }
 }
@@ -1503,6 +1557,7 @@ module.exports = {
     TAKE_CASTLE,
     SIEGE_FLAG,
     resolve,
+    resolveCached,
     normalizeKey,
     sourcedMaxLevel,
     expandSourcedLevels

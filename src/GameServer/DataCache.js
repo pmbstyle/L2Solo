@@ -43,6 +43,7 @@ const DataCache = {
             ...validateModel(path + 'Npcs/c4_wall_of_argos'),
             ...validateModel(path + 'Npcs/c4_shrine_of_loyalty'),
             ...validateModel(path + 'Npcs/c4_forge_of_the_gods'),
+            ...validateModel(path + 'Npcs/c4_maille_lizardmen'),
             ...validateModel(path + 'Npcs/c4_fields_of_silence_and_whispers'),
             ...validateModel(path + 'Npcs/c4_alligator_island'),
             ...validateModel(path + 'Npcs/c4_heathen_camp'),
@@ -88,6 +89,7 @@ const DataCache = {
             ...validateModel(path + 'Npcs/Spawns/c4_shrine_of_loyalty'),
             ...validateModel(path + 'Npcs/Spawns/c4_forge_of_the_gods'),
             ...validateModel(path + 'Npcs/Spawns/c4_fields_of_silence_and_whispers'),
+            ...validateModel(path + 'Npcs/Spawns/c4_maille_lizardmen'),
             ...validateModel(path + 'Npcs/Spawns/c4_alligator_island'),
             ...validateModel(path + 'Npcs/Spawns/c4_heathen_camp'),
             ...validateModel(path + 'Npcs/Spawns/c4_imperial_tomb'),
@@ -135,6 +137,7 @@ const DataCache = {
             ...validateModel(path + 'Npcs/Rewards/c4_shrine_of_loyalty'),
             ...validateModel(path + 'Npcs/Rewards/c4_forge_of_the_gods'),
             ...validateModel(path + 'Npcs/Rewards/c4_fields_of_silence_and_whispers'),
+            ...validateModel(path + 'Npcs/Rewards/c4_maille_lizardmen'),
             ...validateModel(path + 'Npcs/Rewards/c4_alligator_island'),
             ...validateModel(path + 'Npcs/Rewards/c4_heathen_camp'),
             ...validateModel(path + 'Npcs/Rewards/c4_imperial_tomb'),
@@ -213,7 +216,9 @@ const DataCache = {
             ...validateModel(path + 'Items/Others/c4_catacomb_of_the_heretics'),
             ...validateModel(path + 'Items/Others/c4_catacomb_of_the_forbidden_path'),
             ...validateModel(path + 'Items/Others/c4_low_level_raid_bosses'),
-            ...validateModel(path + 'Items/Others/c4_raid_bosses')
+            ...validateModel(path + 'Items/Others/c4_raid_bosses'),
+            ...validateModel(path + 'Items/Others/c4_quest_298_380_items'),
+            ...validateModel(path + 'Items/Others/c4_quest_334_items')
         ];
 
         DataCache.skills = invoke('GameServer/Skills/C4SkillRules').expandSourcedLevels([

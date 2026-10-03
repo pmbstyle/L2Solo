@@ -36,6 +36,11 @@ const existingIds = new Set(DataCache.npcs.filter(npc => !previousIds.has(npc.se
 const existingSpawns = DataCache.npcSpawns.filter(group => !towns.some(town => town.key === group.selfId)).flatMap(group => group.spawns);
 const sourceNpcs = read('npc.sql');
 const byId = new Map(sourceNpcs.map(row => [row[0], row]));
+// Lisvus adds Adventure Guild Members 8775-8841 beyond the stock C4
+// client's NPC table. Reuse C4 guildsmen with the exact same model class;
+// the server ID still owns their spawns, dialogue and quest routing.
+const c4GuildDisplayIds = new Map(sourceNpcs.filter(row => row[0] >= 8729 && row[0] <= 8738)
+    .map(row => [row[6], row[1]]));
 const residentTypes = new Set(['L2Adventurer', 'L2ManorManager', 'L2ClanHallManager', 'L2Doormen',
     'L2Npc', 'L2Trainer', 'L2VillageMaster', 'L2SignsPriest', 'L2Guard', 'L2Teleporter',
     'L2Merchant', 'L2Warehouse', 'L2TownPet', 'L2SymbolMaker', 'L2Fisherman', 'L2OlympiadManager', 'L2Auctioneer']);
@@ -53,10 +58,14 @@ const groups = towns.map(town => {
 const ids = new Set(groups.flatMap(group => group.spawns.map(spawn => spawn.selfId)));
 const missingIds = new Set([...ids].filter(id => !existingIds.has(id)));
 const npcs = sourceNpcs.filter(row => missingIds.has(row[0])).map(row => {
-    const [selfId,,name,,title,,,radius,size,level,,type,atkRadius,maxHp,maxMp,revHp,revMp,str,con,dex,int,wit,men,exp,sp,pAtk,pDef,mAtk,mDef,atkSpd,aggro,castSpd,weapon,shield,,walk,run,clanName,helpRadius] = row;
+    const [selfId,idTemplate,name,,title,,modelClass,radius,size,level,,type,atkRadius,maxHp,maxMp,revHp,revMp,str,con,dex,int,wit,men,exp,sp,pAtk,pDef,mAtk,mDef,atkSpd,aggro,castSpd,weapon,shield,,walk,run,clanName,helpRadius] = row;
+    const displayId = type === 'L2Adventurer' && selfId >= 8775 && selfId <= 8841
+        ? c4GuildDisplayIds.get(modelClass) : idTemplate;
+    if (!displayId) throw Error('No C4 display model for NPC ' + selfId);
     return {
         // L2Guard's source aggro radius applies to PKs, not ordinary players.
-        selfId, template: { kind: type.replace(/^L2/, ''), name, title, level, hostile: type !== 'L2Guard' && aggro > 0 },
+        selfId, template: { ...(displayId !== selfId ? { displayId } : {}),
+            kind: type.replace(/^L2/, ''), name, title, level, hostile: type !== 'L2Guard' && aggro > 0 },
         base: { str, con, dex, int, wit, men },
         stats: { pAtk, pAtkRnd: 30, pDef, mAtk, mDef, atkSpd, castSpd, atkRadius, accur: 4.75 },
         speed: { walk, run }, vitals: { maxHp, maxMp, revHp, revMp, corpseTime: 7000 },

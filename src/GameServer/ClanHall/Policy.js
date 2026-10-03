@@ -65,7 +65,10 @@ function inside(hall, actor) {
     return x >= b.minX && x <= b.maxX && y >= b.minY && y <= b.maxY && z >= b.minZ && z <= b.maxZ;
 }
 // Separate from clan.state.goal: a residence never changes assignments or level quests.
-function progressionReserve(clan, goal, configuredBloodPrice = 2500000) {
+// Below level 2 all clan money is the next level's fund. From level 2 only a
+// planned progression purchase is protected: the Blood Mark is hunted, not
+// bought, so no fixed price is held for it.
+function progressionReserve(clan, goal) {
     if (Number(clan.level) < 2) return Infinity;
     const progression = goal?.type === 'level' || goal?.type === 'item';
     const planned =
@@ -77,7 +80,17 @@ function progressionReserve(clan, goal, configuredBloodPrice = 2500000) {
                   integer(goal.plan?.market?.price)
               )
             : 0;
-    return Math.max(Number(clan.level) === 2 ? configuredBloodPrice : 0, planned);
+    return planned;
+}
+// The clan money no clan spending may touch: only autonomous bot clans hold one.
+function protectedReserve(clan, mode, goal) {
+    return mode === 'autonomous' ? progressionReserve(clan, goal) : 0;
+}
+// Clan Adena in warehouse rows that clan spending may use.
+function freeAdena(rows, clan, mode, goal) {
+    const available = (rows || []).filter((row) => Number(row.selfId) === 57)
+        .reduce((sum, row) => sum + Math.max(0, integer(row.amount) - integer(row.reservedAmount)), 0);
+    return Math.max(0, available - protectedReserve(clan, mode, goal));
 }
 function desired(hall, members) {
     const magic = members.some((m) =>
@@ -121,6 +134,8 @@ module.exports = {
     bidAmount,
     inside,
     progressionReserve,
+    protectedReserve,
+    freeAdena,
     desired,
     target
 };

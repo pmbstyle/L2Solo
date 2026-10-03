@@ -1234,7 +1234,7 @@ function chooseHeal(profile, allies, mp, cooldowns, time, caster) {
     if (!injured) return null;
     const skill = (profile.skills || []).filter((candidate) => {
         if (candidate.passive || Number(candidate.mp || 0) > mp || Number(cooldowns[candidate.selfId] || 0) > time) return false;
-        const semantic = C4SkillRules.resolve(candidate);
+        const semantic = C4SkillRules.resolveCached(candidate);
         return [C4SkillRules.HEAL, C4SkillRules.HEAL_PERCENT, C4SkillRules.HEAL_HOT, C4SkillRules.HOT].includes(semantic.skillType)
             && ['self', 'party', 'ally', 'friendly'].includes(semantic.target)
             && (semantic.target !== 'ally' || caster === injured || Number(caster?.state.clanId) > 0
@@ -1243,7 +1243,7 @@ function chooseHeal(profile, allies, mp, cooldowns, time, caster) {
             && (semantic.target !== 'self' || caster?.vitals.hp > 0 && caster.vitals.hp < caster.vitals.maxHp * 0.7);
     }).sort((a, b) => {
         const score = skill => {
-            const semantic = C4SkillRules.resolve(skill);
+            const semantic = C4SkillRules.resolveCached(skill);
             return invoke('GameServer/Bot/AI/PartyHealPolicy').score({
                 missingHp: injured.vitals.maxHp - injured.vitals.hp, maxHp: injured.vitals.maxHp,
                 power: semantic.hot?.heal ?? (semantic.skillType === C4SkillRules.HEAL_PERCENT
@@ -1255,7 +1255,7 @@ function chooseHeal(profile, allies, mp, cooldowns, time, caster) {
         };
         return score(b) - score(a);
     })[0];
-    return skill ? { skill, target: C4SkillRules.resolve(skill).target === 'self' ? caster : injured } : null;
+    return skill ? { skill, target: C4SkillRules.resolveCached(skill).target === 'self' ? caster : injured } : null;
 }
 
 function applyAllyHeal(caster, allies, heal) {

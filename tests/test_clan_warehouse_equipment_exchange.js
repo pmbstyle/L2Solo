@@ -105,7 +105,7 @@ async function main() {
         stub(invoke('GameServer/Skills/ToggleSkills'), 'syncEquipment', () => {});
         stub(invoke('GameServer/Network/Response'), 'itemsList', () => Buffer.alloc(0));
         stub(invoke('GameServer/Network/Response'), 'charInfo', () => Buffer.alloc(0));
-        stub(invoke('GameServer/Inventory/ShotStock'), 'ensureActorStock', () => Promise.resolve());
+        stub(invoke('GameServer/Inventory/ShotStock'), 'restockAfterWeaponChange', () => Promise.resolve());
         stub(invoke('GameServer/Inventory/ShotStock'), 'enableAutoShot', () => {});
         await deposit(103, 6);
         assert.strictEqual(backpack.fetchEquippedWeapon().fetchEnchantLevel(), 3, 'an active swing must defer the exchange');

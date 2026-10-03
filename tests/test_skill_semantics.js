@@ -7378,23 +7378,26 @@ assert.strictEqual(ragePaagrioTarget.collectiveRunSpd, Formulas.calcSpeed(30, 12
 assert.strictEqual(ragePaagrioTarget.collectiveEvasion, Math.round(Formulas.calcEvasion(20, 30, 2)), "The Rage of Pa'agrio should preserve evasion");
 
 const gloomTarget = statActor();
-const curseGloom = skill({ selfId: 1263, name: 'Curse Gloom', spell: true, power: 87, level: 13, buff: 30000 });
+const curseGloom = skill({ selfId: 1263, name: 'Curse Gloom', spell: true, power: 80, level: 13, buff: 120000 });
 const gloomOutcome = SkillEffects.execute(session(), caster, gloomTarget, curseGloom, {
     magicSkill: true,
     rng: () => 0,
     attack: {
         clearLoadedShot() {},
-        prepareSkillDamage: () => 123
+        prepareSkillDamage() { throw new Error('Curse Gloom must never enter direct damage'); }
     }
 });
-assert.strictEqual(curseGloom.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, 'Curse Gloom should resolve as magic damage plus debuff');
-assert.strictEqual(gloomOutcome.damage, 123, 'Curse Gloom should keep its damage component');
+assert.strictEqual(curseGloom.fetchSkillType(), C4SkillRules.EFFECT, 'Curse Gloom should preserve sourced DEBUFF semantics');
+assert.strictEqual(gloomOutcome.damage, 0, 'Curse Gloom must not inflict direct damage');
+assert.strictEqual(curseGloom.fetchSemantic().durationMs, 120000, 'Curse Gloom should preserve the two-minute C4 debuff');
+assert.strictEqual(curseGloom.fetchSemantic().magicLevel, 74, 'Curse Gloom should use sourced level13 magic level');
+assert.strictEqual(curseGloom.fetchSemantic().levelDepend, 2, 'Curse Gloom should preserve sourced level dependence');
 assert.strictEqual(gloomOutcome.effect.key, 'curse_gloom', 'Curse Gloom should apply a structured debuff effect');
-assert.strictEqual(EffectStats.multiplier(gloomTarget, 'mDefMul'), 0.85, 'Curse Gloom should use sourced mDef 0.85');
+assert.strictEqual(EffectStats.multiplier(gloomTarget, 'mDefMul'), 0.77, 'Curse Gloom should use sourced mDef 0.77');
 calculateStats({}, gloomTarget);
 assert.strictEqual(
     gloomTarget.collectiveMDef,
-    Math.round(Formulas.calcMDef(20, 30, 80) * 0.85),
+    Math.round(Formulas.calcMDef(20, 30, 80) * 0.77),
     'Curse Gloom should lower MDef through the sourced L2J multiplier'
 );
 

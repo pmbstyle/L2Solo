@@ -15,6 +15,7 @@
             idle: 'Idle',
             pending: 'Queued',
             paused: 'Paused',
+            preparing: 'Preparing',
             running: 'Running',
             succeeded: 'Completed'
         }),
@@ -35,6 +36,14 @@
             warehouse: 'Warehouse'
         }),
         reason: Object.freeze({
+            clan_craft_crafter_unavailable: 'Waiting for a clan crafter',
+            clan_craft_recipe_unavailable: 'No crafting recipe',
+            clan_craft_material_source_unavailable: 'Missing materials have no suitable drop source',
+            clan_craft_collecting_materials: 'Gathering crafting materials',
+            clan_craft_component_ready: 'Crafting components',
+            clan_craft_ready: 'Ready to craft',
+            clan_craft_success: 'Craft succeeded',
+            clan_craft_failure: 'Craft failed; inputs consumed',
             clan_equipment_craft: 'Crafting clan gear',
             clan_equipment_farm: 'Farming clan gear',
             clan_equipment_market: 'Buying clan gear',
@@ -54,6 +63,7 @@
             party_operation_succeeded: 'Clan operation completed',
             party_ready: 'Party ready',
             player_managed_sync: 'Player clan synced',
+            player_order_edit: 'Goal updated',
             player_order_cancel: 'Order cancelled',
             player_order_pause: 'Order paused',
             player_order_replan: 'Order replanned',
@@ -64,6 +74,12 @@
             warehouse_progress: 'Warehouse progress'
         }),
         event: Object.freeze({
+            player_order_crafted: 'Order item crafted',
+            player_order_craft_failed: 'Craft attempt failed',
+            player_order_pause: 'Goal paused',
+            player_order_resume: 'Goal resumed',
+            player_order_cancel: 'Goal cancelled',
+            player_order_replan: 'Plan recalculated',
             action_failed: 'Action blocked',
             action_succeeded: 'Action completed',
             equipment_goal_advanced: 'Gear goal advanced',
@@ -78,6 +94,7 @@
             party_roster_refreshed: 'Party roster refreshed',
             player_order_cancelled: 'Order cancelled',
             player_order_completed: 'Order completed',
+            player_order_edit: 'Goal updated',
             player_order_created: 'Order created',
             player_order_paused: 'Order paused',
             player_order_progress: 'Order progress',

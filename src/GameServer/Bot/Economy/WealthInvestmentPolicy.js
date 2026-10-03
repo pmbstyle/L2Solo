@@ -1,5 +1,6 @@
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 
 const MIN_DEATHS_AT_NEW_SPOT = SpotRiskPolicy.MIN_DEATHS_AT_SPOT;
 const MIN_DEATH_RATE = SpotRiskPolicy.MIN_DEATH_RATE;
@@ -18,17 +19,19 @@ function spotDeathPressure(state = {}) {
     return SpotRiskPolicy.deathPressure(state);
 }
 
-function investmentOpportunity(state = {}, estimatedCost = 0) {
+// The investment is affordable when the shared rule funds the purchase
+// (PurchaseFunding: wallet plus the bot's own buy-order escrow) with the larger
+// of the plan's reserve and the investment's own cushion (20% of the cost) kept.
+function investmentOpportunity(state = {}, estimatedCost = 0, planReserve = 0, escrow = 0) {
     if (personaFor(state)?.primaryDrive !== 'wealth') return null;
     const pressure = spotDeathPressure(state);
     if (!pressure) return null;
     const cost = Math.max(1, Number(estimatedCost) || 0);
     const reserve = Math.max(MIN_ADENA_RESERVE, Math.ceil(cost * RESERVE_RATE));
-    const adena = Math.max(0, Number(state.adena || 0));
     return {
         pressure,
         reserve,
-        affordable: adena >= cost + reserve,
+        affordable: PurchaseFunding.shortfall(state, cost, Math.max(Number(planReserve || 0), reserve), escrow) === 0,
         reason: 'reduce_deaths_at_profitable_spot'
     };
 }

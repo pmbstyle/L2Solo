@@ -1,0 +1,451 @@
+/* Shared application surfaces and typography. Loaded after each section's styles. */
+:root {
+    --bg: #0d1718; --surface: #142123; --surface-strong: #19292b; --surface-soft: #1b2c2e;
+    --text: #edf2ee; --muted: #a9b9b3; --faint: #849891; --gold: #dfbd79;
+    --green: #77cca5; --cyan: #7fc6d3; --blue: #9ab8eb; --amber: #e5b878; --red: #e89184;
+    --line: #314440; --line-soft: #263b36; --shadow: 0 18px 50px #0003; --bar-track: #2e4442;
+    --ink: var(--text); --quiet: var(--faint); --base: var(--bg); --surface-2: var(--surface-strong);
+    --gold-bright: var(--gold); --line-strong: var(--line); --accent-bg: #dfbd7915;
+    --app-nav: #101c1c; --map-sea: #314e57; --map-text: #f5f2da; --map-outline: #17292f;
+    --scrollbar-track: transparent; --scrollbar-thumb: #60766a80; --scrollbar-thumb-hover: #a9b9b3;
+    --scrollbar-thumb-active: var(--gold);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color-scheme: dark;
+}
+:root[data-theme="light"] {
+    --bg: #f5f4ef; --surface: #fffefa; --surface-strong: #eeeee6; --surface-soft: #f0f0e8;
+    --text: #20342e; --muted: #576b62; --faint: #667a70; --gold: #896421;
+    --green: #217754; --cyan: #267184; --blue: #3c66a6; --amber: #8c6026; --red: #b34d3d;
+    --line: #d2d9cc; --line-soft: #e3e6dc; --shadow: 0 4px 14px #20342e0a; --bar-track: #dfe5db;
+    --accent-bg: #8964210d; --app-nav: #ecefe5; --map-sea: #aec9cc;
+    --scrollbar-thumb: #657b6460; --scrollbar-thumb-hover: #576b62;
+    color-scheme: light;
+}
+body.has-app-shell { padding: 76px 0 0 224px; background: var(--bg); color: var(--text); min-width: 320px; }
+button, input, select { font: inherit; }
+button, a, input, select { -webkit-tap-highlight-color: transparent; }
+button { cursor: pointer; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+.app-navigation { position: fixed; z-index: 50; inset: 0 auto 0 0; display: flex; flex-direction: column; width: 224px; padding: 24px 14px 20px; border-right: 1px solid var(--line-soft); background: var(--app-nav); }
+.app-brand { display: flex; align-items: center; gap: 10px; padding: 0 6px 28px; color: var(--text); text-decoration: none; }
+.app-brand img { flex: 0 0 auto; object-fit: contain; }
+.app-brand strong { display: block; font-size: 16px; letter-spacing: -.04em; }
+.app-brand small { display: block; padding-top: 6px; color: var(--gold); font-size: 9px; letter-spacing: .12em; }
+.app-nav-label { padding: 0 14px 12px; color: var(--faint); font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+.app-navigation nav { display: grid; gap: 5px; }
+.app-navigation nav a { display: flex; align-items: center; gap: 12px; min-height: 43px; padding: 10px 14px; border: 1px solid transparent; border-radius: 9px; color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 550; }
+.app-navigation nav a:hover { background: var(--surface); color: var(--text); }
+.app-navigation nav a[aria-current="page"] { color: var(--gold); background: var(--accent-bg); border-color: color-mix(in srgb, var(--gold), transparent 78%); }
+.app-navigation svg, .app-header svg, .world-search-dialog svg { width: 19px; height: 19px; flex: 0 0 auto; }
+.app-nav-footer { display: grid; gap: 9px; margin-top: auto; padding: 24px 10px 0; }
+.app-nav-footer label { color: var(--muted); font-size: 11px; }
+.app-nav-footer select { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--surface); font-size: 12px; }
+.app-nav-footer > span { margin-top: 14px; color: var(--faint); font-size: 10px; line-height: 1.5; }
+.app-header { position: fixed; z-index: 40; top: 0; right: 0; left: 224px; display: flex; align-items: center; gap: 24px; height: 76px; padding: 16px 28px; border-bottom: 1px solid var(--line-soft); background: var(--bg); }
+.app-page-heading { display: grid; gap: 4px; }
+.app-page-heading > span { color: var(--faint); font-size: 10px; }
+.app-page-heading strong { font-size: 19px; font-weight: 650; letter-spacing: -.025em; }
+.app-search-button { display: flex; align-items: center; gap: 10px; min-width: 240px; margin-left: auto; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--surface); font-size: 12px; }
+.app-search-button kbd { margin-left: auto; color: var(--faint); font: inherit; font-size: 10px; }
+.app-connection { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.app-connection i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+.app-connection.is-disconnected i { background: var(--amber); }
+.app-menu-toggle { display: none; border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px; color: var(--text); background: var(--surface); }
+.world-search-dialog { width: min(600px, calc(100vw - 28px)); max-height: 80vh; padding: 0; border: 1px solid var(--line); border-radius: 16px; color: var(--text); background: var(--surface); box-shadow: var(--shadow); }
+.world-search-dialog::backdrop { background: #07141180; backdrop-filter: blur(4px); }
+.world-search-header { display: flex; align-items: center; gap: 12px; padding: 20px; border-bottom: 1px solid var(--line); }
+.world-search-header label { display: flex; align-items: center; gap: 10px; flex: 1; color: var(--gold); }
+.world-search-header input { min-width: 0; width: 100%; border: 0; outline: none; color: var(--text); background: transparent; font-size: 15px; }
+.world-search-header button { padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); background: var(--surface-strong); font-size: 10px; }
+.world-search-results { overflow: auto; max-height: 60vh; padding: 12px 16px 20px; font-size: 13px; color: var(--muted); }
+.world-search-results h3 { padding: 15px 10px 6px; color: var(--gold); font-size: 11px; }
+.world-search-results a { display: flex; align-items: center; gap: 12px; padding: 11px 10px; border-radius: 7px; color: var(--text); text-decoration: none; }
+.world-search-results a:hover { background: var(--surface-strong); }
+.world-search-results a > span:nth-child(2) { flex: 1; }
+.world-search-results strong, .world-search-results small { display: block; }
+.world-search-results strong { font-size: 13px; }
+.world-search-results small { margin-top: 4px; color: var(--faint); font-size: 11px; }
+.search-empty { padding: 16px 10px; line-height: 1.6; }
+/* Existing sections share one navigation frame. */
+.has-app-shell .topbar .brand-lockup, .has-app-shell .topbar-actions > a, .has-app-shell .topbar-actions > button:not(.live-toggle),
+.has-app-shell .market-page-header, .has-app-shell .kb-topbar, .has-app-shell .clan-page-brand, .has-app-shell .clan-page-divider { display: none; }
+.has-app-shell .observer-shell { height: calc(100svh - 76px); grid-template-columns: minmax(0, 1fr) clamp(370px, 25vw, 440px); gap: 18px; padding: 20px; }
+.has-app-shell .map-panel { grid-template-rows: auto auto auto minmax(0, 1fr); gap: 12px; }
+.has-app-shell .topbar { justify-content: flex-end; padding: 0; min-height: 0; }
+.has-app-shell .topbar-actions { margin-left: auto; }
+.has-app-shell .side-panel { display: flex; flex-direction: column; gap: 14px; overflow: auto; padding-right: 3px; }
+.has-app-shell .side-panel > section { flex: 0 0 auto; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--surface); box-shadow: none; }
+.has-app-shell .population-panel { padding: 18px; }
+.has-app-shell .population-track, .has-app-shell .vital-track, .has-app-shell .clan-goal-progress, .has-app-shell .clan-order-progress { background: var(--bar-track); }
+.has-app-shell .detail-grid > div { background: var(--surface-soft); }
+.has-app-shell .population-headline strong { font-size: 32px; }
+.has-app-shell .population-subline { font-size: 11px; line-height: 1.6; }
+.has-app-shell .side-panel .inspector-section { order: 1; display: flex; flex-direction: column; flex: 1.6 1 480px; min-height: 250px; }
+.has-app-shell .side-panel .roster-section { order: 2; display: flex; flex-direction: column; flex: 1 1 260px; min-height: 220px; }
+.has-app-shell .roster-section > .app-button { flex: 0 0 auto; align-self: flex-start; margin-top: 12px; }
+.has-app-shell .side-panel .section-title, .has-app-shell .map-count-note { flex: 0 0 auto; }
+.has-app-shell .market-panel { display: none; }
+.has-app-shell .selected-inspector { flex: 1; height: auto; max-height: none; }
+.has-app-shell .profile-quick-link { display: flex; width: fit-content; margin-top: 12px; }
+.has-app-shell .progress-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.has-app-shell .progress-stats strong { font-size: 13px; }
+.has-app-shell .actor-list { flex: 1; height: auto; max-height: none; align-content: start; }
+.has-app-shell .section-title h2 { font-size: 14px; }
+.has-app-shell .inspector-section:has(.inspector-empty) { display: none; }
+.has-app-shell .actor-main strong { font-size: 12px; }
+.has-app-shell .actor-main span { font-size: 11px; }
+.has-app-shell .actor-loc { font-size: 10px; }
+.has-app-shell .actor-row { padding: 10px 8px; background: transparent; }
+.has-app-shell .map-stage { background: var(--map-sea); border: 1px solid var(--line-soft); border-radius: 13px; min-height: 420px; box-shadow: none; }
+.has-app-shell .sea { fill: var(--map-sea); }
+.has-app-shell .tile-layer, .has-app-shell .ocean-texture { filter: saturate(.65); }
+.has-app-shell .ocean-texture { opacity: .88; pointer-events: none; }
+.has-app-shell .grid-lines { display: none; }
+.has-app-shell .grid-lines { display: none; }
+.has-app-shell .map-legend, .has-app-shell .map-hint, .has-app-shell .selected-card { background: var(--surface); border-color: var(--line); box-shadow: var(--shadow); }
+.has-app-shell .map-hint { color: var(--muted); }
+.has-app-shell .filter, .has-app-shell .live-toggle, .has-app-shell .rankings-button, .has-app-shell .map-zoom-controls button,
+.has-app-shell .level-filter, .has-app-shell .class-filter, .has-app-shell .search-field { background: var(--surface); color: var(--muted); border-color: var(--line); }
+.has-app-shell .filter.is-active { color: var(--gold); background: var(--accent-bg); border-color: var(--gold); }
+.has-app-shell .class-filter select { background: var(--surface); color: var(--text); }
+.has-app-shell .map-toolbar { gap: 8px; }
+.has-app-shell .search-field { margin-left: 0; width: 100%; }
+.has-app-shell .map-toolbar .filter-strip { flex-wrap: wrap; }
+.has-app-shell .filter { font-size: 11px; padding: 8px 10px; }
+.has-app-shell .filter[data-phase="warm"] { display: none; }
+.has-app-shell .map-legend span:nth-child(2) { display: none; }
+.has-app-shell .market-page { max-width: 1692px; margin-inline: auto; padding: 24px 28px 42px; min-height: calc(100vh - 76px); }
+.has-app-shell .market-ledger-head { grid-template-columns: 1fr; gap: 22px; padding-top: 0; }
+.has-app-shell .market-ledger-head h1 { font-size: 30px; }
+.has-app-shell .market-kpis { grid-template-columns: repeat(4, 1fr); border-radius: 10px; border: 1px solid var(--line); background: var(--surface); }
+.has-app-shell .market-kpis span, .has-app-shell .market-kpis small { font-size: 10px; }
+.has-app-shell .market-controls { top: 76px; display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: center; gap: 10px 16px; }
+.has-app-shell .market-search { flex: 1 1 100%; }
+.has-app-shell .market-side-tabs { margin-right: 4px; }
+.has-app-shell .market-controls > label:not(.market-search) { display: flex; font-size: 10px; }
+.has-app-shell .market-controls select { min-width: 110px; font-size: 12px; }
+.has-app-shell .market-workspace { grid-template-columns: minmax(0, 1fr) clamp(320px, 26vw, 410px); }
+.has-app-shell .market-table th { background: var(--surface); }
+.has-app-shell .market-price.ask, .has-app-shell .market-offer-row.wts .market-offer-price strong { color: var(--gold) !important; }
+.has-app-shell .market-item-detail { top: 194px; max-height: calc(100svh - 214px); }
+.has-app-shell .market-lower-grid { grid-template-columns: 1fr 1fr; gap: 24px; }
+.has-app-shell .kb-shell { width: auto; margin: 0; padding: 28px; }
+.has-app-shell .kb-heading { padding-bottom: 26px; gap: 24px; }
+.has-app-shell .kb-heading h1 { font-family: inherit; font-size: 32px; font-weight: 650; }
+.has-app-shell .kb-heading p { font-size: 13px; }
+.has-app-shell .kb-brand b, .has-app-shell .kb-detail-title h1 { font-family: inherit; }
+.has-app-shell .kb-global-nav { display: none; }
+.has-app-shell .rankings-backdrop { position: fixed; inset: 76px 0 0 224px; padding: 24px; background: var(--bg); backdrop-filter: none; animation: none; z-index: 20; align-items: stretch; justify-content: stretch; }
+.has-app-shell .rankings-modal { width: 100%; max-width: none; max-height: none; height: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: none; animation: none; }
+.has-app-shell .clans-view { padding: 0; }
+.has-app-shell .clans-modal { border: 0; border-radius: 0; background: var(--bg); }
+.has-app-shell .clan-page-header { background: var(--bg); padding: 24px 28px; }
+.has-app-shell .clan-page-heading h2 { font-size: 28px; }
+.has-app-shell .clan-page-heading p { font-size: 12px; }
+.has-app-shell .clan-workspace { grid-template-columns: 260px minmax(0, 1fr); }
+.has-app-shell .clan-directory { background: var(--surface); }
+.has-app-shell .clan-detail { padding: 24px; }
+.has-app-shell .clan-detail-header h3 { font-size: 30px; }
+.has-app-shell .clan-detail-header p, .has-app-shell .clan-identity strong { font-size: 12px; }
+.has-app-shell .clan-identity span, .has-app-shell .clan-row-side span { font-size: 10px; }
+.has-app-shell .clan-row:hover { color: var(--text); }
+.has-app-shell .clan-management-heading p, .has-app-shell .clan-member-identity span { font-size: 11px; }
+.has-app-shell .clan-hall-card, .has-app-shell .clan-order-panel, .has-app-shell .clan-metric-grid > div { background: var(--surface); }
+.has-app-shell .clan-order-item-results, .has-app-shell .clan-order-policy > div { background: var(--surface-strong); }
+.has-app-shell .clan-order-policy button.is-active { color: var(--bg); }
+.has-app-shell .clan-order-submit button { color: var(--bg); }
+/* A focused workspace above the clan directory, with its own scroll and focus. */
+.clan-manager-dialog { width: min(1080px, calc(100vw - 48px)); max-width: none; height: min(860px, calc(100dvh - 48px)); max-height: none; margin: auto; padding: 0; border: 1px solid var(--line); border-radius: 18px; color: var(--text); background: var(--surface); box-shadow: 0 28px 100px #0006; overflow: hidden; }
+.clan-manager-dialog::backdrop { background: #071411aa; backdrop-filter: blur(6px); }
+#clanManagerContent { height: 100%; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; }
+.clan-manager-header { display: grid; grid-template-columns: minmax(0, 1fr) 38px; gap: 20px; align-items: start; padding: 24px 28px 20px; background: var(--surface); }
+.clan-manager-heading { min-width: 0; }
+.clan-manager-heading h2 { overflow-wrap: anywhere; }
+.clan-manager-header h2 { display: flex; align-items: center; gap: 12px; font-size: 28px; margin: 8px 0; letter-spacing: -.035em; }
+.clan-manager-header p { font-size: 12px; color: var(--muted); }
+.clan-manager-header button, .clan-manager-footer button { display: inline-flex; align-items: center; gap: 7px; padding: 9px 14px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--surface-strong); font-size: 12px; }
+.clan-manager-header .clan-manager-close { width: 38px; height: 38px; padding: 0; justify-content: center; align-self: start; }
+.clan-manager-close:hover { border-color: var(--gold); }
+.clan-manager-current-status { display: flex; align-items: center; gap: 8px; margin-top: 14px; color: var(--muted); font-size: 12px; }
+.clan-manager-current-status img { width: 24px; height: 24px; object-fit: contain; image-rendering: pixelated; flex: 0 0 auto; }
+.clan-manager-current-status > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clan-goal-status { flex: 0 0 auto; justify-self: start; padding: 4px 8px; border-radius: 5px; color: var(--green); background: var(--surface-strong); font-size: 11px; font-weight: 650; white-space: nowrap; }
+.clan-order-current > .clan-goal-status { color: var(--green); }
+.clan-goal-status[data-status="blocked"], .clan-goal-status[data-status="failed"], .clan-order-current > .clan-goal-status[data-status="blocked"], .clan-order-current > .clan-goal-status[data-status="failed"] { color: var(--red); }
+.clan-goal-status[data-status="paused"], .clan-goal-status[data-status="idle"], .clan-order-current > .clan-goal-status[data-status="paused"], .clan-order-current > .clan-goal-status[data-status="idle"] { color: var(--muted); }
+.clan-automatic-progress { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 11px; }
+.clan-automatic-goal + .clan-goal-explanation { margin-bottom: 24px; }
+.clan-manager-tabs { display: flex; gap: 4px; padding: 0 28px; overflow-x: auto; border-bottom: 1px solid var(--line); }
+.clan-manager-tabs button { display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding: 15px 14px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-size: 13px; }
+.clan-manager-tabs button[aria-current="page"] { color: var(--gold); border-bottom-color: var(--gold); }
+.clan-manager-tabs button > span { padding: 2px 6px; border-radius: 5px; color: var(--muted); background: var(--surface-strong); font-size: 10px; }
+.clan-manager-body { overflow: auto; min-width: 0; padding: 28px 32px; background: var(--bg); }
+.clan-manager-body .clan-management { margin: 0; }
+.clan-manager-body .clan-order-control { grid-template-columns: 210px minmax(0, 1fr); gap: 30px; padding: 0; border: 0; background: transparent; }
+.clan-manager-body .clan-order-current { padding: 16px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--surface); }
+.clan-manager-body .clan-order-current strong { font-size: 20px; }
+.clan-manager-body .clan-order-editor { padding: 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.clan-manager-body .clan-identity-control { padding: 0; border: 0; background: transparent; }
+.clan-manager-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 32px; border-top: 1px solid var(--line); }
+.clan-manager-footer span { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.clan-manager-section-heading { margin-bottom: 22px; }
+.clan-manager-section-heading h3 { font-size: 21px; margin: 0 0 8px; }
+.clan-manager-section-heading p { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.clan-manager-table-wrap { overflow-x: auto; }
+.clan-manager-dialog table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.clan-manager-dialog th, .clan-manager-dialog td { padding: 12px; border-bottom: 1px solid var(--line-soft); text-align: right; font-variant-numeric: tabular-nums; }
+.clan-manager-dialog th { color: var(--faint); font-size: 11px; font-weight: 550; }
+.clan-manager-dialog th:first-child, .clan-manager-dialog td:first-child { text-align: left; }
+.clan-manager-dialog td small { display: block; max-width: 260px; margin-top: 4px; color: var(--faint); font-size: 10px; line-height: 1.5; }
+.clan-manager-activity .clan-event-row { padding: 14px 0; }
+.clan-craft-preview { margin: 18px 0; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-strong); font-size: 12px; }
+.clan-craft-title { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.clan-craft-title strong { font-size: 15px; }
+.clan-craft-title > span, .clan-craft-preview > small { color: var(--muted); font-size: 11px; line-height: 1.6; }
+.clan-craft-preview > small { display: block; margin-top: 14px; }
+.clan-craft-preview p { margin: 14px 0; color: var(--muted); line-height: 1.6; }
+.clan-craft-stages { display: flex; gap: 10px; list-style: none; padding: 0; margin: 18px 0; }
+.clan-craft-stages li { flex: 1; display: flex; align-items: center; gap: 7px; padding-bottom: 12px; border-bottom: 2px solid var(--line); color: var(--faint); font-size: 11px; }
+.clan-craft-stages li span { display: grid; place-items: center; width: 21px; height: 21px; flex-shrink: 0; border-radius: 50%; background: var(--bg); }
+.clan-craft-stages .is-current { border-color: var(--gold); color: var(--gold); }
+.clan-craft-stages .is-done { border-color: var(--green); color: var(--green); }
+.clan-craft-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+.clan-craft-meta small, .clan-craft-meta strong { display: block; }
+.clan-craft-meta small { color: var(--faint); margin-bottom: 6px; font-size: 10px; }
+.clan-craft-meta strong { font-size: 12px; }
+.clan-craft-materials summary { cursor: pointer; padding: 12px 0; border-top: 1px solid var(--line); font-weight: 600; }
+.clan-craft-materials summary span { display: block; margin: 5px 0 0 16px; color: var(--faint); font-size: 10px; font-weight: 400; }
+.clan-craft-preview .is-missing { color: var(--amber); }
+.clan-craft-preview .is-stocked { color: var(--green); }
+@media (max-width: 760px) {
+    .clan-manager-dialog { width: calc(100vw - 16px); height: calc(100dvh - 16px); border-radius: 12px; }
+    .clan-manager-header { padding: 20px; }
+    .clan-manager-header h2 { font-size: 22px; }
+    .clan-manager-tabs { padding: 0 10px; }
+    .clan-manager-tabs button { padding: 12px 10px; }
+    .clan-manager-body { padding: 20px; }
+    .clan-manager-body .clan-order-control { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+    .clan-manager-body .clan-order-editor { padding: 14px; }
+    .clan-manager-footer { padding: 12px 20px; }
+    .clan-craft-preview { padding: 12px; }
+    .clan-craft-title { flex-direction: column; gap: 5px; }
+    .clan-craft-meta { grid-template-columns: minmax(0, 1fr); }
+    .clan-craft-stages { gap: 6px; }
+    .clan-manager-dialog td, .clan-manager-dialog th { padding: 10px 6px; }
+}
+.app-content { padding: 28px; }
+.page-intro { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
+.page-intro .section-kicker { color: var(--gold); font-size: 10px; letter-spacing: .1em; }
+.page-intro h1 { margin: 9px 0; font-size: 32px; line-height: 1.1; font-weight: 650; letter-spacing: -.04em; }
+.page-intro p { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.page-intro > span { color: var(--faint); font-size: 11px; white-space: nowrap; }
+.app-button { display: inline-flex; justify-content: center; align-items: center; gap: 8px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--surface); text-decoration: none; font-size: 12px; }
+.app-button:hover { border-color: var(--gold); }
+.app-button.primary { border-color: var(--gold); color: var(--gold); background: var(--accent-bg); }
+.overview-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+.overview-metric { display: block; padding: 20px; border: 1px solid var(--line); border-radius: 12px; color: var(--text); background: var(--surface); text-decoration: none; }
+.overview-metric > span { display: block; color: var(--muted); font-size: 12px; }
+.overview-metric > strong { display: block; margin: 12px 0 8px; font-size: 32px; font-weight: 600; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.overview-metric > small { display: block; color: var(--faint); font-size: 11px; line-height: 1.5; }
+.overview-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); gap: 20px; }
+.overview-card { min-width: 0; padding: 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.overview-card h2 { font-size: 17px; font-weight: 600; margin: 0; }
+.overview-card > p { margin: 8px 0 18px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.overview-card header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+.overview-card header a { color: var(--gold); text-decoration: none; font-size: 11px; }
+.overview-card .population-bars { margin: 16px 0; }
+.overview-card .population-bar-row { grid-template-columns: 140px 1fr 50px; }
+.overview-list { display: grid; }
+.overview-list a { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line-soft); color: var(--text); text-decoration: none; font-size: 12px; }
+.overview-list a:last-child { border-bottom: 0; }
+.overview-list strong, .overview-list small { display: block; }
+.overview-list small { margin-top: 5px; color: var(--faint); font-size: 11px; }
+.overview-list > a > span:last-child { color: var(--gold); font-size: 11px; text-align: right; }
+.overview-list .overview-identity { display: flex; align-items: center; justify-content: flex-start; gap: 12px; min-width: 0; }
+.overview-identity > span:last-child { min-width: 0; }
+.overview-row-icon { display: grid; place-items: center; flex: 0 0 38px; width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 7px; color: var(--gold); background: var(--bg); }
+.overview-row-icon img { width: 32px; height: 32px; object-fit: contain; }
+.overview-row-icon.is-crest img { width: 32px; height: 24px; image-rendering: pixelated; }
+.has-app-shell .paperdoll-slot .item-tooltip { display: none; }
+.has-app-shell .equipment-tooltip { position: fixed; z-index: 150; width: min(260px, calc(100vw - 24px)); max-height: calc(100svh - 24px); overflow: auto; opacity: 1; visibility: visible; transform: none; transition: none; background: var(--surface-strong); border-color: var(--gold); }
+.has-app-shell .equipment-tooltip > strong { white-space: normal; overflow: visible; }
+.overview-map-preview { display: block; position: relative; min-height: 235px; overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: #45646d; }
+.overview-map-preview img { width: 100%; height: 235px; object-fit: cover; object-position: 50% 55%; filter: saturate(.55); }
+.overview-map-preview span { position: absolute; left: 16px; bottom: 16px; padding: 9px 13px; border-radius: 7px; background: var(--surface); color: var(--text); font-size: 12px; }
+.directory-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); margin-bottom: 18px; }
+.directory-controls label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
+.directory-controls input, .directory-controls select { min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 7px; color: var(--text); background: var(--bg); font-size: 12px; }
+.directory-controls .directory-search { flex: 1; min-width: 190px; }
+.directory-search input { width: 100%; }
+.directory-table-shell { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.directory-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.directory-table th { padding: 14px 18px; text-align: left; color: var(--faint); background: var(--surface-strong); font-weight: 600; font-size: 11px; }
+.directory-table td { padding: 14px 18px; border-top: 1px solid var(--line-soft); color: var(--muted); }
+.directory-table td:first-child { min-width: 180px; }
+.directory-table a { display: block; color: var(--text); text-decoration: none; }
+.directory-table a:hover { color: var(--gold); }
+.directory-table strong, .directory-table small { display: block; }
+.directory-table small { margin-top: 5px; font-size: 11px; color: var(--faint); }
+.directory-pagination { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 2px; color: var(--muted); font-size: 12px; }
+.directory-pagination > div { display: flex; gap: 8px; }
+.directory-pagination button:disabled { opacity: .4; cursor: default; }
+.party-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.party-card { padding: 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.party-card > header { display: flex; align-items: start; justify-content: space-between; gap: 15px; margin-bottom: 17px; }
+.party-card h2 { font-size: 16px; }
+.party-card p { margin-top: 6px; color: var(--muted); font-size: 12px; }
+.party-card header > span { color: var(--gold); font-size: 12px; }
+.party-members { display: flex; flex-wrap: wrap; gap: 7px; }
+.party-members a { padding: 7px 10px; border: 1px solid var(--line-soft); border-radius: 6px; color: var(--text); background: var(--bg); text-decoration: none; font-size: 11px; }
+.party-members a:hover { border-color: var(--gold); }
+.directory-empty { padding: 50px 24px; text-align: center; color: var(--muted); font-size: 13px; }
+.profile-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.profile-tabs button { padding: 9px 14px; border: 1px solid transparent; border-radius: 7px; color: var(--muted); background: transparent; font-size: 12px; }
+.profile-tabs button[aria-selected="true"] { color: var(--gold); border-color: var(--line); background: var(--accent-bg); }
+body[data-view="overview"], body[data-view="characters"], body[data-view="parties"], body[data-view="dungeon"], body[data-view="profile"] { overflow: auto; }
+body[data-view="overview"] .observer-shell, body[data-view="characters"] .observer-shell, body[data-view="parties"] .observer-shell, body[data-view="dungeon"] .observer-shell { display: none; }
+body[data-view="profile"] .observer-shell { display: block; height: auto; max-width: 1120px; margin: 0 auto; padding: 28px; }
+body[data-view="profile"] .map-panel, body[data-view="profile"] .side-panel > section:not(.inspector-section) { display: none; }
+body[data-view="profile"] .side-panel { display: block; overflow: visible; }
+body[data-view="profile"] .inspector-section { padding: 26px; }
+body[data-view="profile"] .selected-inspector { overflow: visible; max-height: none; }
+body[data-view="profile"] .inspector-section > .section-title { display: none; }
+body[data-view="profile"] .inspector-avatar { width: 62px; height: 62px; font-size: 24px; border-radius: 14px; }
+body[data-view="profile"] .inspector-name strong { font-size: 28px; }
+body[data-view="profile"] .inspector-name span { margin-top: 8px; font-size: 13px; }
+body[data-view="profile"] .inspector-vitals { max-width: 500px; margin: 24px 0; }
+body[data-view="profile"] .detail-grid { grid-template-columns: repeat(3, 1fr); }
+body[data-view="profile"] .detail-grid strong { font-size: 14px; }
+body[data-view="profile"] .detail-grid span { font-size: 11px; }
+body[data-view="profile"] .combat-stats { grid-template-columns: repeat(4, 1fr); }
+body[data-view="profile"] .paperdoll { max-width: 520px; }
+body[data-view="profile"] .stat-cell { padding: 16px; }
+body[data-view="profile"] .stat-cell span { font-size: 11px; }
+body[data-view="profile"] .stat-cell strong { font-size: 17px; }
+body[data-view="profile"] .relationship-section { max-width: 780px; }
+body[data-view="profile"] .profile-quick-link { display: none; }
+.profile-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 22px; }
+.map-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.map-tools label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
+.map-tools select { min-width: 160px; max-width: 220px; padding: 8px; border: 1px solid var(--line); border-radius: 7px; color: var(--text); background: var(--surface); font-size: 11px; }
+.map-tools button { padding: 8px 10px; font-size: 11px; }
+.map-tools .map-follow { margin-left: auto; }
+.map-follow[aria-pressed="true"] { color: var(--gold); border-color: var(--gold); }
+.map-layer-button[aria-pressed="false"] { opacity: .5; }
+.map-count-note { color: var(--faint); font-size: 10px; line-height: 1.5; }
+.dungeon-entrance { color: var(--gold); font-size: 12px; }
+@media (max-width: 1250px) {
+    .has-app-shell .observer-shell { grid-template-columns: minmax(0, 1fr) 270px; gap: 12px; padding: 16px; }
+    .has-app-shell .clan-workspace { grid-template-columns: 220px minmax(0, 1fr); }
+    .overview-metrics { grid-template-columns: repeat(2, 1fr); }
+    .overview-grid { grid-template-columns: 1fr; }
+    .has-app-shell .market-workspace { grid-template-columns: 1fr 270px; }
+    .has-app-shell .market-ledger-head h1 { font-size: 28px; }
+}
+@media (max-width: 1050px) {
+    body.has-app-shell { padding-left: 76px; }
+    .app-navigation { width: 76px; padding-inline: 10px; }
+    .app-brand { justify-content: center; padding-inline: 0; }
+    .app-brand > span, .app-nav-label, .app-navigation nav a > span, .app-nav-footer > span, .app-nav-footer label { display: none; }
+    .app-navigation nav a { justify-content: center; padding-inline: 10px; }
+    .app-nav-footer { padding-inline: 0; }
+    .app-nav-footer select { padding: 8px 2px; font-size: 10px; }
+    .app-header { left: 76px; }
+    .has-app-shell .rankings-backdrop { left: 76px; }
+    .has-app-shell .observer-shell { grid-template-columns: 1fr; height: auto; }
+    .has-app-shell .map-panel { min-height: calc(100svh - 100px); }
+    .has-app-shell .side-panel { display: grid; grid-template-columns: 1fr 1fr; min-height: 0; overflow: visible; }
+    .has-app-shell .side-panel .inspector-section { grid-column: 1 / -1; }
+    .has-app-shell .side-panel .selected-inspector { max-height: 650px; }
+    .has-app-shell .side-panel .actor-list { max-height: 420px; }
+    .has-app-shell .map-stage { min-height: 520px; }
+    .has-app-shell .market-workspace, .has-app-shell .market-lower-grid { grid-template-columns: 1fr; }
+    .has-app-shell .market-depth { border-right: 0; padding-right: 0; }
+    .has-app-shell .market-inspector { padding-left: 0; }
+    .has-app-shell .market-item-detail { position: static; max-height: none; min-height: 0; }
+    .has-app-shell .clan-workspace { grid-template-columns: 200px minmax(0, 1fr); }
+    .party-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 680px) {
+    body.has-app-shell { padding: 64px 0 0; overflow: auto; }
+    .app-header { left: 0; height: 64px; gap: 12px; padding: 10px 16px; }
+    .app-menu-toggle { display: block; }
+    .app-page-heading strong { font-size: 16px; }
+    .app-search-button { min-width: 0; padding: 9px; }
+    .app-search-button span, .app-search-button kbd, .app-connection { display: none; }
+    .app-navigation { width: 224px; top: 64px; transform: translateX(-100%); transition: transform 180ms ease; box-shadow: var(--shadow); }
+    .navigation-open .app-navigation { transform: translateX(0); }
+    .app-brand > span, .app-nav-label, .app-navigation nav a > span, .app-nav-footer > span, .app-nav-footer label { display: block; }
+    .app-brand, .app-navigation nav a { justify-content: flex-start; }
+    .app-nav-footer select { padding: 9px; font-size: 12px; }
+    .app-content { padding: 20px 16px; }
+    .page-intro { align-items: flex-start; flex-direction: column; gap: 10px; }
+    .page-intro h1 { font-size: 27px; }
+    .overview-metrics { gap: 10px; }
+    .overview-metric { padding: 15px; }
+    .overview-metric strong { font-size: 26px; }
+    .overview-card { padding: 18px; }
+    .has-app-shell .observer-shell { padding: 12px; }
+    .has-app-shell .map-panel { min-height: 0; }
+    .has-app-shell .map-stage { min-height: 580px; }
+    .has-app-shell .side-panel { grid-template-columns: 1fr; }
+    .has-app-shell .map-legend { left: 10px; right: auto; top: 10px; bottom: auto; max-width: calc(100% - 65px); flex-wrap: wrap; padding: 8px; }
+    .has-app-shell .map-zoom-controls { left: auto; right: 10px; }
+    .map-tools .map-follow { margin-left: 0; }
+    .map-tools select { max-width: 100%; }
+    .has-app-shell .rankings-backdrop { inset: 64px 0 0; padding: 12px; }
+    .has-app-shell .clans-view { padding: 0; }
+    .has-app-shell .clan-workspace { grid-template-columns: 1fr; overflow: auto; }
+    .has-app-shell .clan-directory { min-height: 260px; max-height: 330px; }
+    .has-app-shell .clan-page-header { padding: 20px 16px; }
+    .has-app-shell .clan-detail { padding: 20px 16px; }
+    .has-app-shell .market-page, .has-app-shell .kb-shell { padding: 20px 16px; }
+    .has-app-shell .market-kpis { grid-template-columns: repeat(2, 1fr); }
+    .has-app-shell .market-controls { top: 64px; }
+    .has-app-shell .market-controls > label:not(.market-search) { display: grid; flex: 1 1 calc(50% - 8px); grid-template-columns: 1fr; min-width: 0; }
+    .has-app-shell .market-controls select { width: 100%; min-width: 0; }
+    .has-app-shell .kb-heading { align-items: start; flex-direction: column; }
+    .has-app-shell .kb-heading h1 { font-size: 28px; }
+    .directory-controls { align-items: stretch; flex-direction: column; }
+    .directory-controls select { flex: 1; }
+    .directory-pagination { align-items: flex-start; flex-direction: column; }
+    body[data-view="profile"] .observer-shell { padding: 16px; }
+    body[data-view="profile"] .inspector-section { padding: 18px; }
+    body[data-view="profile"] .inspector-name strong { font-size: 22px; }
+    body[data-view="profile"] .detail-grid, body[data-view="profile"] .combat-stats { grid-template-columns: repeat(2, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { .app-navigation { transition: none; } }
+
+body[data-view="profile"] .inspector-section:has(.inspector-empty) { display: block; }
+
+.has-app-shell #worldMap { background: var(--map-sea); }
+.has-app-shell .population-panel, body[data-view="profile"] .inspector-section { box-shadow: var(--shadow); }
+.has-app-shell .kb-filter-popover { background: var(--surface); }
+.has-app-shell .kb-primary strong, .has-app-shell .kb-stat strong, .has-app-shell .kb-cell b { color: var(--text); }
+.has-app-shell .phase-badge { background: var(--accent-bg); color: var(--blue); border: 1px solid var(--line); }
+
+.has-app-shell .ranking-row:hover, .has-app-shell .ranking-row:focus-visible, .has-app-shell .raid-boss-row:hover, .has-app-shell .raid-boss-row:focus-visible { color: var(--text); background: var(--accent-bg); }
+
+.map-destination-marker { pointer-events: none; }
+.map-destination-marker circle { fill: #dfbd79; stroke: #22362e; }
+.map-destination-marker text { fill: #fff7dc; stroke: #22362e; paint-order: stroke; text-anchor: middle; font-weight: 750; }
+@media (max-width: 680px) {
+    .app-navigation { visibility: hidden; overflow-y: auto; }
+    .navigation-open .app-navigation { visibility: visible; }
+}
+.has-app-shell .clan-directory { grid-template-columns: minmax(0, 1fr); }
+.has-app-shell .clan-controls { flex-wrap: wrap; }
+.has-app-shell .clan-search { width: 100%; }
+.has-app-shell .clan-row.is-selected { color: var(--text); }
+body[data-view="clans"] .observer-shell, body[data-view="rankings"] .observer-shell, body[data-view="raid-bosses"] .observer-shell { display: none; }
+
+.has-app-shell .topbar { display: none; }
+.has-app-shell .map-panel { grid-template-rows: auto auto minmax(0, 1fr); }
+.app-header .live-toggle { flex: 0 0 auto; }
+@media (max-width: 680px) {
+    .app-header .live-toggle { padding: 9px; }
+    .app-header .live-label { display: none; }
+}
+.has-app-shell .point-label, .has-app-shell .cluster-breakdown, .has-app-shell .raid-boss-label { fill: var(--map-text); stroke: var(--map-outline); }
+.has-app-shell .point.is-selected .point-core { stroke: var(--map-text); }

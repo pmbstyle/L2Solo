@@ -48,25 +48,46 @@ function states(options = {}) {
     return options.states || LifeState.allStates(5000);
 }
 
+// Every seller's listing review indexes the signals of every state, while
+// most states are unchanged between two reviews. States are replaced, never
+// edited in place, so a state's signals are kept with the object that
+// produced them until it is replaced or one of its timed wants expires.
+const stateSignals = new WeakMap();
+
+function signalsOfState(state, timestamp) {
+    const cached = stateSignals.get(state);
+    if (cached && timestamp >= cached.at && timestamp < cached.validUntil) return cached.entries;
+    const plan = state?.stats?.equipmentPlan;
+    const ids = new Set([
+        Number(state?.stats?.marketWanted?.itemId || 0),
+        Number(state?.stats?.shotDemand?.itemId || 0),
+        Number(state?.stats?.shotRecipeDemand?.itemId || 0),
+        Number(plan?.target?.selfId || 0),
+        ...(plan?.materials || []).map((material) => Number(material?.selfId || 0))
+    ]);
+    const entries = [];
+    ids.forEach((selfId) => {
+        if (selfId <= 0) return;
+        const signal = demandSignal(state, selfId, timestamp);
+        if (signal) entries.push([selfId, signal]);
+    });
+    const expiries = [timestampForWanted(state?.stats?.marketWanted), Number(state?.stats?.shotDemand?.at || 0),
+        Number(state?.stats?.shotRecipeDemand?.at || 0)]
+        .map((at) => at + WANTED_TTL_MS).filter((until) => until > timestamp);
+    if (state && typeof state === 'object') {
+        stateSignals.set(state, { entries, at: timestamp, validUntil: expiries.length ? Math.min(...expiries) : Infinity });
+    }
+    return entries;
+}
+
 function indexSignals(allStates, timestamp = Date.now()) {
     const byItem = new Map();
-    (allStates || []).forEach((state) => {
-        const plan = state?.stats?.equipmentPlan;
-        const ids = new Set([
-            Number(state?.stats?.marketWanted?.itemId || 0),
-            Number(state?.stats?.shotDemand?.itemId || 0),
-            Number(state?.stats?.shotRecipeDemand?.itemId || 0),
-            Number(plan?.target?.selfId || 0),
-            ...(plan?.materials || []).map((material) => Number(material?.selfId || 0))
-        ]);
-        ids.forEach((selfId) => {
-            if (selfId <= 0) return;
-            const signal = demandSignal(state, selfId, timestamp);
-            if (!signal) return;
+    for (const state of allStates || []) {
+        for (const [selfId, signal] of signalsOfState(state, timestamp)) {
             if (!byItem.has(selfId)) byItem.set(selfId, []);
             byItem.get(selfId).push(signal);
-        });
-    });
+        }
+    }
     return byItem;
 }
 

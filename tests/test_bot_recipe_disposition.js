@@ -9,6 +9,9 @@ const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
+const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
+const MarketBuyerActivity = invoke('GameServer/Bot/Economy/MarketBuyerActivity');
+const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
 
 DataCache.init();
 
@@ -25,7 +28,11 @@ const original = {
     learnColdRecipes: Database.learnColdRecipes,
     acceptLifecycleRow: LifeState.acceptLifecycleRow,
     syncInventorySummary: Database.syncInventorySummary,
-    upsertState: LifeState.upsertState
+    upsertState: LifeState.upsertState,
+    learnCraftableRecipes: LifeState.learnCraftableRecipes,
+    applyNpcLiquidation: LifeState.applyNpcLiquidation,
+    refreshBuyerActivity: MarketBuyerActivity.refresh,
+    depositCold: BotWarehouse.depositCold
 };
 
 async function run() {
@@ -107,6 +114,43 @@ async function run() {
     assert.strictEqual(updated.inventory[spellbook.selfId].amount, 1, 'spellbooks must remain for NPC liquidation');
     assert.strictEqual(updated.stats.lastRecipeBookLearning.learned[0].recipeId, recipe.recipeId);
 
+    // Material recipes are no-grade but feed every craft: a capable dwarf learns them.
+    const leatherRecipe = C4RecipeItems.resolve(1814);
+    assert(leatherRecipe && String(DataCache.items.find((item) => item.selfId === leatherRecipe.productId)
+        ?.template?.kind).startsWith('Other.Material'), 'Recipe: Leather must make a material');
+    const leatherItem = { selfId: 1814, name: 'Recipe: Leather', amount: 1, kind: 'Other.Recipe' };
+    assert.strictEqual(ItemDisposition.recipeDisposition(craftState, leatherItem, []).action, 'learn',
+        'a dwarf must learn a material recipe its craft level allows');
+    assert.strictEqual(ItemDisposition.recipeDisposition(craftState, leatherItem, [leatherRecipe.recipeId]).action, 'npc',
+        'a known no-grade material recipe is NPC junk, not a market item');
+    assert.strictEqual(ItemDisposition.recipeDisposition({ ...craftState, classId: 28, stats: { classId: 28 } },
+        leatherItem, []).action, 'npc', 'a non-crafter still sells a material recipe to the NPC');
+    assert.strictEqual(ItemDisposition.recipeDisposition({ characterId: 7003, level: 40, classId: 55, stats: { classId: 55 } },
+        leatherItem, []).action, 'npc', 'a Bounty Hunter has Create Item 1 but never crafts: it sells the recipe to the NPC');
+    learned.length = 0;
+    const materialCrafter = { ...craftState, characterId: 7002, inventory: { 1814: leatherItem } };
+    const learnedMaterial = await LifeState.learnCraftableRecipes(materialCrafter);
+    assert.deepStrictEqual(learned, [{ characterId: 7002, recipeId: leatherRecipe.recipeId, type: 'dwarven' }]);
+    assert.strictEqual(learnedMaterial.inventory[1814].amount, 0, 'learning must consume the material recipe');
+
+    // A cleanup during the sale pause learns first, as the sale path does.
+    const calls = [];
+    LifeState.learnCraftableRecipes = async (state) => {
+        calls.push('learn');
+        return { ...state, inventory: { ...state.inventory, 1814: { ...state.inventory[1814], amount: 0 } } };
+    };
+    LifeState.applyNpcLiquidation = async (state, candidates) => {
+        calls.push(['npc', ...candidates.map((item) => Number(item.selfId))]);
+        return state;
+    };
+    MarketBuyerActivity.refresh = async () => null;
+    BotWarehouse.depositCold = async (state) => ({ state, count: 0 });
+    await ColdMarketListingService.open({ ...materialCrafter, phase: 'cold', activity: 'shopping', level: 36,
+        inventory: { ...materialCrafter.inventory, 2250: craftState.inventory[2250] },
+        stats: { classId: 56, marketSellRetryAfter: 500000 } }, { now: 1000, forcedCleanup: { reason: 'npc_only_inventory' } });
+    assert.deepStrictEqual(calls, ['learn', ['npc', 2250]],
+        'a cleanup in the sale pause must learn the material recipe first and sell only the junk recipe');
+
     console.log('Bot recipe disposition checks passed');
 }
 
@@ -120,5 +164,9 @@ run().catch((error) => {
     LifeState.acceptLifecycleRow = original.acceptLifecycleRow;
     Database.syncInventorySummary = original.syncInventorySummary;
     LifeState.upsertState = original.upsertState;
+    LifeState.learnCraftableRecipes = original.learnCraftableRecipes;
+    LifeState.applyNpcLiquidation = original.applyNpcLiquidation;
+    MarketBuyerActivity.refresh = original.refreshBuyerActivity;
+    BotWarehouse.depositCold = original.depositCold;
     LifeState.reset?.();
 });

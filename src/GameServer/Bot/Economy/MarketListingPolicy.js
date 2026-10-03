@@ -40,6 +40,10 @@ function listOrWarehouse(item, decision) {
 }
 
 function surplusGearDecision(item, reason, market) {
+    // The warehouse does not take recipes and NPC liquidation skips market
+    // recipes: an unlisted one stays in the bag, where a crafter's recipe
+    // request finds its holder.
+    if (ItemDisposition.isMarketRecipeItem(item)) return { action: 'keep', reason, market };
     const ordinary = item.npcComparable !== false && Number(item.enchant || 0) <= 0;
     const common = isGear(item) && ordinary
         && Number(item.basePrice || 0) <= NPC_SURPLUS_GEAR_MAX_BASE_PRICE;
@@ -101,6 +105,7 @@ function classify(state, item, options = {}) {
             listCount: Math.min(Number(item.count), SPECULATIVE_SUPPLY_LIMIT - market.supply.units), market
         });
     }
+    if (ItemDisposition.isMarketRecipeItem(item)) return surplusGearDecision(item, 'recipe_supplied', market);
     if (isGear(item) && fundedUnits <= market.supply.units && market.recentBuyers > 0) {
         const available = Math.max(0, market.recentBuyers - market.competitiveUnits);
         if (available > 0) return listOrWarehouse(item, {

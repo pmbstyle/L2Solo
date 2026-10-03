@@ -6,9 +6,10 @@ const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner'
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const PartyLootAllocator = invoke('GameServer/Bot/Population/PartyLootAllocator');
+const OrderCrafting = require('./ClanOrderCrafting');
 
 const ORDER_KIND = 'gather_item';
-const STRATEGIES = Object.freeze(['auto', 'farm', 'market']);
+const STRATEGIES = Object.freeze(['auto', 'farm', 'market', 'craft']);
 const DELIVERY_BATCH_SIZE = 8;
 
 function number(value, fallback = 0) {
@@ -36,6 +37,9 @@ function itemSnapshot(item) {
 }
 
 function actionTypeForGoal(goal) {
+    if (goal?.policy?.strategy === 'craft' && !['completed', 'paused'].includes(goal.status)) {
+        return goal.plan?.kind === 'farm' ? 'party' : 'goal_plan';
+    }
     if (!goal || ['completed', 'paused', 'blocked'].includes(String(goal.status))) return null;
     if (goal.plan?.kind === 'market') return 'market';
     if (goal.plan?.kind === 'farm') return 'party';
@@ -269,12 +273,16 @@ async function buildGoal(order, clan, options = {}) {
     const acquisitionProgress = delivery.kind === 'best_upgrade'
         ? Math.min(number(order.amount), progress + delivery.warehouseAmount)
         : progress;
-    let plan = planFor(order, clan, acquisitionProgress, options);
+    let plan = order.strategy === 'craft' && acquisitionProgress < number(order.amount)
+        ? await OrderCrafting.planFor(order, clan, number(order.amount) - acquisitionProgress, options)
+        : planFor(order, clan, acquisitionProgress, options);
     if (delivery.kind === 'best_upgrade' && progress < number(order.amount)) {
         if (!delivery.nextRecipient) {
-            plan = { kind: 'prepare', reasonCode: 'no_equipment_beneficiary', selectedAt: Date.now() };
+            plan = { ...plan, kind: 'prepare', reasonCode: 'no_equipment_beneficiary', selectedAt: Date.now(),
+                ...(plan.craft ? { craft: { ...plan.craft, stage: 'blocked' } } : {}) };
         } else if (acquisitionProgress >= number(order.amount)) {
-            plan = { kind: 'prepare', reasonCode: 'warehouse_delivery_pending', selectedAt: Date.now() };
+            plan = { kind: 'prepare', reasonCode: 'warehouse_delivery_pending', selectedAt: Date.now(),
+                ...(order.plan?.craft ? { craft: { ...order.plan.craft, stage: 'delivery' } } : {}) };
         }
     }
     plan.delivery = delivery;
@@ -282,6 +290,7 @@ async function buildGoal(order, clan, options = {}) {
     const blocked = !completed && plan.kind === 'prepare' && plan.reasonCode !== 'warehouse_delivery_pending';
     return {
         type: 'item',
+        ...(order.strategy === 'craft' ? { goalKey: `player-order:${order.id}:craft` } : {}),
         controlledBy: 'player',
         orderId: number(order.id) || null,
         orderRevision: number(order.revision) || null,
@@ -377,6 +386,7 @@ async function create(clan, payload = {}, options = {}) {
     if (!item || itemId <= 0 || itemId === 57) return { ok: false, code: 'invalid_clan_order_item' };
     if (amount <= 0 || amount > 1000000) return { ok: false, code: 'invalid_clan_order_amount' };
     if (!STRATEGIES.includes(strategy)) return { ok: false, code: 'invalid_clan_order_strategy' };
+    if (strategy === 'craft' && !OrderCrafting.recipesForItem(itemId).length) return { ok: false, code: 'clan_craft_recipe_unavailable' };
     const availableMembers = new Set(uniqueIds(clan.state.memberIds || []));
     const memberIds = uniqueIds(payload.memberIds || []);
     if (memberIds.some((id) => !availableMembers.has(id))) return { ok: false, code: 'invalid_clan_order_members' };
@@ -405,6 +415,7 @@ async function create(clan, payload = {}, options = {}) {
         actionType: actionTypeForGoal(goal)
     });
     if (!created.ok) return created;
+    await LifeState.statesByIds(clan.state.memberIds);
     const nextGoal = { ...created.goal, orderId: created.order.id, orderRevision: created.order.revision };
     await ensureMarketDemand(clan.id, created.order, nextGoal);
     if (nextGoal.plan?.delivery?.kind === 'best_upgrade' && number(nextGoal.plan.delivery.warehouseAmount) > 0) {
@@ -439,15 +450,18 @@ async function resolveClan(clan, options = {}) {
     const updated = await Database.updatePlayerManagedClanOrderProgress({
         clanId: clan.id,
         orderId: order.id,
+        expectedRevision: order.revision,
         goal,
         reasonCode: delivery.delivered > 0 ? 'clan_order_delivered' : options.reasonCode || ''
     });
     if (!updated.ok) return updated;
     await ensureMarketDemand(clan.id, updated.order, updated.goal);
-    return { ok: true, changed: true, order: updated.order, goal: updated.goal, reason: updated.goal.plan?.reasonCode };
+    const assignment = order.strategy === 'craft' ? await OrderCrafting.assign(clan, updated.order, updated.goal) : null;
+    return { ok: true, changed: order.strategy !== 'craft', assignment,
+        order: updated.order, goal: updated.goal, reason: assignment?.code || updated.goal.plan?.reasonCode };
 }
 
-async function syncProgress(clan, spentDelta = 0, reasonCode = '') {
+async function syncProgress(clan, spentDelta = 0, reasonCode = '', retry = 0) {
     const order = await current(clan.id);
     if (!order || order.status === 'paused') return { ok: false, code: 'clan_order_not_active' };
     const delivery = await deliverAvailable(order, clan);
@@ -455,25 +469,83 @@ async function syncProgress(clan, spentDelta = 0, reasonCode = '') {
     const updated = await Database.updatePlayerManagedClanOrderProgress({
         clanId: clan.id,
         orderId: order.id,
+        expectedRevision: order.revision,
         goal,
         spentDelta,
         reasonCode: delivery.delivered > 0 ? 'clan_order_delivered' : reasonCode
     });
+    if (updated.code === 'clan_order_revision_conflict' && retry < 2) {
+        return syncProgress(clan, spentDelta, reasonCode, retry + 1);
+    }
     if (updated.ok) await ensureMarketDemand(clan.id, updated.order, updated.goal);
     return updated;
+}
+
+function orderSettings(order) {
+    return {
+        itemId: number(order.itemId), amount: number(order.amount), strategy: String(order.strategy),
+        maxUnitPrice: number(order.maxUnitPrice), budget: number(order.budget),
+        memberIds: uniqueIds(Array.isArray(order.memberIds) ? order.memberIds : []),
+        paused: order.paused === true || order.status === 'paused'
+    };
+}
+
+async function edit(clan, orderId, payload = {}, options = {}) {
+    if (!clan || clan.state?.mode !== 'player_managed') return { ok: false, code: 'target_not_player_managed' };
+    const order = await current(clan.id);
+    if (!order || number(order.id) !== number(orderId)) return { ok: false, code: 'clan_order_not_active' };
+    // Progress updates change the revision too; only conflicting settings invalidate the editor.
+    const settingsMatch = payload.expectedSettings
+        && JSON.stringify(orderSettings(payload.expectedSettings)) === JSON.stringify(orderSettings(order));
+    if (!Number.isSafeInteger(payload.revision) || (payload.revision !== number(order.revision) && !settingsMatch)) {
+        return { ok: false, code: 'clan_order_revision_conflict' };
+    }
+    if (payload.itemId !== undefined && Number(payload.itemId) !== number(order.itemId)) {
+        return { ok: false, code: 'invalid_clan_order_edit' };
+    }
+    const amount = Number(payload.amount ?? order.amount);
+    const strategy = String(payload.strategy ?? order.strategy);
+    const maxUnitPrice = payload.maxUnitPrice === null
+        ? Math.max(1, number(itemSnapshot(itemTemplate(order.itemId))?.itemPrice) * 2)
+        : Number(payload.maxUnitPrice ?? order.maxUnitPrice);
+    const budget = Number(payload.budget ?? order.budget);
+    if (!Number.isSafeInteger(amount) || amount < 1 || amount > 1000000) return { ok: false, code: 'invalid_clan_order_amount' };
+    if (!STRATEGIES.includes(strategy)) return { ok: false, code: 'invalid_clan_order_strategy' };
+    if (strategy === 'craft' && !OrderCrafting.recipesForItem(order.itemId).length) return { ok: false, code: 'clan_craft_recipe_unavailable' };
+    if (!Number.isSafeInteger(maxUnitPrice) || maxUnitPrice < 1 || !Number.isSafeInteger(budget) || budget < 0) {
+        return { ok: false, code: 'invalid_clan_order_price' };
+    }
+    if (budget > 0 && budget < number(order.spent)) return { ok: false, code: 'clan_order_budget_below_spent' };
+    if (payload.memberIds !== undefined && (!Array.isArray(payload.memberIds) || payload.memberIds.some((id) => !Number.isSafeInteger(id) || id <= 0))) {
+        return { ok: false, code: 'invalid_clan_order_members' };
+    }
+    const available = uniqueIds(clan.state.memberIds);
+    const memberIds = uniqueIds(payload.memberIds ?? (order.memberIds.length ? order.memberIds : available));
+    if (!memberIds.length || memberIds.some((id) => !available.includes(id))) return { ok: false, code: 'invalid_clan_order_members' };
+    const changes = { ...order, amount, strategy, maxUnitPrice, budget, memberIds };
+    const goal = await buildGoal(changes, clan, options);
+    const result = await Database.transitionPlayerManagedClanOrder({
+        clanId: clan.id, orderId: order.id, expectedRevision: order.revision,
+        transition: 'edit', changes, goal, actionType: actionTypeForGoal(goal), reasonCode: 'player_order_edit'
+    });
+    if (result.ok) await LifeState.statesByIds(clan.state.memberIds);
+    if (result.ok && result.order.status !== 'paused') await ensureMarketDemand(clan.id, result.order, result.goal);
+    return result;
 }
 
 async function transition(clan, transitionName, payload = {}, options = {}) {
     const order = await current(clan.id);
     if (!order) return { ok: false, code: 'clan_order_not_active' };
     if (transitionName === 'pause' || transitionName === 'cancel') {
-        return Database.transitionPlayerManagedClanOrder({
+        const result = await Database.transitionPlayerManagedClanOrder({
             clanId: clan.id,
             orderId: order.id,
             expectedRevision: payload.revision ?? null,
             transition: transitionName,
             reasonCode: `player_order_${transitionName}`
         });
+        if (result.ok) await LifeState.statesByIds(clan.state.memberIds);
+        return result;
     }
     const goal = await buildGoal(order, clan, {
         ...options,
@@ -490,6 +562,7 @@ async function transition(clan, transitionName, payload = {}, options = {}) {
         actionType: actionTypeForGoal(goal),
         reasonCode: `player_order_${transitionName}`
     });
+    if (result.ok) await LifeState.statesByIds(clan.state.memberIds);
     if (result.ok) await ensureMarketDemand(clan.id, result.order, result.goal);
     return result;
 }
@@ -501,9 +574,11 @@ module.exports = {
     buildGoal,
     create,
     current,
+    edit,
     itemSnapshot,
     itemTemplate,
     planFor,
+    orderSettings,
     resolveClan,
     syncProgress,
     transition

@@ -5,12 +5,9 @@ const Restrictions = invoke('GameServer/Effects/EffectRestrictions');
 const Tactics = invoke('GameServer/Bot/AI/BotPvpTactics');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const Support = invoke('GameServer/Bot/AI/BotSupportPlanner');
-const ClassTactics = invoke('GameServer/Bot/AI/PartyClassTactics');
-const SkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const HuntingVisibility = invoke('GameServer/Bot/AI/BotHuntingVisibility');
 
-const RAID_ACTION_RETRY_MS = 8000;
-const RAID_AGGRESSION_RETRY_MS = 5000;
+const RaidCombat = invoke('GameServer/Bot/AI/PartyRaidCombat');
 const RAID_PREPARATION_SETTLE_MS = 1500;
 const RAID_RECOVERY_BUFF_WAIT_MS = 8000;
 
@@ -26,130 +23,12 @@ function leader(session) {
     return roster(session).find(s => s.actor.fetchId() === party?.leaderId) || session;
 }
 
-function mainRaidTank(members, party) {
-    return members.find((member) => (
-        Number(member.actor.fetchId?.() || 0) === Number(party?.leaderId || 0)
-        && Roles.inferRole(member.actor) === 'tank'
-    )) || members.find((member) => Roles.inferRole(member.actor) === 'tank') || null;
-}
-
-function bossHeldByRaidTank(members, boss, party) {
-    const tank = mainRaidTank(members, party);
-    const targetId = Number(boss?.fetchDestId?.() || 0);
-    return !!tank && targetId > 0
-        && Number(tank.actor.fetchId?.() || 0) === targetId
-        && Threats.alive(tank.actor);
-}
-
 const loc = actor => ({ locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() });
 const ratio = (value, max) => Number(value || 0) / Math.max(1, Number(max || 0));
 
-function raidActionKey(target, skill) {
-    const effect = String(skill?.fetchSemantic?.()?.effect || '').toLowerCase();
-    return `${Number(target?.fetchId?.() || 0)}:${effect || Number(skill?.fetchSelfId?.() || 0)}`;
-}
+const standForAction = RaidCombat.standForAction;
 
-function raidClaimMap(owner) {
-    return owner.backgroundRaidActionClaims || (owner.backgroundRaidActionClaims = new Map());
-}
-
-function canAttemptRaidAction(owner, target, skill, now, retryMs = RAID_ACTION_RETRY_MS) {
-    const claims = raidClaimMap(owner);
-    for (const [key, until] of claims) if (Number(until) <= now) claims.delete(key);
-    return Number(claims.get(raidActionKey(target, skill)) || 0) <= now;
-}
-
-function rememberRaidAction(owner, target, skill, now, retryMs = RAID_ACTION_RETRY_MS) {
-    raidClaimMap(owner).set(raidActionKey(target, skill), now + retryMs);
-}
-
-function raidMinionPickup(owner, members, raidPlan, mainTank, now) {
-    const Effects = invoke('GameServer/Effects/EffectStore');
-    // Capability, not the inferred party role: music fighters can also have
-    // Aggression. A holder remains valid while its skill is on reuse, so two
-    // rescuers do not continually pull the same add away from one another.
-    const holders = members.filter(member => member === mainTank
-        || SkillCapabilities.aggressionSkill(member.actor));
-    const holderIds = new Set(holders.map(member => member.actor.fetchId()));
-    const providers = holders.filter(member => member !== mainTank
-        && !member.actor.state.fetchCasts?.()
-        && Restrictions.canUseBasicAction(member.actor)
-        && ClassTactics.usable(member.actor, SkillCapabilities.aggressionSkill(member.actor), 0.08));
-    const targets = raidPlan.minions.filter(target => {
-        if (target === raidPlan.boss || !Threats.alive(target)) return false;
-        const victimId = Number(target.fetchDestId?.() || 0);
-        if (holderIds.has(victimId) || !members.some(member => member.actor.fetchId() === victimId)) return false;
-        const effects = Effects.impairments(target);
-        // Leave safely controlled adds alone and do not pull unengaged adds.
-        return !effects.disabled && !effects.rooted;
-    });
-    const priority = target => {
-        const victim = members.find(member => member.actor.fetchId() === Number(target.fetchDestId?.()));
-        const role = Roles.inferRole(victim.actor);
-        return ['healer', 'buffer'].includes(role) && !Roles.isPartyMusicFighter(victim.actor) ? 0
-            : ['archer', 'mage'].includes(role) ? 1 : 2;
-    };
-    targets.sort((a, b) => priority(a) - priority(b)
-        || Number(b === raidPlan.focusMinion) - Number(a === raidPlan.focusMinion)
-        || a.fetchId() - b.fetchId());
-    for (const target of targets) {
-        const candidates = providers.filter(member => {
-            const skill = SkillCapabilities.aggressionSkill(member.actor);
-            const distance = Threats.distance(member.actor, target);
-            return distance <= 1800
-                && (Restrictions.canMove(member.actor) || distance <= Number(skill.fetchDistance?.() || 0))
-                && canAttemptRaidAction(owner, target, skill, now, RAID_AGGRESSION_RETRY_MS);
-        });
-        candidates.sort((a, b) => Threats.distance(a.actor, target) - Threats.distance(b.actor, target)
-            || a.actor.fetchId() - b.actor.fetchId());
-        if (candidates.length) return { provider: candidates[0], target,
-            skill: SkillCapabilities.aggressionSkill(candidates[0].actor) };
-    }
-    return null;
-}
-
-function castRaidSkill(session, bot, target, skill, Generics) {
-    standForAction(session, bot);
-    Tactics.stop(session, bot);
-    session.currentTargetId = target.fetchId();
-    bot.select({ id: target.fetchId() });
-    Generics.skillExec(session, bot, { id: target.fetchId(), selfId: skill.fetchSelfId(), ctrl: true });
-}
-
-function standForAction(session, bot) {
-    if (!bot.state.fetchSeated()) return;
-    bot.state.setSeated(false);
-    session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(bot), bot);
-}
-
-function combatRaidBuffs(session, owner, members, Generics, now) {
-    const supportMembers = members.filter(s => !['tank', 'healer'].includes(Roles.inferRole(s.actor)));
-    const recoveryOptions = { raidRecovery: true, allowAttackInterrupt: true };
-    for (const member of members.filter(s => s.hotRaidNeedsRebuff)) {
-        member.hotRaidRebuffUntil ||= now + RAID_RECOVERY_BUFF_WAIT_MS;
-        if (now >= member.hotRaidRebuffUntil || !Support.hasPendingAction(
-            [{ actor: member.actor }], supportMembers.map(s => s.actor), recoveryOptions)) {
-            member.hotRaidNeedsRebuff = false;
-            member.hotRaidRebuffUntil = undefined;
-        }
-    }
-    const recovering = members.filter(s => s.hotRaidNeedsRebuff);
-    const providers = supportMembers.filter(s => !s.actor.state.fetchCasts?.() && !s.pendingSupportCast
-        && Restrictions.canCast(s.actor)).map(s => s.actor);
-    const recipients = (recovering.length ? recovering : members).map(s => ({ actor: s.actor, leader: s === owner }));
-    const action = Support.nextPartyAction(recipients, providers, recovering.length
-        ? recoveryOptions : { musicOnly: true, allowAttackInterrupt: true });
-    if (!action || action.provider !== session.actor) return false;
-    // Battle rebuffs never drag a provider through the encounter to reach an
-    // outlying recipient. Other members keep their native attack cycles.
-    if (!invoke('GameServer/Bot/AI/BotSkillIntent').inRange(session.actor, action.target, action.skill)) return false;
-    Tactics.stop(session, session.actor);
-    standForAction(session, session.actor);
-    Support.queueSupportCast(session, action);
-    Generics.skillExec(session, session.actor, { id: action.target.fetchId(), selfId: action.skill.fetchSelfId(), ctrl: false });
-    session.lastDecision = { action: 'raid_rebuff', skillId: action.skill.fetchSelfId(), targetId: action.target.fetchId(), at: now };
-    return true;
-}
+const combatRaidBuffs = RaidCombat.combatRaidBuffs;
 
 function prepareBuffs(session, owner, members, Generics, now, options = {}) {
     // Finish one native cast/approach before electing another provider. This
@@ -331,6 +210,10 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     const members = roster(session).filter(s => Threats.alive(s.actor) && !s.hotRaidCasualtyAt);
     if (!members.length) return true;
     const owner = members.find(s => s.actor.fetchId() === party.leaderId) || members[0];
+    const RaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
+    const heldRaidPlan = owner.backgroundHuntTarget && RaidSafety.isProtectedRaidEntity(owner.backgroundHuntTarget)
+        ? RaidSafety.botClanRaidCombatPlan(owner, owner.backgroundHuntTarget) : null;
+    if (heldRaidPlan) RaidCombat.preserveControlledAdds(session, bot, heldRaidPlan);
     if (!Restrictions.canUseBasicAction(bot)) return true;
     // Native cast completion owns the action slot, including support effects.
     // A silence that lands during party music must not leave a melee support
@@ -345,7 +228,6 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     const near = members.filter(s => Threats.distance(s.actor, owner.actor) <= radius);
     const Awareness = invoke('GameServer/Bot/AI/PartyAwareness');
     const incoming = Awareness.npcThreateningActor(session) || near.map(s => Awareness.npcThreateningActor(s)).find(Boolean);
-    const RaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
     const raidObjective = party.stats?.objective?.sourceKind === 'raid'
         || party.stats?.objective?.raidBoss === true;
     const legal = (npc) => {
@@ -395,6 +277,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         session.lastDecision = { action: 'party_buff_approach', targetId: session.pendingSupportCast.targetId, at: now };
         return true;
     }
+    if (!incoming && invoke('GameServer/Bot/AI/PendingSweep').tick(session, bot, Generics, AI, now)) return true;
     const distance = Threats.distance(bot, owner.actor);
     if (!incoming && session !== owner && distance > 700) {
         if (!session.pendingPathRequest && !bot.state.fetchTowards?.() && Restrictions.canMove(bot)) {
@@ -500,126 +383,18 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     session.backgroundSearchDestination = null;
     const autonomousRaid = RaidSafety.canEngageBotClanRaid(session, target);
     const raidPlan = autonomousRaid ? RaidSafety.botClanRaidCombatPlan(owner, target) : null;
-    const role = Roles.inferRole(bot);
-    let combatTarget = target;
-    if (raidPlan) {
-        const raidTank = mainRaidTank(members, party);
-        const isRaidTank = session === raidTank;
-        const bossHeldByTank = bossHeldByRaidTank(members, raidPlan.boss, party);
-        if (bossHeldByTank) owner.raidOpenedBossId = raidPlan.boss.fetchId();
-        const attackers = [raidPlan.boss, ...raidPlan.minions]
-            .filter(npc => Threats.alive(npc) && Number(npc.fetchDestId?.()) === Number(bot.fetchId()));
-        const defense = attackers.length ? ClassTactics.selfAction(bot, {
-            role, activeMobs: attackers.length, raidBoss: true, target: attackers[0]
-        }) : null;
-        if (defense) {
-            castRaidSkill(session, bot, bot, defense.skill, Generics);
-            session.lastDecision = { action: 'raid_defense', skillId: defense.skill.fetchSelfId(),
-                targetId: bot.fetchId(), partyId: party.partyId, at: now };
-            return true;
-        }
-        if (!isRaidTank) {
-            const pickup = raidMinionPickup(owner, members, raidPlan, raidTank, now);
-            if (pickup?.provider === session) {
-                rememberRaidAction(owner, pickup.target, pickup.skill, now, RAID_AGGRESSION_RETRY_MS);
-                castRaidSkill(session, bot, pickup.target, pickup.skill, Generics);
-                session.lastDecision = { action: 'raid_taunt_add', targetId: pickup.target.fetchId(),
-                    skillId: pickup.skill.fetchSelfId(), partyId: party.partyId, at: now };
-                return true;
-            }
-        }
-        if (!isRaidTank && !bossHeldByTank && (owner.raidOpenedBossId !== raidPlan.boss.fetchId()
-            || Number(raidPlan.boss.fetchDestId?.()) === Number(bot.fetchId()))) {
-            Tactics.stop(session, bot);
-            session.currentTargetId = undefined;
-            bot.unselect?.();
-            session.lastDecision = { action: 'raid_wait_tank', targetId: raidPlan.boss.fetchId(),
-                partyId: party.partyId, at: now };
-            return true;
-        }
-
-        if (!isRaidTank && combatRaidBuffs(session, owner, near, Generics, now)) return true;
-        if (!isRaidTank && session.hotRaidNeedsRebuff) {
-            Tactics.stop(session, bot);
-            session.currentTargetId = undefined;
-            bot.unselect?.();
-            session.lastDecision = { action: 'raid_wait_minimal_rebuff', until: session.hotRaidRebuffUntil,
-                partyId: party.partyId, at: now };
-            return true;
-        }
-        combatTarget = isRaidTank
-            ? raidPlan.boss
-            : (raidPlan.focusMinion || raidPlan.boss);
-
-        if (isRaidTank && Number(raidPlan.boss.fetchDestId?.() || 0) !== Number(bot.fetchId())) {
-            const aggression = SkillCapabilities.aggressionSkill(bot);
-            if (aggression && ClassTactics.usable(bot, aggression, 0.08)
-                && canAttemptRaidAction(owner, raidPlan.boss, aggression, now, RAID_AGGRESSION_RETRY_MS)) {
-                rememberRaidAction(owner, raidPlan.boss, aggression, now, RAID_AGGRESSION_RETRY_MS);
-                castRaidSkill(session, bot, raidPlan.boss, aggression, Generics);
-                session.lastDecision = { action: 'raid_taunt_boss', targetId: raidPlan.boss.fetchId(),
-                    skillId: aggression.fetchSelfId(), partyId: party.partyId, at: now };
-                return true;
-            }
-        }
-
-        const canAttempt = (raidTarget, skill) => canAttemptRaidAction(owner, raidTarget, skill, now);
-        // Silence/magic mute must not strand melee support classes in a loop
-        // of rejected control and debuff casts. Sword Singers and Bladedancers
-        // are physical fighters after their party music is applied, so when
-        // casting is unavailable they must fall through to executeCombat and
-        // use their weapon normally.
-        if (!isRaidTank && Restrictions.canCast(bot)) {
-            const control = ClassTactics.supportCrowdControl(bot, raidPlan.minions, {
-                raid: true,
-                primaryTargetId: raidPlan.focusMinion?.fetchId?.() || null,
-                canAttempt
-            });
-            if (control) {
-                rememberRaidAction(owner, control.target, control.skill, now);
-                castRaidSkill(session, bot, control.target, control.skill, Generics);
-                session.lastDecision = { action: 'raid_control_add', targetId: control.target.fetchId(),
-                    skillId: control.skill.fetchSelfId(), partyId: party.partyId, at: now };
-                return true;
-            }
-            const debuff = ClassTactics.raidDebuffAction(bot,
-                [raidPlan.boss, raidPlan.focusMinion].filter(Boolean), {
-                    primaryTargetId: raidPlan.boss.fetchId(),
-                    canAttempt
-                });
-            if (debuff) {
-                rememberRaidAction(owner, debuff.target, debuff.skill, now);
-                castRaidSkill(session, bot, debuff.target, debuff.skill, Generics);
-                session.lastDecision = { action: 'raid_debuff', targetId: debuff.target.fetchId(),
-                    skillId: debuff.skill.fetchSelfId(), partyId: party.partyId, at: now };
-                return true;
-            }
-        }
-        // The healer is not a damage slot. Regenerate seated between support
-        // actions, but never sit with an attacker on us or outside heal range.
-        // Hysteresis avoids a stand/sit packet loop near full MP.
-        if (role === 'healer' && !attackers.length && !Awareness.underDirectNpcAttack(session)
-            && !bot.state.fetchTowards?.() && near.every(s => Threats.distance(bot, s.actor) <= 900)
-            && ratio(bot.fetchMp(), bot.fetchMaxMp()) < (bot.state.fetchSeated() ? 0.98 : 0.9)) {
-            if (!bot.state.fetchSeated()) {
-                Tactics.stop(session, bot);
-                bot.state.setSeated(true);
-                session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(bot), bot);
-            }
-            bot.automation.replenishVitals(bot);
-            session.lastDecision = { action: 'raid_healer_recovery', partyId: party.partyId, at: now };
-            return true;
-        }
-    }
+    if (raidPlan) return RaidCombat.tick(session, bot, Generics, AI, {
+        owner, members, near, raidPlan, raidTank: RaidCombat.mainRaidTank(members, party),
+        partyId: party.partyId, combatBuffs: combatRaidBuffs
+    }, now);
+    const combatTarget = target;
     standForAction(session, bot);
     if (session.currentTargetId !== combatTarget.fetchId()) {
         Tactics.stop(session, bot);
         session.currentTargetId = combatTarget.fetchId();
         bot.select({ id: combatTarget.fetchId() });
     }
-    const assignedRaidTank = raidPlan ? mainRaidTank(members, party) : null;
-    session.lastDecision = { action: raidPlan && session === assignedRaidTank ? 'raid_hold_boss'
-        : raidPlan ? 'raid_focus_add' : 'party_hunt',
+    session.lastDecision = { action: 'party_hunt',
         targetId: combatTarget.fetchId(), partyId: party.partyId, at: now };
     // Attack.meleeHit owns the whole native weapon cycle and repeats it when
     // the cycle completes. Re-dispatching attackExec from every bot AI tick
@@ -632,7 +407,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     }
     AI.executeCombat(session, bot, combatTarget, Generics, {
         party: true,
-        autonomousClanRaid: RaidSafety.canEngageBotClanRaid(session, combatTarget)
+        autonomousClanRaid: false
     });
     return true;
 }

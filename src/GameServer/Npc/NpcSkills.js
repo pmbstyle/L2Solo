@@ -113,6 +113,7 @@ const COMBAT_SKILL_TYPES = new Set([
     C4SkillRules.DRAIN,
     C4SkillRules.BLOW,
     C4SkillRules.EFFECT,
+    C4SkillRules.HOT,
     C4SkillRules.AGGRO_DAMAGE,
     C4SkillRules.GET_PLAYER
 ]);

@@ -576,7 +576,9 @@ function open(state, options = {}) {
     if (Number(state.stats?.marketSellRetryAfter || 0) > timestamp) {
         if (!options.forcedCleanup) return Promise.resolve({ state, listed: false, reason: 'sell_retry_cooldown' });
         // Cleanup may bypass the travel delay, but must not open another WTS.
-        return MarketBuyerActivity.refresh().then(() => preTradeNpcCleanup(state, options.forcedCleanup, timestamp)).then((cleanup) => (
+        // Learn recipes first, as the sale path does: a learnable one is not junk.
+        return MarketBuyerActivity.refresh().then(() => LifeState.learnCraftableRecipes(state))
+            .then((learnedState) => preTradeNpcCleanup(learnedState || state, options.forcedCleanup, timestamp)).then((cleanup) => (
             BotWarehouse.depositCold({
                 ...cleanup.state,
                 stats: { ...cleanup.state.stats, marketSellRetryAfter: state.stats.marketSellRetryAfter }
@@ -1219,6 +1221,7 @@ module.exports = {
     DWARVEN_VILLAGE_STALL_MIN_DISTANCE,
     marketStoreTitle,
     marketLocation,
+    pricingAfterReview,
     staticMerchantStalls,
     targetMarketTownName,
     legacyMarketTownCandidates,

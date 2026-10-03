@@ -2,7 +2,7 @@ const marketState = {
     data: null,
     loading: false,
     live: true,
-    query: '',
+    query: new URLSearchParams(location.search).get('q') || '',
     side: 'wts',
     town: 'all',
     source: 'market',
@@ -11,7 +11,7 @@ const marketState = {
     view: 'items',
     limit: 100,
     offers: [],
-    selectedId: null,
+    selectedId: Number(new URLSearchParams(location.search).get('item')) || null,
     history: null,
     historyRange: '24h',
     historyItemId: null,
@@ -152,7 +152,9 @@ function renderMarketTable() {
         renderMarketDetail();
         return;
     }
-    if (!rows.slice(0, marketState.limit).some((row) => Number(row.selfId) === Number(marketState.selectedId))) marketState.selectedId = rows[0].selfId;
+    const selectedIndex = rows.findIndex((row) => Number(row.selfId) === Number(marketState.selectedId));
+    if (selectedIndex < 0) marketState.selectedId = rows[0].selfId;
+    else if (selectedIndex >= marketState.limit) marketState.limit = selectedIndex + 1;
     marketEls.body.innerHTML = rows.slice(0, marketState.limit).map((row) => {
         const best = itemView ? row.best : row;
         const selected = Number(row.selfId) === Number(marketState.selectedId);
@@ -475,8 +477,10 @@ async function refreshMarket() {
         marketState.data = await response.json();
         marketState.offers = MarketModel.activeOffers(marketState.data);
         renderMarketPage();
+        window.WorldObserverShell?.connection(true);
     } catch (error) {
-        marketEls.freshness.textContent = `Market unavailable: ${error.message}`;
+        marketEls.freshness.textContent = 'Trading activity could not load. We will try again shortly.';
+        window.WorldObserverShell?.connection(false);
     } finally {
         marketState.loading = false;
     }
@@ -544,6 +548,7 @@ marketEls.liveToggle.addEventListener('click', () => {
     marketState.live = !marketState.live;
     marketEls.liveToggle.classList.toggle('is-live', marketState.live);
     marketEls.liveLabel.textContent = marketState.live ? 'Live' : 'Paused';
+    marketEls.liveToggle.setAttribute('aria-label', marketEls.liveToggle.title);
     marketEls.liveToggle.title = marketState.live ? 'Pause live refresh' : 'Resume live refresh';
     if (marketState.live) refreshMarket();
 });
@@ -557,6 +562,7 @@ document.addEventListener('visibilitychange', () => {
     if (!document.hidden && marketState.live) refreshMarket();
 });
 
+marketEls.search.value = marketState.query;
 refreshMarket();
 marketState.timer = window.setInterval(() => {
     if (marketState.live && !document.hidden) refreshMarket();

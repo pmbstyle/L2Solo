@@ -47,6 +47,10 @@ function seedDatabase() {
         if (index === 3) insertItem.run(1864, 'Stem', 5, id);
         if (index === 4) insertItem.run(5339, 'Recipe: Sealed Majestic Leather Armor(100%)', 2, id);
     }
+    // Existing successful-upgrade fixture must fund the leader's player-rule SP cost.
+    const levelSp = invoke('GameServer/Clan/ClanRules').LEVEL_REQUIREMENTS[1].sp;
+    seed.prepare('UPDATE characters SET sp = ?').run(levelSp);
+    seed.prepare('UPDATE bot_life_state SET sp = ?').run(levelSp);
     seed.close();
 }
 
@@ -54,6 +58,7 @@ async function main() {
     seedDatabase();
     options.default.Database.path = path.relative(rootDir, databasePath);
     Database.init();
+    await Database.initClanHalls(); // creates the dues cursor table, as the server start does
 
     try {
         const created = await Database.createAutonomousClan({
@@ -73,20 +78,30 @@ async function main() {
         await Database.execute(['UPDATE clans SET level = 1 WHERE id = ?', [created.clanId]]);
         await Database.execute(['UPDATE clan_simulation_clans SET stateJson = ? WHERE clanId = ?', [JSON.stringify(state), created.clanId]]);
 
+        // Level 1 dues: a share of new earnings, paid into the clan warehouse.
+        for (const memberId of [4300002, 4300003]) {
+            await Database.settleClanDues({ clanId: created.clanId, characterId: memberId, rate: 0.35, timestamp: 1 });
+            await Database.execute(['UPDATE items SET amount = amount + 4000000 WHERE characterId = ? AND selfId = 57', [memberId]]);
+            assert.strictEqual((await Database.settleClanDues({ clanId: created.clanId, characterId: memberId, rate: 0.35, timestamp: 2 })).amount, 1400000);
+        }
+
         const resolved = await ClanEconomyService.resolveBatch(4, { budgetMs: 1000 });
         assert.strictEqual(resolved.levelUps, 1, 'level 1 must advance after a real treasury contribution');
-        assert(resolved.contributions > 0, 'level 1 must apply real Adena contributions');
 
         const [clan] = await Database.execute(['SELECT level FROM clans WHERE id = ?', [created.clanId]]);
         assert.strictEqual(Number(clan.level), 2);
         const [contributions] = await Database.execute(['SELECT COUNT(*) AS entries, SUM(amount) AS amount FROM clan_contributions WHERE clanId = ? AND targetLevel = 1', [created.clanId]]);
-        assert.strictEqual(Number(contributions.amount), 2500000);
+        assert.strictEqual(Number(contributions.amount), 2800000);
 
         const warehouse = await Database.fetchClanWarehouseItems(created.clanId);
         const adena = warehouse.find((item) => Number(item.selfId) === 57);
         const stems = warehouse.find((item) => Number(item.selfId) === 1864);
         const recipe = warehouse.find((item) => Number(item.selfId) === 5339);
-        assert.strictEqual(Number(adena.amount), 2500000, 'level 1 Adena must live in the clan warehouse');
+        // Level 1 Adena was collected in the clan warehouse; the level-up spent 2.5M of it.
+        assert.strictEqual(Number(adena.amount), 300000, 'the level-up spends the collected Adena');
+        const [spent] = await Database.execute([`SELECT amount FROM clan_warehouse_ledger
+            WHERE clanId = ? AND selfId = 57 AND operation = 'level_up_consume'`, [created.clanId]]);
+        assert.strictEqual(Number(spent.amount), 2500000);
         assert.strictEqual(Number(stems.amount), 15, 'free material surplus must be deposited atomically');
         assert.strictEqual(Number(recipe.amount), 1, 'the clan warehouse keeps one recipe instance');
 

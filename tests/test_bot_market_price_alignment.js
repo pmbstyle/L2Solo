@@ -52,14 +52,17 @@ try {
     process.env.L2NODE_PROGRESSION_RATE = 'x10';
     const goal = goalFor(state);
     assert.strictEqual(goal.target.adena, 3790000, 'Karmian Tunic has no ordinary NPC alternative');
-    assert.strictEqual(goal.plan.requiredAdena, 701453, 'funding shortfall must use the corrected estimate');
+    // The shortfall keeps the operating reserve (10% of the budget here) like
+    // every other purchase (PurchaseFunding): 701,453 + 308,855.
+    assert.strictEqual(goal.plan.requiredAdena, 1010308, 'funding shortfall must use the corrected estimate and keep the operating reserve');
     const legacyGoal = {
         ...goal,
         target: { ...goal.target, adena: 379000 },
         plan: { estimatedCost: 379000, marketTown: null }
     };
     const bid = BuyStore.bidFor(state, legacyGoal);
-    assert.strictEqual(bid.price, 2779693, 'the saved CorinCloud estimate must no longer cap his bid at 379000');
+    // The shared operating reserve rounds its 10% up (PurchaseFunding), one adena below the old floor.
+    assert.strictEqual(bid.price, 2779692, 'the saved CorinCloud estimate must no longer cap his bid at 379000');
     assert(bid.price >= Listings.listingFloor(pricingItem(439)));
     assert(bid.price * bid.count <= state.adena - Math.floor(state.adena * 0.1));
     assert.strictEqual(BuyStore.bidFor({ ...state, adena: 2000000 }, goal), null,

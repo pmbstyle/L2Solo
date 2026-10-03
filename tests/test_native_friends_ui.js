@@ -6,6 +6,7 @@ const Protocol = invoke('GameServer/World/Generics/NativeFriendsProtocol');
 const Friends = invoke('GameServer/Bot/AI/BotFriendship');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const World = invoke('GameServer/World/World');
+const Party = invoke('GameServer/Bot/AI/PartyCompanionService');
 const Database = invoke('Database');
 const restores = [];
 function replace(object, key, value) { const old = object[key]; restores.push(() => { object[key] = old; }); object[key] = value; }
@@ -72,8 +73,11 @@ const command = (value) => Native(session, ['native-friends', ...value.split(' '
         let resolveInvite, invited = [];
         replace(World, 'inviteFriendByName', (s, actor, name, distribution, source) => {
             assert.strictEqual(s, session); assert.strictEqual(actor, session.actor); assert.strictEqual(source, 'friend_const');
+            assert.strictEqual(distribution, undefined);
+            assert.strictEqual(Party.distributionForLeader(s), 0, 'Form inherits the setting reported by the client');
             invited.push(name); return new Promise((resolve) => { resolveInvite = resolve; });
         });
+        invoke('GameServer/World/Generics/NpcTalkResponse')(session, { link: 'native-party distribution 0' });
         const forming = command('form'); await Promise.resolve(); await Promise.resolve();
         await command('form'); assert.deepStrictEqual(invited, ['Friend0'], 'double click cannot duplicate or parallelize invites');
         resolveInvite(true); await Promise.resolve(); await Promise.resolve();

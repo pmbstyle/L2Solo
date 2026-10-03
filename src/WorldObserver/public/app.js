@@ -2,9 +2,23 @@ const ActorFilters = window.WorldObserverActorFilters;
 const Leaderboards = window.WorldObserverLeaderboards;
 const WorldState = window.WorldObserverWorldState;
 const MapClusters = window.WorldObserverMapClusters;
+const MapViewport = window.WorldObserverMapViewport;
 const Router = window.WorldObserverSpaRouter;
 const UiLanguage = window.WorldObserverUiLanguage;
 const Relationships = window.WorldObserverRelationships;
+
+let playerPages = null;
+let mapControls = null;
+let activeMapMetrics = null;
+const scheduleMapViewportRender = MapViewport.frameRenderer(() => {
+    setViewBox();
+    withMapMetrics(() => {
+        renderLabels();
+        renderPoints();
+        mapControls?.renderMarker();
+    });
+    saveMapPreferences();
+}, (render) => requestAnimationFrame(render));
 
 const state = {
     snapshot: null,
@@ -63,6 +77,8 @@ const state = {
     clanLastLoadedAt: 0,
     clanFocusReturn: null,
     clanManagerOpen: false,
+    clanManagerTab: 'goal',
+    clanCraftPreviewRequest: 0,
     clanCrestFit: 'cover',
     clanCrestSource: null,
     clanCrestDraft: null,
@@ -74,13 +90,20 @@ const state = {
     clanOrderSearchError: null,
     clanOrderSearchRequest: 0,
     clanOrderSearchTimer: null,
+    clanOrderCancelPending: false,
+    clanOrderConflict: false,
     clanOrderSaving: false,
     clanOrderMessage: null,
     knowledgeNpcFocus: null,
     knowledgeNpcLoading: false,
     knowledgeNpcRequest: 0,
     applyingRoute: false,
-    pendingRoute: null
+    pendingRoute: null,
+    profileTab: 'overview',
+    showMapLabels: true,
+    showMapRaids: false,
+    followCharacter: false,
+    destinationSignature: null
 };
 
 function commitRoute(route, { replace = false } = {}) {
@@ -88,7 +111,39 @@ function commitRoute(route, { replace = false } = {}) {
     const href = Router.href(route);
     if (`${window.location.pathname}${window.location.search}` === href) return;
     window.history[replace ? 'replaceState' : 'pushState']({}, '', href);
+    const mapSelection = document.body.dataset.view === 'world'
+        && (route.name === 'actor' || (route.name === 'raid-bosses' && route.id));
+    window.WorldObserverShell?.update(mapSelection ? { name: 'world' } : route);
 }
+
+function setApplicationView(route) {
+    const key = Router.href(route);
+    if (state.applicationRoute !== key) { state.applicationRoute = key; window.scrollTo(0, 0); }
+    document.body.dataset.view = route.name === 'actor' ? 'profile' : route.name;
+    playerPages?.show(route);
+    window.WorldObserverShell?.update(route);
+    const names = { overview: 'Overview', characters: 'Characters', parties: 'Parties', dungeon: 'Dungeon', actor: 'Character', world: 'World map', clans: 'Clans', rankings: 'Rankings', 'raid-bosses': 'Raid bosses' };
+    document.title = `${names[route.name] || 'World'} · World Observer`;
+    if (route.name === 'world' || route.name === 'actor') requestAnimationFrame(() => { renderSelected(); renderLabels(); renderPoints(); });
+}
+
+function updateProfileTabs() {
+    const profile = document.body.dataset.view === 'profile';
+    els.selectedInspector.querySelectorAll('[data-profile-panel]').forEach((panel) => {
+        panel.hidden = profile && panel.dataset.profilePanel !== state.profileTab;
+        if (!profile) { panel.removeAttribute('role'); panel.removeAttribute('aria-labelledby'); }
+    });
+    els.selectedInspector.querySelectorAll('[data-profile-tab]').forEach((tab) => {
+        const selected = tab.dataset.profileTab === state.profileTab;
+        tab.setAttribute('aria-selected', String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+    });
+}
+
+function saveMapPreferences() { mapControls?.save(); }
+function renderMapDestinations() { mapControls?.renderDestinations(); }
+function focusMapDestination(value) { return mapControls?.focus(value); }
+function focusSelectedCharacter() { mapControls?.focusSelected(); }
 
 function clearActorSelection() {
     resetRelationships();
@@ -105,9 +160,16 @@ function applyRoute(route = Router.parse(`${window.location.pathname}${window.lo
         window.history.replaceState({}, '', Router.href({ name: 'world' }));
         route = { name: 'world' };
     }
+    setApplicationView(route);
     state.applyingRoute = true;
     state.pendingRoute = null;
     try {
+        if (['overview', 'characters', 'parties', 'dungeon'].includes(route.name)) {
+            closeRankings({ updateRoute: false });
+            closeRaidBosses({ updateRoute: false });
+            closeClans({ updateRoute: false });
+            return;
+        }
         if (route.name === 'world') {
             document.title = 'World Observer';
             const clanId = Number(route.clanId) || null;
@@ -131,6 +193,10 @@ function applyRoute(route = Router.parse(`${window.location.pathname}${window.lo
                 state.pendingRoute = route;
             }
             if (npcId) loadKnowledgeNpcFocus(npcId);
+            if (route.areaId) {
+                if (state.snapshot) focusMapDestination(`area:${route.areaId}`);
+                else state.pendingRoute = route;
+            }
             return;
         }
         if (route.name === 'rankings') {
@@ -150,7 +216,10 @@ function applyRoute(route = Router.parse(`${window.location.pathname}${window.lo
         }
         if (route.name === 'actor') {
             if (!state.snapshot) state.pendingRoute = route;
-            else selectActor(route.id, route.kind, true, false);
+            else {
+                closeRankings({ updateRoute: false }); closeRaidBosses({ updateRoute: false }); closeClans({ updateRoute: false });
+                selectActor(route.id, route.kind, false, false);
+            }
         }
     } finally {
         state.applyingRoute = false;
@@ -182,8 +251,8 @@ const COLORS = {
 
 const PHASE_LABELS = Object.freeze({
     hot: 'Active',
-    warm: 'Background',
-    cold: 'Simulated',
+    warm: 'Elsewhere',
+    cold: 'Elsewhere',
     player: 'Player',
     players: 'Players',
     raidbosses: 'Raid bosses'
@@ -203,8 +272,8 @@ const ROLE_LABELS = Object.freeze({
 });
 
 const ACTIVITY_LABELS = Object.freeze({
-    background_active: 'Active in background',
-    background_resolve: 'Simulating',
+    background_active: 'Adventuring',
+    background_resolve: 'Adventuring',
     buy: 'Buying',
     complete_errand: 'Finishing an errand',
     crafting: 'Crafting',
@@ -307,26 +376,12 @@ const els = {
     clanSearch: document.querySelector('#clanSearch'),
     clanScope: document.querySelector('#clanScope'),
     clanList: document.querySelector('#clanList'),
+    clanManagerDialog: document.querySelector('#clanManagerDialog'),
+    clanManagerContent: document.querySelector('#clanManagerContent'),
     clanDetail: document.querySelector('#clanDetail')
 };
 
-const DEFAULT_TILES = {
-    rawBaseUrl: 'https://raw.githubusercontent.com/npetrovski/l2-world-map/main/Maps',
-    blockSize: 32768,
-    blockPx: 900,
-    x: { min: 16, max: 26, mid: 20 },
-    y: { min: 10, max: 25, mid: 18 },
-    missingTiles: [
-        '17_14',
-        '18_13',
-        '26_13',
-        '26_15',
-        '26_16',
-        '26_17',
-        '26_18',
-        '26_19'
-    ]
-};
+const DEFAULT_TILES = window.WorldObserverMapAtlas.metadata;
 
 const RAID_BOSS_STATUS_LABELS = Object.freeze({
     alive: 'In world',
@@ -398,7 +453,7 @@ function clamp(value, min, max) {
 }
 
 function mapMeta() {
-    const tiles = state.snapshot?.mapTiles || DEFAULT_TILES;
+    const tiles = DEFAULT_TILES;
     const width = (tiles.x.max - tiles.x.min + 1) * tiles.blockPx;
     const height = (tiles.y.max - tiles.y.min + 1) * tiles.blockPx;
     return { ...tiles, width, height };
@@ -451,11 +506,20 @@ function setViewBox() {
 
 function setSvgViewBox() {
     const tiles = mapMeta();
-    els.worldMap.querySelector('.sea').setAttribute('width', tiles.width);
-    els.worldMap.querySelector('.sea').setAttribute('height', tiles.height);
+    // Extend the ocean through the SVG's aspect-ratio gutters as well as the atlas.
+    for (const backdrop of els.worldMap.querySelectorAll('.sea, .ocean-texture')) {
+        backdrop.setAttribute('x', -tiles.width);
+        backdrop.setAttribute('y', -tiles.height);
+        backdrop.setAttribute('width', tiles.width * 3);
+        backdrop.setAttribute('height', tiles.height * 3);
+    }
 
     if (!state.viewport) {
-        state.viewport = { x: 0, y: 0, width: tiles.width, height: tiles.height };
+        const rect = els.worldMap.getBoundingClientRect();
+        const aspect = rect.width > 0 && rect.height > 0 ? rect.width / rect.height : 1.35;
+        const center = worldToMap({ locX: 30000, locY: 90000 });
+        const width = 8000, height = Math.min(tiles.height, width / aspect);
+        state.viewport = clampViewport({ x: center.x - width / 2, y: center.y - height / 2, width, height });
     }
 
     if (!state.fit || !state.snapshot) {
@@ -498,25 +562,25 @@ function clientToMapPoint(clientX, clientY) {
 }
 
 function mapViewportMetrics(viewport = state.viewport || { x: 0, y: 0, width: mapMeta().width, height: mapMeta().height }) {
-    const rect = els.worldMap.getBoundingClientRect();
-    const scale = Math.max(0.0001, Math.min(rect.width / viewport.width, rect.height / viewport.height));
-    const renderedWidth = viewport.width * scale;
-    const renderedHeight = viewport.height * scale;
-    return {
-        rect,
-        scale,
-        left: rect.left + (rect.width - renderedWidth) / 2,
-        top: rect.top + (rect.height - renderedHeight) / 2
-    };
+    return MapViewport.metrics(viewport, els.worldMap.getBoundingClientRect());
+}
+
+function withMapMetrics(render) {
+    if (activeMapMetrics) return render();
+    activeMapMetrics = mapViewportMetrics();
+    try { return render(); }
+    finally { activeMapMetrics = null; }
+}
+
+function visibleMapViewport() {
+    return (activeMapMetrics || mapViewportMetrics()).visible;
 }
 
 function applyViewport(viewport) {
     state.fit = false;
     els.fitButton.classList.remove('is-live');
     state.viewport = clampViewport(viewport);
-    setViewBox();
-    renderLabels();
-    renderPoints();
+    scheduleMapViewportRender();
 }
 
 function phaseColor(item) {
@@ -711,8 +775,8 @@ function renderRaidBosses() {
                     : 'Not found';
             return `<button class="raid-boss-row ${escapeHtml(boss.status)}${clickable ? '' : ' is-missing'}" type="button" data-raid-boss-id="${escapeHtml(boss.id)}" ${clickable ? '' : 'disabled'}>
                 <i class="raid-boss-dot ${escapeHtml(boss.status)}"></i>
-                <span class="raid-boss-identity"><strong>${text(boss.name)}</strong><span>Lv ${number(boss.level, '?')} · NPC ${number(boss.id)}</span></span>
-                <span class="raid-boss-location"><strong>${text(boss.location?.name, 'Unknown location')}</strong><span>${text(raidBossCoordinates(boss.loc), 'Coordinates unavailable')}</span></span>
+                <span class="raid-boss-identity"><strong>${text(boss.name)}</strong><span>Lv ${number(boss.level, '?')}</span></span>
+                <span class="raid-boss-location"><strong>${text(boss.location?.name, 'Unknown location')}</strong><span>${boss.location?.area?.mapAnchor ? 'Dungeon entrance on map' : 'Surface location'}</span></span>
                 <span class="raid-boss-timer"><strong>${text(timer)}</strong><span>${text(raidBossStatusLabel(boss.status))}</span></span>
                 <span>${clickable ? '<span class="raid-boss-map-button">Show on map</span>' : ''}</span>
             </button>`;
@@ -796,6 +860,7 @@ function renderRankings() {
 }
 
 function openRankings({ updateRoute = true } = {}) {
+    setApplicationView({ name: 'rankings' });
     if (state.clanMapScope) clearClanMapScope({ updateRoute: false });
     if (state.raidBossOpen) closeRaidBosses({ updateRoute: false });
     if (state.clanOpen) closeClans({ updateRoute: false });
@@ -815,10 +880,11 @@ function closeRankings({ updateRoute = true } = {}) {
     if (!state.raidBossOpen && !state.clanOpen) document.body.classList.remove('rankings-open');
     state.rankingFocusReturn?.focus?.();
     state.rankingFocusReturn = null;
-    if (updateRoute) commitRoute({ name: 'world' });
+    if (updateRoute) { commitRoute({ name: 'world' }); setApplicationView({ name: 'world' }); }
 }
 
 function openRaidBosses({ updateRoute = true } = {}) {
+    setApplicationView({ name: 'raid-bosses' });
     if (state.clanMapScope) clearClanMapScope({ updateRoute: false });
     if (state.rankingOpen) closeRankings({ updateRoute: false });
     if (state.clanOpen) closeClans({ updateRoute: false });
@@ -838,7 +904,7 @@ function closeRaidBosses({ updateRoute = true } = {}) {
     if (!state.rankingOpen && !state.clanOpen) document.body.classList.remove('rankings-open');
     state.raidBossFocusReturn?.focus?.();
     state.raidBossFocusReturn = null;
-    if (updateRoute) commitRoute({ name: 'world' });
+    if (updateRoute) { commitRoute({ name: 'world' }); setApplicationView({ name: 'world' }); }
 }
 
 function clanItems() {
@@ -942,20 +1008,36 @@ function clanGoalSummary(goal, clan = null) {
         ? { title: 'No active goal', progress: 'Waiting', percent: 0, meta: 'Waiting for the next clan decision' }
         : { title: 'No active goal', progress: 'Player directed', percent: 0, meta: 'No clan objective has been selected' };
     const target = goal.target?.itemName || goal.target?.npcName || goal.plan?.label || uiLabel('type', goal.type, 'Operation');
-    const progressValue = number(goal.progress);
-    const required = number(goal.required);
-    const progress = required > 0 ? `${progressValue}/${required}` : 'Ready';
+    const progressValue = Number(goal.progress || 0);
+    const required = Number(goal.required || 0);
+    const progress = required > 0 ? `${number(progressValue)}/${number(required)}` : 'Waiting';
     const status = uiLabel('status', goal.status || 'active');
     const plan = uiLabel('plan', goal.plan?.kind, null);
     const reason = uiLabel('reason', goal.plan?.reasonCode, null);
     return {
         title: target,
         progress,
-        percent: required > 0 ? Math.max(0, Math.min(100, Math.round((progressValue / required) * 100))) : 100,
+        percent: required > 0 ? Math.max(0, Math.min(100, Math.round((progressValue / required) * 100))) : 0,
         itemId: Number(goal.target?.itemId || 0) || null,
         iconUrl: goal.target?.iconUrl || null,
         meta: [status, reason || plan].filter(Boolean).join(' · ')
     };
+}
+
+function clanAutomaticGoalMarkup(goal, clan, label = 'Automatic goal') {
+    const summary = clanGoalSummary(goal, clan);
+    const recipient = goal?.target?.memberName;
+    const status = goal ? clanOrderStatusLabel(goal.status) : 'Waiting';
+    const route = uiLabel('plan', goal?.plan?.kind, null);
+    return `<section class="clan-automatic-goal" aria-label="${text(label)}">
+        <div class="clan-order-current">
+            <span class="clan-order-current-icon">${summary.iconUrl ? `<img src="${text(summary.iconUrl)}" alt="${text(summary.title)}">` : uiIcon(goal?.type === 'adena' ? 'coins' : 'target')}</span>
+            <div class="clan-order-current-copy"><span>${text(label)}${route ? ` · ${text(route)}` : ''}</span><strong>${text(summary.title)}</strong><small>${recipient ? `For ${text(recipient)}` : goal?.target?.itemId ? 'Delivery: Clan warehouse' : 'Clan progression'}</small></div>
+            <b class="clan-goal-status" data-status="${text(goal?.status || 'idle')}">${text(status)}</b>
+        </div>
+        ${goal?.required > 0 ? `<div class="clan-order-progress" role="progressbar" aria-label="${text(label)} progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${summary.percent}"><i style="width:${summary.percent}%"></i></div><div class="clan-automatic-progress"><span>Progress</span><strong>${text(summary.progress)}</strong></div>` : ''}
+        <p class="clan-goal-explanation">${text(summary.meta)}</p>
+    </section>`;
 }
 
 function resetClanCrestDraft() {
@@ -975,6 +1057,8 @@ function resetClanOrderDraft() {
     state.clanOrderSearchError = null;
     state.clanOrderSaving = false;
     state.clanOrderMessage = null;
+    state.clanOrderConflict = false;
+    state.clanOrderCancelPending = false;
 }
 
 function clanOrderDraft() {
@@ -990,6 +1074,67 @@ function clanOrderDraft() {
         };
     }
     return state.clanOrderDraft;
+}
+
+function clanOrderSettings(order) {
+    return {
+        itemId: Number(order.itemId), amount: Number(order.amount), strategy: order.strategy,
+        maxUnitPrice: Number(order.maxUnitPrice), budget: Number(order.budget),
+        memberIds: [...order.memberIds].map(Number).sort((left, right) => left - right),
+        paused: order.status === 'paused'
+    };
+}
+
+function startClanOrderEditor(mode) {
+    resetClanOrderDraft();
+    state.clanManagerOpen = true;
+    state.clanManagerTab = 'goal';
+    const order = mode === 'edit' ? state.clanDetail?.order : null;
+    const draft = clanOrderDraft();
+    draft.mode = order ? 'edit' : 'new';
+    if (order) {
+        Object.assign(draft, {
+            orderId: order.id,
+            revision: order.revision,
+            expectedSettings: clanOrderSettings(order),
+            item: { id: order.itemId, name: order.itemName, iconUrl: order.iconUrl },
+            query: order.itemName,
+            amount: order.amount,
+            strategy: order.strategy,
+            maxUnitPrice: order.maxUnitPrice || '',
+            budget: order.budget || '',
+            memberIds: order.memberIds.length ? [...order.memberIds] : null
+        });
+    }
+    renderClanDetail();
+    if (draft.strategy === 'craft') loadClanCraftPreview();
+    requestAnimationFrame(() => els.clansModal?.querySelector(order ? '[data-clan-order-amount]' : '[data-clan-order-search]')?.focus());
+}
+
+function clanGoalExplanation(clan, order = null) {
+    const goal = clan.goal;
+    if (order) {
+        const delivery = order.plan?.delivery;
+        const destination = delivery?.kind === 'best_upgrade'
+            ? `Equipment is issued to compatible bots who benefit most. Progress counts issued items; ${number(delivery.warehouseAmount || 0)} waiting in the warehouse.`
+            : 'Progress counts the target item currently held in the shared clan warehouse, including existing stock.';
+        const work = order.status !== 'paused' && order.strategy === 'craft' ? clanCraftReason(order.plan?.reasonCode) : order.status === 'paused' ? 'Work is paused until you resume this goal.'
+            : order.plan?.reasonCode === 'no_equipment_beneficiary' ? 'Waiting for a clan bot who can use this item as an upgrade.'
+                : order.plan?.reasonCode === 'item_source_unavailable' ? 'No suitable drop source found. Try buying from the market or choose another item.'
+                    : order.plan?.reasonCode === 'warehouse_delivery_pending' ? 'Items are collected; waiting for a recipient to become available.'
+                        : order.plan?.kind === 'farm' ? `Farming ${clan.goal?.target?.npcName || order.plan?.sourceName || 'a known drop source'}.`
+                            : order.plan?.kind === 'market' ? 'Looking for market offers within your price and budget limits.' : 'Preparing the next step.';
+        return { mode: 'Manual goal', work, destination };
+    }
+    const work = !goal ? 'The clan will choose its next goal when it is ready.'
+        : goal.type === 'adena' ? 'Members contribute Adena toward clan progression.'
+            : goal.type === 'equipment' ? `The clan is improving its members’ gear${goal.target?.memberName ? ` for ${goal.target.memberName}` : ''}.`
+                : `The clan is working on ${goal.target?.itemName || goal.target?.npcName || 'its current objective'}.`;
+    return {
+        mode: clan.automated ? 'Automatic goal' : 'Player directed',
+        work,
+        destination: clan.automated ? 'The clan chooses its own goals. A manual goal takes priority; completing or cancelling it restores automatic planning.' : 'Add bot members to enable shared clan goals.'
+    };
 }
 
 function clanCrestPixelsBase64(bytes) {
@@ -1034,7 +1179,7 @@ function clanOrderStatusLabel(status) {
 }
 
 function clanOrderStrategyLabel(strategy) {
-    return ({ auto: 'Auto', farm: 'Farm', market: 'Market' })[strategy] || readableToken(strategy);
+    return ({ auto: 'Auto', farm: 'Farm', market: 'Market', craft: 'Craft' })[strategy] || readableToken(strategy);
 }
 
 function clanOrderDelivery(order = null, item = null) {
@@ -1073,7 +1218,7 @@ function clanOrderItemResultsMarkup(draft = clanOrderDraft()) {
         <button type="button" class="clan-order-item-result" data-clan-order-item="${escapeHtml(item.id)}">
             <span class="clan-order-item-icon">${item.iconUrl ? `<img src="${text(item.iconUrl)}" alt="" loading="lazy">` : uiIcon('target')}</span>
             <span><strong>${text(item.name)}</strong><small>#${number(item.id)} · ${text(readableToken(item.kind), 'Item')}</small></span>
-            <b>${item.price ? `${compactNumber(item.price)} A` : '—'}</b>
+            <b>${item.craftable ? 'Craftable · ' : ''}${item.price ? `${compactNumber(item.price)} A` : '—'}</b>
         </button>
     `).join('');
 }
@@ -1089,21 +1234,24 @@ function renderClanOrderSearchResults() {
 function clanOrderMarkup(clan) {
     const detail = state.clanDetail || {};
     const order = detail.order;
-    const draft = clanOrderDraft();
+    const draft = state.clanOrderDraft;
+    const editing = draft?.mode === 'edit';
     const members = (detail.members || []).filter((member) => member.kind === 'bot');
-    const assigned = new Set(draft.memberIds === null ? members.map((member) => Number(member.id)) : draft.memberIds);
-    const rosterReady = draft.strategy === 'market' ? assigned.size >= 1 : assigned.size >= 3;
+    const assigned = new Set((draft?.memberIds ?? members.map((member) => Number(member.id))).filter((id) => members.some((member) => Number(member.id) === Number(id))));
+    const rosterReady = ['market', 'craft'].includes(draft?.strategy) ? assigned.size >= 1 : assigned.size >= 3;
     const goal = clanGoalSummary(clan.goal, clan);
-    const progress = order ? `${number(clan.goal?.progress)}/${number(order.amount)}` : null;
+    const explanation = clanGoalExplanation(clan, order);
     const message = state.clanOrderMessage;
-    const itemResults = clanOrderItemResultsMarkup(draft);
+    const itemResults = draft ? clanOrderItemResultsMarkup(draft) : '';
     const activeDelivery = clanOrderDelivery(order);
-    const draftDelivery = clanOrderDelivery(null, draft.item);
+    const draftDelivery = editing ? activeDelivery : clanOrderDelivery(null, draft?.item);
+    const paused = order?.status === 'paused';
     return `
-        <section class="clan-order-control" aria-label="Clan order">
+        <section class="clan-order-control" aria-label="Clan goal management">
             <div class="clan-management-heading">
-                <div><span class="section-kicker">Clan control</span><strong>${order ? 'Active order' : 'Set an order'}</strong></div>
-                <p>Give the clan one durable objective. The server keeps executing it after this page is closed.</p>
+                <div><span class="section-kicker">${text(explanation.mode)}</span><strong>${order ? 'Your clan goal' : 'Clan runs automatically'}</strong></div>
+                <p>${text(explanation.destination)}</p>
+                <details class="clan-goal-help"><summary>How clan goals work</summary><p>Choose an item and a total quantity. Bot members gather, buy or craft it. Equipment goes to suitable bot members; resources stay in the warehouse. Work continues when you leave Observer. Pause holds the goal; cancel returns the clan to automatic planning.</p></details>
             </div>
             <div class="clan-order-main">
                 ${order ? `
@@ -1112,54 +1260,40 @@ function clanOrderMarkup(clan) {
                         <div class="clan-order-current-copy">
                             <span>${text(clanOrderStatusLabel(order.status))} · ${text(clanOrderStrategyLabel(order.strategy))}</span>
                             <strong>${text(order.itemName)}</strong>
-                            <small>${text(goal.meta)} · Delivery: ${text(activeDelivery.title)} · ${compactNumber(order.spent)}${order.budget ? ` / ${compactNumber(order.budget)}` : ''} A spent</small>
+                            <small>Delivery: ${text(activeDelivery.title)}</small>
                         </div>
-                        <b>${text(progress)}</b>
+                        <b>${number(clan.goal?.progress || 0)} / ${number(order.amount)}</b>
                     </div>
-                    <div class="clan-order-progress"><i style="width:${number(goal.percent)}%"></i></div>
+                    <div class="clan-order-progress" role="progressbar" aria-label="Goal progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${goal.percent}"><i style="width:${goal.percent}%"></i></div>
+                    <p class="clan-goal-explanation">${text(explanation.work)}</p>
                     <div class="clan-order-actions">
-                        ${order.status === 'paused'
-                            ? `<button type="button" data-clan-order-transition="resume">${uiIcon('target')}Resume</button>`
-                            : `<button type="button" data-clan-order-transition="pause">Pause</button>`}
-                        <button type="button" data-clan-order-transition="replan">${uiIcon('crosshair')}Replan</button>
-                        <button class="is-danger" type="button" data-clan-order-transition="cancel">${uiIcon('trash')}Cancel</button>
+                        <button type="button" data-clan-order-editor="edit" ${state.clanOrderSaving ? 'disabled' : ''}>Edit goal</button>
+                        <button type="button" data-clan-order-transition="${paused ? 'resume' : 'pause'}" ${state.clanOrderSaving ? 'disabled' : ''}>${paused ? 'Resume' : 'Pause'}</button>
+                        <button type="button" data-clan-order-transition="replan" title="Recalculate how to reach this goal; keep the item and quantity" ${state.clanOrderSaving || paused ? 'disabled' : ''}>Try another plan</button>
+                        <button class="is-danger" type="button" data-clan-order-transition="cancel" ${state.clanOrderSaving ? 'disabled' : ''}>Cancel goal</button>
                     </div>
-                ` : '<div class="clan-order-empty"><span>No active order</span><strong>Choose an item below to put the clan to work.</strong></div>'}
-                <div class="clan-order-editor">
-                    <div class="clan-order-editor-title"><span>${order ? 'Replace order' : 'New order'}</span><small>Gather item</small></div>
-                    <label class="clan-order-search-field">
-                        <span>Item</span>
-                        <div>${uiIcon('search')}<input type="search" data-clan-order-search value="${escapeHtml(draft.query)}" placeholder="Search by item name or ID" autocomplete="off"></div>
-                    </label>
-                    <div class="clan-order-item-results" data-clan-order-results ${itemResults ? '' : 'hidden'}>${itemResults}</div>
-                    ${draft.item ? `<div class="clan-order-selected"><span>${draft.item.iconUrl ? `<img src="${text(draft.item.iconUrl)}" alt="">` : uiIcon('target')}</span><div><small>Selected item</small><strong>${text(draft.item.name)}</strong></div><b>#${number(draft.item.id)}</b></div>` : ''}
-                    <div class="clan-order-delivery ${draftDelivery.member ? 'is-member' : ''}"><span>${uiIcon(draftDelivery.member ? 'users' : 'warehouse')}</span><div><small>Delivery</small><strong>${text(draftDelivery.title)}</strong><p>${text(draftDelivery.description)}</p></div></div>
-                    <div class="clan-order-fields">
-                        <label><span>Quantity</span><input type="number" min="1" max="1000000" step="1" data-clan-order-amount value="${escapeHtml(draft.amount)}"></label>
-                        <label><span>Max unit price</span><input type="number" min="1" step="1" data-clan-order-price value="${escapeHtml(draft.maxUnitPrice)}" placeholder="Auto"></label>
-                        <label><span>Total budget</span><input type="number" min="0" step="1" data-clan-order-budget value="${escapeHtml(draft.budget)}" placeholder="Unlimited"></label>
-                    </div>
-                    <div class="clan-order-policy">
-                        <span>Execution policy</span>
-                        <div role="group" aria-label="Execution policy">
-                            ${['auto', 'farm', 'market'].map((strategy) => `<button type="button" class="${draft.strategy === strategy ? 'is-active' : ''}" data-clan-order-strategy="${strategy}" aria-pressed="${draft.strategy === strategy}">${clanOrderStrategyLabel(strategy)}</button>`).join('')}
-                        </div>
-                        <small>${draft.strategy === 'auto' ? 'Use a suitable market offer, then fall back to farming.' : draft.strategy === 'farm' ? 'Farm a known drop source with the selected bots.' : 'Wait for and buy a suitable player offer.'}</small>
-                    </div>
-                    <fieldset class="clan-order-members">
-                        <legend>Executors <small>${assigned.size || members.length} selected</small></legend>
-                        <div>${members.map((member) => `
-                            <label><input type="checkbox" data-clan-order-member="${escapeHtml(member.id)}" ${assigned.has(Number(member.id)) ? 'checked' : ''}><span><strong>${text(member.name)}</strong><small>${text(roleLabel(member.role || 'member'))} · Lv ${number(member.level, '?')}</small></span></label>
-                        `).join('') || '<p>No bot members available.</p>'}</div>
-                    </fieldset>
-                    <div class="clan-order-submit">
-                        <span class="${message?.kind === 'error' || !rosterReady ? 'is-error' : ''}">${text(message?.text || (!rosterReady ? 'Auto and Farm need at least 3 executors' : draft.item ? `${draft.item.name} ready` : 'Select an item to continue'))}</span>
-                        <button type="button" data-create-clan-order ${draft.item && rosterReady && !state.clanOrderSaving ? '' : 'disabled'}>${state.clanOrderSaving ? 'Saving…' : order ? 'Replace order' : 'Start order'}</button>
-                    </div>
-                </div>
+                    ${order.strategy === 'craft' ? draft ? '' : clanCraftPreviewMarkup(order.plan) : `<div class="clan-order-facts"><span><small>Spent</small><strong>${number(order.spent)} A</strong></span><span><small>Budget remaining</small><strong>${order.budget ? `${number(Math.max(0, order.budget - order.spent))} A` : 'No limit'}</strong></span><span><small>Unit price limit</small><strong>${number(order.maxUnitPrice)} A</strong></span></div>`}
+                ` : `${clanAutomaticGoalMarkup(clan.goal, clan)}<p class="clan-goal-explanation">${text(explanation.work)}</p>${detail.automaticCraft ? clanCraftPreviewMarkup(detail.automaticCraft) : ''}${clan.productionGoal && !['complete', 'completed', 'cancelled'].includes(clan.productionGoal.status) ? `${clanAutomaticGoalMarkup(clan.productionGoal, clan, 'Automatic equipment')}${detail.productionCraft ? clanCraftPreviewMarkup(detail.productionCraft) : ''}` : ''}`}
+                ${state.clanOrderCancelPending ? `<div class="clan-order-confirm" role="alert"><strong>Cancel this goal?</strong><p>Queued work stops. Collected items stay with the clan and automatic planning resumes.</p><div class="clan-order-actions"><button type="button" data-clan-order-confirm-cancel>Yes, cancel goal</button><button type="button" data-clan-order-keep>Keep goal</button></div></div>` : ''}
+                ${!draft ? `<div class="clan-order-actions"><button type="button" data-clan-order-editor="new">${order ? 'Choose a different goal' : 'Set a manual goal'}</button></div>` : `
+                <form class="clan-order-editor" data-clan-order-form>
+                    <div class="clan-order-editor-title"><span>${editing ? 'Edit goal' : order ? 'Choose a different goal' : 'New manual goal'}</span><button type="button" data-clan-order-discard>Close editor</button></div>
+                    <p class="clan-goal-explanation">${editing ? 'Update the total quantity, approach or limits. Progress and spending stay with this goal. The plan is recalculated; paused work stays paused.' : order ? 'Starting this goal replaces the current one and stops its queued work.' : 'This goal takes priority over the clan’s automatic plans.'}</p>
+                    ${editing ? '' : `<label class="clan-order-search-field"><span>1. Choose an item</span><div>${uiIcon('search')}<input type="search" data-clan-order-search value="${escapeHtml(draft.query)}" placeholder="Search by item name or ID" autocomplete="off"></div></label>
+                    <div class="clan-order-item-results" data-clan-order-results ${itemResults ? '' : 'hidden'}>${itemResults}</div>`}
+                    ${draft.item ? `<div class="clan-order-selected"><span>${draft.item.iconUrl ? `<img src="${text(draft.item.iconUrl)}" alt="">` : uiIcon('target')}</span><div><small>${editing ? 'Current target' : 'Selected item'}</small><strong>${text(draft.item.name)}</strong></div><b>#${Number(draft.item.id)}</b></div>` : ''}
+                    ${draft.item ? `<div class="clan-order-delivery ${draftDelivery.member ? 'is-member' : ''}"><span>${uiIcon(draftDelivery.member ? 'users' : 'warehouse')}</span><div><small>Where it goes</small><strong>${text(draftDelivery.title)}</strong><p>${text(draftDelivery.description)}</p></div></div>` : ''}
+                    <div class="clan-order-fields clan-order-quantity"><label><span>Total quantity</span><input required aria-label="Total quantity" type="number" min="1" max="1000000" step="1" data-clan-order-amount value="${escapeHtml(draft.amount)}"><small>Total target, including items already counted.</small></label></div>
+                    <div class="clan-order-policy"><span>${editing ? 'Approach' : '2. Choose how to get it'}</span><div role="group" aria-label="Approach">${['auto', 'farm', 'market', 'craft'].map((strategy) => `<button type="button" class="${draft.strategy === strategy ? 'is-active' : ''}" data-clan-order-strategy="${strategy}" aria-pressed="${draft.strategy === strategy}">${clanOrderStrategyLabel(strategy)}</button>`).join('')}</div><small>${draft.strategy === 'auto' ? 'Buy a suitable offer when available; otherwise farm a known drop source.' : draft.strategy === 'farm' ? 'Farm a known drop source. No market purchases.' : draft.strategy === 'craft' ? 'Selected clan dwarves craft the item. Gather missing materials, craft components, then deliver the result.' : 'Buy suitable market offers with clan Adena.'}</small></div>
+                    ${draft.strategy === 'craft' ? clanCraftPreviewMarkup(draft.craftPreview, draft.craftPreviewLoading, draft.craftPreviewError) : ''}
+                    <details class="clan-order-options" data-clan-order-option="limits" ${['farm', 'craft'].includes(draft.strategy) ? 'hidden' : ''}><summary>Purchase limits <span>${draft.budget ? `${number(draft.budget)} A budget` : 'No total budget limit'}</span></summary><div class="clan-order-fields"><label><span>Max unit price (Adena)</span><input aria-label="Max unit price (Adena)" type="number" min="1" step="1" data-clan-order-price value="${escapeHtml(draft.maxUnitPrice)}" placeholder="Auto"><small>Auto uses twice the item’s base price.</small></label><label><span>Total budget (Adena)</span><input aria-label="Total budget (Adena)" type="number" min="0" step="1" data-clan-order-budget value="${escapeHtml(draft.budget)}" placeholder="No limit"><small>Includes Adena already spent. Empty or 0 means no limit.</small></label></div></details>
+                    <details class="clan-order-options" data-clan-order-option="roster"><summary>Bot executors <span>${assigned.size} of ${members.length} selected</span></summary><p>These bots do the work. Equipment recipients are chosen from all clan bots. ${draft.strategy === 'market' ? 'Select at least one executor.' : draft.strategy === 'craft' ? 'Include at least one dwarf. Gathering missing materials needs three available bots.' : 'Gathering materials needs at least three. Include a dwarf who can craft the recipe; party composition is checked when work starts.'}</p><div class="clan-order-actions"><button type="button" data-clan-order-roster="all">Select all</button><button type="button" data-clan-order-roster="none">Clear selection</button></div><fieldset class="clan-order-members"><legend>Executors</legend><div>${members.map((member) => `<label><input type="checkbox" data-clan-order-member="${escapeHtml(member.id)}" ${assigned.has(Number(member.id)) ? 'checked' : ''}><span><strong>${text(member.name)}</strong><small>${text(roleLabel(member.role || 'member'))} · Lv ${number(member.level, '?')}</small></span></label>`).join('') || '<p>No bot members available.</p>'}</div></fieldset></details>
+                    <div class="clan-order-submit"><span class="${!rosterReady ? 'is-error' : ''}">${text(!rosterReady ? ['market', 'craft'].includes(draft.strategy) ? 'Select at least one bot executor' : 'Select at least 3 bot executors' : !draft.item ? 'Select an item to continue' : editing ? 'Ready to save changes' : 'Ready to start')}</span><button type="submit" data-create-clan-order ${draft.item && rosterReady && !state.clanOrderSaving ? '' : 'disabled'}>${state.clanOrderSaving ? 'Saving…' : editing ? 'Save changes' : order ? 'Replace goal' : 'Start goal'}</button></div>
+                    ${draft.confirmReplacement ? `<div class="clan-order-confirm" role="alert"><strong>Replace ${text(order?.itemName)} with ${text(draft.item?.name)}?</strong><p>The current goal’s queued work stops. Collected items stay with the clan. The new goal starts a separate spending record.</p><div class="clan-order-actions"><button type="button" data-clan-order-confirm-replace>Yes, replace goal</button><button type="button" data-clan-order-keep>Keep current goal</button></div></div>` : ''}
+                </form>`}
+                ${message ? `<p class="clan-order-message ${message.kind === 'error' ? 'is-error' : ''}" role="${message.kind === 'error' ? 'alert' : 'status'}">${text(message.text)}${state.clanOrderConflict ? ' <button type="button" data-clan-order-reload>Reload current goal</button>' : ''}</p>` : ''}
             </div>
-        </section>
-    `;
+        </section>`;
 }
 
 function clanManagementMarkup(clan) {
@@ -1169,8 +1303,8 @@ function clanManagementMarkup(clan) {
     const crestAvailable = Number(clan.level || 0) >= 3;
     return `
         <div class="clan-management" aria-label="Clan management">
-            ${clanOrderMarkup(clan)}
-            <section class="clan-identity-control">
+            ${state.clanManagerTab === 'goal' ? clanOrderMarkup(clan) : ''}
+            <section class="clan-appearance" ${state.clanManagerTab === 'appearance' ? '' : 'hidden'}><section class="clan-identity-control">
             <div class="clan-management-heading">
                 <div><span class="section-kicker">Appearance</span><strong>Identity</strong></div>
                 <p>${crestAvailable ? 'Upload a normal image. Observer prepares the 16 × 12 crest required by the C4 client.' : 'Clan crests unlock at clan level 3.'}</p>
@@ -1204,9 +1338,102 @@ function clanManagementMarkup(clan) {
                 <div><strong>Clan crest locked</strong><span>Reach clan level 3 to choose and upload a crest.</span></div>
                 <b>L${number(clan.level, 0)} / L3</b>
             </div>`}
-            </section>
+            </section></section>
         </div>
     `;
+}
+
+function clanCraftReason(code) {
+    return ({ no_equipment_beneficiary: 'Waiting for a clan bot who can use this item as an upgrade.',
+        clan_craft_plan_pending: 'The clan is preparing this crafting route. Recipe and material details will appear when a carrier is assigned.',
+        clan_craft_traveling: 'Taking materials to the crafter.',
+        clan_craft_in_progress: 'The carrier is at the crafter.',
+        clan_craft_party_resources: 'The carrier is gathering resources with its party.',
+        clan_craft_route_blocked: 'This crafting route is blocked. The clan is reviewing how to continue.',
+        warehouse_delivery_pending: 'Crafted items are in the warehouse; waiting for an available recipient.',
+        goal_completed: 'The target quantity has been delivered.',
+        clan_craft_recipe_unavailable: 'This item has no dwarf crafting recipe.',
+        clan_craft_crafter_unavailable: 'Select a living clan dwarf with enough crafting skill.',
+        clan_craft_customer_unavailable: 'Waiting for an available bot to carry the materials.',
+        clan_craft_material_source_unavailable: 'No suitable drop source for the missing inputs. Add them to the clan warehouse, then replan.',
+        clan_craft_collecting_materials: 'Gathering missing materials.',
+        clan_craft_ready: 'Materials are ready for the final craft.',
+        clan_craft_component_ready: 'Crafting an intermediate component first.' })[code] || readableToken(code);
+}
+
+function clanCraftPreviewMarkup(plan, loading = false, error = null) {
+    if (loading) return '<section class="clan-craft-preview" data-clan-craft-preview role="status">Checking recipe, selected dwarves and shared materials…</section>';
+    if (error) return `<section class="clan-craft-preview is-error" data-clan-craft-preview role="alert">${text(error)}</section>`;
+    if (!plan) return '<section class="clan-craft-preview" data-clan-craft-preview>Select an item to check its recipe and resources.</section>';
+    const craft = plan.craft;
+    if (!craft) return `<section class="clan-craft-preview" data-clan-craft-preview>${text(clanCraftReason(plan.reasonCode))}</section>`;
+    const stage = ({ resources: 0, components: 1, crafting: 1, delivery: 2, blocked: -1 })[craft.stage] ?? -1;
+    return `<section class="clan-craft-preview" data-clan-craft-preview aria-label="Crafting plan">
+        <div class="clan-craft-title"><strong>Crafting plan</strong><span>${number(craft.successRate)}% success · ${number(craft.productCount)} per batch</span></div>
+        <ol class="clan-craft-stages">${['Gather resources', 'Craft', 'Deliver'].map((label, index) => `<li class="${index === stage ? 'is-current' : index < stage ? 'is-done' : ''}"><span>${index + 1}</span>${label}</li>`).join('')}</ol>
+        <p>${text(clanCraftReason(plan.reasonCode))}${craft.nextItemName ? ` Next: ${text(craft.nextItemName)}.` : ''}</p>
+        ${craft.customerName ? `<p>Material carrier: ${text(craft.customerName)}${craft.activity ? ` · ${text(activityLabel(craft.activity))}` : ''}${craft.sourceName ? `<br>Current source: ${text(craft.sourceName)}${craft.sourceKind === 'spoil' ? ' · Spoil' : ''}` : ''}</p>` : ''}
+        <div class="clan-craft-meta"><span><small>Recipe skill</small><strong>Level ${number(craft.level)}</strong></span><span><small>Crafter</small><strong>${text(craft.crafterName || 'Unavailable')}</strong></span><span><small>Recipe knowledge</small><strong>${craft.learned ? 'Learned' : craft.materials.some(material => material.selfId === craft.recipeItemId && !material.missing) ? 'Ready to learn' : 'Recipe scroll needed'}</strong></span></div>
+        ${craft.materials.length ? `<details class="clan-craft-materials" open><summary>Inputs for the next batch <span>Shared stock + carrier’s inventory</span></summary><div class="clan-manager-table-wrap"><table><thead><tr><th>Material</th><th>Needed</th><th>Available</th><th>Missing</th></tr></thead><tbody>${craft.materials.map(material => `<tr><td>${text(material.name)}${material.component ? '<small>Craftable component; its missing inputs are listed below</small>' : ''}</td><td>${number(material.required)}</td><td>${number(material.available)}</td><td class="${material.missing ? 'is-missing' : 'is-stocked'}">${material.missing ? number(material.missing) : 'Ready'}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
+        <small>Crafting repeats until the total goal is met. Failed attempts consume inputs. Crystals and gemstones are supplied automatically.</small>
+    </section>`;
+}
+
+async function loadClanCraftPreview() {
+    const draft = state.clanOrderDraft;
+    const request = ++state.clanCraftPreviewRequest;
+    if (!draft || draft.strategy !== 'craft' || !draft.item) return;
+    draft.craftPreviewLoading = true;
+    draft.craftPreviewError = null;
+    const memberIds = draft.memberIds ?? (state.clanDetail.members || []).filter(member => member.kind === 'bot').map(member => Number(member.id));
+    try {
+        const response = await fetch(`/observer/api/clan/${state.selectedClanId}/craft-preview`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ itemId: Number(draft.item.id), amount: Number(draft.amount), orderId: draft.orderId, memberIds })
+        });
+        const result = await clanOrderResponse(response);
+        if (!response.ok || !result.ok) throw new Error(clanOrderErrorMessage(result.code, result.error));
+        if (request === state.clanCraftPreviewRequest && draft === state.clanOrderDraft) draft.craftPreview = result.plan;
+    } catch (error) {
+        if (request === state.clanCraftPreviewRequest && draft === state.clanOrderDraft) draft.craftPreviewError = error.message;
+    } finally {
+        if (request === state.clanCraftPreviewRequest && draft === state.clanOrderDraft) {
+            draft.craftPreviewLoading = false;
+            const preview = els.clansModal.querySelector('[data-clan-order-form] [data-clan-craft-preview]');
+            if (preview) preview.outerHTML = clanCraftPreviewMarkup(draft.craftPreview, false, draft.craftPreviewError);
+        }
+    }
+}
+
+function closeClanManager() {
+    if (state.clanOrderSaving || state.clanCrestSaving) return;
+    state.clanManagerOpen = false;
+    els.clanManagerDialog?.close();
+    const trigger = els.clanDetail?.querySelector('[data-clan-manage]');
+    trigger?.setAttribute('aria-expanded', 'false');
+    trigger?.classList.remove('is-active');
+    trigger?.focus();
+}
+
+function renderClanManager() {
+    const dialog = els.clanManagerDialog;
+    const detail = state.clanDetail;
+    if (!dialog) return;
+    if (!state.clanManagerOpen || !detail?.clan?.playerManaged || !state.clanOpen) { dialog.close(); return; }
+    const clan = detail.clan;
+    const tab = state.clanManagerTab || 'goal';
+    const content = els.clanManagerContent;
+    const previousScroll = content.querySelector('.clan-manager-body')?.scrollTop || 0;
+    const currentGoal = clanGoalSummary(clan.goal, clan);
+    content.innerHTML = `<header class="clan-manager-header"><div class="clan-manager-heading"><span class="section-kicker">Clan management</span><h2 id="clanManagerTitle">${clanCrestMarkup(clan, 'large')}${text(clan.name)}</h2><p>Level ${number(clan.level)} · ${number(clan.memberCount)} members · ${number(clan.warehouse?.adena)} Adena in warehouse</p><div class="clan-manager-current-status" aria-label="Current clan goal">${currentGoal.iconUrl ? `<img src="${text(currentGoal.iconUrl)}" alt="">` : uiIcon(clan.goal?.type === 'adena' ? 'coins' : 'target')}<span>${detail.order ? 'Manual' : 'Automatic'} · ${text(currentGoal.title)}</span><b class="clan-goal-status" data-status="${text(clan.goal?.status || 'idle')}">${text(clan.goal ? clanOrderStatusLabel(clan.goal.status) : 'Waiting')}</b></div></div><button class="clan-manager-close" type="button" data-clan-manager-close aria-label="Close clan management" title="Close clan management">${uiIcon('close')}</button></header>
+        <nav class="clan-manager-tabs" aria-label="Clan management sections">${[['goal', 'target', 'Goal'], ['members', 'users', 'Members'], ['warehouse', 'warehouse', 'Warehouse'], ['activity', 'history', 'Activity'], ['appearance', 'shield', 'Appearance']].map(([id, icon, label]) => `<button type="button" data-clan-manager-tab="${id}" aria-current="${tab === id ? 'page' : 'false'}">${uiIcon(icon)}${label}${id === 'members' ? `<span>${number(detail.members.length)}</span>` : ''}</button>`).join('')}</nav>
+        <div class="clan-manager-body">${clanManagementMarkup(clan)}
+        ${tab === 'members' ? `<section><div class="clan-manager-section-heading"><h3>Clan members</h3><p>Open a profile to inspect equipment and current activity. Goal executors are chosen in the Goal tab.</p></div><div class="clan-member-list">${detail.members.map(member => `<button type="button" class="clan-member-row" data-clan-member-id="${member.id}" data-clan-member-kind="${text(member.kind)}"><span class="clan-member-main"><strong>${text(member.name)}</strong><span>${text(member.className)} · Lv ${number(member.level)}</span></span><span class="clan-member-state"><strong>${text(activityLabel(member.activity || member.phase))}</strong><span>${text(member.region)}</span></span></button>`).join('')}</div></section>` : ''}
+        ${tab === 'warehouse' ? `<section><div class="clan-manager-section-heading"><h3>Shared warehouse</h3><p>Available stock is used by clan goals. Reserved quantities are held for ongoing work.</p></div><div class="clan-manager-table-wrap"><table><thead><tr><th>Item</th><th>Total</th><th>Reserved</th><th>Available</th></tr></thead><tbody>${(detail.warehouse || []).map(item => `<tr><td>${text(item.name)}${item.enchant ? ` +${number(item.enchant)}` : ''}</td><td>${number(item.amount)}</td><td>${number(item.reservedAmount)}</td><td>${number(Math.max(0, item.amount - item.reservedAmount))}</td></tr>`).join('') || '<tr><td colspan="4">The warehouse is empty.</td></tr>'}</tbody></table></div>${clanHallMarkup(detail.clanHall)}</section>` : ''}
+        ${tab === 'activity' ? `<section class="clan-manager-activity"><div class="clan-manager-section-heading"><h3>Recent activity</h3><p>Goal changes, gathering, crafting and delivery.</p></div>${(detail.events || []).map(event => `<div class="clan-event-row"><strong>${text(uiLabel('event', event.eventType, 'Clan update'))}</strong><span>${text(uiLabel('reason', event.reasonCode, null) || readableToken(event.reasonCode))}</span><time>${text(formatTime(event.occurredAt))}</time></div>`).join('') || '<p>No activity yet.</p>'}</section>` : ''}
+        </div><footer class="clan-manager-footer"><span>${state.clanOrderDraft || state.clanCrestDraft ? 'Unsaved edits stay here when you close this window.' : 'Saved goals keep running when you leave Observer.'}</span><button type="button" data-clan-manager-close>Done</button></footer>`;
+    content.querySelector('.clan-manager-body').scrollTop = previousScroll;
+    if (!dialog.open) dialog.showModal();
 }
 
 function clanHallMarkup(finance) {
@@ -1260,16 +1487,18 @@ function clanHallMarkup(finance) {
 
 function renderClanDetail() {
     if (!els.clanDetail) return;
+    const scrollTop = els.clanDetail.scrollTop;
+    const expandedSettings = [...els.clansModal.querySelectorAll('[data-clan-order-option][open]')].map((element) => element.dataset.clanOrderOption);
     state.clanDetailDeferredRender = false;
     const detail = state.clanDetail;
     if (state.clanDetailLoading && !detail) {
-        els.clanDetail.innerHTML = '<div class="inspector-empty"><span class="loading-orbit"></span><strong>Loading clan</strong><p>Reading members and durable clan state.</p></div>';
+        els.clanDetail.innerHTML = '<div class="inspector-empty"><span class="loading-orbit"></span><strong>Loading clan</strong><p>Loading members and clan activity.</p></div>';
         return;
     }
     if (!detail?.clan) {
         els.clanDetail.innerHTML = state.clanError
             ? `<div class="inspector-empty"><span class="empty-glyph">!</span><strong>Clan unavailable</strong><p>${text(state.clanError)}</p></div>`
-            : '<div class="inspector-empty"><span class="empty-glyph">♘</span><strong>Select a clan</strong><p>Open a clan to inspect its bots, goal, warehouse, and operation history.</p></div>';
+            : '<div class="inspector-empty"><span class="empty-glyph">♘</span><strong>Select a clan</strong><p>Choose a clan to meet its members and explore its goals, warehouse and activity.</p></div>';
         return;
     }
     const clan = detail.clan;
@@ -1292,17 +1521,9 @@ function renderClanDetail() {
                 <span class="clan-level-badge">L${number(clan.level, 0)}</span>
             </div>
         </div>
-        ${clanManagementMarkup(clan)}
-        ${clanHallMarkup(detail.clanHall)}
-        <div class="clan-metric-grid">
-            <div><span>Members</span><strong>${number(clan.memberCount)}</strong><small>${number(clan.botMembers)} bots</small></div>
-            <div><span>Average level</span><strong>${number(clan.averageLevel)}</strong><small>range ${number(clan.lowestLevel)}–${number(clan.highestLevel)}</small></div>
-            <div><span>Warehouse</span><strong>${compactNumber(warehouse.adena)} A</strong><small>${number(warehouse.bloodMarks)} Blood Marks</small></div>
-            <div><span>Operation</span><strong>${operation ? text(uiLabel('status', operation.status, 'Active')) : 'Idle'}</strong><small>${operation ? text(uiLabel('plan', operation.type, 'Operation')) : 'No active party'}</small></div>
-        </div>
         <div class="clan-briefing">
             <section class="clan-goal-brief">
-                <div class="clan-block-title"><span>${uiIcon('target')}Current goal</span><b>${text(goal.progress)}</b></div>
+                <div class="clan-block-title"><span>${uiIcon('target')}${text(clanGoalExplanation(clan, detail.order).mode)}</span><b>${text(goal.progress)}</b></div>
                 <div class="clan-goal-primary">
                     ${goal.iconUrl ? `<span class="clan-goal-icon"><img src="${text(goal.iconUrl)}" alt="${text(goal.title)}" loading="lazy" decoding="async"></span>` : ''}
                     <div>
@@ -1311,6 +1532,8 @@ function renderClanDetail() {
                     </div>
                 </div>
                 <div class="clan-goal-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${number(goal.percent)}"><i style="width:${number(goal.percent)}%"></i></div>
+                <p class="clan-goal-explanation">${text(clanGoalExplanation(clan, detail.order).work)}</p><p class="clan-goal-explanation">${text(clanGoalExplanation(clan, detail.order).destination)}</p>
+                ${clan.playerManaged ? `<div class="clan-order-actions"><button type="button" data-clan-order-editor="${detail.order ? 'edit' : 'new'}">${detail.order ? 'Edit goal' : 'Set a manual goal'}</button></div>` : ''}
             </section>
             <div class="clan-briefing-facts">
                 <div><span>Market demand</span><strong>${number(clan.market?.openDemands)} open</strong><small>${number(clan.market?.requestedUnits)} units requested</small></div>
@@ -1318,11 +1541,19 @@ function renderClanDetail() {
                 <div><span>Progression</span><strong>${number(clan.contributions?.length || 0)} levels funded</strong><small>${(clan.contributions || []).length ? clan.contributions.map((entry) => `L${number(entry.targetLevel)} · ${compactNumber(entry.amount)} A`).join(' · ') : 'No ledger entries'}</small></div>
             </div>
         </div>
+
+        ${clanHallMarkup(detail.clanHall)}
+        <div class="clan-metric-grid">
+            <div><span>Members</span><strong>${number(clan.memberCount)}</strong><small>${number(clan.botMembers)} bots</small></div>
+            <div><span>Average level</span><strong>${number(clan.averageLevel)}</strong><small>range ${number(clan.lowestLevel)}–${number(clan.highestLevel)}</small></div>
+            <div><span>Warehouse</span><strong>${compactNumber(warehouse.adena)} A</strong><small>${number(warehouse.bloodMarks)} Blood Marks</small></div>
+            <div><span>Operation</span><strong>${operation ? text(uiLabel('status', operation.status, 'Active')) : 'Idle'}</strong><small>${operation ? text(uiLabel('plan', operation.type, 'Operation')) : 'No active party'}</small></div>
+        </div>
         <div class="clan-roster-layout">
             <section class="clan-members-section">
                 <div class="clan-member-toolbar">
                     <strong>${uiIcon('users')}Members</strong>
-                    <span>${number(members.length)} total · open a member on the map</span>
+                    <span>${number(members.length)} total · open a member profile</span>
                 </div>
                 <div class="clan-member-list" role="list">
                     ${members.length ? members.map((member) => `
@@ -1339,6 +1570,9 @@ function renderClanDetail() {
             </aside>
         </div>
     `;
+    renderClanManager();
+    for (const option of expandedSettings) els.clansModal.querySelector(`[data-clan-order-option="${option}"]`)?.setAttribute('open', '');
+    els.clanDetail.scrollTop = scrollTop;
 }
 
 async function loadClanDetail(id, { updateRoute = true } = {}) {
@@ -1376,7 +1610,7 @@ async function loadClanDetail(id, { updateRoute = true } = {}) {
         if (requestId === state.clanRequest) {
             state.clanDetailLoading = false;
             const editor = els.clansModal?.querySelector('.clan-order-editor');
-            if (editor?.contains(document.activeElement)) state.clanDetailDeferredRender = true;
+            if (state.clanOrderDraft || editor?.contains(document.activeElement)) state.clanDetailDeferredRender = true;
             else renderClans();
         }
     }
@@ -1400,12 +1634,27 @@ function clanOrderErrorMessage(code, fallback = 'Could not update the clan order
         invalid_clan_order: 'The clan order is invalid',
         invalid_clan_order_item: 'Choose a valid item',
         invalid_clan_order_amount: 'Quantity must be between 1 and 1,000,000',
+        clan_craft_recipe_unavailable: 'This item has no dwarf crafting recipe. Choose another item or approach.',
         invalid_clan_order_strategy: 'Choose a valid execution policy',
+        invalid_clan_order_edit: 'Choose a different goal to change the target item',
+        invalid_clan_order_price: 'Use whole Adena amounts: a positive unit price and a budget of 0 or more',
+        clan_order_budget_below_spent: 'The total budget cannot be less than Adena already spent',
         invalid_clan_order_members: 'One or more selected bots no longer belong to this clan',
         clan_order_not_active: 'This order is no longer active',
-        clan_order_revision_conflict: 'The order changed on the server. Refresh and try again'
+        clan_order_revision_conflict: 'The goal changed while you were editing. Reload the current goal and apply your changes again'
     };
     return messages[code] || fallback;
+}
+
+async function clanOrderResponse(response) {
+    if (response.status === 404) {
+        throw new Error('Clan controls are unavailable on the running server. Restart the server to load the update, then try again. Your edits are kept.');
+    }
+    try {
+        return await response.json();
+    } catch (_) {
+        throw new Error(`The server could not return clan data${response.status ? ` (HTTP ${response.status})` : ''}. Try again. Your edits are kept.`);
+    }
 }
 
 async function searchClanOrderItems(query = clanOrderDraft().query, { showLoading = true } = {}) {
@@ -1423,7 +1672,7 @@ async function searchClanOrderItems(query = clanOrderDraft().query, { showLoadin
     if (showLoading) renderClanOrderSearchResults();
     try {
         const response = await fetch(`/observer/api/clan-order-items?q=${encodeURIComponent(needle)}&limit=40`, { cache: 'no-store' });
-        const result = await response.json();
+        const result = await clanOrderResponse(response);
         if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
         if (requestId !== state.clanOrderSearchRequest) return;
         state.clanOrderItems = Array.isArray(result.items) ? result.items : [];
@@ -1446,45 +1695,66 @@ async function createClanOrder() {
     const memberIds = draft.memberIds === null
         ? (state.clanDetail?.members || []).filter((member) => member.kind === 'bot').map((member) => Number(member.id))
         : draft.memberIds;
-    if (!memberIds.length) {
-        state.clanOrderMessage = { kind: 'error', text: 'Select at least one bot executor' };
+    const minimumExecutors = ['market', 'craft'].includes(draft.strategy) ? 1 : 3;
+    if (memberIds.length < minimumExecutors) {
+        state.clanOrderMessage = { kind: 'error', text: `Select at least ${minimumExecutors} bot executors` };
         renderClanDetail();
         return;
     }
-    if (state.clanDetail?.order && !window.confirm('Replace the active clan order? Its queued work will be cancelled.')) return;
+    const editing = draft.mode === 'edit';
+    const form = els.clansModal?.querySelector('[data-clan-order-form]');
+    if (form && !form.reportValidity()) return;
+    if (!editing && state.clanDetail?.order && !draft.replaceConfirmed) {
+        draft.confirmReplacement = true;
+        renderClanDetail();
+        return;
+    }
     state.clanOrderSaving = true;
     state.clanOrderMessage = null;
     renderClanDetail();
     try {
-        const response = await fetch(`/observer/api/clan/${encodeURIComponent(clanId)}/orders`, {
-            method: 'POST',
+        const response = await fetch(`/observer/api/clan/${encodeURIComponent(clanId)}/orders${editing ? `/${encodeURIComponent(draft.orderId)}` : ''}`, {
+            method: editing ? 'PATCH' : 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                revision: editing ? draft.revision : undefined,
+                expectedSettings: editing ? draft.expectedSettings : undefined,
                 itemId: Number(draft.item.id),
                 amount: Number(draft.amount),
                 strategy: draft.strategy,
-                maxUnitPrice: draft.maxUnitPrice === '' ? undefined : Number(draft.maxUnitPrice),
-                budget: draft.budget === '' ? undefined : Number(draft.budget),
+                maxUnitPrice: draft.maxUnitPrice === '' ? editing ? null : undefined : Number(draft.maxUnitPrice),
+                budget: draft.budget === '' ? 0 : Number(draft.budget),
                 memberIds
             })
         });
-        const result = await response.json();
-        if (!response.ok || !result.ok) throw new Error(clanOrderErrorMessage(result.code, result.error));
+        const result = await clanOrderResponse(response);
+        if (Number(state.selectedClanId) !== clanId) return;
+        if (!response.ok || !result.ok) {
+            state.clanOrderConflict = result.code === 'clan_order_revision_conflict' || result.code === 'clan_order_not_active';
+            throw new Error(clanOrderErrorMessage(result.code, result.error));
+        }
         resetClanOrderDraft();
-        state.clanOrderMessage = { kind: 'success', text: 'Clan order started' };
+        state.clanOrderMessage = { kind: 'success', text: editing ? 'Goal updated. Progress and spending preserved.' : 'Manual goal started' };
         await refreshManagedClan(clanId);
     } catch (error) {
+        if (Number(state.selectedClanId) !== clanId) return;
         state.clanOrderSaving = false;
-        state.clanOrderMessage = { kind: 'error', text: error.message || 'Could not start the clan order' };
+        draft.replaceConfirmed = false;
+        state.clanOrderMessage = { kind: 'error', text: error.message || 'Could not save the clan goal' };
         renderClanDetail();
     }
 }
 
-async function transitionClanOrder(transition) {
+async function transitionClanOrder(transition, { confirmed = false } = {}) {
     const clanId = Number(state.clanDetail?.clan?.id || 0);
     const order = state.clanDetail?.order;
     if (!clanId || !order || state.clanOrderSaving) return;
-    if (transition === 'cancel' && !window.confirm('Cancel this clan order? Its queued work will stop.')) return;
+    if (transition === 'cancel' && !confirmed) {
+        state.clanOrderCancelPending = true;
+        renderClanDetail();
+        return;
+    }
+    state.clanOrderCancelPending = false;
     state.clanOrderSaving = true;
     state.clanOrderMessage = null;
     renderClanDetail();
@@ -1494,7 +1764,7 @@ async function transitionClanOrder(transition) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ revision: order.revision })
         });
-        const result = await response.json();
+        const result = await clanOrderResponse(response);
         if (!response.ok || !result.ok) throw new Error(clanOrderErrorMessage(result.code, result.error));
         state.clanOrderSaving = false;
         state.clanOrderMessage = { kind: 'success', text: `${transition === 'cancel' ? 'Order cancelled' : transition === 'pause' ? 'Order paused' : transition === 'resume' ? 'Order resumed' : 'New plan queued'}` };
@@ -1627,6 +1897,7 @@ async function loadClanDirectory({ force = false, selectFirst = false } = {}) {
         const selectedExists = clanItems().some((clan) => Number(clan.id) === Number(state.selectedClanId));
         if ((selectFirst || !selectedExists) && clanItems().length) state.selectedClanId = Number(clanItems()[0].id);
         renderClans({ renderDetail: !state.clanDetail });
+        playerPages?.render();
         const detailClanId = Number(state.clanDetail?.clan?.id || 0);
         const selectedOverview = clanItems().find((clan) => Number(clan.id) === Number(state.selectedClanId));
         const selectedSignature = clanOverviewSignature(selectedOverview);
@@ -1641,6 +1912,7 @@ async function loadClanDirectory({ force = false, selectFirst = false } = {}) {
 }
 
 function openClans(clanId = null, { updateRoute = true } = {}) {
+    setApplicationView({ name: 'clans', id: Number(clanId) || null });
     if (state.clanMapScope) clearClanMapScope({ updateRoute: false });
     if (state.rankingOpen) closeRankings({ updateRoute: false });
     if (state.raidBossOpen) closeRaidBosses({ updateRoute: false });
@@ -1669,18 +1941,19 @@ function openClans(clanId = null, { updateRoute = true } = {}) {
 function closeClans({ updateRoute = true } = {}) {
     if (!state.clanOpen) return;
     state.clanOpen = false;
+    els.clanManagerDialog?.close();
     els.clansModal.hidden = true;
     els.observerShell?.removeAttribute('aria-hidden');
     if (els.observerShell) els.observerShell.inert = false;
     if (!state.rankingOpen && !state.raidBossOpen) document.body.classList.remove('rankings-open');
-    document.title = 'World Observer';
+    if (updateRoute) document.title = 'World Observer';
     state.clanFocusReturn?.focus?.();
     state.clanFocusReturn = null;
     state.clanManagerOpen = false;
     state.clanCrestMessage = null;
     resetClanCrestDraft();
     resetClanOrderDraft();
-    if (updateRoute) commitRoute({ name: 'world' });
+    if (updateRoute) { commitRoute({ name: 'world' }); setApplicationView({ name: 'world' }); }
 }
 
 function eligibleActors() {
@@ -1709,7 +1982,8 @@ function actorSearchText(actor) {
 }
 
 function isVisible(actor) {
-    if (state.phase !== 'all' && state.phase !== 'players' && actor.phase !== state.phase) return false;
+    if (state.phase === 'cold' && !['cold', 'warm'].includes(actor.phase)) return false;
+    if (!['all', 'players', 'cold'].includes(state.phase) && actor.phase !== state.phase) return false;
     if (state.phase === 'players' && actor.kind !== 'player') return false;
     if (state.search && !actorSearchText(actor).includes(state.search)) return false;
     return ActorFilters.matches(actor, state);
@@ -1771,15 +2045,28 @@ function renderTiles() {
     if (state.renderedTileKey === tileKey) return;
 
     els.tileLayer.innerHTML = '';
+    const coverage = els.worldMap.querySelector('#atlasCoverage');
+    coverage.replaceChildren();
+    for (const element of els.worldMap.querySelectorAll('#atlasMask, #atlasEdgeFeather')) {
+        element.setAttribute('x', -tiles.blockPx);
+        element.setAttribute('y', -tiles.blockPx);
+        element.setAttribute('width', tiles.width + tiles.blockPx * 2);
+        element.setAttribute('height', tiles.height + tiles.blockPx * 2);
+    }
     for (let x = tiles.x.min; x <= tiles.x.max; x += 1) {
         for (let y = tiles.y.min; y <= tiles.y.max; y += 1) {
-            const hidden = (tiles.hiddenRanges || []).some((range) => (
-                x >= range.x1 && x <= range.x2 && y >= range.y1 && y <= range.y2
-            ));
+            const hidden = window.WorldObserverMapAtlas.hidden(x, y);
             if (hidden || missingTiles.has(`${x}_${y}`)) continue;
 
+            // Feather the union of all surface tiles, leaving shared edges opaque.
+            coverage.appendChild(svgEl('rect', {
+                x: (x - tiles.x.min) * tiles.blockPx,
+                y: (y - tiles.y.min) * tiles.blockPx,
+                width: tiles.blockPx,
+                height: tiles.blockPx
+            }));
             els.tileLayer.appendChild(svgEl('image', {
-                href: `${tiles.rawBaseUrl}/${x}_${y}.jpg`,
+                href: `${tiles.rawBaseUrl}/${x}_${y}.${tiles.extension || 'jpg'}`,
                 x: (x - tiles.x.min) * tiles.blockPx,
                 y: (y - tiles.y.min) * tiles.blockPx,
                 width: tiles.blockPx,
@@ -1794,10 +2081,10 @@ function renderTiles() {
 function renderLabels() {
     const snap = state.snapshot;
     els.regionLabels.innerHTML = '';
-    if (!snap) return;
+    if (!snap || !state.showMapLabels) return;
 
     const viewportWidth = state.viewport?.width || mapMeta().width;
-    const showLabels = viewportWidth < 7600;
+    const showLabels = viewportWidth < 10000;
     const labelSize = clamp(viewportWidth / 55, 44, 135);
     snap.labels.forEach((label) => {
         const point = project(label);
@@ -1818,7 +2105,7 @@ function clusterCellSize() {
 }
 
 function screenUnits(pixels) {
-    return pixels / mapViewportMetrics().scale;
+    return pixels / (activeMapMetrics || mapViewportMetrics()).scale;
 }
 
 function pointHitElement(screenSize = 30) {
@@ -1840,7 +2127,7 @@ function clusterActors(items) {
     }).filter(Boolean);
     const groups = MapClusters.clusterProjected(projected, {
         cellSize: clusterCellSize(),
-        viewport: state.viewport,
+        viewport: visibleMapViewport(),
         margin: screenUnits(72)
     });
 
@@ -1901,7 +2188,7 @@ function renderSinglePoint(cluster) {
     group.appendChild(svgEl('circle', { class: 'point-ring', r: radius + screenUnits(3.5), stroke: color, 'vector-effect': 'non-scaling-stroke' }));
     group.appendChild(svgEl('circle', { class: 'point-core', r: radius, fill: color, 'vector-effect': 'non-scaling-stroke' }));
 
-    const showName = actor.kind === 'player' || actor.phase === 'hot' || (state.viewport?.width || 99999) < 4200;
+    const showName = actor.kind === 'player' || actor.phase === 'hot' || (state.viewport?.width || 99999) < 2000;
     if (showName) {
         const label = svgEl('text', {
             class: 'point-label',
@@ -1960,6 +2247,10 @@ function renderCluster(cluster) {
 }
 
 function renderPoints() {
+    return withMapMetrics(renderMapPoints);
+}
+
+function renderMapPoints() {
     els.pointsLayer.innerHTML = '';
     if (!state.snapshot) {
         renderRaidBossPoints();
@@ -1975,21 +2266,26 @@ function renderPoints() {
 }
 
 function renderRaidBossPoints() {
+    return withMapMetrics(renderRaidBossMapPoints);
+}
+
+function renderRaidBossMapPoints() {
+    if (!state.showMapRaids && state.phase !== 'raidbosses' && !state.selectedRaidBossId) { els.raidBossLayer.innerHTML = ''; return; }
     if (!els.raidBossLayer) return;
     els.raidBossLayer.innerHTML = '';
-    if (state.phase !== 'raidbosses' && !state.selectedRaidBossId) return;
+    if (!state.showMapRaids && state.phase !== 'raidbosses' && !state.selectedRaidBossId) return;
     const viewportWidth = state.viewport?.width || 99999;
     const bosses = raidBossItems()
         .filter((boss) => boss.status === 'alive' && boss.loc && (
-            state.phase === 'raidbosses' || String(boss.id) === String(state.selectedRaidBossId)
+            state.showMapRaids || state.phase === 'raidbosses' || String(boss.id) === String(state.selectedRaidBossId)
         ));
-    const clusters = state.phase === 'raidbosses'
-        ? MapClusters.clusterProjected(bosses.map((boss) => ({ boss, point: project(boss.loc) })), {
+    const clusters = state.showMapRaids || state.phase === 'raidbosses'
+        ? MapClusters.clusterProjected(bosses.map((boss) => ({ boss, point: project(boss.location?.area?.mapAnchor || boss.loc) })), {
             cellSize: screenUnits(48),
-            viewport: state.viewport,
+            viewport: visibleMapViewport(),
             margin: screenUnits(64)
         })
-        : bosses.map((boss) => ({ members: [{ boss, point: project(boss.loc) }], point: project(boss.loc), size: 1 }));
+        : bosses.map((boss) => ({ members: [{ boss, point: project(boss.location?.area?.mapAnchor || boss.loc) }], point: project(boss.location?.area?.mapAnchor || boss.loc), size: 1 }));
 
     clusters.forEach((cluster) => {
         if (cluster.size > 1) {
@@ -2015,7 +2311,7 @@ function renderRaidBossPoints() {
             d: `M 0 ${-radius} L ${radius} 0 L 0 ${radius} L ${-radius} 0 Z`,
             'vector-effect': 'non-scaling-stroke'
         }));
-        if (selected || viewportWidth < 4200) {
+        if (selected || viewportWidth < 2000) {
             const label = svgEl('text', {
                 class: 'raid-boss-label',
                 x: radius + screenUnits(8),
@@ -2043,6 +2339,10 @@ function renderKnowledgeNpcScope() {
 }
 
 function renderKnowledgeNpcPoints() {
+    return withMapMetrics(renderKnowledgeNpcMapPoints);
+}
+
+function renderKnowledgeNpcMapPoints() {
     if (!els.npcSpawnLayer) return;
     els.npcSpawnLayer.innerHTML = '';
     renderKnowledgeNpcScope();
@@ -2052,7 +2352,7 @@ function renderKnowledgeNpcPoints() {
     const projected = locations.map((location) => ({ location, point: project(location) }));
     const clusters = MapClusters.clusterProjected(projected, {
         cellSize: screenUnits(42),
-        viewport: state.viewport,
+        viewport: visibleMapViewport(),
         margin: screenUnits(54)
     });
     const viewportWidth = state.viewport?.width || 99999;
@@ -2092,7 +2392,7 @@ function clearKnowledgeNpcFocus({ render = true, updateRoute = false } = {}) {
     state.knowledgeNpcLoading = false;
     state.knowledgeNpcRequest += 1;
     if (render) renderKnowledgeNpcPoints();
-    if (updateRoute) commitRoute({ name: 'world' });
+    if (updateRoute) { commitRoute({ name: 'world' }); setApplicationView({ name: 'world' }); }
 }
 
 async function loadKnowledgeNpcFocus(id) {
@@ -2155,7 +2455,8 @@ function renderRaidBossCluster(cluster) {
 
 function focusRaidBoss(id) {
     const boss = raidBossItems().find((item) => String(item.id) === String(id));
-    if (!boss || boss.status !== 'alive' || !boss.loc) return;
+    if (!boss || boss.status !== 'alive' || !boss.loc) { openRaidBosses({ updateRoute: false }); return; }
+    setApplicationView({ name: 'world' });
     state.selectedRaidBossId = boss.id;
     state.selectedId = null;
     state.clusterScope = null;
@@ -2163,7 +2464,7 @@ function focusRaidBoss(id) {
     state.detailRequest += 1;
     closeRaidBosses({ updateRoute: false });
     const viewport = state.viewport || { x: 0, y: 0, width: mapMeta().width, height: mapMeta().height };
-    const point = worldToMap(boss.loc);
+    const point = worldToMap(boss.location?.area?.mapAnchor || boss.loc);
     applyViewport({
         x: point.x - viewport.width * 0.5,
         y: point.y - viewport.height * 0.5,
@@ -2205,7 +2506,7 @@ function renderFilterCounts() {
         all: items.length,
         hot: items.filter((actor) => actor.phase === 'hot').length,
         warm: items.filter((actor) => actor.phase === 'warm').length,
-        cold: items.filter((actor) => actor.phase === 'cold').length,
+        cold: items.filter((actor) => ['cold', 'warm'].includes(actor.phase)).length,
         players: items.filter((actor) => actor.kind === 'player').length,
         raidbosses: state.clanMapScope ? 0 : Number(state.snapshot?.raidBosses?.counts?.alive || 0)
     };
@@ -2248,10 +2549,11 @@ function renderFilteredActorViews({ counts = true } = {}) {
     renderActorFilterState();
 }
 
-function updateLevelFilter(changed) {
+function updateLevelFilter(changed = null) {
     state.minLevel = ActorFilters.normalizeLevel(els.minLevelFilter.value);
     state.maxLevel = ActorFilters.normalizeLevel(els.maxLevelFilter.value);
-    if (state.minLevel !== null && state.maxLevel !== null && state.minLevel > state.maxLevel) {
+    // Reconcile crossed bounds only after editing, not on a partial number.
+    if (changed && state.minLevel !== null && state.maxLevel !== null && state.minLevel > state.maxLevel) {
         if (changed === 'min') {
             state.maxLevel = state.minLevel;
             els.maxLevelFilter.value = state.maxLevel;
@@ -2276,14 +2578,13 @@ function renderPopulation() {
     const { active, services } = populationDisplayCounts(population);
     els.botsTotal.textContent = total.toLocaleString();
     els.playersTotal.textContent = (snap.players?.length || 0).toLocaleString();
-    els.populationSubline.textContent = `${number(active)} active on field · ${number(services)} services · ${number(population.persisted || total)} persisted · ${number(population.parties || 0)} background parties`;
+    els.populationSubline.textContent = `${number(active)} active on field · ${number(services)} services · ${number(population.parties || 0)} adventuring parties`;
     els.lastRefresh.textContent = formatTime(snap.generatedAt);
 
     const phases = [
         { key: 'active', label: 'Active', className: 'hot', count: active },
         { key: 'services', label: 'Services', className: 'services', count: services },
-        { key: 'warm', label: phaseLabel('warm'), className: 'warm', count: Number(population.warm || 0) },
-        { key: 'cold', label: phaseLabel('cold'), className: 'cold', count: Number(population.cold || 0) }
+        { key: 'cold', label: phaseLabel('cold'), className: 'cold', count: Number(population.cold || 0) + Number(population.warm || 0) }
     ];
     const phaseTotal = Math.max(1, phases.reduce((sum, phase) => sum + phase.count, 0));
     els.phaseBars.innerHTML = phases.map((phase) => {
@@ -2374,10 +2675,10 @@ function renderRoster() {
     const phaseRank = { hot: 0, warm: 1, cold: 2, player: 3 };
     const roster = filteredActors()
         .sort((a, b) => (phaseRank[a.phase] ?? 9) - (phaseRank[b.phase] ?? 9) || Number(b.level || 0) - Number(a.level || 0) || String(a.name).localeCompare(String(b.name)));
-    const list = roster.slice(0, 90);
+    const list = roster.slice(0, 30);
     els.visibleCount.textContent = list.length < roster.length
-        ? `${list.length.toLocaleString()} of ${roster.length.toLocaleString()} listed`
-        : `${roster.length.toLocaleString()} listed`;
+        ? `${list.length.toLocaleString()} of ${roster.length.toLocaleString()} adventurers`
+        : `${roster.length.toLocaleString()} adventurers`;
     els.actorList.innerHTML = list.length ? list.map((actor) => `
         <button class="actor-row${ActorFilters.matchesSelection(actor, state.selectedId) ? ' is-selected' : ''}" type="button" data-roster-id="${escapeHtml(actor.id)}" data-roster-kind="${actor.kind}">
             <span class="phase-dot" style="background:${phaseColor(actor)}"></span>
@@ -2404,6 +2705,7 @@ function selectedActor() {
 
 function reconcileSelectedActor() {
     if (!state.selectedId || !state.snapshot) return;
+    if (document.body.dataset.view === 'profile' && (state.detailLoading || state.detailError)) return;
 
     const id = String(state.selectedId.id);
     const currentKind = state.selectedId.kind === 'player' ? 'player' : 'bot';
@@ -2559,7 +2861,7 @@ function actorClanLink(actor) {
 }
 
 function statCell(label, value) {
-    return `<div class="stat-cell"><span>${text(label)}</span><strong>${number(value)}</strong></div>`;
+    return `<div class="stat-cell"><span>${text(label)}</span><strong title="${number(value)}">${number(value)}</strong></div>`;
 }
 
 function renderProgress(actor) {
@@ -2569,7 +2871,6 @@ function renderProgress(actor) {
         actor.adena !== undefined ? ['Adena', actor.adena] : null,
         actor.equipmentValue !== undefined ? ['Gear value', actor.equipmentValue] : null,
         actor.counters ? ['Wins', actor.counters.fightsWon ?? 0] : null,
-        actor.counters ? ['Resolves', actor.counters.fightsResolved ?? 0] : null,
         actor.counters ? ['Deaths', actor.counters.deaths ?? 0] : null,
         actor.pvp !== undefined ? ['PvP', actor.pvp] : null,
         actor.pk !== undefined ? ['PK', actor.pk] : null,
@@ -2577,8 +2878,8 @@ function renderProgress(actor) {
     ].filter(Boolean);
     if (!stats.length) return '';
     return `<section class="inspector-block compact-block">
-        <div class="inspector-block-title"><h3>Progress & wealth</h3><span>${text(Leaderboards.raceName(actor) || formatRelative(actor.updatedAt))}</span></div>
-        <div class="combat-stats">${stats.map(([label, value]) => statCell(label, value)).join('')}</div>
+        <div class="inspector-block-title"><h3>Progress & wealth</h3><span>Lifetime totals</span></div>
+        <div class="combat-stats progress-stats">${stats.map(([label, value]) => statCell(label, value)).join('')}</div>
     </section>`;
 }
 
@@ -2670,7 +2971,7 @@ function renderEquipment(equipment, combat) {
     const totals = equipment.totals || combat || {};
     const used = new Set();
     return `<section class="inspector-block">
-        <div class="inspector-block-title"><h3>Paperdoll</h3><span>${items.length} items · hover for stats · click for details</span></div>
+        <div class="inspector-block-title"><h3>Equipment</h3><span>${items.length} items · hover for stats · click for details</span></div>
         <div class="paperdoll" aria-label="Equipped items">
             <div class="paperdoll-center" aria-hidden="true"><span>W</span><small>C4</small></div>
             ${PAPERDOLL_SLOTS.map((slot) => renderPaperdollSlot(slot, paperdollItem(items, slot.slotIds, used))).join('')}
@@ -2877,7 +3178,19 @@ function renderRelationships(actor) {
 }
 
 function renderInspector() {
+    const focusedTab = document.activeElement?.dataset?.profileTab;
+    if (document.body.dataset.view === 'profile' && !state.snapshot) {
+        els.selectedInspector.innerHTML = '<div class="inspector-empty"><strong>Loading character</strong><p>Connecting to the world…</p></div>';
+        return;
+    }
     const actor = selectedActor();
+    if (!actor && state.selectedId) {
+        els.inspectorFreshness.textContent = state.detailLoading ? 'loading' : '';
+        els.selectedInspector.innerHTML = state.detailError
+            ? '<div class="inspector-empty"><strong>Character unavailable</strong><p>This character could not be loaded. Try again or return to the directory.</p><button class="app-button" type="button" data-retry-detail>Try again</button><a class="app-button" href="/observer/characters" data-app-route>Characters →</a></div>'
+            : '<div class="inspector-empty"><span class="loading-orbit"></span><strong>Loading character</strong><p>Loading equipment and current activity.</p></div>';
+        return;
+    }
     if (!actor) {
         els.inspectorFreshness.textContent = 'live';
         if (state.clusterScope) {
@@ -2900,13 +3213,13 @@ function renderInspector() {
             `;
             return;
         }
-        els.selectedInspector.innerHTML = `<div class="inspector-empty"><span class="empty-glyph">◎</span><strong>Nothing selected</strong><p>Click any actor on the map to see its current action and runtime status.</p></div>`;
+        els.selectedInspector.innerHTML = `<div class="inspector-empty"><span class="empty-glyph">◎</span><strong>Nothing selected</strong><p>Select a character to see their equipment, party and current activity.</p></div>`;
         return;
     }
 
     if (state.detailLoading && !state.detail) {
         els.inspectorFreshness.textContent = 'loading';
-        els.selectedInspector.innerHTML = '<div class="inspector-empty"><span class="loading-orbit"></span><strong>Loading actor info</strong><p>Reading the live status and persisted equipment snapshot.</p></div>';
+        els.selectedInspector.innerHTML = '<div class="inspector-empty"><span class="loading-orbit"></span><strong>Loading character</strong><p>Loading equipment and current activity.</p></div>';
         return;
     }
 
@@ -2914,13 +3227,14 @@ function renderInspector() {
         els.inspectorFreshness.textContent = 'error';
         els.selectedInspector.innerHTML = `<div class="inspector-empty detail-failure">
             <span class="empty-glyph">!</span>
-            <strong>Actor info unavailable</strong>
-            <p>${text(state.detailError)} · the compact map snapshot may be incomplete.</p>
+            <strong>Character unavailable</strong>
+            <p>Please try again in a moment.</p>
             <button class="selection-clear" type="button" data-retry-detail>Retry</button>
         </div>`;
         return;
     }
 
+    if (document.body.dataset.view === 'profile') document.title = `${actor.name} · World Observer`;
     const build = actor.build;
     const family = actorClassName(actor);
     const location = actor.loc ? `${Math.round(actor.loc.locX)}, ${Math.round(actor.loc.locY)}, ${Math.round(actor.loc.locZ || 0)}` : 'Unknown';
@@ -2934,11 +3248,14 @@ function renderInspector() {
     </div>` : '';
     els.selectedInspector.innerHTML = `
         ${detailWarning}
+        ${document.body.dataset.view === 'profile' ? `<div class="profile-toolbar"><a class="app-button" href="/observer/characters" data-app-route>← Characters</a><button class="app-button" type="button" data-profile-map>Show on map ↗</button></div>` : ''}
         <div class="inspector-hero">
             <div class="inspector-avatar" style="--avatar-color:${phaseColor(actor)}">${text(String(actor.name || '?').slice(0, 1).toUpperCase())}</div>
             <div class="inspector-name"><strong>${text(actor.isPk ? `PK ${actor.name}` : actor.name)}</strong><span>Lv ${number(actor.level, '?')} · ${text(family)} · ${text(roleLabel(actor.role || '—'))}</span></div>
-            <span class="phase-badge ${text(actor.phase || 'cold')}">${text(phaseLabel(actor.phase || 'bot'))}</span>
+            <span class="phase-badge ${text(actor.phase || 'cold')}">${text(displayActivity(actor))}</span>
         </div>
+        ${document.body.dataset.view === 'profile' ? `<div class="profile-tabs" role="tablist" aria-label="Profile sections">${['overview', 'equipment', 'relationships', 'progress'].filter((tab) => tab !== 'relationships' || state.selectedId?.kind === 'bot').map((tab) => `<button type="button" role="tab" id="profile-tab-${tab}" aria-controls="profile-panel-${tab}" aria-selected="${state.profileTab === tab}" data-profile-tab="${tab}">${tab[0].toUpperCase() + tab.slice(1)}</button>`).join('')}</div>` : `<a class="app-button profile-quick-link" href="${Router.href({ name: 'actor', kind: state.selectedId.kind, id: state.selectedId.id })}" data-app-route>Open profile ↗</a>`}
+        <div data-profile-panel="overview" id="profile-panel-overview" role="tabpanel" aria-labelledby="profile-tab-overview">
         <div class="inspector-vitals">
             ${vitalBar('HP', actor.vitals, '#63d37b')}
             ${vitalBar('MP', actor.vitals, '#57c7e8')}
@@ -2950,19 +3267,21 @@ function renderInspector() {
             <div><span>Region</span><strong>${text(readablePlace(actor.region || actor.home?.region))}</strong></div>
             <div><span>Clan</span><strong>${clan}</strong></div>
             <div><span>Party</span><strong>${party}</strong></div>
-            <div><span>Position</span><strong>${text(location)}</strong></div>
-            <div><span>Blockers</span><strong>${text(actor.blockers?.length ? actor.blockers.map(activityLabel).join(' · ') : 'None')}</strong></div>
+            ${actor.area?.mapLayer === 'dungeon' ? `<div><span>Dungeon</span><strong><a class="inspector-link" href="/observer/dungeons/${text(actor.area.id)}" data-app-route>${text(actor.area.name)}</a></strong></div>` : ''}
         </div>
         ${renderSignals(actor)}
-        ${actor.equipment || actor.combat ? renderEquipment(actor.equipment, actor.combat) : ''}
-        ${renderRelationships(actor)}
         ${renderBuild(build)}
-        ${renderDecisions(actor)}
-        ${renderProgress(actor)}
+        </div>
+        <div data-profile-panel="equipment" id="profile-panel-equipment" role="tabpanel" aria-labelledby="profile-tab-equipment">${actor.equipment || actor.combat ? renderEquipment(actor.equipment, actor.combat) : '<p class="muted-copy">Equipment information is unavailable.</p>'}</div>
+        <div data-profile-panel="relationships" id="profile-panel-relationships" role="tabpanel" aria-labelledby="profile-tab-relationships">${renderRelationships(actor)}</div>
+        <div data-profile-panel="progress" id="profile-panel-progress" role="tabpanel" aria-labelledby="profile-tab-progress">${renderProgress(actor)}</div>
     `;
+    updateProfileTabs();
+    if (focusedTab) els.selectedInspector.querySelector(`[data-profile-tab="${focusedTab}"]`)?.focus({ preventScroll: true });
 }
 
 function renderSelected() {
+    mapControls?.syncSelection();
     renderSelectedCard();
     renderInspector();
 }
@@ -2973,7 +3292,7 @@ function renderSnapshot() {
 
     const population = snap.population || {};
     const { active, services } = populationDisplayCounts(population);
-    els.serverLine.textContent = `${number(population.total || snap.bots.length)} bots in simulation · ${number(active)} active · ${number(services)} services · uptime ${formatDuration(snap.uptimeMs)}`;
+    els.serverLine.textContent = `${number(population.total || snap.bots.length)} bots in the world · ${number(active)} active · ${number(services)} services`;
     setSvgViewBox();
     renderTiles();
     renderGrid();
@@ -2986,11 +3305,15 @@ function renderSnapshot() {
     renderRaidBosses();
     renderRoster();
     renderSelected();
+    renderMapDestinations();
+    playerPages?.render();
 }
 
 function renderActorUpdates({ mapChanged = true } = {}) {
+    playerPages?.render();
     if (!state.snapshot) return;
     renderFilterCounts();
+    mapControls?.updateFollow();
     if (mapChanged) {
         setSvgViewBox();
         renderPoints();
@@ -3036,6 +3359,7 @@ function selectActor(id, kind = 'bot', focus = false, updateRoute = true) {
     state.detail = null;
     state.detailError = null;
     state.detailLoading = false;
+    state.profileTab = 'overview';
     if (focus) {
         const actor = actorById(id, actorKind);
         const loc = actor ? mapLocation(actor) : null;
@@ -3134,18 +3458,20 @@ async function loadWorldStatus(force = false) {
         state.snapshot = { ...state.snapshot, ...status };
         const population = state.snapshot.population || {};
         const { active, services } = populationDisplayCounts(population);
-        els.serverLine.textContent = `${number(population.total || state.snapshot.bots.length)} bots in simulation · ${number(active)} active · ${number(services)} services · uptime ${formatDuration(state.snapshot.uptimeMs)}`;
+        els.serverLine.textContent = `${number(population.total || state.snapshot.bots.length)} bots in the world · ${number(active)} active · ${number(services)} services`;
         renderFilterCounts();
         renderPopulation();
         renderMarket();
         renderRaidBosses();
+        playerPages?.render();
         if (state.phase === 'raidbosses' || state.selectedRaidBossId) {
             renderRaidBossPoints();
             renderRoster();
             renderSelected();
         }
     } catch (error) {
-        els.serverLine.textContent = `Observer status failed: ${error.message}`;
+        els.serverLine.textContent = 'The world could not refresh. Reconnecting…';
+        window.WorldObserverShell?.connection(false);
     } finally {
         state.worldStatusLoading = false;
     }
@@ -3167,11 +3493,13 @@ async function refresh() {
             reconcileSelectedActor();
             renderSnapshot();
             loadClanDirectory();
+            window.WorldObserverShell?.connection(true);
             if (state.pendingRoute) applyRoute(state.pendingRoute);
             return;
         }
         const response = await fetch(`/observer/api/world/changes?since=${encodeURIComponent(state.worldRevision)}`, { cache: 'no-store' });
         if (response.status === 204) {
+            window.WorldObserverShell?.connection(true);
             const epoch = response.headers.get('X-Observer-Epoch');
             if (worldEpochChanged(epoch)) {
                 restartWorldBootstrap(epoch);
@@ -3182,6 +3510,7 @@ async function refresh() {
             return;
         }
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        window.WorldObserverShell?.connection(true);
         const changes = await response.json();
         if (worldEpochChanged(changes.epoch)) {
             restartWorldBootstrap(changes.epoch);
@@ -3198,7 +3527,8 @@ async function refresh() {
         loadClanDirectory();
         loadWorldStatus();
     } catch (error) {
-        els.serverLine.textContent = `Observer snapshot failed: ${error.message}`;
+        els.serverLine.textContent = 'The world could not refresh. Reconnecting…';
+        window.WorldObserverShell?.connection(false);
     } finally {
         state.refreshing = false;
     }
@@ -3214,8 +3544,9 @@ els.closeClans?.addEventListener('click', closeClans);
 els.rankingsModal?.addEventListener('click', (event) => {
     const actor = event.target.closest('[data-ranking-id]');
     if (actor) {
-        selectActor(actor.dataset.rankingId, actor.dataset.rankingKind, true);
-        closeRankings({ updateRoute: false });
+        const route = { name: 'actor', kind: actor.dataset.rankingKind, id: Number(actor.dataset.rankingId) };
+        commitRoute(route);
+        applyRoute(route);
         return;
     }
     if (event.target === els.rankingsModal) closeRankings();
@@ -3231,6 +3562,14 @@ els.raidBossesModal?.addEventListener('click', (event) => {
 });
 
 els.clansModal?.addEventListener('click', (event) => {
+    if (event.target.closest('[data-clan-manager-close]')) { closeClanManager(); return; }
+    const managerTab = event.target.closest('[data-clan-manager-tab]');
+    if (managerTab) {
+        state.clanManagerTab = managerTab.dataset.clanManagerTab;
+        renderClanManager();
+        els.clanManagerContent.querySelector(`[data-clan-manager-tab="${state.clanManagerTab}"]`)?.focus();
+        return;
+    }
     const mapLink = event.target.closest('[data-clan-map-id]');
     if (mapLink) {
         event.preventDefault();
@@ -3239,14 +3578,40 @@ els.clansModal?.addEventListener('click', (event) => {
     }
     const manage = event.target.closest('[data-clan-manage]');
     if (manage) {
+        if (state.clanOrderSaving) return;
         state.clanManagerOpen = !state.clanManagerOpen;
         state.clanCrestMessage = null;
         state.clanOrderMessage = null;
-        if (!state.clanManagerOpen) {
-            resetClanCrestDraft();
-            resetClanOrderDraft();
-        }
         renderClanDetail();
+        return;
+    }
+    if (state.clanOrderSaving && event.target.closest('.clan-order-control')) return;
+    if (event.target.closest('[data-clan-order-confirm-replace]')) {
+        clanOrderDraft().replaceConfirmed = true;
+        createClanOrder();
+        return;
+    }
+    if (event.target.closest('[data-clan-order-confirm-cancel]')) { transitionClanOrder('cancel', { confirmed: true }); return; }
+    if (event.target.closest('[data-clan-order-keep]')) { resetClanOrderDraft(); renderClanDetail(); return; }
+    const editorMode = event.target.closest('[data-clan-order-editor]');
+    if (editorMode) { startClanOrderEditor(editorMode.dataset.clanOrderEditor); return; }
+    if (event.target.closest('[data-clan-order-discard]')) { resetClanOrderDraft(); renderClanDetail(); return; }
+    if (event.target.closest('[data-clan-order-reload]')) {
+        const clanId = state.clanDetail?.clan?.id;
+        resetClanOrderDraft();
+        loadClanDetail(clanId, { updateRoute: false }).then(() => {
+            if (Number(state.selectedClanId) === Number(clanId)) startClanOrderEditor('edit');
+        });
+        return;
+    }
+    const roster = event.target.closest('[data-clan-order-roster]');
+    if (roster) {
+        const expanded = els.clansModal.querySelector('[data-clan-order-roster]')?.closest('details')?.open;
+        clanOrderDraft().memberIds = roster.dataset.clanOrderRoster === 'all'
+            ? (state.clanDetail?.members || []).filter((member) => member.kind === 'bot').map((member) => Number(member.id)) : [];
+        renderClanDetail();
+        loadClanCraftPreview();
+        if (expanded) els.clansModal.querySelector('[data-clan-order-roster]')?.closest('details')?.setAttribute('open', '');
         return;
     }
     const item = event.target.closest('[data-clan-order-item]');
@@ -3263,20 +3628,19 @@ els.clansModal?.addEventListener('click', (event) => {
             state.clanOrderSearchError = null;
             state.clanOrderMessage = null;
             renderClanDetail();
+            loadClanCraftPreview();
         }
         return;
     }
     const strategy = event.target.closest('[data-clan-order-strategy]');
     if (strategy) {
         clanOrderDraft().strategy = strategy.dataset.clanOrderStrategy || 'auto';
+        loadClanCraftPreview();
         state.clanOrderMessage = null;
         renderClanDetail();
         return;
     }
-    if (event.target.closest('[data-create-clan-order]')) {
-        createClanOrder();
-        return;
-    }
+    if (event.target.closest('[data-create-clan-order]')) return;
     const transition = event.target.closest('[data-clan-order-transition]');
     if (transition) {
         transitionClanOrder(transition.dataset.clanOrderTransition);
@@ -3299,8 +3663,10 @@ els.clansModal?.addEventListener('click', (event) => {
     }
     const member = event.target.closest('[data-clan-member-id]');
     if (member) {
-        selectActor(member.dataset.clanMemberId, member.dataset.clanMemberKind || 'bot', true);
-        closeClans({ updateRoute: false });
+        closeClanManager();
+        const route = { name: 'actor', kind: member.dataset.clanMemberKind || 'bot', id: Number(member.dataset.clanMemberId) };
+        commitRoute(route);
+        applyRoute(route);
         return;
     }
     const clan = event.target.closest('[data-clan-id]');
@@ -3309,6 +3675,12 @@ els.clansModal?.addEventListener('click', (event) => {
         return;
     }
     if (event.target === els.clansModal) closeClans();
+});
+
+els.clansModal?.addEventListener('submit', (event) => {
+    if (!event.target.matches('[data-clan-order-form]')) return;
+    event.preventDefault();
+    createClanOrder();
 });
 
 els.clansModal?.addEventListener('change', (event) => {
@@ -3320,13 +3692,21 @@ els.clansModal?.addEventListener('change', (event) => {
             .map((entry) => Number(entry.dataset.clanOrderMember))
             .filter(Boolean);
         state.clanOrderMessage = null;
-        renderClanDetail();
+        loadClanCraftPreview();
+        const selected = state.clanOrderDraft.memberIds.length;
+        const minimum = ['market', 'craft'].includes(state.clanOrderDraft.strategy) ? 1 : 3;
+        const submit = els.clansModal.querySelector('[data-create-clan-order]');
+        if (submit) submit.disabled = !state.clanOrderDraft.item || selected < minimum || state.clanOrderSaving;
+        const summary = member.closest('details')?.querySelector('summary span');
+        if (summary) summary.textContent = `${selected} selected`;
+        const status = els.clansModal.querySelector('.clan-order-submit span');
+        if (status) { status.textContent = selected < minimum ? `Select at least ${minimum} bot executors` : 'Ready to save'; status.classList.toggle('is-error', selected < minimum); }
     }
 });
 
 els.clansModal?.addEventListener('focusout', () => {
     requestAnimationFrame(() => {
-        if (!state.clanDetailDeferredRender) return;
+        if (!state.clanDetailDeferredRender || state.clanOrderDraft) return;
         const editor = els.clansModal?.querySelector('.clan-order-editor');
         if (editor?.contains(document.activeElement)) return;
         renderClanDetail();
@@ -3334,6 +3714,7 @@ els.clansModal?.addEventListener('focusout', () => {
 });
 
 els.clansModal?.addEventListener('input', (event) => {
+    if (state.clanOrderDraft) state.clanOrderDraft.replaceConfirmed = false;
     const search = event.target.closest('[data-clan-order-search]');
     if (search) {
         const draft = clanOrderDraft();
@@ -3354,11 +3735,20 @@ els.clansModal?.addEventListener('input', (event) => {
         return;
     }
     const amount = event.target.closest('[data-clan-order-amount]');
-    if (amount) clanOrderDraft().amount = amount.value;
+    if (amount) {
+        clanOrderDraft().amount = amount.value;
+        window.clearTimeout(state.clanCraftPreviewTimer);
+        state.clanCraftPreviewTimer = window.setTimeout(loadClanCraftPreview, 200);
+    }
     const price = event.target.closest('[data-clan-order-price]');
     if (price) clanOrderDraft().maxUnitPrice = price.value;
     const budget = event.target.closest('[data-clan-order-budget]');
     if (budget) clanOrderDraft().budget = budget.value;
+});
+
+els.clanManagerDialog?.addEventListener('cancel', event => {
+    event.preventDefault();
+    closeClanManager();
 });
 
 els.clansModal?.addEventListener('dragover', (event) => {
@@ -3448,6 +3838,7 @@ els.liveToggle.addEventListener('click', () => {
     els.liveToggle.classList.toggle('is-live', state.live);
     els.liveToggle.title = state.live ? 'Pause live refresh' : 'Resume live refresh';
     els.liveLabel.textContent = state.live ? 'Live' : 'Paused';
+    els.liveToggle.setAttribute('aria-label', els.liveToggle.title);
     if (state.live) refresh();
 });
 
@@ -3496,6 +3887,22 @@ document.addEventListener('click', (event) => {
         renderRelationshipPanel(); return;
     }
     if (event.target.closest('[data-retry-relationships]')) { loadRelationships(true); return; }
+    const profileTab = event.target.closest('[data-profile-tab]');
+    if (profileTab) { state.profileTab = profileTab.dataset.profileTab; updateProfileTabs(); return; }
+    if (event.target.closest('[data-profile-map]')) {
+        const selected = state.selectedId;
+        setApplicationView({ name: 'world' });
+        commitRoute({ name: 'world' });
+        if (selected) focusSelectedCharacter();
+        return;
+    }
+    const appLink = event.target.closest('[data-app-route]');
+    if (appLink) {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        const route = Router.parse(appLink.getAttribute('href'));
+        commitRoute(route); applyRoute(route); return;
+    }
     const worldLink = event.target.closest('[data-spa-route="world"]');
     if (worldLink) {
         event.preventDefault();
@@ -3554,8 +3961,10 @@ els.actorSearch.addEventListener('input', (event) => {
     renderFilteredActorViews();
 });
 
-els.minLevelFilter.addEventListener('input', () => updateLevelFilter('min'));
-els.maxLevelFilter.addEventListener('input', () => updateLevelFilter('max'));
+els.minLevelFilter.addEventListener('input', () => updateLevelFilter());
+els.maxLevelFilter.addEventListener('input', () => updateLevelFilter());
+els.minLevelFilter.addEventListener('change', () => updateLevelFilter('min'));
+els.maxLevelFilter.addEventListener('change', () => updateLevelFilter('max'));
 
 els.classFilter.addEventListener('change', (event) => {
     state.classKey = String(event.target.value || 'all');
@@ -3580,9 +3989,11 @@ els.actorList.addEventListener('click', (event) => {
 
 els.worldMap.addEventListener('wheel', (event) => {
     event.preventDefault();
+    if (!event.deltaY) return;
     const viewport = state.viewport || { x: 0, y: 0, width: mapMeta().width, height: mapMeta().height };
     const focus = clientToMapPoint(event.clientX, event.clientY);
-    const zoomFactor = event.deltaY < 0 ? 0.82 : 1.22;
+    const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? els.worldMap.clientHeight : 1);
+    const zoomFactor = Math.exp(clamp(delta, -100, 100) * 0.002);
     const nextWidth = viewport.width * zoomFactor;
     const nextHeight = viewport.height * zoomFactor;
     const focusRatioX = (focus.x - viewport.x) / viewport.width;
@@ -3625,6 +4036,15 @@ els.worldMap.addEventListener('pointerup', finishDrag);
 els.worldMap.addEventListener('pointercancel', finishDrag);
 
 document.addEventListener('keydown', (event) => {
+    const tab = event.target.closest('[data-profile-tab]');
+    if (tab && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+        event.preventDefault();
+        const tabs = [...els.selectedInspector.querySelectorAll('[data-profile-tab]')];
+        const index = tabs.indexOf(tab);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+        state.profileTab = tabs[next].dataset.profileTab; updateProfileTabs(); tabs[next].focus(); return;
+    }
+    if (document.querySelector('dialog[open]')) return;
     if (event.key === 'Escape' && state.raidBossOpen) {
         event.preventDefault();
         closeRaidBosses();
@@ -3637,10 +4057,7 @@ document.addEventListener('keydown', (event) => {
     }
     if (event.key === 'Escape' && state.clanOpen && state.clanManagerOpen) {
         event.preventDefault();
-        state.clanManagerOpen = false;
-        state.clanCrestMessage = null;
-        resetClanCrestDraft();
-        renderClanDetail();
+        closeClanManager();
         return;
     }
     if (event.key === 'Escape' && state.clanOpen) {
@@ -3648,55 +4065,8 @@ document.addEventListener('keydown', (event) => {
         closeClans();
         return;
     }
-    if (state.rankingOpen) {
-        if (event.key === 'Tab') {
-            const focusable = [...els.rankingsModal.querySelectorAll('button:not([disabled]), select:not([disabled])')]
-                .filter((element) => !element.hidden && element.offsetParent !== null);
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            if (event.shiftKey && document.activeElement === first) {
-                event.preventDefault();
-                last?.focus();
-            } else if (!event.shiftKey && document.activeElement === last) {
-                event.preventDefault();
-                first?.focus();
-            }
-        }
-        return;
-    }
-    if (state.raidBossOpen) {
-        if (event.key === 'Tab') {
-            const focusable = [...els.raidBossesModal.querySelectorAll('button:not([disabled]), input:not([disabled])')]
-                .filter((element) => !element.hidden && element.offsetParent !== null);
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            if (event.shiftKey && document.activeElement === first) {
-                event.preventDefault();
-                last?.focus();
-            } else if (!event.shiftKey && document.activeElement === last) {
-                event.preventDefault();
-                first?.focus();
-            }
-        }
-        return;
-    }
-    if (state.clanOpen) {
-        if (event.key === 'Tab') {
-            const focusable = [...els.clansModal.querySelectorAll('button:not([disabled]), input:not([disabled])')]
-                .filter((element) => !element.hidden && element.offsetParent !== null);
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            if (event.shiftKey && document.activeElement === first) {
-                event.preventDefault();
-                last?.focus();
-            } else if (!event.shiftKey && document.activeElement === last) {
-                event.preventDefault();
-                first?.focus();
-            }
-        }
-        return;
-    }
-    if (event.key === '/' && document.activeElement !== els.actorSearch) {
+    if (state.rankingOpen || state.raidBossOpen || state.clanOpen) return;
+    if (event.key === '/' && document.body.dataset.view === 'world' && !event.target.closest('input, textarea, select')) {
         event.preventDefault();
         els.actorSearch.focus();
     }
@@ -3710,6 +4080,16 @@ document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && state.clusterScope) clearClusterScope(true);
 });
 
+window.WorldObserverShell.getActors = actors;
+playerPages = window.WorldObserverPlayerPages.create({ getSnapshot: () => state.snapshot, getActors: actors, getClans: clanItems, rememberRoute: (route) => commitRoute(route, { replace: true }),
+    navigate: (route) => { commitRoute(route); applyRoute(route); }, activityLabel, roleLabel });
+mapControls = window.WorldObserverMapControls.create({ state, getMeta: mapMeta, getMetrics: () => activeMapMetrics || mapViewportMetrics(), project: worldToMap,
+    applyViewport, renderViewport: scheduleMapViewportRender, renderLabels, renderRaids: renderRaidBossPoints,
+    getActors: actors, getSelected: selectedActor, navigate: (route) => { commitRoute(route); if (route.name !== 'world') applyRoute(route); } });
+window.addEventListener('observer:navigate', (event) => {
+    if (event.detail.name === 'not-found' || event.detail.name === 'market' || event.detail.name.startsWith('knowledge-')) return;
+    event.preventDefault(); commitRoute(event.detail); applyRoute(event.detail);
+});
 window.addEventListener('popstate', () => applyRoute());
 applyRoute();
 refresh();

@@ -16,6 +16,9 @@ function finishRevive(session, actor, helper) {
     // Only an actual in-place resurrection rejoins an ongoing raid. Town
     // recovery has no helper and must leave that participant out of combat.
     if (helper && wasDead) {
+        if (session.partyCompanion && session.followPlayerSession?.partyRaidEngagement?.phase === 'combat') {
+            session.playerRaidResurrectionRecovery = true;
+        }
         if (session.hotRaidCasualtyAt) session.hotRaidResurrectionRecovery = true;
         session.hotRaidCasualtyAt = undefined;
         session.hotRaidCasualtyRole = undefined;

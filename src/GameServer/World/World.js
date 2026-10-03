@@ -286,7 +286,8 @@ const World = {
 
         const attachCompanion = (withdrawal = null) => {
             const attachOptions = {};
-            if (distribution !== undefined && distribution !== null) {
+            // A delayed invite must not overwrite a newer client setting.
+            if (!session.clientPartyLootDistributionKnown && distribution !== undefined && distribution !== null) {
                 attachOptions.distribution = distribution;
             }
             attachOptions.capacityReservation = capacityReservation;

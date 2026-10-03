@@ -4,8 +4,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Market · World Observer</title>
+    <script src="/observer/appearance.js"></script>
     <link rel="icon" type="image/png" href="/observer/world-observer-logo.png">
     <link rel="stylesheet" href="/observer/styles.css">
+    <link rel="stylesheet" href="/observer/application.css">
 </head>
 <body class="market-page-body">
     <main class="market-page">
@@ -50,7 +52,7 @@
         <section class="market-controls" aria-label="Market filters">
             <label class="market-search">
                 <svg class="ui-icon" aria-hidden="true"><use href="/observer/ui-icons.svg#search"></use></svg>
-                <input id="marketSearch" type="search" placeholder="Item, ID, trader or shop title…" autocomplete="off">
+                <input id="marketSearch" type="search" aria-label="Search market" placeholder="Item, ID, trader or shop title…" autocomplete="off">
                 <kbd>/</kbd>
             </label>
             <div class="market-side-tabs" id="marketSideTabs" role="group" aria-label="Market side">
@@ -114,6 +116,9 @@
         </section>
     </main>
     <script src="/observer/marketModel.js"></script>
+    <script src="/observer/spaRouter.js"></script>
+    <script src="/observer/worldState.js"></script>
+    <script src="/observer/appShell.js"></script>
     <script src="/observer/market.js"></script>
 </body>
 </html>

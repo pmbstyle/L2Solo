@@ -14,7 +14,7 @@ const Geo = invoke('GameServer/Geodata/GeodataEngine');
 const saved = [];
 function replace(object, key, value) { const old = object[key]; saved.push(() => object[key] = old); object[key] = value; }
 function actor(id, x = 0, kind = null) {
-    return { x, hp: 100, fetchId: () => id, fetchSelfId: () => id, fetchKind: () => kind,
+    return { x, hp: 100, fetchId: () => id, fetchSelfId: () => id, fetchKind: kind ? () => kind : undefined,
         fetchLocX() { return this.x; }, fetchLocY: () => 0, fetchLocZ: () => 0,
         fetchHp() { return this.hp; }, fetchMaxHp: () => 100, fetchMp: () => 100, fetchMaxMp: () => 100,
         fetchLevel: () => 20, fetchIsOnline: () => true, isDead() { return this.hp <= 0; },

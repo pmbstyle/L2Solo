@@ -113,6 +113,7 @@ async function refreshQueueStats() {
 
 function actionTypeFor(clan, goal) {
     if (!clan || !goal || goal.status === 'completed') return null;
+    if (goal.controlledBy === 'player') return OrderService.actionTypeForGoal(goal);
     // The bots execute an equipment route through their normal lifecycle, but
     // the clan re-evaluates the weakest/highest-priority beneficiary on the
     // bounded retry cadence. This also repairs a lost durable plan binding
@@ -131,9 +132,7 @@ function actionTypeFor(clan, goal) {
 
 function workDone(actionType, result = {}) {
     if (actionType === ACTION_TYPES.CONTRIBUTION) {
-        return (result.results || []).some((entry) => entry?.ok)
-            || result.advanced?.ok === true
-            || number(result.warehouse?.deposited) > 0;
+        return result.advanced?.ok === true || number(result.warehouse?.deposited) > 0;
     }
     if (actionType === ACTION_TYPES.WAREHOUSE) return number(result.deposited) > 0;
     if (actionType === ACTION_TYPES.MARKET) return result.purchased === true || result.advanced?.ok === true;
@@ -183,6 +182,7 @@ function deferredRetryDelay(actionType, result = {}) {
 
 async function scheduleProduction(clan) {
     if (number(clan.level) >= 3) return;
+    if (clan.state?.goal?.controlledBy === 'player' && clan.state.goal.status !== 'completed') return;
     const [active] = await Database.execute([`SELECT id FROM clan_actions WHERE clanId = ?
         AND actionType = 'production' AND status IN ('pending', 'running') LIMIT 1`, [clan.id]]);
     if (active) return;
@@ -192,6 +192,9 @@ async function scheduleProduction(clan) {
 }
 
 async function resolveProduction(clan) {
+    if (clan.state?.goal?.controlledBy === 'player' && clan.state.goal.status !== 'completed') {
+        return { ok: true, skipped: true, reason: 'player_order_active' };
+    }
     if (number(clan.level) >= 3) return { ok: true, skipped: true };
     const service = invoke('GameServer/Clan/ClanEquipmentService');
     let result;
@@ -362,6 +365,13 @@ async function execute(action, options = {}) {
     try {
         switch (actionType) {
             case ACTION_TYPES.PLAN:
+                // The beneficiary got its item (BotLifeState.enqueueEquipmentGoalAdvance):
+                // below level 3 the equipment goal is the production goal, so pick the
+                // next one now instead of at the next 15-min production review.
+                if (String(payload.reason || '') === 'equipment_goal_completed' && number(clan.level) < 3) {
+                    result = await resolveProduction(clan);
+                    break;
+                }
                 result = String(clan.state?.mode || '') === 'player_managed'
                     && String(clan.state?.goal?.controlledBy || '') === 'player'
                     && clan.state?.goal?.status !== 'completed'
@@ -374,12 +384,7 @@ async function execute(action, options = {}) {
                     : await GoalService.resolveClan(clan, { actionId: Number(action.id) });
                 break;
             case ACTION_TYPES.CONTRIBUTION:
-                result = await EconomyService.resolveClan(clan, {
-                    batchSize: 1,
-                    deadlineAt,
-                    actionId: Number(action.id),
-                    goalUpdatedAt: Number(payload.goalUpdatedAt) || null
-                });
+                result = await EconomyService.resolveClan(clan, { deadlineAt });
                 break;
             case ACTION_TYPES.PRODUCTION:
                 result = await resolveProduction(clan);

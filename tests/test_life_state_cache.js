@@ -24,4 +24,27 @@ cache.set(2, { ...states[2], updatedAt: 9999 });
 assert.strictEqual(cache.recent(1)[0].characterId, 2);
 cache.delete(2); assert(!cache.recent(2500).some(state => state.characterId === 2));
 cache.clear(); assert.strictEqual(cache.cells.size, 0); assert.strictEqual(cache.size, 0);
+assert.deepStrictEqual(cache.recent(10), []);
+
+// The order kept on every write equals a stable sort of the Map values:
+// newest updatedAt first, equal times in Map (first insertion) order.
+let seed = 7;
+const random = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+const reference = new Map();
+const sorted = () => [...reference.values()].sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+for (let step = 0; step < 20000; step++) {
+    const id = Math.floor(random() * 300);
+    const roll = random();
+    if (roll < 0.1) {
+        cache.delete(id); reference.delete(id);
+    } else {
+        // Few distinct times: many ties, also missing and zero updatedAt.
+        const updatedAt = roll < 0.15 ? undefined : Math.floor(random() * 40);
+        const state = { characterId: id, updatedAt, phase: 'cold', activity: 'hunting', loc: { locX: id, locY: 0 } };
+        cache.set(id, state); reference.set(id, state);
+    }
+    if (step % 97 === 0) assert.deepStrictEqual(cache.recent(2000), sorted(), `order after step ${step}`);
+}
+assert.deepStrictEqual(cache.recent(2000), sorted(), 'final order');
+assert.deepStrictEqual(cache.recent(5), sorted().slice(0, 5), 'limit');
 console.log('Life state spatial parity, movement, phase and ordered cache checks passed');

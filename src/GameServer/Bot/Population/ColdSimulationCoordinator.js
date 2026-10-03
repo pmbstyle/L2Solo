@@ -1,4 +1,4 @@
-const { collectionPages, PAGE_BYTES } = require('./ColdMessagePages');
+const { collectionPagesWithBytes, PAGE_BYTES } = require('./ColdMessagePages');
 const path = require('path');
 const { randomUUID } = require('crypto');
 const { Worker } = require('worker_threads');
@@ -6,6 +6,7 @@ const { Worker } = require('worker_threads');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const DataCache = invoke('GameServer/DataCache');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
@@ -40,6 +41,9 @@ function wait(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Longest stretch the initial full snapshot builds rows without yielding.
+const SNAPSHOT_SLICE_MS = 50;
+
 function yieldToLoop() {
     return new Promise((resolve) => setImmediate(resolve));
 }
@@ -57,7 +61,7 @@ function admitSoloRouteTravelState(nextState, baseState, profiles, occupancy, ti
         || !travel?.spotId) {
         return { state: nextState, admitted: true, checked: false };
     }
-    const spot = (profiles || []).find((profile) => String(profile.id) === String(travel.spotId));
+    const spot = SpotIndex.spotById(profiles, travel.spotId);
     if (!spot) return { state: nextState, admitted: true, checked: false };
     // Leaving party-only content is a safety transition, not an optional
     // farming reservation. A full destination may be exceeded by one bot so
@@ -369,22 +373,23 @@ class ColdSimulationCoordinator {
         this.counters.invalidReasons[reason] = Number(this.counters.invalidReasons[reason] || 0) + 1;
     }
 
-    post(type, payload = {}, msgId = null) {
+    post(type, payload = {}, msgId = null, bytes = null) {
         if (!this.worker || !this.workerEpoch) return null;
         const message = Protocol.envelope(type, this.workerEpoch, payload, msgId);
-        const valid = Protocol.validateEnvelope(message, 'main', { workerEpoch: this.workerEpoch });
+        const valid = Protocol.validateEnvelope(message, 'main', { workerEpoch: this.workerEpoch, bytes });
         if (!valid.ok) {
             this.recordInvalid(`out_${type}_${valid.reason}`);
             return null;
         }
         this.counters.messagesOut += 1;
         this.counters.bytesOut += valid.bytes;
+        message.bytes = valid.bytes;
         this.worker.postMessage(message);
         return message.msgId;
     }
 
     postCollections(type, collections = {}, msgId = null) {
-        const pages = collectionPages(type, this.workerEpoch, collections, msgId, (value) => {
+        const pages = collectionPagesWithBytes(type, this.workerEpoch, collections, msgId, (value) => {
             this.recordInvalid(`out_${type}_single_item_too_large`);
             return value?.state ? {
                 ...value, state: null, context: {},
@@ -396,12 +401,12 @@ class ColdSimulationCoordinator {
             return this.post(type, Object.fromEntries(Object.keys(collections).map((field) => [field, []])), msgId) ? 1 : 0;
         }
         let sent = 0;
-        for (const page of pages) if (this.post(type, page, msgId)) sent++;
+        for (const page of pages) if (this.post(type, page.payload, msgId, page.bytes)) sent++;
         return sent;
     }
 
     async onMessage(message) {
-        const valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: this.workerEpoch });
+        const valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: this.workerEpoch, bytes: message?.bytes });
         if (!valid.ok) {
             this.recordInvalid(`in_${valid.reason}`);
             return;
@@ -436,7 +441,11 @@ class ColdSimulationCoordinator {
             }
             break;
         case 'claim_request':
-            await this.handleClaimRequest(message);
+            // A claim writes SQLite; a busy database must not become an
+            // unhandled rejection, which ends the process. Release already
+            // tolerates it. The worker times out a lost claim acknowledgement
+            // and queues the bot again.
+            await this.handleClaimRequest(message).catch((error) => this.recordError(error));
             break;
         case 'proposal_batch':
             this.handleProposalBatch(message);
@@ -533,20 +542,23 @@ class ColdSimulationCoordinator {
             { catalog: 'npc_offers', rows: npcPlanningCatalogRows() }
         ];
         catalogs.forEach(({ catalog, rows }) => {
+            // Count each row once, as sendIncrementalEntries does, instead of
+            // serialising every growing page prefix; post() trusts the count.
+            const baseBytes = Protocol.byteLength(Protocol.envelope('catalog_page', this.workerEpoch, {
+                catalog, rows: [], done: false
+            })) + 256;
             let page = [];
+            let pageBytes = baseBytes;
             const flush = (done = false) => {
                 if (!page.length && !done) return;
-                this.post('catalog_page', { catalog, rows: page, done });
+                this.post('catalog_page', { catalog, rows: page, done }, null, pageBytes);
                 page = [];
+                pageBytes = baseBytes;
             };
             for (const row of rows) {
-                const candidate = [...page, row];
-                const envelope = Protocol.envelope('catalog_page', this.workerEpoch, {
-                    catalog,
-                    rows: candidate,
-                    done: false
-                });
-                if (page.length && Protocol.byteLength(envelope) > 240 * 1024) flush(false);
+                const rowBytes = Protocol.byteLength([row]) - 2;
+                if (page.length && pageBytes + rowBytes + 1 > PAGE_BYTES) flush(false);
+                pageBytes += rowBytes + (page.length ? 1 : 0);
                 page.push(row);
                 if (page.length >= Protocol.MAX_BATCH) flush(false);
             }
@@ -557,7 +569,8 @@ class ColdSimulationCoordinator {
     contextIndex(options = {}) {
         let profiles = [];
         try { profiles = SpotProfiles.ensure() || []; } catch (_) { profiles = []; }
-        const spots = new Map(profiles.map((spot) => [String(spot.id), spot]));
+        // Every context of one spot catalog reads the same id table.
+        const spots = SpotIndex.tableFor(profiles);
         const parties = new Map((BackgroundPartyState.active?.() || []).map((party) => [Number(party.leaderId || 0), party]));
         let occupancy = {};
         try { occupancy = SpotProfiles.currentOccupancy(profiles) || {}; } catch (_) { occupancy = {}; }
@@ -664,20 +677,33 @@ class ColdSimulationCoordinator {
                 name: state.currentRegion || null,
                 area: state.area || state.stats?.area || null
             } : currentSpot;
+        // Solo checks and a non-party search all judge this bot, as the only
+        // capacity state, at this timestamp. Its combat profiles depend on the
+        // bot, not the spot: build them once for the decision.
+        let soloProfiles = null;
+        const soloOptions = () => {
+            soloProfiles = soloProfiles || invoke('GameServer/Bot/AI/BotTargetMatchup')
+                .stateProfiles(state, { ...options, mode: 'solo' });
+            return { ...options, mode: 'solo', matchupProfiles: soloProfiles };
+        };
         const unsafeSoloGround = !partyRoute && currentGround
-            && !LevelingRoutes.isSpotAllowedForState(currentGround, state, { ...options, mode: 'solo' });
+            && !LevelingRoutes.isSpotAllowedForState(currentGround, state, soloOptions());
         const sharedSpot = party?.stats?.objective?.spotId;
         let selected = partyRoute && sharedSpot && !excludedSpotIds.has(String(sharedSpot))
             ? index.spots.get(String(sharedSpot)) || null : fallbackSpot;
         try {
-            if (!selected) selected = SpotProfiles.findForState(routeState, options);
+            // A party-mode search of a lone member builds no profiles at all.
+            if (!selected) selected = SpotProfiles.findForState(routeState, !partyRoute
+                && LevelingRoutes.modeForState(routeState, options) !== 'party'
+                ? { ...options, matchupProfiles: soloOptions().matchupProfiles }
+                : options);
         } catch (_) { selected = null; }
         if (unsafeSoloGround && selected) {
             const repeatsCurrentGround = String(selected.id || '') === String(currentId || '');
             const destinationSafeForSolo = LevelingRoutes.isSpotAllowedForState(
                 selected,
                 state,
-                { ...options, mode: 'solo' }
+                soloOptions()
             );
             if (repeatsCurrentGround || !destinationSafeForSolo) selected = null;
         }
@@ -687,7 +713,7 @@ class ColdSimulationCoordinator {
             // blocked dungeon forever. Only for this rare safety evacuation,
             // choose the least-bad allowed field and let admission exceed its
             // soft capacity by one.
-            const emergencyOptions = { ...options, mode: 'solo' };
+            const emergencyOptions = soloOptions();
             const candidatesWithRoom = (index.profiles || [...index.spots.values()])
                 .filter((profile) => profile.raidBoss !== true)
                 .filter((profile) => String(profile.id) !== String(currentId || ''))
@@ -702,13 +728,6 @@ class ColdSimulationCoordinator {
                     index.occupancy,
                     { maxOverflowUnits: 1 }
                 ));
-            // These profiles depend on the bot, not the candidate spot. Keep
-            // them local to this decision so skill/equipment changes remain
-            // visible without rebuilding every skill for the entire catalog.
-            if (candidatesWithRoom.length) {
-                emergencyOptions.matchupProfiles = invoke('GameServer/Bot/AI/BotTargetMatchup')
-                    .stateProfiles(state, emergencyOptions);
-            }
             const emergencyCandidates = candidatesWithRoom.filter((profile) => (
                 LevelingRoutes.isSpotAllowedForState(profile, state, emergencyOptions)
             ));
@@ -798,6 +817,9 @@ class ColdSimulationCoordinator {
             interactionMemory: invoke('GameServer/Social/InteractionMemoryRuntime').snapshot(Number(state.characterId)),
             clanHallServices: invoke('GameServer/ClanHall/ColdVisit').needed(state),
             pressure,
+            // The worker cannot see AFK shops: hand it the Adena the bot's own
+            // buy order holds, which still counts as purchase budget.
+            buyOrderEscrow: invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId),
             targetNpcId: party ? require('./PartyHuntingTarget').npcId(party, state)
                 : directDropTargetNpcId(state.stats?.equipmentPlan),
             isPartyLeader: !!party,
@@ -845,7 +867,7 @@ class ColdSimulationCoordinator {
             initial: options.initial === true,
             ...(options.priority ? { priority: options.priority } : {})
         };
-        if (!this.post('snapshot_page', payload)) return false;
+        if (!this.post('snapshot_page', payload, null, options.bytes)) return false;
         this.counters.snapshotsSent += rows.length;
         this.counters.snapshotPages += 1;
         return true;
@@ -854,7 +876,7 @@ class ColdSimulationCoordinator {
     async sendIncrementalEntries(entries, index, pageSize, priority = null, deadlineAt = Infinity) {
         await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany(entries.map(entry => Number((entry.state || entry).characterId)));
         // Count each row once instead of serializing every growing page prefix.
-        // post() still validates the complete envelope before worker delivery.
+        // post() checks the counted upper bound of the envelope against the limit.
         const baseBytes = Protocol.byteLength(Protocol.envelope('snapshot_page', this.workerEpoch, {
             rows: [], done: false, initial: false, ...(priority ? { priority } : {})
         })) + 256;
@@ -865,9 +887,10 @@ class ColdSimulationCoordinator {
         const flush = async () => {
             if (!page.length) return true;
             const rows = page;
+            const bytes = pageBytes;
             page = [];
             pageBytes = baseBytes;
-            if (!await this.sendSnapshotPage(rows, { initial: false, priority })) return false;
+            if (!await this.sendSnapshotPage(rows, { initial: false, priority, bytes })) return false;
             rowsSent += rows.length;
             pagesSent += 1;
             this.counters.snapshotYields += 1;
@@ -906,11 +929,12 @@ class ColdSimulationCoordinator {
         let pageBytes = baseBytes;
         let page = [];
         let pendingPage = null;
+        let pendingBytes = baseBytes;
         let rowsSent = 0;
         let pagesSent = 0;
 
-        const emit = async (rows, done) => {
-            if (!await this.sendSnapshotPage(rows, { done, initial: true })) return false;
+        const emit = async (rows, done, bytes) => {
+            if (!await this.sendSnapshotPage(rows, { done, initial: true, bytes })) return false;
             rowsSent += rows.length;
             pagesSent += 1;
             this.counters.snapshotYields += 1;
@@ -918,7 +942,15 @@ class ColdSimulationCoordinator {
             return true;
         };
 
+        // A page of fresh routes can take most of a second on cold caches;
+        // hand the loop back inside a page too, not only between pages.
+        let sliceStartedAt = Date.now();
         for (let stateIndex = 0; stateIndex < states.length; stateIndex++) {
+            if (Date.now() - sliceStartedAt >= SNAPSHOT_SLICE_MS) {
+                this.counters.snapshotYields += 1;
+                await yieldToLoop();
+                sliceStartedAt = Date.now();
+            }
             if (stateIndex % pageSize === 0) {
                 await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany(
                     states.slice(stateIndex, stateIndex + pageSize).map(state => Number(state.characterId)));
@@ -928,8 +960,9 @@ class ColdSimulationCoordinator {
             const rowBytes = Protocol.byteLength([row]) - 2;
             const tooLarge = page.length > 0 && pageBytes + rowBytes + 1 > PAGE_BYTES;
             if (tooLarge || page.length >= pageSize) {
-                if (pendingPage && !await emit(pendingPage, false)) return { ok: false, rowsSent, pagesSent };
+                if (pendingPage && !await emit(pendingPage, false, pendingBytes)) return { ok: false, rowsSent, pagesSent };
                 pendingPage = page;
+                pendingBytes = pageBytes;
                 page = [];
                 pageBytes = baseBytes;
             }
@@ -937,11 +970,12 @@ class ColdSimulationCoordinator {
             page.push(row);
         }
         if (page.length) {
-            if (pendingPage && !await emit(pendingPage, false)) return { ok: false, rowsSent, pagesSent };
+            if (pendingPage && !await emit(pendingPage, false, pendingBytes)) return { ok: false, rowsSent, pagesSent };
             pendingPage = page;
+            pendingBytes = pageBytes;
         }
         if (!pendingPage) pendingPage = [];
-        if (!await emit(pendingPage, true)) return { ok: false, rowsSent, pagesSent };
+        if (!await emit(pendingPage, true, pendingBytes)) return { ok: false, rowsSent, pagesSent };
         return { ok: true, rowsSent, pagesSent };
     }
 
@@ -1287,13 +1321,14 @@ class ColdSimulationCoordinator {
     handleProposalBatch(message) {
         if (message.payload.capacityBlocked === true) this.queue.capacityBlocked = true;
         const rejected = [];
-        (message.payload.proposals || []).forEach((proposal) => {
+        const sizes = message.payload.proposalBytes;
+        (message.payload.proposals || []).forEach((proposal, index) => {
             const tokenValid = Protocol.validateToken(proposal.token);
             if (!tokenValid.ok || Number(proposal.characterId) !== Number(proposal.token?.characterId)) {
                 rejected.push({ ok: false, characterId: Number(proposal.characterId || 0), reason: tokenValid.reason || 'token_character', proposal });
                 return;
             }
-            const queued = this.queue.enqueue(proposal);
+            const queued = this.queue.enqueue(proposal, Array.isArray(sizes) ? sizes[index] : null);
             if (!queued.ok) rejected.push({ ok: false, characterId: proposal.characterId, reason: queued.reason, proposal });
             else Metrics.recordColdOwnerResolved();
         });
@@ -1327,43 +1362,43 @@ class ColdSimulationCoordinator {
             }
         };
         const timestamp = Number(proposal.enqueuedAt || Date.now());
+        // The worker's fight has already happened: a forced cleanup trip
+        // starts from the state after it, so its exp, adena and loot stay.
+        const resolvedState = proposal?.nextState || (proposal.result
+            ? await LifeState.prepareResolve(claimedState, proposal.result, { persist: false, timestamp })
+            : null);
+        if (!resolvedState) return null;
+        // An atomic group commits all members or none: as before, its cleanup
+        // is decided on the claimed state, so a member its party releases in
+        // this commit does not fail the whole group.
         const cleanupState = this.population?.prepareInventoryCleanupProposal?.(
-            claimedState,
+            proposal.atomicGroup ? claimedState : resolvedState,
             timestamp,
-            claimedState.simulation
+            claimedState.simulation,
+            claimedState
         );
         if (cleanupState) {
             if (proposal.atomicGroup) return null;
             proposal.inventoryCleanupForced = true;
-            proposal.result = {
-                events: [],
-                debug: { inventoryCleanup: true }
-            };
             delete cleanupState.cleanup;
             return cleanupState;
         }
-        if (proposal?.nextState) {
-            let profiles = [];
-            let occupancy = {};
-            try {
-                profiles = SpotProfiles.ensure() || [];
-                occupancy = SpotProfiles.currentOccupancy(profiles) || {};
-            } catch (_) { profiles = []; occupancy = {}; }
-            const admission = admitSoloRouteTravelState(
-                proposal.nextState,
-                state,
-                profiles,
-                occupancy,
-                Date.now()
-            );
-            if (admission.checked && !admission.admitted) this.counters.routeCapacityRejects += 1;
-            return admission.state;
-        }
-        if (!proposal.result) return null;
-        return LifeState.prepareResolve(claimedState, proposal.result, {
-            persist: false,
-            timestamp
-        });
+        if (!proposal?.nextState) return resolvedState;
+        let profiles = [];
+        let occupancy = {};
+        try {
+            profiles = SpotProfiles.ensure() || [];
+            occupancy = SpotProfiles.currentOccupancy(profiles) || {};
+        } catch (_) { profiles = []; occupancy = {}; }
+        const admission = admitSoloRouteTravelState(
+            proposal.nextState,
+            state,
+            profiles,
+            occupancy,
+            Date.now()
+        );
+        if (admission.checked && !admission.admitted) this.counters.routeCapacityRejects += 1;
+        return admission.state;
     }
 
     async afterCommit(entry, committed = {}) {

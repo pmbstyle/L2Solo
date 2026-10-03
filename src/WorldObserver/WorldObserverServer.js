@@ -6,6 +6,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const ITEM_ICON_CATALOG_DIR = path.join(PUBLIC_DIR, 'item-icons');
 const ITEM_ICON_MANIFEST_PATH = path.join(ITEM_ICON_CATALOG_DIR, 'index.json');
 const KNOWLEDGE_BASE_DIR = path.join(__dirname, '..', '..', 'data', 'KnowledgeBase');
+const { searchPlayers } = require('./CharacterSearch');
 const { createKnowledgeBaseService } = require('./KnowledgeBaseService');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
@@ -32,7 +33,8 @@ const MIME_TYPES = {
     '.svg': 'image/svg+xml; charset=utf-8',
     '.png': 'image/png',
     '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg'
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp'
 };
 const OBSERVER_IDLE_CACHE_MS = 2000;
 const WORLD_EPOCH = `${process.pid}-${Date.now().toString(36)}`;
@@ -60,36 +62,7 @@ const WORLD_BOUNDS = {
     maxY: 262144
 };
 
-const MAP_TILES = {
-    source: 'https://github.com/npetrovski/l2-world-map',
-    rawBaseUrl: 'https://raw.githubusercontent.com/npetrovski/l2-world-map/main/Maps',
-    blockSize: 32768,
-    blockPx: 900,
-    x: { min: 16, max: 26, mid: 20 },
-    y: { min: 10, max: 25, mid: 18 },
-    missingTiles: [
-        '17_14',
-        '18_13',
-        '26_13',
-        '26_15',
-        '26_16',
-        '26_17',
-        '26_18',
-        '26_19'
-    ],
-    alternatives: [
-        {
-            name: 'L2J C4 common map',
-            url: 'https://l2j.ru/img/maps/c4_all.jpg',
-            note: 'large C4 poster map; needs manual coordinate calibration'
-        },
-        {
-            name: 'PMfun Aden World Map C4 (big)',
-            url: 'https://lineage.pmfun.com/data/maps/world/Aden%20World%20Map%20C4%20%28big%29.jpg',
-            note: 'large C4 poster map; useful as a visual reference'
-        }
-    ]
-};
+const MAP_TILES = require('./public/mapAtlas').metadata;
 
 const REGION_LABELS = [
     { name: 'Talking Island', locX: -84318, locY: 244579, kind: 'town' },
@@ -311,6 +284,8 @@ function compactPlayer(session) {
     const race = raceMetadata(actor.fetchRace?.(), classId);
     const loc = actorLoc(actor);
     const area = WorldAreaCatalog.publicArea(WorldAreaCatalog.resolve(loc));
+    const sessions = invoke('GameServer/World/World').user?.sessions || [];
+    const hasCompanions = sessions.some((member) => member.partyCompanion === true && member.followPlayerSession === session);
     return {
         id: actor.fetchId(),
         name: actor.fetchName(),
@@ -323,6 +298,12 @@ function compactPlayer(session) {
         equipmentValue: liveEquipmentValue(actor),
         loc,
         area,
+        party: hasCompanions ? {
+            id: `player_${actor.fetchId()}`,
+            leaderId: actor.fetchId(),
+            leader: { id: actor.fetchId(), name: actor.fetchName(), kind: 'player' },
+            role: 'player'
+        } : null,
         vitals: actorVitals(actor),
         online: !!actor.fetchIsOnline(),
         isPk: isPkActor(actor)
@@ -365,7 +346,8 @@ function compactHotBot(status, pkIds = new Set(), session = null) {
             distance: status.target.distance ? Math.round(status.target.distance) : null
         } : null,
         party: status.party ? {
-            id: status.party.id || null,
+            id: status.party.id || (session?.partyCompanion && session.followPlayerSession?.actor
+                ? `player_${session.followPlayerSession.actor.fetchId()}` : null),
             leader: compactPartyLeader(status.party.leader),
             leaderId: Number(status.party.leader?.id || 0) || null,
             stance: status.party.stance,
@@ -476,7 +458,7 @@ const projectionRuntime = {
 const PROJECTION_FIELDS = Object.freeze([
     'id', 'name', 'phase', 'mode', 'intent', 'role', 'level', 'classId', 'className',
     'raceId', 'exp', 'adena', 'equipmentValue', 'loc', 'area', 'region', 'online',
-    'staticService', 'isPk', 'blockers', 'updatedAt'
+    'staticService', 'isPk', 'blockers', 'updatedAt', 'party'
 ]);
 
 function equipmentSlot(slot) {
@@ -564,6 +546,54 @@ function compactClanGoal(raw) {
         failureCount: clanNumber(goal.failureCount),
         updatedAt: clanNumber(goal.updatedAt || raw.updatedAt)
     };
+}
+
+function compactClanCraftPlan(goal, members, warehouse, knowledge = []) {
+    if (goal?.plan?.kind !== 'craft' || goal.controlledBy === 'player' || ['completed', 'cancelled'].includes(goal.status)) return null;
+    const carrier = members.find(member => Number(member.id) === Number(goal.target?.memberId));
+    const stats = observerJson(carrier?.statsJson);
+    const plan = stats.equipmentPlan;
+    if (!goal.goalKey || !plan || plan.strategy !== 'craft' || plan.clanGoal?.goalKey !== goal.goalKey
+        || Number(plan.target?.selfId) !== Number(goal.target?.itemId)) {
+        return { reasonCode: 'clan_craft_plan_pending', craft: null };
+    }
+    const Crafting = require('../GameServer/Clan/ClanCraftingPolicy');
+    const ColdCrafting = invoke('GameServer/Bot/Economy/ColdCraftingService');
+    const recipe = Crafting.resolveRecipe(plan.recipeId);
+    if (!recipe) return { reasonCode: 'clan_craft_recipe_unavailable', craft: null };
+    const providers = Object.fromEntries(Object.entries(plan.craftProviders || {}).map(([id, provider]) => [id,
+        { ...provider, known: knowledge.some(row => Number(row.characterId) === Number(provider.characterId) && Number(row.recipeId) === Number(id)) }]));
+    const inventory = { ...observerJson(carrier.inventorySummary) };
+    for (const row of warehouse) {
+        const id = Number(row.selfId);
+        inventory[id] = { selfId: id, amount: Number(inventory[id]?.amount || 0)
+            + Math.max(0, Number(row.amount || 0) - Number(row.reservedAmount || 0)) };
+    }
+    const demand = Crafting.requirements(recipe, inventory, null, 1, providers, plan.componentRecipes);
+    const provider = providers[recipe.recipeId];
+    const crafter = members.find(member => Number(member.id) === Number(provider?.characterId));
+    const traveling = carrier.activity === 'traveling' && stats.travel?.arrivalActivity === 'crafting';
+    const crafting = carrier.activity === 'crafting';
+    const gathering = !traveling && !crafting && carrier.activity === 'grouped';
+    const ready = gathering ? null : ColdCrafting.readyRecipeFor({ inventory, stats: { ...stats, equipmentPlan: { ...plan, craftProviders: providers } } }, recipe);
+    const blocked = goal.status === 'blocked' || plan.status === 'blocked';
+    const reasonCode = blocked ? 'clan_craft_route_blocked' : traveling ? 'clan_craft_traveling' : crafting ? 'clan_craft_in_progress' : gathering ? 'clan_craft_party_resources'
+        : ready?.recipeId === recipe.recipeId ? 'clan_craft_ready' : ready ? 'clan_craft_component_ready' : 'clan_craft_collecting_materials';
+    const itemName = id => ClanOrderService.itemSnapshot(ClanOrderService.itemTemplate(id))?.itemName || `Item ${id}`;
+    return { kind: 'craft', reasonCode, craft: {
+        recipeId: recipe.recipeId, recipeItemId: recipe.recipeItemId, level: recipe.level,
+        successRate: recipe.successRate, productCount: recipe.productCount,
+        crafterName: crafter?.name || (provider ? 'Unavailable' : 'Public crafting service'),
+        learned: provider ? provider.known : true,
+        customerName: carrier.name, activity: carrier.activity,
+        stage: blocked ? 'blocked' : traveling || crafting || ready ? ready && ready.recipeId !== recipe.recipeId ? 'components' : 'crafting' : 'resources',
+        nextItemName: ready ? itemName(ready.productId) : plan.next?.itemId ? itemName(plan.next.itemId) : null,
+        sourceName: ready ? null : plan.next?.npcName || null,
+        sourceKind: plan.next?.sourceKind || plan.next?.kind || null,
+        materials: [...demand].map(([selfId, required]) => ({ selfId, name: itemName(selfId), required,
+            available: Number(inventory[selfId]?.amount || 0), missing: Math.max(0, required - Number(inventory[selfId]?.amount || 0)),
+            component: !!plan.componentRecipes?.[selfId] }))
+    } };
 }
 
 function clanOverviewQuery() {
@@ -706,7 +736,8 @@ function compactClanOverview(row, auxiliary = {}) {
             active: clanNumber(operation.activeOperations),
             latestAt: clanNumber(operation.latestOperationAt)
         },
-        goal: compactClanGoal(state.goal)
+        goal: compactClanGoal(state.goal),
+        productionGoal: level < 3 ? compactClanGoal(state.productionGoal) : null
     };
 }
 
@@ -835,6 +866,11 @@ function compactClanEvent(row) {
 function compactClanOrder(order) {
     if (!order) return null;
     const icon = itemIconFor(null, order.itemId, order.itemName, null);
+    const plan = { ...(order.plan || {}) };
+    if (plan.craft) {
+        plan.craft = { ...plan.craft };
+        delete plan.craft.nativePlan;
+    }
     return {
         id: clanNumber(order.id),
         revision: clanNumber(order.revision),
@@ -849,7 +885,7 @@ function compactClanOrder(order) {
         budget: clanNumber(order.budget),
         spent: clanNumber(order.spent),
         memberIds: (order.memberIds || []).map(Number).filter(Boolean),
-        plan: order.plan || {},
+        plan,
         reasonCode: order.reasonCode || null,
         createdAt: clanNumber(order.createdAt),
         updatedAt: clanNumber(order.updatedAt),
@@ -881,6 +917,7 @@ function clanOrderItems(query = '', limit = 40) {
                 name: item.itemName,
                 kind: item.itemKind,
                 price: item.itemPrice,
+                craftable: require('../GameServer/Clan/ClanOrderCrafting').recipesForItem(item.itemId).length > 0,
                 iconUrl: icon?.url || null
             };
         });
@@ -922,6 +959,16 @@ async function clanDetail(clanId) {
     const leaderId = clanNumber(row[0]?.leaderId || overview.leaderId);
     const hot = hotBotStatuses();
     const memberViews = members.map((member) => compactClanMember(member, hot.get(Number(member.id)), leaderId));
+    const clanState = observerJson(row[0]?.stateJson);
+    // The goal card and its durable carrier plan must describe the same
+    // snapshot even if a clan action changed the goal during these reads.
+    overview.goal = compactClanGoal(clanState.goal);
+    overview.productionGoal = overview.level < 3 ? compactClanGoal(clanState.productionGoal) : null;
+    const craftGoals = [clanState.goal, overview.productionGoal ? clanState.productionGoal : null]
+        .filter(goal => goal?.plan?.kind === 'craft' && goal.controlledBy !== 'player');
+    const craftKnowledge = craftGoals.length ? await Database.execute([`SELECT recipes.characterId, recipes.recipeId
+        FROM character_recipes recipes JOIN characters members ON members.id = recipes.characterId
+        WHERE members.clanId = ?`, [id]], 'observer:clan-craft-recipes') : [];
     const operationRow = operation[0] || null;
     const operationMembers = operationRow
         ? await Database.execute([`
@@ -935,6 +982,8 @@ async function clanDetail(clanId) {
     return {
         generatedAt: Date.now(),
         clan: overview,
+        automaticCraft: compactClanCraftPlan(clanState.goal, members, warehouse, craftKnowledge),
+        productionCraft: overview.productionGoal ? compactClanCraftPlan(clanState.productionGoal, members, warehouse, craftKnowledge) : null,
         clanHall: await Database.fetchClanHallFinance(id),
         members: memberViews,
         bots: memberViews.filter((member) => member.isBot),
@@ -1164,7 +1213,8 @@ function loadItemIconCatalog() {
 
     try {
         const manifest = JSON.parse(fs.readFileSync(ITEM_ICON_MANIFEST_PATH, 'utf8'));
-        const entries = Object.values(manifest.items || {})
+        const supplemental = JSON.parse(fs.readFileSync(path.join(ITEM_ICON_CATALOG_DIR, 'supplemental.json'), 'utf8'));
+        const entries = Object.values({ ...manifest.items, ...supplemental.items })
             .filter((entry) => entry && entry.localFile);
         const bySelfId = new Map();
         const byNameAndCategory = new Map();
@@ -1895,6 +1945,7 @@ function projectionActor(actor, kind) {
         area: actor.area || null,
         region: actor.region || null,
         online: kind === 'player' ? !!actor.online : undefined,
+        party: actor.party || null,
         staticService: kind === 'bot' ? !!actor.staticService : undefined,
         isPk: !!actor.isPk,
         blockers: actor.blockers?.includes('dead') ? ['dead'] : [],
@@ -2003,6 +2054,7 @@ async function worldBootstrap() {
         bounds: WORLD_BOUNDS,
         mapTiles: MAP_TILES,
         labels: REGION_LABELS,
+        areas: WorldAreaCatalog.AREAS.map(WorldAreaCatalog.publicArea),
         classes: classCatalog(),
         actorFormat: 'row-v1',
         actorFields: PROJECTION_FIELDS,
@@ -2068,7 +2120,8 @@ async function marketSnapshot() {
             ...market.transactions,
             recent: market.transactions.recent.map((trade) => ({
                 ...trade,
-                itemName: itemById.get(Number(trade.selfId))?.name || trade.itemName
+                itemName: itemById.get(Number(trade.selfId))?.name || trade.itemName,
+                iconUrl: itemById.get(Number(trade.selfId))?.iconUrl || knowledgeBaseService().itemDetail(Number(trade.selfId))?.iconUrl || null
             }))
         }
     };
@@ -2116,6 +2169,7 @@ async function snapshot() {
         bounds: WORLD_BOUNDS,
         mapTiles: MAP_TILES,
         labels: REGION_LABELS,
+        areas: WorldAreaCatalog.AREAS.map(WorldAreaCatalog.publicArea),
         classes: classCatalog(),
         raidBosses: raidBossSnapshot(),
         population: PopulationStatus.counts(),
@@ -2450,6 +2504,16 @@ function route(request, response) {
         return;
     }
 
+    if (url.pathname === '/observer/api/characters/search') {
+        if (request.method !== 'GET') { response.writeHead(405, { Allow: 'GET' }); response.end(); return; }
+        searchPlayers({ execute: (query) => Database.execute(query, 'observer:character-search'),
+            query: url.searchParams.get('q'), limit: url.searchParams.get('limit'), classes: classCatalog(),
+            onlineIds: realPlayerSessions().map((session) => session.actor.fetchId()) })
+            .then((characters) => sendJson(response, { characters }))
+            .catch((err) => sendJson(response, { error: err.message }, 500));
+        return;
+    }
+
     if (url.pathname === '/observer/api/clans/social') {
         if (request.method !== 'GET') { response.writeHead(405, { Allow: 'GET' }); response.end(); return; }
         sendJson(response, invoke('GameServer/Clan/ClanSocialRuntime').inspect());
@@ -2596,6 +2660,32 @@ function route(request, response) {
         return;
     }
 
+    const craftPreviewMatch = url.pathname.match(/^\/observer\/api\/clan\/(\d+)\/craft-preview$/);
+    if (craftPreviewMatch) {
+        if (request.method !== 'POST') {
+            response.writeHead(405, { Allow: 'POST' }); response.end(); return;
+        }
+        readJsonBody(request, 32768).then(async payload => {
+            const clan = await ClanGoalService.clanProjectionById(Number(craftPreviewMatch[1]));
+            if (!clan || clan.state?.mode !== 'player_managed') return { ok: false, code: 'target_not_player_managed' };
+            const memberIds = payload.memberIds ?? clan.state.memberIds;
+            if (!Array.isArray(memberIds) || memberIds.some(id => !Number.isSafeInteger(id) || !clan.state.memberIds.includes(id))) {
+                return { ok: false, code: 'invalid_clan_order_members' };
+            }
+            if (!Number.isSafeInteger(payload.itemId) || !Number.isSafeInteger(payload.amount)
+                || payload.amount < 1 || payload.amount > 1000000) return { ok: false, code: 'invalid_clan_order_amount' };
+            const current = await ClanOrderService.current(clan.id);
+            const order = { id: current && current.id === payload.orderId && current.itemId === payload.itemId ? current.id : 0,
+                itemId: payload.itemId, amount: payload.amount, strategy: 'craft', memberIds: [...new Set(memberIds)] };
+            const plan = await require('../GameServer/Clan/ClanOrderCrafting').planFor(order, clan, payload.amount);
+            const craft = plan.craft ? { ...plan.craft } : null;
+            if (craft) delete craft.nativePlan;
+            return { ok: true, plan: { kind: plan.kind, reasonCode: plan.reasonCode, craft } };
+        }).then(result => sendJson(response, result, result.ok ? 200 : 400))
+            .catch(err => sendJson(response, { ok: false, error: err.message }, err.statusCode || 500));
+        return;
+    }
+
     const clanOrderCreateMatch = url.pathname.match(/^\/observer\/api\/clan\/(\d+)\/orders$/);
     if (clanOrderCreateMatch) {
         if (request.method !== 'POST') {
@@ -2605,6 +2695,24 @@ function route(request, response) {
         }
         readJsonBody(request, 32768)
             .then((payload) => createPlayerManagedClanOrder(clanOrderCreateMatch[1], payload))
+            .then((result) => sendJson(response, result, clanOrderMutationStatus(result)))
+            .catch((err) => sendJson(response, { ok: false, error: err.message }, err.statusCode || 500));
+        return;
+    }
+
+    const clanOrderEditMatch = url.pathname.match(/^\/observer\/api\/clan\/(\d+)\/orders\/(\d+)$/);
+    if (clanOrderEditMatch) {
+        if (request.method !== 'PATCH') {
+            response.writeHead(405, { Allow: 'PATCH' });
+            response.end();
+            return;
+        }
+        readJsonBody(request, 32768)
+            .then(async (payload) => {
+                const clan = await ClanGoalService.clanProjectionById(Number(clanOrderEditMatch[1]));
+                const result = await ClanOrderService.edit(clan, Number(clanOrderEditMatch[2]), payload);
+                return result.ok ? { ...result, order: compactClanOrder(result.order), goal: compactClanGoal(result.goal) } : result;
+            })
             .then((result) => sendJson(response, result, clanOrderMutationStatus(result)))
             .catch((err) => sendJson(response, { ok: false, error: err.message }, err.statusCode || 500));
         return;
@@ -2696,6 +2804,10 @@ function route(request, response) {
         return;
     }
 
+    if (url.pathname === '/observer/item-icons/supplemental.json') {
+        sendFile(request, response, path.join(ITEM_ICON_CATALOG_DIR, 'supplemental.json')); return;
+    }
+
     const itemIconMatch = url.pathname.match(/^\/observer\/item-icons\/([^/]+)$/);
     if (itemIconMatch) {
         let fileName = null;
@@ -2724,7 +2836,7 @@ function route(request, response) {
         return;
     }
 
-    if (/^\/observer\/(?:world|rankings|raid-bosses(?:\/\d+)?|clans(?:\/\d+)?(?:\/map)?|actors\/(?:bot|player)\/\d+)\/?$/.test(url.pathname)) {
+    if (/^\/observer\/(?:world|overview|characters|parties|dungeons\/[a-z0-9_-]+|rankings|raid-bosses(?:\/\d+)?|clans(?:\/\d+)?(?:\/map)?|actors\/(?:bot|player)\/\d+)\/?$/.test(url.pathname)) {
         sendFile(request, response, path.join(PUBLIC_DIR, 'index.html'));
         return;
     }
@@ -2748,6 +2860,7 @@ function route(request, response) {
 
 const WorldObserverServer = {
     server: null,
+    route,
     compactPlayer,
     compactPlayerDetail,
     compactHotBot,
@@ -2755,6 +2868,7 @@ const WorldObserverServer = {
     compactColdDetail,
     compactHotDetail,
     compactClanGoal,
+    compactClanCraftPlan,
     compactClanOverview,
     compactClanMember,
     compactClanOrder,

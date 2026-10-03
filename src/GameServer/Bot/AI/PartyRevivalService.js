@@ -32,6 +32,7 @@ function partySessions(leaderSession) {
     if (leaderSession.hotBackgroundPartyId && !leaderSession.partyCompanion) {
         return invoke('GameServer/Bot/AI/HotBackgroundParty').roster(leaderSession);
     }
+    if (leaderSession.partyRaidEngagement) return PartyCombatState.partySessions(leaderSession, { includeDead: true });
     const BotManager = invoke('GameServer/Bot/BotManager');
     return [leaderSession, ...(BotManager.sessions || []).filter((session) => isCompanionOf(session, leaderSession))];
 }
@@ -97,7 +98,15 @@ function resurrectionSkill(actor) {
 }
 
 function combatResurrectionAllowed(leaderSession) {
-    if (!leaderSession?.hotBackgroundPartyId || leaderSession.partyCompanion) return false;
+    if (!leaderSession?.hotBackgroundPartyId) {
+        const raid = leaderSession?.partyRaidEngagement;
+        if (raid?.phase !== 'combat') return false;
+        const tank = partySessions(leaderSession).find(s => Number(s.actor.fetchId()) === Number(raid.mainTankId));
+        if (!isAlive(tank)) return false;
+        const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
+        return !partySessions(leaderSession).filter(isAlive).some(s => Threats.context(s).threats.length > 0);
+    }
+    if (leaderSession.partyCompanion) return false;
     const party = invoke('GameServer/Bot/Population/BackgroundPartyState').find(leaderSession.hotBackgroundPartyId);
     if (party?.status !== 'hot' || party.stats?.raidEncounter?.status === 'failed') return false;
     if (party.stats?.objective?.sourceKind !== 'raid' && party.stats?.objective?.raidBoss !== true) return false;
@@ -193,6 +202,21 @@ function castScroll(session, actor, target, skill) {
     });
 }
 
+function cancelAttempt(leaderSession) {
+    const attempt = leaderSession.partyRevivalAttempt;
+    if (!attempt) return;
+    const provider = partySessions(leaderSession).find(s => s.actor.fetchId() === attempt.providerId);
+    if (provider?.actor) {
+        invoke('GameServer/Bot/AI/BotPvpTactics').stop(provider, provider.actor);
+        if (provider.currentTargetId === attempt.targetId) {
+            provider.currentTargetId = undefined;
+            provider.actor.unselect?.();
+        }
+        if (provider.pendingPartyChatResult?.kind === 'resurrection') provider.pendingPartyChatResult = undefined;
+    }
+    leaderSession.partyRevivalAttempt = null;
+}
+
 function tick(session, leaderSession, Generics) {
     if (!isRescueMember(session, leaderSession) || !isAlive(session)) return { handled: false };
     const background = !!leaderSession.hotBackgroundPartyId && !leaderSession.partyCompanion;
@@ -211,13 +235,22 @@ function tick(session, leaderSession, Generics) {
         ? { active: partyCombatInProgress(leaderSession), reason: 'party_combat' }
         : PartyCombatState.combatState(leaderSession);
     const combatRescue = combatResurrectionAllowed(leaderSession);
-    if (combat.active && !combatRescue) return { handled: false, dead, blockedBy: combat.reason, threat: combat.target };
+    if (combat.active && !combatRescue) {
+        cancelAttempt(leaderSession);
+        return { handled: false, dead, blockedBy: combat.reason, threat: combat.target };
+    }
     // Death classification owns the raid outcome. Never race its async
     // failure transaction by resurrecting a critical role mid-wipe.
-    const rescueTargets = combat.active ? dead.filter(s => s.hotRaidCasualtyAt) : dead;
+    const rescueTargets = combat.active && background ? dead.filter(s => s.hotRaidCasualtyAt) : dead;
 
     const attempt = leaderSession.partyRevivalAttempt;
-    if (attempt) return { handled: attempt.providerId === session.actor.fetchId(), waiting: true, targetId: attempt.targetId };
+    if (attempt) {
+        const provider = partySessions(leaderSession).find(s => s.actor.fetchId() === attempt.providerId);
+        if (combat.active && provider && !safeCombatProvider(provider, leaderSession,
+            resurrectionSkill(provider.actor) || resurrectionScrollSkill())) {
+            cancelAttempt(leaderSession);
+        } else return { handled: attempt.providerId === session.actor.fetchId(), waiting: true, targetId: attempt.targetId };
+    }
 
     // The leader is the party's anchor.  Restore them first even if another
     // companion happens to have a lower character id.
@@ -228,15 +261,21 @@ function tick(session, leaderSession, Generics) {
         // Background parties use learned resurrection. Do not inherit the
         // player-companion fallback that manufactures a scroll cast.
         .filter(s => !background || learnedResurrectionSkills(s.actor).length > 0);
-    const targetSession = rescueTargets.filter(target => availableProviders.some(provider => withinReviveApproach(provider.actor, target.actor))).sort((a, b) => (
+    const raidBoss = leaderSession.partyRaidEngagement && invoke('GameServer/Bot/AI/BotRaidSafety')
+        .raidBossByObjectId(leaderSession.partyRaidEngagement.bossId);
+    const eligibleProviders = availableProviders.filter(s => !raidBoss
+        || !invoke('GameServer/RaidBoss/RaidCurse').isAboveRaidThreshold(s.actor, raidBoss));
+    const targetSession = rescueTargets.filter(target => eligibleProviders.some(provider => withinReviveApproach(provider.actor, target.actor))).sort((a, b) => (
         Number(b === leaderSession) - Number(a === leaderSession) ||
         Number(a.actor.fetchId()) - Number(b.actor.fetchId())
     ))[0];
     if (!targetSession) return { handled: false, dead };
-    const providers = availableProviders
+    const providers = eligibleProviders
         .filter((memberSession) => withinReviveApproach(memberSession.actor, targetSession.actor))
         .filter((memberSession) => !memberSession.actor.state?.fetchCasts?.())
-        .filter(s => !background || invoke('GameServer/Effects/EffectRestrictions').canCast(s.actor));
+        .filter(s => !(background || combat.active) || invoke('GameServer/Effects/EffectRestrictions').canCast(s.actor))
+        .filter(s => !combat.active || safeCombatProvider(s, leaderSession,
+            resurrectionSkill(s.actor) || resurrectionScrollSkill()));
     const skilled = providers
         .map((providerSession) => ({ session: providerSession, skill: resurrectionSkill(providerSession.actor) }))
         .filter((entry) => entry.skill)
@@ -253,7 +292,7 @@ function tick(session, leaderSession, Generics) {
     const skill = skilled?.skill || resurrectionScrollSkill();
     if (!skill) return { handled: false, dead };
 
-    if (background) {
+    if (background || combat.active) {
         invoke('GameServer/Bot/AI/BotPvpTactics').stop(session, session.actor);
         if (session.actor.state.fetchSeated?.()) {
             session.actor.state.setSeated(false);
@@ -324,7 +363,7 @@ function shouldTownRespawn(leaderSession, deadSession, now = Date.now()) {
     // A cast accepted before the deadline must be allowed to land, including
     // the native stand-up animation. Failed attempts remain time-bounded.
     const attempt = leaderSession.partyRevivalAttempt;
-    if (background && attempt?.targetId === deadSession.actor.fetchId()
+    if (attempt?.targetId === deadSession.actor.fetchId()
         && now - Number(attempt.startedAt || 0) < 25000
         && living.some(s => s.actor.fetchId() === attempt.providerId
             && withinReviveApproach(s.actor, deadSession.actor))) return false;

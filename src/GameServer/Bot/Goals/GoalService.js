@@ -24,12 +24,18 @@ function reviewDecision(state, existing, options, timestamp) {
     const activeMarketGoal = existing?.current?.type === 'sell_inventory' || existing?.current?.type === 'buy_craft_material'
         || ['market_search_for_weapon', 'market_search_for_gear'].includes(existing?.current?.plan?.expectedBenefit);
     if (existing?.current?.nextReviewAt > timestamp && existing.current.status === 'active'
-        && !marketCandidate && !activeMarketGoal) return { result: existing, unchanged: true, goal: null };
+        && !marketCandidate && !activeMarketGoal) return { result: existing, unchanged: true, goal: null, candidates };
 
     const goal = GoalPlanner.plan(candidates, timestamp);
-    if (!goal) return { result: null, unchanged: true, goal: null };
+    if (!goal) return { result: null, unchanged: true, goal: null, candidates };
     if (existing?.current?.type === goal.type) goal.createdAt = existing.current.createdAt;
-    return { result: null, unchanged: false, goal };
+    return { result: null, unchanged: false, goal, candidates };
+}
+
+// A review hands back the needs it evaluated (not stored), so the AFK market
+// reconcile that follows does not evaluate them again.
+function withCandidates(snapshot, candidates) {
+    return snapshot ? { ...snapshot, candidates } : null;
 }
 
 const GoalService = {
@@ -64,10 +70,10 @@ const GoalService = {
 
         const choose = (existing) => {
             const decision = reviewDecision(state, existing, options, timestamp);
-            if (decision.unchanged) return decision.result;
+            if (decision.unchanged) return withCandidates(decision.result, decision.candidates);
             return GoalState.set(state.characterId, decision.goal).then(saved => {
                 if (saved) invoke('GameServer/Bot/AI/BotClanChat').onGoal(state, saved.current, existing?.current, timestamp);
-                return saved;
+                return withCandidates(saved, decision.candidates);
             });
         };
 
@@ -102,9 +108,9 @@ const GoalService = {
                     const result = savedById.get(Number(state.characterId));
                     if (!decision.unchanged && result) invoke('GameServer/Bot/AI/BotClanChat').onGoal(state, result.current, previous, timestamp);
                 }
-                return decisions.map(({ state, decision }) => (
-                    decision.unchanged ? decision.result : savedById.get(Number(state.characterId)) || null
-                ));
+                return decisions.map(({ state, decision }) => withCandidates(
+                    decision.unchanged ? decision.result : savedById.get(Number(state.characterId)) || null,
+                    decision.candidates));
             });
         });
     }

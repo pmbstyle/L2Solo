@@ -1,3 +1,5 @@
+const OfferOrder = require('../Economy/OfferOrder');
+
 const LOW_TIER_RANKS = new Set(['none', 'd']);
 const EMPTY_OFFERS = Object.freeze([]);
 
@@ -72,7 +74,17 @@ function createLookup(rows = []) {
     });
 
     const offersFor = (target) => offersByItem.get(Number(target?.selfId ?? target)) || EMPTY_OFFERS;
-    const bestOffer = (target) => offersFor(target)[0] || null;
+    // Offers are sorted by price, so only the cheapest run competes on
+    // distance to the buyer.
+    const bestOffer = (target, state, origin) => {
+        const offers = offersFor(target);
+        let best = offers[0] || null;
+        for (const offer of offers) {
+            if (offer.price !== best.price) break;
+            if (OfferOrder.compareDistance(offer, best, origin) < 0) best = offer;
+        }
+        return best;
+    };
     const plannerOptions = Object.freeze({
         findNpcOffer: bestOffer,
         findMarketOffer: bestOffer

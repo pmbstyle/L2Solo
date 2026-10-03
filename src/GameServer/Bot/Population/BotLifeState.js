@@ -22,6 +22,10 @@ const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
 const cache = new LifeStateCache();
+
+function recentLimit(limit) {
+    return Math.max(1, Math.min(2000, Number(limit) || 500));
+}
 const pendingWrites = new Map();
 const changeListeners = new Set();
 let initialized = false;
@@ -405,8 +409,11 @@ function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
     const limitTargets = (values) => Object.fromEntries(Object.entries(values)
         .sort(([, left], [, right]) => Number(right.lastResolvedAt || 0) - Number(left.lastResolvedAt || 0))
         .slice(0, 24));
-    const current = add(previous.populationTargets?.[targetKey]
-        || (Number(previous.targetNpcId) === targetNpcId ? previous : {}));
+    // The bot's own counter continues itself: the population map stops growing
+    // for a party member that is not the population telemetry owner.
+    const current = add(Number(previous.targetNpcId) === targetNpcId
+        ? previous
+        : previous.populationTargets?.[targetKey] || {});
     const populationTargets = { ...(previous.populationTargets || {}) };
     if (!debug.aggregate || debug.populationTelemetryOwner === true) {
         populationTargets[targetKey] = add(populationTargets[targetKey]);
@@ -506,6 +513,7 @@ function recordFromSession(session, phase, reason = '') {
         pvpIncidents: invoke('GameServer/Social/PvpResponsibility').snapshot(actor, timestamp),
         revengeUntil: Math.max(Number(session.nextRevengeAt || 0), Number(cache.get(characterId)?.stats?.revengeUntil || 0)),
         clanGearExchangeRevision: Number(cache.get(characterId)?.stats?.clanGearExchangeRevision || 0),
+        clanLevelSpVersion: Number(cache.get(characterId)?.stats?.clanLevelSpVersion || 0),
         clanInventoryRevision: Number(cache.get(characterId)?.stats?.clanInventoryRevision || 0),
         clanMembershipVersion: Number(cache.get(characterId)?.stats?.clanMembershipVersion || 0),
         classId: actor.fetchClassId ? Number(actor.fetchClassId()) : null,
@@ -659,6 +667,12 @@ function save(row) {
         error.code = 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT';
         return Promise.reject(error);
     }
+    const spVersion = Number(cache.get(Number(row.characterId))?.stats?.clanLevelSpVersion || 0);
+    if (spVersion > Number(reconciled.stats.clanLevelSpVersion || 0)) {
+        const error = new Error(`stale SP before clan level-up for ${row.characterId}`);
+        error.code = 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT';
+        return Promise.reject(error);
+    }
     preserveVersionedAppearanceForSave(row);
     const current = cache.get(Number(row.characterId));
     const incomingStats = parseJson(row.statsJson, {});
@@ -706,6 +720,8 @@ function save(row) {
         WHERE ${TABLE}.simulationOwner = 'legacy_main'
           AND COALESCE(json_extract(${TABLE}.statsJson, '$.clanInventoryRevision'), 0)
               <= COALESCE(json_extract(excluded.statsJson, '$.clanInventoryRevision'), 0)
+          AND COALESCE(json_extract(${TABLE}.statsJson, '$.clanLevelSpVersion'), 0)
+              <= COALESCE(json_extract(excluded.statsJson, '$.clanLevelSpVersion'), 0)
           AND COALESCE(json_extract(${TABLE}.statsJson, '$.clanMembershipVersion'), 0)
               <= COALESCE(json_extract(excluded.statsJson, '$.clanMembershipVersion'), 0)`,
         [
@@ -1488,8 +1504,19 @@ const BotLifeState = {
         await Promise.all(ids.map(id => pendingWrites.get(Number(id)) || Promise.resolve()));
     },
 
+    // Accept a row another transaction wrote for this bot, unless the cache already
+    // holds a newer cold revision of it.
+    acceptNewerLifecycleRow(row) {
+        if (!row) return null;
+        const current = cache.get(Number(row.characterId));
+        if (current && (current.phase !== 'cold' || Number(current.simulation?.revision || 0) > Number(row.simulationRevision))) return null;
+        return this.acceptLifecycleRow(row);
+    },
+
     acceptLifecycleRow(row) {
         const snapshot = normalize(row);
+        const current = cache.get(snapshot.characterId);
+        if (Number(current?.stats?.clanLevelSpVersion || 0) > Number(snapshot.stats?.clanLevelSpVersion || 0)) return current;
         cache.set(snapshot.characterId, snapshot);
         invoke('GameServer/Clan/ClanService').syncColdMember(snapshot);
         return snapshot;
@@ -1676,6 +1703,14 @@ const BotLifeState = {
 
     snapshot(characterId) {
         return cache.get(Number(characterId)) || null;
+    },
+
+    // The row of a bot that is in the world as an actor, else null. A hot row
+    // belongs to the actor: the AFK sync and the cold market jobs never write
+    // a cold state over it (markCold writes the next cold state).
+    hotRow(characterId) {
+        const current = cache.get(Number(characterId));
+        return current?.phase === 'hot' ? current : null;
     },
 
     findByCharacterId(characterId) {
@@ -2332,6 +2367,11 @@ const BotLifeState = {
                 ? { deathExperience: progressionState.stats.deathExperience }
                 : {})
         };
+        // Every writer of stats.travel also makes the bot `traveling`, and
+        // arrival clears it. A trip on a bot that neither was nor stays
+        // traveling is a leftover; routeFor would skip the bot forever.
+        if (patchedStats.travel && state.activity !== 'traveling'
+            && (result.patch?.activity || state.activity) !== 'traveling') patchedStats.travel = null;
         const stats = {
             ...patchedStats,
             karma: Math.max(0, Number(state.stats?.karma || 0) - Math.floor(
@@ -2575,17 +2615,17 @@ const BotLifeState = {
     },
 
     applyResolve(state, result) {
-        return this.prepareResolve(state, result, { persist: true });
+        return this.serializeClanLevelUp(state.characterId, () => this.prepareResolve(state, result, { persist: true }));
     },
 
     syncResolvedState(state) {
         if (!state?.characterId) return Promise.resolve(null);
         const row = rowFromState(state);
-        return Database.updateColdCharacterProgression(row.characterId, state)
+        return this.serializeClanLevelUp(row.characterId, () => Database.updateColdCharacterProgression(row.characterId, state)
             .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
             .then(() => syncInventorySummary(row.characterId, state.inventory || {}))
             .then(() => enqueueEquipmentGoalAdvance(row.equipmentAdvance))
-            .then(() => state);
+            .then(() => state));
     },
 
     enqueueEquipmentGoalAdvanceForState,
@@ -3039,7 +3079,7 @@ const BotLifeState = {
         });
     },
 
-    applyMarketPurchase(state, offer, qty = 1) {
+    applyMarketPurchase(state, offer, qty = 1, options = {}) {
         const selfId = Number(offer?.selfId || 0);
         const price = Number(offer?.price || 0);
         const count = Number(qty);
@@ -3107,7 +3147,9 @@ const BotLifeState = {
         const purchasedState = {
             ...state,
             adena: Number(state.adena) - totalPrice,
-            activity: 'shopping',
+            // A bot in town is shopping; a purchase made for it where it hunts
+            // (the clan's goal purchase) leaves its activity alone.
+            activity: options.keepActivity ? state.activity : 'shopping',
             inventory,
             stats: {
                 ...purchaseStats,
@@ -3325,6 +3367,24 @@ const BotLifeState = {
         });
         pendingWrites.set(id, tracked);
         return tracked;
+    },
+
+    serializeClanLevelUp(characterId, work) {
+        const id = Number(characterId);
+        const previous = pendingWrites.get(id) || Promise.resolve();
+        const next = previous.then(work);
+        const tracked = next.catch(() => {}).finally(() => {
+            if (pendingWrites.get(id) === tracked) pendingWrites.delete(id);
+        });
+        pendingWrites.set(id, tracked);
+        return next;
+    },
+
+    acceptClanLevelSpState(row) {
+        const snapshot = normalize(row);
+        cache.set(snapshot.characterId, snapshot);
+        notifyColdSnapshot(snapshot, 'clan_level_sp', { critical: true });
+        return snapshot;
     },
 
     acceptClanMembershipState(row) {
@@ -3680,6 +3740,7 @@ const BotLifeState = {
         const id = Number(characterId);
         const current = cache.get(id);
         if (!current && !committedState) return null;
+        if (committedState && Number(current?.stats?.clanLevelSpVersion || 0) > Number(committedState.stats?.clanLevelSpVersion || 0)) return current;
         const next = {
             ...(current || {}),
             ...(committedState || {}),
@@ -3701,8 +3762,22 @@ const BotLifeState = {
     },
 
     allStates(limit = 500) {
-        const safeLimit = Math.max(1, Math.min(2000, Number(limit) || 500));
-        return cache.recent(safeLimit);
+        return cache.recent(recentLimit(limit));
+    },
+
+    // The states a bounded allStates(limit) view leaves out (oldest updatedAt).
+    statesBeyondRecent(limit = 500) {
+        return cache.beyondRecent(recentLimit(limit));
+    },
+
+    // Spot occupancy kept up to date at every state write (SpotProfiles.currentOccupancy).
+    occupancyIndex() {
+        return cache.occupancy;
+    },
+
+    // For a caller that changed the cached state object in place, not through a write.
+    refreshOccupancy(state) {
+        if (state && cache.get(Number(state.characterId)) === state) cache.occupancy.update(state);
     },
 
     populationSeedStates() {

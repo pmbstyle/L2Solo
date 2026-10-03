@@ -106,12 +106,20 @@ class Npc extends NpcModel {
         }
     }
 
+    isConfusionTarget(actor) {
+        return !!actor && actor !== this && actor === this.confusionTarget
+            && this.fetchAttackable() && actor.fetchAttackable?.() === true
+            && actor.state?.fetchDead?.() !== true
+            && EffectStore.hasDebuff(this, 'confusion');
+    }
+
     isValidAggroTarget(actor) {
         if (!actor || Number(actor.fetchId?.()) <= 0) return false;
         // NPC combat can target players and player-owned summons, but not
-        // another ordinary NPC. Keeping cross-NPC objects out of hate tables
-        // prevents aggro transfer from re-entering the player damage pipeline.
-        if (typeof actor.fetchKind === 'function' && actor.fetchIsSummon?.() !== true) return false;
+        // another ordinary NPC, except the target selected by active confusion.
+        // That exception uses its own NPC damage path, never the player pipeline.
+        if (typeof actor.fetchKind === 'function' && actor.fetchIsSummon?.() !== true
+            && !this.isConfusionTarget(actor)) return false;
         if (actor.state?.fetchDead?.() === true || actor.fakeDeath === true) return false;
 
         // A disconnected player can remain strongly referenced by the hate
@@ -197,6 +205,11 @@ class Npc extends NpcModel {
     }
 
     fetchCombatTarget() {
+        if (this.isConfusionTarget(this.confusionTarget)) {
+            this.switchCombatTarget(this.confusionTarget);
+            return this.confusionTarget;
+        }
+        delete this.confusionTarget;
         const mostHated = this.fetchMostHated();
         if (mostHated) {
             this.switchCombatTarget(mostHated);
@@ -387,7 +400,9 @@ class Npc extends NpcModel {
                 coords.locZ = newDstZ;
                 lastChaseRepathAt = Date.now();
 
-                const combatSkill = this.selectCombatSkill(actor);
+                // ConfuseMob orders a physical attack; NPC spell damage must
+                // not enter the caster's player reward/quest pipeline.
+                const combatSkill = this.isConfusionTarget(actor) ? null : this.selectCombatSkill(actor);
                 if (combatSkill?.fetchTargetKind?.() === 'self') {
                     this.stopForCombatAction(session);
                     this.castSkill(session, this, combatSkill);
@@ -684,8 +699,14 @@ class Npc extends NpcModel {
             if (skill.fetchTargetKind() !== 'self') return false;
             const semantic = skill.fetchSemantic?.() || {};
             if (semantic.effectType !== 'buff' || !semantic.effect) return false;
+            if (skill.fetchSkillType?.() === 'hot') {
+                const targets = this.attack.resolveSkillTargets(null,this,this,skill);
+                if (!targets.some(target => Number(target.fetchHp?.()) < Number(target.fetchMaxHp?.()))) return false;
+            }
             return !EffectStore.list(this).some((effect) => (
                 Number(effect.id) === Number(skill.fetchSelfId()) || effect.key === semantic.effect
+                || semantic.stackFamily && effect.stackFamily === semantic.stackFamily
+                    && Number(effect.stackOrder || 0) >= Number(semantic.stackOrder || 0)
             ));
         });
         if (selfBuff) return selfBuff;
@@ -834,6 +855,7 @@ class Npc extends NpcModel {
     }
 
     abortCombatState(session, { preserveAggro = false } = {}) {
+        delete this.confusionTarget;
         const wasMoving = this.state.inMotion();
         clearTimeout(this.timer.combatStart);
         this.timer.combatStart = undefined;
@@ -929,6 +951,21 @@ class Npc extends NpcModel {
         ConsoleText.transmit(session, ConsoleText.caption.monsterHit, [
             { kind: ConsoleText.kind.npc, value: this.fetchDispSelfId() }, { kind: ConsoleText.kind.number, value: hit }
         ]);
+
+        if (this.isConfusionTarget(actor) && typeof actor.fetchKind === 'function'
+            && actor.fetchIsSummon?.() !== true) {
+            EffectRestrictions.wakeOnDamage(actor);
+            actor.setHp(Math.max(actor.fetchIsKillable?.() === false ? 1 : 0, actor.fetchHp() - hit));
+            actor.broadcastVitals?.();
+            if (actor.fetchHp() <= 0) {
+                // The original caster's session is only a packet transport.
+                // A monster kill must not credit that player with XP/quests.
+                invoke(path.npc).die({
+                    dataSendToMeAndOthers: (packet, source) => session.dataSendToMeAndOthers(packet, source)
+                }, this, actor);
+            }
+            return;
+        }
 
         if (actor?.fetchIsSummon?.() === true) {
             actor.setHp(Math.max(0, actor.fetchHp() - hit));

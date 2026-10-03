@@ -111,6 +111,7 @@ function startConfusion(session, actor, effect) {
         // Npc.enterCombatState deliberately ignores a second start while the
         // mob has an active combat loop. Confusion must replace that target.
         actor.abortCombatState?.(session);
+        actor.confusionTarget = target;
         actor.enterCombatState?.(session, target);
     };
 
@@ -121,6 +122,7 @@ function startConfusion(session, actor, effect) {
 }
 
 function stopConfusion(actor, key = 'confusion') {
+    if (actor) delete actor.confusionTarget;
     if (!actor?.effectTimers?.[key]) return false;
     clearInterval(actor.effectTimers[key]);
     delete actor.effectTimers[key];

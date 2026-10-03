@@ -85,6 +85,13 @@ function isSellableInventoryItem(item) {
     return item && !item.fetchPetLocked?.() && !item.fetchEquipped() && item.fetchSelfId() !== 57;
 }
 
+// The copies a sale to a buy store may take: not reserved by the bot's
+// plans, not equipped, not pet-locked, not Adena.
+function sellableActorItems(actor, state) {
+    return ItemDisposition.unreservedActorItems(state, actor.backpack.fetchItems())
+        .filter(isSellableInventoryItem);
+}
+
 function normalizeStoreItems(storeCfg, { staticStore = false } = {}) {
     let fakeObjectIdSeq = 600000000 + utils.randomNumber(100000000);
     const pricing = staticStore ? invoke('GameServer/Bot/Economy/StaticMerchantPricing') : null;
@@ -150,13 +157,14 @@ function giveAdena(actor, amount) {
     });
 }
 
+// Resolves with the item the amount went to: the stack, or the new row.
 function giveItem(actor, selfId, amount) {
     return new Promise((resolve, reject) => {
         actor.backpack.stackableExists(selfId).then((item) => {
             const total = item.fetchAmount() + amount;
             Database.updateItemAmount(actor.fetchId(), item.fetchId(), total).then(() => {
                 actor.backpack.updateAmount(item.fetchId(), total);
-                resolve();
+                resolve(item);
             }).catch(reject);
         }).catch(() => {
             const itemDetails = itemTemplate(selfId);
@@ -173,15 +181,24 @@ function giveItem(actor, selfId, amount) {
                 slot: itemDetails.etc?.slot ?? 0
             }).then((packet) => {
                 actor.backpack.insertItem(Number(packet.insertId), selfId, { amount });
-                resolve();
+                resolve(actor.backpack.items.find((entry) => Number(entry.fetchId()) === Number(packet.insertId)) || null);
             }).catch(reject);
         });
     });
 }
 
-function takeItem(actor, selfId, amount) {
+// The copy a buy store takes: the offered one (objectId), else the first
+// sellable copy. Never a worn or pet-locked one.
+function sellableCopy(actor, selfId, objectId = null) {
+    return actor.backpack.fetchItems().find((item) => (
+        Number(item.fetchSelfId()) === Number(selfId)
+        && (!objectId || Number(item.fetchId()) === Number(objectId))
+        && isSellableInventoryItem(item)
+    )) || null;
+}
+
+function takeItem(actor, selfId, amount, item = actor.backpack.fetchItemFromSelfId(selfId)) {
     return new Promise((resolve, reject) => {
-        const item = actor.backpack.fetchItemFromSelfId(selfId);
         if (!item || item.fetchAmount() < amount) {
             return reject("Not enough items.");
         }
@@ -201,6 +218,25 @@ function takeItem(actor, selfId, amount) {
     });
 }
 
+// The AFK buy order in this town that pays most for the actor's sellable
+// items, as { offer, score }, or null.
+function findAfkBuyerForActor(actor, town, state = null) {
+    const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+    let best = null;
+    sellableActorItems(actor, state).forEach((item) => {
+        const offer = MarketOpportunity.findBuyOffers(item.fetchSelfId(), {
+            town: town?.name,
+            sellerCharacterId: actor.fetchId()
+        }).find((candidate) => ['afk_player_buy_store', 'afk_bot_buy_store'].includes(candidate.sourceType));
+        if (!offer) return;
+        const qty = Math.min(Number(item.fetchAmount?.() || 0), Number(offer.count || 0));
+        if (qty <= 0) return;
+        const score = qty * Number(offer.price || 0);
+        if (!best || score > best.score) best = { offer, score };
+    });
+    return best;
+}
+
 function previewSaleToStore(actor, store, options = {}) {
     if (!store || store.storeType !== 3) {
         return { totalAdena: 0, itemCount: 0, lines: [] };
@@ -210,8 +246,8 @@ function previewSaleToStore(actor, store, options = {}) {
     let itemCount = 0;
     const lines = [];
 
-    ItemDisposition.unreservedActorItems(options.state, actor.backpack.fetchItems())
-        .filter(isSellableInventoryItem).forEach((inventoryItem) => {
+    sellableActorItems(actor, options.state)
+        .forEach((inventoryItem) => {
             const storeItem = store.items.find((item) => item.selfId === inventoryItem.fetchSelfId() && item.count > 0);
             if (!storeItem) return;
 
@@ -222,6 +258,7 @@ function previewSaleToStore(actor, store, options = {}) {
             totalAdena += payout;
             itemCount += qty;
             lines.push({
+                objectId: inventoryItem.fetchId(),
                 selfId: inventoryItem.fetchSelfId(),
                 name: inventoryItem.fetchName(),
                 qty,
@@ -329,7 +366,7 @@ async function sellToStore(actor, store, selfId, qty, options = {}) {
             if (!Number.isSafeInteger(requestedQty) || requestedQty <= 0) {
                 throw new Error("Invalid quantity.");
             }
-            const actorItem = actor.backpack.fetchItemFromSelfId(selfId);
+            const actorItem = sellableCopy(actor, selfId, options.objectId);
             const actorCount = actorItem ? actorItem.fetchAmount() : 0;
             const sellQty = Math.min(requestedQty, Number(actorCount), Number(storeItem.count));
             if (!Number.isSafeInteger(sellQty) || sellQty <= 0) {
@@ -350,13 +387,14 @@ async function sellToStore(actor, store, selfId, qty, options = {}) {
             let sellerItemTaken = false;
             let buyerAdenaDeducted = false;
             let buyerItemGiven = false;
+            let buyerItem = null;
             try {
-                await takeItem(actor, selfId, sellQty);
+                await takeItem(actor, selfId, sellQty, actorItem);
                 sellerItemTaken = true;
                 if (budgetBacked) {
                     await deductAdena(buyerActor, totalEarn);
                     buyerAdenaDeducted = true;
-                    await giveItem(buyerActor, selfId, sellQty);
+                    buyerItem = await giveItem(buyerActor, selfId, sellQty);
                     buyerItemGiven = true;
                 }
                 await giveAdena(actor, totalEarn);
@@ -366,7 +404,8 @@ async function sellToStore(actor, store, selfId, qty, options = {}) {
                     store.items.splice(Math.max(0, Math.min(originalIndex, store.items.length)), 0, storeItem);
                 }
                 try {
-                    if (buyerItemGiven) await takeItem(buyerActor, selfId, sellQty);
+                    // Take back the copy just given, never another one the buyer holds or wears.
+                    if (buyerItemGiven) await takeItem(buyerActor, selfId, sellQty, buyerItem || undefined);
                     if (buyerAdenaDeducted) await giveAdena(buyerActor, totalEarn);
                     if (sellerItemTaken) await giveItem(actor, selfId, sellQty);
                 } catch (rollbackError) {
@@ -389,7 +428,7 @@ async function sellInventoryToStore(actor, store, options = {}) {
     const sold = [];
 
     for (const line of preview.lines) {
-        const result = await sellToStore(actor, store, line.selfId, line.qty, options);
+        const result = await sellToStore(actor, store, line.selfId, line.qty, { ...options, objectId: line.objectId });
         sold.push(result);
     }
 
@@ -435,12 +474,16 @@ function findBestBuyerForActor(actor, merchantSessions, options = {}) {
 module.exports = {
     buyFromStore,
     describeStoreItems,
+    findAfkBuyerForActor,
     findBestBuyerForActor,
     itemBasePrice,
+    isSellableInventoryItem,
     itemName,
     normalizeStoreItems,
     previewSaleToStore,
     ratedPrice,
+    sellableActorItems,
     sellInventoryToStore,
-    sellToStore
+    sellToStore,
+    sellableCopy
 };

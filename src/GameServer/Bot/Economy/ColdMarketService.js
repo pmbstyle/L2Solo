@@ -9,7 +9,19 @@ const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 
 const RETRY_DELAY_MS = 15 * 60 * 1000;
 
+// A failed purchase writes the bot's pre-trade state back as cold. While the
+// job awaited the trade the bot may have been activated: its row is hot and
+// belongs to the actor in the world (LifeState.hotRow, the AFK sync's rule);
+// a cold write here would roll its wallet back although the items moved. The
+// hot row is handed back unchanged and the cold side redoes the goal later.
+function hotResult(state, reason) {
+    const hot = LifeState.hotRow(state.characterId);
+    return hot ? { state: hot, purchased: false, reason, wanted: false, remoteOffer: null } : null;
+}
+
 function retryAfterFailedPurchase(state, goal, reason) {
+    const hot = hotResult(state, reason);
+    if (hot) return Promise.resolve(hot);
     if (reason === 'no_affordable_offer') MarketTelemetry.noOffer();
     else if (reason === 'offer_changed') MarketTelemetry.offerChanged();
     else if (reason === 'purchase_failed' || reason === 'persist_failed') MarketTelemetry.purchaseFailed();
@@ -40,6 +52,8 @@ function retryAfterFailedPurchase(state, goal, reason) {
 }
 
 function finishBlockedPurchase(state, goal, reason) {
+    const hot = hotResult(state, reason);
+    if (hot) return Promise.resolve(hot);
     const stats = {
         ...(state.stats || {}),
         marketRetryAfter: null,
@@ -60,6 +74,55 @@ function finishBlockedPurchase(state, goal, reason) {
             remoteOffer: null
         }))
     ));
+}
+
+// Buys one unit of a found offer for a cold bot: an AFK store through
+// AfkTradeService, otherwise the market snapshot (NPC, cold store). No goal or
+// travel change; a snapshot purchase records the bot as shopping unless
+// options.keepActivity (a purchase made for it where it hunts).
+function buyOffer(state, offer, options = {}) {
+    const blocker = LifeState.marketPurchaseBlocker(state, offer, 1);
+    if (blocker) return Promise.resolve({ purchased: false, blocked: true, reason: blocker });
+    if (['afk_player_store', 'afk_bot_store'].includes(offer.sourceType)) {
+        return invoke('GameServer/AfkTrade/AfkTradeService').buyFromShop(
+            state.characterId,
+            offer.store,
+            offer.selfId,
+            1,
+            { expectedPrice: offer.price, coldState: state }
+        ).then((trade) => {
+            if (!trade.coldState) throw new Error('cold_state_sync_failed');
+            MarketTelemetry.purchase(offer, 1, {
+                buyerCharacterId: trade.coldState.characterId,
+                buyerName: trade.coldState.name,
+                town: trade.coldState.currentRegion
+            });
+            return { state: trade.coldState, purchased: true, offer, sellerState: null };
+        }).catch((error) => {
+            utils.infoWarn('BotMarket', 'AFK market purchase failed for %s: %s', state.name, error.message);
+            return { purchased: false, reason: 'offer_changed' };
+        });
+    }
+    if (!MarketOpportunity.reserve(offer, 1)) return Promise.resolve({ purchased: false, reason: 'offer_changed' });
+    return LifeState.applyMarketPurchase(state, offer, 1, options).then((updated) => {
+        if (!updated) {
+            MarketOpportunity.release(offer, 1);
+            return { purchased: false, reason: 'persist_failed' };
+        }
+        const settlement = offer.sourceType === 'cold_store' ? ListingService.settle(offer, 1) : Promise.resolve(null);
+        return settlement.then((sellerState) => {
+            MarketTelemetry.purchase(offer, 1, {
+                buyerCharacterId: updated.characterId,
+                buyerName: updated.name,
+                town: updated.currentRegion
+            });
+            return { state: updated, purchased: true, offer, sellerState };
+        });
+    }).catch((err) => {
+        MarketOpportunity.release(offer, 1);
+        utils.infoWarn('BotMarket', 'cold purchase failed for %s: %s', state.name, err.message);
+        return { purchased: false, reason: 'purchase_failed' };
+    });
 }
 
 const ColdMarketService = {
@@ -123,60 +186,14 @@ const ColdMarketService = {
         }
         offer.buyerCharacterId = Number(state.characterId);
         offer.equipSlot = Number(goal.target.itemSlot || 0) || undefined;
-        const blocker = LifeState.marketPurchaseBlocker(state, offer, 1);
-        if (blocker) return finishBlockedPurchase(state, goal, blocker);
-        if (['afk_player_store', 'afk_bot_store'].includes(offer.sourceType)) {
-            return invoke('GameServer/AfkTrade/AfkTradeService').buyFromShop(
-                state.characterId,
-                offer.store,
-                offer.selfId,
-                1,
-                { expectedPrice: offer.price, coldState: state }
-            ).then((trade) => {
-                if (!trade.coldState) throw new Error('cold_state_sync_failed');
-                MarketTelemetry.purchase(offer, 1, {
-                    buyerCharacterId: trade.coldState.characterId,
-                    buyerName: trade.coldState.name,
-                    town: trade.coldState.currentRegion
-                });
-                return GoalState.clear(state.characterId, 'completed').then(() => ({
-                    state: trade.coldState,
-                    purchased: true,
-                    offer,
-                    sellerState: null
-                }));
-            }).catch((error) => {
-                utils.infoWarn('BotMarket', 'AFK market purchase failed for %s: %s', state.name, error.message);
-                return retryAfterFailedPurchase(state, goal, 'offer_changed');
-            });
-        }
-        if (!MarketOpportunity.reserve(offer, 1)) return retryAfterFailedPurchase(state, goal, 'offer_changed');
-
-        return LifeState.applyMarketPurchase(state, offer).then((updated) => {
-            if (!updated) {
-                MarketOpportunity.release(offer, 1);
-                return retryAfterFailedPurchase(state, goal, 'persist_failed');
+        return buyOffer(state, offer).then((bought) => {
+            if (!bought.purchased) {
+                return bought.blocked ? finishBlockedPurchase(state, goal, bought.reason) : retryAfterFailedPurchase(state, goal, bought.reason);
             }
-            const settlement = offer.sourceType === 'cold_store' ? ListingService.settle(offer, 1) : Promise.resolve(null);
-            return settlement.then((sellerState) => {
-                MarketTelemetry.purchase(offer, 1, {
-                    buyerCharacterId: updated.characterId,
-                    buyerName: updated.name,
-                    town: updated.currentRegion
-                });
-                return GoalState.clear(state.characterId, 'completed').then(() => ({
-                state: updated,
-                purchased: true,
-                offer,
-                sellerState
-                }));
-            });
-        }).catch((err) => {
-            MarketOpportunity.release(offer, 1);
-            utils.infoWarn('BotMarket', 'cold purchase failed for %s: %s', state.name, err.message);
-            return retryAfterFailedPurchase(state, goal, 'purchase_failed');
+            return GoalState.clear(state.characterId, 'completed').then(() => bought);
         });
-    }
+    },
+    buyOffer
 };
 
 ColdMarketService.RETRY_DELAY_MS = RETRY_DELAY_MS;

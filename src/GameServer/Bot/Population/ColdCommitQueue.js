@@ -80,14 +80,17 @@ class ColdCommitQueue {
         return this.p0.length + this.p1.length + this.p2.size;
     }
 
-    proposalBytes(proposal) {
-        return Protocol.byteLength(proposal);
+    // The worker measures each proposal while sizing its batch and sends that
+    // size along; only a proposal without one is serialised here.
+    proposalBytes(proposal, measured = null) {
+        const known = Number(measured);
+        return Number.isSafeInteger(known) && known > 0 ? known : Protocol.byteLength(proposal);
     }
 
-    enqueue(proposal) {
+    enqueue(proposal, measuredBytes = null) {
         if (this.stopping) return { ok: false, reason: 'queue_stopping' };
         if (!proposal || !proposal.characterId || !proposal.token) return { ok: false, reason: 'invalid_proposal' };
-        const bytes = this.proposalBytes(proposal);
+        const bytes = this.proposalBytes(proposal, measuredBytes);
         if (!Number.isFinite(bytes) || bytes > Protocol.MAX_MESSAGE_BYTES) return { ok: false, reason: 'proposal_too_large' };
         const priority = ['P0', 'P1', 'P2'].includes(proposal.priority) ? proposal.priority : 'P2';
         const queued = { ...proposal, priority, bytes, queuedAt: this.now() };

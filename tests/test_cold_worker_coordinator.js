@@ -36,7 +36,7 @@ function wait(ms) {
             activityStartedAt, nextResolveAt, lastResolvedAt,
             locX, locY, locZ, hp, maxHp, mp, maxMp,
             statsJson, inventorySummary, updatedAt
-        ) VALUES (?, 'worker_probe', 'WorkerProbe', 20, 1000, 100, 500,
+        ) VALUES (?, 'worker_probe', 'WorkerProbe', 20, 1000, 100, 2000000,
             'Talking Island', 'Talking Island', NULL, 'resting', 'cold',
             ?, ?, ?, -84191, 244577, -3729, 20, 300, 20, 120, ?, '{}', ?)`,
         [characterId, dueAt - 60000, dueAt, dueAt - 60000, JSON.stringify({ restUntil: dueAt - 1 }), dueAt]
@@ -84,6 +84,8 @@ function wait(ms) {
     const persistedStats = JSON.parse(row.statsJson || '{}');
     const equipmentPlan = persistedStats.equipmentPlan;
     const plannedItem = DataCache.items.find((item) => Number(item.selfId) === Number(equipmentPlan?.target?.selfId));
+    // The probe can pay for a D weapon: an unarmed bot that cannot is bridged
+    // with the weapon it can afford (test_bot_weapon_bridge_affordable).
     assert.strictEqual(equipmentPlan?.strategy, 'market',
         'the real cold worker must replace an empty D-grade loadout with an NPC purchase plan');
     assert.strictEqual(equipmentPlan?.market?.sourceType, 'npc');

@@ -10,6 +10,10 @@
             "template": {
                 "type": "object",
                 "properties": {
+                    "displayId": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
                     "kind": {
                         "type": "string"
                     },

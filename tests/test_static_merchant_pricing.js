@@ -90,6 +90,7 @@ async function run() {
     const adena = inventoryItem(57, 1000000);
     const backpack = {
         items: [adena],
+        fetchItems() { return this.items; },
         fetchItemFromSelfId(id) { return this.items.find((item) => item.fetchSelfId() === id); },
         fetchTotalAdena: () => adena.fetchAmount(),
         deleteItem(session, id, amount, done) { adena.setAmount(adena.fetchAmount() - amount); done(); }

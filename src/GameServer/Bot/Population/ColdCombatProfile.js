@@ -111,7 +111,7 @@ function statSources(profile, timestamp) {
     const effects = activeEffects(profile.effects, timestamp).map(effectStats);
     const passives = (profile.skills || [])
         .filter((skill) => skill.passive)
-        .map((skill) => C4SkillRules.resolve({ selfId: skill.selfId, level: skill.level }))
+        .map((skill) => C4SkillRules.resolveCached({ selfId: skill.selfId, level: skill.level }))
         .filter((semantic) => passiveRequirementsMatch(profile, semantic.requires))
         .map((semantic) => semantic.stats);
     return [...effects, ...passives];
@@ -326,9 +326,20 @@ function skillTreeEntries(classId) {
     return [...entries.values()];
 }
 
+// The highest level row of a tree entry that a character of `level` has learned.
+function learnedTreeRow(entry, level) {
+    return (entry.levels || []).filter((row) => number(row.pLevel) <= level).at(-1);
+}
+
+// The level of one skill a class line knows at a character level, 0 if none.
+function treeSkillLevel(classId, level, skillId) {
+    const entry = skillTreeEntries(classId).find((candidate) => number(candidate.selfId) === number(skillId));
+    return entry ? number(learnedTreeRow(entry, number(level))?.level) : 0;
+}
+
 function skillsFromTree(classId, level) {
     return skillTreeEntries(classId).map((entry) => {
-        const learned = (entry.levels || []).filter((row) => number(row.pLevel) <= level).at(-1);
+        const learned = learnedTreeRow(entry, level);
         if (!learned) return null;
         const skill = (DataCache.skills || []).find((candidate) => Number(candidate.selfId) === Number(entry.selfId));
         const definition = skillDefinition(entry.selfId, learned.level) || {};
@@ -380,7 +391,7 @@ function legacySnapshot(state = {}, records = [], timestamp = Date.now()) {
 
 function skillRecordsFromTree(classId, level) {
     return skillTreeEntries(classId).map((entry) => {
-        const learned = (entry.levels || []).filter((row) => number(row.pLevel) <= level).at(-1);
+        const learned = learnedTreeRow(entry, level);
         if (!learned) return null;
         const skill = (DataCache.skills || []).find((candidate) => Number(candidate.selfId) === Number(entry.selfId));
         const definition = (skill?.levels || []).find((row) => number(row.level) === number(learned.level))
@@ -542,7 +553,7 @@ function activeMusicEffects(profile = {}, timestamp = Date.now()) {
 function partyMusicSkills(profile = {}) {
     return (profile.skills || []).filter((skill) => {
         if (skill.passive) return false;
-        const semantic = C4SkillRules.resolve(skill);
+        const semantic = C4SkillRules.resolveCached(skill);
         const required = number(semantic.requires?.weaponsAllowed);
         return semantic.isDance === true
             && semantic.target === 'party'
@@ -552,7 +563,7 @@ function partyMusicSkills(profile = {}) {
 }
 
 function partyMusicMpCost(profile, skill, timestamp = Date.now()) {
-    const semantic = C4SkillRules.resolve(skill);
+    const semantic = C4SkillRules.resolveCached(skill);
     let cost = Math.max(0, number(skill.mp));
     if (semantic.isDance === true) {
         cost += activeMusicEffects(profile, timestamp).length * Math.max(0, number(semantic.nextDanceCost));
@@ -724,6 +735,6 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
 module.exports = {
     PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor,
     offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect,
-    npcForSpot, npcCombatStats, skillSnapshotsFromRecords, skillRecordsFromTree,
+    npcForSpot, npcCombatStats, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
     statMultiplier: multiplier, statAdd: add
 };

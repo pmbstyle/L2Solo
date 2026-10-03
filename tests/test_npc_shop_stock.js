@@ -93,3 +93,45 @@ for (const name of accessibleStalls) {
     const ground = GeodataEngine.getHeight(store.locX, store.locY, store.locZ);
     assert.strictEqual(store.locZ, ground, `${name} must stand on the visible geodata floor`);
 }
+
+// Lisvus C4 fdc7e33a shop 23 sells C/B gemstones at Helvetia; shops
+// 21 (Pano), 63 (Harmony), and 65 (Hally) only sell Gemstone D.
+const originalPreset = options.default.General.progressionPreset;
+const originalRateEnv = process.env.L2NODE_PROGRESSION_RATE;
+delete process.env.L2NODE_PROGRESSION_RATE;
+try {
+    for (const [preset, multiplier] of [['x1', 1], ['x10', 2]]) {
+        options.default.General.progressionPreset = preset;
+        const gemstonePackets = [];
+        const gemstoneSession = {
+            activeNpcTalk: { selfId: 7081 },
+            actor: { backpack: { fetchTotalAdena: () => 100000 } },
+            dataSendToMe: (packet) => gemstonePackets.push(packet)
+        };
+        BuyShop(gemstoneSession, ['buy-shop', 'npc']);
+        const packet = gemstonePackets[0];
+        const gemstoneRows = new Map();
+        for (let index = 0; index < packet.readInt16LE(9); index++) {
+            const offset = 11 + index * rowSize;
+            gemstoneRows.set(packet.readInt32LE(offset + 6), {
+                amount: packet.readInt32LE(offset + 10),
+                price: packet.readInt32LE(offset + 28)
+            });
+        }
+        for (const [selfId, price] of [[2130, 1100], [2131, 3300], [2132, 11000]]) {
+            assert.deepStrictEqual(gemstoneRows.get(selfId), { amount: 0, price: price * multiplier },
+                `Helvetia must advertise unlimited gemstone ${selfId} at the ${preset} price`);
+            assert.strictEqual(gemstoneSession.activeNpcShop.prices.get(selfId), price * multiplier,
+                'purchase authorization must use the price advertised in BuyList');
+        }
+    }
+    for (const npcId of [7078, 7254, 7301]) {
+        const gemstoneIds = NpcShopBuyLists.fetchForNpc(npcId)
+            .map((row) => row.selfId).filter((id) => id >= 2130 && id <= 2134);
+        assert.deepStrictEqual(gemstoneIds, [2130], `C4 merchant ${npcId} must only stock Gemstone D`);
+    }
+} finally {
+    options.default.General.progressionPreset = originalPreset;
+    if (originalRateEnv === undefined) delete process.env.L2NODE_PROGRESSION_RATE;
+    else process.env.L2NODE_PROGRESSION_RATE = originalRateEnv;
+}

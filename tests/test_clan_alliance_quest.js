@@ -19,6 +19,7 @@ for (let id = 1; id <= 9; id++) {
 seed.prepare("INSERT INTO clans(id, name, leaderId, level) VALUES (1, 'AutoAlliance', 1, 3), (2, 'PlayerAlliance', 5, 3)").run();
 seed.exec('UPDATE characters SET clanId = CASE WHEN id < 5 THEN 1 WHEN id < 9 THEN 2 ELSE 0 END');
 seed.prepare("INSERT INTO clan_simulation_clans(clanId, mode, createdAt, updatedAt, stateJson) VALUES (1, 'autonomous', 0, 0, '{}'), (2, 'player_managed', 0, 0, '{}')").run();
+seed.prepare('UPDATE characters SET sp = ? WHERE id = 1').run(Rules.SP_COST);
 seed.close();
 options.default.Database.path = path.relative(root, file);
 Database.init();

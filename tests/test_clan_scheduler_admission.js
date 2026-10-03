@@ -45,11 +45,14 @@ async function main() {
             await new Promise((resolve) => setTimeout(resolve, 15));
             return [];
         };
+        // The budget bounds the candidate loop, not the wait for the reads: on a
+        // busy world the candidate query alone waited in the statement queue
+        // longer than the budget and no candidate was ever evaluated.
         const projectionBounded = await ClanSimulationService.resolveBatch(16, { budgetMs: 5 });
-        assert.strictEqual(projectionBounded.budgetStopped, true, 'candidate projection time must consume the founder budget');
+        assert.strictEqual(projectionBounded.budgetStopped, false, 'the wait for the candidate projection does not consume the founder budget');
         const projectionMetrics = ClanSimulationService.metrics();
         assert.strictEqual(projectionMetrics.stages.candidate_projection.count, 1);
-        assert.strictEqual(projectionMetrics.stages.clan_projection, undefined, 'a spent budget must stop before the clan projection');
+        assert.strictEqual(projectionMetrics.stages.clan_projection, undefined, 'without candidates nothing else is read');
         assert(projectionMetrics.stages.total.p95Ms >= 5);
         Database.execute = originalDatabaseExecute;
 

@@ -8,6 +8,7 @@ const RaidEntityIndex = invoke('GameServer/World/RaidEntityIndex');
 const DEFAULT_RETREAT_DISTANCE = 1100;
 const RAID_DISENGAGE_GRACE_MS = 15000;
 const RAID_OPENER_MIN_HP_RATIO = 0.55;
+const RAID_PULL_RADIUS = 900;
 
 function world() {
     return invoke('GameServer/World/World');
@@ -82,8 +83,7 @@ function belongsToRaid(target, raid) {
     if (!target || !raid || !isProtectedRaidEntity(target)) return false;
     const boss = raidBossFor(target);
     return !!boss && (
-        objectId(boss) === Number(raid.bossId || 0) ||
-        templateId(boss) === Number(raid.bossTemplateId || 0)
+        objectId(boss) === Number(raid.bossId || 0)
     );
 }
 
@@ -98,7 +98,8 @@ function playerPartySessions(leaderSession) {
     if (!leaderSession || leaderSession.partyCompanion === true || String(leaderSession.accountId || '').startsWith('bot_')) {
         return [];
     }
-    return (world().user?.sessions || []).filter((session) => (
+    return [...new Set([leaderSession, ...(world().user?.sessions || []),
+        ...(invoke('GameServer/Bot/BotManager').sessions || [])])].filter((session) => (
         session === leaderSession || isOnlineCompanion(session, leaderSession)
     ));
 }
@@ -138,9 +139,10 @@ function compareScores(a, b) {
     return 0;
 }
 
-function selectRaidOpener(leaderSession) {
+function selectRaidOpener(leaderSession, boss = null) {
     return playerPartySessions(leaderSession)
         .filter((session) => session !== leaderSession && isOnlineCompanion(session, leaderSession))
+        .filter(session => !boss || !invoke('GameServer/RaidBoss/RaidCurse').isAboveRaidThreshold(session.actor, boss))
         .sort(compareScores)[0] || null;
 }
 
@@ -177,24 +179,35 @@ function currentCombatTargetId(actor) {
 }
 
 function raidHasPartyCombat(leaderSession, raid) {
-    const sessions = playerPartySessions(leaderSession);
+    const sessions = playerPartySessions(leaderSession).filter(session => session.actor.fetchIsOnline?.() === true
+        && !session.actor.isDead?.() && !session.actor.state?.fetchDead?.());
     const memberIds = new Set(sessions.map((session) => objectId(session.actor)).filter(Boolean));
     if (memberIds.size === 0) return false;
 
     const entities = raidEntities(raid);
     if (entities.some((npc) => memberIds.has(Number(npc.fetchDestId?.() || 0)))) return true;
     const entityIds = new Set(entities.map(objectId).filter(Boolean));
-    return sessions.some((session) => entityIds.has(currentCombatTargetId(session.actor)));
+    return sessions.some((session) => (session === leaderSession || session.actor.state?.fetchHits?.()
+        || session.actor.state?.fetchCasts?.() || session.actor.state?.fetchCombats?.())
+        && entityIds.has(currentCombatTargetId(session.actor)));
 }
 
 function startPlayerPartyRaid(leaderSession, boss, target, now) {
-    const opener = selectRaidOpener(leaderSession);
+    const opener = selectRaidOpener(leaderSession, boss);
+    const mainTank = invoke('GameServer/Bot/AI/BotRoles').inferRole(leaderSession.actor) === 'tank'
+        ? leaderSession : opener;
+    leaderSession.backgroundRaidTactics = undefined;
+    leaderSession.backgroundRaidActionClaims = undefined;
+    leaderSession.raidOpenedBossId = undefined;
     const raid = {
         bossId: objectId(boss),
         bossTemplateId: templateId(boss),
         targetId: objectId(target || boss),
         targetTemplateId: templateId(target || boss),
         openerId: objectId(opener?.actor),
+        mainTankId: objectId(mainTank?.actor),
+        pullOrigin: { locX: leaderSession.actor.fetchLocX(), locY: leaderSession.actor.fetchLocY(),
+            locZ: leaderSession.actor.fetchLocZ() },
         phase: 'opening',
         selectedAt: now,
         lastActiveAt: now
@@ -203,7 +216,58 @@ function startPlayerPartyRaid(leaderSession, boss, target, now) {
     return raid;
 }
 
+function canStartPlayerRaidPull(leaderSession, boss) {
+    if (leaderSession.partyCompanionSettings?.pullMode === 'off') return false;
+    if (leaderSession.partyRaidPullBlockedBossId === objectId(boss)) return false;
+    if (leaderSession.partyPullState?.targetId && leaderSession.partyPullState?.type !== 'raid') return false;
+    const origin = leaderSession.actor;
+    if (Math.hypot(origin.fetchLocX() - boss.fetchLocX(), origin.fetchLocY() - boss.fetchLocY()) > RAID_PULL_RADIUS
+        || Math.abs(origin.fetchLocZ() - boss.fetchLocZ()) > 400) return false;
+    return invoke('GameServer/Bot/AI/BotHuntingVisibility').canSee(origin, boss);
+}
+
+function cancelPlayerRaidOpening(leaderSession, raid) {
+    const ids = new Set(raidEntities(raid).map(objectId));
+    for (const member of playerPartySessions(leaderSession)) {
+        if (member === leaderSession || !ids.has(Number(member.currentTargetId || currentCombatTargetId(member.actor)))) continue;
+        invoke('GameServer/Bot/AI/BotPvpTactics').stop(member, member.actor);
+        invoke('GameServer/Bot/AI/BotPvpTactics').followSummon(member, member.actor);
+        member.currentTargetId = undefined;
+        member.actor.unselect?.();
+    }
+    leaderSession.partyRaidEngagement = undefined;
+    if (leaderSession.partyPullState?.type === 'raid') leaderSession.partyPullState = {};
+}
+
+function endPlayerPartyRaid(leaderSession) {
+    if (!leaderSession?.partyRaidEngagement && leaderSession?.partyPullState?.type !== 'raid') return false;
+    const Tactics = invoke('GameServer/Bot/AI/BotPvpTactics');
+    const AI = invoke('GameServer/Bot/BotAI');
+    // Include fallen companions: a town teleport revives them, and their old
+    // retreat/support orders must not survive that native recovery.
+    const companions = invoke('GameServer/Bot/AI/PartyCompanionService').membersForLeader(leaderSession);
+    Tactics.stop(leaderSession, leaderSession.actor);
+    leaderSession.currentTargetId = undefined;
+    leaderSession.actor.unselect?.();
+    for (const member of companions) {
+        AI.cancelScheduledTick(member);
+        Tactics.stop(member, member.actor);
+        Tactics.followSummon(member, member.actor);
+        for (const key of ['currentTargetId', 'incomingThreatId', 'incomingThreatAt', 'fleeStart',
+            'fleeDestination', 'raidSafetyResumePlan', 'playerRaidRetreatAt', 'pendingSupportApproach',
+            'pendingPartyChatResult', 'lastFollowMoveTarget', 'playerRaidResurrectionRecovery']) delete member[key];
+        member.actor.unselect?.();
+        member.plan = 'following';
+    }
+    for (const key of ['partyRaidEngagement', 'partyRaidPullBlockedBossId', 'partyRevivalAttempt',
+        'backgroundRaidTactics', 'backgroundRaidActionClaims', 'raidOpenedBossId', 'playerRaidChatter',
+        'playerRaidChatterCheckAt', 'pvpHealClaims', 'pvpControlClaims']) delete leaderSession[key];
+    if (leaderSession.partyPullState?.type === 'raid') leaderSession.partyPullState = {};
+    return true;
+}
+
 function syncPlayerPartyRaid(leaderSession, now = Date.now()) {
+    if (leaderSession?.pendingActorTeleport) return null;
     if (playerPartySessions(leaderSession).length === 0) {
         if (leaderSession) leaderSession.partyRaidEngagement = undefined;
         return null;
@@ -213,10 +277,11 @@ function syncPlayerPartyRaid(leaderSession, now = Date.now()) {
     const selectedBoss = selectedRaidTarget?.boss || null;
     const selectedTarget = selectedRaidTarget?.target || null;
     let raid = leaderSession.partyRaidEngagement;
+    if (objectId(selectedBoss) !== leaderSession.partyRaidPullBlockedBossId) leaderSession.partyRaidPullBlockedBossId = undefined;
     const existingBoss = raid
         ? RaidEntityIndex.bossByObjectId(world(), raid.bossId)
         : null;
-    if (raid && (!existingBoss || existingBoss.isDead?.())) {
+    if (raid && (!existingBoss || existingBoss.isDead?.() || leaderSession.actor.fetchIsOnline?.() !== true)) {
         leaderSession.partyRaidEngagement = undefined;
         raid = null;
     }
@@ -231,9 +296,9 @@ function syncPlayerPartyRaid(leaderSession, now = Date.now()) {
         // only when live party targeting/aggro proves that the newly selected
         // entity is the fight in progress; a stray click must not abandon the
         // current raid's grace period.
-        if (!raid || (!selectedMatches && (
+        if ((!raid || (!selectedMatches && (
             raid.phase === 'opening' || raidHasPartyCombat(leaderSession, selectedRaid)
-        ))) {
+        ))) && (raidHasPartyCombat(leaderSession, selectedRaid) || canStartPlayerRaidPull(leaderSession, selectedBoss))) {
             raid = startPlayerPartyRaid(leaderSession, selectedBoss, selectedTarget, now);
         }
     }
@@ -244,20 +309,28 @@ function syncPlayerPartyRaid(leaderSession, now = Date.now()) {
         raid.targetTemplateId = templateId(selectedTarget);
     }
     const selectedMatches = selectedBoss && objectId(selectedBoss) === Number(raid.bossId || 0);
+    const activeCombat = raidHasPartyCombat(leaderSession, raid);
     if (raid.phase === 'opening') {
-        if (!selectedMatches) {
-            leaderSession.partyRaidEngagement = undefined;
+        if (!activeCombat && (!selectedMatches || leaderSession.partyCompanionSettings?.pullMode === 'off')) {
+            cancelPlayerRaidOpening(leaderSession, raid);
             return null;
         }
         const openerStillAvailable = playerPartySessions(leaderSession)
             .some((session) => objectId(session.actor) === Number(raid.openerId || 0) && isOnlineCompanion(session, leaderSession));
-        if (!openerStillAvailable) raid.openerId = objectId(selectRaidOpener(leaderSession)?.actor);
+        if (!openerStillAvailable && !activeCombat) {
+            const replacement = selectRaidOpener(leaderSession, existingBoss || selectedBoss);
+            if (Number(raid.mainTankId) === Number(raid.openerId)) raid.mainTankId = objectId(replacement?.actor);
+            raid.openerId = objectId(replacement?.actor);
+        }
     }
 
-    if (raidHasPartyCombat(leaderSession, raid)) {
+    if (raid.phase === 'retreat') return raid;
+    if (!raid.mainTankId) raid.mainTankId = invoke('GameServer/Bot/AI/BotRoles').inferRole(leaderSession.actor) === 'tank'
+        ? objectId(leaderSession.actor) : raid.openerId;
+    if (activeCombat) {
         raid.phase = 'combat';
         raid.lastActiveAt = now;
-    } else if (selectedMatches) {
+    } else if (selectedMatches && raid.phase === 'opening') {
         raid.lastActiveAt = now;
     } else if (raid.phase === 'combat' && now - Number(raid.lastActiveAt || 0) > RAID_DISENGAGE_GRACE_MS) {
         leaderSession.partyRaidEngagement = undefined;
@@ -273,8 +346,8 @@ function canEngagePlayerPartyRaid(session, target, leaderSession = session?.foll
     if (!raid || !belongsToRaid(target, raid)) return false;
     if (raid.phase === 'combat') return true;
     return raid.phase === 'opening' &&
-        objectId(session.actor) === Number(raid.openerId || 0) &&
-        objectId(target) === Number(raid.targetId || raid.bossId || 0);
+        objectId(session.actor) === Number(raid.mainTankId || raid.openerId || 0) &&
+        objectId(target) === Number(raid.bossId || 0);
 }
 
 function isEngagedPlayerPartyRaidTarget(leaderSession, target) {
@@ -287,8 +360,8 @@ function hasControlledRaidMinion(target) {
     if (!boss) return false;
     const raid = { bossId: objectId(boss), bossTemplateId: templateId(boss) };
     const EffectStore = invoke('GameServer/Effects/EffectStore');
-    return raidEntities(raid).some((npc) => {
-        if (!isRaidMinion(npc) || npc.isDead?.()) return false;
+    const minions = raidEntities(raid).filter(npc => isRaidMinion(npc) && !npc.isDead?.());
+    return minions.length > 1 && minions.some((npc) => {
         const impairments = EffectStore.impairments(npc);
         return impairments.disabled;
     });
@@ -313,7 +386,8 @@ function botClanRaidCombatPlan(ownerSession, target) {
     let focusMinion = minions.find((npc) => (
         Number(objectId(npc)) === Number(state.focusMinionId || 0) && !hardControlled(npc)
     ));
-    if (!focusMinion) focusMinion = minions.find((npc) => !hardControlled(npc)) || minions[0] || null;
+    if (!focusMinion) focusMinion = minions.find((npc) => !hardControlled(npc))
+        || (minions.length === 1 ? minions[0] : null);
     state.focusMinionId = objectId(focusMinion);
     if (ownerSession) ownerSession.backgroundRaidTactics = state;
     return {
@@ -349,6 +423,7 @@ function retreat(session, bot, threat, options = {}) {
     bot.state?.setHits?.(false);
     bot.state?.setCasts?.(false);
     bot.automation?.abortAll?.(bot);
+    invoke('GameServer/Bot/AI/BotPvpTactics').followSummon(session, bot);
 
     if (wasSeated) {
         bot.state?.setSeated?.(false);
@@ -383,6 +458,7 @@ function retreat(session, bot, threat, options = {}) {
 }
 
 module.exports = {
+    RAID_PULL_RADIUS,
     RAID_MINION_TEMPLATE_IDS,
     isRaidBoss,
     isRaidMinion,
@@ -394,12 +470,15 @@ module.exports = {
     raidEntityByObjectId,
     raidEntities,
     belongsToRaid,
+    playerPartySessions,
+    raidHasPartyCombat,
     hasHeavyArmor,
     isRaidOpenerReady,
     selectRaidOpener,
     leaderDesignatedRaidBoss,
     leaderDesignatedRaidTarget,
     syncPlayerPartyRaid,
+    endPlayerPartyRaid,
     canEngagePlayerPartyRaid,
     isEngagedPlayerPartyRaidTarget,
     hasControlledRaidMinion,

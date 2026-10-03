@@ -7,6 +7,7 @@ const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const Database = invoke('Database');
 const Status  = invoke('GameServer/Bot/Population/PopulationStatus');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
@@ -23,6 +24,7 @@ const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const BotAfkMarketService = invoke('GameServer/Bot/Economy/BotAfkMarketService');
+const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const ColdMarketTradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
 const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
@@ -32,6 +34,7 @@ const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const PartyRecruitmentChat = invoke('GameServer/Bot/Population/ColdPartyRecruitmentChat');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const GearPlanSelection = invoke('GameServer/Bot/AI/GearPlanSelection');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const ColdWealthCraftService = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
@@ -318,6 +321,22 @@ function occupiedPartySlots() {
     return Math.max(0, Number(BackgroundPartyState.counts().active || 0)) + partyAdmission.pending;
 }
 
+function acquisitionFallbackEvent(state, previousPlan, failure, nextPlan) {
+    return {
+        type: 'gear_acquisition_fallback',
+        summary: `${state.name} abandoned an unproductive ${previousPlan?.target?.name || `item ${failure.targetId}`} drop route`,
+        weight: 3,
+        meta: {
+            reason: failure.reason,
+            targetId: failure.targetId,
+            npcId: failure.npcId,
+            resolves: failure.resolves,
+            targetKills: failure.targetKills,
+            nextStrategy: nextPlan?.strategy
+        }
+    };
+}
+
 function acquisitionRequirementKey(plan) {
     return JSON.stringify({
         status: plan?.status || null,
@@ -415,6 +434,21 @@ function joinedBackgroundParty(state) {
     return !!current?.party?.partyId;
 }
 
+// A trip to buy at a shop is paid from the wallet. When the bot's own buy
+// order still holds Adena, the trip withdraws it first (its goal keeps no
+// WTB, or beginMarketTravel would refuse) and starts from the refunded
+// state. If the order cannot be withdrawn, the bot does not leave; a caller
+// that holds the pre-refund state must not apply it after a refund.
+async function marketTravelWithRefund(state, goal, timestamp = Date.now()) {
+    const travel = GoalExecutor.beginMarketTravel(state, goal, timestamp);
+    if (!travel || BotAfkMarketService.desiredSide(goal) !== AfkTrade.BUY
+        || BotAfkMarketService.buyOrderEscrow(state.characterId) <= 0) return travel;
+    const remote = await BotAfkMarketService.reconcile(state, goal).catch(() => null);
+    const refunded = remote?.withdrawn ? remote.state || state : null;
+    if (!refunded || refunded.phase !== 'cold' || joinedBackgroundParty(refunded)) return null;
+    return GoalExecutor.beginMarketTravel(refunded, goal, timestamp);
+}
+
 function canResumeAffordableMarketPlan(state, timestamp = Date.now()) {
     const plan = state?.stats?.equipmentPlan;
     const targetId = Number(plan?.target?.selfId || 0);
@@ -429,7 +463,8 @@ function canResumeAffordableMarketPlan(state, timestamp = Date.now()) {
 
     const price = Number(plan.market?.price || 0);
     const reserve = Math.max(0, Number(plan.market?.reserve || 0));
-    if (price <= 0 || Number(state.adena || 0) < price + reserve) return false;
+    if (price <= 0 || PurchaseFunding.shortfall(state, price, reserve,
+        PurchaseFunding.tripEscrow(plan, BotAfkMarketService.buyOrderEscrow(state.characterId))) > 0) return false;
 
     const combinationRequirement = (plan.combine?.requirements || [])
         .find((entry) => Number(entry.selfId) === targetId);
@@ -527,7 +562,7 @@ async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
             ? await GoalService.review(current, { spot, now: timestamp })
             : cachedGoal;
         if (due || cleanupNeeded) reviewed += 1;
-        await BotAfkMarketService.reconcile(current, goalSnapshot?.current);
+        await BotAfkMarketService.reconcile(current, goalSnapshot?.current, goalSnapshot?.candidates);
         if (departed || !canTakePartyMarketBreak(party, members, current, timestamp)) continue;
 
         // Goal review can overlap the next worker claim. Re-read the reflected
@@ -617,6 +652,14 @@ function inventoryCleanupGoal(state, timestamp = Date.now()) {
         },
         blockers: []
     };
+}
+
+// A forced cleanup decided over a resolve outranks a trip that resolve
+// started (route, karma), as it did when it was decided before the fight;
+// the fight's outcome is kept.
+function withoutStartedTrip(before, resolved) {
+    if (before.activity === 'traveling' || resolved.activity !== 'traveling') return resolved;
+    return { ...resolved, activity: before.activity, stats: { ...(resolved.stats || {}), travel: null } };
 }
 
 function inventoryCleanupTravelState(state, timestamp = Date.now(), simulation = null) {
@@ -2490,23 +2533,17 @@ const PopulationService = {
             for (const member of members) {
                 if (budgetReached()) return refreshed;
                 const previousPlan = member.stats?.equipmentPlan;
-                if (GearAcquisitionPlanner.clanGoalPlanLocked(member, previousPlan)) {
-                    refreshedPlans.set(Number(member.characterId), previousPlan);
-                    continue;
-                }
-                let nextPlan;
+                let selection;
                 try {
-                    const replacePreviousPlan = previousPlan?.status === 'blocked'
-                        || (previousPlan?.status === 'active'
-                            && ['direct_drop', 'craft'].includes(previousPlan.strategy)
-                            && previousPlan.next?.spotId);
-                    nextPlan = replacePreviousPlan
-                        ? GearAcquisitionPlanner.replacementPlanFor(member, previousPlan, spots, { occupancy })
-                        : GearAcquisitionPlanner.planFor(member, { spots, occupancy });
+                    selection = GearPlanSelection.selectAcquisitionPlan(member, previousPlan, {
+                        spots, occupancy, timestamp,
+                        planningOptions: { buyOrderEscrow: BotAfkMarketService.buyOrderEscrow(member.characterId) }
+                    });
                 } catch (err) {
                     utils.infoWarn('BotPopulation', 'party requirement refresh failed for %s: %s', member.name, err.message);
                     continue;
                 }
+                const nextPlan = selection.acquisitionPlan;
                 refreshedPlans.set(Number(member.characterId), nextPlan);
                 if (acquisitionRequirementKey(previousPlan) === acquisitionRequirementKey(nextPlan)) continue;
                 const nextState = {
@@ -2514,6 +2551,10 @@ const PopulationService = {
                     stats: { ...(member.stats || {}), equipmentPlan: nextPlan }
                 };
                 const saved = await LifeState.upsertState(nextState, 'party_requirement_refresh');
+                if (saved && selection.replanContext.failure) {
+                    await LifeEvents.recordMany(member.characterId,
+                        [acquisitionFallbackEvent(member, previousPlan, selection.replanContext.failure, nextPlan)]);
+                }
                 changed = changed || !!saved;
             }
             const refreshedMembers = members.map((member) => {
@@ -2614,9 +2655,10 @@ const PopulationService = {
                     });
                 }
                 const partyObjective = party.stats?.objective || null;
+                const ClanEquipmentPartyPolicy = require('./ClanEquipmentPartyPolicy');
                 const nearby = candidates.filter((state) => (
                     !claimed.has(Number(state.characterId))
-                    && require('./ClanEquipmentPartyPolicy').allowed(state, partyObjective)
+                    && ClanEquipmentPartyPolicy.allowed(state, partyObjective)
                     && (partyObjective
                         ? (partyObjectiveKeyForState(state) === partyObjectiveGroupingKey(partyObjective)
                             || partyObjectivesShareRoute(partyObjective, partyObjectiveForState(state))
@@ -3084,7 +3126,7 @@ const PopulationService = {
                 // inventory, ownership or a player activation.
                 const current = this.refreshGoalCandidate(state, true);
                 if (!current || current !== state) return null;
-                const remote = await BotAfkMarketService.reconcile(current, snapshot?.current);
+                const remote = await BotAfkMarketService.reconcile(current, snapshot?.current, snapshot?.candidates);
                 if (remote.changed) return remote.state;
                 const travel = GoalExecutor.beginMarketTravel(current, snapshot?.current);
                 if (!travel) return null;
@@ -3289,7 +3331,8 @@ const PopulationService = {
                 let marketDeparture = null;
                 return resolvedMembers.reduce((chain, member) => (
                 chain.then((activeMembers) => (spot.raidBoss ? Promise.resolve(null) : GoalService.review(member, { spot })).then(async (goalSnapshot) => {
-                    const remote = spot.raidBoss ? null : await BotAfkMarketService.reconcile(member, goalSnapshot?.current);
+                    const remote = spot.raidBoss ? null
+                        : await BotAfkMarketService.reconcile(member, goalSnapshot?.current, goalSnapshot?.candidates);
                     const currentMember = remote?.state || member;
                     if (spot.raidBoss) return [...activeMembers, currentMember];
                     if (breakTaken || !canTakePartyMarketBreak(party, resolvedMembers, currentMember)) {
@@ -3378,7 +3421,10 @@ const PopulationService = {
             Metrics.recordSkippedResolve('joined_party_before_resolve');
             return Promise.resolve({ ok: false, reason: 'joined_party', state });
         }
-        const cleanupState = inventoryCleanupTravelState(state, startedAt);
+        // With a worker result the fight already happened: the transition
+        // branch below applies it first and then starts the cleanup trip.
+        const cleanupAfterFight = !!precomputedResult && !!inventoryCleanupGoal(state, startedAt);
+        const cleanupState = precomputedResult ? null : inventoryCleanupTravelState(state, startedAt);
         if (cleanupState) {
             const { cleanup, ...travelState } = cleanupState;
             return LifeState.upsertState(travelState, 'inventory_cleanup_market_travel')
@@ -3401,7 +3447,8 @@ const PopulationService = {
         const elapsedMs = state.timing?.lastResolvedAt ? Math.max(1000, startedAt - state.timing.lastResolvedAt) : 60000;
         // These transitions have no planning, market search, or inventory work
         // between their persisted deadline and the next state change.
-        if (state.activity === 'traveling' || (state.activity === 'resting' && Number(state.stats?.restUntil || 0) > 0)) {
+        if (cleanupAfterFight || state.activity === 'traveling'
+            || (state.activity === 'resting' && Number(state.stats?.restUntil || 0) > 0)) {
             const requestLifecycleState = expirePartyRequestForState(state, startedAt);
             const result = precomputedResult || BackgroundResolver.resolveSolo({
                 state: requestLifecycleState,
@@ -3424,13 +3471,18 @@ const PopulationService = {
                 const recoveredForMarket = state.activity === 'resting'
                     && (canResumeAffordableMarketPlan(updatedState)
                         || canResumeWarehouseMarketSale(updatedState));
-                const marketHandoff = recoveredForMarket
-                    ? GoalService.review(updatedState).then((goalSnapshot) => {
-                        const timestamp = Date.now();
-                        const travelState = GoalExecutor.beginMarketTravel(updatedState, goalSnapshot?.current, timestamp);
+                const cleanupTrip = cleanupAfterFight
+                    ? inventoryCleanupTravelState(withoutStartedTrip(state, updatedState), startedAt)
+                    : null;
+                if (cleanupTrip) delete cleanupTrip.cleanup;
+                const marketHandoff = cleanupTrip
+                    ? LifeState.upsertState(cleanupTrip, 'inventory_cleanup_market_travel').then((saved) => saved || updatedState)
+                    : recoveredForMarket
+                    ? GoalService.review(updatedState).then(async (goalSnapshot) => {
+                        const travelState = await marketTravelWithRefund(updatedState, goalSnapshot?.current);
                         return travelState
                             ? LifeState.upsertState(travelState, 'goal_market_travel_after_recovery').then((saved) => saved || travelState)
-                            : updatedState;
+                            : LifeState.cachedState(updatedState.characterId) || updatedState;
                     }).catch((err) => {
                         utils.infoWarn('BotGoals', 'post-recovery market handoff failed for %s: %s', state.name, err.message);
                         return updatedState;
@@ -3476,10 +3528,8 @@ const PopulationService = {
         // in-progress craft route into `blocked` on its first travel tick.
         const spots = SpotProfiles.ensure();
         const occupancy = SpotProfiles.currentOccupancy(spots);
-        const replanContext = workerPlan
-            ? { failure: workerPlan.replanFailure || null }
-            : GearAcquisitionPlanner.replanContextFor(state, previousPlan, startedAt);
-        const weaponBridgePlan = GearAcquisitionPlanner.npcEquipmentBridgePlan(state);
+        const buyOrderEscrow = BotAfkMarketService.buyOrderEscrow(state.characterId);
+        let replanContext = { failure: workerPlan?.replanFailure || null, buyOrderEscrow };
         let acquisitionPlan = workerPlan?.acquisitionPlan || null;
         const workerPlanHasSource = acquisitionPlan?.status === 'active'
             && ['direct_drop', 'craft'].includes(acquisitionPlan.strategy)
@@ -3510,46 +3560,11 @@ const PopulationService = {
             }
         }
         if (!acquisitionPlan) {
-            const previousFarmPlan = previousPlan?.status === 'active'
-                && ['direct_drop', 'craft'].includes(previousPlan.strategy)
-                && previousPlan.next?.spotId;
-            const previousAvailabilitySource = previousFarmPlan && !replanContext.failure
-                ? GearAcquisitionPlanner.bestSourceForPlan(state, previousPlan, spots, { occupancy })
-                : null;
-            const reusablePartyRequest = !weaponBridgePlan
-                && !state.party?.partyId
-                && previousPlan?.next
-                && (!previousFarmPlan || !!previousAvailabilitySource)
-                && replanContext.routeCurrent
-                && !replanContext.failure
-                && state.stats?.partyRequest?.status === 'open'
-                && Number(state.stats.partyRequest.reviewAt || 0) > startedAt
-                && !GearAcquisitionPlanner.fundedMarketPlanForTarget(state, previousPlan.target?.selfId);
-            const upgradedPlan = weaponBridgePlan || (previousFarmPlan
-                && !GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan)
-                    ? GearAcquisitionPlanner.replacementPlanFor(state, previousPlan, spots, { occupancy, ...replanContext })
-                : previousAvailabilitySource
-                    ? GearAcquisitionPlanner.retargetPlanSource(state, previousPlan, previousAvailabilitySource)
-                    : reusablePartyRequest
-                        ? previousPlan
-                        : GearAcquisitionPlanner.planFor(state, { spots, occupancy, ...replanContext }));
-            const previousRefresh = previousPlan?.recipeId && !reusablePartyRequest
-                ? GearAcquisitionPlanner.planFor(state, { spots, occupancy, recipeId: previousPlan.recipeId, ...replanContext })
-                : null;
-            const rawAcquisitionPlan = GearAcquisitionPlanner.shouldFinishPreviousPlan(previousPlan, previousRefresh)
-                ? { ...previousRefresh, finishBeforeUpgrade: true }
-                : upgradedPlan;
-            const finalizedPlan = reusablePartyRequest
-                ? previousPlan
-                : GearAcquisitionPlanner.finalizePlan(state, previousPlan, rawAcquisitionPlan,
-                    weaponBridgePlan ? { ...replanContext, allowClanGoalReplan: true } : replanContext,
-                    startedAt);
-            const costedPlan = GearAcquisitionPlanner.withMaterialFarmEffort(finalizedPlan, state, spots, { occupancy });
-            acquisitionPlan = {
-                ...costedPlan,
-                marketFallback: finalizedPlan.status === 'active' && finalizedPlan.strategy === 'craft'
-                    && Number(finalizedPlan.acquisitionProgress?.at || finalizedPlan.startedAt || startedAt) + 20 * 60 * 1000 <= Date.now()
-            };
+            const selection = GearPlanSelection.selectAcquisitionPlan(state, previousPlan, {
+                spots, occupancy, timestamp: startedAt, planningOptions: { buyOrderEscrow }
+            });
+            acquisitionPlan = selection.acquisitionPlan;
+            replanContext = selection.replanContext;
         }
         const partyRequest = partyRequestForPlan(state, acquisitionPlan, startedAt);
         const plannedStats = { ...(state.stats || {}), equipmentPlan: acquisitionPlan };
@@ -3561,19 +3576,7 @@ const PopulationService = {
         };
         const planEvents = CraftTelemetry.planEvents(state, previousPlan, acquisitionPlan);
         if (replanContext.failure) {
-            planEvents.push({
-                type: 'gear_acquisition_fallback',
-                summary: `${state.name} abandoned an unproductive ${previousPlan.target?.name || `item ${replanContext.failure.targetId}`} drop route`,
-                weight: 3,
-                meta: {
-                    reason: replanContext.failure.reason,
-                    targetId: replanContext.failure.targetId,
-                    npcId: replanContext.failure.npcId,
-                    resolves: replanContext.failure.resolves,
-                    targetKills: replanContext.failure.targetKills,
-                    nextStrategy: acquisitionPlan.strategy
-                }
-            });
+            planEvents.push(acquisitionFallbackEvent(state, previousPlan, replanContext.failure, acquisitionPlan));
         }
         if (plannedState.activity === 'crafting') {
             return ColdCraftingService.craft(plannedState).then((craft) => {
@@ -3687,7 +3690,10 @@ const PopulationService = {
                 excludedSpotIds,
                 timestamp: startedAt
             });
-        const huntingTravelState = selectedSpot && !passiveActivity
+        // A worker result is a fight at the worker's spot; applied over a trip
+        // it would restore `hunting` there and strand stats.travel. The worker
+        // is routed by routeFor from the state this command writes.
+        const huntingTravelState = selectedSpot && !passiveActivity && !precomputedResult
             ? beginHuntingTravel(travellingState, selectedSpot, startedAt, { currentSpotId })
             : null;
         const effectiveState = huntingTravelState || travellingState;
@@ -3754,6 +3760,10 @@ const PopulationService = {
                         .then((marketResult) => ({ marketLifecycle, marketResult, goal: goalSnapshot?.current || null }))))
                 .then(({ marketLifecycle, marketResult, goal }) => {
                     const purchasedState = marketResult.state || marketLifecycle.state || updatedState;
+                    // The bot was activated while the market step ran (the activation fence waits
+                    // 500 ms at most): its row is the actor's now; nothing cold is written over it.
+                    const hotRow = LifeState.hotRow(purchasedState.characterId);
+                    if (hotRow) return hotRow;
                     if (marketResult.purchased) {
                         const batchState = {
                             ...purchasedState,
@@ -3797,7 +3807,7 @@ const PopulationService = {
                         utils.infoWarn('BotGoals', 'goal review failed for %s: %s', marketState.name, err.message);
                         return null;
                     }).then(async (goalSnapshot) => {
-                        const remote = await BotAfkMarketService.reconcile(marketState, goalSnapshot?.current);
+                        const remote = await BotAfkMarketService.reconcile(marketState, goalSnapshot?.current, goalSnapshot?.candidates);
                         const current = remote.state || marketState;
                         const travelState = GoalExecutor.beginMarketTravel(current, goalSnapshot?.current);
                         return travelState ? LifeState.upsertState(travelState, 'goal_market_travel') : current;
@@ -3808,7 +3818,8 @@ const PopulationService = {
                         .then(() => finalState);
                 })
                 .then((finalState) => {
-                    GlobalChat.maybeAnnounce(finalState, result.events);
+                    // A bot that went hot meanwhile speaks through its own AI.
+                    if (finalState.phase !== 'hot') GlobalChat.maybeAnnounce(finalState, result.events);
                     return {
                         ok: true,
                         state: finalState,
@@ -3834,7 +3845,9 @@ const PopulationService = {
             if (current !== state || joinedBackgroundParty(current) || current.phase !== 'cold') {
                 return { ok: false, reason: 'state_changed', state: current };
             }
-            const travel = GoalExecutor.beginMarketTravel(current, goal?.current);
+            const travel = await marketTravelWithRefund(current, goal?.current);
+            const latest = LifeState.cachedState(state.characterId) || current;
+            if (!travel && latest !== current) return { ok: false, reason: 'state_changed', state: latest };
             if (travel) {
                 const saved = await LifeState.upsertState(travel, 'goal_market_travel_before_combat');
                 return { ok: !!saved, state: saved || state,
@@ -3844,8 +3857,8 @@ const PopulationService = {
         return this.resolveColdState(state, request);
     },
 
-    prepareInventoryCleanupProposal(state, timestamp = Date.now(), simulation = null) {
-        return inventoryCleanupTravelState(state, timestamp, simulation);
+    prepareInventoryCleanupProposal(state, timestamp = Date.now(), simulation = null, before = state) {
+        return inventoryCleanupTravelState(withoutStartedTrip(before, state), timestamp, simulation);
     },
 
     reserveCompetitionPartySlot() {
@@ -3895,6 +3908,7 @@ PopulationService.beginPartySpotTravel = beginPartySpotTravel;
 PopulationService.finishPartySpotTravel = finishPartySpotTravel;
 PopulationService.finishPartyTravelRecord = finishPartyTravelRecord;
 PopulationService.marketListingIntent = marketListingIntent;
+PopulationService.canResumeAffordableMarketPlan = canResumeAffordableMarketPlan;
 PopulationService.partyLimitsForObjective = partyLimitsForObjective;
 PopulationService.requiresClanEquipmentParty = requiresClanEquipmentParty;
 PopulationService.partyObjectivesShareRoute = partyObjectivesShareRoute;

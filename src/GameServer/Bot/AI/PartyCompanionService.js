@@ -11,6 +11,7 @@ const DEFAULT_PARTY_SETTINGS = {
     combatMode: 'assist',
     pullMode: 'auto',
     pullerId: null,
+    lootPickupEnabled: true,
     itemLastLootIndex: -1
 };
 const PARTY_LOOT_RADIUS = 2500;
@@ -18,7 +19,6 @@ const PARTY_GROUND_LOOT_LEASH_RADIUS = 1200;
 const GROUND_LOOT_SCAN_INTERVAL_MS = 500;
 const GROUND_PICKUP_FALLBACK_TIMEOUT_MS = 8000;
 const GROUND_PICKUP_TIMEOUT_GRACE_MS = 5000;
-const AUTOMATED_LOOT_DISTRIBUTIONS = new Set([1, 2, 3, 4]);
 const MAX_PARTY_MEMBERS = 9;
 const MAX_COMPANIONS = MAX_PARTY_MEMBERS - 1;
 const capacityReservations = new WeakMap();
@@ -114,6 +114,7 @@ function updateSettings(leaderSession, patch = {}) {
     const next = getSettings(leaderSession);
     membersForLeader(leaderSession).forEach((companionSession) => {
         companionSession.autoTaunt = next.pullMode !== 'off';
+        if (next.lootPickupEnabled === false) cancelGroundPickup(companionSession);
         Promise.resolve(BotEventJournal.record({
             playerId: leaderSession?.actor?.fetchId?.(),
             botId: companionSession.actor?.fetchId?.(),
@@ -125,6 +126,7 @@ function updateSettings(leaderSession, patch = {}) {
             meta: { patch, settings: next }
         })).catch(() => {});
     });
+    if (hasOwn(patch, 'lootPickupEnabled')) leaderSession.lastGroundLootScanAt = 0;
     return next;
 }
 
@@ -261,8 +263,29 @@ function nextTurnMember(leaderSession, members) {
     return members[nextIndex];
 }
 
+function canPickupLoot(session) {
+    if (!session?.partyCompanion && !autonomousLootBot(session)) return true;
+    return settingsForLeader(partyLeaderSession(session)).lootPickupEnabled !== false;
+}
+
+function cancelGroundPickup(session) {
+    const actor = session?.actor;
+    if (!actor) return;
+    if (session.partyGroundPickupInProgress || actor.storedPickup) {
+        // Support may already own automation after interrupting a pickup.
+        if (!actor.state?.fetchCasts?.()) actor.automation?.abortAll?.(actor);
+        actor.state?.setPickinUp?.(false);
+    }
+    session.partyGroundPickupAttempt = Number(session.partyGroundPickupAttempt || 0) + 1;
+    session.partyGroundPickupQueue = [];
+    session.partyGroundPickupInProgress = false;
+    session.partyGroundPickupDeadlineAt = 0;
+    delete actor.storedPickup;
+}
+
 function canPickGroundLoot(session, leaderSession, item) {
     const actor = session?.actor;
+    if (!canPickupLoot(session)) return false;
     if (!(isActiveCompanion(session, leaderSession) || autonomousLootBot(session)
         && partyLeaderSession(session) === leaderSession) || !isAliveOnline(session)) return false;
     // A finished fight often leaves the whole party seated.  Ground loot is
@@ -368,7 +391,7 @@ function hasCampThreat(leaderSession) {
 
 function reconcileGroundLoot(looterSession) {
     const leaderSession = partyLeaderSession(looterSession);
-    if (!leaderSession) return 0;
+    if (!leaderSession || settingsForLeader(leaderSession).lootPickupEnabled === false) return 0;
 
     const now = Date.now();
     if (now - Number(leaderSession.lastGroundLootScanAt || 0) < GROUND_LOOT_SCAN_INTERVAL_MS) return 0;
@@ -401,8 +424,7 @@ function reconcileGroundLoot(looterSession) {
 
 function nearestGroundLootPicker(looterSession, item) {
     const leaderSession = partyLeaderSession(looterSession);
-    if (!leaderSession || !item || !autonomousLootBot(leaderSession)
-        && !AUTOMATED_LOOT_DISTRIBUTIONS.has(distributionForLeader(leaderSession))) return null;
+    if (!leaderSession || !item || settingsForLeader(leaderSession).lootPickupEnabled === false) return null;
     if (!isOwnedPartyGroundLoot(leaderSession, item) || !isInsidePartyGroundLootLeash(leaderSession, item)) return null;
 
     const pickers = groundLootPickers(leaderSession)
@@ -437,6 +459,12 @@ function groundPickupTimeoutMs(picker, pickup) {
 
 function startQueuedGroundPickup(pickerSession) {
     const picker = pickerSession?.actor;
+    if (!canPickupLoot(pickerSession)) {
+        if (pickerSession?.partyGroundPickupInProgress || pickerSession?.partyGroundPickupQueue?.length || picker?.storedPickup) {
+            cancelGroundPickup(pickerSession);
+        }
+        return false;
+    }
     const queue = pickerSession?.partyGroundPickupQueue;
     if (!picker || !queue?.length) return false;
     const now = Date.now();
@@ -534,6 +562,7 @@ function startQueuedGroundPickup(pickerSession) {
         // original drop was assigned while the party was still fighting.
         reconcileGroundLoot(pickerSession);
     }, () => pickerSession.actor === picker
+        && canPickupLoot(pickerSession)
         && Number(pickerSession.partyGroundPickupAttempt) === attempt
         && partyLeaderSession(pickerSession) === leaderSession
         && isOwnedPartyGroundLoot(leaderSession,queuedItem)
@@ -878,7 +907,21 @@ const PartyCompanionService = {
 
     distributionForLeader,
 
+    syncClientDistribution(leaderSession, distribution) {
+        if (!leaderSession?.actor || !Number.isInteger(distribution) || distribution < 0 || distribution > 4) return false;
+        leaderSession.clientPartyLootDistributionKnown = true;
+        const changed = distributionForLeader(leaderSession) !== distribution;
+        setDistribution(leaderSession, distribution);
+        if (changed && membersForLeader(leaderSession).length > 0) {
+            sendPartyWindow(leaderSession, distribution);
+            if (leaderSession.nativePartyUiOpen) renderPanel(leaderSession);
+        }
+        return true;
+    },
+
     getSettings,
+
+    canPickupLoot,
 
     updateSettings,
 

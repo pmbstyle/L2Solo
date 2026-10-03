@@ -196,7 +196,7 @@ async function perform(playerSession, target, source) {
     const attached = Companion.attachRoster(playerSession, sessions, {
         expectedBackgroundPartyId: partyId,
         lifeStates: acceptedStates,
-        distribution: 1
+        distribution: Companion.distributionForLeader(playerSession)
     });
     if (!attached.ok) {
         utils.infoWarn('BotParty', 'persisted party takeover could not attach runtime roster party=%s reason=%s', partyId, attached.reason);

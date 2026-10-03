@@ -79,7 +79,10 @@ function validateEnvelope(message, direction, options = {}) {
     if (!message.payload || typeof message.payload !== 'object' || Array.isArray(message.payload)) {
         return { ok: false, reason: 'invalid_payload' };
     }
-    const bytes = byteLength(message);
+    // Serialising a page only to measure it costs as much as building it.
+    // A sender that sized the page while building it passes that size, and
+    // stamps the measured size on the message so the receiver can skip it.
+    const bytes = Number.isFinite(options.bytes) && options.bytes >= 0 ? options.bytes : byteLength(message);
     if (!Number.isFinite(bytes) || bytes > Number(options.maxBytes || MAX_MESSAGE_BYTES)) {
         return { ok: false, reason: 'message_too_large', bytes };
     }

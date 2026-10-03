@@ -213,6 +213,11 @@ const SpoilSweep = {
     },
 
     castSweep(session, actor, npc, skill) {
+        // A hot bot may finish its queued approach after the corpse decayed.
+        const expiredBotCorpse = () => String(session?.accountId || '').startsWith('bot_')
+            && (npc.corpseDecayState === 'removed'
+                || Number(npc.corpseDecayAt || Infinity) <= Date.now());
+        if (expiredBotCorpse()) return;
         if (!npc.isDead()) {
             session.dataSendToMe(ServerResponse.actionFailed());
             return;
@@ -229,7 +234,7 @@ const SpoilSweep = {
         }
 
         castUtilitySkill(session, actor, npc, skill, () => {
-            if (!this.isSweepable(npc)) {
+            if (expiredBotCorpse() || !this.isSweepable(npc)) {
                 session.dataSendToMe(ServerResponse.actionFailed());
                 return;
             }
