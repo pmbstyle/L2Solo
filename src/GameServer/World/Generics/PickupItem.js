@@ -15,6 +15,7 @@ function transmitPickup(session, selfId, amount) {
 function pickupItem(session, actor, item) {
     if (!actor || session?.actor !== actor || !actor.backpack ||
         actor.isDead?.() || actor.fetchIsOnline?.() === false) return false;
+    if (!PartyCompanionService.canPickupLoot(session)) return false;
     const id     = item.fetchId();
     const spawnIndex = this.items.spawns.findIndex((spawn) => spawn.fetchId() === id);
     if (spawnIndex < 0) return false;

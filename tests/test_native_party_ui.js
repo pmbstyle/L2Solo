@@ -9,18 +9,21 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const NpcTalkResponse = invoke('GameServer/World/Generics/NpcTalkResponse');
 const Speak = invoke('GameServer/Network/Request/Speak');
 const SendPacket = invoke('Packet/Send');
+const ActorGenerics = invoke(path.actor);
 
 function actor(id, name) {
     return {
         fetchId: () => id, fetchName: () => name, fetchLevel: () => 40,
         isDead: () => false,
         fetchLocX: () => 10, fetchLocY: () => 20, fetchLocZ: () => 30,
-        state: { fetchDead: () => false }
+        state: { fetchDead: () => false },
+        clearDestId() {}, automation: { abortAll() {} }
     };
 }
 const packets = [];
 const leader = { actor: actor(1, 'Leader'), dataSendToMe: (p) => packets.push(p) };
-let members = Array.from({ length: 8 }, (_, i) => ({ actor: actor(i + 10, `Companion${i}`) }));
+let members = Array.from({ length: 8 }, (_, i) => ({ actor: actor(i + 10, `Companion${i}`),
+    accountId: `bot_companion_${i}`, dataSendToMeAndOthers() {} }));
 let settings = { combatMode: 'assist', movementMode: 'follow', pullMode: 'auto' };
 const restore = [];
 function replace(object, key, value) {
@@ -42,7 +45,7 @@ try {
     replace(BotManager, 'getBotStatus', () => ({ intent: 'idle' }));
     replace(BotManager, 'botSay', () => {});
     replace(BotRoles, 'inferRole', () => 'dps');
-    replace(BotRoles, 'presentation', () => ({ role: 'dps', className: 'Gladiator' }));
+    replace(BotRoles, 'presentation', () => ({ classId: 2, role: 'dps', className: 'Gladiator' }));
 
     CompanionControl.render(leader);
     assert(body().includes('<title>Party Control</title>'), 'unmodified client receives HTML');
@@ -63,12 +66,50 @@ try {
     assert.deepStrictEqual(members[0].stayLocation, { locX: 10, locY: 20, locZ: 30 });
     command('member 10 follow');
     assert.strictEqual(members[0].botStay, false);
+    for (const combatMode of ['assist', 'protect', 'passive']) {
+        command(`action combat ${combatMode}`);
+        assert.strictEqual(settings.combatMode, combatMode);
+    }
+    command('action movement hold');
+    assert(members.every((m) => m.botStay === true), 'group Hold applies to every companion');
+    command('action movement follow');
+    assert(members.every((m) => m.botStay === false), 'group Follow clears individual anchors');
+    for (const pullMode of ['auto', 'leader', 'off']) {
+        command(`action pull ${pullMode}`);
+        assert.strictEqual(settings.pullMode, pullMode);
+        assert(members.every((m) => m.autoTaunt === (pullMode !== 'off')));
+    }
+    command('member 10 pull-on');
+    assert.strictEqual(settings.pullMode, 'bot');
+    assert.strictEqual(settings.pullerId, 10);
+    assert.strictEqual(members[0].partyPuller, true);
+    command('member 11 pull-on');
+    assert.strictEqual(settings.pullerId, 11, 'a new Pull order replaces the assigned puller');
+    assert.strictEqual(members[0].partyPuller, false);
+    command('member 11 pull-off');
+    assert.strictEqual(settings.pullMode, 'off', 'Stop Pull disables autonomous pulling');
+    assert(members.every((m) => m.autoTaunt === false));
+    settings.pullMode = 'auto';
+    const teleports = [];
+    replace(ActorGenerics, 'updatePosition', (session, _actor, coords) => teleports.push({ session, coords }));
+    const originalTimeout = global.setTimeout;
+    const teleportCallbacks = [];
+    global.setTimeout = (callback, ms) => { assert.strictEqual(ms, 1000); teleportCallbacks.push(callback); };
+    try {
+        command('member 10 summon');
+        teleportCallbacks.shift()();
+        assert.deepStrictEqual(teleports[0], { session: members[0], coords: { locX: 70, locY: 80, locZ: 30 } },
+            'Call invokes the real teleport handler for the selected companion');
+        command('action regroup');
+        teleportCallbacks.splice(0).forEach((callback) => callback());
+        assert.strictEqual(teleports.length, 9, 'Regroup teleports all eight current companions');
+    } finally { global.setTimeout = originalTimeout; }
     command('member 999 stay');
     assert(members.every((m) => !m.botStay), 'outsider cannot be controlled');
     const removed = members.shift();
     command('member 10 stay');
     assert.strictEqual(removed.botStay, false, 'stale row cannot control a removed member');
-    for (const invalid of ['action combat bogus', 'action constructor foo', 'member -1 stay', 'member 11 dismiss']) {
+    for (const invalid of ['action combat bogus', 'action loot bogus', 'action constructor foo', 'member -1 stay', 'member 11 dismiss']) {
         const before = packets.length; command(invalid); assert.strictEqual(packets.length, before);
     }
 
@@ -84,12 +125,50 @@ try {
     members.unshift(removed); settings.combatMode = 'assist';
     command('open 0');
     assert.strictEqual(body(), legacy, 'fallback preserves existing HTML output');
+    command('open 2');
+    assert(body().startsWith(Protocol.PREFIX_V2), 'new clients negotiate the extended snapshot');
+    assert(body().split('\n').slice(2).every((line) => line.split('\t').length === 10), 'v2 member format stays unchanged');
+    assert(body().includes('state\tassist\tfollow\tauto\t8\t1\t1'), 'pickup defaults to enabled');
+    command('action loot off');
+    assert.strictEqual(settings.lootPickupEnabled, false);
+    assert(body().includes('state\tassist\tfollow\tauto\t8\t0\t0'), 'native selection follows the server');
+    command('refresh');
+    assert.strictEqual(settings.lootPickupEnabled, false, 'Refresh preserves the toggle');
+    command('close');
+    command('action loot on');
+    assert.strictEqual(settings.lootPickupEnabled, false, 'closed panels cannot issue orders');
+    command('open 2');
+    assert(body().includes('state\tassist\tfollow\tauto\t8\t1\t0'), 'reopen preserves the toggle');
+    NpcTalkResponse(leader, { link: 'native-party open 3' });
+    assert.strictEqual(leader.nativePartyUiVersion, 3);
+    assert(body().startsWith(Protocol.PREFIX_V3), 'current quick menu route negotiates class icons and pickup controls');
+    assert(body().includes('state\tassist\tfollow\tauto\t8\t1\t0'));
+    for (const line of body().split('\n').slice(2)) {
+        const fields = line.split('\t');
+        assert.strictEqual(fields.length, 11);
+        assert.strictEqual(fields[10], '2', 'the presentation class ID reaches every member row');
+    }
+    command('action loot on');
+    assert.strictEqual(settings.lootPickupEnabled, true);
+    assert(body().includes('state\tassist\tfollow\tauto\t8\t0\t1'));
+    command('action loot off');
+    command('refresh');
+    assert.strictEqual(settings.lootPickupEnabled, false);
+    command('close');
+    command('open 3');
+    assert(body().includes('state\tassist\tfollow\tauto\t8\t1\t0'), 'v3 reopen preserves Off');
+    command('open 0');
+    assert(body().includes('companion-control loot on'), 'stock HTML clients can enable pickup');
+    CompanionControl(leader, ['companion-control', 'loot', 'on']);
+    assert.strictEqual(settings.lootPickupEnabled, true);
     members = [];
+    command('open 3');
+    assert.strictEqual(body(), Protocol.PREFIX_V3 + 'state\tassist\tfollow\tauto\t0\t1\t1');
     command('open 1');
     assert.strictEqual(body(), Protocol.PREFIX + 'state\tassist\tfollow\tauto\t0\t1');
 
     const hostile = { id: 20, name: 'Алиса\t\n\0' + 'x'.repeat(40), level: 40,
-        className: 'c'.repeat(60), role: 'dps', stance: 'hold', order: '\nmember\t99', note: 'n'.repeat(200), canPull: true };
+        classId: 136, className: 'c'.repeat(60), role: 'dps', stance: 'hold', order: '\nmember\t99', note: 'n'.repeat(200), canPull: true };
     const bounded = Protocol.encode(settings, Array.from({ length: 9 }, (_, i) => ({ ...hostile, id: i + 20 })));
     const lines = bounded.split('\n');
     assert.strictEqual(lines.length, 10);
@@ -101,6 +180,15 @@ try {
         assert.strictEqual(fields[8].length, 64);
         assert(!line.includes('\0'));
     }
-    if (process.argv[2]) require('fs').writeFileSync(process.argv[2], Buffer.from(bounded, 'utf16le'));
+    for (const classId of [0, 2, 136, undefined, null, -1, 137, 2.5, '2']) {
+        const payload = Protocol.encode(settings, [{ ...hostile, classId }], { version: 3 });
+        const expected = [0, 2, 136].includes(classId) ? classId : -1;
+        assert.strictEqual(payload.split('\n')[2].split('\t')[10], String(expected), 'unknown classes do not become fighter icons');
+    }
+    command('open 4');
+    assert.strictEqual(leader.nativePartyUiVersion, 0, 'unsupported versions fall back to HTML');
+    assert(body().includes('<title>Party Control</title>'));
+    if (process.argv[2]) require('fs').writeFileSync(process.argv[2], Buffer.from(
+        Protocol.encode({ ...settings, lootPickupEnabled: false }, Array.from({ length: 8 }, (_, i) => ({ ...hostile, id: i + 20 })), { version: 3 }), 'utf16le'));
 } finally { restore.reverse().forEach((fn) => fn()); }
 console.log('Native party UI: wire format, full/empty party, negotiation, fallback, reopen and current membership checks passed');

@@ -43979,7 +43979,7 @@
         "time": {
             "hitTime": 4000,
             "reuse": 6000,
-            "buff": 0
+            "buff": 1200000
         },
         "levels": [
             {
@@ -44011,7 +44011,7 @@
         "time": {
             "hitTime": 4000,
             "reuse": 6000,
-            "buff": 0
+            "buff": 1200000
         },
         "levels": [
             {
