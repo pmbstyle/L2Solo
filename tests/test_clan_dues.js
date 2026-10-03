@@ -48,6 +48,8 @@ async function main() {
     near(Policy.memberRate(0.10, ambitious), 0.10, 'a stingy member adds nothing');
     const buying = { adena: 1000000, level: 30, stats: { equipmentPlan: { strategy: 'market', market: { price: 500000 } } } };
     near(Policy.memberRate(0.10, generous, buying), 0.10, 'no top-up while the member is about to buy its gear');
+    const bridge = { adena: 2300, level: 30, stats: { equipmentPlan: { strategy: 'market', weaponBridge: true, market: { price: 1766, reserve: 500 } } } };
+    near(Policy.memberRate(0.10, generous, bridge), 0.10, 'the plan\'s stored reserve counts: a member about to buy its bridge weapon gets no top-up');
     near(Policy.investFraction({ commitment: 0.6, ambition: 0.8 }), 0.245, 'investment share');
 
     seedDatabase();

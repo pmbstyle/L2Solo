@@ -86,6 +86,19 @@ assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed(capacityOnlyState, {
     limit: ItemDisposition.INVENTORY_SLOT_LIMIT
 }, 'an over-capacity inventory must bypass the market retry cooldown even without NPC-only items');
 
+// NPC-only junk (a recipe no bot lists or learns) forces a trip at 20 slots (user, 2026-10-03; the author's 3).
+const junkRecipes = (amount) => ({
+    999001: {
+        selfId: 999001, name: 'Recipe: Junk', kind: 'Other.Recipe', stackable: false, amount,
+        instances: Array.from({ length: amount }, (_, index) => ({ id: 9400000 + index, amount: 1, equipped: false, slot: 0 }))
+    }
+});
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: junkRecipes(19) }, { now }), null,
+'NPC-only junk below the threshold must not interrupt farming');
+assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: junkRecipes(20) }, { now }),
+    { reason: 'npc_only_inventory', slots: 20, npcOnlySlots: 20, limit: ItemDisposition.INVENTORY_SLOT_LIMIT },
+'twenty NPC-only slots form one NPC cleanup trip');
+
 const boneHelmet = DataCache.items.find((item) => Number(item.selfId) === 45);
 const surplusInventory = (amount) => ({
     [boneHelmet.selfId]: {

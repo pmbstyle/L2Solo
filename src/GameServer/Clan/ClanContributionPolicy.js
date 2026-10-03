@@ -66,7 +66,8 @@ function memberRate(clanRate, traits = {}, state = null, config = Config) {
 function ownGearPurchase(state = null) {
     const plan = state?.stats?.equipmentPlan;
     if (plan?.strategy !== 'market' || !(number(plan.market?.price) > 0)) return null;
-    const reserve = PurchaseFunding.operatingReserve(state || {});
+    // The plan's own reserve (a weapon bridge keeps a smaller one), as the goal review reads it.
+    const reserve = number(plan.market.reserve) || PurchaseFunding.operatingReserve(state || {});
     return PurchaseFunding.shortfall(state || {}, plan.market.price, reserve) === 0 ? 'funded' : 'short';
 }
 
