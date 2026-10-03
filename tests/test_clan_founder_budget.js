@@ -37,7 +37,10 @@ function seedDatabase() {
         const id = 4300000 + index;
         const name = `BudgetCandidate${index}`;
         insertCharacter.run(id, name);
-        insertState.run(id, name, JSON.stringify({ generatedCold: true, generatedIndex: index, classId: 4, partyHistory: { b: { runs: 1 } } }), index);
+        // Only the last candidate has the party history a founder needs: the seven before it are blocked
+        // without any database read, the eighth founds a clan.
+        const partyHistory = index === 8 ? { b: { runs: 1 } } : {};
+        insertState.run(id, name, JSON.stringify({ generatedCold: true, generatedIndex: index, classId: 4, partyHistory }), index);
         insertPersona.run(id, String(id), JSON.stringify(traits));
     }
     seed.close();
@@ -59,7 +62,11 @@ async function main() {
     };
     try {
         const summary = await ClanSimulationService.resolveBatch(16, { budgetMs });
-        assert(summary.attempted >= 1, `the pass must evaluate candidates although its reads waited longer than the budget: ${JSON.stringify(summary)}`);
+        // The reads before the loop are not counted, and a blocked candidate needs no further read: the whole
+        // page is evaluated inside the budget (before: attempted 0, then 1 with the thresholds read per candidate).
+        assert.strictEqual(summary.attempted, 8, `the pass must evaluate the page although its reads waited longer than the budget: ${JSON.stringify(summary)}`);
+        assert.strictEqual(summary.created, 1);
+        assert.strictEqual(summary.budgetStopped, false);
         console.log(`Clan founder budget checks passed (attempted ${summary.attempted}, budgetStopped ${summary.budgetStopped})`);
     } finally {
         Database.execute = execute;

@@ -244,7 +244,7 @@ async function resolveCandidate(candidate, options = {}) {
         const recruits = selectRecruitment(candidate, pool, Config.founderQuorum - 1);
         const eligibility = Policy.founderEligibility(candidate, {
             quorumCandidates: [candidate, ...recruits],
-            founderThresholds: await founderThresholds()
+            founderThresholds: options.founderThresholds || await founderThresholds()
         });
         metrics.founderEvaluations += 1;
         recordReasons(eligibility.reasons);
@@ -333,9 +333,12 @@ const ClanSimulationService = {
                 founderScanOffset = 0;
                 candidates = await candidateProjection(safeLimit, 0);
             }
-            if (!candidates.length) return summary;
-            const clans = await autonomousClanProjection();
+            // The clans and the thresholds are read once per batch, so a blocked candidate costs the loop no
+            // database wait (like founderCandidates below).
+            const clans = candidates.length ? await autonomousClanProjection() : [];
+            const thresholds = candidates.length ? await founderThresholds() : {};
             deadlineAt = Date.now() + budgetMs;
+            if (!candidates.length) return summary;
             const pool = candidates;
             const scanStartedAt = Date.now();
             const reservedIds = new Set();
@@ -348,7 +351,7 @@ const ClanSimulationService = {
                 processed += 1;
                 if (reservedIds.has(candidate.characterId)) continue;
                 const availablePool = pool.filter((entry) => !reservedIds.has(entry.characterId));
-                const result = await resolveCandidate(candidate, { clans, pool: availablePool });
+                const result = await resolveCandidate(candidate, { clans, pool: availablePool, founderThresholds: thresholds });
                 summary.attempted += 1;
                 if (result.ok && result.clanId && result.characterId) {
                     summary.joined += 1;
