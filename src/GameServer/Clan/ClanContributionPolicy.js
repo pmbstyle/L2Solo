@@ -16,10 +16,10 @@ function walletAdena(state = {}) {
     );
 }
 
+// What the clan leaves a member: the bot's operating reserve (PurchaseFunding),
+// scaled by the clan's reserve multiplier.
 function personalReserve(state = {}, config = Config) {
-    const adena = walletAdena(state);
-    const level = Math.max(1, number(state.level, 1));
-    const baseline = Math.max(500, level * 250, Math.ceil(adena * 0.10));
+    const baseline = PurchaseFunding.operatingReserve({ level: Math.max(1, number(state.level, 1)), adena: walletAdena(state) });
     return Math.ceil(baseline * Math.max(0, number(config.personalAdenaReserveMultiplier, 1)));
 }
 
@@ -66,14 +66,20 @@ function memberRate(clanRate, traits = {}, state = null, config = Config) {
 function ownGearPurchase(state = null) {
     const plan = state?.stats?.equipmentPlan;
     if (plan?.strategy !== 'market' || !(number(plan.market?.price) > 0)) return null;
-    // The plan's own reserve (a weapon bridge keeps a smaller one), as the goal review reads it.
-    const reserve = number(plan.market.reserve) || PurchaseFunding.operatingReserve(state || {});
-    return PurchaseFunding.shortfall(state || {}, plan.market.price, reserve) === 0 ? 'funded' : 'short';
+    // The plan's own reserve (a weapon bridge keeps a smaller one) and the bot's
+    // own buy-order escrow, as the goal review reads them.
+    const escrow = state?.characterId
+        ? invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId) : 0;
+    const reserve = number(plan.market.reserve) || PurchaseFunding.operatingReserve(state || {}, escrow);
+    return PurchaseFunding.shortfall(state || {}, plan.market.price, reserve, escrow) === 0 ? 'funded' : 'short';
 }
 
 // Share of its free savings a member puts once into the clan's current target:
-// up to contributionMaxFraction, by commitment and ambition.
-function investFraction(traits = {}, config = Config) {
+// up to contributionMaxFraction, by commitment and ambition. Like the top-up, it
+// waits while the member is about to buy its own gear: the target stays open for
+// it, so it invests at the first settlement after the purchase.
+function investFraction(traits = {}, state = null, config = Config) {
+    if (ownGearPurchase(state) === 'funded') return 0;
     return number(config.contributionMaxFraction, 0.35) * (trait(traits, 'commitment') + trait(traits, 'ambition')) / 2;
 }
 

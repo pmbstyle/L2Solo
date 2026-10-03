@@ -157,6 +157,12 @@ function giveAdena(actor, amount) {
     });
 }
 
+// The handle of a row giveItem inserted that the backpack does not hold: enough
+// for takeItem to delete that row.
+function insertedRow(id, amount) {
+    return { fetchId: () => id, fetchAmount: () => amount, setAmount: (value) => { amount = value; } };
+}
+
 // Resolves with the item the amount went to: the stack, or the new row.
 function giveItem(actor, selfId, amount) {
     return new Promise((resolve, reject) => {
@@ -181,7 +187,10 @@ function giveItem(actor, selfId, amount) {
                 slot: itemDetails.etc?.slot ?? 0
             }).then((packet) => {
                 actor.backpack.insertItem(Number(packet.insertId), selfId, { amount });
-                resolve(actor.backpack.items.find((entry) => Number(entry.fetchId()) === Number(packet.insertId)) || null);
+                // The new row, even when the backpack did not take it: a rollback
+                // must be able to delete exactly this row.
+                resolve(actor.backpack.items.find((entry) => Number(entry.fetchId()) === Number(packet.insertId))
+                    || insertedRow(Number(packet.insertId), amount));
             }).catch(reject);
         });
     });
@@ -404,8 +413,9 @@ async function sellToStore(actor, store, selfId, qty, options = {}) {
                     store.items.splice(Math.max(0, Math.min(originalIndex, store.items.length)), 0, storeItem);
                 }
                 try {
-                    // Take back the copy just given, never another one the buyer holds or wears.
-                    if (buyerItemGiven) await takeItem(buyerActor, selfId, sellQty, buyerItem || undefined);
+                    // Take back the copy just given (its row, even one the backpack did not
+                    // take), never another one the buyer holds or wears.
+                    if (buyerItemGiven) await takeItem(buyerActor, selfId, sellQty, buyerItem);
                     if (buyerAdenaDeducted) await giveAdena(buyerActor, totalEarn);
                     if (sellerItemTaken) await giveItem(actor, selfId, sellQty);
                 } catch (rollbackError) {

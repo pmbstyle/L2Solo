@@ -7,7 +7,8 @@ require('../src/Global');
 // returns no cold state, the job fails, and the failure path used to write the
 // pre-trade state back as a cold row: the wallet rolled back while the items
 // had moved, and the hot actor lost its row. The failure path leaves a hot row
-// alone; a cold bot's failure is written as before.
+// alone; a cold bot's failure is written as before. A trade that committed
+// while the bot went hot is a purchase: the actor holds the item.
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
@@ -68,12 +69,13 @@ async function run() {
     const hot = bot(77);
     await BotLifeState.upsertState({ ...hot, phase: 'hot', adena: 0, inventory: { 2: { selfId: 2, name: 'Long Sword', amount: 1 } } }, 'hot_activation');
     assert.strictEqual(BotLifeState.snapshot(77).phase, 'hot', 'fixture: the row is hot');
-    const failed = await ColdMarketService.tryPurchase(hot, goal);
-    assert.strictEqual(failed.purchased, false);
-    assert.strictEqual(failed.reason, 'offer_changed', 'fixture: the lost sync counts as a changed offer');
-    assert.strictEqual(BotLifeState.snapshot(77).phase, 'hot', 'a failed purchase must not write a cold row over a hot bot');
+    // The trade committed; the actor holds the sword. The purchase counts as
+    // done, and the job writes nothing over the hot row.
+    const bought = await ColdMarketService.tryPurchase(hot, goal);
+    assert.strictEqual(bought.purchased, true, 'a trade committed with a bot that went hot is a purchase');
+    assert.strictEqual(BotLifeState.snapshot(77).phase, 'hot', 'the purchase must not write a cold row over a hot bot');
     assert.strictEqual(BotLifeState.snapshot(77).adena, 0, 'the hot row keeps its wallet');
-    assert.strictEqual(failed.state.phase, 'hot', 'the job hands the hot row back unchanged');
+    assert.notStrictEqual(bought.state, BotLifeState.snapshot(77), 'the job goes on with its own state, not the actor\'s row');
 
     // The blocked path (an offer the bot must not buy) is guarded the same way.
     const hotBlocked = bot(86, { stats: { classId: 55, role: 'dps',
@@ -90,7 +92,7 @@ async function run() {
     assert.strictEqual(blocked.reason, 'incompatible_loadout', 'fixture: the shield is blocked');
     assert.strictEqual(BotLifeState.snapshot(86).phase, 'hot', 'a blocked purchase must not write a cold row over a hot bot');
     assert(!goalClears.includes(86), 'the hot bot\'s goal is left to the cold side, as its plan is');
-    assert.strictEqual(failed.wanted, false, 'no trade-chat wish for a hot bot');
+    assert(!bought.wanted, 'no trade-chat wish for a hot bot');
 
     // A cold bot's failed purchase is written as before: it returns to its field.
     MarketOpportunity.bestOffer = () => ({ ...afkOffer });

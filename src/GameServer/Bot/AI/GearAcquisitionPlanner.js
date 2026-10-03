@@ -1109,6 +1109,15 @@ function targetCombatCounter(state = {}, npcId) {
     };
 }
 
+// A party member's own counter restarts from the population totals when its
+// target changes, and those totals grow only on the telemetry owner. A counter
+// below the plan's baseline therefore restarted: its progress since the
+// baseline is unknown, so the route is judged again from a new baseline.
+function counterRestarted(counter = {}, baseline = {}) {
+    return Number(counter.resolves || 0) < Number(baseline.resolves || 0)
+        || Number(counter.targetKills || 0) < Number(baseline.targetKills || 0);
+}
+
 function isClanOwnedPlan(plan = {}) {
     return Number(plan?.clanGoal?.clanId || 0) > 0
         && String(plan?.clanGoal?.goalKey || '').trim() !== '';
@@ -1188,6 +1197,8 @@ function directPlanFailure(state = {}, plan = {}, timestamp = Date.now()) {
     // next finalize pass stamp the current values before judging this route.
     if (!hasBaseline) return null;
     const baseline = plan.targetProgress;
+    // The finalize pass of the same review stamps the new baseline.
+    if (counterRestarted(current, baseline)) return null;
     const resolves = Math.max(0, current.resolves - Number(baseline.resolves || 0));
     const targetKills = Math.max(0, current.targetKills - Number(baseline.targetKills || 0));
     const ageMs = Math.max(0, Number(timestamp) - Number(plan.startedAt || timestamp));
@@ -1369,10 +1380,14 @@ function finalizePlan(state = {}, previousPlan = null, rawPlan = {}, context = {
     const sameClanTarget = previousPlan?.clanGoal
         && Number(previousPlan?.target?.selfId || 0) === Number(rawPlan?.target?.selfId || 0)
         && Number(previousPlan?.target?.slot || 0) === Number(rawPlan?.target?.slot || 0);
-    const targetProgress = rawPlan?.status === 'active' && rawPlan.strategy === 'direct_drop'
+    const currentCounter = rawPlan?.status === 'active' && rawPlan.strategy === 'direct_drop'
+        ? targetCombatCounter(state, rawPlan.next?.npcId)
+        : null;
+    const targetProgress = currentCounter
         ? (sameDirectTarget && previousPlan.targetProgress
+            && !counterRestarted(currentCounter, previousPlan.targetProgress)
             ? previousPlan.targetProgress
-            : targetCombatCounter(state, rawPlan.next?.npcId))
+            : currentCounter)
         : null;
     const recoveryTargets = [...(context.recoveryTargets || [])];
     if (rawPlan?.strategy === 'market' && rawPlan.partyNeedReason === 'market_fallback'

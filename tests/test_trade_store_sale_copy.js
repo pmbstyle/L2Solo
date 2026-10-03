@@ -121,6 +121,25 @@ async function main() {
         assert.strictEqual(archer.backpack.fetchItemFromSelfId(57).fetchAmount(), 5000, 'and the buyer is refunded');
         assert.strictEqual(fletcher.backpack.items.filter((entry) => entry.fetchSelfId() === ARROW)
             .reduce((sum, entry) => sum + entry.fetchAmount(), 0), 5, 'the seller gets its arrows back');
+
+        // The backpack did not take the new row: the rollback deletes exactly that
+        // row (no duplicate), never the ring the buyer wears.
+        const blind = seller([item(801, RING, 1, true, 'Elven Ring'), item(802, 57, 5000, false, 'Adena')], 9002);
+        blind.backpack.insertItem = () => {};
+        const failingAgain = seller([item(901, RING, 1, false, 'Elven Ring'), item(502, 57, 10, false, 'Adena')]);
+        Database.setItem = async () => ({ insertId: 999 });
+        deleted.length = 0;
+        try {
+            await assert.rejects(TradeService.sellToStore(failingAgain,
+                { storeType: 3, budgetBacked: true, items: [{ selfId: RING, price: 100, count: 1 }] }, RING, 1,
+                { buyerActor: blind }), /seller_adena_write_failed/);
+        } finally {
+            Database.setItem = setItem;
+        }
+        assert(deleted.includes(999), 'the row given to the buyer is deleted');
+        assert.deepStrictEqual(blind.backpack.items.filter((entry) => entry.fetchSelfId() === RING)
+            .map((entry) => [entry.fetchId(), entry.fetchEquipped()]), [[801, true]], 'the worn ring is never taken back in its place');
+        assert.strictEqual(blind.backpack.fetchItemFromSelfId(57).fetchAmount(), 5000, 'the buyer is refunded');
     } finally {
         DataCache.items = originalItems;
         Object.assign(Database, originals);
