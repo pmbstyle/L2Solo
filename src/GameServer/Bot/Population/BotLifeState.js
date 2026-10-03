@@ -651,7 +651,27 @@ function preserveVersionedAppearanceForSave(row) {
     return row;
 }
 
-function save(row) {
+// The session's own snapshots carry the phase of its row: after markHot what
+// the actor writes from them (a hot merchant's sale, its haggling) keeps the
+// row hot, while a cold job's older snapshot is still rejected by save(); after
+// the hand-back a late write that copies the phase from them stays cold
+// (writers that set phase 'hot' themselves, like syncMarketSession, are not
+// covered by this).
+function setSessionSnapshotsPhase(session, phase) {
+    for (const key of ['coldLifeState', 'coldMarketState', 'coldCraftState']) {
+        if (session?.[key]) session[key] = { ...session[key], phase };
+    }
+}
+
+function save(row, options = {}) {
+    // A hot row belongs to the actor in the world; only markCold hands it back
+    // to the cold population. A cold row proposed over it comes from a job that
+    // started while the bot was cold: reject it like the stale writers below.
+    if (cache.get(Number(row.characterId))?.phase === 'hot' && row.phase !== 'hot' && options.releaseHot !== true) {
+        const error = new Error(`stale cold state over the hot row of ${row.characterId}`);
+        error.code = 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT';
+        return Promise.reject(error);
+    }
     const proposed = { activity: row.activity, stats: parseJson(row.statsJson, {}) };
     const reconciled = ClanMembershipPolicy.reconcileState(ClanMembershipPolicy.preserveGoalInvalidation(
         proposed, cache.get(Number(row.characterId))?.stats));
@@ -1568,6 +1588,7 @@ const BotLifeState = {
         }).then(() => {
             const snapshot = normalize(row);
             cache.set(characterId, snapshot);
+            setSessionSnapshotsPhase(session, 'hot');
             return snapshot;
         }).catch((err) => {
             utils.infoWarn('BotLife', 'failed to mark %s hot: %s', row.characterName, err.message);
@@ -1584,6 +1605,14 @@ const BotLifeState = {
     },
 
     markCold(session, reason = 'cooldown') {
+        return this.writeColdRow(session, reason).then((saved) => {
+            if (saved) setSessionSnapshotsPhase(session, 'cold');
+            return saved;
+        });
+    },
+
+    // markCold's write: the next cold row built from the actor or its market or craft state.
+    writeColdRow(session, reason = 'cooldown') {
         if (!session || !session.actor) return Promise.resolve(null);
 
         const membership = cache.get(Number(session.actor.fetchId()))?.stats;
@@ -1625,7 +1654,7 @@ const BotLifeState = {
                     }
                 }
             };
-            return this.upsertState(nextState, reason);
+            return this.upsertState(nextState, reason, { releaseHot: true });
         }
 
         if (craftState?.stats?.craftShop) {
@@ -1650,7 +1679,7 @@ const BotLifeState = {
                 stats: { ...(craftState.stats || {}), ...membershipStats, pvpEnemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session), lastReason: reason },
                 inventory: parseJson(row.inventorySummary, {})
             };
-            return this.upsertState(nextState, reason);
+            return this.upsertState(nextState, reason, { releaseHot: true });
         }
 
         if (session.coldLifeState) {
@@ -1662,7 +1691,7 @@ const BotLifeState = {
                 nextResolveAt: now() + 30000 + Math.round(Math.random() * 90000)
             });
             session.coldLifeState = nextState;
-            return this.upsertState(nextState, reason);
+            return this.upsertState(nextState, reason, { releaseHot: true });
         }
 
         const row = {
@@ -1676,7 +1705,7 @@ const BotLifeState = {
             if (!isReady) {
                 throw new Error('state table unavailable');
             }
-            return save(row);
+            return save(row, { releaseHot: true });
         }).then(() => Database.updateCharacterLocation(row.characterId, {
             locX: row.locX,
             locY: row.locY,
@@ -3481,7 +3510,8 @@ const BotLifeState = {
         });
     },
 
-    upsertState(state, reason = 'seed') {
+    // options.releaseHot: markCold's write, the one that hands a hot row back.
+    upsertState(state, reason = 'seed', options = {}) {
         if (!state || !state.characterId) return Promise.resolve(null);
 
         const timestamp = now();
@@ -3509,7 +3539,7 @@ const BotLifeState = {
             }
             const protectedState = preserveClanOwnedEquipmentState(nextState, reason, cache.get(characterId));
             const row = rowFromState(protectedState);
-            return save(row).then(() => row);
+            return save(row, { releaseHot: options.releaseHot === true }).then(() => row);
         }).then((row) => Database.updateCharacterLocation(row.characterId, {
             locX: row.locX,
             locY: row.locY,
@@ -3831,6 +3861,7 @@ const BotLifeState = {
 
 BotLifeState.canonicalizeAreaState = canonicalizeAreaState;
 BotLifeState.inventorySummaryFromItems = inventorySummaryFromItems;
+BotLifeState.setSessionSnapshotsPhase = setSessionSnapshotsPhase;
 BotLifeState.equipmentSummaryFromInventory = equipmentSummaryFromInventory;
 BotLifeState.marketPurchaseBlocker = marketPurchaseBlocker;
 BotLifeState.normalizeInventoryStackability = normalizeInventoryStackability;
