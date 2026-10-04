@@ -171,4 +171,25 @@ assert.strictEqual(
     'bots should use the same Z-aware Elven Ruins routing as players'
 );
 
+// Floran's map cell (20_23) restarts a character without karma at Dion, as
+// in C4; the town centre (shops, nearest town) and the PK points stay in Floran.
+for (const [label, locX, locY, locZ] of [
+    ['Floran village', 17144, 170156, -3504],
+    ['Floran farmland', 26810, 172787, -3376]
+]) {
+    assert.deepStrictEqual(TownRespawn.getRespawnCoords(locX, locY, locZ),
+        { locX: 15681, locY: 142885, locZ: -2704 },
+        `a death without karma in ${label} should restart beside the Dion gatekeeper`);
+    const chaotic = TownRespawn.getChaoticRespawnCoords(locX, locY, locZ, () => 0);
+    assert.deepStrictEqual(chaotic, { locX: 17555, locY: 170393, locZ: -3451 },
+        `a death with karma in ${label} should keep the Floran PK point`);
+}
+assert.strictEqual(TownRespawn.getClosestTown(17144, 170156, -3504).name, 'Floran Village',
+    'Floran stays the nearest town for its village');
+assert.deepStrictEqual(
+    [TownRespawn.towns.floran_village.locX, TownRespawn.towns.floran_village.locY],
+    [17144, 170156],
+    'the Floran town centre stays in the village'
+);
+
 console.log('Town respawn regression checks passed');
