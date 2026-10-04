@@ -667,6 +667,7 @@ const tests = [
     'tests/test_plains_walker_profession_trials.js',
     'tests/test_abyss_walker_profession_trials.js',
     'tests/test_hawkeye_profession_trials.js',
+    'tests/test_silver_ranger_profession_trials.js',
     'tests/test_enhance_your_weapon_quest.js',
     'tests/test_soul_crystal_progression.js',
     'tests/test_recipe_book.js',
