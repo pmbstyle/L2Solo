@@ -32,6 +32,9 @@ function syncPartyCompanions(leaderSession, destination, Generics, companions = 
         }
 
         const companion = companionSession.actor;
+        if (PartyCompanionService.staysOutOfTown(companion, destination)) {
+            return;
+        }
         const offset = COMPANION_TELEPORT_OFFSETS[moved % COMPANION_TELEPORT_OFFSETS.length];
         const companionDestination = {
             locX: destination.locX + offset.locX,

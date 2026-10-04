@@ -491,6 +491,79 @@ try {
     assert.strictEqual(bot.moves.length, 1, 'companion should run after the leader at 1200 range');
     assert.strictEqual(bot.fetchLocX(), 1200, 'companion should not teleport at 1200 range');
 
+    {
+        // A companion with karma does not follow the player into a town:
+        // no join pull-in, catch-up teleport or gatekeeper transit; it waits
+        // where it is and catches up once the player is outside again.
+        const realInvoke = global.invoke;
+        const realTeleport = ActorGenerics.teleportTo;
+        const teleports = [];
+        const recordTeleport = (_session, actor, coords) => {
+            teleports.push({ id: actor.fetchId(), coords });
+            return true;
+        };
+        global.invoke = (route) => route === 'GameServer/Actor/Generics/TeleportTo' ? recordTeleport : realInvoke(route);
+        ActorGenerics.teleportTo = recordTeleport;
+        const ai = { say() {}, executeCombat() {}, executePvPCombat() {} };
+        const dion = { locX: 15664, locY: 142979, locZ: -2700 };
+        const companionAt = (id, karma, at) => {
+            const companionSession = fakeSession(`bot_karma_town_${id}`, fakeActor(id, { ...at, karma }));
+            companionSession.followPlayerSession = karmaLeaderSession;
+            companionSession.partyCompanion = true;
+            companionSession.plan = 'following';
+            return companionSession;
+        };
+        const karmaLeader = fakeActor(2000901, dion);
+        const karmaLeaderSession = fakeSession('player_karma_town', karmaLeader);
+        try {
+            const field = { locX: dion.locX + 12000, locY: dion.locY, locZ: dion.locZ };
+            const white = companionAt(2000902, 0, field);
+            const red = companionAt(2000903, 500, field);
+            World.user = { sessions: [karmaLeaderSession, white, red] };
+            World.fetchNpcsInRadius = () => [];
+            BotManager.sessions = [white, red];
+
+            assert.strictEqual(PartyCompanionService.bringToLeader(karmaLeaderSession, red), false,
+                'joining a player in town must not pull a companion with karma into the town');
+            assert.strictEqual(PartyCompanionService.bringToLeader(karmaLeaderSession, white), true,
+                'joining a player in town still pulls a white companion to the player');
+            assert.deepStrictEqual(teleports.map(entry => entry.id), [2000902]);
+
+            teleports.length = 0;
+            FollowingState.tick(white, white.actor, {}, ai);
+            FollowingState.tick(red, red.actor, {}, ai);
+            assert.deepStrictEqual(teleports.map(entry => entry.id), [2000902],
+                'only a white companion catches up with a player in town');
+            assert.strictEqual(red.actor.moves.length, 0, 'a companion with karma does not walk into town');
+            assert.strictEqual(red.roleDecision?.action, 'hold_position');
+            assert.strictEqual(red.roleDecision?.reason, 'karma_keeps_out_of_town');
+
+            karmaLeader.locX = dion.locX + 20000;
+            teleports.length = 0;
+            FollowingState.tick(red, red.actor, {}, ai);
+            assert.deepStrictEqual(teleports.map(entry => entry.id), [2000903],
+                'a companion with karma catches up once the player is outside a town');
+
+            karmaLeader.locX = dion.locX;
+            const giran = { locX: 83396, locY: 147904, locZ: -3404 };
+            const whiteInTown = companionAt(2000904, 0, giran);
+            const redInTown = companionAt(2000905, 500, giran);
+            BotManager.sessions = [whiteInTown, redInTown];
+            World.user = { sessions: [karmaLeaderSession, whiteInTown, redInTown] };
+            teleports.length = 0;
+            FollowingState.tick(whiteInTown, whiteInTown.actor, {}, ai);
+            FollowingState.tick(redInTown, redInTown.actor, {}, ai);
+            assert(whiteInTown.companionTownTransit, 'a white companion in another town starts the gatekeeper transit');
+            assert.strictEqual(redInTown.companionTownTransit, undefined,
+                'a companion with karma does not take the gatekeeper transit into the player\'s town');
+            assert.strictEqual(teleports.length, 0);
+        } finally {
+            global.invoke = realInvoke;
+            ActorGenerics.teleportTo = realTeleport;
+            BotManager.sessions = originalBotSessions;
+        }
+    }
+
     const raidBoss = {
         model: { raidBoss: true, raidAttackers: new Set() },
         destId: undefined,

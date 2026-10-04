@@ -3,6 +3,7 @@ const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
+const Karma = invoke('GameServer/Karma');
 
 const DEFAULT_PARTY_DISTRIBUTION = 1;
 const DEFAULT_PARTY_SETTINGS = {
@@ -160,6 +161,13 @@ function setDistribution(leaderSession, distribution) {
 function botSessions() {
     const BotManager = invoke('GameServer/Bot/BotManager');
     return BotManager.sessions || [];
+}
+
+// A companion with karma does not follow the player into a town (peace zone):
+// it waits where it is and catches up once the player is outside a town again.
+function staysOutOfTown(companion, destination) {
+    return Karma.closesTowns(companion?.fetchKarma?.())
+        && utils.isInPeaceZone(Number(destination?.locX), Number(destination?.locY));
 }
 
 function isActiveCompanion(session, leaderSession) {
@@ -889,6 +897,8 @@ const PartyCompanionService = {
 
     formationTargetFor,
 
+    staysOutOfTown,
+
     beginRegroup,
     holdParty,
 
@@ -999,7 +1009,7 @@ const PartyCompanionService = {
     bringToLeader(leaderSession, companionSession) {
         if (!isActiveCompanion(companionSession, leaderSession)) return false;
         const destination = formationTargetFor(companionSession);
-        if (!destination) return false;
+        if (!destination || staysOutOfTown(companionSession.actor, destination)) return false;
 
         companionSession.lastFollowMoveTarget = null;
         companionSession.stuckTicks = 0;

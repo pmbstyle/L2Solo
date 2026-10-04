@@ -1080,7 +1080,18 @@ module.exports = {
         // report no movement even though its server-stepped route is healthy.
         // A truly distant puller may still use the normal catch-up teleport.
         const pullerTravelling = activeBotPullTravel(session, pulling);
-        if (session.companionTownTransit || distance > FOLLOW_TELEPORT_DISTANCE) {
+        // Neither a gatekeeper transit nor a catch-up teleport takes a
+        // companion with karma into a town; it waits where it is.
+        const waitsOutsideTown = PartyCompanionService.staysOutOfTown(bot, loc(player));
+        if (waitsOutsideTown && !partyThreat) {
+            if (session.lastFollowMoveTarget) {
+                bot.automation?.abortAll?.(bot);
+                session.lastFollowMoveTarget = null;
+            }
+            recordRoleDecision(session, bot, 'hold_position', 'karma_keeps_out_of_town');
+            return;
+        }
+        if (!waitsOutsideTown && (session.companionTownTransit || distance > FOLLOW_TELEPORT_DISTANCE)) {
             const transit = CompanionTownTransit.tick(session, bot, player);
             if (transit.handled) {
                 session.stuckTicks = 0;
@@ -1093,7 +1104,8 @@ module.exports = {
         }
         const separatedInsideTown = distance > FOLLOW_TELEPORT_DISTANCE
             && CompanionTownTransit.sameTown(bot, player);
-        if (!pullerTravelling && (session.stuckTicks >= 3 || (distance > FOLLOW_TELEPORT_DISTANCE && !separatedInsideTown))) {
+        if (!waitsOutsideTown && !pullerTravelling
+            && (session.stuckTicks >= 3 || (distance > FOLLOW_TELEPORT_DISTANCE && !separatedInsideTown))) {
             session.stuckTicks = 0;
             recordRoleDecision(session, bot, 'follow_leader', distance > FOLLOW_TELEPORT_DISTANCE ? 'catch_up' : 'unstuck');
             const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
