@@ -137,6 +137,16 @@ try {
     });
     assert.strictEqual(teleported, null, 'a forged dungeon bypass from another NPC must not teleport');
     assert.strictEqual(rejectedPackets[0][0], 0x25);
+
+    const redPackets = [];
+    SevenSignsDungeonTeleport({
+        actor: { fetchId: () => 2000903, fetchName: () => 'Red', fetchKarma: () => 500 },
+        activeNpcTalk: { selfId: 8095 },
+        dataSendToMe: (packet) => redPackets.push(packet)
+    });
+    assert.strictEqual(teleported, null, 'a Ziggurat must refuse a player with karma');
+    assert(redPackets[0][0] === 0x4a && redPackets[0].includes(Buffer.from('Go away, you\'re not welcome here.', 'ucs2')),
+        'a Ziggurat must tell a player with karma he is not welcome');
 } finally {
     global.invoke = originalInvoke;
 }

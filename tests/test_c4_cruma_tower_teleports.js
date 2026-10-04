@@ -76,6 +76,16 @@ try {
     }, ['cruma-tower-teleport', '24']);
     assert.strictEqual(teleported, null, 'a forged Cruma bypass must not teleport to another NPC route');
     assert.strictEqual(rejectedPackets[0][0], 0x25);
+
+    const redPackets = [];
+    CrumaTowerTeleport({
+        actor: { fetchId: () => 2000902, fetchName: () => 'Red', fetchKarma: () => 500 },
+        activeNpcTalk: { selfId: 7487, objectId: 9907487 },
+        dataSendToMe: (packet) => redPackets.push(packet)
+    }, ['cruma-tower-teleport', '23']);
+    assert.strictEqual(teleported, null, 'the Cruma gatekeeper must refuse a player with karma');
+    assert(redPackets[0][0] === 0x4a && redPackets[0].includes(Buffer.from('Go away, you\'re not welcome here.', 'ucs2')),
+        'the Cruma gatekeeper must tell a player with karma he is not welcome');
 } finally {
     global.invoke = originalInvoke;
 }

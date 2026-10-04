@@ -1,5 +1,6 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const C4GatekeeperTeleports = invoke('GameServer/World/C4GatekeeperTeleports');
+const refuseKarmaTeleport = invoke('GameServer/World/Generics/TeleporterKarmaRefusal');
 
 module.exports = function gatekeeperTeleport(session, parts) {
     if (!parts?.[1]) {
@@ -13,6 +14,7 @@ module.exports = function gatekeeperTeleport(session, parts) {
     const actor = session?.actor;
     const destination = C4GatekeeperTeleports.destination(session?.activeNpcTalk?.selfId, Number(parts?.[1]));
     if (!actor || !destination) return session?.dataSendToMe?.(ServerResponse.actionFailed());
+    if (refuseKarmaTeleport(session, actor)) return;
 
     const adena = actor.backpack?.fetchItemFromSelfId?.(57);
     if (destination.price > 0 && (!adena || adena.fetchAmount() < destination.price)) {

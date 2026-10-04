@@ -2,6 +2,7 @@
 
 const ServerResponse = invoke('GameServer/Network/Response');
 const CrumaTowerTeleports = invoke('GameServer/World/C4CrumaTowerTeleports');
+const refuseKarmaTeleport = invoke('GameServer/World/Generics/TeleporterKarmaRefusal');
 
 function showMenu(session) {
     const npc = session?.activeNpcTalk;
@@ -28,6 +29,7 @@ module.exports = function crumaTowerTeleport(session, parts) {
         session?.dataSendToMe?.(ServerResponse.actionFailed());
         return;
     }
+    if (refuseKarmaTeleport(session, actor)) return;
 
     invoke(path.actor).teleportTo(session, actor, destination);
 };

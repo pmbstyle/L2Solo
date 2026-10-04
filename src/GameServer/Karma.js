@@ -20,8 +20,9 @@ function karmaLostForExperience(actor, exp) {
 }
 
 // A character with karma is kept out of towns: a bot takes no town trip and
-// travels on foot, never by Scroll of Escape or gatekeeper. One test for hot
-// actors (fetchKarma) and cold states (stats.karma).
+// travels on foot, never by Scroll of Escape or gatekeeper, and a teleporter
+// NPC refuses a player. One test for hot actors (fetchKarma) and cold states
+// (stats.karma).
 function closesTowns(karma) {
     return Number(karma) > 0;
 }

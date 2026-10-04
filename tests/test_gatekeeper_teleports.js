@@ -95,6 +95,35 @@ for (const npcId of [8256, 8300]) {
         NpcTalkResponse(entranceSession, { link: 'html Gatekeeper/7080-teleport' });
         assert.deepStrictEqual(arrivals, [destination], 'a forged old teleport bypass must not move the player');
         assert.strictEqual(packets.length, 0, 'the old gatekeeper teleport page must not be served');
+
+        // C4: a gatekeeper refuses a player with karma after the choice and takes no Adena.
+        for (const karma of [500, 0]) {
+            const paidPackets = [];
+            const paidArrivals = arrivals.length;
+            let adenaTaken = 0;
+            const adena = { fetchId: () => 57001, fetchAmount: () => 10000 };
+            const paidSession = {
+                actor: { fetchId: () => 2000901, fetchName: () => 'Payer', fetchKarma: () => karma,
+                    backpack: {
+                        fetchItemFromSelfId: () => adena,
+                        deleteItem: (_session, _id, amount, callback) => { adenaTaken += amount; callback(); }
+                    } },
+                activeNpcTalk: { selfId: 7059, objectId: 1007059 },
+                dataSendToMe: packet => paidPackets.push(packet)
+            };
+            Teleport(paidSession, ['gatekeeper-teleport', '19']);
+            if (karma > 0) {
+                assert.strictEqual(arrivals.length, paidArrivals, 'a gatekeeper must not teleport a player with karma');
+                assert.strictEqual(adenaTaken, 0, 'a refused player with karma keeps the Adena');
+                assert(paidPackets.some(packet => packet[0] === 0x4a
+                    && packet.includes(Buffer.from('Go away, you\'re not welcome here.', 'ucs2'))),
+                'a gatekeeper must tell a player with karma he is not welcome');
+            } else {
+                assert.deepStrictEqual(arrivals[arrivals.length - 1], { locX: 83400, locY: 147943, locZ: -3404, price: 8100 },
+                    'a player without karma still teleports');
+                assert.strictEqual(adenaTaken, 8100, 'a player without karma pays the fee');
+            }
+        }
     } finally { Generics.teleportTo = originalTeleport; }
     console.log('gatekeeper teleport checks passed');
 })().catch((error) => {
