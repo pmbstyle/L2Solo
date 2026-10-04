@@ -1,3 +1,13 @@
+const BotErrands = require('./BotErrands');
+// Errands a member keeps through a contest; a retreat also waits out a PvP fight.
+const MEMBER_BUSY_FLAGS = ['supplyErrand', 'warehouseWorkflow', 'marketReturn'];
+const RETREAT_BUSY_FLAGS = ['pvpEncounter'];
+const BUSY_DETAILS = {
+    pvp: 'member_pvp_encounter',
+    player: 'member_supply_errand',
+    warehouse: 'member_warehouse_workflow',
+    market: 'member_market_return'
+};
 // Fixed reason codes and scalar context only: no roster/state copies or I/O.
 const partyIdOf = state => state?.party?.partyId || state?.partyId || null;
 const failed = (reason, detail, participant, characterId = participant.id, context = {}) =>
@@ -48,10 +58,9 @@ function member(state, characterId, participant, event, { party: group, resume =
     if (state.stats?.travel) return fail('member_travelling');
     const wait = state.stats?.coldCompetition?.wait;
     if (!resume && wait) return fail('member_competition_wait', { until: wait.until ?? null, expired: Number(wait.until) <= at });
-    if (retreat && state.stats?.pvpEncounter) return fail('member_pvp_encounter');
-    if (!resume && state.stats?.supplyErrand) return fail('member_supply_errand');
-    if (!resume && state.stats?.warehouseWorkflow) return fail('member_warehouse_workflow');
-    if (!resume && state.stats?.marketReturn) return fail('member_market_return');
+    const busy = (retreat && BotErrands.busyWith(state, RETREAT_BUSY_FLAGS))
+        || (!resume && BotErrands.busyWith(state, MEMBER_BUSY_FLAGS));
+    if (busy) return fail(BUSY_DETAILS[busy]);
     if ((state.simulation?.ownerId || 'legacy_main') !== 'legacy_main') return fail('member_owner_changed', { actual: state.simulation.ownerId });
     if (!participantAllowed(state.characterId)) return fail('member_handoff_fenced');
     if (!resume && !contestContextAllowed(state, event)) return fail('member_contest_context_changed');

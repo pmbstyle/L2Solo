@@ -49,6 +49,9 @@ const ColdSimulationCoordinator = invoke('GameServer/Bot/Population/ColdSimulati
 const BackgroundWorkGovernor = invoke('GameServer/Bot/Population/BackgroundWorkGovernor');
 const BackgroundJobRegistry = invoke('GameServer/Bot/Population/BackgroundJobRegistry');
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
+const BotErrands = invoke('GameServer/Bot/Population/BotErrands');
+const CLEANUP_BUSY_FLAGS = ['marketReturn'];
+const ACTIVATION_BUSY_FLAGS = ['supplyErrand'];
 const BackgroundPartyLifecycle = invoke('GameServer/Bot/Population/BackgroundPartyLifecycle');
 const ClanSimulationConfig = invoke('GameServer/Clan/ClanSimulationConfig');
 const ClanSimulationService = invoke('GameServer/Clan/ClanSimulationService');
@@ -573,7 +576,7 @@ async function resumePartyMarketBreak(state, timestamp) {
 
 function inventoryCleanupGoal(state, timestamp = Date.now()) {
     if (!state || state.phase !== 'cold' || state.party?.partyId || state.partyId
-        || state.stats?.travel || state.stats?.marketReturn
+        || state.stats?.travel || BotErrands.busyWith(state, CLEANUP_BUSY_FLAGS)
         || ['traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting'].includes(state.activity)) return null;
     const need = ItemDisposition.inventoryCleanupNeed(state, { now: timestamp });
     if (!need) return null;
@@ -1860,7 +1863,7 @@ const PopulationService = {
                         const seenParties = new Set();
                         const available = states.filter((state) => (
                             !['pk_hunting', 'traveling'].includes(state.activity) &&
-                            !state.stats?.supplyErrand
+                            !BotErrands.busyWith(state, ACTIVATION_BUSY_FLAGS)
                         )).filter(state => {
                             const partyId = state.party?.partyId;
                             if (!partyId) return true;

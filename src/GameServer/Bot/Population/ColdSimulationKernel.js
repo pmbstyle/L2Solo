@@ -5,6 +5,7 @@ const Protocol = require('./ColdSimulationProtocol');
 const ColdStateDelta = require('./ColdStateDelta');
 const { HUNTING_TRAVEL_MS, beginHuntingTrip } = require('./HuntingTravel');
 const PurchaseFunding = require('../Economy/PurchaseFunding');
+const BotErrands = require('./BotErrands');
 const { SpotOccupancyIndex, stateKey } = require('./SpotOccupancyIndex');
 
 class DueHeap {
@@ -225,8 +226,7 @@ function lifecycleKind(state = {}, context = {}) {
     if (!SIMPLE_ACTIVITIES.has(String(state.activity || ''))) return 'command';
     // craftReturn is a saved destination, not an outstanding crafting action.
     // Actual crafting is routed by activity, shop/station and plan readiness.
-    if (stats.warehouseWorkflow || stats.warehouseErrand || stats.marketStore || stats.marketReturn
-        || stats.craftShop || stats.craftStationId || stats.supplyErrand) return 'command';
+    if (BotErrands.busyWith(state, BotErrands.COLD_CLAIM)) return 'command';
     if (stats.mammonReturn || (Number(stats.mammonRetryAt || 0) <= Date.now()
         && Object.values(state.inventory || {}).some(item => Number(item.amount)>0
             && (C4Unseal ||= invoke('GameServer/Items/C4Unseal')).options(item.selfId).length))) return 'command';

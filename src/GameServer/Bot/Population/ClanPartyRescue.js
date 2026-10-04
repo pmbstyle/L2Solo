@@ -3,18 +3,20 @@ const Parties = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const Clan = invoke('GameServer/Clan/ClanService');
 const Composition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const Identity = invoke('GameServer/Bot/AI/BotServiceIdentity');
+const BotErrands = invoke('GameServer/Bot/Population/BotErrands');
+const BUSY_FLAGS = ['partyMarketReturn', 'pvpEncounter', 'marketStore', 'craftShop',
+    'warehouseWorkflow', 'warehouseErrand', 'supplyErrand'];
 
 function eligible(state, objective) {
     const ownDuty = state?.stats?.clanPartyObjective;
     const planDuty = state?.stats?.equipmentPlan?.clanGoal;
     const party = state?.party?.partyId && Parties.find(state.party.partyId);
-    return !state?.stats?.partyMarketReturn && state?.phase === 'cold' && !Identity.isStaticService(state)
+    return state?.phase === 'cold' && !BotErrands.busyWith(state, BUSY_FLAGS) && !Identity.isStaticService(state)
         && String(state.simulation?.ownerId || 'legacy_main') === 'legacy_main'
         && Number(state.vitals?.hp) > 0
         && ['hunting', 'resting', 'party_wait', 'grouped', 'shopping', 'traveling'].includes(state.activity)
         && (!state.stats?.travel || ['hunting', 'grouped'].includes(state.stats.travel.arrivalActivity))
-        && !state.stats?.coldCompetition?.wait && !state.stats?.pvpEncounter
-        && !['marketStore', 'craftShop', 'warehouseWorkflow', 'warehouseErrand', 'supplyErrand'].some(key => state.stats?.[key])
+        && !state.stats?.coldCompetition?.wait
         && (!ownDuty?.clanGoalKey || Number(ownDuty.clanId) === Number(objective.clanId))
         && (!planDuty?.goalKey || Number(planDuty.clanId) === Number(objective.clanId))
         && (!party || party.status === 'active'
@@ -22,7 +24,7 @@ function eligible(state, objective) {
 }
 
 async function rescue({ requester, objective, rows, entry, commit, create, release, listeners, now }) {
-    if (requester?.stats?.partyMarketReturn || !eligible(requester, objective)) return null;
+    if (!eligible(requester, objective)) return null;
     const clanId = Number(entry.clanId);
     const memberOfClan = state => Clan.findById(clanId)?.members?.some(member => Number(member.id) === Number(state.characterId));
     const sameDuty = party => party?.status === 'active' && party.stats?.objective?.clanGoalKey === objective.clanGoalKey;

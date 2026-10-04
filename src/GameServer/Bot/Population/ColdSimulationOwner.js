@@ -2,6 +2,7 @@ const { randomUUID } = require('crypto');
 
 const Database = invoke('Database');
 const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
+const BotErrands = require('./BotErrands');
 
 const OWNER_ID = 'cold_simulation_owner';
 const LEGACY_OWNER_ID = 'legacy_main';
@@ -32,10 +33,8 @@ function eligibility(state = {}, options = {}) {
     if (stats.mammonReturn || (Number(stats.mammonRetryAt || 0) <= Date.now()
         && Object.values(state.inventory || {}).some(item => Number(item.amount)>0
             && invoke('GameServer/Items/C4Unseal').options(item.selfId).length))) return { ok:false, reason:'craft_state' };
-    if (stats.warehouseWorkflow || stats.warehouseErrand) return { ok: false, reason: 'warehouse_state' };
-    if (stats.marketStore || stats.marketReturn) return { ok: false, reason: 'market_state' };
-    if (stats.craftShop || stats.craftStationId) return { ok: false, reason: 'craft_state' };
-    if (stats.supplyErrand) return { ok: false, reason: 'player_workflow' };
+    const busy = BotErrands.busyWith(state, BotErrands.COLD_CLAIM);
+    if (busy) return { ok: false, reason: BotErrands.CLAIM_REASONS[busy] };
     if (stats.backgroundPartyId && options.allowParty !== true) return { ok: false, reason: 'background_party' };
     if (LEGACY_PLAN_STRATEGIES.has(String(stats.equipmentPlan?.strategy || ''))) {
         return { ok: false, reason: `${stats.equipmentPlan.strategy}_plan` };

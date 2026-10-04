@@ -11,6 +11,7 @@ const History = require('./HistoryDatabase');
 const { XP_DIVIDER: KARMA_XP_DIVIDER } = require('./GameServer/Karma');
 const InteractionMemoryPolicy = require('./GameServer/Social/InteractionMemoryPolicy');
 const ClanNameCatalog = require('./GameServer/Clan/ClanNameCatalog');
+const BotErrands = require('./GameServer/Bot/Population/BotErrands');
 
 let connection;
 let queryTail = Promise.resolve();
@@ -2068,10 +2069,8 @@ function coldSimulationPartition(row, options = {}, parsedStats) {
     if (options.allowLifecycle === true) {
         return { ok: true, reason: row.partyId ? 'background_party_cold' : 'trusted_cold_lifecycle' };
     }
-    if (stats.warehouseWorkflow || stats.warehouseErrand) return { ok: false, reason: 'warehouse_state' };
-    if (stats.marketStore || stats.marketReturn) return { ok: false, reason: 'market_state' };
-    if (stats.craftShop || stats.craftStationId) return { ok: false, reason: 'craft_state' };
-    if (stats.supplyErrand) return { ok: false, reason: 'player_workflow' };
+    const busy = BotErrands.busyWith({ stats }, BotErrands.COLD_CLAIM);
+    if (busy) return { ok: false, reason: BotErrands.CLAIM_REASONS[busy] };
     return { ok: true, reason: row.partyId ? 'background_party_cold' : 'simple_solo_cold' };
 }
 
@@ -2084,8 +2083,7 @@ function coldSimulationRow(characterId) {
 // truthiness for them: false, 0, '' and missing values come back as 0, '' or
 // NULL, objects and arrays as their JSON text. Empty stats parse to {} as in
 // parsedObject; malformed stats have no flags and fail as invalid_stats.
-const COLD_CLAIM_FLAGS = ['warehouseWorkflow', 'warehouseErrand', 'marketStore', 'marketReturn',
-    'craftShop', 'craftStationId', 'supplyErrand'];
+const COLD_CLAIM_FLAGS = BotErrands.COLD_CLAIM;
 const COLD_CLAIM_SQL = `SELECT characterId, phase, activity, partyId,
         simulationOwner, simulationRevision, simulationLeaseUntil,
         (statsJson IS NULL OR statsJson = '' OR json_valid(statsJson)) AS statsValid,

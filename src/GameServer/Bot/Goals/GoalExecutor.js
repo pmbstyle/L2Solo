@@ -3,6 +3,9 @@ const TownRespawn = invoke('GameServer/World/TownRespawn');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
+const BotErrands = invoke('GameServer/Bot/Population/BotErrands');
+// Other errands are excluded by the activity check and the goal planner.
+const MARKET_TRIP_BUSY_FLAGS = ['partyMarketReturn'];
 
 const MARKET_TRAVEL_MS = 25 * 1000;
 const GATEKEEPER_SPOT_TRAVEL_MS = 25 * 1000;
@@ -18,7 +21,7 @@ function marketTown(name = 'Giran') {
 function beginMarketTravel(state, goal, timestamp = Date.now()) {
     if (Number(state?.stats?.karma || 0) > 0) return null;
     if (!state || !goal || ['traveling', 'shopping', 'merchant', 'crafting'].includes(state.activity)) return null;
-    if (state.stats?.partyMarketReturn) return null;
+    if (BotErrands.busyWith(state, MARKET_TRIP_BUSY_FLAGS)) return null;
     const buyingGear = goal.type === 'upgrade_gear'
         && ['market_search_for_weapon', 'market_search_for_gear'].includes(goal.plan?.expectedBenefit);
     const buyingMaterial = goal.type === 'buy_craft_material' && goal.plan?.expectedBenefit === 'market_buy_craft_material';

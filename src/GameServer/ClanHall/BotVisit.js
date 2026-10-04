@@ -2,22 +2,19 @@ const Runtime = require('./Runtime');
 const Services = require('./Services');
 const Approach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const Navigation = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
+const BotErrands = invoke('GameServer/Bot/Population/BotErrands');
 const RETRY_MS = 300000;
 const VISIT_MS = 180000;
+// The cold visit's list (ColdVisit.js) also respects a PvP fight and an
+// alliance quest kept in stats; the hot session keeps those on itself.
+const BUSY_FLAGS = ['clanPartyObjective', 'clanGoal', 'supplyErrand', 'marketReturn', 'craftReturn',
+    'warehouseWorkflow', 'mammonReturn', 'partyMarketReturn'];
 
 function duty(session) {
-    const stats = session.coldLifeState?.stats || {};
     return (
         session.clanAllianceQuest ||
         session.clanAllianceSupportLeaderId ||
-        stats.clanPartyObjective ||
-        stats.equipmentPlan?.clanGoal ||
-        stats.supplyErrand ||
-        stats.marketReturn ||
-        stats.craftReturn ||
-        stats.warehouseWorkflow ||
-        stats.mammonReturn ||
-        stats.partyMarketReturn
+        BotErrands.busyWith(session.coldLifeState, BUSY_FLAGS)
     );
 }
 function safe(session, actor) {

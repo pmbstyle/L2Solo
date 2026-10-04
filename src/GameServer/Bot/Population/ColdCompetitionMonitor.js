@@ -1,4 +1,7 @@
 const { decide } = require('./ColdCompetitionPolicy');
+const BotErrands = require('./BotErrands');
+// A party competes as one unit only when no member is on one of these errands.
+const PARTY_MEMBER_BUSY_FLAGS = ['pvpEncounter', 'supplyErrand', 'warehouseWorkflow', 'marketReturn'];
 const INTERVAL_MS = 30000;
 const PAIR_COOLDOWN_MS = 2 * 60000;
 const BOT_COOLDOWN_MS = 2 * 60000;
@@ -88,7 +91,7 @@ class ColdCompetitionMonitor {
                         || members.some(s => !s || s.phase !== 'cold' || !(s.vitals?.hp > 0)
                             || !['hunting', 'grouped', 'resting'].includes(s.activity) || s.spotId !== group.spotId
                             || (s.party?.partyId || s.partyId) !== unit.partyId || s.stats?.travel || s.stats?.coldCompetition?.wait
-                            || s.stats?.pvpEncounter || s.stats?.supplyErrand || s.stats?.warehouseWorkflow || s.stats?.marketReturn)) {
+                            || BotErrands.busyWith(s, PARTY_MEMBER_BUSY_FLAGS))) {
                         group.units.delete(unit.unitKey); this.report.skipped.incompleteParty++; continue;
                     }
                     unit.hunters = unit.hunters.filter(s => ids.includes(s.characterId));
