@@ -3,6 +3,18 @@
 const paths = ['$.role', '$.generatedIndex', '$.partyRequest', '$.clanPartyObjective', '$.equipmentPlan', '$.partyHistory'];
 const table = 'bot_party_candidate_projection';
 
+// Party formation reads its candidates through this covering index.
+function createIndex(connection) {
+    connection.exec(`
+        DROP INDEX IF EXISTS bot_life_state_party_candidate_projection;
+        CREATE INDEX bot_life_state_party_candidate_projection ON bot_life_state(
+            simulationOwner, phase, partyId, activity, partyObjectiveSpot,
+            partyRequestStatus, partyRequestPriority, updatedAt, level,
+            characterId, characterName, activityStartedAt, simulationRevision, spotId
+        );
+    `);
+}
+
 function install(connection) {
     // One parse of the large document per update, not one per projected field.
     const payload = prefix => `json_extract(${prefix}.statsJson, ${paths.map(path => `'${path}'`).join(', ')})`;
@@ -17,12 +29,9 @@ function install(connection) {
         );
         INSERT INTO ${table} (characterId, payloadJson)
             SELECT life.characterId, ${payload('life')} FROM bot_life_state life;
-        DROP INDEX IF EXISTS bot_life_state_party_candidate_projection;
-        CREATE INDEX bot_life_state_party_candidate_projection ON bot_life_state(
-            simulationOwner, phase, partyId, activity, partyObjectiveSpot,
-            partyRequestStatus, partyRequestPriority, updatedAt, level,
-            characterId, characterName, activityStartedAt, simulationRevision, spotId
-        );
+    `);
+    createIndex(connection);
+    connection.exec(`
         CREATE TRIGGER bot_party_candidate_insert AFTER INSERT ON bot_life_state BEGIN
             ${upsert}
         END;
@@ -36,4 +45,4 @@ function install(connection) {
     `);
 }
 
-module.exports = { install };
+module.exports = { install, createIndex };

@@ -44,7 +44,9 @@ function limitsForObjective(objective = null, defaults = {}) {
 }
 
 // The spot a party for this bot hunts: its objective's, else the next spot of
-// an active gear plan, else where the bot is.
+// an active gear plan, else where the bot is. The SQL prefilter column
+// bot_life_state.partyObjectiveSpot follows it with the party request as the
+// objective (database/sql/sqlite.sql, migration 51).
 function objectiveSpot(state, objective = null) {
     return objective?.spotId
         || (state?.stats?.equipmentPlan?.status === 'active' ? state.stats.equipmentPlan.next?.spotId : null)

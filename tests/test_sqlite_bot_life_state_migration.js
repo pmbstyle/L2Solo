@@ -45,6 +45,12 @@ if (process.argv[2] === '--bootstrap') {
         'updatedAt INTEGER NOT NULL DEFAULT 0'
     );
     assert(!preV10Schema.includes('simulationOwner'), 'test fixture must reproduce the pre-v10 lifecycle schema');
+    // Before v51 an inactive gear plan's next spot set the objective spot.
+    const preV51Schema = currentSchema.replace(
+        /CASE WHEN json_extract\(statsJson, '\$\.equipmentPlan\.status'\) = 'active'\r?\n\s*THEN (json_extract\(statsJson, '\$\.equipmentPlan\.next\.spotId'\)) END/,
+        '$1'
+    );
+    assert(!preV51Schema.includes('equipmentPlan.status'), 'test fixture must reproduce the pre-v51 objective spot');
     const preV14Schema = currentSchema.replace(
         /,\r?\n\s*partyRequestStatus TEXT GENERATED ALWAYS AS \([\s\S]*?\r?\n\s*\) VIRTUAL\r?\n\);/,
         '\n);'
@@ -116,6 +122,42 @@ if (process.argv[2] === '--bootstrap') {
             inventorySummary: JSON.stringify({ 1458: { selfId: 1458, name: 'Mithril Ore', amount: 80 } }),
             statsJson: JSON.stringify({ marketStore: { kind: 'sell', town: 'Giran', listings: 3 } }),
             updatedAt: 1812345700000
+        },
+        {
+            characterId: 71004,
+            accountName: 'migration-plan-wait',
+            characterName: 'MigrationPlanWait',
+            level: 44,
+            exp: 1843210,
+            sp: 10021,
+            adena: 45000,
+            homeRegion: 'Giran',
+            currentRegion: 'Dragon Valley',
+            spotId: 'dragon_valley_hunt',
+            activity: 'hunting',
+            phase: 'cold',
+            partyId: null,
+            inventorySummary: JSON.stringify({ 57: { selfId: 57, name: 'Adena', amount: 45000 } }),
+            statsJson: JSON.stringify({ equipmentPlan: { status: 'component_ready', next: { spotId: 'inactive-plan-spot' } } }),
+            updatedAt: 1812345710000
+        },
+        {
+            characterId: 71005,
+            accountName: 'migration-plan-go',
+            characterName: 'MigrationPlanGo',
+            level: 45,
+            exp: 1943210,
+            sp: 11021,
+            adena: 46000,
+            homeRegion: 'Giran',
+            currentRegion: 'Dragon Valley',
+            spotId: 'dragon_valley_hunt',
+            activity: 'hunting',
+            phase: 'cold',
+            partyId: null,
+            inventorySummary: JSON.stringify({ 57: { selfId: 57, name: 'Adena', amount: 46000 } }),
+            statsJson: JSON.stringify({ equipmentPlan: { status: 'active', next: { spotId: 'active-plan-spot' } } }),
+            updatedAt: 1812345720000
         }
     ];
 
@@ -271,6 +313,14 @@ if (process.argv[2] === '--bootstrap') {
             },
             'party candidate projections must reflect existing JSON state without a backfill rewrite'
         );
+        // As PartyRequestPlanner.objectiveSpot: only an active gear plan names the spot.
+        assert.deepStrictEqual(db.prepare(`SELECT characterId, partyObjectiveSpot FROM bot_life_state
+            WHERE characterId IN (71001, 71004, 71005) ORDER BY characterId`).all().map((row) => [Number(row.characterId), row.partyObjectiveSpot]), [
+            [71001, 'death_pass_harpy'],
+            [71004, 'dragon_valley_hunt'],
+            [71005, 'active-plan-spot']
+        ], 'an inactive gear plan must not set the party objective spot');
+        assert.strictEqual(Number(db.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 51').get().count), 1, 'v51 must be recorded exactly once');
         assert.strictEqual(db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
         assert.deepStrictEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
         db.close();
@@ -299,6 +349,24 @@ if (process.argv[2] === '--bootstrap') {
     assertMigrated(version13Path);
     bootstrap(version13Path);
     assertMigrated(version13Path);
+
+    // A world created from the pre-v51 schema: v39 (run here) builds the
+    // projection index on the old column; v14 and v15 left their indexes.
+    const version50Path = path.join(outputDir, 'version-50.sqlite');
+    seed(version50Path, Array.from({ length: 50 }, (_, index) => index + 1).filter((version) => version !== 39),
+        { schema: preV51Schema });
+    const before51 = open(version50Path);
+    before51.exec(`DROP INDEX bot_life_state_party_request_filter;
+        DROP INDEX bot_life_state_party_objective_spot;
+        CREATE INDEX bot_life_state_party_request_expiry ON bot_life_state(
+            simulationOwner, phase, partyRequestStatus, partyRequestedAt, partyRequestPriority);`);
+    assert.strictEqual(before51.prepare('SELECT partyObjectiveSpot FROM bot_life_state WHERE characterId = 71004').get().partyObjectiveSpot,
+        'inactive-plan-spot', 'test fixture must reproduce the pre-v51 objective spot');
+    before51.close();
+    bootstrap(version50Path);
+    assertMigrated(version50Path);
+    bootstrap(version50Path);
+    assertMigrated(version50Path);
 
     const compactionPath = path.join(outputDir, 'version-16-compaction.sqlite');
     seed(compactionPath, Array.from({ length: 16 }, (_, index) => index + 1), { schema: currentSchema });

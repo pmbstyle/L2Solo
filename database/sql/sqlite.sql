@@ -443,7 +443,8 @@ CREATE TABLE IF NOT EXISTS bot_life_state (
     partyObjectiveSpot TEXT GENERATED ALWAYS AS (
         COALESCE(
             json_extract(statsJson, '$.partyRequest.spotId'),
-            json_extract(statsJson, '$.equipmentPlan.next.spotId'),
+            CASE WHEN json_extract(statsJson, '$.equipmentPlan.status') = 'active'
+                THEN json_extract(statsJson, '$.equipmentPlan.next.spotId') END,
             spotId
         )
     ) VIRTUAL

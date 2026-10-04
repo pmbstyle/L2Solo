@@ -1292,6 +1292,26 @@ function applySchemaMigrations() {
             .run(require('crypto').randomUUID());
         connection.exec(fs.readFileSync(path.join(__dirname, '../database/sql/market-store-outbox.sql'), 'utf8'));
     }]);
+    migrations.push([51, () => {
+        // An inactive gear plan does not name the party objective spot
+        // (PartyRequestPlanner.objectiveSpot). The column stays a prefilter:
+        // party formation checks each candidate's spot again. A virtual
+        // column cannot be altered, so it is dropped and added again.
+        const table = connection.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'bot_life_state'").get();
+        if (String(table?.sql || '').includes("'$.equipmentPlan.status'")) return;
+        connection.exec(`
+            DROP INDEX IF EXISTS bot_life_state_party_candidate_projection;
+            ALTER TABLE bot_life_state DROP COLUMN partyObjectiveSpot;
+            ALTER TABLE bot_life_state ADD COLUMN partyObjectiveSpot TEXT
+                GENERATED ALWAYS AS (COALESCE(
+                    json_extract(statsJson, '$.partyRequest.spotId'),
+                    CASE WHEN json_extract(statsJson, '$.equipmentPlan.status') = 'active'
+                        THEN json_extract(statsJson, '$.equipmentPlan.next.spotId') END,
+                    spotId
+                )) VIRTUAL;
+        `);
+        require('./DatabasePartyCandidateProjection').createIndex(connection);
+    }]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
