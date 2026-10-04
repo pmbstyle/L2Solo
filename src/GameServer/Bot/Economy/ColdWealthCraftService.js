@@ -23,8 +23,7 @@ function eligible(state) {
     if (!state || state.phase !== 'cold' || !['hunting', 'resting', 'shopping'].includes(state.activity)
         || state.party?.partyId || state.partyId || Number(state.stats?.karma || 0) > 0
         || state.stats?.craftStationId || /^bot_craft_\d+$/i.test(String(state.accountName || ''))) return false;
-    if (Number(state.stats?.classId || state.classId || 0) !== 57
-        && Number(state.stats?.classId || state.classId || 0) !== 56) return false;
+    if (!CraftShopService.isServiceCrafter(state)) return false;
     if (CraftShopService.craftLevelFor(state) <= 0) return false;
     if (state.stats?.equipmentPlan?.strategy === 'craft'
         && ['active', 'component_ready', 'ready_to_craft'].includes(state.stats.equipmentPlan.status)) return false;
@@ -64,7 +63,6 @@ function exitsFor(state, recipe, template) {
 
 function chooseOpportunity(state, knownRecipes) {
     let best = null;
-    const craftLevel = CraftShopService.craftLevelFor(state);
     // An active market gear plan keeps what its purchase needs (price and
     // reserve): inputs are bought only with the rest of the wallet. A bot
     // with its own buy order does not craft at all (eligible), so no escrow.
@@ -97,7 +95,7 @@ function chooseOpportunity(state, knownRecipes) {
     };
     for (const known of knownRecipes || []) {
         const recipe = Recipes.resolveByRecipeId(known.recipeId);
-        if (!recipe || recipe.type !== 'dwarven' || Number(recipe.level || 0) > craftLevel) continue;
+        if (!recipe || recipe.type !== 'dwarven' || !CraftShopService.canCraft(state, recipe)) continue;
         const template = ItemTemplateIndex.find(DataCache.items, recipe.productId);
         if (!template || !recipe.materials?.length) continue;
         const exits = exitsFor(state, recipe, template);

@@ -329,7 +329,7 @@ assert.deepStrictEqual([
     { level: 42, stats: { classId: 54 } },
     { level: 78, stats: { classId: 118 } },
     { level: 78, stats: { classId: 118 }, party: { role: 'tank' } }
-].map((state) => LevelingRoutes.roleForState(state)), ['spoiler', 'crafter', 'crafter', 'spoiler', 'crafter', 'tank'],
+].map((state) => LevelingRoutes.roleForState(state)), ['spoiler', 'crafter', 'crafter', 'spoiler', 'crafter', 'crafter'],
 'route roles of dwarves');
 
 console.log('Bot leveling route checks passed');

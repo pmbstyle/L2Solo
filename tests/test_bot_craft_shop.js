@@ -57,9 +57,12 @@ async function run() {
         CraftShopService.isServiceCrafter({ level, stats: { classId } }), false, `class ${classId} is not a crafter class`));
     assert.strictEqual(CraftShopService.isServiceCrafter({ classId: 57, level: 70 }), true, 'a top-level class id counts too');
     const maestro = { level: 78, stats: { classId: 118 } };
-    assert.strictEqual(CraftShopService.isServiceCrafter(maestro), false, 'a Maestro is not a crafter class yet');
-    assert.strictEqual(CraftShopService.canCraft(maestro, levelOneRecipe), false);
-    assert.deepStrictEqual(CraftShopService.availableRecipes(maestro), []);
+    // C4: Maestro is the third craft class and keeps crafting after its third profession.
+    assert.strictEqual(CraftShopService.isServiceCrafter(maestro), true, 'a Maestro is a crafter class');
+    assert.strictEqual(CraftShopService.canCraft(maestro, levelOneRecipe), true);
+    assert.strictEqual(CraftShopService.craftLevelFor(maestro), 9);
+    assert.deepStrictEqual(CraftShopService.availableRecipes(maestro),
+        CraftShopService.availableRecipes({ level: 78, stats: { classId: 57 } }), 'a Maestro crafts what a Warsmith of its level crafts');
     const loadedTree = DataCache.skillTree;
     DataCache.skillTree = loadedTree.filter((entry) => entry.classId !== 56);
     assert.strictEqual(CraftShopService.craftLevelFor({ level: 41, stats: { classId: 57 } }), 1,

@@ -31,7 +31,7 @@ async function planFor(order, clan, remaining, options = {}) {
         JOIN characters members ON members.id = recipes.characterId WHERE members.clanId = ?`, [clan.id]]);
     const known = (member, recipe) => knowledge.some(row => Number(row.characterId) === idOf(member)
         && Number(row.recipeId) === Number(recipe.recipeId));
-    const providerFor = recipe => crafters.filter(state => Shops.craftLevelFor(state) >= recipe.level)
+    const providerFor = recipe => crafters.filter(state => Shops.canCraft(state, recipe))
         .sort((a, b) => Number(known(b, recipe)) - Number(known(a, recipe)) || idOf(a) - idOf(b))[0];
     const recipe = recipes.find(candidate => providerFor(candidate)) || recipes[0];
     const crafter = providerFor(recipe);

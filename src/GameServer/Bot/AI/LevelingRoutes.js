@@ -7,13 +7,6 @@ const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 let SpotRiskPolicy;
 const spotRiskPolicy = () => SpotRiskPolicy || (SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy'));
 
-const ECONOMIC_ROLES = {
-    54: 'spoiler',
-    55: 'spoiler',
-    56: 'crafter',
-    57: 'crafter'
-};
-
 // Cohort centers mirror PopulationSeedPlanner.STARTER_REGIONS. Route
 // eligibility deliberately uses a wider radius than initial seeding, so
 // adjacent Elf and Dark Elf starter areas overlap.
@@ -192,7 +185,7 @@ function classIdOf(state = {}) {
 function roleForState(state = {}) {
     const classId = classIdOf(state);
     if (BotRoles.isSpoiler(state)) return 'spoiler';
-    if (classId && ECONOMIC_ROLES[classId]) return ECONOMIC_ROLES[classId];
+    if (BotRoles.isCrafterClass(classId)) return 'crafter';
     if (state.party?.role) return state.party.role;
     if (state.stats?.routeRole) return state.stats.routeRole;
     if (state.stats?.role) return state.stats.role;
@@ -473,7 +466,6 @@ function safetyOptions(state, options = {}) {
 
 module.exports = {
     ROUTES,
-    ECONOMIC_ROLES,
     roleForState,
     modeForState,
     targetLevelForState,

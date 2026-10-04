@@ -114,7 +114,8 @@ async function main() {
         assert.strictEqual(queued.actionType, 'goal_plan', 'blocked crafts must be reviewed when roster or stock changes');
         const spoilerPlan = await CraftOrders.planFor({ id: 0, itemId: 1879, memberIds: [5300002, 5300007] },
             { id: 6300001, state: { memberIds: [] } }, 2, { source: null });
-        assert.strictEqual(spoilerPlan.craft.crafterName, 'OrderSpoiler', 'a spoiler with Create Item is picked as the clan crafter');
+        assert.strictEqual(spoilerPlan.craft.crafterName, null, 'a spoiler with Create Item is not a clan crafter');
+        assert.strictEqual(spoilerPlan.reasonCode, 'clan_craft_crafter_unavailable');
 
         await stock(1870, 6); await stock(1871, 6); await stock(recipe.recipeItemId, 1);
         const created = await OrderService.create(await projection(), { itemId: 1879, amount: 2, strategy: 'craft', memberIds: members });

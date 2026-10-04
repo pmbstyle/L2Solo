@@ -93,8 +93,8 @@ async function run() {
     assert.strictEqual(Service.eligible({ ...state, level: 36, stats: { ...state.stats, classId: 56 } }), true);
     assert.strictEqual(Service.eligible({ ...state, stats: { ...state.stats, classId: 55 } }), false,
         'a Bounty Hunter has Create Item but does not craft');
-    assert.strictEqual(Service.eligible({ ...state, level: 78, stats: { ...state.stats, classId: 118 } }), false,
-        'a Maestro does not craft for profit yet');
+    assert.strictEqual(Service.eligible({ ...state, level: 78, stats: { ...state.stats, classId: 118 } }), true,
+        'a Maestro crafts for profit like a Warsmith');
     // A recipe above the crafter's level (7 for a level-60 Warsmith) is skipped.
     recipe.level = 8;
     assert.strictEqual(Service.chooseOpportunity(state, [{ recipeId: recipe.recipeId }]), null,

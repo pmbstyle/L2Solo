@@ -172,12 +172,12 @@ const original = {
     LifeState.allStates = () => [ordinaryCrafter, newRecipeCrafter];
     assert.strictEqual((await Service.candidates(2, procurementAt + 1000))[0]?.characterId, 411,
         'a crafter who just bought a shot recipe should be reviewed before routine scans');
-    // A crafter class is reviewed before other classes; a Maestro is not one yet.
+    // A crafter class is reviewed before other classes; a Maestro is one, so input order decides.
     const maestro = { ...state, characterId: 420, classId: 118, level: 78, inventory: {}, stats: { classId: 118 } };
     const warsmith = { ...state, characterId: 421, inventory: {}, stats: { classId: 57 } };
     LifeState.allStates = () => [maestro, warsmith];
-    assert.deepStrictEqual((await Service.candidates(2, procurementAt + 1000)).map((entry) => entry.characterId), [421, 420],
-        'a Warsmith is reviewed before a Maestro');
+    assert.deepStrictEqual((await Service.candidates(2, procurementAt + 1000)).map((entry) => entry.characterId), [420, 421],
+        'a Maestro has the priority of a Warsmith');
     console.log('Cold shot economy buys scrap, crystallizes and crafts a demanded batch');
 })().finally(() => {
     for (const [key, value] of Object.entries(original)) {

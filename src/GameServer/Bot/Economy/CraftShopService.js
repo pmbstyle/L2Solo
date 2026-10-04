@@ -3,6 +3,8 @@ const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
+const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
 
 const MAX_PUBLIC_RECIPES = 16;
 const CRAFT_LOC_Z = -3466;
@@ -94,8 +96,7 @@ const CraftStations = Object.freeze(STATION_LAYOUT.map(([grade, category, title,
 }));
 
 function isServiceCrafter(state = {}) {
-    const classId = Number(state.classId || state.stats?.classId || 0);
-    return classId === 56 || classId === 57;
+    return BotRoles.isCrafterClass(state);
 }
 
 // Craft level = the Create Item level the class line has learned by this
@@ -186,9 +187,16 @@ function productPrice(recipe) {
     return Math.max(100, Math.min(1000000, BotEconomyPricing.scalePrice(Math.round(value * 0.03) + Number(recipe.mpCost || 0) * 10)));
 }
 
-// Recipes and items are datapack data: the dwarven recipe lists and what the
-// Giran stations publish are built once per item catalogue.
-const STATION_SERVICE = Object.freeze({ level: 70, stats: Object.freeze({ classId: 57 }) });
+// The Giran station crafters: level-70 Warsmiths, seeded at the content cap.
+const STATION_CRAFTER = Object.freeze({ classId: 57, level: 70 });
+
+function stationCrafter() {
+    return { classId: STATION_CRAFTER.classId, level: ProgressionCap.clampLevel(STATION_CRAFTER.level) };
+}
+
+// Recipes and items are datapack data: the dwarven recipe lists are built once
+// per item catalogue, what the Giran stations publish once per item catalogue
+// and station crafter level.
 let catalog = null;
 
 function recipeCatalog() {
@@ -200,7 +208,7 @@ function recipeCatalog() {
         unique.set(Number(recipe.recipeId), recipe);
     });
     const dwarven = [...unique.values()].sort((a, b) => Number(a.recipeId) - Number(b.recipeId));
-    catalog = { items: DataCache.items, dwarven, byCraftLevel: new Map(), published: null };
+    catalog = { items: DataCache.items, dwarven, byCraftLevel: new Map(), published: null, publishedLevel: null };
     return catalog;
 }
 
@@ -210,7 +218,7 @@ function availableRecipes(state) {
     const current = recipeCatalog();
     if (!current.byCraftLevel.has(craftLevel)) {
         current.byCraftLevel.set(craftLevel, Object.freeze(
-            current.dwarven.filter((recipe) => Number(recipe.level || 0) <= craftLevel)
+            current.dwarven.filter((recipe) => canCraft(state, recipe))
         ));
     }
     return current.byCraftLevel.get(craftLevel);
@@ -253,8 +261,9 @@ function stationRecipes(station, allowedRecipes) {
 // with the first station (in station order) that publishes it.
 function publishedStationRecipes() {
     const current = recipeCatalog();
-    if (current.published) return current.published;
-    const allowed = availableRecipes(STATION_SERVICE);
+    const crafter = stationCrafter();
+    if (current.published && current.publishedLevel === crafter.level) return current.published;
+    const allowed = availableRecipes(crafter);
     const stationByRecipeId = new Map();
     const recipes = [];
     for (const station of CraftStations) {
@@ -265,6 +274,7 @@ function publishedStationRecipes() {
             recipes.push(recipe);
         }
     }
+    current.publishedLevel = crafter.level;
     current.published = Object.freeze({
         recipes: Object.freeze(recipes),
         ids: new Set(stationByRecipeId.keys()),
@@ -326,6 +336,8 @@ module.exports = {
     MAX_PUBLIC_RECIPES,
     GiranCraftStalls,
     CraftStations,
+    STATION_CRAFTER,
+    stationCrafter,
     isServiceCrafter,
     craftLevelFor,
     canCraft,

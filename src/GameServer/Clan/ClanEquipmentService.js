@@ -541,7 +541,7 @@ async function assignPlan(member, plan, clan, goal) {
 }
 
 async function craftingOptions(clan) {
-    const all = CraftShops.availableRecipes({ level: 70, stats: { classId: 57 } });
+    const all = CraftShops.availableRecipes(CraftShops.STATION_CRAFTER);
     const published = new Map(CraftShops.publishedStationRecipes().recipes.map(recipe => [Number(recipe.recipeId), recipe]));
     const providers = {};
     const crafters = (clan.members || []).filter(member => member.phase === 'cold'

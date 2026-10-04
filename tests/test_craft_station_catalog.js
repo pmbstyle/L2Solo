@@ -54,4 +54,28 @@ try {
 } finally {
     DataCache.items = originalItems;
 }
+
+// Station crafters are seeded at the content cap; the stations publish only
+// what such a crafter makes, and the full catalogue at the maximum cap.
+assert.deepStrictEqual(CraftShopService.stationCrafter(), { classId: 57, level: 70 });
+const progression = options.default.Progression;
+options.default.Progression = { ...(progression || {}), contentCap: 52 };
+try {
+    assert.deepStrictEqual(CraftShopService.stationCrafter(), { classId: 57, level: 52 });
+    const cappedFirst = new Map();
+    for (const station of CraftShopService.CraftStations) {
+        for (const recipe of CraftShopService.stationRecipes(station, direct(6))) {
+            if (!cappedFirst.has(Number(recipe.recipeId))) cappedFirst.set(Number(recipe.recipeId), station.id);
+        }
+    }
+    const capped = CraftShopService.publishedStationRecipes();
+    assert.deepStrictEqual(capped.recipes.map((recipe) => Number(recipe.recipeId)), [...cappedFirst.keys()],
+        'a capped world publishes what a capped station crafter (craft level 6) makes');
+    assert(capped.recipes.length < published.recipes.length, 'fixture: the cap removes recipes');
+} finally {
+    if (progression === undefined) delete options.default.Progression;
+    else options.default.Progression = progression;
+}
+assert.deepStrictEqual(CraftShopService.publishedStationRecipes().recipes.map((recipe) => Number(recipe.recipeId)),
+    [...firstStation.keys()], 'the maximum cap publishes the full catalogue again');
 console.log('Craft station catalogue checks passed');

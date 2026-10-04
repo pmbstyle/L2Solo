@@ -41,7 +41,7 @@ const STARTER_REGION_RACES = Object.freeze({
     dwarf: 4
 });
 
-const CRAFT_SERVICE_PROFILE = { race: 4, classId: 57, role: 'crafter', serviceCrafter: true };
+const CRAFT_SERVICE_PROFILE = { race: 4, classId: CraftShopService.STATION_CRAFTER.classId, role: 'crafter', serviceCrafter: true };
 const CRAFT_SERVICE_COUNT = CraftShopService.CraftStations.length;
 const CRAFT_SERVICE_INDEX_BASE = 10000;
 
@@ -88,7 +88,7 @@ function baseForIndex(index, starterRegion = null) {
 
 function profileForIndex(index, base = baseForIndex(index), seedProfile = null) {
     if (base.serviceCrafter) {
-        return { level: ProgressionCap.clampLevel(70), band: 'craft_service' };
+        return { level: CraftShopService.stationCrafter().level, band: 'craft_service' };
     }
     if (seedProfile?.level) {
         return {
@@ -204,7 +204,7 @@ function migrationBaseFor(state) {
 
     return {
         ...stats,
-        classId: isCraftService ? 57 : classId,
+        classId: isCraftService ? CraftShopService.STATION_CRAFTER.classId : classId,
         race: isCraftService ? 4 : (Number.isFinite(storedRace) ? storedRace : inferredRace),
         role: isCraftService ? 'crafter' : stats.role,
         serviceCrafter: isCraftService

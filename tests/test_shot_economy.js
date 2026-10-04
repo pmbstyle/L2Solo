@@ -102,15 +102,15 @@ assert.strictEqual(ItemDisposition.priceFor({ ...dwarf, stats: {
     ...dwarf.stats, shotCraft: { productId: 1463, unitPrice: candidate.salePrice }
 } }, { selfId: 1463, amount: recipe.productCount }, index.itemTemplates.get(1463)),
 candidate.salePrice, 'the published shot price must match the profitable route calculation');
-assert.strictEqual(Shots.recipeTarget(dwarf, 7, { ...index, recipeStock: new Map([[1805, 1]]),
+assert.strictEqual(Shots.recipeTarget(dwarf, { ...index, recipeStock: new Map([[1805, 1]]),
     shotDemand: new Map([[1464, [{ characterId: 200, amount: 1000, budget: 1000000 }]]]), shotSupply: new Map() })?.recipeItemId, 1805,
     'a crafter should ask for a recipe that somebody actually holds');
-assert.strictEqual(Shots.recipeTarget(dwarf, 7, { ...index, recipeStock: new Map([[1805, 1]]),
+assert.strictEqual(Shots.recipeTarget(dwarf, { ...index, recipeStock: new Map([[1805, 1]]),
     shotDemand: new Map(), shotSupply: new Map() }), null,
     'a crafter should not buy a recipe for a shot with no market demand');
-assert.strictEqual(Shots.recipeTarget(dwarf, 7, { ...index, recipeStock: new Map([[1805, 1]]) })?.recipeItemId,
+assert.strictEqual(Shots.recipeTarget(dwarf, { ...index, recipeStock: new Map([[1805, 1]]) })?.recipeItemId,
     1804, 'a viable D-grade route should create recipe demand even before somebody lists the recipe');
-assert.strictEqual(Shots.recipeTarget(dwarf, 7, { ...index, recipeStock: new Map([[1805, 1]]) }, [318])?.recipeItemId,
+assert.strictEqual(Shots.recipeTarget(dwarf, { ...index, recipeStock: new Map([[1805, 1]]) }, [318])?.recipeItemId,
     1804, 'knowing a higher-grade recipe must not prevent a profitable D-grade route');
 assert.strictEqual(candidate.requiredCrystals, 1);
 assert.strictEqual(candidate.ore.selfId, 1785);

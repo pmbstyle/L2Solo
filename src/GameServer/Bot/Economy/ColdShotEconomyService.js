@@ -158,14 +158,13 @@ async function candidates(limit = 16, now = Date.now()) {
         const wanted = state.stats?.shotRecipeDemand;
         const holders = index.recipeHolders.get(Number(wanted?.itemId || 0)) || [];
         if (holders.length && Number(wanted?.maxSpend || 0) >= holders[0].price) return 3;
-        return [56, 57].includes(Number(state.stats?.classId || state.classId || 0)) ? 2 : 1;
+        return CraftShopService.isServiceCrafter(state) ? 2 : 1;
     };
     return LifeState.allStates(5000)
         .filter((state) => {
             if (state.phase !== 'cold' || !['hunting', 'resting', 'shopping', 'grouped'].includes(state.activity)
                 || now - Number(scanAt.get(Number(state.characterId)) || 0) < SCAN_INTERVAL_MS) return false;
-            const classId = Number(state.stats?.classId || state.classId || 0);
-            if ([56, 57].includes(classId)) return true;
+            if (CraftShopService.isServiceCrafter(state)) return true;
             const plan = ShotStock.planForState(state);
             return Number(state.inventory?.[String(plan.selfId)]?.amount || 0) < ShotStock.DEFAULT_TARGET_AMOUNT;
         })
@@ -233,12 +232,12 @@ async function reviewDemand(state, now) {
         'shot_static_purchase') || refreshed;
 }
 
-function recipeTarget(state, craftLevel, index = null, knownRecipeIds = []) {
+function recipeTarget(state, index = null, knownRecipeIds = []) {
     const known = new Set(knownRecipeIds.map(Number));
     const candidates = SHOT_RECIPE_IDS
         .filter((id) => !known.has(id))
         .map((id) => Recipes.resolveByRecipeId(id))
-        .filter((recipe) => recipe && Number(recipe.level) <= craftLevel);
+        .filter((recipe) => recipe && CraftShopService.canCraft(state, recipe));
     const needed = candidates;
     const viable = index ? needed.map((recipe) => ({ recipe, route: craftCandidate(state, recipe, index) }))
         .filter((entry) => entry.route) : needed.map((recipe) => ({ recipe, route: null }));
@@ -303,7 +302,6 @@ function availableMaterial(state, selfId) {
 
 function scrapCraftRoutes(state, knownRecipes, index) {
     const routes = [];
-    const craftLevel = CraftShopService.craftLevelFor(state);
     const owned = new Map(ItemDisposition.saleCandidates(state, { unlimited: true })
         .map(item => [Number(item.selfId), item]));
     const prices = new Map();
@@ -317,7 +315,7 @@ function scrapCraftRoutes(state, knownRecipes, index) {
     for (const known of knownRecipes) {
         const recipe = Recipes.resolveByRecipeId(known.recipeId);
         const template = recipe && index.itemTemplates.get(Number(recipe.productId));
-        if (!recipe || recipe.type !== 'dwarven' || Number(recipe.level) > craftLevel
+        if (!recipe || recipe.type !== 'dwarven' || !CraftShopService.canCraft(state, recipe)
             || Number(recipe.successRate) !== 100 || Number(recipe.productCount) !== 1
             || !/^(Weapon|Armor)\./.test(String(template?.template?.kind || ''))
             || Number(template?.etc?.cristals || 0) <= 0 || Number(recipe.mpCost) >= Number(state.vitals?.mp || 0)) continue;
@@ -606,8 +604,7 @@ async function review(state, now = Date.now()) {
     try {
         state = await reviewDemand(state, now);
         noteBuyer(state);
-        const classId = Number(state.stats?.classId || state.classId || 0);
-        if (![56, 57].includes(classId) || state.party?.partyId || state.partyId
+        if (!CraftShopService.isServiceCrafter(state) || state.party?.partyId || state.partyId
             || CraftShopService.craftLevelFor(state) < 2 || state.stats?.craftStationId
             || (state.stats?.equipmentPlan?.strategy === 'craft'
                 && ['active', 'component_ready', 'ready_to_craft'].includes(state.stats.equipmentPlan.status))) return { state };
@@ -615,13 +612,12 @@ async function review(state, now = Date.now()) {
             state = await LifeState.learnCraftableRecipes(state) || state;
         }
         const known = await Database.fetchCharacterRecipes(id);
-        const craftLevel = CraftShopService.craftLevelFor(state);
         const shotRecipes = (known || []).map((row) => Recipes.resolveByRecipeId(row.recipeId))
             .filter((recipe) => recipe && SHOT_RECIPE_IDS.includes(Number(recipe.recipeId))
-                && Number(recipe.level) <= craftLevel);
+                && CraftShopService.canCraft(state, recipe));
         const knownRecipeIds = shotRecipes.map((recipe) => Number(recipe.recipeId));
         if (!shotRecipes.length) {
-            const target = recipeTarget(state, craftLevel, await marketSnapshot(now), knownRecipeIds);
+            const target = recipeTarget(state, await marketSnapshot(now), knownRecipeIds);
             return { state: target ? await obtainRecipe(state, target, now) : state };
         }
         if (shotRecipes.some((recipe) => Number(recipe.recipeItemId) === Number(state.stats?.shotRecipeDemand?.itemId))) {
@@ -634,7 +630,7 @@ async function review(state, now = Date.now()) {
         const candidate = shotRecipes.map((recipe) => craftCandidate(state, recipe, index))
             .filter(Boolean).sort((a, b) => b.profit - a.profit)[0];
         if (!candidate) {
-            const target = recipeTarget(state, craftLevel, index, knownRecipeIds);
+            const target = recipeTarget(state, index, knownRecipeIds);
             return { state: target ? await obtainRecipe(state, target, now) : state };
         }
         const craftedState = await craft(state, candidate, index, now);
