@@ -89,6 +89,12 @@ async function run() {
         stats: { classId: 57, generatedIndex: 1787947094937 }, persona: { primaryDrive: 'wealth' } };
     assert.strictEqual(Service.eligible(state, 1000000), true,
         'ordinary generated dwarves must not be mistaken for fixed crafting stations');
+    // Karma keeps a crafter from crafting for sale: any karma above 0 blocks
+    // it; none, zero or negative karma does not.
+    for (const [karma, blocked] of [[undefined, false], [null, false], [0, false], [-5, false], ['0', false], [NaN, false], [1, true], ['7', true], [45, true]]) {
+        assert.strictEqual(Service.eligible({ ...state, stats: { ...state.stats, karma } }), !blocked,
+            `wealth craft with karma ${karma}`);
+    }
     // Only crafter classes craft for profit.
     assert.strictEqual(Service.eligible({ ...state, level: 36, stats: { ...state.stats, classId: 56 } }), true);
     assert.strictEqual(Service.eligible({ ...state, stats: { ...state.stats, classId: 55 } }), false,

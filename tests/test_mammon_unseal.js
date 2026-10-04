@@ -96,6 +96,11 @@ async function run() {
     const cold = {...session.coldLifeState,inventory:{6674:{selfId:6674,amount:1}},loc:{locX:1000,locY:2000,locZ:-3000}};
     const trip = Bot.beginTravel(cold,1000);
     assert(trip && trip.stats.travel.arrivalAt===26000);
+    // Karma keeps the bot from the Giran trip: any karma above 0 blocks it;
+    // none, zero or negative karma does not.
+    for (const [karma, blocked] of [[undefined, false], [null, false], [0, false], [-5, false], ['0', false], [NaN, false], [1, true], ['7', true], [45, true]]) {
+        assert.strictEqual(!!Bot.beginTravel({...cold,stats:{...cold.stats,karma}},1000), !blocked, `Mammon trip with karma ${karma}`);
+    }
     assert.strictEqual(invoke('GameServer/Bot/Population/ColdSimulationKernel').lifecycleKind(cold), 'command');
     assert.strictEqual(invoke('GameServer/Bot/Population/ColdSimulationOwner').eligibility(cold).ok, false);
     assert.strictEqual(Bot.beginTravel({...cold,party:{partyId:'test'}},1000),null);

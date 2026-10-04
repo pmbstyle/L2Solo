@@ -33,6 +33,17 @@ try {
     assert(Goals.beginMarketTravel({ ...hunting, stats: { karma: 0 } }, shoppingGoal),
         'normal town shopping must resume after karma reaches zero');
     assert.strictEqual(Crafting.beginTravel(state), null);
+    // Any karma above 0 closes towns and starts karma washing; none, zero or
+    // negative karma does not.
+    const whiteKind = lifecycleKind({ ...hunting, stats: { clanHallVisit: {} } });
+    assert.strictEqual(whiteKind, 'command');
+    for (const [karma, red] of [[undefined, false], [null, false], [0, false], [-5, false], ['0', false], [NaN, false], [1, true], ['7', true], [45, true]]) {
+        const karmaState = { ...hunting, stats: { karma } };
+        assert.strictEqual(!!Goals.beginMarketTravel(karmaState, shoppingGoal), !red, `market trip with karma ${karma}`);
+        assert.strictEqual(Policy.active(karmaState), red, `karma washing with karma ${karma}`);
+        assert.strictEqual(lifecycleKind({ ...hunting, stats: { clanHallVisit: {}, karma } }), red ? 'resolver' : whiteKind,
+            `lifecycle with karma ${karma}`);
+    }
     const blocked = Resolver.resolveSolo({ state, timestamp: 2000 });
     assert.strictEqual(blocked.debug.reason, 'karma_blocks_town', 'even an overdue saved town trip must be cancelled');
     assert.strictEqual(blocked.patch.loc, undefined, 'cancelling town travel must not teleport');

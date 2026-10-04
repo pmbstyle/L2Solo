@@ -267,6 +267,12 @@ async function main() {
         assert(safeDeparture);
         assert.equal(selection.options.spotRetryAfter.dangerous, Infinity, 'do not return to a dangerous spot');
         assert.equal(selection.options.mode, 'solo');
+        // Karma closes the hall's teleport: any karma above 0 blocks it; none,
+        // zero or negative karma does not.
+        for (const [karma, blocked] of [[undefined, false], [null, false], [0, false], [-5, false], ['0', false], [NaN, false], [1, true], ['7', true], [45, true]]) {
+            assert.strictEqual(!!Departure.plan({ ...state, stats: { ...state.stats, karma } }, Runtime.owned(1), at), !blocked,
+                `hall departure with karma ${karma}`);
+        }
         assert.equal(Departure.plan({ ...state, loc: { locX: 0, locY: 0, locZ: 0 } }, Runtime.owned(1), at), null,
             'hall departure is not a free teleport from anywhere');
         Spots.arrivalPointForState = () => null;

@@ -125,6 +125,15 @@ const travel = ColdCraftingService.beginTravel({
 assert.strictEqual(travel.stats.travel.reason, 'dual_sword_combine');
 assert.strictEqual(travel.stats.travel.townName, 'Giran');
 assert.strictEqual(travel.stats.travel.arrivalActivity, 'crafting');
+// Karma keeps the bot out of the town's craft station: any karma above 0
+// blocks the trip; none, zero or negative karma does not.
+for (const [karma, blocked] of [[undefined, false], [null, false], [0, false], [-5, false], ['0', false], [NaN, false], [1, true], ['7', true], [45, true]]) {
+    const trip = ColdCraftingService.beginTravel({
+        ...readyState,
+        stats: { ...readyState.stats, equipmentPlan: readyPlan, karma }
+    }, 1000);
+    assert.strictEqual(trip?.stats.travel.reason ?? null, blocked ? null : 'dual_sword_combine', `craft trip with karma ${karma}`);
+}
 
 const originals = {
     fetchItems: Database.fetchItems,

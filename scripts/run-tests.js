@@ -666,6 +666,7 @@ const tests = [
     'tests/test_recipe_persistence.js',
     'tests/test_manufacture_shop.js',
     'tests/test_restart_point_revive.js',
+    'tests/test_restart_point_choice.js',
     'tests/test_private_tell_routing.js',
     'tests/test_shot_consumption.js',
     'tests/test_skill_area_semantics.js',
