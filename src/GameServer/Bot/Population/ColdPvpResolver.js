@@ -1,7 +1,6 @@
 // Bounded, deterministic skirmishes. No actors, SQL, timers or population scans.
 const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const { combat } = invoke('GameServer/Bot/Population/BackgroundResolver');
-const Formulas = invoke('GameServer/Formulas');
 const Rules = invoke('GameServer/Skills/C4SkillRules');
 const Aid = require('../../Social/OpponentAidPolicy');
 const Config = require('./PopulationConfig');
@@ -85,8 +84,7 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
         // Resolve only completed actions within the bounded combat window.
         if (!step && time + delay > MAX_DURATION_MS) { next.readyAt = MAX_DURATION_MS + 1; continue; }
         if (skill) {
-            next.vitals.mp = Math.max(0, next.vitals.mp - Number(skill.mp || 0));
-            next.cooldowns[skill.selfId] = timestamp + time + delay + Math.max(0, Number(skill.reuse || 0));
+            combat.spendSkill(next, skill, timestamp + time);
             next.skills++;
         }
         if (preparation) {
@@ -107,18 +105,9 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
             }
             next.attacks++;
             incident(target, next);
-            let damage = selected?.magic
-                ? Formulas.calcMagicDamage(next.profile.mAtk, Math.max(1, selected.power), target.profile.mDef,
-                    { magicCritical: Formulas.rollCritical(next.profile.mCritRate, rng) })
-                : combat.hitSucceeds(next.profile.accur, target.profile.evasion, rng)
-                    ? Formulas.calcPhysicalDamage(next.profile.pAtk, next.profile.equipment.pAtkRnd,
-                        target.profile.pDef, selected?.power || 0, { critical: Formulas.rollCritical(next.profile.critical, rng), rng }) : 0;
-            const semantic = skill ? Rules.resolve(skill) : {};
-            if (Number(semantic.requires?.charges) > 0) damage *= 0.8 + (0.201 * next.charges);
-            combat.consumeCharges(next, semantic.requires?.charges);
-            if (Number(semantic.chargeOnUse) > 0) {
-                combat.addCharges(next, semantic.chargeOnUse, semantic.maxCharges, timestamp + time);
-            }
+            // A player target: no monster weaknesses. PvP does not count shots yet.
+            let damage = combat.attackDamage(next, selected, target.profile, rng);
+            combat.settleCharges(next, skill ? Rules.resolve(skill) : {}, timestamp + time);
             damage = Math.max(0, Math.round(damage));
             const shield = Math.min(target.cp, damage);
             target.cp -= shield;

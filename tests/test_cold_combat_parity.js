@@ -36,7 +36,7 @@ function seeded(seed) {
         return ((t ^ t >>> 14) >>> 0) / 4294967296;
     };
 }
-// Physical damage spread draws from Math.random: seed it for the fight too.
+// Math.random is seeded too, so a draw outside the fight rng would still be reproducible.
 function withSeed(seed, fn) {
     const realRandom = Math.random;
     Math.random = seeded(seed + 1000);
@@ -131,17 +131,17 @@ const SOLO = [
 ];
 const SOLO_GOLDEN = {
     'sorcerer dies after a self-heal': { won: false, died: true, hp: 0, mp: 2365, charges: 0, actions: 24, durationMs: 23669, skillUses: 8, shotActions: 4, heals: 4, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 1, mobHp: null, botReadyAt: null },
-    'gladiator charges': { won: true, died: false, hp: 1467, mp: 384, charges: 0, actions: 18, durationMs: 11315, skillUses: 10, shotActions: 6, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'bishop': { won: true, died: false, hp: 1031, mp: 2385, charges: 0, actions: 27, durationMs: 29256, skillUses: 9, shotActions: 7, heals: 2, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'warlock servitor, heals, potion': { won: true, died: false, hp: 176, mp: 2139, charges: 0, actions: 88, durationMs: 58312, skillUses: 14, shotActions: 0, heals: 14, musicUses: 0, summonUses: 1, summonActions: 37, potionsUsed: 1, mobHp: null, botReadyAt: null },
-    'necromancer corpse servitor': { won: true, died: false, hp: 1150, mp: 2432, charges: 0, actions: 4, durationMs: 3442, skillUses: 2, shotActions: 2, heals: 0, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'swordsinger songs': { won: true, died: false, hp: 1221, mp: 13, charges: 0, actions: 29, durationMs: 22185, skillUses: 6, shotActions: 11, heals: 0, musicUses: 6, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'tyrant': { won: true, died: false, hp: 1840, mp: 691, charges: 0, actions: 7, durationMs: 3655, skillUses: 4, shotActions: 3, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'paladin': { won: true, died: false, hp: 1504, mp: 643, charges: 0, actions: 23, durationMs: 20867, skillUses: 8, shotActions: 9, heals: 1, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'sorcerer 40 dies': { won: false, died: true, hp: 0, mp: 1441, charges: 0, actions: 32, durationMs: 35504, skillUses: 10, shotActions: 2, heals: 8, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'bladedancer dances': { won: true, died: false, hp: 597, mp: 13, charges: 0, actions: 35, durationMs: 26083, skillUses: 6, shotActions: 13, heals: 0, musicUses: 6, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'gladiator times out': { won: false, died: false, hp: 1565, mp: 679, charges: 0, actions: 6, durationMs: 4000, skillUses: 3, shotActions: 2, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 752, botReadyAt: 216 },
-    'paladin runs out of actions': { won: false, died: false, hp: 1384, mp: 774, charges: 0, actions: 10, durationMs: 7518, skillUses: 2, shotActions: 5, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 513, botReadyAt: 1127 }
+    'gladiator charges': { won: true, died: false, hp: 1389, mp: 384, charges: 0, actions: 18, durationMs: 11315, skillUses: 10, shotActions: 6, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'bishop': { won: true, died: false, hp: 1014, mp: 2489, charges: 0, actions: 19, durationMs: 19877, skillUses: 7, shotActions: 7, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'warlock servitor, heals, potion': { won: true, died: false, hp: 345, mp: 2237, charges: 0, actions: 81, durationMs: 54630, skillUses: 12, shotActions: 0, heals: 12, musicUses: 0, summonUses: 1, summonActions: 34, potionsUsed: 1, mobHp: null, botReadyAt: null },
+    'necromancer corpse servitor': { won: true, died: false, hp: 1140, mp: 2432, charges: 0, actions: 4, durationMs: 3442, skillUses: 2, shotActions: 2, heals: 0, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'swordsinger songs': { won: true, died: false, hp: 1141, mp: 13, charges: 0, actions: 33, durationMs: 24336, skillUses: 6, shotActions: 13, heals: 0, musicUses: 6, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'tyrant': { won: true, died: false, hp: 1717, mp: 691, charges: 0, actions: 7, durationMs: 3655, skillUses: 4, shotActions: 3, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'paladin': { won: true, died: false, hp: 1490, mp: 643, charges: 0, actions: 23, durationMs: 20867, skillUses: 8, shotActions: 9, heals: 1, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'sorcerer 40 dies': { won: false, died: true, hp: 0, mp: 1400, charges: 0, actions: 37, durationMs: 40576, skillUses: 12, shotActions: 2, heals: 10, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'bladedancer dances': { won: true, died: false, hp: 604, mp: 13, charges: 0, actions: 35, durationMs: 26083, skillUses: 6, shotActions: 13, heals: 0, musicUses: 6, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'gladiator times out': { won: false, died: false, hp: 1579, mp: 679, charges: 0, actions: 6, durationMs: 4000, skillUses: 3, shotActions: 2, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 1306, botReadyAt: 216 },
+    'paladin runs out of actions': { won: false, died: false, hp: 1398, mp: 774, charges: 0, actions: 10, durationMs: 7518, skillUses: 2, shotActions: 5, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 534, botReadyAt: 1127 }
 };
 for (const [name, state, npcId, seed, limitMs, maxActions] of SOLO) {
     assert.deepStrictEqual(soloOutcome(state, npcId, seed, limitMs, maxActions), SOLO_GOLDEN[name], `solo: ${name}`);
@@ -166,7 +166,7 @@ const PARTY = [
 ];
 const PARTY_GOLDEN = {
     'tank, charges, healer, songs, servitor': { won: true, actions: 25, skillUses: 18, musicUses: 5, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0,
-        members: [[1008, 1338, 774, 4, 3, 3, 1, 0, 0],
+        members: [[1008, 1340, 774, 4, 3, 3, 1, 0, 0],
             [1002, 1734, 497, 7, 7, 4, 0, 0, 0],
             [1011, 1290, 2565, 3, 3, 3, 0, 0, 0],
             [1006, 1392, 223, 5, 5, 0, 0, 5, 0],
@@ -174,15 +174,15 @@ const PARTY_GOLDEN = {
     'casters and a dancer': { won: true, actions: 9, skillUses: 7, musicUses: 2, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0,
         members: [[1001, 1290, 2538, 2, 2, 2, 0, 0, 0],
             [1005, 1290, 2432, 2, 2, 2, 0, 0, 0],
-            [1003, 1143, 2595, 1, 1, 1, 0, 0, 0],
-            [1010, 1248, 673, 2, 2, 0, 0, 2, 0]] },
-    'injured with potions': { won: true, actions: 20, skillUses: 15, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 1, mobHp: 0, help: 1,
-        members: [[1012, 1340, 642, 7, 6, 4, 1, 0, 0],
-            [1002, 1544, 578, 6, 6, 3, 0, 0, 1],
-            [1009, 821, 1627, 3, 3, 0, 3, 0, 0]] },
+            [1003, 1189, 2595, 1, 1, 1, 0, 0, 0],
+            [1010, 1227, 673, 2, 2, 0, 0, 2, 0]] },
+    'injured with potions': { won: true, actions: 12, skillUses: 9, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 1, mobHp: 0, help: 1,
+        members: [[1012, 1326, 765, 5, 4, 2, 1, 0, 0],
+            [1002, 1665, 679, 3, 3, 2, 0, 0, 0],
+            [1009, 821, 1659, 2, 2, 0, 2, 0, 0]] },
     'necromancer corpse servitor': { won: true, actions: 5, skillUses: 3, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0,
         members: [[1005, 1290, 2432, 2, 2, 2, 0, 0, 0],
-            [1003, 1208, 2595, 1, 1, 1, 0, 0, 0]] }
+            [1003, 1165, 2595, 1, 1, 1, 0, 0, 0]] }
 };
 for (const [name, members, npcId, seed] of PARTY) {
     assert.deepStrictEqual(partyOutcome(members, npcId, seed), PARTY_GOLDEN[name], `party: ${name}`);
@@ -211,6 +211,43 @@ for (const [name, state, npcId, seed] of SOLO) {
         mobHp: solo.died ? null : solo.encounter ? Math.round(solo.encounter.hp) : 0
     }, `party of one = solo: ${name}`);
 }
+
+// ---------- solo start vitals and the physical damage spread ----------
+// Stored HP / MP above the maximum start the solo fight at the maximum, as the party fight does.
+const overfull = { ...gladiator, vitals: { hp: 999999, mp: 999999 } };
+const overfullFight = withSeed(2, (rng) => resolveFight({ state: overfull, spot: spotFor(5135), pressure: {}, targetNpcId: 5135,
+    rng, timestamp: TS, fightLimitMs: 60000, maxActions: 400 }));
+assert.ok(overfullFight.hp <= overfullFight.maxHp && overfullFight.mp <= overfullFight.maxMp, 'solo start HP and MP are clamped to the maximum');
+assert.deepStrictEqual(overfullFight.hp, soloOutcome(gladiator, 5135, 2).hp, 'an overfull bot fights like a bot at full HP');
+// Every damage roll of a cold fight draws from the fight rng: Math.random does not change the outcome.
+const fightWith = (randomSeed) => {
+    const realRandom = Math.random;
+    Math.random = seeded(randomSeed);
+    try { return soloOutcome(tyrant, 5135, 7); } finally { Math.random = realRandom; }
+};
+assert.deepStrictEqual(fightWith(1), fightWith(2), 'physical damage spread comes from the fight rng, not Math.random');
+
+// ---------- cold PvP: the shared attack and the cooldown from cast start ----------
+const Pvp = invoke('GameServer/Bot/Population/ColdPvpResolver');
+function duelist(id, skills) {
+    const at = { locX: 50000, locY: 15000, locZ: -5000 };
+    return { characterId: id, name: `Duelist${id}`, level: 40, classId: 0, phase: 'cold', loc: at,
+        vitals: { hp: 1000, mp: 500 }, stats: { classId: 0, coldCombat: { version: 1, classId: 0, cp: 0, cpAt: TS,
+            base: { str: 40, dex: 30, con: 43, int: 21, wit: 11, men: 25 },
+            equipment: { weaponKind: 'Weapon.Sword', pAtk: 100, pAtkRnd: 0, mAtk: 100, atkSpd: 379, critical: 0, accur: 0,
+                pDef: 200, mDef: 100, evasion: 0 },
+            effects: [], skills } } };
+}
+const windStrike = { selfId: 1177, level: 5, spell: true, passive: false, power: 50, mp: 20, hitTime: 4000, reuse: 60000 };
+const left = duelist(2001, [{ selfId: 1, level: 1, passive: true }]);
+const right = duelist(2002, [windStrike]);
+const duel = Pvp.resolve({ sides: [{ principal: left, members: [left] }, { principal: right, members: [right] }],
+    roles: new Map(), timestamp: TS, rng: seeded(5), personaFor: () => ({ traits: { caution: 0 } }) });
+assert.ok(duel.started, 'the duel starts');
+const caster = duel.fighters.find((f) => f.id === 2002);
+assert.strictEqual(caster.skills, 1, 'Wind Strike is cast once');
+// side 1 opens at 0 ms: the 4000 ms cast starts at TS, its 60 s reuse with it (C4), not after the cast
+assert.strictEqual(duel.updates.get(2002).stats.coldCombat.cooldowns[1177], TS + 60000, 'PvP reuse starts at cast start');
 
 // ---------- action delays ----------
 // rounded to 0.001 ms: the speed ratio leaves float noise (999.9999999999999)

@@ -117,6 +117,18 @@ function consumeCharges(holder, amount) {
     if (holder.charges === 0) holder.chargeExpiresAt = null;
 }
 
+// A used skill costs its MP; its reuse starts when the cast starts (C4).
+function spendSkill(fighter, skill, at, mpCost = Number(skill.mp || 0)) {
+    fighter.vitals.mp = Math.max(0, fighter.vitals.mp - mpCost);
+    fighter.cooldowns[skill.selfId] = at + Math.max(0, Number(skill.reuse || 0));
+}
+
+// A used attack skill spends the charges it needs and adds those it grants.
+function settleCharges(fighter, semantic, at) {
+    consumeCharges(fighter, semantic.requires?.charges);
+    if (Number(semantic.chargeOnUse) > 0) addCharges(fighter, semantic.chargeOnUse, semantic.maxCharges, at);
+}
+
 function coldPassiveRegenAdd(state, skillId, stat) {
     const classId = Number(state.stats?.classId ?? state.classId);
     const skill = (DataCache.skillTree || []).find((tree) => Number(tree.classId) === classId)?.skills
@@ -944,8 +956,29 @@ function summonDamage(fighter, mob, rng) {
         summon.pAtkRnd,
         mob.pDef,
         0,
-        { critical: Formulas.rollCritical(summon.critical, rng) }
+        { critical: Formulas.rollCritical(summon.critical, rng), rng }
     ));
+}
+
+// Damage of one attack action in a cold fight (PvE or PvP): a spell with its
+// magic critical, or a weapon hit (hit roll, critical, spread from the fight
+// rng); a monster target (`vsMob`) adds its weaknesses; a skill that spends
+// charges hits harder with each charge.
+function attackDamage(fighter, selected, target, rng, { vsMob = false, at = 0 } = {}) {
+    const profile = fighter.profile;
+    const semantic = selected?.skill ? C4SkillRules.resolve(selected.skill) : {};
+    let damage = 0;
+    if (selected?.magic) {
+        damage = Formulas.calcMagicDamage(profile.mAtk, Math.max(1, selected.power), target.mDef,
+            { magicCritical: Formulas.rollCritical(profile.mCritRate, rng) });
+        if (vsMob) damage *= coldMagicTargetModifier(target, semantic);
+    } else if (hitSucceeds(profile.accur, target.evasion, rng)) {
+        damage = Formulas.calcPhysicalDamage(profile.pAtk, profile.equipment.pAtkRnd, target.pDef, selected?.power || 0,
+            { critical: Formulas.rollCritical(profile.critical, rng), rng });
+        if (vsMob) damage *= coldPhysicalTargetModifier(profile, target, semantic, at);
+    }
+    if (Number(semantic.requires?.charges) > 0) damage *= 0.8 + (0.201 * fighter.charges);
+    return damage;
 }
 
 // One cold bot action, shared by the solo and the party fight: servitor,
@@ -968,8 +1001,7 @@ function coldBotTurn(fighter, { allies, mob, mobHp, at, time, rng, party = false
     if (heal) {
         const events = applyAllyHeal(fighter, allies, heal);
         if (help) for (const event of events) help.set(`${event.sourceId}:${event.targetId}:${event.type}`, event);
-        fighter.vitals.mp = Math.max(0, fighter.vitals.mp - Number(heal.skill.mp || 0));
-        fighter.cooldowns[heal.skill.selfId] = at + Math.max(0, Number(heal.skill.reuse || 0));
+        spendSkill(fighter, heal.skill, at);
         fighter.skillUses += 1;
         fighter.heals += 1;
         fighter.readyAt += actionDelayMs(fighter.profile, heal.skill);
@@ -978,8 +1010,7 @@ function coldBotTurn(fighter, { allies, mob, mobHp, at, time, rng, party = false
     const music = chooseMusicAction(fighter, allies, at);
     if (music) {
         applyMusicAction(fighter, music, at);
-        fighter.vitals.mp = Math.max(0, fighter.vitals.mp - music.cost);
-        fighter.cooldowns[music.skill.selfId] = at + Math.max(0, Number(music.skill.reuse || 0));
+        spendSkill(fighter, music.skill, at, music.cost);
         fighter.skillUses += 1;
         fighter.musicUses += 1;
         fighter.readyAt += actionDelayMs(fighter.profile, music.skill);
@@ -990,8 +1021,7 @@ function coldBotTurn(fighter, { allies, mob, mobHp, at, time, rng, party = false
     if (chargeSkill) {
         const semantic = C4SkillRules.resolve(chargeSkill);
         addCharges(fighter, 1, semantic.maxCharges, at);
-        fighter.vitals.mp = Math.max(0, fighter.vitals.mp - Number(chargeSkill.mp || 0));
-        fighter.cooldowns[chargeSkill.selfId] = at + Math.max(0, Number(chargeSkill.reuse || 0));
+        spendSkill(fighter, chargeSkill, at);
         fighter.skillUses += 1;
         fighter.readyAt += actionDelayMs(fighter.profile, chargeSkill);
         return null;
@@ -1002,28 +1032,10 @@ function coldBotTurn(fighter, { allies, mob, mobHp, at, time, rng, party = false
     const selected = chooseSkill(profile, fighter.vitals.hp, fighter.vitals.mp, fighter.cooldowns, at, fighter.charges, rng,
         { mob, party, summon: fighter.summon });
     const skill = selected?.skill || null;
-    let damage = 0;
-    if (selected?.magic) {
-        const magicCritical = Formulas.rollCritical(profile.mCritRate, rng);
-        const semantic = C4SkillRules.resolve(selected.skill);
-        damage = Formulas.calcMagicDamage(profile.mAtk, Math.max(1, selected.power), mob.mDef, { magicCritical })
-            * coldMagicTargetModifier(mob, semantic);
-    } else if (hitSucceeds(profile.accur, mob.evasion, rng)) {
-        const critical = Formulas.rollCritical(profile.critical, rng);
-        const semantic = selected?.skill ? C4SkillRules.resolve(selected.skill) : {};
-        damage = Formulas.calcPhysicalDamage(profile.pAtk, profile.equipment.pAtkRnd, mob.pDef, selected?.power || 0, { critical })
-            * coldPhysicalTargetModifier(profile, mob, semantic, at);
-    }
+    const damage = attackDamage(fighter, selected, mob, rng, { vsMob: true, at });
     if (skill) {
-        const semantic = C4SkillRules.resolve(skill);
-        const requiredCharges = Math.max(0, Number(semantic.requires?.charges) || 0);
-        if (requiredCharges > 0) damage *= 0.8 + (0.201 * fighter.charges);
-        consumeCharges(fighter, semantic.requires?.charges);
-        if (Number(semantic.chargeOnUse) > 0) {
-            addCharges(fighter, semantic.chargeOnUse, semantic.maxCharges, at);
-        }
-        fighter.vitals.mp = Math.max(0, fighter.vitals.mp - Number(skill.mp || 0));
-        fighter.cooldowns[skill.selfId] = at + Math.max(0, Number(skill.reuse || 0));
+        settleCharges(fighter, C4SkillRules.resolve(skill), at);
+        spendSkill(fighter, skill, at);
         fighter.skillUses += 1;
     }
     fighter.readyAt += actionDelayMs(profile, skill);
@@ -1064,8 +1076,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         }
     }
     const vitals = {
-        hp: Number(state.vitals?.hp ?? bot.maxHp),
-        mp: Number(state.vitals?.mp ?? bot.maxMp),
+        hp: clamp(Number(state.vitals?.hp ?? bot.maxHp), 0, bot.maxHp),
+        mp: clamp(Number(state.vitals?.mp ?? bot.maxMp), 0, bot.maxMp),
         maxHp: bot.maxHp,
         maxMp: bot.maxMp
     };
@@ -1147,7 +1159,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             }
         } else if (hitSucceeds(mob.accur, soloFighter.profile.evasion, rng)) {
             const critical = Formulas.rollCritical(mob.critical, rng);
-            const damage = Formulas.calcMeleeDamage(mob.pAtk, mob.pAtkRnd, soloFighter.profile.pDef, { critical })
+            const damage = Formulas.calcMeleeDamage(mob.pAtk, mob.pAtkRnd, soloFighter.profile.pDef, { critical, rng })
                 * coldNpcWeaponModifier(mob, soloFighter.profile, timestamp + time);
             vitals.hp -= Math.max(0, damage);
             mobReadyAt += Math.max(250, Formulas.calcMeleeAtkTime(mob.atkSpd));
@@ -1430,7 +1442,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             const bossPAtk = Number(mob.raidBossPAtk || mob.pAtk);
             if (target && hitSucceeds(mob.accur, target.profile.evasion, rng)) {
                 const damage = Formulas.calcMeleeDamage(bossPAtk, mob.pAtkRnd, target.profile.pDef, {
-                    critical: Formulas.rollCritical(mob.critical, rng)
+                    critical: Formulas.rollCritical(mob.critical, rng), rng
                 }) * coldNpcWeaponModifier(mob, target.profile, timestamp + time);
                 const before = target.vitals.hp;
                 target.vitals.hp = Math.max(0, before - damage);
@@ -1441,7 +1453,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
                 const addTarget = addTargets[Math.floor(rng() * addTargets.length)] || target;
                 if (addTarget && hitSucceeds(mob.accur, addTarget.profile.evasion, rng)) {
                     const damage = Formulas.calcMeleeDamage(raidPressure.pAtk, mob.pAtkRnd, addTarget.profile.pDef, {
-                        critical: Formulas.rollCritical(mob.critical, rng)
+                        critical: Formulas.rollCritical(mob.critical, rng), rng
                     }) * coldNpcWeaponModifier(mob, addTarget.profile, timestamp + time);
                     const before = addTarget.vitals.hp;
                     addTarget.vitals.hp = Math.max(0, before - damage);
@@ -1487,6 +1499,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
 
 const BackgroundResolver = {
     combat: { chooseSkill, chooseChargeSkill, coldChargeState, expireCharges, addCharges, consumeCharges,
+        spendSkill, settleCharges, attackDamage,
         chooseHeal, applyAllyHeal, applyPartyHotTicks, actionDelayMs, hitSucceeds, coldRaidControlCapacity, coldRaidMinionPressure,
         coldRaidEncounterProfile },
     resolveDeathRecovery,
