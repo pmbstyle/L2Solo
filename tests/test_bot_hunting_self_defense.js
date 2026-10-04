@@ -119,8 +119,8 @@ tickHunting(lowManaSession, lowManaFighter, {}, {
     getStatus() { return {}; },
     executeCombat(_session, _bot, npc) { lowManaAttackId = npc.fetchId(); }
 });
-assert.strictEqual(lowManaSession.plan, 'fleeing', 'today a fighter at full HP and 10% MP flees from a mob that hits it');
-assert.strictEqual(lowManaAttackId, null);
+assert.strictEqual(lowManaSession.plan, 'hunting', 'a fighter at full HP and 10% MP does not flee from a mob that hits it');
+assert.strictEqual(lowManaAttackId, threatNpc.fetchId(), 'a melee bot with low MP counterattacks like at full MP');
 
 const raidThreat = {
     ...threatNpc,

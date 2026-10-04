@@ -451,11 +451,7 @@ const BackgroundPartyResolver = {
                     meta: { partyId: party.partyId, spotId: spot.id, fights, wins }
                 });
             } else {
-                if (!raid && BackgroundResolver.needsRest(state, vitals, {
-                    party: true,
-                    hpThreshold: 0.3,
-                    mpThreshold: 0.18
-                })) {
+                if (!raid && BackgroundResolver.needsRest(state, vitals, { party: true })) {
                     activity = 'resting';
                     resting += 1;
                 }

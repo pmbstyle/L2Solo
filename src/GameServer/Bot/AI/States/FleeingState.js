@@ -1,6 +1,6 @@
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
-const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
 const NpcObjectIndex = require('../../../World/NpcObjectIndex');
 
 const MIN_RETREAT_MS = 1000;
@@ -14,11 +14,10 @@ function stillMoving(session, bot) {
 }
 
 function needsRecovery(session, bot) {
-    const hpThreshold = session.recoveryLocked ? 0.95 : 0.35;
-    const mpThreshold = session.recoveryLocked ? 0.95 : 0.20;
-    return bot.fetchHp() / Math.max(1, bot.fetchMaxHp()) < hpThreshold ||
-        (BotRoles.shouldRestForMana(bot)
-            && bot.fetchMp() / Math.max(1, bot.fetchMaxMp()) < mpThreshold);
+    return RestPolicy.needsRest(bot,
+        bot.fetchHp() / Math.max(1, bot.fetchMaxHp()),
+        bot.fetchMp() / Math.max(1, bot.fetchMaxMp()),
+        { locked: !!session.recoveryLocked });
 }
 
 function distance2d(first, second) {

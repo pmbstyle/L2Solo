@@ -8,6 +8,7 @@ const WealthInvestmentPolicy = invoke('GameServer/Bot/Economy/WealthInvestmentPo
 const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
 
 const RANK_ORDER = ['none', 'd', 'c', 'b', 'a', 's'];
 const NPC_GEAR_PRIORITY = {
@@ -250,7 +251,7 @@ function evaluate(state = {}, options = {}) {
         });
     }
 
-    if (hpPct < 0.35 || mpPct < 0.2 || state.activity === 'resting') {
+    if (RestPolicy.needsRest(state, hpPct, mpPct) || state.activity === 'resting') {
         candidates.push({
             type: 'recover',
             priority: 90,

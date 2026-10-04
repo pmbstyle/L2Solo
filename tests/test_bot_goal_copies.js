@@ -35,12 +35,23 @@ const recover = (state) => NeedsEvaluator.evaluate(state, { now }).some((goal) =
 assert.strictEqual(recover(bot(FIGHTER, ratios(1, 1))), false, 'a fresh fighter has no recover goal');
 assert.strictEqual(recover(bot(FIGHTER, ratios(0.34, 1))), true, 'a fighter under 35% HP recovers');
 assert.strictEqual(recover(bot(FIGHTER, ratios(0.36, 1))), false);
-assert.strictEqual(recover(bot(FIGHTER, ratios(1, 0.1))), true,
-    'today a fighter at full HP and 10% MP holds the recover goal');
+assert.strictEqual(recover(bot(FIGHTER, ratios(1, 0.1))), false,
+    'a fighter at full HP and 10% MP does not hold the recover goal: it does not rest for MP');
 assert.strictEqual(recover(bot(MYSTIC, ratios(1, 0.1))), true, 'a mage at 10% MP recovers');
 assert.strictEqual(recover(bot(MYSTIC, ratios(1, 0.21))), false);
 assert.strictEqual(recover(bot(FIGHTER, ratios(1, 1), { activity: 'resting' })), true,
     'a resting bot keeps its recover goal');
+
+// Rest: the one rule and its thresholds.
+const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
+const fighter = bot(FIGHTER, ratios(1, 1));
+const mystic = bot(MYSTIC, ratios(1, 1));
+assert.strictEqual(RestPolicy.needsRest(fighter, 0.94, 1, { locked: true }), true, 'a locked recovery rests to 95% HP');
+assert.strictEqual(RestPolicy.needsRest(fighter, 0.95, 0.1, { locked: true }), false, 'a locked fighter ignores MP');
+assert.strictEqual(RestPolicy.needsRest(mystic, 1, 0.94, { locked: true }), true, 'a locked mage rests to 95% MP');
+assert.strictEqual(RestPolicy.needsRest(mystic, 1, 0.95, { locked: true }), false);
+assert.strictEqual(RestPolicy.needsRest(bot(TANK, ratios(1, 1)), 1, 0.17, { party: true }), true);
+assert.strictEqual(RestPolicy.needsRest(bot(TANK, ratios(1, 1)), 1, 0.17), false);
 
 // Rest: the cold solo rule.
 const soloRest = (state) => BackgroundResolver.needsRest(state, state.vitals);

@@ -7,6 +7,7 @@ const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const ColdClassPolicy = invoke('GameServer/Bot/Population/ColdClassPolicy');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
 const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
@@ -160,16 +161,13 @@ function coldRestRegenPerTick(state, options = {}) {
 
 function requiresManaRecovery(state, options = {}) {
     if (typeof options.requireMana === 'boolean') return options.requireMana;
-    return options.party === true
-        ? BotRoles.needsPartyManaRecovery(state)
-        : BotRoles.shouldRestForMana(state);
+    return RestPolicy.restsForMana(state, options.party === true);
 }
 
 function needsRest(state, vitals, options = {}) {
     const hpRatio = Number(vitals?.hp ?? 0) / Math.max(1, Number(vitals?.maxHp ?? vitals?.hp ?? 1));
     const mpRatio = Number(vitals?.mp ?? 0) / Math.max(1, Number(vitals?.maxMp ?? vitals?.mp ?? 1));
-    return hpRatio < Number(options.hpThreshold ?? 0.35)
-        || (requiresManaRecovery(state, options) && mpRatio < Number(options.mpThreshold ?? 0.20));
+    return RestPolicy.needsRest(state, hpRatio, mpRatio, { party: options.party === true });
 }
 
 function estimateRestMs(state, vitals, options = {}) {

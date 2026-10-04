@@ -12,6 +12,7 @@ const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const EncounterReadiness = invoke('GameServer/Bot/AI/BotEncounterReadiness');
 const BotPvpRisk      = invoke('GameServer/Bot/AI/BotPvpRisk');
 const BotRoles        = invoke('GameServer/Bot/AI/BotRoles');
+const RestPolicy      = invoke('GameServer/Bot/AI/RestPolicy');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const BotTownTravel  = invoke('GameServer/Bot/AI/BotTownTravel');
@@ -32,8 +33,6 @@ const { SPOT_CELL_SIZE } = invoke('GameServer/World/WorldConstants');
 const TARGET_STALL_TICKS = 5;
 const TARGET_RETRY_COOLDOWN_MS = 15000;
 const TARGET_PROGRESS_DISTANCE = 40;
-const EMERGENCY_RETREAT_HP_RATIO = 0.35;
-const EMERGENCY_RETREAT_MP_RATIO = 0.20;
 const EMERGENCY_RETREAT_DISTANCE = 850;
 const MAX_WALK_SPOT_DISTANCE = 12000;
 const SPOT_ARRIVAL_RADIUS = 1000;
@@ -252,9 +251,9 @@ function beginVoluntaryRecovery(session, bot, BotAI, readiness = null) {
         action: 'recover_before_encounter',
         reason: readiness?.reason || 'low_resources',
         hpRatio: readiness?.hpRatio ?? (bot.fetchHp() / Math.max(1, bot.fetchMaxHp())),
-        hpNeeded: readiness?.hpNeeded ?? EMERGENCY_RETREAT_HP_RATIO,
+        hpNeeded: readiness?.hpNeeded ?? RestPolicy.THRESHOLDS.solo.hp,
         mpRatio: readiness?.mpRatio ?? (bot.fetchMp() / Math.max(1, bot.fetchMaxMp())),
-        mpNeeded: readiness?.mpNeeded ?? EMERGENCY_RETREAT_MP_RATIO,
+        mpNeeded: readiness?.mpNeeded ?? RestPolicy.THRESHOLDS.solo.mp,
         at: Date.now()
     };
     BotAI.say(session, Speech.line('combat.rest'), { ambient: true, key: 'rest' });
@@ -444,9 +443,12 @@ function clearTarget(session, bot, targetId, retryCooldown = false) {
     return true;
 }
 
+// Low MP sends only a bot that rests for mana away from a fight; a melee
+// bot keeps swinging, as it keeps hunting with low MP.
 function needsEmergencyRetreat(bot) {
-    return bot.fetchHp() / Math.max(1, bot.fetchMaxHp()) < EMERGENCY_RETREAT_HP_RATIO
-        || bot.fetchMp() / Math.max(1, bot.fetchMaxMp()) < EMERGENCY_RETREAT_MP_RATIO;
+    return RestPolicy.needsRest(bot,
+        bot.fetchHp() / Math.max(1, bot.fetchMaxHp()),
+        bot.fetchMp() / Math.max(1, bot.fetchMaxMp()));
 }
 
 function retreatFromThreat(session, bot, threat) {
@@ -678,9 +680,7 @@ module.exports = {
         // Match RestingState's role-aware wake policy.  Melee/dps bots are
         // allowed to keep hunting with low MP; otherwise they immediately
         // wake again at full HP and oscillate between hunting and resting.
-        if (!encounterActionInFlight && (
-            hpRatio < 0.35 || (BotRoles.shouldRestForMana(bot) && mpRatio < 0.20)
-        )) {
+        if (!encounterActionInFlight && RestPolicy.needsRest(bot, hpRatio, mpRatio)) {
             beginVoluntaryRecovery(session, bot, BotAI);
             return;
         }

@@ -2,6 +2,7 @@ const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const ServerResponse = invoke('GameServer/Network/Response');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
+const RestPolicy     = invoke('GameServer/Bot/AI/RestPolicy');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
@@ -10,9 +11,6 @@ const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 
 const REST_FOLLOW_WAKE_DISTANCE = 600;
-const RECOVERY_HP_RATIO = 0.35;
-const RECOVERY_MP_RATIO = 0.20;
-const FULL_RECOVERY_RATIO = 0.95;
 const EMERGENCY_RETREAT_DISTANCE = 850;
 const MANA_REGEN_CAST_RETRY_MS = 8000;
 const NEWBIE_GUIDE_TOWN_RADIUS = 7500;
@@ -76,11 +74,10 @@ function maybeCastManaRegeneration(session, bot, Generics) {
 }
 
 function needsRecovery(session, bot) {
-    const hpThreshold = session.recoveryLocked ? FULL_RECOVERY_RATIO : RECOVERY_HP_RATIO;
-    const mpThreshold = session.recoveryLocked ? FULL_RECOVERY_RATIO : RECOVERY_MP_RATIO;
-    return bot.fetchHp() / Math.max(1, bot.fetchMaxHp()) < hpThreshold
-        || (BotRoles.shouldRestForMana(bot)
-            && bot.fetchMp() / Math.max(1, bot.fetchMaxMp()) < mpThreshold);
+    return RestPolicy.needsRest(bot,
+        bot.fetchHp() / Math.max(1, bot.fetchMaxHp()),
+        bot.fetchMp() / Math.max(1, bot.fetchMaxMp()),
+        { locked: !!session.recoveryLocked });
 }
 
 function canRecoverAtNewbieGuide(bot, BotAI) {

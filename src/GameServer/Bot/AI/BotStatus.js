@@ -1,4 +1,5 @@
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
@@ -147,7 +148,7 @@ function inferIntent(session, bot, vitals, target) {
     if (session.plan === 'pk_hunting') {
         return target ? 'hunt_player' : 'find_player';
     }
-    if (vitals.hpPct < 0.35 || (BotRoles.shouldRestForMana(bot) && vitals.mpPct < 0.20)) return 'recover';
+    if (RestPolicy.needsRest(bot, vitals.hpPct, vitals.mpPct)) return 'recover';
     return target ? 'fight_target' : 'find_target';
 }
 
@@ -155,8 +156,8 @@ function collectBlockers(session, bot, vitals, party) {
     const blockers = [];
 
     if (bot.state.fetchDead()) blockers.push('dead');
-    if (vitals.hpPct < 0.35) blockers.push('low_hp');
-    if (BotRoles.shouldRestForMana(bot) && vitals.mpPct < 0.20) blockers.push('low_mp');
+    if (RestPolicy.needsRest(bot, vitals.hpPct, 1)) blockers.push('low_hp');
+    if (RestPolicy.needsRest(bot, 1, vitals.mpPct)) blockers.push('low_mp');
     if (session.stuckTicks >= 3) blockers.push('stuck');
     if (party && party.leader && party.leader.distance > 1000) blockers.push('too_far_from_leader');
     if (session.plan === 'hunting' && session.noTargetTicks >= 3) blockers.push('no_targets_nearby');
