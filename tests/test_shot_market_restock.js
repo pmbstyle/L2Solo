@@ -5,7 +5,9 @@ require('../src/Global');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const Database = invoke('Database');
+const StaticMerchantPricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
 const originalOffers = AfkTrade.offers;
+const originalCheapest = StaticMerchantPricing.cheapestPurchase;
 const originalBuy = AfkTrade.buyFromShop;
 const originalUpdate = Database.updateItemAmount;
 
@@ -29,15 +31,21 @@ const plan = { selfId: 1835, kind: 'soulshot', rank: 'none', price: 7, name: 'So
         amounts.set(selfId, amounts.get(selfId) + amount);
         return {};
     };
-    Database.updateItemAmount = () => { throw new Error('fixed-store restock must not run'); };
+    // One restock rule (S3): the cheaper AFK offer first, then the NPC (price 7)
+    // up to 3,000 shots with only the money above the consumables reserve.
+    StaticMerchantPricing.cheapestPurchase = (selfId) => (Number(selfId) === 1835 ? 7 : 0);
+    const npcWrites = [];
+    Database.updateItemAmount = (...args) => { npcWrites.push(args); return Promise.resolve({}); };
     const result = await ShotStock.purchaseActorRestock(actor, { plan, targetAmount: 1000 });
-    assert.strictEqual(result.cost, 4500);
-    assert.strictEqual(result.amount, 1000);
-    assert.deepStrictEqual(purchases, [{ selfId: 1835, amount: 900 }]);
-    assert.strictEqual(amounts.get(57), 5500);
-    console.log('Shot restock prefers a cheaper AFK market offer');
+    assert.deepStrictEqual(purchases, [{ selfId: 1835, amount: 900 }], 'the cheaper AFK offer is bought first');
+    assert.strictEqual(result.amount, 1642);
+    assert.strictEqual(result.cost, 900 * 5 + 642 * 7);
+    assert.strictEqual(amounts.get(57), 1006, 'the consumables reserve stays');
+    assert.ok(npcWrites.length > 0, 'the rest comes from the NPC');
+    console.log('Shot restock buys the cheaper AFK offer first, then the NPC above the reserve');
 })().finally(() => {
     AfkTrade.offers = originalOffers;
+    StaticMerchantPricing.cheapestPurchase = originalCheapest;
     AfkTrade.buyFromShop = originalBuy;
     Database.updateItemAmount = originalUpdate;
 });
