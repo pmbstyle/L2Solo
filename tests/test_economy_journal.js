@@ -6,6 +6,7 @@ require('../src/Global');
 
 const Database = invoke('Database');
 const EconomyJournal = invoke('EconomyJournal');
+const PvpJournal = invoke('PvpJournal');
 const databasePath = path.join(process.cwd(), 'tmp', 'test-economy-journal.sqlite');
 
 function clean() {
@@ -42,7 +43,7 @@ async function worldTotals() {
 }
 
 async function journalRows() {
-    await Database.flushEconomyJournal();
+    await Database.flushJournals();
     return Database.execute(['SELECT * FROM economy_flow_hour'], 'test:journal');
 }
 
@@ -126,6 +127,42 @@ function sumBy(rows, keyOf) {
     assert.ok(rows.some((row) => row.operation === 'inventory:sync-summary:npc_liquidation'
         && Number(row.selfId) === 57 && Number(row.delta) > 0), 'the sync reason must name the operation');
     assert.ok(!rows.some((row) => row.operation === 'test:failing-update'), 'a failed statement must not be journaled');
+
+    // A committed cold fight is journaled with who started it, the outcome and the kills.
+    const fighter = (characterId, level, karma = 0) => ({ characterId, level, stats: { karma } });
+    PvpJournal.coldConflict({
+        event: { key: 'test-conflict', action: 'contest', spotId: 'spot-1', npcId: 20001 },
+        sides: [
+            { principal: fighter(ownerId, 30), members: [fighter(ownerId, 30)] },
+            { principal: fighter(customerId, 28, 120), members: [fighter(customerId, 28, 120), fighter(9, 27)] }
+        ],
+        outcome: 'pvp_killed',
+        pvp: { started: true, reason: 'contest', losingSide: 1, durationMs: 4200,
+            fighters: [{ id: ownerId, kills: [{ victimId: customerId, pvp: true }, { victimId: 9, pvp: false }] }] },
+        matchup: 'solo_vs_party',
+        revenge: false,
+        personaFor: () => ({ archetype: 'brawler' }),
+        at: Date.now()
+    });
+    const actor = (id, level, karma) => ({ fetchId: () => id, fetchLevel: () => level, fetchKarma: () => karma });
+    PvpJournal.hotKill({ attacker: actor(ownerId, 30, 0), victim: actor(customerId, 29, 0), pk: true,
+        attackerKarma: 0, playerInvolved: true, at: Date.now() });
+    await Database.flushJournals();
+    const [hot] = await Database.execute(["SELECT * FROM pvp_conflicts WHERE source = 'hot'"], 'test:pvp-hot');
+    assert.strictEqual(hot.outcome, 'pk');
+    assert.strictEqual(hot.playerInvolved, 1);
+    const [conflict] = await Database.execute(['SELECT * FROM pvp_conflicts WHERE conflictKey = ?', ['test-conflict']], 'test:pvp');
+    assert.strictEqual(conflict.initiatorId, ownerId);
+    assert.strictEqual(conflict.targetKarma, 120);
+    assert.strictEqual(conflict.sideSizes, '1:2');
+    assert.strictEqual(conflict.kills, 2);
+    assert.strictEqual(conflict.pkKills, 1);
+    assert.strictEqual(conflict.initiatorArchetype, 'brawler');
+    const [summary] = await Database.execute([
+        "SELECT * FROM pvp_conflict_hour WHERE source = 'cold' AND outcome = 'pvp_killed'"
+    ], 'test:pvp-hour');
+    assert.strictEqual(summary.conflicts, 1);
+    assert.strictEqual(summary.pkKills, 1);
 
     // The triggers live only on the server's connection: another tool may still write.
     const other = new DatabaseSync(databasePath);

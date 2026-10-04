@@ -172,11 +172,13 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
         if (results.length !== states.length || results.some(r => !r.ok)) return { ok: false, reason: 'commit_rejected' };
         preparedParties.filter(Boolean).forEach(prepared => parties.acceptCommit(prepared));
         if (encounter) onEncounter(encounter);
+        const matchup = sides.map(s => s.party ? 'party' : 'solo').join('_vs_');
+        require('../../../PvpJournal').coldConflict({ event, sides, outcome, pvp, matchup, revenge, personaFor, at: timestamp });
         return { ok: true, deescalated, outcome, pvp: !!pvp?.started,
             ...(pvp ? { pvpReason: pvp.reason || outcome } : {}),
             ...(pvp?.started ? { encounter, extensionMs: encounter ? Math.max(0, encounter.expiresAt - step.expiresAt) : 0,
                 combat: { durationMs: pvp.durationMs, actions: pvp.actions, fighters: pvp.fighters } } : {}),
-            matchup: sides.map(s => s.party ? 'party' : 'solo').join('_vs_'),
+            matchup,
             affectedIds: deescalated ? [] : pvp?.started ? [...pvp.updates.keys()] : sides[losingIndex].members.map(s => s.characterId),
             participants: [...roles].map(([id, role]) => ({ id, role })), memoryEvents: events.length,
             ...(deescalated ? {} : { waitUntil: wait.until, victimId: sides[1].principal.characterId }) };

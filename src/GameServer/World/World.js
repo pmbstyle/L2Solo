@@ -124,6 +124,7 @@ function waitForBotSession(BotManager, name, attempts = 40) {
 
 const World = {
     waitForBotSession,
+    isBotSession,
 
     async init() {
         NpcDecay.stop(this);

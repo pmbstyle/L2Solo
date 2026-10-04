@@ -394,6 +394,47 @@ CREATE TABLE IF NOT EXISTS economy_flow_hour (
     events INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (hour, operation, store, selfId)
 ) WITHOUT ROWID;
+
+-- PvP journal (src/PvpJournal.js): raw conflicts for hours, an hourly summary for days.
+CREATE TABLE IF NOT EXISTS pvp_conflicts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    source TEXT NOT NULL,
+    conflictKey TEXT,
+    action TEXT NOT NULL,
+    reason TEXT,
+    spotId TEXT,
+    npcId INTEGER,
+    matchup TEXT,
+    outcome TEXT NOT NULL,
+    pvp INTEGER NOT NULL DEFAULT 0,
+    initiatorId INTEGER NOT NULL,
+    initiatorLevel INTEGER NOT NULL DEFAULT 0,
+    initiatorArchetype TEXT,
+    initiatorKarma INTEGER NOT NULL DEFAULT 0,
+    targetId INTEGER NOT NULL,
+    targetLevel INTEGER NOT NULL DEFAULT 0,
+    targetArchetype TEXT,
+    targetKarma INTEGER NOT NULL DEFAULT 0,
+    sideSizes TEXT,
+    losingSide INTEGER,
+    kills INTEGER NOT NULL DEFAULT 0,
+    pkKills INTEGER NOT NULL DEFAULT 0,
+    durationMs INTEGER NOT NULL DEFAULT 0,
+    playerInvolved INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS pvp_conflicts_at ON pvp_conflicts(at);
+CREATE TABLE IF NOT EXISTS pvp_conflict_hour (
+    hour INTEGER NOT NULL,
+    source TEXT NOT NULL,
+    action TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    conflicts INTEGER NOT NULL DEFAULT 0,
+    kills INTEGER NOT NULL DEFAULT 0,
+    pkKills INTEGER NOT NULL DEFAULT 0,
+    playerInvolved INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (hour, source, action, outcome)
+) WITHOUT ROWID;
 INSERT OR IGNORE INTO market_trades (
     eventKey, occurredAt, channel, sourceType, selfId, itemName,
     quantity, unitPrice, totalPrice, town,

@@ -4,6 +4,7 @@ const { DatabaseSync } = require('node:sqlite');
 const Statements = require('./DatabaseStatements');
 const MarketTradeOverview = require('./MarketTradeOverview');
 const EconomyJournal = require('./EconomyJournal');
+const PvpJournal = require('./PvpJournal');
 const CheckpointCoordinator = require('./DatabaseCheckpointCoordinator');
 const { XP_DIVIDER: KARMA_XP_DIVIDER } = require('./GameServer/Karma');
 const InteractionMemoryPolicy = require('./GameServer/Social/InteractionMemoryPolicy');
@@ -233,18 +234,24 @@ function selectOne(table, columns, where, params, operation) {
 
 const ECONOMY_JOURNAL_FLUSH_MS = 60 * 1000;
 const ECONOMY_JOURNAL_RETENTION_HOURS = 14 * 24;
+const PVP_JOURNAL_RAW_RETENTION_MS = 12 * 60 * 60 * 1000;
+const PVP_COLUMNS = ['at', 'source', 'conflictKey', 'action', 'reason', 'spotId', 'npcId', 'matchup', 'outcome', 'pvp',
+    'initiatorId', 'initiatorLevel', 'initiatorArchetype', 'initiatorKarma', 'targetId', 'targetLevel', 'targetArchetype',
+    'targetKarma', 'sideSizes', 'losingSide', 'kills', 'pkKills', 'durationMs', 'playerInvolved'];
 let economyJournalTimer = null;
 let economyJournalPrunedHour = 0;
 let economyJournalComplete = false;
 
-// Writes the journal sums gathered in memory; old hours are pruned once an hour.
-function flushEconomyJournal() {
+// Writes the economy and PvP journals gathered in memory; old rows are pruned once an hour.
+function flushJournals() {
     return enqueue(() => {
         if (!economyJournalComplete) economyJournalComplete = EconomyJournal.attachMissing(connection);
         const rows = EconomyJournal.drain();
-        const hour = Math.floor(now() / EconomyJournal.HOUR_MS);
+        const conflicts = PvpJournal.drain();
+        const timestamp = now();
+        const hour = Math.floor(timestamp / EconomyJournal.HOUR_MS);
         const prune = hour !== economyJournalPrunedHour;
-        if (!rows.length && !prune) return 0;
+        if (!rows.length && !conflicts.length && !prune) return 0;
         connection.exec('BEGIN IMMEDIATE');
         try {
             const upsert = Statements.prepare(connection, `INSERT INTO economy_flow_hour
@@ -252,9 +259,27 @@ function flushEconomyJournal() {
                 ON CONFLICT(hour, operation, store, selfId) DO UPDATE SET
                     delta = delta + excluded.delta, events = events + excluded.events`);
             rows.forEach((row) => upsert.run(row.hour, row.operation, row.store, row.selfId, row.delta, row.events));
+            if (conflicts.length) {
+                const insertConflict = Statements.prepare(connection, `INSERT INTO pvp_conflicts (${PVP_COLUMNS.join(', ')})
+                    VALUES (${PVP_COLUMNS.map(() => '?').join(', ')})`);
+                const summary = Statements.prepare(connection, `INSERT INTO pvp_conflict_hour
+                    (hour, source, action, outcome, conflicts, kills, pkKills, playerInvolved) VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+                    ON CONFLICT(hour, source, action, outcome) DO UPDATE SET conflicts = conflicts + 1,
+                        kills = kills + excluded.kills, pkKills = pkKills + excluded.pkKills,
+                        playerInvolved = playerInvolved + excluded.playerInvolved`);
+                conflicts.forEach((conflict) => {
+                    insertConflict.run(...PVP_COLUMNS.map((column) => conflict[column] ?? null));
+                    summary.run(Math.floor(conflict.at / EconomyJournal.HOUR_MS), conflict.source, conflict.action,
+                        conflict.outcome, conflict.kills, conflict.pkKills, conflict.playerInvolved);
+                });
+            }
             if (prune) {
                 Statements.prepare(connection, 'DELETE FROM economy_flow_hour WHERE hour < ?')
                     .run(hour - ECONOMY_JOURNAL_RETENTION_HOURS);
+                Statements.prepare(connection, 'DELETE FROM pvp_conflict_hour WHERE hour < ?')
+                    .run(hour - ECONOMY_JOURNAL_RETENTION_HOURS);
+                Statements.prepare(connection, 'DELETE FROM pvp_conflicts WHERE at < ?')
+                    .run(timestamp - PVP_JOURNAL_RAW_RETENTION_MS);
             }
             connection.exec('COMMIT');
         } catch (error) {
@@ -262,8 +287,8 @@ function flushEconomyJournal() {
             throw error;
         }
         if (prune) economyJournalPrunedHour = hour;
-        return rows.length;
-    }, { operation: 'economy-journal:flush' });
+        return rows.length + conflicts.length;
+    }, { operation: 'journal:flush' });
 }
 
 function startEconomyJournal() {
@@ -271,7 +296,7 @@ function startEconomyJournal() {
     economyJournalComplete = false;
     clearInterval(economyJournalTimer);
     economyJournalTimer = setInterval(() => {
-        flushEconomyJournal().catch((error) => utils.infoWarn('DB', 'economy journal flush failed: %s', error.message));
+        flushJournals().catch((error) => utils.infoWarn('DB', 'journal flush failed: %s', error.message));
     }, ECONOMY_JOURNAL_FLUSH_MS);
     economyJournalTimer.unref?.();
 }
@@ -4153,7 +4178,7 @@ const Database = {
         clearInterval(economyJournalTimer);
         economyJournalTimer = null;
         if (connection) {
-            flushEconomyJournal().catch((error) => utils.infoWarn('DB', 'economy journal flush failed: %s', error.message));
+            flushJournals().catch((error) => utils.infoWarn('DB', 'journal flush failed: %s', error.message));
         }
         shuttingDown = true;
         const pending = queryTail;
@@ -4241,7 +4266,7 @@ const Database = {
         ));
     },
 
-    flushEconomyJournal,
+    flushJournals,
 
     compactStackableInventory(selfIds = [], taskName = 'compact-stackable-inventory-v1') {
         const ids = [...new Set((selfIds || []).map(Number).filter((selfId) => selfId > 0))];

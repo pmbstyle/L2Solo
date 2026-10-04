@@ -147,6 +147,16 @@ function receivedHit(session, actor, hit, options = {}) {
             const attackerSession = attacker.session || session;
             const Database = invoke('Database');
             const ServerResponse = invoke('GameServer/Network/Response');
+            const isBotSession = invoke('GameServer/World/World').isBotSession;
+            const isPlayer = (character) => !!character.session && !isBotSession(character.session);
+            invoke('PvpJournal').hotKill({
+                attacker,
+                victim,
+                pk: !(victim.fetchPvpFlag() === 1 || victim.fetchKarma() > 0),
+                attackerKarma: attacker.fetchKarma(),
+                playerInvolved: isPlayer(attacker) || isPlayer(victim),
+                at: Date.now()
+            });
 
             if (victim.fetchPvpFlag() === 1 || victim.fetchKarma() > 0) {
                 // Legitimate PvP or PK-hunting kill
