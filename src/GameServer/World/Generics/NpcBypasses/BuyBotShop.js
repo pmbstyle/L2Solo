@@ -1,6 +1,7 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const Item           = invoke('GameServer/Item/Item');
 const DataCache      = invoke('GameServer/DataCache');
+const ItemTemplateIndex = require('../../../Item/ItemTemplateIndex');
 const BotManager     = invoke('GameServer/Bot/BotManager');
 
 module.exports = function(session, parts) {
@@ -73,7 +74,7 @@ module.exports = function(session, parts) {
     // 4. Собираем уникальные ID выпадающих предметов (исключаем Adena [57])
     const itemIds = new Set();
     monsterIds.forEach(monsterId => {
-        const rewardsData = DataCache.npcRewards.find(r => r.selfId === monsterId);
+        const rewardsData = ItemTemplateIndex.findStrict(DataCache.npcRewards, monsterId);
         if (!rewardsData) return;
         
         if (rewardsData.rewards) {

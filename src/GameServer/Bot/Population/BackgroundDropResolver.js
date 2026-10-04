@@ -4,13 +4,32 @@ const ProgressionRates = invoke('GameServer/ProgressionRates');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 
 const npcRewardMaxHpMultiplierCache = new Map();
+let rewardNameIndexes = new WeakMap();
+
+// Rewards with loot, by lower-case monster name, each with its catalog position.
+// Rebuilt when the catalog array is replaced or changes length.
+function rewardsByName(rewards) {
+    if (!Array.isArray(rewards)) return new Map();
+    let index = rewardNameIndexes.get(rewards);
+    if (index && index.length === rewards.length) return index.byName;
+    index = { length: rewards.length, byName: new Map() };
+    rewards.forEach((reward, position) => {
+        if (!reward || !((reward.rewards || []).length > 0 || (reward.spoils || []).length > 0)) return;
+        const name = String(reward.template?.name || '').trim().toLowerCase();
+        const list = index.byName.get(name) || [];
+        list.push({ reward, position });
+        index.byName.set(name, list);
+    });
+    rewardNameIndexes.set(rewards, index);
+    return index.byName;
+}
 
 function rewardDataForSpot(spot, rng, npcSelfId = 0) {
     const entries = spot?.npcEntries?.length
         ? spot.npcEntries
         : (spot?.npcSelfIds || []).map((selfId) => ({ selfId, count: 1 }));
     const byId = entries.map((entry) => ({
-        reward: (DataCache.npcRewards || []).find((reward) => Number(reward.selfId) === Number(entry.selfId)),
+        reward: ItemTemplateIndex.find(DataCache.npcRewards, entry.selfId),
         count: Math.max(1, Number(entry.count || 1))
     })).filter((entry) => (entry.reward?.rewards || []).length > 0 || (entry.reward?.spoils || []).length > 0);
     const knownIds = new Set(byId.map((entry) => Number(entry.reward.selfId)));
@@ -18,18 +37,19 @@ function rewardDataForSpot(spot, rng, npcSelfId = 0) {
     // World-spawn ids may not be the datapack reward ids. The spot index also
     // carries the monster names, so use that source-backed mapping before
     // giving up on loot for the fight.
-    const byName = names.size === 0 ? [] : (DataCache.npcRewards || []).filter((reward) => (
-        !knownIds.has(Number(reward.selfId))
-        && names.has(String(reward.template?.name || '').trim().toLowerCase())
-        && ((reward.rewards || []).length > 0 || (reward.spoils || []).length > 0)
-    )).map((reward) => ({ reward, count: 1 }));
+    const byNameIndex = names.size === 0 ? null : rewardsByName(DataCache.npcRewards);
+    const byName = !byNameIndex ? [] : [...names]
+        .flatMap((name) => byNameIndex.get(name) || [])
+        .filter((entry) => !knownIds.has(Number(entry.reward.selfId)))
+        .sort((a, b) => a.position - b.position)
+        .map((entry) => ({ reward: entry.reward, count: 1 }));
     const candidates = [...byId, ...byName];
     if (!candidates.length) return null;
     const defeatedNpcId = Number(npcSelfId || 0);
     if (defeatedNpcId > 0) {
         const exact = candidates.find((candidate) => Number(candidate.reward.selfId) === defeatedNpcId)?.reward;
         if (exact) return exact;
-        const defeatedNpcName = String((DataCache.npcs || []).find((npc) => Number(npc.selfId) === defeatedNpcId)?.template?.name || '')
+        const defeatedNpcName = String(ItemTemplateIndex.find(DataCache.npcs, defeatedNpcId)?.template?.name || '')
             .trim().toLowerCase();
         return candidates.find((candidate) => (
             defeatedNpcName && String(candidate.reward.template?.name || '').trim().toLowerCase() === defeatedNpcName

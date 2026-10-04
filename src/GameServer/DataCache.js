@@ -231,12 +231,12 @@ const DataCache = {
     },
 
     fetchNpcFromSelfId(selfId, callback) {
-        const item = structuredClone(DataCache.npcs.find((ob) => ob.selfId === selfId));
+        const item = structuredClone(ItemTemplateIndex.findStrict(DataCache.npcs, selfId));
         item ? callback(item) : utils.infoWarn('Datapack', 'unknown Npc SelfId %d', selfId);
     },
 
     fetchNpcRewardsFromSelfId(selfId, callback) {
-        const item = structuredClone(DataCache.npcRewards.find((ob) => ob.selfId === selfId));
+        const item = structuredClone(ItemTemplateIndex.findStrict(DataCache.npcRewards, selfId));
         item ? callback(item) : utils.infoWarn('Datapack', 'unknown NpcRewards SelfId %d', selfId);
     },
 
