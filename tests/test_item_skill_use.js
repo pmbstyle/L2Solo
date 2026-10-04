@@ -97,7 +97,7 @@ function sessionFor(backpack, options = {}) {
         fetchCollectiveCastSpd: () => 1,
         fetchCollectiveMDef: () => 1,
         fetchPvpFlag: () => 0,
-        fetchKarma: () => 0,
+        fetchKarma: () => options.karma ?? 0,
         fetchCollectiveRunSpd: () => 1,
         fetchCollectiveWalkSpd: () => 1,
         fetchSwim: () => 0,
@@ -569,12 +569,50 @@ assert(blessedEscape, 'L2Day Blessed Escape should resolve to an item skill');
 assert.strictEqual(blessedEscape.fetchSelfId(), 2036, 'L2Day Blessed Escape should use sourced skill 2036');
 assert.strictEqual(blessedEscape.fetchLevel(), 2, 'L2Day Blessed Escape should preserve sourced item_skill level 2');
 assert.strictEqual(blessedEscape.fetchHitTime(), 200, 'L2Day Blessed Escape should preserve sourced skill hitTime');
+
+// Scrolls of Escape to the nearest town (items 736, 1538, 3958) are consumed
+// and cast the recall skill, which sends a character with karma to the
+// town's PK point instead of its gatekeeper (C4 ScrollOfEscape casts 2013/2036).
+function useEscapeScroll(selfId, options) {
+    const backpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+    backpack.items = [item(30, { selfId, kind: 'Other.Scroll', amount: 1 })];
+    const session = sessionFor(backpack, options);
+    const realInvoke = global.invoke;
+    const realSetTimeout = global.setTimeout;
+    let landed = null;
+    global.invoke = (module) => module === 'GameServer/Actor/Generics/TeleportTo'
+        ? (_session, _actor, coords) => { landed = coords; }
+        : realInvoke(module);
+    global.setTimeout = (callback) => { callback(); return 0; };
+    try {
+        backpack.useItem(session, 30);
+    } finally {
+        global.invoke = realInvoke;
+        global.setTimeout = realSetTimeout;
+    }
+    return { landed, consumed: backpack.fetchItemFromSelfId(selfId) === undefined };
+}
+
+const dionFields = { locX: 22000, locY: 140000, locZ: -3000 };
+const dionChaoticPoints = invoke('GameServer/World/TownRespawn').CHAOTIC_RESPAWNS.dion_town
+    .map(([locX, locY, locZ]) => JSON.stringify({ locX, locY, locZ }));
+for (const selfId of [736, 1538, 3958]) {
+    const white = useEscapeScroll(selfId, { ...dionFields, karma: 0 });
+    assert.deepStrictEqual(white.landed, { locX: 15681, locY: 142885, locZ: -2704 },
+        `escape scroll ${selfId} without karma should land at the Dion gatekeeper`);
+    assert.strictEqual(white.consumed, true, `escape scroll ${selfId} should be consumed`);
+
+    const red = useEscapeScroll(selfId, { ...dionFields, karma: 500 });
+    assert(red.landed && dionChaoticPoints.includes(JSON.stringify(red.landed)),
+        `escape scroll ${selfId} with karma should land at a Dion PK point, got ${JSON.stringify(red.landed)}`);
+    assert.strictEqual(red.consumed, true, `escape scroll ${selfId} with karma should be consumed`);
+
+    const refused = useEscapeScroll(selfId, { ...dionFields, karma: 0, privateStoreType: 1 });
+    assert.strictEqual(refused.landed, null, `escape scroll ${selfId} should not move a character the recall refuses`);
+    assert.strictEqual(refused.consumed, true, `escape scroll ${selfId} should be consumed even when the recall refuses`);
+}
 assert.deepStrictEqual(
-    blessedEscapeBackpack.resolveItemTeleportCoords(
-        sessionFor(blessedEscapeBackpack, { locX: 49315, locY: 248452, locZ: -5960 }).actor,
-        C4ItemSkills.resolve(3958),
-        blessedEscape
-    ),
+    useEscapeScroll(3958, { locX: 49315, locY: 248452, locZ: -5960 }).landed,
     { locX: -84058, locY: 244604, locZ: -3728 },
     'a generic Scroll of Escape used inside Elven Ruins should teleport to Talking Island'
 );

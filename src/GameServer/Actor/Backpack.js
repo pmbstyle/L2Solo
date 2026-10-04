@@ -612,7 +612,7 @@ class Backpack extends BackpackModel {
                 return;
             }
 
-            if (itemSkill.teleport === 'town' || itemSkill.teleport === 'skillCoords') {
+            if (itemSkill.teleport === 'skillCoords') {
                 const coords = this.resolveItemTeleportCoords(session.actor, itemSkill, skill);
                 if (!coords) {
                     return;
@@ -644,13 +644,6 @@ class Backpack extends BackpackModel {
     }
 
     resolveItemTeleportCoords(actor, itemSkill, skill) {
-        if (itemSkill.teleport === 'town') {
-            return invoke('GameServer/World/TownRespawn').getRespawnCoords(
-                actor.fetchLocX(),
-                actor.fetchLocY(),
-                actor.fetchLocZ()
-            );
-        }
         if (itemSkill.teleport === 'skillCoords') {
             return skill.fetchTeleportCoords?.() || null;
         }
