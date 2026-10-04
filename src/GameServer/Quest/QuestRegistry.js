@@ -132,6 +132,7 @@ const entries = [
     [220, "Q220_TestimonyOfGlory"],
     [223, "Q223_TestOfChampion"],
     [215, "Q215_TrialOfPilgrim"],
+    [233, "Q233_TestOfWarspirit"],
   ].map(([id, name]) => ({
     id,
     modulePath: `./quests/${name}`,
