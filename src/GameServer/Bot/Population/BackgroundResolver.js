@@ -15,6 +15,7 @@ const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const EncounterReadiness = invoke('GameServer/Bot/AI/BotEncounterReadiness');
 const PartyBuffLoadout = invoke('GameServer/Bot/AI/PartyBuffLoadout');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
+const Karma = invoke('GameServer/Karma');
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -1569,7 +1570,7 @@ const BackgroundResolver = {
             };
         }
 
-        if (state.activity === 'traveling' && Number(state.stats?.karma || 0) > 0
+        if (state.activity === 'traveling' && Karma.closesTowns(state.stats?.karma)
             && !['hunting', 'grouped'].includes(state.stats?.travel?.arrivalActivity)) {
             return { patch: { activity: 'hunting', stats: { ...state.stats, travel: null } },
                 events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },

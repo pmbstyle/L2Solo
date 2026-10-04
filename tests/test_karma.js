@@ -16,5 +16,8 @@ assert.strictEqual(Karma.pkKillKarma(actor({ pk: 0, level: 40 }), actor({ level:
 assert.strictEqual(Karma.pkKillKarma(actor({ pk: 4, level: 60 }), actor({ level: 20 })), 1440, 'PK karma must scale with prior PK count and level advantage');
 assert.strictEqual(Karma.karmaLostForExperience(actor({ karma: 1000 }), 520), 2, 'earned experience should wash karma using the C4 XP divider');
 assert.strictEqual(Karma.karmaLostForExperience(actor({ karma: 1 }), 520), 1, 'karma wash must not make karma negative');
+assert.strictEqual(Karma.closesTowns(1), true, 'any karma keeps a character out of towns');
+assert.strictEqual(Karma.closesTowns(0), false, 'no karma leaves towns open');
+assert.strictEqual(Karma.closesTowns(undefined), false, 'a missing karma value leaves towns open');
 
 console.log('Karma regression checks passed');

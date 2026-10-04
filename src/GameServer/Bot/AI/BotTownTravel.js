@@ -3,6 +3,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
 const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
+const Karma = invoke('GameServer/Karma');
 
 const SOE_SKILL_ID = 2013;
 const SOE_CAST_MS = 20000;
@@ -139,6 +140,8 @@ function request(session, bot, BotAI, reason, options = {}) {
     const pending = session.pendingTownTrip || {};
     session.pendingTownTrip = { reason: reason || pending.reason || null, requestedAt: pending.requestedAt || Date.now() };
     if (inCombat(session, bot)) return 'deferred';
+    // A bot with karma keeps the trip pending until it has washed its karma.
+    if (Karma.closesTowns(bot.fetchKarma?.())) return 'deferred';
 
     const town = options.destinationTown || BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
     session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };

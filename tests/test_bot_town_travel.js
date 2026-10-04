@@ -107,6 +107,21 @@ try {
     assert.strictEqual(resumedResult, 'escape', 'pending town trip should start after combat ends');
     assert.strictEqual(fightingSession.pendingTownTrip, undefined, 'started town trip should clear its pending marker');
 
+    const redBot = botAt({ locX: 0, locY: 0, locZ: 0 });
+    let redKarma = 500;
+    redBot.fetchKarma = () => redKarma;
+    const redSession = session(redBot);
+    const redResult = BotTownTravel.request(redSession, redBot, farAi, 'Out of shots.');
+    assert.strictEqual(redResult, 'deferred', 'a hot bot with karma should not take a town trip');
+    assert.strictEqual(redSession.plan, 'hunting', 'a bot with karma keeps hunting to wash its karma');
+    assert.strictEqual(redSession.townEscape, undefined, 'a bot with karma should not cast Scroll of Escape to town');
+    assert.strictEqual(redBot.moves.length, 0, 'a bot with karma should not walk into town');
+    assert.strictEqual(redSession.pendingTownTrip?.reason, 'Out of shots.', 'the town trip of a bot with karma stays pending');
+    redKarma = 0;
+    const washedResult = BotTownTravel.request(redSession, redBot, farAi, redSession.pendingTownTrip.reason);
+    assert.strictEqual(washedResult, 'escape', 'the pending town trip should start once karma is washed');
+    assert.strictEqual(redSession.pendingTownTrip, undefined, 'the started trip clears its pending marker');
+
     const visiblePackets = [];
     const interruptedBot = botAt({ locX: 10, locY: 20, locZ: 30 });
     const interruptedSession = session(interruptedBot);

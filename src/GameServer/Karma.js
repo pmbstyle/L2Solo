@@ -19,4 +19,11 @@ function karmaLostForExperience(actor, exp) {
     return Math.min(current, lost);
 }
 
-module.exports = { MIN_KARMA, MAX_KARMA, XP_DIVIDER, pkKillKarma, karmaLostForExperience };
+// A character with karma is kept out of towns: a bot takes no town trip and
+// travels on foot, never by Scroll of Escape or gatekeeper. One test for hot
+// actors (fetchKarma) and cold states (stats.karma).
+function closesTowns(karma) {
+    return Number(karma) > 0;
+}
+
+module.exports = { MIN_KARMA, MAX_KARMA, XP_DIVIDER, pkKillKarma, karmaLostForExperience, closesTowns };
