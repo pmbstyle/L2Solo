@@ -77,9 +77,14 @@ function itemSnapshot(item, amount, sourceMobLevel = 0) {
     };
 }
 
-function sourceMobLevel(rewardData, spot, npcSelfId = 0) {
-    const npc = (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(npcSelfId || rewardData?.selfId));
+// The level of a defeated NPC: its template level, else the spot average.
+function npcLevel(spot, npcSelfId) {
+    const npc = ItemTemplateIndex.find(DataCache.npcs, npcSelfId);
     return Math.max(0, Number(npc?.template?.level || spot?.avgLevel || 0));
+}
+
+function sourceMobLevel(rewardData, spot, npcSelfId = 0) {
+    return npcLevel(spot, npcSelfId || rewardData?.selfId);
 }
 
 function rewardMaxHpMultiplier(npc) {
@@ -184,4 +189,4 @@ function rollSpoilForFight({ spot, killerLevel, npcSelfId = 0, rng = Math.random
     return spoils;
 }
 
-module.exports = { progressionForFight, rollRewardsForFight, rollAdenaForFight, rollForFight, rollSpoilForFight };
+module.exports = { npcLevel, progressionForFight, rollRewardsForFight, rollAdenaForFight, rollForFight, rollSpoilForFight };

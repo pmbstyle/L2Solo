@@ -56,7 +56,7 @@ function distributeRewards({ members, spot, wins, defeatedNpcIds = [], overhitCo
         kills,
         killerLevel: Math.max(...levels),
         rng,
-        spoiler: spoilerIndex >= 0,
+        spoiler: spoilerIndex >= 0 ? ColdKillRewards.spoilerFor(members[spoilerIndex], profiles[spoilerIndex]) : null,
         lootKills: MAX_DROPS_PER_RESOLVE,
         dropOwners: members.length
     });

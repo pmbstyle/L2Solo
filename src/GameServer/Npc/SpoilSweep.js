@@ -144,12 +144,12 @@ function markSpoiled(session, actor, npc, skill, { announce = false, festival = 
     return true;
 }
 
-function spoilCrushLands(actor, npc, skill, rng = Math.random) {
-    const semantic = skill?.fetchSemantic?.() || {};
-    return Formulas.calcMagicSuccess({
+function spoilLands(actor, npc, skill, rng = Math.random) {
+    return Formulas.calcSpoilSuccess({
+        skillId: skill?.fetchSelfId?.(),
+        skillLevel: skill?.fetchLevel?.(),
         attackerLevel: actor?.fetchLevel?.(),
-        targetLevel: npc?.fetchLevel?.(),
-        magicLevel: semantic.magicLevel
+        targetLevel: npc?.fetchLevel?.()
     }, rng);
 }
 
@@ -176,7 +176,7 @@ const SpoilSweep = {
 
     trySpoilCrush(session, actor, npc, skill, rng = Math.random) {
         if (!npc?.fetchAttackable?.() || npc.isDead?.() || !hasSpoils(npc) || npc.model?.spoil?.spoiled) return false;
-        if (!spoilCrushLands(actor, npc, skill, rng)) return false;
+        if (!spoilLands(actor, npc, skill, rng)) return false;
         return markSpoiled(session, actor, npc, skill, { announce: true });
     },
 
@@ -206,9 +206,17 @@ const SpoilSweep = {
             }
 
             const festival = Number(skill.fetchSelfId?.()) === SPOIL_FESTIVAL_SKILL_ID;
-            spoiled.forEach((npc) => markSpoiled(session, actor, npc, skill, { festival }));
-            console.info('SpoilSweep :: %s spoiled %d targets with %s', actor.fetchName(), spoiled.length, skill.fetchName());
-            ConsoleText.transmit(session, ConsoleText.caption.spoilActivated);
+            let landed = 0;
+            spoiled.forEach((npc) => {
+                // Like Lisvus Spoil.java, a failed spoil still draws the target into combat.
+                if (!spoilLands(actor, npc, skill)) {
+                    npc.enterCombatState?.(session, actor);
+                    return;
+                }
+                if (markSpoiled(session, actor, npc, skill, { festival })) landed += 1;
+            });
+            console.info('SpoilSweep :: %s spoiled %d of %d targets with %s', actor.fetchName(), landed, spoiled.length, skill.fetchName());
+            if (landed > 0) ConsoleText.transmit(session, ConsoleText.caption.spoilActivated);
         });
     },
 

@@ -1257,7 +1257,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         kills: [{ npcSelfId: mob.selfId, overhitContext }],
         killerLevel: Number(state.level || bot.level),
         rng,
-        spoiler: BotRoles.isSpoiler(state)
+        spoiler: BotRoles.isSpoiler(state) ? ColdKillRewards.spoilerFor(state, soloFighter.profile) : null
     });
     const [kill] = rewards.progression;
     const [{ drops, spoil }] = rewards.loot;

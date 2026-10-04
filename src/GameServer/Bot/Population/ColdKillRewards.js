@@ -1,9 +1,24 @@
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const Formulas = invoke('GameServer/Formulas');
+
+const SPOIL_SKILL_ID = 254;
 
 function randInt(rng, min, max) {
     return Math.floor(rng() * (max - min + 1)) + min;
+}
+
+// The Spoil level a cold fighter knows, 0 when it has not learned Spoil.
+function spoilSkillLevel(profile) {
+    const spoil = (profile?.skills || []).find((skill) => Number(skill.selfId) === SPOIL_SKILL_ID);
+    return Number(spoil?.level || 0);
+}
+
+// The spoiler of a cold fight, or null when nobody there can cast Spoil.
+function spoilerFor(state, profile) {
+    const skillLevel = spoilSkillLevel(profile);
+    return skillLevel > 0 ? { level: Number(state.level || 1), skillLevel } : null;
 }
 
 // Rewards of the kills one cold fighter or one cold party made in a resolve.
@@ -14,8 +29,9 @@ function randInt(rng, min, max) {
 // The random draws come in a fixed order: base exp/SP of every kill, the drop
 // roll of every kill, the spot's fallback adena for kills without reward data,
 // then, for each of the first `lootKills` kills, its drop owner (only when
-// `dropOwners` recipients share the drops) and its spoil.
-function roll({ spot, kills, killerLevel, rng, spoiler = false, lootKills = kills.length, dropOwners = 0 }) {
+// `dropOwners` recipients share the drops), the spoiler's Spoil landing roll
+// against that kill's NPC level and, when Spoil landed, the spoil.
+function roll({ spot, kills, killerLevel, rng, spoiler = null, lootKills = kills.length, dropOwners = 0 }) {
     const OverhitReward = invoke('GameServer/Progression/OverhitReward');
     const progression = kills.map((kill) => {
         const base = BackgroundDropResolver.progressionForFight({ spot, npcSelfId: kill.npcSelfId, rng });
@@ -40,8 +56,15 @@ function roll({ spot, kills, killerLevel, rng, spoiler = false, lootKills = kill
         const owner = drops.length && dropOwners > 0
             ? Math.min(dropOwners - 1, Math.floor(rng() * dropOwners))
             : 0;
-        const spoil = spoiler
-            ? BackgroundDropResolver.rollSpoilForFight({ spot, killerLevel, npcSelfId: kills[index].npcSelfId, rng })
+        const npcSelfId = kills[index].npcSelfId;
+        const spoiled = spoiler !== null && Formulas.calcSpoilSuccess({
+            skillId: SPOIL_SKILL_ID,
+            skillLevel: spoiler.skillLevel,
+            attackerLevel: spoiler.level,
+            targetLevel: BackgroundDropResolver.npcLevel(spot, npcSelfId)
+        }, rng);
+        const spoil = spoiled
+            ? BackgroundDropResolver.rollSpoilForFight({ spot, killerLevel, npcSelfId, rng })
             : [];
         loot.push({ drops, owner, spoil });
     }
@@ -58,4 +81,4 @@ function scaledProgression({ exp, sp }, { expMultiplier, rates, profile, timesta
     };
 }
 
-module.exports = { roll, scaledProgression };
+module.exports = { roll, scaledProgression, spoilerFor };

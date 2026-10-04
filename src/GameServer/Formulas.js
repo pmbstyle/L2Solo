@@ -460,6 +460,15 @@ const Formulas = {
         return Math.floor(rng() * 10000) > failureThreshold;
     },
 
+    // Lisvus Spoil.java (Spoil, Spoil Festival) and the extra SPOIL handler of
+    // Spoil Crush: a spoil lands only when calcMagicSuccess passes for the
+    // skill's C4 magic level against the target level. Hot casts and cold
+    // kills both roll it here.
+    calcSpoilSuccess({ skillId, skillLevel = 1, attackerLevel = 1, targetLevel = 1 } = {}, rng = Math.random) {
+        const semantic = invoke('GameServer/Skills/C4SkillRules').resolveCached({ selfId: Number(skillId), level: Number(skillLevel) || 1 });
+        return Formulas.calcMagicSuccess({ attackerLevel, targetLevel, magicLevel: semantic.magicLevel }, rng);
+    },
+
     // Lisvus C4 Formulas.calcSkillSuccess. C4SkillEffects supplies the
     // sourced trait-resist modifier because the local effect model keeps it
     // separately from an L2Character stat calculator.

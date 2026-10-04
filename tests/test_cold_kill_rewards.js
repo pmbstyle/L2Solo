@@ -1,7 +1,8 @@
 // Golden values for cold kill rewards: exp, SP, adena (rolled and the spot's
 // fallback range), drops, spoil, the party adena split and the drop owner.
 // A seeded random source makes every draw repeatable, so a change of reward
-// rules or of the order of random draws moves these values.
+// rules or of the order of random draws moves these values. The spoiler's
+// Spoil landing roll comes after exp, SP and adena, so only loot depends on it.
 const assert = require('assert');
 
 process.env.L2NODE_PROGRESSION_RATE = 'x10';
@@ -71,11 +72,11 @@ const TIMESTAMP = 1790000000000;
 const SOLO = [
     ['pin_orcs', 1, 53, 15, [3910, 150, 742, [[1921, 1], [1867, 1], [1799, 10]]]],
     ['pin_orcs', 1, 0, 14, [3910, 150, 742, [[1921, 1], [1867, 1]]]],
-    ['pin_orcs', 2, 53, 15, [3910, 150, 739, [[1870, 1], [1799, 10]]]],
+    ['pin_orcs', 2, 53, 15, [3910, 150, 739, [[1870, 1]]]],
     ['pin_orcs', 2, 0, 14, [3910, 150, 739, [[1870, 1]]]],
-    ['pin_orcs', 3, 53, 15, [3910, 150, 705, []]],
+    ['pin_orcs', 3, 53, 15, [3910, 150, 705, [[1799, 10]]]],
     ['pin_orcs', 3, 0, 14, [3910, 150, 705, []]],
-    ['pin_orcs', 7, 53, 15, [3630, 120, 644, [[1870, 1]]]],
+    ['pin_orcs', 7, 53, 15, [3630, 120, 644, [[1870, 1], [1867, 10]]]],
     ['pin_orcs', 7, 0, 14, [3630, 120, 644, [[1870, 1]]]],
     ['pin_unknown', 4, 53, 15, [1000, 100, 210, []]],
     ['pin_unknown', 4, 0, 14, [1000, 100, 210, []]]
@@ -97,18 +98,18 @@ for (const [spotId, seed, classId, level, expected] of SOLO) {
 // [spot, seed, [[classId, level]...], per member [exp, sp, adena, items]]
 const PARTY = [
     ['pin_orcs', 11, [[53, 15], [0, 16], [10, 14]], [
-        [7360, 280, 959, [[1799, 10], [736, 10]]],
+        [7360, 280, 959, [[736, 10]]],
         [8380, 310, 958, [[1060, 1], [1870, 1]]],
         [6400, 240, 958, [[1870, 1]]]
     ]],
     ['pin_orcs', 12, [[53, 15], [0, 16], [10, 14]], [
-        [6850, 250, 877, [[1870, 1], [1867, 10], [1802, 1], [1867, 10], [1921, 10]]],
-        [7790, 260, 877, [[1802, 1]]],
-        [5950, 210, 876, [[1921, 1], [1870, 1]]]
+        [6850, 250, 877, [[1870, 1], [1802, 1], [1867, 10], [1921, 1], [1870, 1], [1921, 10]]],
+        [7790, 260, 877, []],
+        [5950, 210, 876, [[1802, 1]]]
     ]],
     ['pin_orcs', 13, [[0, 15], [53, 13]], [
-        [11180, 400, 1395, [[1921, 1], [1060, 1]]],
-        [8400, 300, 1394, [[1921, 1], [1867, 1], [1867, 1], [1867, 10]]]
+        [11180, 400, 1395, [[1867, 1], [1921, 1], [1060, 1]]],
+        [8400, 300, 1394, [[1921, 1], [1867, 1], [2007, 10]]]
     ]],
     ['pin_orcs', 14, [[0, 15], [18, 16], [31, 15], [44, 14]], [
         [6060, 200, 717, [[1802, 1], [1870, 1]]],
