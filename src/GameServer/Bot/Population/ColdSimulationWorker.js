@@ -43,6 +43,8 @@ const stubs = new Map([
     }],
     // Immutable map boundaries only; no live World, geodata or database access.
     ['GameServer/World/WorldAreaCatalog', { resolve: originalInvoke('GameServer/World/WorldAreaCatalog').resolve }],
+    // The game clock is a pure function of the timestamp (cold night bonuses).
+    ['GameServer/World/GameTime', originalInvoke('GameServer/World/GameTime')],
     ['GameServer/World/Generics/NpcShopBuyLists', { allEntries: () => [] }]
 ]);
 
