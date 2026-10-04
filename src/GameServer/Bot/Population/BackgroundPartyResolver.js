@@ -1,8 +1,8 @@
 const PveEncounter = require('./ColdPveEncounter');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
-const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const ColdKillRewards = invoke('GameServer/Bot/Population/ColdKillRewards');
 const PartyAffinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity');
 const PartyLootAllocator = invoke('GameServer/Bot/Population/PartyLootAllocator');
 const PartyRewardMath = invoke('GameServer/Actor/PartyRewardMath');
@@ -15,10 +15,6 @@ const RAID_RESOLVE_INTERVAL_MS = 15000;
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
-}
-
-function randInt(rng, min, max) {
-    return Math.floor(rng() * (max - min + 1)) + min;
 }
 
 function memberVitals(state) {
@@ -48,59 +44,39 @@ function estimateFightCount({ party, members, spot, elapsedMs }) {
 function distributeRewards({ members, spot, wins, defeatedNpcIds = [], overhitContexts = [], pressure, rng, timestamp }) {
     const expMultiplier = Number(pressure?.expMultiplier || 1);
     const rates = ProgressionRates.profile();
-    const memberProgression = members.map((state) => ({
-        exp: 0,
-        sp: 0,
-        profile: ColdCombatProfile.profileFor(state, timestamp)
+    const levels = members.map((state) => Number(state.level || 1));
+    const profiles = members.map((state) => ColdCombatProfile.profileFor(state, timestamp));
+    const spoilerIndex = members.findIndex((state) => BotRoles.isSpoiler(state));
+    const kills = Array.from({ length: wins }, (_, index) => ({
+        npcSelfId: defeatedNpcIds[index],
+        overhitContext: overhitContexts[index]
     }));
-    Array.from({ length: wins }).forEach((_, winIndex) => {
-        const progression = BackgroundDropResolver.progressionForFight({
-            spot, npcSelfId: defeatedNpcIds[winIndex], rng
-        });
-        const adjustedExp = invoke('GameServer/Progression/OverhitReward')
-            .resolveContext(overhitContexts[winIndex], progression.exp).adjustedExp;
-        PartyRewardMath.sharesForLevels(
-            members.map((state) => Number(state.level || 1)),
-            adjustedExp,
-            progression.sp
-        ).forEach((share) => {
-            memberProgression[share.index].exp += Math.round(share.exp * expMultiplier * rates.exp
-                * ColdCombatProfile.statMultiplier(memberProgression[share.index].profile, 'expMul', timestamp));
-            memberProgression[share.index].sp += Math.round(share.sp * expMultiplier * rates.sp);
+    const rewards = ColdKillRewards.roll({
+        spot,
+        kills,
+        killerLevel: Math.max(...levels),
+        rng,
+        spoiler: spoilerIndex >= 0,
+        lootKills: MAX_DROPS_PER_RESOLVE,
+        dropOwners: members.length
+    });
+    const memberProgression = members.map(() => ({ exp: 0, sp: 0 }));
+    rewards.progression.forEach((kill) => {
+        PartyRewardMath.sharesForLevels(levels, kill.exp, kill.sp).forEach((share) => {
+            const gained = ColdKillRewards.scaledProgression(share, {
+                expMultiplier, rates, profile: profiles[share.index], timestamp
+            });
+            memberProgression[share.index].exp += gained.exp;
+            memberProgression[share.index].sp += gained.sp;
         });
     });
-    const partyKillerLevel = Math.max(...members.map((state) => Number(state.level || 1)));
-    const rewardRolls = Array.from({ length: wins }).map((_, index) => (
-        BackgroundDropResolver.rollRewardsForFight({
-            spot,
-            killerLevel: partyKillerLevel,
-            npcSelfId: defeatedNpcIds[index],
-            rng
-        })
-    ));
-    const totalAdena = rewardRolls.reduce((sum, rolled) => (
-        sum + (rolled === null
-            ? Math.round(randInt(rng, spot.rewards.adenaMin, spot.rewards.adenaMax) * rates.adena)
-            : rolled.adena)
-    ), 0);
-    const adenaPerMember = Math.floor(totalAdena / members.length);
-    const adenaRemainder = totalAdena - (adenaPerMember * members.length);
+    const adenaPerMember = Math.floor(rewards.adena / members.length);
+    const adenaRemainder = rewards.adena - (adenaPerMember * members.length);
     const loot = members.map(() => []);
-    const spoilerIndex = members.findIndex((state) => BotRoles.isSpoiler(state));
-    for (let win = 0; win < Math.min(wins, MAX_DROPS_PER_RESOLVE); win++) {
-        const drops = rewardRolls[win]?.items || [];
-        if (drops.length) {
-            loot[Math.min(members.length - 1, Math.floor(rng() * members.length))].push(...drops);
-        }
-        if (spoilerIndex >= 0) {
-            loot[spoilerIndex].push(...BackgroundDropResolver.rollSpoilForFight({
-                spot,
-                killerLevel: partyKillerLevel,
-                npcSelfId: defeatedNpcIds[win],
-                rng
-            }));
-        }
-    }
+    rewards.loot.forEach(({ drops, owner, spoil }) => {
+        if (drops.length) loot[owner].push(...drops);
+        if (spoilerIndex >= 0) loot[spoilerIndex].push(...spoil);
+    });
 
     return members.map((state, index) => ({
         state,

@@ -1,10 +1,10 @@
 const PveEncounter = require('./ColdPveEncounter');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
-const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
 const DataCache = invoke('GameServer/DataCache');
 const Formulas = invoke('GameServer/Formulas');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const ColdKillRewards = invoke('GameServer/Bot/Population/ColdKillRewards');
 const ColdClassPolicy = invoke('GameServer/Bot/Population/ColdClassPolicy');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
@@ -18,10 +18,6 @@ const ShotStock = invoke('GameServer/Inventory/ShotStock');
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
-}
-
-function randInt(rng, min, max) {
-    return Math.floor(rng() * (max - min + 1)) + min;
 }
 
 function midpointBand(levelBand) {
@@ -1256,28 +1252,21 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         };
     }
 
-    const rewards = BackgroundDropResolver.progressionForFight({ spot, npcSelfId: mob.selfId, rng });
-    const overhit = invoke('GameServer/Progression/OverhitReward').resolveContext(overhitContext, rewards.exp);
-    const expMultiplier = pressure?.expMultiplier || 1;
-    const rates = ProgressionRates.profile();
-    const rolledRewards = BackgroundDropResolver.rollRewardsForFight({
+    const rewards = ColdKillRewards.roll({
         spot,
+        kills: [{ npcSelfId: mob.selfId, overhitContext }],
         killerLevel: Number(state.level || bot.level),
-        npcSelfId: mob.selfId,
-        rng
+        rng,
+        spoiler: BotRoles.isSpoiler(state)
     });
-    const adena = rolledRewards === null
-        ? Math.round(randInt(rng, spot.rewards.adenaMin, spot.rewards.adenaMax) * rates.adena)
-        : rolledRewards.adena;
-    const loot = rolledRewards?.items || [];
-    if (BotRoles.isSpoiler(state)) {
-        loot.push(...BackgroundDropResolver.rollSpoilForFight({
-            spot,
-            killerLevel: Number(state.level || bot.level),
-            npcSelfId: mob.selfId,
-            rng
-        }));
-    }
+    const [kill] = rewards.progression;
+    const [{ drops, spoil }] = rewards.loot;
+    const gained = ColdKillRewards.scaledProgression(kill, {
+        expMultiplier: Number(pressure?.expMultiplier || 1),
+        rates: ProgressionRates.profile(),
+        profile: soloFighter.profile,
+        timestamp
+    });
 
     return {
         won: true,
@@ -1286,11 +1275,10 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         maxHp: Math.max(1, Math.round(vitals.maxHp)),
         mp: Math.max(0, Math.round(vitals.mp)),
         maxMp: Math.max(1, Math.round(vitals.maxMp)),
-        exp: Math.round(overhit.adjustedExp * expMultiplier * rates.exp
-            * ColdCombatProfile.statMultiplier(soloFighter.profile, 'expMul', timestamp)),
-        sp: Math.round(rewards.sp * expMultiplier * rates.sp),
-        adena,
-        loot,
+        exp: gained.exp,
+        sp: gained.sp,
+        adena: rewards.adena,
+        loot: [...drops, ...spoil],
         cooldowns: soloFighter.cooldowns,
         charges: soloFighter.charges,
         chargeExpiresAt: soloFighter.chargeExpiresAt,
@@ -1299,7 +1287,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         summon: soloFighter.summon || null,
         debug: { actions, durationMs: time, skillUses: soloFighter.skillUses, shotActions: soloFighter.shotActions, heals: soloFighter.heals,
             musicUses: soloFighter.musicUses, summonUses: soloFighter.summonUses, summonActions: soloFighter.summonActions,
-            potionsUsed: soloFighter.potionsUsed, mobSelfId: mob.selfId || null, timedOut: false, overhit }
+            potionsUsed: soloFighter.potionsUsed, mobSelfId: mob.selfId || null, timedOut: false, overhit: kill.overhit }
     };
 }
 
