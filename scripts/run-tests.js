@@ -210,6 +210,7 @@ const tests = [
     'tests/test_afk_trade_database.js',
     'tests/test_economy_journal.js',
     'tests/test_market_trade_history.js',
+    'tests/test_history_database.js',
     'tests/test_observer_market_model.js',
     'tests/test_afk_trade_service.js',
     'tests/test_afk_trade_hot_counterparty.js',
