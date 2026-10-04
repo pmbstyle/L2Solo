@@ -17,6 +17,7 @@ const Approach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const Navigation = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
 const Spots = invoke('GameServer/Bot/AI/SpotService');
 const Departure = require('../src/GameServer/ClanHall/Departure');
+const VisitPolicy = require('../src/GameServer/ClanHall/VisitPolicy');
 const originalBestSpot = Spots.findBestSpot;
 const originalArrival = Spots.arrivalPointForState;
 const originalInvoke = global.invoke;
@@ -246,9 +247,32 @@ async function main() {
         assert.strictEqual(restart({ clanAllianceSupportLeaderId: 7 }), null);
         assert.strictEqual(restart({ plan: 'merchant' }), null, 'hot: a merchant restarts at its stall');
         assert.strictEqual(restart({}, { ...physical, fetchKarma: () => 10 }), null, 'hot: a red bot restarts in town');
-        assert.strictEqual(restart({ hotBackgroundPartyId: 'party' }), hall, 'hot: a party member restarts in the hall');
-        assert.strictEqual(restart({ coldLifeState: { stats: { marketReturn: { spotId: 'home' } } } }), hall,
-            'hot: a bot with an errand restarts in the hall');
+        // One rule for hot and cold (VisitPolicy, step 1.5): a party member and
+        // a bot with an errand restart in town.
+        assert.strictEqual(restart({ hotBackgroundPartyId: 'party' }), null, 'hot: a party member restarts in town');
+        assert.strictEqual(restart({ coldLifeState: { stats: { marketReturn: { spotId: 'home' } } } }), null,
+            'hot: a bot with an errand restarts in town');
+        assert.strictEqual(restart({ pvpEncounter: { key: 'e1' } }), null, 'hot: a bot in a PvP fight restarts in town');
+        assert.strictEqual(restart({ accountId: 'bot_craft_probe' }), null, 'hot: a craft account restarts in town');
+        assert.strictEqual(restart({}, { ...physical, fetchPrivateStore: () => ({ storeType: 1 }) }), null,
+            'hot: a bot with a store restarts at its stall');
+        // Hot visit: the same exclusions; a grouped bot takes support only at the manager.
+        const atManager = { ...physical, fetchLocX: () => npc.fetchLocX(), fetchLocY: () => npc.fetchLocY(),
+            fetchLocZ: () => npc.fetchLocZ() };
+        assert(Services.near(atManager, npc));
+        for (const extra of [{ hotBackgroundPartyId: 'party' }, { partyCompanion: true, followPlayerSession: {} }]) {
+            assert(VisitPolicy.mayUse(VisitPolicy.fromSession(extra, atManager), { atManager: true }),
+                'a grouped bot already at the manager takes support');
+            assert.strictEqual(VisitPolicy.mayUse(VisitPolicy.fromSession(extra, remote), { atManager: false }), false,
+                'a grouped bot does not leave its group for the hall');
+        }
+        assert(VisitPolicy.mayUse(VisitPolicy.fromSession({ plan: 'hunting' }, remote)), 'a free solo hunter may visit');
+        for (const extra of [{ pvpEncounter: {} }, { accountId: 'bot_craft_probe' }, { plan: 'merchant' },
+            { clanAllianceSupportLeaderId: 7 }]) {
+            assert.strictEqual(VisitPolicy.mayUse(VisitPolicy.fromSession({ plan: 'hunting', ...extra }, remote)), false);
+            assert.strictEqual(Hot.tick({ ...session, actor: remote, clanHallVisit: null, clanHallRetryAt: 0, ...extra },
+                remote, at), false, `hot visit excluded: ${Object.keys(extra)[0]}`);
+        }
         const dead = { ...state, activity: 'dead', vitals: { ...state.vitals, hp: 0 } };
         assert.strictEqual(Cold.needed(dead, at), true, 'cold: a dead solo hunter restarts in the hall');
         assert.strictEqual(Cold.needed({ ...dead, party: { partyId: 'party' } }, at), false,
@@ -259,6 +283,8 @@ async function main() {
             'cold: a red bot restarts in town');
         assert.strictEqual(Cold.needed({ ...dead, accountName: 'bot_craft_probe' }, at), false,
             'cold: a craft account restarts in town');
+        assert.strictEqual(Cold.needed({ ...dead, stats: { ...dead.stats, pvpEncounter: { key: 'e1' } } }, at), false,
+            'cold: a bot in a PvP fight restarts in town');
         const distantState = { ...state, loc: { locX: 0, locY: 0, locZ: 0 } };
         assert(Cold.needed(distantState, at), 'missing useful buffs trigger a cold visit from anywhere');
         assert.equal(Cold.needed({ ...distantState, stats: { ...state.stats, marketReturn: {} } }, at), false);

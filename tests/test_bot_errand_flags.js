@@ -57,9 +57,10 @@ const competition = (retreat) => (state) => CompetitionValidation.member(state, 
     }) !== null;
 
 // Copies that read a busy list. Database.coldSimulationPartition (the SQL
-// claim) is pinned by test_cold_claim_flags.js, the hot clan hall duty, the
-// competition monitor and the activation filter are inline and not reached
-// from here.
+// claim) is pinned by test_cold_claim_flags.js; the hot clan hall visit and
+// restart share the cold visit's rule (ClanHall/VisitPolicy, pinned in
+// test_clan_hall_bot_services.js); the competition monitor and the activation
+// filter are inline and not reached from here.
 const copies = {
     ownerEligibility: (state) => !Owner.eligibility(state).ok,
     kernelLifecycle: (state) => lifecycleKind(state) === 'command',

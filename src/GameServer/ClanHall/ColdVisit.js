@@ -1,11 +1,8 @@
 const Runtime = require('./Runtime');
 const Services = require('./Services');
 const Effects = invoke('GameServer/Effects/EffectStore');
-const BotErrands = invoke('GameServer/Bot/Population/BotErrands');
+const VisitPolicy = require('./VisitPolicy');
 const VISIT_MS = 180000;
-// Every errand except a warehouse errand, a merchant store or a craft shop/station.
-const BUSY_FLAGS = ['pvpEncounter', 'clanPartyObjective', 'clanGoal', 'clanAllianceQuest', 'supplyErrand',
-    'marketReturn', 'craftReturn', 'warehouseWorkflow', 'mammonReturn', 'partyMarketReturn'];
 function hallFor(state) {
     // Membership projection is refreshed on joins/kicks; a saved stats.clanId is not authority.
     const id = invoke('GameServer/Clan/ClanSocialRuntime').view.memberships.get(Number(state.characterId));
@@ -55,15 +52,10 @@ function actorFor(state, hall) {
     };
     return actor;
 }
+// The same rule as the hot visit and the hot restart (VisitPolicy): a cold
+// bot is never at the manager, so a party member restarts in town.
 function eligible(state) {
-    return (
-        state?.phase === 'cold' &&
-        !state.party?.partyId &&
-        !state.partyId &&
-        Number(state.stats?.karma || 0) === 0 &&
-        !BotErrands.busyWith(state, BUSY_FLAGS) &&
-        !String(state.accountName || '').startsWith('bot_craft_')
-    );
+    return state?.phase === 'cold' && VisitPolicy.mayUse(VisitPolicy.fromState(state));
 }
 function needed(state, timestamp = Date.now()) {
     if (!eligible(state)) return false;
