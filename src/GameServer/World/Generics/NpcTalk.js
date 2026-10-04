@@ -23,8 +23,7 @@ function npcTalk(session, npc) {
     }
 
     if (Number(npc.fetchSelfId()) === require('../GiranCrystallizationStation').npcId) {
-        invoke('GameServer/Items/CrystallizationStationService').menu(session);
-        return;
+        return invoke('GameServer/World/Generics/NpcBypasses/CrystallizationStation')(session, ['crystallization-station']);
     }
 
     if (Number(npc.fetchSelfId()) === 8126) {

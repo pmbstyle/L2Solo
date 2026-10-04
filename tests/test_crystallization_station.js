@@ -86,6 +86,30 @@ async function run() {
     const worn = await add(a, 45), noGrade = await add(a, 1);
     worn.setEquipped(true); await Database.updateItemEquipState(1, worn.fetchId(), true, worn.fetchSlot());
     const foreign = await add(b, 40);
+
+    // Opening the NPC dialog can run inside an arrival timer. Ordinary service
+    // refusals must stay inside the interaction handler instead of crashing it.
+    const beforeRejectedTalk = await Database.fetchItems(1);
+    for (const [reason, block, restore] of [
+        ['combat', () => { a.actor.state.fetchCombats = () => true; }, () => { a.actor.state.fetchCombats = () => false; }],
+        ['casting', () => { a.actor.state.fetchCasts = () => true; }, () => { a.actor.state.fetchCasts = () => false; }],
+        ['trade', () => { a.activeTrade = {}; }, () => { delete a.activeTrade; }],
+        ['enchanting', () => { a.activeEnchantItem = {}; }, () => { delete a.activeEnchantItem; }],
+        ['distance', () => { a.actor.x += 1000; }, () => { a.actor.x = Station.loc.locX; }]
+    ]) {
+        Service.preview(a, boots.fetchId());
+        const beforePackets = a.packets.length;
+        block();
+        try {
+            let opening;
+            assert.doesNotThrow(() => { opening = Talk(a, npc); }, `${reason}: opening the station must not escape the timer callback`);
+            await assert.doesNotReject(() => Promise.resolve(opening), `${reason}: the dialog must not leave an unhandled rejection`);
+            assert.equal(a.activeCrystallization, null, `${reason}: a rejected reopening clears the old confirmation`);
+            assert.match(html(a), /outside combat, trade or enchanting/, `${reason}: explain how to retry`);
+            assert(a.packets.slice(beforePackets).some(packet => packet.equals(invoke('GameServer/Network/Response').actionFailed())));
+        } finally { restore(); }
+    }
+    assert.deepEqual(await Database.fetchItems(1), beforeRejectedTalk, 'rejected dialogs do not change items or crystal stacks');
     Talk(a, npc);
     assert.match(html(a), /crystallization-station preview/);
     assert.match(html(a), /15%/);
