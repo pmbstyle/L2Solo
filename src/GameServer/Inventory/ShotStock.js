@@ -93,6 +93,30 @@ function weaponRankFromRows(rows = []) {
     return equippedWeapon ? itemRank(equippedWeapon.selfId) : 'none';
 }
 
+function isEquipped(item) {
+    return item?.equipped === true || Number(item?.equipped) === 1 || Number(item?.equippedCount || 0) > 0;
+}
+
+// The weapon equipped in a bot's inventory summary (the cold state), or null.
+function equippedWeaponInState(state) {
+    const inventory = state?.inventory || {};
+    for (const key in inventory) {
+        const item = inventory[key];
+        if (isEquipped(item) && WEAPON_SLOTS.has(Number(item.slot || 0))) return item;
+    }
+    return null;
+}
+
+// A bot's shot from its cold state, as hot auto shots load it (planFor): its
+// class's kind at the equipped weapon's grade.
+function planForState(state) {
+    const weapon = equippedWeaponInState(state);
+    return planFor({
+        classId: Number(state?.stats?.classId || state?.classId || 0),
+        rank: weapon ? itemRank(weapon.selfId) : 'none'
+    });
+}
+
 function planFor({ classId, rank = 'none' } = {}) {
     const normalizedRank = normalizeRank(rank);
     const kind = classWantsSpiritshots(classId) ? 'spiritshot' : 'soulshot';
@@ -372,6 +396,8 @@ module.exports = {
     planForKind,
     planForActor,
     planForActorKind,
+    planForState,
+    equippedWeaponInState,
     actionShotKind,
     kindForSelfId,
     isCompatibleWithActor,

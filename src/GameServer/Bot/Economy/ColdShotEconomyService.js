@@ -107,7 +107,7 @@ async function buildMarketSnapshot(now) {
             }
         }
         if (state.stats?.shotCraft) {
-            const own = shotPlan(state).selfId;
+            const own = ShotStock.planForState(state).selfId;
             for (const id of SHOT_PRODUCT_IDS) {
                 const surplus = Math.max(0, Number(state.inventory?.[id]?.amount || 0)
                     - (id === own ? ShotStock.DEFAULT_TARGET_AMOUNT : 0));
@@ -148,14 +148,6 @@ function noteBuyer(state) {
     }
 }
 
-function shotPlan(state) {
-    const rows = Object.values(state.inventory || {}).map((item) => ({
-        selfId: Number(item.selfId), slot: Number(item.slot || 0),
-        equipped: item.equipped === true || Number(item.equippedCount || 0) > 0
-    }));
-    return ShotStock.planForRows(rows, Number(state.stats?.classId || state.classId || 0));
-}
-
 async function candidates(limit = 16, now = Date.now()) {
     const index = await marketSnapshot(now);
     const priority = (state) => {
@@ -174,7 +166,7 @@ async function candidates(limit = 16, now = Date.now()) {
                 || now - Number(scanAt.get(Number(state.characterId)) || 0) < SCAN_INTERVAL_MS) return false;
             const classId = Number(state.stats?.classId || state.classId || 0);
             if ([56, 57].includes(classId)) return true;
-            const plan = shotPlan(state);
+            const plan = ShotStock.planForState(state);
             return Number(state.inventory?.[String(plan.selfId)]?.amount || 0) < ShotStock.DEFAULT_TARGET_AMOUNT;
         })
         .sort((left, right) => priority(right) - priority(left)
@@ -185,7 +177,7 @@ async function candidates(limit = 16, now = Date.now()) {
 
 function hasShotSurplus(state) {
     if (!state?.stats?.shotCraft) return false;
-    const ownShotId = shotPlan(state).selfId;
+    const ownShotId = ShotStock.planForState(state).selfId;
     // This is only a cheap admission check. The listing policy still applies
     // reservations, funded demand and competing supply before publishing.
     return [...SHOT_PRODUCT_IDS].some(id => Number(state.inventory?.[id]?.amount || 0)
@@ -194,7 +186,7 @@ function hasShotSurplus(state) {
 
 async function reviewDemand(state, now) {
     if (!state || state.phase !== 'cold' || !['hunting', 'resting', 'shopping', 'grouped'].includes(state.activity)) return state;
-    const plan = shotPlan(state);
+    const plan = ShotStock.planForState(state);
     const current = Number(state.inventory?.[String(plan.selfId)]?.amount || 0);
     if (current >= ShotStock.DEFAULT_TARGET_AMOUNT) {
         if (!state.stats?.shotDemand) return state;
@@ -656,7 +648,7 @@ async function review(state, now = Date.now()) {
     }
 }
 
-module.exports = { review, candidates, marketSnapshot, shotPlan, craftCandidate, recipeTarget,
+module.exports = { review, candidates, marketSnapshot, craftCandidate, recipeTarget,
     fundedDemand, scrapCraftRoutes, hasShotSurplus, SHOT_RECIPE_IDS,
     _resetForTests() { marketCache = null; marketBuild = null; catalogCache = null; scanAt.clear(); active.clear(); }
 };

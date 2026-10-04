@@ -2460,12 +2460,9 @@ const BotLifeState = {
         // counts this bot's own casts, skills and landed normal attacks.
         const shotActions = Math.max(0, Number(result.debug?.shotActions || 0));
         if (shotActions > 0) {
-            const shot = invoke('GameServer/Inventory/ShotStock').planForRows(
-                Object.values(inventory).map((item) => ({ ...item,
-                    equipped: item.equipped === true || Number(item.equippedCount || 0) > 0
-                })), Number(state.stats?.classId || state.classId || 0));
-            const weapon = Object.values(inventory).find((item) =>
-                item.equipped && [7, 14].includes(Number(item.slot || 0)));
+            const ShotStock = invoke('GameServer/Inventory/ShotStock');
+            const shot = ShotStock.planForState({ ...state, inventory });
+            const weapon = ShotStock.equippedWeaponInState({ inventory });
             const weaponTemplate = weapon ? itemTemplate(weapon.selfId) : null;
             const perAction = Math.max(1, Number(weaponTemplate?.etc?.[
                 shot.kind === 'spiritshot' ? 'spiritshot' : 'soulshot'

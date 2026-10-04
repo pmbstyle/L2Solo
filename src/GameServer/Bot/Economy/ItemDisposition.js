@@ -426,10 +426,7 @@ function saleCandidates(state, options = {}) {
     for (const [selfId, amount] of Object.entries(invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state))) {
         reserved[selfId] = Math.max(Number(reserved[selfId] || 0), amount);
     }
-    const ownShot = invoke('GameServer/Inventory/ShotStock').planForRows(
-        Object.values(state?.inventory || {}).map((item) => ({ ...item,
-            equipped: item.equipped === true || Number(item.equippedCount || 0) > 0
-        })), Number(state?.stats?.classId || state?.classId || 0));
+    const ownShot = invoke('GameServer/Inventory/ShotStock').planForState(state);
     if (Number(state?.inventory?.[String(ownShot.selfId)]?.amount || 0) > 0) {
         reserved[ownShot.selfId] = Math.max(Number(reserved[ownShot.selfId] || 0),
             invoke('GameServer/Inventory/ShotStock').DEFAULT_TARGET_AMOUNT);
