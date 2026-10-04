@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const WorldWipe = require('./world-wipe');
 const SavedGames = require('./saved-games');
+const HistoryStore = require('../src/HistoryStore');
 const { acquireDatabaseAccess } = require('./database-access');
 
 const rootDir = path.resolve(__dirname, '..');
@@ -596,6 +597,12 @@ function sendJson(response, data, statusCode = 200) {
 function databasePath() {
     const file = resolveRootPath(readConfig().Database?.path || 'tmp/nodel2.sqlite');
     return fs.existsSync(file) ? fs.realpathSync(file) : file;
+}
+
+// The history file next to the world (src/HistoryStore.js), as the server derives it.
+function historyDatabasePath() {
+    const config = readConfig().Database || {};
+    return HistoryStore.pathFor(resolveRootPath(config.path || 'tmp/nodel2.sqlite'), config.historyPath || '', rootDir);
 }
 
 function readBody(request) {
@@ -1413,7 +1420,8 @@ async function route(request, response) {
         }
         state.saveOperation = operation;
         try {
-            const save = await SavedGames.run({ operation, databasePath: databasePath(), savesDir, name: payload.name, id: payload.id });
+            const save = await SavedGames.run({ operation, databasePath: databasePath(), historyPath: historyDatabasePath(),
+                savesDir, name: payload.name, id: payload.id });
             sendJson(response, { save });
         } finally { state.saveOperation = null; }
         return;

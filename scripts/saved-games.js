@@ -6,6 +6,13 @@ const { randomUUID } = require('crypto');
 const { DatabaseSync } = require('node:sqlite');
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
 const { acquireDatabaseAccess } = require('./database-access');
+const HistoryStore = require('../src/HistoryStore');
+
+// A save holds the world file and, next to it, the history file
+// (src/HistoryStore.js). Saves made before the history file existed hold only
+// the world; loading one lets the server move its history tables at start.
+const WORLD_FILE = 'database.sqlite';
+const HISTORY_FILE = 'history.sqlite';
 
 function fail(message, statusCode = 400) {
     throw Object.assign(new Error(message), { statusCode });
@@ -22,13 +29,13 @@ function readSave(savesDir, id) {
     const directory = saveDirectory(savesDir, id);
     try {
         if (!fs.lstatSync(directory).isDirectory()) fail('Invalid save directory.');
-        const databaseFile = path.join(directory, 'database.sqlite');
+        const databaseFile = path.join(directory, WORLD_FILE);
         if (!fs.lstatSync(databaseFile).isFile()) fail('Invalid save database.');
         const metadataFile = path.join(directory, 'save.json');
         if (!fs.lstatSync(metadataFile).isFile()) fail('Invalid save metadata.');
         const metadata = JSON.parse(fs.readFileSync(metadataFile, 'utf8'));
         if (typeof metadata.name !== 'string' || !Number.isFinite(Date.parse(metadata.createdAt))) fail('Invalid save metadata.');
-        return { id, name: metadata.name, createdAt: metadata.createdAt, sizeBytes: fs.statSync(databaseFile).size };
+        return { id, name: metadata.name, createdAt: metadata.createdAt, sizeBytes: saveBytes(directory) };
     } catch (error) {
         if (error.code === 'ENOENT') fail('Save not found.', 404);
         throw error;
@@ -46,15 +53,21 @@ async function list(savesDir) {
         if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
         try {
             const directory = saveDirectory(savesDir, entry.name);
-            const file = await fs.promises.lstat(path.join(directory, 'database.sqlite'));
+            const file = await fs.promises.lstat(path.join(directory, WORLD_FILE));
             const metadataFile = path.join(directory, 'save.json');
             if (!file.isFile() || !(await fs.promises.lstat(metadataFile)).isFile()) continue;
             const metadata = JSON.parse(await fs.promises.readFile(metadataFile, 'utf8'));
             if (typeof metadata.name !== 'string' || !Number.isFinite(Date.parse(metadata.createdAt))) continue;
-            saves.push({ id: entry.name, name: metadata.name, createdAt: metadata.createdAt, sizeBytes: file.size });
+            saves.push({ id: entry.name, name: metadata.name, createdAt: metadata.createdAt, sizeBytes: saveBytes(directory) });
         } catch (_) { /* Ignore incomplete saves and concurrently deleted entries. */ }
     }
     return saves.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+}
+
+function saveBytes(directory) {
+    return [WORLD_FILE, HISTORY_FILE].reduce((sum, name) => {
+        try { return sum + fs.statSync(path.join(directory, name)).size; } catch (_) { return sum; }
+    }, 0);
 }
 
 function validateDatabase(file) {
@@ -92,7 +105,11 @@ function openStoppedDatabase(file) {
     }
 }
 
-function perform({ operation, databasePath, savesDir, name, id }) {
+function removeDatabaseFiles(file) {
+    for (const suffix of ['', '-wal', '-shm']) fs.rmSync(file + suffix, { force: true });
+}
+
+function perform({ operation, databasePath, historyPath = HistoryStore.pathFor(databasePath), savesDir, name, id }) {
     if (operation === 'delete') {
         // A damaged snapshot should still be removable.
         const directory = saveDirectory(savesDir, id);
@@ -109,12 +126,16 @@ function perform({ operation, databasePath, savesDir, name, id }) {
         const directory = saveDirectory(savesDir, id);
         const pending = path.join(savesDir, `.${id}.pending`);
         const db = openStoppedDatabase(databasePath);
+        const history = fs.existsSync(historyPath) ? openStoppedDatabase(historyPath) : null;
         try {
             fs.mkdirSync(pending, { recursive: true });
-            const file = path.join(pending, 'database.sqlite');
-            fs.copyFileSync(databasePath, file, fs.constants.COPYFILE_EXCL);
-            validateDatabase(file);
-            flushFile(file);
+            const copies = [[databasePath, WORLD_FILE], ...(history ? [[historyPath, HISTORY_FILE]] : [])];
+            copies.forEach(([source, target]) => {
+                const file = path.join(pending, target);
+                fs.copyFileSync(source, file, fs.constants.COPYFILE_EXCL);
+                validateDatabase(file);
+                flushFile(file);
+            });
             fs.writeFileSync(path.join(pending, 'save.json'), JSON.stringify({
                 name: trimmed || `Save — ${new Date(createdAt).toLocaleString('en-GB')}`,
                 createdAt
@@ -123,31 +144,45 @@ function perform({ operation, databasePath, savesDir, name, id }) {
             fs.renameSync(pending, directory);
             return readSave(savesDir, id);
         } finally {
+            history?.close();
             db.close();
             fs.rmSync(pending, { recursive: true, force: true });
         }
     }
     if (operation === 'load') {
         const save = readSave(savesDir, id);
+        const directory = saveDirectory(savesDir, id);
+        const savedHistory = path.join(directory, HISTORY_FILE);
+        const hasHistory = fs.existsSync(savedHistory);
         const pending = `${databasePath}.${randomUUID()}.loading`;
+        const pendingHistory = `${historyPath}.${randomUUID()}.loading`;
         try {
-            fs.copyFileSync(path.join(saveDirectory(savesDir, id), 'database.sqlite'), pending, fs.constants.COPYFILE_EXCL);
+            fs.copyFileSync(path.join(directory, WORLD_FILE), pending, fs.constants.COPYFILE_EXCL);
             validateDatabase(pending);
             flushFile(pending);
+            if (hasHistory) {
+                fs.copyFileSync(savedHistory, pendingHistory, fs.constants.COPYFILE_EXCL);
+                validateDatabase(pendingHistory);
+                flushFile(pendingHistory);
+            }
             if (fs.existsSync(databasePath)) {
                 const db = openStoppedDatabase(databasePath);
                 db.close();
             } else if (fs.existsSync(`${databasePath}-wal`) || fs.existsSync(`${databasePath}-journal`)) {
                 fail('The current database is missing but its journal still exists. Restore the database file first.');
             }
+            if (fs.existsSync(historyPath)) {
+                const history = openStoppedDatabase(historyPath);
+                history.close();
+            }
             // The shared lock remains held after closing SQLite (required on
             // Windows). Rename replaces the database only once the copy is ready.
             fs.renameSync(pending, databasePath);
+            if (hasHistory) fs.renameSync(pendingHistory, historyPath);
+            else removeDatabaseFiles(historyPath);
             return save;
         } finally {
-            fs.rmSync(pending, { force: true });
-            fs.rmSync(`${pending}-wal`, { force: true });
-            fs.rmSync(`${pending}-shm`, { force: true });
+            for (const file of [pending, pendingHistory]) removeDatabaseFiles(file);
         }
     }
     fail('Unknown save operation.');
