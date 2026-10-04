@@ -4,6 +4,7 @@ const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 const ColdSafeEnchantService = invoke('GameServer/Bot/Economy/ColdSafeEnchantService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
@@ -73,7 +74,7 @@ function overflowCandidate(item, count) {
         selfId: Number(item.selfId),
         name: item.name || templateFor(item.selfId)?.template?.name || `Item ${item.selfId}`,
         count: amount,
-        npcPrice: Math.max(1, Math.floor(ItemDisposition.basePrice(item) * 0.5))
+        npcPrice: NpcSellRules.npcBuyPrice(ItemDisposition.basePrice(item))
     };
 }
 

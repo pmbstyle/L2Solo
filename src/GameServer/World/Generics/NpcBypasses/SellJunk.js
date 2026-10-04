@@ -54,7 +54,7 @@ async function sellJunk(session) {
     const soldItemIds = new Set();
     sales.forEach(({ item, amount }) => {
         const price = item.fetchPrice();
-        const sellPrice = Math.max(1, Math.floor(price * 0.5));
+        const sellPrice = NpcSellRules.npcBuyPrice(price);
         const payout = sellPrice * amount;
         
         totalAdenaPayout += payout;

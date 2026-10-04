@@ -1,6 +1,7 @@
 const LotPolicy = require('./MarketLotPolicy');
 const DataCache = invoke('GameServer/DataCache');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 const MarketDemandIndex = invoke('GameServer/Bot/Economy/MarketDemandIndex');
 const BotMarketPricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
 const MarketBuyerActivity = invoke('GameServer/Bot/Economy/MarketBuyerActivity');
@@ -233,7 +234,7 @@ function evaluate(state, options = {}) {
         listings: decisions.filter((decision) => decision.action === 'list').map((decision) => decision.item),
         npc: decisions.filter((decision) => decision.action === 'npc').map((decision) => ({
             ...decision.item,
-            npcPrice: Math.max(1, Math.floor(Number(decision.item.basePrice || 0) * 0.5))
+            npcPrice: NpcSellRules.npcBuyPrice(decision.item.basePrice)
         })),
         warehouse: decisions.filter((decision) => decision.action === 'warehouse').map((decision) => decision.item)
     };

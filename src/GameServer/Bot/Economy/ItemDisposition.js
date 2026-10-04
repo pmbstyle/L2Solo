@@ -3,6 +3,7 @@ const DataCache = invoke('GameServer/DataCache');
 const BotMarketPricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const C4EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
+const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 const { CRYSTAL_IDS } = invoke('GameServer/Items/C4EnchantRules');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const ClanSimulationConfig = invoke('GameServer/Clan/ClanSimulationConfig');
@@ -465,7 +466,7 @@ function saleCandidates(state, options = {}) {
             : 0;
         const price = clanProgression
             ? clanPrice
-            : npcOnly ? Math.max(1, priceFor(state, item, template), Math.floor(base * 0.5)) : priceFor(state, item, template);
+            : npcOnly ? Math.max(priceFor(state, item, template), NpcSellRules.npcBuyPrice(base)) : priceFor(state, item, template);
         if (price <= 0 || sellableCount <= 0) return [];
         return [{
             selfId,
@@ -506,7 +507,7 @@ function npcLiquidationCandidates(state, options = {}) {
         return isNpcOnlyItem(item) || lowGradeGear || item.basePrice <= maxUnitPrice;
     }).map((item) => ({
         ...item,
-        npcPrice: Math.max(1, Math.floor(item.basePrice * 0.5))
+        npcPrice: NpcSellRules.npcBuyPrice(item.basePrice)
     }));
 }
 
