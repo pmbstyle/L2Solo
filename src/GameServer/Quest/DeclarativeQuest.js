@@ -80,7 +80,7 @@ function create(definition) {
         ...d.stages.flatMap(s=>[s.item,...(s.drops||[]).flatMap(x=>[x.item,...(x.outcomes||[]).map(o=>o.item),...(x.items||[]).map(o=>o.item),...(x.cascade||[]).map(o=>o.item)]),
             ...(s.transforms||[]).map(x=>x.to),...(s.sideDrops||[]).map(x=>x.item),
             ...(s.gives||[]).map(x=>x[0]),...(s.takes||[]).map(x=>x[0])]).filter(Boolean)])];
-    const cleanup=state=>questItemIds.map(id=>[id,count(state,id)]).filter(([,n])=>n>0);
+    const cleanup=state=>require('./QuestStep').heldItems(state,questItemIds);
     // The beginner-shot grant rides along with the reward it accompanies.
     function beginnerGrant(state) {
         if (!d.beginnerReward) return null;
@@ -385,10 +385,9 @@ function create(definition) {
             state.playSound(complete ? 'ItemSound.quest_middle' : 'ItemSound.quest_itemget');
         },
         async onAbort(state) {
-            await step(state, { status: 'created', variables: {
+            await require('./QuestStep').abandon(state, questItemIds, {
                 ...Object.fromEntries(rewardReceipts.filter(key=>state.get(key)).map(key=>[key,state.get(key)])),
-                completions: state.get('completions', '0'), cashouts:state.get('cashouts','0') },
-                takes: cleanup(state) });
+                completions: state.get('completions', '0'), cashouts:state.get('cashouts','0') });
         }
     };
     return quest;

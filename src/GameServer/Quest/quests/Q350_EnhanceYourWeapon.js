@@ -36,16 +36,10 @@ function progressPage(state, npcId) {
         + link(npcId, 'quit', 'Quit (unused stage 0 crystals will be removed).'));
 }
 
-async function abort(state) {
-    // Lisvus marks only the three starter crystals as quest items to remove on exit.
-    // Upgraded crystals are retained, including when quitting through the quest journal.
-    for (const id of Object.values(COLORS)) {
-        while (state.session.actor.backpack.fetchItemFromSelfId(id)) {
-            if (!await service().takeItem(state.session, id, -1)) break;
-        }
-    }
-    await state.exit(true);
-}
+// Lisvus marks only the three starter crystals as quest items to remove on exit.
+// Upgraded crystals are retained, including when quitting through the quest journal.
+const STARTER_CRYSTALS = Object.values(COLORS);
+const abort = state => require('../QuestStep').abandon(state, STARTER_CRYSTALS);
 
 module.exports = {
     id: 350,

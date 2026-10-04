@@ -53,4 +53,19 @@ async function apply(state, { takes: wanted = [], gives = [], variables = state.
     for (const [id, amount] of gives) invoke('GameServer/Quest/QuestService').transmitItemReceived(state.session, id, amount);
     return { ok: true };
 }
-module.exports = { apply };
+// What the character holds of each item, ready for `takes`. Equipped items
+// are left out: the step transaction only takes unequipped ones.
+function heldItems(state, itemIds) {
+    const items = state.session.actor.backpack.fetchItems();
+    return itemIds.map(id => [id, items
+        .filter(item => item.fetchSelfId() === id && !item.fetchEquipped())
+        .reduce((sum, item) => sum + item.fetchAmount(), 0)]).filter(([, amount]) => amount > 0);
+}
+
+// Abandoning a quest (L2J QuestState.exitQuest(true)): take every held item of
+// the quest and reset it to created in one transaction. `kept` holds the
+// variables that survive, such as reward receipts.
+function abandon(state, itemIds = [], kept = {}) {
+    return apply(state, { takes: heldItems(state, itemIds), status: 'created', variables: kept });
+}
+module.exports = { apply, heldItems, abandon };

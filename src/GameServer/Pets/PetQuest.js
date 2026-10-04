@@ -52,7 +52,7 @@ async function evolve(state) {
     }
 }
 async function abort(state) {
-    const takes = (state.quest.questItems || []).map(id => [id, count(state, id)]).filter(([, amount]) => amount > 0);
-    await step(state, {}, takes, [], 'created');
+    await invoke('GameServer/Quest/QuestStep').abandon(state, state.quest.questItems);
+    state.playSound('ItemSound.quest_finish');
 }
 module.exports = { count, step, evolve, abort };
