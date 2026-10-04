@@ -103,6 +103,6 @@ async function enter(a, coldLifeState) {
     console.log('Hot/cold effect handoff: SQLite close/reopen, native enter-world restoration, expiry, HP caps and rebuff planning passed');
  } finally {
     actors.forEach(a=>Ticker.clearAll(a));saved.reverse().forEach(fn=>fn());
-    fs.unlinkSync(dbPath);fs.rmdirSync(dir);
+    fs.rmSync(dir, { recursive: true, force: true });
  }
 })().catch(e=>{console.error(e);process.exitCode=1;});

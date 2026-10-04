@@ -148,7 +148,7 @@ async function run() {
     } finally {
         await Database.close();
         for (const suffix of ['', '-wal', '-shm']) fs.rmSync(`${file}${suffix}`, { force: true });
-        fs.rmdirSync(dir);
+        fs.rmSync(dir, { recursive: true, force: true });
     }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

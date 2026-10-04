@@ -556,5 +556,5 @@ main().catch(error => { console.error(error); process.exitCode = 1; }).finally(a
     Response.userInfo = originalUserInfo;
     utils.infoWarn = originalWarn;
     for (const suffix of ['', '-wal', '-shm']) fs.rmSync(file + suffix, { force: true });
-    fs.rmdirSync(directory);
+    fs.rmSync(directory, { recursive: true, force: true });
 });
