@@ -5,7 +5,7 @@ const DataCache = invoke('GameServer/DataCache');
 const NpcIndex = invoke('GameServer/World/NpcObjectIndex');
 
 const count = (state, id) => state.session.actor.backpack.fetchItems()
-    .filter(item => item.fetchSelfId() === id && !item.fetchEquipped())
+    .filter(item => item.fetchSelfId() === id && (!item.fetchEquipped() || state.quest.equippedQuestItems?.includes(id)))
     .reduce((sum, item) => sum + item.fetchAmount(), 0);
 const has = (state, takes) => takes.every(([id, amount]) => count(state, id) >= amount);
 const link = (id, event, label) => `<a action="bypass -h quest ${id} ${event}">${label}</a>`;

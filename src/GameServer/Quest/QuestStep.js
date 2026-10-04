@@ -24,15 +24,26 @@ async function apply(state, { takes: wanted = [], gives = [], variables = state.
     const rows = await Database.applyQuestStep(actor.fetchId(), state.quest.id,
         { state: state.state, variables: state.variables }, next,
         takes.map(([selfId, amount]) => ({ selfId, amount })), rewards, experience, beginner, pk);
+    let equipmentChanged = false;
     for (const row of rows) {
         const item = actor.backpack.fetchItemRaw(row.id);
         if (!row.amount) {
+            if (item?.fetchEquipped()) {
+                actor.backpack.unequipPaperdoll(item.fetchSlot());
+                equipmentChanged = true;
+            }
             actor.backpack.items = actor.backpack.items.filter(i => i.fetchId() !== row.id);
         } else if (item) item.setAmount(row.amount);
         else actor.backpack.insertItem(row.id, row.selfId, row);
     }
     state.state = next.state;
     state.variables = next.variables;
+    if (equipmentChanged && actor.fetchMaxHp) {
+        invoke(path.actor).calculateStats(state.session, actor);
+        invoke('GameServer/Skills/ToggleSkills').syncEquipment(state.session, actor);
+        state.session.dataSendToMe(Response.userInfo(actor));
+        state.session.dataSendToOthers?.(Response.charInfo(actor));
+    }
     if (rows.experience) {
         const award = rows.experience;
         actor.setExpSp(award.totalExp, award.totalSp);
