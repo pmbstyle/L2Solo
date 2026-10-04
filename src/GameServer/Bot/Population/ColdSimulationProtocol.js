@@ -19,6 +19,7 @@ const MAIN_TYPES = new Set([
     'pause',
     'resume',
     'throttle',
+    'competition_release',
     'shutdown'
 ]);
 

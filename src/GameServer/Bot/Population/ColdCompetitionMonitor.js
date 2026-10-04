@@ -2,6 +2,7 @@ const { decide } = require('./ColdCompetitionPolicy');
 const INTERVAL_MS = 30000;
 const PAIR_COOLDOWN_MS = 2 * 60000;
 const BOT_COOLDOWN_MS = 2 * 60000;
+const unitKeyOf = (partyId, id) => partyId || `solo:${id}`;
 function seeded(seed) {
     let h = 2166136261;
     for (const c of seed) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
@@ -63,7 +64,7 @@ class ColdCompetitionMonitor {
             const key = `${state.spotId}:${target}`;
             if (!groups.has(key)) groups.set(key, { key, spotId: state.spotId, npcId: target, fraction: count / total,
                 capacity: Math.max(1, this.capacityForSpot(context.spot) * count / total), demand: 0, units: new Map() });
-            const group = groups.get(key), unitKey = partyId || `solo:${state.characterId}`;
+            const group = groups.get(key), unitKey = unitKeyOf(partyId, state.characterId);
             group.demand++;
             if (!group.units.has(unitKey)) group.units.set(unitKey, { id: Number(state.characterId), name: state.name,
                 partyId, unitKey, size: 0, level: 0, state, members: [] });
@@ -188,6 +189,18 @@ class ColdCompetitionMonitor {
             this.report.events.push(...revenge);
             this.report.recent = [...this.report.recent, ...revenge].slice(-12);
             this.report.revenge = { ...this.revenge.report };
+        }
+    }
+    // The main thread skipped these forecasts for its action budget, so they
+    // never happened: drop the cooldowns their scan set and let the pairs
+    // re-decide next scan. A cooldown set by a later scan is kept.
+    release(events) {
+        for (const event of events) {
+            const a = unitKeyOf(event.actor?.partyId, event.actor?.id), b = unitKeyOf(event.peer?.partyId, event.peer?.id);
+            if (event.action === 'revenge') { this.revenge.release([a, b], Number(event.at)); continue; }
+            const pairKey = [a, b].sort().join('|');
+            if (this.pairs.get(pairKey) === Number(event.at) + PAIR_COOLDOWN_MS) this.pairs.delete(pairKey);
+            for (const key of [a, b]) if (this.bots.get(key) === Number(event.at) + BOT_COOLDOWN_MS) this.bots.delete(key);
         }
     }
     snapshot() { return this.report; }

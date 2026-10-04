@@ -59,4 +59,40 @@ assert(busy.earlySessions >= runs * 0.65, 'crowded sessions need no hour-long wa
 assert(friends.intents < busy.intents / 10, 'repeated friendly encounters do not become a feud');
 const stalled = observe(2, neutral, true);
 assert(stalled.meanIntentsPerHour < 10, 'a long offline interval cannot generate a catch-up war');
+
+// A forecast the main thread skipped for its action budget gives its cooldowns
+// back: the same pair can meet again on the next scan, before the two minutes.
+{
+    const spot = { id: 'release', npcEntries: [{ selfId: 10, count: 1 }] };
+    const entries = [2100001, 2100002].map((characterId, i) => ({ state: { characterId, name: `Leaver${i}`, level: 40,
+        phase: 'cold', activity: 'hunting', spotId: spot.id, vitals: { hp: 100 }, stats: {} }, context: { spot, targetNpcId: 10 } }));
+    const memory = { assess: () => neutral, views: new Map() };
+    const make = () => new ColdCompetitionMonitor({ capacityForSpot: () => 1, personaFor: s => Persona.generate({ characterId: s.characterId, stats: {} }) });
+    const kept = make(), released = make();
+    let first = null, tick = 0;
+    for (; !first && tick < 20; tick++) {
+        for (const monitor of [kept, released]) monitor.sample(entries, memory, at + tick * INTERVAL_MS);
+        first = released.snapshot().events.find(e => e.action !== 'revenge') || null;
+    }
+    assert(first, 'two hunters on a one-slot ground meet');
+    released.release([{ at: first.at - 1, action: first.action, actor: first.actor, peer: first.peer }]);
+    assert.strictEqual(released.pairs.size, 1, 'a release from another scan keeps the cooldown');
+    released.release([JSON.parse(JSON.stringify(first))]);
+    assert.strictEqual(released.pairs.size + released.bots.size, 0, 'the skipped forecast releases its pair and unit cooldowns');
+    const again = { kept: 0, released: 0 };
+    for (let next = tick; next < tick + 3; next++) {
+        for (const [name, monitor] of Object.entries({ kept, released })) {
+            monitor.sample(entries, memory, at + next * INTERVAL_MS);
+            again[name] += monitor.snapshot().events.length;
+        }
+    }
+    assert.strictEqual(again.kept, 0, 'an applied forecast keeps the pair cooling down');
+    assert(again.released > 0, 'a released pair re-decides before the cooldown ends');
+    const revenge = new ColdCompetitionMonitor({ capacityForSpot: () => 1, personaFor: () => ({ traits: {} }) });
+    const retry = require('../src/GameServer/Social/RevengePolicy').RETRY_MS;
+    revenge.revenge.cooldowns.set('solo:1', at + retry).set('party-2', at + retry).set('solo:3', at + INTERVAL_MS + retry);
+    revenge.release([{ at, action: 'revenge', actor: { id: 1, partyId: null }, peer: { id: 2, partyId: 'party-2' } },
+        { at, action: 'revenge', actor: { id: 3 }, peer: { id: 4 } }]);
+    assert.deepStrictEqual([...revenge.revenge.cooldowns.keys()], ['solo:3'], 'a skipped revenge releases only its own scan cooldowns');
+}
 console.log('Local competition cadence passed', JSON.stringify({ runs, quiet, ordinary, busy, friends, stalled }));

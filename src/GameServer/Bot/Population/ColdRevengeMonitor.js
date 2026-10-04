@@ -52,5 +52,9 @@ class ColdRevengeMonitor {
         this.cursor += examined;
         return events;
     }
+    // Releases only the cooldowns set by the sample at `at`.
+    release(unitIds, at) {
+        for (const id of unitIds) if (this.cooldowns.get(id) === at + Policy.RETRY_MS) this.cooldowns.delete(id);
+    }
 }
 module.exports = { ColdRevengeMonitor, available, nearby, MAX_ACTORS };

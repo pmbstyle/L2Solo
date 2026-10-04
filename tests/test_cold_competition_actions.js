@@ -249,7 +249,7 @@ async function run() {
     const bounded = new ColdCompetitionActions({ now: () => now, budgetNow: () => clock, conflictsEnabled: () => true });
     const attempts = [];
     bounded.apply = async e => { attempts.push(e.key); return { ok: attempts.length > 2, reason: 'state_changed_or_busy' }; };
-    const batch = Array.from({ length: 12 }, (_, i) => ({ ...yieldEvent, key: `batch-${i}`, at: now }));
+    const batch = Array.from({ length: 12 }, (_, i) => ({ ...partyEvent, key: `batch-${i}`, at: now }));
     batch[11] = { ...dispute, key: 'pvp-first', at: now };
     bounded.submit({ at: now, recent: batch.slice(0, 2), events: batch }); await bounded.running;
     assert.strictEqual(attempts[0], 'pvp-first');
@@ -261,6 +261,27 @@ async function run() {
     failures.apply = async () => ({ ok: false, reason: 'stale' });
     failures.submit({ at: now, recent: batch.slice(0, 11) }); await failures.running;
     assert.strictEqual(failures.report.attempted, 8, 'failed attempts have their own hard bound');
+    // One scan with six PvP contests, an invitation and five departures: fights
+    // keep their four slots (PvP first), departures have their own two, and every
+    // forecast skipped by the budget is handed back so its pair re-decides next
+    // scan. The next scan carries only its own forecasts: no backlog.
+    const released = [], order = [];
+    const mixed = new ColdCompetitionActions({ now: () => now, budgetNow: () => 0, conflictsEnabled: () => true,
+        releaseForecasts: events => released.push(events.map(e => e.key)) });
+    mixed.apply = async e => { order.push(e.key); return { ok: true }; };
+    const scan = (n, at) => [...['avoid', 'yield', 'avoid', 'yield', 'avoid'].map((action, i) => ({ ...yieldEvent, action, key: `leave-${n}-${i}`, at })),
+        { ...partyEvent, key: `offer-${n}`, at }, ...Array.from({ length: 6 }, (_, i) => ({ ...dispute, key: `pvp-${n}-${i}`, at }))];
+    mixed.submit({ at: now, events: scan(0, now) }); await mixed.running;
+    assert.deepStrictEqual(order, ['pvp-0-0', 'pvp-0-1', 'pvp-0-2', 'pvp-0-3', 'leave-0-0', 'leave-0-1'],
+        'two departures still apply next to four PvP fights');
+    assert.strictEqual(mixed.report.avoids + mixed.report.yields, 2);
+    assert.deepStrictEqual(released, [['pvp-0-4', 'pvp-0-5', 'offer-0', 'leave-0-2', 'leave-0-3', 'leave-0-4']],
+        'every forecast skipped by the budget releases its pair cooldown');
+    mixed.submit({ at: now + 30000, events: [...scan(0, now), ...scan(1, now + 30000)] }); await mixed.running;
+    assert.deepStrictEqual(order.slice(6), ['pvp-1-0', 'pvp-1-1', 'pvp-1-2', 'pvp-1-3', 'leave-1-0', 'leave-1-1'],
+        'skipped forecasts are not replayed on the next scan');
+    assert.strictEqual(released[1].length, 6);
+    assert.strictEqual(mixed.report.budgetSkipped, 12, 'the skipped count does not grow across scans');
     const slow = new ColdCompetitionActions({ now: () => now, budgetNow: () => clock });
     slow.apply = async () => { clock += 80; return { ok: true }; };
     slow.submit({ at: now, recent: batch.slice(0, 11) }); await slow.running;

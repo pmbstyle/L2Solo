@@ -356,6 +356,9 @@ async function handle(message) {
     case 'throttle':
         kernel?.setMaxInFlight(payload.maxInFlight);
         break;
+    case 'competition_release':
+        competition?.release(payload.events || []);
+        break;
     case 'shutdown':
         if (shuttingDown) break;
         shuttingDown = true;

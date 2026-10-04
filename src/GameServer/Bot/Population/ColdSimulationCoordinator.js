@@ -171,6 +171,8 @@ class ColdSimulationCoordinator {
                 return physical?.id === event.spotId && (event.action === 'revenge' || !!spot?.npcEntries?.some(row => Number(row.selfId) === event.npcId));
             },
             participantAllowed: id => !this.fencedBots.has(Number(id)),
+            releaseForecasts: events => this.post('competition_release', { events: events.map(e => ({ at: e.at, action: e.action,
+                actor: { id: e.actor.id, partyId: e.actor.partyId || null }, peer: { id: e.peer.id, partyId: e.peer.partyId || null } })) }),
             retreatRoute: (members, party, event, timestamp) => {
                 const leader = members.find(s => s.characterId === party?.leaderId) || members[0];
                 const index = this.contextIndex();

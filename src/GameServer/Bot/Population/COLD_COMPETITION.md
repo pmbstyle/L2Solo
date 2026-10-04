@@ -90,7 +90,9 @@ At most 32 pairs are sampled per scan with a rotating ground cursor. Each ground
 has at most eight pair slots; encounter hazard scales with pressure and is capped
 at four per minute per sampled pair. There is no backlog catch-up. Pair and unit
 forecast cooldowns are both two minutes; accepted disputes retain their separate
-durable cooldowns. Expired keys are removed; at most twelve recent forecasts are
+durable cooldowns. A forecast the action consumer skips for its budget is handed
+back to the worker, which drops the cooldowns of that scan so the pair re-decides
+on the next scan (`competition_release`); nothing is queued. Expired keys are removed; at most twelve recent forecasts are
 retained, while the action consumer receives the current bounded event batch. Cooldowns and counters
 are process-local observation state and reset with the worker. They are NOT the
 durable deduplication needed for future gameplay events.
@@ -112,10 +114,11 @@ No negative memory may be produced merely from a forecast or shared objective.
 
 ## First real actions
 
-`coldCompetitionActionsEnabled` lets the main process consume at most two fresh
-yield/avoid/accepted-offer forecasts from a scan, with accepted offers taking priority
-over voluntary retreats; `budgetSkipped` counts excess
-candidates. Capacity and clan-objective refusals have explicit result reasons.
+`coldCompetitionActionsEnabled` lets the main process apply at most four fresh
+PvP/revenge/accepted-offer/contest forecasts (eight attempts) and, in a separate
+budget, two yield/avoid departures (four attempts) from a scan, PvP first, within
+one 75 ms wall-time budget; `budgetSkipped` counts excess candidates, and their
+monitor cooldowns are released. Capacity and clan-objective refusals have explicit result reasons.
 Actual results are exported separately
 as `coldCompetitionActions` in the observer. PvP requires its separate enable flag.
 Resource disputes can execute under the separate conflicts flag described below.
@@ -331,7 +334,7 @@ follow-up work.
 ## Bounded cold PvP
 
 `coldCompetitionPvpEnabled` consumes accepted contest episodes whose existing
-forecast includes `pvpIntent`. It shares the same four-success/eight-attempt admission budget,
+forecast includes `pvpIntent`. It shares the same four-success/eight-attempt fight budget,
 ten-minute durable cooldowns, roster votes, memory revisions and ownership fences.
 No new encounter generator or backlog replay is introduced. Peace zones and
 same-clan opponents cannot grant attack permission; a materially outmatched
