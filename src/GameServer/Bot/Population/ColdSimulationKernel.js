@@ -1,10 +1,9 @@
 const SIMPLE_ACTIVITIES = new Set(['hunting', 'resting', 'traveling', 'dead']);
-const HUNTING_TRAVEL_MS = 25000;
 const PROPOSAL_PAYLOAD_LIMIT_BYTES = 240 * 1024;
 const BackgroundPartyLifecycle = require('./BackgroundPartyLifecycle');
 const Protocol = require('./ColdSimulationProtocol');
 const ColdStateDelta = require('./ColdStateDelta');
-const SpotRiskPolicy = require('./SpotRiskPolicy');
+const { HUNTING_TRAVEL_MS, beginHuntingTrip } = require('./HuntingTravel');
 const PurchaseFunding = require('../Economy/PurchaseFunding');
 const { SpotOccupancyIndex, stateKey } = require('./SpotOccupancyIndex');
 
@@ -127,59 +126,6 @@ function nextDueAt(state = {}, timestamp = Date.now(), context = {}, partySessio
     const sessionExpiry = partySessionExpiryAt(state, context, partySession);
     if (sessionExpiry > 0) return due > 0 ? Math.min(due, sessionExpiry) : sessionExpiry;
     return due > 0 ? due : Math.max(0, Number(state.updatedAt || timestamp));
-}
-
-function hasFiniteCoordinate(value) {
-    return value !== null
-        && value !== undefined
-        && String(value).trim() !== ''
-        && Number.isFinite(Number(value));
-}
-
-function routeDestination(state = {}, route = {}) {
-    return route?.destinations?.[String(state.characterId)] || route?.to || null;
-}
-
-function beginRouteTravelState(state = {}, route = null, timestamp = Date.now(), options = {}) {
-    if (!state || !route?.needed || state.activity === 'traveling') return null;
-    const destination = routeDestination(state, route);
-    const from = { ...(state.loc || {}) };
-    if (!destination || !hasFiniteCoordinate(from.locX) || !hasFiniteCoordinate(from.locY)) return null;
-    const arrivalAt = timestamp + Math.max(1000, Number(route.travelMs) || HUNTING_TRAVEL_MS);
-    const isPartyRoute = route.mode === 'party';
-    const routedState = route.spotBackoff && !isPartyRoute
-        ? SpotRiskPolicy.withBackoff(state, route.spotBackoff, timestamp)
-        : state;
-    return {
-        ...routedState,
-        activity: 'traveling',
-        timing: {
-            ...(state.timing || {}),
-            activityStartedAt: timestamp,
-            nextResolveAt: arrivalAt
-        },
-        stats: {
-            ...(routedState.stats || {}),
-            pveEncounter: null,
-            travel: {
-                from,
-                to: { ...destination },
-                startedAt: timestamp,
-                arrivalAt,
-                regionName: route.regionName || state.currentRegion || 'Hunting Ground',
-                method: Number(state.stats?.karma || 0) > 0 ? 'walk' : 'gatekeeper_spot',
-                spotId: route.spotId,
-                arrivalActivity: isPartyRoute ? 'grouped' : 'hunting',
-                arrivalEvent: isPartyRoute ? 'party_arrived_hunting_ground' : 'arrived_hunting_ground',
-                reason: isPartyRoute
-                    ? 'party_spot_replan'
-                    : route.reason || (state.stats?.equipmentPlan?.status === 'active'
-                        ? 'equipment_source_replan'
-                        : 'level_replan'),
-                ...(route.cause ? { cause: route.cause } : {})
-            }
-        }
-    };
 }
 
 function finishPartyRouteTravelState(state = {}, timestamp = Date.now()) {
@@ -1043,7 +989,7 @@ class ColdSimulationKernel {
             if (!rescuing && run.route?.needed) {
                 const arrivalAt = startedAt + Math.max(1000, Number(run.route.travelMs) || HUNTING_TRAVEL_MS);
                 const travellingMembers = run.members.map((state) => (
-                    beginRouteTravelState(state, run.route, startedAt)
+                    beginHuntingTrip(state, run.route, startedAt)
                     || {
                         ...state,
                         timing: { ...(state.timing || {}), nextResolveAt: arrivalAt }
@@ -1498,7 +1444,6 @@ module.exports = {
     ColdSimulationKernel,
     DueHeap,
     deterministicRandom,
-    beginRouteTravelState,
     finishPartyRouteTravelState,
     lifecycleKind,
     priorityForResult,

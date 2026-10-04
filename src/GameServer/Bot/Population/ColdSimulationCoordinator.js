@@ -27,7 +27,7 @@ const { ColdSnapshotQueue } = require('./ColdSnapshotQueue');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const TownNpcCatalog = require('../Economy/TownNpcCatalog');
 
-const HUNTING_TRAVEL_MS = 25000;
+const { HUNTING_TRAVEL_MS } = require('./HuntingTravel');
 const OWNERSHIP_REBASE_REASONS = new Set([
     'stale_revision',
     'cas_failed',

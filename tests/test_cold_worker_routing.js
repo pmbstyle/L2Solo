@@ -520,7 +520,7 @@ try {
         assert.strictEqual(repairedRoute.cause, 'position_mismatch');
         assert.strictEqual(repairedRoute.reason, 'party_spot_replan');
         const Kernel = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
-        const departing = Kernel.beginRouteTravelState(displacedMembers[1], repairedRoute, 1000);
+        const departing = require('../src/GameServer/Bot/Population/HuntingTravel').beginHuntingTrip(displacedMembers[1], repairedRoute, 1000);
         assert.strictEqual(departing.loc.locZ, 160, 'repair uses ordinary travel, not an instant move');
         assert.strictEqual(Kernel.finishPartyRouteTravelState(departing, 2000), null);
         const arrived = Kernel.finishPartyRouteTravelState(departing, 1000 + repairedRoute.travelMs);

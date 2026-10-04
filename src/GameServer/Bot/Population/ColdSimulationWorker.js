@@ -72,7 +72,8 @@ const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const Protocol = require('./ColdSimulationProtocol');
 const RequiredPartyFormation = require('./RequiredPartyFormation');
 const { ColdCompetitionMonitor, INTERVAL_MS: COMPETITION_INTERVAL_MS } = require('./ColdCompetitionMonitor');
-const { ColdSimulationKernel, beginRouteTravelState } = require('./ColdSimulationKernel');
+const { ColdSimulationKernel } = require('./ColdSimulationKernel');
+const { beginHuntingTrip } = require('./HuntingTravel');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const SpotIndex = require('../AI/SpotIndex');
 const forbiddenLoaded = Object.keys(require.cache).filter((filename) => (
@@ -234,7 +235,7 @@ function startKernel(config = {}) {
                 spotId: fallbackSpot ? fallbackSpot.id : state.spotId,
                 stats: plannedStats
             };
-            const routedState = beginRouteTravelState(plannedState, context?.route, timestamp) || plannedState;
+            const routedState = beginHuntingTrip(plannedState, context?.route, timestamp) || plannedState;
             return {
                 previousPlan,
                 acquisitionPlan,

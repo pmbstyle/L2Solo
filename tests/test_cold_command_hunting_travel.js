@@ -82,7 +82,10 @@ async function run() {
     LifeEvents.recordMany = () => Promise.resolve(null);
     GlobalChat.maybeAnnounce = () => null;
 
-    const commanded = await PopulationService.resolveColdState(hunter(7401), { precomputedResult: workerFight() });
+    // The worker's context carries the coordinator's choice: no trip, the
+    // bot fights on its old ground.
+    const commanded = await PopulationService.resolveColdState(hunter(7401),
+        { precomputedResult: workerFight(), context: { spot: oldSpot, route: null } });
     assert.strictEqual(commanded.ok, true);
     assert.strictEqual(applied.length, 1, 'the worker fight is applied');
     assert.notStrictEqual(applied[0].activity, 'traveling', 'main begins no hunting trip under a worker result');

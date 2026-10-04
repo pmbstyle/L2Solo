@@ -2,7 +2,7 @@ const assert = require('assert');
 require('../src/Global');
 const Solo = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const Party = invoke('GameServer/Bot/Population/PartySpotRiskPolicy');
-const { beginRouteTravelState } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
+const { beginHuntingTrip } = require('../src/GameServer/Bot/Population/HuntingTravel');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const at = 1800000000000;
 const personal = { characterId: 1, level: 20, phase: 'cold', activity: 'hunting', spotId: 'danger',
@@ -36,7 +36,7 @@ async function run() {
         partyPatch: { stats: { deaths: 25 } } }, at));
     assert.strictEqual(Party.backoff(lowWins, 'danger', at).reason, 'low_win_rate');
     const route = { needed: true, mode: 'party', spotId: 'safer', to: { locX: 10, locY: 20, locZ: 3 }, spotBackoff: pressure };
-    const travelled = beginRouteTravelState(personal, route, at);
+    const travelled = beginHuntingTrip(personal, route, at);
     assert.deepStrictEqual(travelled.stats.spotBackoffs, personal.stats.spotBackoffs,
         'group retreat cannot copy/extend its ban into a member');
     assert.deepStrictEqual(travelled.stats.spotRisk, personal.stats.spotRisk);

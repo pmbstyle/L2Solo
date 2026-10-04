@@ -65,7 +65,7 @@ const {
     partyObjectiveForState
 } = PartyRequestPlanner;
 
-const HUNTING_TRAVEL_MS = 25000;
+const { HUNTING_TRAVEL_MS, beginHuntingTrip } = require('./HuntingTravel');
 const activationFailureLogAt = new Map();
 
 function logPartyActivationFailure(state, result, timestamp = Date.now()) {
@@ -128,11 +128,12 @@ function hasFiniteCoordinate(value) {
         && Number.isFinite(Number(value));
 }
 
+// Main's trip to a spot it chose itself: the trip a coordinator route to the
+// same spot starts (beginHuntingTrip). A regroup is a party trip.
 function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
     if (!state || !spot || state.activity === 'traveling') return null;
-    const from = { ...(state.loc || {}) };
-    const hasLocation = hasFiniteCoordinate(from.locX) && hasFiniteCoordinate(from.locY);
-    if (!hasLocation) return null;
+    const from = state.loc || {};
+    if (!hasFiniteCoordinate(from.locX) || !hasFiniteCoordinate(from.locY)) return null;
     const physical = SpotService.findCurrentSpot(from);
     const currentId = physical?.id || options.currentSpotId || state.spotId || null;
     if (currentId === spot.id && !options.regroup) return null;
@@ -140,58 +141,26 @@ function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
     if (!destination) return null;
     const spotBackoff = options.spotBackoff
         || (!options.regroup && SpotRiskPolicy.backoffForStates([state], currentId, timestamp));
-    const routedState = spotBackoff && !options.regroup
-        ? SpotRiskPolicy.withBackoff(state, spotBackoff, timestamp)
-        : state;
-
-    return {
-        ...routedState,
-        activity: 'traveling',
-        timing: {
-            ...(state.timing || {}),
-            activityStartedAt: timestamp,
-            nextResolveAt: timestamp + HUNTING_TRAVEL_MS
-        },
-        stats: {
-            ...(routedState.stats || {}),
-            pveEncounter: null,
-            travel: {
-                from,
-                to: destination,
-                startedAt: timestamp,
-                arrivalAt: timestamp + HUNTING_TRAVEL_MS,
-                regionName: spot.name || state.currentRegion || 'Hunting Ground',
-                method: Number(state.stats?.karma || 0) > 0 ? 'walk' : 'gatekeeper_spot',
-                spotId: spot.id,
-                arrivalActivity: 'hunting',
-                arrivalEvent: 'arrived_hunting_ground',
-                reason: spotBackoff
-                    ? 'death_pressure_replan'
-                    : state.stats?.equipmentPlan?.status === 'active'
-                        ? 'equipment_source_replan'
-                        : 'level_replan',
-                ...(spotBackoff ? { cause: 'death_pressure' } : {})
-            }
-        }
-    };
+    return beginHuntingTrip(state, {
+        needed: true,
+        mode: options.regroup ? 'party' : 'solo',
+        spotId: spot.id,
+        regionName: spot.name,
+        to: destination,
+        ...(spotBackoff ? { spotBackoff, cause: 'death_pressure', reason: 'death_pressure_replan' } : {})
+    }, timestamp);
 }
 
 function beginPartySpotTravel(state, spot, timestamp = Date.now(), options = {}) {
-    const travelling = beginHuntingTravel(state, spot, timestamp, { ...options, regroup: true });
-    if (!travelling) return null;
-    return {
-        ...travelling,
-        stats: {
-            ...(travelling.stats || {}),
-            travel: {
-                ...(travelling.stats?.travel || {}),
-                reason: 'party_spot_replan',
-                ...(options.spotBackoff ? { cause: 'death_pressure' } : {}),
-                arrivalActivity: 'grouped',
-                arrivalEvent: 'party_arrived_hunting_ground'
-            }
-        }
-    };
+    return beginHuntingTravel(state, spot, timestamp, { ...options, regroup: true });
+}
+
+// The spot the coordinator chose for a commanded bot (routeFor, sent in the
+// worker's context): the trip's destination, or the ground the worker fought
+// on when the bot needed no trip.
+function commandSpot(context) {
+    const spotId = context?.route?.needed ? context.route.spotId : context?.spot?.id;
+    return spotId ? SpotProfiles.findById(spotId) : null;
 }
 
 function finishPartySpotTravel(state, timestamp = Date.now(), destinationSpot = null, partyTravel = null) {
@@ -3686,10 +3655,12 @@ const PopulationService = {
         }
         const selectedSpot = passiveActivity
             ? null
-            : fallbackSpot || SpotProfiles.findForState(travellingState, {
-                excludedSpotIds,
-                timestamp: startedAt
-            });
+            : fallbackSpot || (precomputedResult
+                ? commandSpot(workerRequest.context)
+                : SpotProfiles.findForState(travellingState, {
+                    excludedSpotIds,
+                    timestamp: startedAt
+                }));
         // A worker result is a fight at the worker's spot; applied over a trip
         // it would restore `hunting` there and strand stats.travel. The worker
         // is routed by routeFor from the state this command writes.

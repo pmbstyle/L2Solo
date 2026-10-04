@@ -3,13 +3,13 @@ const assert = require('assert');
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
 const {
     ColdSimulationKernel,
-    beginRouteTravelState,
     deterministicRandom,
     finishPartyRouteTravelState,
     lifecycleKind,
     nextDueAt,
     partyTransitionProposals
 } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
+const { beginHuntingTrip } = require('../src/GameServer/Bot/Population/HuntingTravel');
 
 function state(characterId = 1, overrides = {}) {
     return {
@@ -141,7 +141,7 @@ function state(characterId = 1, overrides = {}) {
         travelMs: 25000,
         to: { locX: 125000, locY: -176000, locZ: -1000 }
     };
-    const travelState = beginRouteTravelState(state(70, {
+    const travelState = beginHuntingTrip(state(70, {
         level: 16,
         spotId: 'starter-field',
         loc: { locX: 115000, locY: -176000, locZ: -1000 },
@@ -166,7 +166,7 @@ function state(characterId = 1, overrides = {}) {
             until: 3605000
         }
     };
-    const backedOffTravelState = beginRouteTravelState(state(72, {
+    const backedOffTravelState = beginHuntingTrip(state(72, {
         spotId: 'starter-field',
         loc: { locX: 115000, locY: -176000, locZ: -1000 }
     }), deathPressureRoute, 5000);
@@ -204,7 +204,7 @@ function state(characterId = 1, overrides = {}) {
             };
         },
         planLifecycle: ({ state: current, context, timestamp }) => ({
-            plannedState: beginRouteTravelState(current, context.route, timestamp) || current
+            plannedState: beginHuntingTrip(current, context.route, timestamp) || current
         }),
         emit: () => {},
         now: () => 5000

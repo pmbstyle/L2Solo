@@ -156,7 +156,12 @@ async function commandChecks() {
     ListingService.resolve = (lifecycle) => Promise.resolve({ state: lifecycle?.state || lifecycle, closed: false });
     MarketService.tryPurchase = (value) => Promise.resolve({ state: value, purchased: false });
     GoalService.current = () => Promise.resolve(null);
-    GoalService.review = () => Promise.resolve(null);
+    // The goal review after the fight receives the spot main settled on.
+    const reviewed = [];
+    GoalService.review = (state, options) => {
+        reviewed.push(options?.spot?.id || null);
+        return Promise.resolve(null);
+    };
     LifeEvents.recordMany = () => Promise.resolve(null);
     GlobalChat.maybeAnnounce = () => null;
     // The worker's plan is used as it is: a 'farm' plan has no drop source
@@ -164,6 +169,7 @@ async function commandChecks() {
     const command = (state, plan, context = {}) => {
         applied.length = 0;
         upserted.length = 0;
+        reviewed.length = 0;
         return PopulationService.resolveColdState(state, {
             precomputedPlan: { previousPlan: null, acquisitionPlan: plan, replanFailure: null },
             precomputedResult: workerFight(),
@@ -196,13 +202,20 @@ async function commandChecks() {
     result = await command(routeState(14, {}, { activity: 'resting' }), farmPartyPlan, worked);
     assert.strictEqual(applied[0].activity, 'hunting', 'D3 pin: a found fallback turns a resting waiter into a hunter');
 
-    // Not a waiter, and main's own search finds no spot. Today the worker
-    // fight is dropped for a 30 s rest even when the worker fought on known
-    // ground (step 1.3 U3 moves this pin).
-    SpotProfiles.findForState = () => null;
+    // Not a waiter: main takes the spot the coordinator chose and keeps the
+    // worker fight; it runs no spot search of its own (step 1.3 U3).
+    SpotProfiles.findForState = () => assert.fail('a command runs no second spot search');
     result = await command(routeState(15, {}), farmSoloPlan, worked);
-    assert.strictEqual(result.reason, 'missing_spot_recovery', 'U3 pin: main drops the worker fight without its own spot');
-    assert.strictEqual(applied.length, 0);
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(applied.length, 1, 'U3: the worker fight on known ground is kept');
+    assert.strictEqual(applied[0].spotId, currentSpot.id);
+    assert(reviewed.length && reviewed.every((id) => id === currentSpot.id),
+        'the goal review sees the ground the worker fought on');
+    // A trip the coordinator started names its destination.
+    result = await command(routeState(17, {}), farmSoloPlan,
+        { spot: currentSpot, route: { needed: true, spotId: levelSpot.id } });
+    assert.strictEqual(applied.length, 1);
+    assert(reviewed.length && reviewed.every((id) => id === levelSpot.id), 'the goal review sees the trip\'s destination');
     // Without any spot in the worker's context the rest stays.
     result = await command(routeState(16, {}), farmSoloPlan, {});
     assert.strictEqual(result.reason, 'missing_spot_recovery', 'no spot anywhere: the bot rests and retries');

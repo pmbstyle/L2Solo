@@ -2,7 +2,8 @@ const assert = require('assert');
 require('../src/Global');
 invoke('GameServer/DataCache').init();
 const Resolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
-const { ColdSimulationKernel, beginRouteTravelState, finishPartyRouteTravelState } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
+const { ColdSimulationKernel, finishPartyRouteTravelState } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
+const { beginHuntingTrip } = require('../src/GameServer/Bot/Population/HuntingTravel');
 const at = 1800000000000;
 const point = { locX: 145224, locY: 120001, locZ: -4500 };
 const spot = { id: '24_20:antharas_lair', name: 'Assembly test', center: point,
@@ -99,7 +100,7 @@ async function main() {
 
     const route = { needed: true, reason: 'party_spot_replan', spotId: spot.id,
         travelMs: 25000, to: point, destinations: { 1: point, 2: point } };
-    const travelling = scattered.map(s => beginRouteTravelState(s, route, at));
+    const travelling = scattered.map(s => beginHuntingTrip(s, route, at));
     assert.deepStrictEqual(travelling[1].loc, scattered[1].loc, 'departure does not teleport');
     const arrived = travelling.map(s => finishPartyRouteTravelState(s, at + 25000));
     const hunt = resolve(arrived, { timestamp: at + 25000 });
