@@ -675,6 +675,7 @@ const tests = [
     'tests/test_spellsinger_profession_trials.js',
     'tests/test_elemental_summoner_profession_trials.js',
     'tests/test_spellhowler_profession_trials.js',
+    'tests/test_phantom_summoner_profession_trials.js',
     'tests/test_enhance_your_weapon_quest.js',
     'tests/test_soul_crystal_progression.js',
     'tests/test_recipe_book.js',
