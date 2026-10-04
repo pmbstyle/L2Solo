@@ -4,7 +4,7 @@ const { auditQuestRegistry } = require("../scripts/check-quest-registry");
 
 const result = auditQuestRegistry();
 assert.deepStrictEqual(result.errors, []);
-assert.strictEqual(result.active, 132);
+assert.strictEqual(result.active, 133);
 
 const QuestService = invoke("GameServer/Quest/QuestService");
 const Database = invoke("Database");

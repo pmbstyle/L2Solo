@@ -18,8 +18,8 @@ assert.deepStrictEqual(
 );
 assert.deepStrictEqual(
   QuestService.quests().slice(71).map(quest => quest.id).sort((a, b) => a - b),
-  [211, 217, 220, 222, 223, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 271, 272, 273, 274, 275, 276, 277, 291, 292, 293, 294, 295, 296, 297, 298, 303, 306, 313, 316, 317, 319, 320, 324, 325, 326, 327, 328, 330, 333, 334, 340, 341, 347, 362, 363, 364, 369, 370, 378, 379, 380, 385, 422, 634, 635],
-  "exactly the 61 added quests are appended without changing existing priority",
+  [211, 215, 217, 220, 222, 223, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 271, 272, 273, 274, 275, 276, 277, 291, 292, 293, 294, 295, 296, 297, 298, 303, 306, 313, 316, 317, 319, 320, 324, 325, 326, 327, 328, 330, 333, 334, 340, 341, 347, 362, 363, 364, 369, 370, 378, 379, 380, 385, 422, 634, 635],
+  "exactly the 62 added quests are appended without changing existing priority",
 );
 assert.deepStrictEqual(
   QuestService.quests()[0].startNpcs,
