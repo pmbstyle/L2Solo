@@ -97,6 +97,13 @@ assert.strictEqual(partyRest(bot(FIGHTER, ratios(1, 0.05))), false, 'a party fig
 assert.strictEqual(PopulationService.isRestingActivationState(bot(FIGHTER, ratios(1, 0.1))), true,
     'activation recovers any class under 20% MP');
 assert.strictEqual(PopulationService.isRestingActivationState(bot(FIGHTER, ratios(0.36, 0.21))), false);
+assert.strictEqual(PopulationService.isRestingActivationState(bot(MYSTIC, ratios(1, 0.1))), true,
+    'activation: a mage under 20% MP recovers');
+const grouped = { party: { partyId: 'probe-party' } };
+assert.strictEqual(PopulationService.isRestingActivationState(bot(FIGHTER, ratios(0.32, 1), grouped)), true,
+    'activation: a party fighter at 32% HP recovers');
+assert.strictEqual(PopulationService.isRestingActivationState(bot(TANK, ratios(1, 0.19), grouped)), true,
+    'activation: a party tank at 19% MP recovers');
 
 // Inventory cleanup: the goal planner's goal.
 const originalNeed = ItemDisposition.inventoryCleanupNeed;

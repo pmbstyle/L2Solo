@@ -59,6 +59,13 @@ function finish(session, actor, retryAt) {
         session.dataSendToOthers?.(invoke('GameServer/Network/Response').sitAndStand(actor), actor);
     }
 }
+// The hall a dead hot bot restarts in, or null for a town restart.
+function restartHall(session, actor) {
+    const wasCompanion = session.partyCompanion === true && !!session.followPlayerSession;
+    return !wasCompanion && !session.clanAllianceQuest && !session.clanAllianceSupportLeaderId
+        && Number(actor.fetchKarma?.() || 0) === 0 && session.plan !== 'merchant'
+        ? Runtime.forActor(actor) : null;
+}
 function tick(session, actor, timestamp = Date.now()) {
     if (session.clanHallVisit === undefined)
         session.clanHallVisit = session.coldLifeState?.stats?.clanHallVisit || null;
@@ -157,4 +164,4 @@ function tick(session, actor, timestamp = Date.now()) {
     }
     return false;
 }
-module.exports = { RETRY_MS, VISIT_MS, safe, local, tick, finish };
+module.exports = { RETRY_MS, VISIT_MS, safe, local, restartHall, tick, finish };

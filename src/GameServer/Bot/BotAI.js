@@ -562,9 +562,7 @@ const BotAI = {
                 // TeleportTo rejects actors that are still marked dead, so bot
                 // respawns must complete before applying the new town location.
                 const hallRuntime = invoke('GameServer/ClanHall/Runtime');
-                const recoveryHall = !wasCompanion && !session.clanAllianceQuest && !session.clanAllianceSupportLeaderId
-                    && Number(bot.fetchKarma?.() || 0) === 0 && session.plan !== 'merchant'
-                    ? hallRuntime.forActor(bot) : null;
+                const recoveryHall = invoke('GameServer/ClanHall/BotVisit').restartHall(session, bot);
                 Generics.revive(session, bot, { delayMs: 0, restoreFullVitals: true,
                     restoreExpPercent: recoveryHall ? hallRuntime.expRestore(bot) : null,
                     recoveryReason: recoveryHall ? 'restart_to_clan_hall' : 'restart_to_town' });

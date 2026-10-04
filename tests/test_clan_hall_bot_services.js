@@ -236,6 +236,29 @@ async function main() {
             false
         );
         assert.equal(Cold.needed({ ...state, party: { partyId: 'party' } }, at), false);
+        // Death restart: where a dead bot of the hall's clan restarts, hot and cold.
+        const hall = Runtime.owned(1);
+        const restart = (extra, actor = physical) => Hot.restartHall({ plan: 'hunting', ...extra }, actor);
+        assert.strictEqual(restart({}), hall, 'hot: a solo hunter restarts in the hall');
+        assert.strictEqual(restart({ partyCompanion: true, followPlayerSession: {} }), null,
+            'hot: a player companion restarts in town');
+        assert.strictEqual(restart({ clanAllianceQuest: {} }), null, 'hot: an alliance courier restarts in town');
+        assert.strictEqual(restart({ clanAllianceSupportLeaderId: 7 }), null);
+        assert.strictEqual(restart({ plan: 'merchant' }), null, 'hot: a merchant restarts at its stall');
+        assert.strictEqual(restart({}, { ...physical, fetchKarma: () => 10 }), null, 'hot: a red bot restarts in town');
+        assert.strictEqual(restart({ hotBackgroundPartyId: 'party' }), hall, 'hot: a party member restarts in the hall');
+        assert.strictEqual(restart({ coldLifeState: { stats: { marketReturn: { spotId: 'home' } } } }), hall,
+            'hot: a bot with an errand restarts in the hall');
+        const dead = { ...state, activity: 'dead', vitals: { ...state.vitals, hp: 0 } };
+        assert.strictEqual(Cold.needed(dead, at), true, 'cold: a dead solo hunter restarts in the hall');
+        assert.strictEqual(Cold.needed({ ...dead, party: { partyId: 'party' } }, at), false,
+            'cold: a party member restarts in town');
+        assert.strictEqual(Cold.needed({ ...dead, stats: { ...dead.stats, marketReturn: { spotId: 'home' } } }, at), false,
+            'cold: a bot with an errand restarts in town');
+        assert.strictEqual(Cold.needed({ ...dead, stats: { ...dead.stats, karma: 10 } }, at), false,
+            'cold: a red bot restarts in town');
+        assert.strictEqual(Cold.needed({ ...dead, accountName: 'bot_craft_probe' }, at), false,
+            'cold: a craft account restarts in town');
         const distantState = { ...state, loc: { locX: 0, locY: 0, locZ: 0 } };
         assert(Cold.needed(distantState, at), 'missing useful buffs trigger a cold visit from anywhere');
         assert.equal(Cold.needed({ ...distantState, stats: { ...state.stats, marketReturn: {} } }, at), false);

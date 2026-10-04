@@ -114,6 +114,9 @@ assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: m
 'the half-full trip respects the market retry cooldown');
 assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: mixedBag(40), party: { partyId: 5 } }, { now }), null,
 'a party member sells from the field: no half-full trip');
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: mixedBag(40), level: 9,
+    stats: { generatedCold: true } }, { now }), null,
+'a generated bot below level 10 makes no half-full trip');
 const unsellableBag = (slots) => Object.fromEntries(Array.from({ length: slots }, (_, index) => {
     const selfId = 990000 + index;
     // Quest items: no sale rule takes them (potions are NPC junk for a bot since H12).
