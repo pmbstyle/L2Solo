@@ -30,9 +30,7 @@ function consume(session, data) {
     const TownRespawn = invoke('GameServer/World/TownRespawn');
     const destination = arenaDeath
         ? invoke('GameServer/World/GiranArena').RESTART
-        : hallRestart || (actor.fetchKarma?.() > 0
-            ? TownRespawn.getChaoticRespawnCoords(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ())
-            : TownRespawn.getRespawnCoords(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ()));
+        : hallRestart || TownRespawn.restartCoords(actor);
     const Generics = invoke(path.actor);
 
     // Restart is a complete respawn, unlike a gradual resurrection skill.

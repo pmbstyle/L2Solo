@@ -1,5 +1,7 @@
 // Based on the C4 L2J mapRegions/restartPoints data. Restart regions are
 // deliberately geographical, not a straight-line nearest-city calculation.
+const Karma = require('../Karma');
+
 const TOWNS = {
     aden_town: { name: 'Aden', locX: 146737, locY: 25807, locZ: -2008 },
     de_village: { name: 'Dark Elven Village', locX: 9670, locY: 15537, locZ: -4576 },
@@ -146,11 +148,21 @@ function getChaoticRespawnCoords(locX, locY, locZ, random = Math.random) {
     return { locX: respawnX, locY: respawnY, locZ: respawnZ };
 }
 
+// Where a character restarts in town (restart after death, Scroll of Escape
+// recall, a bot's death respawn): with karma the region's PK point, otherwise
+// the town gatekeeper.
+function restartCoords(actor) {
+    return Karma.closesTowns(actor.fetchKarma?.())
+        ? getChaoticRespawnCoords(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ())
+        : getRespawnCoords(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ());
+}
+
 module.exports = {
     towns: TOWNS,
     getClosestTown,
     getRegionGroup,
     getRespawnCoords,
     getChaoticRespawnCoords,
+    restartCoords,
     CHAOTIC_RESPAWNS
 };

@@ -9,6 +9,7 @@ const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const PartyRevivalService = invoke('GameServer/Bot/AI/PartyRevivalService');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
+const Karma = invoke('GameServer/Karma');
 const HotBotPolicyOverlay = invoke('GameServer/Bot/AI/HotBotPolicyOverlay');
 const BotTradeService = invoke('GameServer/Bot/BotTradeService');
 const ChatArrivalState = invoke('GameServer/Bot/AI/ChatArrivalState');
@@ -38,10 +39,6 @@ function getRandomPhrase(category, ...args) {
 function newbieSpawnCoords(classId) {
     const DataCache = invoke('GameServer/DataCache');
     return DataCache.newbieSpawns.find(ob => ob.classId === classId)?.spawns ?? [{ locX: -84318, locY: 244579, locZ: -3730 }];
-}
-
-function townRespawnCoords(bot) {
-    return TownRespawn.getRespawnCoords(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
 }
 
 function isRealPlayerSession(session) {
@@ -277,9 +274,8 @@ const BotAI = {
         if (session?.pkProfile?.anchor) {
             return { ...session.pkProfile.anchor };
         }
-        if (bot.fetchKarma?.() > 0) {
-            return TownRespawn.getChaoticRespawnCoords(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
-        }
+        // With karma the PK point comes before the shop spot and the leader.
+        if (Karma.closesTowns(bot.fetchKarma?.())) return TownRespawn.restartCoords(bot);
 
         if (session.plan === 'merchant' || (bot.fetchPrivateStore && bot.fetchPrivateStore())) {
             return {
@@ -302,7 +298,7 @@ const BotAI = {
             };
         }
 
-        return townRespawnCoords(bot);
+        return TownRespawn.restartCoords(bot);
     },
 
     beginPartyTownRecovery(session, bot, now = Date.now()) {

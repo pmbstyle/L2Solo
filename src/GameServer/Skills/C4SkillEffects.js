@@ -556,10 +556,7 @@ function applyRecall(session, target, semantic) {
         invoke('GameServer/Actor/Generics/TeleportTo')(targetSession, target, coords);
         return true;
     }
-    const TownRespawn = invoke('GameServer/World/TownRespawn');
-    const coords = target.fetchKarma?.() > 0
-        ? TownRespawn.getChaoticRespawnCoords(target.fetchLocX(), target.fetchLocY(), target.fetchLocZ())
-        : TownRespawn.getRespawnCoords(target.fetchLocX(), target.fetchLocY(), target.fetchLocZ());
+    const coords = invoke('GameServer/World/TownRespawn').restartCoords(target);
     invoke('GameServer/Actor/Generics/TeleportTo')(targetSession, target, coords);
     return true;
 }
