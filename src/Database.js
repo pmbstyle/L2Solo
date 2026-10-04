@@ -4834,9 +4834,9 @@ const Database = {
             if ((row?.state || 'created') !== expected.state || JSON.stringify(current) !== JSON.stringify(expected.variables)) throw new Error('Quest step changed');
             const changed = new Set();
             for (const take of takes) {
-                // Q218 retires Talin's Spear, including the copy currently wielded.
-                // Other hand-ins continue to reject equipped gear.
-                const equipmentFilter = questId === 218 && take.selfId === 3026 ? '' : 'AND equipped = 0';
+                // Only the owning trial may retire its currently wielded quest weapon.
+                const trialWeapon = { 212: 3027, 218: 3026 }[questId];
+                const equipmentFilter = take.selfId === trialWeapon ? '' : 'AND equipped = 0';
                 const items = all(`SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ${equipmentFilter} ORDER BY id`, [characterId, take.selfId]);
                 if (!Number.isSafeInteger(take.amount) || take.amount < 1 || items.reduce((sum, item) => sum + item.amount, 0) < take.amount) throw new Error('Required quest items missing');
                 let remaining = take.amount;

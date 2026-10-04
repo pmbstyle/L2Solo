@@ -127,6 +127,7 @@ const entries = [
     [634, "Q634_InSearchOfFragmentsOfDimension"],
     [635, "Q635_IntoTheDimensionalRift"],
     [211, "Q211_TrialOfChallenger"],
+    [212, "Q212_TrialOfDuty"],
     [217, "Q217_TestimonyOfTrust"],
     [222, "Q222_TestOfDuelist"],
     [220, "Q220_TestimonyOfGlory"],

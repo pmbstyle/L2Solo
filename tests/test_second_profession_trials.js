@@ -213,6 +213,9 @@ async function run() {
         await realActor();
         let master = staticNpc(7109);
         NpcTalk(session, master);
+        // Hannavalt's Duty quest makes this dialog use the asynchronous quest queue.
+        await session.questMutationTail;
+        await new Promise(resolve => setImmediate(resolve));
         assert.match(world.page(session), /second-profession/);
         assert.equal((await Transfer(session, ['second-profession', '2'])).reason, 'level');
         session.actor.setLevel(40);

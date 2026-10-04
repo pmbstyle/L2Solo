@@ -6,11 +6,14 @@ const Actor = invoke('GameServer/Actor/Actor');
 
 async function reloadActor(c) {
     const row = await c.world.character(c.id), template = DataCache.classTemplates.find(t => t.classId === row.classId);
+    const items = await Database.fetchItems(c.id), paperdoll = utils.tupleAlloc(16, {});
+    for (const item of items) if (item.equipped) paperdoll[item.slot] = { id: item.id, selfId: item.selfId };
     c.session.actor = new Actor(c.session, { ...row, ...utils.crushOb(template), id: c.id, name: row.name, username: row.username,
         level: row.level, classId: row.classId, locX: 0, locY: 0, locZ: 0, head: 0, title: '', isActive: 1,
-        items: await Database.fetchItems(c.id), paperdoll: utils.tupleAlloc(16, {}) });
+        items, paperdoll });
     c.session.dataSendToOthers = p => c.session.packets.push(p);
     await c.session.actor.skillset.populate(c.id);
+    invoke('GameServer/Actor/Generics/CalculateStats')(c.session, c.session.actor);
 }
 
 function master(c, selfId) {
