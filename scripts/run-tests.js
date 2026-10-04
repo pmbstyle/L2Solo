@@ -644,6 +644,7 @@ const tests = [
     'tests/test_tyrant_profession_trials.js',
     'tests/test_pilgrim_trial.js',
     'tests/test_warcryer_profession_trials.js',
+    'tests/test_overlord_profession_trials.js',
     'tests/test_enhance_your_weapon_quest.js',
     'tests/test_soul_crystal_progression.js',
     'tests/test_recipe_book.js',
