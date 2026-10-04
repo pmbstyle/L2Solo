@@ -13,8 +13,7 @@ async function equipSword(c) {
     assert.equal(c.session.actor.backpack.fetchEquippedWeapon().fetchSelfId(), 3027);
 }
 
-async function duty(c, foreign = null, { stopAtSword = false, stopAtSpirit = false } = {}) {
-    const before = await c.world.character(c.id), diamonds = await c.amount(7562);
+async function duty(c, foreign = null, { stopAtSword = false, stopAtSpirit = false, beforeArticles = null } = {}) {
     assert.equal(await c.event(212, 'start', 7109), false, 'Duty starts at level 35');
     await c.level(35); assert.equal(await c.event(212, 'start', 7653), false);
     await c.click(212, 'start', 7109); await c.click(212, 'handin', 7653);
@@ -88,8 +87,12 @@ async function duty(c, foreign = null, { stopAtSword = false, stopAtSpirit = fal
     assert.equal(c.cond(212), 10, 'Isael waits for level 36');
     await c.kill(577); assert.equal(await c.amount(2641), 0);
     await c.level(36); await c.click(212, 'handin', 7655);
+    if (beforeArticles) await beforeArticles();
+    const articles = await c.amount(2641);
     for (const mob of [577, 578, 579, 580, 581, 582]) await c.kill(mob, 3);
-    assert.equal(await c.amount(2641), 18); assert.equal(await c.event(212, 'handin', 7655), false);
+    const collected = Math.min(20, articles + 18);
+    assert.equal(await c.amount(2641), collected);
+    if (collected < 20) assert.equal(await c.event(212, 'handin', 7655), false);
     await c.reopen(); await c.kill(582, 3); assert.equal(await c.amount(2641), 20);
     await c.click(212, 'handin', 7655);
     await c.kill(270, 3, .5); assert.equal(await c.amount(2643), 0, 'Dustin must explain the bones first');
@@ -99,6 +102,8 @@ async function duty(c, foreign = null, { stopAtSword = false, stopAtSpirit = fal
     assert.equal(await c.event(212, 'handin', 7116), false);
     await c.reopen(); await c.kill(270, 3, .5); assert.equal(await c.amount(2645), 1);
     for (const npc of [7116, 7311, 7116]) await c.click(212, 'handin', npc);
+    // Measure Duty's final award separately from overlapping trials completed by the hook.
+    const before = await c.world.character(c.id), diamonds = await c.amount(7562);
     await c.world.talk(c.session, 7109);
     const results = await Promise.all([c.event(212, 'handin', 7109), c.event(212, 'handin', 7109)]);
     assert.deepEqual(results, [true, false]);
