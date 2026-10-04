@@ -575,6 +575,9 @@ const BotManager = {
     loadAndSpawnBot(username, botData = {}) {
         const session = new BotSession(username);
         session.populationStaging = botData.prepareOnly === true;
+        // The servitor kept away from the player, read before a party or PvP
+        // handoff re-captures the staged actor (which has none yet).
+        session.coldSummon = botData.coldLifeState?.stats?.coldCombat?.summon || null;
 
         return Shared.fetchCharacters(username).then((characters) => {
             const firstCharacter = characters[0];

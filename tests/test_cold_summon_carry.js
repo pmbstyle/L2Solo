@@ -77,4 +77,22 @@ try {
 } finally {
     C4SkillEffects.placeSummon = place;
 }
+// The servitor comes from the cold state the bot was loaded with: a party or
+// PvP handoff re-captures the staged actor (no servitor yet) into
+// session.coldLifeState before the AI starts, so that copy is not used.
+const BotAI = invoke('GameServer/Bot/BotAI');
+const restoreFromCold = SummonControl.restoreFromCold;
+const restored = [];
+SummonControl.restoreFromCold = (session, actor, saved) => { restored.push(saved); return null; };
+try {
+    const kept = { active: true, skillId: 1128, hp: 300, expiresAt: Date.now() + 600000 };
+    const session = { actor: { fetchClanId: () => 0 }, coldSummon: kept,
+        coldLifeState: { stats: { coldCombat: { summon: null } } } };
+    BotAI.init(session);
+    BotAI.init(session);
+    BotAI.cancelScheduledTick(session);
+    assert.deepStrictEqual(restored, [kept], 'restored once, from the state the bot was loaded with');
+} finally {
+    SummonControl.restoreFromCold = restoreFromCold;
+}
 console.log('test_cold_summon_carry: ok');

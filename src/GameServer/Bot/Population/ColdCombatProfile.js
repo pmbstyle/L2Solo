@@ -441,13 +441,17 @@ function summonSnapshot(actor, timestamp) {
     if (!summon || summon.isDead?.() === true || summon.state?.fetchDead?.() === true) return null;
     const skillId = number(summon.fetchSummonSkillId?.());
     if (!skillId) return null;
+    // startLifetime set both from the skill; a servitor without a lifetime
+    // gets cold's default 20 minutes (BackgroundResolver.startColdSummon).
     const remaining = Number(summon.summonTimeRemaining);
-    const idleLoss = Number(summon.summonTimeLostIdle) || 1000;
+    const idleLoss = Number(summon.summonTimeLostIdle);
     return {
         active: true,
         skillId,
         hp: number(summon.fetchHp?.()),
-        expiresAt: Number.isFinite(remaining) ? timestamp + Math.max(0, remaining) * 1000 / idleLoss : timestamp + 1200000
+        expiresAt: Number.isFinite(remaining) && idleLoss > 0
+            ? timestamp + Math.max(0, remaining) * 1000 / idleLoss
+            : timestamp + 1200000
     };
 }
 

@@ -137,6 +137,11 @@ function stop(session, summon) {
     sendStopMove(session, summon);
 }
 
+// Lifetime a servitor loses per second while idle (C4 data, 1 s when unset).
+function timeLostIdle(skill) {
+    return Number(skill.fetchSummonTimeLostIdle?.()) || 1000;
+}
+
 function startLifetime(session, actor, summon, skill) {
     const total = Number(skill.fetchSummonTotalLifeTime?.()) || 0;
     if (total <= 0) return;
@@ -145,7 +150,7 @@ function startLifetime(session, actor, summon, skill) {
     clearLifetimeTimer(summon);
     summon.summonTimeRemaining = total;
     summon.summonTotalLifeTime = total;
-    summon.summonTimeLostIdle = Number(skill.fetchSummonTimeLostIdle?.()) || 1000;
+    summon.summonTimeLostIdle = timeLostIdle(skill);
     summon.summonTimeLostActive = Number(skill.fetchSummonTimeLostActive?.()) || summon.summonTimeLostIdle;
     const botOwned = isBotSummonSession(session);
     summon.summonItemConsumeId = botOwned ? 0 : Number(skill.fetchOngoingItemConsumeId?.()) || 0;
@@ -372,9 +377,8 @@ function restoreFromCold(session, actor, saved, now = Date.now()) {
     const Effects = invoke('GameServer/Skills/C4SkillEffects');
     const npcData = Effects.fetchSummonNpcData(skill);
     if (!npcData) return null;
-    const idleLoss = Number(skill.fetchSummonTimeLostIdle?.()) || 1000;
     return Effects.placeSummon(session, actor, skill, npcData, Effects.fetchSummonCoords(actor, null, skill),
-        { hp: saved.hp, remainingLife: remaining * idleLoss / 1000 });
+        { hp: saved.hp, remainingLife: remaining * timeLostIdle(skill) / 1000 });
 }
 
 function unsummon(session, actor, summon) {
