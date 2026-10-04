@@ -14155,6 +14155,30 @@
     "template": { "kind": "Other.Quest", "name": "Roselyn's Note", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
     "etc": { "stackable": true, "consumable": false }
 },{
+    "selfId": 7574,
+    "template": { "kind": "Other.Quest", "name": "Very Expensive Necklace", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7528,
+    "template": { "kind": "Other.Quest", "name": "Spinneret", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7161,
+    "template": { "kind": "Other.Quest", "name": "Skein of Yarn", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7076,
+    "template": { "kind": "Other.Quest", "name": "Mysterious Cloth", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7163,
+    "template": { "kind": "Other.Quest", "name": "Piece of Reinforced Steel", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 7078,
+    "template": { "kind": "Other.Quest", "name": "Sewing kit", "class1": 4, "class2": 3, "mass": 0, "price": 0 },
+    "etc": { "stackable": true, "consumable": false }
+},{
     "selfId": 7554,
     "template": {"kind": "Other.Scroll", "name": "Scroll of Escape to Talking Island", "class1": 4, "class2": 5, "mass": 30, "price": 400},
     "etc": {"stackable": true, "consumable": true}
