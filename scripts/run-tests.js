@@ -355,6 +355,7 @@ const tests = [
     'tests/test_bot_trade_chat.js',
     'tests/test_buff_service.js',
     'tests/test_bot_cold_combat.js',
+    'tests/test_cold_combat_parity.js',
     'tests/test_party_member_drop_route_failure.js',
     'tests/test_party_requirement_refresh_plan_context.js',
     'tests/test_cold_raid_encounter.js',
