@@ -4,7 +4,7 @@ const Response = invoke('GameServer/Network/Response');
 
 // One compare-and-swap transaction for state, hand-in and reward. The caller
 // must be a server-authored handler that has validated its NPC and conditions.
-async function apply(state, { takes: wanted = [], gives = [], variables = state.variables, status = 'started', exp = 0, sp = 0, beginner = null, pk = null }) {
+async function apply(state, { takes: wanted = [], gives = [], variables = state.variables, status = 'started', exp = 0, sp = 0, beginner = null, pk = null, removeRecipes = [] }) {
     // A count of zero means "consume whatever the character holds of this kind";
     // it is a no-op, not a shortage the database should reject.
     const takes = wanted.filter(([, amount]) => amount > 0);
@@ -23,7 +23,7 @@ async function apply(state, { takes: wanted = [], gives = [], variables = state.
     } : null;
     const rows = await Database.applyQuestStep(actor.fetchId(), state.quest.id,
         { state: state.state, variables: state.variables }, next,
-        takes.map(([selfId, amount]) => ({ selfId, amount })), rewards, experience, beginner, pk);
+        takes.map(([selfId, amount]) => ({ selfId, amount })), rewards, experience, beginner, pk, removeRecipes);
     let equipmentChanged = false;
     for (const row of rows) {
         const item = actor.backpack.fetchItemRaw(row.id);
@@ -38,6 +38,16 @@ async function apply(state, { takes: wanted = [], gives = [], variables = state.
     }
     state.state = next.state;
     state.variables = next.variables;
+    if (removeRecipes.length) {
+        const store = actor.model || actor;
+        for (const type of ['dwarven', 'common']) {
+            const property = type === 'dwarven' ? 'dwarvenRecipes' : 'commonRecipes';
+            const before = store[property] || [];
+            store[property] = before.filter(row => !removeRecipes.includes(Number(row.recipeId)));
+            if (actor.fetchMaxMp && before.length !== store[property].length)
+                state.session.dataSendToMe(Response.recipeBookItemList(actor, type === 'dwarven'));
+        }
+    }
     if (equipmentChanged && actor.fetchMaxHp) {
         invoke(path.actor).calculateStats(state.session, actor);
         invoke('GameServer/Skills/ToggleSkills').syncEquipment(state.session, actor);

@@ -93,6 +93,7 @@ function coords(npc, fallback) {
 async function abort(state) {
     const encounter = state.get('encounter');
     await Step.apply(state, { status: 'created', variables: {},
+        removeRecipes: state.quest.questRecipes || [],
         takes: state.quest.questItems.map(id => [id, count(state, id)]) });
     clearSpawns(state);
     for (const coords of state.quest.radarPoints || []) state.removeRadar(...coords);

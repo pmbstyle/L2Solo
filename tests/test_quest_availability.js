@@ -12,7 +12,7 @@ const spawnedIds = new Set(DataCache.npcSpawns.flatMap(group =>
   (group.spawns || []).map(spawn => Number(spawn.selfId))));
 
 for (const quest of QuestService.quests()) {
-  for (const npcId of [...(quest.npcs || []), ...(quest.killNpcs || []), ...(quest.sharedKillNpcs || []), ...(quest.attackNpcs || [])]) {
+  for (const npcId of [...(quest.npcs || []), ...(quest.killNpcs || []), ...(quest.sharedKillNpcs || []), ...(quest.attackNpcs || []), ...(quest.skillNpcs || [])]) {
     assert(
       templateIds.has(npcId),
       `Q${quest.id} references NPC ${npcId}, but its template is absent`,

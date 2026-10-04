@@ -4826,7 +4826,7 @@ const Database = {
             return changed;
         }, 'quest:second-profession'));
     },
-    applyQuestStep(characterId, questId, expected, next, takes, gives, experience = null, beginner = null, pk = null) {
+    applyQuestStep(characterId, questId, expected, next, takes, gives, experience = null, beginner = null, pk = null, removeRecipes = []) {
         return withCharacterFlush(characterId, () => inTransaction(() => {
             if (!require('./GameServer/Quest/QuestRegistry').entries.some(e => e.id === questId && e.status === 'active')) throw new Error('Unsupported quest');
             const row = one('SELECT state, variables FROM character_quests WHERE characterId = ? AND questId = ?', [characterId, questId]);
@@ -4854,6 +4854,11 @@ const Database = {
                 const item = give.stackable ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, give.selfId]) : null;
                 if (item) { write('UPDATE items SET amount = ? WHERE id = ?', [item.amount + give.amount, item.id]); changed.add(item.id); }
                 else changed.add(Number(write('INSERT INTO items(selfId, name, amount, characterId) VALUES (?, ?, ?, ?)', [give.selfId, give.name, give.amount, characterId]).insertId));
+            }
+            for (const recipeId of removeRecipes) {
+                const allowed = { 216: [315, 316], 221: [314] }[questId] || [];
+                if (!allowed.includes(recipeId)) throw new Error('Unsupported quest recipe');
+                write('DELETE FROM character_recipes WHERE characterId = ? AND recipeId = ?', [characterId, recipeId]);
             }
             write(UPSERT_CHARACTER_QUEST, [characterId, questId, next.state, JSON.stringify(next.variables)]);
             const rows = [...changed].map(id => one('SELECT * FROM items WHERE id = ? AND characterId = ?', [id, characterId]) || { id, amount: 0 });

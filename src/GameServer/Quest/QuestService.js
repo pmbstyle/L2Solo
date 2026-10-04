@@ -12,6 +12,11 @@ const QuestRegistry = require("./QuestRegistry");
 const quests = QuestRegistry.activeQuests();
 const byId = new Map(quests.map((quest) => [quest.id, quest]));
 const attackQuests = new Map();
+const skillQuests = new Map();
+for (const quest of quests) for (const npcId of quest.skillNpcs || []) {
+  if (!skillQuests.has(npcId)) skillQuests.set(npcId, []);
+  skillQuests.get(npcId).push(quest);
+}
 for (const quest of quests) for (const npcId of quest.attackNpcs || []) {
   if (!attackQuests.has(npcId)) attackQuests.set(npcId, []);
   attackQuests.get(npcId).push(quest);
@@ -391,6 +396,21 @@ function onAttack(session, npc, source, damage) {
   });
 }
 
+function onSkillSee(session, npc, skill, source = session?.actor) {
+  const handlers = skillQuests.get(npc.fetchSelfId?.());
+  if (!handlers || !session?.actor || source !== session.actor || npc.isDead?.()) return Promise.resolve();
+  return mutate(session, async () => {
+    await ensureLoaded(session);
+    if (npc.questSpawn?.ownerId && npc.questSpawn.ownerId !== session.actor.fetchId()) return;
+    for (const quest of handlers) {
+      if (npc.questSpawn?.questId && npc.questSpawn.questId !== quest.id) continue;
+      const state = states(session).get(quest.id);
+      if (state?.isStarted()) await quest.onSkillSee(state, npc, skill);
+    }
+    syncActiveQuests(session);
+  });
+}
+
 function active(session) {
   return [...states(session).values()]
     .filter((state) => state.isStarted())
@@ -423,6 +443,7 @@ module.exports = {
   rewardExpSp,
   questDropAmount,
   onAttack,
+  onSkillSee,
   addRadar,
   removeRadar,
   clearRadars,
