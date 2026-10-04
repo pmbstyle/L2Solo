@@ -1,7 +1,7 @@
 const E = 7050,
   Y = 7032,
-  S = 1006,
-  M = 1007;
+  S = 703,
+  M = 704;
 const Q = () => invoke("GameServer/Quest/QuestService"),
   p = (t, x, a = "") => `<html><body>${t}:<br>${x}<br><br>${a}</body></html>`;
 module.exports = {

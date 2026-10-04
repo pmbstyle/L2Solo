@@ -640,6 +640,7 @@ const tests = [
     'tests/test_quest_spawn_radar.js',
     'tests/test_quest_runtime.js',
     'tests/test_quest_handins.js',
+    'tests/test_quest_cure_fever_items.js',
     'tests/test_enhance_your_weapon_quest.js',
     'tests/test_soul_crystal_progression.js',
     'tests/test_recipe_book.js',
