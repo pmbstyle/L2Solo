@@ -240,16 +240,12 @@ function evaluate(state, options = {}) {
     };
 }
 
-// What a bot in the world sells to the NPC, by selfId and count: the cold
-// visit's NPC sale (evaluate().npc) on the actor's own bag. The hot town visit
-// sells exactly this and keeps it out of the warehouse, as the cold visit sells
-// before it stores.
-function npcSaleForActor(session) {
-    const actor = session?.actor;
-    const sale = new Map();
-    if (!actor?.backpack?.fetchItems) return sale;
+// A bot in the world seen by the cold rules: its saved life state with the
+// live bag, level and class of the actor.
+function actorState(session) {
+    const actor = session.actor;
     const inventory = LifeState.inventorySummaryFromItems(actor.backpack.fetchItems());
-    const state = {
+    return {
         ...(session.coldLifeState || {}),
         characterId: Number(actor.fetchId()),
         level: Number(actor.fetchLevel?.() || session.coldLifeState?.level || 1),
@@ -257,6 +253,16 @@ function npcSaleForActor(session) {
         inventory,
         stats: { ...(session.coldLifeState?.stats || {}), classId: Number(actor.fetchClassId?.() || 0) }
     };
+}
+
+// What a bot in the world sells to the NPC, by selfId and count: the cold
+// visit's NPC sale (evaluate().npc) on the actor's own bag. The hot town visit
+// sells exactly this and keeps it out of the warehouse, as the cold visit sells
+// before it stores.
+function npcSaleForActor(session) {
+    const sale = new Map();
+    if (!session?.actor?.backpack?.fetchItems) return sale;
+    const state = actorState(session);
     for (const line of evaluate(state, { unlimited: true, allowPreTradeCleanup: true }).npc) {
         sale.set(Number(line.selfId), Number(sale.get(Number(line.selfId)) || 0) + Number(line.count || 0));
     }
@@ -274,6 +280,7 @@ module.exports = {
     isGear,
     listingFloor,
     listingPrice,
+    actorState,
     npcSaleForActor,
     starterItemIds
 };

@@ -29,6 +29,8 @@ const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
 const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
 const HuntingVisibility = invoke('GameServer/Bot/AI/BotHuntingVisibility');
+const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const { SPOT_CELL_SIZE } = invoke('GameServer/World/WorldConstants');
 
 const TARGET_STALL_TICKS = 5;
@@ -44,6 +46,39 @@ const VISIBLE_TARGET_CANDIDATE_LIMIT = 32;
 
 function isSoloHunter(session) {
     return session.plan === 'hunting' && session.partyCompanion !== true && !session.followPlayerSession;
+}
+
+// When a solo hunter carries its bag to town: the cold rule
+// (ItemDisposition.inventoryCleanupNeed) on the live bag. The verdict is kept
+// until the bag, the life state, the level or the party changes, or the sell
+// pause ends, so a tick with nothing new costs a few comparisons.
+function sellTripDue(session, bot, now = Date.now()) {
+    if (!isSoloHunter(session) || session.pendingTownTrip) return null;
+    const items = bot.backpack?.fetchItems?.();
+    if (!items) return null;
+    const life = session.coldLifeState || null;
+    const level = Number(bot.fetchLevel?.() || 0);
+    const partyId = session.hotBackgroundPartyId || null;
+    const last = session.sellTripCheck;
+    if (last && last.items === items && last.count === items.length && last.life === life
+        && last.level === level && last.partyId === partyId
+        && !(last.pauseEndsAt && now >= last.pauseEndsAt)) return last.need;
+    const state = MarketListingPolicy.actorState(session);
+    if (partyId) state.partyId = partyId;
+    const need = ItemDisposition.inventoryCleanupNeed(state, { now });
+    const pause = Number(state.stats?.marketSellRetryAfter || 0);
+    session.sellTripCheck = { items, count: items.length, life, level, partyId,
+        pauseEndsAt: pause > now ? pause : 0, need };
+    return need;
+}
+
+// A sell trip starts the cold sell pause, as the cold visit does, so a bag the
+// town visit could not empty does not send the bot back on its next loot.
+function pauseSelling(session, now = Date.now()) {
+    const life = session.coldLifeState;
+    if (!life) return;
+    const delay = invoke('GameServer/Bot/Economy/ColdMarketListingService').SELL_RETRY_DELAY_MS;
+    session.coldLifeState = { ...life, stats: { ...(life.stats || {}), marketSellRetryAfter: now + delay } };
 }
 
 function isPartyCompanion(session) {
@@ -490,6 +525,8 @@ function targetProgressing(session, bot, target) {
 }
 
 module.exports = {
+    sellTripDue,
+    pauseSelling,
     findPreferredMonster,
     limitTargetCandidates,
     claimedTargetIds,
@@ -724,8 +761,9 @@ module.exports = {
 
         if (invoke('GameServer/Bot/AI/PendingSweep').tick(session, bot, Generics, BotAI)) return;
 
-        if (isSoloHunter(session) && Math.random() < 0.005) { // ~0.5% chance per tick (~10 minutes)
+        if (sellTripDue(session, bot)) {
             const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
+            pauseSelling(session);
             const trip = startShopping(session, bot, BotAI, `My bags are full of loot. Heading to ${closestTown.name} to sell and restock.`);
             if (trip !== 'deferred') return;
         }
