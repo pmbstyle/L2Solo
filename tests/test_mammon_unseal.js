@@ -99,6 +99,10 @@ async function run() {
     assert.strictEqual(invoke('GameServer/Bot/Population/ColdSimulationKernel').lifecycleKind(cold), 'command');
     assert.strictEqual(invoke('GameServer/Bot/Population/ColdSimulationOwner').eligibility(cold).ok, false);
     assert.strictEqual(Bot.beginTravel({...cold,party:{partyId:'test'}},1000),null);
+    assert.strictEqual(Bot.beginTravel({...cold,activity:'shopping'},1000),null,'a shopping bot finishes its market steps first');
+    for (const flag of ['supplyErrand','partyMarketReturn','marketStore','pvpEncounter']) {
+        assert.strictEqual(Bot.beginTravel({...cold,stats:{...cold.stats,[flag]:{}}},1000),null,`${flag} keeps the bot from the Mammon trip`);
+    }
     const travelResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
     const early = travelResolver.resolveSolo({state:trip,timestamp:2000,elapsedMs:1000});
     assert.strictEqual(early.patch.activity,'traveling');

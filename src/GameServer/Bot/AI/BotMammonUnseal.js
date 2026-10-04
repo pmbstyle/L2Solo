@@ -4,7 +4,9 @@ const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const Compatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const BotErrands = invoke('GameServer/Bot/Population/BotErrands');
-const BUSY_FLAGS = ['marketReturn', 'craftReturn', 'craftStationId'];
+// A Mammon trip waits for every other errand to finish, as the other trips do.
+const BUSY_FLAGS = ['marketReturn', 'partyMarketReturn', 'marketStore', 'craftReturn', 'craftStationId',
+    'supplyErrand', 'pvpEncounter'];
 
 function recipeFor(selfId, state) {
     const style = Compatibility.armorStyleFor(Roles.inferRole(state),Roles.classIdOf(state));
@@ -47,9 +49,10 @@ async function execute(session,bot,errand) {
     } finally { session.activeNpcTalk = oldTalk; }
 }
 // Cold solo bots use the existing SoE/gatekeeper transit model. Party members
-// wait for a town errand instead of abandoning their group to cross the map.
+// wait for a town errand instead of abandoning their group to cross the map;
+// a shopping bot finishes its market steps first.
 function beginTravel(state, timestamp = Date.now()) {
-    if (state.phase !== 'cold' || !['hunting','shopping'].includes(state.activity)
+    if (state.phase !== 'cold' || state.activity !== 'hunting'
         || state.party?.partyId || state.partyId || Number(state.stats?.karma)>0
         || BotErrands.busyWith(state, BUSY_FLAGS)
         || Number(state.stats?.mammonRetryAt||0)>timestamp || !candidate(state)) return null;

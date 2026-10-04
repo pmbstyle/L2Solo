@@ -80,18 +80,18 @@ const columns = Object.keys(copies);
 const expected = {
     warehouseWorkflow: [T, T, T, F, F, T, T, T],
     warehouseErrand: [T, T, F, F, F, T, F, F],
-    marketStore: [T, T, F, F, F, T, F, F],
+    marketStore: [T, T, F, T, F, T, F, F],
     marketReturn: [T, T, T, T, F, F, T, T],
-    partyMarketReturn: [F, T, T, F, T, T, F, F],
+    partyMarketReturn: [F, T, T, T, T, T, F, F],
     craftShop: [T, T, F, F, F, T, F, F],
     craftStationId: [T, T, F, T, F, T, F, F],
     craftReturn: [F, F, T, T, F, F, F, F],
-    supplyErrand: [T, T, T, F, F, T, T, T],
+    supplyErrand: [T, T, T, T, F, T, T, T],
     mammonReturn: [T, T, T, F, F, F, F, F],
     clanPartyObjective: [F, F, T, F, F, F, F, F],
     clanGoal: [F, F, T, F, F, F, F, F],
     clanAllianceQuest: [F, F, T, F, F, F, F, F],
-    pvpEncounter: [F, F, T, F, F, T, F, T]
+    pvpEncounter: [F, F, T, T, F, T, F, T]
 };
 
 for (const [name, copy] of Object.entries(copies)) {
