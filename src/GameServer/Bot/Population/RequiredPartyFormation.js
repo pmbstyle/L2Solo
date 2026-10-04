@@ -1,11 +1,17 @@
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
+const PersonaPartyPolicy = invoke('GameServer/Bot/Population/PersonaPartyPolicy');
 
 const ELIGIBLE_ACTIVITIES = new Set(['hunting', 'resting', 'party_wait']);
 
+// The open requests this player-safe formation assembles: required ones
+// always, preferred ones when the bot is willing by the persona rule the
+// background formation applies (PersonaPartyPolicy.backgroundIntent).
 function objectiveFor(state) {
     const objective = PartyRequestPlanner.partyObjectiveForState(state);
-    return objective?.status === 'open' && objective?.priority === 'required' ? objective : null;
+    if (objective?.status !== 'open') return null;
+    if (objective.priority === 'required') return objective;
+    return objective.priority === 'preferred' && PersonaPartyPolicy.backgroundIntent(state).accept ? objective : null;
 }
 
 function spotFor(state, objective = null) {
@@ -51,10 +57,13 @@ function proposalFromStates(states = [], options = {}) {
         if (!groups.has(key)) groups.set(key, []);
         groups.get(key).push({ state, objective });
     });
-    const requiredCount = [...groups.values()].reduce((sum, group) => sum + group.length, 0);
+    const requiredCount = [...groups.values()].reduce((sum, group) => (
+        sum + group.filter(({ objective }) => objective.priority === 'required').length
+    ), 0);
     const ordered = [...groups.values()].map(group => ({
         spotId: spotFor(group[0].state, group[0].objective),
         playerClan: group.some(({ objective }) => objective.clanGoalKey && priorityClans.has(Number(objective.clanId))),
+        required: group.some(({ objective }) => objective.priority === 'required'),
         group,
         oldestAt: Math.min(...group.map(({ state, objective }) => Number(
             objective.requestedAt || state.timing?.activityStartedAt || state.updatedAt || timestamp
@@ -62,6 +71,7 @@ function proposalFromStates(states = [], options = {}) {
         activeParties: Number(activePartyIdsBySpot.get(spotFor(group[0].state, group[0].objective))?.size || 0)
     })).sort((left, right) => (
         Number(right.playerClan) - Number(left.playerClan)
+        || Number(right.required) - Number(left.required)
         || (right.group.length / (1 + right.activeParties)) - (left.group.length / (1 + left.activeParties))
         || left.oldestAt - right.oldestAt
         || left.spotId.localeCompare(right.spotId)

@@ -49,6 +49,7 @@ const ColdSimulationCoordinator = invoke('GameServer/Bot/Population/ColdSimulati
 const BackgroundWorkGovernor = invoke('GameServer/Bot/Population/BackgroundWorkGovernor');
 const BackgroundJobRegistry = invoke('GameServer/Bot/Population/BackgroundJobRegistry');
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
+const RequiredPartyFormation = invoke('GameServer/Bot/Population/RequiredPartyFormation');
 const BotErrands = invoke('GameServer/Bot/Population/BotErrands');
 const CLEANUP_BUSY_FLAGS = ['marketReturn'];
 const ACTIVATION_BUSY_FLAGS = ['supplyErrand'];
@@ -2097,11 +2098,8 @@ const PopulationService = {
             if (!projections.length) return [];
             return hydratePartyCandidates(projections).then((states) => {
                 const required = states.filter((state) => {
-                    const objective = partyObjectiveForState(state);
-                    const objectiveSpot = String(PartyRequestPlanner.objectiveSpot(state, objective) || '');
-                    return objective?.status === 'open'
-                        && objective?.priority === 'required'
-                        && objectiveSpot === String(proposal.spotId || '');
+                    const objective = RequiredPartyFormation.objectiveFor(state);
+                    return objective && RequiredPartyFormation.spotFor(state, objective) === String(proposal.spotId || '');
                 });
                 const selected = PartyComposition.selectMembers(required, {
                     minSize: proposal.minSize,
@@ -2124,7 +2122,7 @@ const PopulationService = {
                     Metrics.recordPartyFormationDeferral();
                     return [];
                 }
-                const objectiveMember = selected.find((state) => partyObjectiveForState(state)?.priority === 'required');
+                const objectiveMember = selected.find((state) => partyObjectiveForState(state)?.priority === 'required') || selected[0];
                 const commitStartedAt = Date.now();
                 return createAndCommitBackgroundParty(selected, partyObjectiveForState(objectiveMember)).then((party) => {
                     if (!party) failed = true;
