@@ -213,6 +213,13 @@ const BotAI = {
     init(session) {
         this.cancelScheduledTick(session);
         session.aiActive = true;
+        // Once per activation: a later re-init must not bring back a servitor
+        // that died near the player.
+        if (!session.coldSummonRestored && session.actor) {
+            session.coldSummonRestored = true;
+            invoke('GameServer/Npc/SummonControl').restoreFromCold(session, session.actor,
+                session.coldLifeState?.stats?.coldCombat?.summon);
+        }
         if (session.actor?.fetchClanId?.()) invoke('GameServer/Clan/ClanAllianceService').resume(session)
             .catch(error => utils.infoWarn('ClanQuest', 'resume failed: %s', error.message));
         this.scheduleTick(session, 1000 + Math.random() * 2000);

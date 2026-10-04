@@ -29,17 +29,26 @@ function cancelExpiry(actor) {
     delete actor.chargeExpiresAt;
 }
 
-function startExpiry(session, actor) {
+function startExpiry(session, actor, expiresAt = Date.now() + EXPIRY_MS) {
     cancelExpiry(actor);
-    actor.chargeExpiresAt = Date.now() + EXPIRY_MS;
+    actor.chargeExpiresAt = expiresAt;
     actor.chargeExpiryTimer = setTimeout(() => {
         delete actor.chargeExpiryTimer;
         delete actor.chargeExpiresAt;
         if (current(actor) <= 0) return;
         set(actor, 0);
         notify(session, actor);
-    }, EXPIRY_MS);
+    }, Math.max(0, expiresAt - Date.now()));
     actor.chargeExpiryTimer.unref?.();
+}
+
+// Charges a bot kept away from the player, with the deadline of that stack.
+function restore(session, actor, value, expiresAt, now = Date.now()) {
+    if (!(Number(value) > 0) || !(Number(expiresAt) > now)) return current(actor);
+    set(actor, value);
+    startExpiry(session, actor, Number(expiresAt));
+    notify(session, actor);
+    return current(actor);
 }
 
 function increase(session, actor, amount, maxCharges) {
@@ -82,6 +91,7 @@ module.exports = {
     EXPIRY_MS,
     current,
     increase,
+    restore,
     consume,
     clear,
     dispose

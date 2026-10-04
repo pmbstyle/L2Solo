@@ -360,6 +360,23 @@ function attackTick(session, summon, target) {
     }, speed);
 }
 
+// A bot coming back near the player keeps the servitor it had away from the
+// player (ColdCombatProfile.capture -> BackgroundResolver.persistedSummon):
+// the same skill, HP and remaining life, without a new cast.
+function restoreFromCold(session, actor, saved, now = Date.now()) {
+    if (!saved?.active || activeSummon(actor)) return null;
+    const remaining = Number(saved.expiresAt) - now;
+    if (!(remaining > 0)) return null;
+    const skill = actor.skillset?.fetchSkill?.(Number(saved.skillId));
+    if (!skill) return null;
+    const Effects = invoke('GameServer/Skills/C4SkillEffects');
+    const npcData = Effects.fetchSummonNpcData(skill);
+    if (!npcData) return null;
+    const idleLoss = Number(skill.fetchSummonTimeLostIdle?.()) || 1000;
+    return Effects.placeSummon(session, actor, skill, npcData, Effects.fetchSummonCoords(actor, null, skill),
+        { hp: saved.hp, remainingLife: remaining * idleLoss / 1000 });
+}
+
 function unsummon(session, actor, summon) {
     if (actor.pet === summon && (actor.fetchMounted?.() || actor.mounted)) invoke('GameServer/Pets/PetMount').set(actor,false);
     stop(session, summon);
@@ -520,6 +537,7 @@ function useSkillAction(session, actor, summon, actionId) {
 }
 
 module.exports = {
+    restoreFromCold,
     activeSummon,
     attack,
     moveToTarget,

@@ -433,6 +433,24 @@ function treeSnapshot(state = {}, timestamp = Date.now()) {
     };
 }
 
+// The servitor goes with the bot into cold combat, which keeps it between
+// fights (BackgroundResolver.persistedSummon). Item pets (actor.pet) are not
+// cold summons. Remaining life is counted at the idle loss rate, as cold does.
+function summonSnapshot(actor, timestamp) {
+    const summon = actor.summon;
+    if (!summon || summon.isDead?.() === true || summon.state?.fetchDead?.() === true) return null;
+    const skillId = number(summon.fetchSummonSkillId?.());
+    if (!skillId) return null;
+    const remaining = Number(summon.summonTimeRemaining);
+    const idleLoss = Number(summon.summonTimeLostIdle) || 1000;
+    return {
+        active: true,
+        skillId,
+        hp: number(summon.fetchHp?.()),
+        expiresAt: Number.isFinite(remaining) ? timestamp + Math.max(0, remaining) * 1000 / idleLoss : timestamp + 1200000
+    };
+}
+
 function capture(actor, timestamp = Date.now()) {
     const backpack = actor.backpack;
     const armors = backpack?.fetchEquippedArmors?.() || [];
@@ -462,6 +480,9 @@ function capture(actor, timestamp = Date.now()) {
         cp: number(actor.fetchCp?.()),
         cpAt: timestamp,
         cooldowns: Object.fromEntries([...(actor.skillReuseUntil || [])].filter(([, until]) => until > timestamp)),
+        summon: summonSnapshot(actor, timestamp),
+        charges: number(actor.fetchCharges?.()),
+        chargeExpiresAt: Number(actor.chargeExpiresAt) > timestamp ? Number(actor.chargeExpiresAt) : null,
         classId: number(actor.fetchClassId?.()),
         base: {
             str: number(actor.fetchStr?.(), 1), dex: number(actor.fetchDex?.(), 1), con: number(actor.fetchCon?.(), 1),

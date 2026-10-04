@@ -679,39 +679,51 @@ function applySummon(session, actor, target, skill, semantic, magicSkill, attack
         const npcData = fetchSummonNpcData(skill);
         if (!npcData) return null;
 
-        const Npc = invoke('GameServer/Npc/Npc');
         const World = invoke('GameServer/World/World');
         const coords = fetchSummonCoords(actor, target, skill);
-        const npc = new Npc(World.npc.nextId++, {
-            ...utils.crushOb(npcData),
-            ...coords,
-            title: actor.fetchName?.() || '',
-            ownerId: actor.fetchId?.() || 0,
-            ownerName: actor.fetchName?.() || '',
-            summonSkillId: skill.fetchSelfId?.() || 0,
-            summonLifeTime: skill.fetchSummonTotalLifeTime?.() || 0,
-            isSummon: true
-        });
-
         if (skill.fetchTargetKind?.() === 'corpse_mob') {
             World.removeNpcFromGrid?.(target);
             World.npc.spawns = World.npc.spawns.filter((spawn) => spawn.fetchId?.() !== target?.fetchId?.());
         }
 
-        World.npc.spawns.push(npc);
-        if (World.addNpcToGrid) World.addNpcToGrid(npc);
-        else World.indexSpawnsInGrid?.();
-
-        actor.summon = npc;
-        session.summon = npc;
-
-        session.dataSendToMeAndOthers?.(ServerResponse.npcInfo(npc), npc);
-        const SummonControl = invoke('GameServer/Npc/SummonControl');
-        SummonControl.startFollowOwner(session, actor, npc);
-        SummonControl.startLifetime(session, actor, npc, skill);
+        const npc = placeSummon(session, actor, skill, npcData, coords);
         clearLoadedShot(attack || actor.attack, actor, magicSkill);
         return npc;
     });
+}
+
+// Puts a servitor next to its owner: a cast, or a bot coming back near the
+// player with the servitor it kept away from the player (hp, remainingLife).
+function placeSummon(session, actor, skill, npcData, coords, { hp = null, remainingLife = null } = {}) {
+    const Npc = invoke('GameServer/Npc/Npc');
+    const World = invoke('GameServer/World/World');
+    const npc = new Npc(World.npc.nextId++, {
+        ...utils.crushOb(npcData),
+        ...coords,
+        title: actor.fetchName?.() || '',
+        ownerId: actor.fetchId?.() || 0,
+        ownerName: actor.fetchName?.() || '',
+        summonSkillId: skill.fetchSelfId?.() || 0,
+        summonLifeTime: skill.fetchSummonTotalLifeTime?.() || 0,
+        isSummon: true
+    });
+    if (Number(hp) > 0) npc.setHp(Math.min(Number(hp), npc.fetchMaxHp()));
+
+    World.npc.spawns.push(npc);
+    if (World.addNpcToGrid) World.addNpcToGrid(npc);
+    else World.indexSpawnsInGrid?.();
+
+    actor.summon = npc;
+    session.summon = npc;
+
+    session.dataSendToMeAndOthers?.(ServerResponse.npcInfo(npc), npc);
+    const SummonControl = invoke('GameServer/Npc/SummonControl');
+    SummonControl.startFollowOwner(session, actor, npc);
+    SummonControl.startLifetime(session, actor, npc, skill);
+    if (Number(remainingLife) > 0 && Number.isFinite(npc.summonTimeRemaining)) {
+        npc.summonTimeRemaining = Math.min(npc.summonTimeRemaining, Number(remainingLife));
+    }
+    return npc;
 }
 
 function cubicRecipients(session, actor, target, skill) {
@@ -1406,6 +1418,9 @@ function applyBalanceLife(session, actor) {
 
 module.exports = {
     execute,
+    placeSummon,
+    fetchSummonNpcData,
+    fetchSummonCoords,
     applyGetPlayer,
     seedPower,
     validateSummonUse,
