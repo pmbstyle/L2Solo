@@ -22,6 +22,8 @@ const ANCIENT_NECKLACE = 1855;
 
 const FRAGMENTS = [URN_FRAGMENT, BRASS_PIECE, MIRROR_PIECE, JADE_BEAD];
 const RELICS = [ANCIENT_URN, ANCIENT_TIARA, ANCIENT_MIRROR, ANCIENT_NECKLACE];
+// What the reference registers for removal on exit; the relics stay.
+const QUEST_ITEMS = [DOGTAG, MEDALLION, ...FRAGMENTS];
 // npcId: [token, percent chance that a fragment also falls]
 const DROPLIST = { 500: [DOGTAG, 7], 499: [DOGTAG, 8], 498: [DOGTAG, 10], 496: [DOGTAG, 9],
     501: [MEDALLION, 12], 497: [MEDALLION, 11], 495: [MEDALLION, 13] };
@@ -36,11 +38,10 @@ const count = (state, selfId) => state.session.actor.backpack.fetchItems()
 const adena = (amount) => Math.floor(amount * invoke('GameServer/ProgressionRates').profile().questAdena);
 const page = (name, text, action = '') => `<html><body>${name}:<br>${text}<br><br>${action}</body></html>`;
 const link = (event, label) => `<a action="bypass -h quest 327 ${event}">${label}</a>`;
-const questOwned = (state) => [DOGTAG, MEDALLION, ...FRAGMENTS].map((id) => [id, count(state, id)]).filter(([, n]) => n > 0);
 
 module.exports = {
     id: 327,
-    questItems: [DOGTAG, MEDALLION, ...FRAGMENTS],
+    questItems: QUEST_ITEMS,
     name: 'Reclaim The Land',
     npcs: [PETER, IRIS, ASHLEY],
     startNpcs: [PETER],
@@ -140,7 +141,7 @@ module.exports = {
         }
         if (event === 'giveUp') {
             // The reference's exitQuest(1): every quest-owned token is surrendered.
-            await step(state, { takes: questOwned(state), status: 'created', variables: {} });
+            await require('../QuestStep').abandon(state, QUEST_ITEMS);
             state.playSound('ItemSound.quest_finish');
             return page('Peter', 'Leaving already? Return the proofs of battle, then.');
         }

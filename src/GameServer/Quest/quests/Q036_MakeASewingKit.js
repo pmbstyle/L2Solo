@@ -16,6 +16,7 @@ const A = "ItemSound.quest_accept",
   F = "ItemSound.quest_finish";
 module.exports = {
   id: 36,
+  questItems: [STEEL],
   name: "Make a Sewing Kit",
   npcs: [FERRIS],
   startNpcs: [FERRIS],

@@ -20,6 +20,7 @@ const A = "ItemSound.quest_accept",
   F = "ItemSound.quest_finish";
 module.exports = {
   id: 34,
+  questItems: [SPINNERET, SILK],
   name: "In Search of Cloth",
   npcs: [RADIA, RALFORD, VARAN],
   startNpcs: [RADIA],

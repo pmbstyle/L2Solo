@@ -17,6 +17,7 @@ function page(title, text, action = "") {
 
 module.exports = {
   id: 10,
+  questItems: [NECKLACE],
   name: "Into the World",
   npcs: [MINA, MARYSE, JACOB],
   startNpcs: [MINA],

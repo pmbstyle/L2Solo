@@ -159,10 +159,7 @@ module.exports = {
         }
 
         if (event === 'quit') {
-            await step(state, {
-                takes: QUEST_ITEMS.map((selfId) => [selfId, count(state, selfId)]).filter(([, n]) => n > 0),
-                status: 'created', variables: {}
-            });
+            await require('../QuestStep').abandon(state, QUEST_ITEMS);
             state.playSound('ItemSound.quest_finish');
             return page('Black Judge', 'Then carry your sins yourself.');
         }

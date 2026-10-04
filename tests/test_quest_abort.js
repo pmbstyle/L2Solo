@@ -80,7 +80,8 @@ async function abandonedQuestsTakeTheirItems() {
     const session = await sessionFor(2);
     await QuestService.giveItem(session, 57, 1000);
     await QuestService.giveItem(session, 7570, 1);
-    for (const [questId, items] of [[1, [[687, 1], [688, 1]]], [42, [[7548, 30]]], [46, [[7563, 1], [7568, 1]]], [151, [[703, 1]]]]) {
+    for (const [questId, items] of [[1, [[687, 1], [688, 1]]], [42, [[7548, 30]]], [46, [[7563, 1], [7568, 1]]], [151, [[703, 1]]],
+        [10, [[7574, 1]]], [34, [[7528, 1], [7161, 3]]], [36, [[7163, 5]]]]) {
         await started(session, questId, 2);
         for (const [id, amount] of items) await QuestService.giveItem(session, id, amount);
         await abort(session, questId);
@@ -109,13 +110,47 @@ async function equippedQuestWeaponStays() {
     assert.equal(count(session, 1142), 1, 'the equipped Rusted Bronze Sword stays');
 }
 
-// The 73 hand-written quests that L2J C4 gives registered quest items.
-const ABANDON_ITEM_QUESTS = [1, 2, 3, 4, 5, 6, 7, 8, 42, 43, 44, 45, 46, 47, 48, 49, 101, 102, 103, 104, 105, 106, 107, 108,
+// Giving up a quest at its NPC (Q267 and Q422 "quit", Q327 "giveUp") is the
+// same abandon as the journal's: the shared step with the quest's items, and
+// the NPC keeps its own words.
+async function giveUpDialogsAbandonTheQuest() {
+    const QuestStep = invoke('GameServer/Quest/QuestStep');
+    const shared = QuestStep.abandon;
+    const calls = [];
+    QuestStep.abandon = (state, itemIds, kept) => {
+        calls.push([state.quest.id, itemIds]);
+        return shared(state, itemIds, kept);
+    };
+    try {
+        const session = await sessionFor(4);
+        await QuestService.giveItem(session, 57, 500);
+        for (const [questId, event, items, words] of [
+            [267, 'quit', [[1335, 3]], 'Go in peace.'],
+            [327, 'giveUp', [[1846, 2], [1847, 1], [1848, 4]], 'Return the proofs of battle'],
+            [422, 'quit', [[4326, 5], [4331, 1], [4425, 1]], 'Then carry your sins yourself.']
+        ]) {
+            const state = await started(session, questId, 6);
+            for (const [id, amount] of items) await QuestService.giveItem(session, id, amount);
+            const html = await quest(questId).onEvent(state, event);
+            assert.match(html, new RegExp(words), `Q${questId} ${event} keeps its NPC text`);
+            assert.equal(state.state, 'created', `Q${questId} ${event} releases the quest`);
+            for (const [id] of items) assert.equal(count(session, id), 0, `Q${questId} ${event} takes item ${id}`);
+        }
+        assert.deepEqual(calls, [[267, quest(267).questItems], [327, quest(327).questItems], [422, quest(422).questItems]],
+            'each give-up runs the shared abandon step with the quest items');
+        assert.equal(count(session, 57), 500, 'Adena stays');
+    } finally {
+        QuestStep.abandon = shared;
+    }
+}
+
+// The 76 hand-written quests that L2J C4 gives registered quest items.
+const ABANDON_ITEM_QUESTS = [1, 2, 3, 4, 5, 6, 7, 8, 10, 34, 36, 42, 43, 44, 45, 46, 47, 48, 49, 101, 102, 103, 104, 105, 106, 107, 108,
     151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170,
     267, 275, 276, 327, 330, 334, 340, 363, 364,
     401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 419, 422];
 function questItemListsAreDeclared() {
-    assert.equal(ABANDON_ITEM_QUESTS.length, 73);
+    assert.equal(ABANDON_ITEM_QUESTS.length, 76);
     for (const id of ABANDON_ITEM_QUESTS) {
         const items = quest(id).questItems;
         assert(Array.isArray(items) && items.length > 0, `Q${id} declares its quest items`);
@@ -138,6 +173,7 @@ async function main() {
     await abandonedOrcRaiderLeavesNoMapPoint();
     await abandonedQuestsTakeTheirItems();
     await equippedQuestWeaponStays();
+    await giveUpDialogsAbandonTheQuest();
     questItemListsAreDeclared();
     console.log('Quest abort checks passed');
 }

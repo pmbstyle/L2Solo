@@ -12,6 +12,7 @@ const GOBLIN_RAIDER = 325;
 
 const GOBLIN_CLUB = 1335;
 const SILVERY_LEAF = 1340;
+const QUEST_ITEMS = [GOBLIN_CLUB];
 
 const ELF = 1;
 const MIN_LEVEL = 4;
@@ -30,7 +31,7 @@ const eligible = (actor) => Number(actor.fetchRace()) === ELF && Number(actor.fe
 
 module.exports = {
     id: 267,
-    questItems: [1335],
+    questItems: QUEST_ITEMS,
     name: 'Wrath of Verdure',
     npcs: [BREMEC],
     startNpcs: [BREMEC],
@@ -63,10 +64,7 @@ module.exports = {
         }
 
         if (event === 'quit') {
-            await step(state, {
-                takes: [[GOBLIN_CLUB, count(state, GOBLIN_CLUB)]].filter(([, n]) => n > 0),
-                status: 'created', variables: {}
-            });
+            await require('../QuestStep').abandon(state, QUEST_ITEMS);
             state.playSound('ItemSound.quest_finish');
             return page('Go in peace.');
         }
