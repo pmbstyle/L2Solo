@@ -1686,6 +1686,23 @@ function syncEconomySnapshotUnsafe(characterId, state, changedIds, mp = null) {
         || (state.simulation && Number(row.simulationRevision) !== Number(state.simulation.revision))) {
         throw new Error('economy_state_changed');
     }
+    return writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp);
+}
+
+// An AFK fill changes the items of a bot whose row the cold worker may lease;
+// the worker would later commit its older summary over them. Fence it as clan
+// writes do: the same transaction writes the new amounts into the summary and
+// advances simulationRevision, so the worker's commit fails its CAS and the
+// bot is resolved again from this row. Returns the row when it was fenced.
+function fenceLeasedColdInventoryUnsafe(characterId, changedIds) {
+    const row = one('SELECT simulationOwner, inventorySummary FROM bot_life_state WHERE characterId = ?', [Number(characterId)]);
+    if (!row || row.simulationOwner !== COLD_SIMULATION_OWNER) return null;
+    return writeColdInventorySnapshotUnsafe(characterId, row, changedIds);
+}
+
+// The summary entries of changedIds and adena from the physical rows, and the
+// next simulationRevision, for a row its caller has checked.
+function writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp = null) {
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
     const physical = LifeState.inventorySummaryFromItems(all('SELECT * FROM items WHERE characterId = ?', [Number(characterId)]));
     const inventory = jsonObject(row.inventorySummary);
@@ -2384,6 +2401,17 @@ function returnAfkTradeEscrowUnsafe(shop, closedAt = now()) {
         WHERE id = ? AND status = 'active'`, [closedAt, closedAt, shop.id]);
 }
 
+// A fill moves adena and the line's item between the two parties. Fences each
+// party whose lifecycle row the cold worker leases; by characterId.
+function fenceAfkTradePartiesUnsafe(characterIds, selfId) {
+    const rows = {};
+    for (const characterId of characterIds) {
+        const row = fenceLeasedColdInventoryUnsafe(characterId, [selfId]);
+        if (row) rows[Number(characterId)] = row;
+    }
+    return rows;
+}
+
 function completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned = false) {
     const lines = botOwned ? all(`SELECT selfId, name, count FROM afk_trade_lines
         WHERE shopId = ? AND count > 0 ORDER BY id`, [shopId]) : null;
@@ -3039,7 +3067,9 @@ const Database = {
             });
             completeAfkTradeIfFilledUnsafe(sellShopId, timestamp, botOwned);
             completeAfkTradeIfFilledUnsafe(buyShopId, timestamp, botBuyer);
+            const coldLifeRows = fenceAfkTradePartiesUnsafe([sellerId, buyerId], sellLine.selfId);
             return {
+                coldLifeRows,
                 sellerEventId, buyerEventId, amount: quantity, totalPrice: total,
                 line: sellLine,
                 sellerShop: afkTradeShopUnsafe(sellShopId),
@@ -3089,6 +3119,7 @@ const Database = {
             });
             const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned);
             return {
+                coldLifeRows: fenceAfkTradePartiesUnsafe([shop.ownerId, buyerId], line.selfId),
                 eventId,
                 filled,
                 amount: quantity,
@@ -3151,6 +3182,7 @@ const Database = {
             });
             const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned);
             return {
+                coldLifeRows: fenceAfkTradePartiesUnsafe([shop.ownerId, sellerId], line.selfId),
                 eventId,
                 filled,
                 amount: quantity,

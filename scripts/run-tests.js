@@ -209,6 +209,7 @@ const tests = [
     'tests/test_llm_supply_errand.js',
     'tests/test_llm_configured_supply_store.js',
     'tests/test_afk_trade_database.js',
+    'tests/test_afk_trade_cold_lease.js',
     'tests/test_economy_journal.js',
     'tests/test_market_trade_history.js',
     'tests/test_history_database.js',
