@@ -35,6 +35,11 @@ function rows(s) {
 const DROPS=[[557,3311,100],[565,3313,80],...[577,578,579,580,581,582].map(m=>[m,3312,m<579?50:m<581?60:70])];
 const quest={
     id:229,name:'Test of Witchcraft',startNpcs:[7630],npcs:NPCS,questSpawns:[DRE],
+    clientCondition(s) {
+        const cond = s.getInt('cond');
+        if (cond === 5) return H.has(s, [[SWORD,1],[3331,1],[3332,1]]) ? 8 : 6;
+        return {1:1,2:2,3:4,4:5,6:9,7:10}[cond] ?? cond;
+    },
     killNpcs:[...DROPS.map(r=>r[0]),5099,5100,DRE,601,602],
     questItems:[SWORD,...Array.from({length:28},(_,i)=>3308+i)],equippedQuestItems:[SWORD],radarPoints:[FIRST,FINAL],
     eventNpc:e=>({start:7630,handin:NPCS,recover:[7630,7633]})[e],canTalk:(s,npc)=>s.isStarted()||s.isCompleted()||npc.fetchSelfId()===7630&&eligible(s),
@@ -44,12 +49,14 @@ const quest={
         const cond=s.getInt('cond'),options=rows(s),actions=[];
         if(options.some(r=>r[0]===npc.fetchSelfId()&&H.has(s,r[2]))) actions.push(l('handin','Speak and continue the test'));
         if([3,6].includes(cond)&&npc.fetchSelfId()===(cond===3?7630:7633)) actions.push(l('recover','Locate Dre Vanul again'));
-        const text=cond===2?'Gather the six gems. Iker needs twenty Dire Wyrm Fangs, Leto Lizardman Charms and Enchanted Golem Hearts. Visit Kaira, Lara and Nestle; follow Nestle\'s trail through Leopold and recover three gems from the quest skeletons.'
+        const text=cond===2?'Gather the six gems. Iker needs twenty Dire Wyrm Fangs, Leto Lizardman Charms and Enchanted Golem Hearts. Visit Kaira, Lara and Nestle. Lara\'s missing buyer became a Nameless Revenant in the Execution Grounds; Roderik and Endrigo can explain his fate. Follow Nestle\'s trail through Leopold and recover three gems from the Skeletal Mercenaries near the Wasteland.'
             :cond===3?'Defeat the first Dre Vanul, then return to Orim.'
             :cond===5?'Obtain the soultrap from Iker and the Sword of Binding through Klaus Vasper and Vadin. Vadin needs twenty Tamlin Orc Amulets. Carry both tools to Fisherman Evert.'
             :cond===6?'Wield the Sword of Binding when defeating Dre Vanul. Evert can recover the encounter if you used another weapon.'
             :options.map(r=>`Visit ${H.npcName(r[0])}.`).join('<br>');
-        return H.page(s,text+'<br>'+options.flatMap(r=>r[2].map(([i,n])=>`${H.itemName(i)}: ${H.count(s,i)}/${n}`)).join('<br>'),actions.join('<br>'));
+        const hint = cond === 2 && [7631,7632].includes(npc.fetchSelfId())
+            ? '<br>Ismell entered the Execution Grounds and never returned. Search among the Nameless Revenants for Lara\'s gem.' : '';
+        return H.page(s,text+hint+'<br>'+options.flatMap(r=>r[2].map(([i,n])=>`${H.itemName(i)}: ${H.count(s,i)}/${n}`)).join('<br>'),actions.join('<br>'));
     },
     async onEvent(s,e) {
         const id=s.session.activeNpcTalk.selfId,cond=s.getInt('cond');

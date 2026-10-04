@@ -15,6 +15,12 @@ const eligible=s=>s.session.actor.fetchLevel()>=39&&[11,26,39].includes(s.sessio
 const l=(e,t)=>H.link(228,e,t);
 const quest={
     id:228,name:'Test of the Magus',startNpcs:[7629],npcs:NPCS,killNpcs:[5095,5096,5097,...DROPS.map(r=>r[0])],
+    clientCondition(s) {
+        const cond = s.getInt('cond');
+        if (cond === 3) return H.has(s, [[2844,1],[2845,1],[2846,1]]) ? 5 : 3;
+        if (cond === 4) return s.getInt('elements') ? 7 : 6;
+        return cond;
+    },
     questItems:Array.from({length:23},(_,i)=>2841+i),eventNpc:e=>e==='start'?7629:e==='handin'?NPCS:null,
     canTalk:(s,npc)=>s.isStarted()||s.isCompleted()||npc.fetchSelfId()===7629&&eligible(s),
     async onTalk(s,npc) {
@@ -22,7 +28,7 @@ const quest={
         if(!s.isStarted()) return H.page(s,'Rukal in Dion asks you to investigate an elemental song. Speak to Parina in Gludin.',l('start','Accept the test'));
         const cond=s.getInt('cond'),row=ROWS.find(r=>r[0]===cond),b=cond===4&&BRANCHES.find(b=>b[0]===npc.fetchSelfId()&&!H.count(s,b[2]));
         const ready=b&&(!H.count(s,b[1])||H.has(s,b[3]));
-        const text=cond===3?'Collect one seed each from the Singing Flowers of Phantasm, Nightmare and Horror, then return to Rukal.'
+        const text=cond===3?'Collect one seed each from the Singing Flowers of Phantasm, Nightmare and Horror. Search the watersides of Fellmere Lake, the waterfalls near the Ivory Tower and the southern Giran area, then return to Rukal.'
             :cond===4?BRANCHES.map(b=>`${H.npcName(b[0])}: ${H.count(s,b[2])?'tone complete':b[3].map(([i,n])=>`${H.itemName(i)} ${H.count(s,i)}/${n}`).join(', ')}`).join('<br>')
             :`Visit ${H.npcName(row[1])}.`;
         const hunts=cond===4?DROPS.filter(()=>s.getInt('elements')).map(r=>`${H.npcName(r[0])}: ${H.itemName(r[1])}`).join('<br>'):'';

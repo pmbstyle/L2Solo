@@ -32,6 +32,7 @@ const l = (event, label) => H.link(218, event, label);
 
 const quest = {
     id: 218, name: 'Testimony of Life', startNpcs: [7460], npcs: NPCS,
+    clientCondition: () => 1, // C4's item-driven testimony retains cond 1.
     killNpcs: [550, 176, 82, 84, 86, 87, 88, 233, 145, 581, 582, 5077],
     questItems: [3026, ...Array.from({ length: 31 }, (_, n) => 3141 + n)],
     equippedQuestItems: [3026],

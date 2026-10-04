@@ -12,6 +12,7 @@ const rows = [
 ];
 module.exports = require('../TrialJourney')({
     id:213, name:'Trial of the Seeker', startNpc:7106, npcs:[7106,7064,7684,7715,7526],
+    clientCondition: () => 1, // C4 uses items to track the journey within cond 1.
     eligible:s=>s.session.actor.fetchLevel()>=35 && [7,22,35].includes(s.session.actor.fetchClassId()),
     intro:'Dufner in Giran sends you to Terry in Dion to investigate dark bezoars and their hosts.', startItems:[[2647,1]],
     questItems:Array.from({length:26},(_,i)=>2647+i), exp:72126,sp:11000,

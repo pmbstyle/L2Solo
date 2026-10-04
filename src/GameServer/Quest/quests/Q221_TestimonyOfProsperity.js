@@ -50,6 +50,7 @@ function handin(s, npc) {
 
 const quest = {
     id: 221, name: 'Testimony of Prosperity', startNpcs: [7104], npcs: NPCS,
+    clientCondition: () => 1, // C4's item-driven testimony retains cond 1.
     killNpcs: [...new Set(DROPS.map(row => row[1]))], questRecipes: [314],
     questItems: [3023, 3030, 3428, ...Array.from({ length: 37 }, (_, n) => 3239 + n)],
     eventNpc: e => e === 'start' ? 7104 : e === 'handin' ? NPCS : null,

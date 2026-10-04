@@ -17,6 +17,7 @@ const rows = [
 ];
 module.exports = require('../TrialJourney')({
     id:214,name:'Trial of the Scholar',startNpc:7461,npcs:[7070,7071,7103,7111,7115,7230,7316,7458,7461,7608,7609,7610,7611,7612],
+    clientCondition: () => 1, // C4 uses items to track the journey within cond 1.
     eligible:s=>s.session.actor.fetchLevel()>=35 && [11,26,39].includes(s.session.actor.fetchClassId()),
     intro:'Mirien in Dion asks you to study under Sylvain, Jurek and Cronos. Begin with High Priest Sylvain.',startItems:[[2675,1]],
     questItems:Array.from({length:46},(_,i)=>2675+i),exp:80265,sp:30000,

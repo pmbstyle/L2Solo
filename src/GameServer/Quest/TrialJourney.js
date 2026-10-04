@@ -5,6 +5,7 @@ module.exports = function journey(d) {
     const available = s => rows(s).filter(r => r[0] === s.getInt('cond'));
     const quest = {
         id: d.id, name: d.name, startNpcs: [d.startNpc], npcs: d.npcs,
+        clientCondition: d.clientCondition,
         killNpcs: [...new Set(d.drops.map(r => r[1]))], questItems: d.questItems,
         eventNpc: e => e === 'start' ? d.startNpc : e === 'handin' ? d.npcs : null,
         canTalk: (s, npc) => s.isStarted() || s.isCompleted() || npc.fetchSelfId() === d.startNpc && d.eligible(s),

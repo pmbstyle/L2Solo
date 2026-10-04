@@ -17,6 +17,7 @@ const l=(e,t)=>H.link(224,e,t);
 const recover=s=>H.spawn(s,KADESH,JSON.parse(s.get('encounter')));
 const quest={
     id:224,name:'Test of Sagittarius',startNpcs:[7702],npcs:NPCS,questSpawns:[KADESH],
+    clientCondition: () => 1, // Source progression uses step; client cond stays 1.
     killNpcs:[...new Set([...DROPS.map(r=>r[1]),577,578,579,580,581,582,KADESH])],
     questItems:[BOW,...Array.from({length:13},(_,i)=>3294+i)],equippedQuestItems:[BOW],
     eventNpc:e=>({start:7702,handin:NPCS,recover:7626})[e],canTalk:(s,npc)=>s.isStarted()||s.isCompleted()||npc.fetchSelfId()===7702&&eligible(s),

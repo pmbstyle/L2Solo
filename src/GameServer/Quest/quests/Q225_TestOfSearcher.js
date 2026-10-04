@@ -20,6 +20,7 @@ const eligible = s => [7, 22, 35, 54].includes(s.session.actor.fetchClassId()) &
 const l = (e, text) => H.link(225, e, text);
 const quest = {
     id: 225, name: 'Test of the Searcher', startNpcs: [7690], npcs: NPCS,
+    clientCondition: () => 1, // Source progression uses phase; client cond stays 1.
     killNpcs: [781, 5094, 5093, 555, 551, 144], questSpawns: [5094, 7628], personalNpcs: [7628],
     radarPoints: [ASSASSIN, CHEST, MAP], questItems: Array.from({ length: 25 }, (_, n) => 2784 + n),
     eventNpc: e => e === 'start' ? 7690 : e === 'handin' ? NPCS : e === 'recover' ? 7627 : null,

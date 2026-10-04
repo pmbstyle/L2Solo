@@ -28,6 +28,7 @@ const l = (event, label) => H.link(219, event, label);
 
 const quest = {
     id: 219, name: 'Testimony of Fate', startNpcs: [7476], npcs: NPCS,
+    clientCondition: () => 1, // C4's item-driven testimony retains cond 1.
     killNpcs: [144, ...DROPS.map(row => row[0]), ...TROPHIES.map(row => row[0]), 5079],
     personalNpcs: [7613], questSpawns: [7613], radarPoints: [ALDER],
     questItems: [1246, ...Array.from({ length: 29 }, (_, n) => 3173 + n)],

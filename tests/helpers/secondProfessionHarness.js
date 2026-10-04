@@ -6,6 +6,7 @@ const Actor = invoke('GameServer/Actor/Actor');
 const Profession = invoke('GameServer/SecondProfession');
 const Transfer = invoke('GameServer/World/Generics/NpcBypasses/SecondProfession');
 const QuestAbort = invoke('GameServer/Network/Request/QuestAbort');
+const Dialogue = require('./npcDialogueHarness');
 
 async function abort(session, questId) {
     const packet = Buffer.alloc(5);
@@ -21,12 +22,7 @@ async function createTrialWorld(label, id, extra = [], character = {}) {
     ctx.amount = item => world.amount(ctx.id, item);
     ctx.cond = q => ctx.state(q).getInt('cond');
     ctx.event = (q, name, npc) => world.event(ctx.session, q, name, npc);
-    ctx.click = async (q, name, npc) => {
-        await world.talk(ctx.session, npc);
-        if (!world.page(ctx.session).includes(`quest ${q} ${name}`)) assert.equal(await ctx.event(q, 'show_quest', npc), true);
-        assert(world.page(ctx.session).includes(`quest ${q} ${name}`), `Q${q} offers ${name} at NPC ${npc}`);
-        assert.equal(await ctx.event(q, name, npc), true);
-    };
+    ctx.click = (q, name, npc) => Dialogue.questClick(ctx, q, name, npc);
     ctx.kill = async (npc, n = 1, roll = 0) => withRandom(Array(n).fill(roll), async () => {
         for (let i = 0; i < n; i++) await world.kill(ctx.session, npc);
     });
@@ -46,8 +42,7 @@ async function createTrialWorld(label, id, extra = [], character = {}) {
     ctx.personalEvent = async (q, name, template) => {
         const npc = H.personalSpawns(ctx.state(q), template)[0];
         assert(npc);
-        ctx.session.activeNpcTalk = { selfId: template, objectId: npc.fetchId() };
-        assert.equal(await Service.onEvent(ctx.session, { questId: q, name }), true);
+        await Dialogue.questClick(ctx, q, name, template, npc);
     };
     ctx.close = async () => {
         for (const npc of [...runtime.npc.spawns]) if (npc.questSpawn) runtime.despawnQuestNpc(npc);

@@ -4,6 +4,7 @@ const H = invoke('GameServer/Quest/SecondProfessionQuest');
 const Transfer = invoke('GameServer/World/Generics/NpcBypasses/SecondProfession');
 const Actor = invoke('GameServer/Actor/Actor');
 const QuestAbort = invoke('GameServer/Network/Request/QuestAbort');
+const Dialogue = require('./helpers/npcDialogueHarness');
 
 async function run() {
     const world = await createWorld([
@@ -17,14 +18,7 @@ async function run() {
     const cond = q => state(q).getInt('cond');
     const amount = item => world.amount(session.actor.fetchId(), item);
     const event = (q, name, npc) => world.event(session, q, name, npc);
-    const click = async (q, name, npc) => {
-        await world.talk(session, npc);
-        if (!world.page(session).includes(`quest ${q} ${name}`)) {
-            assert.equal(await event(q, 'show_quest', npc), true, 'shared NPC exposes the chosen quest');
-        }
-        assert(world.page(session).includes(`quest ${q} ${name}`), `Q${q} offers ${name} at NPC ${npc}`);
-        assert.equal(await event(q, name, npc), true);
-    };
+    const click = (q, name, npc) => Dialogue.questClick({ session, world }, q, name, npc);
     const kill = async (npc, n = 1) => {
         for (let i = 0; i < n; i++) await withRandom([0], () => world.kill(session, npc));
     };
@@ -43,8 +37,7 @@ async function run() {
     async function personalEvent(q, name, template) {
         const npc = H.personalSpawns(state(q), template)[0];
         assert(npc);
-        session.activeNpcTalk = { selfId: template, objectId: npc.fetchId() };
-        assert.equal(await Service.onEvent(session, { questId: q, name }), true);
+        await Dialogue.questClick({ session, world }, q, name, template, npc);
     }
     async function challenger() {
         await event(211, 'start', 7644);
@@ -126,6 +119,8 @@ async function run() {
         assert.equal(await amount(3292), 0, 'Mouen retires the final hunt order');
         const before = await world.character(session.actor.fetchId());
         const diamonds = await amount(7562);
+        await Dialogue.talk(session,world,7624);
+        assert(world.page(session).includes('quest 223 handin'), 'Ascalon offers the final award');
         await Promise.all([event(223, 'handin', 7624), event(223, 'handin', 7624)]);
         const after = await world.character(session.actor.fetchId());
         assert.equal(after.exp - before.exp, 117454);
