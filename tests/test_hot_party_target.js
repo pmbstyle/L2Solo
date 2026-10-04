@@ -57,14 +57,15 @@ try {
     assert.strictEqual(pick({ objective: { npcId: 20 } }), 20, 'the shared objective wins');
     assert.strictEqual(pick({ acquisitionGoal: { status: 'active', next: { npcId: 20 } } }), 20,
         'the party gear goal');
-    // Hot today: a finished or blocked party goal still steers the pull.
-    assert.strictEqual(pick({ acquisitionGoal: { status: 'completed', next: { npcId: 20 } } }), 20,
-        'hot: an inactive party goal still steers the pull');
-    // Hot today: the leader's own gear plan is not read.
-    assert.strictEqual(pick({}, plan('active')), 21, 'hot: the leader plan is ignored');
-    // Hot today: a clan help party without its own target follows the party goal.
+    // As the cold party: only an active party goal steers the pull.
+    assert.strictEqual(pick({ acquisitionGoal: { status: 'completed', next: { npcId: 20 } } }), 21,
+        'an inactive party goal does not steer the pull');
+    // As the cold party: without a party goal the leader's active gear plan does.
+    assert.strictEqual(pick({}, plan('active')), 20, 'the leader plan steers the pull');
+    assert.strictEqual(pick({}, plan('completed')), 21, 'a finished leader plan does not');
+    // As the cold party: a clan help party hunts its shared spot, not a gear goal.
     assert.strictEqual(pick({ objective: { reason: 'clan_help' },
-        acquisitionGoal: { status: 'active', next: { npcId: 20 } } }), 20,
-    'hot: a clan help party follows the party goal');
+        acquisitionGoal: { status: 'active', next: { npcId: 20 } } }), 21,
+    'a clan help party ignores the gear goal');
     console.log('Hot party target checks passed');
 } finally { saved.reverse().forEach(restore => restore()); }
