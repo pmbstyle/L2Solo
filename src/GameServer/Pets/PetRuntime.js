@@ -153,6 +153,9 @@ function scheduleCorpse(pet) {
 }
 function die(pet) {
     if (!pet.petData || pet.petData.dead) return;
+    invoke('GameServer/Quest/QuestService').onSummonDeath(pet.ownerSession, pet).catch(error => {
+        utils.infoWarn('Quest', 'pet death callback failed: %s', error.message);
+    });
     pet.petData.dead = true;
     pet.petData.deadUntil = Date.now() + Rules.POLICY.corpseMs;
     const loss = Math.min(pet.fetchExp(), Rules.deathLoss(pet.fetchSelfId(), pet.fetchLevel()));

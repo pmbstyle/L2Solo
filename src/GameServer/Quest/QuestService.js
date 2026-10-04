@@ -364,7 +364,7 @@ function rewardExpSp(session, exp, sp) {
   ExperienceReward(session, session.actor, baseExp, baseSp);
 }
 
-async function onKill(session, npc) {
+async function onKill(session, npc, source = session?.actor) {
   return mutate(session, async () => {
     await ensureLoaded(session);
     await invoke("GameServer/Clan/ClanAllianceService").onKill(session, npc);
@@ -377,7 +377,7 @@ async function onKill(session, npc) {
       if (spawnedQuestId && spawnedQuestId !== quest.id) continue;
       if (!quest.killNpcs?.includes(npcId)) continue;
       const state = states(session).get(quest.id);
-      if (state?.isStarted()) await quest.onKill(state, npc);
+      if (state?.isStarted()) await quest.onKill(state, npc, source);
     }
     if (before !== activeQuestSnapshot(session)) syncActiveQuests(session);
   });
@@ -386,11 +386,31 @@ async function onKill(session, npc) {
 function onAttack(session, npc, source, damage) {
   const handlers = attackQuests.get(npc.fetchSelfId?.());
   if (!handlers || !session?.actor) return Promise.resolve();
+  // A foreign attacker can foul another player's personal summoning duel.
+  // Deliver the real source to the encounter owner without granting kill credit.
+  const ownerId = Number(npc.questSpawn?.ownerId) || 0;
+  if (ownerId && ownerId !== Number(session.actor.fetchId())) {
+    const owner = (World.user?.sessions || []).find(s => Number(s.actor?.fetchId?.()) === ownerId);
+    if (!owner) return Promise.resolve();
+    return onAttack(owner, npc, source, damage);
+  }
   return mutate(session, async () => {
     await ensureLoaded(session);
     for (const quest of handlers) {
       const state = states(session).get(quest.id);
       if (state?.isStarted()) await quest.onAttack(state, npc, source, damage);
+    }
+    syncActiveQuests(session);
+  });
+}
+
+function onSummonDeath(session, pet) {
+  if (!session?.actor) return Promise.resolve();
+  return mutate(session, async () => {
+    await ensureLoaded(session);
+    for (const quest of quests) {
+      const state = states(session).get(quest.id);
+      if (quest.onSummonDeath && state?.isStarted()) await quest.onSummonDeath(state, pet);
     }
     syncActiveQuests(session);
   });
@@ -443,6 +463,7 @@ module.exports = {
   rewardExpSp,
   questDropAmount,
   onAttack,
+  onSummonDeath,
   onSkillSee,
   addRadar,
   removeRadar,

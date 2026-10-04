@@ -4835,7 +4835,7 @@ const Database = {
             const changed = new Set();
             for (const take of takes) {
                 // Only the owning trial may retire its currently wielded quest weapon.
-                const trialWeapon = { 212: 3027, 218: 3026 }[questId];
+                const trialWeapon = { 212: 3027, 218: 3026, 224: 3028, 229: 3029 }[questId];
                 const equipmentFilter = take.selfId === trialWeapon ? '' : 'AND equipped = 0';
                 const items = all(`SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ${equipmentFilter} ORDER BY id`, [characterId, take.selfId]);
                 if (!Number.isSafeInteger(take.amount) || take.amount < 1 || items.reduce((sum, item) => sum + item.amount, 0) < take.amount) throw new Error('Required quest items missing');

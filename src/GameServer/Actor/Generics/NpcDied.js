@@ -157,6 +157,10 @@ function npcDied(session, actor, npc) {
     }
 
     if (npc.fetchIsSummon?.() === true) {
+        const summonOwner = npc.ownerSession || ownerSessionForSummon(npc);
+        invoke('GameServer/Quest/QuestService').onSummonDeath(summonOwner, npc).catch(error => {
+            utils.infoWarn('Quest', 'summon death callback failed: %s', error.message);
+        });
         NpcObjectIndex.remove(World, npc);
         World.npc.spawns = World.npc.spawns.filter((spawn) => spawn.fetchId() !== npc.fetchId());
         session.dataSendToMeAndOthers?.(invoke('GameServer/Network/Response').deleteOb(npc.fetchId()), npc);
@@ -206,7 +210,7 @@ function npcDied(session, actor, npc) {
 
     // C4's ordinary quest callback is attributed to the actual killer, not to
     // every party member that receives shared EXP.
-    invoke('GameServer/Quest/QuestService').onKill(session, npc).catch((error) => {
+    invoke('GameServer/Quest/QuestService').onKill(session, npc, actor).catch((error) => {
         utils.infoWarn('Quest', 'kill callback failed: %s', error.message);
     });
 
