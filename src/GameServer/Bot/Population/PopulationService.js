@@ -1827,7 +1827,9 @@ const PopulationService = {
         const vitals = state?.vitals || {};
         const hpPct = Number(vitals.hp || 0) / Math.max(1, Number(vitals.maxHp || vitals.hp || 1));
         const mpPct = Number(vitals.mp || 0) / Math.max(1, Number(vitals.maxMp || vitals.mp || 1));
-        return hpPct < 0.35 || mpPct < 0.20;
+        // The rest rule of a hunting bot, solo or in a party (RestPolicy).
+        const party = !!(state?.party?.partyId || state?.partyId);
+        return invoke('GameServer/Bot/AI/RestPolicy').needsRest(state, hpPct, mpPct, { party });
     },
 
     activateNearPlayers() {

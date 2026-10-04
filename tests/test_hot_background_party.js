@@ -77,7 +77,7 @@ try {
     follower.incoming.raid = true;
     assert.strictEqual(tick(follower), false, 'raid protection remains owned by the existing escape path');
     follower.incoming = null; follower.actor.x = 0;
-    leader.backgroundHuntTarget = null; leader.actor.hp = 40;
+    leader.backgroundHuntTarget = null; leader.actor.hp = 29;
     tick(healer);
     assert(healer.actor.state.fetchSeated(), 'group waits for recovery before a new pull');
 
@@ -136,7 +136,12 @@ try {
     searchTick(leader, 36000);
     assert.strictEqual(leader.lastDecision.action, 'party_wait_roster', 'leader waits for separated members');
     follower.actor.x = 0;
+    // The party rest rule (RestPolicy, party): a member at 40% HP keeps
+    // fighting, under 30% the group recovers.
     leader.actor.hp = 40;
+    searchTick(leader, 41000);
+    assert.notStrictEqual(leader.lastDecision.action, 'party_recovery', 'a party fights on at 40% HP');
+    leader.actor.hp = 29;
     const scansBeforeRecovery = wideScans;
     searchTick(leader, 42000);
     assert.strictEqual(leader.lastDecision.action, 'party_recovery');

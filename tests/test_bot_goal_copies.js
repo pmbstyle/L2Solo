@@ -93,17 +93,23 @@ assert.strictEqual(partyRest(bot(MYSTIC, ratios(1, 0.19))), false);
 assert.strictEqual(partyRest(bot(TANK, ratios(1, 0.17))), true, 'a party tank rests for MP');
 assert.strictEqual(partyRest(bot(FIGHTER, ratios(1, 0.05))), false, 'a party fighter does not rest for MP');
 
-// Rest: activation near a player keeps its own rule (step 1.5).
-assert.strictEqual(PopulationService.isRestingActivationState(bot(FIGHTER, ratios(1, 0.1))), true,
-    'activation recovers any class under 20% MP');
+// Rest: activation near a player asks the same rule (step 1.5).
+assert.strictEqual(PopulationService.isRestingActivationState(bot(FIGHTER, ratios(1, 0.1))), false,
+    'activation: a solo fighter does not sit for MP');
+assert.strictEqual(PopulationService.isRestingActivationState(bot(FIGHTER, ratios(0.34, 1))), true,
+    'activation: a solo fighter under 35% HP recovers');
 assert.strictEqual(PopulationService.isRestingActivationState(bot(FIGHTER, ratios(0.36, 0.21))), false);
 assert.strictEqual(PopulationService.isRestingActivationState(bot(MYSTIC, ratios(1, 0.1))), true,
     'activation: a mage under 20% MP recovers');
 const grouped = { party: { partyId: 'probe-party' } };
-assert.strictEqual(PopulationService.isRestingActivationState(bot(FIGHTER, ratios(0.32, 1), grouped)), true,
-    'activation: a party fighter at 32% HP recovers');
-assert.strictEqual(PopulationService.isRestingActivationState(bot(TANK, ratios(1, 0.19), grouped)), true,
-    'activation: a party tank at 19% MP recovers');
+assert.strictEqual(PopulationService.isRestingActivationState(bot(FIGHTER, ratios(0.32, 1), grouped)), false,
+    'activation: a party fighter keeps fighting at 32% HP');
+assert.strictEqual(PopulationService.isRestingActivationState(bot(FIGHTER, ratios(0.29, 1), grouped)), true);
+assert.strictEqual(PopulationService.isRestingActivationState(bot(TANK, ratios(1, 0.19), grouped)), false,
+    'activation: a party tank at 19% MP keeps fighting');
+assert.strictEqual(PopulationService.isRestingActivationState(bot(TANK, ratios(1, 0.17), grouped)), true,
+    'activation: a party tank under 18% MP recovers');
+assert.strictEqual(PopulationService.isRestingActivationState(bot(FIGHTER, ratios(1, 1), { activity: 'resting' })), true);
 
 // Inventory cleanup: the goal planner's goal.
 const originalNeed = ItemDisposition.inventoryCleanupNeed;
