@@ -181,7 +181,8 @@ const original = {
 
     // A cold bot below 1000 shots restocks by the rule hot bots use (ShotStock.restockPlan,
     // S3): the shop cheaper than the NPC first, the NPC for the rest, keeping its reserve
-    // max(500, 30 x 250, 10%) = 7,500 of 51,000. D shots cost 100 at the NPC at x10.
+    // max(500, 30 x 250, 10%) = 7,500 of 51,000 and the cost of its potion restock
+    // (survival first): 8 Healing Potions at 660 = 5,280. D shots cost 100 at the NPC at x10.
     const fighter = { characterId: 430, name: 'Fighter', phase: 'cold', activity: 'hunting', level: 30, adena: 51000,
         inventory: { '1463': { selfId: 1463, amount: 200 }, '129': { selfId: 129, amount: 1, equipped: true, slot: 7 } },
         stats: { classId: 0 } };
@@ -199,9 +200,9 @@ const original = {
     };
     LifeState.refreshInventory = async (refreshed) => refreshed;
     const restocked = (await Service.review(fighter, procurementAt + 2000)).state;
-    assert.deepStrictEqual(coldBuys, [['shop', 300, 60], ['npc', 255, 100]],
+    assert.deepStrictEqual(coldBuys, [['shop', 300, 60], ['npc', 202, 100]],
         'a cold bot below 1000 shots buys from the cheaper shop, then the NPC');
-    assert.strictEqual(restocked.adena, 7500, 'the cold restock keeps the consumables reserve');
+    assert.strictEqual(restocked.adena, 12800, 'the cold restock keeps the consumables reserve and the potions money');
     assert.strictEqual(restocked.stats.shotDemand, null);
     console.log('Cold shot economy buys scrap, crystallizes and crafts a demanded batch');
 })().finally(() => {

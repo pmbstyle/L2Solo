@@ -742,26 +742,14 @@ module.exports = {
     },
 
     scheduleRestock(session, bot, Generics, BotAI) {
-        setTimeout(() => {
+        setTimeout(async () => {
             const plan = ShotStock.planForActor(bot);
             const current = ShotStock.shotAmount(bot, plan);
             const amount = Math.max(0, ShotStock.PURCHASE_TARGET_AMOUNT - current);
             const expectedCost = amount * Number(plan.price || 0);
-
-            ShotStock.purchaseActorRestock(bot, { plan }).then(async (result) => {
-                if (!result.ok) {
-                    TownChatter.say(session, BotAI, 'shots-too-expensive', Speech.lines('town.shots-too-expensive', { item: ShotStock.describe(plan), adena: result.adena || 0, cost: result.cost || expectedCost }),
-                        { priority: 'coordination', values: { item: ShotStock.describe(plan) } });
-                    return;
-                }
-
-                if (result.delta > 0) {
-                    TownChatter.say(session, BotAI, 'shots-restocked', Speech.lines('town.shots-restocked', { count: result.delta, item: ShotStock.describe(plan), cost: formatAdena(result.cost) }));
-                } else {
-                    TownChatter.say(session, BotAI, 'shots-already-stocked', Speech.lines('town.shots-already-stocked', { item: ShotStock.describe(plan) }));
-                }
-                session.dataSendToOthers(ServerResponse.skillStarted(bot, bot.fetchId(), { fetchSelfId: () => 2001, fetchCalculatedHitTime: () => 500, fetchReuseTime: () => 500 }), bot);
-
+            try {
+                // Survival first: the healing potions, then the shots with what is
+                // left (ShotStock.restockPlan keeps the potions' cost, user 2026-10-04).
                 const potionPlan = HealingPotionStock.purchasePotionFor(bot);
                 const potionTown = session.shoppingTarget?.town
                     || session.coldLifeState?.currentRegion
@@ -770,19 +758,28 @@ module.exports = {
                         bot.fetchLocY(),
                         bot.fetchLocZ()
                     )?.name;
-                const potionOffer = potionTown
-                    ? MarketOpportunity.npcOffers(potionPlan.selfId, potionTown)
-                        .filter((offer) => offer.available !== false && Number(offer.price || 0) > 0)
-                        .sort((left, right) => Number(left.price) - Number(right.price))[0]
-                    : null;
-                const potionResult = potionOffer
+                const potionPrice = HealingPotionStock.localNpcPrice(potionPlan, potionTown);
+                const potionResult = potionPrice > 0
                     ? await HealingPotionStock.purchaseActorRestock(bot, {
                         potion: potionPlan,
-                        unitPrice: potionOffer.price
+                        unitPrice: potionPrice
                     })
                     : { ok: false, reason: 'no_local_offer' };
                 if (potionResult.ok && potionResult.changed) {
                     TownChatter.say(session, BotAI, 'healing-potions-restocked', Speech.lines('town.healing-potions-restocked', { count: potionResult.amount, item: potionResult.potion.name, reserve: formatAdena(potionResult.reserve) }));
+                }
+
+                const result = await ShotStock.purchaseActorRestock(bot, { plan, potionUnitPrice: potionPrice || undefined });
+                if (!result.ok) {
+                    TownChatter.say(session, BotAI, 'shots-too-expensive', Speech.lines('town.shots-too-expensive', { item: ShotStock.describe(plan), adena: result.adena || 0, cost: result.cost || expectedCost }),
+                        { priority: 'coordination', values: { item: ShotStock.describe(plan) } });
+                } else {
+                    if (result.delta > 0) {
+                        TownChatter.say(session, BotAI, 'shots-restocked', Speech.lines('town.shots-restocked', { count: result.delta, item: ShotStock.describe(plan), cost: formatAdena(result.cost) }));
+                    } else {
+                        TownChatter.say(session, BotAI, 'shots-already-stocked', Speech.lines('town.shots-already-stocked', { item: ShotStock.describe(plan) }));
+                    }
+                    session.dataSendToOthers(ServerResponse.skillStarted(bot, bot.fetchId(), { fetchSelfId: () => 2001, fetchCalculatedHitTime: () => 500, fetchReuseTime: () => 500 }), bot);
                 }
                 if (session.coldLifeState) {
                     session.coldLifeState = {
@@ -791,9 +788,9 @@ module.exports = {
                         inventory: LifeState.inventorySummaryFromItems(bot.backpack?.fetchItems?.() || [])
                     };
                 }
-            }).catch((err) => {
-                utils.infoWarn('Shopping', 'shot restock failed for %s: %s', bot.fetchName(), err.message);
-            });
+            } catch (err) {
+                utils.infoWarn('Shopping', 'consumable restock failed for %s: %s', bot.fetchName(), err.message);
+            }
         }, 4000);
 
         setTimeout(() => {

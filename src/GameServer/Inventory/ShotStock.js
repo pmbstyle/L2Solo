@@ -294,10 +294,23 @@ function ensureCharacterStock(characterId, options = {}) {
     });
 }
 
+// What the bot's healing-potion restock (HealingPotionStock.restockPlan) costs
+// now: survival first, so the shot restock leaves this money for the potions.
+// The potion price is the caller's local NPC price, else the cheapest NPC price.
+function potionRestockCost(value, inventory, adena, reserve, potionUnitPrice) {
+    const Potions = invoke('GameServer/Bot/AI/HealingPotionStock');
+    const potion = Potions.purchasePotionFor(value);
+    const unitPrice = Number(potionUnitPrice ?? invoke('GameServer/Bot/Economy/StaticMerchantPricing')
+        .cheapestPurchase(potion.selfId));
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0) return 0;
+    return Potions.restockPlan(value, { potion, inventory: inventory || undefined, adena, reserve, unitPrice }).cost;
+}
+
 // One restock rule for hot and cold bots, like HealingPotionStock.restockPlan:
 // below 1,000 shots a bot buys up to 3,000, first from players' shops cheaper
 // than the NPC (cheapest first, as many as needed), then from the NPC, and
-// spends only what is above its consumables reserve (PurchaseFunding).
+// spends only what is above its consumables reserve (PurchaseFunding) and the
+// cost of its healing-potion restock (survival first, user 2026-10-04).
 // `value` is a hot actor or a cold state; the NPC price is the one unit price.
 function restockPlan(value, options = {}) {
     const actor = !!value?.backpack;
@@ -315,7 +328,8 @@ function restockPlan(value, options = {}) {
     const npcPrice = Number.isFinite(unitPrice) && unitPrice > 0 ? unitPrice : 0;
     const needed = npcPrice > 0 && currentAmount < DEFAULT_TARGET_AMOUNT;
     let left = needed ? PURCHASE_TARGET_AMOUNT - currentAmount : 0;
-    let money = Math.max(0, adena - reserve);
+    const potionCost = needed ? potionRestockCost(value, inventory, adena, reserve, options.potionUnitPrice) : 0;
+    let money = Math.max(0, adena - reserve - potionCost);
     const shops = [];
     const cheaper = (options.offers || [])
         .filter((offer) => Number(offer.price) > 0 && Number(offer.price) < npcPrice && Number(offer.count) > 0)
@@ -342,7 +356,8 @@ function restockPlan(value, options = {}) {
         amount,
         cost: shops.reduce((sum, line) => sum + line.cost, 0) + npcAmount * npcPrice,
         adena,
-        reserve
+        reserve,
+        potionCost
     };
 }
 
@@ -354,7 +369,7 @@ async function purchaseActorRestock(actor, options = {}) {
 
     const plan = options.plan || planForActor(actor);
     const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
-    const restock = restockPlan(actor, { plan, unitPrice: options.unitPrice,
+    const restock = restockPlan(actor, { plan, unitPrice: options.unitPrice, potionUnitPrice: options.potionUnitPrice,
         offers: AfkTrade.offers(plan.selfId, AfkTrade.SELL, { characterId: actor.fetchId() }) });
     if (!restock.needed) return { ok: true, changed: false, plan, amount: restock.currentAmount, cost: 0 };
     if (restock.amount <= 0) {

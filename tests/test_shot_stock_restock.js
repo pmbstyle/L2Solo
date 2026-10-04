@@ -136,6 +136,45 @@ const originalFetchItems = Database.fetchItems;
         const hotPlan = ShotStock.restockPlan(hot, { plan: dPlan, unitPrice: 20, offers });
         assert.deepStrictEqual(hotPlan, coldPlan, 'hot and cold bots restock by the same rule');
         assert.deepStrictEqual([coldPlan.shops[0].amount, coldPlan.npcAmount], [400, 1875]);
+        offers = [];
+
+        // Survival first (S3 follow-up, user 2026-10-04): the shot restock leaves the
+        // cost of the healing-potion restock (HealingPotionStock.restockPlan).
+        // Level 30, 10,000 adena: reserve 7,500, so 2,500 to spend; 8 potions at
+        // 200 = 1,600, the shots (100 each) get the other 900.
+        const Potions = invoke('GameServer/Bot/AI/HealingPotionStock');
+        const shortCold = { level: 30, adena: 10000, inventory: {} };
+        const shortPlan = ShotStock.restockPlan(shortCold, { plan: dPlan, unitPrice: 100, potionUnitPrice: 200, offers: [] });
+        assert.deepStrictEqual([shortPlan.potionCost, shortPlan.amount, shortPlan.cost], [1600, 9, 900],
+            'a bot with money for only one restock buys potions and fewer shots');
+        // Cold: shots on their own timer first, potions on the shopping visit after.
+        const afterShots = { ...shortCold, adena: shortCold.adena - shortPlan.cost };
+        const potionsAfterShots = Potions.restockPlan(afterShots, { inventory: afterShots.inventory, unitPrice: 200 });
+        assert.deepStrictEqual([potionsAfterShots.amount, potionsAfterShots.cost], [8, 1600],
+            'the money the shots left buys the whole potion restock');
+        // Hot: potions first on the trip, then the shots with what is left: the same purchase.
+        const hotItems = new Map([[57, inventoryItem(1, 10000)], [1061, inventoryItem(4, 0)], [1463, inventoryItem(3, 0)]]);
+        const shortHot = { fetchId: () => 100, fetchLevel: () => 30,
+            backpack: { fetchItemFromSelfId: (selfId) => hotItems.get(Number(selfId)) } };
+        const hotPotions = await Potions.purchaseActorRestock(shortHot, { unitPrice: 200 });
+        assert.deepStrictEqual([hotPotions.ok, hotPotions.amount], [true, 8]);
+        currentActor = shortHot;
+        const hotShots = await ShotStock.purchaseActorRestock(shortHot, { plan: dPlan, unitPrice: 100, potionUnitPrice: 200 });
+        assert.deepStrictEqual([hotShots.delta, hotItems.get(1061).fetchAmount(), hotItems.get(57).fetchAmount()],
+            [9, 8, 7500], 'hot and cold end with the same potions, shots and wallet');
+        // A bot with enough money buys both in full.
+        const richPlan = ShotStock.restockPlan({ level: 30, adena: 400000, inventory: {} },
+            { plan: dPlan, unitPrice: 100, potionUnitPrice: 200, offers: [] });
+        assert.deepStrictEqual([richPlan.potionCost, richPlan.amount], [1600, 3000], 'enough money buys both');
+        // Potions already stocked leave everything above the reserve to the shots.
+        const stockedPlan = ShotStock.restockPlan({ level: 30, adena: 10000, inventory: { 1061: { selfId: 1061, amount: 8 } } },
+            { plan: dPlan, unitPrice: 100, potionUnitPrice: 200, offers: [] });
+        assert.deepStrictEqual([stockedPlan.potionCost, stockedPlan.amount], [0, 25]);
+        // Hot and cold bots without potions keep the same potion cost.
+        const coldNoPotions = ShotStock.restockPlan(cold, { plan: dPlan, unitPrice: 20, potionUnitPrice: 200, offers: [] });
+        const hotNoPotions = ShotStock.restockPlan(hot, { plan: dPlan, unitPrice: 20, potionUnitPrice: 200, offers: [] });
+        assert.deepStrictEqual(hotNoPotions, coldNoPotions, 'hot and cold keep the potions by the same rule');
+        assert.strictEqual(coldNoPotions.potionCost, 1600);
     } finally {
         AfkTrade.offers = originalOffers;
         AfkTrade.buyFromShop = originalBuyFromShop;

@@ -86,11 +86,9 @@ function logPartyActivationFailure(state, result, timestamp = Date.now()) {
 function restockColdHealingPotions(state) {
     if (!state || state.activity !== 'shopping' || !state.currentRegion) return Promise.resolve(state);
     const potion = HealingPotionStock.purchasePotionFor(state);
-    const offer = MarketOpportunity.npcOffers(potion.selfId, state.currentRegion)
-        .filter((candidate) => candidate.available !== false && Number(candidate.price || 0) > 0)
-        .sort((left, right) => Number(left.price) - Number(right.price))[0];
-    if (!offer) return Promise.resolve(state);
-    const patch = HealingPotionStock.coldPurchasePatch(state, { potion, unitPrice: offer.price });
+    const unitPrice = HealingPotionStock.localNpcPrice(potion, state.currentRegion);
+    if (unitPrice <= 0) return Promise.resolve(state);
+    const patch = HealingPotionStock.coldPurchasePatch(state, { potion, unitPrice });
     if (!patch) return Promise.resolve(state);
     return LifeState.applyConsumablePurchase(state, patch, 'healing_potion_restock')
         .then((saved) => saved || state);

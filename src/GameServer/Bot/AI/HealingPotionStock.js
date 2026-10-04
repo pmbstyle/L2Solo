@@ -125,6 +125,19 @@ function keptAmounts(value, options = {}) {
     return kept;
 }
 
+// The price of the bot's potion at the cheapest NPC of a town; 0 = not sold there.
+// One lookup for the hot trip (ShoppingState) and the cold visit (PopulationService).
+function localNpcPrice(potion, town) {
+    if (!town) return 0;
+    let price = 0;
+    for (const offer of invoke('GameServer/Bot/Economy/MarketOpportunity').npcOffers(potion.selfId, town)) {
+        const offerPrice = Number(offer.price || 0);
+        if (offer.available === false || offerPrice <= 0) continue;
+        if (price === 0 || offerPrice < price) price = offerPrice;
+    }
+    return price;
+}
+
 function restockPlan(value, options = {}) {
     const potion = options.potion || purchasePotionFor(value);
     const targetAmount = Math.max(0, Number(options.targetAmount ?? targetAmountFor(value)) || 0);
@@ -360,6 +373,7 @@ module.exports = {
     restockPlan,
     stockAmounts,
     keptAmounts,
+    localNpcPrice,
     selectPotion,
     targetAmountFor,
     tryUseInCombat,
