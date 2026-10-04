@@ -206,4 +206,25 @@ assert.strictEqual(RequiredPartyFormation.spotFor(planned('complete')), 'current
 assert.strictEqual(RequiredPartyFormation.spotFor(planned('active'), { spotId: 'objective-spot' }), 'objective-spot');
 assert.strictEqual(RequiredPartyFormation.spotFor(bot(FIGHTER, ratios(1, 1), { spotId: null })), '');
 
+// The shared party request rules the main thread, the worker and the SQL
+// batch read.
+const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
+assert.strictEqual(PartyRequestPlanner.maxAgeMs('required'), 15 * 60 * 1000);
+assert.strictEqual(PartyRequestPlanner.maxAgeMs('preferred'), 5 * 60 * 1000);
+assert.strictEqual(PartyRequestPlanner.cooldownMs(), 5 * 60 * 1000);
+const open = request('preferred', 5 * 60 * 1000).stats.partyRequest;
+assert.deepStrictEqual(PartyRequestPlanner.expire(open, now), {
+    ...open, status: 'deferred', deferredUntil: now + 5 * 60 * 1000, expiredAt: now, attempts: 3
+});
+assert.strictEqual(PartyRequestPlanner.expire(undefined, now), undefined);
+assert.deepStrictEqual(PartyRequestPlanner.limitsForObjective({ clanOperation: 'equipment', clanId: 3 },
+    { minSize: 2, maxSize: 5, levelRange: 4 }), { maxSize: 5, minSize: 2, levelRange: 99 });
+assert.deepStrictEqual(PartyRequestPlanner.limitsForObjective(null, { minSize: 3, maxSize: 4, levelRange: 6 }),
+    { maxSize: 4, minSize: 3, levelRange: 6 });
+// An inactive gear plan no longer names the party spot on the main thread
+// either: the bot's own spot is used, as in the worker.
+assert.strictEqual(PartyRequestPlanner.objectiveSpot(planned('complete')), 'current');
+assert.strictEqual(PartyRequestPlanner.objectiveSpot(planned('active')), 'plan-spot');
+assert.strictEqual(PartyRequestPlanner.objectiveSpot({}), null);
+
 console.log('Bot goal copy checks passed');

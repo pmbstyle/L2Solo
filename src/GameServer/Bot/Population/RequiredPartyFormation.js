@@ -9,12 +9,7 @@ function objectiveFor(state) {
 }
 
 function spotFor(state, objective = null) {
-    return String(
-        objective?.spotId
-        || (state?.stats?.equipmentPlan?.status === 'active' ? state.stats.equipmentPlan.next?.spotId : null)
-        || state?.spotId
-        || ''
-    );
+    return String(PartyRequestPlanner.objectiveSpot(state, objective) || '');
 }
 
 function eligible(state) {
@@ -79,17 +74,9 @@ function proposalFromStates(states = [], options = {}) {
             || Number(left.state.characterId) - Number(right.state.characterId)
         ));
         for (const anchor of anchors) {
-            const clanEquipment = anchor.objective.clanOperation === 'equipment'
-                && Number(anchor.objective.clanId || 0) > 0;
-            const maxSize = clanEquipment
-                ? Math.max(defaultMinSize, Math.min(9, Number(anchor.objective.maxPartySize) || defaultMaxSize))
-                : defaultMaxSize;
-            const minSize = clanEquipment
-                ? Math.max(2, Math.min(maxSize, Number(anchor.objective.minPartySize) || defaultMinSize))
-                : defaultMinSize;
-            const levelRange = clanEquipment
-                ? Math.max(defaultLevelRange, Number(anchor.objective.levelRange) || 99)
-                : defaultLevelRange;
+            const { maxSize, minSize, levelRange } = PartyRequestPlanner.limitsForObjective(anchor.objective, {
+                minSize: defaultMinSize, maxSize: defaultMaxSize, levelRange: defaultLevelRange
+            });
             const anchorLevel = Number(anchor.state.level || 1);
             const compatible = anchors
                 .filter(({ state }) => Math.abs(Number(state.level || 1) - anchorLevel) <= levelRange)

@@ -1,5 +1,57 @@
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 
+// How long an open party request may wait for a group, by its priority.
+function maxAgeMs(priority) {
+    return priority === 'required'
+        ? Math.max(30000, Number(Config.partyRequestMaxAgeMs) || 15 * 60 * 1000)
+        : Math.max(30000, Number(Config.partyPreferredMaxAgeMs) || 5 * 60 * 1000);
+}
+
+// How long an expired request rests before the bot asks again.
+function cooldownMs() {
+    return Math.max(30000, Number(Config.partyRequestCooldownMs) || 5 * 60 * 1000);
+}
+
+// An open request older than its age is deferred for the cooldown and
+// counted as one more attempt; any other request is returned as it is.
+function expire(request, now = Date.now()) {
+    if (request?.status !== 'open') return request;
+    if (now - Number(request.requestedAt || now) < maxAgeMs(request.priority)) return request;
+    return {
+        ...request,
+        status: 'deferred',
+        deferredUntil: now + cooldownMs(),
+        expiredAt: now,
+        attempts: Number(request.attempts || 0) + 1
+    };
+}
+
+// Party size and level spread: a clan equipment duty sets its own within
+// fixed bounds, any other party uses the defaults (the configured sizes
+// unless the caller gives its own).
+function limitsForObjective(objective = null, defaults = {}) {
+    const maxSize = Number(defaults.maxSize ?? Config.partyMaxSize);
+    const minSize = Number(defaults.minSize ?? Config.partyMinSize);
+    const clanEquipment = objective?.clanOperation === 'equipment'
+        && Number(objective?.clanId || 0) > 0;
+    if (!clanEquipment) return { maxSize, minSize, levelRange: defaults.levelRange };
+    const clanMaxSize = Math.max(2, Math.min(9, Number(objective.maxPartySize) || maxSize));
+    return {
+        maxSize: clanMaxSize,
+        minSize: Math.max(2, Math.min(clanMaxSize, Number(objective.minPartySize) || minSize)),
+        levelRange: Math.max(4, Number(objective.levelRange) || 99)
+    };
+}
+
+// The spot a party for this bot hunts: its objective's, else the next spot of
+// an active gear plan, else where the bot is.
+function objectiveSpot(state, objective = null) {
+    return objective?.spotId
+        || (state?.stats?.equipmentPlan?.status === 'active' ? state.stats.equipmentPlan.next?.spotId : null)
+        || state?.spotId
+        || null;
+}
+
 function partyObjectiveForPlan(plan) {
     if (!plan || !['active', 'blocked'].includes(plan.status) || !plan.next?.spotId) return null;
     const partyNeed = plan.clanGoal?.partyNeed
@@ -59,10 +111,6 @@ function partyRequestForPlan(state, plan, timestamp = Date.now()) {
         && previous.objectiveKey === objective.objectiveKey
         && Number(previous.itemId || 0) === Number(objective.itemId || 0)
         && Number(previous.targetId || 0) === Number(objective.targetId || 0);
-    const maxAge = objective.priority === 'required'
-        ? Math.max(30000, Number(Config.partyRequestMaxAgeMs) || 15 * 60 * 1000)
-        : Math.max(30000, Number(Config.partyPreferredMaxAgeMs) || 5 * 60 * 1000);
-    const cooldownMs = Math.max(30000, Number(Config.partyRequestCooldownMs) || 5 * 60 * 1000);
     const previousRequestedAt = sameRequest ? Number(previous.requestedAt || timestamp) : timestamp;
     const previousAttempts = sameRequest ? Number(previous.attempts || 0) : 0;
 
@@ -78,16 +126,16 @@ function partyRequestForPlan(state, plan, timestamp = Date.now()) {
         };
     }
 
-    if (sameRequest && previous.status === 'open' && timestamp - previousRequestedAt >= maxAge) {
-        return {
+    if (sameRequest && previous.status === 'open') {
+        const kept = {
             ...objective,
-            status: 'deferred',
+            status: 'open',
             requestedAt: previousRequestedAt,
-            deferredUntil: timestamp + cooldownMs,
-            expiredAt: timestamp,
-            attempts: previousAttempts + 1,
+            attempts: previousAttempts,
             lastMatchedAt: previous.lastMatchedAt || null
         };
+        const expired = expire(kept, timestamp);
+        if (expired !== kept) return expired;
     }
 
     return {
@@ -119,6 +167,11 @@ function partyObjectiveForState(state) {
 }
 
 module.exports = {
+    maxAgeMs,
+    cooldownMs,
+    expire,
+    limitsForObjective,
+    objectiveSpot,
     partyObjectiveForPlan,
     clanPartyObjectiveForState,
     partyRequestForPlan,

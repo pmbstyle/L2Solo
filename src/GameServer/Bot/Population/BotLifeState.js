@@ -6,6 +6,7 @@ const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
 const Metrics  = invoke('GameServer/Bot/Population/PopulationMetrics');
 const DataCache = invoke('GameServer/DataCache');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
@@ -1204,9 +1205,9 @@ function clearPassivePartyRequests() {
 
 function expireStalePartyRequests(limit = 0) {
     const timestamp = now();
-    const requiredMaxAge = Math.max(30000, Number(Config.partyRequestMaxAgeMs) || 15 * 60 * 1000);
-    const preferredMaxAge = Math.max(30000, Number(Config.partyPreferredMaxAgeMs) || 5 * 60 * 1000);
-    const cooldownMs = Math.max(30000, Number(Config.partyRequestCooldownMs) || 5 * 60 * 1000);
+    const requiredMaxAge = PartyRequestPlanner.maxAgeMs('required');
+    const preferredMaxAge = PartyRequestPlanner.maxAgeMs('preferred');
+    const cooldownMs = PartyRequestPlanner.cooldownMs();
     // Spread the next eligible formation attempts over at most two minutes so
     // a restart cannot turn one historical queue into a new SQLite spike.
     const staggerMs = Math.min(120000, Math.max(0, Math.floor(cooldownMs / 2)));
@@ -1294,7 +1295,7 @@ function deferUnformablePartyRequests(characterIds = [], reason = 'no_compatible
     if (!ids.length) return Promise.resolve(0);
 
     const timestamp = now();
-    const cooldownMs = Math.max(30000, Number(Config.partyRequestCooldownMs) || 5 * 60 * 1000);
+    const cooldownMs = PartyRequestPlanner.cooldownMs();
     const staggerMs = Math.min(120000, Math.max(0, Math.floor(cooldownMs / 2)));
     const placeholders = ids.map(() => '?').join(', ');
     const selection = `characterId IN (${placeholders})

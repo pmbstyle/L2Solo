@@ -348,24 +348,9 @@ function statesForParties(partyIds = []) {
 
 function expirePartyRequestForState(state, timestamp = Date.now()) {
     const request = state?.stats?.partyRequest;
-    if (request?.status !== 'open') return state;
-    const maxAge = request.priority === 'required'
-        ? Math.max(30000, Number(Config.partyRequestMaxAgeMs) || 15 * 60 * 1000)
-        : Math.max(30000, Number(Config.partyPreferredMaxAgeMs) || 5 * 60 * 1000);
-    if (timestamp - Number(request.requestedAt || timestamp) < maxAge) return state;
-    return {
-        ...state,
-        stats: {
-            ...(state.stats || {}),
-            partyRequest: {
-                ...request,
-                status: 'deferred',
-                deferredUntil: timestamp + Math.max(30000, Number(Config.partyRequestCooldownMs) || 5 * 60 * 1000),
-                expiredAt: timestamp,
-                attempts: Number(request.attempts || 0) + 1
-            }
-        }
-    };
+    const expired = PartyRequestPlanner.expire(request, timestamp);
+    if (expired === request) return state;
+    return { ...state, stats: { ...(state.stats || {}), partyRequest: expired } };
 }
 
 function partyObjectiveGroupingKey(objective) {
@@ -379,10 +364,7 @@ function partyObjectiveKeyForState(state) {
 }
 
 function partyObjectiveSpotForState(state) {
-    return partyObjectiveForState(state)?.spotId
-        || state?.stats?.equipmentPlan?.next?.spotId
-        || state?.spotId
-        || null;
+    return PartyRequestPlanner.objectiveSpot(state, partyObjectiveForState(state));
 }
 
 function directDropTargetNpcId(...plans) {
@@ -480,18 +462,7 @@ function dissolveBackgroundParty(party, reason, memberCount = 0) {
 }
 
 function partyLimitsForObjective(objective = null) {
-    const clanEquipment = objective?.clanOperation === 'equipment'
-        && Number(objective?.clanId || 0) > 0;
-    const maxSize = clanEquipment
-        ? Math.max(2, Math.min(9, Number(objective.maxPartySize) || Config.partyMaxSize))
-        : Config.partyMaxSize;
-    return {
-        maxSize,
-        minSize: clanEquipment
-            ? Math.max(2, Math.min(maxSize, Number(objective.minPartySize) || Config.partyMinSize))
-            : Config.partyMinSize,
-        levelRange: clanEquipment ? Math.max(4, Number(objective.levelRange) || 99) : undefined
-    };
+    return PartyRequestPlanner.limitsForObjective(objective);
 }
 
 function requiresClanEquipmentParty(state) {
@@ -2124,12 +2095,7 @@ const PopulationService = {
             return hydratePartyCandidates(projections).then((states) => {
                 const required = states.filter((state) => {
                     const objective = partyObjectiveForState(state);
-                    const objectiveSpot = String(
-                        objective?.spotId
-                        || (state.stats?.equipmentPlan?.status === 'active' ? state.stats.equipmentPlan.next?.spotId : null)
-                        || state.spotId
-                        || ''
-                    );
+                    const objectiveSpot = String(PartyRequestPlanner.objectiveSpot(state, objective) || '');
                     return objective?.status === 'open'
                         && objective?.priority === 'required'
                         && objectiveSpot === String(proposal.spotId || '');
