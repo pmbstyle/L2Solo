@@ -6,7 +6,7 @@ const NpcAggro = invoke('GameServer/Npc/NpcAggro');
 const RaidBossState = invoke('GameServer/World/RaidBossState');
 const MinionManager = invoke('GameServer/World/RaidBossMinionManager');
 
-const VISIBILITY_RADIUS = 6000;
+const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
 
 function distanceSquared(first, second) {
     const dx = first.fetchLocX() - second.fetchLocX();
@@ -16,7 +16,7 @@ function distanceSquared(first, second) {
 
 function notifyNearby(world, npc, response = ServerResponse) {
     if (!world?.user?.sessions || !npc) return;
-    const radiusSquared = VISIBILITY_RADIUS * VISIBILITY_RADIUS;
+    const radiusSquared = CLIENT_VISIBILITY_RADIUS * CLIENT_VISIBILITY_RADIUS;
     const packet = response.npcInfo(npc);
 
     world.user.sessions.forEach((session) => {

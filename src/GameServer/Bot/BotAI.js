@@ -1,4 +1,5 @@
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
+const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
 const BotStatus      = invoke('GameServer/Bot/AI/BotStatus');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
@@ -944,7 +945,7 @@ const BotAI = {
                 if (candidate === session || !candidate.actor || typeof candidate.actor.fetchLocX !== 'function' || typeof candidate.actor.fetchLocY !== 'function') return false;
                 const dx = candidate.actor.fetchLocX() - x;
                 const dy = candidate.actor.fetchLocY() - y;
-                return dx * dx + dy * dy <= 6000 * 6000;
+                return dx * dx + dy * dy <= CLIENT_VISIBILITY_RADIUS * CLIENT_VISIBILITY_RADIUS;
             });
         }
         const fetchVisiblePlayers = typeof World.fetchVisibleRealPlayers === 'function'

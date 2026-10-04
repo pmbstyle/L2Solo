@@ -8,8 +8,8 @@ const World = invoke('GameServer/World/World');
 const SELL = 1;
 const BUY = 3;
 const PROJECTION_ID_BASE = 900000000;
-const VISIBILITY_RADIUS = 6000;
-const VISIBILITY_CELL_SIZE = VISIBILITY_RADIUS;
+const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
+const VISIBILITY_CELL_SIZE = CLIENT_VISIBILITY_RADIUS;
 const projectionsById = new Map();
 const projectionsByOwner = new Map();
 const projectionsByCell = new Map();
@@ -221,7 +221,7 @@ function visibleTo(viewer, actor) {
     return !!viewer?.actor
         && viewer.actor.fetchIsOnline?.() === true
         && !isBotSession(viewer)
-        && distance2d(viewer.actor, actor) <= VISIBILITY_RADIUS;
+        && distance2d(viewer.actor, actor) <= CLIENT_VISIBILITY_RADIUS;
 }
 
 function sendProjection(viewer, projection) {

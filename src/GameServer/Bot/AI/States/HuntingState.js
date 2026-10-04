@@ -27,11 +27,11 @@ const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
 const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
 const HuntingVisibility = invoke('GameServer/Bot/AI/BotHuntingVisibility');
+const { SPOT_CELL_SIZE } = invoke('GameServer/World/WorldConstants');
 
 const TARGET_STALL_TICKS = 5;
 const TARGET_RETRY_COOLDOWN_MS = 15000;
 const TARGET_PROGRESS_DISTANCE = 40;
-const TARGET_SPOT_GRID_SIZE = 6000;
 const EMERGENCY_RETREAT_HP_RATIO = 0.35;
 const EMERGENCY_RETREAT_MP_RATIO = 0.20;
 const EMERGENCY_RETREAT_DISTANCE = 850;
@@ -113,7 +113,7 @@ function findPreferredMonster(session, bot, radius, options = {}) {
         if (clan) counts.set(clan, (counts.get(clan) || 0) + 1);
         return counts;
     }, new Map());
-    const spotIdAt = (actor) => `${Math.floor(actor.fetchLocX() / TARGET_SPOT_GRID_SIZE)}_${Math.floor(actor.fetchLocY() / TARGET_SPOT_GRID_SIZE)}`;
+    const spotIdAt = (actor) => `${Math.floor(actor.fetchLocX() / SPOT_CELL_SIZE)}_${Math.floor(actor.fetchLocY() / SPOT_CELL_SIZE)}`;
     const currentSpotId = String(session.currentSpot?.id || spotIdAt(bot)).split(':')[0];
     const partyActors = session.followPlayerSession || session.hotBackgroundPartyId
         ? PartyAwareness.partyActors(session.followPlayerSession || session) : [];

@@ -1,5 +1,6 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const World          = invoke('GameServer/World/World');
+const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const TownGuard      = invoke('GameServer/Npc/TownGuard');
 const NpcAggro       = invoke('GameServer/Npc/NpcAggro');
@@ -13,8 +14,8 @@ function isBotSession(session) {
 }
 
 function updateEnvironment(session, actor, { immediateNpcInfo = false, forceRefresh = false } = {}) {
-    const actorArea = new SpeckMath.Circle(actor.fetchLocX(), actor.fetchLocY(), 6000);
-    const npcs = World.fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), 6000).filter((ob) => ob.state.fetchDead() === false) ?? [];
+    const actorArea = new SpeckMath.Circle(actor.fetchLocX(), actor.fetchLocY(), CLIENT_VISIBILITY_RADIUS);
+    const npcs = World.fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), CLIENT_VISIBILITY_RADIUS).filter((ob) => ob.state.fetchDead() === false) ?? [];
 
     if (forceRefresh || new SpeckMath.Point(actor.previousXY?.locX ?? 0, actor.previousXY?.locY ?? 0).distance(new SpeckMath.Point(actor.fetchLocX(), actor.fetchLocY())) >= 1000) {
         require('../../ClanHall/Doors').sync(session, actor, true);

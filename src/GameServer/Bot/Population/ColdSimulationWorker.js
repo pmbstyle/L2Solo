@@ -45,6 +45,7 @@ const stubs = new Map([
     ['GameServer/World/WorldAreaCatalog', { resolve: originalInvoke('GameServer/World/WorldAreaCatalog').resolve }],
     // The game clock is a pure function of the timestamp (cold night bonuses).
     ['GameServer/World/GameTime', originalInvoke('GameServer/World/GameTime')],
+    ['GameServer/World/WorldConstants', originalInvoke('GameServer/World/WorldConstants')],
     ['GameServer/World/Generics/NpcShopBuyLists', { allEntries: () => [] }]
 ]);
 

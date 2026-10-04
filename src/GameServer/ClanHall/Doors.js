@@ -1,6 +1,7 @@
 const definitions = require('../../../data/ClanHalls/doors.json');
 const SendPacket = invoke('Packet/Send');
 const Rules = require('../Clan/ClanRules');
+const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
 let doors = [];
 
 function packets(door) {
@@ -20,7 +21,7 @@ function sync(session, actor, force = false) {
     if (!actor || !session?.dataSendToMe || session.botSession || String(session.accountId || '').startsWith('bot_')) return;
     session.clanHallDoorVersions ||= new Map();
     for (const door of doors) {
-        if (Math.hypot(actor.fetchLocX() - door.locX, actor.fetchLocY() - door.locY) > 6000) continue;
+        if (Math.hypot(actor.fetchLocX() - door.locX, actor.fetchLocY() - door.locY) > CLIENT_VISIBILITY_RADIUS) continue;
         if (!force && session.clanHallDoorVersions.get(door.objectId) === door.revision) continue;
         for (const packet of packets(door)) session.dataSendToMe(packet);
         session.clanHallDoorVersions.set(door.objectId, door.revision);

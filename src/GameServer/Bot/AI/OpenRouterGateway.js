@@ -1,5 +1,6 @@
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
+const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
 const REASONING_EFFORTS = new Set(['off', 'low', 'medium', 'high']);
 const COMPLETION_LIMIT_PARAMS = new Set(['max_tokens', 'max_completion_tokens']);
 
@@ -24,7 +25,7 @@ const DEFAULTS = Object.freeze({
     // knobs; callers may override them explicitly for focused tests/workflows.
     maxTokens: 320,
     timeoutMs: 3500,
-    visibilityRadius: 6000,
+    visibilityRadius: CLIENT_VISIBILITY_RADIUS,
     circuitBreakerFailureThreshold: 3,
     circuitBreakerOpenMs: 30000
 });

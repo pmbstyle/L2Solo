@@ -40,7 +40,7 @@ function coldBotTell(playerSession, state, text) {
     });
 }
 
-const CLIENT_VISIBILITY_RADIUS = 6000;
+const { CLIENT_VISIBILITY_RADIUS, NPC_GRID_SIZE } = invoke('GameServer/World/WorldConstants');
 const CLIENT_VISIBILITY_RADIUS_SQUARED = CLIENT_VISIBILITY_RADIUS * CLIENT_VISIBILITY_RADIUS;
 
 function isBotSession(session) {
@@ -639,9 +639,8 @@ const World = {
     },
 
     npcGridKey(npc) {
-        const GRID_SIZE = 6000;
-        const gx = Math.floor(npc.fetchLocX() / GRID_SIZE);
-        const gy = Math.floor(npc.fetchLocY() / GRID_SIZE);
+        const gx = Math.floor(npc.fetchLocX() / NPC_GRID_SIZE);
+        const gy = Math.floor(npc.fetchLocY() / NPC_GRID_SIZE);
         return `${gx}_${gy}`;
     },
 
@@ -702,9 +701,8 @@ const World = {
     },
 
     fetchNpcsInRadius(locX, locY, radius) {
-        const GRID_SIZE = 6000;
-        const bgx = Math.floor(locX / GRID_SIZE);
-        const bgy = Math.floor(locY / GRID_SIZE);
+        const bgx = Math.floor(locX / NPC_GRID_SIZE);
+        const bgy = Math.floor(locY / NPC_GRID_SIZE);
         const npcs = [];
         
         for (let dx = -1; dx <= 1; dx++) {

@@ -10,7 +10,7 @@ const TownTraffic = invoke('GameServer/Bot/AI/TownTraffic');
 // World.fetchVisibleUsers broadcasts movement to observers inside this same
 // radius.  Low-detail simulation must never silently relocate a bot that is
 // already visible to a player (or whose requested destination is visible).
-const CLIENT_VISIBILITY_RADIUS = 6000;
+const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
 const COMPANION_DIRECT_DISTANCE = 256;
 const COMPANION_PATH_TIMEOUT_MS = 2000;
 const COMPANION_PATH_MAX_NODES = 4000;

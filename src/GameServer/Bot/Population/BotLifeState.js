@@ -2,6 +2,7 @@ const ClanMembershipPolicy = require('../../Clan/ClanMembershipPolicy');
 const LifeStateCache = require('./LifeStateCache');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Database = invoke('Database');
+const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
 const Metrics  = invoke('GameServer/Bot/Population/PopulationMetrics');
 const DataCache = invoke('GameServer/DataCache');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
@@ -1781,7 +1782,7 @@ const BotLifeState = {
 
     coldNear(loc, radius, limit = 10) {
         if (!initialized || !loc) return Promise.resolve([]);
-        const safeRadius = Math.max(1, Number(radius) || 6000);
+        const safeRadius = Math.max(1, Number(radius) || CLIENT_VISIBILITY_RADIUS);
         const safeLimit = Math.max(1, Math.min(100, Number(limit) || 10));
         return Promise.resolve(cache.near(loc, safeRadius, safeLimit));
     },

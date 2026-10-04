@@ -1,4 +1,4 @@
-const GRID_SIZE = 6000;
+const { SPOT_CELL_SIZE } = invoke('GameServer/World/WorldConstants');
 const DEFAULT_LEVEL_RANGE = 3;
 const DEFAULT_MIN_HUNT_LEVEL_GAP = -7;
 const DEFAULT_MAX_HUNT_LEVEL_GAP = 3;
@@ -66,8 +66,8 @@ function constrainToSpotGrid(spot, locX, locY) {
     const gridX = Number(match[1]);
     const gridY = Number(match[2]);
     return {
-        locX: Math.max(gridX * GRID_SIZE, Math.min((gridX + 1) * GRID_SIZE - 1, locX)),
-        locY: Math.max(gridY * GRID_SIZE, Math.min((gridY + 1) * GRID_SIZE - 1, locY))
+        locX: Math.max(gridX * SPOT_CELL_SIZE, Math.min((gridX + 1) * SPOT_CELL_SIZE - 1, locX)),
+        locY: Math.max(gridY * SPOT_CELL_SIZE, Math.min((gridY + 1) * SPOT_CELL_SIZE - 1, locY))
     };
 }
 
@@ -78,8 +78,8 @@ function partitionedAreaAt(loc) {
 }
 
 function spotIdAt(loc) {
-    const gx = Math.floor(Number(loc.locX) / GRID_SIZE);
-    const gy = Math.floor(Number(loc.locY) / GRID_SIZE);
+    const gx = Math.floor(Number(loc.locX) / SPOT_CELL_SIZE);
+    const gy = Math.floor(Number(loc.locY) / SPOT_CELL_SIZE);
     const area = partitionedAreaAt(loc);
     return {
         id: `${gx}_${gy}${area ? `:${area.id}` : ''}`,

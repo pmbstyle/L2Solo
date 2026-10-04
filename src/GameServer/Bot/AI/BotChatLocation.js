@@ -1,5 +1,6 @@
 const Areas = invoke('GameServer/World/WorldAreaCatalog');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
+const { SPOT_CELL_SIZE } = invoke('GameServer/World/WorldConstants');
 
 function readableName(value) {
     const name = String(value || '').replace(/\s+/g, ' ').trim();
@@ -54,7 +55,7 @@ function describe({ spot = null, spotId = null, loc = null, region = null } = {}
     // Without an indexed spot, only infer a broad region from the cell center.
     const cell = /^(-?\d+)_(-?\d+)(?::.+)?$/.exec(String(spotId || indexed?.id || ''));
     if (cell) {
-        const group = TownRespawn.getRegionGroup((Number(cell[1]) + 0.5) * 6000, (Number(cell[2]) + 0.5) * 6000);
+        const group = TownRespawn.getRegionGroup((Number(cell[1]) + 0.5) * SPOT_CELL_SIZE, (Number(cell[2]) + 0.5) * SPOT_CELL_SIZE);
         const town = TownRespawn.towns[group];
         if (town) return `the ${town.name} area`;
     }

@@ -1,6 +1,8 @@
 'use strict';
 const { SpotOccupancyIndex, stateKey } = require('./SpotOccupancyIndex');
-const CELL_SIZE = 6000;
+// Bot location buckets: any size is correct. One visibility radius keeps a
+// coldNear search of that radius within 3x3 cells.
+const CELL_SIZE = require('../../World/WorldConstants').CLIENT_VISIBILITY_RADIUS;
 
 class LifeStateCache extends Map {
     constructor() {
