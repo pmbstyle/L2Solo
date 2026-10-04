@@ -14,6 +14,7 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
+const HuntEfficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const Director = invoke('GameServer/Bot/Population/PopulationDirector');
@@ -1371,6 +1372,9 @@ class ColdSimulationCoordinator {
             ? await LifeState.prepareResolve(claimedState, proposal.result, { persist: false, timestamp })
             : null);
         if (!resolvedState) return null;
+        // The worker recorded this hunt's income: the main thread's level-band
+        // table (the hour value of bots without a sample) learns it here.
+        HuntEfficiency.observe(resolvedState);
         // An atomic group commits all members or none: as before, its cleanup
         // is decided on the claimed state, so a member its party releases in
         // this commit does not fail the whole group.

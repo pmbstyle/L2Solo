@@ -6,7 +6,7 @@ const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
 const PersonaEconomicPolicy = invoke('GameServer/Bot/Economy/PersonaEconomicPolicy');
 const WealthInvestmentPolicy = invoke('GameServer/Bot/Economy/WealthInvestmentPolicy');
 const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
-const ProgressionRates = invoke('GameServer/ProgressionRates');
+const HuntEfficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
 
@@ -303,8 +303,7 @@ function evaluate(state = {}, options = {}) {
         ? (() => {
             const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
             const spendable = PurchaseFunding.spendable(state, escrow);
-            const adenaPerKill = Math.max(20, Number(state.level || 1) * 25)
-                * ProgressionRates.profile().adena;
+            const adenaPerKill = HuntEfficiency.hourValue(state, timestamp).perKill;
             // Clan beneficiaries can spend a modest premium to finish a shared
             // equipment goal sooner; personal crafting keeps a savings margin.
             const farmPriceFactor = craftPlan.clanGoal?.clanId ? 1.35 : 0.9;

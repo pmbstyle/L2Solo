@@ -1,7 +1,7 @@
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const Loadout = invoke('GameServer/Bot/AI/PartyBuffLoadout');
 const Effects = invoke('GameServer/Effects/EffectStore');
-const Rates = invoke('GameServer/ProgressionRates');
+const HuntEfficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 
 const EXCLUDED_CLASSES = new Set([21, 34, 49, 50, 51, 52]);
 const REFRESH_MS = 2 * 60 * 1000;
@@ -27,11 +27,18 @@ function sameClan(provider, recipient) {
     return first > 0 && first === second;
 }
 
-function incomeForTenMinutes(provider) {
-    const level = Math.max(1, Number(provider?.fetchLevel?.() ?? provider?.level ?? 1));
-    // Approximate a solo support bot's ten-minute farm as six kills at
-    // 25 Adena per level before applying the server's Adena rate.
-    return Math.round(Math.max(20, level * 25) * 6 * Rates.profile().adena);
+// A hot actor's hour value comes from its life state (its cold samples); a
+// player or an actor without one is valued at its level band.
+function lifeStateOf(entity) {
+    if (entity?.stats) return entity;
+    const id = Number(entity?.fetchId?.() || 0);
+    return (id && invoke('GameServer/Bot/Population/BotLifeState').cachedState(id))
+        || { level: Math.max(1, Number(entity?.fetchLevel?.() ?? entity?.level ?? 1)) };
+}
+
+// What ten minutes of the bot's hunting earn: its hour value / 6.
+function incomeForTenMinutes(entity) {
+    return Math.round(HuntEfficiency.hourValue(lifeStateOf(entity)).perHour / 6);
 }
 
 function priceFor({ provider, recipient, skills, town, trust = 0 }) {

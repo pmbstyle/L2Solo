@@ -9,6 +9,7 @@ const Listings = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const Market = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+const Efficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 DataCache.init();
 
 const originalRate = process.env.L2NODE_PROGRESSION_RATE;
@@ -79,11 +80,21 @@ try {
     assert.strictEqual(BuyStore.bidFor(state, quotedGoal).price, 2500000, 'WTB must respect a concrete offer limit');
 
     const originalOffers = AfkTrade.offers;
-    const materialBuyer = { characterId: 2004011, level: 50, adena: 10000000,
+    // A kill is worth the bot's measured income per kill (its hour value),
+    // whatever the rate: three hunts of 10 kills earning perKill each.
+    const withIncome = (buyer, perKill) => {
+        let next = buyer;
+        for (let i = 0; i < 3; i += 1) {
+            next = { ...next, stats: { ...next.stats, huntEfficiency: Efficiency.record(next, { spotId: 'field',
+                exp: 1000, combatMs: 60000, adena: perKill * 8, loot: perKill * 2, kills: 10, timestamp: 1000 }) } };
+        }
+        return next;
+    };
+    const materialBuyer = withIncome({ characterId: 2004011, level: 50, adena: 10000000,
         inventory: {}, stats: { equipmentPlan: { status: 'active', strategy: 'craft',
             recipeId: 1, marketFallback: false, clanGoal: { clanId: 1 }, materials: [
                 { selfId: 2068, amount: 3, missing: 3, farmEffort: 1000 }
-            ], next: { itemId: 2068 } } } };
+            ], next: { itemId: 2068 } } } }, 12500);
     try {
         let ask = 3000000;
         AfkTrade.offers = (selfId, type, options) => {
@@ -93,7 +104,7 @@ try {
             return [{ selfId: 2068, price: ask, count: 3, town: 'Giran',
                 sourceType: 'afk_bot_store', sourceId: 2004012 }];
         };
-        const materialGoal = () => Needs.evaluate(materialBuyer, { now: 1000 })
+        const materialGoal = (buyer = materialBuyer) => Needs.evaluate(buyer, { now: 1000 })
             .find((candidate) => candidate.type === 'buy_craft_material');
         const wanted = materialGoal();
         assert.strictEqual(wanted.target.itemId, 2068, 'a fresh craft plan must notice a cheaper AFK component');
@@ -101,10 +112,11 @@ try {
         assert.strictEqual(wanted.plan.priceSource, 'offer');
         assert.strictEqual(BuyStore.bidFor(materialBuyer, wanted).price, ask,
             'a reviewed AFK ask may exceed the generic material price cap');
-        process.env.L2NODE_PROGRESSION_RATE = 'x1';
-        assert.strictEqual(materialGoal(), undefined,
-            'the same ask must be too expensive when farming earns x1 Adena');
-        process.env.L2NODE_PROGRESSION_RATE = 'x10';
+        // The decided hour value (N0b/G8) replaces the author's level x 25 x rate:
+        // a bot that measurably earns a tenth per kill finds the same ask too expensive.
+        assert.strictEqual(materialGoal(withIncome({ ...materialBuyer,
+            stats: { ...materialBuyer.stats, huntEfficiency: [] } }, 1250)), undefined,
+        'the same ask must be too expensive for a bot that earns a tenth per kill');
         ask = 7000000;
         assert.strictEqual(materialGoal(), undefined, 'an ask costlier than farming must be ignored');
         assert.strictEqual(Needs.evaluate({ ...materialBuyer,

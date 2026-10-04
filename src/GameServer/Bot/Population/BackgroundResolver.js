@@ -1858,8 +1858,11 @@ const BackgroundResolver = {
             }
         }
 
-        patch.stats.huntEfficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency').record(state, {
+        const HuntEfficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
+        const lootValue = HuntEfficiency.lootValue(materialize.items);
+        patch.stats.huntEfficiency = HuntEfficiency.record(state, {
             spotId:spot.id,combatMs,exp:materialize.exp,timestamp,
+            adena:materialize.adena,loot:lootValue,kills:wins,
             recoveryMs:Math.max(0,Number(patch.stats.restUntil || timestamp)-timestamp)
         });
         if (wins > 0 && !died) {
@@ -1884,6 +1887,7 @@ const BackgroundResolver = {
                 pendingFight: !!patch.stats.pveEncounter,
                 wins,
                 died,
+                lootValue,
                 dropsRolled: materialize.items.length,
                 dropsAwarded: materialize.items.reduce((sum, item) => sum + Number(item.amount || 0), 0),
                 spotId: spot.id,

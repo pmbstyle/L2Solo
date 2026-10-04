@@ -2522,6 +2522,8 @@ const BotLifeState = {
                         // Replace the resolver's provisional gross reward sample.
                         huntEfficiency: invoke('GameServer/Bot/AI/BotHuntEfficiency').record(state, {
                             spotId: nextSpotId, timestamp, exp: exp - Number(state.exp || 0),
+                            adena: Number(result.materialize?.adena || 0),
+                            loot: Number(result.debug.lootValue || 0), kills: Number(result.debug.wins || 0),
                             combatMs: result.debug.combatMs,
                             recoveryMs: Math.max(0, Number(result.patch?.stats?.restUntil || timestamp) - timestamp)
                         })

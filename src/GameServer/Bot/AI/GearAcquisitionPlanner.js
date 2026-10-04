@@ -6,6 +6,7 @@ const C4DualSwordCombinations = invoke('GameServer/Items/C4DualSwordCombinations
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
+const HuntEfficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
@@ -714,8 +715,9 @@ function marketOfferForTarget(target, state = {}, options = {}) {
         .sort((left, right) => OfferOrder.compareOffers(left, right, origin))[0] || null;
 }
 
+// What one kill earns the bot: its measured hour value per kill.
 function expectedAdenaPerKill(state = {}) {
-    return Math.max(20, Number(state.level || 1) * 25);
+    return HuntEfficiency.hourValue(state).perKill;
 }
 
 function marketEffort(offer, state) {
