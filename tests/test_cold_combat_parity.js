@@ -135,7 +135,7 @@ const SOLO_GOLDEN = {
     'necromancer corpse servitor': { won: true, died: false, hp: 1009, mp: 2424, charges: 0, actions: 6, durationMs: 6902, skillUses: 2, shotActions: 2, heals: 0, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     'swordsinger songs': { won: true, died: false, hp: 1218, mp: 13, charges: 0, actions: 29, durationMs: 22185, skillUses: 6, shotActions: 11, heals: 0, musicUses: 6, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     'tyrant': { won: true, died: false, hp: 1838, mp: 691, charges: 0, actions: 7, durationMs: 3655, skillUses: 4, shotActions: 3, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'paladin': { won: true, died: false, hp: 1542, mp: 612, charges: 0, actions: 28, durationMs: 26395, skillUses: 9, shotActions: 11, heals: 1, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'paladin': { won: true, died: false, hp: 1183, mp: 515, charges: 0, actions: 42, durationMs: 39487, skillUses: 13, shotActions: 17, heals: 1, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     'sorcerer 40 dies': { won: false, died: true, hp: 0, mp: 1663, charges: 0, actions: 9, durationMs: 11325, skillUses: 2, shotActions: 1, heals: 1, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     'bladedancer dances': { won: true, died: false, hp: 578, mp: 13, charges: 0, actions: 35, durationMs: 26083, skillUses: 6, shotActions: 13, heals: 0, musicUses: 6, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     'gladiator times out': { won: false, died: false, hp: 1561, mp: 679, charges: 0, actions: 6, durationMs: 4000, skillUses: 3, shotActions: 2, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 684, botReadyAt: 216 },
@@ -229,6 +229,25 @@ assert.strictEqual(delay({ castSpd: 333, atkSpd: 1332 }, { spell: false, hitTime
 assert.strictEqual(delay({ castSpd: 1332, atkSpd: 333 }, { spell: true, hitTime: 0 }), 500, 'spell fallback 1000 ms keeps the 500 ms floor');
 assert.strictEqual(delay(speeds), 1411.411, 'normal attack at attack speed 333');
 assert.strictEqual(delay({ castSpd: 333, atkSpd: 2000 }), 250, 'normal attack: 250 ms floor (cold only; C4 has no attack-time floor)');
+
+// ---------- magic critical rate in the cold profile ----------
+// The cold profile stores the C4 rate once: base 8 x WIT bonus (a weapon is held) x magic-critical buffs.
+const sorcererWit = Number(sorcererProfileFor().base.wit);
+function sorcererProfileFor(effects = []) {
+    return ColdCombatProfile.profileFor({ ...sorcerer, stats: { ...sorcerer.stats, coldCombat: { effects } } }, TS);
+}
+const plainSorcerer = sorcererProfileFor();
+const Formulas = invoke('GameServer/Formulas');
+assert.strictEqual(plainSorcerer.mCritRate, 8 * Formulas.calcBaseMod.WIT(Math.max(1, Math.round(sorcererWit))),
+    'cold magic critical rate: 8 x WIT bonus with a weapon');
+const wildMagic = { key: 'wild_magic', id: 1303, level: 2, type: 'buff', stats: { mCritRateMul: 4 }, expiresAt: TS + 60000 };
+assert.strictEqual(sorcererProfileFor([wildMagic]).mCritRate, plainSorcerer.mCritRate * 4, 'Wild Magic quadruples the cold magic critical rate');
+const focus = { key: 'focus', id: 1077, level: 3, type: 'buff', stats: { pCritRateMul: 1.3, pCritRateAdd: 100 }, expiresAt: TS + 60000 };
+const focused = sorcererProfileFor([focus]);
+assert.ok(focused.critical > plainSorcerer.critical, 'Focus raises the physical critical rate');
+assert.strictEqual(focused.mCritRate, plainSorcerer.mCritRate, 'a physical critical buff does not change spell criticals');
+const unarmed = ColdCombatProfile.profileFor({ ...sorcerer, inventory: {} }, TS);
+assert.strictEqual(unarmed.mCritRate, 8, 'no weapon: the base 8 per mille');
 
 // ---------- clan raid estimate cast cycle ----------
 const sorcererProfile = ColdCombatProfile.profileFor(sorcerer, TS);

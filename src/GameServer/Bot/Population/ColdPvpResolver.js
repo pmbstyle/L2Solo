@@ -109,7 +109,7 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
             incident(target, next);
             let damage = selected?.magic
                 ? Formulas.calcMagicDamage(next.profile.mAtk, Math.max(1, selected.power), target.profile.mDef,
-                    { magicCritical: rng() < Math.min(0.25, next.profile.critical / 1000) })
+                    { magicCritical: Formulas.rollCritical(next.profile.mCritRate, rng) })
                 : combat.hitSucceeds(next.profile.accur, target.profile.evasion, rng)
                     ? Formulas.calcPhysicalDamage(next.profile.pAtk, next.profile.equipment.pAtkRnd,
                         target.profile.pDef, selected?.power || 0, { critical: Formulas.rollCritical(next.profile.critical, rng), rng }) : 0;

@@ -972,10 +972,12 @@ class Attack {
             const usedBlessedSpiritshot = usedSpiritshot && !!actor.blessedSpiritshotLoaded;
             const semantic = skill.fetchSemantic?.() || {};
             const vulnModifier = traitVulnerabilityModifier(creature, semantic.trait);
-            const magicCriticalRate = Math.min(300, Math.max(0,
-                (8 * EffectStats.multiplier(actor, 'mCritRateMul'))
-                + EffectStats.add(actor, 'mCritRateAdd')
-            ));
+            const magicCriticalRate = Formulas.magicCriticalRate({
+                multiplier: EffectStats.multiplier(actor, 'mCritRateMul'),
+                add: EffectStats.add(actor, 'mCritRateAdd'),
+                wit: actor.fetchCollectiveWit?.(),
+                weapon: !!actor.backpack?.fetchEquippedWeapon?.()
+            });
             const magicCritical = Formulas.rollCritical(magicCriticalRate, rng);
             const power = semantic.skillType === C4SkillRules.DEATH_LINK
                 ? Formulas.calcDeathLinkPower(skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.())

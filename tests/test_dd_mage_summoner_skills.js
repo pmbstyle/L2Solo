@@ -134,6 +134,19 @@ const baselineMagicCritical = magicAttack.prepareSkillDamage(magicCaster, magicT
 assert.strictEqual(baselineMagicCritical, ordinaryMagicDamage * 4, 'C4 baseline magic critical rate should be 8 per 1000');
 EffectStore.apply(magicCaster, { key: 'wild_magic', id: 1303, level: 2, type: 'buff', stats: { mCritRateMul: 4 }, durationMs: 60000 });
 assert.strictEqual(magicAttack.prepareSkillDamage(magicCaster, magicTarget, prominence, true, () => 0.02), ordinaryMagicDamage * 4, 'Wild Magic should multiply the baseline magic critical rate');
+const unarmedCaster = combatant(2000103);
+assert.strictEqual(magicAttack.prepareSkillDamage(unarmedCaster, magicTarget, prominence, true, () => 0.0079), ordinaryMagicDamage * 4, 'rng 0.0079 is under the 8 per mille base: a magic critical');
+assert.strictEqual(magicAttack.prepareSkillDamage(unarmedCaster, magicTarget, prominence, true, () => 0.009), ordinaryMagicDamage, 'rng 0.009 is over the 8 per mille base: no magic critical');
+// C4 FuncMAtkCritical: with a weapon the base 8 is multiplied by the WIT bonus (WIT 30: 1.715 -> 13.7 per mille)
+const armedCaster = { ...combatant(2000104), fetchCollectiveWit: () => 30,
+    backpack: { fetchTotalWeaponPAtkRnd: () => 0, fetchEquippedWeapon: () => ({}) } };
+assert.strictEqual(magicAttack.prepareSkillDamage(armedCaster, magicTarget, prominence, true, () => 0.0135), ordinaryMagicDamage * 4, 'WIT 30 with a weapon: 13.7 per mille');
+assert.strictEqual(magicAttack.prepareSkillDamage(armedCaster, magicTarget, prominence, true, () => 0.014), ordinaryMagicDamage, 'WIT 30 with a weapon: not 14 per mille');
+const unarmedWitCaster = { ...combatant(2000105), fetchCollectiveWit: () => 30 };
+assert.strictEqual(magicAttack.prepareSkillDamage(unarmedWitCaster, magicTarget, prominence, true, () => 0.009), ordinaryMagicDamage, 'without a weapon WIT does not raise the magic critical rate');
+const physicalCritCaster = combatant(2000106);
+EffectStore.apply(physicalCritCaster, { key: 'focus', id: 1077, level: 3, type: 'buff', stats: { pCritRateMul: 1.3, pCritRateAdd: 100 }, durationMs: 60000 });
+assert.strictEqual(magicAttack.prepareSkillDamage(physicalCritCaster, magicTarget, prominence, true, () => 0.009), ordinaryMagicDamage, 'physical critical buffs do not raise spell criticals');
 
 const baneCaster = combatant(2000201);
 const baneTarget = combatant(2000202);

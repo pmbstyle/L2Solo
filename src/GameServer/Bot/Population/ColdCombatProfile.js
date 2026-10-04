@@ -532,10 +532,16 @@ function profileFor(state = {}, timestamp = Date.now()) {
     const atkSpd = Math.round(Formulas.calcAtkSpd(dex, number(equipment.atkSpd, number(profile.base.atkSpd)))
         * multiplier(profile, 'pAtkSpdMul', timestamp, sources));
     const castSpd = Math.round(Formulas.calcCastSpd(wit) * multiplier(profile, 'castSpdMul', timestamp, sources));
+    const mCritRate = Formulas.magicCriticalRate({
+        multiplier: multiplier(profile, 'mCritRateMul', timestamp, sources),
+        add: add(profile, 'mCritRateAdd', timestamp, sources),
+        wit,
+        weapon: !!equipment.weaponKind
+    });
     return {
         ...profile, level, maxCp, cp, maxHp: Math.max(1, maxHp), maxMp: Math.max(1, maxMp), pAtk: Math.max(1, pAtk), mAtk: Math.max(1, mAtk),
         pDef: Math.max(1, pDef), mDef: Math.max(1, mDef), accur: Math.max(1, accur), evasion: Math.max(0, evasion),
-        critical: Math.max(0, critical), atkSpd: Math.max(1, atkSpd), castSpd: Math.max(1, castSpd),
+        critical: Math.max(0, critical), mCritRate, atkSpd: Math.max(1, atkSpd), castSpd: Math.max(1, castSpd),
         weaponMask: (WEAPON_MASK_BY_KIND[equipment.weaponKind] || 0) | (number(equipment.shieldPDef) > 0 ? 1048576 : 0)
     };
 }

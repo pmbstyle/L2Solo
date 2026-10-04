@@ -323,6 +323,16 @@ const Formulas = {
             + (Math.max(0, Number(pAtkRnd) || 0) * Math.max(0, Math.min(1, Number(rng()) || 0)));
     },
 
+    // Lisvus C4 magic critical rate in per mille (CharStat.getMCriticalHit,
+    // FuncMAtkCritical in Formulas.java:390-415): base 8, times the WIT bonus
+    // when the caster holds a weapon, times the magic-critical multipliers,
+    // plus flat bonuses, capped at 300 (MaxMCritRate). The WIT bonus is the
+    // server's own table, the one cast speed uses.
+    magicCriticalRate({ multiplier = 1, add = 0, wit = 0, weapon = false } = {}) {
+        const witBonus = weapon ? this.calcBaseMod.WIT(Number(wit) || 0) : 1;
+        return Math.min(300, Math.max(0, (8 * witBonus * multiplier) + add));
+    },
+
     rollCritical(critical, rng = Math.random) {
         return (Number(critical) || 0) > rng() * 1000;
     },

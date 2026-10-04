@@ -128,6 +128,8 @@ function setCollectiveTotalAtkSpd(actor) {
 
 function setCollectiveTotalCastSpd(actor) {
     const wit = effectiveBaseStat(actor, 'WIT', () => actor.fetchWit());
+    // Kept for the magic critical rate, so a cast does not recompute WIT.
+    actor.setCollectiveWit?.(wit);
     let base = Formulas.calcCastSpd(wit);
     base = Math.round(base * EffectStats.multiplier(actor, 'castSpdMul'));
     actor.setCollectiveCastSpd(base);

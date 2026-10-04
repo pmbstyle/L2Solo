@@ -130,6 +130,20 @@ assert.strictEqual(hitTime(300, 999), 100, 'physical, base under 500 ms: no floo
 assert.strictEqual(hitTime(5000, 1332, { magic: true, spiritshot: true, staticHitTime: true }), 5000,
     'a static skill keeps its base cast time');
 
+// Formulas.magicCriticalRate: C4 base 8 per mille, times the WIT bonus with a weapon, cap 300.
+const mCrit = (options) => Math.round(Formulas.magicCriticalRate(options) * 10) / 10;
+assert.strictEqual(mCrit({}), 8, 'C4 base magic critical rate is 8 per mille');
+assert.strictEqual(Formulas.rollCritical(Formulas.magicCriticalRate({}), () => 0.0079), true, 'rng 0.0079 crits at 8 per mille');
+assert.strictEqual(Formulas.rollCritical(Formulas.magicCriticalRate({}), () => 0.009), false, 'rng 0.009 does not crit at 8 per mille');
+assert.strictEqual(mCrit({ wit: 30 }), 8, 'without a weapon WIT does not count');
+assert.strictEqual(mCrit({ wit: 20, weapon: true }), 8.4, 'WIT 20 with a weapon: 8.4 per mille');
+assert.strictEqual(mCrit({ wit: 30, weapon: true }), 13.7, 'WIT 30 with a weapon: 13.7 per mille');
+assert.strictEqual(mCrit({ wit: 40, weapon: true }), 22.3, 'WIT 40 with a weapon: 22.3 per mille');
+assert.strictEqual(mCrit({ multiplier: 4 }), 32, 'Wild Magic level 2 quadruples the rate');
+assert.strictEqual(mCrit({ add: 10 }), 18, 'flat bonuses add after the multipliers');
+assert.strictEqual(mCrit({ multiplier: 100, wit: 40, weapon: true }), 300, 'capped at 300 per mille');
+assert.strictEqual(mCrit({ add: -50 }), 0, 'never below zero');
+
 const attack = new Attack();
 const magicActor = actor();
 magicActor.spiritshotLoaded = true;

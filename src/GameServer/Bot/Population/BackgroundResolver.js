@@ -1004,7 +1004,7 @@ function coldBotTurn(fighter, { allies, mob, mobHp, at, time, rng, party = false
     const skill = selected?.skill || null;
     let damage = 0;
     if (selected?.magic) {
-        const magicCritical = rng() < clamp(profile.critical / 1000, 0, 0.25);
+        const magicCritical = Formulas.rollCritical(profile.mCritRate, rng);
         const semantic = C4SkillRules.resolve(selected.skill);
         damage = Formulas.calcMagicDamage(profile.mAtk, Math.max(1, selected.power), mob.mDef, { magicCritical })
             * coldMagicTargetModifier(mob, semantic);

@@ -92,6 +92,10 @@ class CreatureModel extends SelectedModel {
         this.model.collectiveCastSpd = data;
     }
 
+    setCollectiveWit(data) {
+        this.model.collectiveWit = data;
+    }
+
     setCollectiveWalkSpd(data) {
         this.model.collectiveWalkSpd = data;
     }
@@ -220,6 +224,10 @@ class CreatureModel extends SelectedModel {
 
     fetchCollectiveCastSpd() {
         return this.model.collectiveCastSpd ?? this.fetchCastSpd();
+    }
+
+    fetchCollectiveWit() {
+        return this.model.collectiveWit ?? this.fetchWit();
     }
 
     fetchWalkSpd() {
