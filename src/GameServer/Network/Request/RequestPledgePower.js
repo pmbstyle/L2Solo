@@ -2,6 +2,7 @@ const ReceivePacket = invoke('Packet/Receive');
 const World = invoke('GameServer/World/World');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const ServerResponse = invoke('GameServer/Network/Response');
+const ActionMessage = invoke('GameServer/Clan/ClanActionMessage');
 
 function onlineSessionByActorId(id) {
     return (World.user?.sessions || []).find((session) => Number(session.actor?.fetchId?.()) === Number(id));
@@ -29,17 +30,20 @@ function consume(session, data) {
     const clan = ClanService.clanForActor(session.actor);
     if (!clan) {
         session.dataSendToMe(ServerResponse.actionFailed());
+        ActionMessage.failure(session, 'no_clan');
         return;
     }
 
     if (data.action === 1) {
         session.dataSendToMe(ServerResponse.managePledgePower(session.actor.fetchClanPrivileges()));
+        ActionMessage.send(session, 'Clan privilege management opened.');
         return;
     }
 
     const targetSession = onlineSessionByActorId(data.memberId);
     if (data.action === 2 && targetSession?.actor) {
         session.dataSendToMe(ServerResponse.managePledgePower(targetSession.actor.fetchClanPrivileges()));
+        ActionMessage.send(session, `Clan privileges viewed for ${targetSession.actor.fetchName()}.`);
         return;
     }
 
@@ -47,15 +51,19 @@ function consume(session, data) {
         ClanService.setPrivileges(session.actor, targetSession.actor, data.privileges).then((result) => {
             if (!result.ok) {
                 session.dataSendToMe(ServerResponse.actionFailed());
+                ActionMessage.failure(session, result.code);
                 return;
             }
             targetSession.dataSendToMe(ServerResponse.userInfo(targetSession.actor));
             targetSession.dataSendToMe(ServerResponse.pledgeShowInfoUpdate(clan));
+            ActionMessage.send(session, `Clan privileges updated for ${targetSession.actor.fetchName()}.`);
+            ActionMessage.send(targetSession, `Your clan privileges were updated by ${session.actor.fetchName()}.`);
         });
         return;
     }
 
     session.dataSendToMe(ServerResponse.actionFailed());
+    ActionMessage.failure(session, 'not_authorized');
 }
 
 module.exports = requestPledgePower;

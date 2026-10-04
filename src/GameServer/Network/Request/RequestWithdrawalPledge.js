@@ -1,5 +1,6 @@
 const ClanService = invoke('GameServer/Clan/ClanService');
 const ServerResponse = invoke('GameServer/Network/Response');
+const ActionMessage = invoke('GameServer/Clan/ClanActionMessage');
 
 function requestWithdrawalPledge(session) {
     const actor = session.actor;
@@ -7,6 +8,7 @@ function requestWithdrawalPledge(session) {
 
     if (!clan || ClanService.isLeader(actor, clan)) {
         session.dataSendToMe(ServerResponse.actionFailed());
+        ActionMessage.failure(session, clan ? 'leader_cannot_leave' : 'no_clan');
         return Promise.resolve({ ok: false, code: 'leader_cannot_leave' });
     }
 
@@ -24,10 +26,12 @@ function requestWithdrawalPledge(session) {
             memberSession.dataSendToMe(ServerResponse.pledgeShowMemberListDelete(name));
             memberSession.dataSendToMe(ServerResponse.pledgeShowInfoUpdate(result.clan));
         });
+        ActionMessage.send(session, `You left clan ${result.clan.name}.`);
         return result;
     }).catch((err) => {
         utils.infoWarn('Clan', 'leave clan failed: %s', err.message);
         session.dataSendToMe(ServerResponse.actionFailed());
+        ActionMessage.failure(session, 'leave_failed');
         return { ok: false, code: 'leave_failed' };
     });
 }

@@ -1,6 +1,7 @@
 const ReceivePacket = invoke('Packet/Receive');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const ServerResponse = invoke('GameServer/Network/Response');
+const ActionMessage = invoke('GameServer/Clan/ClanActionMessage');
 
 function requestPledgeCrest(session, buffer) {
     const packet = new ReceivePacket(buffer);
@@ -22,6 +23,7 @@ function requestPledgeCrest(session, buffer) {
         if (!crest) {
             utils.infoWarn('ClanCrest', 'missing crest actor=%s crest=%d clan=%d', actorName, crestId, clanId);
             session.dataSendToMe(ServerResponse.actionFailed());
+            ActionMessage.failure(session, 'no_clan_crest');
             return;
         }
 
@@ -29,10 +31,12 @@ function requestPledgeCrest(session, buffer) {
         utils.infoSuccess('ClanCrest', 'response actor=%s crest=%d clan=%d bytes=%d signature=%s',
             actorName, crest.id, crest.clanId, crest.data.length, crest.data.toString('ascii', 0, 4));
         session.dataSendToMe(response);
+        ActionMessage.send(session, 'Clan crest loaded.');
     }).catch((error) => {
         utils.infoWarn('ClanCrest', 'request failed actor=%s crest=%d clan=%d: %s',
             actorName, crestId, clanId, error.message);
         session.dataSendToMe(ServerResponse.actionFailed());
+        ActionMessage.failure(session, 'crest_failed');
     });
 }
 

@@ -1,5 +1,6 @@
 const ClanService = invoke('GameServer/Clan/ClanService');
 const ServerResponse = invoke('GameServer/Network/Response');
+const ActionMessage = invoke('GameServer/Clan/ClanActionMessage');
 
 function isBotSession(session) {
     return !!(session && (
@@ -30,6 +31,7 @@ function accept(session, options = {}) {
 
     if (!invite?.requestorSession?.actor) {
         session.dataSendToMe(ServerResponse.actionFailed());
+        ActionMessage.failure(session, 'missing_invite');
         return Promise.resolve({ ok: false, code: 'missing_invite' });
     }
 
@@ -37,23 +39,34 @@ function accept(session, options = {}) {
     const clan = ClanService.findById(invite.clanId);
     if (!answer || !clan) {
         invite.requestorSession.dataSendToMe(ServerResponse.actionFailed());
+        ActionMessage.send(invite.requestorSession, answer ? 'The invited clan is no longer available.' : 'The clan invitation was declined.');
+        ActionMessage.send(session, answer ? 'The invited clan is no longer available.' : 'You declined the clan invitation.');
         return Promise.resolve({ ok: false, code: answer ? 'missing_clan' : 'declined' });
     }
 
     const allowed = ClanService.canInvite(requestor, session.actor);
     if (!allowed.ok || Number(allowed.clan.id) !== Number(clan.id)) {
         session.dataSendToMe(ServerResponse.actionFailed());
+        ActionMessage.failure(session, allowed.code || 'not_allowed');
+        ActionMessage.failure(invite.requestorSession, allowed.code || 'not_allowed');
         return Promise.resolve({ ok: false, code: allowed.code || 'not_allowed' });
     }
 
     return ClanService.addMember(clan, session.actor, 0).then((result) => {
-        if (!result.ok) return result;
+        if (!result.ok) {
+            session.dataSendToMe(ServerResponse.actionFailed());
+            ActionMessage.failure(session, result.code);
+            ActionMessage.failure(invite.requestorSession, result.code);
+            return result;
+        }
         session.dataSendToMe(ServerResponse.joinPledge(clan.id));
         session.dataSendToMe(ServerResponse.pledgeShowMemberListAll(
             ClanService.refreshOnlineMembers(clan),
             session.actor
         ));
         session.dataSendToMe(ServerResponse.pledgeShowInfoUpdate(clan));
+        ActionMessage.send(session, `You joined clan ${clan.name}.`);
+        ActionMessage.send(invite.requestorSession, `${session.actor.fetchName()} joined clan ${clan.name}.`);
         refreshAppearance(session);
 
         broadcastClan(clan, (memberSession) => (
@@ -73,6 +86,7 @@ function accept(session, options = {}) {
     }).catch((err) => {
         utils.infoWarn('Clan', 'join clan failed: %s', err.message);
         session.dataSendToMe(ServerResponse.actionFailed());
+        ActionMessage.failure(session, 'join_failed');
         return { ok: false, code: 'join_failed' };
     });
 }

@@ -2,6 +2,7 @@ const ReceivePacket = invoke('Packet/Receive');
 const World = invoke('GameServer/World/World');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const ServerResponse = invoke('GameServer/Network/Response');
+const ActionMessage = invoke('GameServer/Clan/ClanActionMessage');
 
 function onlineSessionByActorId(id) {
     return (World.user?.sessions || []).find((session) => Number(session.actor?.fetchId?.()) === Number(id));
@@ -23,6 +24,7 @@ function consume(session, data) {
     const clan = ClanService.clanForActor(actor);
     if (!clan || !ClanService.isLeader(actor, clan)) {
         session.dataSendToMe(ServerResponse.actionFailed());
+        ActionMessage.failure(session, 'not_authorized');
         return Promise.resolve({ ok: false, code: 'not_authorized' });
     }
 
@@ -30,12 +32,14 @@ function consume(session, data) {
     const targetSession = member ? onlineSessionByActorId(member.id) : null;
     if (!member || Number(member.id) === Number(actor.fetchId())) {
         session.dataSendToMe(ServerResponse.actionFailed());
+        ActionMessage.failure(session, member ? 'leader_cannot_leave' : 'not_member');
         return Promise.resolve({ ok: false, code: member ? 'leader_cannot_leave' : 'not_member' });
     }
 
     return ClanService.removeMemberById(clan, member.id, { force: true, actor: targetSession?.actor }).then((result) => {
         if (!result.ok) {
             session.dataSendToMe(ServerResponse.actionFailed());
+            ActionMessage.failure(session, result.code);
             return result;
         }
         if (targetSession?.actor) {
@@ -48,10 +52,13 @@ function consume(session, data) {
             memberSession.dataSendToMe(ServerResponse.pledgeShowMemberListDelete(member.name));
             memberSession.dataSendToMe(ServerResponse.pledgeShowInfoUpdate(result.clan));
         });
+        ActionMessage.send(session, `${member.name} was removed from clan ${result.clan.name}.`);
+        ActionMessage.send(targetSession, `You were removed from clan ${result.clan.name}.`);
         return result;
     }).catch((err) => {
         utils.infoWarn('Clan', 'oust clan member failed: %s', err.message);
         session.dataSendToMe(ServerResponse.actionFailed());
+        ActionMessage.failure(session, 'oust_failed');
         return { ok: false, code: 'oust_failed' };
     });
 }
