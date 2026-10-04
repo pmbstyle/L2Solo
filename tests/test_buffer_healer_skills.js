@@ -265,9 +265,13 @@ let recalledTarget = null;
 try {
     global.invoke = (module) => {
         if (module === 'GameServer/World/TownRespawn') {
+            const respawn = { locX: 10, locY: 20, locZ: 30 };
+            const chaotic = { locX: -10, locY: -20, locZ: -30 };
             return {
-                getRespawnCoords: () => ({ locX: 10, locY: 20, locZ: 30 }),
-                getChaoticRespawnCoords: () => ({ locX: -10, locY: -20, locZ: -30 })
+                getRespawnCoords: () => respawn,
+                getChaoticRespawnCoords: () => chaotic,
+                // Recall resolves its destination through the one restart choice (U29).
+                restartCoords: (target) => (Number(target.fetchKarma?.() || 0) > 0 ? chaotic : respawn)
             };
         }
         if (module === 'GameServer/Actor/Generics/TeleportTo') {
