@@ -164,6 +164,27 @@ try {
     result = BotAvailability.evaluate(lowPlayer, soloBot, { forceFriend: true });
     assert.strictEqual(result.available, true, 'a const friend invite must override persona solo preference');
 
+    // Social refusals: trust -6 or lower, or an abandonment in the last five minutes.
+    const at = 2000000000000;
+    const refusal = (nextMemory, options = {}) => {
+        memory = nextMemory;
+        return [BotAvailability.evaluate(lowPlayer, socialBot, { timestamp: at, ...options }),
+            BotAvailability.evaluateState(lowPlayer, farColdBot, { timestamp: at, ...options })]
+            .map((entry) => [entry.reason, entry.reasonText]);
+    };
+    const lowTrust = [['low_trust', 'low trust'], ['low_trust', 'low trust']];
+    const abandoned = [['recently_abandoned', 'recently abandoned'], ['recently_abandoned', 'recently abandoned']];
+    const open = [['available', 'available'], ['available', 'available']];
+    assert.deepStrictEqual(refusal({ trust: -6, familiarity: 0, recentlyAbandonedAt: null }), lowTrust);
+    assert.deepStrictEqual(refusal({ trust: -6, familiarity: 0, recentlyAbandonedAt: at - 1000 }), lowTrust,
+        'low trust is named before an abandonment');
+    assert.deepStrictEqual(refusal({ trust: -5, familiarity: 0, recentlyAbandonedAt: null }), open);
+    assert.deepStrictEqual(refusal({ trust: 0, familiarity: 0, recentlyAbandonedAt: at - 5 * 60 * 1000 + 1 }), abandoned);
+    assert.deepStrictEqual(refusal({ trust: 0, familiarity: 0, recentlyAbandonedAt: at - 5 * 60 * 1000 }), open);
+    assert.deepStrictEqual(refusal({ trust: -6, familiarity: 0, recentlyAbandonedAt: at }, { forceFriend: true }), open,
+        'a const friend summon ignores social refusals');
+    memory = { trust: 0, familiarity: 0, recentlyAbandonedAt: null };
+
     const farLowFriend = session(actor(2000015, 55, 0, { locX: 100000 }), {
         persona: { primaryDrive: 'wealth', traits: { sociability: 0.30, empathy: 0.35, commitment: 0.45 } }
     });

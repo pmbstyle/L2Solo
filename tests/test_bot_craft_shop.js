@@ -52,6 +52,14 @@ async function run() {
     assert.strictEqual(CraftShopService.canCraft({ level: 36, stats: { classId: 56 } }, { level: 5 }), false,
         'a crafter needs the recipe level');
     assert.strictEqual(CraftShopService.canCraft({ level: 41, stats: { classId: 57 } }, { level: 4 }), true);
+    // Crafter classes: spoiler dwarves and Dwarven Fighters never craft.
+    [[53, 30], [54, 40], [55, 60], [117, 78]].forEach(([classId, level]) => assert.strictEqual(
+        CraftShopService.isServiceCrafter({ level, stats: { classId } }), false, `class ${classId} is not a crafter class`));
+    assert.strictEqual(CraftShopService.isServiceCrafter({ classId: 57, level: 70 }), true, 'a top-level class id counts too');
+    const maestro = { level: 78, stats: { classId: 118 } };
+    assert.strictEqual(CraftShopService.isServiceCrafter(maestro), false, 'a Maestro is not a crafter class yet');
+    assert.strictEqual(CraftShopService.canCraft(maestro, levelOneRecipe), false);
+    assert.deepStrictEqual(CraftShopService.availableRecipes(maestro), []);
     const loadedTree = DataCache.skillTree;
     DataCache.skillTree = loadedTree.filter((entry) => entry.classId !== 56);
     assert.strictEqual(CraftShopService.craftLevelFor({ level: 41, stats: { classId: 57 } }), 1,

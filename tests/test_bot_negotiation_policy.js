@@ -79,6 +79,29 @@ try {
     assert.strictEqual(BotNegotiationService.cleanup(bot, 'death'), true);
     assert.strictEqual(BotNegotiationService.activeSummary(player), null, 'death cleanup clears both negotiation participants');
     assert.strictEqual(bot.botNegotiationReservations.size, 0, 'death cleanup releases reserved stock');
+    // Relationship labels and the quote each label gets.
+    const labels = [
+        [null, 'stranger'], [{ trust: 0, familiarity: 0 }, 'stranger'], [{ trust: 0, familiarity: 1 }, 'familiar'],
+        [{ trust: 2, familiarity: 4 }, 'familiar'], [{ trust: 3, familiarity: 0 }, 'friendly'],
+        [{ trust: 0, familiarity: 5 }, 'friendly'], [{ trust: 7, familiarity: 9 }, 'friendly'],
+        [{ trust: 8, familiarity: 0 }, 'trusted'], [{ trust: -4, familiarity: 0 }, 'stranger'],
+        [{ trust: -5, familiarity: 0 }, 'wary'], [{ trust: -5, familiarity: 6 }, 'friendly'], [{ trust: -9, familiarity: 3 }, 'wary']
+    ];
+    for (const [memory, label] of labels) {
+        assert.strictEqual(BotSocialMemory.relationship(memory), label, `relationship of ${JSON.stringify(memory)}`);
+    }
+    const quotes = labels.filter(([memory]) => memory).map(([memory]) => {
+        BotSocialMemory.getSnapshot = () => memory;
+        const quote = BotNegotiationService.quoteItem(bot, player, 911, 1).negotiation;
+        BotNegotiationService.declinePrice(bot, player);
+        return [quote.relation, quote.minimumUnitPrice, quote.currentUnitPrice, quote.maximumUnitPrice];
+    });
+    assert.deepStrictEqual(quotes, [
+        ['stranger', 784, 1088, 1306], ['familiar', 780, 1078, 1306], ['familiar', 780, 1078, 1306],
+        ['friendly', 770, 1048, 1306], ['friendly', 770, 1048, 1306], ['friendly', 770, 1048, 1306],
+        ['trusted', 756, 1008, 1306], ['stranger', 784, 1088, 1306], ['wary', 805, 1148, 1366],
+        ['friendly', 770, 1048, 1306], ['wary', 805, 1148, 1366]
+    ], 'each relationship keeps its price');
     console.log('Bot negotiation policy checks passed');
 } finally {
     BotSocialMemory.getSnapshot = originalSnapshot;

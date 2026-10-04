@@ -112,6 +112,13 @@ try {
         assert.strictEqual(BotRoles.inferRole(117), 'spoiler', 'Fortune Seeker must be recognized as a spoiler');
         assert.strictEqual(BotRoles.combatRoleFor({ classId: 57, level: 40 }), 'dps', 'a non-spoiler dwarf branch should remain DPS in combat for now');
         assert.strictEqual(BotRoles.inferRole(118), 'crafter', 'Maestro must retain its crafter role');
+        // Clan rosters count dwarves by the same roles.
+        const ClanPolicy = invoke('GameServer/Clan/ClanSimulationPolicy');
+        assert.deepStrictEqual([
+            { classId: 56, level: 39 }, { classId: 56, level: 45 }, { stats: { classId: 57 }, level: 60 },
+            { classId: 118, level: 78 }, { classId: 55, level: 60 }, { classId: 117, level: 78 }, { classId: 4, level: 40 }
+        ].map((member) => ClanPolicy.rosterRole(member)), ['spoiler', 'crafter', 'crafter', 'crafter', 'spoiler', 'spoiler', 'tank'],
+        'clan roster roles of dwarves');
         const ColdProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
         for (const template of DataCache.classTemplates) {
             const classId = template.classId;

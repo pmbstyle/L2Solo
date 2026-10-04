@@ -89,6 +89,19 @@ async function run() {
         stats: { classId: 57, generatedIndex: 1787947094937 }, persona: { primaryDrive: 'wealth' } };
     assert.strictEqual(Service.eligible(state, 1000000), true,
         'ordinary generated dwarves must not be mistaken for fixed crafting stations');
+    // Only crafter classes craft for profit.
+    assert.strictEqual(Service.eligible({ ...state, level: 36, stats: { ...state.stats, classId: 56 } }), true);
+    assert.strictEqual(Service.eligible({ ...state, stats: { ...state.stats, classId: 55 } }), false,
+        'a Bounty Hunter has Create Item but does not craft');
+    assert.strictEqual(Service.eligible({ ...state, level: 78, stats: { ...state.stats, classId: 118 } }), false,
+        'a Maestro does not craft for profit yet');
+    // A recipe above the crafter's level (7 for a level-60 Warsmith) is skipped.
+    recipe.level = 8;
+    assert.strictEqual(Service.chooseOpportunity(state, [{ recipeId: recipe.recipeId }]), null,
+        'a recipe above the craft level is skipped');
+    recipe.level = 7;
+    assert(Service.chooseOpportunity(state, [{ recipeId: recipe.recipeId }]), 'a recipe at the craft level is crafted');
+    recipe.level = 4;
     // A crafter with a market gear plan keeps the plan's price and reserve out
     // of its input budget.
     const planning = (adena) => ({ ...state, adena, stats: { ...state.stats, equipmentPlan: {

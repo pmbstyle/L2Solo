@@ -23,6 +23,22 @@ assert.strictEqual(main.assess(source, target, { attackingMe: true }, now).immed
 assert.strictEqual(main.assess({ id: 1 }, { id: 3 }, {}, now).affiliation, 'outsider', 'zero affiliations are not allies');
 assert.strictEqual(main.assess(source, { id: 3 }, { clanStance: 'hostile' }, now).diplomaticEnemy, true);
 assert.strictEqual(main.assess(source, target, {}, now + 70 * 86400000).disposition, 'familiar', 'old hostility decays');
+{
+    // Feelings halve every seven days; a late event is aged to the relation's time first.
+    const DAY = 86400000, at = 2000000000000;
+    let decay = Policy.empty(1);
+    decay = Policy.apply(decay, { key: 'pin:1', sourceId: 1, targetId: 7, type: 'attacked', at: at - DAY }, at).snapshot;
+    decay = Policy.apply(decay, { key: 'pin:2', sourceId: 1, targetId: 7, type: 'healed', at: at - 3 * DAY }, at).snapshot;
+    const feelings = (time) => {
+        const row = Policy.view(decay).relation('character', 7, time);
+        return [row.affinity, row.trust, row.hostility, row.fear, row.familiarity];
+    };
+    const late = [-2.359329287984724, -2.359329287984724, 6, 2, 1.820335356007638];
+    assert.deepStrictEqual(feelings(at - DAY), late);
+    assert.deepStrictEqual(feelings(at - 2 * DAY), late, 'a read before the relation time does not grow it');
+    assert.deepStrictEqual(feelings(at + 7 * DAY),
+        [-1.068450183959339, -1.068450183959339, 2.7171709927917203, 0.9057236642639067, 0.8243604044161905]);
+}
 assert.strictEqual(Policy.apply(snapshot, make('contest:0'), now).status, 'duplicate');
 assert.throws(() => Policy.apply(snapshot, make('contest:0', 3), now), /collision/);
 assert.throws(() => Policy.event(make('self', 1)), /self interaction/);

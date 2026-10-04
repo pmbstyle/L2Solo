@@ -23,6 +23,19 @@ s = Policy.apply(s, event(5, 4, 1), at + 10 * Policy.HOUR);
 assert(s.relations.some(r => r.kind === 'clan' && r.targetId === 10), 'independent offenders and encounters support collective responsibility');
 const outside = Policy.relation(s.relations.find(r => r.kind === 'character' && r.targetId === 2), at + 10 * Policy.HOUR);
 assert(Policy.relation(outside, at + 60 * Policy.DAY).hostility < outside.hostility, 'old grievances decay');
+{
+    // Clan feelings halve by each event's own half-life; discipline scores halve every seven days.
+    const t = 2000000000000, DAY = Policy.DAY;
+    const row = { at: t, halfLife: 3 * DAY, trust: 8, hostility: 6, fear: 4, familiarity: 2 };
+    const feelings = (time) => { const r = Policy.relation(row, time); return [r.trust, r.hostility, r.fear, r.familiarity]; };
+    assert.deepStrictEqual(feelings(t - DAY), [8, 6, 4, 2], 'a read before the relation time does not grow it');
+    assert.deepStrictEqual(feelings(t + 3 * DAY), [4, 3, 2, 1]);
+    assert.deepStrictEqual(feelings(t + 5 * DAY), [2.5198420997897464, 1.8898815748423097, 1.2599210498948732, 0.6299605249474366]);
+    const concern = { stage: 'concern', score: 8, at: t, stageAt: t, lastOffenseAt: t };
+    const later = Policy.discipline(concern, 0, t + 10 * DAY);
+    assert.deepStrictEqual([later.score, later.stage], [2.971988578273897, 'clear']);
+    assert.strictEqual(Policy.discipline(concern, 0, t - DAY).score, 8);
+}
 let group = Policy.empty(20);
 for (let id = 3; id < 12; id++) group = Policy.apply(group, event(0, id), at);
 assert.strictEqual(group.relations.find(r => r.kind === 'character').hostility, 6, 'nine witnesses are one episode');

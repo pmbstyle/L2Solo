@@ -26,6 +26,11 @@ assert.strictEqual(soloDecision.reason, 'prefers_solo');
 
 const knownPartnerDecision = Policy.evaluate(subject(wealth), { trust: 3, familiarity: 0 });
 assert.strictEqual(knownPartnerDecision.accept, true, 'a known partner must override the solo preference');
+// A known partner is a trusted or friendly relationship.
+for (const [memory, accept] of [[{ trust: 0, familiarity: 5 }, true], [{ trust: 2, familiarity: 4 }, false],
+    [{ trust: 8, familiarity: 0 }, true], [{ trust: -5, familiarity: 6 }, true], [{ trust: -5, familiarity: 0 }, false]]) {
+    assert.strictEqual(Policy.evaluate(subject(wealth), memory).accept, accept, `known partner ${JSON.stringify(memory)}`);
+}
 assert(Policy.reply(soloDecision).includes('get to know'), 'a refusal should explain how the player can improve the relationship');
 
 const hotFallback = Policy.evaluate({ actor: { fetchId: () => 42 } }, { trust: 0, familiarity: 0 });
