@@ -37,7 +37,7 @@ const quest={
     id:229,name:'Test of Witchcraft',startNpcs:[7630],npcs:NPCS,questSpawns:[DRE],
     killNpcs:[...DROPS.map(r=>r[0]),5099,5100,DRE,601,602],
     questItems:[SWORD,...Array.from({length:28},(_,i)=>3308+i)],equippedQuestItems:[SWORD],radarPoints:[FIRST,FINAL],
-    eventNpc:e=>({start:7630,handin:NPCS,recover:[7630,7633]})[e],canTalk:s=>s.isStarted()||s.isCompleted()||eligible(s),
+    eventNpc:e=>({start:7630,handin:NPCS,recover:[7630,7633]})[e],canTalk:(s,npc)=>s.isStarted()||s.isCompleted()||npc.fetchSelfId()===7630&&eligible(s),
     async onTalk(s,npc) {
         if(s.isCompleted()) return H.page(s,'You have earned the Mark of Witchcraft.');
         if(!s.isStarted()) return H.page(s,'Orim near Death Pass asks you to identify a mysterious box. Begin with Alexandria in Giran.',l('start','Accept the test'));

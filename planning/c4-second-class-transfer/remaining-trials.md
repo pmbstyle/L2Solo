@@ -52,3 +52,25 @@ branch order, wrong weapons, recovery, foreign interference and abort cleanup.
 
 These are server integration checks. A visual client walkthrough remains a
 separate validation step; these changes do not restart or deploy the server.
+
+## Complete route coverage
+
+All 31 routes now have complete server walkthroughs. The final fifteen are:
+
+| Profession | Trials | Marks | Transfer masters |
+| --- | --- | --- | --- |
+| Dark Avenger | Q212, Q217, Q229 | 2633, 2734, 3307 | 7109, 7187, 7689, 7849, 7900 |
+| Shillien Knight | Q212, Q219, Q229 | 2633, 3172, 3307 | 7195, 7699, 7474, 7862, 7910, 8285, 8324, 8328, 8331, 8334 |
+| Treasure Hunter | Q213, Q217, Q225 | 2673, 2734, 2809 | 7109, 7187, 7689, 7849, 7900 |
+| Plains Walker | Q213, Q218, Q225 | 2673, 3140, 2809 | 7109, 7187, 7689, 7849, 7900 |
+| Abyss Walker | Q213, Q219, Q225 | 2673, 3172, 2809 | 7195, 7699, 7474, 7862, 7910, 8285, 8324, 8328, 8331, 8334 |
+| Hawkeye | Q213, Q217, Q224 | 2673, 2734, 3293 | 7109, 7187, 7689, 7849, 7900 |
+| Silver Ranger | Q213, Q218, Q224 | 2673, 3140, 3293 | 7109, 7187, 7689, 7849, 7900 |
+| Phantom Ranger | Q213, Q219, Q224 | 2673, 3172, 3293 | 7195, 7699, 7474, 7862, 7910, 8285, 8324, 8328, 8331, 8334 |
+| Sorcerer | Q214, Q217, Q228 | 2674, 2734, 2840 | 7115, 7174, 7176, 7694, 7854 |
+| Necromancer | Q214, Q217, Q229 | 2674, 2734, 3307 | 7115, 7174, 7176, 7694, 7854 |
+| Warlock | Q214, Q217, Q230 | 2674, 2734, 3336 | 7115, 7174, 7176, 7694, 7854 |
+| Spellsinger | Q214, Q218, Q228 | 2674, 3140, 2840 | 7115, 7174, 7176, 7694, 7854 |
+| Elemental Summoner | Q214, Q218, Q230 | 2674, 3140, 3336 | 7115, 7174, 7176, 7694, 7854 |
+| Spellhowler | Q214, Q219, Q228 | 2674, 3172, 2840 | 7195, 7699, 7474, 7862, 7910, 8285, 8324, 8328, 8331, 8334 |
+| Phantom Summoner | Q214, Q219, Q230 | 2674, 3172, 3336 | 7195, 7699, 7474, 7862, 7910, 8285, 8324, 8328, 8331, 8334 |

@@ -19,7 +19,7 @@ const quest={
     id:224,name:'Test of Sagittarius',startNpcs:[7702],npcs:NPCS,questSpawns:[KADESH],
     killNpcs:[...new Set([...DROPS.map(r=>r[1]),577,578,579,580,581,582,KADESH])],
     questItems:[BOW,...Array.from({length:13},(_,i)=>3294+i)],equippedQuestItems:[BOW],
-    eventNpc:e=>({start:7702,handin:NPCS,recover:7626})[e],canTalk:s=>s.isStarted()||s.isCompleted()||eligible(s),
+    eventNpc:e=>({start:7702,handin:NPCS,recover:7626})[e],canTalk:(s,npc)=>s.isStarted()||s.isCompleted()||npc.fetchSelfId()===7702&&eligible(s),
     async onTalk(s,npc) {
         if(s.isCompleted()) return H.page(s,'You have earned the Mark of Sagittarius.');
         if(!s.isStarted()) return H.page(s,'Bernard in Gludin sends you to Hamil in Floran to investigate Brankel\'s disappearance.',l('start','Accept the test'));

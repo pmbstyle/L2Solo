@@ -22,7 +22,7 @@ const quest={
     questSpawns:[5102,5103,5104,5105,5106,5107],attackNpcs:[5102,5103,5104,5105,5106,5107],
     killNpcs:[...DROPS.map(r=>r[0]),5102,5103,5104,5105,5106,5107],questItems:Array.from({length:53},(_,i)=>3337+i),radarPoints:POSITIONS,
     eventNpc:e=>({start:7634,list:7063,handin:NPCS,duel:[7635,7636,7637,7638,7639,7640],forfeit:[7635,7636,7637,7638,7639,7640]})[e],
-    canTalk:s=>s.isStarted()||s.isCompleted()||eligible(s),
+    canTalk:(s,npc)=>s.isStarted()||s.isCompleted()||npc.fetchSelfId()===7634&&eligible(s),
     async onTalk(s,npc) {
         if(s.isCompleted()) return H.page(s,'You have earned the Mark of Summoner.');
         if(!s.isStarted()) return H.page(s,'Galatea in Gludin asks you to win six summoning duels. Lara in Dion supplies two Beginner\'s Arcanas for each completed materials list.',l('start','Accept the test'));

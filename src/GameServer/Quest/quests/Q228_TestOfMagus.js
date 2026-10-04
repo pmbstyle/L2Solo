@@ -16,7 +16,7 @@ const l=(e,t)=>H.link(228,e,t);
 const quest={
     id:228,name:'Test of the Magus',startNpcs:[7629],npcs:NPCS,killNpcs:[5095,5096,5097,...DROPS.map(r=>r[0])],
     questItems:Array.from({length:23},(_,i)=>2841+i),eventNpc:e=>e==='start'?7629:e==='handin'?NPCS:null,
-    canTalk:s=>s.isStarted()||s.isCompleted()||eligible(s),
+    canTalk:(s,npc)=>s.isStarted()||s.isCompleted()||npc.fetchSelfId()===7629&&eligible(s),
     async onTalk(s,npc) {
         if(s.isCompleted()) return H.page(s,'You have earned the Mark of Magus.');
         if(!s.isStarted()) return H.page(s,'Rukal in Dion asks you to investigate an elemental song. Speak to Parina in Gludin.',l('start','Accept the test'));

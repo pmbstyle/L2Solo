@@ -16,6 +16,9 @@ const STARTS=[[213,7106,35,7],[214,7461,35,11],[224,7702,39,7],[228,7629,39,11],
             assert.equal(await c.world.event(wrong,q,'start',npc),false,'wrong-class acceptance blocked');
             s.actor.level=level;await Database.execute(['UPDATE characters SET level = ? WHERE id = ?',[level,s.actor.fetchId()]]);
             assert.equal(await c.world.event(s,q,'start',npc+1),false,'wrong NPC cannot authorize acceptance');
+            const middle={213:7064,214:7070,224:7626,228:7391,229:7098,230:7063}[q];
+            await c.world.talk(s,middle);
+            assert(!c.world.page(s).includes(`quest ${q} start`),"intermediate NPC does not offer another NPC's acceptance link");
             assert.equal(await c.world.event(s,q,'start',npc),true);
             assert.equal(await c.world.event(s,q,'start',npc),false);
             const state=c.world.state(s,q);

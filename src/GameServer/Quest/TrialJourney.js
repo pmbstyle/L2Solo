@@ -7,7 +7,7 @@ module.exports = function journey(d) {
         id: d.id, name: d.name, startNpcs: [d.startNpc], npcs: d.npcs,
         killNpcs: [...new Set(d.drops.map(r => r[1]))], questItems: d.questItems,
         eventNpc: e => e === 'start' ? d.startNpc : e === 'handin' ? d.npcs : null,
-        canTalk: s => s.isStarted() || s.isCompleted() || d.eligible(s),
+        canTalk: (s, npc) => s.isStarted() || s.isCompleted() || npc.fetchSelfId() === d.startNpc && d.eligible(s),
         async onTalk(s, npc) {
             if (s.isCompleted()) return H.page(s, 'Your trial is complete.');
             if (!s.isStarted()) return H.page(s, d.intro, H.link(d.id, 'start', 'Accept the trial'));
