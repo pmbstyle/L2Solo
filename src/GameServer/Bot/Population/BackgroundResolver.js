@@ -369,12 +369,12 @@ function hitSucceeds(accuracy, evasion, rng) {
     return rng() < chance;
 }
 
-// A skill takes its C4 cast time (no spiritshot in cold yet); a skill row
+// A skill takes its C4 cast time, cut by a loaded spiritshot; a skill row
 // without a cast time falls back to 1000 ms (spell) or 600 ms (physical).
 // C4 has no floor on the normal attack time: the 250 ms floor is cold's own.
-function actionDelayMs(profile, skill = null) {
+function actionDelayMs(profile, skill = null, spiritshot = false) {
     if (skill?.spell) {
-        return Formulas.calcSkillHitTime(Number(skill.hitTime) || 1000, profile.castSpd, { magic: true });
+        return Formulas.calcSkillHitTime(Number(skill.hitTime) || 1000, profile.castSpd, { magic: true, spiritshot });
     }
     if (skill) {
         return Formulas.calcSkillHitTime(Number(skill.hitTime) || 600, profile.atkSpd);
@@ -964,36 +964,66 @@ function summonDamage(fighter, mob, rng) {
 // Damage of one attack action in a cold fight (PvE or PvP): a spell with its
 // magic critical, or a weapon hit (hit roll, critical, spread from the fight
 // rng); a monster target (`vsMob`) adds its weaknesses; a skill that spends
-// charges hits harder with each charge.
-function attackDamage(fighter, selected, target, rng, { vsMob = false, at = 0 } = {}) {
+// charges hits harder with each charge; a loaded `shot` (loadColdShot) boosts
+// it as in hot: a soulshot doubles P.Atk, a spiritshot M.Atk, blessed x4. A
+// miss deals 0.
+function attackDamage(fighter, selected, target, rng, { vsMob = false, at = 0, shot = null } = {}) {
     const profile = fighter.profile;
     const semantic = selected?.skill ? C4SkillRules.resolve(selected.skill) : {};
     let damage = 0;
     if (selected?.magic) {
-        damage = Formulas.calcMagicDamage(profile.mAtk, Math.max(1, selected.power), target.mDef,
-            { magicCritical: Formulas.rollCritical(profile.mCritRate, rng) });
+        damage = Formulas.calcMagicDamage(profile.mAtk, Math.max(1, selected.power), target.mDef, {
+            spiritshot: shot?.spiritshot === true, blessedSpiritshot: shot?.blessedSpiritshot === true,
+            magicCritical: Formulas.rollCritical(profile.mCritRate, rng)
+        });
         if (vsMob) damage *= coldMagicTargetModifier(target, semantic);
     } else if (hitSucceeds(profile.accur, target.evasion, rng)) {
         damage = Formulas.calcPhysicalDamage(profile.pAtk, profile.equipment.pAtkRnd, target.pDef, selected?.power || 0,
-            { critical: Formulas.rollCritical(profile.critical, rng), rng });
+            { critical: Formulas.rollCritical(profile.critical, rng), soulshot: shot?.soulshot === true, rng });
         if (vsMob) damage *= coldPhysicalTargetModifier(profile, target, semantic, at);
     }
     if (Number(semantic.requires?.charges) > 0) damage *= 0.8 + (0.201 * fighter.charges);
     return damage;
 }
 
+// The shot a bot loads in one cold fight, decided once from its inventory:
+// the kind and grade hot auto shots load (ShotStock.planForState), how many
+// the weapon takes per charge and how many charges the stock still covers.
+// Null when the bot holds none of that shot or its weapon takes none.
+function coldShotSupply(state) {
+    const plan = ShotStock.planForState(state);
+    const key = String(plan.selfId);
+    const left = plan.perAction > 0 ? Math.floor(Number(state.inventory?.[key]?.amount || 0) / plan.perAction) : 0;
+    if (left <= 0) return null;
+    return { key, perAction: plan.perAction, left, soulshot: plan.kind === 'soulshot',
+        spiritshot: plan.kind !== 'soulshot', blessedSpiritshot: plan.kind === 'blessedSpiritshot' };
+}
+
 // The shot a cold action loads, by the hot rule (ShotStock.actionShotKind):
 // a spell a spiritshot, a physical skill a soulshot unless its ssBoost is 0,
-// a normal attack (no skill) a soulshot. Null when the action takes none.
+// a normal attack (no skill) a soulshot. Returns the bot's shot supply when
+// it holds that kind, otherwise null (no bonus, nothing spent).
 function loadColdShot(fighter, skill) {
-    if (!skill) return ShotStock.actionShotKind(false);
-    const semantic = C4SkillRules.resolveCached(skill);
-    return ShotStock.actionShotKind(semantic.isMagic ?? skill.spell === true, semantic.ssBoost);
+    const shot = fighter.shot;
+    if (!shot || shot.left <= 0) return null;
+    let kind = ShotStock.actionShotKind(false);
+    if (skill) {
+        const semantic = C4SkillRules.resolveCached(skill);
+        kind = ShotStock.actionShotKind(semantic.isMagic ?? skill.spell === true, semantic.ssBoost);
+    }
+    if (kind === 'soulshot') return shot.soulshot ? shot : null;
+    return kind && shot.spiritshot ? shot : null;
 }
 
 // A cast or a skill spends its loaded shot at use, a normal attack only when
-// the hit lands (Attack.js); the resolve debits shotActions from the stock.
+// the hit lands (Attack.js). The fight's own inventory copy (mutableCombatState)
+// is debited so the next fight of the resolve sees the rest; the resolve then
+// debits shotActions x perAction from the stored stock (BotLifeState).
 function spendColdShot(fighter) {
+    const shot = fighter.shot;
+    shot.left -= 1;
+    const item = fighter.state.inventory[shot.key];
+    item.amount = Number(item.amount) - shot.perAction;
     fighter.shotActions += 1;
 }
 
@@ -1016,12 +1046,12 @@ function coldBotTurn(fighter, { allies, mob, mobHp, at, time, rng, party = false
     const heal = chooseHeal(fighter.profile, allies, fighter.vitals.mp, fighter.cooldowns, at, fighter);
     if (heal) {
         const shot = loadColdShot(fighter, heal.skill);
-        const events = applyAllyHeal(fighter, allies, heal);
+        const events = applyAllyHeal(fighter, allies, heal, shot);
         if (help) for (const event of events) help.set(`${event.sourceId}:${event.targetId}:${event.type}`, event);
         spendSkill(fighter, heal.skill, at);
         fighter.skillUses += 1;
         fighter.heals += 1;
-        fighter.readyAt += actionDelayMs(fighter.profile, heal.skill);
+        fighter.readyAt += actionDelayMs(fighter.profile, heal.skill, shot?.spiritshot === true);
         if (shot) spendColdShot(fighter);
         return null;
     }
@@ -1032,7 +1062,7 @@ function coldBotTurn(fighter, { allies, mob, mobHp, at, time, rng, party = false
         spendSkill(fighter, music.skill, at, music.cost);
         fighter.skillUses += 1;
         fighter.musicUses += 1;
-        fighter.readyAt += actionDelayMs(fighter.profile, music.skill);
+        fighter.readyAt += actionDelayMs(fighter.profile, music.skill, shot?.spiritshot === true);
         if (shot) spendColdShot(fighter);
         return null;
     }
@@ -1044,7 +1074,7 @@ function coldBotTurn(fighter, { allies, mob, mobHp, at, time, rng, party = false
         addCharges(fighter, 1, semantic.maxCharges, at);
         spendSkill(fighter, chargeSkill, at);
         fighter.skillUses += 1;
-        fighter.readyAt += actionDelayMs(fighter.profile, chargeSkill);
+        fighter.readyAt += actionDelayMs(fighter.profile, chargeSkill, shot?.spiritshot === true);
         if (shot) spendColdShot(fighter);
         return null;
     }
@@ -1054,7 +1084,7 @@ function coldBotTurn(fighter, { allies, mob, mobHp, at, time, rng, party = false
         { mob, party, summon: fighter.summon });
     const skill = selected?.skill || null;
     const shot = loadColdShot(fighter, skill);
-    const damage = attackDamage(fighter, selected, mob, rng, { vsMob: true, at });
+    const damage = attackDamage(fighter, selected, mob, rng, { vsMob: true, at, shot });
     // A missed normal attack deals 0 and keeps its soulshot.
     if (shot && (skill || damage > 0)) spendColdShot(fighter);
     if (skill) {
@@ -1062,7 +1092,7 @@ function coldBotTurn(fighter, { allies, mob, mobHp, at, time, rng, party = false
         spendSkill(fighter, skill, at);
         fighter.skillUses += 1;
     }
-    fighter.readyAt += actionDelayMs(profile, skill);
+    fighter.readyAt += actionDelayMs(profile, skill, shot?.spiritshot === true);
     if (mobHp - Math.max(0, damage) <= 0) {
         const necromancer = allies.find((ally) => (
             ally.vitals.hp > 0
@@ -1113,6 +1143,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         vitals,
         cooldowns: { ...(state.stats?.coldCombat?.cooldowns || {}) },
         readyAt: Number(pending?.botReadyAt || 0),
+        shot: coldShotSupply(fightState),
         shotActions: 0,
         skillUses: 0,
         heals: 0,
@@ -1302,8 +1333,11 @@ function chooseHeal(profile, allies, mp, cooldowns, time, caster) {
     return skill ? { skill, target: C4SkillRules.resolveCached(skill).target === 'self' ? caster : injured } : null;
 }
 
-function applyAllyHeal(caster, allies, heal) {
+// A loaded spiritshot (`shot`) strengthens the heals hot strengthens.
+function applyAllyHeal(caster, allies, heal, shot = null) {
     const semantic = C4SkillRules.resolve(heal.skill);
+    const boost = shot?.spiritshot && C4SkillRules.shotBoostsHeal(semantic.skillType)
+        ? { spiritshot: true, blessedSpiritshot: shot.blessedSpiritshot } : {};
     const targets = semantic.target === 'self' ? [caster] : semantic.target === 'party' ? allies
         : semantic.target === 'ally' ? allies.filter(f => f === caster || Number(caster.state.clanId) > 0
             && Number(caster.state.clanId) === Number(f.state.clanId)) : [heal.target];
@@ -1320,7 +1354,7 @@ function applyAllyHeal(caster, allies, heal) {
         }
         const before = ally.vitals.hp;
         const amount = semantic.skillType === C4SkillRules.HEAL_PERCENT
-            ? ally.vitals.maxHp * Number(heal.skill.power || 0) / 100 : Formulas.calcHealAmount(heal.skill.power);
+            ? ally.vitals.maxHp * Number(heal.skill.power || 0) / 100 : Formulas.calcHealAmount(heal.skill.power, boost);
         ally.vitals.hp = Math.min(ally.vitals.maxHp, before + Math.max(0, amount));
         if (ally !== caster && require('../../Social/CombatHelpPolicy').meaningfulHeal(before, ally.vitals.hp, ally.vitals.maxHp)) {
             helped.push({ sourceId: ally.state.characterId, targetId: caster.state.characterId, type: 'healed' });
@@ -1364,6 +1398,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             cooldowns: { ...(state.stats?.coldCombat?.cooldowns || {}) },
             readyAt: Number(pending?.readyAt?.[state.characterId] || 0),
             actions: 0,
+            shot: coldShotSupply(fighterState),
             shotActions: 0,
             skillUses: 0,
             heals: 0,

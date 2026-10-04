@@ -1306,6 +1306,12 @@ function resolve(skill = {}) {
 const RESOLVED_LIMIT = 20000;
 const resolved = new Map();
 
+// The heals a spiritshot strengthens (x1.3, blessed x1.5), in hot and cold combat.
+const SHOT_BOOSTED_HEALS = new Set([HEAL, HEAL_HOT, HEAL_CLEANSE]);
+function shotBoostsHeal(skillType) {
+    return SHOT_BOOSTED_HEALS.has(skillType);
+}
+
 function resolveCached(skill = {}) {
     const key = `${skill.selfId}|${skill.level}|${skill.name}|${skill.power}|${skill.buff}|${skill.spell === true}|${skill.distance}`;
     let semantic = resolved.get(key);
@@ -1558,6 +1564,7 @@ module.exports = {
     SIEGE_FLAG,
     resolve,
     resolveCached,
+    shotBoostsHeal,
     normalizeKey,
     sourcedMaxLevel,
     expandSourcedLevels

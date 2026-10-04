@@ -446,11 +446,7 @@ function applyAggroPoints(session, actor, target, skill, semantic) {
 function applyHeal(session, actor, target, skill, semantic, magicSkill, attack) {
     const usedSpiritshot = !!actor.spiritshotLoaded;
     const usedBlessedSpiritshot = usedSpiritshot && !!actor.blessedSpiritshotLoaded;
-    const shotBoostsHeal = magicSkill && [
-        C4SkillRules.HEAL,
-        C4SkillRules.HEAL_HOT,
-        C4SkillRules.HEAL_CLEANSE
-    ].includes(semantic.skillType);
+    const shotBoostsHeal = magicSkill && C4SkillRules.shotBoostsHeal(semantic.skillType);
     const amount = Math.round(Formulas.calcHealAmount(
         semantic.healPower ?? skill.fetchPower(),
         {

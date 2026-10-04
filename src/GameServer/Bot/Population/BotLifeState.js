@@ -2457,20 +2457,15 @@ const BotLifeState = {
         // Cold combat spends the same persisted shot stock that hot combat uses.
         // Resolve telemetry is already available here, so this adds no market
         // lookup or extra inventory query to the simulation tick. shotActions
-        // counts this bot's own casts, skills and landed normal attacks.
+        // counts the shots this bot's own casts, skills and landed normal
+        // attacks loaded from this stock (BackgroundResolver.coldShotSupply).
         const shotActions = Math.max(0, Number(result.debug?.shotActions || 0));
         if (shotActions > 0) {
-            const ShotStock = invoke('GameServer/Inventory/ShotStock');
-            const shot = ShotStock.planForState({ ...state, inventory });
-            const weapon = ShotStock.equippedWeaponInState({ inventory });
-            const weaponTemplate = weapon ? itemTemplate(weapon.selfId) : null;
-            const perAction = Math.max(1, Number(weaponTemplate?.etc?.[
-                shot.kind === 'spiritshot' ? 'spiritshot' : 'soulshot'
-            ] || 1));
+            const shot = invoke('GameServer/Inventory/ShotStock').planForState({ ...state, inventory });
             const stock = inventory[String(shot.selfId)];
             if (stock && Number(stock.amount || 0) > 0) {
                 inventory[String(shot.selfId)] = { ...stock,
-                    amount: Math.max(0, Number(stock.amount) - Math.ceil(shotActions) * perAction) };
+                    amount: Math.max(0, Number(stock.amount) - shotActions * shot.perAction) };
             }
         }
 

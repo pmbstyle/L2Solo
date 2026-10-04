@@ -108,13 +108,17 @@ function equippedWeaponInState(state) {
 }
 
 // A bot's shot from its cold state, as hot auto shots load it (planFor): its
-// class's kind at the equipped weapon's grade.
+// class's kind at the equipped weapon's grade, and how many the weapon takes
+// per charge (perAction, the weapon's count as hot charges it; 0 without a
+// weapon, so no shot loads).
 function planForState(state) {
     const weapon = equippedWeaponInState(state);
-    return planFor({
+    const plan = planFor({
         classId: Number(state?.stats?.classId || state?.classId || 0),
         rank: weapon ? itemRank(weapon.selfId) : 'none'
     });
+    const count = weapon ? templateFor(weapon.selfId)?.etc?.[plan.kind === 'soulshot' ? 'soulshot' : 'spiritshot'] : 0;
+    return { ...plan, perAction: Math.max(0, Number(count) || 0) };
 }
 
 function planFor({ classId, rank = 'none' } = {}) {
@@ -397,7 +401,6 @@ module.exports = {
     planForActor,
     planForActorKind,
     planForState,
-    equippedWeaponInState,
     actionShotKind,
     kindForSelfId,
     isCompatibleWithActor,
