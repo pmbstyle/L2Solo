@@ -118,6 +118,12 @@ invoke('GameServer/Bot/AI/GearAcquisitionPlanner').safeFallbackForPlan = (state)
             await new Promise((resolve) => setTimeout(resolve, 25));
         }
         assert(!received.some((m) => m.type === 'fault'), JSON.stringify(received.filter((m) => m.type === 'fault')));
+        // L9: the size the worker stamps on a proposal batch, taken from the
+        // kernel's count, is the batch's real JSON size.
+        for (const message of received.filter((m) => m.type === 'proposal_batch')) {
+            const { bytes, ...sent } = message;
+            assert.strictEqual(bytes, Protocol.byteLength(sent));
+        }
         const planned = (id) => proposals.get(id).baseState;
 
         assert.strictEqual(planned(101).spotId, scenarios[101].planned.spotId,

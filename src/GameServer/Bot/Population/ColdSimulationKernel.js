@@ -1279,7 +1279,12 @@ class ColdSimulationKernel {
         // Each proposal's measured size travels with it, so the main commit
         // queue need not serialise it again (the list fits the 16 KiB left
         // between the payload limit and the message limit).
-        this.emit('proposal_batch', { proposals, proposalBytes, capacityBlocked });
+        // The payload's JSON size follows from the sizes already counted:
+        // { proposals } and { proposalBytes, capacityBlocked } joined by a
+        // comma, less the brace each drops. send() need not serialise it again.
+        const tail = { proposalBytes, capacityBlocked };
+        const payloadBytes = proposalPayloadBytes(proposals.length, itemBytes) + Protocol.byteLength(tail) - 1;
+        this.emit('proposal_batch', { proposals, ...tail }, null, payloadBytes);
         return proposals.length;
     }
 

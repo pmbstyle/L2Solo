@@ -61,6 +61,12 @@ function envelope(type, workerEpoch, payload = {}, msgId = null) {
     };
 }
 
+// The JSON size of an envelope whose payload size is already known: the
+// envelope with an empty payload ("{}", 2 bytes) plus the payload's size.
+function envelopeBytes(message, payloadBytes) {
+    return byteLength({ ...message, payload: {} }) - 2 + payloadBytes;
+}
+
 function validateEnvelope(message, direction, options = {}) {
     if (!message || typeof message !== 'object' || Array.isArray(message)) {
         return { ok: false, reason: 'invalid_envelope' };
@@ -130,6 +136,7 @@ module.exports = {
     MAX_BATCH,
     MAX_MESSAGE_BYTES,
     envelope,
+    envelopeBytes,
     validateEnvelope,
     validateToken,
     byteLength

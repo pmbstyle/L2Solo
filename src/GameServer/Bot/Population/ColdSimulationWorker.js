@@ -112,9 +112,12 @@ function currentPlanningOccupancy(timestamp = Date.now()) {
     return planningOccupancyCache;
 }
 
-function send(type, payload = {}, msgId = null) {
+// payloadBytes: the payload's JSON size when the caller already counted it
+// (the kernel's proposal batches); the 256 KB limit is checked against it.
+function send(type, payload = {}, msgId = null, payloadBytes = null) {
     const message = Protocol.envelope(type, epoch, payload, msgId);
-    const valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: epoch });
+    const bytes = Number.isFinite(payloadBytes) ? Protocol.envelopeBytes(message, payloadBytes) : null;
+    const valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: epoch, bytes });
     if (!valid.ok) {
         if (type !== 'fault') {
             parentPort.postMessage(Protocol.envelope('fault', epoch, {

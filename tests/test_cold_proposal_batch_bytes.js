@@ -33,8 +33,10 @@ function kernelWith(proposals) {
     const emitted = [];
     const kernel = new ColdSimulationKernel({
         resolveSolo: async () => ({}),
-        emit: (type, payload) => {
+        emit: (type, payload, msgId, payloadBytes) => {
             if (type !== 'proposal_batch') return;
+            // L9: the size handed to the worker's send() is the real JSON size.
+            assert.strictEqual(payloadBytes, Protocol.byteLength(payload));
             // The measured sizes travel next to the proposals and match what
             // the main thread would measure; the whole message still fits.
             assert.deepStrictEqual(payload.proposalBytes, payload.proposals.map((entry) => Protocol.byteLength(entry)));
@@ -137,6 +139,21 @@ function kernelBatches(proposals) {
     } finally {
         Protocol.byteLength = original;
     }
+}
+
+// L9: the envelope size built from a known payload size is the real JSON
+// size, and the 256 KB limit still refuses an oversized message by it.
+{
+    const payload = { proposals: [proposal(9, 1, 'ж🙂"\\'.repeat(50))], proposalBytes: [1], capacityBlocked: true };
+    const message = Protocol.envelope('proposal_batch', 'epoch-1', payload);
+    const bytes = Protocol.envelopeBytes(message, Protocol.byteLength(payload));
+    assert.strictEqual(bytes, Protocol.byteLength(message));
+    assert.deepStrictEqual(Protocol.validateEnvelope(message, 'worker', { workerEpoch: 'epoch-1', bytes }), { ok: true, bytes });
+    const huge = { ...payload, proposals: [proposal(9, 1, 'x'.repeat(Protocol.MAX_MESSAGE_BYTES))] };
+    const big = Protocol.envelope('proposal_batch', 'epoch-1', huge);
+    const bigBytes = Protocol.envelopeBytes(big, Protocol.byteLength(huge));
+    assert.strictEqual(bigBytes, Protocol.byteLength(big));
+    assert.strictEqual(Protocol.validateEnvelope(big, 'worker', { workerEpoch: 'epoch-1', bytes: bigBytes }).reason, 'message_too_large');
 }
 
 console.log('cold proposal batch bytes ok');
