@@ -209,6 +209,11 @@ assert.deepStrictEqual(proposalTravel.simulation, {
 });
 assert.strictEqual(proposalTravel.stats.forcedMarketCleanup.cleanupReason, 'inventory_capacity',
     'worker cleanup travel must carry durable intent through arrival');
+assert.deepStrictEqual(proposalTravel.cleanup, {
+    itemCount: goal.target.itemCount,
+    npcOnlySlots: goal.target.npcOnlySlots,
+    cleanupReason: 'inventory_capacity'
+}, 'the forced cleanup records the same target as the planner goal');
 
 const staleRecoverIntent = PopulationService.marketListingIntent({
     ...proposalTravel,

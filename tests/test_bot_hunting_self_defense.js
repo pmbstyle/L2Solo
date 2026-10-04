@@ -100,6 +100,28 @@ assert.strictEqual(session.currentTargetId, threatNpc.fetchId(), 'solo hunter sh
 assert.strictEqual(bot.selected, threatNpc.fetchId(), 'solo hunter should select the incoming threat');
 assert.strictEqual(attackedId, threatNpc.fetchId(), 'solo hunter should counterattack the incoming threat immediately');
 
+const lowManaFighter = actor(2000015);
+lowManaFighter.fetchMp = () => 10;
+const lowManaSession = {
+    accountId: 'bot_low_mana_fighter',
+    actor: lowManaFighter,
+    plan: 'hunting',
+    incomingThreatId: threatNpc.fetchId(),
+    incomingThreatAt: Date.now(),
+    dataSendToOthers() {}
+};
+let lowManaAttackId = null;
+World.user = { sessions: [lowManaSession] };
+World.npc = { spawns: [threatNpc] };
+World.fetchNpcsInRadius = () => [];
+tickHunting(lowManaSession, lowManaFighter, {}, {
+    say() {},
+    getStatus() { return {}; },
+    executeCombat(_session, _bot, npc) { lowManaAttackId = npc.fetchId(); }
+});
+assert.strictEqual(lowManaSession.plan, 'fleeing', 'today a fighter at full HP and 10% MP flees from a mob that hits it');
+assert.strictEqual(lowManaAttackId, null);
+
 const raidThreat = {
     ...threatNpc,
     fetchId: () => 1102,
