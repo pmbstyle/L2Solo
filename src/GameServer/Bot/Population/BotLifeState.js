@@ -385,8 +385,9 @@ function refreshCraftShop(state = {}) {
     };
 }
 
-function syncInventorySummary(characterId, inventory) {
-    return Database.syncInventorySummary(characterId, inventory);
+// reason names the action for the economy journal.
+function syncInventorySummary(characterId, inventory, reason = null) {
+    return Database.syncInventorySummary(characterId, inventory, reason);
 }
 
 function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
@@ -1449,7 +1450,7 @@ function reconcileIncompatibleShields() {
         const reconciled = reconcileIncompatibleShieldState(state);
         const row = rowFromState(reconciled);
         return save(row)
-            .then(() => syncInventorySummary(row.characterId, reconciled.inventory))
+            .then(() => syncInventorySummary(row.characterId, reconciled.inventory, 'shield_reconcile'))
             .then(() => {
                 cache.set(row.characterId, normalize(row));
                 reconciledCount += 1;
@@ -2623,7 +2624,7 @@ const BotLifeState = {
                             : Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp);
                     })
                     .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
-                    .then(() => syncInventorySummary(row.characterId, profiledState.inventory))
+                    .then(() => syncInventorySummary(row.characterId, profiledState.inventory, 'resolve'))
                     .then(() => {
                         const snapshot = normalize(row);
                         cache.set(snapshot.characterId, snapshot);
@@ -2652,7 +2653,7 @@ const BotLifeState = {
         const row = rowFromState(state);
         return this.serializeClanLevelUp(row.characterId, () => Database.updateColdCharacterProgression(row.characterId, state)
             .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
-            .then(() => syncInventorySummary(row.characterId, state.inventory || {}))
+            .then(() => syncInventorySummary(row.characterId, state.inventory || {}, 'resolve_sync'))
             .then(() => enqueueEquipmentGoalAdvance(row.equipmentAdvance))
             .then(() => state));
     },
@@ -2965,7 +2966,7 @@ const BotLifeState = {
                 }
             };
             return options.equip === true
-                ? syncInventorySummary(state.characterId, equipped).then(() => refreshed)
+                ? syncInventorySummary(state.characterId, equipped, 'refresh').then(() => refreshed)
                 : refreshed;
         }).catch((err) => {
             utils.infoWarn('BotLife', 'failed to refresh inventory for %s: %s', state.name, err.message);
@@ -3102,7 +3103,7 @@ const BotLifeState = {
                 !== JSON.stringify(reconciled.stats.equipment);
             return this.upsertState(reconciled, reason).then((saved) => (
                 saved && equipmentChanged
-                    ? syncInventorySummary(id, saved.inventory).then(() => saved)
+                    ? syncInventorySummary(id, saved.inventory, 'external').then(() => saved)
                     : saved
             ));
         });
@@ -3197,7 +3198,7 @@ const BotLifeState = {
         const nextState = slot > 0 ? reconcileEquipmentInventory(purchasedState) : purchasedState;
         const row = rowFromState(nextState);
         return save(row)
-            .then(() => syncInventorySummary(row.characterId, nextState.inventory))
+            .then(() => syncInventorySummary(row.characterId, nextState.inventory, 'market_purchase'))
             .then(() => {
                 const snapshot = normalize(row);
                 cache.set(snapshot.characterId, snapshot);
@@ -3220,7 +3221,7 @@ const BotLifeState = {
         };
         const row = rowFromState(nextState);
         return save(row)
-            .then(() => syncInventorySummary(row.characterId, nextState.inventory))
+            .then(() => syncInventorySummary(row.characterId, nextState.inventory, 'market_restore'))
             .then(() => {
                 const snapshot = normalize(row);
                 cache.set(snapshot.characterId, snapshot);
@@ -3284,7 +3285,7 @@ const BotLifeState = {
         };
         const row = rowFromState(nextState);
         return save(row)
-            .then(() => syncInventorySummary(row.characterId, inventory))
+            .then(() => syncInventorySummary(row.characterId, inventory, 'market_sale'))
             .then(() => {
                 const snapshot = normalize(row);
                 cache.set(snapshot.characterId, snapshot);
@@ -3337,7 +3338,7 @@ const BotLifeState = {
         };
         const row = rowFromState(nextState);
         return save(row)
-            .then(() => syncInventorySummary(row.characterId, inventory))
+            .then(() => syncInventorySummary(row.characterId, inventory, 'npc_liquidation'))
             .then(() => {
                 const snapshot = normalize(row);
                 cache.set(snapshot.characterId, snapshot);
@@ -3363,7 +3364,7 @@ const BotLifeState = {
         };
         const row = rowFromState(nextState);
         return save(row)
-            .then(() => syncInventorySummary(row.characterId, nextState.inventory))
+            .then(() => syncInventorySummary(row.characterId, nextState.inventory, 'consumable_purchase'))
             .then(() => {
                 const snapshot = normalize(row);
                 cache.set(snapshot.characterId, snapshot);

@@ -382,6 +382,18 @@ CREATE INDEX IF NOT EXISTS market_trades_recent
     ON market_trades(occurredAt DESC, id DESC);
 CREATE INDEX IF NOT EXISTS market_trades_town_recent
     ON market_trades(town, occurredAt DESC, id DESC);
+
+-- Economy journal (src/EconomyJournal.js): adena and item changes summed per
+-- hour (epoch hours), database operation, store and item.
+CREATE TABLE IF NOT EXISTS economy_flow_hour (
+    hour INTEGER NOT NULL,
+    operation TEXT NOT NULL,
+    store TEXT NOT NULL,
+    selfId INTEGER NOT NULL,
+    delta INTEGER NOT NULL DEFAULT 0,
+    events INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (hour, operation, store, selfId)
+) WITHOUT ROWID;
 INSERT OR IGNORE INTO market_trades (
     eventKey, occurredAt, channel, sourceType, selfId, itemName,
     quantity, unitPrice, totalPrice, town,

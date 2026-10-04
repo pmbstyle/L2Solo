@@ -46,7 +46,7 @@ async function resolve({ party, members, spot, pressure, targetNpcId, elapsedMs 
                 atomicGroup, options: { allowParty: true, allowLifecycle: true },
                 proposal: { baseState: state, result: memberResult, durable: changed ? { classId: afterClassId, skills } : null } };
         }));
-        const committed = await Owner.commitAndReleaseBatch(entries);
+        const committed = await Owner.commitAndReleaseBatch(entries, { journalReason: 'raid' });
         committed.forEach(row => Raid.acknowledge(id, row.characterId, row.ok));
         if (committed.some(row => !row.ok)) return { ok: false, reason: 'raid_commit_rejected' };
         Parties.acceptRow(committed[0].raidPartyRow);

@@ -332,6 +332,7 @@ function commitAndReleaseBatch(entries = [], options = {}) {
             allowParty: entry.options?.allowParty === true || options.allowParty === true,
             allowLifecycle: entry.options?.allowLifecycle === true || options.allowLifecycle === true,
             atomicGroup: entry.atomicGroup || null,
+            journalReason: entry.journalReason || options.journalReason || null,
             ...(entry.proposal?.result?.memoryEvents ? { memoryEvents: entry.proposal.result.memoryEvents } : {})
         });
     });

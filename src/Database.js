@@ -3,6 +3,7 @@ const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const Statements = require('./DatabaseStatements');
 const MarketTradeOverview = require('./MarketTradeOverview');
+const EconomyJournal = require('./EconomyJournal');
 const CheckpointCoordinator = require('./DatabaseCheckpointCoordinator');
 const { XP_DIVIDER: KARMA_XP_DIVIDER } = require('./GameServer/Karma');
 const InteractionMemoryPolicy = require('./GameServer/Social/InteractionMemoryPolicy');
@@ -154,11 +155,14 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
     const execute = () => {
         const startedAt = now();
         const wait = startedAt - queuedAt;
+        EconomyJournal.begin(operation);
         try {
             const result = work();
+            EconomyJournal.commit();
             record(operation, wait, now() - startedAt, read);
             return result;
         } catch (error) {
+            EconomyJournal.discard();
             record(operation, wait, now() - startedAt, read, true);
             throw error;
         } finally {
@@ -225,6 +229,51 @@ function select(table, columns = ['*'], where = '', params = [], operation) {
 
 function selectOne(table, columns, where, params, operation) {
     return select(table, columns, `${where} LIMIT 1`, params, operation);
+}
+
+const ECONOMY_JOURNAL_FLUSH_MS = 60 * 1000;
+const ECONOMY_JOURNAL_RETENTION_HOURS = 14 * 24;
+let economyJournalTimer = null;
+let economyJournalPrunedHour = 0;
+let economyJournalComplete = false;
+
+// Writes the journal sums gathered in memory; old hours are pruned once an hour.
+function flushEconomyJournal() {
+    return enqueue(() => {
+        if (!economyJournalComplete) economyJournalComplete = EconomyJournal.attachMissing(connection);
+        const rows = EconomyJournal.drain();
+        const hour = Math.floor(now() / EconomyJournal.HOUR_MS);
+        const prune = hour !== economyJournalPrunedHour;
+        if (!rows.length && !prune) return 0;
+        connection.exec('BEGIN IMMEDIATE');
+        try {
+            const upsert = Statements.prepare(connection, `INSERT INTO economy_flow_hour
+                (hour, operation, store, selfId, delta, events) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(hour, operation, store, selfId) DO UPDATE SET
+                    delta = delta + excluded.delta, events = events + excluded.events`);
+            rows.forEach((row) => upsert.run(row.hour, row.operation, row.store, row.selfId, row.delta, row.events));
+            if (prune) {
+                Statements.prepare(connection, 'DELETE FROM economy_flow_hour WHERE hour < ?')
+                    .run(hour - ECONOMY_JOURNAL_RETENTION_HOURS);
+            }
+            connection.exec('COMMIT');
+        } catch (error) {
+            connection.exec('ROLLBACK');
+            throw error;
+        }
+        if (prune) economyJournalPrunedHour = hour;
+        return rows.length;
+    }, { operation: 'economy-journal:flush' });
+}
+
+function startEconomyJournal() {
+    EconomyJournal.attach(connection);
+    economyJournalComplete = false;
+    clearInterval(economyJournalTimer);
+    economyJournalTimer = setInterval(() => {
+        flushEconomyJournal().catch((error) => utils.infoWarn('DB', 'economy journal flush failed: %s', error.message));
+    }, ECONOMY_JOURNAL_FLUSH_MS);
+    economyJournalTimer.unref?.();
 }
 
 function cleanZeroAmountItems() {
@@ -2331,6 +2380,7 @@ const Database = {
             connection.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA temp_store = MEMORY; PRAGMA wal_autocheckpoint = 0;');
             connection.exec(fs.readFileSync(path.join(process.cwd(), 'database', 'sql', 'sqlite.sql'), 'utf8'));
             applySchemaMigrations();
+            startEconomyJournal();
             CheckpointCoordinator.start(databasePath, {
                 intervalMs: Number(options.default.Database?.checkpointIntervalMs) || 5000,
                 minWalBytes: Number(options.default.Database?.checkpointMinWalBytes) || (4 * 1024 * 1024)
@@ -3528,7 +3578,9 @@ const Database = {
                 };
             }
             const physical = request.physical || null;
+            EconomyJournal.detail(request.journalReason || 'resolve');
             if (physical) applyColdPhysicalStateUnsafe(characterId, physical);
+            EconomyJournal.detail(null);
             // Persist the entitlement under the same lease fence and transaction
             // as EXP. Cold-to-hot resurrection reads this durable record.
             syncColdDeathExperienceUnsafe(characterId, deathExperience, timestamp);
@@ -4098,6 +4150,11 @@ const Database = {
 
     close() {
         if (closePromise) return closePromise;
+        clearInterval(economyJournalTimer);
+        economyJournalTimer = null;
+        if (connection) {
+            flushEconomyJournal().catch((error) => utils.infoWarn('DB', 'economy journal flush failed: %s', error.message));
+        }
         shuttingDown = true;
         const pending = queryTail;
         closePromise = pending.then(async () => {
@@ -4176,12 +4233,15 @@ const Database = {
         return inTransaction(() => entries.map(([characterId, state]) => applyBufferedCharacterStateUnsafe(Number(characterId), state)), 'buffered-character:flush-batch');
     },
 
-    syncInventorySummary(characterId, inventory = {}) {
+    // reason names the bot action for the economy journal (e.g. 'npc_liquidation').
+    syncInventorySummary(characterId, inventory = {}, reason = null) {
         return withCharacterFlush(characterId, () => inTransaction(
             () => syncInventorySummaryUnsafe(characterId, inventory),
-            'inventory:sync-summary'
+            reason ? `inventory:sync-summary:${reason}` : 'inventory:sync-summary'
         ));
     },
+
+    flushEconomyJournal,
 
     compactStackableInventory(selfIds = [], taskName = 'compact-stackable-inventory-v1') {
         const ids = [...new Set((selfIds || []).map(Number).filter((selfId) => selfId > 0))];

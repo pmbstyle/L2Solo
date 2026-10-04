@@ -187,7 +187,7 @@ class ColdCompetitionActions {
                     ...(contest && i === 1 ? { result: { memoryEvents: [{ key: `${event.key}:contested`,
                         sourceId: state.characterId, targetId: states[0].characterId, kind: 'character',
                         type: 'mob_contested', at: now }] } } : {}) }
-            })), { timestamp: this.now() });
+            })), { timestamp: this.now(), journalReason: 'competition' });
             states.forEach(s => this.onState(s.characterId));
             return results.length === 2 && results.every(r => r.ok)
                 ? (queued ? { ok: true, queued: true } : { ok: true, waitUntil: now + WAIT_MS,

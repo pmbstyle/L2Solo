@@ -168,7 +168,7 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
             options: { allowParty: true, allowLifecycle: true }, proposal: { baseState: states[index],
                 ...(pvp?.started ? { durable: { pvpKills: pvp.fighters.find(f => f.id === state.characterId)?.kills || [] } } : {}),
                 result: { memoryEvents: events.filter(e => e.sourceId === state.characterId) } }
-        })), { timestamp: now() });
+        })), { timestamp: now(), journalReason: pvp?.started ? 'pvp' : 'party_conflict' });
         if (results.length !== states.length || results.some(r => !r.ok)) return { ok: false, reason: 'commit_rejected' };
         preparedParties.filter(Boolean).forEach(prepared => parties.acceptCommit(prepared));
         if (encounter) onEncounter(encounter);
