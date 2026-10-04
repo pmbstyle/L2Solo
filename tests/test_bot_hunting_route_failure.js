@@ -109,6 +109,44 @@ try {
     tick(expired);
     assert.strictEqual(expired.session.spotRelocation, undefined);
     assert(expired.session.spotRetryAfter[spot.id] > Date.now(), 'timeout must not immediately select the same destination');
+
+    // A hot bot with karma never uses SoE or a gatekeeper: it looks for a
+    // spot within walking range and walks there.
+    const farSpot = { ...spot, id: '31_8', name: 'Far field',
+        center: { locX: start.locX + 30000, locY: start.locY, locZ: start.locZ } };
+    Spots.ensureIndexed = () => [farSpot];
+    const redStatus = { ...fixture().session.botStatus, nearby: { attackableNpcs: 0, eligibleAttackableNpcs: 0 } };
+    assert.strictEqual(Spots.findBestSpot(redStatus).spot.id, farSpot.id, 'a far spot is in range for SoE');
+    assert.strictEqual(Spots.findBestSpot(redStatus, { walkOnly: true }), null, 'walking range ends at 12000');
+    const white = fixture(true);
+    const red = fixture(true);
+    red.bot.fetchKarma = () => 500;
+    assert.strictEqual(Decision.suggest(redStatus, white.session).spot?.id, farSpot.id, 'a white bot may pick a far spot');
+    assert.strictEqual(Decision.suggest(redStatus, red.session).action, 'search_locally', 'a bot with karma picks only spots it can walk to');
+
+    const realSuggest = Decision.suggest;
+    const realSetTimeout = global.setTimeout;
+    const Response = invoke('GameServer/Network/Response');
+    const realSkillStarted = Response.skillStarted;
+    Decision.suggest = () => ({ action: 'move_to_spot', reason: 'no_targets_nearby', spot: farSpot });
+    global.setTimeout = () => 0;
+    Response.skillStarted = () => Buffer.alloc(0);
+    try {
+        for (const f of [white, red]) {
+            f.session.spotRelocation = undefined;
+            f.session.townRoutePlan = null;
+            f.bot.automation = { abortAll() {} };
+            tick(f);
+        }
+    } finally {
+        Decision.suggest = realSuggest;
+        global.setTimeout = realSetTimeout;
+        Response.skillStarted = realSkillStarted;
+    }
+    assert.strictEqual(white.session.spotRelocation?.method, 'soe_gatekeeper', 'a white bot reads SoE to a far spot');
+    assert.strictEqual(red.session.spotRelocation?.method, 'walk', 'a bot with karma walks even to a far spot');
+    assert.strictEqual(red.bot.moves, 1, 'a bot with karma starts walking at once');
+
     console.log('Bot hunting route failure checks passed');
 } finally {
     Math.random = originalRandom;

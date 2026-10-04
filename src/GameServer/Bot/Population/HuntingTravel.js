@@ -1,4 +1,5 @@
 const SpotRiskPolicy = require('./SpotRiskPolicy');
+const Karma = require('../../Karma');
 
 // A trip to a hunting spot (gatekeeper, or a walk for a red bot) takes this long.
 const HUNTING_TRAVEL_MS = 25000;
@@ -45,7 +46,7 @@ function beginHuntingTrip(state = {}, route = null, timestamp = Date.now()) {
                 startedAt: timestamp,
                 arrivalAt,
                 regionName: route.regionName || state.currentRegion || 'Hunting Ground',
-                method: Number(state.stats?.karma || 0) > 0 ? 'walk' : 'gatekeeper_spot',
+                method: Karma.closesTowns(state.stats?.karma) ? 'walk' : 'gatekeeper_spot',
                 spotId: route.spotId,
                 arrivalActivity: isPartyRoute ? 'grouped' : 'hunting',
                 arrivalEvent: isPartyRoute ? 'party_arrived_hunting_ground' : 'arrived_hunting_ground',

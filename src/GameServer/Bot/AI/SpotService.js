@@ -2,6 +2,8 @@ const { SPOT_CELL_SIZE } = invoke('GameServer/World/WorldConstants');
 const DEFAULT_LEVEL_RANGE = 3;
 const DEFAULT_MIN_HUNT_LEVEL_GAP = -7;
 const DEFAULT_MAX_HUNT_LEVEL_GAP = 3;
+// The farthest hunting spot a hot bot reaches on foot; beyond it, SoE or a gatekeeper.
+const MAX_WALK_SPOT_DISTANCE = 12000;
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
@@ -137,6 +139,7 @@ function isSuitable(spot, targetLevel, options = {}) {
 }
 
 const SpotService = {
+    MAX_WALK_SPOT_DISTANCE,
     spots: null,
 
     reset() {
@@ -276,7 +279,7 @@ const SpotService = {
         const levelRange = options.levelRange || DEFAULT_LEVEL_RANGE;
         const currentSpotId = status.spot?.id;
         const minDistance = options.minDistance || 1200;
-        const maxDistance = options.maxDistance || 90000;
+        const maxDistance = options.maxDistance || (options.walkOnly === true ? MAX_WALK_SPOT_DISTANCE : 90000);
         const routeState = {
             characterId: status.characterId,
             name: status.name,

@@ -4,6 +4,7 @@ const World          = invoke('GameServer/World/World');
 const ServerResponse = invoke('GameServer/Network/Response');
 const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const SpotService    = invoke('GameServer/Bot/AI/SpotService');
+const Karma          = invoke('GameServer/Karma');
 const DecisionService = invoke('GameServer/Bot/AI/BotDecisionService');
 const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
@@ -34,7 +35,7 @@ const TARGET_STALL_TICKS = 5;
 const TARGET_RETRY_COOLDOWN_MS = 15000;
 const TARGET_PROGRESS_DISTANCE = 40;
 const EMERGENCY_RETREAT_DISTANCE = 850;
-const MAX_WALK_SPOT_DISTANCE = 12000;
+const MAX_WALK_SPOT_DISTANCE = SpotService.MAX_WALK_SPOT_DISTANCE;
 const SPOT_ARRIVAL_RADIUS = 1000;
 const MAX_SPOT_RELOCATION_MS = 120000;
 const FAILED_SPOT_RETRY_MS = 60000;
@@ -387,8 +388,9 @@ function beginSpotRelocation(session, bot, spot, BotAI) {
             ? Speech.lines('town.town-to-farm', { place: destinationName })
             : Speech.lines('town.farm-relocation', { place: destinationName }));
 
+    // A bot with karma never uses SoE or a gatekeeper: it walks.
     const travelDistance = SpotService.distance2d(botLocation(bot), destination);
-    if (travelDistance > MAX_WALK_SPOT_DISTANCE) {
+    if (travelDistance > MAX_WALK_SPOT_DISTANCE && !Karma.closesTowns(bot.fetchKarma?.())) {
         BotSpotTravel.start(session, bot, spot, destination);
         return;
     }
@@ -703,6 +705,7 @@ module.exports = {
                 const status = session.botStatus || BotAI.getStatus(session);
                 const destination = SpotService.findBestSpot(status, {
                     spotRetryAfter: session.spotRetryAfter,
+                    walkOnly: Karma.closesTowns(bot.fetchKarma?.()),
                     minDistance: 1,
                     mode: 'solo',
                     matchupProfiles: TargetMatchup.actorProfiles([bot]),

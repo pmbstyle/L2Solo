@@ -1,4 +1,5 @@
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
+const Karma = invoke('GameServer/Karma');
 
 const MOVE_TO_SPOT_COOLDOWN = 15000;
 
@@ -8,6 +9,11 @@ function now() {
 
 function canMoveToSpot(session) {
     return !session.lastSpotMoveAt || (now() - session.lastSpotMoveAt) > MOVE_TO_SPOT_COOLDOWN;
+}
+
+// A bot with karma walks to its next spot, so it looks only within walking range.
+function walkOnly(session) {
+    return Karma.closesTowns(session.actor?.fetchKarma?.());
 }
 
 const BotDecisionService = {
@@ -82,7 +88,8 @@ const BotDecisionService = {
                 };
             }
 
-            const candidate = SpotService.findBestSpot(status, { spotRetryAfter: session.spotRetryAfter, matchupProfiles:
+            const candidate = SpotService.findBestSpot(status, { spotRetryAfter: session.spotRetryAfter,
+                walkOnly: walkOnly(session), matchupProfiles:
                 session.actor ? invoke('GameServer/Bot/AI/BotTargetMatchup').actorProfiles([session.actor]) : undefined });
             if (candidate) {
                 return {
@@ -98,6 +105,7 @@ const BotDecisionService = {
 
         if (status.mode === 'hunting' && status.blockers.includes('no_targets_nearby')) {
             const candidate = canMoveToSpot(session) ? SpotService.findBestSpot(status, { minDensity: 2, spotRetryAfter: session.spotRetryAfter,
+                walkOnly: walkOnly(session),
                 matchupProfiles: session.actor ? invoke('GameServer/Bot/AI/BotTargetMatchup').actorProfiles([session.actor]) : undefined }) : null;
             if (candidate) {
                 return {
