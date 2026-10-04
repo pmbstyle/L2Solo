@@ -644,13 +644,13 @@ try {
         level: 16,
         spotId: currentSpot.id,
         loc: { locX: 1, locY: 2, locZ: 3 },
-        stats: { equipmentPlan: requestPlan }
+        stats: { equipmentPlan: requestPlan, partyRequest: request }
     }, currentSpot, null, [], {
         occupancy: {},
         spots: new Map([[fallbackSpot.id, fallbackSpot]])
     });
     assert.strictEqual(fallbackRoute.spotId, fallbackSpot.id,
-        'a no-party required plan must route to a safe fallback instead of its party-only source');
+        'a bot waiting for a required party must route to a safe fallback instead of its party-only source');
 
     GearAcquisitionPlanner.safeFallbackForPlan = originalSafeFallbackForPlan;
     const profiles = [currentSpot, targetSpot];
@@ -673,7 +673,7 @@ try {
                 stats: { equipmentPlan: {
                     status: 'active', strategy: 'direct_drop',
                     partyNeed: 'required', target: { selfId: 1 }
-                } }
+                }, partyRequest: request }
             }, currentSpot, null, [], {
                 profiles,
                 spots: new Map(profiles.map((spot) => [spot.id, spot])),

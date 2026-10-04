@@ -68,7 +68,7 @@ const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanne
 const LifeStateProjector = invoke('GameServer/Bot/Population/BotLifeState');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
-const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
+const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
 const Protocol = require('./ColdSimulationProtocol');
 const RequiredPartyFormation = require('./RequiredPartyFormation');
 const { ColdCompetitionMonitor, INTERVAL_MS: COMPETITION_INTERVAL_MS } = require('./ColdCompetitionMonitor');
@@ -194,42 +194,19 @@ function startKernel(config = {}) {
                 : null;
             if (reservedSpot) SpotProfiles.reserveCapacity(occupancy, reservedSpot, [state]);
             const partyRequest = PartyRequestPlanner.partyRequestForPlan(state, acquisitionPlan, timestamp);
-            const partyRouteWaiting = !state.party?.partyId
-                && (partyRequest?.priority === 'required'
-                    || (partyRequest?.status === 'deferred'
-                        && (acquisitionPlan.partyNeed === 'required' || acquisitionPlan.requiresParty === true)));
-            const plannedPartyFallback = partyRouteWaiting
-                ? GearAcquisitionPlanner.safeFallbackForPlan(state, acquisitionPlan, spots, { occupancy, excludedSpotIds })
+            const partyRouteWaiting = PartyWaitFallback.waiting(state, acquisitionPlan, partyRequest);
+            const partyFallback = partyRouteWaiting
+                ? PartyWaitFallback.spotFor(state, acquisitionPlan, spots, { occupancy, excludedSpotIds, timestamp })
                 : null;
-            const plannedFallbackSpot = plannedPartyFallback
-                ? SpotIndex.spotById(spots, plannedPartyFallback.spotId)
-                : null;
-            const safePlannedFallback = plannedFallbackSpot
-                && LevelingRoutes.isSpotAllowedForState(plannedFallbackSpot, state)
-                ? plannedFallbackSpot
-                : null;
-            const fallbackState = {
-                ...state,
-                spotId: null,
-                stats: Object.fromEntries(Object.entries(state.stats || {})
-                    .filter(([key]) => key !== 'equipmentPlan'))
-            };
-            const fallbackLevel = LevelingRoutes.targetLevelForState(fallbackState);
-            const genericFallback = partyRouteWaiting && !safePlannedFallback
-                ? LevelingRoutes.bestSpot(spots.filter((spot) => (
-                    spot.raidBoss !== true
-                    && Number(spot.minLevel || 1) <= fallbackLevel + 4
-                    && Number(spot.maxLevel || spot.minLevel || 1) >= fallbackLevel - 4
-                )), fallbackState, { occupancy, excludedSpotIds })?.spot || null
-                : null;
-            const fallbackSpot = safePlannedFallback || genericFallback;
-            const partyFallback = safePlannedFallback ? plannedPartyFallback : null;
+            const fallbackSpot = partyFallback?.spot || null;
             const plannedStats = { ...(state.stats || {}), equipmentPlan: acquisitionPlan };
             if (partyRequest) plannedStats.partyRequest = partyRequest;
             else delete plannedStats.partyRequest;
+            // A waiter that is resting finishes its rest first.
             const plannedState = {
                 ...state,
-                activity: fallbackSpot && !['traveling', 'shopping', 'merchant', 'crafting', 'dead'].includes(state.activity)
+                activity: fallbackSpot
+                    && !['traveling', 'shopping', 'merchant', 'crafting', 'dead', 'resting'].includes(state.activity)
                     ? 'hunting'
                     : state.activity,
                 spotId: fallbackSpot ? fallbackSpot.id : state.spotId,
@@ -240,7 +217,6 @@ function startKernel(config = {}) {
                 previousPlan,
                 acquisitionPlan,
                 partyRequest,
-                partyFallback,
                 targetNpcId: partyRouteWaiting ? Number(partyFallback?.npcId || 0) : Number(acquisitionPlan.next?.npcId || 0),
                 reusablePartyRequest,
                 replanFailure: replanContext.failure || null,

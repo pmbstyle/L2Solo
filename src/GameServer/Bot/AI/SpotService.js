@@ -251,9 +251,11 @@ const SpotService = {
         return SpotIndex.spotById(this.ensureIndexed(), id);
     },
 
-    findCurrentSpot(loc) {
+    // `spots`: a catalogue with the same cell ids (SpotProfiles), for callers
+    // without the live world such as the cold worker.
+    findCurrentSpot(loc, spots = null) {
         if (!loc || !Number.isFinite(Number(loc.locX)) || !Number.isFinite(Number(loc.locY))) return null;
-        return this.findById(spotIdAt(loc).id);
+        return spots ? SpotIndex.spotById(spots, spotIdAt(loc).id) : this.findById(spotIdAt(loc).id);
     },
 
     containsLocation(spot, loc) {

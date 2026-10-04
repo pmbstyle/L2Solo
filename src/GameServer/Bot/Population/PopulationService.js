@@ -35,7 +35,7 @@ const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyCompos
 const PartyRecruitmentChat = invoke('GameServer/Bot/Population/ColdPartyRecruitmentChat');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const GearPlanSelection = invoke('GameServer/Bot/AI/GearPlanSelection');
-const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
+const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const ColdWealthCraftService = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
 const ColdShotEconomyService = invoke('GameServer/Bot/Economy/ColdShotEconomyService');
@@ -3602,38 +3602,20 @@ const PopulationService = {
             })
                 .finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
         }
-        const requiredPartyRequest = partyRequest?.priority === 'required';
         // A deferred request still owns the safe fallback route until the
         // planner either reopens it or replaces the unavailable target. Do
         // not let the cooldown hand control back to SpotProfiles while the
         // persisted gear plan still points at an unsafe source.
-        const deferredPartyRequest = partyRequest?.status === 'deferred'
-            && (acquisitionPlan?.partyNeed === 'required'
-                || acquisitionPlan?.requiresParty === true);
-        const partyRouteWaiting = (requiredPartyRequest || deferredPartyRequest)
-            && !state.party?.partyId;
+        const partyRouteWaiting = PartyWaitFallback.waiting(state, acquisitionPlan, partyRequest);
         const excludedSpotIds = SpotRiskPolicy.excludedSpotIdsForStates([plannedState], startedAt);
         const partyFallback = partyRouteWaiting && !passiveActivity
-            ? GearAcquisitionPlanner.safeFallbackForPlan(state, acquisitionPlan, spots, {
-                occupancy,
-                excludedSpotIds
-            })
+            ? PartyWaitFallback.spotFor(state, acquisitionPlan, spots, { occupancy, excludedSpotIds, timestamp: startedAt })
             : null;
-        const equipmentFallbackSpot = partyFallback && SpotProfiles.findById(partyFallback.spotId);
-        const safeEquipmentFallbackSpot = equipmentFallbackSpot
-            && LevelingRoutes.isSpotAllowedForState(equipmentFallbackSpot, state)
-            ? equipmentFallbackSpot
-            : null;
-        const fallbackSpot = partyRouteWaiting && !passiveActivity
-            ? safeEquipmentFallbackSpot || SpotProfiles.findForState({
-                ...plannedState,
-                spotId: null,
-                stats: Object.fromEntries(Object.entries(plannedState.stats || {})
-                    .filter(([key]) => key !== 'equipmentPlan'))
-            }, { excludedSpotIds, timestamp: startedAt })
-            : null;
+        const fallbackSpot = partyFallback?.spot || null;
+        // A waiter that is resting finishes its rest first.
         const routedState = fallbackSpot
-            ? { ...plannedState, activity: 'hunting', spotId: fallbackSpot.id }
+            ? { ...plannedState, activity: plannedState.activity === 'resting' ? 'resting' : 'hunting',
+                spotId: fallbackSpot.id }
             : plannedState;
         const currentSpotId = plannedState.spotId || null;
         const travellingState = ColdCraftingService.beginTravel(routedState) || routedState;
@@ -3689,7 +3671,7 @@ const PopulationService = {
             spot,
             pressure: Director.pressureForState(state),
             targetNpcId: partyRouteWaiting
-                ? Number(safeEquipmentFallbackSpot ? partyFallback?.npcId : 0)
+                ? Number(partyFallback?.npcId || 0)
                 : directDropTargetNpcId(acquisitionPlan),
             elapsedMs
         });

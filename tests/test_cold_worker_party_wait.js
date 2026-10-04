@@ -126,13 +126,12 @@ invoke('GameServer/Bot/AI/GearAcquisitionPlanner').safeFallbackForPlan = (state)
         assert.strictEqual(planned(101).stats.partyRequest.priority, 'required');
 
         assert.strictEqual(planned(102).spotId, scenarios[102].planned.spotId);
-        assert.strictEqual(planned(102).activity, 'hunting',
-            'D3 pin: a found fallback turns a resting waiter into a hunter');
+        assert.strictEqual(planned(102).activity, 'resting', 'D3: a found fallback does not skip the rest');
 
         assert.strictEqual(planned(103).spotId, current.id, 'a party-only plan without a request does not wait');
 
-        assert.strictEqual(planned(104).spotId, other.id,
-            'U2 pin: without a planned fallback the worker moves to another spot near its level, off its fitting current spot');
+        assert.strictEqual(planned(104).spotId, current.id,
+            'U2: without a planned fallback the worker keeps its fitting current spot, as the coordinator does');
 
         assert.strictEqual(planned(105).spotId, scenarios[105].planned.spotId,
             'a required request waits even when the plan is solo-safe');

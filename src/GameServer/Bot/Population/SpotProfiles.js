@@ -67,10 +67,12 @@ function isProtectedStarterCohort(state) {
         && !!state?.stats?.starterRegion;
 }
 
-function physicalSpotForState(state, profiles) {
+// `catalogOnly`: the caller has no live world (the cold worker); the cell is
+// looked up in the profiles, which carry the same ids.
+function physicalSpotForState(state, profiles, catalogOnly = false) {
     const loc = state?.loc;
     if (loc && Number.isFinite(Number(loc.locX)) && Number.isFinite(Number(loc.locY))) {
-        const physical = SpotService.findCurrentSpot(loc);
+        const physical = SpotService.findCurrentSpot(loc, catalogOnly ? profiles : null);
         if (physical) return SpotIndex.spotById(profiles, physical.id) || physical;
     }
     return state?.spotId ? SpotIndex.spotById(profiles, state.spotId) : null;
@@ -422,6 +424,8 @@ const SpotProfiles = {
         return SpotIndex.spotById(this.ensure(), id);
     },
 
+    // options.profiles: the spot catalogue to search instead of ensure(), for
+    // callers without the live world (the cold worker).
     findForState(state, options = {}) {
         const timestamp = Number(options.timestamp || Date.now());
         if (GearAcquisitionPlanner.levelingRecoveryFor(state, state?.stats?.equipmentPlan, timestamp)) {
@@ -429,9 +433,9 @@ const SpotProfiles = {
         }
         const acquisitionPlan = state?.stats?.equipmentPlan;
         const protectedStarterCohort = isProtectedStarterCohort(state);
-        const profiles = this.ensure();
-        const physicalSpot = physicalSpotForState(state, profiles);
-        const savedSpot = state?.spotId ? this.findById(state.spotId) : null;
+        const profiles = options.profiles || this.ensure();
+        const physicalSpot = physicalSpotForState(state, profiles, !!options.profiles);
+        const savedSpot = state?.spotId ? SpotIndex.spotById(profiles, state.spotId) : null;
         const currentSpot = physicalSpot || savedSpot;
         const targetLevel = LevelingRoutes.targetLevelForState(state, options);
         const excludedSpotIds = new Set([
@@ -505,12 +509,12 @@ const SpotProfiles = {
                         && GearAcquisitionPlanner.isClanOwnedPlan(acquisitionPlan) }
             );
             const planned = plannedSource
-                ? this.findById(plannedSource.spotId)
+                ? SpotIndex.spotById(profiles, plannedSource.spotId)
                 // Lightweight callers may provide only the persisted route
                 // metadata, without a source atlas or occupancy snapshot.
                 // Preserve that route until live capacity data is available.
                 : Object.keys(occupancy || {}).length === 0
-                    ? this.findById(acquisitionPlan.next?.spotId)
+                    ? SpotIndex.spotById(profiles, acquisitionPlan.next?.spotId)
                     : null;
             if (planned && !excludedSpotIds.has(String(planned.id))
                 && LevelingRoutes.isSpotAllowedForState(planned, state, routeOptions)) {

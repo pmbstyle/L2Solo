@@ -114,16 +114,15 @@ function coordinatorChecks() {
     SpotProfiles.findForState = findForStateStub;
     LevelingRoutes.isSpotAllowedForState = (candidate) => candidate.id !== unsafeFallback.id;
 
-    // Today the coordinator asks only the plan: a party-only plan without a
-    // party request waits (step 1.3 U2 moves this pin).
+    // The coordinator follows the party request like the worker (step 1.3
+    // U2): a party-only plan without a request does not wait...
     GearPlanner.safeFallbackForPlan = () => ({ spotId: plannedFallback.id, npcId: 321 });
-    assert.strictEqual(route(routeState(5, { equipmentPlan: partyPlan })).spotId, plannedFallback.id,
-        'U2 pin: the coordinator waits on a party-only plan without a party request');
+    assert.strictEqual(route(routeState(5, { equipmentPlan: partyPlan })).spotId, planSpot.id,
+        'U2: a party-only plan without a party request does not wait');
 
-    // Today a required request of a clan hunt with a solo-safe plan does not
-    // wait in the coordinator (step 1.3 U2 moves this pin).
+    // ...and a required request of a clan hunt waits even with a solo-safe plan.
     assert.strictEqual(route(routeState(6, { equipmentPlan: soloPlan, partyRequest: requiredRequest })).spotId,
-        planSpot.id, 'U2 pin: the coordinator ignores a required request when the plan is solo-safe');
+        plannedFallback.id, 'U2: a required request waits even when the plan is solo-safe');
 
     // A party member never waits.
     const member = routeState(7, { equipmentPlan: partyPlan, partyRequest: requiredRequest },
@@ -198,9 +197,10 @@ async function commandChecks() {
     result = await command(routeState(13, { clanPartyObjective: clanObjective }), farmSoloPlan, worked);
     assert.strictEqual(applied[0].spotId, plannedFallback.id, 'a clan-hunt request makes a solo-safe planner wait');
 
-    // A resting waiter is relabelled as hunting today (step 1.3 D3 moves this pin).
+    // A resting waiter finishes its rest first (step 1.3 D3).
     result = await command(routeState(14, {}, { activity: 'resting' }), farmPartyPlan, worked);
-    assert.strictEqual(applied[0].activity, 'hunting', 'D3 pin: a found fallback turns a resting waiter into a hunter');
+    assert.strictEqual(applied[0].spotId, plannedFallback.id);
+    assert.strictEqual(applied[0].activity, 'resting', 'D3: a found fallback does not skip the rest');
 
     // Not a waiter: main takes the spot the coordinator chose and keeps the
     // worker fight; it runs no spot search of its own (step 1.3 U3).
@@ -223,7 +223,28 @@ async function commandChecks() {
     SpotProfiles.findForState = findForStateStub;
 }
 
+// The one rule of who waits, as each caller asks it.
+function waitingChecks() {
+    const { waiting } = require('../src/GameServer/Bot/Population/PartyWaitFallback');
+    const deferred = { ...requiredRequest, status: 'deferred', priority: 'preferred' };
+    const open = { ...requiredRequest, priority: 'preferred' };
+    const cases = [
+        [{}, partyPlan, requiredRequest, true],
+        [{}, soloPlan, requiredRequest, true],
+        [{}, partyPlan, deferred, true],
+        [{}, { ...soloPlan, requiresParty: true }, deferred, true],
+        [{}, soloPlan, deferred, false],
+        [{}, partyPlan, open, false],
+        [{}, partyPlan, null, false],
+        [{ party: { partyId: 'p' } }, partyPlan, requiredRequest, false]
+    ];
+    cases.forEach(([state, plan, request, expected], index) => {
+        assert.strictEqual(waiting(state, plan, request), expected, `waiting case ${index}`);
+    });
+}
+
 async function run() {
+    waitingChecks();
     SpotProfiles.ensure = () => profiles;
     SpotProfiles.findForState = findForStateStub;
     SpotService.findCurrentSpot = () => currentSpot;

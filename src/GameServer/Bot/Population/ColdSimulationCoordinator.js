@@ -12,9 +12,9 @@ const DataCache = invoke('GameServer/DataCache');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
-const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
+const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const Director = invoke('GameServer/Bot/Population/PopulationDirector');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
@@ -617,36 +617,17 @@ class ColdSimulationCoordinator {
             : SpotRiskPolicy.backoffForStates(routedMembers, currentId, timestamp);
 
         const role = partyRoute ? PartyComposition.roleForState(state) : null;
-        const partyRequired = !partyRoute
-            && !state.party?.partyId
-            && (state.stats?.equipmentPlan?.partyNeed === 'required'
-                || state.stats?.equipmentPlan?.requiresParty === true);
         let fallbackSpot = null;
-        if (partyRequired) {
-            let fallback = null;
+        if (!partyRoute && PartyWaitFallback.waiting(state, state.stats?.equipmentPlan, state.stats?.partyRequest)) {
             try {
-                fallback = GearAcquisitionPlanner.safeFallbackForPlan(
+                fallbackSpot = PartyWaitFallback.spotFor(
                     state,
                     state.stats?.equipmentPlan,
                     // Preserve catalog identity for the planner's source-index cache.
                     index.profiles || [...index.spots.values()],
-                    { occupancy: index.occupancy, excludedSpotIds }
-                );
-            } catch (_) { fallback = null; }
-            fallbackSpot = (fallback && index.spots.get(String(fallback.spotId))) || null;
-            if (fallbackSpot && !LevelingRoutes.isSpotAllowedForState(fallbackSpot, state)) {
-                fallbackSpot = null;
-            }
-            if (!fallbackSpot) {
-                try {
-                    fallbackSpot = SpotProfiles.findForState({
-                        ...state,
-                        spotId: null,
-                        stats: Object.fromEntries(Object.entries(state.stats || {})
-                            .filter(([key]) => key !== 'equipmentPlan'))
-                    }, { occupancy: index.occupancy, excludedSpotIds, timestamp });
-                } catch (_) { fallbackSpot = null; }
-            }
+                    { occupancy: index.occupancy, excludedSpotIds, timestamp }
+                )?.spot || null;
+            } catch (_) { fallbackSpot = null; }
         }
         const routeState = partyRoute
             ? {
