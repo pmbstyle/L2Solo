@@ -31,7 +31,7 @@ invoke('GameServer/DataCache').init();
     const seller = await Life.upsertState(state(8, 2), 'seed');
     const lastSeller = await Life.upsertState(state(9, 1), 'seed');
     for (const s of [buyer, seller, lastSeller]) await Database.syncInventorySummary(s.characterId, s.inventory);
-    const events = () => Database.execute(["SELECT eventType,reason FROM market_store_events WHERE storeId='partial-wtb' ORDER BY id"]);
+    const events = () => Database.readHistory(["SELECT eventType,reason FROM market_store_events WHERE storeId='partial-wtb' ORDER BY id"]);
     const partial = await Buyers.sellToBestBuyer(seller, 'Giran');
     assert.strictEqual(partial.itemCount, 2);
     assert.strictEqual(partial.sales[0].buyer.activity, 'merchant');

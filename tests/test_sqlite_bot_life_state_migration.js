@@ -317,6 +317,16 @@ if (process.argv[2] === '--bootstrap') {
         }),
         71001
     );
+    // Worlds of this age kept bot_life_events in the world file.
+    compactionSeed.exec(`CREATE TABLE bot_life_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        characterId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+        eventType TEXT NOT NULL,
+        summary TEXT NOT NULL DEFAULT '',
+        weight INTEGER NOT NULL DEFAULT 1,
+        createdAt INTEGER NOT NULL DEFAULT 0,
+        metaJson TEXT
+    )`);
     const insertLifeEvent = compactionSeed.prepare(`INSERT INTO bot_life_events(
         characterId, eventType, summary, weight, createdAt, metaJson
     ) VALUES (?, ?, ?, ?, ?, '{}')`);
@@ -337,12 +347,15 @@ if (process.argv[2] === '--bootstrap') {
     assert.strictEqual(compactedStats.targetCombat.targets, undefined, 'v17 must remove obsolete target maps');
     assert.deepStrictEqual(compactedStats.targetCombat.populationTargets, { 20001: { resolves: 5 } },
         'v17 must preserve population target telemetry');
-    assert.deepStrictEqual(compacted.prepare(`SELECT eventType, summary FROM bot_life_events
+    // The compacted events then moved to the history file.
+    const compactedHistory = open(compactionPath.replace(/\.sqlite$/, '.history.sqlite'));
+    assert.deepStrictEqual(compactedHistory.prepare(`SELECT eventType, summary FROM bot_life_events
         WHERE characterId = 71001 ORDER BY eventType`).all().map((row) => ({ ...row })), [
         { eventType: 'death', summary: 'major event' },
         { eventType: 'hunt', summary: 'new hunt' },
         { eventType: 'rest', summary: 'new rest' }
     ], 'v17 must retain major events and only the newest routine event of each type');
+    compactedHistory.close();
     assert.strictEqual(Number(compacted.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 17').get().count), 1);
     compacted.close();
     bootstrap(compactionPath);

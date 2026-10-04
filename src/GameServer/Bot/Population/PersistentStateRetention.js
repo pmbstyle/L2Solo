@@ -11,9 +11,7 @@ const DEFAULTS = Object.freeze({
     llmTurnMaxRows: 50000,
     staleLlmTurnMs: 7 * DAY_MS,
     compactedConversationRetentionMs: DAY_MS,
-    conversationMaxUncompactedRows: 512,
-    clanActionDetailRetentionMs: 60 * 60 * 1000,
-    largeTextBatchSize: 4
+    conversationMaxUncompactedRows: 512
 });
 
 let policyIndex = 0;
@@ -44,17 +42,6 @@ function policyOptions(input = {}) {
             DEFAULTS.conversationMaxUncompactedRows,
             64,
             10000
-        ),
-        clanActionDetailRetentionMs: boundedInteger(
-            input.clanActionDetailRetentionMs,
-            DEFAULTS.clanActionDetailRetentionMs,
-            60 * 1000
-        ),
-        largeTextBatchSize: boundedInteger(
-            input.largeTextBatchSize,
-            DEFAULTS.largeTextBatchSize,
-            1,
-            16
         )
     };
 }
@@ -62,37 +49,7 @@ function policyOptions(input = {}) {
 function policies(input = {}) {
     const options = policyOptions(input);
     const batch = options.batchSize;
-    const largeTextBatch = Math.min(batch, options.largeTextBatchSize);
     return [
-        {
-            name: 'clan_action_detail_compaction',
-            statement: [
-                `UPDATE clan_actions
-                 SET payloadJson = '{}', resultJson = '{}'
-                 WHERE id IN (
-                     SELECT id FROM clan_actions INDEXED BY clan_actions_uncompacted_details
-                     WHERE status IN ('succeeded', 'failed', 'cancelled')
-                       AND resolvedAt IS NOT NULL AND resolvedAt < ?
-                       AND (payloadJson <> '{}' OR resultJson <> '{}')
-                     ORDER BY resolvedAt, id LIMIT ?
-                 )`,
-                [options.timestamp - options.clanActionDetailRetentionMs, largeTextBatch]
-            ]
-        },
-        {
-            name: 'clan_action_event_detail_compaction',
-            statement: [
-                `UPDATE clan_goal_events
-                 SET payloadJson = '{}'
-                 WHERE id IN (
-                     SELECT id FROM clan_goal_events INDEXED BY clan_goal_events_uncompacted_details
-                     WHERE eventType IN ('action_succeeded', 'action_failed', 'action_cancelled')
-                       AND occurredAt < ? AND payloadJson <> '{}'
-                     ORDER BY occurredAt, id LIMIT ?
-                 )`,
-                [options.timestamp - options.clanActionDetailRetentionMs, largeTextBatch]
-            ]
-        },
         {
             name: 'conversation_compacted_age',
             statement: [

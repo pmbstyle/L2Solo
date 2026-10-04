@@ -48,53 +48,8 @@ async function run() {
     const playerId = Number(characters.find((row) => row.name === 'RetentionPlayer').id);
     const botId = Number(characters.find((row) => row.name === 'RetentionBot').id);
 
-    await Database.execute([
-        'INSERT INTO clans(id, name, level, leaderId) VALUES (1, ?, 2, ?)',
-        ['RetentionClan', botId]
-    ]);
-    const huge = JSON.stringify({ context: { members: [{ stats: 'x'.repeat(128 * 1024) }] } });
-    await Database.execute([
-        `INSERT INTO clan_actions
-            (clanId, actionKey, actionType, status, payloadJson, resultJson, createdAt, updatedAt, resolvedAt)
-         VALUES
-            (1, 'retention-old-action', 'goal_plan', 'succeeded', ?, ?, ?, ?, ?),
-            (1, 'retention-fresh-action', 'goal_plan', 'succeeded', ?, ?, ?, ?, ?)`,
-        [huge, huge, old, old, old, huge, huge, fresh, fresh, fresh]
-    ]);
-    await Database.execute([
-        `INSERT INTO clan_goal_events
-            (clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt)
-         VALUES
-            (1, 'action_succeeded', '', 'goal_plan', '', ?, ?),
-            (1, 'action_succeeded', '', 'goal_plan', '', ?, ?)`,
-        [huge, old, huge, fresh]
-    ]);
-    assert.strictEqual((await executePolicy('clan_action_detail_compaction', {
-        clanActionDetailRetentionMs: 60 * 60 * 1000,
-        largeTextBatchSize: 4
-    })).affectedRows, 1);
-    assert.strictEqual((await executePolicy('clan_action_event_detail_compaction', {
-        clanActionDetailRetentionMs: 60 * 60 * 1000,
-        largeTextBatchSize: 4
-    })).affectedRows, 1);
-    const retainedActions = await Database.execute([
-        'SELECT actionKey, payloadJson, resultJson FROM clan_actions ORDER BY id'
-    ]);
-    assert.deepStrictEqual(
-        retainedActions.find((row) => row.actionKey === 'retention-old-action'),
-        { actionKey: 'retention-old-action', payloadJson: '{}', resultJson: '{}' },
-        'old terminal action details must compact without deleting durable status metadata'
-    );
-    assert.strictEqual(
-        retainedActions.find((row) => row.actionKey === 'retention-fresh-action').resultJson,
-        huge,
-        'fresh action details remain available to the observer'
-    );
-    const retainedEvents = await Database.execute([
-        'SELECT payloadJson FROM clan_goal_events ORDER BY id'
-    ]);
-    assert.strictEqual(retainedEvents[0].payloadJson, '{}');
-    assert.strictEqual(retainedEvents[1].payloadJson, huge);
+    // Finished clan actions and goal events are compacted in the history file
+    // (HistoryStore.retention, tests/test_history_database.js).
 
     const conversation = await Database.execute([
         `INSERT INTO bot_conversations(playerId, botId, createdAt, updatedAt)
@@ -186,73 +141,6 @@ async function run() {
     ]);
     assert(pairPlan.some((row) => String(row.detail).includes('bot_activity_journal_pair_retention')),
         'pair retention must use its bot/player working-set index');
-    // Old compacted history must not be revisited on every four-row batch.
-    for (const table of ['clan_actions', 'clan_goal_events']) {
-        const columns = table === 'clan_actions'
-            ? "clanId, actionKey, actionType, status, resolvedAt"
-            : "clanId, eventType, occurredAt";
-        const values = table === 'clan_actions'
-            ? "1, 'compacted-' || value, 'goal_plan', 'succeeded', ?"
-            : "1, 'action_succeeded', ?";
-        await Database.execute([`WITH RECURSIVE seq(value) AS
-            (SELECT 1 UNION ALL SELECT value + 1 FROM seq WHERE value < 10000)
-            INSERT INTO ${table} (${columns}) SELECT ${values} FROM seq`, [old]]);
-    }
-    for (let i = 0; i < 6; i++) {
-        const status = ['succeeded', 'failed', 'cancelled'][i % 3];
-        await Database.execute([`INSERT INTO clan_actions
-            (clanId, actionKey, actionType, status, payloadJson, resultJson, resolvedAt)
-            VALUES (1, ?, 'goal_plan', ?, ?, ?, ?)`,
-        ['uncompacted-' + i, status, i % 2 ? '{}' : '{"input":1}', i % 2 ? '{"output":1}' : '{}', old + i + 1]]);
-        await Database.execute([`INSERT INTO clan_goal_events (clanId, eventType, payloadJson, occurredAt)
-            VALUES (1, ?, '{"detail":1}', ?)`, ['action_' + status, old + i + 1]]);
-    }
-    await Database.execute([`INSERT INTO clan_actions
-        (clanId, actionKey, actionType, status, payloadJson, resolvedAt) VALUES
-        (1, 'still-running', 'goal_plan', 'running', '{"keep":1}', ?),
-        (1, 'missing-resolution', 'goal_plan', 'succeeded', '{"keep":1}', NULL)`, [old]]);
-    await Database.execute([`INSERT INTO clan_goal_events (clanId, eventType, payloadJson, occurredAt)
-        VALUES (1, 'goal_changed', '{"keep":1}', ?)`, [old]]);
-
-    const snapshots = async () => Promise.all(['clan_actions', 'clan_goal_events'].map(table =>
-        Database.execute([`SELECT * FROM ${table} ORDER BY id`])));
-    const beforeMigration = await snapshots();
-    await Database.close();
-    const { DatabaseSync } = require('node:sqlite');
-    const legacy = new DatabaseSync(databasePath);
-    legacy.exec(`DROP INDEX clan_actions_uncompacted_details;
-        DROP INDEX clan_goal_events_uncompacted_details;
-        DELETE FROM schema_migrations WHERE version = 42;
-        CREATE INDEX clan_actions_terminal_retention ON clan_actions(resolvedAt, id)
-            WHERE status IN ('succeeded', 'failed', 'cancelled');
-        CREATE INDEX clan_goal_events_action_retention ON clan_goal_events(occurredAt, id)
-            WHERE eventType IN ('action_succeeded', 'action_failed', 'action_cancelled');`);
-    legacy.close();
-    Database.init();
-    assert.deepStrictEqual(await snapshots(), beforeMigration, 'index upgrade must preserve history and active actions');
-    assert.strictEqual(await scalar('SELECT COUNT(*) value FROM schema_migrations WHERE version = 42'), 1);
-    assert.strictEqual(await scalar(`SELECT COUNT(*) value FROM sqlite_master WHERE name IN
-        ('clan_actions_terminal_retention', 'clan_goal_events_action_retention')`), 0);
-    for (const [name, index] of [
-        ['clan_action_detail_compaction', 'clan_actions_uncompacted_details'],
-        ['clan_action_event_detail_compaction', 'clan_goal_events_uncompacted_details']
-    ]) {
-        const policy = Retention.policies({ timestamp }).find(entry => entry.name === name);
-        const plan = await Database.execute(['EXPLAIN QUERY PLAN ' + policy.statement[0], policy.statement[1]]);
-        assert(plan.some(row => String(row.detail).includes(index)), 'compaction must search only unprocessed history');
-        assert.strictEqual((await executePolicy(name)).affectedRows, 4, 'first batch must honor the large-text limit');
-        assert.strictEqual((await executePolicy(name)).affectedRows, 2, 'next batch must advance past compacted records');
-        assert.strictEqual((await executePolicy(name)).affectedRows, 0, 'no-op pass must ignore the compacted backlog');
-    }
-    assert.strictEqual(await scalar(`SELECT COUNT(*) value FROM clan_actions
-        WHERE actionKey IN ('still-running', 'missing-resolution', 'retention-fresh-action') AND payloadJson <> '{}'`), 3);
-    assert.strictEqual(await scalar(`SELECT COUNT(*) value FROM clan_goal_events
-        WHERE (eventType = 'goal_changed' OR occurredAt = ?) AND payloadJson <> '{}'`, [fresh]), 2);
-    await Database.close();
-    Database.init();
-    assert.strictEqual(await scalar('SELECT COUNT(*) value FROM schema_migrations WHERE version = 42'), 1,
-        'reopening the database must not repeat the migration');
-
     Retention.reset();
     const names = [];
     for (let index = 0; index < Retention.policies().length; index++) {

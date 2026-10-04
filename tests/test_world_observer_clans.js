@@ -244,7 +244,8 @@ assert.strictEqual(playerMember.online, true);
 async function databaseBackedChecks() {
     const rootDir = path.resolve(__dirname, '..');
     const databasePath = path.join(rootDir, 'tmp', 'test-world-observer-clans.sqlite');
-    [databasePath, `${databasePath}-wal`, `${databasePath}-shm`].forEach((file) => fs.rmSync(file, { force: true }));
+    const historyPath = path.join(rootDir, 'tmp', 'test-world-observer-clans.history.sqlite');
+    [databasePath, historyPath].forEach((file) => ['', '-wal', '-shm'].forEach((suffix) => fs.rmSync(file + suffix, { force: true })));
     const seed = new DatabaseSync(databasePath);
     seed.exec(fs.readFileSync(path.join(rootDir, 'database', 'sql', 'sqlite.sql'), 'utf8'));
     seed.prepare('INSERT INTO accounts(username, password) VALUES (?, ?)').run('bot_pop_observer', 'test-only');
@@ -280,8 +281,6 @@ async function databaseBackedChecks() {
         VALUES (91, 1419, 'Blood Mark', 'quest', 2, 100, 200)`).run();
     seed.prepare(`INSERT INTO clan_contributions(clanId, characterId, targetLevel, amount, resolveKey, createdAt)
         VALUES (91, 9101, 4, 50000, 'observer:test', 200)`).run();
-    seed.prepare(`INSERT INTO clan_goal_events(clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt)
-        VALUES (91, 'goal_updated', 'item', 'market', 'observer_test', '{}', 300)`).run();
     seed.prepare(`INSERT INTO clan_orders(
         clanId, revision, kind, status, itemId, itemName, amount, strategy,
         maxUnitPrice, budget, spent, memberIdsJson, planJson, reasonCode, createdAt, updatedAt
@@ -299,6 +298,9 @@ async function databaseBackedChecks() {
 
     options.default.Database.path = path.relative(rootDir, databasePath);
     Database.init();
+    // Goal events live in the history file.
+    await Database.recordHistory('clan_goal_event', { clanId: 91, eventType: 'goal_updated', goalType: 'item',
+        plan: 'market', reasonCode: 'observer_test', payloadJson: '{}', occurredAt: 300 });
     try {
         const directory = await Observer.clanSnapshot();
         assert.strictEqual(directory.total, 1);
@@ -351,7 +353,7 @@ async function databaseBackedChecks() {
         assert.strictEqual(offlinePlayer.clan.id, 91);
     } finally {
         await Database.close();
-        [databasePath, `${databasePath}-wal`, `${databasePath}-shm`].forEach((file) => fs.rmSync(file, { force: true }));
+        [databasePath, historyPath].forEach((file) => ['', '-wal', '-shm'].forEach((suffix) => fs.rmSync(file + suffix, { force: true })));
     }
 }
 

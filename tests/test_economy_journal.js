@@ -8,9 +8,12 @@ const Database = invoke('Database');
 const EconomyJournal = invoke('EconomyJournal');
 const PvpJournal = invoke('PvpJournal');
 const databasePath = path.join(process.cwd(), 'tmp', 'test-economy-journal.sqlite');
+const historyPath = path.join(process.cwd(), 'tmp', 'test-economy-journal.history.sqlite');
 
 function clean() {
-    for (const suffix of ['', '-wal', '-shm']) fs.rmSync(databasePath + suffix, { force: true });
+    for (const file of [databasePath, historyPath]) {
+        for (const suffix of ['', '-wal', '-shm']) fs.rmSync(file + suffix, { force: true });
+    }
 }
 
 function character(name) {
@@ -42,9 +45,10 @@ async function worldTotals() {
     return new Map(rows.map((row) => [Number(row.selfId), Number(row.amount)]));
 }
 
+// The journal lives in the history file; readHistory waits for the outbox.
 async function journalRows() {
     await Database.flushJournals();
-    return Database.execute(['SELECT * FROM economy_flow_hour'], 'test:journal');
+    return Database.readHistory(['SELECT * FROM economy_flow_hour'], 'test:journal');
 }
 
 function sumBy(rows, keyOf) {
@@ -68,8 +72,7 @@ function sumBy(rows, keyOf) {
     await Database.createAccount('journal_customer', 'pw');
     const ownerId = Number((await Database.createCharacter('journal_owner', character('JournalOwner'))).insertId);
     const customerId = Number((await Database.createCharacter('journal_customer', character('JournalCustomer'))).insertId);
-    await journalRows();
-    await Database.execute(['DELETE FROM economy_flow_hour'], 'test:reset-journal');
+    const baseline = sumBy(await journalRows(), (row) => Number(row.selfId));
     const before = await worldTotals();
 
     const stockId = Number((await Database.setItem(ownerId, item(1001, 10))).insertId);
@@ -113,6 +116,7 @@ function sumBy(rows, keyOf) {
     const after = await worldTotals();
     const rows = await journalRows();
     const journaled = sumBy(rows, (row) => Number(row.selfId));
+    baseline.forEach((delta, selfId) => journaled.set(selfId, (journaled.get(selfId) || 0) - delta));
     new Set([...before.keys(), ...after.keys(), ...journaled.keys()]).forEach((selfId) => {
         const worldChange = (after.get(selfId) || 0) - (before.get(selfId) || 0);
         assert.strictEqual(journaled.get(selfId) || 0, worldChange, `journal must close for item ${selfId}`);
@@ -148,17 +152,17 @@ function sumBy(rows, keyOf) {
     PvpJournal.hotKill({ attacker: actor(ownerId, 30, 0), victim: actor(customerId, 29, 0), pk: true,
         attackerKarma: 0, playerInvolved: true, at: Date.now() });
     await Database.flushJournals();
-    const [hot] = await Database.execute(["SELECT * FROM pvp_conflicts WHERE source = 'hot'"], 'test:pvp-hot');
+    const [hot] = await Database.readHistory(["SELECT * FROM pvp_conflicts WHERE source = 'hot'"], 'test:pvp-hot');
     assert.strictEqual(hot.outcome, 'pk');
     assert.strictEqual(hot.playerInvolved, 1);
-    const [conflict] = await Database.execute(['SELECT * FROM pvp_conflicts WHERE conflictKey = ?', ['test-conflict']], 'test:pvp');
+    const [conflict] = await Database.readHistory(['SELECT * FROM pvp_conflicts WHERE conflictKey = ?', ['test-conflict']], 'test:pvp');
     assert.strictEqual(conflict.initiatorId, ownerId);
     assert.strictEqual(conflict.targetKarma, 120);
     assert.strictEqual(conflict.sideSizes, '1:2');
     assert.strictEqual(conflict.kills, 2);
     assert.strictEqual(conflict.pkKills, 1);
     assert.strictEqual(conflict.initiatorArchetype, 'brawler');
-    const [summary] = await Database.execute([
+    const [summary] = await Database.readHistory([
         "SELECT * FROM pvp_conflict_hour WHERE source = 'cold' AND outcome = 'pvp_killed'"
     ], 'test:pvp-hour');
     assert.strictEqual(summary.conflicts, 1);

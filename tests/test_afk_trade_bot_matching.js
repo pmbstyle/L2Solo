@@ -199,7 +199,7 @@ function coldState(characterId, name, inventory, store) {
     assert.strictEqual(restoredMatch.itemCount, 1);
     assert.strictEqual(AfkTrade.findOwnerProjection(ownerId), null);
 
-    const events = await Database.execute([
+    const events = await Database.readHistory([
         'SELECT kind, selfId, amount, unitPrice, totalPrice FROM afk_trade_events WHERE ownerId = ? ORDER BY id ASC',
         [ownerId]
     ], 'test:afk-bot-matching-events');

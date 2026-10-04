@@ -182,7 +182,7 @@ async function run() {
     assert.strictEqual(LifeState.snapshot(ownerId).activity, 'hunting');
     assert.strictEqual(Number(LifeState.snapshot(ownerId).inventory[cWeapon.selfId]?.amount), 1);
     assert.strictEqual((await Database.fetchAfkTradeShops(ownerId)).length, 0);
-    const history = await Database.execute([
+    const history = await Database.readHistory([
         `SELECT channel, sourceType FROM market_trades ORDER BY id`, []
     ]);
     assert.deepStrictEqual(history.map((row) => row.sourceType), ['afk_bot_store', 'afk_bot_buy_store']);
@@ -224,7 +224,7 @@ async function run() {
     assert.strictEqual(amount(await Database.fetchItems(sellerId), 57), 150);
     assert.strictEqual(amount(await Database.fetchItems(buyerId), 57), 50);
     assert.strictEqual(amount(await Database.fetchItems(buyerId), 1865), 1);
-    const crossTownTrade = await Database.execute([
+    const crossTownTrade = await Database.readHistory([
         'SELECT town, unitPrice FROM market_trades WHERE sellerCharacterId = ? AND buyerCharacterId = ? ORDER BY id DESC LIMIT 1',
         [sellerId, buyerId]
     ]);

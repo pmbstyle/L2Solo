@@ -1,9 +1,6 @@
 const Database = invoke('Database');
 
 const TABLE = 'bot_life_events';
-const MAX_EVENTS_PER_BOT = 20;
-const ROUTINE_EVENT_WINDOW_MS = 30 * 60 * 1000;
-const ROUTINE_EVENT_TYPES = new Set(['rest', 'hunt']);
 let initialized = false;
 let initStarted = false;
 let initPromise = null;
@@ -12,45 +9,24 @@ function now() {
     return Date.now();
 }
 
-function safeJson(value) {
-    return JSON.stringify(value || {});
-}
-
-function insertEvent(characterId, eventType, summary, meta, weight, createdAt) {
-    return Database.execute([
-        `INSERT INTO ${TABLE} (characterId, eventType, summary, weight, createdAt, metaJson)
-        VALUES (?, ?, ?, ?, ?, ?)`,
-        [characterId, eventType, summary, weight, createdAt, safeJson(meta)]
-    ]).then((result) => ({ result, inserted: true, coalesced: false }));
-}
-
-function writeEvent(characterId, eventType, summary, meta = {}, weight = 1) {
+// The events go to the history file through the world outbox. There a
+// routine event (rest, hunt) updates the bot's latest one of the same type
+// within 30 minutes, and each bot keeps its 20 most telling events
+// (HistoryStore APPLY.life_events).
+function writeEvents(characterId, events) {
     const createdAt = now();
-    const safeSummary = String(summary).slice(0, 255);
-    if (!ROUTINE_EVENT_TYPES.has(eventType)) {
-        return insertEvent(characterId, eventType, safeSummary, meta, weight, createdAt);
-    }
-
-    return Database.execute([
-        `UPDATE ${TABLE}
-        SET summary = ?,
-            weight = MAX(weight, ?),
-            createdAt = ?,
-            metaJson = json_set(
-                ?, '$.coalescedCount',
-                COALESCE(CAST(json_extract(metaJson, '$.coalescedCount') AS INTEGER), 1) + 1
-            )
-        WHERE id = (
-            SELECT id FROM ${TABLE}
-            WHERE characterId = ? AND eventType = ? AND createdAt >= ?
-            ORDER BY createdAt DESC, id DESC
-            LIMIT 1
-        )`,
-        [safeSummary, weight, createdAt, safeJson(meta), characterId, eventType, createdAt - ROUTINE_EVENT_WINDOW_MS]
-    ]).then((result) => {
-        if (Number(result?.affectedRows || 0) > 0) return { result, inserted: false, coalesced: true };
-        return insertEvent(characterId, eventType, safeSummary, meta, weight, createdAt);
-    });
+    return Database.recordHistory('life_events', {
+        characterId,
+        prune: 'recent',
+        events: events.map((event) => ({
+            eventType: event.eventType,
+            summary: String(event.summary).slice(0, 255),
+            weight: event.weight ?? 1,
+            createdAt,
+            meta: event.meta || {},
+            coalesce: true
+        }))
+    }, 'history:life-events');
 }
 
 const BotLifeEvents = {
@@ -77,10 +53,7 @@ const BotLifeEvents = {
 
         return ready.then((isReady) => {
             if (!isReady) return null;
-            return writeEvent(characterId, eventType, summary, meta, weight);
-        }).then(async (writeResult) => {
-            if (writeResult?.inserted) await this.prune(characterId);
-            return writeResult?.result || null;
+            return writeEvents(characterId, [{ eventType, summary, meta, weight }]);
         }).catch((err) => {
             utils.infoWarn('BotLife', 'failed to record life event: %s', err.message);
             return null;
@@ -90,18 +63,12 @@ const BotLifeEvents = {
     recordMany(characterId, events = []) {
         if (!characterId || !events.length) return Promise.resolve([]);
         const ready = initialized ? Promise.resolve(true) : this.init();
-        return ready.then(async (isReady) => {
+        return ready.then((isReady) => {
             if (!isReady) return [];
-            const results = [];
-            let inserted = false;
-            for (const event of events) {
-                if (!event?.type || !event?.summary) continue;
-                const writeResult = await writeEvent(characterId, event.type, event.summary, event.meta, event.weight);
-                inserted = inserted || writeResult.inserted;
-                results.push(writeResult.result);
-            }
-            if (inserted) await this.prune(characterId);
-            return results;
+            const valid = events.filter((event) => event?.type && event?.summary)
+                .map((event) => ({ eventType: event.type, summary: event.summary, meta: event.meta, weight: event.weight }));
+            if (!valid.length) return [];
+            return writeEvents(characterId, valid).then((outboxId) => valid.map(() => outboxId));
         }).catch((err) => {
             utils.infoWarn('BotLife', 'failed to record life events: %s', err.message);
             return [];
@@ -115,7 +82,7 @@ const BotLifeEvents = {
 
         return ready.then((isReady) => {
             if (!isReady) return [];
-            return Database.execute([
+            return Database.readHistory([
                 `SELECT eventType, summary, weight, createdAt, metaJson
                 FROM ${TABLE}
                 WHERE characterId = ?
@@ -140,7 +107,7 @@ const BotLifeEvents = {
 
         return ready.then((isReady) => {
             if (!isReady) return [];
-            return Database.execute([
+            return Database.readHistory([
                 `SELECT characterId, eventType, summary, weight, createdAt
                 FROM ${TABLE}
                 ORDER BY createdAt DESC, weight DESC
@@ -157,32 +124,6 @@ const BotLifeEvents = {
             utils.infoWarn('BotLife', 'failed to read recent observer events: %s', err.message);
             return [];
         });
-    },
-
-    prune(characterId) {
-        return Database.execute([
-            `DELETE FROM ${TABLE}
-            WHERE characterId = ?
-            AND id NOT IN (
-                WITH recent AS (
-                    SELECT id FROM ${TABLE} WHERE characterId = ?
-                    ORDER BY createdAt DESC, id DESC LIMIT 10
-                ), milestones AS (
-                    SELECT id FROM ${TABLE} WHERE characterId = ?
-                        AND eventType IN ('equipment_craft', 'dual_sword_combine', 'component_craft',
-                            'gear_acquisition_started', 'craft_materials_ready', 'level_up', 'class_change')
-                        AND id NOT IN (SELECT id FROM recent)
-                    ORDER BY createdAt DESC, id DESC LIMIT 5
-                ), important AS (
-                    SELECT id FROM ${TABLE} WHERE characterId = ?
-                        AND id NOT IN (SELECT id FROM recent UNION SELECT id FROM milestones)
-                    ORDER BY weight DESC, createdAt DESC, id DESC
-                    LIMIT (${MAX_EVENTS_PER_BOT} - (SELECT COUNT(*) FROM recent) - (SELECT COUNT(*) FROM milestones))
-                )
-                SELECT id FROM recent UNION SELECT id FROM milestones UNION SELECT id FROM important
-            )`,
-            [characterId, characterId, characterId, characterId]
-        ]).catch(() => null);
     }
 };
 

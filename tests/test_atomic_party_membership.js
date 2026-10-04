@@ -107,7 +107,7 @@ Database.init();
     ]);
     assert(savedMembers.every((row) => row.partyId === 'bgp_atomic_success' && row.activity === 'grouped'));
     assert(savedMembers.every((row) => !JSON.parse(row.statsJson).partyRequest));
-    assert.deepStrictEqual((await Database.execute([
+    assert.deepStrictEqual((await Database.readHistory([
         'SELECT characterId, eventType, summary, weight, createdAt, metaJson FROM bot_life_events WHERE characterId = ?',
         [3200001]
     ]))[0], {

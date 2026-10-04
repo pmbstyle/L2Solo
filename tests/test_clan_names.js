@@ -31,9 +31,11 @@ async function clan(id, name, leaderId, mode = 'autonomous') {
 
 async function snapshot() {
     const result = {};
-    for (const table of ['clans', 'characters', 'clan_simulation_clans', 'clan_warehouse_items', 'clan_goal_events']) {
+    for (const table of ['clans', 'characters', 'clan_simulation_clans', 'clan_warehouse_items']) {
         result[table] = await query(`SELECT * FROM ${table} ORDER BY rowid`);
     }
+    // Goal events live in the history file.
+    result.clan_goal_events = await Database.readHistory(['SELECT * FROM clan_goal_events ORDER BY rowid']);
     return result;
 }
 
@@ -63,7 +65,7 @@ async function snapshot() {
     await clan(6, 'Legion', 5, null);
     await clan(7, Catalog.select(1).name.toLowerCase(), 5, null);
     await query(`INSERT INTO clan_warehouse_items(clanId, selfId, amount) VALUES (1, 1864, 123)`);
-    await query(`INSERT INTO clan_goal_events(clanId, goalType, eventType, occurredAt) VALUES (1, 'equipment', 'created', 123)`);
+    await Database.recordHistory('clan_goal_event', { clanId: 1, goalType: 'equipment', eventType: 'created', occurredAt: 123 });
     const before = await snapshot();
     const preview = await Database.migrateAutonomousClanNames({ dryRun: true });
     assert.deepStrictEqual(preview.renamed.map((row) => row.clanId), [1, 2]);

@@ -25,7 +25,7 @@ Database.init();
     for (let index = 0; index < 25; index++) {
         await LifeEvents.record(characterId, 'rest', `rest cycle ${index}`, { spotId: 'probe' }, 2);
     }
-    const routineRows = await Database.execute([
+    const routineRows = await Database.readHistory([
         `SELECT eventType, summary, metaJson FROM bot_life_events
          WHERE characterId = ? ORDER BY id`,
         [characterId]
@@ -41,7 +41,7 @@ Database.init();
         weight: 4,
         meta: { index }
     })));
-    const retained = await Database.execute([
+    const retained = await Database.readHistory([
         'SELECT COUNT(*) AS count FROM bot_life_events WHERE characterId = ?',
         [characterId]
     ]);
@@ -51,7 +51,7 @@ Database.init();
     await LifeEvents.record(characterId, 'component_craft', 'made Cokes', {}, 2);
     await LifeEvents.record(characterId, 'equipment_craft', 'made weapon', {}, 3);
     await LifeEvents.record(characterId, 'hunt', 'recent hunt', {}, 1);
-    let history = await Database.execute(['SELECT * FROM bot_life_events WHERE characterId = ?', [characterId]]);
+    let history = await Database.readHistory(['SELECT * FROM bot_life_events WHERE characterId = ?', [characterId]]);
     for (const type of ['component_craft', 'equipment_craft', 'hunt']) {
         assert(history.some(row => row.eventType === type), `${type} must survive older deaths`);
     }
@@ -59,7 +59,7 @@ Database.init();
     await LifeEvents.recordMany(characterId, Array.from({ length: 15 }, (_, index) => ({
         type: 'death', summary: `later death ${index}`, weight: 4, meta: { index }
     })));
-    history = await Database.execute(['SELECT * FROM bot_life_events WHERE characterId = ?', [characterId]]);
+    history = await Database.readHistory(['SELECT * FROM bot_life_events WHERE characterId = ?', [characterId]]);
     assert.equal(history.length, 20);
     assert(history.some(row => row.eventType === 'equipment_craft'));
     assert(history.some(row => row.eventType === 'component_craft'));

@@ -408,10 +408,10 @@ function buildDetail({ states = [], stores = [], transactions = MarketTelemetry.
 async function detail() {
     const itemsById = cachedItemsById();
     const states = LifeState.allStates(5000);
-    const databasePath = Database.stats().path;
+    const historyPath = Database.stats().historyPath;
     const [afk, history, storeHistory] = await Promise.all([
         Database.fetchAfkTradeShops(null, { activeOnly: true }).catch(() => []),
-        (databasePath ? MarketTradeOverviewReader.read(databasePath) : Database.fetchMarketTradeOverview())
+        (historyPath ? MarketTradeOverviewReader.read(historyPath) : Database.fetchMarketTradeOverview())
             .catch(() => null),
         Database.fetchMarketStoreHistory().catch(() => null)
     ]);

@@ -178,7 +178,7 @@ async function main() {
             result: oversizedResult
         });
         assert.strictEqual(durableResolution.ok, true);
-        const [durableAction] = await Database.execute([
+        const [durableAction] = await Database.readHistory([
             'SELECT resultJson FROM clan_actions WHERE id = ?',
             [durableFixture.actionId]
         ]);
@@ -189,7 +189,7 @@ async function main() {
             'large runtime arrays retain useful cardinality without member snapshots');
         assert.strictEqual(durableResult.goal.target.itemId, 1419,
             'the compact result must retain the selected progression target');
-        const [durableEvent] = await Database.execute([
+        const [durableEvent] = await Database.readHistory([
             `SELECT payloadJson FROM clan_goal_events
              WHERE clanId = ? AND eventType = 'action_succeeded'
              ORDER BY id DESC LIMIT 1`,
@@ -214,7 +214,7 @@ async function main() {
             status: 'succeeded',
             result: flatOversizedResult
         });
-        const [flatBoundaryAction] = await Database.execute([
+        const [flatBoundaryAction] = await Database.readHistory([
             'SELECT resultJson FROM clan_actions WHERE id = ?',
             [flatBoundaryFixture.actionId]
         ]);

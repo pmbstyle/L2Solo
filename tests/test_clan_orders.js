@@ -109,7 +109,8 @@ async function main() {
         const paused = await OrderService.transition(await projection(), 'pause', { revision: created.order.revision });
         assert.strictEqual(paused.ok, true);
         assert.strictEqual(paused.order.status, 'paused');
-        [action] = await Database.execute([
+        // A finished action is in the history file.
+        [action] = await Database.readHistory([
             'SELECT actionType, status, reasonCode FROM clan_actions WHERE clanId = ? ORDER BY id DESC LIMIT 1',
             [6300001]
         ]);

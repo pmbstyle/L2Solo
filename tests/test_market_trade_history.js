@@ -8,9 +8,12 @@ const Database = invoke('Database');
 const MarketTradeOverviewReader = invoke('MarketTradeOverviewReader');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const databasePath = path.join(process.cwd(), 'tmp', 'test-market-trade-history.sqlite');
+const historyPath = path.join(process.cwd(), 'tmp', 'test-market-trade-history.history.sqlite');
 
 function clean() {
-    for (const suffix of ['', '-wal', '-shm']) fs.rmSync(databasePath + suffix, { force: true });
+    for (const file of [databasePath, historyPath]) {
+        for (const suffix of ['', '-wal', '-shm']) fs.rmSync(file + suffix, { force: true });
+    }
 }
 
 (async () => {
@@ -25,16 +28,17 @@ function clean() {
         seller: { characterId: 10, name: 'Seller' },
         buyer: { characterId: 11, name: 'Buyer' }
     };
-    const first = await Database.recordMarketTrade({
+    await Database.recordMarketTrade({
         ...base, eventKey: 'test:stem:1', at: timestamp - 23 * 60 * 60 * 1000,
         channel: 'wts', sourceType: 'cold_store', quantity: 2, unitPrice: 100
     });
-    assert.strictEqual(first.inserted, true);
-    const duplicate = await Database.recordMarketTrade({
+    await Database.recordMarketTrade({
         ...base, eventKey: 'test:stem:1', at: timestamp - 23 * 60 * 60 * 1000,
         channel: 'wts', sourceType: 'cold_store', quantity: 2, unitPrice: 100
     });
-    assert.strictEqual(duplicate.inserted, false, 'event keys must make journal retries idempotent');
+    assert.strictEqual((await Database.readHistory([
+        "SELECT COUNT(*) AS n FROM market_trades WHERE eventKey = 'test:stem:1'"
+    ]))[0].n, 1, 'event keys must make journal retries idempotent');
     await Database.recordMarketTrade({
         ...base, eventKey: 'test:stem:2', at: timestamp - 21 * 60 * 60 * 1000,
         channel: 'wtb', sourceType: 'cold_buy_store', quantity: 1, unitPrice: 200
@@ -49,7 +53,8 @@ function clean() {
     });
 
     const overview = await Database.fetchMarketTradeOverview({ timestamp });
-    const workerOverview = await MarketTradeOverviewReader.read(databasePath, { timestamp });
+    assert.strictEqual(Database.stats().historyPath, historyPath);
+    const workerOverview = await MarketTradeOverviewReader.read(historyPath, { timestamp });
     assert.deepStrictEqual(workerOverview, overview, 'read-only worker must return the same persistent market overview');
     assert.strictEqual(overview.scope, 'persistent_90d');
     assert.deepStrictEqual(overview.windows.day, {
@@ -103,7 +108,7 @@ function clean() {
     assert.strictEqual((await Database.fetchMarketTradeHistory(45, { timestamp })).summary.trades, 1);
     MarketTelemetry.dynamicBuyerSale({ ...afkTrade, sourceId: 11, sourceName: 'Buyer' }, 1,
         { sellerCharacterId: 10, sellerName: 'Seller' });
-    assert.strictEqual((await Database.execute([
+    assert.strictEqual((await Database.readHistory([
         "SELECT COUNT(*) AS n FROM market_trades WHERE eventKey GLOB 'market:*' AND sourceType = 'afk_bot_buy_store'"
     ]))[0].n, 1, 'new AFK telemetry must not add another persistent trade');
 

@@ -6,6 +6,8 @@ const MarketTradeOverview = require('./MarketTradeOverview');
 const EconomyJournal = require('./EconomyJournal');
 const PvpJournal = require('./PvpJournal');
 const CheckpointCoordinator = require('./DatabaseCheckpointCoordinator');
+const HistoryStore = require('./HistoryStore');
+const History = require('./HistoryDatabase');
 const { XP_DIVIDER: KARMA_XP_DIVIDER } = require('./GameServer/Karma');
 const InteractionMemoryPolicy = require('./GameServer/Social/InteractionMemoryPolicy');
 const ClanNameCatalog = require('./GameServer/Clan/ClanNameCatalog');
@@ -15,9 +17,9 @@ let queryTail = Promise.resolve();
 let shuttingDown = false;
 let closePromise = null;
 let databasePath;
+let historyPath;
 let flushPendingCharacterWrites = null;
-let lastMarketTradePruneAt = 0;
-const MARKET_TRADE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+const MARKET_TRADE_RETENTION_MS = HistoryStore.MARKET_TRADE_RETENTION_MS;
 const cooperative = {
     depth: 0,
     sliceStartedAt: 0,
@@ -233,60 +235,61 @@ function selectOne(table, columns, where, params, operation) {
 }
 
 const ECONOMY_JOURNAL_FLUSH_MS = 60 * 1000;
-const ECONOMY_JOURNAL_RETENTION_HOURS = 14 * 24;
-const PVP_JOURNAL_RAW_RETENTION_MS = 12 * 60 * 60 * 1000;
-const PVP_COLUMNS = ['at', 'source', 'conflictKey', 'action', 'reason', 'spotId', 'npcId', 'matchup', 'outcome', 'pvp',
-    'initiatorId', 'initiatorLevel', 'initiatorArchetype', 'initiatorKarma', 'targetId', 'targetLevel', 'targetArchetype',
-    'targetKarma', 'sideSizes', 'losingSide', 'kills', 'pkKills', 'durationMs', 'playerInvolved'];
 let economyJournalTimer = null;
-let economyJournalPrunedHour = 0;
 let economyJournalComplete = false;
 
-// Writes the economy and PvP journals gathered in memory; old rows are pruned once an hour.
+function historyFile() {
+    return HistoryStore.pathFor(databaseFile(), options.default.Database?.historyPath || '');
+}
+
+// A history row written inside the current world transaction: one small
+// outbox row; the history thread moves it into the history file (HistoryStore
+// APPLY[kind]). Returns the outbox id, which is also the id of an AFK trade
+// event or a clan goal event.
+function historyOutboxUnsafe(kind, payload) {
+    return write('INSERT INTO history_outbox (kind, payload) VALUES (?, ?)', [kind, JSON.stringify(payload)]).insertId;
+}
+
+// The history thread moved the outbox rows up to `upTo`; delete them from the
+// world through the write queue, one delete at a time.
+let outboxDeletedUpTo = 0;
+let outboxDeleteWanted = 0;
+let outboxDeleting = false;
+function deleteMovedOutbox(upTo) {
+    outboxDeleteWanted = Math.max(outboxDeleteWanted, Number(upTo) || 0);
+    if (outboxDeleting || outboxDeleteWanted <= outboxDeletedUpTo || shuttingDown) return;
+    outboxDeleting = true;
+    const target = outboxDeleteWanted;
+    enqueue(() => write('DELETE FROM history_outbox WHERE id <= ?', [target]), { operation: 'history:outbox-delete' })
+        .then(() => { outboxDeletedUpTo = target; })
+        .catch(() => null)
+        .finally(() => {
+            outboxDeleting = false;
+            if (outboxDeleteWanted > outboxDeletedUpTo) deleteMovedOutbox(outboxDeleteWanted);
+        });
+}
+
+// Waits until every write queued before the call is committed and moved into
+// the history file, so a history reader sees what the world already holds.
+function flushHistory() {
+    return enqueue(() => null, { operation: 'history:barrier', read: true })
+        .then(() => History.flush())
+        .catch((error) => utils.infoWarn('DB', 'history flush failed: %s', error.message));
+}
+
+function readHistory(work, operation) {
+    return flushHistory().then(() => enqueue(work, { operation, read: true }));
+}
+
+// Writes the economy and PvP journals gathered in memory as one history row;
+// the history thread adds them up and prunes old rows (HistoryStore).
 function flushJournals() {
     return enqueue(() => {
         if (!economyJournalComplete) economyJournalComplete = EconomyJournal.attachMissing(connection);
         const rows = EconomyJournal.drain();
         const conflicts = PvpJournal.drain();
-        const timestamp = now();
-        const hour = Math.floor(timestamp / EconomyJournal.HOUR_MS);
-        const prune = hour !== economyJournalPrunedHour;
-        if (!rows.length && !conflicts.length && !prune) return 0;
-        connection.exec('BEGIN IMMEDIATE');
-        try {
-            const upsert = Statements.prepare(connection, `INSERT INTO economy_flow_hour
-                (hour, operation, store, selfId, delta, events) VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(hour, operation, store, selfId) DO UPDATE SET
-                    delta = delta + excluded.delta, events = events + excluded.events`);
-            rows.forEach((row) => upsert.run(row.hour, row.operation, row.store, row.selfId, row.delta, row.events));
-            if (conflicts.length) {
-                const insertConflict = Statements.prepare(connection, `INSERT INTO pvp_conflicts (${PVP_COLUMNS.join(', ')})
-                    VALUES (${PVP_COLUMNS.map(() => '?').join(', ')})`);
-                const summary = Statements.prepare(connection, `INSERT INTO pvp_conflict_hour
-                    (hour, source, action, outcome, conflicts, kills, pkKills, playerInvolved) VALUES (?, ?, ?, ?, 1, ?, ?, ?)
-                    ON CONFLICT(hour, source, action, outcome) DO UPDATE SET conflicts = conflicts + 1,
-                        kills = kills + excluded.kills, pkKills = pkKills + excluded.pkKills,
-                        playerInvolved = playerInvolved + excluded.playerInvolved`);
-                conflicts.forEach((conflict) => {
-                    insertConflict.run(...PVP_COLUMNS.map((column) => conflict[column] ?? null));
-                    summary.run(Math.floor(conflict.at / EconomyJournal.HOUR_MS), conflict.source, conflict.action,
-                        conflict.outcome, conflict.kills, conflict.pkKills, conflict.playerInvolved);
-                });
-            }
-            if (prune) {
-                Statements.prepare(connection, 'DELETE FROM economy_flow_hour WHERE hour < ?')
-                    .run(hour - ECONOMY_JOURNAL_RETENTION_HOURS);
-                Statements.prepare(connection, 'DELETE FROM pvp_conflict_hour WHERE hour < ?')
-                    .run(hour - ECONOMY_JOURNAL_RETENTION_HOURS);
-                Statements.prepare(connection, 'DELETE FROM pvp_conflicts WHERE at < ?')
-                    .run(timestamp - PVP_JOURNAL_RAW_RETENTION_MS);
-            }
-            connection.exec('COMMIT');
-        } catch (error) {
-            connection.exec('ROLLBACK');
-            throw error;
-        }
-        if (prune) economyJournalPrunedHour = hour;
+        if (!rows.length && !conflicts.length) return 0;
+        historyOutboxUnsafe('journal', { rows, conflicts });
         return rows.length + conflicts.length;
     }, { operation: 'journal:flush' });
 }
@@ -630,7 +633,9 @@ function applySchemaMigrations() {
                 statesCompacted += 1;
             });
 
-            const routineEventsRemoved = Number(connection.prepare(`DELETE FROM bot_life_events
+            // A new world keeps bot_life_events in the history file only.
+            const lifeEventsHere = !!connection.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'bot_life_events'").get();
+            const routineEventsRemoved = !lifeEventsHere ? 0 : Number(connection.prepare(`DELETE FROM bot_life_events
                 WHERE eventType IN ('rest', 'hunt')
                   AND id NOT IN (
                       SELECT id FROM (
@@ -1254,13 +1259,38 @@ function applySchemaMigrations() {
         symbolId INTEGER NOT NULL,
         PRIMARY KEY(characterId, slot)
     )`)]);
-    migrations.push([49, () => connection.exec(`
-        CREATE INDEX IF NOT EXISTS clan_warehouse_ledger_revision
-            ON clan_warehouse_ledger(clanId, warehouseRevision);
-        CREATE INDEX IF NOT EXISTS clan_goal_events_meaningful_recent
+    migrations.push([49, () => {
+        connection.exec(`CREATE INDEX IF NOT EXISTS clan_warehouse_ledger_revision
+            ON clan_warehouse_ledger(clanId, warehouseRevision)`);
+        // The history file creates its own index (database/sql/history.sql).
+        if (!connection.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'clan_goal_events'").get()) return;
+        connection.exec(`CREATE INDEX IF NOT EXISTS clan_goal_events_meaningful_recent
             ON clan_goal_events(clanId, occurredAt DESC, id DESC)
-            WHERE eventType != 'action_succeeded';
-    `)]);
+            WHERE eventType != 'action_succeeded'`);
+    }]);
+    migrations.push([50, () => {
+        // Two databases: history rows leave the world through history_outbox
+        // (HistoryStore.js); the tables themselves move once at start
+        // (HistoryStore.moveWorldTables). The token ties the history file to
+        // this world.
+        connection.exec(`
+            CREATE TABLE IF NOT EXISTS history_outbox (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind TEXT NOT NULL,
+                payload TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS world_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            DROP INDEX IF EXISTS clan_actions_uncompacted_details;
+            DROP TRIGGER IF EXISTS market_store_insert;
+            DROP TRIGGER IF EXISTS market_store_update;
+        `);
+        connection.prepare("INSERT OR IGNORE INTO world_meta (key, value) VALUES ('historyToken', ?)")
+            .run(require('crypto').randomUUID());
+        connection.exec(fs.readFileSync(path.join(__dirname, '../database/sql/market-store-outbox.sql'), 'utf8'));
+    }]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
@@ -1338,7 +1368,7 @@ function marketTradeAggregate(since, { selfId = null, to = null } = {}) {
         where.push('occurredAt <= ?');
         params.push(Number(to));
     }
-    const row = one(`SELECT COUNT(*) AS trades,
+    const row = History.one(`SELECT COUNT(*) AS trades,
         COALESCE(SUM(quantity), 0) AS units,
         COALESCE(SUM(totalPrice), 0) AS adena,
         COUNT(DISTINCT selfId) AS items,
@@ -1460,6 +1490,52 @@ function playerClanCraftOrderUnsafe(clanId, orderId, settings = {}) {
     return order;
 }
 
+const FINISHED_CLAN_ACTION = "('succeeded', 'failed', 'cancelled')";
+
+// A finished clan action lives in the history file; until the history thread
+// moves it, in the outbox. The outbox is read first: a row leaves it only
+// after the history file holds it. `column` is 'id' or 'actionKey'.
+function finishedClanActionUnsafe(column, value) {
+    const queued = one(`SELECT payload FROM history_outbox
+        WHERE kind = 'clan_action' AND json_extract(payload, '$.${column}') = ?
+        ORDER BY id DESC LIMIT 1`, [value]);
+    if (queued) return JSON.parse(queued.payload);
+    return History.one(`SELECT * FROM clan_actions WHERE ${column} = ?`, [value]) || null;
+}
+
+// One clan action by id or actionKey, live (world) or finished (history).
+function clanActionUnsafe(column, value) {
+    return one(`SELECT * FROM clan_actions WHERE ${column} = ?`, [value]) || finishedClanActionUnsafe(column, value);
+}
+
+// Finished clan actions leave the world in the transaction that finishes
+// them; returns the moved rows.
+function archiveFinishedClanActionsUnsafe(clanId) {
+    const rows = all(`SELECT * FROM clan_actions WHERE clanId = ? AND status IN ${FINISHED_CLAN_ACTION}`, [Number(clanId)]);
+    if (!rows.length) return rows;
+    rows.forEach((row) => historyOutboxUnsafe('clan_action', row));
+    write(`DELETE FROM clan_actions WHERE clanId = ? AND status IN ${FINISHED_CLAN_ACTION}`, [Number(clanId)]);
+    return rows;
+}
+
+// A new pending clan action. Its actionKey stays unique across live and
+// finished actions, as when both were one table: a key taken by a finished
+// action fails (or is ignored) like the UNIQUE constraint did.
+function insertClanActionUnsafe({ clanId, actionKey, actionType, priority = 100, availableAt, payload = {},
+    reasonCode = '', createdAt }, { ignoreDuplicate = false } = {}) {
+    if (finishedClanActionUnsafe('actionKey', actionKey)) {
+        if (ignoreDuplicate) return { affectedRows: 0, insertId: 0 };
+        throw Object.assign(new Error('UNIQUE constraint failed: clan_actions.actionKey'),
+            { code: 'ERR_SQLITE_ERROR', errcode: 2067, errstr: 'constraint failed' });
+    }
+    return write(`INSERT ${ignoreDuplicate ? 'OR IGNORE ' : ''}INTO clan_actions
+        (clanId, actionKey, actionType, priority, status, attempt, availableAt,
+         payloadJson, resultJson, reasonCode, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, '{}', ?, ?, ?)`, [
+        clanId, actionKey, actionType, priority, availableAt, JSON.stringify(payload), reasonCode, createdAt, createdAt
+    ]);
+}
+
 function cancelPlayerManagedClanWorkUnsafe(clanId, reasonCode, timestamp = now()) {
     const clan = Number(clanId);
     const reason = String(reasonCode || 'player_order_replaced');
@@ -1475,6 +1551,7 @@ function cancelPlayerManagedClanWorkUnsafe(clanId, reasonCode, timestamp = now()
     write(`UPDATE clan_actions
         SET status = 'cancelled', leaseUntil = NULL, reasonCode = ?, updatedAt = ?, resolvedAt = ?
         WHERE clanId = ? AND status IN ('pending', 'running')`, [reason, timestamp, timestamp, clan]);
+    archiveFinishedClanActionsUnsafe(clan);
     write(`UPDATE clan_market_demands SET status = 'cancelled', updatedAt = ?
         WHERE clanId = ? AND status = 'open'`, [timestamp, clan]);
     write(`UPDATE clan_warehouse_reservations SET status = 'released', updatedAt = ?
@@ -1553,23 +1630,21 @@ function syncPlayerManagedClanUnsafe(clanId) {
     }
     const activeOrder = currentOrder && String(currentOrder.status) !== 'paused' ? currentOrder : null;
     if (activeOrder || !currentOrder) {
-        write(`INSERT OR IGNORE INTO clan_actions
-            (clanId, actionKey, actionType, priority, status, attempt, availableAt,
-             payloadJson, resultJson, reasonCode, createdAt, updatedAt)
-            VALUES (?, ?, 'goal_plan', 100, 'pending', 0, ?, ?, '{}', 'player_managed_sync', ?, ?)`, [
-            Number(clanId),
-            `clan:${Number(clanId)}:player-managed:${timestamp}`,
-            timestamp,
-            JSON.stringify({
+        insertClanActionUnsafe({
+            clanId: Number(clanId),
+            actionKey: `clan:${Number(clanId)}:player-managed:${timestamp}`,
+            actionType: 'goal_plan',
+            availableAt: timestamp,
+            payload: {
                 reason: simulation ? 'player_managed_membership_changed' : 'player_managed_enabled',
                 clanId: Number(clanId),
                 orderId: Number(activeOrder?.id) || null,
                 orderRevision: Number(activeOrder?.revision) || null,
                 control: activeOrder ? 'player' : 'automatic'
-            }),
-            timestamp,
-            timestamp
-        ]);
+            },
+            reasonCode: 'player_managed_sync',
+            createdAt: timestamp
+        }, { ignoreDuplicate: true });
     }
     return {
         ok: true,
@@ -2158,6 +2233,25 @@ function commitSocialGraphEventUnsafe(input) {
     };
 }
 
+// One clan goal event for the history file (clan_goal_events). Its id is the
+// outbox id.
+function recordClanGoalEventUnsafe({ clanId, eventType, goalType = '', plan = '', reasonCode = '',
+    payloadJson = '{}', occurredAt = now() }) {
+    return historyOutboxUnsafe('clan_goal_event', { clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt });
+}
+
+// One market trade for the history file (market_trades); a repeated eventKey
+// is ignored there.
+function recordMarketTradeUnsafe(trade) {
+    return historyOutboxUnsafe('market_trade', trade);
+}
+
+// One AFK trade notification for the shop owner (afk_trade_events in the
+// history file). Its id is the outbox id.
+function recordAfkTradeEventUnsafe(event) {
+    return historyOutboxUnsafe('afk_event', event);
+}
+
 function afkTradeShopUnsafe(shopId) {
     const shop = one(`SELECT shops.*, characters.name AS ownerName, characters.username AS ownerAccount
         FROM afk_trade_shops shops
@@ -2395,7 +2489,6 @@ const Database = {
         try {
             shuttingDown = false;
             closePromise = null;
-            lastMarketTradePruneAt = 0;
             databasePath = databaseFile();
             fs.mkdirSync(path.dirname(databasePath), { recursive: true });
             connection = new DatabaseSync(databasePath, { timeout: 5000 });
@@ -2405,13 +2498,19 @@ const Database = {
             connection.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA temp_store = MEMORY; PRAGMA wal_autocheckpoint = 0;');
             connection.exec(fs.readFileSync(path.join(process.cwd(), 'database', 'sql', 'sqlite.sql'), 'utf8'));
             applySchemaMigrations();
+            historyPath = historyFile();
+            History.prepare(connection, historyPath);
+            outboxDeletedUpTo = 0;
+            outboxDeleteWanted = 0;
+            History.start({ worldPath: databasePath, historyPath, onMoved: deleteMovedOutbox,
+                transferMs: Number(options.default.Database?.historyTransferMs) || 200 });
             startEconomyJournal();
             CheckpointCoordinator.start(databasePath, {
                 intervalMs: Number(options.default.Database?.checkpointIntervalMs) || 5000,
                 minWalBytes: Number(options.default.Database?.checkpointMinWalBytes) || (4 * 1024 * 1024)
             });
             cleanZeroAmountItems().catch((error) => utils.infoWarn('DB', 'failed to clean zero amount items: %s', error.message));
-            utils.infoSuccess('DB', 'SQLite connected %s', databasePath);
+            utils.infoSuccess('DB', 'SQLite connected %s (history %s)', databasePath, historyPath);
             callback();
         } catch (error) {
             if (connection) {
@@ -2422,6 +2521,7 @@ const Database = {
                 }
                 connection = null;
             }
+            History.stop().catch(() => null);
             process.exitCode = 1;
             utils.infoFail('DB', 'SQLite initialization failed -> %s', error.message);
         }
@@ -2552,58 +2652,52 @@ const Database = {
             return Promise.reject(new Error('invalid_market_trade'));
         }
         return enqueue(() => {
-            const result = write(`INSERT OR IGNORE INTO market_trades (
-                eventKey, occurredAt, channel, sourceType, selfId, itemName,
-                quantity, unitPrice, totalPrice, town,
-                sellerCharacterId, sellerName, buyerCharacterId, buyerName
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+            const id = recordMarketTradeUnsafe({
                 eventKey,
                 occurredAt,
-                String(trade.channel || 'wts').slice(0, 32),
-                String(trade.sourceType || '').slice(0, 64),
+                channel: String(trade.channel || 'wts').slice(0, 32),
+                sourceType: String(trade.sourceType || '').slice(0, 64),
                 selfId,
-                String(trade.itemName || '').slice(0, 160),
+                itemName: String(trade.itemName || '').slice(0, 160),
                 quantity,
                 unitPrice,
                 totalPrice,
-                trade.town ? String(trade.town).slice(0, 80) : null,
-                Number(trade.seller?.characterId || trade.sellerCharacterId || 0) || null,
-                sellerName ? String(sellerName).slice(0, 80) : null,
-                Number(trade.buyer?.characterId || trade.buyerCharacterId || 0) || null,
-                buyerName ? String(buyerName).slice(0, 80) : null
-            ]);
-            if (occurredAt - lastMarketTradePruneAt >= 6 * 60 * 60 * 1000) {
-                write('DELETE FROM market_trades WHERE occurredAt < ?', [occurredAt - MARKET_TRADE_RETENTION_MS]);
-                lastMarketTradePruneAt = occurredAt;
-            }
-            return { inserted: result.affectedRows > 0, id: result.affectedRows > 0 ? result.insertId || null : null };
+                town: trade.town ? String(trade.town).slice(0, 80) : null,
+                sellerCharacterId: Number(trade.seller?.characterId || trade.sellerCharacterId || 0) || null,
+                sellerName: sellerName ? String(sellerName).slice(0, 80) : null,
+                buyerCharacterId: Number(trade.buyer?.characterId || trade.buyerCharacterId || 0) || null,
+                buyerName: buyerName ? String(buyerName).slice(0, 80) : null
+            });
+            // The row reaches market_trades in the history file shortly; a
+            // repeated eventKey is ignored there.
+            return { queued: true, outboxId: id };
         }, { operation: 'market:trade-record', read: false });
     },
 
     fetchMarketStoreHistory({ timestamp = now(), rangeMs = 24 * 60 * 60 * 1000, recentLimit = 100 } = {}) {
         const since = Number(timestamp) - Math.max(1, Math.min(MARKET_TRADE_RETENTION_MS, Number(rangeMs) || 86400000));
         const limit = Math.max(1, Math.min(500, Math.floor(Number(recentLimit) || 100)));
-        return enqueue(() => ({
+        return readHistory(() => ({
             retentionDays: 90,
             since,
-            byEvent: all(`SELECT eventType, storeType, reason, COUNT(*) AS events
+            byEvent: History.all(`SELECT eventType, storeType, reason, COUNT(*) AS events
                 FROM market_store_events WHERE occurredAt >= ?
                 GROUP BY eventType, storeType, reason`, [since]),
-            byItem: all(`SELECT CAST(json_extract(item.value, '$.selfId') AS INTEGER) AS selfId,
+            byItem: History.all(`SELECT CAST(json_extract(item.value, '$.selfId') AS INTEGER) AS selfId,
                     json_extract(item.value, '$.name') AS name, events.storeType, COUNT(*) AS openings
                 FROM market_store_events events, json_each(events.itemsJson) item
                 WHERE events.occurredAt >= ? AND events.eventType = 'opened'
                 GROUP BY selfId, events.storeType ORDER BY openings DESC, selfId LIMIT 100`, [since]),
-            recent: all(`SELECT * FROM market_store_events WHERE occurredAt >= ?
+            recent: History.all(`SELECT * FROM market_store_events WHERE occurredAt >= ?
                 ORDER BY occurredAt DESC, id DESC LIMIT ${limit}`, [since]).map(({ itemsJson, ...event }) => ({
                 ...event, items: JSON.parse(itemsJson)
             }))
-        }), { operation: 'market:store-history', read: true });
+        }), 'market:store-history');
     },
 
     fetchMarketTradeOverview({ timestamp = now(), recentLimit = 200 } = {}) {
-        return enqueue(() => MarketTradeOverview.fetch(all, { timestamp, recentLimit }),
-            { operation: 'market:trade-overview', read: true });
+        return readHistory(() => MarketTradeOverview.fetch(History.all, { timestamp, recentLimit }),
+            'market:trade-overview');
     },
 
     fetchMarketBuyerActivity({ timestamp = now(), rangeMs = 24 * 60 * 60 * 1000 } = {}) {
@@ -2611,11 +2705,11 @@ const Database = {
         // A matched AFK trade can write both seller and buyer journal rows.
         // Distinct buyers count that transaction once and bound repeat purchases
         // of the same equipment by one bot during the review window.
-        return enqueue(() => all(`SELECT selfId, COUNT(DISTINCT buyerCharacterId) AS buyers
+        return readHistory(() => History.all(`SELECT selfId, COUNT(DISTINCT buyerCharacterId) AS buyers
             FROM market_trades
             WHERE occurredAt >= ? AND buyerCharacterId > 0
                 AND sourceType NOT IN ('npc', 'static_buy_store', 'static_sell_store')
-            GROUP BY selfId`, [since]), { operation: 'market:buyer-activity', read: true });
+            GROUP BY selfId`, [since]), 'market:buyer-activity');
     },
 
     fetchMarketTradeHistory(selfId, { timestamp = now(), rangeMs = 24 * 60 * 60 * 1000, bucketMs = 60 * 60 * 1000 } = {}) {
@@ -2625,8 +2719,8 @@ const Database = {
         const range = Math.max(60 * 60 * 1000, Math.min(MARKET_TRADE_RETENTION_MS, Math.floor(Number(rangeMs) || 0)));
         const bucket = Math.max(5 * 60 * 1000, Math.min(24 * 60 * 60 * 1000, Math.floor(Number(bucketMs) || 0)));
         const since = current - range;
-        return enqueue(() => {
-            const levels = all(`SELECT CAST(occurredAt / ? AS INTEGER) * ? AS bucketAt,
+        return readHistory(() => {
+            const levels = History.all(`SELECT CAST(occurredAt / ? AS INTEGER) * ? AS bucketAt,
                 unitPrice, COUNT(*) AS trades, SUM(quantity) AS units, SUM(totalPrice) AS adena
                 FROM market_trades
                 WHERE selfId = ? AND occurredAt >= ? AND occurredAt <= ?
@@ -2663,12 +2757,12 @@ const Database = {
                 return summary;
             }, new Map()).entries()).map(([unitPrice, units]) => ({ unitPrice, units }));
             const summary = marketTradeAggregate(since, { selfId: itemId, to: current });
-            const priceSummary = one(`SELECT MIN(unitPrice) AS low, MAX(unitPrice) AS high,
+            const priceSummary = History.one(`SELECT MIN(unitPrice) AS low, MAX(unitPrice) AS high,
                 CASE WHEN SUM(quantity) > 0 THEN CAST(SUM(totalPrice) AS REAL) / SUM(quantity) END AS vwap
                 FROM market_trades WHERE selfId = ? AND occurredAt >= ? AND occurredAt <= ?
                     AND ${MarketTradeOverview.CANONICAL_FILTER}`,
             [itemId, since, current]) || {};
-            const channels = Object.fromEntries(all(`SELECT channel, COUNT(*) AS trades,
+            const channels = Object.fromEntries(History.all(`SELECT channel, COUNT(*) AS trades,
                 SUM(quantity) AS units, SUM(totalPrice) AS adena
                 FROM market_trades WHERE selfId = ? AND occurredAt >= ? AND occurredAt <= ?
                     AND ${MarketTradeOverview.CANONICAL_FILTER}
@@ -2691,7 +2785,7 @@ const Database = {
                 channels,
                 buckets
             };
-        }, { operation: 'market:trade-history', read: true });
+        }, 'market:trade-history');
     },
 
     createAfkTradeShop(ownerId, config = {}) {
@@ -2908,30 +3002,23 @@ const Database = {
             write(`UPDATE afk_trade_shops SET escrowAdena = escrowAdena - ?,
                 revision = revision + 1, updatedAt = ? WHERE id = ?`,
             [Number(buyLine.price) * quantity, timestamp, buyShopId]);
-            const sellerEventId = Number(write(`INSERT INTO afk_trade_events(
-                shopId, ownerId, counterpartyId, kind, selfId, itemName, amount,
-                unitPrice, totalPrice, createdAt
-            ) VALUES (?, ?, ?, 'sale', ?, ?, ?, ?, ?, ?)`, [
-                sellShopId, sellerId, buyerId, sellLine.selfId, sellLine.name,
-                quantity, sellLine.price, total, timestamp
-            ]).insertId);
-            const buyerEventId = Number(write(`INSERT INTO afk_trade_events(
-                shopId, ownerId, counterpartyId, kind, selfId, itemName, amount,
-                unitPrice, totalPrice, createdAt
-            ) VALUES (?, ?, ?, 'purchase', ?, ?, ?, ?, ?, ?)`, [
-                buyShopId, buyerId, sellerId, sellLine.selfId, sellLine.name,
-                quantity, sellLine.price, total, timestamp
-            ]).insertId);
-            write(`INSERT OR IGNORE INTO market_trades (
-                eventKey, occurredAt, channel, sourceType, selfId, itemName,
-                quantity, unitPrice, totalPrice, town,
-                sellerCharacterId, sellerName, buyerCharacterId, buyerName
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
-                `afk:${sellerEventId}`, timestamp, botOwned ? 'bot_wts' : 'player_wts',
-                botOwned ? 'afk_bot_store' : 'afk_player_store', sellLine.selfId, sellLine.name,
-                quantity, sellLine.price, total, sellerShop.town,
-                sellerId, seller?.name || null, buyerId, buyer?.name || null
-            ]);
+            const sellerEventId = Number(recordAfkTradeEventUnsafe({
+                shopId: sellShopId, ownerId: sellerId, counterpartyId: buyerId, kind: 'sale',
+                selfId: sellLine.selfId, itemName: sellLine.name, amount: quantity,
+                unitPrice: sellLine.price, totalPrice: total, createdAt: timestamp
+            }));
+            const buyerEventId = Number(recordAfkTradeEventUnsafe({
+                shopId: buyShopId, ownerId: buyerId, counterpartyId: sellerId, kind: 'purchase',
+                selfId: sellLine.selfId, itemName: sellLine.name, amount: quantity,
+                unitPrice: sellLine.price, totalPrice: total, createdAt: timestamp
+            }));
+            recordMarketTradeUnsafe({
+                eventKey: `afk:${sellerEventId}`, occurredAt: timestamp, channel: botOwned ? 'bot_wts' : 'player_wts',
+                sourceType: botOwned ? 'afk_bot_store' : 'afk_player_store', selfId: sellLine.selfId, itemName: sellLine.name,
+                quantity, unitPrice: sellLine.price, totalPrice: total, town: sellerShop.town,
+                sellerCharacterId: sellerId, sellerName: seller?.name || null,
+                buyerCharacterId: buyerId, buyerName: buyer?.name || null
+            });
             completeAfkTradeIfFilledUnsafe(sellShopId, timestamp, botOwned);
             completeAfkTradeIfFilledUnsafe(buyShopId, timestamp, botBuyer);
             return {
@@ -2968,24 +3055,20 @@ const Database = {
             const timestamp = now();
             write('UPDATE afk_trade_lines SET count = count - ?, updatedAt = ? WHERE id = ?', [quantity, timestamp, lineId]);
             write('UPDATE afk_trade_shops SET revision = revision + 1, updatedAt = ? WHERE id = ?', [timestamp, shopId]);
-            const eventId = Number(write(`INSERT INTO afk_trade_events(
-                shopId, ownerId, counterpartyId, kind, selfId, itemName, amount,
-                unitPrice, totalPrice, createdAt
-            ) VALUES (?, ?, ?, 'sale', ?, ?, ?, ?, ?, ?)`, [
-                shopId, shop.ownerId, buyerId, line.selfId, line.name, quantity, line.price, total, timestamp
-            ]).insertId);
+            const eventId = Number(recordAfkTradeEventUnsafe({
+                shopId, ownerId: shop.ownerId, counterpartyId: buyerId, kind: 'sale', selfId: line.selfId,
+                itemName: line.name, amount: quantity, unitPrice: line.price, totalPrice: total, createdAt: timestamp
+            }));
             const owner = one('SELECT name, username FROM characters WHERE id = ?', [shop.ownerId]);
             const buyer = one('SELECT name FROM characters WHERE id = ?', [buyerId]);
             const botOwned = String(owner?.username || '').startsWith('bot_');
-            write(`INSERT OR IGNORE INTO market_trades (
-                eventKey, occurredAt, channel, sourceType, selfId, itemName,
-                quantity, unitPrice, totalPrice, town,
-                sellerCharacterId, sellerName, buyerCharacterId, buyerName
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
-                `afk:${eventId}`, timestamp, botOwned ? 'bot_wts' : 'player_wts',
-                botOwned ? 'afk_bot_store' : 'afk_player_store', line.selfId, line.name, quantity, line.price, total,
-                shop.town, shop.ownerId, owner?.name || null, buyerId, buyer?.name || null
-            ]);
+            recordMarketTradeUnsafe({
+                eventKey: `afk:${eventId}`, occurredAt: timestamp, channel: botOwned ? 'bot_wts' : 'player_wts',
+                sourceType: botOwned ? 'afk_bot_store' : 'afk_player_store', selfId: line.selfId, itemName: line.name,
+                quantity, unitPrice: line.price, totalPrice: total, town: shop.town,
+                sellerCharacterId: shop.ownerId, sellerName: owner?.name || null,
+                buyerCharacterId: buyerId, buyerName: buyer?.name || null
+            });
             const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned);
             return {
                 eventId,
@@ -3034,24 +3117,20 @@ const Database = {
             write(`UPDATE afk_trade_shops
                 SET escrowAdena = escrowAdena - ?, revision = revision + 1, updatedAt = ?
                 WHERE id = ?`, [total, timestamp, shopId]);
-            const eventId = Number(write(`INSERT INTO afk_trade_events(
-                shopId, ownerId, counterpartyId, kind, selfId, itemName, amount,
-                unitPrice, totalPrice, createdAt
-            ) VALUES (?, ?, ?, 'purchase', ?, ?, ?, ?, ?, ?)`, [
-                shopId, shop.ownerId, sellerId, line.selfId, line.name, quantity, line.price, total, timestamp
-            ]).insertId);
+            const eventId = Number(recordAfkTradeEventUnsafe({
+                shopId, ownerId: shop.ownerId, counterpartyId: sellerId, kind: 'purchase', selfId: line.selfId,
+                itemName: line.name, amount: quantity, unitPrice: line.price, totalPrice: total, createdAt: timestamp
+            }));
             const seller = one('SELECT name FROM characters WHERE id = ?', [sellerId]);
             const owner = one('SELECT name, username FROM characters WHERE id = ?', [shop.ownerId]);
             const botOwned = String(owner?.username || '').startsWith('bot_');
-            write(`INSERT OR IGNORE INTO market_trades (
-                eventKey, occurredAt, channel, sourceType, selfId, itemName,
-                quantity, unitPrice, totalPrice, town,
-                sellerCharacterId, sellerName, buyerCharacterId, buyerName
-            ) VALUES (?, ?, 'wtb', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
-                `afk:${eventId}`, timestamp, botOwned ? 'afk_bot_buy_store' : 'afk_player_buy_store',
-                line.selfId, line.name, quantity, line.price, total,
-                shop.town, sellerId, seller?.name || null, shop.ownerId, owner?.name || null
-            ]);
+            recordMarketTradeUnsafe({
+                eventKey: `afk:${eventId}`, occurredAt: timestamp, channel: 'wtb',
+                sourceType: botOwned ? 'afk_bot_buy_store' : 'afk_player_buy_store', selfId: line.selfId, itemName: line.name,
+                quantity, unitPrice: line.price, totalPrice: total, town: shop.town,
+                sellerCharacterId: sellerId, sellerName: seller?.name || null,
+                buyerCharacterId: shop.ownerId, buyerName: owner?.name || null
+            });
             const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned);
             return {
                 eventId,
@@ -3117,17 +3196,20 @@ const Database = {
 
     fetchAfkTradeNotifications(ownerId, limit = 50) {
         const safeLimit = Math.max(1, Math.min(200, Math.floor(Number(limit) || 50)));
-        return run(`SELECT * FROM afk_trade_events
+        return readHistory(() => History.all(`SELECT * FROM afk_trade_events
             WHERE ownerId = ? AND deliveredAt IS NULL
-            ORDER BY id ASC LIMIT ${safeLimit}`, [Number(ownerId)], 'afk-trade:notifications');
+            ORDER BY id ASC LIMIT ${safeLimit}`, [Number(ownerId)]), 'afk-trade:notifications');
     },
 
     markAfkTradeNotificationsDelivered(ownerId, eventIds = []) {
         const ids = [...new Set((eventIds || []).map(Number).filter(Boolean))];
         if (!ids.length) return Promise.resolve({ affectedRows: 0 });
-        return run(`UPDATE afk_trade_events SET deliveredAt = ?
-            WHERE ownerId = ? AND deliveredAt IS NULL AND id IN (${ids.map(() => '?').join(', ')})`,
-        [now(), Number(ownerId), ...ids], 'afk-trade:notifications-delivered');
+        // Through the outbox, so it lands after the events it marks even when
+        // they have not reached the history file yet.
+        return enqueue(() => {
+            historyOutboxUnsafe('afk_delivered', { ownerId: Number(ownerId), ids, at: now() });
+            return { queued: ids.length };
+        }, { operation: 'afk-trade:notifications-delivered' });
     },
 
     upsertBotGoalStates(entries = []) {
@@ -3271,26 +3353,19 @@ const Database = {
             const eventType = String(event?.eventType || '');
             const eventSummary = String(event?.summary || '').slice(0, 255);
             if (eventCharacterId > 0 && eventType && eventSummary) {
-                write(`INSERT INTO bot_life_events
-                    (characterId, eventType, summary, weight, createdAt, metaJson)
-                    VALUES (?, ?, ?, ?, ?, ?)`, [
-                    eventCharacterId,
-                    eventType,
-                    eventSummary,
-                    Math.max(1, Number(event?.weight || 1)),
-                    Number(event?.createdAt || Date.now()),
-                    JSON.stringify(event?.meta || {})
-                ]);
-                write(`DELETE FROM bot_life_events
-                    WHERE characterId = ?
-                    AND id NOT IN (
-                        SELECT id FROM (
-                            SELECT id FROM bot_life_events
-                            WHERE characterId = ?
-                            ORDER BY weight DESC, createdAt DESC
-                            LIMIT 20
-                        ) keep_rows
-                    )`, [eventCharacterId, eventCharacterId]);
+                // Kept per bot by weight here (the life events service keeps
+                // the most recent ones); both rules live in HistoryStore.
+                historyOutboxUnsafe('life_events', {
+                    characterId: eventCharacterId,
+                    prune: 'weight',
+                    events: [{
+                        eventType,
+                        summary: eventSummary,
+                        weight: Math.max(1, Number(event?.weight || 1)),
+                        createdAt: Number(event?.createdAt || Date.now()),
+                        meta: event?.meta || {}
+                    }]
+                });
             }
 
             return { ok: true, partyId: party.partyId, characterIds };
@@ -4184,11 +4259,22 @@ const Database = {
         const pending = queryTail;
         closePromise = pending.then(async () => {
             if (!connection) {
+                await History.stop();
                 await CheckpointCoordinator.stop({ final: true });
                 return false;
             }
+            // The history thread moves what is left in the outbox; the moved
+            // rows leave the world before it closes.
+            const movedUpTo = await History.stop();
             const openConnection = connection;
             connection = null;
+            if (movedUpTo > 0) {
+                try {
+                    openConnection.prepare('DELETE FROM history_outbox WHERE id <= ?').run(movedUpTo);
+                } catch (error) {
+                    utils.infoWarn('DB', 'history outbox cleanup failed: %s', error.message);
+                }
+            }
             openConnection.close();
             queryTail = Promise.resolve();
             await CheckpointCoordinator.stop({ final: true });
@@ -4221,6 +4307,7 @@ const Database = {
         const operations = Object.fromEntries(Array.from(metrics.byOperation.entries()).map(([key, value]) => [key, { ...value }]));
         const snapshot = {
             path: databasePath || null,
+            historyPath: historyPath || null,
             pending: metrics.pending,
             maxPending: metrics.maxPending,
             total: metrics.total,
@@ -4231,7 +4318,8 @@ const Database = {
             avgWaitMs: metrics.total ? Math.round(metrics.waitMs / metrics.total) : 0,
             avgRunMs: metrics.total ? Math.round(metrics.runMs / metrics.total) : 0,
             operations,
-            checkpoint: CheckpointCoordinator.snapshot()
+            checkpoint: CheckpointCoordinator.snapshot(),
+            history: History.stats()
         };
         if (resetPeak) metrics.maxPending = metrics.pending;
         return snapshot;
@@ -4267,6 +4355,17 @@ const Database = {
     },
 
     flushJournals,
+    flushHistory,
+
+    // A history row outside any other world write (HistoryStore APPLY[kind]).
+    recordHistory(kind, payload, operation = `history:${kind}`) {
+        return enqueue(() => historyOutboxUnsafe(kind, payload), { operation });
+    },
+
+    // A raw read of the history file, after flushHistory (see readHistory).
+    readHistory(statement, operation = 'history:raw') {
+        return readHistory(() => History.all(statement[0], statement[1] || []), operation);
+    },
 
     compactStackableInventory(selfIds = [], taskName = 'compact-stackable-inventory-v1') {
         const ids = [...new Set((selfIds || []).map(Number).filter((selfId) => selfId > 0))];
@@ -5393,24 +5492,27 @@ const Database = {
             } else if (target) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [productAmount, productId, customerId]);
             else if (product) productId = write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, 0, ?, ?)', [product.selfId, product.name || '', product.amount, product.slot || 0, customerId]).insertId;
             if (manualOrder) {
-                const event = write(`INSERT INTO clan_goal_events
-                    (clanId, eventType, plan, reasonCode, payloadJson, occurredAt)
-                    VALUES (?, ?, 'craft', ?, ?, ?)`, [manualOrder.clanId,
-                    product ? 'player_order_crafted' : 'player_order_craft_failed', product ? 'clan_craft_success' : 'clan_craft_failure',
-                    JSON.stringify({ orderId: manualOrder.id, recipeId: clanCraft.recipeId, crafterId, customerId,
-                        final: clanOrder.final, amount: Number(product?.amount || 0) }), now()]);
+                const eventId = recordClanGoalEventUnsafe({ clanId: manualOrder.clanId,
+                    eventType: product ? 'player_order_crafted' : 'player_order_craft_failed', plan: 'craft',
+                    reasonCode: product ? 'clan_craft_success' : 'clan_craft_failure',
+                    payloadJson: JSON.stringify({ orderId: manualOrder.id, recipeId: clanCraft.recipeId, crafterId, customerId,
+                        final: clanOrder.final, amount: Number(product?.amount || 0) }), occurredAt: now() });
                 // A real craft supersedes the delayed review of the same
                 // manual goal; keep one execution chain rather than adding a
                 // polling chain for every component in the recipe tree.
                 write(`UPDATE clan_actions SET status = 'cancelled', reasonCode = 'clan_craft_progress',
                     updatedAt = ?, resolvedAt = ? WHERE clanId = ? AND actionType = 'goal_plan' AND status = 'pending'`,
                 [now(), now(), manualOrder.clanId]);
-                write(`INSERT INTO clan_actions
-                    (clanId, actionKey, actionType, priority, status, attempt, availableAt,
-                     payloadJson, resultJson, reasonCode, createdAt, updatedAt)
-                    VALUES (?, ?, 'goal_plan', 100, 'pending', 0, ?, ?, '{}', 'clan_craft_progress', ?, ?)`,
-                [manualOrder.clanId, `clan:${manualOrder.clanId}:order:${manualOrder.id}:craft:${event.insertId}`, now(),
-                    JSON.stringify({ orderId: manualOrder.id, reason: 'clan_craft_progress' }), now(), now()]);
+                archiveFinishedClanActionsUnsafe(manualOrder.clanId);
+                insertClanActionUnsafe({
+                    clanId: manualOrder.clanId,
+                    actionKey: `clan:${manualOrder.clanId}:order:${manualOrder.id}:craft:${eventId}`,
+                    actionType: 'goal_plan',
+                    availableAt: now(),
+                    payload: { orderId: manualOrder.id, reason: 'clan_craft_progress' },
+                    reasonCode: 'clan_craft_progress',
+                    createdAt: now()
+                });
             }
             let nextCrafterAdena = null;
             if (fee > 0) {
@@ -5635,29 +5737,26 @@ const Database = {
             state.updatedAt = timestamp;
             write('UPDATE clan_simulation_clans SET updatedAt = ?, stateJson = ? WHERE clanId = ?', [timestamp, JSON.stringify(state), clan]);
             if (actionType && (orderStatus === 'active' || orderStatus === 'blocked' && strategy === 'craft')) {
-                write(`INSERT INTO clan_actions
-                    (clanId, actionKey, actionType, priority, status, attempt, availableAt,
-                     payloadJson, resultJson, reasonCode, createdAt, updatedAt)
-                    VALUES (?, ?, ?, 100, 'pending', 0, ?, ?, '{}', 'player_order_created', ?, ?)`, [
-                    clan, `clan:${clan}:order:${orderId}:r${revision}:${String(actionType)}`, String(actionType), timestamp,
-                    JSON.stringify({ orderId, orderRevision: revision, reason: 'player_order_created' }), timestamp, timestamp
-                ]);
+                insertClanActionUnsafe({
+                    clanId: clan, actionKey: `clan:${clan}:order:${orderId}:r${revision}:${String(actionType)}`,
+                    actionType: String(actionType), availableAt: timestamp,
+                    payload: { orderId, orderRevision: revision, reason: 'player_order_created' },
+                    reasonCode: 'player_order_created', createdAt: timestamp
+                });
             } else if (orderStatus === 'completed') {
-                write(`INSERT INTO clan_actions
-                    (clanId, actionKey, actionType, priority, status, attempt, availableAt,
-                     payloadJson, resultJson, reasonCode, createdAt, updatedAt)
-                    VALUES (?, ?, 'goal_plan', 100, 'pending', 0, ?, ?, '{}', 'player_order_completed', ?, ?)`, [
-                    clan, `clan:${clan}:order:${orderId}:r${revision}:automatic`, timestamp,
-                    JSON.stringify({ orderId, orderRevision: revision, reason: 'player_order_completed', control: 'automatic' }),
-                    timestamp, timestamp
-                ]);
+                insertClanActionUnsafe({
+                    clanId: clan, actionKey: `clan:${clan}:order:${orderId}:r${revision}:automatic`,
+                    actionType: 'goal_plan', availableAt: timestamp,
+                    payload: { orderId, orderRevision: revision, reason: 'player_order_completed', control: 'automatic' },
+                    reasonCode: 'player_order_completed', createdAt: timestamp
+                });
             }
-            write(`INSERT INTO clan_goal_events
-                (clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt)
-                VALUES (?, 'player_order_created', 'item', ?, ?, ?, ?)`, [
-                clan, String(nextGoal?.plan?.kind || ''), String(nextGoal?.plan?.reasonCode || ''),
-                JSON.stringify({ orderId, revision, itemId: item, itemName: String(itemName), amount: required, strategy: String(strategy) }), timestamp
-            ]);
+            recordClanGoalEventUnsafe({
+                clanId: clan, eventType: 'player_order_created', goalType: 'item', plan: String(nextGoal?.plan?.kind || ''),
+                reasonCode: String(nextGoal?.plan?.reasonCode || ''),
+                payloadJson: JSON.stringify({ orderId, revision, itemId: item, itemName: String(itemName), amount: required, strategy: String(strategy) }),
+                occurredAt: timestamp
+            });
             return {
                 ok: true,
                 order: playerManagedOrderRow(one('SELECT * FROM clan_orders WHERE id = ?', [orderId])),
@@ -5748,30 +5847,25 @@ const Database = {
                 timestamp, ['completed', 'cancelled'].includes(status) ? timestamp : null, id, clan
             ]);
             if (actionType && (status === 'active' || status === 'blocked' && nextGoal?.policy?.strategy === 'craft')) {
-                write(`INSERT INTO clan_actions
-                    (clanId, actionKey, actionType, priority, status, attempt, availableAt,
-                     payloadJson, resultJson, reasonCode, createdAt, updatedAt)
-                    VALUES (?, ?, ?, 100, 'pending', 0, ?, ?, '{}', ?, ?, ?)`, [
-                    clan, `clan:${clan}:order:${id}:r${revision}:${String(actionType)}`, String(actionType), timestamp,
-                    JSON.stringify({ orderId: id, orderRevision: revision, reason: `player_order_${action}` }),
-                    `player_order_${action}`, timestamp, timestamp
-                ]);
+                insertClanActionUnsafe({
+                    clanId: clan, actionKey: `clan:${clan}:order:${id}:r${revision}:${String(actionType)}`,
+                    actionType: String(actionType), availableAt: timestamp,
+                    payload: { orderId: id, orderRevision: revision, reason: `player_order_${action}` },
+                    reasonCode: `player_order_${action}`, createdAt: timestamp
+                });
             } else if (action === 'cancel' || status === 'completed') {
-                write(`INSERT INTO clan_actions
-                    (clanId, actionKey, actionType, priority, status, attempt, availableAt,
-                     payloadJson, resultJson, reasonCode, createdAt, updatedAt)
-                    VALUES (?, ?, 'goal_plan', 100, 'pending', 0, ?, ?, '{}', ?, ?, ?)`, [
-                    clan, `clan:${clan}:order:${id}:r${revision}:automatic`, timestamp,
-                    JSON.stringify({ orderId: id, orderRevision: revision, reason: status === 'completed' ? 'player_order_completed' : 'player_order_cancelled', control: 'automatic' }),
-                    status === 'completed' ? 'player_order_completed' : 'player_order_cancelled', timestamp, timestamp
-                ]);
+                insertClanActionUnsafe({
+                    clanId: clan, actionKey: `clan:${clan}:order:${id}:r${revision}:automatic`,
+                    actionType: 'goal_plan', availableAt: timestamp,
+                    payload: { orderId: id, orderRevision: revision, reason: status === 'completed' ? 'player_order_completed' : 'player_order_cancelled', control: 'automatic' },
+                    reasonCode: status === 'completed' ? 'player_order_completed' : 'player_order_cancelled', createdAt: timestamp
+                });
             }
-            write(`INSERT INTO clan_goal_events
-                (clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt)
-                VALUES (?, ?, 'item', ?, ?, ?, ?)`, [
-                clan, `player_order_${action}`, String(nextGoal?.plan?.kind || ''), String(reasonCode || `player_order_${action}`),
-                JSON.stringify({ orderId: id, revision, status }), timestamp
-            ]);
+            recordClanGoalEventUnsafe({
+                clanId: clan, eventType: `player_order_${action}`, goalType: 'item', plan: String(nextGoal?.plan?.kind || ''),
+                reasonCode: String(reasonCode || `player_order_${action}`),
+                payloadJson: JSON.stringify({ orderId: id, revision, status }), occurredAt: timestamp
+            });
             return { ok: true, order: playerManagedOrderRow(one('SELECT * FROM clan_orders WHERE id = ?', [id])), goal: nextGoal };
         }, `clan-order:${action}`);
     },
@@ -5809,25 +5903,24 @@ const Database = {
                 write(`UPDATE clan_actions SET status = 'cancelled', reasonCode = 'player_order_completed',
                         updatedAt = ?, resolvedAt = ?
                     WHERE clanId = ? AND status = 'pending'`, [timestamp, timestamp, clan]);
+                archiveFinishedClanActionsUnsafe(clan);
                 write(`UPDATE clan_market_demands SET status = 'fulfilled', updatedAt = ?
                     WHERE clanId = ? AND status = 'open'`, [timestamp, clan]);
-                write(`INSERT INTO clan_actions
-                    (clanId, actionKey, actionType, priority, status, attempt, availableAt,
-                     payloadJson, resultJson, reasonCode, createdAt, updatedAt)
-                    VALUES (?, ?, 'goal_plan', 100, 'pending', 0, ?, ?, '{}', 'player_order_completed', ?, ?)`, [
-                    clan, `clan:${clan}:order:${id}:r${revision}:automatic`, timestamp,
-                    JSON.stringify({ orderId: id, orderRevision: revision, reason: 'player_order_completed', control: 'automatic' }),
-                    timestamp, timestamp
-                ]);
+                insertClanActionUnsafe({
+                    clanId: clan, actionKey: `clan:${clan}:order:${id}:r${revision}:automatic`,
+                    actionType: 'goal_plan', availableAt: timestamp,
+                    payload: { orderId: id, orderRevision: revision, reason: 'player_order_completed', control: 'automatic' },
+                    reasonCode: 'player_order_completed', createdAt: timestamp
+                });
             }
             if (completed || reasonCode) {
-                write(`INSERT INTO clan_goal_events
-                    (clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt)
-                    VALUES (?, ?, 'item', ?, ?, ?, ?)`, [
-                    clan, completed ? 'player_order_completed' : 'player_order_progress', String(nextGoal.plan?.kind || ''),
-                    String(reasonCode || (completed ? 'goal_completed' : 'goal_progress')),
-                    JSON.stringify({ orderId: id, revision, progress: Number(nextGoal.progress), required: Number(nextGoal.required) }), timestamp
-                ]);
+                recordClanGoalEventUnsafe({
+                    clanId: clan, eventType: completed ? 'player_order_completed' : 'player_order_progress', goalType: 'item',
+                    plan: String(nextGoal.plan?.kind || ''),
+                    reasonCode: String(reasonCode || (completed ? 'goal_completed' : 'goal_progress')),
+                    payloadJson: JSON.stringify({ orderId: id, revision, progress: Number(nextGoal.progress), required: Number(nextGoal.required) }),
+                    occurredAt: timestamp
+                });
             }
             return { ok: true, order: playerManagedOrderRow(one('SELECT * FROM clan_orders WHERE id = ?', [id])), goal: nextGoal };
         }, 'clan-order:progress');
@@ -5845,7 +5938,7 @@ const Database = {
         const type = String(actionType || '').trim();
         if (!clan || !key || !type) return Promise.resolve({ ok: false, code: 'invalid_clan_action' });
         return inTransaction(() => {
-            const existing = one('SELECT * FROM clan_actions WHERE actionKey = ?', [key]);
+            const existing = clanActionUnsafe('actionKey', key);
             if (existing) {
                 return {
                     ok: true,
@@ -5862,19 +5955,15 @@ const Database = {
             const dueAt = availableAt !== null && availableAt !== undefined && Number.isFinite(Number(availableAt))
                 ? Math.max(0, Number(availableAt))
                 : timestamp;
-            const inserted = write(`INSERT INTO clan_actions
-                (clanId, actionKey, actionType, priority, status, attempt, availableAt,
-                 payloadJson, resultJson, reasonCode, createdAt, updatedAt)
-                VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, '{}', '', ?, ?)`, [
-                clan,
-                key,
-                type,
-                Math.floor(Number(priority) || 0),
-                dueAt,
-                JSON.stringify(payload && typeof payload === 'object' ? payload : {}),
-                timestamp,
-                timestamp
-            ]);
+            const inserted = insertClanActionUnsafe({
+                clanId: clan,
+                actionKey: key,
+                actionType: type,
+                priority: Math.floor(Number(priority) || 0),
+                availableAt: dueAt,
+                payload: payload && typeof payload === 'object' ? payload : {},
+                createdAt: timestamp
+            });
             const action = one('SELECT * FROM clan_actions WHERE id = ?', [Number(inserted.insertId)]);
             return { ok: true, created: true, actionId: Number(inserted.insertId), action };
         }, 'clan-action:enqueue');
@@ -5921,7 +6010,7 @@ const Database = {
         const id = Number(actionId);
         if (!id) return Promise.resolve({ ok: false, code: 'invalid_clan_action' });
         return inTransaction(() => {
-            const action = one('SELECT * FROM clan_actions WHERE id = ?', [id]);
+            const action = clanActionUnsafe('id', id);
             if (!action) return { ok: false, code: 'clan_action_missing' };
             if (String(action.status) === 'pending') {
                 return { ok: true, idempotent: true, actionId: id, status: 'pending', action };
@@ -5960,7 +6049,7 @@ const Database = {
             : 'failed';
         if (!id) return Promise.resolve({ ok: false, code: 'invalid_clan_action' });
         return inTransaction(() => {
-            const action = one('SELECT * FROM clan_actions WHERE id = ?', [id]);
+            const action = clanActionUnsafe('id', id);
             if (!action) return { ok: false, code: 'clan_action_missing' };
             if (['succeeded', 'failed', 'cancelled'].includes(String(action.status))) {
                 return {
@@ -5984,21 +6073,21 @@ const Database = {
                 id
             ]);
             if (Number(updated.affectedRows || 0) !== 1) return { ok: false, code: 'ownership_conflict' };
-            write(`INSERT INTO clan_goal_events
-                (clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt)
-                VALUES (?, ?, '', ?, ?, ?, ?)`, [
-                Number(action.clanId),
-                `action_${nextStatus}`,
-                String(action.actionType || ''),
-                String(reasonCode || ''),
-                JSON.stringify({ actionId: id, actionKey: action.actionKey, result: safeResult }),
-                timestamp
-            ]);
+            recordClanGoalEventUnsafe({
+                clanId: Number(action.clanId),
+                eventType: `action_${nextStatus}`,
+                plan: String(action.actionType || ''),
+                reasonCode: String(reasonCode || ''),
+                payloadJson: JSON.stringify({ actionId: id, actionKey: action.actionKey, result: safeResult }),
+                occurredAt: timestamp
+            });
+            const resolved = one('SELECT * FROM clan_actions WHERE id = ?', [id]);
+            archiveFinishedClanActionsUnsafe(action.clanId);
             return {
                 ok: true,
                 actionId: id,
                 status: nextStatus,
-                action: one('SELECT * FROM clan_actions WHERE id = ?', [id])
+                action: resolved
             };
         }, 'clan-action:resolve');
     },
@@ -6008,8 +6097,12 @@ const Database = {
         if (clanId !== null && clanId !== undefined) { clauses.push('clanId = ?'); params.push(Number(clanId)); }
         if (status !== null && status !== undefined) { clauses.push('status = ?'); params.push(String(status)); }
         const safeLimit = Math.max(1, Math.min(200, Math.floor(Number(limit) || 50)));
-        return run(`SELECT * FROM clan_actions${clauses.length ? ` WHERE ${clauses.join(' AND ')}` : ''}
-            ORDER BY updatedAt DESC, id DESC LIMIT ${safeLimit}`, params, 'clan-action:list');
+        const sql = `SELECT * FROM clan_actions${clauses.length ? ` WHERE ${clauses.join(' AND ')}` : ''}
+            ORDER BY updatedAt DESC, id DESC LIMIT ${safeLimit}`;
+        // Live actions are in the world, finished ones in the history file.
+        return readHistory(() => [...all(sql, params), ...History.all(sql, params)]
+            .sort((left, right) => right.updatedAt - left.updatedAt || right.id - left.id)
+            .slice(0, safeLimit), 'clan-action:list');
     },
     fetchClanActionQueueStats({ at = null } = {}) {
         const timestamp = at !== null && at !== undefined && Number.isFinite(Number(at))
@@ -6223,17 +6316,15 @@ const Database = {
             if (generatedName) state.naming = { version: ClanNameCatalog.VERSION, source: generatedName.source };
             write(`INSERT INTO clan_simulation_clans (clanId, version, mode, createdAt, updatedAt, stateJson)
                 VALUES (?, ?, 'autonomous', ?, ?, ?)`, [clanId, 1, timestamp, timestamp, JSON.stringify(state)]);
-            write(`INSERT INTO clan_actions
-                (clanId, actionKey, actionType, priority, status, attempt, availableAt,
-                 payloadJson, resultJson, reasonCode, createdAt, updatedAt)
-                VALUES (?, ?, 'goal_plan', 100, 'pending', 0, ?, ?, '{}', 'clan_created', ?, ?)`, [
+            insertClanActionUnsafe({
                 clanId,
-                `clan:${clanId}:bootstrap:${timestamp}`,
-                timestamp,
-                JSON.stringify({ reason: 'clan_created', clanId }),
-                timestamp,
-                timestamp
-            ]);
+                actionKey: `clan:${clanId}:bootstrap:${timestamp}`,
+                actionType: 'goal_plan',
+                availableAt: timestamp,
+                payload: { reason: 'clan_created', clanId },
+                reasonCode: 'clan_created',
+                createdAt: timestamp
+            });
             return {
                 ok: true,
                 clanId,
@@ -6361,17 +6452,15 @@ const Database = {
                 SET updatedAt = ?, stateJson = ? WHERE clanId = ?`, [timestamp, JSON.stringify(state), clan]);
             if (Number(updated.affectedRows || 0) !== 1) return { ok: false, code: 'ownership_conflict' };
             if (eventType) {
-                write(`INSERT INTO clan_goal_events
-                    (clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)`, [
-                    clan,
-                    String(eventType),
-                    String(goal?.type || ''),
-                    String(goal?.plan?.kind || ''),
-                    String(reasonCode || ''),
-                    JSON.stringify(goal || {}),
-                    timestamp
-                ]);
+                recordClanGoalEventUnsafe({
+                    clanId: clan,
+                    eventType: String(eventType),
+                    goalType: String(goal?.type || ''),
+                    plan: String(goal?.plan?.kind || ''),
+                    reasonCode: String(reasonCode || ''),
+                    payloadJson: JSON.stringify(goal || {}),
+                    occurredAt: timestamp
+                });
             }
             return { ok: true, clanId: clan, goal: state.goal, updatedAt: timestamp,
                 membershipRepair: ClanMembership.repairGoalsUnsafe([clan]) };
@@ -6379,7 +6468,7 @@ const Database = {
     },
     recordClanGoalEvent({ clanId, eventType, goalType = '', plan = '', reasonCode = '', payload = {} } = {}) {
         if (!Number(clanId) || !String(eventType || '').trim()) return Promise.resolve({ ok: false, code: 'invalid_goal_event' });
-        return insert('clan_goal_events', {
+        return enqueue(() => recordClanGoalEventUnsafe({
             clanId: Number(clanId),
             eventType: String(eventType),
             goalType: String(goalType || ''),
@@ -6387,12 +6476,12 @@ const Database = {
             reasonCode: String(reasonCode || ''),
             payloadJson: JSON.stringify(payload || {}),
             occurredAt: now()
-        }, 'clan-goal:event').then((result) => ({ ok: true, eventId: Number(result.insertId) }));
+        }), { operation: 'clan-goal:event' }).then((eventId) => ({ ok: true, eventId: Number(eventId) }));
     },
     fetchClanGoalEvents(clanId, limit = 50) {
         const safeLimit = Math.max(1, Math.min(200, Math.floor(Number(limit) || 50)));
-        return run(`SELECT * FROM clan_goal_events WHERE clanId = ?
-            ORDER BY occurredAt DESC, id DESC LIMIT ${safeLimit}`, [Number(clanId)], 'clan-goal:events');
+        return readHistory(() => History.all(`SELECT * FROM clan_goal_events WHERE clanId = ?
+            ORDER BY occurredAt DESC, id DESC LIMIT ${safeLimit}`, [Number(clanId)]), 'clan-goal:events');
     },
     upsertClanMarketDemand({ clanId, itemId, amount, maxPrice, goalKey, status = 'open' } = {}) {
         const clan = Number(clanId);
@@ -6584,20 +6673,20 @@ const Database = {
             allMembers.forEach((characterId) => write(`INSERT INTO clan_operation_members
                 (operationId, clanId, characterId, status, reservedAt)
                 VALUES (?, ?, ?, 'active', ?)`, [Number(inserted.insertId), clan, characterId, timestamp]));
-            write(`INSERT INTO clan_goal_events
-                (clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt)
-                VALUES (?, 'party_operation_started', ?, ?, 'party_operation_started', ?, ?)`, [
-                clan,
-                String(goal.type || ''),
-                String(operationType),
-                JSON.stringify({
+            recordClanGoalEventUnsafe({
+                clanId: clan,
+                eventType: 'party_operation_started',
+                goalType: String(goal.type || ''),
+                plan: String(operationType),
+                reasonCode: 'party_operation_started',
+                payloadJson: JSON.stringify({
                     operationKey: key,
                     operationId: Number(inserted.insertId),
                     memberIds: allMembers,
                     guestMemberIds: guests
                 }),
-                timestamp
-            ]);
+                occurredAt: timestamp
+            });
             return {
                 ok: true,
                 code: 'party_operation_started',
@@ -6724,16 +6813,15 @@ const Database = {
                 timestamp,
                 id
             ]);
-            write(`INSERT INTO clan_goal_events
-                (clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt)
-                VALUES (?, ?, ?, 'farm', ?, ?, ?)`, [
-                clan,
-                success ? 'party_operation_succeeded' : 'party_operation_failed',
-                String(goal.type || 'item'),
-                String(reasonCode || (success ? 'party_operation_succeeded' : 'party_operation_failed')),
-                JSON.stringify({ operationId: id, operationKey: operation.operationKey, reward }),
-                timestamp
-            ]);
+            recordClanGoalEventUnsafe({
+                clanId: clan,
+                eventType: success ? 'party_operation_succeeded' : 'party_operation_failed',
+                goalType: String(goal.type || 'item'),
+                plan: 'farm',
+                reasonCode: String(reasonCode || (success ? 'party_operation_succeeded' : 'party_operation_failed')),
+                payloadJson: JSON.stringify({ operationId: id, operationKey: operation.operationKey, reward }),
+                occurredAt: timestamp
+            });
             return {
                 ok: true,
                 code: success ? 'party_operation_succeeded' : 'party_operation_failed',
@@ -7658,7 +7746,7 @@ const Database = {
 };
 
 const ClanLevelSp = require('./GameServer/Clan/ClanLevelSpRepository')({ one, write, run, withCharacterFlushes });
-Object.assign(Database, require('./GameServer/Clan/ClanAllianceRepository')({ one, all, write, inTransaction, withCharacterFlushes, ClanLevelSp }));
+Object.assign(Database, require('./GameServer/Clan/ClanAllianceRepository')({ one, all, write, inTransaction, withCharacterFlushes, ClanLevelSp, recordClanGoalEventUnsafe }));
 
 Object.assign(Database, require('./GameServer/ClanHall/Repository')({
     one, all, write, inTransaction, withCharacterFlush, updateColdInventorySnapshotUnsafe, syncInventorySummaryUnsafe,

@@ -4,7 +4,7 @@ const runtimeEpoch = require('crypto').randomUUID();
 
 // All progress and physical quest-item writes share the server's transaction
 // queue. JSON is scoped to one clan; no separate connection can race saves.
-module.exports = function repository({ one, all, write, inTransaction, withCharacterFlushes, ClanLevelSp }) {
+module.exports = function repository({ one, all, write, inTransaction, withCharacterFlushes, ClanLevelSp, recordClanGoalEventUnsafe }) {
     const ensure = () => write(`CREATE TABLE IF NOT EXISTS clan_alliance_quests (
         clanId INTEGER PRIMARY KEY REFERENCES clans(id) ON DELETE CASCADE,
         stateJson TEXT NOT NULL)`);
@@ -122,8 +122,8 @@ module.exports = function repository({ one, all, write, inTransaction, withChara
                         write('UPDATE clan_simulation_clans SET updatedAt = ?, stateJson = ? WHERE clanId = ?', [timestamp, JSON.stringify(projection), clanId]);
                     }
                 } else {
-                    write(`INSERT INTO clan_goal_events(clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt)
-                        VALUES (?, 'alliance_trial_completed', 'level', 'alliance_trial', 'clan_level_four', ?, ?)`, [clanId, JSON.stringify(state), timestamp]);
+                    recordClanGoalEventUnsafe({ clanId, eventType: 'alliance_trial_completed', goalType: 'level',
+                        plan: 'alliance_trial', reasonCode: 'clan_level_four', payloadJson: JSON.stringify(state), occurredAt: timestamp });
                 }
                 return { ok: true, advanced: spBudget && !spBudget.ok ? spBudget : { ok: advanced }, state, levelSp };
             }, 'clan-alliance:bot'));

@@ -171,7 +171,7 @@ function recentEvents(events = []) {
 
 async function meaningfulEvents(clanId, limit = 120) {
     const safeLimit = Math.max(20, Math.min(200, Math.floor(number(limit, 120))));
-    return Database.execute([`
+    return Database.readHistory([`
         SELECT id, clanId, eventType, goalType, plan, reasonCode, payloadJson, occurredAt
         FROM clan_goal_events
         WHERE clanId = ? AND eventType != 'action_succeeded'

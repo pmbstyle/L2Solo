@@ -140,7 +140,8 @@ async function main() {
             [6200001]
         ]);
         assert.deepStrictEqual(cleanedAction, { status: 'pending', reasonCode: 'player_managed_sync' });
-        const [cancelledStaleAction] = await Database.execute([
+        // A finished action is in the history file.
+        const [cancelledStaleAction] = await Database.readHistory([
             "SELECT status, reasonCode FROM clan_actions WHERE clanId = ? AND actionKey = 'test:legacy-player-goal'",
             [6200001]
         ]);

@@ -120,7 +120,7 @@ function amountOf(rows, selfId) {
     const events = await Database.fetchAfkTradeNotifications(ownerId);
     assert.strictEqual(events.length, 2);
     assert.deepStrictEqual(events.map((event) => event.kind), ['sale', 'purchase']);
-    const marketTrades = await Database.execute([
+    const marketTrades = await Database.readHistory([
         `SELECT eventKey, channel, sourceType, selfId, quantity, unitPrice, totalPrice
          FROM market_trades ORDER BY id ASC`
     ], 'test:afk-market-journal');
