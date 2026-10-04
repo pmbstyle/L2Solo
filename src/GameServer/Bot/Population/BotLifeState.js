@@ -3789,6 +3789,12 @@ const BotLifeState = {
         return cache.recent(recentLimit(limit));
     },
 
+    // Every cached state, newest first, with no 2000 bound: for the feeds to
+    // the cold worker, which must see the whole population.
+    everyState() {
+        return cache.recent(cache.size);
+    },
+
     // The states a bounded allStates(limit) view leaves out (oldest updatedAt).
     statesBeyondRecent(limit = 500) {
         return cache.beyondRecent(recentLimit(limit));

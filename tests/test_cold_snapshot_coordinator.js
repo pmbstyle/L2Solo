@@ -43,9 +43,9 @@ function setup() {
     };
 
     const incremental = setup();
-    const originalAllStates = LifeState.allStates;
+    const originalEveryState = LifeState.everyState;
     let fullCalls = 0;
-    LifeState.allStates = () => {
+    LifeState.everyState = () => {
         fullCalls += 1;
         return [];
     };
@@ -57,7 +57,7 @@ function setup() {
     assert.strictEqual(incremental.messages[0].payload.initial, false);
 
     const full = setup();
-    LifeState.allStates = () => Array.from({ length: 130 }, (_, index) => ({
+    LifeState.everyState = () => Array.from({ length: 130 }, (_, index) => ({
         characterId: index + 1,
         phase: 'cold',
         revision: 1
@@ -119,7 +119,7 @@ function setup() {
                 }
             }
         }));
-        LifeState.allStates = () => states;
+        LifeState.everyState = () => states;
         const send = () => mode === 'full' ? coordinator.sendFullSnapshot()
             : coordinator.sendIncrementalEntries(states, {}, 32, 'P0');
         const result = await send();
@@ -168,7 +168,7 @@ function setup() {
         if (mode === 'full') assert.strictEqual(messages[0].payload.done, true);
     }
 
-    LifeState.allStates = originalAllStates;
+    LifeState.everyState = originalEveryState;
     const sliced = setup();
     const governor = invoke('GameServer/Bot/Population/BackgroundWorkGovernor');
     const originalAdmit = governor.admit;

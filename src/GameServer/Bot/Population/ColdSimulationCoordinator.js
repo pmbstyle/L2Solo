@@ -902,7 +902,7 @@ class ColdSimulationCoordinator {
         // Re-read after reconciliation: releasing an invalid party updates
         // cached member ownership and membership. Sending the pre-repair
         // array would immediately seed the worker with the stale party again.
-        const states = LifeState.allStates(Math.max(1, Number(Config.maxPlayingPopulation) + 300 || 2000));
+        const states = LifeState.everyState();
         const compactPartyMemberIds = new Set(states.map((state) => Number(state.characterId || 0)).filter(Boolean));
         const index = this.contextIndex({ compactPartyMemberIds });
         const pageSize = this.snapshotQueue.pageSize;
@@ -963,22 +963,25 @@ class ColdSimulationCoordinator {
     }
 
     async reconcileOrphanedBackgroundParties() {
-        const allStates = typeof LifeState.allStates === 'function'
-            ? LifeState.allStates(Math.max(2000, Number(Config.maxPlayingPopulation || 0) + 300))
-            : [];
+        const statePartyId = (state) => state?.party?.partyId ?? state?.partyId ?? null;
+        // Who claims each party, from one pass over every state, instead of
+        // a pass over the states for every party.
+        const attachedByParty = new Map();
+        for (const state of LifeState.everyState()) {
+            const partyId = String(statePartyId(state) || '');
+            if (!partyId) continue;
+            if (!attachedByParty.has(partyId)) attachedByParty.set(partyId, []);
+            attachedByParty.get(partyId).push(Number(state.characterId));
+        }
         const invalid = BackgroundPartyState.active().map((party) => {
             const memberIds = (party.memberIds || []).map((id) => Number(id)).filter(Boolean);
             const states = memberIds.map((id) => LifeState.cachedState(id)).filter(Boolean);
-            const statePartyId = (state) => state?.party?.partyId ?? state?.partyId ?? null;
             const attached = states.filter((state) => (
                 String(statePartyId(state) || '') === String(party.partyId)
             ));
             const leaderAttached = attached.some((state) => Number(state.characterId) === Number(party.leaderId));
             const declared = new Set(memberIds);
-            const extraAttached = allStates.some((state) => (
-                String(statePartyId(state) || '') === String(party.partyId)
-                && !declared.has(Number(state.characterId))
-            ));
+            const extraAttached = (attachedByParty.get(String(party.partyId)) || []).some((id) => !declared.has(id));
             const reason = !memberIds.length || !states.length
                 ? 'orphaned_dissolved_party'
                 : !leaderAttached || attached.length !== memberIds.length || extraAttached

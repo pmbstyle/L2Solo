@@ -78,7 +78,7 @@ function coordinatorWithWorker() {
             return { state, context: {} };
         };
         const states = Array.from({ length: 60 }, (_, index) => ({ characterId: index + 1, phase: 'cold' }));
-        LifeState.allStates = () => states;
+        LifeState.everyState = () => states;
         let ticks = 0, longest = 0, last = Date.now(), running = true;
         const tick = () => { const now = Date.now(); longest = Math.max(longest, now - last); last = now; ticks += 1;
             if (running) setImmediate(tick); };
