@@ -138,6 +138,15 @@ function kindForSelfId(selfId) {
     return null;
 }
 
+// The shot an action loads (Attack.chargeShotForSkill, used by hot and cold
+// combat): a spell a spiritshot, a physical skill a soulshot unless its
+// ssBoost is 0, a normal attack (no skill, so no ssBoost) a soulshot. A cast
+// or a skill spends its shot at use; a normal attack only when the hit lands.
+function actionShotKind(magic, ssBoost) {
+    if (magic) return 'spiritshot';
+    return Number(ssBoost) <= 0 ? null : 'soulshot';
+}
+
 function isCompatibleWithActor(kind, selfId, actor) {
     const id = Number(selfId);
     const rank = weaponRankFromActor(actor);
@@ -363,6 +372,7 @@ module.exports = {
     planForKind,
     planForActor,
     planForActorKind,
+    actionShotKind,
     kindForSelfId,
     isCompatibleWithActor,
     enableAutoShot,

@@ -13,6 +13,7 @@ const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy'
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const EncounterReadiness = invoke('GameServer/Bot/AI/BotEncounterReadiness');
 const PartyBuffLoadout = invoke('GameServer/Bot/AI/PartyBuffLoadout');
+const ShotStock = invoke('GameServer/Inventory/ShotStock');
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -981,6 +982,21 @@ function attackDamage(fighter, selected, target, rng, { vsMob = false, at = 0 } 
     return damage;
 }
 
+// The shot a cold action loads, by the hot rule (ShotStock.actionShotKind):
+// a spell a spiritshot, a physical skill a soulshot unless its ssBoost is 0,
+// a normal attack (no skill) a soulshot. Null when the action takes none.
+function loadColdShot(fighter, skill) {
+    if (!skill) return ShotStock.actionShotKind(false);
+    const semantic = C4SkillRules.resolveCached(skill);
+    return ShotStock.actionShotKind(semantic.isMagic ?? skill.spell === true, semantic.ssBoost);
+}
+
+// A cast or a skill spends its loaded shot at use, a normal attack only when
+// the hit lands (Attack.js); the resolve debits shotActions from the stock.
+function spendColdShot(fighter) {
+    fighter.shotActions += 1;
+}
+
 // One cold bot action, shared by the solo and the party fight: servitor,
 // charge expiry, potion, heal, song, charge preparation, then a skill or a
 // normal attack on the mob. `allies` are the heal and song targets (only the
@@ -999,40 +1015,48 @@ function coldBotTurn(fighter, { allies, mob, mobHp, at, time, rng, party = false
     }
     const heal = chooseHeal(fighter.profile, allies, fighter.vitals.mp, fighter.cooldowns, at, fighter);
     if (heal) {
+        const shot = loadColdShot(fighter, heal.skill);
         const events = applyAllyHeal(fighter, allies, heal);
         if (help) for (const event of events) help.set(`${event.sourceId}:${event.targetId}:${event.type}`, event);
         spendSkill(fighter, heal.skill, at);
         fighter.skillUses += 1;
         fighter.heals += 1;
         fighter.readyAt += actionDelayMs(fighter.profile, heal.skill);
+        if (shot) spendColdShot(fighter);
         return null;
     }
     const music = chooseMusicAction(fighter, allies, at);
     if (music) {
+        const shot = loadColdShot(fighter, music.skill);
         applyMusicAction(fighter, music, at);
         spendSkill(fighter, music.skill, at, music.cost);
         fighter.skillUses += 1;
         fighter.musicUses += 1;
         fighter.readyAt += actionDelayMs(fighter.profile, music.skill);
+        if (shot) spendColdShot(fighter);
         return null;
     }
     const chargeSkill = chooseChargeSkill(fighter.profile, fighter.vitals.mp, fighter.cooldowns, at, fighter.charges,
         { hp: fighter.vitals.hp, mob, party, summon: fighter.summon });
     if (chargeSkill) {
+        const shot = loadColdShot(fighter, chargeSkill);
         const semantic = C4SkillRules.resolve(chargeSkill);
         addCharges(fighter, 1, semantic.maxCharges, at);
         spendSkill(fighter, chargeSkill, at);
         fighter.skillUses += 1;
         fighter.readyAt += actionDelayMs(fighter.profile, chargeSkill);
+        if (shot) spendColdShot(fighter);
         return null;
     }
 
-    fighter.shotActions += 1;
     const profile = fighter.profile;
     const selected = chooseSkill(profile, fighter.vitals.hp, fighter.vitals.mp, fighter.cooldowns, at, fighter.charges, rng,
         { mob, party, summon: fighter.summon });
     const skill = selected?.skill || null;
+    const shot = loadColdShot(fighter, skill);
     const damage = attackDamage(fighter, selected, mob, rng, { vsMob: true, at });
+    // A missed normal attack deals 0 and keeps its soulshot.
+    if (shot && (skill || damage > 0)) spendColdShot(fighter);
     if (skill) {
         settleCharges(fighter, C4SkillRules.resolve(skill), at);
         spendSkill(fighter, skill, at);

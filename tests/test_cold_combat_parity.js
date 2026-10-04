@@ -130,16 +130,16 @@ const SOLO = [
     ['paladin runs out of actions', paladin, 122, 15, 60000, 10]
 ];
 const SOLO_GOLDEN = {
-    'sorcerer dies after a self-heal': { won: false, died: true, hp: 0, mp: 2365, charges: 0, actions: 24, durationMs: 23669, skillUses: 8, shotActions: 4, heals: 4, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 1, mobHp: null, botReadyAt: null },
+    'sorcerer dies after a self-heal': { won: false, died: true, hp: 0, mp: 2365, charges: 0, actions: 24, durationMs: 23669, skillUses: 8, shotActions: 8, heals: 4, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 1, mobHp: null, botReadyAt: null },
     'gladiator charges': { won: true, died: false, hp: 1389, mp: 384, charges: 0, actions: 18, durationMs: 11315, skillUses: 10, shotActions: 6, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     'bishop': { won: true, died: false, hp: 1014, mp: 2489, charges: 0, actions: 19, durationMs: 19877, skillUses: 7, shotActions: 7, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'warlock servitor, heals, potion': { won: true, died: false, hp: 345, mp: 2237, charges: 0, actions: 81, durationMs: 54630, skillUses: 12, shotActions: 0, heals: 12, musicUses: 0, summonUses: 1, summonActions: 34, potionsUsed: 1, mobHp: null, botReadyAt: null },
+    'warlock servitor, heals, potion': { won: true, died: false, hp: 345, mp: 2237, charges: 0, actions: 81, durationMs: 54630, skillUses: 12, shotActions: 12, heals: 12, musicUses: 0, summonUses: 1, summonActions: 34, potionsUsed: 1, mobHp: null, botReadyAt: null },
     'necromancer corpse servitor': { won: true, died: false, hp: 1140, mp: 2432, charges: 0, actions: 4, durationMs: 3442, skillUses: 2, shotActions: 2, heals: 0, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'swordsinger songs': { won: true, died: false, hp: 1141, mp: 13, charges: 0, actions: 33, durationMs: 24336, skillUses: 6, shotActions: 13, heals: 0, musicUses: 6, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'swordsinger songs': { won: true, died: false, hp: 1141, mp: 13, charges: 0, actions: 33, durationMs: 24336, skillUses: 6, shotActions: 17, heals: 0, musicUses: 6, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     'tyrant': { won: true, died: false, hp: 1717, mp: 691, charges: 0, actions: 7, durationMs: 3655, skillUses: 4, shotActions: 3, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'paladin': { won: true, died: false, hp: 1490, mp: 643, charges: 0, actions: 23, durationMs: 20867, skillUses: 8, shotActions: 9, heals: 1, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'sorcerer 40 dies': { won: false, died: true, hp: 0, mp: 1400, charges: 0, actions: 37, durationMs: 40576, skillUses: 12, shotActions: 2, heals: 10, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'bladedancer dances': { won: true, died: false, hp: 604, mp: 13, charges: 0, actions: 35, durationMs: 26083, skillUses: 6, shotActions: 13, heals: 0, musicUses: 6, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'paladin': { won: true, died: false, hp: 1490, mp: 643, charges: 0, actions: 23, durationMs: 20867, skillUses: 8, shotActions: 10, heals: 1, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'sorcerer 40 dies': { won: false, died: true, hp: 0, mp: 1400, charges: 0, actions: 37, durationMs: 40576, skillUses: 12, shotActions: 12, heals: 10, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'bladedancer dances': { won: true, died: false, hp: 604, mp: 13, charges: 0, actions: 35, durationMs: 26083, skillUses: 6, shotActions: 19, heals: 0, musicUses: 6, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     'gladiator times out': { won: false, died: false, hp: 1579, mp: 679, charges: 0, actions: 6, durationMs: 4000, skillUses: 3, shotActions: 2, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 1306, botReadyAt: 216 },
     'paladin runs out of actions': { won: false, died: false, hp: 1398, mp: 774, charges: 0, actions: 10, durationMs: 7518, skillUses: 2, shotActions: 5, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 534, botReadyAt: 1127 }
 };
@@ -166,20 +166,20 @@ const PARTY = [
 ];
 const PARTY_GOLDEN = {
     'tank, charges, healer, songs, servitor': { won: true, actions: 25, skillUses: 18, musicUses: 5, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0,
-        members: [[1008, 1340, 774, 4, 3, 3, 1, 0, 0],
+        members: [[1008, 1340, 774, 4, 3, 4, 1, 0, 0],
             [1002, 1734, 497, 7, 7, 4, 0, 0, 0],
             [1011, 1290, 2565, 3, 3, 3, 0, 0, 0],
-            [1006, 1392, 223, 5, 5, 0, 0, 5, 0],
+            [1006, 1392, 223, 5, 5, 5, 0, 5, 0],
             [1004, 1290, 2523, 1, 0, 0, 0, 0, 0]] },
     'casters and a dancer': { won: true, actions: 9, skillUses: 7, musicUses: 2, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0,
         members: [[1001, 1290, 2538, 2, 2, 2, 0, 0, 0],
             [1005, 1290, 2432, 2, 2, 2, 0, 0, 0],
             [1003, 1189, 2595, 1, 1, 1, 0, 0, 0],
-            [1010, 1227, 673, 2, 2, 0, 0, 2, 0]] },
+            [1010, 1227, 673, 2, 2, 2, 0, 2, 0]] },
     'injured with potions': { won: true, actions: 12, skillUses: 9, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 1, mobHp: 0, help: 1,
         members: [[1012, 1326, 765, 5, 4, 2, 1, 0, 0],
             [1002, 1665, 679, 3, 3, 2, 0, 0, 0],
-            [1009, 821, 1659, 2, 2, 0, 2, 0, 0]] },
+            [1009, 821, 1659, 2, 2, 2, 2, 0, 0]] },
     'necromancer corpse servitor': { won: true, actions: 5, skillUses: 3, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0,
         members: [[1005, 1290, 2432, 2, 2, 2, 0, 0, 0],
             [1003, 1165, 2595, 1, 1, 1, 0, 0, 0]] }

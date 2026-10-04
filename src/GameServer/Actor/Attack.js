@@ -9,6 +9,7 @@ const EffectStats    = invoke('GameServer/Effects/EffectStats');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
 const WeaponSA = invoke('GameServer/Items/C4WeaponSA');
+const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const RaidCurse = invoke('GameServer/RaidBoss/RaidCurse');
 const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 const AttackRange = invoke('GameServer/Actor/AttackRange');
@@ -770,9 +771,7 @@ class Attack {
     }
 
     chargeShotForSkill(session, actor, magicSkill, skill = null) {
-        if (!magicSkill && skill?.fetchSsBoost && Number(skill.fetchSsBoost()) <= 0) {
-            return;
-        }
+        if (!ShotStock.actionShotKind(magicSkill, skill?.fetchSsBoost?.())) return;
 
         if (magicSkill) {
             const autoShot = actor.backpack?.fetchAutoSpiritshot?.(actor);

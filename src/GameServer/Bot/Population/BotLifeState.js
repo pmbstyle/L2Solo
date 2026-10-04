@@ -2456,8 +2456,8 @@ const BotLifeState = {
 
         // Cold combat spends the same persisted shot stock that hot combat uses.
         // Resolve telemetry is already available here, so this adds no market
-        // lookup or extra inventory query to the simulation tick.
-        // Aggregate actions include enemy turns and, for parties, other members.
+        // lookup or extra inventory query to the simulation tick. shotActions
+        // counts this bot's own casts, skills and landed normal attacks.
         const shotActions = Math.max(0, Number(result.debug?.shotActions || 0));
         if (shotActions > 0) {
             const shot = invoke('GameServer/Inventory/ShotStock').planForRows(
