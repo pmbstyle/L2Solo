@@ -1,9 +1,10 @@
 const Services = require('./Services');
+const Karma = require('../Karma');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 
 function plan(state, hall, timestamp = Date.now(), options = {}) {
-    if (!hall || !state?.loc || Number(state.vitals?.hp) <= 0 || Number(state.stats?.karma || 0) > 0)
+    if (!hall || !state?.loc || Number(state.vitals?.hp) <= 0 || Karma.closesTowns(state.stats?.karma))
         return null;
     const point = {
         fetchLocX: () => state.loc.locX,

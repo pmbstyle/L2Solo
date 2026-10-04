@@ -1,5 +1,6 @@
 const Policy = require('./WealthCraftPolicy');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
+const Karma = require('../../Karma');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const Recipes = invoke('GameServer/Items/C4RecipeItems');
@@ -21,7 +22,7 @@ const inFlight = new Set();
 
 function eligible(state) {
     if (!state || state.phase !== 'cold' || !['hunting', 'resting', 'shopping'].includes(state.activity)
-        || state.party?.partyId || state.partyId || Number(state.stats?.karma || 0) > 0
+        || state.party?.partyId || state.partyId || Karma.closesTowns(state.stats?.karma)
         || state.stats?.craftStationId || /^bot_craft_\d+$/i.test(String(state.accountName || ''))) return false;
     if (!CraftShopService.isServiceCrafter(state)) return false;
     if (CraftShopService.craftLevelFor(state) <= 0) return false;

@@ -4,6 +4,8 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 
+// Karma washing: a bot with any karma hunts it off. The same value as
+// Karma.closesTowns, asked for planning rather than for town access.
 function active(state) {
     return Number(state?.stats?.karma || 0) > 0;
 }

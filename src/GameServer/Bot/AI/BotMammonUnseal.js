@@ -1,5 +1,6 @@
 const Catalog = invoke('GameServer/Items/C4Unseal');
 const Mammon = invoke('GameServer/World/GiranMammon');
+const Karma = invoke('GameServer/Karma');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const Compatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
@@ -53,7 +54,7 @@ async function execute(session,bot,errand) {
 // a shopping bot finishes its market steps first.
 function beginTravel(state, timestamp = Date.now()) {
     if (state.phase !== 'cold' || state.activity !== 'hunting'
-        || state.party?.partyId || state.partyId || Number(state.stats?.karma)>0
+        || state.party?.partyId || state.partyId || Karma.closesTowns(state.stats?.karma)
         || BotErrands.busyWith(state, BUSY_FLAGS)
         || Number(state.stats?.mammonRetryAt||0)>timestamp || !candidate(state)) return null;
     return {...state,activity:'traveling',stats:{...state.stats,
