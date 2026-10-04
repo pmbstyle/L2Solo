@@ -117,10 +117,8 @@ async function depositActorUnlocked(actor, state = null, session = null) {
     const learned = await learnActorRecipes(actor, state, session);
     const retained = storedAmounts(await Database.fetchWarehouseItems(actor.fetchId()));
     const stored = [];
-    for (const source of ItemDisposition.unreservedActorItems(state, backpack.fetchItems().slice())) {
-        const item = itemData(source);
-        if (!ItemDisposition.isWarehouseCandidate(item)) continue;
-        const amount = retentionAmount(item, retained.get(item.selfId));
+    for (const { source, item, storable } of storableActorItems(actor, state, session?.shoppingNpcSale)) {
+        const amount = retentionAmount({ ...item, amount: storable }, retained.get(item.selfId));
         if (amount <= 0) continue;
         const result = await Database.transferInventoryToWarehouse(actor.fetchId(), { ...item, amount });
         if (Number(result.inventoryAmount) === 0) backpack.items = backpack.items.filter((entry) => entry !== source);
@@ -136,10 +134,23 @@ function depositActor(actor, state = null, session = null) {
     return serializeDeposit(actor.fetchId(), () => depositActorUnlocked(actor, state, session));
 }
 
-function hasActorDepositCandidates(actor, state = null) {
-    const items = actor?.backpack?.fetchItems?.() || [];
-    return ItemDisposition.unreservedActorItems(state, items)
-        .some((source) => ItemDisposition.isWarehouseCandidate(itemData(source)));
+// The actor's warehouse candidates and the amount of each that may be stored:
+// what the town visit sells to the NPC (npcSale, by selfId) stays in the bag for that sale.
+function storableActorItems(actor, state = null, npcSale = null) {
+    const selling = new Map(npcSale || []);
+    const rows = [];
+    for (const source of ItemDisposition.unreservedActorItems(state, actor?.backpack?.fetchItems?.().slice() || [])) {
+        const item = itemData(source);
+        if (!ItemDisposition.isWarehouseCandidate(item)) continue;
+        const sold = Math.min(Number(item.amount || 0), Number(selling.get(item.selfId) || 0));
+        selling.set(item.selfId, Number(selling.get(item.selfId) || 0) - sold);
+        if (Number(item.amount || 0) > sold) rows.push({ source, item, storable: Number(item.amount || 0) - sold });
+    }
+    return rows;
+}
+
+function hasActorDepositCandidates(actor, state = null, npcSale = null) {
+    return storableActorItems(actor, state, npcSale).length > 0;
 }
 
 function isAtWarehouseService(actor, target) {

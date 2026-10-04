@@ -40,8 +40,10 @@ const Cooldown = {
         const BotManager = invoke('GameServer/Bot/BotManager');
         try { invoke('GameServer/Bot/BotTradeService').cleanup(session, 'cold_transition'); } catch (_) { /* optional hot trade modules */ }
         try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'cold_transition'); } catch (_) { /* optional ambient module */ }
-        return LifeState.upsertState(state, reason).then((saved) => {
+        // The hand-back of a hot row (a sold-out merchant leaves without markCold).
+        return LifeState.upsertState({ ...state, phase: 'cold' }, reason, { releaseHot: true }).then((saved) => {
             if (!saved) return { ok: false, reason: 'state_save_failed' };
+            LifeState.setSessionSnapshotsPhase(session, 'cold');
 
             return ColdSimulationCoordinator.acceptColdState(saved).then((accepted) => {
                 if (!accepted.ok) {

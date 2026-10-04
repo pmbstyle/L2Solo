@@ -1,3 +1,4 @@
+const ServerResponse = invoke('GameServer/Network/Response');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const BotMarketPricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
@@ -184,12 +185,31 @@ function currentAfkStore(ownerId, storeType) {
     return Number(store?.storeType) === Number(storeType) ? store : null;
 }
 
+function lowerLiveBuyLine(session, selfId, qty) {
+    const actor = session?.actor;
+    const liveStore = actor?.fetchPrivateStore?.();
+    if (!liveStore) return;
+    liveStore.items = (liveStore.items || [])
+        .map((item) => (Number(item.selfId) === Number(selfId)
+            ? { ...item, count: Math.max(0, Number(item.count || 0) - Number(qty || 0)) } : item))
+        .filter((item) => Number(item.count || 0) > 0);
+    if (!liveStore.items.length) closeSoldOutStore(actor, liveStore);
+}
+
+// A hot store with nothing left closes, as after a player's sale to it (Sell.js).
+function closeSoldOutStore(actor, store) {
+    actor.setPrivateStoreType?.(0);
+    actor.setPrivateStore?.({ ...store, items: [] });
+    actor.session?.dataSendToOthers?.(ServerResponse.charInfo(actor), actor);
+}
+
 function syncLiveBuyerSession(offer, buyer) {
     if (!offer?.session) return;
     offer.session.coldMarketState = buyer;
-    const liveStore = offer.session.actor?.fetchPrivateStore?.();
+    const actor = offer.session.actor;
+    const liveStore = actor?.fetchPrivateStore?.();
     if (liveStore) liveStore.items = (buyer.stats?.marketStore?.items || []).map((item) => ({ ...item }));
-    if (!buyer.stats?.marketStore) offer.session.actor?.setPrivateStoreType?.(0);
+    if (!buyer.stats?.marketStore && actor) closeSoldOutStore(actor, liveStore || {});
 }
 
 async function syncSellerStoreAfterSale(sellerState, selfId, qty, session = null) {
@@ -251,30 +271,35 @@ async function settleLine(sellerState, line, town, options = {}) {
     );
     if (['afk_player_buy_store', 'afk_bot_buy_store'].includes(offer.sourceType)) {
         if (qty <= 0) return { state: sellerState, sold: false };
-        let trade;
+        const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+        let done;
         try {
-            trade = await invoke('GameServer/AfkTrade/AfkTradeService').sellToShop(
+            const trade = await AfkTrade.sellToShop(
                 sellerState.characterId,
                 offer.store,
                 line.selfId,
                 qty,
                 { objectId: line.objectId || line.id, expectedPrice: offer.price, coldState: sellerState }
             );
-            if (!trade.coldState) return { state: sellerState, sold: false, reason: 'cold_state_sync_failed' };
+            done = AfkTrade.committedTrade(trade, sellerState.characterId);
+            if (!done.committed) return { state: sellerState, sold: false, reason: 'cold_state_sync_failed' };
         } catch (error) {
             utils.infoWarn('BotMarket', 'AFK buy-store sale failed for %s: %s', sellerState.name, error.message);
             return { state: sellerState, sold: false, reason: 'offer_changed' };
         }
-        let syncedSeller = trade.coldState;
-        try {
-            syncedSeller = await syncSellerStoreAfterSale(
-                trade.coldState,
-                line.selfId,
-                qty,
-                options.sellerSession || null
-            );
-        } catch (error) {
-            utils.infoWarn('BotMarket', 'AFK buy-store seller finalization failed after commit for %s: %s', sellerState.name, error.message);
+        // A seller that went hot keeps its row: no store sync is written for it.
+        let syncedSeller = done.state || sellerState;
+        if (!done.hot) {
+            try {
+                syncedSeller = await syncSellerStoreAfterSale(
+                    done.state,
+                    line.selfId,
+                    qty,
+                    options.sellerSession || null
+                );
+            } catch (error) {
+                utils.infoWarn('BotMarket', 'AFK buy-store seller finalization failed after commit for %s: %s', sellerState.name, error.message);
+            }
         }
         MarketTelemetry.dynamicBuyerSale?.(offer, qty, {
             sellerCharacterId: syncedSeller.characterId,
@@ -284,6 +309,7 @@ async function settleLine(sellerState, line, town, options = {}) {
         return {
             state: syncedSeller,
             sold: true,
+            hot: done.hot,
             buyer: null,
             offer,
             qty,
@@ -322,12 +348,7 @@ async function settleLine(sellerState, line, town, options = {}) {
     } catch (error) {
         utils.infoWarn('BotMarket', 'dynamic WTB finalization failed after committed trade for %s: %s', buyerState.name, error?.message || String(error));
     }
-    if (offer.session) {
-        offer.session.coldMarketState = buyer;
-        const liveStore = offer.session.actor?.fetchPrivateStore?.();
-        if (liveStore) liveStore.items = (buyer.stats?.marketStore?.items || []).map((item) => ({ ...item }));
-        if (!buyer.stats?.marketStore) offer.session.actor?.setPrivateStoreType?.(0);
-    }
+    syncLiveBuyerSession(offer, buyer);
     MarketTelemetry.dynamicBuyerSale?.(offer, qty, {
         sellerCharacterId: seller.characterId,
         sellerName: seller.name,
@@ -348,29 +369,42 @@ async function buyFromAfkPlayerStore(offer, store, line) {
     if (qty <= 0 || !MarketOpportunity.reserveBuy(offer, qty)) {
         return { state: buyerState, purchased: false, reason: 'buyer_changed' };
     }
-    let trade;
+    const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+    let done;
     try {
-        trade = await invoke('GameServer/AfkTrade/AfkTradeService').buyFromShop(
+        const trade = await AfkTrade.buyFromShop(
             buyerState.characterId,
             store,
             line.selfId,
             qty,
             { lineId: line.afkTradeLineId, expectedPrice: line.price, coldState: buyerState }
         );
-        if (!trade.coldState) throw new Error('cold_state_sync_failed');
+        done = AfkTrade.committedTrade(trade, buyerState.characterId);
+        if (!done.committed) throw new Error('cold_state_sync_failed');
     } catch (error) {
         MarketOpportunity.releaseBuy(offer, qty);
         utils.infoWarn('BotMarket', 'AFK sell-store match failed for %s: %s', buyerState.name, error.message);
         return { state: buyerState, purchased: false, reason: 'offer_changed' };
     }
-    MarketOpportunity.commitBuy(offer, qty, trade.coldState);
-    let buyer = trade.coldState;
+    let buyer = done.state || buyerState;
+    MarketOpportunity.commitBuy(offer, qty, buyer);
     try {
-        buyer = await finishBuyer(trade.coldState);
+        if (!done.hot) {
+            buyer = await finishBuyer(done.state);
+            syncLiveBuyerSession(offer, buyer);
+        } else {
+            // A hot buyer's store is the actor's (also one activated while the trade
+            // ran): lower the bought line, close a sold-out store and save it the hot
+            // way (syncMarketSession), as a sale to that store does (Sell.js).
+            const session = invoke('GameServer/Bot/BotManager').findSessionById?.(buyerState.characterId) || offer.session;
+            if (session?.actor) {
+                lowerLiveBuyLine(session, line.selfId, qty);
+                buyer = await LifeState.syncMarketSession(session, 'hot_bot_market_buy_fill') || buyer;
+            }
+        }
     } catch (error) {
         utils.infoWarn('BotMarket', 'AFK sell-store buyer finalization failed after commit for %s: %s', buyerState.name, error.message);
     }
-    syncLiveBuyerSession(offer, buyer);
     const botOwned = !!store.botOwned;
     MarketTelemetry.purchase({
         sourceType: botOwned ? 'afk_bot_store' : 'afk_player_store',
@@ -489,6 +523,8 @@ async function sellToBestBuyer(state, town = state?.currentRegion) {
         const result = await settleLine(seller, line, town);
         seller = result.state || seller;
         if (result.sold) sales.push(result);
+        // The bot went hot: its bag is the actor's now.
+        if (result.hot) break;
     }
     return {
         state: seller,
@@ -517,6 +553,7 @@ function bestTownFor(state) {
 
 module.exports = {
     DEFAULT_BUY_STORE_MS,
+    closeSoldOutStore,
     bestTownFor,
     bidFor,
     matchAfkPlayerShop,

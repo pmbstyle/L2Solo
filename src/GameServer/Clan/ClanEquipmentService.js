@@ -840,6 +840,20 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
     if (!selection) {
         metrics.noDebt += 1;
         recordReason('no_equipment_debt');
+        // The beneficiary has its item and no member needs anything next: the
+        // goal is closed, not left executing until the next debt appears.
+        if (previousFulfilled && previousGoal && previousGoal.status !== 'completed') {
+            return {
+                ok: true,
+                skipped: true,
+                completed: true,
+                reason: 'no_equipment_debt',
+                plans,
+                previousFulfilled,
+                goal: { ...previousGoal, status: 'completed', updatedAt: Date.now() },
+                expectedUpdatedAt: number(clan.state?.updatedAt) || null
+            };
+        }
         return { ok: true, skipped: true, reason: 'no_equipment_debt', plans };
     }
     if (planning.workerFingerprint && selection.plan?.strategy === 'market') {

@@ -239,6 +239,29 @@ function evaluate(state, options = {}) {
     };
 }
 
+// What a bot in the world sells to the NPC, by selfId and count: the cold
+// visit's NPC sale (evaluate().npc) on the actor's own bag. The hot town visit
+// sells exactly this and keeps it out of the warehouse, as the cold visit sells
+// before it stores.
+function npcSaleForActor(session) {
+    const actor = session?.actor;
+    const sale = new Map();
+    if (!actor?.backpack?.fetchItems) return sale;
+    const inventory = LifeState.inventorySummaryFromItems(actor.backpack.fetchItems());
+    const state = {
+        ...(session.coldLifeState || {}),
+        characterId: Number(actor.fetchId()),
+        level: Number(actor.fetchLevel?.() || session.coldLifeState?.level || 1),
+        adena: Number(inventory['57']?.amount || 0),
+        inventory,
+        stats: { ...(session.coldLifeState?.stats || {}), classId: Number(actor.fetchClassId?.() || 0) }
+    };
+    for (const line of evaluate(state, { unlimited: true, allowPreTradeCleanup: true }).npc) {
+        sale.set(Number(line.selfId), Number(sale.get(Number(line.selfId)) || 0) + Number(line.count || 0));
+    }
+    return sale;
+}
+
 module.exports = {
     MARKET_GEAR_MIN_BASE_PRICE,
     MIN_LISTING_BASE_PERCENT,
@@ -250,5 +273,6 @@ module.exports = {
     isGear,
     listingFloor,
     listingPrice,
+    npcSaleForActor,
     starterItemIds
 };

@@ -19,6 +19,7 @@ const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
+const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 
 const COMPANION_EQUIPMENT_FAILURE_RETRY_MS = 5 * 60 * 1000;
 
@@ -211,7 +212,15 @@ function restoreAfterWarehouse(session) {
     session.failedWarehouseNpcSelfIds = undefined;
 }
 
+// What this town visit sells to the NPC, once per visit: the warehouse stop
+// leaves it in the bag for that sale, as the cold visit sells before it stores.
+function shoppingNpcSale(session) {
+    if (!session.shoppingNpcSale) session.shoppingNpcSale = MarketListingPolicy.npcSaleForActor(session);
+    return session.shoppingNpcSale;
+}
+
 function clearShoppingServiceState(session) {
+    session.shoppingNpcSale = undefined;
     session.shoppingServicePhase = undefined;
     session.shoppingWarehouseDone = undefined;
     session.shoppingAfterWarehouseTarget = undefined;
@@ -244,7 +253,7 @@ function prepareEquipmentMarketStop(session, bot, town, BotAI) {
 function prepareWarehouseStop(session, bot, town, BotAI) {
     if (session.shoppingServicePhase === 'warehouse') return true;
     if (session.shoppingWarehouseDone || !usesWarehouseStop(session)) return false;
-    if (!BotWarehouse.hasActorDepositCandidates(bot, session.coldLifeState)) {
+    if (!BotWarehouse.hasActorDepositCandidates(bot, session.coldLifeState, shoppingNpcSale(session))) {
         session.shoppingWarehouseDone = true;
         return false;
     }
