@@ -101,8 +101,13 @@ function event(input) {
         ...(input.clan ? { clan: require('../Clan/ClanSocialPolicy').evidence(input.clan) } : {}) };
 }
 
+// The share of a feeling left after `elapsed` ms; nothing grows before its time.
+function halfLife(elapsed, halfLifeMs) {
+    return 0.5 ** (Math.max(0, elapsed) / halfLifeMs);
+}
+
 function decayed(relation, at) {
-    const factor = Math.pow(0.5, Math.max(0, at - relation.at) / (7 * DAY));
+    const factor = halfLife(at - relation.at, 7 * DAY);
     return Object.fromEntries(FIELDS.map(field => [field, relation[field] * factor]));
 }
 
@@ -141,7 +146,7 @@ function apply(snapshot, input, now) {
     if (e.kind === 'character' && e.type === 'aided_opponent' && !Aid.eligible(old, e.at)) return { status: 'rate_limited', snapshot };
     const at = Math.max(e.at, old?.at || 0);
     const values = old ? decayed(old, at) : Object.fromEntries(FIELDS.map(field => [field, 0]));
-    const factor = Math.pow(0.5, (at - e.at) / (7 * DAY));
+    const factor = halfLife(at - e.at, 7 * DAY);
     FIELDS.forEach((field, index) => {
         const min = ['hostility', 'fear', 'familiarity'].includes(field) ? 0 : -100;
         values[field] = Math.max(min, Math.min(100, values[field] + EVENTS[e.type][index] * factor));
@@ -213,4 +218,4 @@ function assess(memory, source, target, context, now) {
 }
 
 module.exports = { VERSION, LIMITS, RECENT_LIMIT, REASON_LIMIT, ACCEPT_WINDOW_MS, MAX_BATCH, HUNT_COOLDOWN_MS, FIELDS,
-    empty, event, apply, view, assess, id, validate };
+    empty, event, apply, view, assess, id, validate, halfLife };

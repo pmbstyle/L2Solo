@@ -6,7 +6,6 @@ const InteractionMemory = invoke('GameServer/Social/InteractionMemoryRuntime');
 const PlayerPartyRelationship = require('../../Social/PlayerPartyRelationship');
 
 const MAX_LEVEL_GAP = 12;
-const RECENT_ABANDON_MS = 5 * 60 * 1000;
 
 function actorLocation(actor) {
     return {
@@ -29,7 +28,6 @@ function reasonText(reason) {
         bot_dead: 'dead',
         already_grouped: 'already grouped',
         merchant_duty: 'merchant duty',
-        low_trust: 'low trust',
         relationship_unloaded: 'give me a moment before we decide',
         relationship_hostile: 'we still have a conflict to settle',
         recently_abandoned: 'recently abandoned',
@@ -106,7 +104,17 @@ function emptyResult(playerSession, botSubject, options = {}) {
     };
 }
 
+// A bot refuses a player it distrusts (trust -6 or lower, the same line as a
+// hostile shared relation) or one that ended its party in the last minutes.
+function socialRefusal(memory, at) {
+    if (Number(memory?.trust || 0) <= -6) return 'relationship_hostile';
+    if (BotSocialMemory.recentlyAbandoned(memory, at)) return 'recently_abandoned';
+    return null;
+}
+
 const BotAvailability = {
+    socialRefusal,
+
     evaluate(playerSession, botSession, options = {}) {
         const player = playerSession?.actor;
         const bot = botSession?.actor;
@@ -114,6 +122,7 @@ const BotAvailability = {
         const timestamp = Number(options.timestamp ?? Date.now());
 
         if (!player || !bot) return result;
+        const refusal = options.forceFriend ? null : socialRefusal(result.memory, timestamp);
 
         result.distance = distance(actorLocation(player), actorLocation(bot));
         result.clanmate = sameClan(player, bot);
@@ -128,8 +137,7 @@ const BotAvailability = {
         else if (bot.isDead && bot.isDead()) reason = 'bot_dead';
         else if (!options.forceFriend && botSession.plan === 'merchant') reason = 'merchant_duty';
         else if (!options.forceFriend && botSession.partyCompanion === true && botSession.followPlayerSession) reason = 'already_grouped';
-        else if (!options.forceFriend && result.memory.trust <= -6) reason = 'low_trust';
-        else if (!options.forceFriend && result.memory.recentlyAbandonedAt && timestamp - result.memory.recentlyAbandonedAt < RECENT_ABANDON_MS) reason = 'recently_abandoned';
+        else if (refusal) reason = refusal;
         else if (!options.forceFriend && Math.abs(bot.fetchLevel() - player.fetchLevel()) > MAX_LEVEL_GAP) reason = 'level_gap_too_large';
 
         if (reason === 'available' && !result.clanmate && !options.forceFriend) {
@@ -150,6 +158,7 @@ const BotAvailability = {
         const result = emptyResult(playerSession, state, options);
         const timestamp = Number(options.timestamp ?? Date.now());
         if (!player || !state) return result;
+        const refusal = options.forceFriend ? null : socialRefusal(result.memory, timestamp);
 
         result.distance = distance(actorLocation(player), state.loc);
         result.clanmate = sameClan(player, state);
@@ -164,8 +173,7 @@ const BotAvailability = {
         else if (player.isDead && player.isDead()) reason = 'player_dead';
         else if (state.activity === 'dead' || Number(state.vitals?.hp || 1) <= 0) reason = 'bot_dead';
         else if (!options.forceFriend && (state.activity === 'merchant' || state.activity === 'crafting')) reason = 'merchant_duty';
-        else if (!options.forceFriend && result.memory.trust <= -6) reason = 'low_trust';
-        else if (!options.forceFriend && result.memory.recentlyAbandonedAt && timestamp - result.memory.recentlyAbandonedAt < RECENT_ABANDON_MS) reason = 'recently_abandoned';
+        else if (refusal) reason = refusal;
         else if (!options.forceFriend && Math.abs(Number(state.level || 1) - player.fetchLevel()) > MAX_LEVEL_GAP) reason = 'level_gap_too_large';
 
         if (reason === 'available' && !result.clanmate && !options.forceFriend) {

@@ -172,12 +172,14 @@ try {
             BotAvailability.evaluateState(lowPlayer, farColdBot, { timestamp: at, ...options })]
             .map((entry) => [entry.reason, entry.reasonText]);
     };
-    const lowTrust = [['low_trust', 'low trust'], ['low_trust', 'low trust']];
+    // One reason name for trust -6 or lower, as in party takeover and the shared relation.
+    const lowTrust = [['relationship_hostile', 'we still have a conflict to settle'],
+        ['relationship_hostile', 'we still have a conflict to settle']];
     const abandoned = [['recently_abandoned', 'recently abandoned'], ['recently_abandoned', 'recently abandoned']];
     const open = [['available', 'available'], ['available', 'available']];
     assert.deepStrictEqual(refusal({ trust: -6, familiarity: 0, recentlyAbandonedAt: null }), lowTrust);
     assert.deepStrictEqual(refusal({ trust: -6, familiarity: 0, recentlyAbandonedAt: at - 1000 }), lowTrust,
-        'low trust is named before an abandonment');
+        'distrust is named before an abandonment');
     assert.deepStrictEqual(refusal({ trust: -5, familiarity: 0, recentlyAbandonedAt: null }), open);
     assert.deepStrictEqual(refusal({ trust: 0, familiarity: 0, recentlyAbandonedAt: at - 5 * 60 * 1000 + 1 }), abandoned);
     assert.deepStrictEqual(refusal({ trust: 0, familiarity: 0, recentlyAbandonedAt: at - 5 * 60 * 1000 }), open);

@@ -1,4 +1,5 @@
 // Pure clan reputation and discipline. Scores never grant combat permission.
+const { halfLife } = require('../Social/InteractionMemoryPolicy');
 const HOUR = 3600000, DAY = HOUR * 24;
 const LIMITS = { character: 128, clan: 32, recent: 256 };
 const TYPES = {
@@ -26,7 +27,7 @@ function evidence(input) {
 }
 function relation(row, at) {
     if (!row) return null;
-    const factor = 0.5 ** (Math.max(0, at - row.at) / row.halfLife);
+    const factor = halfLife(at - row.at, row.halfLife);
     return { ...row, trust: row.trust * factor, hostility: row.hostility * factor,
         fear: row.fear * factor, familiarity: row.familiarity * factor,
         ...(row.discipline ? { discipline: discipline(row.discipline, 0, at) } : {}) };
@@ -42,7 +43,7 @@ function stance(row, at) {
 function discipline(previous, harm, at, leader = {}) {
     const d = { stage: 'clear', score: 0, at, stageAt: at, lastOffenseAt: 0, ...previous };
     if (d.stage === 'expelled') return d;
-    d.score *= 0.5 ** (Math.max(0, at - d.at) / (7 * DAY));
+    d.score *= halfLife(at - d.at, 7 * DAY);
     d.at = at;
     if (harm <= 0) {
         d.score = Math.max(0, d.score + Math.max(-1, harm));

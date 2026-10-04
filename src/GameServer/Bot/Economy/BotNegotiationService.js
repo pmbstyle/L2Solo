@@ -54,15 +54,20 @@ function safeItem(item) {
     return Number(item.fetchAmount?.() || 0) > 0;
 }
 
+// Price change by relationship label: friends pay less, wary bots ask more.
+const PRICE_MODIFIER_BY_RELATIONSHIP = Object.freeze({
+    trusted: -0.08,
+    friendly: -0.04,
+    wary: 0.06,
+    familiar: -0.01,
+    stranger: 0
+});
+
 function relationshipFor(player, bot) {
     const memory = BotSocialMemory.getSnapshot(player, bot) || {};
-    const trust = Number(memory.trust || 0);
-    const familiarity = Number(memory.familiarity || 0);
-    if (trust >= 8) return { name: 'trusted', trust, familiarity, modifier: -0.08 };
-    if (trust >= 3 || familiarity >= 5) return { name: 'friendly', trust, familiarity, modifier: -0.04 };
-    if (trust <= -5) return { name: 'wary', trust, familiarity, modifier: 0.06 };
-    if (familiarity > 0) return { name: 'familiar', trust, familiarity, modifier: -0.01 };
-    return { name: 'stranger', trust, familiarity, modifier: 0 };
+    const name = BotSocialMemory.relationship(memory);
+    return { name, trust: Number(memory.trust || 0), familiarity: Number(memory.familiarity || 0),
+        modifier: PRICE_MODIFIER_BY_RELATIONSHIP[name] };
 }
 
 function personaFor(bot) {

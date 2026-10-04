@@ -1,7 +1,6 @@
 const PartyRewardMath = invoke('GameServer/Actor/PartyRewardMath');
 
 const pending = new Map();
-const RECENT_ABANDON_MS = 5 * 60 * 1000;
 
 function isJoinRequest(text) {
     return /\b(?:can|could|may)\s+i\s+join(?:\s+(?:you\s+guys|you|(?:your|the|this)\s+(?:party|group|team)))?\b|\b(?:let|add|take|invite)\s+me\s+(?:join|into|to)\s+(?:your|the|this)\s+(?:party|group|team)\b|\bcan\s+i\s+party\s+with\s+you\b/i.test(String(text || ''));
@@ -123,13 +122,9 @@ async function evaluate(playerSession, party, states) {
             const availability = hotSession?.actor
                 ? BotAvailability.evaluate(playerSession, hotSession, { loadMemory: false })
                 : BotAvailability.evaluateState(playerSession, state, { loadMemory: false });
-            if (availability.relationshipReason === 'relationship_hostile' || Number(availability.memory?.trust || 0) <= -6) {
-                return rejection('relationship_hostile', { refusingMemberId: state.characterId });
-            }
-            if (availability.memory?.recentlyAbandonedAt
-                && Date.now() - Number(availability.memory.recentlyAbandonedAt) < RECENT_ABANDON_MS) {
-                return rejection('recently_abandoned', { refusingMemberId: state.characterId });
-            }
+            const refusal = availability.relationshipReason === 'relationship_hostile' ? 'relationship_hostile'
+                : BotAvailability.socialRefusal(availability.memory, Date.now());
+            if (refusal) return rejection(refusal, { refusingMemberId: state.characterId });
         }
     }
     return { ok: true, reason: clanmate ? 'same_clan' : 'party_accepts', clanmate };

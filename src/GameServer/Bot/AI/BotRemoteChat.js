@@ -98,7 +98,7 @@ function fallbackReply(state, availability, text) {
     const lower = String(text || '').toLowerCase();
     const persona = personaForState(state);
 
-    if (availability?.reason === 'low_trust') {
+    if (availability?.reason === 'relationship_hostile') {
         return `I hear you, but I don't trust you enough yet.`;
     }
     if (availability?.reason === 'recently_abandoned') {

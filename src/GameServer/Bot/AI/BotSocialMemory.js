@@ -2,6 +2,8 @@ const Database = invoke('Database');
 const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
 
 const TABLE = 'bot_social_memory';
+const TRUSTED_TRUST = 8;
+const RECENT_ABANDON_MS = 5 * 60 * 1000;
 const cache = new Map();
 const loadedKeys = new Set();
 const pendingWrites = new Map();
@@ -81,12 +83,21 @@ function normalize(row, playerSession, botSession) {
     };
 }
 
+// The one relationship label of a player-bot memory.
 function relationship(record) {
     if (!record) return 'stranger';
-    if (record.trust >= 8) return 'trusted';
-    if (record.trust >= 3 || record.familiarity >= 5) return 'friendly';
-    if (record.trust <= -5) return 'wary';
-    return record.familiarity > 0 ? 'familiar' : 'stranger';
+    const trust = Number(record.trust || 0);
+    const familiarity = Number(record.familiarity || 0);
+    if (trust >= TRUSTED_TRUST) return 'trusted';
+    if (trust >= 3 || familiarity >= 5) return 'friendly';
+    if (trust <= -5) return 'wary';
+    return familiarity > 0 ? 'familiar' : 'stranger';
+}
+
+// A party ended by a dismissal or a kick in the last five minutes.
+function recentlyAbandoned(memory, at) {
+    const abandonedAt = Number(memory?.recentlyAbandonedAt || 0);
+    return abandonedAt > 0 && at - abandonedAt < RECENT_ABANDON_MS;
 }
 
 function applyEvent(record, eventName) {
@@ -362,7 +373,9 @@ const BotSocialMemory = {
             .filter(Boolean);
     },
 
-    relationship
+    TRUSTED_TRUST,
+    relationship,
+    recentlyAbandoned
 };
 
 module.exports = BotSocialMemory;

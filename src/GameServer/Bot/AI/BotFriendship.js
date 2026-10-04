@@ -2,11 +2,12 @@ const Database = invoke('Database');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
+const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 
-const FRIEND_TRUST = 8;
+// Friendship needs a trusted relationship; the friends window shows this trust.
+const FRIEND_TRUST = BotSocialMemory.TRUSTED_TRUST;
 const MAX_CONST_MEMBERS = 8;
 const PAGE_SIZE = 12;
-const RECENT_ABANDON_MS = 5 * 60 * 1000;
 const rosterWrites = new Map();
 const staticMerchantNames = BotServiceIdentity.configuredMerchantNames();
 const staticMerchantPlaceholders = staticMerchantNames.map(() => '?').join(', ');
@@ -90,11 +91,9 @@ const BotFriendship = {
             const now = Date.now();
             const trust = Number(social.trust || 0);
             const insults = Number(social.insults || 0);
-            const recentlyAbandoned = Number(social.recentlyAbandonedAt || 0) > 0
-                && now - Number(social.recentlyAbandonedAt) < RECENT_ABANDON_MS;
-            const reason = trust < FRIEND_TRUST ? 'low_trust'
+            const reason = BotSocialMemory.relationship(social) !== 'trusted' ? 'low_trust'
                 : insults > 0 ? 'insults'
-                    : recentlyAbandoned ? 'recently_abandoned' : null;
+                    : BotSocialMemory.recentlyAbandoned(social, now) ? 'recently_abandoned' : null;
             const accepted = !reason;
             return Database.execute([`INSERT INTO bot_friendships (playerId, botId, status, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(playerId, botId) DO UPDATE SET status = excluded.status, updatedAt = excluded.updatedAt`, [playerId, botId, accepted ? 'accepted' : 'declined', now, now]])

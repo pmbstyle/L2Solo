@@ -1,4 +1,5 @@
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
+const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 
 const ACCEPT_SCORE = 45;
 
@@ -21,7 +22,8 @@ function evaluate(subject, memory = {}) {
     const traits = persona.traits;
     const trust = Number(memory.trust || 0);
     const familiarity = Number(memory.familiarity || 0);
-    const knownPartner = trust >= 3 || familiarity >= 5;
+    const relationship = BotSocialMemory.relationship(memory);
+    const knownPartner = relationship === 'trusted' || relationship === 'friendly';
     const driveBonus = persona.primaryDrive === 'social' ? 18
         : persona.primaryDrive === 'progression' ? 6 : -12;
     const score = Math.round(clamp(
