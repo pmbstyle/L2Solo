@@ -32,7 +32,9 @@ const RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
 const WEAPON_SLOTS = new Set([7, 14]);
 const ARMOR_SLOTS = new Set([6, 9, 10, 11, 12, 15]);
 const JEWEL_SLOTS = new Set([1, 2, 3, 4, 5]);
-const RATE_MODEL_VERSION = 16;
+// Saved plans older than this version are re-planned (BotLifeState, ClanEquipmentPlanner).
+// 17: the income model is the bot's measured hour value (BotHuntEfficiency.hourValue).
+const RATE_MODEL_VERSION = 17;
 const RAID_MIN_ROSTER_LABOR = 7;
 const DIRECT_FAILURE_RESOLVE_LIMIT = 8;
 const DIRECT_DROP_EXHAUSTION_MULTIPLIER = 3;

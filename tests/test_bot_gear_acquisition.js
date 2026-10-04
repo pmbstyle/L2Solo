@@ -74,6 +74,26 @@ assert.strictEqual(
 );
 assert.deepStrictEqual(GearAcquisitionPlanner.sourceForItem(123, [raidSourceProfile], { level: 20 }), [],
     'the same raid source must remain invisible to personal equipment planning');
+// The income model changed to the measured hour value (N0b): plans saved with
+// model 16 must be re-planned, through the author's version check.
+assert(GearAcquisitionPlanner.RATE_MODEL_VERSION >= 17, 'the hour-value income model needs a new plan model version');
+const incomeModelState = { level: 20, stats: { classId: 0, role: 'dps' }, inventory: {} };
+const incomeModelPlan = {
+    status: 'active',
+    grade: GearAcquisitionPlanner.gradeForLevel(20),
+    strategy: 'direct_drop',
+    plannedForLevel: 20,
+    expectedKills: 100,
+    rateModelVersion: GearAcquisitionPlanner.RATE_MODEL_VERSION,
+    rateProfileSignature: GearAcquisitionPlanner.rateProfileSignature(),
+    target: { selfId: 123, name: 'Saber', slot: 7 },
+    next: null
+};
+assert.strictEqual(GearAcquisitionPlanner.replanContextFor(incomeModelState, incomeModelPlan, Date.now()).routeCurrent, true,
+    'a plan of the current model keeps its route');
+assert.strictEqual(GearAcquisitionPlanner.replanContextFor(incomeModelState,
+    { ...incomeModelPlan, rateModelVersion: 16 }, Date.now()).routeCurrent, false,
+    'a plan saved before the hour-value income model is re-planned');
 const protectedClanPlan = {
     status: 'active',
     grade: 'b',
