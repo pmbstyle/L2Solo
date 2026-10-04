@@ -5,6 +5,7 @@ const Rules = invoke('GameServer/Skills/C4SkillRules');
 const Aid = require('../../Social/OpponentAidPolicy');
 const Config = require('./PopulationConfig');
 const Aggression = require('../../Social/PvpAggression');
+const DeathExperience = invoke('GameServer/Progression/DeathExperience');
 const { MAX_ACTIONS, INITIAL_MS: MAX_DURATION_MS } = require('./PvpEncounterBudget');
 const FLAG_MS = 15000;
 const RECOVERY_MS = 90000;
@@ -150,7 +151,7 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
             enemies.push(updated);
         }
         enemies.sort((a, b) => Number(b.kills || 0) - Number(a.kills || 0) || Number(b.lastSeenAt || 0) - Number(a.lastSeenAt || 0));
-        return [f.id, { ...f.state, activity: dead ? 'dead' : 'resting', vitals: f.vitals,
+        const next = { ...f.state, activity: dead ? 'dead' : 'resting', vitals: f.vitals,
             stats: { ...f.state.stats, deaths: Number(f.state.stats?.deaths || 0) + Number(dead),
                 restUntil: until, pvpEnemies: enemies.slice(0, 3),
                 coldPvp: { at: timestamp, until: step ? step.until : until, outcome: ongoing ? 'fighting' : outcome,
@@ -161,7 +162,10 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
                 coldCombat: { ...(f.state.stats?.coldCombat || f.profile), cp: dead ? 0 : f.cp, cpAt: step ? step.until : until,
                     cooldowns: dead ? {} : f.cooldowns,
                     charges: dead ? 0 : f.charges, chargeExpiresAt: dead ? null : f.chargeExpiresAt,
-                    ...(dead ? { effects: [], charges: 0, chargeExpiresAt: null, summon: null } : {}) } } }];
+                    ...(dead ? { effects: [], charges: 0, chargeExpiresAt: null, summon: null } : {}) } } };
+        // The C4 death penalty of an ordinary cold death, with the PvP context.
+        // No clan wars, arenas or PvP zones reach cold PvP (peace zones never fight).
+        return [f.id, dead ? DeathExperience.applyColdDeath(next, { timestamp, cold: true, killerPlayable: true }).state : next];
     }));
     return { started: true, ongoing, outcome: ongoing ? 'fighting' : outcome, durationMs, until: step ? step.until : until, losingSide, updates,
         incidents: [...incidents.values()], help: [...help.values()], opponentAid: [...opponentAid.values()], fighters: fighters.map(f => ({ id: f.id, side: f.side,
