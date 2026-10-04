@@ -402,10 +402,11 @@ async function notifyCommitted(result, kind) {
 }
 
 async function syncColdCharacter(characterId, previousState, reason, rows = [], options = {}) {
-    // The fill fenced a row the cold worker leases (Database
+    // The shop write fenced a row the cold worker leases (Database
     // fenceAfkTradePartiesUnsafe): that row is the new state, and a save here
     // would be refused. The worker's retry starts from this cached row.
-    if (options.coldLifeRow) return invoke('GameServer/Bot/Population/BotLifeState').acceptLifecycleRow(options.coldLifeRow);
+    const fenced = options.coldLifeRows?.[Number(characterId)];
+    if (fenced) return invoke('GameServer/Bot/Population/BotLifeState').acceptLifecycleRow(fenced);
     if (!previousState) return null;
     // A hot row belongs to the actor in the world: syncOnlineInventory has
     // refreshed its backpack and markCold or syncMarketSession writes the
@@ -462,15 +463,14 @@ async function finalizeTrade(result, kind, counterpartyId, previousState = null,
     if (String(result.shop?.ownerAccount || '').startsWith('bot_')) {
         const ownerState = invoke('GameServer/Bot/Population/BotLifeState').snapshot(result.shop.ownerId);
         await syncColdCharacter(result.shop.ownerId, ownerState,
-            `afk_trade_owner_${kind}`, result.ownerInventory,
-            { coldLifeRow: result.coldLifeRows?.[Number(result.shop.ownerId)] });
+            `afk_trade_owner_${kind}`, result.ownerInventory, { coldLifeRows: result.coldLifeRows });
     }
     const coldState = await syncColdCharacter(
         counterpartyId,
         previousState,
         `afk_trade_${kind}`,
         result.counterpartyInventory,
-        { ...options, coldLifeRow: result.coldLifeRows?.[Number(counterpartyId)] }
+        { ...options, coldLifeRows: result.coldLifeRows }
     );
     refreshProjection(result.shop);
     await notifyCommitted(result, kind);
@@ -494,7 +494,8 @@ async function stop(session) {
     const result = await Database.closeAfkTradeShop(ownerId);
     removeProjection(ownerId);
     syncOnlineInventory(ownerId, result.ownerInventory);
-    if (ownerState) await syncColdCharacter(ownerId, ownerState, 'afk_trade_closed', result.ownerInventory);
+    if (ownerState) await syncColdCharacter(ownerId, ownerState, 'afk_trade_closed', result.ownerInventory,
+        { coldLifeRows: result.coldLifeRows });
     if (session?.actor) {
         session.afkTradeDraft = null;
         session.actor.setPrivateStoreType?.(0);
@@ -515,7 +516,8 @@ async function publishBot(ownerId, config) {
     const result = await Database.createAfkTradeShop(characterId, { ...config, replace: true });
     syncOnlineInventory(characterId, result.ownerInventory);
     const ownerState = invoke('GameServer/Bot/Population/BotLifeState').snapshot(characterId);
-    if (ownerState) await syncColdCharacter(characterId, ownerState, 'bot_afk_trade_published', result.ownerInventory);
+    if (ownerState) await syncColdCharacter(characterId, ownerState, 'bot_afk_trade_published', result.ownerInventory,
+        { coldLifeRows: result.coldLifeRows });
     spawnProjection(result.shop);
     return result.shop;
 }
@@ -534,7 +536,8 @@ async function repriceBot(ownerId, lineId, price, expectedRevision = null, quant
     const result = await Database.repriceAfkTradeShop(ownerId, lineId, price, expectedRevision, quantity);
     syncOnlineInventory(ownerId, result.ownerInventory);
     const ownerState = invoke('GameServer/Bot/Population/BotLifeState').snapshot(ownerId);
-    if (ownerState) await syncColdCharacter(ownerId, ownerState, 'bot_afk_trade_repriced', result.ownerInventory);
+    if (ownerState) await syncColdCharacter(ownerId, ownerState, 'bot_afk_trade_repriced', result.ownerInventory,
+        { coldLifeRows: result.coldLifeRows });
     invoke('GameServer/Bot/Economy/BotAfkMarketService').rememberInventory(ownerId,
         invoke('GameServer/Bot/Population/BotLifeState').snapshot(ownerId));
     refreshProjection(result.shop);
@@ -586,9 +589,9 @@ async function matchAfkOrders(ownerId, maxTrades = 64) {
         syncOnlineInventory(buyer.ownerId, trade.buyerInventory);
         const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
         if (seller.botOwned) await syncColdCharacter(seller.ownerId, LifeState.snapshot(seller.ownerId),
-            'afk_trade_owner_sale', trade.sellerInventory, { coldLifeRow: trade.coldLifeRows?.[Number(seller.ownerId)] });
+            'afk_trade_owner_sale', trade.sellerInventory, { coldLifeRows: trade.coldLifeRows });
         if (buyer.botOwned) await syncColdCharacter(buyer.ownerId, LifeState.snapshot(buyer.ownerId),
-            'afk_trade_owner_purchase', trade.buyerInventory, { coldLifeRow: trade.coldLifeRows?.[Number(buyer.ownerId)] });
+            'afk_trade_owner_purchase', trade.buyerInventory, { coldLifeRows: trade.coldLifeRows });
         refreshProjection(trade.sellerShop);
         refreshProjection(trade.buyerShop);
         await notifyCommitted({ shop: trade.sellerShop, eventId: trade.sellerEventId,

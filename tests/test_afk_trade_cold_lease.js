@@ -75,9 +75,10 @@ async function coldBot(id, account, name) {
     }, 'test_cold_seed');
 }
 
-// The worker leases the owner, the fill lands, then the worker commits a hunt
-// (+30 adena, 2 Stems) projected from the inventory it leased.
-async function fillUnderLease({ label, storeType, lines, ownerItems, counterpartyItems, fill }) {
+// The worker leases the owner, a shop write (a fill, close, reprice or
+// publish) lands, then the worker commits a hunt (+30 adena, 2 Stems)
+// projected from the inventory it leased.
+async function writeUnderLease({ label, storeType, lines, ownerItems, counterpartyItems = [], write }) {
     const owner = await makeCharacter(`bot_${label}_owner`, `${label}Owner`, ownerItems);
     const counterparty = await makeCharacter(`pl_${label}`, `${label}Player`, counterpartyItems);
     await coldBot(owner.id, `bot_${label}_owner`, `${label}Owner`);
@@ -92,7 +93,7 @@ async function fillUnderLease({ label, storeType, lines, ownerItems, counterpart
 
     const base = await journalTotals();
     const store = AfkTrade.findOwnerProjection(owner.id).actor.fetchPrivateStore();
-    await fill(store, counterparty);
+    await write(store, counterparty, owner);
     const afterFill = await amounts(owner.id);
 
     const next = structuredClone(leased.inventory);
@@ -102,7 +103,7 @@ async function fillUnderLease({ label, storeType, lines, ownerItems, counterpart
         simulation: { ...leased.simulation, ownerId: Owner.OWNER_ID, revision: claim.revision } };
     const [commit] = await Owner.commitAndReleaseBatch([{ token: claim, nextState,
         proposal: { baseState: { inventory: leased.inventory } } }], { timestamp: Date.now() });
-    assert.strictEqual(commit.ok, false, `${label}: the worker commit after a fill fails its CAS`);
+    assert.strictEqual(commit.ok, false, `${label}: the worker commit after the shop write fails its CAS`);
     assert.strictEqual(commit.reason, 'stale_revision');
     assert.deepStrictEqual(await amounts(owner.id), afterFill, `${label}: the rejected commit leaves the fill in items`);
 
@@ -113,9 +114,9 @@ async function fillUnderLease({ label, storeType, lines, ownerItems, counterpart
     const retry = LifeState.cachedState(owner.id);
     assert.strictEqual(retry.inventory['57'].amount, afterFill[57], `${label}: the retry starts from the filled adena`);
     assert.strictEqual(retry.adena, afterFill[57]);
-    const traded = Object.keys(afterFill).map(Number).filter((selfId) => selfId !== 57);
+    const traded = [...new Set([...Object.keys(afterFill), ...Object.keys(leased.inventory)])].map(Number);
     for (const selfId of traded) {
-        assert.strictEqual(Number(retry.inventory[selfId]?.amount || 0), afterFill[selfId],
+        assert.strictEqual(Number(retry.inventory[selfId]?.amount || 0), Number(afterFill[selfId] || 0),
             `${label}: the retry starts from the filled item ${selfId}`);
     }
     const [row] = await Database.execute(['SELECT adena, inventorySummary FROM bot_life_state WHERE characterId = ?', [owner.id]]);
@@ -131,8 +132,12 @@ async function fillUnderLease({ label, storeType, lines, ownerItems, counterpart
             simulation: { ...retry.simulation, ownerId: Owner.OWNER_ID, revision: again.revision } },
         proposal: { baseState: { inventory: retry.inventory } } }], { timestamp: Date.now() });
     assert(second.ok, `${label}: the retry commits`);
-    assert.strictEqual((await amounts(owner.id))[57], afterFill[57] + 30, `${label}: no adena lost`);
-    return journalSince(base, await journalTotals());
+    assert.deepStrictEqual(await amounts(owner.id), { ...afterFill, 57: afterFill[57] + 30 },
+        `${label}: no adena or items lost`);
+    const commits = Object.fromEntries(Object.entries(journalSince(base, await journalTotals()))
+        .filter(([key]) => key.startsWith('bot-life:cold-owner-commit-release-batch/')));
+    assert.deepStrictEqual(commits, { 'bot-life:cold-owner-commit-release-batch/resolve|57': 30 },
+        `${label}: the journal of the commits shows only the hunt, nothing taken back`);
 }
 
 (async () => {
@@ -144,27 +149,59 @@ async function fillUnderLease({ label, storeType, lines, ownerItems, counterpart
     await LifeState.init();
 
     // A sale from a leased bot's sell shop: the 250 adena it earned stay.
-    const sale = await fillUnderLease({
+    await writeUnderLease({
         label: 'sell', storeType: AfkTrade.SELL,
         ownerItems: [item(57, 1000, 'Adena'), item(POTION, 10, 'Lesser Healing Potion')],
         counterpartyItems: [item(57, 5000, 'Adena')],
         lines: (ids) => [{ objectId: ids[POTION], selfId: POTION, name: 'Lesser Healing Potion', count: 10, price: 50, stackable: true }],
-        fill: (store, buyer) => AfkTrade.buyFromShop(buyer.id, store, POTION, 5, { expectedPrice: 50 })
+        write: (store, buyer) => AfkTrade.buyFromShop(buyer.id, store, POTION, 5, { expectedPrice: 50 })
     });
-    assert.strictEqual(Number(sale[`bot-life:cold-owner-commit-release-batch/resolve|57`] || 0), 30,
-        'the journal of the commits shows only the hunt, no adena taken back');
 
     // A fill of a leased bot's buy shop: the 5 bought ores stay.
-    const purchase = await fillUnderLease({
+    await writeUnderLease({
         label: 'buy', storeType: AfkTrade.BUY,
         ownerItems: [item(57, 1000, 'Adena'), item(IRON_ORE, 5, 'Iron Ore')],
         counterpartyItems: [item(57, 5000, 'Adena'), item(IRON_ORE, 10, 'Iron Ore')],
         lines: () => [{ selfId: IRON_ORE, name: 'Iron Ore', count: 10, price: 20, stackable: true }],
-        fill: (store, seller) => AfkTrade.sellToShop(seller.id, store, IRON_ORE, 5,
+        write: (store, seller) => AfkTrade.sellToShop(seller.id, store, IRON_ORE, 5,
             { objectId: seller.ids[IRON_ORE], expectedPrice: 20 })
     });
-    assert.strictEqual(purchase[`bot-life:cold-owner-commit-release-batch/resolve|${IRON_ORE}`], undefined,
-        'the journal of the commits takes no ore back');
+
+    // Closing a leased bot's buy shop returns its 200 escrow adena; they stay.
+    await writeUnderLease({
+        label: 'closebuy', storeType: AfkTrade.BUY,
+        ownerItems: [item(57, 1000, 'Adena')],
+        lines: () => [{ selfId: IRON_ORE, name: 'Iron Ore', count: 10, price: 20, stackable: true }],
+        write: (store, _, owner) => AfkTrade.stop(owner.id)
+    });
+
+    // Closing a leased bot's sell shop returns its 10 potions; they stay.
+    await writeUnderLease({
+        label: 'closesell', storeType: AfkTrade.SELL,
+        ownerItems: [item(57, 1000, 'Adena'), item(POTION, 10, 'Lesser Healing Potion')],
+        lines: (ids) => [{ objectId: ids[POTION], selfId: POTION, name: 'Lesser Healing Potion', count: 10, price: 50, stackable: true }],
+        write: (store, _, owner) => AfkTrade.stop(owner.id)
+    });
+
+    // Repricing a leased bot's buy line from 20 to 30 reserves 100 more adena.
+    await writeUnderLease({
+        label: 'reprice', storeType: AfkTrade.BUY,
+        ownerItems: [item(57, 1000, 'Adena')],
+        lines: () => [{ selfId: IRON_ORE, name: 'Iron Ore', count: 10, price: 20, stackable: true }],
+        write: (store, _, owner) => AfkTrade.repriceBot(owner.id, store.items[0].afkTradeLineId, 30,
+            AfkTrade.findOwnerProjection(owner.id).shop.revision, null, { match: false })
+    });
+
+    // Republishing a leased bot's sell shop with 4 of its 10 potions (the
+    // prune after a sale does this): 6 come back to the backpack and stay.
+    await writeUnderLease({
+        label: 'publish', storeType: AfkTrade.SELL,
+        ownerItems: [item(57, 1000, 'Adena'), item(POTION, 10, 'Lesser Healing Potion')],
+        lines: (ids) => [{ objectId: ids[POTION], selfId: POTION, name: 'Lesser Healing Potion', count: 10, price: 50, stackable: true }],
+        write: (store, _, owner) => AfkTrade.publishBot(owner.id, { storeType: AfkTrade.SELL, title: 'publish', town: 'Giran',
+            locX: 83000, locY: 148000, locZ: -3400, appearance: { model: character('publishOwner') },
+            lines: [{ objectId: owner.ids[POTION], selfId: POTION, name: 'Lesser Healing Potion', count: 4, price: 50, stackable: true }] })
+    });
 
     // A fill on a bot the worker does not lease leaves its revision alone.
     const free = await makeCharacter('bot_free_owner', 'FreeOwner', [item(57, 1000, 'Adena'), item(POTION, 4, 'Lesser Healing Potion')]);
@@ -179,11 +216,16 @@ async function fillUnderLease({ label, storeType, lines, ownerItems, counterpart
     assert.deepStrictEqual(freeTrade.coldLifeRows, {}, 'a legacy-owned row is not fenced');
     const [freeRow] = await Database.execute(['SELECT simulationRevision FROM bot_life_state WHERE characterId = ?', [free.id]]);
     assert.strictEqual(Number(freeRow.simulationRevision), Number(before));
+    const freeClose = await Database.closeAfkTradeShop(free.id);
+    assert(freeClose.closed);
+    assert.deepStrictEqual(freeClose.coldLifeRows, {}, 'closing the shop of a legacy-owned row does not fence it');
+    const [closedRow] = await Database.execute(['SELECT simulationRevision FROM bot_life_state WHERE characterId = ?', [free.id]]);
+    assert.strictEqual(Number(closedRow.simulationRevision), Number(before));
 
     await AfkTrade._resetForTests();
     await Database.close();
     clean();
-    console.log(`AFK fills on ${accounts} characters: a fill on a leased bot fences its row; the worker resolves again, nothing lost`);
+    console.log(`AFK shop writes on ${accounts} characters: a fill, close, reprice or publish on a leased bot fences its row; the worker resolves again, nothing lost`);
 })().catch((error) => {
     console.error(error);
     process.exit(1);

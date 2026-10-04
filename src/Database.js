@@ -2388,6 +2388,7 @@ function afkTradeTakeItemUnsafe(characterId, itemId, selfId, enchant, amount) {
     return source;
 }
 
+// Returns the items (selfIds) it gave back; a buy shop gives back adena only.
 function returnAfkTradeEscrowUnsafe(shop, closedAt = now()) {
     const lines = all('SELECT * FROM afk_trade_lines WHERE shopId = ? AND count > 0 ORDER BY id', [shop.id]);
     if (Number(shop.storeType) === 1) {
@@ -2399,14 +2400,16 @@ function returnAfkTradeEscrowUnsafe(shop, closedAt = now()) {
     write(`UPDATE afk_trade_shops
         SET status = 'closed', escrowAdena = 0, revision = revision + 1, updatedAt = ?, closedAt = ?
         WHERE id = ? AND status = 'active'`, [closedAt, closedAt, shop.id]);
+    return Number(shop.storeType) === 1 ? lines.map((line) => Number(line.selfId)) : [];
 }
 
-// A fill moves adena and the line's item between the two parties. Fences each
-// party whose lifecycle row the cold worker leases; by characterId.
-function fenceAfkTradePartiesUnsafe(characterIds, selfId) {
+// An AFK shop write (a fill, close, reprice or publish) moves adena and the
+// items selfIds into or out of each party's backpack. Fences each party whose
+// lifecycle row the cold worker leases; by characterId.
+function fenceAfkTradePartiesUnsafe(characterIds, selfIds) {
     const rows = {};
     for (const characterId of characterIds) {
-        const row = fenceLeasedColdInventoryUnsafe(characterId, [selfId]);
+        const row = fenceLeasedColdInventoryUnsafe(characterId, selfIds);
         if (row) rows[Number(characterId)] = row;
     }
     return rows;
@@ -2851,7 +2854,7 @@ const Database = {
             if (active && !config.replace) throw new Error('afk_trade_already_active');
             // Replacing a remote shop returns its escrow and reserves the new
             // stock in the same transaction. A failed publish restores both.
-            if (active) returnAfkTradeEscrowUnsafe(active);
+            const changedIds = active ? returnAfkTradeEscrowUnsafe(active) : [];
 
             const timestamp = now();
             let escrowAdena = 0;
@@ -2914,6 +2917,7 @@ const Database = {
                     if (!sourceId || sourceIds.has(sourceId)) throw new Error('invalid_afk_trade_source');
                     sourceIds.add(sourceId);
                     source = afkTradeTakeItemUnsafe(characterId, sourceId, selfId, enchant, count);
+                    changedIds.push(selfId);
                 }
                 write(`INSERT INTO afk_trade_lines(
                     shopId, sourceObjectId, selfId, name, count, initialCount, price,
@@ -2937,7 +2941,8 @@ const Database = {
 
             return {
                 shop: afkTradeShopUnsafe(shopId),
-                ownerInventory: afkTradeInventoryUnsafe(characterId)
+                ownerInventory: afkTradeInventoryUnsafe(characterId),
+                coldLifeRows: fenceAfkTradePartiesUnsafe([characterId], changedIds)
             };
         }, 'afk-trade:create'));
     },
@@ -2948,12 +2953,13 @@ const Database = {
         return withCharacterFlush(characterId, () => inTransaction(() => {
             const shop = one("SELECT * FROM afk_trade_shops WHERE ownerId = ? AND status = 'active'", [characterId]);
             if (!shop) return { closed: false, ownerInventory: afkTradeInventoryUnsafe(characterId) };
-            returnAfkTradeEscrowUnsafe(shop);
+            const changedIds = returnAfkTradeEscrowUnsafe(shop);
             return {
                 closed: true,
                 shopId: Number(shop.id),
                 ownerId: characterId,
-                ownerInventory: afkTradeInventoryUnsafe(characterId)
+                ownerInventory: afkTradeInventoryUnsafe(characterId),
+                coldLifeRows: fenceAfkTradePartiesUnsafe([characterId], changedIds)
             };
         }, 'afk-trade:close'));
     },
@@ -2978,8 +2984,10 @@ const Database = {
                 throw new Error('invalid_afk_trade_quantity');
             }
             const returned = Number(line.count) - count;
+            const changedIds = [];
             if (returned > 0 && Number(shop.storeType) === 1) {
                 afkTradeCreditItemUnsafe(characterId, line, returned);
+                changedIds.push(Number(line.selfId));
             }
             const difference = Number(shop.storeType) === 3
                 ? unitPrice * count - Number(line.price) * Number(line.count) : 0;
@@ -2994,9 +3002,12 @@ const Database = {
                 updatedAt = ? WHERE id = ?`, [reserved, timestamp, shop.id]);
             const owner = one('SELECT username FROM characters WHERE id = ?', [characterId]);
             completeAfkTradeIfFilledUnsafe(shop.id, timestamp, String(owner?.username || '').startsWith('bot_'));
+            // A price-only change moves nothing and leaves the worker's lease alone.
+            const moved = changedIds.length > 0 || difference !== 0;
             return {
                 shop: afkTradeShopUnsafe(shop.id),
-                ownerInventory: afkTradeInventoryUnsafe(characterId)
+                ownerInventory: afkTradeInventoryUnsafe(characterId),
+                coldLifeRows: moved ? fenceAfkTradePartiesUnsafe([characterId], changedIds) : {}
             };
         }, 'afk-trade:reprice'));
     },
@@ -3067,7 +3078,7 @@ const Database = {
             });
             completeAfkTradeIfFilledUnsafe(sellShopId, timestamp, botOwned);
             completeAfkTradeIfFilledUnsafe(buyShopId, timestamp, botBuyer);
-            const coldLifeRows = fenceAfkTradePartiesUnsafe([sellerId, buyerId], sellLine.selfId);
+            const coldLifeRows = fenceAfkTradePartiesUnsafe([sellerId, buyerId], [sellLine.selfId]);
             return {
                 coldLifeRows,
                 sellerEventId, buyerEventId, amount: quantity, totalPrice: total,
@@ -3119,7 +3130,7 @@ const Database = {
             });
             const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned);
             return {
-                coldLifeRows: fenceAfkTradePartiesUnsafe([shop.ownerId, buyerId], line.selfId),
+                coldLifeRows: fenceAfkTradePartiesUnsafe([shop.ownerId, buyerId], [line.selfId]),
                 eventId,
                 filled,
                 amount: quantity,
@@ -3182,7 +3193,7 @@ const Database = {
             });
             const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned);
             return {
-                coldLifeRows: fenceAfkTradePartiesUnsafe([shop.ownerId, sellerId], line.selfId),
+                coldLifeRows: fenceAfkTradePartiesUnsafe([shop.ownerId, sellerId], [line.selfId]),
                 eventId,
                 filled,
                 amount: quantity,
