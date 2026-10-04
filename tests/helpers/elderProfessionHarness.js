@@ -10,6 +10,7 @@ async function realActor(c) {
     c.session.actor = new Actor(c.session, { ...row, ...utils.crushOb(template), id: c.id, name: row.name, username: row.username,
         level: row.level, classId: row.classId, locX: 0, locY: 0, locZ: 0, head: 0, title: '', isActive: 1, items, paperdoll });
     c.session.dataSendToOthers = p => c.session.packets.push(p);
+    invoke('GameServer/Actor/Generics/CalculateStats')(c.session, c.session.actor);
 }
 
 async function equipSpear(c) {
@@ -23,7 +24,7 @@ async function equipSpear(c) {
     assert.equal(c.session.actor.backpack.fetchEquippedWeapon().fetchSelfId(), 3026);
 }
 
-async function life(c, { equipped = true, stopAtSpear = false, waitAt37 = true } = {}) {
+async function life(c, { equipped = true, stopAtSpear = false, waitAt37 = true, beforeSpearParts = null } = {}) {
     const before = await c.world.character(c.id);
     await c.level(36); assert.equal(await c.event(218, 'start', 7460), false);
     await c.level(37); await c.click(218, 'start', 7460);
@@ -53,6 +54,7 @@ async function life(c, { equipped = true, stopAtSpear = false, waitAt37 = true }
     assert.equal(await c.amount(3148), 0);
     await c.click(218, 'handin', 7655);
     await c.kill(581, 1, .5); assert.equal(await c.amount(3166), 0);
+    if (beforeSpearParts) await beforeSpearParts();
     for (let i = 0; i < 6; i++) await c.kill(i % 2 ? 582 : 581);
     await c.kill(582); assert.equal(await c.amount(3171), 1);
     for (let id = 3166; id <= 3171; id++) assert.equal(await c.amount(id), 1);
