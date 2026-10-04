@@ -748,10 +748,7 @@ module.exports = {
             const amount = Math.max(0, ShotStock.PURCHASE_TARGET_AMOUNT - current);
             const expectedCost = amount * Number(plan.price || 0);
 
-            ShotStock.purchaseActorRestock(bot, {
-                plan,
-                targetAmount: ShotStock.PURCHASE_TARGET_AMOUNT
-            }).then(async (result) => {
+            ShotStock.purchaseActorRestock(bot, { plan }).then(async (result) => {
                 if (!result.ok) {
                     TownChatter.say(session, BotAI, 'shots-too-expensive', Speech.lines('town.shots-too-expensive', { item: ShotStock.describe(plan), adena: result.adena || 0, cost: result.cost || expectedCost }),
                         { priority: 'coordination', values: { item: ShotStock.describe(plan) } });

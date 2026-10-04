@@ -3,6 +3,7 @@ const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 
 const DEFAULT_TARGET_AMOUNT = 1000;
 const PURCHASE_TARGET_AMOUNT = 3000;
@@ -293,64 +294,101 @@ function ensureCharacterStock(characterId, options = {}) {
     });
 }
 
+// One restock rule for hot and cold bots, like HealingPotionStock.restockPlan:
+// below 1,000 shots a bot buys up to 3,000, first from players' shops cheaper
+// than the NPC (cheapest first, as many as needed), then from the NPC, and
+// spends only what is above its consumables reserve (PurchaseFunding).
+// `value` is a hot actor or a cold state; the NPC price is the one unit price.
+function restockPlan(value, options = {}) {
+    const actor = !!value?.backpack;
+    const plan = options.plan || (actor ? planForActor(value) : planForState(value));
+    const inventory = options.inventory || (actor ? null : value?.inventory);
+    const currentAmount = inventory
+        ? Number(inventory[String(plan.selfId)]?.amount || 0)
+        : shotAmount(value, plan);
+    const adena = Math.max(0, Number(options.adena ?? (actor
+        ? value.backpack.fetchItemFromSelfId?.(57)?.fetchAmount?.() : value?.adena) ?? 0) || 0);
+    const level = Math.max(1, Number(value?.fetchLevel?.() ?? value?.level ?? 1) || 1);
+    const reserve = PurchaseFunding.operatingReserve({ adena, level });
+    const unitPrice = Number(options.unitPrice ?? invoke('GameServer/Bot/Economy/StaticMerchantPricing')
+        .cheapestPurchase(plan.selfId));
+    const npcPrice = Number.isFinite(unitPrice) && unitPrice > 0 ? unitPrice : 0;
+    const needed = npcPrice > 0 && currentAmount < DEFAULT_TARGET_AMOUNT;
+    let left = needed ? PURCHASE_TARGET_AMOUNT - currentAmount : 0;
+    let money = Math.max(0, adena - reserve);
+    const shops = [];
+    const cheaper = (options.offers || [])
+        .filter((offer) => Number(offer.price) > 0 && Number(offer.price) < npcPrice && Number(offer.count) > 0)
+        .sort((a, b) => Number(a.price) - Number(b.price));
+    for (const offer of cheaper) {
+        if (left <= 0) break;
+        const price = Number(offer.price);
+        const amount = Math.min(left, Number(offer.count), Math.floor(money / price));
+        if (amount <= 0) break;
+        shops.push({ offer, price, amount, cost: amount * price });
+        left -= amount;
+        money -= amount * price;
+    }
+    const npcAmount = left > 0 ? Math.min(left, Math.floor(money / npcPrice)) : 0;
+    const amount = shops.reduce((sum, line) => sum + line.amount, 0) + npcAmount;
+    return {
+        plan,
+        currentAmount,
+        targetAmount: PURCHASE_TARGET_AMOUNT,
+        needed,
+        shops,
+        npcAmount,
+        unitPrice: npcPrice,
+        amount,
+        cost: shops.reduce((sum, line) => sum + line.cost, 0) + npcAmount * npcPrice,
+        adena,
+        reserve
+    };
+}
+
+// A hot bot's restock (restockPlan) on its trip: the players' shops, then the NPC.
 async function purchaseActorRestock(actor, options = {}) {
     if (!actor?.backpack || typeof actor.fetchId !== 'function') {
         return { ok: false, reason: 'missing_actor' };
     }
 
-    const targetAmount = Number(options.targetAmount || PURCHASE_TARGET_AMOUNT);
     const plan = options.plan || planForActor(actor);
-    const currentAmount = shotAmount(actor, plan);
-    const missingAmount = Math.max(0, targetAmount - currentAmount);
-    if (missingAmount <= 0) return { ok: true, changed: false, plan, amount: currentAmount, cost: 0 };
-
-    const staticPrice = invoke('GameServer/Bot/Economy/StaticMerchantPricing')
-        .cheapestPurchase(plan.selfId);
-    const unitPrice = Number.isFinite(staticPrice) ? Math.max(1, Number(plan.price || 0), staticPrice)
-        : Math.max(1, Number(plan.price || 0));
-    const fullCost = missingAmount * unitPrice;
-    const adenaItem = actor.backpack.fetchItemFromSelfId(57);
-    let adena = Number(adenaItem?.fetchAmount ? adenaItem.fetchAmount() : 0);
-    let remaining = missingAmount;
-    let marketCost = 0;
     const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
-    const offers = AfkTrade.offers(plan.selfId, AfkTrade.SELL, { characterId: actor.fetchId() })
-        .filter((offer) => Number(offer.price) > 0 && Number(offer.price) < unitPrice && Number(offer.count) > 0)
-        .sort((a, b) => Number(a.price) - Number(b.price)).slice(0, 4);
-    for (const offer of offers) {
-        const quantity = Math.min(remaining, Number(offer.count), Math.floor(adena / Number(offer.price)));
-        if (quantity <= 0) continue;
+    const restock = restockPlan(actor, { plan, unitPrice: options.unitPrice,
+        offers: AfkTrade.offers(plan.selfId, AfkTrade.SELL, { characterId: actor.fetchId() }) });
+    if (!restock.needed) return { ok: true, changed: false, plan, amount: restock.currentAmount, cost: 0 };
+    if (restock.amount <= 0) {
+        return { ok: false, reason: 'not_enough_adena', plan, adena: restock.adena,
+            cost: (restock.targetAmount - restock.currentAmount) * restock.unitPrice };
+    }
+
+    let delta = 0;
+    let cost = 0;
+    for (const line of restock.shops) {
         try {
-            await AfkTrade.buyFromShop(actor.fetchId(), offer.store, plan.selfId, quantity,
-                { expectedPrice: Number(offer.price) });
-            marketCost += quantity * Number(offer.price);
-            remaining -= quantity;
-            adena = Number(actor.backpack.fetchItemFromSelfId(57)?.fetchAmount?.() || 0);
+            await AfkTrade.buyFromShop(actor.fetchId(), line.offer.store, plan.selfId, line.amount,
+                { expectedPrice: line.price });
+            delta += line.amount;
+            cost += line.cost;
         } catch (_) {
             // An AFK listing may change between selection and purchase.
         }
-        if (remaining <= 0) break;
     }
-    if (remaining <= 0) return { ok: true, changed: true, plan, amount: targetAmount, delta: missingAmount, cost: marketCost };
-
-    const affordableAmount = unitPrice > 0 ? Math.floor(adena / unitPrice) : missingAmount;
-    const delta = Math.min(remaining, affordableAmount);
-    const currentAdenaItem = actor.backpack.fetchItemFromSelfId(57);
-    if (!currentAdenaItem || delta <= 0) {
-        return marketCost > 0
-            ? { ok: true, changed: true, plan, amount: targetAmount - remaining, delta: missingAmount - remaining, cost: marketCost, adena }
-            : { ok: false, reason: 'not_enough_adena', plan, cost: fullCost, adena };
+    const adenaItem = actor.backpack.fetchItemFromSelfId(57);
+    const adena = Number(adenaItem?.fetchAmount ? adenaItem.fetchAmount() : 0);
+    const npcCost = restock.npcAmount * restock.unitPrice;
+    if (!adenaItem || restock.npcAmount <= 0 || adena < npcCost) {
+        return delta > 0
+            ? { ok: true, changed: true, plan, amount: shotAmount(actor, plan), delta, cost, adena }
+            : { ok: false, reason: 'not_enough_adena', plan, cost: restock.cost, adena };
     }
 
-    const cost = delta * unitPrice;
-    const nextAdena = adena - cost;
-    const nextAmount = targetAmount - remaining + delta;
-    return Database.updateItemAmount(actor.fetchId(), currentAdenaItem.fetchId(), nextAdena)
-        .then(() => {
-            currentAdenaItem.setAmount(nextAdena);
-            return ensureActorStock(actor, { targetAmount: nextAmount, plan });
-        })
-        .then((result) => ({ ok: true, ...result, cost: marketCost + cost, adena: nextAdena }));
+    const nextAdena = adena - npcCost;
+    const nextAmount = shotAmount(actor, plan) + restock.npcAmount;
+    await Database.updateItemAmount(actor.fetchId(), adenaItem.fetchId(), nextAdena);
+    adenaItem.setAmount(nextAdena);
+    const result = await ensureActorStock(actor, { targetAmount: nextAmount, plan });
+    return { ok: true, ...result, delta: delta + restock.npcAmount, cost: cost + npcCost, adena: nextAdena };
 }
 
 // A weapon change can switch the shot grade and kind: buy the restock with the
@@ -359,7 +397,7 @@ function restockAfterWeaponChange(actor, slots = [], logTag = 'BotGear') {
     if (!slots.some((slot) => WEAPON_SLOTS.has(Number(slot)))) return Promise.resolve(null);
     // Through the module object, as the callers did before: tests replace these.
     const shots = module.exports;
-    return shots.purchaseActorRestock(actor, { targetAmount: DEFAULT_TARGET_AMOUNT })
+    return shots.purchaseActorRestock(actor)
         .then(() => shots.enableAutoShot(actor))
         .catch((error) => utils.infoWarn(logTag, 'failed to refresh shots for %s: %s', actor.fetchName?.(), error.message));
 }
@@ -409,6 +447,7 @@ module.exports = {
     shotAmount,
     ensureActorStock,
     ensureCharacterStock,
+    restockPlan,
     purchaseActorRestock,
     restockAfterWeaponChange,
     needsActorRestock,

@@ -204,32 +204,36 @@ async function reviewDemand(state, now) {
             shotDemand: { itemId: plan.selfId, amount: missing, maxSpend, at: now }
         } }, 'shot_market_demand') || state;
     }
-    const offer = AfkTrade.offers(plan.selfId, AfkTrade.SELL, { characterId: state.characterId })
-        .filter((entry) => Number(entry.price) > 0 && Number(entry.price) < staticPrice && Number(entry.count) > 0)
-        .sort((a, b) => a.price - b.price)[0];
-    if (offer && maxSpend >= Number(offer.price)) {
-        const amount = Math.min(missing, Number(offer.count), Math.floor(maxSpend / Number(offer.price)));
+    // The purchase follows the one restock rule of hot and cold bots.
+    const restock = ShotStock.restockPlan(state, { plan, unitPrice: staticPrice,
+        offers: AfkTrade.offers(plan.selfId, AfkTrade.SELL, { characterId: state.characterId }) });
+    let bought = false;
+    for (const line of restock.shops) {
         try {
-            const trade = await AfkTrade.buyFromShop(state.characterId, offer.store, plan.selfId, amount,
-                { expectedPrice: Number(offer.price), coldState: state });
-            if (trade.coldState) return await persist({ ...trade.coldState,
-                stats: { ...(trade.coldState.stats || {}), shotDemand: null }
-            }, 'shot_market_purchase') || trade.coldState;
+            const trade = await AfkTrade.buyFromShop(state.characterId, line.offer.store, plan.selfId, line.amount,
+                { expectedPrice: line.price, coldState: state });
+            if (trade.coldState) {
+                state = trade.coldState;
+                bought = true;
+            }
         } catch (_) {
             // Retry on a later lifecycle when the offer changes.
         }
     }
-    if (current > 0 || maxSpend < staticPrice) return state;
-    const amount = Math.min(ShotStock.DEFAULT_TARGET_AMOUNT, Math.floor(maxSpend / staticPrice));
-    if (amount <= 0) return state;
-    const purchase = await Database.purchaseNpcInventoryItem(state.characterId, {
-        selfId: plan.selfId, name: plan.name, amount, unitPrice: staticPrice, coldState: state
-    });
-    if (!purchase.ok) return state;
-    state = debitAdena(state, Number(purchase.spent || amount * staticPrice));
-    const refreshed = await acceptMutation(purchase, state, 'shot_static_inventory');
-    return await persist({ ...refreshed, stats: { ...(refreshed.stats || {}), shotDemand: null } },
-        'shot_static_purchase') || refreshed;
+    if (restock.npcAmount > 0) {
+        const purchase = await Database.purchaseNpcInventoryItem(state.characterId, {
+            selfId: plan.selfId, name: plan.name, amount: restock.npcAmount, unitPrice: staticPrice, coldState: state
+        });
+        if (purchase.ok) {
+            state = debitAdena(state, Number(purchase.spent || restock.npcAmount * staticPrice));
+            const refreshed = await acceptMutation(purchase, state, 'shot_static_inventory');
+            return await persist({ ...refreshed, stats: { ...(refreshed.stats || {}), shotDemand: null } },
+                'shot_static_purchase') || refreshed;
+        }
+    }
+    if (!bought) return state;
+    return await persist({ ...state, stats: { ...(state.stats || {}), shotDemand: null } },
+        'shot_market_purchase') || state;
 }
 
 function recipeTarget(state, index = null, knownRecipeIds = []) {

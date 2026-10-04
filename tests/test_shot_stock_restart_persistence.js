@@ -40,7 +40,7 @@ async function main() {
     ], 'test:character');
     const characterId = Number(character.insertId);
 
-    await Database.setItem(characterId, { selfId: 1835, name: plan.name, amount: 1000 });
+    await Database.setItem(characterId, { selfId: 1835, name: plan.name, amount: 500 });
     await Database.setItem(characterId, { selfId: 57, name: 'Adena', amount: 7000 });
     const rows = await Database.fetchItems(characterId);
     const runtimeItems = new Map(rows.map((row) => [Number(row.selfId), runtimeItem(row)]));
@@ -51,17 +51,18 @@ async function main() {
         }
     };
 
-    const purchased = await ShotStock.purchaseActorRestock(actor, { plan });
-    assert.strictEqual(purchased.amount, 2000,
+    // The restock rule (S3) keeps the consumables reserve: 700 of 7,000 at level 1.
+    const purchased = await ShotStock.purchaseActorRestock(actor, { plan, unitPrice: 7 });
+    assert.strictEqual(purchased.amount, 1400,
         'the persisted test bot should make an affordable partial purchase before restart');
-    assert.strictEqual(purchased.adena, 0);
+    assert.strictEqual(purchased.adena, 700);
 
     await Database.close();
     Database.init();
 
     const initiallyLoaded = await Shared.fetchCharacters('shot_restart');
     const loadedShots = initiallyLoaded[0].items.find((row) => Number(row.selfId) === plan.selfId);
-    assert.strictEqual(Number(loadedShots.amount), 2000,
+    assert.strictEqual(Number(loadedShots.amount), 1400,
         'the paid shot amount must load unchanged from SQLite after database restart');
 
     const reconciled = await ShotStock.ensureCharacterStock(characterId, {
@@ -73,10 +74,10 @@ async function main() {
 
     const readyCharacters = await Shared.fetchCharacters('shot_restart');
     const readyShots = readyCharacters[0].items.find((row) => Number(row.selfId) === plan.selfId);
-    assert.strictEqual(Number(readyShots.amount), 2000,
+    assert.strictEqual(Number(readyShots.amount), 1400,
         'the final bot actor input must retain the extra shots after startup reconciliation');
 
-    await Database.setItem(characterId, { selfId: 57, name: 'Adena', amount: 5000 });
+    await Database.updateItemAmount(characterId, runtimeItems.get(57).fetchId(), 5000);
     const orePurchase = await Database.purchaseNpcInventoryItem(characterId, {
         selfId: 1785, name: 'Soul Ore', amount: 3, unitPrice: 500
     });
