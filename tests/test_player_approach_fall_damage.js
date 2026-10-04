@@ -18,6 +18,7 @@ const Update = invoke('GameServer/Actor/Generics/UpdatePosition');
     const saved = { now: Date.now, timeout: global.setTimeout, clearTimeout: global.clearTimeout,
         start: Timer.start, clear: Timer.clear, npc: World.fetchNpc, talk: World.npcTalk,
         sessions: Manager.sessions, projection: AfkTrade.findProjection, hasGeo: Geo.hasGeo,
+        lineOfSight: Geo.hasLineOfSight,
         environment: Generics.updateEnvironment, underwater: Generics.underwaterCheck, party: Party.updatePosition };
     let now = 10000;
     try {
@@ -29,6 +30,8 @@ const Update = invoke('GameServer/Actor/Generics/UpdatePosition');
         Manager.sessions = [];
         AfkTrade.findProjection = () => null;
         Geo.hasGeo = () => true;
+        // These arrival checks assume an unobstructed path, independent of map files.
+        Geo.hasLineOfSight = () => true;
         Generics.updateEnvironment = Generics.underwaterCheck = Party.updatePosition = () => {};
 
         function encounter(targetZ, attackable = true, accountId = 'player_height') {
@@ -187,6 +190,7 @@ const Update = invoke('GameServer/Actor/Generics/UpdatePosition');
         Date.now = saved.now; global.setTimeout = saved.timeout; global.clearTimeout = saved.clearTimeout;
         Timer.start = saved.start; Timer.clear = saved.clear; World.fetchNpc = saved.npc; World.npcTalk = saved.talk;
         Manager.sessions = saved.sessions; AfkTrade.findProjection = saved.projection; Geo.hasGeo = saved.hasGeo;
+        Geo.hasLineOfSight = saved.lineOfSight;
         Generics.updateEnvironment = saved.environment; Generics.underwaterCheck = saved.underwater; Party.updatePosition = saved.party;
     }
     console.log('Player approach height, fall damage and bot arrival checks passed');
