@@ -311,6 +311,8 @@ function resolveTravel(state, timestamp = Date.now()) {
     };
 }
 
+// A shopping state left behind by an old town loop: no market return to
+// finish, no companion supply errand, and not at the Giran market.
 function staleShopping(state) {
     return state?.activity === 'shopping'
         && !state.stats?.marketReturn
@@ -1563,6 +1565,7 @@ const BackgroundResolver = {
     resolveRest,
     resolvePartyFight,
     needsRest,
+    staleShopping,
     estimateRestMs,
     applyStandingRegen,
     prepareRaidParty,

@@ -3473,9 +3473,7 @@ const PopulationService = {
                 .then((saved) => ({ ok: true, state: saved || serviceState, debug: { activity: 'craft_service_idle' } }))
                 .finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
         }
-        const staleShopping = state?.activity === 'shopping'
-            && !state.stats?.marketReturn
-            && state.currentRegion !== 'Giran';
+        const staleShopping = BackgroundResolver.staleShopping(state);
         const passiveActivity = ['traveling', 'shopping', 'merchant', 'crafting', 'dead'].includes(state?.activity) && !staleShopping;
         const workerPlan = workerRequest?.precomputedPlan || null;
         const previousPlan = workerPlan ? workerPlan.previousPlan : state.stats?.equipmentPlan;

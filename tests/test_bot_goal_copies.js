@@ -163,6 +163,12 @@ assert.strictEqual(shopping(shopper()), 'shopping_recovered');
 assert.strictEqual(shopping(shopper({ marketReturn: { spotId: 'home' } })), 'shopping');
 assert.strictEqual(shopping(shopper({}, 'Giran')), 'shopping');
 assert.strictEqual(shopping(shopper({ supplyErrand: { itemId: 57 } })), 'supply_errand');
+// The main thread reads the same rule: a companion's supply errand is not
+// a stale shopping state there either.
+assert.strictEqual(BackgroundResolver.staleShopping(shopper()), true);
+assert.strictEqual(BackgroundResolver.staleShopping(shopper({ supplyErrand: { itemId: 57 } })), false);
+assert.strictEqual(BackgroundResolver.staleShopping(shopper({ marketReturn: { spotId: 'home' } })), false);
+assert.strictEqual(BackgroundResolver.staleShopping(shopper({}, 'Giran')), false);
 
 // Party request expiry on the main thread.
 const request = (priority, age, extra = {}) => ({
