@@ -1,7 +1,24 @@
 // Shared fighter trials, driven through actual dialogue, quest handlers and SQLite.
 const assert = require('node:assert/strict');
 const shared = require('./secondProfessionHarness');
-const { H, withRandom } = shared;
+const { H, withRandom, Database, DataCache } = shared;
+const Actor = invoke('GameServer/Actor/Actor');
+
+async function reloadActor(c) {
+    const row = await c.world.character(c.id), template = DataCache.classTemplates.find(t => t.classId === row.classId);
+    c.session.actor = new Actor(c.session, { ...row, ...utils.crushOb(template), id: c.id, name: row.name, username: row.username,
+        level: row.level, classId: row.classId, locX: 0, locY: 0, locZ: 0, head: 0, title: '', isActive: 1,
+        items: await Database.fetchItems(c.id), paperdoll: utils.tupleAlloc(16, {}) });
+    c.session.dataSendToOthers = p => c.session.packets.push(p);
+    await c.session.actor.skillset.populate(c.id);
+}
+
+function master(c, selfId) {
+    const npc = { fetchSelfId: () => selfId, fetchId: () => 190000 + selfId, fetchName: () => H.npcName(selfId), fetchTitle: () => '',
+        fetchLocX: () => 0, fetchLocY: () => 0, fetchLocZ: () => 0, isDead: () => false };
+    c.runtime.npc.spawns.push(npc); c.session.activeNpcTalk = { selfId, objectId: npc.fetchId() };
+    return npc;
+}
 
 async function challenger(c, foreign) {
     const before = await c.world.character(c.id), diamonds = await c.amount(7562);
@@ -58,4 +75,4 @@ async function duelist(c, { started = false } = {}) {
     await c.reopen(); assert.equal(await c.event(222, 'handin', 7623), false);
 }
 
-module.exports = { ...shared, challenger, duelist };
+module.exports = { ...shared, challenger, duelist, reloadActor, master };

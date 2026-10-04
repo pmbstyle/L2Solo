@@ -1,25 +1,8 @@
 const assert = require('node:assert/strict');
-const { createTrialWorld, challenger, duelist, finishRoute, abort, H, Service, Database, DataCache } = require('./helpers/fighterProfessionHarness');
+const { createTrialWorld, challenger, duelist, finishRoute, abort, Service, Database, reloadActor, master } = require('./helpers/fighterProfessionHarness');
 const { life } = require('./helpers/elderProfessionHarness');
 const Profession = invoke('GameServer/SecondProfession');
 const Transfer = invoke('GameServer/World/Generics/NpcBypasses/SecondProfession');
-const Actor = invoke('GameServer/Actor/Actor');
-
-async function reloadActor(c) {
-    const row = await c.world.character(c.id), template = DataCache.classTemplates.find(t => t.classId === row.classId);
-    c.session.actor = new Actor(c.session, { ...row, ...utils.crushOb(template), id: c.id, name: row.name, username: row.username,
-        level: row.level, classId: row.classId, locX: 0, locY: 0, locZ: 0, head: 0, title: '', isActive: 1,
-        items: await Database.fetchItems(c.id), paperdoll: utils.tupleAlloc(16, {}) });
-    c.session.dataSendToOthers = p => c.session.packets.push(p);
-    await c.session.actor.skillset.populate(c.id);
-}
-
-function master(c, selfId) {
-    const npc = { fetchSelfId: () => selfId, fetchId: () => 190000 + selfId, fetchName: () => H.npcName(selfId), fetchTitle: () => '',
-        fetchLocX: () => 0, fetchLocY: () => 0, fetchLocZ: () => 0, isDead: () => false };
-    c.runtime.npc.spawns.push(npc); c.session.activeNpcTalk = { selfId, objectId: npc.fetchId() };
-    return npc;
-}
 
 (async () => {
     const c = await createTrialWorld('swordsinger', 180001, [

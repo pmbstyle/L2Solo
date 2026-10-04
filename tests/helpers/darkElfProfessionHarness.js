@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const shared = require('./clericProfessionHarness');
 const { H } = shared;
 
-async function fate(c, foreign = null) {
+async function fate(c, foreign = null, { beforeSkulls = null } = {}) {
     const before = await c.world.character(c.id);
     await c.level(36); assert.equal(await c.event(219, 'start', 7476), false);
     await c.level(37); await c.click(219, 'start', 7476);
@@ -43,6 +43,7 @@ async function fate(c, foreign = null) {
     await c.click(219, 'pixy', 12084); await c.click(219, 'treant', 12089);
     assert.equal(await c.event(219, 'pixy', 12084), false); assert.equal(await c.event(219, 'treant', 12089), false);
     assert.equal(await c.event(219, 'handin', 7419), false);
+    if (beforeSkulls) await beforeSkulls();
     for (const [mob, item] of [[554, 3194], [600, 3195], [270, 3196], [582, 3197]]) {
         await c.kill(mob, 11); assert.equal(await c.amount(item), 10);
     }
