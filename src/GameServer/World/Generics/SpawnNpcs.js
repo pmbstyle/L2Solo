@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Npc       = invoke('GameServer/Npc/Npc');
 const DataCache = invoke('GameServer/DataCache');
 const ServerResponse = invoke('GameServer/Network/Response');
@@ -167,7 +168,7 @@ function spawnNpc(world, definition, options = {}) {
 
 function templateFor(selfId) {
     const id = Number(selfId);
-    const template = DataCache.npcs?.find((npc) => Number(npc.selfId) === id);
+    const template = ItemTemplateIndex.find(DataCache.npcs, id);
     return template ? structuredClone(template) : null;
 }
 

@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const GatekeeperTeleports = invoke('GameServer/World/C4GatekeeperTeleports');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
@@ -53,7 +54,6 @@ function build() {
     }
     if (cachedSpawns === spawns) return;
 
-    const templates = new Map((DataCache.npcs || []).map((npc) => [Number(npc.selfId), npc.template || {}]));
     const sellerIds = new Set((NpcShopBuyLists.npcIds?.() || []).map(Number));
     const gatekeeperIds = new Set(Object.keys(GatekeeperTeleports.lists || {}).map(Number));
     const rows = [];
@@ -62,7 +62,7 @@ function build() {
     spawns.forEach((zone) => {
         (zone?.spawns || []).forEach((spawn) => {
             const npcSelfId = Number(spawn?.selfId || 0);
-            const template = templates.get(npcSelfId) || {};
+            const template = ItemTemplateIndex.find(DataCache.npcs, npcSelfId)?.template || {};
             const title = String(template.title || spawn.title || '');
             const roles = rolesFor(npcSelfId, title, sellerIds, gatekeeperIds);
             if (!roles.length) return;

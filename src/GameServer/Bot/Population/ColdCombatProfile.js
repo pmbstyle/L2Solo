@@ -660,7 +660,7 @@ function corpseSummonSkills(profile = {}) {
 function npcForSpot(spot = {}, rng = Math.random, options = {}) {
     const rawEntries = Array.isArray(spot.npcEntries) && spot.npcEntries.length ? spot.npcEntries : (spot.npcSelfIds || []).map((selfId) => ({ selfId, count: 1 }));
     let entries = rawEntries.filter((entry) => {
-        const npc = (DataCache.npcs || []).find((candidate) => number(candidate.selfId) === number(entry.selfId));
+        const npc = ItemTemplateIndex.find(DataCache.npcs, entry.selfId);
         const explicitRaid = options.allowRaid === true && spot.raidBoss === true
             && BotRaidSafety.isRaidBoss(npc)
             && number(spot.raidBossTemplateId) === number(npc.selfId);
@@ -673,7 +673,7 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
     if (options.matchupProfiles?.length) {
         let resisted = 0;
         entries = entries.map(entry => {
-            const npc = (DataCache.npcs || []).find(n => number(n.selfId) === number(entry.selfId));
+            const npc = ItemTemplateIndex.find(DataCache.npcs, entry.selfId);
             const target = npcCombatStats(npc);
             const match = Matchup.evaluate(options.matchupProfiles, target);
             if (!match.eligible) resisted += 1;
@@ -704,13 +704,13 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
     // making the bot immune to the rest of the encounter table.
     const aggressive = preferred
         ? encounterEntries.filter((entry) => number(entry.selfId) !== preferredNpcId
-            && (DataCache.npcs || []).find((npc) => number(npc.selfId) === number(entry.selfId))?.template?.hostile === true)
+            && ItemTemplateIndex.find(DataCache.npcs, entry.selfId)?.template?.hostile === true)
         : [];
     const interruptionChance = Math.max(0, Math.min(1, number(options.aggressiveInterruptionChance, 0.25)));
     const selected = preferred && (!aggressive.length || rng() >= interruptionChance)
         ? preferred
         : pickEntry(aggressive.length ? aggressive : entries);
-    const npc = (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(selected?.selfId));
+    const npc = ItemTemplateIndex.find(DataCache.npcs, selected?.selfId);
     if (!npc) return null;
     const combat = npcCombatStats(npc);
     const explicitRaid = options.allowRaid === true && spot.raidBoss === true;
@@ -718,7 +718,7 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
         ? RAID_MINIONS.filter((row) => number(row.bossId) === number(npc.selfId))
         : [];
     const minionPressure = minionRows.reduce((pressure, row) => {
-        const minion = (DataCache.npcs || []).find((candidate) => number(candidate.selfId) === number(row.minionId));
+        const minion = ItemTemplateIndex.find(DataCache.npcs, row.minionId);
         const profile = npcCombatStats(minion);
         const count = Math.max(0, number(row.max, row.min));
         if (!profile || !count) return pressure;

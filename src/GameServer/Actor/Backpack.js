@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const ServerResponse = invoke('GameServer/Network/Response');
 const BackpackModel  = invoke('GameServer/Model/Backpack');
 const SkillModel     = invoke('GameServer/Model/Skill');
@@ -862,7 +863,7 @@ class Backpack extends BackpackModel {
             }
         };
 
-        const cachedNpc = DataCache.npcs.find((npc) => Number(npc.selfId) === Number(payload.npcId));
+        const cachedNpc = ItemTemplateIndex.find(DataCache.npcs, payload.npcId);
         spawn(cachedNpc ? structuredClone(cachedNpc) : null);
     }
 
@@ -894,7 +895,7 @@ class Backpack extends BackpackModel {
             12781: 'Baby Kookaburra',
             12782: 'Baby Cougar'
         };
-        const fallback = DataCache.npcs.find((npc) => Number(npc.selfId) === fallbackNpcIds[Number(npcId)]);
+        const fallback = ItemTemplateIndex.find(DataCache.npcs, fallbackNpcIds[Number(npcId)]);
         if (!fallback) return null;
         const cloned = structuredClone(fallback);
         cloned.selfId = Number(npcId);

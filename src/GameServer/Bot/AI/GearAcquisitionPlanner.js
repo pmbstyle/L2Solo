@@ -45,8 +45,6 @@ const NPC_GEAR_MAX_RANK = 'd';
 let staticNpcItemIdsCache = null;
 let itemCatalogSource = null;
 let itemCatalogById = new Map();
-let npcCatalogSource = null;
-let npcCatalogById = new Map();
 
 function rateProfileSignature() {
     const rates = ProgressionRates.profile();
@@ -83,12 +81,7 @@ function catalogItem(selfId) {
 }
 
 function catalogNpc(selfId) {
-    const npcs = DataCache.npcs || [];
-    if (npcCatalogSource !== npcs) {
-        npcCatalogSource = npcs;
-        npcCatalogById = new Map(npcs.map((npc) => [Number(npc.selfId), npc]));
-    }
-    return npcCatalogById.get(Number(selfId)) || null;
+    return ItemTemplateIndex.find(DataCache.npcs, selfId) || null;
 }
 
 function isRealCatalogItem(item = {}) {
@@ -1779,11 +1772,6 @@ function sourceIndexFor(spots = []) {
         return sourceIndexCache.byItemId;
     }
 
-    const npcById = new Map((DataCache.npcs || []).map((npc) => [Number(npc.selfId), npc]));
-    const npcLevels = new Map((DataCache.npcs || []).map((npc) => [
-        Number(npc.selfId),
-        Number(npc.template?.level || 0)
-    ]));
     const spotByNpc = new Map();
     const spotByName = new Map();
     const appendSpot = (index, key, spot) => {
@@ -1799,7 +1787,7 @@ function sourceIndexFor(spots = []) {
 
     const byItemId = new Map();
     rewards.forEach((reward) => {
-        const protectedRaid = BotRaidSafety.isProtectedRaidEntity(npcById.get(Number(reward.selfId)));
+        const protectedRaid = BotRaidSafety.isProtectedRaidEntity(ItemTemplateIndex.find(DataCache.npcs, reward.selfId));
         const spotsForNpc = [...new Map([
             ...(spotByNpc.get(Number(reward.selfId)) || []),
             ...(spotByName.get(String(reward.template?.name || '').trim().toLowerCase()) || [])
@@ -1822,7 +1810,7 @@ function sourceIndexFor(spots = []) {
         eligibleSpots.forEach((spot) => itemKinds.forEach(({ id, kind }) => {
             const entries = byItemId.get(id) || [];
             if (!entries.some((entry) => entry.reward === reward && entry.spot.id === spot.id && entry.kind === kind)) {
-                entries.push({ reward, spot, kind, npcLevel: npcLevels.get(Number(reward.selfId)) || 0 });
+                entries.push({ reward, spot, kind, npcLevel: Number(ItemTemplateIndex.find(DataCache.npcs, reward.selfId)?.template?.level || 0) });
             }
             byItemId.set(id, entries);
         }));

@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 // Server-authored definitions implement the existing QuestService interface.
 // This is not an inventory interpreter: only reviewed local definitions enter.
 const page = (name, text) => `<html><body>${name}:<br>${text}</body></html>`;
@@ -52,7 +53,7 @@ function create(definition) {
     const step = (state, options) => require('./QuestStep').apply(state, options);
     const stageFor = state => d.stages[state.getInt('cond') - 1];
     const itemName=id=>invoke('GameServer/DataCache').items.find(x=>x.selfId===id)?.template?.name||`item ${id}`;
-    const npcName=id=>invoke('GameServer/DataCache').npcs.find(x=>x.selfId===id)?.template?.name||`NPC ${id}`;
+    const npcName=id=>ItemTemplateIndex.findStrict(invoke('GameServer/DataCache').npcs, id)?.template?.name||`NPC ${id}`;
     const describe=stage=>stage?.sources ? `Collect what you need from ${stage.sources.map(c=>npcName(c.npc)).join(', ')}.`
         : stage?.deliveries ? `Deliver the supplies to ${stage.deliveries.map(c=>npcName(c.npc)).join(', ')}.`
         : stage?.choices ? `Consult ${[...new Set(stage.choices.map(c=>npcName(c.npc)))].join(' and ')}.` : stage?.drops

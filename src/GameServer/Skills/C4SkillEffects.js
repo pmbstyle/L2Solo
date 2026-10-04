@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
@@ -753,7 +754,7 @@ function fetchSummonNpcData(skill) {
     if (!npcId) return null;
 
     const DataCache = invoke('GameServer/DataCache');
-    const npcData = DataCache.npcs?.find((npc) => Number(npc.selfId) === npcId);
+    const npcData = ItemTemplateIndex.find(DataCache.npcs, npcId);
     if (npcData) {
         return structuredClone(npcData);
     }
@@ -775,7 +776,7 @@ function fetchSummonNpcFallback(DataCache, skill) {
     const levelCandidates = (skillData?.levels || [])
         .map((level) => ({
             level: Number(level.level) || 0,
-            npc: DataCache.npcs?.find((npc) => Number(npc.selfId) === Number(level.npcId))
+            npc: ItemTemplateIndex.find(DataCache.npcs, level.npcId)
         }))
         .filter((entry) => entry.npc)
         .sort((a, b) => Math.abs(a.level - currentLevel) - Math.abs(b.level - currentLevel));
@@ -787,7 +788,7 @@ function fetchSummonNpcFallback(DataCache, skill) {
     const name = String(skill.fetchName?.() || '').toLowerCase();
     const fallbackIds = summonFamilyFallbackIds(name);
     return fallbackIds
-        .map((id) => DataCache.npcs?.find((npc) => Number(npc.selfId) === id))
+        .map((id) => ItemTemplateIndex.find(DataCache.npcs, id))
         .find(Boolean) || null;
 }
 

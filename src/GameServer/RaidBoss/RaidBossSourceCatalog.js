@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 
 let cachedNpcs = null;
@@ -30,9 +31,8 @@ function arrivalPoints(center, distance = 650) {
 }
 
 function buildProfiles() {
-    const npcById = new Map((DataCache.npcs || []).map((npc) => [number(npc.selfId), npc]));
     return spawnRows().flatMap(({ spawn }) => {
-        const npc = npcById.get(number(spawn.selfId));
+        const npc = ItemTemplateIndex.find(DataCache.npcs, spawn.selfId);
         const center = spawn.coords?.[0];
         if (!npc || !center) return [];
         const level = Math.max(1, number(npc.template?.level, 1));

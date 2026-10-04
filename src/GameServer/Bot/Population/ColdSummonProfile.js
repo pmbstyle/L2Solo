@@ -1,13 +1,14 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 
 function summonNpcStats(profile, details) {
-    const direct = (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(details.npcId));
+    const direct = ItemTemplateIndex.find(DataCache.npcs, details.npcId);
     const skill = (DataCache.skills || []).find((entry) => Number(entry.selfId) === Number(details.skillId));
     const skillLevel = Number(details.skillLevel || 1);
     const levelCandidates = (skill?.levels || [])
         .map((level) => ({
             level: Number(level.level) || 0,
-            npc: (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(level.npcId))
+            npc: ItemTemplateIndex.find(DataCache.npcs, level.npcId)
         }))
         .filter((entry) => entry.npc)
         .sort((a, b) => Math.abs(a.level - skillLevel) - Math.abs(b.level - skillLevel));
@@ -17,7 +18,7 @@ function summonNpcStats(profile, details) {
         ? [12070, 12366, 12071, 12367]
         : [];
     const familyFallback = fallbackIds
-        .map((id) => (DataCache.npcs || []).find((entry) => Number(entry.selfId) === id))
+        .map((id) => ItemTemplateIndex.find(DataCache.npcs, id))
         .find(Boolean);
     const npc = direct || levelCandidates[0]?.npc || familyFallback;
     return {

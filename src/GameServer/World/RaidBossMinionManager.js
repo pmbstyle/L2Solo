@@ -1,3 +1,4 @@
+const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const NpcVisibility = invoke('GameServer/World/NpcVisibility');
 const RaidEntityIndex = invoke('GameServer/World/RaidEntityIndex');
@@ -33,7 +34,7 @@ function randomCount(min, max) {
 function templateFor(minionId) {
     const id = Number(minionId);
     if (!minionTemplates.has(id)) {
-        minionTemplates.set(id, DataCache.npcs?.find((npc) => Number(npc.selfId) === id) || null);
+        minionTemplates.set(id, ItemTemplateIndex.find(DataCache.npcs, id) || null);
     }
     return minionTemplates.get(id);
 }

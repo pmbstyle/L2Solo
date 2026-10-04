@@ -108,7 +108,7 @@ function rewardMaxHpMultiplier(npc) {
 
 function progressionForFight({ spot, npcSelfId = 0, rng = Math.random } = {}) {
     const rewardData = rewardDataForSpot(spot, rng, npcSelfId);
-    const npc = (DataCache.npcs || []).find((entry) => Number(entry.selfId) === Number(npcSelfId || rewardData?.selfId));
+    const npc = ItemTemplateIndex.find(DataCache.npcs, npcSelfId || rewardData?.selfId);
     const level = Math.max(1, Number(npc?.template?.level || spot?.avgLevel || 1));
     const expModifier = Number(npc?.rewards?.exp);
     const sp = Number(npc?.rewards?.sp);
