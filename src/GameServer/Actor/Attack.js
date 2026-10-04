@@ -801,17 +801,10 @@ class Attack {
     }
 
     calculatedSkillHitTime(actor, skill, magicSkill) {
-        const hitTime = Math.max(0, Number(skill?.fetchHitTime?.()) || 0);
-        if (skill?.fetchSemantic?.()?.staticHitTime) return hitTime;
-
-        const attackRate = magicSkill ? actor.fetchCollectiveCastSpd() : actor.fetchCollectiveAtkSpd();
-        const scaledHitTime = Formulas.calcRemoteAtkTime(hitTime, attackRate);
-        const adjustedHitTime = magicSkill && actor.spiritshotLoaded
-            ? Math.floor(scaledHitTime * 0.70)
-            : scaledHitTime;
-        return magicSkill && hitTime >= 500
-            ? Math.max(500, adjustedHitTime)
-            : adjustedHitTime;
+        const hitTime = skill?.fetchHitTime?.();
+        if (skill?.fetchSemantic?.()?.staticHitTime) return Formulas.calcSkillHitTime(hitTime, 1, { staticHitTime: true });
+        const speed = magicSkill ? actor.fetchCollectiveCastSpd() : actor.fetchCollectiveAtkSpd();
+        return Formulas.calcSkillHitTime(hitTime, speed, { magic: !!magicSkill, spiritshot: !!actor.spiritshotLoaded });
     }
 
     skillUseConditionFailure(session, actor, skill) {

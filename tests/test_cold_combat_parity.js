@@ -217,13 +217,18 @@ const speeds = { castSpd: 333, atkSpd: 333 };
 assert.strictEqual(delay(speeds, { spell: true, hitTime: 1000 }), 1000, 'spell: base 1000 ms at cast speed 333');
 assert.strictEqual(delay(speeds, { spell: true, hitTime: 0 }), 1000, 'spell without a cast time: 1000 ms fallback');
 assert.strictEqual(delay({ castSpd: 666, atkSpd: 333 }, { spell: true, hitTime: 2000 }), 1000, 'spell at double cast speed');
-assert.strictEqual(delay({ castSpd: 1332, atkSpd: 333 }, { spell: true, hitTime: 500 }), 250, 'spell: 250 ms floor');
+// C4 floor (L2Character.java:1458-1466): a skill with a base of at least 500 ms casts in no less than 500 ms;
+// a shorter skill has no floor
+assert.strictEqual(delay({ castSpd: 1332, atkSpd: 333 }, { spell: true, hitTime: 500 }), 500, 'spell: 500 ms floor');
+assert.strictEqual(delay({ castSpd: 1332, atkSpd: 333 }, { spell: true, hitTime: 400 }), 100, 'spell under 500 ms: no floor');
 assert.strictEqual(delay(speeds, { spell: false, hitTime: 0 }), 600, 'physical skill without a cast time: 600 ms fallback');
 assert.strictEqual(delay({ castSpd: 333, atkSpd: 666 }, { spell: false, hitTime: 1200 }), 600, 'physical skill scales with attack speed');
 assert.strictEqual(delay({ castSpd: 333, atkSpd: 333 }, { spell: false, hitTime: 300 }), 300, 'physical skill');
-assert.strictEqual(delay({ castSpd: 333, atkSpd: 1332 }, { spell: false, hitTime: 600 }), 250, 'physical skill: 250 ms floor');
+assert.strictEqual(delay({ castSpd: 333, atkSpd: 1332 }, { spell: false, hitTime: 600 }), 500, 'physical skill: 500 ms floor');
+assert.strictEqual(delay({ castSpd: 333, atkSpd: 1332 }, { spell: false, hitTime: 400 }), 100, 'physical skill under 500 ms: no floor');
+assert.strictEqual(delay({ castSpd: 1332, atkSpd: 333 }, { spell: true, hitTime: 0 }), 500, 'spell fallback 1000 ms keeps the 500 ms floor');
 assert.strictEqual(delay(speeds), 1411.411, 'normal attack at attack speed 333');
-assert.strictEqual(delay({ castSpd: 333, atkSpd: 2000 }), 250, 'normal attack: 250 ms floor');
+assert.strictEqual(delay({ castSpd: 333, atkSpd: 2000 }), 250, 'normal attack: 250 ms floor (cold only; C4 has no attack-time floor)');
 
 // ---------- clan raid estimate cast cycle ----------
 const sorcererProfile = ColdCombatProfile.profileFor(sorcerer, TS);
@@ -234,5 +239,7 @@ assert.strictEqual(nuke.selfId, 1177, 'the sorcerer nuke is Wind Strike');
 assert.strictEqual(Math.round(castCycle(sorcererProfile, nuke) * 1000) / 1000, 7246.632, 'raid estimate cast cycle of Wind Strike');
 assert.strictEqual(Math.round(castCycle({ castSpd: 333, atkSpd: 333, effects: [], skills: [] }, { spell: true, hitTime: 4000, reuse: 0 })), 4000,
     'raid estimate cast cycle: base cast time at cast speed 333');
+assert.strictEqual(Math.round(castCycle({ castSpd: 1332, atkSpd: 333, effects: [], skills: [] }, { spell: true, hitTime: 1000, reuse: 0 })), 500,
+    'raid estimate cast cycle: the C4 500 ms cast floor');
 
 console.log('test_cold_combat_parity passed');

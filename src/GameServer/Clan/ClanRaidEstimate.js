@@ -6,9 +6,11 @@ const Formulas = invoke('GameServer/Formulas');
 function castCycle(p, skill) {
     const magic = skill.spell !== false;
     const speed = Math.max(1, Number(magic ? p.castSpd : p.atkSpd) || 333);
-    const cast = Formulas.calcRemoteAtkTime(Number(skill.hitTime) || 1000, speed);
+    const semantic = Rules.resolve(skill);
+    const cast = Formulas.calcSkillHitTime(Number(skill.hitTime) || 1000, speed,
+        { magic, staticHitTime: !!semantic.staticHitTime });
     let reuse = Number(skill.reuse) || 0;
-    if (!Rules.resolve(skill).staticReuse) {
+    if (!semantic.staticReuse) {
         reuse *= 333 / speed * Combat.statMultiplier(p, magic ? 'mReuseMul' : 'pReuseMul')
             / Math.max(0.01, Combat.statMultiplier(p, magic ? 'mReuseDiv' : 'pReuseDiv'));
     }

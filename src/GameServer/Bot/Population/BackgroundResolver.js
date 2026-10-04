@@ -356,12 +356,15 @@ function hitSucceeds(accuracy, evasion, rng) {
     return rng() < chance;
 }
 
+// A skill takes its C4 cast time (no spiritshot in cold yet); a skill row
+// without a cast time falls back to 1000 ms (spell) or 600 ms (physical).
+// C4 has no floor on the normal attack time: the 250 ms floor is cold's own.
 function actionDelayMs(profile, skill = null) {
     if (skill?.spell) {
-        return Math.max(250, Formulas.calcRemoteAtkTime(Math.max(1, Number(skill.hitTime) || 1000), profile.castSpd));
+        return Formulas.calcSkillHitTime(Number(skill.hitTime) || 1000, profile.castSpd, { magic: true });
     }
     if (skill) {
-        return Math.max(250, Formulas.calcRemoteAtkTime(Math.max(1, Number(skill.hitTime) || 600), profile.atkSpd));
+        return Formulas.calcSkillHitTime(Number(skill.hitTime) || 600, profile.atkSpd);
     }
     return Math.max(250, Formulas.calcMeleeAtkTime(profile.atkSpd));
 }

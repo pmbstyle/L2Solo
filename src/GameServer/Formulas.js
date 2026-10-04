@@ -262,6 +262,19 @@ const Formulas = {
         return  (time / castSpd) * 333;
     },
 
+    // Lisvus L2Character.doCast (L2Character.java:1422-1466): a skill's cast
+    // time scales with the speed the caller passes (cast speed for magic,
+    // attack speed for physical skills), a spiritshot cuts a magic cast to
+    // 70%, a static skill keeps its base time, and a skill whose base time
+    // is at least 500 ms never casts faster than 500 ms.
+    calcSkillHitTime(baseHitTime, speed, { magic = false, spiritshot = false, staticHitTime = false } = {}) {
+        const base = Math.max(0, Number(baseHitTime) || 0);
+        if (staticHitTime) return base;
+        let hitTime = this.calcRemoteAtkTime(base, speed);
+        if (magic && spiritshot) hitTime = Math.floor(hitTime * 0.70);
+        return base >= 500 ? Math.max(500, hitTime) : hitTime;
+    },
+
     // Lisvus C4 calcAtkBreak: a casting target starts at 15%, incoming
     // damage raises the chance, MEN lowers it, and Concentration-style
     // effects modify the final ATTACK_CANCEL stat.
