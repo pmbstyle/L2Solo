@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { createTrialWorld, pilgrim, abort, Service } = require('./helpers/shamanProfessionHarness');
+const { createTrialWorld, pilgrim, abort, Service } = require('./helpers/secondProfessionHarness');
 
 (async () => {
     const c = await createTrialWorld('pilgrim', 172001, [

@@ -13,8 +13,8 @@ async function abort(session, questId) {
     await QuestAbort(session, packet);
 }
 
-async function createTrialWorld(label, id, extra = []) {
-    const world = await createWorld([{ id, classId: 50, race: 3, level: 34 }, ...extra], label);
+async function createTrialWorld(label, id, extra = [], character = {}) {
+    const world = await createWorld([{ id, classId: 50, race: 3, level: 34, ...character }, ...extra], label);
     const runtime = enableQuestSpawns();
     const ctx = { world, runtime, id, session: await world.session(id) };
     ctx.state = q => world.state(ctx.session, q);
@@ -133,14 +133,14 @@ async function finishRoute(c, target, skillRanks) {
         for (const i of c.state(q).quest.questItems) assert.equal(await c.amount(i), 0);
     }
     for (const i of route.marks) assert.equal(await c.amount(i), 1);
-    const row = await c.world.character(c.id), template = DataCache.classTemplates.find(t => t.classId === 50);
+    const row = await c.world.character(c.id), template = DataCache.classTemplates.find(t => t.classId === row.classId);
     c.session.actor = new Actor(c.session, { ...row, ...utils.crushOb(template), id: c.id, name: row.name, username: row.username,
         level: row.level, classId: row.classId, locX: 0, locY: 0, locZ: 0, head: 0, title: '', isActive: 1,
         items: await Database.fetchItems(c.id), paperdoll: utils.tupleAlloc(16, {}) });
     c.session.dataSendToOthers = p => c.session.packets.push(p);
-    const npc = { fetchSelfId: () => 7513, fetchId: () => 173001, fetchName: () => H.npcName(7513), fetchTitle: () => '',
+    const npc = { fetchSelfId: () => route.npcs[0], fetchId: () => 173001, fetchName: () => H.npcName(route.npcs[0]), fetchTitle: () => '',
         fetchLocX: () => 0, fetchLocY: () => 0, fetchLocZ: () => 0, isDead: () => false };
-    c.runtime.npc.spawns.push(npc); c.session.activeNpcTalk = { selfId: 7513, objectId: npc.fetchId() };
+    c.runtime.npc.spawns.push(npc); c.session.activeNpcTalk = { selfId: route.npcs[0], objectId: npc.fetchId() };
     assert.equal((await Transfer(c.session, ['second-profession', String(target)])).reason, 'level');
     c.session.actor.setLevel(40); await Database.execute(['UPDATE characters SET level = 40 WHERE id = ?', [c.id]]);
     assert.equal((await Transfer(c.session, ['second-profession', String(target)])).ok, true);
