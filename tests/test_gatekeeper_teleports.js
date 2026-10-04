@@ -86,6 +86,15 @@ for (const npcId of [8256, 8300]) {
         assert(packets[0].toString('utf16le', 5).includes('gatekeeper-teleport 30'));
         Teleport(entranceSession, ['gatekeeper-teleport', '30']);
         assert.deepStrictEqual(arrivals, [destination], 'Level 20 with no Adena must enter the ruins');
+
+        // The pre-C4 route "teleport <id>" (no NPC, no Adena) and its pages are gone.
+        invoke('GameServer/DataCache').init();
+        const NpcTalkResponse = invoke('GameServer/World/Generics/NpcTalkResponse');
+        packets.length = 0;
+        NpcTalkResponse(entranceSession, { link: 'teleport 1009' });
+        NpcTalkResponse(entranceSession, { link: 'html Gatekeeper/7080-teleport' });
+        assert.deepStrictEqual(arrivals, [destination], 'a forged old teleport bypass must not move the player');
+        assert.strictEqual(packets.length, 0, 'the old gatekeeper teleport page must not be served');
     } finally { Generics.teleportTo = originalTeleport; }
     console.log('gatekeeper teleport checks passed');
 })().catch((error) => {

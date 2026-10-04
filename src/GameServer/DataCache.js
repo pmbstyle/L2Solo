@@ -160,7 +160,6 @@ const DataCache = {
             ...validateModel(path + 'Npcs/Rewards/c4_raid_bosses'),
             ...validateModel(path + 'Npcs/Rewards/c4_raid_boss_minions')
         ];
-        DataCache.teleports       = validateModel(path + 'Teleports/teleports');
         DataCache.adminShop       = validateModel(path + 'Admin/Shop/shop');
 
         DataCache.items = [
