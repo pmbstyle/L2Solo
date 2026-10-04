@@ -45,8 +45,10 @@ function passiveActor({ skills = [], weaponKind = 'Weapon.Knife', armorKind = 'A
         },
         backpack: {
             fetchTotalWeaponKind: () => weaponKind,
-            fetchEquippedArmors: () => (armorKinds || (armorKind ? [armorKind] : []))
-                .map((kind) => ({ fetchKind: () => kind }))
+            // `armorKind` is worn as a chest and legs set (C4 armour masteries need the set),
+            // `armorKinds` as chest and legs pieces in that order
+            fetchEquippedArmors: () => (armorKinds || (armorKind ? [armorKind, armorKind] : []))
+                .map((kind, index) => ({ fetchKind: () => kind, fetchSlot: () => 10 + index }))
         }
     };
 }

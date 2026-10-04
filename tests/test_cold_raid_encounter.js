@@ -55,7 +55,11 @@ function members(firstId, partyId) {
                     mDef: 300,
                     evasion: 0,
                     bonusMp: index === 1 ? 10000 : 0,
-                    shieldPDef: 0
+                    shieldPDef: 0,
+                    // the buffer and the healer wear a leather set: their armour mastery
+                    // (cast and attack speed) needs it
+                    ...(index === 1 || index === 2
+                        ? { armorKinds: ['Armor.Leather', 'Armor.Leather'], setKind: 'Armor.Leather' } : {})
                 },
                 skills: index === 1 ? [
                     { selfId: 1040, level: 3, passive: false, mp: 39, buffTime: 1200000 },

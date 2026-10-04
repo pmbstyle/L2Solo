@@ -78,7 +78,9 @@ function actor(overrides = {}) {
             fetchTotalWeaponPAtkRnd: () => 0,
             fetchTotalShieldRate: () => 0,
             fetchTotalShieldPDef: () => 0,
-            fetchEquippedArmors: () => (overrides.armorKinds || ['Armor.Leather']).map((kind) => ({ fetchKind: () => kind }))
+            // a leather chest and legs: C4 armour masteries need the full set
+            fetchEquippedArmors: () => (overrides.armorKinds || ['Armor.Leather', 'Armor.Leather'])
+                .map((kind, index) => ({ fetchKind: () => kind, fetchSlot: () => 10 + index }))
         }
     };
     if (overrides.kind) value.fetchKind = () => overrides.kind;

@@ -89,8 +89,13 @@ function actor(overrides = {}) {
         },
         backpack: {
             fetchTotalWeaponKind: () => overrides.weaponKind || 'Weapon.Blunt',
-            fetchEquippedArmors: () => (overrides.armorKinds || ['Armor.Chain'])
-                .map((kind) => ({ fetchKind: () => kind })),
+            // one kind is worn as a chest and legs set (C4 armour masteries need the set),
+            // two kinds as a mixed chest and legs
+            fetchEquippedArmors: () => {
+                const kinds = overrides.armorKinds || ['Armor.Chain'];
+                return (kinds.length === 1 ? [kinds[0], kinds[0]] : kinds)
+                    .map((kind, index) => ({ fetchKind: () => kind, fetchSlot: () => 10 + index }));
+            },
             fetchTotalShieldPDef: () => 0,
             fetchTotalWeaponPAtkRnd: () => 0
         }

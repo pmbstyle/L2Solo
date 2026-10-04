@@ -3,6 +3,8 @@ const DataCache = invoke('GameServer/DataCache');
 const Formulas = invoke('GameServer/Formulas');
 const ClassProgression = invoke('GameServer/ClassProgression');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
+const SkillRequirements = invoke('GameServer/Skills/SkillRequirements');
+const GameTime = invoke('GameServer/World/GameTime');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
@@ -90,7 +92,8 @@ function equipmentFromTemplates(items = [], spellcaster = false, fallback = {}) 
         bonusMp: armor.reduce((sum, item) => sum + number(item.stats?.maxMp), 0),
         shieldPDef: number(armorAt(8)?.stats?.pDef),
         shieldRate: number(armorAt(8)?.stats?.shieldRate, armorAt(8) ? 20 : 0),
-        armorKinds: armor.map((item) => item.template?.kind).filter(Boolean)
+        armorKinds: armor.map((item) => item.template?.kind).filter(Boolean),
+        setKind: SkillRequirements.wornSetKind(fullBody?.template?.kind, armorAt(10)?.template?.kind, armorAt(11)?.template?.kind)
     };
 }
 
@@ -107,28 +110,32 @@ function effectStats(effect = {}) {
     return legacy?.stats || structured;
 }
 
+// Passives follow the hot rule (SkillRequirements). A cold fight is judged
+// once, at its start: the bot at full HP (HP-threshold passives off), not
+// moving or seated, night from the game clock at `timestamp`.
 function statSources(profile, timestamp) {
-    const effects = activeEffects(profile.effects, timestamp).map(effectStats);
-    const passives = (profile.skills || [])
-        .filter((skill) => skill.passive)
-        .map((skill) => C4SkillRules.resolveCached({ selfId: skill.selfId, level: skill.level }))
-        .filter((semantic) => passiveRequirementsMatch(profile, semantic.requires))
-        .map((semantic) => semantic.stats);
-    return [...effects, ...passives];
+    const equipment = profile.equipment || {};
+    const gear = {
+        weaponKind: equipment.weaponKind || '',
+        armorKinds: equipment.armorKinds || [],
+        setKind: equipment.setKind || '',
+        shield: number(equipment.shieldPDef) > 0
+    };
+    const situation = {
+        hp: 1, maxHp: 1, moving: false, walking: false, seated: false,
+        get night() { return GameTime.isNight(timestamp); }
+    };
+    const sources = activeEffects(profile.effects, timestamp).map(effectStats);
+    for (const skill of profile.skills || []) {
+        if (!skill.passive) continue;
+        const semantic = C4SkillRules.resolveCached({ selfId: skill.selfId, level: skill.level });
+        sources.push(...SkillRequirements.passiveStats(semantic, gear, situation));
+    }
+    return sources;
 }
 
 function statValues(profile, stat, timestamp, sources = statSources(profile, timestamp)) {
     return sources.map((stats) => number(stats?.[stat], NaN)).filter(Number.isFinite);
-}
-
-function passiveRequirementsMatch(profile, requires = {}) {
-    if (!requires) return true;
-    const weaponMask = WEAPON_MASK_BY_KIND[profile.equipment?.weaponKind] || 0;
-    if (requires.weaponsAllowed && (number(requires.weaponsAllowed) & weaponMask) === 0) return false;
-    if (requires.weaponKinds && !requires.weaponKinds.includes(profile.equipment?.weaponKind)) return false;
-    if (requires.armorKind && !(profile.equipment?.armorKinds || []).includes(requires.armorKind)) return false;
-    if (requires.shield && number(profile.equipment?.shieldPDef) <= 0) return false;
-    return true;
 }
 
 function add(profile, stat, timestamp, sources) {
@@ -428,6 +435,8 @@ function treeSnapshot(state = {}, timestamp = Date.now()) {
 
 function capture(actor, timestamp = Date.now()) {
     const backpack = actor.backpack;
+    const armors = backpack?.fetchEquippedArmors?.() || [];
+    const armorKindAt = (slot) => armors.find((item) => Number(item.fetchSlot?.()) === slot)?.fetchKind?.();
     const equipment = {
         weaponKind: backpack?.fetchTotalWeaponKind?.() || '',
         attackReuseDelay: backpack?.fetchEquippedWeapon?.()?.fetchAttackReuseDelay?.() ?? 1500,
@@ -443,7 +452,8 @@ function capture(actor, timestamp = Date.now()) {
         bonusMp: number(backpack?.fetchTotalArmorBonusMp?.()),
         shieldPDef: number(backpack?.fetchTotalShieldPDef?.()),
         shieldRate: number(backpack?.fetchTotalShieldRate?.()),
-        armorKinds: (backpack?.fetchEquippedArmors?.() || []).map((item) => item.fetchKind?.()).filter(Boolean)
+        armorKinds: armors.map((item) => item.fetchKind?.()).filter(Boolean),
+        setKind: SkillRequirements.wornSetKind(armorKindAt(15), armorKindAt(10), armorKindAt(11))
     };
     return {
         version: PROFILE_VERSION,

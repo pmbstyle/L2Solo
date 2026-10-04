@@ -1,6 +1,7 @@
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const GameTime = invoke('GameServer/World/GameTime');
+const SkillRequirements = invoke('GameServer/Skills/SkillRequirements');
 
 function multiplier(actor, stat, fallback = 1) {
     return statValues(actor, stat)
@@ -20,115 +21,73 @@ function situationalMultiplier(actor, stat, context = {}, fallback = 1) {
         : context.front
             ? 'front'
             : 'side';
+    const gear = gearOf(actor);
     return EffectStore.list(actor)
         .flatMap((effect) => effect.situationalStats || [])
-        .filter((entry) => entry.position === position && matchesRequirements(actor, entry.requires))
+        .filter((entry) => entry.position === position && SkillRequirements.requirementsMet(entry.requires, gear))
         .map((entry) => Number(entry.stats?.[stat]))
         .filter((value) => Number.isFinite(value))
         .reduce((total, value) => total * value, fallback);
 }
 
+// Gear and situation are read once per lookup, and only when a rule asks.
 function statValues(actor, stat) {
-    return [
-        ...EffectStore.list(actor).map((effect) => Number(effect.stats?.[stat])),
-        ...EffectStore.list(actor).flatMap((effect) => (effect.conditionalStats || [])
-            .filter((entry) => matchesCondition(actor, entry.condition) && matchesRequirements(actor, entry.requires))
-            .map((entry) => Number(entry.stats?.[stat]))),
-        ...passiveStatValues(actor, stat)
-    ];
-}
-
-function passiveStatValues(actor, stat) {
+    const effects = EffectStore.list(actor);
+    const gear = gearOf(actor);
+    const situation = situationOf(actor);
+    const values = effects.map((effect) => Number(effect.stats?.[stat]));
+    for (const effect of effects) {
+        for (const entry of effect.conditionalStats || []) {
+            if (SkillRequirements.conditionMet(entry.condition, situation)
+                && SkillRequirements.requirementsMet(entry.requires, gear)) values.push(Number(entry.stats?.[stat]));
+        }
+    }
     const skills = [
         ...(actor?.skillset?.fetchSkills?.() || []),
         ...(actor?.fetchPassiveSkills?.() || [])
     ];
-    return skills
-        .filter((skill) => skill?.fetchPassive?.() === true)
-        .map((skill) => C4SkillRules.resolve({
+    for (const skill of skills) {
+        if (skill?.fetchPassive?.() !== true) continue;
+        const semantic = C4SkillRules.resolve({
             selfId: skill.fetchSelfId?.(),
             name: skill.fetchName?.(),
             level: skill.fetchLevel?.()
-        }))
-        .flatMap((semantic) => passiveValuesForSemantic(actor, semantic, stat))
-        .filter((value) => Number.isFinite(value));
+        });
+        for (const stats of SkillRequirements.passiveStats(semantic, gear, situation)) values.push(Number(stats?.[stat]));
+    }
+    return values;
 }
 
-function passiveValuesForSemantic(actor, semantic, stat) {
-    if (!matchesCondition(actor, semantic.condition) || !matchesRequirements(actor, semantic.requires)) return [];
-    return [
-        Number(semantic.stats?.[stat]),
-        ...(semantic.conditionalStats || [])
-            .filter((entry) => matchesCondition(actor, entry.condition) && matchesRequirements(actor, entry.requires))
-            .map((entry) => Number(entry.stats?.[stat]))
-    ];
-}
-
-function matchesCondition(actor, condition = {}) {
-    condition = condition || {};
-    if (condition.actorHpPercentAtMost !== undefined) {
-        const maxHp = Number(actor?.fetchMaxHp?.()) || 0;
-        const hp = Number(actor?.fetchHp?.()) || 0;
-        if (!maxHp || hp > maxHp * Number(condition.actorHpPercentAtMost) / 100) return false;
-    }
-
-    const state = actor?.state;
-    const moving = !!state?.inMotion?.();
-    if (condition.moving !== undefined && moving !== condition.moving) return false;
-    if (condition.walking !== undefined && !!state?.fetchWalkin?.() !== condition.walking) return false;
-    if (condition.seated !== undefined && !!state?.fetchSeated?.() !== condition.seated) return false;
-    if (condition.night !== undefined) {
-        const clock = actor?.gameTime || actor?.world?.gameTime;
-        const night = typeof clock?.isNight === 'function'
-            ? !!clock.isNight()
-            : typeof actor?.isNight === 'function'
-                ? !!actor.isNight()
-                : GameTime.isNight();
-        if (night !== condition.night) return false;
-    }
-    return true;
-}
-
-function matchesRequirements(actor, requires = {}) {
-    requires = requires || {};
-    if (requires.weaponKinds) {
-        const kind = actor?.backpack?.fetchTotalWeaponKind?.();
-        if (!requires.weaponKinds.includes(kind)) return false;
-    }
-    if (requires.armorKind) {
-        const equipped = actor?.backpack?.fetchEquippedArmors?.() || [];
-        if (!equipped.some((item) => item?.fetchKind?.() === requires.armorKind)) return false;
-    }
-    if (requires.armorKinds) {
-        const allowed = new Set(requires.armorKinds);
-        const equipped = actor?.backpack?.fetchEquippedArmors?.() || [];
-        if (!equipped.some((item) => allowed.has(item?.fetchKind?.()))) return false;
-    }
-    if (requires.excludedArmorKinds) {
-        const excluded = new Set(requires.excludedArmorKinds);
-        const equipped = actor?.backpack?.fetchEquippedArmors?.() || [];
-        if (equipped.some((item) => excluded.has(item?.fetchKind?.()))) return false;
-    }
-    if (requires.armorSetKind && !wornArmorKinds(actor).has(requires.armorSetKind)) return false;
-    if (requires.excludedArmorSetKinds) {
-        const excluded = new Set(requires.excludedArmorSetKinds);
-        if ([...wornArmorKinds(actor)].some((kind) => excluded.has(kind))) return false;
-    }
-    if (requires.shield && !(Number(actor?.backpack?.fetchTotalShieldPDef?.()) > 0)) return false;
-    return true;
-}
-
-function wornArmorKinds(actor) {
+// What the actor wears, from its backpack. Each field is read on first use
+// and kept for the rest of the lookup.
+function gearOf(actor) {
     const backpack = actor?.backpack;
-    const equipped = backpack?.fetchEquippedArmors?.() || [];
-    const bySlot = (slot) => backpack?.fetchEquippedArmor?.(slot)
-        || equipped.find((item) => Number(item?.fetchSlot?.()) === slot);
-    const fullBody = bySlot(15);
-    if (fullBody?.fetchKind?.()) return new Set([fullBody.fetchKind()]);
+    const cache = {};
+    const armors = () => cache.armors ??= backpack?.fetchEquippedArmors?.() || [];
+    const kindAt = (slot) => armors().find((item) => Number(item?.fetchSlot?.()) === slot)?.fetchKind?.();
+    return {
+        get weaponKind() { return cache.weaponKind ??= backpack?.fetchTotalWeaponKind?.() || ''; },
+        get armorKinds() { return cache.armorKinds ??= armors().map((item) => item?.fetchKind?.()); },
+        get setKind() { return cache.setKind ??= SkillRequirements.wornSetKind(kindAt(15), kindAt(10), kindAt(11)); },
+        get shield() { return cache.shield ??= Number(backpack?.fetchTotalShieldPDef?.()) > 0; }
+    };
+}
 
-    const chestKind = bySlot(10)?.fetchKind?.();
-    const legsKind = bySlot(11)?.fetchKind?.();
-    return chestKind && chestKind === legsKind ? new Set([chestKind]) : new Set();
+function situationOf(actor) {
+    const state = actor?.state;
+    return {
+        get hp() { return Number(actor?.fetchHp?.()) || 0; },
+        get maxHp() { return Number(actor?.fetchMaxHp?.()) || 0; },
+        get moving() { return !!state?.inMotion?.(); },
+        get walking() { return !!state?.fetchWalkin?.(); },
+        get seated() { return !!state?.fetchSeated?.(); },
+        get night() {
+            const clock = actor?.gameTime || actor?.world?.gameTime;
+            if (typeof clock?.isNight === 'function') return !!clock.isNight();
+            if (typeof actor?.isNight === 'function') return !!actor.isNight();
+            return GameTime.isNight();
+        }
+    };
 }
 
 module.exports = {
