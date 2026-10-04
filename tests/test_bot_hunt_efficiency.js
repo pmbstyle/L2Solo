@@ -50,9 +50,13 @@ assert.strictEqual(Efficiency.hourValue(rich, at, 'party').source, 'level_band',
 earner(2, 32, [{ spotId: 'a', combatMs: 60000, adena: 1000, loot: 0, kills: 5 }]);
 earner(3, 39, [{ spotId: 'a', combatMs: 60000, adena: 3000, loot: 0, kills: 5 }]);
 // Band 30-39 holds 600,000, 60,000 and 180,000 per hour: the median is 180,000 (600 per kill).
-assert.deepStrictEqual(Efficiency.hourValue({ level: 30, stats: {} }, at),
+// A band read just before (the party check above) is re-sorted after new samples at most once a minute.
+assert.strictEqual(Efficiency.hourValue({ level: 30, stats: {} }, at).perHour, 600000,
+    'within a minute a band keeps the median it last sorted');
+const resorted = at + 60 * 1000;
+assert.deepStrictEqual(Efficiency.hourValue({ level: 30, stats: {} }, resorted),
     { perHour: 180000, perKill: 600, source: 'level_band' }, 'an unsampled bot takes its level band\'s median');
-assert.deepStrictEqual(Efficiency.hourValue({ level: 58, stats: {} }, at),
+assert.deepStrictEqual(Efficiency.hourValue({ level: 58, stats: {} }, resorted),
     { perHour: 180000, perKill: 600, source: 'level_band' }, 'an empty band borrows the nearest measured one');
 assert.strictEqual(Efficiency.hourValue({ level: 30, stats: {} }, at + Efficiency.MAX_AGE_MS).source, 'default',
     'old band samples expire');

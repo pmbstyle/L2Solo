@@ -84,9 +84,12 @@ function bestIncome(rows) {
 }
 
 // The measured hour value of the sampled bots of each level band: the latest
-// best income of each bot, the median read in O(1) and re-sorted (a few
-// hundred numbers) only after a new sample or an expiry. Each thread keeps
-// its own table, fed by the samples it records or the cold commits it applies.
+// best income of each bot, the median read in O(1). New samples arrive on
+// every cold commit, so a band is re-sorted at most once a minute after a new
+// sample (a median over 6 hours of samples) or once its oldest sample expired.
+// Each thread keeps its own table, fed by the samples it records or the cold
+// commits it applies.
+const BAND_RESORT_MS = 60 * 1000;
 const bands = new Map();
 function bandOf(level) {
     return Math.floor(Math.max(1, Number(level) || 1) / BAND_LEVELS);
@@ -97,10 +100,10 @@ function noteLevelBand(state, rows, timestamp) {
     const best = bestIncome(rows.filter(row => row.samples >= 3));
     if (!best) return;
     const band = bandOf(levelOf(state));
-    if (!bands.has(band)) bands.set(band, { values: new Map(), median: null });
+    if (!bands.has(band)) bands.set(band, { values: new Map(), median: null, changed: false });
     const entry = bands.get(band);
     entry.values.set(id, { ...best, at: timestamp });
-    entry.median = null;
+    entry.changed = true;
 }
 // A cold commit applied on the main thread: its samples were recorded in the
 // worker, where record() already kept only the rows of the bot's signature.
@@ -113,8 +116,11 @@ function observe(state, timestamp = Date.now()) {
 function bandMedian(band, timestamp) {
     const entry = bands.get(band);
     if (!entry) return null;
-    // Re-sorted after a new sample or once its oldest sample has expired.
-    if (!entry.median || timestamp - entry.median.oldestAt >= MAX_AGE_MS) {
+    const stale = !entry.median
+        || timestamp - entry.median.oldestAt >= MAX_AGE_MS
+        || (entry.changed && timestamp - entry.median.sortedAt >= BAND_RESORT_MS);
+    if (stale) {
+        entry.changed = false;
         const perHour = [], perKill = [];
         let oldestAt = Infinity;
         for (const [id, value] of entry.values) {
@@ -127,7 +133,8 @@ function bandMedian(band, timestamp) {
         perHour.sort((a, b) => a - b);
         perKill.sort((a, b) => a - b);
         const middle = Math.floor(perHour.length / 2);
-        entry.median = { perHour: perHour[middle], perKill: perKill[middle], bots: perHour.length, oldestAt };
+        entry.median = { perHour: perHour[middle], perKill: perKill[middle], bots: perHour.length, oldestAt,
+            sortedAt: timestamp };
     }
     return entry.median;
 }
