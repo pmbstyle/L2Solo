@@ -38,8 +38,54 @@ function collectionPagesWithBytes(type, epoch, collections, msgId, onOversize = 
     return pages;
 }
 
+// Table pages for ColdTableChannel: { tables: [piece] }, a piece being
+// { name, from, to, full, rows: [[key, row]], removed: [key] }. Limited only by
+// size: each page's payload stays within budget bytes, counted while it is
+// built (each value measured once). A table cut across pages goes on in a
+// piece at the version the first piece reached (from === to), which a
+// TableMirror applies in order. A single value larger than a page is left out
+// and counted in skipped.
+const EMPTY_TABLES_BYTES = Protocol.byteLength({ tables: [] });
+function tablePagesWithBytes(tables, budget = PAGE_BYTES - 1024) {
+    const pages = [];
+    let pieces = [];
+    let bytes = EMPTY_TABLES_BYTES;
+    let piece = null;
+    let skipped = 0;
+    const closePage = () => {
+        if (pieces.length) pages.push({ payload: { tables: pieces }, bytes });
+        pieces = [];
+        bytes = EMPTY_TABLES_BYTES;
+    };
+    const openPiece = (table, first) => {
+        piece = { name: table.name, from: first ? table.from : table.to, to: table.to,
+            full: first && table.full === true, rows: [], removed: [] };
+        const size = Protocol.byteLength(piece);
+        if (pieces.length && bytes + size + 1 > budget) closePage();
+        bytes += size + (pieces.length ? 1 : 0);
+        pieces.push(piece);
+    };
+    const add = (table, field, value) => {
+        const size = Protocol.byteLength(value);
+        if (bytes + size + (piece[field].length ? 1 : 0) > budget) {
+            closePage();
+            openPiece(table, false);
+            if (bytes + size > budget) { skipped++; return; }
+        }
+        bytes += size + (piece[field].length ? 1 : 0);
+        piece[field].push(value);
+    };
+    for (const table of tables) {
+        openPiece(table, true);
+        for (const entry of table.rows || []) add(table, 'rows', entry);
+        for (const key of table.removed || []) add(table, 'removed', key);
+    }
+    closePage();
+    return { pages, skipped };
+}
+
 function collectionPages(type, epoch, collections, msgId, onOversize) {
     return collectionPagesWithBytes(type, epoch, collections, msgId, onOversize).map((page) => page.payload);
 }
 
-module.exports = { collectionPages, collectionPagesWithBytes, PAGE_BYTES };
+module.exports = { collectionPages, collectionPagesWithBytes, tablePagesWithBytes, PAGE_BYTES };

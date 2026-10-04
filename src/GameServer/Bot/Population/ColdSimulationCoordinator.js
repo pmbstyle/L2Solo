@@ -25,6 +25,7 @@ const ColdStateDelta = require('./ColdStateDelta');
 const { ColdCommitQueue, EARLY_COMMIT_ROW_BUDGET_MS } = require('./ColdCommitQueue');
 const { ColdSnapshotQueue } = require('./ColdSnapshotQueue');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
+const TableChannel = require('./ColdTableChannel');
 const TownNpcCatalog = require('../Economy/TownNpcCatalog');
 
 const { HUNTING_TRAVEL_MS } = require('./HuntingTravel');
@@ -131,6 +132,7 @@ class ColdSimulationCoordinator {
     constructor(options = {}) {
         this.WorkerClass = options.WorkerClass || Worker;
         this.workerPath = options.workerPath || path.join(__dirname, 'ColdSimulationWorker.js');
+        this.tableChannel = options.tableChannel || TableChannel.shared;
         this.worker = null;
         this.workerEpoch = null;
         this.population = null;
@@ -303,6 +305,7 @@ class ColdSimulationCoordinator {
                 encounters.tick(this.competitionActions)?.catch(error => this.recordError(error));
             }, 1000);
             this.reconcileTimer = setInterval(() => {
+                this.tableChannel.flush();
                 this.sendSnapshots(false).catch((error) => this.recordError(error));
             }, Math.max(2000, Number(Config.coldWorkerSnapshotRefreshMs) || 10000));
             this.buffServiceTimer = setInterval(() => {
@@ -425,6 +428,7 @@ class ColdSimulationCoordinator {
             if (payload.phase === 'loaded') {
                 this.sendPlanningCatalog();
                 this.post('init', { config: this.workerConfig(), catalogVersion: utils.buildNumber() });
+                this.attachTableChannel();
             } else if (payload.phase === 'running') {
                 this.ready = true;
                 this.syncWorkerPressure();
@@ -480,6 +484,9 @@ class ColdSimulationCoordinator {
             }
             break;
         }
+        case 'table_resync':
+            this.tableChannel.resync(this, message.workerEpoch, payload.names || []);
+            break;
         case 'fault':
             this.counters.workerErrors += 1;
             utils.infoWarn('ColdWorker', 'worker fault: %s%s', payload.reason || 'unknown', payload.stack ? `\n${payload.stack}` : '');
@@ -487,6 +494,16 @@ class ColdSimulationCoordinator {
         default:
             break;
         }
+    }
+
+    // A new worker epoch gets every table in full; later flushes send changes.
+    attachTableChannel() {
+        const epoch = this.workerEpoch;
+        this.tableChannel.attach(this, epoch, (payload, payloadBytes) => {
+            if (this.workerEpoch !== epoch) return false;
+            const bytes = Protocol.envelopeBytes(Protocol.envelope('table_page', epoch, {}), payloadBytes) + 256;
+            return !!this.post('table_page', payload, null, bytes);
+        });
     }
 
     workerConfig() {
@@ -1467,6 +1484,8 @@ class ColdSimulationCoordinator {
                 context: state ? this.contextFor(state, index) : {}
             };
         });
+        // Table changes reach the worker before the commits that made them.
+        this.tableChannel.flush();
         this.postCollections('commit_ack', { results: acknowledgements });
     }
 
@@ -1640,6 +1659,7 @@ class ColdSimulationCoordinator {
 
     onWorkerExit(code) {
         this.counters.workerExits += 1;
+        this.tableChannel.detach(this);
         this.worker = null;
         this.workerMaxInFlight = null;
         this.ready = false;

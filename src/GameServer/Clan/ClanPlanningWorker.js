@@ -1,6 +1,7 @@
 const { parentPort } = require('node:worker_threads');
 require('../../Global');
 const OfferOrder = require('../Bot/Economy/OfferOrder');
+const TableMirror = require('../Bot/Population/TableMirror');
 
 // Only immutable catalogs and per-request snapshots enter this process.
 const catalogs = { items: [], npcs: [], npcRewards: [] };
@@ -8,6 +9,8 @@ let context = {};
 let planner;
 let offers = new Map();
 let npcOffers = new Map();
+// Tables from the main thread's ColdTableChannel; pages are not answered.
+const tables = new TableMirror();
 const originalInvoke = global.invoke;
 const indexOffers = (rows = []) => {
     const index = new Map();
@@ -58,7 +61,14 @@ global.invoke = (name) => {
 
 parentPort.on('message', (message) => {
     try {
-        if (message.type === 'catalog') {
+        if (message.type === 'table_page') {
+            const resync = tables.apply(message.tables);
+            if (resync.length) parentPort.postMessage({ type: 'table_resync', names: resync });
+            return;
+        } else if (message.type === 'table_summary') {
+            parentPort.postMessage({ id: message.id, result: tables.summary() });
+            return;
+        } else if (message.type === 'catalog') {
             if (!Object.hasOwn(catalogs, message.name)) throw new Error('unknown catalog');
             catalogs[message.name].push(...message.rows);
         } else if (message.type === 'plan') {

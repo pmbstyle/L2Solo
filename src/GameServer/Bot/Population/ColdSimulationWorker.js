@@ -75,6 +75,7 @@ const { ColdCompetitionMonitor, INTERVAL_MS: COMPETITION_INTERVAL_MS } = require
 const { ColdSimulationKernel } = require('./ColdSimulationKernel');
 const { beginHuntingTrip } = require('./HuntingTravel');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
+const TableMirror = require('./TableMirror');
 const SpotIndex = require('../AI/SpotIndex');
 const forbiddenLoaded = Object.keys(require.cache).filter((filename) => (
     /[\\/]src[\\/]Database\.js$/i.test(filename)
@@ -98,6 +99,7 @@ let planningNpcOfferRows = [];
 let planningNpcCatalog = ColdNpcPlanningCatalog.createLookup();
 let planningOccupancyCache = null;
 let planningOccupancyCachedAt = 0;
+const tables = new TableMirror();
 const eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
 eventLoopDelay.enable();
 
@@ -256,6 +258,7 @@ function startKernel(config = {}) {
         send('heartbeat', {
             ...kernel.snapshot(),
             competition: competition?.snapshot() || null,
+            tables: tables.summary(),
             heapUsed: process.memoryUsage().heapUsed,
             rss: process.memoryUsage().rss,
             eventLoopUtilization: elu.utilization,
@@ -304,6 +307,11 @@ async function handle(message) {
             }
         }, message.msgId);
         break;
+    case 'table_page': {
+        const resync = tables.apply(payload.tables);
+        if (resync.length) send('table_resync', { names: resync });
+        break;
+    }
     case 'clan_social_page':
         if (!kernel) break;
         for (const snapshot of payload.rows || []) kernel.interactionMemory.clanSocial.accept(snapshot);

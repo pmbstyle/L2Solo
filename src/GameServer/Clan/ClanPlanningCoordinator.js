@@ -1,10 +1,15 @@
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
+const TableChannel = require('../Bot/Population/ColdTableChannel');
 const yieldLoop = () => new Promise((resolve) => setImmediate(resolve));
 
 class ClanPlanningCoordinator {
-    constructor({ workerFile = path.join(__dirname, 'ClanPlanningWorker.js'), timeoutMs = 30000, maxPending = 8, restartDelayMs = 5000 } = {}) {
+    constructor({ workerFile = path.join(__dirname, 'ClanPlanningWorker.js'), timeoutMs = 30000, maxPending = 8, restartDelayMs = 5000,
+        tableChannel = TableChannel.shared } = {}) {
         this.workerFile = workerFile;
+        this.tableChannel = tableChannel;
+        // A new worker is a new epoch for the table channel.
+        this.epoch = 0;
         this.timeoutMs = timeoutMs;
         this.maxPending = maxPending;
         this.restartDelayMs = restartDelayMs;
@@ -20,6 +25,7 @@ class ClanPlanningCoordinator {
     fail(worker, error) {
         if (this.worker !== worker) return;
         this.worker = null;
+        this.tableChannel.detach(this);
         this.retryAt = Date.now() + this.restartDelayMs;
         this.stats.failures++;
         for (const entry of this.pending.values()) {
@@ -60,11 +66,16 @@ class ClanPlanningCoordinator {
         if (Date.now() < this.retryAt) throw new Error('clan planning worker recovering');
         const worker = new Worker(this.workerFile);
         this.worker = worker;
+        const epoch = ++this.epoch;
         this.stats.restarts++;
         worker.on('error', (error) => this.fail(worker, error));
         worker.on('exit', (code) => this.fail(worker, new Error(`clan planning worker exited: ${code}`)));
         worker.on('message', (message) => {
             if (this.worker !== worker) return;
+            if (message.type === 'table_resync') {
+                this.tableChannel.resync(this, epoch, message.names || []);
+                return;
+            }
             const entry = this.pending.get(message.id);
             if (!entry) return;
             this.pending.delete(message.id);
@@ -89,11 +100,25 @@ class ClanPlanningCoordinator {
         try { await this.initializing; }
         catch (error) { this.fail(worker, error); throw error; }
         finally { this.initializing = null; }
+        // Every table in full now; changes before each plan (plan()).
+        if (this.worker === worker) this.tableChannel.attach(this, epoch, (payload) => this.postTables(worker, payload));
+    }
+
+    postTables(worker, payload) {
+        if (this.worker !== worker) return false;
+        try {
+            worker.postMessage({ type: 'table_page', ...payload });
+            return true;
+        } catch (error) {
+            this.fail(worker, error);
+            return false;
+        }
     }
 
     async plan(payload, catalogs) {
         await this.ready(catalogs);
         if (payload.deadlineAt && Date.now() >= payload.deadlineAt) throw new Error('clan planning deadline');
+        this.tableChannel.flush();
         const result = await this.send('plan', { payload });
         this.stats.completed++;
         this.stats.maxRunMs = Math.max(this.stats.maxRunMs, result.durationMs);
@@ -105,6 +130,7 @@ class ClanPlanningCoordinator {
         const worker = this.worker;
         if (worker) {
             this.worker = null;
+            this.tableChannel.detach(this);
             for (const entry of this.pending.values()) {
                 clearTimeout(entry.timer);
                 entry.reject(new Error('clan planning worker stopped'));

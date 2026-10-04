@@ -7,6 +7,8 @@ const MAIN_TYPES = new Set([
     'catalog_page',
     'snapshot_page',
     'clan_social_page',
+    // ColdTableChannel pages: limited by size only, so no batch field below.
+    'table_page',
     'claim_ack',
     'lease_renewal',
     'commit_ack',
@@ -34,6 +36,7 @@ const WORKER_TYPES = new Set([
     'heartbeat',
     'fence_ack',
     'drained',
+    'table_resync',
     'fault'
 ]);
 
