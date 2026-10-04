@@ -2469,6 +2469,14 @@ const BotLifeState = {
                     amount: Math.max(0, Number(stock.amount) - shotActions * shot.perAction) };
             }
         }
+        // Cold combat drinks healing potions from the same stock. The fight
+        // debits only its own copy; drunkPotions counts the bottles by selfId
+        // (BackgroundResolver.startColdPotion).
+        for (const [selfId, count] of Object.entries(result.debug?.drunkPotions || {})) {
+            const stock = inventory[String(selfId)];
+            if (!stock || Number(stock.amount || 0) <= 0) continue;
+            inventory[String(selfId)] = { ...stock, amount: Math.max(0, Number(stock.amount) - Number(count || 0)) };
+        }
 
         const equippedInventory = GearAcquisitionPlanner.equipInventoryUpgrades({
             ...state,

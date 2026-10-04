@@ -841,6 +841,11 @@ function startColdPotion(fighter, time) {
     fighter.vitals.hp = Math.min(fighter.vitals.maxHp, fighter.vitals.hp + Number(effect.immediateHeal || 0));
     fighter.potionHot = effect.hot;
     fighter.potionsUsed = Number(fighter.potionsUsed || 0) + 1;
+    // The fight drinks from its own inventory copy (mutableCombatState); the
+    // resolve then debits these bottles from the stored stock, as it debits
+    // shotActions (BotLifeState.prepareResolve).
+    fighter.drunkPotions = { ...(fighter.drunkPotions || {}),
+        [potion.selfId]: Number(fighter.drunkPotions?.[potion.selfId] || 0) + 1 };
     return potion;
 }
 
@@ -1249,7 +1254,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             summon: soloFighter.summon || null,
             debug: { actions, durationMs: time, skillUses: soloFighter.skillUses, shotActions: soloFighter.shotActions, heals: soloFighter.heals,
                 musicUses: soloFighter.musicUses, summonUses: soloFighter.summonUses, summonActions: soloFighter.summonActions,
-                potionsUsed: soloFighter.potionsUsed, mobSelfId: mob.selfId || null, timedOut: !died }
+                potionsUsed: soloFighter.potionsUsed, drunkPotions: soloFighter.drunkPotions || null,
+                mobSelfId: mob.selfId || null, timedOut: !died }
         };
     }
 
@@ -1288,7 +1294,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         summon: soloFighter.summon || null,
         debug: { actions, durationMs: time, skillUses: soloFighter.skillUses, shotActions: soloFighter.shotActions, heals: soloFighter.heals,
             musicUses: soloFighter.musicUses, summonUses: soloFighter.summonUses, summonActions: soloFighter.summonActions,
-            potionsUsed: soloFighter.potionsUsed, mobSelfId: mob.selfId || null, timedOut: false, overhit: kill.overhit }
+            potionsUsed: soloFighter.potionsUsed, drunkPotions: soloFighter.drunkPotions || null,
+            mobSelfId: mob.selfId || null, timedOut: false, overhit: kill.overhit }
     };
 }
 
@@ -1752,6 +1759,7 @@ const BackgroundResolver = {
         let summonUses = 0;
         let summonActions = 0;
         let potionsUsed = 0;
+        const drunkPotions = {};
         let combatMs = 0;
         const foughtNpcIds = [];
         let attemptedFights = 0;
@@ -1812,6 +1820,9 @@ const BackgroundResolver = {
             summonUses += Number(result.debug?.summonUses || 0);
             summonActions += Number(result.debug?.summonActions || 0);
             potionsUsed += Number(result.debug?.potionsUsed || 0);
+            for (const [selfId, count] of Object.entries(result.debug?.drunkPotions || {})) {
+                drunkPotions[selfId] = Number(drunkPotions[selfId] || 0) + Number(count);
+            }
 
             if (result.won) {
                 wins += 1;
@@ -1900,6 +1911,7 @@ const BackgroundResolver = {
                 summonUses,
                 summonActions,
                 potionsUsed,
+                drunkPotions,
                 targetNpcId: Number(targetNpcId) || null,
                 foughtNpcIds
             }

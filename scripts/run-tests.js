@@ -157,6 +157,7 @@ const tests = [
     'tests/test_cold_shot_economy.js',
     'tests/test_shot_economy_persistence.js',
     'tests/test_cold_shot_consumption.js',
+    'tests/test_cold_potion_consumption.js',
     'tests/test_market_economy_policy.js',
     'tests/test_cold_economy_background.js',
     'tests/test_attack_hit_flags.js',
