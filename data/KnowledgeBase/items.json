@@ -574777,6 +574777,56 @@
   },
   {
     "grade": "none",
+    "id": 7076,
+    "kind": "Other.Quest",
+    "name": "Mysterious Cloth",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7076,
+      "template": {
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
+        "name": "Mysterious Cloth",
+        "price": 0
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7078,
+    "kind": "Other.Quest",
+    "name": "Sewing kit",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7078,
+      "template": {
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
+        "name": "Sewing kit",
+        "price": 0
+      }
+    }
+  },
+  {
+    "grade": "none",
     "id": 7079,
     "kind": "Other.None",
     "name": "Fragment of Dimension",
@@ -574822,6 +574872,56 @@
         "mass": 30,
         "name": "Scroll of Escape: Giran Castle Town",
         "price": 35000
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7161,
+    "kind": "Other.Quest",
+    "name": "Skein of Yarn",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7161,
+      "template": {
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
+        "name": "Skein of Yarn",
+        "price": 0
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7163,
+    "kind": "Other.Quest",
+    "name": "Piece of Reinforced Steel",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7163,
+      "template": {
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
+        "name": "Piece of Reinforced Steel",
+        "price": 0
       }
     }
   },
@@ -574896,6 +574996,31 @@
         "kind": "Other.Quest",
         "mass": 0,
         "name": "Shining Red Gem",
+        "price": 0
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7528,
+    "kind": "Other.Quest",
+    "name": "Spinneret",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7528,
+      "template": {
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
+        "name": "Spinneret",
         "price": 0
       }
     }
@@ -575446,6 +575571,31 @@
         "kind": "Other.Quest",
         "mass": 0,
         "name": "Roselyn's Note",
+        "price": 0
+      }
+    }
+  },
+  {
+    "grade": "none",
+    "id": 7574,
+    "kind": "Other.Quest",
+    "name": "Very Expensive Necklace",
+    "sources": {
+      "drops": [],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "consumable": false,
+        "stackable": true
+      },
+      "selfId": 7574,
+      "template": {
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
+        "name": "Very Expensive Necklace",
         "price": 0
       }
     }
