@@ -111,6 +111,19 @@ const GODDARD_MARKET_PLAZA = Object.freeze({
     locZ: -2781
 });
 const GODDARD_STALL_EDGE_PADDING = 55;
+// Captured in-game around Floran, including the central inset. Keep each
+// measured corner height for later placement on the uneven ground.
+const FLORAN_MARKET_PLAZA = Object.freeze({
+    boundary: Object.freeze([
+        [16933, 169872], [16777, 170253], [17382, 170559],
+        [18255, 170501], [18309, 170202], [17899, 170030],
+        [17672, 170355], [17402, 170300], [17518, 169837]
+    ]),
+    boundaryHeights: Object.freeze([-3495, -3498, -3502, -3499, -3496, -3499, -3508, -3507, -3501]),
+    bounds: Object.freeze({ minX: 16777, maxX: 18309, minY: 169837, maxY: 170559 }),
+    locZ: -3501
+});
+const FLORAN_STALL_EDGE_PADDING = 55;
 const TALKING_ISLAND_NO_GRADE_PLAZA = Object.freeze({
     boundary: Object.freeze([
         [-84242, 245018], [-83965, 244591], [-84553, 243951],
@@ -414,6 +427,10 @@ function chooseRuneMarketStall(random = Math.random, occupied = []) {
 
 function isGoddardMarketStallLocation(loc) {
     return isInsetPolygonStallLocation(loc, GODDARD_MARKET_PLAZA, GODDARD_STALL_EDGE_PADDING);
+}
+
+function isFloranMarketStallLocation(loc) {
+    return isInsetPolygonStallLocation(loc, FLORAN_MARKET_PLAZA, FLORAN_STALL_EDGE_PADDING);
 }
 
 function isTalkingIslandNoGradeStallLocation(loc) {
@@ -1366,6 +1383,8 @@ module.exports = {
     RUNE_STALL_MIN_DISTANCE,
     GODDARD_MARKET_PLAZA,
     GODDARD_STALL_EDGE_PADDING,
+    FLORAN_MARKET_PLAZA,
+    FLORAN_STALL_EDGE_PADDING,
     TALKING_ISLAND_NO_GRADE_PLAZA,
     TALKING_ISLAND_STALL_MIN_DISTANCE,
     ELVEN_VILLAGE_NO_GRADE_PLAZA,
@@ -1406,6 +1425,7 @@ module.exports = {
     isAdenMarketStallLocation,
     isRuneMarketStallLocation,
     isGoddardMarketStallLocation,
+    isFloranMarketStallLocation,
     isTalkingIslandNoGradeStallLocation,
     isElvenVillageNoGradeStallLocation,
     isDarkElvenVillageNoGradeStallLocation,
