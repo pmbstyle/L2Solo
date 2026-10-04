@@ -1,4 +1,5 @@
 const cleanupNeed = (member, now) => invoke('GameServer/Bot/Economy/ItemDisposition').inventoryCleanupNeed(member, { now });
+const cleanupGoal = (need) => invoke('GameServer/Bot/Goals/NeedsEvaluator').cleanupGoal(need);
 
 const RESERVATION_MS = 15 * 60 * 1000;
 function clanDuty(party) {
@@ -8,22 +9,26 @@ function clanDuty(party) {
 function pending(party, now = Date.now()) {
     return Object.values(party?.stats?.marketAbsences || {}).filter(value => Number(value.until) > now);
 }
-function allowed(party, member, now = Date.now()) {
+// The bag need a clan-duty break reads; null outside a clan duty. A caller
+// that already has it passes it on (`need`) so the bag is walked once.
+function memberNeed(party, member, now = Date.now()) {
+    return clanDuty(party) ? cleanupNeed(member, now) : null;
+}
+function allowed(party, member, now = Date.now(), need = undefined) {
     if (!clanDuty(party)) return true;
-    return !pending(party, now).length
-        && cleanupNeed(member, now)?.reason === 'inventory_capacity';
+    if (pending(party, now).length) return false;
+    return (need === undefined ? cleanupNeed(member, now) : need)?.reason === 'inventory_capacity';
 }
-function goal(party, member, current, now) {
+// A clan duty is left only for a bag over its slot limit.
+function goal(party, member, current, now, need = undefined) {
     if (!clanDuty(party)) return current;
-    const need = cleanupNeed(member, now);
-    if (need?.reason !== 'inventory_capacity') return null;
-    return { type: 'sell_inventory', status: 'active', priority: 96,
-        target: { cleanupReason: need.reason, itemCount: need.slots },
-        plan: { expectedBenefit: 'market_sale_inventory', cleanupReason: need.reason } };
+    const bag = need === undefined ? cleanupNeed(member, now) : need;
+    if (bag?.reason !== 'inventory_capacity') return null;
+    return { ...cleanupGoal(bag), status: 'active' };
 }
-function departure(party, member, travel, now) {
+function departure(party, member, travel, now, given = undefined) {
     if (!clanDuty(party)) return travel;
-    const need = cleanupNeed(member, now);
+    const need = given === undefined ? cleanupNeed(member, now) : given;
     const token = { partyId: party.partyId, characterId: member.characterId, until: now + RESERVATION_MS,
         objective: { ...party.stats.objective }, startedAt: now, cleanupReason: need?.reason,
         slots: need?.slots, limit: need?.limit };
@@ -39,4 +44,4 @@ function ready(state) {
         && !state.stats?.travel && !state.stats?.marketReturn
         && ['hunting', 'party_wait', 'grouped'].includes(state.activity);
 }
-module.exports = { clanDuty, pending, allowed, goal, departure, stats, ready };
+module.exports = { clanDuty, pending, memberNeed, allowed, goal, departure, stats, ready };

@@ -451,8 +451,9 @@ function canResumeWarehouseMarketSale(state) {
     ));
 }
 
-function canTakePartyMarketBreak(party, members, member, timestamp = Date.now()) {
-    if (!PartyMarketBreak.allowed(party, member, timestamp)) return false;
+// cleanupNeed: the member's bag need when the caller already has it.
+function canTakePartyMarketBreak(party, members, member, timestamp = Date.now(), cleanupNeed = undefined) {
+    if (!PartyMarketBreak.allowed(party, member, timestamp, cleanupNeed)) return false;
     if (PartyMarketBreak.clanDuty(party)) return members.length > 1;
     if (timestamp - Number(party.stats?.formedAt || party.startedAt || timestamp) < Config.partyMarketBreakMinSessionMs) return false;
     if (Number(party.stats?.fightsResolved || 0) < Config.partyMarketBreakMinFights) return false;
@@ -532,18 +533,19 @@ async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
             : cachedGoal;
         if (due || cleanupNeeded) reviewed += 1;
         await BotAfkMarketService.reconcile(current, goalSnapshot?.current, goalSnapshot?.candidates);
-        if (departed || !canTakePartyMarketBreak(party, members, current, timestamp)) continue;
+        if (departed || !canTakePartyMarketBreak(party, members, current, timestamp, cleanupNeeded)) continue;
 
         // Goal review can overlap the next worker claim. Re-read the reflected
         // ownership revision immediately before the atomic transition so the
         // handoff fences that live token instead of an older cached snapshot.
         const currentMember = LifeState.cachedState(member.characterId) || member;
         if (String(currentMember.party?.partyId || currentMember.partyId || '') !== String(party.partyId)) continue;
-        if (!canTakePartyMarketBreak(party, members, currentMember, timestamp)) continue;
+        const need = currentMember === current ? cleanupNeeded : PartyMarketBreak.memberNeed(party, currentMember, timestamp);
+        if (!canTakePartyMarketBreak(party, members, currentMember, timestamp, need)) continue;
         const travel = GoalExecutor.beginMarketTravel(currentMember,
-            PartyMarketBreak.goal(party, currentMember, goalSnapshot?.current, timestamp), timestamp);
+            PartyMarketBreak.goal(party, currentMember, goalSnapshot?.current, timestamp, need), timestamp);
         if (!travel) continue;
-        const detached = await LifeState.leaveParty(PartyMarketBreak.departure(party, currentMember, travel, timestamp),
+        const detached = await LifeState.leaveParty(PartyMarketBreak.departure(party, currentMember, travel, timestamp, need),
             'market_break', { ownerHandoff: true });
         if (detached) departed = detached;
     }
@@ -604,23 +606,7 @@ function inventoryCleanupGoal(state, timestamp = Date.now()) {
         || ['traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting'].includes(state.activity)) return null;
     const need = ItemDisposition.inventoryCleanupNeed(state, { now: timestamp });
     if (!need) return null;
-    return {
-        type: 'sell_inventory',
-        status: 'active',
-        priority: 96,
-        target: {
-            itemCount: need.slots,
-            npcOnlySlots: need.npcOnlySlots,
-            cleanupReason: need.reason
-        },
-        plan: {
-            kind: 'market_sell',
-            expectedBenefit: 'market_sale_inventory',
-            risk: 0,
-            cleanupReason: need.reason
-        },
-        blockers: []
-    };
+    return { ...invoke('GameServer/Bot/Goals/NeedsEvaluator').cleanupGoal(need), status: 'active' };
 }
 
 // A forced cleanup decided over a resolve outranks a trip that resolve
@@ -3304,13 +3290,14 @@ const PopulationService = {
                         : await BotAfkMarketService.reconcile(member, goalSnapshot?.current, goalSnapshot?.candidates);
                     const currentMember = remote?.state || member;
                     if (spot.raidBoss) return [...activeMembers, currentMember];
-                    if (breakTaken || !canTakePartyMarketBreak(party, resolvedMembers, currentMember)) {
+                    const need = breakTaken ? null : PartyMarketBreak.memberNeed(party, currentMember, Date.now());
+                    if (breakTaken || !canTakePartyMarketBreak(party, resolvedMembers, currentMember, Date.now(), need)) {
                         return [...activeMembers, currentMember];
                     }
                     const travel = GoalExecutor.beginMarketTravel(currentMember,
-                        PartyMarketBreak.goal(party, currentMember, goalSnapshot?.current, Date.now()));
+                        PartyMarketBreak.goal(party, currentMember, goalSnapshot?.current, Date.now(), need));
                     if (!travel) return [...activeMembers, currentMember];
-                    return LifeState.leaveParty(PartyMarketBreak.departure(party, currentMember, travel, Date.now()), 'market_break').then((departed) => {
+                    return LifeState.leaveParty(PartyMarketBreak.departure(party, currentMember, travel, Date.now(), need), 'market_break').then((departed) => {
                         if (departed) marketDeparture = departed;
                         if (departed) breakTaken = true;
                         return departed ? activeMembers : [...activeMembers, currentMember];

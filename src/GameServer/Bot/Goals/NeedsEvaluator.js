@@ -151,6 +151,29 @@ function equipmentNeed(state, escrow = 0) {
     };
 }
 
+// The goal a full or junk-heavy bag forces (need from
+// ItemDisposition.inventoryCleanupNeed). An over-capacity bag blocks native
+// trades and keeps every later drop in the same failure loop, so the sale
+// stays below recovery and death but outranks progression and adena.
+function cleanupGoal(need) {
+    return {
+        type: 'sell_inventory',
+        priority: 96,
+        target: {
+            itemCount: need.slots,
+            npcOnlySlots: need.npcOnlySlots,
+            cleanupReason: need.reason
+        },
+        plan: {
+            kind: 'market_sell',
+            expectedBenefit: 'market_sale_inventory',
+            risk: 0,
+            cleanupReason: need.reason
+        },
+        blockers: []
+    };
+}
+
 function routePlan(state, spot) {
     return {
         kind: state.party?.partyId ? 'party_route' : 'farm_route',
@@ -334,27 +357,7 @@ function evaluate(state = {}, options = {}) {
 
     const inventoryCleanup = ItemDisposition.inventoryCleanupNeed(state, { now: timestamp });
     if (inventoryCleanup) {
-        candidates.push({
-            type: 'sell_inventory',
-            // An over-capacity bag is an actionable safety problem: it blocks
-            // native trades and keeps every later drop in the same failure
-            // loop.  Keep recovery/death above it, but outrank ordinary
-            // progression and adena gathering.
-            priority: 96,
-            target: {
-                itemCount: inventoryCleanup.slots,
-                npcOnlySlots: inventoryCleanup.npcOnlySlots,
-                cleanupReason: inventoryCleanup.reason
-            },
-            plan: {
-                kind: 'market_sell',
-                expectedBenefit: 'market_sale_inventory',
-                risk: 0,
-                cleanupReason: inventoryCleanup.reason
-            },
-            blockers: [],
-            nextReviewAt: timestamp + 10 * 60 * 1000
-        });
+        candidates.push({ ...cleanupGoal(inventoryCleanup), nextReviewAt: timestamp + 10 * 60 * 1000 });
     }
 
     const sale = ItemDisposition.saleSummary(state);
@@ -403,4 +406,4 @@ function evaluate(state = {}, options = {}) {
     return candidates;
 }
 
-module.exports = { evaluate };
+module.exports = { evaluate, cleanupGoal };

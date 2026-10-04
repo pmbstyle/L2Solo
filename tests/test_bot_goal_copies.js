@@ -122,9 +122,18 @@ try {
     const breakGoal = PartyMarketBreak.goal(clanParty, member, { type: 'progress_level' }, now);
     assert.deepStrictEqual(breakGoal, {
         type: 'sell_inventory', status: 'active', priority: 96,
-        target: { cleanupReason: 'inventory_capacity', itemCount: 81 },
-        plan: { expectedBenefit: 'market_sale_inventory', cleanupReason: 'inventory_capacity' }
-    }, 'today the clan break goal carries only the reason and the slot count');
+        target: { itemCount: 81, npcOnlySlots: 3, cleanupReason: 'inventory_capacity' },
+        plan: { kind: 'market_sell', expectedBenefit: 'market_sale_inventory', risk: 0, cleanupReason: 'inventory_capacity' },
+        blockers: []
+    }, 'the clan break goal is the planner cleanup goal');
+    const callsBefore = needCalls;
+    const given = PartyMarketBreak.memberNeed(clanParty, member, now);
+    assert.strictEqual(PartyMarketBreak.allowed(clanParty, member, now, given), true);
+    assert.deepStrictEqual(PartyMarketBreak.goal(clanParty, member, null, now, given), breakGoal);
+    PartyMarketBreak.departure(clanParty, member, { stats: {} }, now, given);
+    assert.strictEqual(needCalls, callsBefore + 1, 'a passed need walks the bag once');
+    assert.strictEqual(PartyMarketBreak.memberNeed({ partyId: 'free', stats: {} }, member, now), null);
+    assert.strictEqual(needCalls, callsBefore + 1, 'an ordinary party does not walk the bag');
     const departure = PartyMarketBreak.departure(clanParty, member, { activity: 'traveling', stats: {} }, now);
     assert.deepStrictEqual(departure.stats.partyMarketReturn, {
         partyId: 'clan-party', characterId: 42, until: now + 15 * 60 * 1000,
