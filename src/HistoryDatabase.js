@@ -92,7 +92,6 @@ function spawn() {
     });
     worker = instance;
     counters.starts += 1;
-    instance.unref();
     instance.on('message', (message = {}) => {
         if (instance !== worker) return;
         if (message.type === 'moved' || message.type === 'flushed' || message.type === 'stopped') {
@@ -124,6 +123,9 @@ function spawn() {
     };
     instance.on('error', failed);
     instance.on('exit', (code) => failed(new Error(`history_worker_exited:${code}`)));
+    // After the listeners: adding a 'message' listener refs the worker's port again,
+    // and a process that only opened the database (a test, a script) must still exit.
+    instance.unref();
 }
 
 function start({ worldPath, historyPath, onMoved, transferMs } = {}) {
